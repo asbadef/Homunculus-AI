@@ -358,9 +358,12 @@
     ["Satınalma", ["Satınalma Fatura Analizi", "İrsaliye Analizi", "Satınalma Talep Analizi", "Sipariş Analizi"]],
     ["Ciro ve Verimlilik", ["Ciro", "Bölüm Bazlı Ciro", "Doktor Bazlı Ciro", "Hizmet Analizi", "Hastaya İşlenen Malzemeler", "Protokol Ciro Analizi", "Hasta Ciro Analizi", "Doktor Verimlilik Analizi", "Kurum Bazlı Ciro", "Günlük Nakit Akış Analizi", "Yurtdışı Hasta Ciro Analizi"]],
   ];
+  H.raporGruplari = RAPOR_GRUP.map(g => g[0]);   // admin "Rapor Yetkileri" ekranı bunu kullanır
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · başlık kataloğu (içerik yapım aşamasında, tasarım)</p></div></div>
-      ${RAPOR_GRUP.map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
+    const role = (H.state.user || {}).role, allow = H.data.rolRapor && H.data.rolRapor[role];
+    const groups = RAPOR_GRUP.filter(([g]) => !allow || allow[g]);
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""} (tasarım)</p></div></div>
+      ${(groups.length ? groups : [["", ["— Bu rol için tanımlı rapor yok (admin → Rapor Yetkileri) —"]]]).map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak; gerçek veri bağlantısını ayrı ekip kurar.</p>`;
     root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);

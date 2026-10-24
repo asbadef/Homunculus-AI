@@ -706,7 +706,7 @@
    *                            YÖNETİM
    * ================================================================ */
   const AD = { tab:null, q:"", role:"", sel:"hosp", af:{ user:"", type:"", date:"" }, sys:null };
-  const ATABS = [["users", "Kullanıcılar", "admin_users", "users"], ["roles", "Roller ve yetkiler", "admin_roles", "shield"], ["structure", "Hastane yapısı", "admin_structure", "building"],
+  const ATABS = [["users", "Kullanıcılar", "admin_users", "users"], ["roles", "Roller ve yetkiler", "admin_roles", "shield"], ["raporyetki", "Rapor Yetkileri", "admin_roles", "chart"], ["structure", "Hastane yapısı", "admin_structure", "building"],
     ["integrations", "Entegrasyonlar", "admin_integrations", "plug"], ["camera", "Kamera bağlantısı", "admin_camera", "tv"], ["notify", "Bildirim kuralları", "admin_system", "bell"],
     ["careCat", { toString:() => H.t("adm_cc_tab") }, "admin_system", "list"],   // 24.09 · bakım kataloğu (etiket dile göre)
     ["icdliste", "Tanı Listesi (ICD)", "admin_system", "list"],   // ICD-10 tanı kataloğu (ara + ekle); doktor muayenede seçer
@@ -729,7 +729,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -755,7 +755,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1403,6 +1403,20 @@
       const dh = t.closest("[data-epidahil]"); if (dh) { secs[+dh.dataset.epidahil].dahil = dh.checked; tabEpikriz(body); return; }
       const bo = t.closest("[data-epibos]"); if (bo) { secs[+bo.dataset.epibos].bosCikmasin = bo.checked; return; } });
     list.addEventListener("click", (e) => { const d = e.target.closest("[data-epidel]"); if (d) { secs.splice(+d.dataset.epidel, 1); H.toast("Alan çıkarıldı", "w"); draw(); } });
+  }
+
+  /* ---------- Rapor Yetkileri (admin: hangi rol hangi rapor grubunu görür) ---------- */
+  function tabRaporYetki(body) {
+    const roles = Object.entries(H.data.roles), rk = AD.rrRol || roles[0][0], grps = H.raporGruplari || [];
+    H.data.rolRapor = H.data.rolRapor || {}; const cur = H.data.rolRapor[rk];
+    body.innerHTML = `<div class="g2" style="align-items:start">
+      <div class="box" style="max-width:240px"><h5>Roller</h5><div style="display:flex;flex-direction:column;gap:3px">${roles.map(([k, r]) => `<button class="hc-cat ${rk === k ? "on" : ""}" data-rrrol="${k}">${esc(r.name)}</button>`).join("")}</div></div>
+      <div class="box"><div class="adm-bar"><b>${esc((H.data.roles[rk] || {}).name || "")}</b><span class="spacer"></span><label style="font-weight:400"><input type="checkbox" data-rrall${cur ? "" : " checked"}> Tüm raporlar</label></div>
+        <div class="icd-oz">${grps.map(g => `<label><input type="checkbox" data-rrg="${esc(g)}"${(cur && cur[g]) ? " checked" : ""}${cur ? "" : " disabled"}> ${esc(g)}</label>`).join("") || `<div class="adm-sub">Rapor grubu bulunamadı (raporlar modülü yüklenince gelir).</div>`}</div></div></div>
+      <p class="adm-sub" style="margin-top:10px">Admin her rolün hangi rapor gruplarını göreceğini seçer. "Tüm raporlar" işaretliyse rol tüm raporları görür; kaldırınca yalnız seçili gruplar görünür. (İleride kullanıcı-bazlı ince ayar da eklenecek.)</p>`;
+    body.querySelectorAll("[data-rrrol]").forEach(b => b.onclick = () => { AD.rrRol = b.dataset.rrrol; tabRaporYetki(body); });
+    const allCb = body.querySelector("[data-rrall]"); if (allCb) allCb.onchange = () => { if (allCb.checked) delete H.data.rolRapor[rk]; else H.data.rolRapor[rk] = {}; H.log("Rapor yetkisi", rk + " · " + (allCb.checked ? "tümü" : "kısıtlı")); tabRaporYetki(body); };
+    body.querySelectorAll("[data-rrg]").forEach(cb => cb.onchange = () => { H.data.rolRapor[rk] = H.data.rolRapor[rk] || {}; if (cb.checked) H.data.rolRapor[rk][cb.dataset.rrg] = true; else delete H.data.rolRapor[rk][cb.dataset.rrg]; });
   }
 
   function tabFiyat(body) {
