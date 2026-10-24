@@ -997,20 +997,23 @@
   }
 
   /* ---------- Bölüm / Branş Listesi ---------- */
+  const BOLUM_TIP = ["Poliklinik", "Servis (yatan)", "Yoğun Bakım", "Ameliyathane", "Laboratuvar", "Radyoloji", "Günübirlik", "Acil"];
+  const BOLUM_FLAGS = [["randevuVerilir", "Randevu verilir"], ["farkYok", "Hasta farkı almaz"], ["indirimOto", "İndirim otomatik onaylanmaz"], ["epikrizOzel", "Epikriz bölüme özel"], ["katilimMuaf", "Katılım payından muaf"], ["fiyatTeklif", "Fiyat teklif veren bölüm"], ["mobilCheckin", "Mobil check-in"], ["mobilOnOdeme", "Mobil ön ödeme"]];
   function bolumSeed() {
     if (H.data.bolumler) return;
-    H.data.bolumler = ["Daxili Xəstəliklər", "Kardiologiya", "Oftalmologiya", "Ümumi Cərrahiyyə", "Uşaq Xəstəlikləri", "Nevrologiya", "Nevrocərrahiyyə", "Mamalıq-Ginekologiya", "Uşaq Cərrahiyyəsi", "Endokrinologiya", "Nefrologiya", "Hematologiya", "Qastroenterologiya", "Pulmonologiya", "Travmatologiya-Ortopediya", "Urologiya", "Dermatologiya", "Psixiatriya", "Onkologiya", "Anesteziologiya-Reanimatologiya", "Təcili Yardım", "Fizioterapiya-Reabilitasiya", "Nüvə Təbabəti", "İnfeksion Xəstəliklər", "Revmatologiya", "Plastik Cərrahiyyə", "Torakal Cərrahiyyə", "Ürək-Damar Cərrahiyyəsi"].map((ad, i) => ({ id:"bol" + (i + 1), ad, brans:ad }));
+    const names = ["Daxili Xəstəliklər", "Kardiologiya", "Oftalmologiya", "Ümumi Cərrahiyyə", "Uşaq Xəstəlikləri", "Nevrologiya", "Nevrocərrahiyyə", "Mamalıq-Ginekologiya", "Uşaq Cərrahiyyəsi", "Endokrinologiya", "Nefrologiya", "Hematologiya", "Qastroenterologiya", "Pulmonologiya", "Travmatologiya-Ortopediya", "Urologiya", "Dermatologiya", "Psixiatriya", "Onkologiya", "Anesteziologiya-Reanimatologiya", "Təcili Yardım", "Fizioterapiya-Reabilitasiya", "Nüvə Təbabəti", "İnfeksion Xəstəliklər", "Revmatologiya", "Plastik Cərrahiyyə", "Torakal Cərrahiyyə", "Ürək-Damar Cərrahiyyəsi", "Qulaq-Burun-Boğaz", "Stomatologiya", "Radiologiya", "Laboratoriya", "Patologiya", "Allerqologiya", "Nutrisiya və Dietologiya", "Ağrı Mərkəzi", "Check-Up", "Genetika"];
+    H.data.bolumler = names.map((ad, i) => ({ id:"bol" + (i + 1), kod:"BOL-" + String(i + 1).padStart(3, "0"), ad, kisa:ad, yabanci:"", tip:"Poliklinik", brans:ad, flags:{ randevuVerilir:true }, sorumlu:"", telefon:"", masraf:"", sube:"Bakü Hastanesi", sgkFarkOran:"", ventilator:"", randevuSure:"15" }));
   }
   function tabBolum(body) {
     bolumSeed(); const ALL = H.data.bolumler;
     body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
       <div data-bllist></div>
-      <p class="adm-sub" style="margin-top:10px">Tıbbi bölümler. Otomatik Hizmet Tanımı ve kabul kaydı bu listeyi kullanır. (Branş kodları/SUT eşlemesi veri dosyası gelince eklenir.)</p>`;
+      <p class="adm-sub" style="margin-top:10px">Tıbbi bölümler (kod + tip + özellikler). Admin tanımlar; kabul, randevu, otomatik hizmet tanımı ve epikriz bu listeyi kullanır. Satıra tıklayıp düzenleyin.</p>`;
     const list = body.querySelector("[data-bllist]");
     const draw = () => {
-      const q = norm(AD.blq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;
+      const q = norm(AD.blq || ""), res = q ? ALL.filter(x => norm(x.ad + " " + (x.kod || "") + " " + (x.brans || "")).includes(q)) : ALL;
       body.querySelector("[data-blcount]").textContent = ALL.length + " bölüm";
-      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Bölüm / branş</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-bledit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td><button class="btn g sm" data-bldel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen bölüm yok.</div>`;
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Bölüm / branş</th><th style="width:150px">Tip</th><th style="width:90px">Randevu</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-bledit="${x.id}" style="cursor:pointer"><td class="mono adm-sub">${esc(x.kod || "—")}</td><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.tip || "—")}</td><td class="adm-sub">${x.flags && x.flags.randevuVerilir ? "Verilir" : "—"}</td><td><button class="btn g sm" data-bldel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen bölüm yok.</div>`;
     };
     draw();
     body.querySelector("[data-blq]").addEventListener("input", e => { AD.blq = e.target.value; draw(); });
@@ -1021,13 +1024,31 @@
     });
   }
   function bolumForm(existing, redraw) {
-    bolumSeed(); const ALL = H.data.bolumler, e = existing || {};
-    H.modal({ title:existing ? "Bölüm düzenle" : "Yeni bölüm",
-      body:`<div class="icd-form"><div class="fr"><label>Bölüm / branş adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Kardiologiya"></div></div>`,
+    bolumSeed(); const ALL = H.data.bolumler, e = existing || { tip:"Poliklinik", flags:{ randevuVerilir:true }, sube:"Bakü Hastanesi" }, fl = e.flags || {};
+    const inp = (k, ph) => `<input data-f="${k}" value="${esc(e[k] || "")}" placeholder="${ph || ""}">`;
+    H.modal({ title:existing ? "Bölüm düzenle" : "Yeni bölüm", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kod</label><input data-f="kod" value="${esc(e.kod || "")}" placeholder="BOL-039"></div>
+        <div class="fr"><label>Bölüm adı</label>${inp("ad", "ör. Kardiologiya")}</div>
+        <div class="fr"><label>Kısa ad</label>${inp("kisa")}</div>
+        <div class="fr"><label>Yabancı ad</label>${inp("yabanci", "Cardiology")}</div>
+        <div class="fr"><label>Branş</label>${inp("brans")}</div>
+        <div class="fr"><label>Bölüm tipi</label><select data-f="tip">${BOLUM_TIP.map(t => `<option${e.tip === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Bölüm sorumlusu</label>${inp("sorumlu")}</div>
+        <div class="fr"><label>İrtibat telefon</label>${inp("telefon")}</div>
+        <div class="fr"><label>Masraf merkezi</label>${inp("masraf")}</div>
+        <div class="fr"><label>Şube</label>${inp("sube")}</div>
+        <div class="fr"><label>SGK hasta fark oranı (%)</label>${inp("sgkFarkOran")}</div>
+        <div class="fr"><label>Ventilatör sayısı</label>${inp("ventilator")}</div>
+        <div class="fr"><label>Randevu çizelge süresi (dk)</label>${inp("randevuSure")}</div>
+      </div>
+      <div class="fr" style="margin-top:8px"><label>Özellikler</label><div class="icd-oz">${BOLUM_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-bf="${k}"${fl[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
       actions:`${existing ? `<button class="btn g" data-bldelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-blsave>Kaydet</button>`,
       onMount(m) {
-        m.querySelector("[data-blsave]").onclick = () => { const ad = (m.querySelector('[data-f="ad"]').value || "").trim(); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
-          if (existing) { e.ad = ad; e.brans = ad; } else ALL.unshift({ id:"bol" + Date.now(), ad, brans:ad });
+        m.querySelector("[data-blsave]").onclick = () => { const g = (k) => (m.querySelector(`[data-f="${k}"]`).value || "").trim(); const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
+          const flags = {}; m.querySelectorAll("[data-bf]:checked").forEach(c => flags[c.dataset.bf] = true);
+          const rec = { kod:g("kod"), ad, kisa:g("kisa") || ad, yabanci:g("yabanci"), brans:g("brans") || ad, tip:g("tip"), sorumlu:g("sorumlu"), telefon:g("telefon"), masraf:g("masraf"), sube:g("sube"), sgkFarkOran:g("sgkFarkOran"), ventilator:g("ventilator"), randevuSure:g("randevuSure"), flags };
+          if (existing) Object.assign(e, rec); else ALL.unshift(Object.assign({ id:"bol" + Date.now() }, rec));
           H.log(existing ? "Bölüm güncellendi" : "Bölüm eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw(); };
         const del = m.querySelector("[data-bldelf]"); if (del) del.onclick = () => { if (!confirm("Bu bölüm silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
       } });
