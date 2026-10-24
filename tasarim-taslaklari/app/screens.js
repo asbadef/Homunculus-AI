@@ -507,7 +507,7 @@
   const IK_YETKI = ["Konsültasyon yapabilir", "Randevu verilebilir", "Web randevu ekranında görünsün", "Ameliyat personeli", "Çağrı merkezi personeli", "Danışman personel", "Vezne kasalar arası para giriş/çıkış", "İş yeri hekimi"];
   const IK_MEDENI = ["Bekar", "Evli", "Belirtilmedi"];
   const IK_EGITIM = ["Lise", "Ön lisans", "Lisans", "Yüksek lisans", "Doktora"];
-  const persAll = () => { const users = (H.data.users || []).filter(u => !u.temp).map(u => ({ name:u.name, u:u.u, title:u.title || "", rol:(H.data.roles[u.role] || { name:u.role }).name, units:u.units, active:u.active !== false, src:"user" }));
+  const persAll = () => { const users = (H.data.users || []).filter(u => !u.temp && !u._persId).map(u => ({ name:u.name, u:u.u, title:u.title || "", role:u.role, rol:(H.data.roles[u.role] || { name:u.role }).name, units:u.units, active:u.active !== false, src:"user" }));
     const pers = (H.data.personel || []).map(p => ({ name:(p.ad + " " + p.soyad).trim(), u:p.kimlik || "", title:p.unvan || "", rol:p.tip, units:p.bolum ? [p.bolum] : [], active:true, src:"personel", _p:p }));
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
@@ -520,7 +520,7 @@
     root.onclick = (e) => {
       if (e.target.closest("[data-persnew]")) return persForm(null);
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
-      const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) userDetay(user); }
+      const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
     };
     function userDetay(user) {
       const rol = (H.data.roles[user.role] || { name:user.role }), units = user.units === "*" ? "Tüm birimler" : (user.units || []).map(id => (H.unit(id) || { tr:id }).tr).join(", ") || "—";
@@ -531,8 +531,8 @@
         actions:`<button class="btn" data-x>Kapat</button>${H.can("admin_users") ? `<button class="btn p" data-usrol>Yetki / rol ekranı</button>` : ""}`,
         onMount(m) { const b = m.querySelector("[data-usrol]"); if (b) b.onclick = () => { H.closeModal(); H.go("admin", { tab:"users" }); }; } });
     }
-    function persForm(existing) {
-      const p = existing || {}, bols = H.data.bolumler || [];
+    function persForm(existing, seed) {
+      const p = existing || (seed ? { ad:(seed.name || "").trim().split(/\s+/)[0] || "", soyad:(seed.name || "").trim().split(/\s+/).slice(1).join(" "), kimlik:seed.u || "", unvan:seed.title || "", tip:(H.data.roles[seed.role] || { name:seed.role }).name || "", bolum:(seed.units && seed.units !== "*" && seed.units[0] && (H.unit(seed.units[0]) || {}).tr) || "" } : {}), bols = H.data.bolumler || [];
       const TABS = [["genel", "Genel"], ["kisisel", "Kişisel"], ["calisma", "Çalışma / takvim"], ["iletisim", "İletişim"], ["yetki", "Yetkiler"]];
       const f = (k, lbl, html) => `<div class="fr"><label>${lbl}</label>${html}</div>`;
       const inp = (k, ph) => `<input data-f="${k}" value="${H.esc(p[k] || "")}" placeholder="${ph || ""}">`;
@@ -569,7 +569,7 @@
             rec.yetki = [...m.querySelectorAll("[data-y]:checked")].map(x => x.dataset.y);
             rec.randevuOzellik = [...m.querySelectorAll("[data-rf]:checked")].map(x => x.dataset.rf);
             H.data.personel = H.data.personel || [];
-            if (existing) Object.assign(p, rec); else H.data.personel.unshift(Object.assign({ id:"per" + Date.now() }, rec));
+            if (existing) Object.assign(p, rec); else { const np = Object.assign({ id:"per" + Date.now() }, rec); H.data.personel.unshift(np); if (seed) seed._persId = np.id; }
             H.log(existing ? "Personel güncellendi" : "Personel eklendi", ad + " " + rec.soyad); H.closeModal(); H.toast("Kaydedildi: " + ad); H.go("ik");
           };
           const del = m.querySelector("[data-persdel]"); if (del) del.onclick = () => { if (!confirm("Bu personel silinsin mi?")) return; const i = (H.data.personel || []).findIndex(x => x.id === p.id); if (i >= 0) H.data.personel.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); H.go("ik"); };
