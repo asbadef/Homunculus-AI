@@ -723,7 +723,7 @@
     ["fiyat", "Hizmet Kartı / Fiyatları", "fiyat_duzenle", "list"],   // hizmet tanımı + kuruma göre fiyat (birleşik)
     ["epikriz", "Epikriz Şablonu", "admin_system", "file"],   // epikriz bölümleri (aç/kapat/sıra/başlık)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
-    ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
+    ["system", "Sistem ayarları", "admin_system", "gear"], ["parametre", "Değişken / Parametre", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
     ["health", "Sistem durumu", "admin_system", "activity"], ["events", "Olay günlüğü", "admin_system", "list"], ["integrity", "Veri bütünlüğü", "admin_system", "chart"],
     ["sessions", "Açık oturumlar", "admin_users", "key"], ["announce", "Duyuru", "admin_system", "zap"], ["backup", "Yedek ve geri yükleme", "admin_system", "swap"],
@@ -732,7 +732,7 @@
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
   const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
-    ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
+    ["sys", "Sistem", "gear", ["system", "parametre", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
   const grpOf = (k) => AGRP.find(g => g[3].includes(k)) || AGRP[0];
 
@@ -757,6 +757,7 @@
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
          health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         parametre:tabParametre,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -765,6 +766,29 @@
         AD.tab = mine.some(t => t[0] === last) ? last : mine[0][0]; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); return; }
       const t = e.target.closest("[data-tab]"); if (t && el.contains(t)) { AD.tab = t.dataset.tab; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); } });
     draw();
+  }
+
+  /* ---------- Değişken / Parametre Tanımları ---------- */
+  const parametreler = () => (H.data.parametreler = H.data.parametreler || [
+    { id:"p_pb", grup:"Genel", ad:"Para birimi", deger:"AZN (₼)", aciklama:"Varsayılan para birimi" },
+    { id:"p_kdv", grup:"Finans", ad:"KDV oranı (%)", deger:"18", aciklama:"Varsayılan KDV" },
+    { id:"p_dil", grup:"Genel", ad:"Varsayılan dil", deger:"Azərbaycan", aciklama:"Yeni kullanıcı arayüz dili" },
+    { id:"p_rand", grup:"Randevu", ad:"Varsayılan randevu süresi (dk)", deger:"15", aciklama:"Bölüm/doktor özel süresi yoksa" },
+    { id:"p_donem", grup:"Vezne", ad:"Dönem başlangıç no", deger:"54038", aciklama:"Vezne dönem numarası sayacı" },
+    { id:"p_pay", grup:"Finans", ad:"SAMHI hasta payı (%)", deger:"30", aciklama:"İcbari sığortada hasta/kurum bölünmesi" },
+    { id:"p_timeout", grup:"Güvenlik", ad:"Oturum zaman aşımı (dk)", deger:"30", aciklama:"Hareketsizlikte otomatik çıkış" },
+  ]);
+  function tabParametre(body) {
+    const all = parametreler(), grps = [...new Set(all.map(p => p.grup))];
+    body.innerHTML = `<div class="adm-bar"><span class="adm-sub">Sistem parametreleri · değer kutusuna yazıp Enter'a basın; değişiklik denetim kaydına yazılır.</span><span class="spacer"></span><button class="btn p" data-prnew>+ Yeni parametre</button></div>
+      ${grps.map(g => `<div class="sec">${esc(g)}</div><div class="tw"><table class="t"><thead><tr><th style="width:280px">Parametre</th><th style="width:200px">Değer</th><th>Açıklama</th><th style="width:40px"></th></tr></thead><tbody>
+      ${all.filter(p => p.grup === g).map(p => `<tr><td><b>${esc(p.ad)}</b></td><td><input data-prv="${p.id}" value="${esc(p.deger)}" style="width:100%"></td><td class="adm-sub">${esc(p.aciklama || "")}</td><td><button class="btn g sm" data-prdel="${p.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}
+      </tbody></table></div>`).join("")}`;
+    body.querySelectorAll("[data-prv]").forEach(inp => inp.addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const p = all.find(x => x.id === inp.dataset.prv); if (p) { p.deger = inp.value.trim(); H.log("Parametre değişti", p.ad + " = " + p.deger); H.toast(p.ad + " = " + p.deger); } }));
+    body.querySelectorAll("[data-prdel]").forEach(b => b.onclick = () => { if (!confirm("Bu parametre silinsin mi?")) return; const i = all.findIndex(x => x.id === b.dataset.prdel); if (i >= 0) all.splice(i, 1); H.toast("Silindi", "w"); tabParametre(body); });
+    body.querySelector("[data-prnew]").onclick = () => H.modal({ title:"Yeni parametre", body:`<div class="icd-form"><div class="fr"><label>Grup</label><input data-pf="grup" placeholder="ör. Finans"></div><div class="fr"><label>Parametre adı</label><input data-pf="ad"></div><div class="fr"><label>Değer</label><input data-pf="deger"></div><div class="fr"><label>Açıklama</label><input data-pf="aciklama"></div></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-prsave>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-prsave]").onclick = () => { const g = k => (m.querySelector(`[data-pf="${k}"]`).value || "").trim(); if (!g("ad")) { H.toast("Ad gerekli.", "w"); return; } all.push({ id:"p" + Date.now(), grup:g("grup") || "Genel", ad:g("ad"), deger:g("deger"), aciklama:g("aciklama") }); H.log("Parametre eklendi", g("ad")); H.closeModal(); H.toast("Eklendi"); tabParametre(body); }; } });
   }
 
   /* ---------- Cihaz Listesi (RIS / yazar kasa / hasta çağrı ekranı) ---------- */
