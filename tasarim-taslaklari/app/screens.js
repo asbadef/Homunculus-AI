@@ -250,11 +250,11 @@
         <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri yetkili rol (İade onayla) tarafından onaylanır. Onay zinciri (seviye 1/2/3) gerçek kurguda eklenir.</p>`; };
     const panel = ({ fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     const RAIL = [
-      ["Vezne 360", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""]]],
-      ["Vezne iş havuzu", [["Evrak takip", "evrak"], ["Ödeme takip", "fatura"], ["GFK takip", "gfk"], ["Onay bekleyen indirimler", "indirim"], ["Onay bekleyen iadeler", "iade"], ["Fiyat teklifleri", "fiyat"], ["Medula", ""], ["Toplu fatura işlemleri", ""], ["Protokol listesi", ""], ["Kurum değişiklik onay", ""]]],
+      ["Vezne paneli", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""]]],
+      ["Vezne iş havuzu", [["Evrak takip", "evrak"], ["Ödeme takip", "fatura"], ["GFK takip", "gfk"], ["Onay bekleyen indirimler", "indirim"], ["Onay bekleyen iadeler", "iade"], ["Fiyat teklifleri", "fiyat"], ["Toplu fatura işlemleri", ""], ["Protokol listesi", ""], ["Kurum değişiklik onay", ""]]],
     ];
     const rail = `<div class="vz-rail">${RAIL.map(([g, items]) => `<div class="vz-rg"><h6>${g}</h6>${items.map(([l, t]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t}" data-raill="${H.esc(l)}">${l}</button>`).join("")}</div>`).join("")}</div>`;
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta-360 vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}<div class="vz-wrap"><div class="vz-main">${strip}${panel}</div>${rail}</div>`;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}<div class="vz-wrap"><div class="vz-main">${strip}${panel}</div>${rail}</div>`;
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
       const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr");
@@ -319,7 +319,7 @@
     ["İndirim ve İade", ["Hasta İndirim Analizi", "Onay Bekleyen İndirimler", "İade Talepleri (Avans/Fatura)"]],
     ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi"]],
     ["İptal Analizleri", ["Protokol İptal Analizi", "Fatura İptal Analizi", "Vezne İşlem İptal Analizi", "Protokol İşlem İptal Analizi"]],
-    ["Protokol ve Liste", ["Protokol Listesi", "Medula Takip Analizi", "Kvk / Demografik Bilgi Raporu"]],
+    ["Protokol ve Liste", ["Protokol Listesi", "Provizyon Takip Analizi", "Kvk / Demografik Bilgi Raporu"]],
   ];
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · başlık kataloğu (içerik yapım aşamasında, tasarım)</p></div></div>
@@ -349,7 +349,7 @@
       return { cols:["Hasta no", "Hasta", "Ön tanı", "Doktor"], rows:r, note:"Ayaktan (poliklinik) muayene gelişleri." }; }
     if (name === "Vezne Tahakkuk Tahsilat Analizi") { const f = faturalar(), od = f.filter(x => x.durum === "Ödendi"), bk = f.filter(x => x.durum !== "Ödendi");
       return { cols:["Durum", "Adet", "Tutar ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen tahakkuk", bk.length, bk.reduce((a, x) => a + x.katilim, 0)]] }; }
-    if (name === "Medula Takip Analizi") { const g = {}; gfkRows().forEach(x => { g[x.durum] = (g[x.durum] || 0) + 1; });
+    if (name === "Provizyon Takip Analizi") { const g = {}; gfkRows().forEach(x => { g[x.durum] = (g[x.durum] || 0) + 1; });
       return { cols:["Provizyon / fatura durumu", "Protokol sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"GFK takipteki protokollerin provizyon/fatura durumu." }; }
     if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Şebnem Süleymanlı", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Aytac Rüstemli", 100, "Kısmi iade"]], note:"Örnek veri." };
     return null;
