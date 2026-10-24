@@ -7,7 +7,8 @@
 //   * values in plain `ink`, never in the vital identity colours (`text-v-hr`…), so a monitor value
 //     is never dressed as an engine vital; no risk pill, no rail, no green, nothing coloured by a
 //     value;
-//   * every value with its age; an old one is a dash and "eski", never a number;
+//   * every value with its age; an old one is a dash and "eski", never a number; NBP with the time
+//     its value last changed, written "≤" because the cuff measured then or earlier;
 //   * NO live region and no alert: values change every 5 s and a live region would talk over
 //     everything. The feed's trouble is a static `Note`, as BoardStrip's DEGRADED is.
 // The lock screen never shows any of this (boundaries.test.js).
@@ -22,6 +23,24 @@ import {
 
 const KNOWN = new Set(PARAM_ORDER);
 
+/** NBP's numbers and the time its value last changed — an upper bound of the measurement ("≤"). */
+function NbpValue({ cell, unit }) {
+  const { t } = useI18n();
+  const { systolic, diastolic, mean } = cell;
+  const time = hhmm(cell.changedAtMs);
+  const age = ageText(t, cell.measuredAgeS);
+  return (
+    <>
+      <span aria-hidden="true">{`${systolic}/${diastolic} (${mean})`}</span>
+      <small aria-hidden="true" className="ml-0.5 font-text text-10.5 font-semibold text-mute">{unit}</small>
+      <small aria-hidden="true" className="ml-1 font-text text-10.5 font-semibold text-mute">
+        {t("monitor.nbpMeasured", { time, age })}
+      </small>
+      <span className="sr-only">{t("monitor.nbpSaid", { systolic, diastolic, mean, unit, time, age })}</span>
+    </>
+  );
+}
+
 function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   const { t } = useI18n();
   const cell = cellOf(param, { nowMs, fetchedAtMs, maxAgeS, feedOk });
@@ -29,14 +48,18 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   const unit = UNIT_KEY[param.unit] ? t(UNIT_KEY[param.unit]) : param.unit;
   const age = ageText(t, cell.ageS);
   const said = age ? <span className="sr-only">{` ${t("monitor.age", { age })}`}</span> : null;
+  const nbp = param.parameter === "nbp";
   return (
-    <div className="min-w-0">
+    // NBP's line is two cells wide: three numbers, a unit and the time they changed.
+    <div className={nbp ? "col-span-2 min-w-0" : "min-w-0"}>
       <dt className="flex flex-wrap items-center gap-1 font-text text-10 font-bold uppercase leading-[normal] tracking-[.06em] text-mute">
         {label}
         {param.partial ? <StatusPill tone="neutral">{t("monitor.partial")}</StatusPill> : null}
       </dt>
       <dd className="m-0 font-data text-14 font-bold text-ink">
-        {cell.kind === "value" ? (
+        {cell.kind === "nbp" ? (
+          <NbpValue cell={cell} unit={unit} />
+        ) : cell.kind === "value" ? (
           <>
             {cell.value}
             <small className="ml-0.5 font-text text-10.5 font-semibold text-mute">{unit}</small>
@@ -49,6 +72,11 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
             <span className="sr-only">{t("monitor.invalid")}</span>
             {age ? <small aria-hidden="true" className="ml-1 font-text text-10.5 font-semibold text-mute">{age}</small> : null}
             {said}
+          </>
+        ) : nbp && cell.lastAt === null ? (
+          <>
+            <span aria-hidden="true">—</span>
+            <small className="ml-1 font-text text-10.5 font-semibold text-mute">{t("monitor.nbpWaiting")}</small>
           </>
         ) : (
           <>

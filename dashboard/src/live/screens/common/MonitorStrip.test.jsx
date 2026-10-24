@@ -6,7 +6,7 @@ import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
-import { AT, STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
+import { AT, NBP_CHANGED_AT, STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { MonitorFeedChip, MonitorStrip } from "./MonitorStrip.jsx";
 
 const NOW = Date.parse("2026-10-08T10:00:05Z");
@@ -139,6 +139,67 @@ describe("every value with its age, and nothing it cannot vouch for", () => {
   });
 });
 
+describe("NBP, with the time its value last changed", () => {
+  const NBP = param("nbp", [118, 79, 92]);                 // changed ten minutes before AT
+  const TIME = hhmm(Date.parse(NBP_CHANGED_AT));
+
+  it("shows S/D (M), the unit, and «ölçmə ≤ HH:MM» with how long ago", () => {
+    show(<Strip entry={card([HR, NBP])} />);
+    const [, nbp] = within(region()).getAllByRole("definition");
+    expect(within(region()).getAllByRole("term")[1]).toHaveTextContent("NBP");
+    expect(nbp).toHaveTextContent("118/79 (92)");
+    expect(nbp).toHaveTextContent("mmHg");
+    expect(nbp).toHaveTextContent(`ölçmə ≤ ${TIME} (10 dəq)`);
+  });
+
+  it("tells a screen reader the numbers and that the cuff measured at or before that time", () => {
+    const { unmount } = show(<Strip entry={card([NBP])} />);
+    expect(within(region()).getByText(`118 bölü 79, orta 92 mmHg; ölçmə ${TIME} və ya daha əvvəl, 10 dəq əvvəl`))
+      .toHaveClass("sr-only");
+    unmount();
+    show(<Strip entry={card([NBP])} />, "en");
+    expect(screen.getByText(`118 over 79, mean 92 mmHg; measured at or before ${TIME}, 10 min ago`)).toHaveClass("sr-only");
+    expect(screen.getByRole("definition")).toHaveTextContent(`measured ≤ ${TIME} (10 min)`);
+  });
+
+  it("takes two columns of the strip's grid, and nothing else does", () => {
+    show(<Strip entry={card([HR, NBP])} />);
+    const [hr, nbp] = within(region()).getAllByRole("term").map((term) => term.parentElement);
+    expect(nbp.className.split(/\s+/)).toContain("col-span-2");
+    expect(hr.className.split(/\s+/)).not.toContain("col-span-2");
+  });
+
+  it("awaits a measurement when no change was seen since the hub started: a dash, no number, no age", () => {
+    show(<Strip entry={card([HR, param("nbp", null)])} />);
+    const [, nbp] = within(region()).getAllByRole("definition");
+    expect(nbp).toHaveTextContent("—");
+    expect(nbp).toHaveTextContent("ölçmə gözlənilir");
+    expect(nbp).not.toHaveTextContent("köhnə");
+    expect(nbp).not.toHaveTextContent(/\d/);
+  });
+
+  it("withholds the numbers when the server does, and says how long ago the value changed", () => {
+    const withheld = param("nbp", null, { changed_at: NBP_CHANGED_AT, last_at: NBP_CHANGED_AT, age_s: 7300, measured_age_s: 7300 });
+    show(<Strip entry={card([withheld])} />);
+    const nbp = within(region()).getByRole("definition");
+    expect(nbp).toHaveTextContent("—");
+    expect(nbp).toHaveTextContent("köhnə · 3 saat");                // 2 h 1 min 40 s, rounded up
+    expect(nbp).not.toHaveTextContent("ölçmə");
+  });
+
+  it("draws no NBP number off a dead feed, and still says how long ago it changed", () => {
+    show(<Strip entry={card([NBP])} feedOk={false} />);
+    const nbp = within(region()).getByRole("definition");
+    expect(nbp).not.toHaveTextContent("118");
+    expect(nbp).toHaveTextContent("köhnə · 10 dəq");
+  });
+
+  it("names its evidence in the full variant", () => {
+    show(<Strip variant="full" entry={card([NBP])} />);
+    expect(within(region()).getByText("Monitor ekranı ilə eynidir")).toBeInTheDocument();
+  });
+});
+
 describe("nothing on it can be taken for an alarm", () => {
   const RISKY = ["bg-crit", "text-crit", "bg-high", "text-high", "bg-mid", "bg-low", "bg-ok", "text-ok",
     "text-v-hr", "text-v-map", "text-v-spo", "text-v-rr", "text-v-t"];
@@ -146,7 +207,8 @@ describe("nothing on it can be taken for an alarm", () => {
   it("carries no risk or vital-identity colour, no live region and no alert", () => {
     const { container } = show(
       <>
-        <Strip entry={card([HR, param("spo2", null), param("art_mean", 84), param("hr", 72, { age_s: 40 })])} variant="full" />
+        <Strip entry={card([HR, param("spo2", null), param("art_mean", 84), param("hr", 72, { age_s: 40 }),
+          param("nbp", [118, 79, 92])])} variant="full" />
         <MonitorFeedChip data={strip({ beds: [card()] })} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />
         <MonitorFeedChip data={strip({ beds: [card()], feed: { state: "forwarder_silent" } })} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />
       </>,
