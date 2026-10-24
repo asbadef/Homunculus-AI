@@ -1231,7 +1231,7 @@
       if (a.tip === "secim") return `<div class="fr">${lbl}<select>${(a.secenekler || []).map(o => `<option>${esc(o)}</option>`).join("")}</select></div>`;
       return `<div class="fr">${lbl}<input></div>`; };
     const body = A.length ? Object.entries(byB).map(([b, items]) => `<div class="box" style="margin-bottom:10px"><h5>${esc(b)}</h5><div class="icd-form">${items.map(fld).join("")}</div></div>`).join("") : `<div class="empty">Bu dokümanın alan şablonu yok.</div>`;
-    H.modal({ title:"Önizleme · " + esc(d.ad), wide:true, body:body + `<p class="adm-sub">Doldurulabilir form önizlemesi (tasarım). Gerçekte doktor/hemşire modülünden açılıp hastaya kaydedilir.</p>`, actions:`<button class="btn" data-x>Kapat</button>` });
+    H.modal({ title:"Önizleme · " + esc(d.ad), wide:true, body:body + `<p class="adm-sub">Doldurulabilir form önizlemesi. Doktor/hemşire modülünden açılıp hastaya kaydedilir.</p>`, actions:`<button class="btn" data-x>Kapat</button>` });
   }
   function dokForm(existing, redraw) {
     dokSeed(); const ALL = H.data.dokumanlar, e = existing || { ana:"Hekim Dokümanları", kat:"Muayene Formları", aktif:true }, alanlar = (e.alanlar || []).slice();
@@ -1536,7 +1536,7 @@
     msgSeed(); const ALL = H.data.mesajKalip;
     body.innerHTML = `<div class="adm-bar"><input data-mq placeholder="Mesaj kalıbı ara" value="${esc(AD.mq || "")}"><span class="spacer"></span><span class="adm-sub" data-mcount></span><button class="btn p" data-mnew>+ Yeni kalıp</button></div>
       <div data-mlist></div>
-      <p class="adm-sub" style="margin-top:10px">Randevu, reçete, sonuç ve bildirim mesajlarının kalıpları. Gönderim kanalı (SMS/e-posta/uygulama) ve içerik parametreleri (*HastaAdi* gibi) burada ayarlanır. Gerçek SMS/e-posta sağlayıcısını ayrı ekip bağlar.</p>`;
+      <p class="adm-sub" style="margin-top:10px">Randevu, reçete, sonuç ve bildirim mesajlarının kalıpları. Gönderim kanalı (SMS/e-posta/uygulama) ve içerik parametreleri (*HastaAdi* gibi) burada ayarlanır.</p>`;
     const list = body.querySelector("[data-mlist]");
     const draw = () => {
       const q = norm(AD.mq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;

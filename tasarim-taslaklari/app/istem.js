@@ -67,7 +67,7 @@
     return `<div class="ist" data-ist-root>${lockBar}${payBar}${ptBar}<div class="ist-launch">${grp}</div>
       <div class="ist-sec"><div class="ist-hd"><h5>Hazır paketler (şablonlar)</h5>${scopeTabs}</div>${tplRow}</div>
       <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
-      <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
+      <p class="adm-sub" style="margin-top:8px">İstemler bu başvuruda tutulur; laboratuvar, radyoloji ve eczanaya iletilir.</p></div>`;
   }
 
   /* ---------- Katalog seçici (Laboratuvar / Radyoloji / Hizmet) ---------- */
@@ -208,7 +208,7 @@
         <td style="text-align:center"><input type="checkbox" data-dref="${i}"></td>
         <td><select data-drefd="${i}" disabled>${opts}</select></td></tr>`; }).join("")}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:6px">Diyet tipi seçili öğünler istemle mutfağa iletilir. Son saati geçen öğün bir sonraki güne geçebilir (tasarım).</p></div>`;
+      <p class="adm-sub" style="margin-top:6px">Diyet tipi seçili öğünler istemle mutfağa iletilir. Son saati geçen öğün bir sonraki güne geçebilir.</p></div>`;
     H.modal({ title:"Diyet istemi", wide:true, body,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
       onMount(m) {
@@ -260,7 +260,7 @@
       <div class="fr"><label>Özellikli istekler</label><div class="amf-opts">${OPTS.map(o => `<label class="hc-ac"><input type="checkbox" data-opt="${o[0]}"> ${esc(o[1])}</label>`).join("")}</div></div>
       <div class="fr"><label>Gerekli onamlar</label><input data-f="onam" placeholder="ör. Ameliyat ve anestezi onamı"></div>
       <div class="fr"><label>İstek notu</label><input data-f="not" placeholder="Not"></div>
-      <p class="adm-sub">Ameliyat planı ameliyathane ve anesteziye iletilir; onam çıktısı alınır (tasarım).</p></div>`;
+      <p class="adm-sub">Ameliyat planı ameliyathane ve anesteziye iletilir; onam çıktısı alınır.</p></div>`;
     H.modal({ title:"Ameliyat / yatış istemi", wide:true, body,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
       onMount(m) {

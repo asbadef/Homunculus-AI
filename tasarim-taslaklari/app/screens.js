@@ -326,7 +326,7 @@
         <div class="tw"><table class="t"><thead><tr><th>İşlem</th><th style="width:100px">Fiyat</th><th style="width:100px">Hasta</th><th style="width:100px">SGK/kurum</th><th style="width:40px"></th></tr></thead><tbody>
         ${rows.length ? rows.map((r, i) => { const rs = farkYok ? r.fiyat : (samhi ? Math.round(r.fiyat * 0.7) : 0); return `<tr data-fri="${i}" title="Sağ tık: işlem menüsü"><td><b>${H.esc(r.ad)}</b></td><td class="n">${r.fiyat} ₼</td><td class="n">${r.fiyat - rs} ₼</td><td class="n">${rs} ₼</td><td><button class="btn g sm" data-frm="${i}">${I("x") || "×"}</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Fiyat teklifi için hizmet ekleyin.</td></tr>`}</tbody>
         <tfoot>${ind ? `<tr><td class="adm-sub">Kampanya indirimi (${H.esc(kamp.ad)})</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">—</td><td></td></tr>` : ""}<tr><td><b>Toplam</b></td><td class="n"><b>${top} ₼</b></td><td class="n"><b>${hasta} ₼</b></td><td class="n"><b>${sgk} ₼</b></td><td></td></tr></tfoot></table></div>
-        <p class="adm-sub" style="margin-top:8px">SAMHI'de hasta/kurum payı örnek %30/%70 bölünür. Kampanyayı yetkili rol admin'de oluşturur, vezne burada seçer. Teklif çıktısı alınabilir (tasarım).</p>`; };
+        <p class="adm-sub" style="margin-top:8px">SAMHI'de hasta/kurum payı örnek %30/%70 bölünür. Kampanyayı yetkili rol admin'de oluşturur, vezne burada seçer. Teklif çıktısı alınabilir.</p>`; };
     const panGfk = () => { const g = params.gfk || "hepsi", all = gfkRows(), list = g === "hepsi" ? all : all.filter(x => x.durum === g);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ...GFK_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-gf="${k}" class="${g === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="tw"><table class="t"><thead><tr><th>Protokol</th><th>Hasta</th><th>Geliş</th><th>Protokol tipi</th><th>Bölüm</th><th style="width:200px">Fatura durumu</th></tr></thead><tbody>
@@ -446,7 +446,7 @@
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""} (tasarım)</p></div></div>
       ${(groups.length ? groups : [["", ["— Bu rol için tanımlı rapor yok (admin → Rapor Yetkileri) —"]]]).map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
-      <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak; gerçek veri bağlantısını ayrı ekip kurar.</p>`;
+      <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak.</p>`;
     root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);
       if (!d) { H.toast(name + " · yapım aşamasında (tasarım)", "w"); return; }
       H.modal({ title:name, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri. Gerçek filtre (tarih/bölüm/doktor) ve veri bağlantısı ileride.")}</p>`,
@@ -533,8 +533,8 @@
       <div class="box"><h5>Kurumsal</h5><div class="icd-form">
         ${selF("kurum", "Kurum / sigorta", secArr("kurum", ["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması"]), p.kurum)}${fld("ozelSigorta", "Özel sigorta")}${fld("kurumSicil", "Kurum sicil no")}${fld("calistigiKurum", "Çalıştığı kurum")}
         ${fld("anlasmaliKurulus", "Anlaşmalı kuruluş")}${fld("indirimliGrup", "İndirimli grup")}${fld("personelIndirim", "Personel indirimi")}${fld("indirimSebep", "İndirim sebebi")}</div></div>
-    </div><p class="adm-sub" style="margin-top:8px">Hasta kartı · bizim tasarım (görseldeki tüm alanlar, kendi düzenimizle). "Kaydet" ile hastaya işlenir. Entegrasyon alanları (Omnitech/SAP/VNA) ayrı ekip.</p>`;
-    const placeholder = (ad) => `<div class="empty">${H.esc(ad)} · sırada (bu sekme adım adım birebir yapılacak)</div>`;
+    </div>`;
+    const placeholder = (ad) => `<div class="empty">${H.esc(ad)}</div>`;
     // Alt sekmeler için örnek veri (hastaya bir kez işlenir, kalıcı olur)
     const h3seed = () => {
       if (p._h3) return; p._h3 = true;
@@ -572,7 +572,7 @@
       teklif:["Fiyat verildi", "Değerlendirme", "Onayla", "Reddet", "İptal", "Tarihçe"],
     };
     const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}</div>`;
-    const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}. (işlemler tasarım)</p>`;
+    const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
     const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
     const gelisHtml = () => `<div class="h360-cards">
       <div class="box"><h5>Geliş bilgileri</h5><div class="icd-form">
@@ -588,8 +588,7 @@
       <div class="box"><h5>Yurtdışı sigorta</h5><div class="icd-form">${fld("geldigiYer", "Geldiği yer")}${fld("otel", "Kaldığı otel")}${fld("odaNo", "Oda no")}${fld("acenta", "Seyahat acentası")}${fld("turOperator", "Tur operatörü")}</div></div>
       <div class="box"><h5>Yatış</h5><div class="icd-form">${fld("kat", "Kat", "", b ? b.kat : "")}${fld("yatakNo", "Yatak", "", b ? b.no : "")}${fld("taburcuKodu", "Taburcu kodu")}${fld("kabulT", "Kabul tarihi")}${fld("taburcuT", "Taburcu tarihi")}${fld("yatisGun", "Yatış gün", "", p.admitDays)}</div></div>
     </div>${tbar([["Durum", "edit"], ["Yatış", "bed"], ["Yazdır", "print"], ["Tüm gelişler", "link"]])}
-    <div style="margin-top:4px"><button class="btn sm" data-h3git-gelis>${I("link") || ""} Tüm Gelişler ekranını aç</button></div>
-    <p class="adm-sub" style="margin-top:6px">Geliş/protokol bilgileri · bizim tasarım. "Kaydet" ile hastaya işlenir. Entegrasyon (Omnitech/UHM) ayrı ekip.</p>`;
+    <div style="margin-top:4px"><button class="btn sm" data-h3git-gelis>${I("link") || ""} Tüm Gelişler ekranını aç</button></div>`;
     const tabloHtml = (k, cols, rows, btns) => `${tbar(btns)}<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
       ${rows.length ? rows.map(r => `<tr data-ctx="${k}" style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
       </tbody></table></div>${sagtikNote(k)}`;
@@ -629,8 +628,8 @@
       if (alt === "dosya") { body.innerHTML = dosyaHtml(); return; }
       if (alt === "notlar") { body.innerHTML = notHtml(); return; }
       if (alt === "teklif") { body.innerHTML = teklifHtml(); return; }
-      if (alt === "online") { body.innerHTML = basitTab("Online ödemeler", "web/mobil ödeme hareketleri · entegrasyon ayrı ekip"); return; }
-      if (alt === "pos") { body.innerHTML = basitTab("POS işlem ödeme listesi", "kredi kartı POS hareketleri · entegrasyon ayrı ekip"); return; }
+      if (alt === "online") { body.innerHTML = basitTab("Online ödemeler", "web/mobil ödeme hareketleri"); return; }
+      if (alt === "pos") { body.innerHTML = basitTab("POS işlem ödeme listesi", "kredi kartı POS hareketleri"); return; }
       if (alt === "anlasma") { body.innerHTML = basitTab("Anlaşmalarım", "hastanın kurum/kampanya anlaşma kullanımları"); return; }
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
@@ -680,7 +679,7 @@
       <div class="tw"><table class="t"><thead><tr><th style="width:90px">No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th style="width:80px">Öncelik</th><th style="width:150px">Tarih</th><th style="width:110px">Durum</th></tr></thead><tbody>
       ${list.length ? list.map(t => `<tr data-talopen="${t.id}" style="cursor:pointer"><td class="mono adm-sub">${H.esc(t.no)}</td><td><b>${H.esc(t.konu)}</b></td><td class="adm-sub">${H.esc(t.kategori)}</td><td class="adm-sub">${H.esc(t.acanAd)}</td><td>${H.esc(t.oncelik)}</td><td class="adm-sub">${H.esc(t.tarih)}</td><td><span class="tag ${t.durum === "Çözüldü" || t.durum === "Kapalı" ? "ok" : t.durum === "İşlemde" ? "w" : ""}">${t.durum}</span></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Talep yok. "+ Yeni talep" ile açın.</td></tr>`}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:8px">Talebi açan takip eder; Bilgi Sistemleri (IT) durumunu günceller, not ekler ve kapatır. Gerçek bildirim/e-posta bağlantısını ayrı ekip kurar.</p>`;
+      <p class="adm-sub" style="margin-top:8px">Talebi açan takip eder; Bilgi Sistemleri (IT) durumunu günceller, not ekler ve kapatır.</p>`;
     root.onclick = (e) => {
       const tf = e.target.closest("[data-talf]"); if (tf) return H.go("istakip", { durum:tf.dataset.talf, kapsam:params.kapsam });
       const tk = e.target.closest("[data-talkap]"); if (tk) return H.go("istakip", { durum:params.durum, kapsam:tk.dataset.talkap === "benim" ? "benim" : "tum" });
@@ -744,7 +743,7 @@
       <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th></tr></thead><tbody>
       ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:8px">Sonuç değerleri ve cihaz/PACS bağlantısı ayrı ekip tarafından kurulur. "Serbest bırakıldı" olunca sonuç hekime/hastaya görünür (tasarım).</p>`;
+      <p class="adm-sub" style="margin-top:8px">"Serbest bırakıldı" olunca sonuç hekime/hastaya görünür.</p>`;
     root.onchange = (e) => { const st = e.target.closest("[data-labst]"); if (st) { const o = (H.data.orders || []).find(x => x.id === st.dataset.labst); if (o) { o.durum = st.value; H.log("Lab/Rad durumu", (o.ad || "") + " · " + st.value); H.toast("Durum: " + st.value); } } };
     root.onclick = (e) => { const lt = e.target.closest("[data-lt]"); if (lt) return H.go("labislem", { tur:lt.dataset.lt }); };
   } });
