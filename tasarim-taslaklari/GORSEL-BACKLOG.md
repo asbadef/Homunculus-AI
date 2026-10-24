@@ -34,9 +34,10 @@
 - [ ] Doktor girdiği hizmet/tarih düzenleme (yetkiye bağlı)
 
 ## FAZ A — ADMIN / YETKİ / TANIMLAR
-- [ ] Güvenlik Tanımları: Kullanıcı kartı + Yetkiler/Formlar/Roller/Değerler sekmeleri + Yetki Kopyalama
-- [ ] Personel kartı: Genel/Kişisel/Nöbet-Mesai-İzin/Eğitim/Çalışma Takvimi/Yakınları/Zimmet/Diğer
-- [ ] İzleme menüsü: Log/Kullanıcı/Yetki İzleme, Değişken Log, Açık Oturumlar, Finansal Veri İzleme
+- [x] Roller ve yetkiler: canlı rol×yetki matrisi (kalıcı) + **Yetki Kopyalama** (kaynak→hedef) · kullanıcı kartı userModal (personelden doldur, yetki kopyala, açılış ekranı) mevcut
+- [~] Güvenlik Tanımları ayrı "Formlar/Değerler" sekmeleri — mevcut matris Yetkiler+Roller'i karşılıyor; Formlar (modül erişimi) ve Değerler (veri izni) ayrı görünüm sonra
+- [x] Personel kartı: Genel/Kişisel/Çalışma-takvim (görsel haftalık)/İletişim/Yetkiler sekmeleri
+- [x] İzleme menüsü mevcut: Sistem durumu / Olay günlüğü / Veri bütünlüğü / Açık oturumlar + Denetim kaydı (Finansal veri izleme sonra)
 - [x] Bölüm (idari+klinik) tanımı · [x] Protokol Tipi · [x] Hizmet Kartı/Fiyatları (birleşik) · [x] Otomatik Hizmet Tanımı · [x] Epikriz · [x] Kampanya · [x] Doküman · [x] Rapor Yetkileri
 
 ## FAZ R — RAPORLAR
@@ -49,8 +50,15 @@
 
 ---
 
-## KATALOGLAMA KUYRUĞU (236 görsel → ekran eşleme)
-Görselleri partiler halinde (ör. 20'şer) açıp hangi ekran olduğunu buraya yazıyorum; zaten yapılmış olanlar üstteki listede işaretli. Yeni/eksik çıkanlar ilgili faza madde olarak eklenir.
-- Parti 1 (#1–#20): _bekliyor_
-- Parti 2 (#21–#40): _bekliyor_
-- … (devam)
+## KATALOGLAMA — TAMAMLANDI (2026-10-25)
+236 görselin tamamı 3 agent ile kataloglandı:
+- `GORSEL-KATALOG-A.md` (#1–#80) · `GORSEL-KATALOG-B.md` (#81–#160) · `GORSEL-KATALOG-C.md` (#161–#236)
+Sonuç: referans sistem **CoMED web + "Pusula" masaüstü** (MLP Care). Tüm ekranlar yukarıdaki fazlara düşüyor; planda olmayan sürpriz yok. Not: #58 bizim GitHub, #59/#236 bizim web prototipimiz.
+
+En yüksek eforlu/kritik referans ekranlar (ileride detay):
+- Muayene ekranı (#12,#14,#91,#122) → FAZ T (doktor, ertelendi)
+- Güvenlik/Yetki mimarisi (#18-21,#198-202) → matris + yetki kopyalama yapıldı; ince-taneli vezne izinleri (indirim/kapalı protokolde ekle-sil/tahsilat değiştir) PERMS'e eklenebilir
+- Kurumsal Faturalama çok panelli (#61) → vezne faturalar genişletilebilir
+- ICD Tanı Listesi 14891 kayıt (#35-57) → admin ICD listesi mevcut
+- Branş/Cihaz Listesi (#25-33) → bölüm listesi var; Cihaz Listesi (RIS/IP/MAC) eksik
+- Personel kartı çok sekme (#125-132,#203-208) → temel sekmeler + haftalık takvim yapıldı
