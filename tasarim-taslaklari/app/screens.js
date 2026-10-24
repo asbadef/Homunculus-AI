@@ -526,7 +526,10 @@
           ${f("medeni", "Medeni hal", selOf("medeni", IK_MEDENI))}${f("egitim", "Eğitim", selOf("egitim", IK_EGITIM))}${f("uyruk", "Uyruk", inp("uyruk"))}${f("dogum", "Doğum tarihi", `<input type="date" data-f="dogum" value="${H.esc(p.dogum || "")}">`)}`,
         calisma:`${f("calismaGun", "Çalışma günleri", inp("calismaGun", "ör. Pzt-Cuma"))}${f("calismaSaat", "Çalışma saatleri", inp("calismaSaat", "ör. 08:00-17:00"))}
           ${f("nobet", "Nöbet durumu", inp("nobet", "ör. ayda 4 nöbet"))}${f("sgk", "SGK / sosyal sigorta no", inp("sgk"))}${f("izin", "Yıllık izin (gün)", inp("izin"))}
-          ${f("ranSure", "Randevu çizelge süresi (dk)", inp("ranSure"))}${f("ranGunluk", "Günlük randevu sayısı", inp("ranGunluk"))}`,
+          ${f("ranSure", "Randevu çizelge süresi (dk)", inp("ranSure"))}${f("ranGunluk", "Günlük randevu sayısı", inp("ranGunluk"))}
+          ${f("saatlikRandevu", "Saatlik ara randevu sayısı", inp("saatlikRandevu"))}${f("ayniTarihRandevu", "Aynı tarihli randevu sayısı", inp("ayniTarihRandevu"))}
+          ${f("kurumTipi", "Kurum tipi (randevu)", selOf("kurumTipi", ["Ücretli", "SGK", "ÖSS", "TSS", "AK", "Tümü"]))}
+          <div class="fr" style="grid-column:1/-1"><label>Randevu özellikleri</label><div class="icd-oz">${["Web randevusu verilebilir", "Online muayene randevusu", "Poliklinik randevusu verilebilir", "FTR randevusu verilir", "Hizmet randevusu verilir"].map(y => `<label><input type="checkbox" data-rf="${H.esc(y)}"${(p.randevuOzellik || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div></div>`,
         iletisim:`${f("telefon", "Telefon", inp("telefon"))}${f("eposta", "E-posta", inp("eposta"))}${f("adres", "Adres", `<textarea data-f="adres" rows="2">${H.esc(p.adres || "")}</textarea>`)}${f("acilKisi", "Acil durumda aranacak", inp("acilKisi"))}`,
         yetki:`<div class="icd-oz">${IK_YETKI.map(y => `<label><input type="checkbox" data-y="${H.esc(y)}"${(p.yetki || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div>`,
       };
@@ -539,8 +542,9 @@
           m.querySelector("[data-perssave]").onclick = () => {
             const g = s => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
             const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
-            const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "telefon", "eposta", "adres", "acilKisi"].forEach(k => rec[k] = g(k));
+            const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "saatlikRandevu", "ayniTarihRandevu", "kurumTipi", "telefon", "eposta", "adres", "acilKisi"].forEach(k => rec[k] = g(k));
             rec.yetki = [...m.querySelectorAll("[data-y]:checked")].map(x => x.dataset.y);
+            rec.randevuOzellik = [...m.querySelectorAll("[data-rf]:checked")].map(x => x.dataset.rf);
             H.data.personel = H.data.personel || [];
             if (existing) Object.assign(p, rec); else H.data.personel.unshift(Object.assign({ id:"per" + Date.now() }, rec));
             H.log(existing ? "Personel güncellendi" : "Personel eklendi", ad + " " + rec.soyad); H.closeModal(); H.toast("Kaydedildi: " + ad); H.go("ik");
