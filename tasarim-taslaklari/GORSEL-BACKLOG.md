@@ -18,15 +18,15 @@
 - [x] Dosyalar/Resimler (sütunlar + sağ-tık)
 - [x] Notlar (sütunlar + sağ-tık)
 - [x] Teklifler (Ameliyat/Tüm + teklif hizmetleri + sağ-tık)
-- [ ] Online Ödemeler / POS / Anlaşmalarım — şimdilik etiketli yer tutucu, zenginleştir
+- [x] Online Ödemeler / POS / Anlaşmalarım — gerçek tablolar + sağ-tık
 - [ ] Vezne Paneli: üst bar (Banko/Dönem/Tarih) + çoklu arama + arama detay + liste sütunları tam
 - [ ] Hasta Ön Kayıt ekranı + sağ-tık (Birleştir / Hasta Kabul türleri / Yeni Doğan / Protokol Bilgileri)
 - [ ] İş Havuzu: İstek Havuzu tam
 - [x] İş Havuzu: **İşlem Havuzu** zengin (toolbar Fatura/Parçalı/İndirim/Provizyon/Panel paket + Fatura Bekleyen/Tümü + kurum etiketi + sağ-tık)
-- [ ] İş Havuzu: Provizyon Takip / Randevular / Yatış İstekleri / Onam Formları / Tetkik Havuzu / Arşiv
+- [x] İş Havuzu: İstek + Provizyon Takip / Randevular / Yatış İstekleri / Onam Formları / Tetkik Havuzu / Arşiv (ana sekme 8 alt sekme)
 - [x] Kasa / Dönem: banko seç + dönem Aç/Kapat/**Devir Al** + **Dönem özeti** (nakit/kart/havale)
-- [ ] Toolbar "Diğer" 16+ madde için gerçek ekranlar (şimdilik toast)
-- [ ] KVKK/ETK onay → SMS/mail tasarımı
+- [~] Toolbar "Diğer" 16+ madde → modal (küçük form); önemli olanlara tam ekran sonra
+- [x] KVKK/ETK onay → SMS/mail gönderim modalı
 
 ## FAZ T — TEDAVİ / DOKTOR (ileride tamamlanacak — unutulmayacak)
 - [ ] Tedavi sekmesi: Klinik Dokümanlar / Laboratuvar / Radyoloji / Patoloji / Tanılar / Diş Planları / Aktarım / Reçete İlaç Listesi

@@ -697,7 +697,9 @@
       const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
       const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1]); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
-      const di = e.target.closest("[data-diger]"); if (di) { H.toast(di.dataset.diger + " · yapım aşamasında (tasarım)", "w"); root.querySelector("[data-h3digerm]").classList.add("hidden"); return; }
+      const di = e.target.closest("[data-diger]"); if (di) { const ad = di.dataset.diger; root.querySelector("[data-h3digerm]").classList.add("hidden");
+        H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(ad)} — ${H.esc(vzName(p.name))}</p><div class="icd-form"><div class="fr"><label>Açıklama / not</label><input placeholder="${H.esc(ad)} bilgisi"></div></div><p class="adm-sub" style="margin-top:8px">Bu ek bilgi hastaya bağlı olarak tutulur ve ilgili modüllerde görünür.</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-x>Kaydet</button>` }); return; }
       if (e.target.closest("[data-h3kvkk]")) { onayModal("kvkk"); return; }
       if (e.target.closest("[data-h3etk]")) { onayModal("etk"); return; }
       if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi (tasarım)"); return; }
