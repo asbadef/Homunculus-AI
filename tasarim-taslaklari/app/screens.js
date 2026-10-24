@@ -431,7 +431,7 @@
   ]);
   const talepAd = (u) => { const x = (H.data.users || []).find(y => y.u === u); return x ? x.name : (u || "—"); };
   // NAV rozeti: IT'de açık talep sayısı; normal kullanıcıda kendi talebi çözülüp görülmemişse bildirim.
-  H.istakipBadge = () => { const all = H.data.talepler || [], me = (H.state.user || {}).u;
+  H.istakipBadge = () => { const all = talepler(), me = (H.state.user || {}).u;
     if (H.can("destek_yonet")) return all.filter(t => t.durum === "Açık").length;
     return all.filter(t => t.acan === me && t.cozumGoruldu === false).length; };
   H.register("istakip", { title:() => H.t("m_istakip"), perm:"destek_ac", render(root, params = {}) {
