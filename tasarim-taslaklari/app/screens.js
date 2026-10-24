@@ -907,7 +907,9 @@
     }
     function persForm(existing, seed) {
       const p = existing || (seed ? { ad:(seed.name || "").trim().split(/\s+/)[0] || "", soyad:(seed.name || "").trim().split(/\s+/).slice(1).join(" "), kimlik:seed.u || "", unvan:seed.title || "", tip:(H.data.roles[seed.role] || { name:seed.role }).name || "", bolum:(seed.units && seed.units !== "*" && seed.units[0] && (H.unit(seed.units[0]) || {}).tr) || "" } : {}), bols = H.data.bolumler || [];
-      const TABS = [["genel", "Genel"], ["kisisel", "Kişisel"], ["calisma", "Çalışma / takvim"], ["iletisim", "İletişim"], ["yetki", "Yetkiler"]];
+      const TABS = [["genel", "Genel"], ["kisisel", "Kişisel"], ["nobet", "Nöbet / Mesai / İzin"], ["egitim", "Eğitim / Tecrübe"], ["calisma", "Çalışma takvimi"], ["yakin", "Yakınları"], ["zimmet", "Zimmet"], ["diger", "Diğer özellikler"], ["iletisim", "İletişim"], ["yetki", "Yetkiler"]];
+      const ptbl = (title, cols, rows) => `<div class="fr" style="grid-column:1/-1"><label>${H.esc(title)}</label><div style="width:100%"><div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows && rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:12px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div><button type="button" class="btn sm" style="margin-top:6px" data-ptadd="${H.esc(title)}">${I("plus") || "+"} Ekle</button></div></div>`;
+      const DIGER_YETKI = ["Ameliyat isteğini yapan doktor bilgisini değiştirebilir", "Protokol açabilir", "VIP hasta kabul yapabilir", "Hasta birleştirebilir", "Hasta kaydını silebilir", "Mernis'ten veri çekebilir", "Kök hücre numarası girebilir", "VNA portala erişebilir"];
       const f = (k, lbl, html) => `<div class="fr"><label>${lbl}</label>${html}</div>`;
       const inp = (k, ph) => `<input data-f="${k}" value="${H.esc(p[k] || "")}" placeholder="${ph || ""}">`;
       const selOf = (k, list) => `<select data-f="${k}">${["", ...list].map(x => `<option${(p[k] || "") === x ? " selected" : ""}>${H.esc(x || "— seçiniz —")}</option>`).join("")}</select>`;
@@ -930,6 +932,18 @@
           <div class="fr" style="grid-column:1/-1"><label>Randevu özellikleri</label><div class="icd-oz">${["Web randevusu verilebilir", "Online muayene randevusu", "Poliklinik randevusu verilebilir", "FTR randevusu verilir", "Hizmet randevusu verilir"].map(y => `<label><input type="checkbox" data-rf="${H.esc(y)}"${(p.randevuOzellik || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div></div>`,
         iletisim:`${f("telefon", "Telefon", inp("telefon"))}${f("eposta", "E-posta", inp("eposta"))}${f("adres", "Adres", `<textarea data-f="adres" rows="2">${H.esc(p.adres || "")}</textarea>`)}${f("acilKisi", "Acil durumda aranacak", inp("acilKisi"))}`,
         yetki:`<div class="icd-oz">${IK_YETKI.map(y => `<label><input type="checkbox" data-y="${H.esc(y)}"${(p.yetki || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div>`,
+        nobet:`${ptbl("Nöbet", ["Başlangıç tarihi", "Bitiş tarihi", "Açıklama"], (p.nobetler || []))}
+          ${ptbl("Mesai", ["Başlangıç tarihi", "Bitiş tarihi", "Bölüm", "Açıklama"], (p.mesailer || []))}
+          ${ptbl("İzin", ["Başlangıç tarihi", "Bitiş tarihi", "Açıklama"], (p.izinler || []))}
+          ${ptbl("Randevu slot kapatma (diğer)", ["Başlangıç", "Bitiş", "Şube", "Kapatma sebebi"], (p.slotKapatma || []))}`,
+        egitim:`${ptbl("Okul / eğitim", ["Eğitim derecesi", "Okul adı", "Bölüm", "Portalda görünsün"], (p.egitimler || []))}
+          ${ptbl("Kurs / sertifika", ["Ad", "Kurum", "Tarih"], (p.sertifikalar || []))}
+          ${ptbl("Yabancı dil", ["Dil", "Seviye"], (p.diller || []))}`,
+        yakin:`${ptbl("Personel yakınları", ["Yakınlığı", "Adı", "Soyadı", "T.C / Pasaport", "Cinsiyet", "Doğum tarihi"], (p.yakinlar || []))}`,
+        zimmet:`${ptbl("Zimmet bilgileri", ["Demirbaş / cihaz", "Seri no", "Zimmet tarihi", "Durum"], (p.zimmetler || []))}`,
+        diger:`${f("maxMaasKesinti", "Max maaş kesintisi", inp("maxMaasKesinti"))}${f("iadeOnaySeviye", "İade onay seviyesi", inp("iadeOnaySeviye"))}${f("disKapiIp", "Dış kapı ekranı IP", inp("disKapiIp"))}${f("orgSema", "Organizasyon şeması", inp("orgSema"))}
+          <div class="fr" style="grid-column:1/-1"><label>Seçenekler</label><div class="icd-oz"><label><input type="checkbox" data-do="videoWall"${p.videoWall ? " checked" : ""}> VideoWall kullanıyor</label><label><input type="checkbox" data-do="randevuTeyid"${p.randevuTeyid ? " checked" : ""}> Randevu teyid araması</label><label><input type="checkbox" data-do="canliMesaj"${p.canliMesaj ? " checked" : ""}> Canlı mesaj istemiyor</label></div></div>
+          <div class="fr" style="grid-column:1/-1"><label>Fonksiyon yetkileri</label><div class="icd-oz">${DIGER_YETKI.map(y => `<label><input type="checkbox" data-dy="${H.esc(y)}"${(p.digerYetki || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div></div>`,
       };
       const body = `<div class="pers-card"><div class="seg pers-tabs" data-pt>${TABS.map(([k, l], i) => `<button data-ptab="${k}" class="${i === 0 ? "on" : ""}">${l}</button>`).join("")}</div>
         ${TABS.map(([k], i) => `<div class="icd-form pers-panel" data-panel="${k}"${i === 0 ? "" : " hidden"}>${panels[k]}</div>`).join("")}</div>`;
@@ -937,12 +951,15 @@
         actions:`${existing ? `<button class="btn g" data-persdel>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-perssave>Kaydet</button>`,
         onMount(m) {
           m.querySelector("[data-pt]").onclick = (e) => { const b = e.target.closest("[data-ptab]"); if (!b) return; m.querySelectorAll("[data-ptab]").forEach(x => x.classList.toggle("on", x === b)); m.querySelectorAll("[data-panel]").forEach(x => x.hidden = x.dataset.panel !== b.dataset.ptab); };
+          m.querySelectorAll("[data-ptadd]").forEach(b => b.onclick = () => H.toast(b.dataset.ptadd + " · satır ekle (tasarım)", "w"));
           m.querySelector("[data-perssave]").onclick = () => {
             const g = s => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
             const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
-            const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "saatlikRandevu", "ayniTarihRandevu", "kurumTipi", "telefon", "eposta", "adres", "acilKisi"].forEach(k => rec[k] = g(k));
+            const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "saatlikRandevu", "ayniTarihRandevu", "kurumTipi", "telefon", "eposta", "adres", "acilKisi", "maxMaasKesinti", "iadeOnaySeviye", "disKapiIp", "orgSema"].forEach(k => rec[k] = g(k));
             rec.yetki = [...m.querySelectorAll("[data-y]:checked")].map(x => x.dataset.y);
             rec.randevuOzellik = [...m.querySelectorAll("[data-rf]:checked")].map(x => x.dataset.rf);
+            rec.digerYetki = [...m.querySelectorAll("[data-dy]:checked")].map(x => x.dataset.dy);
+            ["videoWall", "randevuTeyid", "canliMesaj"].forEach(k => rec[k] = !!m.querySelector(`[data-do="${k}"]:checked`));
             rec.haftalik = {}; m.querySelectorAll("[data-wd]").forEach(cb => { const gn = cb.dataset.wd; rec.haftalik[gn] = { calisiyor:cb.checked, bas:(m.querySelector(`[data-ws="${gn}"]`) || {}).value || "", bit:(m.querySelector(`[data-we="${gn}"]`) || {}).value || "" }; });
             H.data.personel = H.data.personel || [];
             if (existing) Object.assign(p, rec); else { const np = Object.assign({ id:"per" + Date.now() }, rec); H.data.personel.unshift(np); if (seed) seed._persId = np.id; }
