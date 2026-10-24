@@ -173,7 +173,12 @@ class _Device:
 
 
 def _number(value: Any) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:          # an int too large for a float (JSON `1` and 400 zeros): not a number here
+        return False
 
 
 def _count(value: Any) -> bool:

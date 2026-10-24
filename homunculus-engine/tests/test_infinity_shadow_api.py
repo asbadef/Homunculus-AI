@@ -293,6 +293,25 @@ def test_a_change_time_on_anything_but_nbp_refuses_the_body(tmp_path):
     assert _board(client)["feed"]["state"] == "never"
 
 
+@pytest.mark.parametrize("path", [("sent_at",), ("forwarder", "interval_s"), ("hub", "collector_age_s"),
+                                  ("devices", 0, "packet_age_ms"), ("devices", 0, "readings", 0, "value"),
+                                  ("devices", 0, "readings", 0, "captured_at")])
+def test_an_integer_too_large_for_a_float_is_400_in_any_numeric_field_and_keeps_nothing(tmp_path, path):
+    # JSON `1` followed by 400 zeros parses to a Python int; `math.isfinite` cannot turn it into a
+    # float. Asked of the wire (no re-raised server error), so a 500 shows as a 500.
+    client, clock, _ = _app(tmp_path)
+    wire = TestClient(client.app, raise_server_exceptions=False)
+    body = _body(clock.t)
+    holder = body
+    for key in path[:-1]:
+        holder = holder[key]
+    holder[path[-1]] = 10 ** 400
+    response = wire.post("/infinity-shadow/readings", content=json.dumps(body).encode(),
+                         headers={**_hdr(SHADOW), "Content-Type": "application/json"})
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+    assert _board(wire)["feed"]["state"] == "never"                  # nothing was kept
+
+
 # --- GET -------------------------------------------------------------------------------------------
 
 def test_the_board_with_the_stage_off_is_exactly_stage_off(tmp_path):

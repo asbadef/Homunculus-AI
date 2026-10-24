@@ -300,6 +300,27 @@ def test_nbp_is_withheld_once_its_value_last_changed_more_than_two_hours_ago():
                         "changed_at": _iso(T0 - 7199.5), "measured_age_s": 7200.5}
 
 
+def test_a_change_exactly_the_limit_old_is_shown_and_one_microsecond_older_is_withheld():
+    for extra, state in ((0.0, "value"), (1e-6, "old")):
+        store = ShadowStore(Clock())
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5,
+                                                    changed_at=T0 - NBP_MAX_MEASURED_AGE_S - extra))))
+        shown = _params(store, now=T0)[NBP]
+        assert (shown["state"], shown["systolic"] is None) == (state, state == "old"), extra
+
+
+def test_nbp_keeps_showing_while_every_post_repeats_the_same_change():
+    clock = Clock()
+    store = ShadowStore(clock)
+    changed = T0 - 90.0
+    for step in range(5):                            # the packets move on, the change does not
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=clock.t - 0.5, changed_at=changed))))
+        shown = _params(store, now=clock.t)[NBP]
+        assert (shown["state"], shown["systolic"], shown["changed_at"], shown["measured_age_s"]) == (
+            "value", 118, _iso(changed), 90.0 + 5.0 * step), step
+        clock.t += 5.0
+
+
 def test_a_silent_monitors_nbp_goes_old_like_any_value_and_is_aged_by_its_change():
     store = ShadowStore(Clock())
     store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0, changed_at=T0 - 300.0))))
@@ -494,13 +515,14 @@ def test_the_store_stays_bounded_at_100_devices_by_12_readings():
 
 def test_any_mangled_body_is_refused_or_taken_never_an_error():
     # The review's fuzzer, deterministic: 2000 bodies with one to three fields replaced by odd
-    # values (None, NaN, inf, 10**20, 2**63, nested containers, the wrong strings). Each is refused
-    # whole or taken; nothing else is raised, and the store stays readable and bounded.
+    # values (None, NaN, inf, 10**20, 2**63, 10**400, nested containers, the wrong strings). Each is refused
+    # whole or taken; nothing else is raised, and the store stays readable and bounded. The seed
+    # carries a complete NBP triple, so `changed_at` and the fold are fuzzed as well.
     import json as _json
     import random
 
     weird = [None, True, False, 0, -1, 1.5, float("nan"), float("inf"), -0.0, 10**20, "", "x", "192.0.2.10",
-             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63]
+             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63, 10**400]
 
     def paths(obj, prefix=()):
         yield prefix
@@ -518,7 +540,8 @@ def test_any_mangled_body_is_refused_or_taken_never_an_error():
     for _ in range(2000):
         clock.t += 1.5
         raw = body(device("192.0.2.10", reading(captured_at=clock.t - 0.5),
-                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5)), sent_at=clock.t)
+                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5),
+                          *nbp(captured_at=clock.t - 0.5, changed_at=clock.t - 30.0)), sent_at=clock.t)
         for _ in range(rng.randint(1, 3)):
             target = rng.choice([p for p in paths(raw) if p])
             holder = raw
