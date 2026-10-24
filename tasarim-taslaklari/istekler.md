@@ -584,3 +584,12 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Zengin hizmet kartı (yeni hizmet tanımı tek karttan)
 - Çeviri turu (4 dil, titiz)
 - Vezne uçtan uca kalan: otomatik hizmet→iş listesi→istem→istek/işlem havuzu→fatura/indirim tam zinciri
+
+## BÜYÜK İŞLER — TAMAMLANDI (2026-10-25)
+- ✅ (1) Sol panel düzeni: NAV gruplu başlıklar (Hasta & Klinik / Tanı & Tedavi / Finans & Vezne / İnsan & Yönetim / Destek & Sistem)
+- ✅ (2) İK→kullanıcı: userModal'a personelden doldur + yetki kopyalama + açılış ekranı (İK personel kartı açar, admin yetkilendirir)
+- ✅ (3) Zengin hizmet kartı: admin 'Hizmet Kartı' (kendi kodlarımız, fiyat/KDV/tip/özellikler); yeni hizmet tek karttan
+- ✅ (4) Çeviri turu (1. parti): ~70 yeni ekran terimi 4 dile (titiz tur birikecek)
+- ✅ (5) Vezne uçtan uca: İşlem Havuzu (hasta kartından) → seç → fatura kes / indirime gönder / bekleyene at; geliş ikonları + kilit; vezneden tetkik isteği; FİN ara→yeni kayıt
+### Not
+Bitti, sahip toplu gözden geçirecek. Çeviri turu süreklidir (yeni metinler biriktirilir). Hizmet kartlarının katalog (istem/vezne combobox) ile tam birleşmesi sıradaki küçük adım.
