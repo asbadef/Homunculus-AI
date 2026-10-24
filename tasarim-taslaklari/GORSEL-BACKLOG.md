@@ -36,6 +36,16 @@
 - [ ] Doktor iş listesi → istem (tetkik/radyoloji/ilaç/hizmet) → epikriz (şablona göre)
 - [ ] Doktor girdiği hizmet/tarih düzenleme (yetkiye bağlı)
 
+## YENİ (2026-10-25, 2. büyük tur — #239-296 + yetki.xls)
+- [x] **Tek hasta kartı → çok protokol** modeli: Hasta Dosyası'nda sol tarih-gruplu protokol listesi (İki hafta önce/Son ay/Daha eski) + "TÜMÜ"; Gelişler/Faturalar/Ödemeler/İndirimler/Dosyalar/Notlar seçili protokole göre
+- [x] **Güvenlik Tanımları** 4 sekme (Yetkiler/Formlar/Roller/Değerler) + `yetki.xls`'ten 927 ince-taneli yetki katalogu (`YETKI-KATALOG.txt`, `yetki-katalog.js`)
+- [x] Cihaz Listesi (#31-33) · Değişken/Parametre Tanımları (#22)
+- [x] Personel kartı tam sekme seti (Nöbet-Mesai-İzin/Eğitim-Tecrübe/Çalışma takvimi/Yakınları/Zimmet/Diğer Özellikler + fonksiyon yetkileri)
+- [x] Raporlar: +Yönetim/İK/Kurum grupları + rapor modalı tarih/bölüm/doktor filtre + Yazdır
+- [x] Vezne sağ ray tam set (tümü aktif) + ince-taneli vezne yetkileri admin matriste
+- [ ] Kurumsal Faturalama çok panelli (#61) — kalan büyük vezne ekranı
+- [ ] Branş min/max yaş + kendi kodlar · Doktor Muayene ekranı (FAZ T, ertelendi)
+
 ## FAZ A — ADMIN / YETKİ / TANIMLAR
 - [x] Roller ve yetkiler: canlı rol×yetki matrisi (kalıcı) + **Yetki Kopyalama** (kaynak→hedef) · kullanıcı kartı userModal (personelden doldur, yetki kopyala, açılış ekranı) mevcut
 - [~] Güvenlik Tanımları ayrı "Formlar/Değerler" sekmeleri — mevcut matris Yetkiler+Roller'i karşılıyor; Formlar (modül erişimi) ve Değerler (veri izni) ayrı görünüm sonra
