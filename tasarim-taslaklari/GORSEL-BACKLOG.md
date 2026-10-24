@@ -19,9 +19,9 @@
 - [x] Notlar (sütunlar + sağ-tık)
 - [x] Teklifler (Ameliyat/Tüm + teklif hizmetleri + sağ-tık)
 - [x] Online Ödemeler / POS / Anlaşmalarım — gerçek tablolar + sağ-tık
-- [ ] Vezne Paneli: üst bar (Banko/Dönem/Tarih) + çoklu arama + arama detay + liste sütunları tam
-- [ ] Hasta Ön Kayıt ekranı + sağ-tık (Birleştir / Hasta Kabul türleri / Yeni Doğan / Protokol Bilgileri)
-- [ ] İş Havuzu: İstek Havuzu tam
+- [x] Vezne Paneli: üst bar (Banko/Dönem/Tarih) + çoklu arama + arama detay + liste sütunları (client-side filtre)
+- [x] Hasta Ön Kayıt: admission ekranı (yatak/eşleştir/elle) + vezne listesi sağ-tık (Dosya/Birleştir/Kabul türleri/Yeni Doğan/Protokol)
+- [x] İş Havuzu: İstek Havuzu
 - [x] İş Havuzu: **İşlem Havuzu** zengin (toolbar Fatura/Parçalı/İndirim/Provizyon/Panel paket + Fatura Bekleyen/Tümü + kurum etiketi + sağ-tık)
 - [x] İş Havuzu: İstek + Provizyon Takip / Randevular / Yatış İstekleri / Onam Formları / Tetkik Havuzu / Arşiv (ana sekme 8 alt sekme)
 - [x] Kasa / Dönem: banko seç + dönem Aç/Kapat/**Devir Al** + **Dönem özeti** (nakit/kart/havale)
