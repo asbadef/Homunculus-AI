@@ -517,3 +517,18 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - ✅ #7 Tanımsız ikon: ptBar 'tag' yerine 'key'.
 - ⚠️ #8 (karar bekliyor): yönetici dönem açar/kapar ama banko değiştiremez (vezne_banko yok). Kasıtlı görünüyor; sahibin teyidi.
 - Not: indirim/iade ONAY işlemleri dönem kilidinden bağımsız bırakıldı (onay = kasa işlemi değil). Teklif satırı ekle/çıkar vezne (admission) için serbest; yalnız reprice yetkiye bağlı.
+
+## DURUM — 2026-10-24 (Faz 5 ilerleme)
+### ✅ Tamamlanan
+- Madde 1: "Medula"/"360" yazıları kaldırıldı; hasta arama isme tıkla → hasta bilgi kartı (telefon/FİN/kurum/doktor) + filtre; protokol işlemleri (bölüm/doktor/tarih/hizmet tarihi değiştir + sil, protokol_duzenle yetkisi)
+- Madde 2: Bölüm kod (BOL-NNN) + zengin alanlar + 8 özellik bayrağı + 10 yeni bölüm (38)
+- Madde 3: Epikriz Şablonu admin (bölüm aç/kapat, sıra, başlık, boş ise çıkmasın)
+- Madde 5: Otomatik Hizmet Tanımı zenginleştirme (doktor/kurum/provizyon/paket aktar/randevudan düş)
+- Madde 6: Hizmet Fiyatları tek liste (satıra tıkla → kuruma göre düzenle)
+- Madde 7: Rapor başlıkları modül bazlı genişletildi (~60) + Excel'e aktar (CSV)
+### ⏳ Bekleyen (sıradaki)
+- Madde 4: Bölüm Randevu Tipi tanımı (randevu↔bölüm↔protokol↔hizmet bağı)
+- Madde 7: rol bazlı rapor yetkisi (admin hangi rol/kullanıcı hangi raporu görür) + kalan raporların içi + gerçek filtre
+- Madde 6: zengin hizmet kartı (yeni hizmet tanımı tek karttan)
+- Madde 1: çeviri eksikleri taraması; diğer liste ekranlarında tıkla-aç + filtre
+- İlaç/malzeme listesi gelince: eczane/stok fazı
