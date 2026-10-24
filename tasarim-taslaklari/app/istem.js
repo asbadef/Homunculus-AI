@@ -59,7 +59,7 @@
       ? `<div class="ist-tpls">${mt.map(t => `<span class="ist-tpl"><button class="btn sm" data-tplap="${t.id}" title="Bu paketteki tüm istemleri hastaya ekle · ${esc(t.owner || "")}">${ic("add") || "+"} ${esc(t.name)} <em>${t.items.length}</em></button>${t.owner === me() ? `<button class="btn g sm" data-tpldel="${t.id}" title="Paketi sil">${ic("x") || "×"}</button>` : ""}</span>`).join("")}</div>`
       : `<div class="adm-sub">Bu kapsamda kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin.</div>`;
     const pOpen = H.protoOpen(p), pCan = H.can("admission") || H.can("orders");
-    const lockBar = `<div class="ist-lock ${pOpen ? "" : "closed"}">${ic(pOpen ? "ok" : "lock") || ""}<span>Protokol: <b>${pOpen ? "Açık" : (p.faturaKesildi ? "Fatura kesildi · kilitli" : "Kapalı · kilitli")}</b>${pOpen ? "" : " · yeni işlem/hizmet eklenemez"}</span>${pCan ? `<button class="btn sm" data-protokat>${pOpen ? "Protokolü kapat" : "Protokolü aç"}</button>` : ""}</div>`;
+    const lockBar = `<div class="ist-lock ${pOpen ? "" : "closed"}">${ic(pOpen ? "ok" : "lock") || ""}<span>Protokol: <b>${pOpen ? "Açık" : (p.faturaKesildi ? "Fatura kesildi · kilitli" : "Kapalı · kilitli")}</b>${pOpen ? "" : " · yeni işlem/hizmet eklenemez"}</span>${pCan ? `<button class="btn sm" data-protokat>${pOpen ? "Protokolü kapat" : "Protokolü aç"}</button>` : ""}${H.can("protokol_duzenle") ? `<button class="btn sm" data-protduz>Protokol işlemleri</button>` : ""}</div>`;
     const payOk = H.ozelOnay(p), payCan = H.can("admission") || H.can("vezne_donem") || H.can("summary") || H.can("orders");
     const payBar = payOk ? "" : `<div class="ist-lock closed">${ic("lock") || ""}<span>Özel onay: <b>Ödeme alınmadı · işlem/hizmet eklenemez</b> · (gerçekte vezne ödemeyi alınca açılır)</span>${payCan ? `<button class="btn sm" data-ozelonay>Özel onay ver (ödeme alındı)</button>` : ""}</div>`;
     const pt = H.protoTipOf(p), ptFlags = pt && pt.flags ? Object.keys(pt.flags).filter(k => pt.flags[k]) : [];
@@ -380,6 +380,30 @@
     return openForm(p, key, rerender);   // ilac / kan / kons
   }
 
+  // Protokol işlemleri: bölüm/doktor/tarih düzelt, hizmet tarihlerini düzelt, protokolü sil (yetkiye bağlı).
+  function protokolModal(p, rerender) {
+    if (!H.can("protokol_duzenle")) { H.toast("Protokol düzenleme yetkiniz yok.", "e"); return; }
+    const bols = (H.data.bolumler || []), heks = (H.data.users || []).filter(u => u.role === "hekim"), ords = ordersOf(p);
+    H.modal({ title:"Protokol işlemleri · " + esc(p.name), wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Protokol no</label><input value="${esc(p.proto || "—")}" readonly></div>
+        <div class="fr"><label>Bölüm</label><select data-pf="bolum"><option value="">—</option>${bols.map(b => `<option${(p.bolum || "") === b.ad ? " selected" : ""}>${esc(b.ad)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Doktor</label><select data-pf="attending"><option value="">—</option>${heks.map(u => `<option value="${esc(u.u)}"${p.attending === u.u ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Protokol tarihi</label><input type="date" data-pf="tarih" value="${esc((p.protoTarih || "").slice(0, 10))}"></div>
+      </div>
+      ${ords.length ? `<div class="ist-sec ist-hd"><h5>Girilen hizmetlerin tarihleri</h5></div>
+        <div class="tw"><table class="t"><thead><tr><th>İşlem</th><th style="width:190px">Tarih / saat</th></tr></thead><tbody>
+        ${ords.map(o => `<tr><td>${esc(o.ad || o.cat || "—")} <span class="adm-sub">${esc(o.cat || "")}</span></td><td><input data-ord="${o.id}" value="${esc(o.at || "")}" style="width:180px"></td></tr>`).join("")}</tbody></table></div>` : ""}
+      <p class="adm-sub" style="margin-top:8px">Protokolün bölümü/doktoru/tarihi ve doktorun girdiği hizmetlerin tarihleri buradan düzeltilir. Her değişiklik denetim kaydına yazılır.</p>`,
+      actions:`<button class="btn g" data-protsil>${ic("trash") || ""} Protokolü sil</button><span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-protkay>Kaydet</button>`,
+      onMount(m) {
+        m.querySelector("[data-protkay]").onclick = () => { const g = (k) => { const el = m.querySelector(`[data-pf="${k}"]`); return el ? el.value : ""; };
+          if (g("bolum")) p.bolum = g("bolum"); if (g("attending")) p.attending = g("attending"); if (g("tarih")) p.protoTarih = g("tarih");
+          m.querySelectorAll("[data-ord]").forEach(i => { const o = all().find(x => x.id === i.dataset.ord); if (o) o.at = i.value; });
+          H.log("Protokol düzenlendi", bedNo(p) + " · " + (p.proto || "")); H.closeModal(); H.toast("Protokol güncellendi"); rerender(); };
+        m.querySelector("[data-protsil]").onclick = () => { if (!confirm("Bu protokol silinsin mi? (Geri alınamaz)")) return; p.protoDurum = "Silindi"; p.protoSilindi = true; H.log("Protokol SİLİNDİ", bedNo(p) + " · " + (p.proto || "")); H.closeModal(); H.toast("Protokol silindi", "w"); H.go("gelisler"); };
+      } });
+  }
   function after(el, p) {
     const root = (el && el.querySelector) ? (el.matches && el.matches("[data-ist-root]") ? el : el.querySelector("[data-ist-root]")) : null;
     if (!root) return;
@@ -387,6 +411,7 @@
     root.onclick = (e) => {
       const pk = e.target.closest("[data-protokat]"); if (pk) { if (!(H.can("admission") || H.can("orders"))) return; const willOpen = !H.protoOpen(p); p.protoDurum = willOpen ? "Açık" : "Kapalı"; if (willOpen) p.faturaKesildi = false; H.log("Protokol durumu", bedNo(p) + " · " + p.protoDurum); H.toast("Protokol " + p.protoDurum.toLowerCase()); rerender(); return; }
       const oz = e.target.closest("[data-ozelonay]"); if (oz) { if (!(H.can("admission") || H.can("vezne_donem") || H.can("summary") || H.can("orders"))) { H.toast("Özel onay yetkiniz yok.", "e"); return; } p.ozelOnay = true; H.log("Özel onay verildi (ödeme alındı)", bedNo(p)); H.toast("Özel onay verildi · işlem eklenebilir"); rerender(); return; }
+      const pd = e.target.closest("[data-protduz]"); if (pd) { protokolModal(p, rerender); return; }
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
       const sc = e.target.closest("[data-tplscope]"); if (sc) { tplScope = sc.dataset.tplscope; rerender(); return; }
       const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
