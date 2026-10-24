@@ -222,16 +222,21 @@
     const p = H.pt(pid); if (!p) return; const kurum = p.kurum || "Özel ödeme";
     const fiyatOf = (o) => o.fiyat != null ? o.fiyat : (o.kod ? H.fiyatOf(o.kod, kurum) : 0);
     H.modal({ title:"İşlem havuzu · " + H.esc(vzName(p.name)), wide:true,
-      body:`<div class="tw"><table class="t"><thead><tr><th style="width:34px"><input type="checkbox" data-hall></th><th>İşlem</th><th>Tür</th><th style="width:90px">Fiyat</th><th style="width:120px">Durum</th></tr></thead><tbody data-hbody></tbody></table></div>
-        <div class="adm-bar" style="margin-top:10px"><b>Seçili toplam: <span data-htop>0</span> ₼</b><span class="spacer"></span>
-          <button class="btn p sm" data-hfatura>Fatura kes</button><button class="btn sm" data-hindirim>İndirime gönder</button><button class="btn g sm" data-hbekle>Bekleyene at</button></div>
-        <p class="adm-sub" style="margin-top:8px">Hastanın işlemleri burada toplanır; seçilenler faturalanır ya da indirime gönderilir. Protokol/ödeme kuralları geçerli.</p>`,
+      body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag">Kurum: ${H.esc(kurum)}</span><span class="spacer"></span><div class="seg"><button data-hf2="bekleyen" class="on">Fatura bekleyen</button><button data-hf2="tumu">Tümü</button></div></div>
+        <div class="r" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><button class="btn p sm" data-hfatura>Fatura kes</button><button class="btn sm" data-hparcali>Parçalı fatura</button><button class="btn sm" data-hindirim>İndirime gönder</button><button class="btn sm" data-hproviz>Provizyon iste</button><button class="btn sm" data-hpaket>Panel paket</button><button class="btn g sm" data-hbekle>Bekleyene at</button></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:34px"><input type="checkbox" data-hall></th><th>İşlem</th><th>Tür</th><th style="width:90px">Fiyat</th><th style="width:120px">Durum</th></tr></thead><tbody data-hbody></tbody></table></div>
+        <div class="adm-bar" style="margin-top:10px"><b>Seçili toplam: <span data-htop>0</span> ₼</b><span class="spacer"></span><span class="adm-sub">Satıra sağ tıklayın: Doktor · Tarih · Tutar · Yeniden fiyatlandır · Özel onay · Durum · Yazdır · Diğer</span></div>`,
       actions:`<button class="btn" data-x>Kapat</button>`,
       onMount(m) {
         const body = m.querySelector("[data-hbody]"), topEl = m.querySelector("[data-htop]");
-        const draw = () => { const ords = (H.data.orders || []).filter(o => o.pid === p.id);
-          body.innerHTML = ords.length ? ords.map(o => `<tr><td><input type="checkbox" data-hsel="${o.id}" ${o.durum === "Faturalandı" ? "disabled" : ""}></td><td><b>${H.esc(o.ad || o.cat || "—")}</b><div class="adm-sub" style="font-size:11px">${H.esc(o.at || "")} · ${H.esc(o.by || "")}</div></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="n">${fiyatOf(o)} ₼</td><td><span class="tag ${o.durum === "Faturalandı" ? "ok" : ""}">${H.esc(o.durum || "İstendi")}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">İşlem yok. Doktor istem yapınca ya da vezne tetkik isteyince burada görünür.</td></tr>`;
+        let f2 = "bekleyen";
+        const draw = () => { const ords = (H.data.orders || []).filter(o => o.pid === p.id && (f2 === "tumu" || o.durum !== "Faturalandı"));
+          body.innerHTML = ords.length ? ords.map(o => `<tr data-hrow="${o.id}" style="cursor:context-menu"><td><input type="checkbox" data-hsel="${o.id}" ${o.durum === "Faturalandı" ? "disabled" : ""}></td><td><b>${H.esc(o.ad || o.cat || "—")}</b><div class="adm-sub" style="font-size:11px">${H.esc(o.at || "")} · ${H.esc(o.by || "")}</div></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="n">${fiyatOf(o)} ₼</td><td><span class="tag ${o.durum === "Faturalandı" ? "ok" : ""}">${H.esc(o.durum || "İstendi")}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">${f2 === "bekleyen" ? "Fatura bekleyen işlem yok." : "İşlem yok. Doktor istem yapınca ya da vezne tetkik isteyince burada görünür."}</td></tr>`;
           recompute(); };
+        m.querySelectorAll("[data-hf2]").forEach(b => b.onclick = () => { f2 = b.dataset.hf2; m.querySelectorAll("[data-hf2]").forEach(x => x.classList.toggle("on", x === b)); draw(); });
+        ["hparcali:Parçalı fatura", "hproviz:Provizyon iste", "hpaket:Panel paket"].forEach(s => { const [k, l] = s.split(":"); const el = m.querySelector("[data-" + k + "]"); if (el) el.onclick = () => H.toast(l + " · tasarım", "w"); });
+        body.oncontextmenu = (e) => { const tr = e.target.closest("[data-hrow]"); if (!tr) return; e.preventDefault();
+          vzMenu(e, ["Doktor değiştir", "Tarih değiştir", "Tutar düzelt", "Yeniden fiyatlandır", "Özel onay", "Durum", "Yazdır", "Diğer"].map(a => [a, () => H.toast(a + " · tasarım", "w")])); };
         const selected = () => [...m.querySelectorAll("[data-hsel]:checked")].map(c => (H.data.orders || []).find(o => o.id === c.dataset.hsel)).filter(Boolean);
         const recompute = () => { topEl.textContent = selected().reduce((a, o) => a + fiyatOf(o), 0); };
         draw();
@@ -306,7 +311,7 @@
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "giris";
     const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("vezne_donem");
     const TABS = [["giris", "Giriş"], ["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
-    const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}</div>`;
+    const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}${!donemAcik && donemYetki ? `<button class="btn sm" data-vdevir>${I("key") || ""} Devir al</button>` : ""}<button class="btn sm" data-vozet>Dönem özeti</button></div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const panFatura = () => { const all = faturalar(), f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -383,6 +388,19 @@
         ]);
       });
     }
+    function donemOzet() {
+      const all = faturalar(), odenen = all.filter(x => x.durum === "Ödendi"), bekleyen = all.filter(x => x.durum !== "Ödendi");
+      const kanal = {}; odenen.forEach(x => { const k = x.odemeTipi || "Nakit"; kanal[k] = (kanal[k] || 0) + (x.katilim || 0); });
+      const tahsil = odenen.reduce((a, x) => a + (x.katilim || 0), 0), bek = bekleyen.reduce((a, x) => a + (x.katilim || 0), 0), devir = H.data.vezneDevir || 0;
+      H.modal({ title:`Dönem özeti · #${donemNo} · ${H.esc(banko)}`, wide:true,
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Dönem</span><b>#${donemNo} · ${donemAcik ? "Açık" : "Kapalı"}</b></div><div><span>Banko / kasa</span><b>${H.esc(banko)}</b></div><div><span>Devir (açılış)</span><b>${devir} ₼</b></div><div><span>Tahsil edilen</span><b>${tahsil} ₼</b></div><div><span>Bekleyen tahakkuk</span><b>${bek} ₼</b></div><div><span>Kasa toplamı</span><b>${devir + tahsil} ₼</b></div></div>
+          <div class="tw"><table class="t"><thead><tr><th>Ödeme kanalı</th><th style="width:140px">Tahsilat ₼</th></tr></thead><tbody>
+          ${Object.keys(kanal).length ? Object.entries(kanal).map(([k, v]) => `<tr><td>${H.esc(k)}</td><td class="n">${v} ₼</td></tr>`).join("") : `<tr><td colspan="2" class="mute" style="padding:14px;text-align:center">Bu dönemde tahsilat yok.</td></tr>`}
+          <tr><td><b>Toplam tahsilat</b></td><td class="n"><b>${tahsil} ₼</b></td></tr></tbody></table></div>
+          <p class="adm-sub" style="margin-top:8px">Dönem kapatılırken bu özet kasa raporu olarak alınır; devir bir sonraki döneme taşınır.</p>`,
+        actions:`<button class="btn" data-x>Kapat</button><button class="btn p" data-ozetyaz>${I("print") || ""} Yazdır</button>`,
+        onMount(m) { const y = m.querySelector("[data-ozetyaz]"); if (y) y.onclick = () => H.toast("Dönem özeti yazdırılıyor"); } });
+    }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); H.toast("Banko: " + vb.value); return; }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp, fptip:params.fptip });
@@ -395,6 +413,8 @@
       const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; } H.data.vezneDonemAcik = !donemAcik; if (donemAcik) { H.log("Vezne dönem kapatıldı", "#" + donemNo + " · " + banko); H.toast("Dönem kapatıldı · kapatmadan işlem yapılamaz", "w"); } else { H.data.vezneDonemNo = donemNo + 1; H.log("Vezne yeni dönem açıldı", "#" + (donemNo + 1)); H.toast("Yeni dönem açıldı: #" + (donemNo + 1)); } return H.go("vezne", params); }
+      if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } H.data.vezneDonemNo = donemNo + 1; H.data.vezneDonemAcik = true; H.data.vezneDevir = (H.data.vezneDevir || 0) + 0; H.log("Dönem devir alındı", "#" + donemNo + " → #" + (donemNo + 1) + " · " + banko); H.toast("Devir alındı · yeni dönem #" + (donemNo + 1) + " açıldı"); return H.go("vezne", params); }
+      if (e.target.closest("[data-vozet]")) { donemOzet(); return; }
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
