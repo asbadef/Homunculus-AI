@@ -706,7 +706,7 @@
    *                            YÖNETİM
    * ================================================================ */
   const AD = { tab:null, q:"", role:"", sel:"hosp", af:{ user:"", type:"", date:"" }, sys:null };
-  const ATABS = [["users", "Kullanıcılar", "admin_users", "users"], ["roles", "Roller ve yetkiler", "admin_roles", "shield"], ["raporyetki", "Rapor Yetkileri", "admin_roles", "chart"], ["structure", "Hastane yapısı", "admin_structure", "building"],
+  const ATABS = [["users", "Kullanıcılar", "admin_users", "users"], ["roles", "Roller ve yetkiler", "admin_roles", "shield"], ["guvenlik", "Güvenlik Tanımları", "admin_roles", "shield"], ["raporyetki", "Rapor Yetkileri", "admin_roles", "chart"], ["structure", "Hastane yapısı", "admin_structure", "building"],
     ["integrations", "Entegrasyonlar", "admin_integrations", "plug"], ["camera", "Kamera bağlantısı", "admin_camera", "tv"], ["notify", "Bildirim kuralları", "admin_system", "bell"],
     ["careCat", { toString:() => H.t("adm_cc_tab") }, "admin_system", "list"],   // 24.09 · bakım kataloğu (etiket dile göre)
     ["icdliste", "Tanı Listesi (ICD)", "admin_system", "list"],   // ICD-10 tanı kataloğu (ara + ekle); doktor muayenede seçer
@@ -730,7 +730,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "guvenlik", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "parametre", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -757,7 +757,7 @@
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
          health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
-         parametre:tabParametre,
+         parametre:tabParametre, guvenlik:tabGuvenlik,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1852,6 +1852,50 @@
       H.log("Yetki değişikliği", `${role.name}: ${c.checked ? "+" : "−"} ${permLabel(p)}`);
       H.toast(`${role.name}: ${permLabel(p)} ${c.checked ? "verildi" : "kaldırıldı"}`, c.checked ? "" : "w");
       if (r === me().role && typeof H.renderApp === "function") H.renderApp(); else tabRoles(body);
+    };
+  }
+
+  /* ---------- Güvenlik Tanımları (Yetkiler / Formlar / Roller / Değerler) ---------- */
+  // İnce-taneli yetki katalogu H.YETKI_KATALOG (yetki-katalog.js). Rol bazında dağıtılır (prototip; bellekte tutulur).
+  const GV_MODULLER = ["Hasta Kabul", "Tedavi", "Diş Tedavi", "Laboratuvar", "Tetkik ve Radyoloji", "Stok", "Eczane", "Satın Alma", "Sterilizasyon", "Finans", "Hakediş", "İnsan Kaynakları", "Ortak", "Randevu", "Medikal Muhasebe", "Tıbbi Arşiv", "Kalite", "İstatistik ve Analizler", "CRM", "Dijital Arşiv", "Doküman Yönetimi", "E-Nabız", "Entegrasyon", "ComedEMR", "Merkez", "Kiosk", "Sistem"];
+  const GV_VERI = ["İşlem Yapabileceği Bölümler", "İşlem Yapabileceği Cariler", "İşlem Yapabileceği Cihazlar", "İşlem Yapabileceği Depolar", "İşlem Yapabileceği Kurumlar", "İşlem Yapabileceği Katlar", "İşlem Yapabileceği Fiş Tipleri", "İşlem Yapabileceği Hasta Tipleri", "İşlem Yapabileceği POS Cihazları", "İşlem Yapabileceği Radyoloji Bölümleri", "İşlem Yapabileceği Yabancı Hasta Tipleri", "Protokol Açabileceği Bölümler", "Protokol Açabileceği Hekimler", "Protokol Açabileceği Protokol Tipleri", "Görebileceği Raporlar", "İndirim Onay Yetki Kodları", "Hastadan İptal Edebileceği Malzeme Tipleri", "Hastaya Çıkış Yapabileceği Malzeme Tipleri", "Onaylayabileceği İndirim Onay Grupları", "Görebileceği Not Tipleri", "Verebileceği Randevu Tipleri"];
+  function tabGuvenlik(body) {
+    const roles = Object.entries(H.data.roles), ro = !H.can("admin_roles");
+    const role = AD.gvRole && H.data.roles[AD.gvRole] ? AD.gvRole : roles[0][0], sub = AD.gvSub || "yetki";
+    H.data.detayYetki = H.data.detayYetki || {}; H.data.formYetki = H.data.formYetki || {}; H.data.veriYetki = H.data.veriYetki || {};
+    const dSet = H.data.detayYetki[role] = H.data.detayYetki[role] || [], fSet = H.data.formYetki[role] = H.data.formYetki[role] || GV_MODULLER.slice(), vSet = H.data.veriYetki[role] = H.data.veriYetki[role] || [];
+    const kat = H.YETKI_KATALOG || [], SUBS = [["yetki", "Yetkiler"], ["form", "Formlar"], ["rol", "Roller"], ["deger", "Değerler"]];
+    let pane = "";
+    if (sub === "yetki") {
+      const toplam = kat.reduce((a, g) => a + g[1].length, 0);
+      pane = `<p class="adm-sub" style="margin:0 0 8px">İnce-taneli yetkiler (${toplam} yetki, ${kat.length} grup) · referans HBYS'den. Grubu açıp işaretleyin; <b>${esc(H.data.roles[role].name)}</b> rolüne uygulanır.</p>
+        ${kat.map((g, gi) => { const on = g[1].filter(p => dSet.includes(p)).length; return `<details class="gv-grp"${on ? " open" : ""}><summary><b>${esc(g[0])}</b> <span class="adm-sub">(${on}/${g[1].length})</span></summary>
+          <div class="gv-perms">${g[1].map((p, pi) => `<label class="dc-chk"><input type="checkbox" data-gvp="${gi}:${pi}"${dSet.includes(p) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(p)}</label>`).join("")}</div></details>`; }).join("")}`;
+    } else if (sub === "form") {
+      pane = `<p class="adm-sub" style="margin:0 0 8px">Modül (form) erişimi · <b>${esc(H.data.roles[role].name)}</b> hangi ekranları açabilir.</p>
+        <div class="icd-oz">${GV_MODULLER.map(m => `<label class="dc-chk"><input type="checkbox" data-gvf="${esc(m)}"${fSet.includes(m) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(m)}</label>`).join("")}</div>`;
+    } else if (sub === "rol") {
+      pane = `<p class="adm-sub" style="margin:0 0 8px">Roller · seçili rol bu kullanıcı grubunda. Rol temel ekran yetkilerini "Roller ve yetkiler" sekmesindeki matris belirler.</p>
+        <div class="tw"><table class="t"><thead><tr><th>Rol</th><th>Grup</th><th>Temel yetki sayısı</th><th>İnce-taneli yetki</th></tr></thead><tbody>
+        ${roles.map(([k, r]) => `<tr${k === role ? ' style="background:color-mix(in srgb,var(--pri) 10%,transparent)"' : ""}><td><b>${esc(r.name)}</b></td><td class="adm-sub">${esc(r.group)}</td><td class="n">${r.perms.length}</td><td class="n">${(H.data.detayYetki[k] || []).length}</td></tr>`).join("")}
+        </tbody></table></div>`;
+    } else {
+      pane = `<p class="adm-sub" style="margin:0 0 8px">Veri (değer) izinleri · <b>${esc(H.data.roles[role].name)}</b> hangi veri kümelerinde işlem yapabilir. "Tümüne yetki" işaretlenirse o grubun tamamı açılır.</p>
+        <div class="tw"><table class="t"><thead><tr><th>Veri grubu</th><th style="width:130px">Tümüne yetki</th></tr></thead><tbody>
+        ${GV_VERI.map(v => `<tr><td>${esc(v)}</td><td><label class="dc-chk"><input type="checkbox" data-gvv="${esc(v)}"${vSet.includes(v) ? " checked" : ""}${ro ? " disabled" : ""}> Tümü</label></td></tr>`).join("")}
+        </tbody></table></div>`;
+    }
+    body.innerHTML = `<div class="adm-bar" style="margin-bottom:10px"><label class="adm-sub">Kullanıcı grubu / rol</label><select data-gvrole>${roles.map(([k, r]) => `<option value="${k}"${k === role ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub">Değişiklikler denetim kaydına yazılır.</span></div>
+      <div class="tabs adm-sub-tabs" style="margin-bottom:12px">${SUBS.map(([k, l]) => `<span data-gvsub="${k}" class="${sub === k ? "on" : ""}">${l}</span>`).join("")}</div>
+      <div>${pane}</div>`;
+    body.querySelector("[data-gvrole]").onchange = (e) => { AD.gvRole = e.target.value; tabGuvenlik(body); };
+    body.querySelectorAll("[data-gvsub]").forEach(s => s.onclick = () => { AD.gvSub = s.dataset.gvsub; tabGuvenlik(body); });
+    body.onchange = (e) => {
+      const p = e.target.closest("[data-gvp]"); if (p) { const [gi, pi] = p.dataset.gvp.split(":").map(Number), name = kat[gi][1][pi];
+        if (e.target.checked) { if (!dSet.includes(name)) dSet.push(name); } else { const ix = dSet.indexOf(name); if (ix >= 0) dSet.splice(ix, 1); }
+        H.log("Güvenlik yetkisi", H.data.roles[role].name + ": " + (e.target.checked ? "+" : "−") + " " + name); return; }
+      const f = e.target.closest("[data-gvf]"); if (f) { const m = f.dataset.gvf; if (e.target.checked) { if (!fSet.includes(m)) fSet.push(m); } else { const ix = fSet.indexOf(m); if (ix >= 0) fSet.splice(ix, 1); } H.log("Form yetkisi", H.data.roles[role].name + ": " + m + " " + (e.target.checked ? "açık" : "kapalı")); return; }
+      const v = e.target.closest("[data-gvv]"); if (v) { const g = v.dataset.gvv; if (e.target.checked) { if (!vSet.includes(g)) vSet.push(g); } else { const ix = vSet.indexOf(g); if (ix >= 0) vSet.splice(ix, 1); } H.log("Veri yetkisi", H.data.roles[role].name + ": " + g + " " + (e.target.checked ? "tümü" : "kaldırıldı")); H.toast(g + ": " + (e.target.checked ? "tümüne yetki" : "kaldırıldı")); return; }
     };
   }
 

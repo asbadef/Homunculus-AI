@@ -1,0 +1,957 @@
+Yetki / Grup
+Hasta Kabul
+Vezne İşlemleri
+Fatura Keserken Fatura - Fiş Tutarını Değiştirebilir
+Diğer(Sanal) Fatura Kesebilir
+Yazdırılmış Faturayı Yazdırabilir
+Avans Alabilir
+İndirim Yapabilir
+Max. İndirim Oranı
+Max. İndirim Tutarı
+Tahsilat bilgilerini değiştirebilir
+Kapanmis Dönem Tahsilat bilgilerini değiştirebilir
+Dönemi Kapatılmış Faturanın Matbu Nosunu Değiştirebilir
+Fatura Kalemde Fiş,Fatura Tutarlarını değiştirebilir
+Diş Tedavi Ödeme Planını düzenleyebilir
+Kapalı Protokolde İndirim Yapabilir
+Kapalı Protokolde Hizmet Ekleyebilir(Fiyatlar 0 olarak oluşur)
+Kapalı Protokolde Hizmet Silebilir
+Tahsilat Veznesini Değiştirebilir
+Tahsilat Tarihini Değiştirebilir
+Cari Tahsilat Yapabilir
+Fatura Evrak Tipini Değiştirebilir
+Faturalanmış Protokolde Hasta Tutarını değiştirebilir
+ÖSS Protokollerinde Sonraki Tarihe Girişi Yapılamasın.
+SGK Faturası Kesilmiş Protokolde Hizmet Ekleyebilir(SGK Fiyatı 0 oluşur)
+OSS-AK Faturası Kesilmiş Protokolde Hizmet Ekleyebilir(OSS-AK Fiyatı 0 oluşur)
+Diğer Veznelere Ait Tahsilatları İptal Edebilir
+Katılım Payı İndirimi Yapabilir
+Avansı başka protokole aktarabilir
+Tahsilatın vezne dönemini değiştirebilir
+Protokol Ekranından Medula Hizmet Kayıt Yapabilir
+Kasa teslim ekranında tüm vezneleri görebilir
+Onaylayabileceği makismum indirim tutarı
+Takip alınan protokollerin açılış tarihini değistirebilir
+Fatura Tarihini Değiştirebilir
+Başkasının Onayladığı Dönemi İptal Edebilir
+Kasa Kapanış ve Onay Tarihini Güncelleyebilir.
+Tahsilat Carisini Değiştirebilir
+Fatura Türünü Değiştirebilir
+Tahsilatsız Fatura Kesebilir
+Hasta Faturası Default Cari Id
+Kurum Tahsilatlarını Alabilir / İptal Edebilir.
+Protokol Ekranından Sadece OSS'li Protokol İçin Medula Hizmet Kayıt Yapabilir
+işlem Tipine Göre İndirim Yapabilir
+Normal Faturanın matbu numarasını değiştirebilir.
+E-Fatura ve E-Arşiv faturalarının Matbu numarasını değiştirebilir
+'Alınamayan' Tipli Tahsilat Girebilir
+Vezne Dönemi Yönetebilir
+Proforma fatura kesebilir
+Protokol Süreçlerinde Hizmet Malzeme ve İlaç Girişi Yapabilsin
+Protokol Süreçlerinde Arşiv İçin değiştirme yetkisi
+Dosya ve İşlem Listesinde Toplam Tutarları Görme yetkisi
+Onaylayabileceği maksimum indirim oranı
+Döviz Kuru Değistirebilir
+Tahsilatı avansa çevirebilir
+İade faturası kesebilir
+Maximum kaç gün öncesine fatura girişi yapabilir
+Maximum kaç gün sonrasına fatura girişi yapabilir
+Hasta kabul yapabileceği maximum borç tutarı
+Kara Listedeki Hastaya Protokol Açabilir
+Kurum İndirimi Yapabilir
+Avans İşlemlerinde Eksik Tahsilat ve Senet İşlemi Girebilir
+İade İşlemini İptal Edebilir
+Eksik Tahsilat İşlemi Girebilir
+Dosyada Hakediş İşlem Yetisi
+Cari Ödemede Default Bekleyenleri Görebilir
+Cari Ödeme Ekranında Cari Değiştirebilir
+Fatura İptal Tarihini Güncelleyebilir
+İade faturası kesebilir/iptal edebilir(Kurum Faturası)
+Şüpeli Alacak Tipinde Ödeme Girişi Yapabilir
+Hukuksal Takip Durumundaki Hastaya Protokol Açabilir
+Onay Verilmiş Avansı İade Edebilir
+Provizyonu faturaya çevirebilir
+Protokol onayı verebileceği maximum gün süresi
+Girebileceği Maksimum Cari Ödeme Tutarı
+Girebileceği Minimum Cari Ödeme Tutarı
+E-Arşiv faturasını muhasebe programına aktarabilir
+Birden Fazla provizyonu tek faturaya çevirebilir
+Oracle Aktarımı Yapılmış E-Faturayı Iptal Edebilir
+Vezne Panelinde Kurum E-Arşivlerini GIB'e Gönderebilir
+Tüm Tarihli Hasta Faturalarını İptal Edebilir (Vezne 360)
+Tüm Tarihli Kurum Faturalarını İptal Edebilir (Vezne 360)
+Vezne Kendi Kestiği  Aynı Gün İçindeki Hasta Faturalarını İptal Edebilir (Vezne 360)
+Vezne Kendi Kestiği Aktif Tarihli Kurum Faturalarını İptal Edebilir (Vezne 360)
+Vezne Kendi Kestiği Provizyonu İptal Edebilir (Vezne 360)
+Tüm Kullanıcıların Kestiği Provizyonları İptal Edebilir (Vezne 360)
+Veznedeki Tüm Provizyonları Iptal Edebilir (Vezne 360)
+İade Ödeme Tipini Güncelleyebilir
+Dönem Onay Ve Onay İptali Yapabilir
+Dönem Kapama Ve Kapama İptali Yapabilir
+Satış İade Faturasının Tarihini ve Matbu Fatura Numarasını Değiştirebilir
+SGKlı Hastalarda Katılım Payı Almadan Fatura Kesebilir
+GFK Ekranında Protokolün Atanan Personelini Değiştirebilir
+İndirim Onay Grubu Yönetimi
+E-Arşiv İptali Yapabilir(Memorial)
+E-Fatura İptal Günü(Memorial)
+E-Fatura İptali Yapabilir(Memorial)
+TSS Protokollerinde Provizyonu Faturaya Çevirebilir
+ERP Aktarımı yapılmış Avansı başka protokole aktarabilir
+Virman Tahsilatı Yapabilir
+Virman Tahsilatını Iptal Edebilir
+Mobil İndirim Kodundan Muaf Alanını İşaretleyebilir
+Hasta Fatura İptal Günü(ASM)
+Kurum Fatura İptal Günü(ASM)
+Farklı Hastaya Virman Tahsilatı Yapabilir
+Farklı Şubeden Açılan Protokole Hizmet Malzeme Girişi Yapabilir (Güven)
+Açık Hasta Faturası Kesilebilir
+Yabancı Hasta KDV Düzenleyebilir
+Muhasebe Programına Aktarılmış Tahsilatın Bağlantısını Koparabilir
+Pasif Yapılan Doktorun Protokolüne Girebilir
+İade İşlemini Girebilir
+Sadece Açık Muhasebe Dönemlerine Tahsilat Fatura İşlemleri Yapabilir
+SGK Katılım Payı'nı Avansa Çevirebilir
+İade Onay Limit
+Dövizli Tahsilat Tarihini Değiştirebilir
+Faturası Kesilmiş Hastalara İlaç Düşümü Yapabilir
+Faturası Kesilmiş Hastalara Malzeme Düşümü Yapabilir
+Vezne Dönem Bilgilerinde , Tahsilat Dökümünü Yazdırabilir
+Faturada , Mail Gönderilecek Check Alanını değiştirebilir
+Vezne Panelinde Hasta Faturası Çevir Yapılabilir
+Vezne İşlem Açıklama Güncelleyebilir
+Memorial Şirketler Arası Grup Virman Yapabilir
+İptal Edebileceği Tahsilat Ödeme Tipleri 
+Omnitech Faturası İptal Edilmeden Fatura İptal Edebilir
+Fatura Avans Bağlantı Tarihini Güncelleyebilir
+Hasta Faturasında , Yeni Cari Ekleyebilir
+Onaylanmış Dönem Tahsilat bilgilerini değiştirebilir
+Yeni Banka , Şube , Banka Hesabı ve Pos cihazı Ekleyebilir
+Ödeme Girişi İşlemini Yapabilir
+Fatura Avans Eşleştirme yapabileceği Fatura Tipleri (Hasta Faturası,Kurum Faturası,Hepsi)
+'Alınamayan' Tipinde Girebileceği Tahsilat Tutarı
+Fatura iptalini yapabileceği evrak durumları 
+İşlem Listesinde Tutarları Görebilir
+Faturaya Çevrilmiş Olan Provizyonu Güncelleyebilir
+Tam Iade Faturasını Iptal Edebilir
+Açık Dönemin Çıktısını Alamaz
+Provizyon Ekranında , Provizyon Tarihini değiştirebilir
+Protokol içersinde  , Fatura Listesinden Toplu Çıktı Alabilir
+Fiş Türündeki Fatura İçin Girebileceği Maksimum Ödeme Tutarı
+Sıfır KDV'li Faturayı Farklı Ayda İptal Edemez
+Farklı Omnitech Cihazdan Kesilmiş Faturayı İptal Edebilir
+Kurum Değişiklik Onay Ekranında Onayla-Reddet Yapabilir (Vezne 360)
+Fatura Tarihini Önceki Bir Tarihe Değiştirebilir
+Fatura Tarihini İleriki Bir Tarihe Değiştirebilir
+100 TL Altı KDVSiz fatura kesebilir
+Döviz Tutar Değistirebilir
+Kurum İndirimi Yapabileceği Maximum Tutar
+Kur Farkı Tipinde Ödeme Girişi Yapabilir
+Kayıt açtığı bölümün hastaları dışındaki hastaları görebilir
+Onay Bekleyen Protokolleri Farklı Vezneye Atayabilir
+Onam Formu Silebilir
+Iade Faturası İptal Günü
+Avansı Iptal Edebilir
+Avans Girişi Yapabilir
+SAP'e Aktarılan ve Maaş Kesintisi ile Tahsilatı Yapılan Faturayı İptal Edebilir
+Cari Ay Faturalarını İptal Edebilir
+SMS kodu olmadan KVKK reddedebilir.
+Ticari Ünvan Tipini Değiştirebilir
+Branş Yaş Kısıtlaması olmadan Kayıt Açabilir ve Randevu verebilir
+Kapalı Protokolde Barkod Basımı Yapabilir
+Havuz ödemelerinde kullanabileceği ödeme tipleri 
+Onay Bekleyen Protokolleri Birden Fazla Onaylayabilir
+Virman İptal-Grup Şirketler Arası
+Virman İptal-Şubeler Arası
+Virman İptal-Hastadan Kuruma
+Virman İptal-Hastadan Farklı Hastaya
+Virman İptal-Hastadan Aynı Hastaya
+Satış iadesi kesilen faturalarda kurum değiştirebilir
+Satış iadesi kesilen faturalarda indirim gönderebilir
+Otomatik Onaylanacak TL İade tutarı
+Otomatik Onaylanacak DOLAR İade tutarı
+Otomatik Onaylanacak EURO İade tutarı
+İptal Edebileceği Maksimum Avans Tutarı
+Muhasebe Programına Aktarılmış Kurum Tahsilatın Bağlantısını Koparabilir
+GFK Takip Ekranında tüm vezneleri görebilir
+Provizyon Ekranında , Hasta ve Kurum Tutar bilgilerini değiştirebilir
+Katılım Payı İade Yapabilir
+Tahsilat/Avans Açıklama bilgilerini değiştirebilir
+Fatura Farklı Maile Gönderebilir
+Bekleyen Avans Listesi ekranında tüm vezneleri görebilir
+Havuz Ödeme İade İptali Yapabilir
+Hizmet Gün Süresi Geçmiş Protokole Hizmet Girilebilir
+E-Arşiv Satış İade Faturası İptali Yapabilir(Memorial)
+E-Fatura Satış İade Faturası İptali Yapabilir(Memorial)
+Tüm Veznelerde Listeleye Yapabilir
+Vezne Paneli Faturalar Ekranında Red Provizyonu İptal Edebilir
+Provizyon Ekranında , Provizyon Şikayet Tarihini değiştirebilir
+Katılım Payı İptal Yapabilir
+Havale Ödeme Tipindeki Tahsilat bilgilerini değiştirebilir
+Vezne Panelinde , Kurum Faturası Yazdır Yapabilir
+Dekont Onay İşlemlerini Yapabilir
+Vezne panelinden reçete silebilir.
+Comed Raporu yazılmış hizmetlerde hizmet değiştir işlemi yapabilir
+GFK Ekranında Borçlu Protokol Açıklama Tipini Değiştirebilir
+Ödeme İptal Tarihini Güncelleyebilir
+Resmi Tutara İndirim Yapabilir
+Onay Bekleyen Protokoller Ekranında , İşlem Yapabilir
+Entegrasyonsuz Kurumlarda Provizyon Alınmadan Önce Tutarları Değiştirebilir
+Avansı , Katılım Payına Aktar İşlemini Yapabilir
+Hasta Faturasında , Matbu numarasına müdahale edebilsin.
+İşlem Havuzunda Hizmet Değiştir Yapabilir
+Hastaya Avans Girilebilir
+Hasta Faturasında , Farklı veznenin girdiği avansı kullanamaz (Medipol)
+Oracle Aktarımı Yapılmış Hasta E-Faturayı Iptal Edebilir
+Anlaşmalı Kurum Maksimum İndirim Limitini Aşabilir
+Vezne Dönem Kapama ve Onay Ekranında Kapalı Dönem Düzenleyebilir
+Açık Fatura Açıklama Bilgisini Değiştirebilir
+Protokol
+Açık Protokolü Kapalı Duruma Getirebilir
+Kapalı Protokolü Açık Duruma Getirebilir
+Hizmet Kayıt ve Faturalanmış Kapalı Protokolü Açık Duruma Getirebilir
+Açılış Tarihini Değiştirebilir
+Kurum Değiştirebilir
+Protokol Doktorunu Değiştirebilir
+Misafir Doktorunu Değiştirebilir
+Hakediş Doktorunu Değiştirebilir
+Hakediş Kapanış Tarihini Değiştirebilir
+Protokol İptal Edebilir
+Yatış Bilgilerini Değiştirebilir
+Taburcu Tarihini Değiştirebilir
+Protokol Tipini Değiştirebilir
+Triaj Değiştirebilir
+Hasta Faturası kesilmiş Protokolde Kurum Değiştirebilir
+Hasta Kabulde Katılım Payından Muaf seçebilir
+Medula Çıkış İşlemlerini Yapabilir
+Protokol ekranından tanı ekleyebilir
+Hasta ve Protokol ekranından notları silebilir
+Epikriz Yazdırabilir
+Mesai dışında protokol açar iken böbetçi isaretini kaldirabilir
+Özel Epikriz Yazdırabilir
+Kurum Faturası Kesilen Kapalı Protokolü Açık Duruma Getirebilir
+Referans Bilgilerini Değiştirebilir
+Protokol Mesajını İptal Edebilir
+Mesaj Bildirim Tarihini Güncelleyebilir
+AK Tutarlarını Görebilir
+Yurt Dışı AK Tutarlarını Görebilir
+Protokol Birleştirebilir
+Protokol Açarken Ameliyat(Doktor Referanslı) Protokol Tipini Seçebilir
+Protokolde Yazdırma İşlemi Yapabilir
+Protokol Bilgilerinde Sağlık Merkezi seçebilir
+Sevk Doktor Bilgilerini Değiştirebilir
+Kurum Faturası Kesilmiş Protokolün Kurumunu Değiştirebilir
+Protokol Doktorunu Güncellerken Protokol İşlemlerinin de Doktorunu Güncelleyebilir
+Yönlendiren DMH Firmasını Güncelleyebilir
+Kurum Değişikliğine Onay Verebilir
+Protokol Düzenleme Ekranında Yeniden Fıyatlandır Seçeneğini Kaldırabilir
+Medula Rapor Ekranından Protokol Bilgilerine Gidebilir
+Protokol Tarihçesini Görebilir
+Protokole Hasta Takip ve Yönlendirme düzenleyebilir
+Self checkin zorunlu kuruma protokol açabilir
+Protokol Listesinde Veri Çekme Süresi
+Dosya Hasta Paneline giriş için limit tutarı
+Dosya Listesi ekranından dosya indirebilir (Vezne 360)
+Finansal Verileri Görebilsin
+Finansal Verileri Göremesin
+ÖSS Formu Yazdırabilir
+Dijital Marketing Satırında Güncelleme Yapabilir
+Referans Bilgilerinde Yönlendiren Bilgilerini güncelleyebilir
+Kontrol Süresinde , Protokol Tipini Değiştirebilir
+Hızlı Triaj Değerlendirme Ekleyebilir
+Protokol İşlemleri
+Hizmet Ekleme
+Hizmet İptal
+Kan İptal
+İlaç İptal
+Vezne Kendi Kestiği Açık Dönem Faturalarını İptal Edebilir.
+Tüm Açık Dönem Hasta Faturalarını İptal Edebilir
+Kapalı Döneme Ait Faturaları İptal Edebilir (Hasta)
+Paket Ekleme
+Protokol İşlem Tarih Güncelleme
+Protokol İşlem İsteyen Doktor Güncelleme
+Protokol İşlem Yapan Doktor Güncelleme
+Protokol İşlem Tutar Güncelleme
+Lab. Rad. Sonuçlarını Görme
+Kapalı Muhasebe Döneminde İşlem Yapabilir
+Özellikli Malzemelerde Fiyat Güncelleyebilir
+Hasta Payı Fiyat Güncelleme Indirim
+Hasta Payı Fiyat Güncelleme Bindirim Güncelleyebilir
+Kurum Payı Fiyatını Güncelleyebilir
+Pakete Dahil Et İşlemini Yapabilir
+Paketden Çıkart İşlemini Yapabilir
+Bekleyene At İşlemini Yapabilir
+Kapalı Protokollere Kontrol Muyane Hizmeti Ekleyebilir
+Vezne Kendi Kestiği Faturalarını Belirlenen Sürede İptal Edebilir.
+Tahsilat iptal kontrolü
+Yapılan muayene hizmetini silebilme
+Protokol İşlem Medula Doktor Güncelleme
+İşlemleri Farklı Protokole Aktarma
+Diş tedavi planından uygulanmış hizmetleri silebilme
+Özel Onay
+Hizmeti pakete çevirebilir
+Tipi Narkotik Olan İlaç İptal Edebilir
+Protokol Ekranında Hizmetlerin Medula Özel Durumunu Düzenleyebilir
+Kurum Payını Hastaya, Hasta Payını Kuruma Aktarabilir. 
+Fatura Tahsilat dağıtma
+Hizmet Paket Özelliklerini Değiştirebilir.
+Kapalı Döneme Ait Tahsilatları İptal Edebilir
+Muayene Ekranından Fiyat Bilgisi Görebilir
+Protokol İşlemlerinin Kdv Tutarında Değişiklik Yapabilsin
+Katılım Payı Güncelleme
+Protokol İşlem Kurum Tutar Güncelleme
+Hasta Faturası İptal Etmenden İşlemleri Başka Bir Protokole Taşıyabilsin
+EArşiv Kurum Faturasını Vezne , İptal Edebilir 
+Kurum Payını Hastaya Aktarabilir
+Hasta Payını Kuruma Aktarabilir
+İcmale Atılan Protokollere İşlem Girebilir İptal Edebilir
+SGK Kurum Payını Hastaya Aktarabilir
+OSS Kurum Payını Hastaya Aktarabilir
+AK Kurum Payını Hastaya Aktarabilir
+Maliyet Fiyatlarını Değiştirebilir
+Doktor Hizmet Bilgileri Ekranındaki Fiyatları Görebilir
+İstek Havuzu Hizmet İptal
+Hizmetin Paketini İptal Edebilir
+Kurum Payı Fiyatında Bindirim Yapabilir
+Kurum Payı Fiyatı Güncelleme İndirim
+Hasta Protokolde Maliyet Tutarı ve Maliyet Fiyatları Sütunlarını Görebilir
+Sarf İptal
+Parçalı Fatura Kullanabilir
+Kurum Payı Fiyatında Yapabileceği Maksimum Bindirim Tutarı
+Kapalı Döneme Ait Faturaları İptal Edebilir (Kurum)
+Hasta Paketlerine Dahil Et İşlemini Yapabilir
+SGK Paketlerine Dahil Et İşlemini Yapabilir
+ÖSS Paketlerine Dahil Et İşlemini Yapabilir
+TSS Paketlerine Dahil Et İşlemini Yapabilir
+AK Paketlerine Dahil Et İşlemini Yapabilir
+Hasta Paketlerinden Çıkart İşlemini Yapabilir
+SGK Paketlerinden Çıkart İşlemini Yapabilir
+OSS Paketlerinden Çıkart İşlemini Yapabilir
+TSS Paketlerinden Çıkart İşlemini Yapabilir
+AK Paketlerinden Çıkart İşlemini Yapabilir
+Hasta Tutarını Seçilen Kuruma göre Hesapla
+İptal Edebileceği Maksimum Fatura Tutarı
+Kapalı Döneme Ait Virman Girişlerini İptal Edebilir
+Faturası kesilmiş işlemlerin doktor bilgisini değiştirebilir
+Ameliyat Hizmeti Ekleyebilir
+Malzeme Hasta Payı Fiyat Güncelleme Indirim
+İlaç Hasta Payı Fiyat Güncelleme Indirim
+Malzeme Hasta Payı Fiyat Güncelleme Bindirim Güncelleyebilir
+İlaç Hasta Payı Fiyat Güncelleme Bindirim Güncelleyebilir
+Tutar Kilidi Ekleyebilir / Kaldırabilir
+İşlem Havuzunda , Provizyon veya Kurum faturası kesildiğinde İşlem Ekleyebilsin
+Red Provizyonu İptal Edebilir
+Kurum Payı Fiyatında Yapabileceği Maksimum İndirim Tutarı
+SGK Kurum Payını AK'ya Aktarabilir
+Hasta Payı Fiyatında Yapabileceği Maksimum Bindirim Tutarı
+Hasta Payı Fiyatında Yapabileceği Maksimum İndirim Tutarı
+Hasta Kayıt İşlemleri
+Takip Alınmış Hastanın Kimlik Bilgilerini Güncelleyebilir
+Mernis Kullanabilir 
+Donör Protokolü Oluşturabilir
+Kan Grubu Bilgisini Güncelleyebilir
+VIP Hasta Kabul Yapabilir
+Özel Hastaların Bilgilerini Girebilir veya Güncelleyebilir
+Hasta Vefat bilgisini değiştirebilir
+Hasta kaydını silebilir
+Araç Plakası Bilgisini Güncelleyebilir
+VNA Portala Erişebilir
+Kök Hücre Numarası Bilgisini Girebilir veya Güncelleyebilir
+Hasta Birleştirebilir
+Hasta Referans Seçim Süresi
+Hasta kartında kdvden muaf alanını düzenleyebilir
+Mernis Sorgulaması Yapıldı İse Mernisten'ten Gelen Bilgileri Güncelleyebilir
+Uyruk ve Hasta Tipi Bilgilerini Değiştirebilir
+KVKK Onay Ekranın da Reddedildi Seçebilir
+Uyruk Bilgisini Değiştirebilir
+Hasta Tipi Bilgisini Değiştirebilir
+Hasta kartında , Uyruk Bilgisini değiştirebilir
+Fatura Kesilmiş Yabancı Hastanın Ülke Bilgisini Değiştirebilir
+Yabancı hasta kimlik bilgisini değiştirebilir
+Hasta Kartından , Calıştığı Kurum Ekleyebilir
+Hasta Kayit Ekranında Mobil Onay Kodlarını Görüntüleyebilir
+Hasta Kayit Ekranında Hasta Email/Sms Ekranını açabilir
+Hasta kartında İndirimden Muaf alanı düzenleyebilir
+Hasta Birleştirme Yapabilir
+Hasta Tercüman Listesine Giriş Yapabilir veya Güncelleyebilir
+Hastanın GSM numarasını güncelleyebili
+KVKK Onay Ekranın da , Onay Alınamadı Seçebilir
+Protokol Açarken Ulkeye Gelis Tarihi dolu ise , Ulkeye Gelis Tarihini değiştirebilir
+Medikal Finans
+Medula İşlemleri
+Bir Medula Faturasını Kaç Kez Iptal Edebilir
+Takip Silebilir
+45 Günü Geçmiş Takipleri Silebilir
+Geçmiş Tarihe Takip Alabilir
+Protokol Icmali Değiştirebilir
+ProtokoleTakipBaglayabilir
+Medula Ekranından ,Hizmet Degistirebilir
+Takip Al işleminde , Meduladan Dönen Devreden Kurum Bilgisini Güncelleyebilir
+Faturalanmiş Protokolun Özet Epikrizini Değiştirebilir
+Yeşil Kart ve 65 Yaş Üstü Kurumlu Hastalarda Sevksiz Takip Alma yetkisi
+Rapor Başhekim Onay
+Biyometrik Doğrulama Yapılmadan Takip Alabilir
+Toplu Hizmet Kayıt ve Toplu Hizmet Kayıt İptali Yapabilir
+Tüm doktorların raporlarını onaylayabilir
+Yeşil Kart ve 65 Yaş Üstü Kurumlu Hastalarda normal takip alma yetkisi
+Yeşil Kart ve 65 Yaş Üstü Kurumlu Hastalarda acil,yoğun bakım takip alma yetkisi
+Faturalandırılamayan tutarları başka kuruma aktarabilir
+Toplu Protokol Güncellemeleri Yapabilir
+Protokol Ekranında Medula Özel Durumunu Degiştirebilir
+Başkasının Girdiği Açıklamaları Değiştirebilir
+Faturaya Dahil Edilmesin ve Faturaya Dahil Edilsin İptal Yapabilir
+Medula Protokol Evrak Durumu İşlem Yapabileceği menüler 
+60 / f12,f13,f14 kapsamında olan hastalarda normal takip alma yetkisi
+60 / f12,f13,f14 kapsamında olan hastalarda acil,yoğun bakım takip alma yetkisi
+Takip Alırken Manuel Branş Seçilebilir
+Hekim Olmayan Kullanıcı Mükerrerlik Sorgulaması Yapabilir
+Medula Fatura Dönemi Ekleyebilir
+SGK Kurum Faturası Kesilen Protokollerin Rapor Onay Durumunu Degiştirebilir
+Aynı Gün Takip Silebilir
+Evrak Durumu 'Onaylandı' Durumunda Olan Protokollerin Faturalarını İptal Edebilir
+Medula Ekranında Atama Yapabilir
+Medula ve Kurumsal Faturalama Ekranlarında Epikriz Aktarma Yapabilir
+Medula Ekranında Pasif Yap veya Pasif Kaldır İşlemlerini Yapabilir
+Toplu Tanı Ekleme İşlemi Yapabilir
+Karekod Bilgilerini Güncelleyebilir
+Geçici Koruma Kanunu (6458) Kapsamında Olan Hastalar için takip alama yetlisi
+Faturalanmış Protokollerde Epikriz Kilidi Açabilir
+Evrak Kayıt Durumunu Onaylayabilir
+Yeniden Fiyatlandır (SGK) işlemi Yapabilir
+Faturalanan İşlemlerde Hizmet Değiştir İşlemi Yapabilir
+Medula Kesinti Kaynağı Seçip Onaylayabilir
+Medula Ekranında Protokol Pasif Yap veya Pasif Kaldır İşlemlerini Yapabilir
+Ceza-i İşlem Konu ve Kurum Seçebilir
+Hakediş
+Hakediş Bilgileri Veri Aktarımı Yapabilir
+Hakediş Detaylarını Görebilir
+Hakediş Tutarlarını Göremesin
+Hakediş Tutarlarını Görebilsin
+Tahakkuka Göre Hakediş Hesaplayabilir
+Anlaşmalı Kurum
+Tedavi tekliflerini onaylayabilir mi?
+Tedavi teklif hizmet dökümü alındı durumunu iptal edebilir mi?
+Tedavi teklif dosyalarını silebilir mi?
+Ödeme Fatura Listesinde İşlem Yapabileceği Hasta , Kurum ve Tüm Faturalar  
+Provizyon Dosya Gönderimi Eksikse Kurum Teslim Yapabilir mi?
+Ödeme Fatura Eşleştirmede İşlem Yapabileceği Fonksiyonlar
+Kurum Teslim Tarihini Geçmişe Dönük Güncelleyebilir mi?
+Entegrasyon Icmal No Boş olsa bile Kuruma Teslim Yapabilir
+Excel Formül Listesi Ekranında Listeleyebileceği İşlem Tipleri
+Yeni Dosya Gönder XML Bilgisini Alabilir mi?
+Tüm teklifleri iptal edebilir mi?
+Yeni Dosya Gönder ekranında Fatura Ve Fatura Dökümü Dosyalarına , Dosya Yükleme Yapabilir mi?
+Faturaya Etiket Ekle/Sil Yapabilir Mi?
+Kurum Tanımında Görebileceği Sekmeler
+Protokol Süreç Arşiv Tarihini Değiştirebilir
+Arşivdeki Dosya Protokolünü Düzenleyebilir
+Excel ile formül kaydedebilir
+Excel Formül Listesi Ekranında Listeleyebileceği İşlem Tipleri
+Pusuladan Dosya Gönder İptal işlemini yapabilir mi?
+Pusula Entegrasyon Icmal No Çıkar işlemini yapabilir mi?
+Dosya Gönder Ekranında Dosya Kaldır işlemini yapabilir mi?
+Anlaşmalı Kurum ve Tarifeleri Silebilir
+Kampanya Bilgilerini Kaydedebilir
+Havuz Odeme Ekranında ,Yetkili Virman Islemleri
+Anlaşma formül kaydedebilir
+K.F ekranında , Başkasının Girdiği Açıklamaları Değiştirebilir
+Evrak Takip ekranında , Başkasının Girdiği Açıklamaları Değiştirebilir
+GFK ekranında , Başkasının Girdiği Açıklama Tipini Değiştirebilir
+Paket Limit Şablon Tanım Ekranında Kaydet Yapabilir
+Tarife Formülünü İptal Edebilir
+Hizmet Kartında Hizmet Fiyat Listesine Yeni Kayıt Yapabilir
+Paket Limit Kontrolü Yapabilir
+Provizyon Alabilir
+Provizyon Güncelleyebilir
+Agent Havuzundaki Kayıtlarda Manuel İşlem Yapabilir
+Havuz Ödemeleri
+Havuz Ödemelerinden İade Yapabilir
+Havuz Ödemlerini Onaylayabilir
+Klinik Araştırma
+Döngü Ekleyebilir
+Döngü Uygulandı Yapabilir
+Sıra Takibi Olmadan Döngü Ekleyebilir
+Finans
+
+EFatura
+YenidenGonderimYapabilir
+GIB'e bildirilmiş faturayı iptal edebilir
+GIB'e bildirilmiş faturayı düzenleyebilir
+Gelen E-Faturalarda Kabul ve Red İşlemi Yapabilir
+E-Arşiv Dönem Tarihini Güncelleyebilir
+İzibizden iptal olmuş faturayı Pusuladan iptal edebilir
+GIB'e bildirilmiş kurum faturasını iptal edebilir (Vezne 360)
+GIB'e bildirilmiş E-Faturay'ı iptal edebilir
+GIB'e bildirilmiş E-Arşiv faturayı iptal edebilir
+İşlem Yapabileceği Cari Tipleri
+Alıcı Firma Değiştirebilir
+E-Arşiv İptal (DGH)
+E-Fatura İptal (DGH)
+E-Fatura Hasta Faturası İptal Yetkisi
+Muhasebe Entegrasyon
+Aktarılmış  duruma getirebilir
+Hakediş(Diğer)
+Hakediş onayı verebilir.
+Hakediş red verebilir.
+Hakediş kesinti tutarı ekleyebilir.
+Merkez UHM Yetkisi
+Genel Müdür Yardımcısı Yetkisi
+Mali İşler Yetkisi
+Fatura Pasif Yapabilir
+Ödeme Onay İşlemi Yapılabilir
+Maliyet Muhasebesi
+Personel Maliyet Tutar Alanını Görebilir
+Masraf Merkezi Maliyet Tutar Alanını Görebilir
+Pos cihazı Terminal Id değiştirebilir
+Cari Kartı
+Cari Kartlarını Güncelleyebilir
+Cari Kart Oluşturabilir
+LIS Yetkileri
+Cross Match Sonucunu Onaylayabilir
+Cross Match Onaylarını İptal Edebilir
+Patoloji Sonucunu Kopyalayabilir
+Tekrar Numune Yazdırabilir
+Test Sonuçlarını Onaylayabilir
+Patoloji Raporu onay ve onay iptal yapabilir
+Donor Test Sonuçlarını Onaylayabilir
+Donor Uygunluk Verebilir
+Onaylanmiş testin onay iptalini yapabilir
+Test iptali yapabilir
+Kan Bankası
+Donör Muayene Bilgilerini Güncelleyebilir mi?
+Donör Sorgu Formu Bilgilerini Güncelleyebilir mi?
+Kan isteğini yatış protokolüne aktarabilir mi?
+Test iptali yapabilir
+Patoloji İstek Protokol Bölüm Doktor Bilgisini Değiştirebilir
+Borçlu Hastanın Patoloji Sonuçlarını Görebilir
+Patoloji Onay Tarihini Değiştirebilir
+Test İşlem
+Test sonuç tipini değiştirebilir(Sayısal/Text)
+Test sonuç yorumu yazabilir
+LH değerini değeştirebilir
+Referans değerini değeştirebilir
+Sonuç gizli yapabilir
+Tekrar numune alabilir
+Numune İptal Yapabilir
+Patoloji
+Onaylanma tarihini değiştirebilir
+Onaylanmış Patoloji isteklerine İşlem Ekle Sil Yapabilir
+Onaylanmış Patoloji İsteklerine Patoloji İşlem Düzenleme Ekranını Kullanabilir
+Onaylanmış Testin Adını Değiştirebilir.
+Sonuç Birimini Değiştirebilir
+Numune Kabul Tarihine Göre Listeleyebilir
+Numune Alma Tarihine Göre Listeleyebilir
+Gizli sonucu testi yazdirabilir
+USS Sorgulamasından Sonra Tetkik İstemeye Devam Edebilir
+Cross Match Sonucunu Manuel Uygun Yapabilir
+Kök Hücre
+Toplama Başladi Bitti Yapabilir
+İşleme Başaldı Bitti Yapabilir
+Durumu Geri Alaibilir
+Cross Match Uygun Değilse Manuel Hazır Duruma Getirebilir
+RIS Yetkileri
+Tetkik İşlemleri
+Tetkik İşlem Rezervasyon İptal Edebilir
+Çapraz okumayı yöntebilir
+Tutarları Görebilir
+Tetkik İşlem Merkeze Gönderebilir
+Tetkik İşlem Ekranında Tetkik İptal Edebilir
+Radyoloji Tetkik İşlem Ekranında İşaretleme Yapabilir
+Pacsa Tekrar Gönderebilir
+Tetkik Rapor
+Rapor onay ve onay iptal yapabilir
+Rapor yazabilir.
+Rapor Onay Iptal Yapabilir.
+Rapor Onay Yapabilir
+Tedavi
+Ameliyat İşlemleri
+Ameliyat süreçlerini geri alabilir
+Ameliyat isteğini yapan doktor bilgisini değiştirebilir.
+İstenilen ameliyat hizmetlerini değiştirebilir!!
+Fiyatlandırma Ekranında Diğer Teklifleri Görebilir
+Ameliyat Notlarında Tarih Güncelleme İşlemi Yapabilir
+Ameliyat İsteğini İptal Edebilir
+Ameliyat Notu Güncelleyebilir
+Ameliyat Ekranını Görebilir
+Müdahale Ekranını Görebilir
+Ameliyat Bitiş tarih ve saat bilgisini değiştirebilir.
+Doktor İşlemleri
+Doktor Hizmet Bilgileri Ekranındaki Fiyatları Görebilsin
+Doktor durumunu meşgul durumuna getirebilir ve protokol açılamaz
+Açıklama girmeden tanı,tetkik iptali yapabilir
+Tüm doktorlarda arama yapabilir
+Otomatik EHU Onayı
+Diş tedavi planında kendisinin uygulamadığı diş tedavisini uygulanmadı yapabilir
+Randevu çizelgesi görünüm yöntemi(2=Liste,Diğer=Takvim)
+Order Şablonu Silme İşlemi Yapabilir
+Doktor, Yatan Hasta Panelinde sadece kendi hastalarını görebilsin
+GenelMuayene İşlemleri
+Genel İstek Tasarımı Yapabilir
+Epikriz Kilitleyebilir
+Epikriz Kilidi Açabilir
+Doktor Gözlem Notlarını Günceleyebilir
+Doktor Gözlem Notlarını İptal Edebilir
+Hemşire Gözlem Notlarını Günceleyebilir
+Hemşire Gözlem Notlarını İptal Edebilir
+Doktor Hastanın Adres ve Telefon Bilgilerini Görebilir
+Özel Muayene Seçeneklerini Değiştirebilir
+Epikriz Bilgilerini Güncelleyebilir
+Konsultasyon Tarihilerini Güncelleyebilir
+Muayene Aktarim Bilgilerini Görebilir
+Tetkik İsteği ve Radyoloji İsteği Yapabilir
+Reçete yazabilir
+EImza PIN Sorgulama Şekli
+Protokol Listesinden Muayene Bilgilerine Ulaşabilir
+Bölüme Özel Epikriz Görüntüleyebilir
+Özgecmis Panelinde Default Gelecek Menü
+Laboratuvar İsteği Yapabilir
+Radyoloji İsteği Yapabilir
+Doktor Oküler Notlarını İptal Edebilir
+Konsultasyon İşlemleri
+Konsultasyon İsteği Yapabilir
+Konsultasyon İstek Notunu Değiştirebilir
+Yatan Hasta İşlemleri
+Diyet Mutfak Onayı Yapabilir
+Diyet Diyetisyen Onayı Yapabilir
+Gözlem Notunun Saatini Güncelleyebilir
+Planlanan Order Uygulama Saatini Güncelleyebilir
+Gerçekleşen Order Uygulama Saatini Güncelleyebilir
+Taburcu Edebilir
+Taburculuk İptal Edebilir
+Girilen Diyeti Güncelleyebilir
+Sevis Kabul Tarihini Güncelleyebilir
+Order Durdurabilir
+Order verebilir
+Kısmi karşılanmış orderı kapatabilir
+Diyet Mutfak Onay İptali Yapabilir
+Diyet Diyetisyen Onay İptali Yapabilir
+Order Lab. ve Rad. Sekmelerinden Girilen Order Tetkik İsteğe Dönüştürebilir
+Taburcu isteğini geri alabilir
+Bakım planında tamamlandı iptali yapabilir
+Yatan Hasta Servisinde Guncelleme Yapabilir
+Order Dozaj Birimini Değiştirebilir
+Onaylanan Diyetleri Değiştirebilir
+Kan İsteği Yapabilir
+Tahmini Taburculuk Tarihini Güncelleyebilir
+Hastaya ait geçmiş geliş bilgilerini görebilir
+Taburculuk Başlatılmadan ve Onaylanmadan Taburcu Edebilir
+Uygulanan Orderın Durumunu Bekliyor Durumuna Çekebilir
+Order Pas Geçebilir
+Order Pas Geç (İlac Zayi) Yapabilir
+İşlem Yapabileceği Yatak Durumları
+Taburcu İstek Yapabilir
+Manuel Kan Gazı Sonucu Ekleyebilir
+Tıbbi Form İşlemleri
+Geçmiş Tarih Verisini Güncelleyebilir
+Multidisipliner Konsey Raporu Onay İptal Edebilir
+Multidisipliner Konsey Raporu Tüm Doktorların Raporunu Güncelleyebilir
+Tıbbi Formlar Üzerinde Guncelleme Silme İşlemi Yapabilir
+İzolasyon Formunda Geçmiş Tarihe Ait Bilgileri Güncelleme
+Izolasyon Formunda Silme İşlemi Yapabilir
+Hizmet Rapor İşlemleri
+Hizmet Raporlarını Onaylayabilir
+Onaylanmış Hizmet Rapor Onay Iptal Yapabilir
+Hizmet Raporlarını Yazdırabilir
+Aşı İşlemleri
+Ats Gonderimi Yapilan Kayit Uzerinde Degisiklik Yapabilsin
+Randevu Yetkileri
+Poliklinik Randevu
+Randevudan Hasta Kabulde Bölüm-Doktor Bilgisini Değiştirebilir
+Doktor Kendi Randevusunu Kapatabilir
+Doktor Hasta Takipten Randevu Ekle Sil Güncelle Yapabilir
+Aynı Saate Randevu Verebilir
+Plansız Mesaileri Yönetebilir
+Randevu takip raporu yetkilide tüm kullanıcıların randevularını görebilir
+Başkasının verdiği referansları güncelleyebilir
+Randevu Kapatabilir, Kapalı Randevuyu Silme/Güncelleme İşlemi Yapabilir
+Randevu Durumlarını Güncelleyebilir
+Randevu Kayıt İşlemi Yaparken Randevu Sürelerini Ayarlayabilir
+Randevu Güncelleme İşlemi Yaparken Hasta Değişikliği Yapabilir
+Personel ait Web Randevu Durumunu Güncelleyebilir
+Gelen arama servisini kullanabilir
+Verilemeyen Randevuyu Güncelleyebilir
+Ameliyat Randevusu Olan Hekime Randevu Verebilir
+Hizmet Randevu
+Randevu Süresini Güncelleyebilir
+Geçmiş Tarihli Randevu İptali Yapabileceği Max. Süre (dk)
+Ameliyat Randevusu
+Başlayan Ameliyat Randevusuna Ait Bilgileri Güncelleyebilir
+Ameliyat tipindeki randevuları iptal edebilir.
+Cihaz Randevu
+Randevu Durumlarını Güncelleyebilir
+Kemoterapi Randevu
+Kemoterapi Randevuların Tarihini Güncelleyebilir
+Veri Yetkileri
+İndirim Yetki Kodları
+İndirim Onay Yetki Kodları
+Indirim Onaylayan Personel Yetkileri
+Vezne Yetkileri
+İşlem Yapabileceği Depolar
+Hemşire Yetkileri
+İşlem Yapabileceği Fiş Tipleri
+Doktor Yetkileri
+Hakedişini Hesaplayabileceği Doktorlar
+İşlem Yapabileceği Hizmet Malzeme Tipleri
+İşlem Yapabileceği Radyololi Bölümleri
+İşlem Yapabileceği Rapor Bölümleri
+İşlem Yapabileceği Katlar
+İşlem Yapabileceği Üniteler
+İşlem Yapabileceği Bölümler
+İşlem Yapabileceği Servis Birimleri
+Randevu Verebileceği Bölümler
+İndirim Yapabileceği İşlem Tipleri
+İşlem Yapabileceği Laboratuarlar
+Satınalma Uzmanı Yetkileri
+İşlem Yapabileceği Cihazlar
+Görebileceği Raporlar
+İşlem Yapabileceği Masraf Merkezi
+Rapor Düzenleyebileceği Doktorlar
+Ciro Raporları Doktor Yetkileri
+Ciro Raporları Bölüm Yetkileri
+İşlem Yapabileceği Pos Cihazları
+İşlem Yapabileceği Malzeme Alt Tipleri
+İşlem Yapabileceği Şubeler
+İşlem Yapabileceği Alınan Hizmet Tipleri
+İşlem Yapabileceği Kurumlar
+İşlem Yapabileceği Cariler
+Protokol Açabileceği Hekimler
+Protokol Açabileceği Protokol Tipleri
+Görebileceği Not Tipleri
+Protokol Süreç Tanımları
+İşlem Yapabileceği E-Raporlar
+Görebileceği Fatura Cari Yetki Tipleri
+Görebileceği Vezne Fatura Süreç Yetki Tipleri
+Onaylayabilecegi Indirim Onay Grupları
+İşlem Yapabileceği Hukuksal Takip Süreç Yetki Tipleri
+Görebileceği Vezne Fatura Para Birimleri
+İşlem Yapabileceği Vezne Fatura Süreç Yetki Tipleri
+İade Onay Departmanları
+Randevu Tipi Kategori Yetkileri
+Protokol Açabileceği Bölümler
+Fatura keserken seçebileceği E-Arşiv serileri
+Verebileceği Randevu Tipleri
+Pusula Api de Erişebileceği Methodlar
+İşlem Yapabileceği Referans Hakediş İşlem Tipleri
+İşlem Yapabileceği Ameliyat Bohça Stok Durumları
+İşlem Yapılamayacak İndirim Grupları
+İşlem Yapılamayacak AK Kurumları
+İşlem Yapılamayacak ÖSS Kurumları
+İşlem Yapabileceği Referans Avans İşlem Tipleri
+Randevu Takip Raporu Görebileceği Bölümler
+İşlem Yapabileceği İkinci Referans Hakediş İşlem Tipleri
+Görebileceği Dosya Tipi Erişim Kodları
+Hastaya Çıkış Yapabileceği Malzeme Tipleri
+İşlem Yapabileceği Hasta Tipleri
+Hastadan İptal Edebileceği Malzeme Tipleri
+Hastaya Çıkış Yapabileceği Hizmet Malzeme Tipleri
+Takip Silemeyeceği Bölümler
+Onaylanmış Dönem Tahsilat Bilgilerini Değiştirebileceği Tahsilat Tipleri
+İşlem Giremeyeceği Ödeme Tipleri
+İşlem Yapabileceği Yabancı Hasta Tipleri
+Onaya Gönderebileceği İndirim Onay Grupları
+Girebileceği Ameliyat Teklif Oranları
+Havale Tahsilatında İşlem Yapabileceği Bankalar
+İstenmeyen Olay Bildirimini Görebileceği Şubeler
+Havale Tahsilatında İşlem Yapabileceği Banka Hesapları
+Fatura Kesemeyeceği Kurumlar
+Havale İadesinde İşlem Yapabileceği Bankalar
+Giriş Yapamayacağı Hizmetler
+Sistem
+Rapor tasarımlarını değiştirebilir
+İş Emri Ataması Yapabilir
+Toplu Hizmet Cari Fiyat Güncelleyebilir
+Agent Servis
+Pyxis Hatalı Hasta Kayıt Mesajlarını Tekrar Gönderebilir.
+Pyxis Hatalı Order Mesajlarını Tekrar Gönderebilir.
+Pyxis Hatalı Hastaya İlaç Çıkış/İade Mesajlarını Tekrar İçeri Alabilir.
+Pyxis Hatalı Hastaya Malzeme Çıkış/İade Mesajlarını Tekrar İçeri Alabilir.
+Pyxis Ilaç-Malzeme Tanımı Tekrar Gönderebilir.
+Pacs Hatalı Hasta Kayıt Mesajlarını Tekrar Gönderebilir.
+Yoğun Bakım Hatalı Hasta Kayıt Mesajlarını Tekrar Gönderebilir.
+Analiz
+Hizmet Analiz Doktorlarda Fiyatları görünsün
+TSIM Ekranlarında Sorguları Güncelleyebilir
+TSIM Ekranlarında Sorguları Çalıştırabilir
+Protokol Defteri İmzalayabilir
+Protokol Defteri Yazdırabilir
+Hasta çağırma ekranı tasarımını değiştirebilir
+Ekranların Tasarımınu Yapabilir
+Hizmeti Aktif Pasif Yapabilir
+Dışarı Veri Aktarabilir(Excel,Pdf,TXT)
+Mail gönderebilir
+Özel Hizmet Notlarını Görebilir
+Günlük Kuru Güncelleyebilir
+Hakediş Dönem Mail Onayı Verebilir
+Hakediş Anlaşma Kilit İşlemleri Yapabilir
+Hakediş Tutarını Güncelleyebilir
+Listelerde Sütun Seçimi ve Gizleme Yapabilir
+Hastanın TC Kimlik Numarasını Görebilir
+Hastanın GSM Numarasını Görebilir
+Hizmet Tanımında Görebileceği Sekmeler
+Resmi Kurumlar için Maskesiz Çıktı Alabilir
+Dosya Listesinden Dosya Silebilir
+Kullanıcı Kartı Erişim Bilgilerini Düzenleyebilir
+Hizmet Kartında Değişiklik Yapabilir
+Minumum versiyon kontrolünden muaf
+Kullanabileceği ve görebileceği hakediş yöntemleri 
+Uygulama Zaman Aşımı Kontrolünden Muaf
+Farklı bilgisayarlarda Oturum açabilir
+Farklı bilgisayarlardaki Oturumları kapatabilir
+Stok
+Alış Fiyatını Görebilir
+Satış Fiyatını Görebilir
+Maliyet Fiyatını Görebilir
+Stok Mevcudunu Görebilir
+Sayım Oluşturabilir
+Sayım Bitirebilir
+Sayım Onaylayabilir
+Sayım İptal Edebilir
+Yalnız T.A. Yapılmaz Depoda Sayım Oluşturabilir
+Yalnız T.A. Yapılmaz Depoda Sayım Bitirebilir
+Yalnız T.A. Yapılmaz Depoda Sayım Onaylayabilir
+Yalnız T.A. Yapılmaz Depoda Sayım İptal Edebilir
+Malzeme Adını Güncelleyebilir
+Malzeme Kartı
+Tedarikçi Bilgilerini Güncelleyebilir
+Muhasebe Bilgilerini Güncelleyebilir
+Stok Takip Yöntemini Değiştirebilir
+Malzeme Kartı Oluşturabilir
+Malzeme Kartı Bilgilerini Güncelleyebilir
+Malzeme Kartını İptal Edebilir
+Malzeme Tipini Değiştirebilir
+Karekod Alanını Güncelleyebilir
+Hasta Stogunda İşlem Yapabilir
+Sipariş fiyatindan farklı giriş yapabilir
+Lot/Seri Miad Tarihini Güncelleyebilir
+Sayımda Mevcudu Görebilir
+Hasta İçin Malzeme İsteği Yapabilir
+Malzeme Kodunu Güncelleyebilir
+Kullanıcı Ayar : Miktar Giriş Ekranını Kullanacak
+Kullanıcı Ayar : Arama satırına otomatik focus yapılsın
+Hastaya İşlenebilen Malzemeyi Sarf Edebilir
+Hastaya Çıkış Ve İadeyi Iptal Edebilir
+Varlık
+Bakım Kalibrasyon
+Gerçekleşmiş bakım kalibrasyonu güncelleyebilir
+Özel Stok Kontrolü
+Depo Kartı Güncelleme Yetkisi
+Depo Talep Yapabilme Yetkisi
+Dönemsel Sayım Oluşturabilir
+İlaç Kontrol Edebilme Yetkisi
+İrsaliye girişinde Birim F. (TL) alanında düzenleme yapabilir
+Stok Durumu Ekranında Küsuratlı Lot Miktarlarını Temizleyebilir
+Hasta Stoğundan Eczaneye Bağış Yapabilir
+Hasta Stoğundan Hastaya İade Edebilir
+Hasta Stoğundan İmha Edebilir
+Stok Fiş İptal Edebilir
+Stok Fişinde Güncelleme Yapabilir
+Bakım Kalibrasyon
+Gerçekleşmiş bakım kalibrasyonu güncelleyebilir
+Entegrasyondan Gelen Stok İşlemleri İptal Edebilir
+Kapalı Envanter Dönemi Açabilir
+Numune Değerlendirme Güncelleyebilir
+Satınalma
+Satınalma Taleplerine İlgili Uzman Atayabilir
+Verilmiş Durumdaki Siparişi iptal Edebilir
+Satınalma Talebi Onaylayabilir
+Fiş Fatura Carisini Değiştirebilir
+Açık durumdaki siparişi güncelleyebilir
+Tüm Siparişleri Onaylayabilir
+İrsaliyede Siparişden Gelen Miktar ve Fiyat Bilgisini Değiştirebilir
+Stok Talebinden Satınalma Sürecini Başlat
+Satınalma Talebi
+Satınalma Talebini Kapatabilir
+Satınalma Talebini Reddedebilir
+Ortak
+İş Emirleri
+Tüm Bölüm Personeline İş Emri Atayabilir
+İş Emrinin Grubunu Değiştirebilme
+Kendine Atanmamış İş Emirlerini İşleme Alma Yetkisi
+Bekliyor durumundaki iş emrini tamamlayabilir
+İş talebinde bulunurken personel bilgisini değiştirebilsin mi?
+İş Emri Atanan Personeli Silebilir
+Personel GSM Numarasını Görebilir
+Tüm kullanıcılara canlı mesaj gönderebilir
+Tüm kullanıcıların hasta notlarını güncelleyebilir
+Hasta İlişkileri
+Bildirim Yönlendirme Yapabilir
+GRS Rapor Bildirim Gönderme Yetkisi
+Arsiv
+Dosyayı Taburcu Kontrole Gönderebilme
+Arşive Alma
+Medikal Muhasebeye Gönderebilme
+Kata Gönderebilme
+Medikal Muhasebeden Teslim Edebilme
+Taburcu Olan Listesini Gorebilme
+Taburcu Kontrol Listesini Gorebilme
+Medikal Muhasebe Listesini Gorebilme
+Bashekimlik Listesini Gorebilme
+Hemsirelik Listesini Gorebilme
+Arsiv Bekleyenler Listesini Gorebilme
+Arsiv Listesini Gorebilme
+Eczane
+Kirmizi Reçeteli İlaç İade Onayı Yapabilir
+Toplu Sarf Bildirimi Yapabilir
+Order Onaylayabilir
+Order Karşılayabilir
+Hasta Stoğu İmha Onayı/Reddi Yapabilir
+IK
+Personel
+Zimmet formu yazdırabilir
+Personel tanımında Web randevusu verilir bilgisini güncelleyebilir
+Personel Kaydını Aktif Edebilir
+Personel Demo Ekleyebilir
+Onaylanmış İzni Geri Alabilir
+CRM
+Girilen görüşme bilgilerini güncelleyebilir 
+Başkasının yapmış olduğu görüşmeyi görebilir. 
+Başkasının yapmış olduğu görüşme bilgilerini güncelleyebilir
+Kalite
+Kalite Sorgularını Güncelleyebilir
+Bildirimi Yapılmayan GRS Kayıtlarını Silebilir
+Kalite Sorgu Gruplarına Ekleme Yapabilir
+Kalite Sorgularına Ekleme Yapabilir
+Tüm İstenmeyen Olay Bildirimlerini Görebilir
+ComedEMR
+İlerlemiş taskı iptal edebilir
+PRM
+Yeni Randevu Oluşturabilir
+Toplu hizmet aktarımı yapabilir
+Hizmet aktarımı yapabilir
+Personel aktarımı yapabilir
+Pusula Api
+Sınırlı Kullanıcı (Pusula Api'de sadece belirlenen servislere erişebilir.)
+Entegrasyon
+SAP Memorial
+Fatura Aktarım Yönetimini Yapabilir
+Onaysız Vezne Dönem Tahsilatını Aktarabilir
+Ingenico Pos
+Otomatik Atanan Pos Cihazını Değiştirebilir
+SAP Kızılay
+SAP Fatura aktarımı yapabileceği kurum tipleri (Kızılay) 
+Omnitech
+Omnitech Faturasını İptal Etmeden Fatura İptal Edebilir
+Omnitech Faturasını Silebilir
+Geçmişe Ait Avansları Ayrı Şekilde İptal Edebilir (Omnitech)
+Omnitech Faturalarını Görüntüleyebilir
+Diş Tedavi
+Fiyatlandırma
+Diş Fiyatlandırma Ekranında Durum Değişikliği Yapabilir
+Onaylandı Durumunu Geri Çekebilir
+Onaylanan indirimi Tekrar Güncelleyebilir
+Diş Muayene Detay ekranlarında fiyat bilgisini görebilir
+Diş Muayene Detay ekranlarında Tedavi Planı Güncelle butonunu görebilir.
+Analiz Yetkileri
+Protokol Listesi
+Başka Kullanıcıların Protokollerini Görüntüleyebilir
+Protokol Listesinde Veri Çekme Süresi
+Protokol Listesi Modülünde Tıbbi Bilgi Görebilir
+Hakedis
+Hakediş Dönem Mail Onayı Verebilir
+Hakediş Anlaşma Kilit İşlemleri Yapabilir
+Hakediş Tutarını Güncelleyebilir
+Kullanabileceği ve görebileceği hakediş yöntemleri 
+Gider Tanımı yapabileceği Gider Tipleri
+Police
+Anlaşma Tarihi Değiştirebilir
+Anlaşma İçeriği Değiştirebilir
+Anlaşma İçeriği Görüntüleyebilir
