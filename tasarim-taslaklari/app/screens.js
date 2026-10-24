@@ -883,7 +883,8 @@
         kisisel:`${f("pasaport", "Pasaport no", inp("pasaport"))}${f("anne", "Anne adı", inp("anne"))}${f("baba", "Baba adı", inp("baba"))}
           ${f("kan", "Kan grubu", selOf("kan", ["0 Rh(+)", "0 Rh(-)", "A Rh(+)", "A Rh(-)", "B Rh(+)", "B Rh(-)", "AB Rh(+)", "AB Rh(-)"]))}
           ${f("medeni", "Medeni hal", selOf("medeni", IK_MEDENI))}${f("egitim", "Eğitim", selOf("egitim", IK_EGITIM))}${f("uyruk", "Uyruk", inp("uyruk"))}${f("dogum", "Doğum tarihi", `<input type="date" data-f="dogum" value="${H.esc(p.dogum || "")}">`)}`,
-        calisma:`${f("calismaGun", "Çalışma günleri", inp("calismaGun", "ör. Pzt-Cuma"))}${f("calismaSaat", "Çalışma saatleri", inp("calismaSaat", "ör. 08:00-17:00"))}
+        calisma:`<div class="fr" style="grid-column:1/-1"><label>Haftalık çalışma takvimi</label><div class="pers-takvim">${["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"].map(gn => { const h = (p.haftalik || {})[gn] || {}, calis = h.calisiyor != null ? h.calisiyor : (gn !== "Cumartesi" && gn !== "Pazar"); return `<div class="ptk-row"><label class="dc-chk"><input type="checkbox" data-wd="${gn}"${calis ? " checked" : ""}> ${gn}</label><input type="time" data-ws="${gn}" value="${H.esc(h.bas || "08:00")}"><span>–</span><input type="time" data-we="${gn}" value="${H.esc(h.bit || "17:00")}"></div>`; }).join("")}</div></div>
+          ${f("calismaGun", "Özet (serbest)", inp("calismaGun", "ör. Pzt-Cuma"))}${f("calismaSaat", "Çalışma saatleri", inp("calismaSaat", "ör. 08:00-17:00"))}
           ${f("nobet", "Nöbet durumu", inp("nobet", "ör. ayda 4 nöbet"))}${f("sgk", "SGK / sosyal sigorta no", inp("sgk"))}${f("izin", "Yıllık izin (gün)", inp("izin"))}
           ${f("ranSure", "Randevu çizelge süresi (dk)", inp("ranSure"))}${f("ranGunluk", "Günlük randevu sayısı", inp("ranGunluk"))}
           ${f("saatlikRandevu", "Saatlik ara randevu sayısı", inp("saatlikRandevu"))}${f("ayniTarihRandevu", "Aynı tarihli randevu sayısı", inp("ayniTarihRandevu"))}
@@ -904,6 +905,7 @@
             const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "saatlikRandevu", "ayniTarihRandevu", "kurumTipi", "telefon", "eposta", "adres", "acilKisi"].forEach(k => rec[k] = g(k));
             rec.yetki = [...m.querySelectorAll("[data-y]:checked")].map(x => x.dataset.y);
             rec.randevuOzellik = [...m.querySelectorAll("[data-rf]:checked")].map(x => x.dataset.rf);
+            rec.haftalik = {}; m.querySelectorAll("[data-wd]").forEach(cb => { const gn = cb.dataset.wd; rec.haftalik[gn] = { calisiyor:cb.checked, bas:(m.querySelector(`[data-ws="${gn}"]`) || {}).value || "", bit:(m.querySelector(`[data-we="${gn}"]`) || {}).value || "" }; });
             H.data.personel = H.data.personel || [];
             if (existing) Object.assign(p, rec); else { const np = Object.assign({ id:"per" + Date.now() }, rec); H.data.personel.unshift(np); if (seed) seed._persId = np.id; }
             H.log(existing ? "Personel güncellendi" : "Personel eklendi", ad + " " + rec.soyad); H.closeModal(); H.toast("Kaydedildi: " + ad); H.go("ik");
