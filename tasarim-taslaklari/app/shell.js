@@ -259,7 +259,7 @@
     ["beds", "grid", "m_beds", "beds"], ["gelisler", "list", "m_gelisler", "beds"], ["wall", "activity", "m_wall", "beds"], ["unitdash", "chart", "m_unitdash", "beds"], ["tasks", "list", "m_tasks", "tasks"], ["bedside", "tablet", "m_bedside", "bedside"],
     ["alarms", "bell", "m_alarms", "alarms", () => H.openAlarms().length],
     ["hand", "clip", "m_hand", "hand", () => H.data.handovers.filter(h => h.state === "waiting" && H.inScope(h.pid)).length, "y"],
-    ["admission", "userPlus", "m_admission", ["admission", "admission_view"]], ["randevu", "clock", "m_randevu", ["admission", "beds"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
+    ["randevu", "clock", "m_randevu", ["admission", "beds"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
     ["rrt", "zap", "m_rrt", "rrt"], ["pharmacy", "pill", "m_pharmacy", "pharmacy"], ["labislem", "flask", "m_labislem", ["beds", "summary"]],
     ["devices", "cpu", "m_devices", "devices", null, null, [["ozet", "Özet", "devices"], ["envanter", "Envanter", "devices"], ["takvim", "Bakım takvimi", "maintenance"], ["ariza", "Arıza kayıtları", "devices"], ["odalar", "Yataklar ve odalar", "devices"]]],
     ["workload", "users", "m_workload", ["staff_view", "occupancy"]], ["infection", "shield", "m_infection", ["quality", "beds"]],
@@ -328,7 +328,7 @@
       <div class="today" data-hclock title="${H.esc(H.today())}">${I("clock")}<span>${H.esc(H.wd(H.calOff()))} ${H.dm(H.calOff())}</span><b>${H.now()}</b></div>
       ${H.can("beds") || H.can("tasks") ? `<div class="shift" title="Nöbet ${H.SHIFT.start} → ${H.SHIFT.end}"><i></i>${H.t("shift_left_lbl")} <b data-hshift>${H.SHIFT.left}</b></div>` : ""}
       <div class="tools">
-        ${(H.can("admission") || H.can("beds")) ? `<button class="chip p" data-menu="yeni" title="Yeni kayıt">${I("plus")}<span>Yeni</span>${I("chevD")}</button>` : ""}
+        <button class="chip p" data-menu="yeni" title="Yeni">${I("plus")}<span>Yeni</span>${I("chevD")}</button>
         <button class="lsel" data-menu="lang" title="Dil / Language">${H.flagBox(H.state.lang)}<b>${H.state.lang}</b>${I("chevD")}</button>
         <button class="ib" data-theme-toggle title="${H.t(H.state.theme === "gece" ? "lg_day" : "lg_night")}">${I(H.state.theme === "gece" ? "sun" : "moon")}</button>
         <button class="ib" data-fullscreen title="${H.t("tb_full")}">${FS_IC}</button>
@@ -478,10 +478,11 @@
     const mn = e.target.closest("[data-menu]");
     if (mn) { e.stopPropagation(); const k = mn.dataset.menu, u = H.state.user;
       if (k === "notif") return openMenu(mn, notifHtml(), "ncenter");
-      if (k === "yeni") return openMenu(mn, `<div class="who"><b>Yeni kayıt</b></div><hr>
-        ${H.can("admission") ? `<a data-nav="admission" data-tab="ayaktan">${I("user")}Ayaktan başvuru</a><a data-nav="admission" data-tab="elle">${I("userPlus")}Hasta kabul (yatış)</a>` : ""}
+      if (k === "yeni") return openMenu(mn, `<div class="who"><b>Yeni</b><small>Yetkinize göre işlemler</small></div><hr>
+        ${H.can("admission") ? `<a data-nav="vezne">${I("file")}Hasta kabul / ara (Ön Büro)</a><a data-nav="admission" data-tab="ayaktan">${I("user")}Ayaktan başvuru</a><a data-nav="admission" data-tab="elle">${I("userPlus")}Hasta kabul (yatış)</a>` : ""}
         ${H.pages["randevu"] && (H.can("admission") || H.can("beds")) ? `<a data-nav="randevu">${I("clock")}Randevu</a>` : ""}
-        ${H.pages["ik"] && H.can("admin_users") ? `<a data-nav="ik">${I("users")}Personel</a>` : ""}`, "ymenu");
+        ${H.pages["ik"] && H.can("admin_users") ? `<a data-nav="ik">${I("users")}Personel</a>` : ""}
+        ${H.pages["istakip"] && H.can("destek_ac") ? `<a data-nav="istakip">${I("clip")}Destek talebi</a>` : ""}`, "ymenu");
       if (k === "preview") return openMenu(mn, `<div class="who"><b>${H.t("view_as")}</b><small>Her rolün menüsü ve ekranları, o rolün yetkisiyle. Her geçiş denetim kaydına yazılır.</small></div><hr>
         <a data-preview="">${I("shield")}${H.t("view_own")}${H.state.realUser ? "" : " ✓"}</a><hr>` +
         Object.entries(H.data.roles).filter(([k2]) => k2 !== "sistem").map(([k2, r]) => `<a data-preview="${k2}">${I(r.names ? "user" : "eye")}<span>${H.esc(r.name)}${PREVIEW_EXTRAS[k2] ? `<br><small class="mute">${PREVIEW_EXTRAS[k2].map(x => H.EXTRA[x].name).join(" · ")} dahil</small>` : ""}</span>${H.state.user.role === k2 && H.state.realUser ? " ✓" : ""}</a>`).join(""), "pvmenu");
