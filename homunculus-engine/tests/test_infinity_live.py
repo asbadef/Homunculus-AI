@@ -420,6 +420,21 @@ def test_a_result_after_a_long_spell_of_stars_has_no_time_because_flagged_record
     assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1601.)
 
 
+def test_a_result_after_minutes_of_the_same_triple_is_stamped_because_every_repeat_renews_the_run():
+    # The counterpart of the spell of stars: the monitor repeats its last result in every packet, so
+    # a result that follows ten minutes of a stable triple is preceded by a complete valid triple
+    # one second earlier. If only a CHANGE renewed the run, no real result would ever be stamped.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    for second in range(1, 600):                                     # 599 repeats, 1001 .. 1599
+        now[0] = 1000. + second
+        view.consume([event(now[0], nbp(120, 80, 93))])
+    now[0] = 1600.5
+    view.consume([event(1600.5, nbp(131, 85, 100))])                 # 1.5 s after the last repeat
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1600.5)
+
+
 def test_packets_the_view_drops_do_not_renew_the_run():
     # Old, already delivered, replayed, undecodable and from-the-future packets are not heard: a
     # complete triple in one of them must not make the next change look watched.

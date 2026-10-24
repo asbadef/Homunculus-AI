@@ -189,6 +189,7 @@ class LiveResearchView:
                     }
                     if name in NBP:
                         # When the value last changed (receipt time), or None: not known.
+                        # Describes the held reading; `status` says whether it is current (stale keeps it).
                         parameters[name]["changed_at"] = self._nbp_changed_at(state, name, record)
                 # The device's status follows its parameters, not its last packet. A bed
                 # interleaves waveform-shaped payloads that carry no records, so judging by
