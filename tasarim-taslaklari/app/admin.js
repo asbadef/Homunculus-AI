@@ -216,9 +216,10 @@
   /* 24.09 (3. oturum) · Ozan #77: elle kayıtta iki numara oluşur.
    *   Hasta no (HN) · KİŞİYE ait, bir kez verilir, sonraki yatışlarda aynı kalır.
    *   Protokol (G-) · bu YATIŞA ait, geçici; hastane kaydıyla eşleşince hastanenin protokolü gelir, G- numarası geçmişte kalır. */
-  let hnSeq = 0;
-  const nextHN = () => "HN-" + String(260200 + ++hnSeq).padStart(7, "0");
-  const peekHN = () => "HN-" + String(260200 + hnSeq + 1).padStart(7, "0");
+  // HN kişiye özgü; mevcut (kalıcı dahil) hastaların en büyük numarasından üretilir → açılışlar arası çakışmaz.
+  const nextHNnum = () => Math.max(260200, ...H.data.patients.map(p => +String(p.hn || "").replace(/\D/g, "") || 0)) + 1;
+  const nextHN = () => "HN-" + String(nextHNnum()).padStart(7, "0");
+  const peekHN = () => "HN-" + String(nextHNnum()).padStart(7, "0");
   function numbersModal(p) {
     H.modal({ title:"Kayıt açıldı · " + esc(H.bed(p.bed).no),
       body:`<div class="adm-nums"><div><small>Hasta no</small><b class="mono">${esc(p.hn)}</b><span>Kişiye ait · sonraki yatışlarda da aynı</span></div>
@@ -236,7 +237,7 @@
     child:{ hr:102, sbp:100, dbp:62, map:75, spo2:98, rr:22, temp:36.9, o2:"Oda havası", loc:"Uyanık" },
     neonate:{ hr:140, sbp:64, dbp:38, map:47, spo2:97, rr:46, temp:36.8, o2:"Oda havası", loc:"—" } };
   const nurseFor = (unitId) => { const n = H.data.users.find(x => x.active !== false && x.role === "hemsire" && x.units.includes(unitId)); return n ? n.u : null; };
-  function admit(d, bedId) {
+  function admit(d, bedId, persist = true) {
     const b = H.bed(bedId), u = H.unit(b.unitId), ag = d.ageGroup || "adult";
     const p = Object.assign({ id:nextPid(), name:d.name, sex:d.sex, age:d.age || 0, ageGroup:ag, bed:bedId, dx:d.dx || "—", icd:"—", admitDays:0,
       attending:d.attending || null, nurse:nurseFor(u.id), blood:d.blood || "Bilinmiyor", weight:d.weight || null, height:d.height || null,
@@ -247,6 +248,8 @@
     // Hasta no kişiye ait: aynı FİN daha önce geldiyse o hasta no tekrar kullanılır (protokol her gelişte yeni).
     if (!p.hn) { const prev = p.fin && H.data.patients.find(x => x.fin && x.hn && x.fin.toUpperCase() === p.fin.toUpperCase()); p.hn = prev ? prev.hn : nextHN(); }
     b.status = "dolu"; b.pid = p.id; H.data.patients.push(p);
+    // Kullanıcının açtığı hasta kalıcı listeye de yazılır (yenileyince kaybolmasın); demo tohum persist=false.
+    if (persist) { (H.data.userPatients = H.data.userPatients || []).push(p); try { H.saveData && H.saveData(); } catch (e) {} }
     return p;
   }
   const prune = (arr, pid) => { if (!Array.isArray(arr)) return; for (let i = arr.length - 1; i >= 0; i--) if (arr[i].pid === pid) arr.splice(i, 1); };
@@ -255,7 +258,7 @@
   // Demo: acilden gelen, kimliği bilinmeyen bir geçici kayıt (eşleşme ekranı boş görünmesin)
   (function seed() { const b = H.bed("cer-6"); if (!b || b.status !== "bos") return; const proto = nextG();
     admit({ name:`Bilinmeyen hasta (E) · ${proto}`, sex:"E", age:45, ageGroup:"adult", dx:"Acil başvuru · kimlik belgesi yok, gözlem", attending:"dr.kamran",
-      meta:{ temp:true, proto, source:"elle", unknown:true, estAge:45, consent:"sonra alınacak", admitType:"medikal", admittedAt:H.at("19:36"), admittedBy:"kabul.ulviyye" } }, "cer-6"); })();
+      meta:{ temp:true, proto, source:"elle", unknown:true, estAge:45, consent:"sonra alınacak", admitType:"medikal", admittedAt:H.at("19:36"), admittedBy:"kabul.ulviyye" } }, "cer-6", false); })();
 
   /* ================= yapı seçici: Bina > Kat > Birim > oda/yatak ızgarası ================= */
   const locOf = (unitId) => { for (const b of H.data.hospital.buildings) for (const f of b.floors) if (f.units.some(u => u.id === unitId)) return { b:b.id, f:f.id }; return {}; };
@@ -448,15 +451,16 @@
       const bols = H.klinikBolumler(), hekims = (H.data.users || []).filter(u => u.role === "hekim");
       const free = ((H.unit("pol") || { beds:[] }).beds).filter(b => b.status === "bos");
       const gelisL = secGet("gelis"), protoL = secGet("protokol"), erisimL = secGet("erisim"), tercihL = secGet("tercih"), kurumL = secGet("kurum");
+      const pre = (H.state.params && H.state.params.pre) || {};   // vezne aramasından gelen ad/FİN/telefon önden dolar
       body.innerHTML = `<div class="note i" style="margin-bottom:12px">${I("user")} Ayaktan (poliklinik) başvuru: kimlikle hafif kayıt açılır, bölümün muayene hizmeti otomatik eklenir ve hasta hekimin <b>Tüm Gelişler</b> listesine düşer. Yatak gerekmez.</div>
         <div data-ayform><fieldset style="border:0;padding:0;margin:0;min-width:0"${can ? "" : " disabled"}>
         <div class="g2">
           <div class="box"><h5>${I("user")} Kimlik</h5>
-            ${fld("name", "Ad soyad", inp("name", "", 'placeholder="Ad soyad"'), 1)}
-            ${fld("fin", "FİN kod", inp("fin", "", 'maxlength="7" placeholder="7 karakter" style="text-transform:uppercase"'))}
+            ${fld("name", "Ad soyad", inp("name", pre.name || "", 'placeholder="Ad soyad"'), 1)}
+            ${fld("fin", "FİN kod", inp("fin", pre.fin || "", 'maxlength="7" placeholder="7 karakter" style="text-transform:uppercase"'))}
             ${fld("sex", "Cinsiyet", opts("sex", [["K", "Kadın"], ["E", "Erkek"]], "K"))}
             ${fld("age", "Yaş", `<input data-f="age" type="number" min="0" class="adm-num" placeholder="yaş">`)}
-            ${fld("phone", "Telefon", `<div class="adm-row" style="flex-wrap:nowrap"><span class="tag mono">+994</span>${inp("phone", "", 'inputmode="tel" placeholder="50 123 45 67"')}</div>`)}
+            ${fld("phone", "Telefon", `<div class="adm-row" style="flex-wrap:nowrap"><span class="tag mono">+994</span>${inp("phone", pre.phone || "", 'inputmode="tel" placeholder="50 123 45 67"')}</div>`)}
           </div>
           <div class="box"><h5>${I("clip")} Başvuru</h5>
             ${fld("gelis", "Geliş tipi", sel("gelis", gelisL, "Ayaktan"), 1)}

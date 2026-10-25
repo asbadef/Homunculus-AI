@@ -661,9 +661,17 @@
    * böylece her açılışta tazelenir ve kırılmaz. Hasta kimlikleri sabit üretildiği için istem/fatura bağları korunur.
    * Şema değişince PERSIST_VER artırılır → eski kayıt yok sayılır. Roller ayrı (hmc.roles) saklanır. */
   const PERSIST_VER = "v3";   // v3: vezne dönemi per-banko (vezneDonemler); eski tek-dönem kaydı sıfırlanır
-  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "danismanlar", "iptaller", "vezneDonemler", "vezneDonemSeq", "rndDoktorSeeded"];
+  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "danismanlar", "iptaller", "vezneDonemler", "vezneDonemSeq", "rndDoktorSeeded", "userPatients"];
   try { const raw = localStorage.getItem("hmc.data." + PERSIST_VER); if (raw) { const o = JSON.parse(raw); PERSIST_KEYS.forEach(k => { if (o[k] !== undefined) H.data[k] = o[k]; }); } }
   catch (e) { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} }
+  /* Kullanıcının açtığı hastalar (vezne/kabul "Kaydet") kalıcıdır: demo hastalar her açılışta koddan tazelenir,
+   * userPatients ise saklanıp üstüne eklenir. Böylece "kayıt açtım, yenileyince kayboldu" sorunu biter. */
+  (H.data.userPatients || []).forEach(p => {
+    if (!H.data.patients.some(x => x.id === p.id)) H.data.patients.push(p);
+    const b = p.bed && H.bed(p.bed); if (b && b.status === "bos") { b.status = "dolu"; b.pid = p.id; }
+  });
+  // Yeni hastayı hem demo listeye hem kalıcı listeye ekler ve kaydeder (tek giriş noktası).
+  H.addPatient = (p) => { H.data.patients.push(p); (H.data.userPatients = H.data.userPatients || []).push(p); try { H.saveData && H.saveData(); } catch (e) {} return p; };
   H.saveData = () => { try { const o = {}; PERSIST_KEYS.forEach(k => { if (H.data[k] !== undefined) o[k] = H.data[k]; }); localStorage.setItem("hmc.data." + PERSIST_VER, JSON.stringify(o)); } catch (e) {} };
   H.resetData = () => { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} location.reload(); };
   try { setInterval(H.saveData, 3000); window.addEventListener("pagehide", H.saveData); document.addEventListener("visibilitychange", () => { if (document.hidden) H.saveData(); }); } catch (e) {}

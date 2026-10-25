@@ -480,7 +480,7 @@
     if (p) { H.go("hasta360", { pid:p.id }); return; }
     H.modal({ title:"Hasta bulunamadı", body:`<p>Bu FİN / hasta no ile kayıtlı hasta yok:</p><p><b class="mono">${H.esc(raw)}</b></p><p class="adm-sub">Yeni kayıt açmak ister misiniz? (Hasta kabul ekranına gidersiniz.)</p>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-yeni>Yeni kayıt aç</button>`,
-      onMount(m) { m.querySelector("[data-yeni]").onclick = () => { H.closeModal(); H.go("admission"); }; } });
+      onMount(m) { m.querySelector("[data-yeni]").onclick = () => { H.closeModal(); H.go("admission", { tab:"ayaktan", pre:/^[A-Za-z0-9]{7}$/.test(raw) ? { fin:raw.toUpperCase() } : { name:raw } }); }; } });
   }
   function railModal(lbl, rd) {
     const head = `<tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr>`;
@@ -561,7 +561,7 @@
       return `<div class="box"><div class="ist-sec ist-hd" style="margin:0 0 8px"><h5>Hasta arama</h5><button class="btn sm" data-vsdetay>Arama detay ▾</button></div>
         <div class="icd-form vz-search">${sf("fin", "Kimlik / FİN no")}${sf("hn", "Hasta no")}${sf("ad", "Adı")}${sf("soyad", "Soyadı")}${sf("baba", "Baba adı")}${sf("ana", "Ana adı")}${sf("tel", "Telefon")}${sf("pasaport", "Pasaport no")}${sf("uyruk", "Uyruk")}</div>
         <div class="icd-form vz-search hidden" data-vsdetaym style="margin-top:4px">${sf("proto", "Protokol no")}${sf("bolum", "Bölüm")}${sf("doktor", "Doktor")}${sf("tarih1", "Tarih (baş)")}${sf("tarih2", "Tarih (bitiş)")}</div>
-        <div class="r" style="gap:6px;margin-top:8px"><button class="btn p sm" data-vsara>${I("search") || ""} Listele</button><button class="btn sm" data-vstemizle>Temizle</button></div></div>
+        <div class="r" style="gap:6px;margin-top:8px"><button class="btn p sm" data-vsara>${I("search") || ""} Listele</button><button class="btn sm" data-vstemizle>Temizle</button><span class="spacer"></span><button class="btn sm" data-vsnew title="Aradığın hasta yoksa yeni hasta + kayıt (protokol) aç">${I("plus") || ""} Yeni hasta + kayıt aç</button></div></div>
         <div class="ist-sec ist-hd"><h5>Hasta listesi</h5><span class="adm-sub" data-vscount>${hep.length} hasta</span></div>
         <div class="tw"><table class="t"><thead><tr><th style="width:80px">Durum</th><th style="width:100px">Hasta no</th><th style="width:100px">Kimlik</th><th>Adı</th><th>Soyadı</th><th>Baba adı</th><th style="width:100px">Doğum</th><th>Kurum / SGK</th><th style="width:110px">Telefon</th><th style="width:110px">Güvenlik</th></tr></thead><tbody data-vsbody>
         ${hep.length ? hep.map(row).join("") : `<tr><td colspan="10" class="mute" style="padding:16px;text-align:center">Hasta yok.</td></tr>`}</tbody></table></div>`; };
@@ -670,6 +670,9 @@
       inputs.forEach(i => i.addEventListener("keydown", (e) => { if (e.key === "Enter") uygula(); }));
       const ara = root.querySelector("[data-vsara]"); if (ara) ara.onclick = uygula;
       const tmz = root.querySelector("[data-vstemizle]"); if (tmz) tmz.onclick = () => { inputs.forEach(i => i.value = ""); uygula(); };
+      const yeni = root.querySelector("[data-vsnew]"); if (yeni) yeni.onclick = () => { const g = k => { const el = root.querySelector(`[data-vs="${k}"]`); return (el && el.value || "").trim(); };
+        const ad = g("ad"), soyad = g("soyad"), nm = [ad, soyad].filter(Boolean).join(" ");
+        H.go("admission", { tab:"ayaktan", pre:{ name:nm, fin:g("fin").toUpperCase(), phone:g("tel") } }); };
       const dt = root.querySelector("[data-vsdetay]"), dtm = root.querySelector("[data-vsdetaym]"); if (dt && dtm) dt.onclick = () => dtm.classList.toggle("hidden");
       if (body) body.oncontextmenu = (ev) => { const tr = ev.target.closest("[data-h3open]"); if (!tr) return; ev.preventDefault(); const pp = H.pt(tr.dataset.h3open); if (!pp) return;
         const kabul = (k, l) => ["Hasta kabul: " + l, () => { pp.encounter = k === "yogun" ? "yogun" : (k === "kontrol" || k === "donor" ? "ayaktan" : k);
