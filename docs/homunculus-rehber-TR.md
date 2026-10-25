@@ -570,7 +570,9 @@ Dalga 3'te geldi: 3.6.
 - *Homunculus'ta:* Ayarlar › "Ses ve bildirim". **Ses** (kapalı başlar, açılınca bu tarayıcıda
   saklanır): yanıt bekleyen alarmların en kötüsüne göre, eski arayüzün ses düzeniyle çalar —
   kritikte 2,5 saniyede bir 10 vuruş (5+5), yüksekte 12, ortada 20 saniyede bir 3 vuruş; düşük ve
-  bilgi sessizdir; önem derecesi bilinmeyen bir alarm kritik gibi çalar. Alarm onaylanınca susar.
+  bilgi sessizdir; önem derecesi bilinmeyen bir alarm kritik gibi çalar. Alarm onaylanınca susar;
+  durumu geçince de susar — kimsenin onaylamadığı kritik bir alarm durumu geçince «geçti ·
+  onaylanmadı» olarak yanıt beklemeye devam eder ama çalmaz, yeni bildirim de getirmez (G2-A1).
   Ekran **kilitliyken de çalar**; oturum kapanınca durur, o an çalmakta olan vuruşlar da kesilir.
   Pano ilk yüklemesini aldıysa, sunucuyla akış daha açılmadan da çalar; akış koparsa panonun son
   bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcı sesi askıya alıp geri
@@ -584,8 +586,9 @@ Dalga 3'te geldi: 3.6.
   Bildirim kilit açılınca, cevaplanan bir alarm yeniden bekleyince ve her yeni oturumda yeniden
   gelir; dışarıdan kapatılırsa (kullanıcı, işletim sistemi, başka bir sekme) ve alarm hâlâ
   bekliyorsa, panonun bir sonraki değişikliğinde yeniden gelir. Aynı tarayıcının iki sekmesi aynı
-  alarm için bildirimi üst üste yığmasın diye her bildirim alarmına göre etiketlenir; etiket
-  alarmın kimliğinin bir özetidir (hash), hasta kimliğini taşımaz. Sayfa kapanınca ya da yenilenince açık bildirimler kapanır; sayfa
+  alarm için bildirimi üst üste yığmasın diye her bildirim alarmın bölümüne göre etiketlenir
+  (G2-A1: kapanıp yeniden çıkan bir alarm yeni bir bildirimdir, eskisinin yerine sessizce geçmez);
+  etiket bölümün kimliğinin bir özetidir (hash), hasta kimliğini taşımaz. Sayfa kapanınca ya da yenilenince açık bildirimler kapanır; sayfa
   kapalıysa bildirim gelmez; güvenli olmayan (HTTPS olmayan) bir adreste tarayıcı bildirim
   göstermez, ekran da bunu söyler. Eski arayüzden taşındı (G1-16). Ses düzeni eski arayüzünkidir;
   bir klinik standarda (IEC 60601-1-8) göre gözden geçirilmedi — Grup 2'de bir klinisyen ya da
@@ -932,9 +935,15 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
    Kırmızı parametrenin düşürmeyi engellemesi gerekip gerekmediği **açık bir klinik karardır**:
    kasada bir kaynak ve bir klinisyenin onayını bekliyor (yol haritası, kullanıcı kararı 9). O
    zamana dek ekran karar vermez, iki olguyu birlikte gösterir.
-2. **"Kapanan alarm nereye gitti?"** Panodan düştü (bugün motor bir bulguyu kapatmıyor; alarm
-   panoda kalır — plandaki O17, kullanıcı kararı bekliyor). Motor yalnız açık alarmları gönderiyor ve
-   alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim kaydında (`audit.view` ister).
+2. **"Kapanan alarm nereye gitti?"** Panodan düştü. Bir alarm, kuralı onu üretmeyi bıraktığı ilk
+   ölçümde kapanır — bekleme süresi yok (G2-A1, O17'nin kararı, 25.10.2026). Tek istisna:
+   **kimsenin onaylamadığı kritik bir alarm** durumu geçince de listede «geçti · onaylanmadı»
+   olarak kalır, sesi durur; biri onaylayınca kalkar. Onaylanmış bir kritik alarm ile yüksek, orta
+   ve düşük alarmlar kuralla birlikte gider. Aynı alarm yeniden çıkarsa yeni bir bölümdür: yeni ilk
+   görülme anı, yeni eskalasyon saati, hemşireye yeni bildirim — gidip gelen bir değer (nabız
+   140 → 80 → 140) her dönüşünde yeniden bildirir; bunun için bilerek bir bekleme yok. Motor yalnız
+   açık alarmları gönderiyor ve alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim
+   kaydında (`alert_cleared`; `audit.view` ister).
    Ekran boş bir "kapananlar" bölümü çizmez — boş bölüm "hiçbir şey kapanmadı" diye okunurdu —
    bunu tek cümleyle söyler.
 3. **"Vital eğrileri nerede?"** Hasta ekranının altında, "Vital eğrileri" kutusunda (Grup 2 ·
@@ -959,9 +968,9 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
 - **"Hastanın normalinde" hapı:** son değer bu hasta için girilmiş aralığın içindeyse. Hap çerçeveyi
   susturmaz, çerçeve de hapı gizlemez — iki olgu birlikte gösterilir.
 - Karta basınca büyük grafik: 6 saat / 24 saat / 3 gün; imlecin altındaki ölçümün saati, değeri
-  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (motor bugün bir bulguyu kuralı
-  sustuktan sonra da açık tutuyor, bu yüzden aynı türden bir bulgu için ikinci ▲ çıkmaz — plandaki
-  O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
+  ve birimi; ▲ bir alarm bölümünün başladığı an (G2-A1'den beri bir alarm kuralı susunca kapanır;
+  yeniden çıkarsa kendi ▲'sı olan yeni bir bölümdür — lejant «alarmın başladığı an» der),
+  ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
   her ölçümün motorun verdiği NEWS2 puanıyla. Klavyeyle de gezilir; ekran okuyucu okumayı yalnız
   klavye hareketinde duyar.
 - Noktalar ölçümdür; aralarındaki kesikli çizgi yalnız aradaki zamandır, ölçüm değildir.
