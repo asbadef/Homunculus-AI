@@ -108,3 +108,80 @@ def test_engine_surfaces_acute_change_from_baseline():
     assert "acute_change" in alerts
     assert alerts["acute_change"].supporting_evidence == ["news2-rcp-2017"]
     assert alerts["acute_change"].recommended_actions
+
+
+# --- G2-A1 (O17): an alert lasts exactly as long as its rule fires -------------------------------
+#
+# The bucket is rebuilt from every evaluation: a kind the rules did not produce for this reading is
+# gone at once — no quiet time, no hysteresis (the user's decision, 2026-10-25). A heart rate of
+# 140/min alone is enough to raise one: 3 NEWS2 points, a single red parameter, a MODERATE `news2`.
+
+def _kinds(eng, patient="bed-3"):
+    return {a.kind for a in eng.active_alerts(patient)}
+
+
+def test_an_alert_whose_rule_stops_firing_leaves_on_the_first_reading_that_does_not_produce_it():
+    eng = Engine()
+    fast = _obs(SignalCode.HEART_RATE, 140)
+    assert {a.kind for a in eng.ingest(fast, now=fast.timestamp)} == {"news2"}
+    calm = _obs(SignalCode.HEART_RATE, 80, minute=1)
+    assert eng.ingest(calm, now=calm.timestamp) == []
+    assert eng.active_alerts("bed-3") == [], "HR 80 scores 0: the single red parameter has resolved"
+
+
+def test_an_alert_that_fires_again_is_back_and_another_patient_is_untouched():
+    eng = Engine()
+    for minute, (patient, rate) in enumerate([("bed-3", 140), ("bed-4", 140), ("bed-3", 80), ("bed-3", 140)]):
+        o = _obs(SignalCode.HEART_RATE, rate, minute=minute, patient=patient)
+        eng.ingest(o, now=o.timestamp)
+    assert _kinds(eng) == {"news2"}, "140 → 80 → 140: the second 140 fires again"
+    assert _kinds(eng, "bed-4") == {"news2"}, "bed-4 was not evaluated again: its alert stands"
+
+
+def _sepsis_charted(eng, infection, minute):
+    """Platelets 80 and creatinine 3.5 with suspected infection charted `infection`: SOFA 5 over an
+    assumed baseline of 0, so `sepsis` fires while infection is 1, and `septic_shock.evaluate`
+    returns nothing at its first line once the physician charts it 0."""
+    for code, value in [(SignalCode.PLATELETS, 80), (SignalCode.CREATININE, 3.5),
+                        (SignalCode.SUSPECTED_INFECTION, infection)]:
+        o = _obs(code, value, minute=minute)
+        eng.ingest(o, now=o.timestamp)
+
+
+def test_when_sepsis_stops_its_antibiotic_clock_stops_and_a_later_episode_starts_its_own():
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    assert _kinds(eng) == {"sepsis", "antibiotic_due"}
+    assert eng.recognized_at("bed-3") == T0
+    _sepsis_charted(eng, 0.0, minute=20)          # the physician charts: no infection after all
+    assert _kinds(eng) == set(), "no recognition kind fires: sepsis and its antibiotic clock are gone"
+    assert eng.recognized_at("bed-3") is None
+    _sepsis_charted(eng, 1.0, minute=90)          # a second episode, seventy minutes later
+    assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=90)
+    due = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_due")
+    assert due.summary == "Antibiotic window: 60 min remaining", \
+        "the second recognition has its own hour, not the first episode's overdue clock"
+
+
+def test_the_antibiotic_clock_keeps_its_anchor_while_septic_shock_fires_without_the_sepsis_criterion():
+    # Recognition is `sepsis` OR `septic_shock` (_RECOGNITION_KINDS). A baseline SOFA charted during
+    # shock can take `sepsis` (a RISE of 2) away while the shock criterion still holds; resetting
+    # the anchor then would restart an overdue antibiotic's hour in the middle of septic shock (X1).
+    from homunculus.state.profile import PatientProfile
+    eng = Engine()
+    for o in [
+        _obs(SignalCode.SUSPECTED_INFECTION, 1.0),
+        _obs(SignalCode.WEIGHT_KG, 100),
+        _obs(SignalCode.CRYSTALLOID_BOLUS_ML, 3000, minute=-30),
+        _obs(SignalCode.MAP, 60),
+        _obs(SignalCode.NOREPINEPHRINE_RATE, 0.12),
+        _obs(SignalCode.LACTATE, 3.1),
+    ]:
+        eng.ingest(o, now=o.timestamp)
+    assert {"septic_shock", "sepsis"} <= _kinds(eng)
+    eng.set_profile(PatientProfile("bed-3", baseline_sofa=4))
+    later = _obs(SignalCode.HEART_RATE, 110, minute=75)
+    eng.ingest(later, now=later.timestamp)
+    assert "sepsis" not in _kinds(eng), "SOFA 4 over a charted baseline of 4 is no rise"
+    assert {"septic_shock", "antibiotic_overdue"} <= _kinds(eng)
+    assert eng.recognized_at("bed-3") == T0

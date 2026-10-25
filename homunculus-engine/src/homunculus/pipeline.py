@@ -61,10 +61,15 @@ class Engine:
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
         findings = patient_relative.apply(findings, state, profile)
 
-        # Anchor the antibiotic clock the first time sepsis/shock is recognized.
-        if obs.patient_id not in self._recognized_at:
-            if any(f.kind in _RECOGNITION_KINDS for f in findings):
-                self._recognized_at[obs.patient_id] = now
+        # Anchor the antibiotic clock the first time sepsis/shock is recognized in an episode, and
+        # drop the anchor once no recognition kind fires (G2-A1, D9): a later episode is a second
+        # recognition with its own hour. Both kinds count, as for the anchor (X1) — a baseline SOFA
+        # charted during shock can take `sepsis` away while `septic_shock` still holds, and
+        # restarting an overdue antibiotic's hour then would hide that it is overdue.
+        if any(f.kind in _RECOGNITION_KINDS for f in findings):
+            self._recognized_at.setdefault(obs.patient_id, now)
+        else:
+            self._recognized_at.pop(obs.patient_id, None)
 
         findings += antibiotic_clock.evaluate(
             state, self._recognized_at.get(obs.patient_id), now
@@ -90,9 +95,11 @@ class Engine:
 
         alerts = [to_alert(f, obs.patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
-        bucket = self._alerts.setdefault(obs.patient_id, {})
-        for a in alerts:
-            bucket[a.kind] = a   # latest alert per kind
+        # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
+        # reading. A kind they did not produce has stopped firing and is gone — no quiet time, no
+        # hysteresis. What the API keeps of one (a critical nobody acknowledged) is the API's
+        # business (api/alert_lifecycle.py), not the engine's.
+        self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
         return alerts
 
     def active_alerts(self, patient_id: str) -> list[Alert]:

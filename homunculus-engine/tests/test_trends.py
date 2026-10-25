@@ -236,13 +236,12 @@ def test_markers_are_in_time_order():
 
 
 def test_more_episodes_than_the_read_takes_are_flagged_not_cut_quietly():
-    """Today the engine never drops an alert kind from `active_alerts` (pipeline.py:93–96), so
-    `first_seen` is stamped once per (patient, kind) and a ▲ means "the first time this finding was
-    raised for this patient"; a window holds a handful. IF alert episodes are ever cleared and
-    re-raised, `AckStore.prune` would drop the stamp each time and a flapping alert would write a row
-    each time it came back — about 30 an hour at one reading a minute, about 2 160 in the 72-hour
-    window. The read is oldest-first, so past its limit the NEWEST marks — the end a clinician looks
-    at — would be the missing ones; the answer says so instead of drawing a quiet end."""
+    """Since G2-A1 (O17) an alert clears on the first reading that does not produce it and its
+    `first_seen` stamp is pruned with it, so a ▲ means "an alert began here", once per episode, and a
+    flapping alert writes a row each time it comes back — about 30 an hour at one reading a minute,
+    about 2 160 in the 72-hour window. The read is oldest-first, so past its limit the NEWEST marks —
+    the end a clinician looks at — would be the missing ones; the answer says so instead of drawing a
+    quiet end."""
     assert TRENDS_MARKER_LIMIT >= 72 * 30
     engine = _engine((SignalCode.SPO2, 85, 60))
     few = InMemoryAuditLog()
