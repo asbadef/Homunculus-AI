@@ -302,3 +302,46 @@ def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retrie
     assert card["latest"]["heart_rate"] == 140, "the retry replayed every row, the newest included"
     assert {a["kind"] for a in card["alerts"]} == {"news2"}
     assert audit.after_ids == [None, 5, None, 5, 10], "the retry reads the log from the first row"
+
+
+def test_a_reading_stamped_in_the_future_is_replayed_at_the_instant_the_door_judged_it():
+    """G2-A2 (X10b). The doors judge a reading at its own stamp but never past the wall clock (X10);
+    the replay judged it at its stamp. A device clock 30 minutes ahead, then a restart: the replay
+    aged the resp rate, pulse and pressure to the future stamp, so the ward's NEWS2 8 came back
+    held, and it moved the antibiotic anchor 30 minutes on. The replay judges at the earlier of the
+    stamp and the row's write time — the door's wall clock, to within the request. Synthetic."""
+    import json
+    audit = InMemoryAuditLog()
+    hdr = {"Authorization": "Bearer tok"}
+    wall = datetime.now(timezone.utc)
+
+    def boot():
+        return TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit))
+
+    def reading(client, code, value, at):
+        fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
+                "subject": {"reference": "Patient/bed-3"}, "effectiveDateTime": at.isoformat(),
+                "valueQuantity": {"value": value, "unit": ""}}
+        assert client.post("/ingest", json=fhir, headers=hdr).status_code == 200
+
+    def board(client):
+        return json.loads(json.dumps(next(b for b in client.get("/patients", headers=hdr).json()["patients"]
+                                          if b["patient_id"] == "bed-3")))
+
+    def alerts(b):
+        return [{**a, "resolved_at": a["resolved_at"] is not None} for a in b["alerts"]]
+
+    live = boot()
+    for code, value in [("resp_rate", 25), ("heart_rate", 120), ("sbp", 88)] + _SHOCK[1:]:
+        reading(live, code, value, wall - timedelta(minutes=50))          # NEWS2 8, and a shock
+    reading(live, "suspected_infection", 1.0, wall + timedelta(minutes=30))   # a clock 30 min ahead
+    before = board(live)
+    news2 = next(a for a in before["alerts"] if a["kind"] == "news2")
+    assert (news2["severity"], news2["urgency"]) == ("high", "immediate")
+    assert "Held" not in news2["clinical_reasoning"]
+
+    after = board(boot())                                                  # the restart
+    assert alerts(after) == alerts(before)
+    anchors = [datetime.fromisoformat(b["meds"]["antibiotic_clock"]["recognized_at"])
+               for b in (before, after)]
+    assert abs(anchors[1] - anchors[0]) < timedelta(seconds=1), "the row is written after the judgement"

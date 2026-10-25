@@ -40,10 +40,11 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -
             # to: a charted `suspected_infection` that a restart forgot would take the sepsis,
             # septic-shock and antibiotic-clock alerts down with it, silently, on a patient the
             # ward believes is being watched for exactly those.
-            if _replay_ingest(engine, rec):
+            written = _written_at(rec)
+            if _replay_ingest(engine, rec, written):
                 # G2-A1 (D7): through the hook, as the door ran it. What it clears was audited
                 # live (`alert_cleared`) and is not written again.
-                sync_alerts(engine, store, rec.patient_id, _written_at(rec))
+                sync_alerts(engine, store, rec.patient_id, written)
         elif rec.event_type == "profile":
             _replay_profile(engine, rec)
         elif rec.event_type == "ack":
@@ -59,8 +60,13 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -
     store.recent.clear()
 
 
-def _replay_ingest(engine: Engine, rec: AuditRecord) -> bool:
-    """Replay one observation; False when its signal is unknown and it was skipped."""
+def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
+    """Replay one observation; False when its signal is unknown and it was skipped.
+
+    Judged where the door judged it (G2-A2, X10b): at the reading's own stamp, never past the wall
+    clock (X10), with the row's write time standing for that wall clock, to within the request.
+    Judged at a stamp in the future, as the replay did, every other input was aged to it — a NEWS2
+    the ward saw firing came back held, and the antibiotic anchor moved to the future stamp."""
     try:
         code = SignalCode(rec.subject)
     except ValueError:
@@ -69,7 +75,7 @@ def _replay_ingest(engine: Engine, rec: AuditRecord) -> bool:
     ts = datetime.fromisoformat(p["obs_ts"])
     obs = Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
                       unit=p.get("unit", ""), timestamp=ts, source_device=p.get("device", "replay"))
-    engine.ingest(obs, now=ts)
+    engine.ingest(obs, now=min(ts, written))
     return True
 
 
