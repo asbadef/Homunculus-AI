@@ -187,6 +187,61 @@ def test_charting_infection_absent_ends_the_episode_and_its_clock():
         "the second recognition has its own hour, not the first episode's overdue clock"
 
 
+def _chart(eng, code, value, minute):
+    o = _obs(code, value, minute=minute)
+    eng.ingest(o, now=o.timestamp)
+
+
+def _summary(eng, kind, patient="bed-3"):
+    return next(a.summary for a in eng.active_alerts(patient) if a.kind == kind)
+
+
+def test_a_corrected_infection_toggle_keeps_the_antibiotic_hour():
+    # X12 (the reviewer's toggle): overdue by 10 min at +70, infection charted absent at +71 and
+    # present again at +72. That is a correction, the same episode: before X12 the anchor dropped at
+    # +71 was gone and +72 started a new hour — "Antibiotic window: 60 min remaining", on a patient
+    # whose antibiotic was overdue.
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    _chart(eng, SignalCode.PLATELETS, 80, minute=70)
+    assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 10 min"
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 0.0, minute=71)
+    assert _kinds(eng) == set()
+    assert eng.recognized_at("bed-3") is None, "charted absent: the anchor is dropped (X9)"
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=72)
+    assert eng.recognized_at("bed-3") == T0, "re-recognised a minute after the drop: the old anchor"
+    assert "antibiotic_due" not in _kinds(eng)
+    assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 12 min", \
+        "the hour that ran from +0 is still the one that is overdue"
+
+
+def test_a_recognition_more_than_an_hour_after_infection_was_charted_absent_has_its_own_hour():
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    _chart(eng, SignalCode.PLATELETS, 80, minute=70)
+    assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 10 min"
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 0.0, minute=71)
+    _chart(eng, SignalCode.HEART_RATE, 80, minute=100)            # an evaluation in the gap
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=140)  # 69 min after the drop
+    assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=140), "past the restore horizon: a new anchor"
+    assert "antibiotic_overdue" not in _kinds(eng)
+    assert _summary(eng, "antibiotic_due") == "Antibiotic window: 60 min remaining"
+
+
+def test_an_antibiotic_charted_while_infection_was_charted_absent_counts_against_the_restored_hour():
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 0.0, minute=30)
+    _chart(eng, SignalCode.ANTIBIOTIC_ADMINISTERED, 1.0, minute=35)   # given during the gap
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=40)
+    assert "sepsis" in _kinds(eng)
+    assert eng.recognized_at("bed-3") == T0, "the toggle was corrected: the anchor of +0, restored"
+    assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"}, \
+        "the dose at +35 is after the restored anchor: the clock is satisfied"
+    _chart(eng, SignalCode.PLATELETS, 80, minute=100)
+    assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"}
+
+
 def _flapping_map(eng, minute, value):
     o = _obs(SignalCode.MAP, value, minute=minute)
     eng.ingest(o, now=o.timestamp)

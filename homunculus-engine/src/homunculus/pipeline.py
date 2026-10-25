@@ -16,11 +16,20 @@ from homunculus.state.timeline import PatientState
 
 _RECOGNITION_KINDS = {"sepsis", "septic_shock"}
 
+#: How long after its drop an antibiotic-clock anchor can still be restored (G2-A1, X12). Charting
+#: suspected infection absent and then present again inside this is a correction of the toggle —
+#: the same episode, whose hour is still running or already overdue; restarting it turned an
+#: antibiotic 10 min overdue into "60 min remaining". One hour because that is the clock's own
+#: horizon: past it the old hour has closed anyway, and a new recognition is a second episode (D9).
+ANCHOR_RESTORE_S = 3600
+
 
 class Engine:
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
         self._recognized_at: dict[str, datetime] = {}
+        # X12: an anchor dropped by infection charted absent -> (anchor, when it was dropped).
+        self._dropped_anchor: dict[str, tuple[datetime, datetime]] = {}
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
@@ -72,15 +81,22 @@ class Engine:
         #    reads the latest MAP, so a single reading at 70 or above (MAP 70 scores 0) stops
         #    `sepsis` for one evaluation, and an anchor dropped then would let an untreated sepsis
         #    never go overdue, or give a treated one a false overdue when it came back.
+        #  - A dropped anchor is remembered with the time of its drop (X12). A recognition within
+        #    ANCHOR_RESTORE_S of it restores the old anchor: infection charted absent and present
+        #    again is a corrected toggle, the same episode, and an antibiotic charted in the gap
+        #    counts against the restored hour. A later recognition gets its own anchor, `now`.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.
         recognizing = any(f.kind in _RECOGNITION_KINDS for f in findings)
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
-            self._recognized_at.setdefault(obs.patient_id, now)
+            if obs.patient_id not in self._recognized_at:
+                self._recognized_at[obs.patient_id] = self._new_anchor(obs.patient_id, now)
         elif infection is None or infection.value < 1.0:
-            self._recognized_at.pop(obs.patient_id, None)
+            dropped = self._recognized_at.pop(obs.patient_id, None)
+            if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
+                self._dropped_anchor[obs.patient_id] = (dropped, now)
 
         findings += antibiotic_clock.evaluate(
             state, self._recognized_at.get(obs.patient_id) if recognizing else None, now
@@ -112,6 +128,14 @@ class Engine:
         # business (api/alert_lifecycle.py), not the engine's.
         self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
         return alerts
+
+    def _new_anchor(self, patient_id: str, now: datetime) -> datetime:
+        """The anchor of a recognition with none running (X12): the anchor dropped at most
+        ANCHOR_RESTORE_S ago, restored, or else `now`. Either way the remembered drop is spent."""
+        dropped = self._dropped_anchor.pop(patient_id, None)
+        if dropped is not None and (now - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
+            return dropped[0]
+        return now
 
     def active_alerts(self, patient_id: str) -> list[Alert]:
         return list(self._alerts.get(patient_id, {}).values())
