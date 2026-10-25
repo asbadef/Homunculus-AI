@@ -114,6 +114,22 @@ def test_an_ack_row_for_a_latched_alert_removes_it_on_replay_and_is_no_acknowled
     assert SHOCK not in store.first_seen and SHOCK not in store.acks
 
 
+def test_a_replay_starts_every_escalation_chain_over_at_its_episodes_first_seen():
+    """G2-A1, X13: the escalation chain is not in the audit log. Replayed, an episode's clock is its
+    own `first_seen` row and no cleared chain is remembered: after a restart a chain starts over, as
+    `paged` and `escalated` do."""
+    audit = _audit_with_shock()
+    for kind in ("septic_shock", "sepsis"):
+        audit.append(AuditEvent("HOSP1", "first_seen", "bed-3", kind, {"at": T0}))
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "suspected_infection",
+                            {"value": 0.0, "unit": "", "obs_ts": T0, "device": "lab"}))
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1"))
+    assert set(store.resolved) == {SHOCK}, "the shock latched; sepsis (HIGH) ended"
+    assert store.clock_from == store.first_seen == {SHOCK: datetime.fromisoformat(T0)}
+    assert store.recent == {}, "sepsis ended inside the replay: its chain is not carried past the restart"
+
+
 def test_an_ack_row_for_a_kind_that_is_not_live_does_not_answer_a_later_episode():
     """The live door answers 404 to an ack for an alert that is neither firing nor latched, so such
     a row is not an acknowledgement of anything — and recorded, a later episode of the same kind

@@ -4,13 +4,28 @@ regenerates on every ingest). Keyed by (patient_id, kind).
 
 Since G2-A1 (O17) it also keeps what the engine does not: the alerts the lifecycle hook last saw
 firing, and the critical ones whose rule stopped before anyone acknowledged them (the latch).
-`api/alert_lifecycle.py` maintains both."""
+`api/alert_lifecycle.py` maintains both.
+
+Since X13 it keeps the escalation chain: consecutive episodes of one (patient, kind) whose gap — from
+the clear to the next first sight — is at most the escalation delay share one escalation clock
+(`clock_from`) and one page to the doctor (`paged`). A return is still a new episode (D5): its own
+first-seen (the board's ▲), no inherited acknowledgement, a nurse told again. Without the chain an
+alert flapping faster than the delay — NEWS2 7 / 4 every two minutes — never reached the doctor."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from homunculus.reco.engine import Alert
+
+
+class Chain(NamedTuple):
+    """An escalation chain whose episode has left the board (X13), kept for the escalation delay in
+    case the alert returns: its clock, when its episode ended, and whether its doctor was paged."""
+    clock_from: datetime
+    cleared_at: datetime
+    paged: bool
 
 
 @dataclass
@@ -27,32 +42,69 @@ class AckStore:
     firing: dict[tuple[str, str], Alert] = field(default_factory=dict)
     # G2-A1, final review: the escalations the doctor was already PAGED for. `escalated` follows
     # the clock — a latch drops it and a return raises it again — so on its own a critical that
-    # flaps (lactate 3.4 / 1.5 every two minutes) would page the doctor on each swing. This is
-    # scoped to the episode like `first_seen` and forgotten with it: a return inside the same
-    # episode is not paged again, a new episode is.
+    # flaps (lactate 3.4 / 1.5 every two minutes) would page the doctor on each swing. It goes with
+    # the episode like `first_seen` — a return inside the same episode is not paged again — and
+    # since X13 a return that continues its chain gets it back from `recent`: one page per chain.
     paged: set[tuple[str, str]] = field(default_factory=set)
+    # X13: when each live key's escalation clock started — its chain's first sight, at or before its
+    # episode's `first_seen`. What `escalate()` measures; the board shows `first_seen`.
+    clock_from: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    # X13: the chains of episodes that left the board, kept for the escalation delay. Written by the
+    # prune and by `acknowledge_latched`; read, and spent, by the next stamp of the key.
+    recent: dict[tuple[str, str], Chain] = field(default_factory=dict)
 
-    def stamp_first_seen(self, patient_id: str, kind: str, now: datetime) -> bool:
+    def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
+                         chain_gap: timedelta | None = None) -> bool:
         """Record when an alert was first seen. Returns True only if this is a NEW stamp
-        (so the caller can audit it exactly once for restart persistence)."""
+        (so the caller can audit it exactly once for restart persistence).
+
+        A new stamp also sets the escalation clock (X13). If the key's last episode left the board
+        at most `chain_gap` (the escalation delay) ago, this one continues its chain: the chain's
+        clock, and its page if the doctor was paged. Otherwise — or with no `chain_gap` — the clock
+        starts now. Chains older than the gap are forgotten here."""
         key = (patient_id, kind)
         if key in self.first_seen:
             return False
         self.first_seen[key] = now
+        chain = self.recent.pop(key, None)
+        if chain is not None and chain_gap is not None and now - chain.cleared_at <= chain_gap:
+            self.clock_from[key] = chain.clock_from
+            if chain.paged:
+                self.paged.add(key)
+        else:
+            self.clock_from[key] = now
+        if chain_gap is not None:
+            for old in [k for k, c in self.recent.items() if now - c.cleared_at > chain_gap]:
+                del self.recent[old]
         return True
+
+    def remember_chain(self, key: tuple[str, str], cleared_at: datetime,
+                       first_seen: datetime | None = None) -> None:
+        """Keep the chain of an episode that is leaving the board at `cleared_at` (X13), before its
+        state is dropped. `first_seen` stands in for a key with no stamp of its own left (a latch
+        carries its episode's). A key never stamped has no clock, and nothing is kept."""
+        clock = self.clock_from.get(key, self.first_seen.get(key, first_seen))
+        if clock is not None:
+            self.recent[key] = Chain(clock, cleared_at, key in self.paged)
 
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}
 
     def prune(self, live_keys: set[tuple[str, str]],
-              firing_keys: set[tuple[str, str]] | None = None) -> None:
+              firing_keys: set[tuple[str, str]] | None = None,
+              now: datetime | None = None) -> None:
         """Drop state for alert kinds that are no longer active, so a re-raised alert starts fresh.
 
         `live_keys` are the kinds still on the board: firing, or latched. With `firing_keys`, the
         ones firing now (G2-A1): only a firing alert can be escalated (D8), and a latched alert
         that fires again is no longer latched — its episode goes on (X2). The page record goes
-        with the episode's first-seen: it is kept for every live key, firing or latched."""
-        for mapping in (self.acks, self.first_seen):
+        with the episode's first-seen: it is kept for every live key, firing or latched, and so is
+        the escalation clock. With `now`, when the prune runs, each episode that leaves the board
+        is remembered as its chain first (X13)."""
+        if now is not None:
+            for key in [k for k in self.first_seen if k not in live_keys]:
+                self.remember_chain(key, now)
+        for mapping in (self.acks, self.first_seen, self.clock_from):
             for key in [k for k in mapping if k not in live_keys]:
                 del mapping[key]
         self.paged &= live_keys

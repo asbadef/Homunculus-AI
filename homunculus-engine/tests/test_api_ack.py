@@ -5,16 +5,36 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import homunculus.api.app as app_module
 import homunculus.scenarios
 from homunculus.api.app import create_app
 from homunculus.scenarios.loader import load_scenario
 
 SCEN = Path(homunculus.scenarios.__file__).parent
+WALL0 = datetime(2026, 10, 25, 9, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+class _Wall(datetime):
+    """The doors' wall clock, set by the test. The escalation clock is wall time, and since X13 the
+    gap between an alert's clear and its return decides whether its clock goes on — a gap the real
+    clock would make a test wait for."""
+    at = WALL0
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.at
+
+
+@pytest.fixture
+def wall(monkeypatch):
+    _Wall.at = WALL0                  # a test that failed half-way must not leak its time
+    monkeypatch.setattr(app_module, "datetime", _Wall)
+    return _Wall
 
 
 def _client():
@@ -62,15 +82,14 @@ def test_ack_is_tenant_isolated():
 
 
 @pytest.mark.anyio
-async def test_escalation_cycle_flips_unacked_immediate_alert():
+async def test_escalation_cycle_flips_unacked_immediate_alert(wall):
     app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
     client = TestClient(app)
     for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
-        client.post("/ingest", json=fhir, headers=_hdr("tok"))
+        client.post("/ingest", json=fhir, headers=_hdr("tok"))     # first seen at WALL0
     store = app.state.ack_stores["HOSP1"]
     key = ("bed-3", "septic_shock")
-    store.first_seen[key] = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
-    await app.state.escalation_cycle(datetime(2026, 7, 19, 10, 6, tzinfo=timezone.utc))
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
     assert key in store.escalated
     board = client.get("/patients", headers=_hdr("tok")).json()["patients"]
     shock = next(a for b in board if b["patient_id"] == "bed-3" for a in b["alerts"] if a["kind"] == "septic_shock")
@@ -78,15 +97,14 @@ async def test_escalation_cycle_flips_unacked_immediate_alert():
 
 
 @pytest.mark.anyio
-async def test_ack_clears_escalation():
+async def test_ack_clears_escalation(wall):
     app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
     client = TestClient(app)
     for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
-        client.post("/ingest", json=fhir, headers=_hdr("tok"))
+        client.post("/ingest", json=fhir, headers=_hdr("tok"))     # first seen at WALL0
     store = app.state.ack_stores["HOSP1"]
     key = ("bed-3", "septic_shock")
-    store.first_seen[key] = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
-    await app.state.escalation_cycle(datetime(2026, 7, 19, 10, 6, tzinfo=timezone.utc))
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
     assert key in store.escalated
     client.post("/ack", json={"patient_id": "bed-3", "kind": "septic_shock", "role": "doctor"}, headers=_hdr("tok"))
     assert key not in store.escalated
@@ -162,23 +180,25 @@ def test_an_acknowledged_critical_leaves_with_its_rule():
 
 
 @pytest.mark.anyio
-async def test_a_latched_alert_never_escalates_and_its_next_episode_has_its_own_clock():
+async def test_a_latched_alert_never_escalates_and_its_next_episode_has_its_own_clock(wall):
     app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
     client = TestClient(app)
-    _drive_shock(client)
+    _drive_shock(client)                                            # first seen at WALL0
     store = app.state.ack_stores["HOSP1"]
-    store.first_seen[SHOCK] = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)   # long unanswered
-    await app.state.escalation_cycle(datetime(2026, 7, 19, 10, 6, tzinfo=timezone.utc))
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))  # long unanswered
     assert SHOCK in store.escalated
+    wall.at = WALL0 + timedelta(minutes=7)
     _reading(client, "lactate", 1.5, minute=61)                     # latched
     assert SHOCK not in store.escalated
-    await app.state.escalation_cycle(datetime(2026, 7, 19, 10, 9, tzinfo=timezone.utc))
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=9))
     assert SHOCK not in store.escalated, "a latched alert is a to-do, not an unanswered active finding"
     assert _on_board(client)["escalated"] is False
+    wall.at = WALL0 + timedelta(minutes=10)
     _ack(client)                                                    # removes the latch
-    _reading(client, "lactate", 3.4, minute=62)                     # a new episode
+    wall.at = WALL0 + timedelta(minutes=16)                         # more than the delay later (X13)
+    _reading(client, "lactate", 3.4, minute=62)                     # a new episode, a new chain
     fresh = store.first_seen[SHOCK]
-    assert fresh != datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
+    assert fresh == WALL0 + timedelta(minutes=16)
     await app.state.escalation_cycle(fresh + timedelta(minutes=4))
     assert SHOCK not in store.escalated, "the new episode's clock started at its own first sight"
     await app.state.escalation_cycle(fresh + timedelta(minutes=5))
@@ -216,19 +236,18 @@ def _pages(client, kind="septic_shock"):
 
 
 @pytest.mark.anyio
-async def test_a_latched_critical_that_returns_pages_the_doctor_once_per_episode():
+async def test_a_latched_critical_that_returns_pages_the_doctor_once_per_episode(wall):
     """G2-A1 final review: the latch drops `escalated` and each return raises it again, so every
     flap used to read as a fresh escalation — a never-acknowledged shock whose lactate swung 3.4 / 1.5
     every two minutes paged the doctor on each swing. One episode is one page; the board's
     `escalated` flag still follows the clock; an acknowledgement ends the episode, and the next
-    one pages anew."""
+    one — more than the escalation delay later, so a new chain (X13) — pages anew."""
     app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
     client = TestClient(app)
     _drive_shock(client)
     store = app.state.ack_stores["HOSP1"]
-    first = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
-    store.first_seen[SHOCK] = first                                  # long unanswered
-    cycle_at = first + timedelta(minutes=6)
+    first = WALL0                                                    # the door's first sight
+    cycle_at = first + timedelta(minutes=6)                          # long unanswered
     await app.state.escalation_cycle(cycle_at)
     assert SHOCK in store.escalated and _pages(client) == (1, 1)
     for flap in range(3):
@@ -240,12 +259,98 @@ async def test_a_latched_critical_that_returns_pages_the_doctor_once_per_episode
         assert SHOCK in store.escalated, "the board's flag follows the clock"
     assert store.first_seen[SHOCK] == first, "never acknowledged: still the first episode"
     assert _pages(client) == (1, 1), "one episode, one page"
+    wall.at = first + timedelta(minutes=7)
     _reading(client, "lactate", 1.5, minute=67)                      # latched once more
     assert _ack(client).status_code == 200                           # answered: the episode ends
     assert SHOCK not in store.paged
-    _reading(client, "lactate", 3.4, minute=68)                      # a new episode
+    wall.at = first + timedelta(minutes=13)                          # more than the delay later
+    _reading(client, "lactate", 3.4, minute=68)                      # a new episode, a new chain
     fresh = store.first_seen[SHOCK]
     await app.state.escalation_cycle(fresh + timedelta(minutes=4))
     assert _pages(client) == (1, 1), "the new episode's clock has not run out"
     await app.state.escalation_cycle(fresh + timedelta(minutes=5))
     assert _pages(client) == (2, 2), "a new episode pages the doctor again"
+
+
+# --- G2-A1, X13: the escalation clock survives a gap of at most the escalation delay -------------
+#
+# Heart rate 115 and temperature 39.5 score 2 NEWS2 points each. A respiratory rate of 26 adds 3:
+# NEWS2 7, a HIGH and immediate `news2`. One of 16 adds none: NEWS2 4 with no single parameter at 3
+# raises nothing, so the alert clears. Made-up values on a synthetic bed.
+
+NEWS2 = ("bed-3", "news2")
+
+
+def _news2_base(client):
+    _reading(client, "heart_rate", 115, minute=0)
+    _reading(client, "temperature", 39.5, minute=0)
+
+
+@pytest.mark.anyio
+async def test_a_high_alert_flapping_faster_than_the_escalation_delay_still_reaches_the_doctor_once(wall):
+    """NEWS2 7 / 4 every two minutes for twenty, never acknowledged. Each return is a new episode — its
+    own first sight and a nurse told again (D5) — but none was off the board for longer than the
+    escalation delay, so they are one chain on one clock. Before X13 each return restarted the clock,
+    no episode lasted five minutes, and the doctor was never paged."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _news2_base(client)
+    store = app.state.ack_stores["HOSP1"]
+    paged_at = None
+    for minute in range(21):
+        wall.at = WALL0 + timedelta(minutes=minute)
+        if minute % 2 == 0:
+            _reading(client, "resp_rate", 26 if minute % 4 == 0 else 16, minute=minute)
+        await app.state.escalation_cycle(wall.at)
+        if paged_at is None and _pages(client, "news2") != (0, 0):
+            paged_at = minute
+    assert paged_at == 5, f"five minutes after the chain's first sight, saw {paged_at}"
+    assert _pages(client, "news2") == (1, 1), "one chain, one page"
+    trail = [event for event, _reason in _trail(client, "news2")]
+    assert trail.count("first_seen") == 6 and trail.count("alert_cleared") == 5, "six episodes"
+    assert _told(client, "news2").count("new") == 6, "the nurse is told of every return (D5)"
+    assert store.first_seen[NEWS2] == WALL0 + timedelta(minutes=20), "the board's ▲ is the episode's"
+    assert store.clock_from[NEWS2] == WALL0, "the escalation clock is the chain's"
+    assert _on_board(client, "news2")["escalated"] is True
+
+
+@pytest.mark.anyio
+async def test_a_return_after_a_gap_longer_than_the_escalation_delay_starts_the_clock_over(wall):
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _news2_base(client)
+    store = app.state.ack_stores["HOSP1"]
+    _reading(client, "resp_rate", 26, minute=0)                      # first seen at WALL0
+    wall.at = WALL0 + timedelta(minutes=2)
+    _reading(client, "resp_rate", 16, minute=2)                      # cleared
+    wall.at = WALL0 + timedelta(minutes=8)
+    _reading(client, "resp_rate", 26, minute=8)                      # back six minutes later
+    assert store.clock_from[NEWS2] == store.first_seen[NEWS2] == WALL0 + timedelta(minutes=8)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=12))
+    assert NEWS2 not in store.escalated and _pages(client, "news2") == (0, 0), \
+        "a new chain: its clock started at the return, four minutes ago"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=13))
+    assert NEWS2 in store.escalated and _pages(client, "news2") == (1, 1)
+
+
+@pytest.mark.anyio
+async def test_an_acknowledged_alert_that_returns_within_the_delay_is_unanswered_on_its_chains_clock(wall):
+    """The acknowledgement belongs to the episode it answered (D5): the return is unacknowledged. Its
+    escalation clock is the chain's — the return came two minutes after the clear."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _news2_base(client)
+    store = app.state.ack_stores["HOSP1"]
+    _reading(client, "resp_rate", 26, minute=0)                      # first seen at WALL0
+    wall.at = WALL0 + timedelta(minutes=1)
+    assert _ack(client, "news2").status_code == 200
+    wall.at = WALL0 + timedelta(minutes=2)
+    _reading(client, "resp_rate", 16, minute=2)                      # cleared, answered
+    wall.at = WALL0 + timedelta(minutes=4)
+    _reading(client, "resp_rate", 26, minute=4)                      # back two minutes later
+    news2 = _on_board(client, "news2")
+    assert news2["acknowledged"] is False, "the old answer belongs to the old episode"
+    assert news2["first_seen_at"] == (WALL0 + timedelta(minutes=4)).isoformat()
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=5))
+    assert NEWS2 in store.escalated and _pages(client, "news2") == (1, 1), \
+        "unanswered, on a clock that started five minutes ago"

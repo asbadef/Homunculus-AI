@@ -269,7 +269,9 @@ def create_app(
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
-            newly = escalate(alerts, store.acks, store.first_seen, now, escalate_after)
+            # The chain's clock, not the episode's first sight (X13): an alert that clears and
+            # returns within `escalate_after` is still unanswered on the clock it started.
+            newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
             if newly != store.escalated:
                 added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
@@ -278,10 +280,10 @@ def create_app(
                     await broadcaster.publish(hospital, patient_board(
                         engine, pid, store, identity=identities.get(hospital, pid),
                         bedmap=bedmap))
-                # One page per episode (G2-A1 final review): `escalated` follows the clock, so a
-                # critical that latches and returns is "added" again — but the doctor was told
-                # about this episode already. `paged` goes with the episode's first-seen, so a new
-                # episode pages anew.
+                # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
+                # critical that latches and returns, or an alert that clears and returns within the
+                # delay, is "added" again — but the doctor was told about this chain already. A new
+                # chain pages anew.
                 to_page = added - store.paged
                 if to_page:
                     store.paged |= to_page
@@ -632,7 +634,7 @@ def create_app(
         # This patient's FIRING alerts only (G2-A1): a latched one keeps its episode's stamp, and
         # stamping it now would open an episode after its end.
         for a in engine.active_alerts(patient_id):
-            if store.stamp_first_seen(patient_id, a.kind, now):
+            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
                 audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind,
                                         {"at": now.isoformat()}))
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
@@ -732,8 +734,9 @@ def create_app(
                                     {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
                                      "source": a.source, "evidence": a.supporting_evidence}))
         _audit_cleared(hospital, cleared, wall_now)
+        # A return within `escalate_after` of its clear continues its escalation chain (X13).
         for a in engine.active_alerts(obs.patient_id):
-            if store.stamp_first_seen(obs.patient_id, a.kind, wall_now):
+            if store.stamp_first_seen(obs.patient_id, a.kind, wall_now, chain_gap=escalate_after):
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
         await broadcaster.publish(hospital, patient_board(
@@ -764,7 +767,7 @@ def create_app(
         now = datetime.now(timezone.utc)
         # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
         # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
-        latched = acknowledge_latched(store, patient_id, kind)
+        latched = acknowledge_latched(store, patient_id, kind, now)
         if latched is None:
             if (patient_id, kind) not in live_keys(engine, store):
                 raise HTTPException(status_code=404, detail="no such active alert")

@@ -6,7 +6,7 @@ acknowledged critical, leaves with its rule and takes its episode's state with i
 and made-up values only (CLAUDE.md rule 6)."""
 from datetime import datetime, timedelta, timezone
 
-from homunculus.api.ackstore import AckStore
+from homunculus.api.ackstore import AckStore, Chain
 from homunculus.api.alert_lifecycle import (
     ACKED_AFTER_RESOLVE, RESOLVED, Cleared, acknowledge_latched, live_keys, sync_alerts,
 )
@@ -230,3 +230,63 @@ def test_a_cleared_row_says_when_the_episode_began_and_why_it_ended():
         "severity": "moderate"}
     assert Cleared("bed-3", "septic_shock", "critical", None, ACKED_AFTER_RESOLVE).payload(at)[
         "first_seen"] is None
+
+
+# --- G2-A1, X13: an episode that returns within the escalation delay continues its chain ---------
+
+GAP = timedelta(minutes=5)
+NEWS2_KEY = ("bed-3", "news2")
+
+
+def _stamp_chained(engine, store, minute, patient="bed-3"):
+    """The doors' stamp since X13: told the escalation delay, so a return can continue its chain."""
+    for a in engine.active_alerts(patient):
+        store.stamp_first_seen(patient, a.kind, WALL + timedelta(minutes=minute), chain_gap=GAP)
+
+
+def test_the_hook_remembers_a_cleared_episodes_chain_at_the_time_it_ran():
+    engine, store = Engine(), AckStore()
+    _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=0)
+    _stamp_chained(engine, store, minute=0)
+    _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=1)
+    assert store.recent[NEWS2_KEY] == Chain(clock_from=WALL, cleared_at=WALL + timedelta(minutes=1),
+                                            paged=False)
+    assert NEWS2_KEY not in store.clock_from
+
+
+def test_a_return_within_the_delay_is_a_new_episode_on_its_chains_escalation_clock():
+    engine, store = Engine(), AckStore()
+    _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=0)
+    _stamp_chained(engine, store, minute=0)
+    store.acknowledge("bed-3", "news2", "ayse", WALL)
+    _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=1)
+    _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=3)
+    _stamp_chained(engine, store, minute=3)
+    assert store.first_seen[NEWS2_KEY] == WALL + timedelta(minutes=3), "a new episode (D5)"
+    assert NEWS2_KEY not in store.acks, "the old answer belongs to the old episode"
+    assert store.clock_from[NEWS2_KEY] == WALL, "two minutes off the board: the chain's clock goes on"
+
+
+def test_an_acknowledged_latch_leaves_its_chain_behind_from_the_acknowledgement():
+    engine, store = _shock()
+    store.paged.add(SHOCK_KEY)
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)                   # latched
+    assert SHOCK_KEY not in store.recent, "still on the board: the chain is live"
+    assert store.clock_from[SHOCK_KEY] == WALL
+    acknowledge_latched(store, "bed-3", "septic_shock", WALL + timedelta(minutes=2))
+    assert store.recent[SHOCK_KEY] == Chain(clock_from=WALL, cleared_at=WALL + timedelta(minutes=2),
+                                            paged=True)
+    assert SHOCK_KEY not in store.clock_from and SHOCK_KEY not in store.paged
+    _evaluate(engine, store, SignalCode.LACTATE, 3.4, minute=4)
+    _stamp_chained(engine, store, minute=4)
+    assert store.first_seen[SHOCK_KEY] == WALL + timedelta(minutes=4), "a new episode"
+    assert store.clock_from[SHOCK_KEY] == WALL and SHOCK_KEY in store.paged, \
+        "two minutes after the acknowledgement: the same chain, its clock and its page"
+
+
+def test_acknowledging_a_latch_without_a_time_remembers_no_chain():
+    """The replay's call (api/rehydrate.py): a restart does not rebuild chains."""
+    engine, store = _shock()
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)
+    acknowledge_latched(store, "bed-3", "septic_shock")
+    assert store.recent == {} and SHOCK_KEY not in store.clock_from

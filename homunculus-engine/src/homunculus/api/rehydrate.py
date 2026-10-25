@@ -12,7 +12,11 @@ Since G2-A1 (O17, D7) every replayed `ingest` and `chart` runs through the lifec
 run (api/alert_lifecycle.py): a closed episode's stamp and ack are pruned as they were live — so
 the `first_seen` row of the next episode sets that episode's own stamp —, a critical nobody
 acknowledged latches again, and an `ack` row for a latched alert removes it. The `alert_cleared`
-rows follow from those and are not replayed."""
+rows follow from those and are not replayed.
+
+The escalation chain (X13) is not in the log: a replayed episode's clock (`clock_from`) is its own
+`first_seen` row, and no chain of an episode that ended is remembered (`recent`). After a restart a
+chain starts over — the same limitation as `paged` and `escalated`, which are not replayed either."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -42,9 +46,14 @@ def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> No
         elif rec.event_type == "ack":
             _replay_ack(engine, store, rec)
         elif rec.event_type == "first_seen":
-            store.first_seen.setdefault((rec.patient_id, rec.subject),
-                                        datetime.fromisoformat(rec.payload["at"]))
+            key = (rec.patient_id, rec.subject)
+            store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
+            store.clock_from.setdefault(key, store.first_seen[key])
         # alert / escalation / notification are derived or transient — nothing to replay.
+    # The hook's prunes remembered the chains of the episodes the replay saw end, but nothing replayed
+    # continues one (the `first_seen` rows set their stamps directly). Carried past the restart, they
+    # would continue a chain from its middle: the last replayed episode's first sight as its clock.
+    store.recent.clear()
 
 
 def _replay_ingest(engine: Engine, rec: AuditRecord) -> bool:

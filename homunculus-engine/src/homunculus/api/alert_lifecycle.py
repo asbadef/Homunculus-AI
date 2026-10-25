@@ -10,16 +10,19 @@ after `engine.ingest`, before their first audit write: an audit that fails mid-r
 leave an evaluation without its hook, or an unacknowledged critical would be off the board until
 some later reading:
 
-* A kind that stopped firing ends its episode. Its ack, first-seen stamp, escalation flag and record
-  of the doctor's page are pruned (the door prunes the notifier's dedup with `live_keys`), so if it
-  fires again it is a NEW episode: a new first-seen, a new escalation clock, a new nurse
-  notification (D5), a new page to the doctor.
+* A kind that stopped firing ends its episode. Its ack, first-seen stamp, escalation clock and flag
+  and record of the doctor's page are pruned (the door prunes the notifier's dedup with
+  `live_keys`), so if it fires again it is a NEW episode: a new first-seen, a new nurse
+  notification (D5). Its escalation chain is remembered first (X13): a return within the
+  escalation delay of the end continues the chain — its clock, and no second page to the doctor —
+  and a later one starts a new chain, with a new clock and a new page.
 * Except a critical one nobody acknowledged: it latches (D2). It stays on the board as resolved,
   unacknowledged — its first-seen kept (and carried in the latch), its escalation flag dropped, for
   only a firing alert escalates (D8) — until a clinician acknowledges it, which removes it
   (`acknowledge_latched`). A
   transient critical event must not vanish before anyone saw it. HIGH, MODERATE and LOW never
-  latch, and an acknowledged critical leaves with its rule.
+  latch, and an acknowledged critical leaves with its rule. The acknowledgement that removes a
+  latch is its episode's end, and leaves its chain behind as a clear does.
 * A latched kind that fires again is active again: the latch is replaced and its episode goes on —
   no `alert_cleared` row, and the first-seen stamp it kept is still its own. Nor is the doctor
   paged for it again if the episode had been (`AckStore.paged`).
@@ -93,18 +96,25 @@ def sync_alerts(engine: Engine, store: AckStore, patient_id: str, now: datetime)
     # its hook, the skipped patient's keys are still in `store.firing`, so another patient's sync
     # cannot prune their ack and first-seen before their drop is processed.
     firing = set(store.firing)
-    store.prune(firing | set(store.resolved), firing)
+    store.prune(firing | set(store.resolved), firing, now=now)
     return cleared
 
 
-def acknowledge_latched(store: AckStore, patient_id: str, kind: str) -> Cleared | None:
+def acknowledge_latched(store: AckStore, patient_id: str, kind: str,
+                        now: datetime | None = None) -> Cleared | None:
     """A clinician acknowledged a latched alert: it is removed, and its episode ends (D8). None
-    when (patient, kind) is not latched — a firing alert is acknowledged the ordinary way."""
+    when (patient, kind) is not latched — a firing alert is acknowledged the ordinary way.
+
+    `now` is the acknowledgement's time: the episode leaves the board then, and its escalation
+    chain is remembered from it (X13). The replay passes none — a restart rebuilds no chain."""
     key = (patient_id, kind)
     entry = store.resolved.pop(key, None)
     if entry is None:
         return None
+    if now is not None:
+        store.remember_chain(key, now, entry.get("first_seen"))
     seen = store.first_seen.pop(key, None)
+    store.clock_from.pop(key, None)
     if seen is None:
         seen = entry.get("first_seen")
     store.escalated.discard(key)
