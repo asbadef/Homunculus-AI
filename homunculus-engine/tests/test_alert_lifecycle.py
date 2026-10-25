@@ -141,6 +141,24 @@ def test_a_critical_that_fires_again_while_latched_keeps_its_episode_and_a_fresh
     assert store.first_seen[SHOCK_KEY] == WALL + timedelta(minutes=4), "now a new episode, a new clock"
 
 
+def test_the_page_belongs_to_the_episode_a_latch_keeps_it_and_an_ending_takes_it():
+    """The doctor is paged once per episode (final review): the record of it lives and dies with the
+    episode's first-seen — kept through a latch and a return, gone with an acknowledgement or with
+    a rule that ended for good."""
+    engine, store = _shock()
+    store.paged.update({SHOCK_KEY, ("bed-3", "sepsis")})
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)                   # latched
+    assert SHOCK_KEY in store.paged and ("bed-3", "sepsis") in store.paged
+    _evaluate(engine, store, SignalCode.LACTATE, 3.4, minute=2)                   # the same episode
+    assert SHOCK_KEY in store.paged, "a return is not a new episode: it is not paged again"
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=3)                   # latched again
+    _evaluate(engine, store, SignalCode.SUSPECTED_INFECTION, 0.0, minute=4)       # sepsis ends for good
+    assert ("bed-3", "sepsis") not in store.paged
+    assert SHOCK_KEY in store.paged, "a latch is still the episode"
+    acknowledge_latched(store, "bed-3", "septic_shock")
+    assert SHOCK_KEY not in store.paged, "answered: the next episode can page"
+
+
 def test_a_latch_carries_its_episodes_first_seen_to_the_cleared_record_of_its_acknowledgement():
     engine, store = _shock()
     _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)

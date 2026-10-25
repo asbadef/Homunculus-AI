@@ -41,3 +41,16 @@ def test_prune_with_the_firing_keys_unlatches_a_refired_alert_and_keeps_only_fir
     assert set(s.first_seen) == {latched, refired}
     assert s.escalated == {refired}
     assert set(s.resolved) == {latched}
+
+
+def test_prune_forgets_a_page_with_its_episode_and_keeps_it_while_the_alert_is_live():
+    # G2-A1 final review: `paged` is scoped to the episode like first_seen. A key still on the board
+    # (firing, or latched) keeps it — a flap inside one episode must not page twice — and a key that
+    # left the board loses it, so the next episode can page.
+    s = AckStore()
+    latched, gone = ("bed-3", "septic_shock"), ("bed-4", "septic_shock")
+    s.paged |= {latched, gone}
+    s.prune(live_keys={latched}, firing_keys=set())
+    assert s.paged == {latched}
+    s.prune(live_keys=set())
+    assert s.paged == set()

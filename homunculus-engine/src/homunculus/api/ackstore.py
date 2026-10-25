@@ -25,6 +25,12 @@ class AckStore:
     # when the hook runs, so this is how it knows which kinds an evaluation dropped, and what a
     # latched one said.
     firing: dict[tuple[str, str], Alert] = field(default_factory=dict)
+    # G2-A1, final review: the escalations the doctor was already PAGED for. `escalated` follows
+    # the clock — a latch drops it and a return raises it again — so on its own a critical that
+    # flaps (lactate 3.4 / 1.5 every two minutes) would page the doctor on each swing. This is
+    # scoped to the episode like `first_seen` and forgotten with it: a return inside the same
+    # episode is not paged again, a new episode is.
+    paged: set[tuple[str, str]] = field(default_factory=set)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime) -> bool:
         """Record when an alert was first seen. Returns True only if this is a NEW stamp
@@ -44,10 +50,12 @@ class AckStore:
 
         `live_keys` are the kinds still on the board: firing, or latched. With `firing_keys`, the
         ones firing now (G2-A1): only a firing alert can be escalated (D8), and a latched alert
-        that fires again is no longer latched — its episode goes on (X2)."""
+        that fires again is no longer latched — its episode goes on (X2). The page record goes
+        with the episode's first-seen: it is kept for every live key, firing or latched."""
         for mapping in (self.acks, self.first_seen):
             for key in [k for k in mapping if k not in live_keys]:
                 del mapping[key]
+        self.paged &= live_keys
         if firing_keys is None:
             self.escalated &= live_keys
             return

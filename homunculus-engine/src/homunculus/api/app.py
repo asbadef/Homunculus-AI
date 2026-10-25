@@ -278,12 +278,18 @@ def create_app(
                     await broadcaster.publish(hospital, patient_board(
                         engine, pid, store, identity=identities.get(hospital, pid),
                         bedmap=bedmap))
-                if added:
+                # One page per episode (G2-A1 final review): `escalated` follows the clock, so a
+                # critical that latches and returns is "added" again — but the doctor was told
+                # about this episode already. `paged` goes with the episode's first-seen, so a new
+                # episode pages anew.
+                to_page = added - store.paged
+                if to_page:
+                    store.paged |= to_page
                     alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
-                    for key in added:
+                    for key in to_page:
                         audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
                                                 {"at": now.isoformat()}))
-                    for note in notifier.for_escalation(hospital, added, alert_by_key):
+                    for note in notifier.for_escalation(hospital, to_page, alert_by_key):
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
@@ -603,6 +609,10 @@ def create_app(
             # never empty (build_entries refuses that), so `now` is set for the stamps below.
             now = datetime.now(timezone.utc)
             cleared = sync_alerts(engine, store, obs.patient_id, now)
+            # Re-arm the nurse's dedup after EACH entry, not only after the last: `[norepinephrine 0,
+            # dopamine 5]` ends an acknowledged shock and starts a new one inside this loop, and the
+            # end-of-request prune would find it live again and keep the old episode's dedup (D5).
+            notifier.prune(hospital, live_keys(engine, store))
             audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
                                     {"value": obs.value, "unit": obs.unit,
                                      "obs_ts": obs.timestamp.isoformat(),

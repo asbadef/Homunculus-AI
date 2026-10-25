@@ -202,3 +202,50 @@ def test_a_new_episode_after_an_acknowledged_latch_tells_the_nurse_again():
     assert _ack(c).status_code == 200                   # removed
     _reading(c, "lactate", 3.4, minute=62)              # a new episode
     assert _told(c) == ["new", "new"]
+
+
+def _pages(client, kind="septic_shock"):
+    """How often the doctor was paged about `kind`: the `escalation` audit rows, and the doctor
+    notifications that went out with them."""
+    rows = client.get("/audit", params={"patient_id": "bed-3", "limit": 10000},
+                      headers=_hdr("tok")).json()["records"]
+    mine = [r for r in rows if r["subject"] == kind]
+    return (sum(r["event_type"] == "escalation" for r in mine),
+            sum(r["event_type"] == "notification" and r["payload"]["trigger"] == "escalation"
+                for r in mine))
+
+
+@pytest.mark.anyio
+async def test_a_latched_critical_that_returns_pages_the_doctor_once_per_episode():
+    """G2-A1 final review: the latch drops `escalated` and each return raises it again, so every
+    flap used to read as a fresh escalation — a never-acknowledged shock whose lactate swung 3.4 / 1.5
+    every two minutes paged the doctor on each swing. One episode is one page; the board's
+    `escalated` flag still follows the clock; an acknowledgement ends the episode, and the next
+    one pages anew."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _drive_shock(client)
+    store = app.state.ack_stores["HOSP1"]
+    first = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
+    store.first_seen[SHOCK] = first                                  # long unanswered
+    cycle_at = first + timedelta(minutes=6)
+    await app.state.escalation_cycle(cycle_at)
+    assert SHOCK in store.escalated and _pages(client) == (1, 1)
+    for flap in range(3):
+        _reading(client, "lactate", 1.5, minute=61 + 2 * flap)       # latched: off the clock
+        await app.state.escalation_cycle(cycle_at)
+        assert SHOCK not in store.escalated
+        _reading(client, "lactate", 3.4, minute=62 + 2 * flap)       # the same episode, back
+        await app.state.escalation_cycle(cycle_at)
+        assert SHOCK in store.escalated, "the board's flag follows the clock"
+    assert store.first_seen[SHOCK] == first, "never acknowledged: still the first episode"
+    assert _pages(client) == (1, 1), "one episode, one page"
+    _reading(client, "lactate", 1.5, minute=67)                      # latched once more
+    assert _ack(client).status_code == 200                           # answered: the episode ends
+    assert SHOCK not in store.paged
+    _reading(client, "lactate", 3.4, minute=68)                      # a new episode
+    fresh = store.first_seen[SHOCK]
+    await app.state.escalation_cycle(fresh + timedelta(minutes=4))
+    assert _pages(client) == (1, 1), "the new episode's clock has not run out"
+    await app.state.escalation_cycle(fresh + timedelta(minutes=5))
+    assert _pages(client) == (2, 2), "a new episode pages the doctor again"
