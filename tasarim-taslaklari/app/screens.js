@@ -265,7 +265,8 @@
     get(pid, no) { return (this.store()[pid] || []).find(x => x.no === no); },
     // İstem bağlanacak protokol: ekranda seçili (tumu değilse) → yoksa açık (son) protokol → yoksa en yeni. (Ozan kararı)
     activeNo(pid, sel) { if (sel && sel !== "tumu") return sel; const list = this.list(pid); return ((list.find(x => !x.kapali)) || list[0] || {}).no; },
-    nextNo() { H.data.protoSeq = (H.data.protoSeq || 50894100) + 1; return String(H.data.protoSeq); },
+    // Protokol numara düzenimiz: YIL-SIRA (ör. 2026-104601). Her kabul farklı/sıralı; seed'lerle (2026-104512…) tutarlı; referanstan (düz 8 hane) farklı.
+    nextNo() { const y = new Date().getFullYear(); H.data.protoSeq = (H.data.protoSeq || 104600) + 1; return y + "-" + H.data.protoSeq; },
     // Mevcut demo protokollerini (p._protokoller) bir kez depoya taşır; sonra depo gerçek kaynaktır.
     seedFrom(pid, arr) { const s = this.store(); if (!s[pid]) { s[pid] = (arr || []).map(x => Object.assign({ islemIds:[] }, x)); } return s[pid]; },
     create(pid, d) { const s = this.store(), list = s[pid] = s[pid] || []; const rec = Object.assign({ no:this.nextNo(), tarih:bugunStr(), bucket:"Bu hafta", kapali:false, islemIds:[] }, d || {}); list.unshift(rec); H.saveData && H.saveData(); return rec; },
@@ -639,7 +640,10 @@
     }
     if (tab === "kurumsal") { const q = root.querySelector("[data-kfq]"); if (q) q.oninput = () => { const v = q.value.toLocaleLowerCase("tr"); root.querySelectorAll("[data-kfsel]").forEach(tr => { tr.style.display = tr.textContent.toLocaleLowerCase("tr").includes(v) ? "" : "none"; }); }; }
     function donemAcModal() {
-      const MESAI = ["Gündüz", "Gecə", "24 saat", "Həftəsonu"], YKASA = ["Yazar Kasa 1", "Yazar Kasa 2", "—"], YKCIHAZ = ["Ingenico Desk/5000", "PAX A920", "—"], POSL = ["POS-1 (Kapital)", "POS-2 (Paşa)", "—"];
+      const MESAI = ["Gündüz", "Gecə", "24 saat", "Həftəsonu"];
+      const cih = (H.data.cihazlar || []).filter(c => c.durum === "Aktif");   // admin → Cihaz Listesi'nden okunur
+      const YKASA = [...cih.filter(c => /Yazar kasa/i.test(c.tip)).map(c => c.ad), "—"];
+      const POSL = [...cih.filter(c => /POS/i.test(c.tip)).map(c => c.ad), "—"];
       const vzAd = (H.state.user || {}).name || "—", now = H.nowFull ? H.nowFull() : new Date().toLocaleString("az-AZ");
       H.modal({ title:"Dönem aç · " + H.esc(banko), body:`<div class="icd-form">
         <div class="fr"><label>Vezne / kullanıcı</label><input value="${H.esc(vzAd)}" readonly></div>
@@ -647,14 +651,13 @@
         <div class="fr"><label>Dönem başlangıç</label><input value="${H.esc(now)}" readonly></div>
         <div class="fr"><label>Max. kapanış tarihi (ops.)</label><input type="datetime-local" data-f="max"></div>
         <div class="fr"><label>Mesai tipi</label><select data-f="mesai">${MESAI.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
-        <div class="fr"><label>Yazar kasa</label><select data-f="ykasa">${YKASA.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
-        <div class="fr"><label>Yazar kasa cihazı</label><select data-f="ykcihaz">${YKCIHAZ.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
-        <div class="fr"><label>POS</label><select data-f="pos">${POSL.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Yazar kasa (ÖKC)</label><select data-f="ykasa">${YKASA.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>POS cihazı</label><select data-f="pos">${POSL.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Açılış matbu no</label><input data-f="matbu" placeholder="ör. A-100245"></div></div>
         <p class="adm-sub" style="margin-top:8px">Bu banko için yeni dönem açılır. Dönem boyunca yaptığın işlemler bu bankodan takip edilir.</p>`,
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Dönemi aç</button>`,
         onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => { const el = m.querySelector(`[data-f="${k}"]`); return el ? el.value : ""; };
-          cur.no = ++H.data.vezneDonemSeq; cur.acik = true; cur.acilis = { mesai:g("mesai"), ykasa:g("ykasa"), ykcihaz:g("ykcihaz"), pos:g("pos"), matbu:g("matbu"), max:g("max"), baslangic:now, vezne:vzAd };
+          cur.no = ++H.data.vezneDonemSeq; cur.acik = true; cur.acilis = { mesai:g("mesai"), ykasa:g("ykasa"), pos:g("pos"), matbu:g("matbu"), max:g("max"), baslangic:now, vezne:vzAd };
           H.saveData && H.saveData(); H.log("Vezne dönem açıldı", banko + " · #" + cur.no); H.toast(banko + " · dönem açıldı: #" + cur.no); H.closeModal(); H.go("vezne", params); }; } });
     }
     function donemOzet() {

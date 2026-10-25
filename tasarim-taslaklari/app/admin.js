@@ -805,11 +805,14 @@
   }
 
   /* ---------- Cihaz Listesi (RIS / yazar kasa / hasta çağrı ekranı) ---------- */
-  const CIHAZ_TIP = ["RIS / görüntüleme", "Yazar kasa (ÖKC)", "Hasta çağrı ekranı", "Barkod / kol bandı yazıcısı", "Laboratuvar cihazı", "Diğer"];
+  const CIHAZ_TIP = ["RIS / görüntüleme", "Yazar kasa (ÖKC)", "POS cihazı", "Hasta çağrı ekranı", "Barkod / kol bandı yazıcısı", "Laboratuvar cihazı", "Diğer"];
   const CIHAZ_DURUM = ["Aktif", "Pasif", "Bakımda", "Arızalı"];
   const cihazlar = () => (H.data.cihazlar = H.data.cihazlar || [
     { id:"chz1", ad:"MR Cihazı 1", tip:"RIS / görüntüleme", bolum:"Radiologiya", marka:"Siemens Magnetom", riskod:"RIS-MR-01", ip:"10.0.12.21", mac:"A4:BB:6D:11:22:33", port:"104", seri:"MR-2021-001", durum:"Aktif" },
     { id:"chz2", ad:"Vezne ÖKC 1", tip:"Yazar kasa (ÖKC)", bolum:"Vezne / Ön büro", marka:"Profilo", riskod:"", ip:"10.0.5.40", mac:"A4:BB:6D:44:55:66", port:"9100", seri:"OKC-9931", durum:"Aktif" },
+    { id:"chz2b", ad:"Vezne ÖKC 2", tip:"Yazar kasa (ÖKC)", bolum:"Vezne / Ön büro", marka:"Hugin", riskod:"", ip:"10.0.5.41", mac:"A4:BB:6D:44:55:67", port:"9100", seri:"OKC-9932", durum:"Aktif" },
+    { id:"chz2c", ad:"POS-1 (Kapital Bank)", tip:"POS cihazı", bolum:"Vezne / Ön büro", marka:"Ingenico Desk/5000", riskod:"", ip:"10.0.5.50", mac:"A4:BB:6D:44:55:70", port:"", seri:"POS-0001", durum:"Aktif" },
+    { id:"chz2d", ad:"POS-2 (Paşa Bank)", tip:"POS cihazı", bolum:"Vezne / Ön büro", marka:"PAX A920", riskod:"", ip:"10.0.5.51", mac:"A4:BB:6D:44:55:71", port:"", seri:"POS-0002", durum:"Aktif" },
     { id:"chz3", ad:"Poliklinik çağrı ekranı 2", tip:"Hasta çağrı ekranı", bolum:"Poliklinik girişi", marka:"LG 43\"", riskod:"", ip:"10.0.7.12", mac:"A4:BB:6D:77:88:99", port:"8080", seri:"CAGRI-0002", durum:"Aktif" },
   ]);
   function tabCihaz(body) {
