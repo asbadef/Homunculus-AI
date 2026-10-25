@@ -78,6 +78,7 @@
     m_ik:{ AZ:"İnsan resursları", TR:"İnsan Kaynakları", RU:"Кадры", EN:"Human resources" },
     m_labislem:{ AZ:"Laboratoriya / Radiologiya", TR:"Laboratuvar / Radyoloji", RU:"Лаборатория / Радиология", EN:"Lab / Radiology" },
     m_steril:{ AZ:"Sterilizasiya (MSŞ)", TR:"Sterilizasyon (MSÜ)", RU:"Стерилизация (ЦСО)", EN:"Sterilization (CSSD)" },
+    m_donemonay:{ AZ:"Maliyyə · Dövr təsdiqi", TR:"Mali İşler · Dönem onay", RU:"Финансы · Утверждение смен", EN:"Finance · Shift approval" },
     m_raporlar:{ AZ:"Hesabatlar", TR:"Raporlar", RU:"Отчёты", EN:"Reports" },
     m_istakip:{ AZ:"Dəstək / İş izləmə", TR:"Destek / İş Takip", RU:"Поддержка / Заявки", EN:"Support / Tickets" },
     m_tasks:{ AZ:"Tapşırıqlar", TR:"Görevlerim", RU:"Задачи", EN:"My tasks" },
@@ -359,7 +360,7 @@
     kabul:    { group:"Destek", name:"Hasta kabul", az:"Qəbul əməkdaşı", names:true, engine:"— (motorda yok)",
                 perms:["admission","occupancy","vezne_donem","vezne_banko","protokol_duzenle","kapali_protokol_ekle","tahsilat_degistir","protokol_aktar","avans_al","toplu_fatura"], home:"vezne" },
     yonetici: { group:"Yönetim", name:"Başhekim / yönetici", az:"Baş həkim / rəhbər", names:false, engine:"— (HOSPITAL_ADMIN'in bir kısmı)",
-                perms:["summary","quality","occupancy","audit","indirim_onay","iade_onay","kampanya_create","fiyat_duzenle","vezne_donem","protokol_duzenle","kapali_protokol_ekle","kapali_protokol_sil","tahsilat_degistir","protokol_aktar","fatura_iptal","avans_al","kurum_degistir","toplu_fatura"], home:"summary" },
+                perms:["summary","quality","occupancy","audit","indirim_onay","iade_onay","kampanya_create","fiyat_duzenle","vezne_donem","protokol_duzenle","kapali_protokol_ekle","kapali_protokol_sil","tahsilat_degistir","protokol_aktar","fatura_iptal","avans_al","kurum_degistir","toplu_fatura","donem_onay"], home:"summary" },
     kalite:   { group:"Yönetim", name:"Kalite", az:"Keyfiyyət", names:false, engine:"AUDITOR",
                 perms:["quality","audit"], home:"quality" },
     sistem:   { group:"Yönetim", name:"Sistem yöneticisi (BT)", az:"Sistem inzibatçısı (İT)", names:false, engine:"HOSPITAL_ADMIN",
@@ -370,6 +371,8 @@
                 perms:["lab_islem"], home:"labislem" },
     muhasebe: { group:"Yönetim", name:"Medikal Muhasebe / Kurumsal Faturalama", az:"Tibbi Mühasibat / Korporativ Fakturalaşdırma", names:true, engine:"— (motorda yok)",
                 perms:["muhasebe", "audit"], home:"medmuhasebe" },
+    mali_isler: { group:"Yönetim", name:"Mali İşler (Maliyyə)", az:"Maliyyə şöbəsi", names:true, engine:"— (motorda yok)",
+                perms:["donem_onay", "summary", "audit", "muhasebe"], home:"donemonay" },
   };
   // Destek / İş takip: her kullanıcı talep açabilir; yönetimi (çözme/kapatma) ayrı yetki (destek_yonet).
   Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
@@ -436,6 +439,7 @@
     { u:"msu.aygun",   pw:"Demo123!", name:"Aygün Hüseynova",        role:"msu",      units:"*", title:"Sterilizasiya (MSŞ) texniki" },
     { u:"lab.elnur",   pw:"Demo123!", name:"Elnur Qədirov",          role:"laborant", units:"*", title:"Laboratoriya texniki" },
     { u:"muh.leyla",   pw:"Demo123!", name:"Leyla Nağıyeva",         role:"muhasebe", units:"*", title:"Tibbi mühasib" },
+    { u:"mali.nurlan", pw:"Demo123!", name:"Nurlan Əliyev",          role:"mali_isler", units:"*", title:"Maliyyə şöbəsi müdiri" },
     { u:"yeni.hekim",  pw:"Gecici1!", name:"Dr. Aynur Cəfərli",      role:"hekim",    units:["dax"], mustChange:true, title:"Yeni hesab · ilk giriş" },
   ].map(x => Object.assign({ active:true, fails:0, lockedUntil:0, lastLogin:"—", extras:[] }, x, x.units === "*" ? { units:H.units().map(u => u.id) } : {}));
   H.MFA_CODE = "123456"; H.RESET_CODE = "482913";
@@ -661,7 +665,7 @@
    * böylece her açılışta tazelenir ve kırılmaz. Hasta kimlikleri sabit üretildiği için istem/fatura bağları korunur.
    * Şema değişince PERSIST_VER artırılır → eski kayıt yok sayılır. Roller ayrı (hmc.roles) saklanır. */
   const PERSIST_VER = "v3";   // v3: vezne dönemi per-banko (vezneDonemler); eski tek-dönem kaydı sıfırlanır
-  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "danismanlar", "iptaller", "vezneDonemler", "vezneDonemSeq", "rndDoktorSeeded", "userPatients"];
+  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "danismanlar", "iptaller", "vezneDonemler", "vezneDonemSeq", "rndDoktorSeeded", "userPatients", "vezneKapanislar"];
   try { const raw = localStorage.getItem("hmc.data." + PERSIST_VER); if (raw) { const o = JSON.parse(raw); PERSIST_KEYS.forEach(k => { if (o[k] !== undefined) H.data[k] = o[k]; }); } }
   catch (e) { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} }
   /* Kullanıcının açtığı hastalar (vezne/kabul "Kaydet") kalıcıdır: demo hastalar her açılışta koddan tazelenir,

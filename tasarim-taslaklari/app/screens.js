@@ -549,7 +549,8 @@
     const cur = donemler[banko], donemNo = cur.no, donemAcik = cur.acik, donemYetki = H.can("vezne_donem");
     const acikBankolar = Object.keys(donemler).filter(b => donemler[b].acik);
     const TABS = [["giris", "Giriş"], ["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
-    const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>${donemAcik ? `Dönem <b>#${donemNo}</b> · <b>Açık</b>` : `<b>Kapalı · işlem yapılamaz</b>`} · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa — her bankonun kendi dönemi vardır">${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}${donemler[b] && donemler[b].acik ? " ● açık" : ""}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönemi kapat" : "Bu bankoda dönem aç"}</button>` : ""}${!donemAcik && donemYetki ? `<button class="btn sm" data-vdevir>${I("key") || ""} Devir alarak aç</button>` : ""}<button class="btn sm" data-vozet>Dönem özeti</button>${acikBankolar.length > 1 ? `<span class="adm-sub" style="margin-left:4px">Açık bankolar: ${acikBankolar.map(H.esc).join(", ")}</span>` : ""}</div>`;
+    const bekKap = (H.data.vezneKapanislar || []).find(x => x.banko === banko && x.onay === "bekliyor");
+    const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>${donemAcik ? `Dönem <b>#${donemNo}</b> · <b>Açık</b>` : bekKap ? `<b>Kapalı · Mali İşler onayı bekliyor (#${bekKap.no})</b>` : `<b>Kapalı · işlem yapılamaz</b>`} · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa — her bankonun kendi dönemi vardır">${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}${donemler[b] && donemler[b].acik ? " ● açık" : ""}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönemi kapat" : "Bu bankoda dönem aç"}</button>` : ""}${!donemAcik && donemYetki ? `<button class="btn sm" data-vdevir>${I("key") || ""} Devir alarak aç</button>` : ""}<button class="btn sm" data-vozet>Dönem özeti</button>${acikBankolar.length > 1 ? `<span class="adm-sub" style="margin-left:4px">Açık bankolar: ${acikBankolar.map(H.esc).join(", ")}</span>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const panFatura = () => { const all = faturalar(), f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -850,7 +851,11 @@
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn" data-kkaydet>Sayımı kaydet</button><button class="btn p" data-kkapat>Dönemi kapat</button>`,
         onMount(m) {
           m.querySelector("[data-kkaydet]").onclick = () => { cur.kapanis = read(m); H.saveData && H.saveData(); H.toast("Sayım kaydedildi"); };
-          m.querySelector("[data-kkapat]").onclick = () => { cur.kapanis = read(m); cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko + " · sayım nakit " + cur.kapanis.sayim.nakit + " ₼"); H.saveData && H.saveData(); H.toast(banko + " dönemi kapatıldı", "w"); H.closeModal(); H.go("vezne", params); }; } });
+          m.querySelector("[data-kkapat]").onclick = () => { const k = read(m); cur.kapanis = k; cur.acik = false; cur.onay = "bekliyor";
+            const sayilan = Object.values(k.sayim).reduce((a, v) => a + (+v || 0), 0), beklenen = tahsil;
+            (H.data.vezneKapanislar = H.data.vezneKapanislar || []).unshift({ id:"vk" + Date.now(), no:cur.no, banko, vezne:(H.state.user || {}).name || "—", vezneU:(H.state.user || {}).u, kapanisT:now, sayim:k.sayim, beklenen, sayilan, fark:+(sayilan - beklenen).toFixed(2), onay:"bekliyor", onaylayan:null, redNot:"" });
+            H.log("Vezne dönem kapatıldı (onay bekliyor)", "#" + cur.no + " · " + banko + " · sayılan " + sayilan + " / beklenen " + beklenen + " ₼"); H.saveData && H.saveData();
+            H.toast(banko + " dönemi kapatıldı · Mali İşler onayı bekleniyor", "w"); H.closeModal(); H.go("vezne", params); }; } });
     }
     // Provizyon / müstehaklık (fatura öncesi kurum onayı)
     function provizyonModal(x) {
@@ -886,10 +891,12 @@
       const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
       const gp = e.target.closest("[data-gfkprov]"); if (gp) { if (!donemAcik) { H.toast("Dönem kapalı · işlem yapılamaz.", "e"); return; } const x = gfkRows()[+gp.dataset.gfkprov]; if (x) provizyonModal(x); return; }
+      const pendKapanis = () => (H.data.vezneKapanislar || []).find(x => x.banko === banko && x.onay === "bekliyor");
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; }
         if (cur.acik) return donemKapatModal();
+        const pk = pendKapanis(); if (pk) { H.toast("Bu bankonun önceki dönemi (#" + pk.no + ") Mali İşler onayını bekliyor · onaylanmadan yeni dönem açılamaz.", "e"); return; }
         return donemAcModal(); }
-      if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } return donemDevirModal(); }
+      if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } const pk = pendKapanis(); if (pk) { H.toast("Önceki dönem (#" + pk.no + ") Mali İşler onayını bekliyor · devir alınamaz.", "e"); return; } return donemDevirModal(); }
       if (e.target.closest("[data-vozet]")) { donemOzet(); return; }
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
@@ -1067,6 +1074,41 @@
       return { cols:["Tarih", "Tür", "Kayıt", "Sebep"], rows:ip.map(x => [x.tarih || "—", x.tur || "—", x.kayit || "—", x.sebep || "—"]), note:"İptal edilen kayıtlar. Henüz iptal işlemi yoksa boş görünür." }; }
     return null;
   }
+
+  /* ================= MALİ İŞLER · Vezne dönem onay (iki aşamalı kapanış) =================
+   * Kasiyer dönemi kapatınca "onay bekliyor" kaydı oluşur. Mali İşler beklenen (sistem) ile
+   * sayılan (kasiyer) tutarı karşılaştırıp (Fark) onaylar (kilitlenir, kasiyer yeni dönem açabilir)
+   * ya da reddeder (dönem kasiyere geri açılır, düzeltir). Renk: fark 0 yeşil, fark var kırmızı. */
+  H.register("donemonay", { title:() => H.t("m_donemonay"), perm:["donem_onay"], render(root, params = {}) {
+    const can = H.can("donem_onay"), f = params.f || "bekliyor";
+    const list = (H.data.vezneKapanislar || []).filter(x => f === "hepsi" ? true : x.onay === f);
+    const SEG = [["bekliyor", "Onay bekleyen"], ["onaylandi", "Onaylanan"], ["reddedildi", "Reddedilen"], ["hepsi", "Tümü"]];
+    const para = (v) => (v == null ? "—" : (+v).toLocaleString("az") + " ₼");
+    const farkTag = (x) => { const d = x.fark || 0; return `<span class="tag ${d === 0 ? "ok" : "w"}" title="${d > 0 ? "Fazla" : d < 0 ? "Eksik" : "Tam"}">${d > 0 ? "+" : ""}${para(d)}</span>`; };
+    const durTag = (o) => `<span class="tag ${o === "onaylandi" ? "ok" : o === "reddedildi" ? "w" : ""}">${o === "onaylandi" ? "Onaylandı" : o === "reddedildi" ? "Reddedildi" : "Onay bekliyor"}</span>`;
+    const bekSay = (H.data.vezneKapanislar || []).filter(x => x.onay === "bekliyor").length;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_donemonay")}</h2><p>Kapanmış vezne dönemlerini kontrol et, kasayı teslim al, onayla. ${bekSay} dönem onay bekliyor.</p></div></div>
+      <div class="seg" style="margin-bottom:12px">${SEG.map(([k, l]) => `<button data-fseg="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:70px">Dönem</th><th>Vezne</th><th>Banko / kasa</th><th style="width:140px">Kapanış</th><th style="width:110px">Beklenen</th><th style="width:110px">Sayılan</th><th style="width:120px">Fark</th><th style="width:120px">Durum</th><th style="width:200px"></th></tr></thead><tbody>
+      ${list.length ? list.map(x => `<tr><td class="mono">#${H.esc(String(x.no))}</td><td><b>${H.esc(x.vezne)}</b></td><td class="adm-sub">${H.esc(x.banko)}</td><td class="adm-sub">${H.esc(x.kapanisT || "—")}</td><td class="n">${para(x.beklenen)}</td><td class="n">${para(x.sayilan)}</td><td class="n">${farkTag(x)}</td><td>${durTag(x.onay)}${x.redNot ? `<div class="adm-sub" style="font-size:11px">${H.esc(x.redNot)}</div>` : ""}${x.onaylayan ? `<div class="adm-sub" style="font-size:11px">${H.esc(x.onaylayan)}</div>` : ""}</td><td>${x.onay === "bekliyor" && can ? `<button class="btn p sm" data-vkdetay="${x.id}">İncele</button> <button class="btn p sm" data-vkonay="${x.id}">Teslim al / Onayla</button> <button class="btn g sm" data-vkred="${x.id}">Reddet</button>` : `<button class="btn sm" data-vkdetay="${x.id}">İncele</button>`}</td></tr>`).join("") : `<tr><td colspan="9" class="mute" style="padding:20px;text-align:center">Bu durumda dönem yok.</td></tr>`}</tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Fark yeşil (0) ise kasa tam; kırmızı ise eksik/fazla var, incelenir. Onaylanınca dönem kilitlenir ve kasiyer yeni dönem/kasa açabilir. Reddedilince dönem kasiyere geri açılır.</p>`;
+    const rec = (id) => (H.data.vezneKapanislar || []).find(x => x.id === id);
+    function detay(x) {
+      const SAYAD = { nakit:"Nakit", kk:"Kredi kartı", havale:"Havale/EFT", cek:"Çek", senet:"Senet", usd:"USD", eur:"EUR", avans:"Avans", katilim:"Katılım payı" };
+      const rows = Object.entries(x.sayim || {}).filter(([, v]) => +v).map(([k, v]) => `<tr><td>${H.esc(SAYAD[k] || k)}</td><td class="n">${para(v)}</td></tr>`).join("") || `<tr><td colspan="2" class="mute" style="padding:12px;text-align:center">Sayım girilmemiş.</td></tr>`;
+      H.modal({ title:`Kasa teslim · #${x.no} · ${H.esc(x.vezne)}`,
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Banko</span><b>${H.esc(x.banko)}</b></div><div><span>Beklenen (sistem)</span><b>${para(x.beklenen)}</b></div><div><span>Sayılan (kasiyer)</span><b>${para(x.sayilan)}</b></div><div><span>Fark</span><b style="color:${(x.fark || 0) === 0 ? "var(--ok)" : "var(--crit)"}">${(x.fark || 0) > 0 ? "+" : ""}${para(x.fark)}</b></div></div>
+          <div class="tw"><table class="t"><thead><tr><th>Para türü</th><th style="width:140px">Sayılan ₼</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+        actions:`<button class="btn" data-x>Kapat</button>` });
+    }
+    root.onclick = (e) => {
+      const seg = e.target.closest("[data-fseg]"); if (seg) return H.go("donemonay", { f:seg.dataset.fseg });
+      const dt = e.target.closest("[data-vkdetay]"); if (dt) { const x = rec(dt.dataset.vkdetay); if (x) detay(x); return; }
+      if (!can) return;
+      const on = e.target.closest("[data-vkonay]"); if (on) { const x = rec(on.dataset.vkonay); if (x) { x.onay = "onaylandi"; x.onaylayan = (H.state.user || {}).name || "Mali İşler"; const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) dl[x.banko].onay = "onaylandi"; H.saveData && H.saveData(); H.log("Vezne dönem onaylandı", "#" + x.no + " · " + x.banko + " · fark " + (x.fark || 0) + " ₼"); H.toast("Kasa teslim alındı · dönem #" + x.no + " onaylandı"); H.go("donemonay", params); } return; }
+      const rd = e.target.closest("[data-vkred]"); if (rd) { const x = rec(rd.dataset.vkred); if (x) { const not = prompt("Red nedeni (kasiyere iletilecek):", "Kasa farkı var, yeniden sayın."); if (not == null) return; x.onay = "reddedildi"; x.redNot = not.trim(); const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) { dl[x.banko].acik = true; dl[x.banko].onay = null; } H.saveData && H.saveData(); H.log("Vezne dönem reddedildi", "#" + x.no + " · " + x.banko); H.toast("Dönem reddedildi · kasiyere geri açıldı", "w"); H.go("donemonay", params); } return; }
+    };
+  } });
 
   /* ================= HASTA 360 (tam ekran hasta kartı · bizim tasarım) ================= */
   const H360_ANA = [["360", "Genel"], ["ishavuzu", "İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];

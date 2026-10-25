@@ -264,7 +264,7 @@
     ["sterilizasyon", "box", "m_steril", "steril", null, null, [["pano", "Akış panosu", "steril"], ["depo", "Steril depo", "steril"], ["tanim", "Set tanımları", "steril"], ["komuta", "Komuta merkezi", "steril"]]],
     ["devices", "cpu", "m_devices", "devices", null, null, [["ozet", "Özet", "devices"], ["envanter", "Envanter", "devices"], ["takvim", "Bakım takvimi", "maintenance"], ["ariza", "Arıza kayıtları", "devices"], ["odalar", "Yataklar ve odalar", "devices"]]],
     ["workload", "users", "m_workload", ["staff_view", "occupancy"]], ["infection", "shield", "m_infection", ["quality", "beds"]],
-    ["vezne", "file", "m_vezne", ["admission", "summary"]], ["medmuhasebe", "file", "m_medmuhasebe", ["summary", "muhasebe"]], ["ik", "users", "m_ik", ["admin_users", "summary"]],
+    ["vezne", "file", "m_vezne", ["admission", "summary"]], ["medmuhasebe", "file", "m_medmuhasebe", ["summary", "muhasebe"]], ["donemonay", "shield", "m_donemonay", ["donem_onay"], () => (H.data.vezneKapanislar || []).filter(x => x.onay === "bekliyor").length, "y"], ["ik", "users", "m_ik", ["admin_users", "summary"]],
     ["summary", "chart", "m_summary", "summary"], ["raporlar", "chart", "m_raporlar", ["summary", "audit"]], ["istakip", "clip", "m_istakip", "destek_ac", () => H.istakipBadge ? H.istakipBadge() : 0, "y"], ["quality", "star", "m_quality", "quality"], ["pilot", "file", "m_pilot", ["summary", "quality"]],
     // Kalite ve başhekim yalnız "audit" yetkisiyle girer: onlara menüde "Denetim kaydı" olarak görünür, yönetim sekmeleri görünmez.
     ["admin", "shield", "m_admin", ["admin_users", "admin_roles", "admin_structure", "admin_integrations", "admin_system", "admin_camera", "audit"], null, null,
