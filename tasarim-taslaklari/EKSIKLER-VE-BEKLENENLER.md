@@ -7,12 +7,13 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 - [x] Kalan "· tasarım" yer tutucu toastları dürüstleştirildi/bağlandı (yeni doğan, onam ekle→dosya, hazırlık açıklaması, sağ-tık menüleri, yazdır çıktıları→gerçek yazdırma).
 - [x] **Hasta Dosyası sağ-tık gerçek (tüm para sekmeleri):** Faturalar (Ödeme/İptal/İade/Yazdır) + Ödeme/İndirim/Not/Online/POS (İptal/Sil/İade/Dekont) — o satıra etki eder, kalıcı.
 - [x] **Vezne demo seed'leri klinik hastalarla hizalandı** (Elvin Hüseynov, Nərgiz Əliyeva vb.) → fatura/GFK satırına tıklayınca kart açılır. Kalıcılık v2.
-- [ ] **Kurumsal Faturalama iki yerde** (Vezne sekmesi + Medikal Muhasebe hub). Ev kararı: ikisi de kalsın (biri kısayol) mı, tek yer mi?
+- [x] **Kurumsal Faturalama iki yerde** — KARAR (ben verdim): asıl ev **Medikal Muhasebe** (mutabakat/alacak işi), Vezne'deki sekme **kısayol/çalışma yüzeyi**. Tek kod, iki yerden açılır (kopya yok); vezne ekranına "aynı kayıt Medikal Muhasebe'den de açılır" notu eklendi.
 - [ ] Rapor: listeden çıkarılan raporların `reportData()` yardımcıları duruyor (ölü kod, zararsız). İstenirse temizlenir.
 
 ## A2. Tarama turu bulguları (25.10.2026)
 - [x] **Liste filtresi eksikti** — Gelişler, Raporlar, İş Takip, Laboratuvar/Radyoloji, Medikal Muhasebe ve İK ekranlarında arama/filtre kutusu yoktu (sahibin "çoğu ekranda filtreleme yok" şikâyeti). Ortak `H.filterBox`/`H.wireFilter` eklendi; kutuya yazınca tablo satırları (raporlarda kartlar) anında süzülür. Vezne'de zaten vardı.
 - [x] İstem modülü tarandı: tüm istem düğmelerinin (lab/rad/hizmet/kons/diyet/bakım/ilaç/reçete/kan/ameliyat) gerçek karşılığı var; "yakında eklenecek" metni ulaşılamayan ölü daldı (zararsız, bırakıldı).
+- [x] **Ölü buton/satır taraması** — tüm etkileşimli dosyalar bir betikle tarandı (tanımlı `data-*` kontrolleri ↔ dinleyiciler). Ölü/işlevsiz buton veya "tıklanınca bir şey olmayan" satır **bulunmadı**; şüpheliler (alarm Eskale, footer yasal linkler) aslında başka dosyadaki global dinleyicilere bağlı.
 
 ## B. Yapmadığımız / eksik süreçler (öncelik sırası önerim)
 1. [x] **Hasta kabulde protokol otomatik açılır** — ayaktan/yatış/vezne/hasta360 kabulünde gerçek protokol oluşur (istemler ona bağlanır).

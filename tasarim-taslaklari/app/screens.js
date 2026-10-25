@@ -559,7 +559,7 @@
         <div class="box">${sel ? `<div class="ist-sec ist-hd" style="margin:0 0 8px"><h5>${H.esc(sel.kurum)} · <span class="mono">${H.esc(sel.no)}</span></h5><div class="r" style="gap:6px"><button class="btn sm" data-kfyaz>${I("print") || ""} Fatura yazdır</button><button class="btn sm" data-kficmal>${I("save") || ""} İcmal (CSV)</button></div></div>` : ""}
           <div class="seg" style="margin-bottom:10px;flex-wrap:wrap">${KFT.map(([k, l]) => `<button data-kftab="${k}" class="${kft === k ? "on" : ""}">${l}</button>`).join("")}</div>
           ${pane}</div></div>
-        <p class="adm-sub" style="margin-top:10px">Kurumsal faturalama: anlaşmalı kurumun dönem faturası; soldan fatura seçilir, sağda kalemler/işlemler/protokoller/vezne/evrak/icmal/notlar/klinik dökümanlar görülür. İcmal kuruma gönderilecek özettir.</p>`; };
+        <p class="adm-sub" style="margin-top:10px">Kurumsal faturalama: anlaşmalı kurumun dönem faturası; soldan fatura seçilir, sağda kalemler/işlemler/protokoller/vezne/evrak/icmal/notlar/klinik dökümanlar görülür. İcmal kuruma gönderilecek özettir. <b>Aynı kayıt Medikal Muhasebe'den de açılır</b> (asıl ev orası; bu, veznedeki kısayol).</p>`; };
     const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, kurumsal:panKurumsal, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     const RAIL = [
       ["Vezne paneli", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Fiyat verme", "fiyat"], ["Kampanyalar", ""], ["Dönem bilgileri", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""], ["UHM hasta arama", ""]]],
