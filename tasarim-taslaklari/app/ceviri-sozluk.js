@@ -12457,3 +12457,43 @@ Object.assign(window.HMC_SOZLUK, {
   "Yazar kasa cihazı": { AZ:"Yazar kassa cihazı", RU:"Устройство кассы", EN:"Cash register device" },
   "Açılış matbu no": { AZ:"Açılış çap nömrəsi", RU:"№ открытия (печатный)", EN:"Opening printed no" }
 });
+
+/* === Danışman + fiyat seçim + dosya tipleri + randevu · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Hasta Danışman": { AZ:"Xəstə Məsləhətçisi", RU:"Консультант пациента", EN:"Patient advisor" },
+  "Yeni atama": { AZ:"Yeni təyinat", RU:"Новое назначение", EN:"New assignment" },
+  "Yeni danışman ataması": { AZ:"Yeni məsləhətçi təyinatı", RU:"Назначить консультанта", EN:"New advisor assignment" },
+  "Danışman": { AZ:"Məsləhətçi", RU:"Консультант", EN:"Advisor" },
+  "Konu / not": { AZ:"Mövzu / qeyd", RU:"Тема / заметка", EN:"Subject / note" },
+  "Ata": { AZ:"Təyin et", RU:"Назначить", EN:"Assign" },
+  "Takipte": { AZ:"İzlənir", RU:"На контроле", EN:"Tracking" },
+  "Kapandı": { AZ:"Bağlandı", RU:"Закрыто", EN:"Closed" },
+  "Hizmet seç (katalog)": { AZ:"Xidmət seç (kataloq)", RU:"Выбрать услугу (каталог)", EN:"Select service (catalog)" },
+  "Katalogdan seç": { AZ:"Kataloqdan seç", RU:"Выбрать из каталога", EN:"Pick from catalog" },
+  "Seçilenleri ekle": { AZ:"Seçilmişləri əlavə et", RU:"Добавить выбранные", EN:"Add selected" },
+  "Hızlı ekle: hizmet ara…": { AZ:"Tez əlavə: xidmət axtar…", RU:"Быстро: поиск услуги…", EN:"Quick add: search service…" },
+  "Hizmet adı / kod ara…": { AZ:"Xidmət adı / kod axtar…", RU:"Поиск услуги / кода…", EN:"Search service / code…" },
+  "Tüm tipler": { AZ:"Bütün növlər", RU:"Все типы", EN:"All types" },
+  "Dosya ekle": { AZ:"Fayl əlavə et", RU:"Добавить файл", EN:"Add file" },
+  "Tarayıcıdan yükle": { AZ:"Skanerdən yüklə", RU:"Загрузить со сканера", EN:"Upload from scanner" },
+  "Dijital imzadan getir": { AZ:"Rəqəmsal imzadan gətir", RU:"Получить из ЭЦП", EN:"Get from e-signature" },
+  "Bağlantı tipi": { AZ:"Əlaqə növü", RU:"Тип связи", EN:"Link type" },
+  "Döküman grubu": { AZ:"Sənəd qrupu", RU:"Группа документов", EN:"Document group" },
+  "Dosya tipi": { AZ:"Fayl növü", RU:"Тип файла", EN:"File type" },
+  "Dosya adı": { AZ:"Fayl adı", RU:"Имя файла", EN:"File name" },
+  "Nüfus cüzdanı fotokopisi": { AZ:"Şəxsiyyət vəsiqəsi surəti", RU:"Копия удостоверения", EN:"ID copy" },
+  "Pasaport": { AZ:"Pasport", RU:"Паспорт", EN:"Passport" },
+  "Fotoğraf": { AZ:"Foto", RU:"Фото", EN:"Photo" },
+  "Fatura nüshası": { AZ:"Faktura nüsxəsi", RU:"Копия счёта", EN:"Invoice copy" },
+  "İrsaliye nüshası": { AZ:"Qaimə nüsxəsi", RU:"Копия накладной", EN:"Waybill copy" },
+  "Test sonucu": { AZ:"Test nəticəsi", RU:"Результат теста", EN:"Test result" },
+  "Reçete": { AZ:"Resept", RU:"Рецепт", EN:"Prescription" },
+  "Sipariş nüshası": { AZ:"Sifariş nüsxəsi", RU:"Копия заказа", EN:"Order copy" },
+  "Garanti belgesi": { AZ:"Zəmanət sənədi", RU:"Гарантийный талон", EN:"Warranty doc" },
+  "Kalibrasyon sertifikası": { AZ:"Kalibrləmə sertifikatı", RU:"Сертификат калибровки", EN:"Calibration cert" },
+  "Kullanım kitapçığı": { AZ:"İstifadə kitabçası", RU:"Инструкция", EN:"User manual" },
+  "Tıbbi form": { AZ:"Tibbi forma", RU:"Медицинская форма", EN:"Medical form" },
+  "Radyoloji evrak": { AZ:"Radiologiya sənədi", RU:"Радиологический документ", EN:"Radiology doc" },
+  "Hasta dosyaları": { AZ:"Xəstə faylları", RU:"Файлы пациента", EN:"Patient files" },
+  "Fatura / mali": { AZ:"Faktura / maliyyə", RU:"Счёт / финансы", EN:"Invoice / finance" }
+});

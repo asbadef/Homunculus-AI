@@ -95,6 +95,8 @@
       { id:"rnd1", hasta:"Elvin Hüseynov", bolum:"Mamalıq-Ginekologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 0), durum:"Bekliyor", not:"Hamiləlik izləmi" },
       { id:"rnd2", hasta:"Nərgiz Əliyeva", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 30), durum:"Bekliyor", not:"Hipertansiyon kontrolü" },
       { id:"rnd3", hasta:"Rəşad Məmmədov", bolum:"Oftalmologiya", doktor:"Dr. Kamran Rzayev", tarih:d(10, 15), durum:"Geldi", not:"Check-up" },
+      { id:"rnd4", hasta:"Nərgiz Əliyeva", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(8, 0), durum:"Gelmedi", not:"" },
+      { id:"rnd5", hasta:"Nərgiz Əliyeva", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(8, 30), durum:"Gelmedi", not:"" },
     ];
   }
   const RND_DURUM = ["Bekliyor", "Geldi", "Tamamlandı", "Gelmedi", "İptal"];
@@ -185,8 +187,10 @@
     function rndForm(pre) {
       const drs = randevuDoktorlari(), bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
       const now = (pre && pre.tarih) ? pre.tarih : new Date().toISOString().slice(0, 16);
+      const hastaAdlari = (H.data.patients || []).map(p => p.name);
       H.modal({ title:"Yeni randevu", body:`<div class="icd-form">
-        <div class="fr"><label>Hasta</label><input data-f="hasta" placeholder="Hasta adı"></div>
+        <div class="fr" style="grid-column:1/-1"><label>Hasta</label><input data-f="hasta" list="rnd-hasta" placeholder="Hasta adı — yazın ya da seçin" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="rnd-hasta">${hastaAdlari.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
+        <div class="fr" style="grid-column:1/-1" data-rndwarn hidden></div>
         <div class="fr"><label>Randevu türü</label><select data-f="tur">${RND_TUR.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
         <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
@@ -195,7 +199,11 @@
         <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div>
         <div class="fr"><label>Hatırlatma</label><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div></div>`,
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+        onMount(m) { const hi = m.querySelector('[data-f="hasta"]'), warn = m.querySelector("[data-rndwarn]");
+          const checkNoShow = () => { const nm = (hi.value || "").trim(); const ns = nm ? all.filter(r => r.hasta === nm && r.durum === "Gelmedi").length : 0;
+            if (ns > 0) { warn.hidden = false; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else warn.hidden = true; };
+          hi.oninput = checkNoShow; checkNoShow();
+          m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
           const sms = m.querySelector('[data-f="sms"]').checked;
           all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), tur:m.querySelector('[data-f="tur"]').value, bolum:g("bolum"), doktor:m.querySelector('[data-f="doktor"]').value, tarih:m.querySelector('[data-f="tarih"]').value, sure:+g("sure") || 15, durum:"Bekliyor", not:g("not"), sms });
