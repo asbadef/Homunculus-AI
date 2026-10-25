@@ -29,11 +29,16 @@ export function patternOf(alarm) {
   return SEVERITY_ORDER.includes(severity) ? PATTERN_OF[severity] : "critical";
 }
 
+/** A RESOLVED alarm (G2-A1, O17) — a critical whose rule stopped before anyone acknowledged it —
+ *  still waits for its answer, and the screens keep it; but the sound and the vibration stop at
+ *  resolve (D11). What is happening now rings; the to-do does not. */
+const rings = (alarm) => alarm.status !== "RESOLVED";
+
 /** What the page plays now: the worst pattern among the alarms somebody must answer, or null. */
 export function soundFor(board) {
   const { items } = alarmsToSignal(board ?? {});
   let worst = null;
-  for (const alarm of items) {
+  for (const alarm of items.filter(rings)) {
     const pattern = patternOf(alarm);
     if (pattern && (worst === null || PATTERNS.indexOf(pattern) < PATTERNS.indexOf(worst))) worst = pattern;
   }
@@ -42,8 +47,11 @@ export function soundFor(board) {
 
 /** The alarms a notification is raised for — the waiting ones whose pattern is critical, as the
  *  previous workspace raised them for its CRITICAL tier only — and whether the board is LIVE
- *  (`known`): only a LIVE board may say an alarm is no longer waiting. */
+ *  (`known`): only a LIVE board may say an alarm is no longer waiting. `ringing` are those a NEW
+ *  notification may be raised for: not a RESOLVED one, whose vibration stopped with its sound —
+ *  a notification already raised for it stays while it waits. */
 export function notifyFor(board) {
   const { known, items } = alarmsToSignal(board ?? {});
-  return { known, items: items.filter((alarm) => patternOf(alarm) === "critical") };
+  const critical = items.filter((alarm) => patternOf(alarm) === "critical");
+  return { known, items: critical, ringing: critical.filter(rings) };
 }

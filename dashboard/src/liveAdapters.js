@@ -199,7 +199,10 @@ export function alertsFromPatients(patients) {
         downgraded: a.downgraded === true,
         chronicContext: a.chronic_context || null,
         staleInputs: Array.isArray(a.stale_inputs) ? a.stale_inputs : [],
-        status: a.acknowledged ? "ACKNOWLEDGED" : "FIRED",
+        // RESOLVED (G2-A1, O17): a critical whose rule stopped firing before anyone acknowledged
+        // it. The engine keeps it on the board until someone does; it still waits for an answer,
+        // but its sound has stopped (signals.js).
+        status: a.acknowledged ? "ACKNOWLEDGED" : a.resolved_at ? "RESOLVED" : "FIRED",
         // WHO and WHEN, for an alarms row. **These two are the pair a screen reads**, the instant
         // in milliseconds on the wall clock. `ack` below is a presence flag the board store tests
         // (`needsAnswer`); it no longer carries a time of its own (G1-16).
@@ -207,6 +210,12 @@ export function alertsFromPatients(patients) {
         ackAtMs: a.acknowledged ? msFromTimestamp(a.acknowledged_at) : null,
         escalated: !!a.escalated,
         firstSeenAtMs: msFromTimestamp(a.first_seen_at),
+        // When its rule stopped firing (status RESOLVED), on the wall clock; null while it fires.
+        resolvedAtMs: msFromTimestamp(a.resolved_at),
+        // This alarm's EPISODE: a kind that cleared and fired again is a new one, with a first-seen
+        // instant of its own. The notification is keyed and tagged by it (AlarmSignals.jsx), so a
+        // new episode is a new notification rather than a silent replacement of the old one.
+        episode: `${p.patient_id}::${a.kind}::${a.first_seen_at ?? ""}`,
         firedAtSec: null,
         currentStep: "NONE",
         events: [],

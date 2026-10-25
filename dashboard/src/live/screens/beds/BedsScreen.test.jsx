@@ -182,6 +182,17 @@ describe("the bed board", () => {
       expect(screen.getAllByText("Ölçülməyib").length).toBeGreaterThan(0);
     });
 
+    // G2-A1 (O17): the list shows one alarm line under the name; a critical that passed
+    // unacknowledged is drawn on a calm row, so the line carries the badge that says why.
+    it("the list marks a critical that passed unacknowledged beside its line", async () => {
+      await open({
+        payload: board([entry("S-001", [alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) })], CARD)]),
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
+      const row = screen.getByText("Septic shock criteria met").closest("tr");
+      expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+    });
+
     it("keeps the chosen view in this browser", async () => {
       await open({ payload: board([entry("S-001", [], CARD)]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));

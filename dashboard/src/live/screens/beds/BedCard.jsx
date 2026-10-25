@@ -26,7 +26,7 @@
 //     and word.
 import React from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { Icon, RiskPill, riskStyle } from "../../ui/index.js";
+import { Icon, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
@@ -129,6 +129,10 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
                     screen reader pronounces them as English rather than with Azerbaijani
                     phonetics. The card says once, at its foot, that they are English. */}
                 <span lang="en" className="min-w-0 flex-1 text-12.5 text-ink">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
+                {/* G2-A1 (O17): a critical whose condition passed waits here, but the card's risk
+                    (computed from the alarms that still fire) is calm — the badge, the alarms
+                    screen's own, says why this line is still red. */}
+                {a.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
                 <ChronicExpected alarm={a} />
               </li>
             ))}

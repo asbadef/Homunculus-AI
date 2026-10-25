@@ -380,6 +380,30 @@ describe("alarm counts and lists", () => {
     expect(alarmCounts({ alerts: escalated, connection: CONNECTION.LIVE }).waiting).toBe(1);
   });
 
+  // G2-A1 (O17): a critical whose condition passed before anyone acknowledged it is still a to-do.
+  it("keeps a RESOLVED alarm in the queue until somebody acknowledges it", () => {
+    const passed = alertsFromPatients(patientsFromBoard(board([
+      entry("P-001", [alert("septic_shock", "critical", { resolved_at: "2026-10-08T09:59:00Z" })]),
+    ])));
+    expect(passed[0].status).toBe("RESOLVED");
+    expect(waitingAlarms({ alerts: passed, connection: CONNECTION.LIVE }).items).toEqual(passed);
+    expect(alarmCounts({ alerts: passed, connection: CONNECTION.LIVE }).waiting).toBe(1);
+  });
+
+  // After severity, an alarm that still fires comes before one that passed: the bell lists the
+  // first ones a nurse should look at, and a critical whose condition is gone is the lesser claim
+  // on her eyes than one that is still happening — even when it is the older one.
+  it("lists a firing alarm above a RESOLVED one of the same severity, whatever their ages", () => {
+    const queue = alertsFromPatients(patientsFromBoard(board([
+      entry("P-001", [alert("septic_shock", "critical", { first_seen_at: "2026-10-08T09:00:00Z", resolved_at: "2026-10-08T09:30:00Z" })]),
+      entry("P-002", [alert("septic_shock", "critical", { first_seen_at: "2026-10-08T09:40:00Z" })]),
+      entry("P-003", [alert("news2", "high", { first_seen_at: "2026-10-08T08:00:00Z" })]),
+    ])));
+    const order = ["P-002", "P-001", "P-003"];          // severity first, then firing before passed
+    expect(waitingAlarms({ alerts: queue, connection: CONNECTION.LIVE }).items.map((a) => a.patientId)).toEqual(order);
+    expect(alarmsToSignal({ alerts: queue, connection: CONNECTION.LIVE, loaded: true }).items.map((a) => a.patientId)).toEqual(order);
+  });
+
   // The alarm sound and the notification act on what a board LOADED, whatever its stream is doing
   // (the previous workspace sounded its first load): LIVE, DEGRADED, or still connecting after the
   // first load landed. Only LIVE is `known` — only it may say an alarm stopped waiting. A board that

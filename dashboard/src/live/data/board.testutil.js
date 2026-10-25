@@ -83,7 +83,7 @@ export function alarm(kind = "news2", severity = "high", over = {}) {
     clinical_reasoning: null, supporting_evidence: [], recommended_actions: [], confidence: null,
     downgraded: false, chronic_context: "", stale_inputs: [],
     acknowledged: false, acknowledged_by: null, acknowledged_at: null,
-    first_seen_at: ago(247), escalated: false, ...over,
+    first_seen_at: ago(247), escalated: false, resolved_at: null, ...over,
   };
 }
 
@@ -95,7 +95,9 @@ export function alarm(kind = "news2", severity = "high", over = {}) {
  *  contradiction on purpose still passes `{ risk: … }` and says so. */
 const SEVERITY_RANK = ["info", "low", "moderate", "high", "critical"];
 export function riskOf(alarms) {
-  const list = Array.isArray(alarms) ? alarms : [];
+  // A latched alarm (`resolved_at` set, G2-A1) is a to-do, not a risk: the engine computes `risk`
+  // from the firing alarms only (api/board.py, D10), and so does this.
+  const list = (Array.isArray(alarms) ? alarms : []).filter((a) => a?.resolved_at == null);
   // A severity this build does not know comes FIRST, not last, and is passed through raw. The UI
   // treats an unknown severity as possibly-the-worst — `waitingAlarms` sorts it ahead of critical,
   // and `riskStyle` gives it the attention look and "Naməlum risk: x" — so a fixture must not

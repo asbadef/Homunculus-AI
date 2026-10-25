@@ -164,7 +164,33 @@ def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
         "acknowledged_at": ack["at"].isoformat() if ack else None,
         "first_seen_at": seen.isoformat() if seen is not None else None,
         "escalated": key in store.escalated,
+        # G2-A1 (D10): when its rule stopped firing; None while it fires.
+        "resolved_at": None,
     }
+
+
+def _latched_alerts(patient_id: str, firing: list[Alert], store: AckStore) -> list[dict]:
+    """G2-A1 (O17), D2 and D10: this patient's critical alerts whose rule stopped firing while
+    nobody had acknowledged them, oldest resolution first, in the firing alerts' shape. Never
+    acknowledged and never escalated, by construction: an acknowledgement removes one (`/ack`), and
+    only a firing alert escalates. A kind that fires again is listed once, as firing."""
+    kinds = {a.kind for a in firing}
+    latched = sorted(((key, entry) for key, entry in store.resolved.items()
+                      if key[0] == patient_id and key[1] not in kinds),
+                     key=lambda item: (item[1]["resolved_at"], item[0][1]))
+    out = []
+    for key, entry in latched:
+        seen = store.first_seen.get(key)
+        out.append({
+            **entry["alert"],
+            "acknowledged": False,
+            "acknowledged_by": None,
+            "acknowledged_at": None,
+            "first_seen_at": seen.isoformat() if seen is not None else None,
+            "escalated": False,
+            "resolved_at": entry["resolved_at"].isoformat(),
+        })
+    return out
 
 
 def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dict:
@@ -227,8 +253,11 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
         "patient_id": patient_id,
         "identity": ({**identity.as_board(), **_bed_resolution(identity, bedmap)}
                      if identity is not None else None),
+        # What is happening NOW (G2-A1, D10): the firing alerts only. A latched one — listed after
+        # them — is a to-do, not a risk.
         "risk": _risk(alerts),
-        "alerts": [_merge_alert(patient_id, a, store) for a in alerts],
+        "alerts": ([_merge_alert(patient_id, a, store) for a in alerts]
+                   + _latched_alerts(patient_id, alerts, store)),
         "latest": {
             # Systolic is what NEWS2 actually scores. It was missing here, so the dashboard could
             # not compute the real score even if it wanted to, and substituted mean arterial

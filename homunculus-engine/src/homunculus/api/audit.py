@@ -51,6 +51,7 @@ def chain_hash(prev_hash: str, *, ts: str, tenant: str, event_type: str,
 class AuditEvent:
     tenant: str
     event_type: str          # "ingest" | "alert" | "ack" | "escalation" | "notification"
+    #                          | "alert_cleared" (G2-A1: an episode's end — api/alert_lifecycle.py)
     patient_id: str
     subject: str             # alert kind or signal slug
     payload: dict = field(default_factory=dict)
