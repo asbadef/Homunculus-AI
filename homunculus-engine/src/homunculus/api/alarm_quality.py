@@ -15,7 +15,9 @@ rests on the same record an inspection would read, not on a counter that a deplo
 on every ingest, so counting `alert` rows would measure how often the monitor sampled, not how
 often the ward was disturbed. `first_seen` is stamped exactly once per episode and re-stamped when
 the alert clears and returns, so consecutive `first_seen` events for one (patient, kind) delimit
-episodes. Their count is the number of times a person was actually asked to look.
+episodes. Their count is the number of times a person was actually asked to look. Since G2-A1
+(O17) an episode also ends: at its `alert_cleared` row — or, for a critical nobody had answered,
+which latches, at the acknowledgement that removes it.
 
 **An open episode is not an ignored one.** An alarm raised forty seconds ago that nobody has
 acknowledged yet is a nurse walking to the bed, not a failure. Those are reported separately as
@@ -67,6 +69,8 @@ class Episode:
     answered_by: str = ""
     escalated: bool = False
     repeats: int = 0          # `alert` rows emitted while this episode was open
+    resolved_at: datetime | None = None   # G2-A1: when its rule stopped firing (`alert_cleared`)
+    ended_at: datetime | None = None      # when it closed: then, or at the ack that removed a latch
 
     @property
     def response_seconds(self) -> float | None:
@@ -149,6 +153,22 @@ def build_episodes(records: list[AuditRecord]) -> list[Episode]:
             episode = open_episode.get(key)
             if episode is not None:
                 episode.escalated = True
+        elif rec.event_type == "alert_cleared":
+            # G2-A1 (O17), D12 with X4: the episode ends here — unless it is a critical nobody had
+            # answered, which latched (api/alert_lifecycle.py): it stays open for the ack that
+            # removes it, and that ack is its answer. The reasons and the severity are the ones
+            # alert_lifecycle writes ("resolved", "acked_after_resolve", "critical").
+            episode = open_episode.get(key)
+            if episode is None:
+                continue
+            if episode.resolved_at is None:
+                episode.resolved_at = when
+            latched = (rec.payload.get("reason") == "resolved"
+                       and rec.payload.get("severity") == "critical"
+                       and episode.answered_at is None)
+            if not latched:
+                episode.ended_at = when
+                del open_episode[key]
     return episodes
 
 
