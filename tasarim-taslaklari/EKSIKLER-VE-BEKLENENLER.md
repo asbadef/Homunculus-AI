@@ -61,7 +61,7 @@ Bekleyen / planlanacak:
 - [ ] **Hakediş modülü** — doktor-hastane anlaşması; doktor adına açılan kayıt/hizmetlerden otomatik hakediş; doktor kendi protokol/hizmet bazlı ödemelerini görür (admin anlaşma tanımlar).
 - [ ] **Hastane kurulum sihirbazı (deployment)** — yeni hastaneye satışta admin'in aktivasyon adımları: hastane/şube, bina-kat-birim, banko/kasa, kullanıcı-rol, hizmet+fiyat, kurum/sigorta, kampanya, protokol/doküman tipleri. Her hastane farklı → veri odaklı, adım adım kontrol listesi.
 - [ ] **Durum renk sistemi** — açık/kapalı, onay bekliyor/onaylı/red, fark 0/var, fatura bekleyen/ödendi gibi durumlar tutarlı renklerle (tag ok/w/crit) okunur; belgelenir.
-- [ ] **Hasta kabul "tek ekran"** — şu an 3 giriş noktası var (Vezne arama → ayrı admission sayfası → hasta dosyası "Hasta kabul" menüsü); tek akışta toplanacak (mantık hatası).
+- [x] **Hasta kabul "tek ekran"** (25.10) — ortak `H.kabulForm` eklendi. Hasta dosyası "Hasta kabul ▾" ve vezne sağ-tık artık formsuz anlık açmıyor; ikisi de aynı formu (geliş tipi/protokol tipi/bölüm/doktor/danışman/kayıt tipi) açıyor. admission sayfası zaten `sel()` ile value'lu, tutarlı. Not: geliş tipi seçenekleri `value=` aldı (çeviri metni değiştirir, değer sabit) → encounter eşlemesi düzeldi.
 - [ ] **Hasta Dosyası üst barı sadeleştirme** — 4 sıra (başlık + ana sekme + butonlar + alt sekme) yoğun; daha sade, kullanıcının ne yapacağını kolay anladığı düzen.
 - [ ] **Rol bazlı sol panel ince ayarı + çapraz erişim** — her rol yalnız kendi işini görür; ama Mali İşler gibi roller gerektiğinde protokol detayına erişebilir.
 - [ ] **Tanıtım / giriş sayfası** — HBYS'ye göre yenilenecek (sol panel vb.) — ileride.
