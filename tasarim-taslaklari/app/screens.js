@@ -1884,28 +1884,42 @@
 
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
-  // Yaygın lab referans aralıkları (yetişkin) — anormal vurgu için. Admin ileride düzenleyebilir.
+  // Lab referans aralıkları — YAŞA GÖRE. Dizi = yaştan bağımsız; nesne = {adult, child, neonate}. NICU/pediatri için yenidoğan aralıkları ayrı.
   H.LABREF = {
-    "WBC":[4,10,"10⁹/L"], "Lökosit":[4,10,"10⁹/L"], "Hemoglobin":[12,16,"g/dL"], "Hgb":[12,16,"g/dL"], "Hematokrit":[36,48,"%"], "Trombosit":[150,400,"10⁹/L"], "Plt":[150,400,"10⁹/L"],
-    "Glukoz":[70,100,"mg/dL"], "CRP":[0,5,"mg/L"], "Sodyum":[135,145,"mmol/L"], "Na":[135,145,"mmol/L"], "Potasyum":[3.5,5.1,"mmol/L"], "K":[3.5,5.1,"mmol/L"],
-    "Kreatinin":[0.6,1.2,"mg/dL"], "Üre":[17,43,"mg/dL"], "ALT":[0,41,"U/L"], "AST":[0,40,"U/L"], "Total bilirubin":[0.3,1.2,"mg/dL"], "Albumin":[3.5,5.2,"g/dL"], "INR":[0.8,1.2,""],
-    "Laktat":[0.5,2.2,"mmol/L"], "Troponin":[0,0.04,"ng/mL"], "D-dimer":[0,0.5,"mg/L"], "Prokalsitonin":[0,0.5,"ng/mL"], "HbA1c":[4,5.7,"%"], "TSH":[0.4,4,"mIU/L"], "Ferritin":[30,400,"ng/mL"]
+    "WBC":{adult:[4,10,"10⁹/L"], child:[5,15,"10⁹/L"], neonate:[9,30,"10⁹/L"]}, "Lökosit":{adult:[4,10,"10⁹/L"], child:[5,15,"10⁹/L"], neonate:[9,30,"10⁹/L"]},
+    "Hemoglobin":{adult:[12,16,"g/dL"], child:[11,14,"g/dL"], neonate:[14,22,"g/dL"]}, "Hgb":{adult:[12,16,"g/dL"], child:[11,14,"g/dL"], neonate:[14,22,"g/dL"]},
+    "Hematokrit":{adult:[36,48,"%"], child:[33,42,"%"], neonate:[44,64,"%"]}, "Trombosit":[150,400,"10⁹/L"], "Plt":[150,400,"10⁹/L"],
+    "Glukoz":{adult:[70,100,"mg/dL"], child:[60,100,"mg/dL"], neonate:[40,90,"mg/dL"]}, "CRP":[0,5,"mg/L"],
+    "Sodyum":[135,145,"mmol/L"], "Na":[135,145,"mmol/L"], "Potasyum":{adult:[3.5,5.1,"mmol/L"], neonate:[3.7,5.9,"mmol/L"]}, "K":{adult:[3.5,5.1,"mmol/L"], neonate:[3.7,5.9,"mmol/L"]},
+    "Kreatinin":{adult:[0.6,1.2,"mg/dL"], child:[0.3,0.7,"mg/dL"], neonate:[0.3,1,"mg/dL"]}, "Üre":[17,43,"mg/dL"], "ALT":[0,41,"U/L"], "AST":{adult:[0,40,"U/L"], neonate:[25,75,"U/L"]},
+    "Total bilirubin":{adult:[0.3,1.2,"mg/dL"], neonate:[0,12,"mg/dL"]}, "Albumin":[3.5,5.2,"g/dL"], "INR":[0.8,1.2,""], "Laktat":[0.5,2.2,"mmol/L"],
+    "Troponin":[0,0.04,"ng/mL"], "D-dimer":[0,0.5,"mg/L"], "Prokalsitonin":[0,0.5,"ng/mL"], "HbA1c":[4,5.7,"%"], "TSH":{adult:[0.4,4,"mIU/L"], neonate:[1,39,"mIU/L"]}, "Ferritin":[30,400,"ng/mL"]
   };
-  H.labFlag = (ad, deger) => { const n = parseFloat(String(deger).replace(",", ".")); if (isNaN(n)) return { ref:"", birim:"", dir:"norm", sym:"" };
+  H.labAge = (p) => { if (!p) return "adult"; if (p.ageGroup === "neonate" || p.ageDays != null) return "neonate"; const a = p.age != null ? p.age : 99; return (p.ageGroup === "child" || p.ageGroup === "infant" || a <= 12) ? "child" : "adult"; };
+  H.labRange = (entry, ageGroup) => Array.isArray(entry) ? entry : (entry[ageGroup] || entry.adult || entry[Object.keys(entry)[0]]);
+  H.labFlag = (ad, deger, ageGroup) => { const n = parseFloat(String(deger).replace(",", ".")); if (isNaN(n)) return { ref:"", birim:"", dir:"norm", sym:"" };
     const low = String(ad).trim().toLocaleLowerCase("tr");
     const key = Object.keys(H.LABREF).find(k => k.toLocaleLowerCase("tr") === low) || Object.keys(H.LABREF).find(k => low.includes(k.toLocaleLowerCase("tr")));
     if (!key) return { ref:"", birim:"", dir:"norm", sym:"" };
-    const r = H.LABREF[key], dir = n < r[0] ? "dus" : n > r[1] ? "yuk" : "norm"; return { ref:r[0] + "–" + r[1], birim:r[2], dir, sym:dir === "yuk" ? "↑" : dir === "dus" ? "↓" : "" };
+    const r = H.labRange(H.LABREF[key], ageGroup || "adult"), dir = n < r[0] ? "dus" : n > r[1] ? "yuk" : "norm";
+    return { ref:r[0] + "–" + r[1], birim:r[2], dir, sym:dir === "yuk" ? "↑" : dir === "dus" ? "↓" : "" };
   };
-  // Serbest metin ("WBC: 12.5\nCRP: 8") -> yapısal sonuç + anormal işaretli özet.
-  H.parseLabResult = (text) => { const sonuclar = [], parts = [];
+  // Serbest metin ("WBC: 12.5;CRP: 8") -> yapısal sonuç + anormal işaretli özet (yaşa göre).
+  H.parseLabResult = (text, ageGroup) => { const sonuclar = [], parts = [];
     String(text || "").split(/\n|;/).map(s => s.trim()).filter(Boolean).forEach(ln => { const m = ln.match(/^(.+?)[:=]\s*([-\d.,]+)\s*(.*)$/);
-      if (m) { const ad = m[1].trim(), deger = m[2].trim(), f = H.labFlag(ad, deger); sonuclar.push({ ad, deger, birim:f.birim || m[3].trim(), ref:f.ref, dir:f.dir }); parts.push(ad + " " + deger + (f.sym ? " " + f.sym : "")); }
+      if (m) { const ad = m[1].trim(), deger = m[2].trim(), f = H.labFlag(ad, deger, ageGroup); sonuclar.push({ ad, deger, birim:f.birim || m[3].trim(), ref:f.ref, dir:f.dir }); parts.push(ad + " " + deger + (f.sym ? " " + f.sym : "")); }
       else { parts.push(ln); sonuclar.push({ ad:ln, deger:"", ref:"", dir:"norm" }); } });
     return { sonuclar, ozet:parts.join(" · ") };
   };
+  // Zaman-içi trend: aynı hastanın önceki sonuçlarında aynı analitle kıyas (↗ artış / ↘ azalış / → aynı).
+  H.labTrend = (pid, ad, deger, exceptOrderId) => { const n = parseFloat(String(deger).replace(",", ".")); if (isNaN(n) || !pid) return "";
+    const low = String(ad).trim().toLocaleLowerCase("tr");
+    const hits = (H.data.orders || []).filter(o => o.pid === pid && o.id !== exceptOrderId && (o.sonuclar || []).some(s => String(s.ad).trim().toLocaleLowerCase("tr") === low)).sort((a, z) => String(z.at || "").localeCompare(String(a.at || "")));
+    for (const o of hits) { const s = (o.sonuclar || []).find(x => String(x.ad).trim().toLocaleLowerCase("tr") === low && x.deger !== ""); if (s) { const pv = parseFloat(String(s.deger).replace(",", ".")); if (!isNaN(pv)) return n > pv ? " ↗" : n < pv ? " ↘" : " →"; } }
+    return "";
+  };
   // Sonucu renkli (anormal vurgulu) HTML olarak göster.
-  H.labResultHtml = (o) => (o.sonuclar && o.sonuclar.length) ? o.sonuclar.map(x => { const c = x.dir === "yuk" ? "var(--crit)" : x.dir === "dus" ? "var(--low)" : "var(--mute)"; return `<span class="mono" style="color:${c};font-size:12px"${x.ref ? ` title="Ref: ${H.esc(x.ref)} ${H.esc(x.birim || "")}"` : ""}>${H.esc(x.ad)}${x.deger ? " " + H.esc(x.deger) : ""}${x.dir === "yuk" ? " ↑" : x.dir === "dus" ? " ↓" : ""}</span>`; }).join(" · ") : (o.sonuc ? H.esc(o.sonuc) : "—");
+  H.labResultHtml = (o) => (o.sonuclar && o.sonuclar.length) ? o.sonuclar.map(x => { const c = x.dir === "yuk" ? "var(--crit)" : x.dir === "dus" ? "var(--low)" : "var(--mute)", tr = x.deger ? H.labTrend(o.pid, x.ad, x.deger, o.id) : ""; return `<span class="mono" style="color:${c};font-size:12px"${x.ref ? ` title="Ref: ${H.esc(x.ref)} ${H.esc(x.birim || "")}"` : ""}>${H.esc(x.ad)}${x.deger ? " " + H.esc(x.deger) : ""}${x.dir === "yuk" ? " ↑" : x.dir === "dus" ? " ↓" : ""}${tr}</span>`; }).join(" · ") : (o.sonuc ? H.esc(o.sonuc) : "—");
   /* ================= NUMUNE (örnek) AKIŞI ================= */
   H.numune = {
     store() { return H.data.numuneler = H.data.numuneler || []; },
@@ -1980,7 +1994,7 @@
           body:`<div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Sonuçlar — her satır: <b>Analit: değer</b></label><textarea data-f="s" rows="6" placeholder="WBC: 12.5&#10;CRP: 8&#10;Sodyum: 134&#10;(radyoloji/patoloji için serbest rapor da yazılabilir)">${H.esc((o.sonuclar || []).map(x => x.ad + (x.deger ? ": " + x.deger : "")).join("\n") || o.sonuc || "")}</textarea></div></div>
             <p class="adm-sub" style="margin-top:4px">Analit referans listesinde tanınırsa anormal <b style="color:var(--crit)">↑ yüksek</b> / <b style="color:var(--low)">↓ düşük</b> otomatik işaretlenir.</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const r = H.parseLabResult(m.querySelector('[data-f="s"]').value);
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const r = H.parseLabResult(m.querySelector('[data-f="s"]').value, H.labAge(H.pt(o.pid)));
             o.sonuclar = r.sonuclar; o.sonuc = r.ozet; if (o.sonuc && /İstendi|İşlemde|Numune alındı|Çalışılıyor/.test(o.durum || "")) o.durum = "Sonuç onaylandı";
             H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", o.ad || ""); H.closeModal(); H.toast("Sonuç kaydedildi."); H.go("labislem", { tur }); }; } });
         return; }
