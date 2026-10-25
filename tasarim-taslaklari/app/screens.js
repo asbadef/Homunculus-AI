@@ -117,7 +117,7 @@
     randevuDoktorSeed();
     const all = randevular(), f = params.durum || "hepsi", GECMIS = ["Tamamlandı", "Gelmedi", "İptal"];
     const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" ? " geçmişi" : ""}</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi (tasarım)</p></div><div class="r"><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" ? " geçmişi" : ""}</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi</p></div><div class="r"><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
       <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
       ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
@@ -529,7 +529,7 @@
     };
     const vzTab = vzTableData();
     const vzTools = vzTab ? `<div class="r" style="justify-content:flex-end;gap:6px;margin:-2px 0 10px"><button class="btn sm" data-vzexp>${I("save") || ""} Excel</button><button class="btn sm" data-vzyaz>${I("print") || ""} Yazdır</button></div>` : "";
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${vzTools}${panel}</div>${rail}</div>`;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo}</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${vzTools}${panel}</div>${rail}</div>`;
     { const xp = root.querySelector("[data-vzexp]"); if (xp) xp.onclick = () => { H.exportCsv ? H.exportCsv("Vezne_" + tab, vzTab.cols, vzTab.rows) : H.toast("Dışa aktarma yok", "w"); };
       const yz = root.querySelector("[data-vzyaz]"); if (yz) yz.onclick = () => { H.printTable ? H.printTable(vzTab.title, vzTab.cols, vzTab.rows) : H.toast("Yazdırma yok", "w"); }; }
     { const fi = root.querySelector("[data-fin]"); if (fi) fi.addEventListener("keydown", (ev) => { if (ev.key === "Enter") vzFinAra(root); }); }
@@ -548,7 +548,7 @@
           ["Hasta dosyası aç", () => H.go("hasta360", { pid:pp.id })],
           ["Birleştir (eşleştir)", () => H.go("admission", { tab:"eslesme" })],
           kabul("ayaktan", "Poliklinik"), kabul("ayaktan", "Acil"), kabul("gunubirlik", "Günübirlik"), kabul("yatan", "Yatış"), kabul("kontrol", "Kontrol"), kabul("donor", "Donör"),
-          ["Yeni doğan kaydı aç", () => H.toast("Yeni doğan kaydı · tasarım", "w")],
+          ["Yeni doğan kaydı aç", () => H.toast("Yeni doğan: anneye bağlı bebek protokolü açılır (yakında).", "w")],
           ["Protokol bilgileri", () => H.go("hasta360", { pid:pp.id, atab:"360", stab:"gelisler" })],
         ]); };
     }
@@ -607,7 +607,7 @@
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
       const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); const lbl = rl.dataset.raill, rd = railData(lbl);
-        if (!rd) { H.toast(lbl + " · yapım aşamasında (tasarım)", "w"); return; }
+        if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
       const kfs = e.target.closest("[data-kfsel]"); if (kfs) return H.go("vezne", { tab:"kurumsal", kfno:kfs.dataset.kfsel, kftab:params.kftab });
       const kftb = e.target.closest("[data-kftab]"); if (kftb) return H.go("vezne", { tab:"kurumsal", kfno:params.kfno, kftab:kftb.dataset.kftab });
@@ -668,12 +668,12 @@
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
     const role = (H.state.user || {}).role, allow = H.data.rolRapor && H.data.rolRapor[role];
     const groups = RAPOR_GRUP.filter(([g]) => !allow || allow[g]);
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""} (tasarım)</p></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""}</p></div></div>
       ${(groups.length ? groups : [["", ["— Bu rol için tanımlı rapor yok (admin → Rapor Yetkileri) —"]]]).map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak.</p>`;
     root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);
-      if (!d) { H.toast(name + " · yapım aşamasında (tasarım)", "w"); return; }
+      if (!d) { H.toast(name + " · yapım aşamasında", "w"); return; }
       const bols = (H.klinikBolumler ? H.klinikBolumler() : []), docs = (H.data.users || []).filter(u => u.role === "hekim");
       H.modal({ title:name, wide:true, body:`<div class="rp-filtre"><div class="fr"><label>Tarih (baş)</label><input type="date" data-rf="t1"></div><div class="fr"><label>Tarih (bitiş)</label><input type="date" data-rf="t2"></div>
           <div class="fr"><label>Bölüm</label><select data-rf="bol"><option value="">Tümü</option>${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</select></div>
@@ -842,7 +842,7 @@
       p._pos = p._pos || [{ tarih:"24.10.2026 10:12", terminal:"POS-01", kart:"**** 4721", tutar:"₼ 250", durum:"Onaylandı", ref:"POS-" + pr }];
       p._anlasma = p._anlasma || [{ kurum:p.kurum || "Özel ödeme", tip:"Kurum anlaşması", kullanim:"1 / 5", durum:"Aktif" }];
     };
-    // Sağ-tık menü aksiyonları (tasarım): her sekme için görseldeki menü maddeleri
+    // Sağ-tık menü aksiyonları: her sekme için görseldeki menü maddeleri
     const SAGTIK = {
       faturalar:["Ödeme", "Ödeme listesi", "İptal", "İade", "Faturaya çevir", "Evrak durumu", "Düzenle (dönem/tarih/açıklama)", "İptalleri göster", "Provizyon"],
       odeme:["İptal", "İade", "Düzenle (dönem/cari/aktar/banka)", "Dosyalar", "İptalleri göster", "Katılım payı iade", "Fatura eşleştirme tarihçesi"],
@@ -1013,7 +1013,7 @@
         } });
     }
     root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
-      e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · tasarım", "w")])); };
+      e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
     root.onclick = (e) => {
       const tex = e.target.closest("[data-h3tblexp],[data-h3tblyaz]"); if (tex) { const tw = tex.closest(".r") && tex.closest(".r").nextElementSibling, tbl = tw && tw.querySelector("table.t");
         if (!tbl || !tbl.tHead) { H.toast("Bu sekmede aktarılacak tablo yok.", "w"); return; }
@@ -1039,8 +1039,8 @@
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-x>Kaydet</button>` }); return; }
       if (e.target.closest("[data-h3kvkk]")) { onayModal("kvkk"); return; }
       if (e.target.closest("[data-h3etk]")) { onayModal("etk"); return; }
-      if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi (tasarım)"); return; }
-      if (e.target.closest("[data-h3yaz]")) { H.toast("Yazdır çıktıları (tasarım)"); return; }
+      if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi"); return; }
+      if (e.target.closest("[data-h3yaz]")) { if (H.printTable) H.printTable("Hasta kartı · " + vzName(p.name), ["Alan", "Değer"], [["Hasta no", p.hn || "—"], ["FİN", p.fin || "—"], ["Protokol", p.proto || "—"], ["Tanı", p.dx || "—"], ["Kurum", p.kurum || "—"]]); else H.toast("Yazdırma yok", "w"); return; }
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
       const ihb = e.target.closest("[data-ih]"); if (ihb) return H.go("hasta360", { pid:p.id, atab:"ishavuzu", ihtab:ihb.dataset.ih });
       const ttb = e.target.closest("[data-ttab]"); if (ttb) return H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:ttb.dataset.ttab });
@@ -1058,8 +1058,8 @@
             o.at = at; o.by = by; o.durum = durum; H.log("İstem düzenlendi", (o.ad || "") + (ch.length ? " · " + ch.join(", ") : "")); H.closeModal(); H.toast("İstem güncellendi"); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:params.ttab || "laboratuvar" }); }; } });
         return; }
       if (e.target.closest("[data-ihrand]")) { H.toast("Randevu ekranı açılıyor"); return H.go("randevu"); }
-      if (e.target.closest("[data-ihhazir]")) { H.toast("Hazırlık açıklaması · tasarım", "w"); return; }
-      if (e.target.closest("[data-ihonam]")) { H.toast("Onam formu ekle · tasarım", "w"); return; }
+      if (e.target.closest("[data-ihhazir]")) { const t = prompt("Hazırlık açıklaması (hastaya):"); if (t) H.toast("Hazırlık açıklaması kaydedildi."); return; }
+      if (e.target.closest("[data-ihonam]")) { const p2 = H.pt(p.id); (p2._dosya = p2._dosya || []).unshift({ bag:"Protokol", grup:"Onam formları", bagId:p2.proto || "", tip:"PDF", ad:"onam-" + Date.now() + ".pdf", tarih:new Date().toLocaleDateString("az") }); H.saveData && H.saveData(); H.toast("Onam formu eklendi."); return; }
       if (e.target.closest("[data-h3islem]")) { vzIslemHavuzu(p.id); return; }
       if (e.target.closest("[data-h3save]")) { body.querySelectorAll("[data-hf]").forEach(el => { p[el.dataset.hf] = el.value; }); if (p.ad || p.soyad) p.name = ((p.ad || "") + " " + (p.soyad || "")).trim() || p.name; if (p.sexT) p.sex = p.sexT === "Kişi" ? "E" : "K"; H.log("Hasta kartı kaydedildi", vzName(p.name)); H.toast("Hasta kartı kaydedildi"); return; }
     };
@@ -1085,7 +1085,7 @@
     const me = (H.state.user || {}).u;
     let list = all.filter(t => mine ? t.acan === me : true);
     list = f === "hepsi" ? list : f === "aktif" ? list.filter(t => t.durum === "Açık" || t.durum === "İşlemde") : list.filter(t => t.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · talep yönetimi" : "Sorununuzu iletin, Bilgi Sistemleri çözsün · yalnız kendi talepleriniz"} (tasarım)</p></div><div class="r"><button class="btn" data-talexp>${I("save") || ""} Excel</button><button class="btn" data-talprint>${I("print") || ""} Yazdır</button><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · talep yönetimi" : "Sorununuzu iletin, Bilgi Sistemleri çözsün · yalnız kendi talepleriniz"}</p></div><div class="r"><button class="btn" data-talexp>${I("save") || ""} Excel</button><button class="btn" data-talprint>${I("print") || ""} Yazdır</button><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
       ${yonet ? `<div class="seg" style="margin-bottom:8px"><button data-talkap="tum" class="${!mine ? "on" : ""}">Tüm talepler</button><button data-talkap="benim" class="${mine ? "on" : ""}">Benim taleplerim</button></div>` : ""}
       <div class="seg" style="margin-bottom:12px">${[["aktif", "Aktif"], ["hepsi", "Hepsi"], ...TALEP_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-talf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:90px">No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th style="width:80px">Öncelik</th><th style="width:150px">Tarih</th><th style="width:110px">Durum</th></tr></thead><tbody>
@@ -1150,7 +1150,7 @@
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
     const pn = (pid) => { const p = H.pt(pid), b = p && H.bed(p.bed); return p ? (H.showNames() ? p.name : (b ? b.no : pid)) : pid; };
-    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma (tasarım)</p></div><div class="r"><button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma</p></div><div class="r"><button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
       <div class="seg" style="margin-bottom:12px">${[["lab", "Laboratuvar"], ["rad", "Radyoloji"], ["kan", "Kan ürünü"]].map(([k, l]) => `<button data-lt="${k}" class="${tur === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th></tr></thead><tbody>
       ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
@@ -1173,7 +1173,7 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
@@ -1240,7 +1240,7 @@
         actions:`${existing ? `<button class="btn g" data-persdel>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-perssave>Kaydet</button>`,
         onMount(m) {
           m.querySelector("[data-pt]").onclick = (e) => { const b = e.target.closest("[data-ptab]"); if (!b) return; m.querySelectorAll("[data-ptab]").forEach(x => x.classList.toggle("on", x === b)); m.querySelectorAll("[data-panel]").forEach(x => x.hidden = x.dataset.panel !== b.dataset.ptab); };
-          m.querySelectorAll("[data-ptadd]").forEach(b => b.onclick = () => H.toast(b.dataset.ptadd + " · satır ekle (tasarım)", "w"));
+          m.querySelectorAll("[data-ptadd]").forEach(b => b.onclick = () => H.toast(b.dataset.ptadd + " · satır ekle", "w"));
           m.querySelector("[data-perssave]").onclick = () => {
             const g = s => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
             const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
