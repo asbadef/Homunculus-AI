@@ -717,3 +717,88 @@ def test_an_expired_u_holds_the_red_parameter_alert_it_raised():
         assert "Held while inputs are stale: consciousness charted more than 8 h ago. " in \
             held.clinical_reasoning
         assert held.stale_inputs == ["consciousness"]
+
+
+# --- G2-A2 (X12): a hold has an end ---------------------------------------------------------------
+#
+# One pressure of 88, then two days of normal, fresh vitals and no new pressure: "NEWS2 3, held" for
+# ever beside a card that read 0. A stale input keeps the hold for at most HOLD_MAX_S, 8 h (one
+# shift) past its window; the alert ends at the first evaluation after that.
+
+_BOUND = "or when they have not been re-measured within 8 h of going stale."
+
+
+def _normal_vitals(eng, start, stop, every=30):
+    """A normal resp rate and pulse every `every` minutes in [start, stop]; the NEWS2 alert after
+    each evaluation, by the minute it was judged at."""
+    seen = {}
+    for minute in range(start, stop + 1, every):
+        for code, value in [(SignalCode.RESP_RATE, 16), (SignalCode.HEART_RATE, 72)]:
+            o = _obs(code, value, minute=minute)
+            eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    return seen
+
+
+def test_a_held_alert_ends_after_its_stale_input_has_gone_8_h_without_a_new_reading():
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)                      # 3 points, a single red parameter, at T0
+    eng.ingest(o, now=o.timestamp)
+    assert _news2(eng).summary.startswith("NEWS2 3 ")
+    seen = _normal_vitals(eng, 30, 48 * 60)
+    # The pressure is stale after 1 h; at +9 h it has been stale for exactly 8 h: still held.
+    assert all(seen[m] is not None for m in range(30, 541, 30)), "held through its first 8 h stale"
+    assert all(seen[m] is None for m in range(570, 48 * 60 + 1, 30)), \
+        "ended at the first evaluation after 8 h stale, and not raised again on the old value"
+    assert "Held while inputs are stale: systolic BP " in seen[540].clinical_reasoning
+    assert seen[540].clinical_reasoning.endswith(_BOUND)
+
+
+def test_a_pressure_re_measured_within_8_h_keeps_the_hold_going_from_its_new_reading():
+    # Inside the bound the X9 behaviour is unchanged: a new reading of 88 at +5 h is the alert
+    # again, stale from +6 h, and held until 8 h after that.
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)
+    eng.ingest(o, now=o.timestamp)
+    seen = _normal_vitals(eng, 30, 270)
+    o = _obs(SignalCode.SBP, 88, minute=300)
+    eng.ingest(o, now=o.timestamp)
+    seen[300] = _news2(eng)
+    assert "Held" not in seen[300].clinical_reasoning, "a fresh 88 is the alert, not a hold"
+    seen.update(_normal_vitals(eng, 330, 960))
+    assert all(seen[m] is not None for m in range(30, 841, 30)), "held to 8 h past +6 h"
+    assert "Held while inputs are stale: systolic BP " in seen[840].clinical_reasoning
+    assert all(seen[m] is None for m in range(870, 961, 30)), "ended 8 h after it went stale"
+
+
+def test_the_bound_is_on_the_input_that_keeps_the_hold_not_on_any_stale_input():
+    # The pressure keeps this hold. A pulse of 95 (1 point) went stale at +8 h, but on its own it
+    # does not reach the band: once the pressure is past its 8 h the hold ends, the pulse's own
+    # staleness notwithstanding.
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.HEART_RATE, 95, minute=420)]:   # 3, then 4
+        eng.ingest(o, now=o.timestamp)
+    seen = {}
+    for minute in (480, 540, 570):
+        o = _obs(SignalCode.RESP_RATE, 16, minute=minute)
+        eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in seen[480].clinical_reasoning
+    assert "systolic BP, pulse " in seen[540].clinical_reasoning, "both stale, the pressure 8 h"
+    assert seen[570] is None, "the pressure is past its 8 h; the stale pulse scores 1"
+
+
+def test_an_expired_chart_holds_for_8_h_past_its_shift():
+    eng = Engine()
+    for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                                # 2 + 2 + 1 = 5
+        eng.ingest(o, now=o.timestamp)
+    seen = {}
+    for minute in range(30, 1021, 30):
+        for code, value in [(SignalCode.RESP_RATE, 22), (SignalCode.HEART_RATE, 105)]:
+            o = _obs(code, value, minute=minute)
+            eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    assert all(seen[m] is None for m in range(990, 1021, 30)), "16 h after the chart: ended"
+    assert "supplemental oxygen charted more than 8 h ago" in seen[960].clinical_reasoning
+    assert seen[960].clinical_reasoning.endswith(_BOUND)
