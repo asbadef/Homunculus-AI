@@ -1566,11 +1566,12 @@
             <div class="box" style="margin-top:8px"><h5>Tanı (ICD-10)</h5><div class="tw"><table class="t"><tbody>${tanRows()}</tbody></table></div></div>
             <div class="box" style="margin-top:8px"><h5>İzlem ve plan</h5>${row("Karar", mk.karar)}${row("Tedavi notu", mk.tedaviNot)}${row("Kontrol", (mk.kontrolTarih || "") + (mk.kontrolNot ? " · " + mk.kontrolNot : ""))}</div>`;
           if (mk.imzali || !klinik) {
-            body.innerHTML = seg + `<div class="r" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h4 style="margin:0">Muayene Kartı · ${H.esc(pno)} ${mk.imzali ? `<span class="tag ok">İmzalı</span>` : `<span class="tag w">Taslak</span>`}</h4><div class="r" style="gap:6px">${mk.imzali ? `<button class="btn sm" data-mkyaz>${I("print") || ""} Yazdır</button>` : ""}${(mk.imzali && H.canAct("protokol_duzenle")) ? `<button class="btn g sm" data-mkunlock>İmzayı kaldır</button>` : ""}</div></div>
+            body.innerHTML = seg + `<div class="r" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h4 style="margin:0">Muayene Kartı · ${H.esc(pno)} ${mk.imzali ? `<span class="tag ok">İmzalı</span>` : `<span class="tag w">Taslak</span>`}</h4><div class="r" style="gap:6px">${klinik ? `<button class="btn sm" data-mkistem>${I("flask") || ""} İstem yap</button>` : ""}${mk.imzali ? `<button class="btn sm" data-mkyaz>${I("print") || ""} Yazdır</button>` : ""}${(mk.imzali && H.canAct("protokol_duzenle")) ? `<button class="btn g sm" data-mkunlock>İmzayı kaldır</button>` : ""}</div></div>
               ${mk.imzali ? `<p class="adm-sub" style="margin-top:0">İmzalayan: ${H.esc(mk.imzalayan || "—")} · ${H.esc(mk.tarih || "—")}</p>` : (!klinik ? `<p class="adm-sub">Bu kartı yalnız klinik personel (hekim/hemşire) doldurabilir.</p>` : "")}
               ${ozetHtml}`;
             const yz = body.querySelector("[data-mkyaz]"); if (yz) yz.onclick = () => { const w = window.open("", "_blank"); if (!w) { H.toast("Yazdırma engellendi (pop-up izni).", "e"); return; } w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Muayene · ${H.esc(pno)}</title><style>body{font:13px system-ui,Arial;padding:24px;color:#111}h3{margin:0 0 8px}h5{margin:12px 0 2px}p{margin:2px 0}</style></head><body><h3>Muayene Kartı · ${H.esc(vzName(p.name))} · ${H.esc(pno)}</h3><p>İmzalayan: ${H.esc(mk.imzalayan || "")} · ${H.esc(mk.tarih || "")}</p><h5>Şikayet</h5><p>${H.esc(mk.sikayet || "-")}</p><h5>Hikaye</h5><p>${H.esc(mk.hikaye || "-")}</p><h5>Fizik muayene</h5><p>Boy ${H.esc(v.boy || "-")} · Kilo ${H.esc(v.kilo || "-")} · VKİ ${H.esc(v.vki || "-")} · Ateş ${H.esc(v.ates || "-")} · Nabız ${H.esc(v.nabiz || "-")} · SPO2 ${H.esc(v.spo2 || "-")} · TA ${H.esc(tansiyon)}</p><p>${H.esc(mk.fizik || "-")}</p><h5>Tanı</h5><p>${H.esc(p._tanilar.map(t => (t.kod ? t.kod + " " : "") + t.ad + " (" + (t.tip || "") + ")").join("; ") || "-")}</p><h5>İzlem / Plan</h5><p>${H.esc(mk.karar || "-")}</p><p>${H.esc(mk.tedaviNot || "-")}</p></body></html>`); w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (x) {} }, 300); };
             const ul = body.querySelector("[data-mkunlock]"); if (ul) ul.onclick = () => { mk.imzali = false; H.saveData && H.saveData(); H.log("Muayene imzası kaldırıldı", vzName(p.name) + " · " + pno); H.toast("İmza kaldırıldı, düzenlenebilir."); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
+            const im0 = body.querySelector("[data-mkistem]"); if (im0) im0.onclick = () => istemModal(p);
             return;
           }
           body.innerHTML = seg + `<h4 style="margin:0 0 8px">Muayene Kartı · ${H.esc(pno)} <span class="tag w">Taslak</span></h4>
@@ -1592,7 +1593,7 @@
               <div class="fr" style="grid-column:1/-1"><label>Tedavi notu</label><textarea data-mk="tedaviNot" rows="2">${H.esc(mk.tedaviNot || "")}</textarea></div>
               <div class="fr"><label>Kontrol önerildi</label><input data-mk="kontrolTarih" type="date" value="${H.esc(mk.kontrolTarih || "")}"></div>
               <div class="fr" style="grid-column:2/-1"><label>Kontrol notu</label><input data-mk="kontrolNot" value="${H.esc(mk.kontrolNot || "")}"></div></div></div>
-            <div class="r" style="gap:8px;margin-top:12px"><button class="btn p" data-mksave>${I("save") || ""} Kaydet</button><button class="btn" data-mksign>İmzala ve kapat</button></div>
+            <div class="r" style="gap:8px;margin-top:12px"><button class="btn p" data-mksave>${I("save") || ""} Kaydet</button><button class="btn" data-mksign>İmzala ve kapat</button><button class="btn" data-mkistem>${I("flask") || ""} İstem yap</button></div>
             <p class="adm-sub" style="margin-top:6px">Kaydet: taslak saklanır, sonra düzeltilir. İmzala: muayene kilitlenir.</p>`;
           const g = k => { const el = body.querySelector(`[data-mk="${k}"]`); return el ? el.value.trim() : ""; };
           const collect = () => { ["sikayet", "hikaye", "fizik", "karar", "tedaviNot", "kontrolTarih", "kontrolNot"].forEach(k => mk[k] = g(k)); mk.vital = { boy:g("boy"), kilo:g("kilo"), vki:g("vki"), ates:g("ates"), nabiz:g("nabiz"), spo2:g("spo2"), sys:g("sys"), dia:g("dia") }; rec.muayene = mk; };
@@ -1606,6 +1607,7 @@
           body.querySelector("[data-mktanekle]").onclick = () => { const ad = (mtq.value || "").trim(); if (!ad) { H.toast("Tanı seçin ya da yazın.", "w"); return; } collect(); p._tanilar.push({ kod:mtq.dataset.kod || "", ad, tip:body.querySelector("[data-mktantip]").value }); if (!p.dx) p.dx = ad; H.saveData && H.saveData(); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
           body.querySelector("[data-mktanbody]").addEventListener("click", (ev) => { const d = ev.target.closest("[data-mktandel]"); if (d) { collect(); p._tanilar.splice(+d.dataset.mktandel, 1); H.saveData && H.saveData(); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); } });
           body.querySelector("[data-mksave]").onclick = () => { collect(); H.saveData && H.saveData(); H.log("Muayene kaydedildi", vzName(p.name) + " · " + pno); H.toast("Muayene kaydedildi (taslak)."); };
+          body.querySelector("[data-mkistem]").onclick = () => { collect(); H.saveData && H.saveData(); istemModal(p); };
           body.querySelector("[data-mksign]").onclick = () => { collect(); mk.imzali = true; mk.imzalayan = (H.state.user || {}).name || "Hekim"; mk.tarih = H.nowFull ? H.nowFull() : (H.now ? H.now() : new Date().toLocaleString("az-AZ")); H.saveData && H.saveData(); H.log("Muayene imzalandı", vzName(p.name) + " · " + pno); H.toast("Muayene imzalandı."); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
           return;
         }
@@ -1652,6 +1654,12 @@
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
     drawBody();
+    function istemModal(p) {
+      H.modal({ title:"İstem · " + H.esc(vzName(p.name)), wide:true,
+        body:`<div data-istemwrap>${H.orders ? H.orders.html(p) : `<div class="empty">İstem modülü yüklenmedi.</div>`}</div>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { if (H.orders && H.orders.after) { try { H.orders.after(m.querySelector("[data-istemwrap]"), p); } catch (e) {} } } });
+    }
     function protoNewModal() {
       const bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
       const docs = (H.data.users || []).filter(u => u.role === "hekim");
