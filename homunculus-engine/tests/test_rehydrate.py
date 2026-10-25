@@ -1,7 +1,10 @@
 # tests/test_rehydrate.py
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from fastapi.testclient import TestClient
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.rehydrate import rehydrate
 from homunculus.pipeline import Engine
@@ -109,6 +112,55 @@ def test_an_ack_row_for_a_latched_alert_removes_it_on_replay_and_is_no_acknowled
     rehydrate(engine, store, audit.records(tenant="HOSP1"))
     assert store.resolved == {}
     assert SHOCK not in store.first_seen and SHOCK not in store.acks
+
+
+def test_an_ack_row_for_a_kind_that_is_not_live_does_not_answer_a_later_episode():
+    """The live door answers 404 to an ack for an alert that is neither firing nor latched, so such
+    a row is not an acknowledgement of anything — and recorded, a later episode of the same kind
+    would inherit it."""
+    audit = _audit_with_shock()
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "suspected_infection",
+                            {"value": 0.0, "unit": "", "obs_ts": T0, "device": "lab"}))   # sepsis ends
+    audit.append(AuditEvent("HOSP1", "ack", "bed-3", "sepsis", {"role": "ayse", "at": T0}))
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "suspected_infection",
+                            {"value": 1.0, "unit": "", "obs_ts": T0, "device": "lab"}))   # and returns
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1"))
+    assert "sepsis" in {a.kind for a in engine.active_alerts("bed-3")}
+    assert ("bed-3", "sepsis") not in store.acks, "a new episode: nobody has answered it"
+
+
+def test_a_latch_made_by_clinical_requests_survives_a_restart():
+    """`chart` rows run through the same hook as `ingest` rows. Without it the replay would drop a
+    critical that charting ended — the antibiotic given, the infection ruled out — while the ward
+    still has it on its board, unacknowledged."""
+    audit = InMemoryAuditLog()
+    hdr = {"Authorization": "Bearer tok"}
+    start = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+
+    def boot():
+        app = create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)
+        client = TestClient(app)
+        client.get("/patients", headers=hdr)          # builds the tenant: rehydrated from the audit
+        return app, client
+
+    def chart(client, entries, minute):
+        r = client.post("/clinical/bed-3", headers=hdr, json={
+            "entries": entries, "recorded_at": (start + timedelta(minutes=minute)).isoformat()})
+        assert r.status_code == 200, r.text
+
+    live_app, live = boot()
+    chart(live, [{"code": "suspected_infection", "value": 1}, {"code": "lactate", "value": 3.4},
+                 {"code": "norepinephrine_rate", "value": 0.08}, {"code": "weight_kg", "value": 50}], 0)
+    chart(live, [{"code": "crystalloid_bolus_ml", "value": 1600}], 1)
+    chart(live, [{"code": "suspected_infection", "value": 0}], 10)       # the shock's rule stops
+    live_store = live_app.state.ack_stores["HOSP1"]
+    assert set(live_store.resolved) == {SHOCK}
+
+    restarted_app, _ = boot()
+    again = restarted_app.state.ack_stores["HOSP1"]
+    assert set(again.resolved) == set(live_store.resolved)
+    assert again.resolved[SHOCK]["alert"] == live_store.resolved[SHOCK]["alert"]
 
 
 def test_a_restart_rebuilds_the_board_the_ward_had_episode_by_episode():

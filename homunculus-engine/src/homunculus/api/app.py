@@ -592,18 +592,22 @@ def create_app(
         engine = _engine(hospital)
         store = _store(hospital)
         alerts: list = []
-        now = datetime.now(timezone.utc)
         for item in charted:
             obs = item.observation
             alerts = engine.ingest(obs, now=obs.timestamp)
+            # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
+            # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
+            # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
+            # Right after the evaluation and before any audit write, as in /ingest: if the audit
+            # fails from here on, an unacknowledged critical is still on the board. `charted` is
+            # never empty (build_entries refuses that), so `now` is set for the stamps below.
+            now = datetime.now(timezone.utc)
+            cleared = sync_alerts(engine, store, obs.patient_id, now)
             audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
                                     {"value": obs.value, "unit": obs.unit,
                                      "obs_ts": obs.timestamp.isoformat(),
                                      "charted_by": item.charted_by}))
-            # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
-            # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
-            # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
-            _audit_cleared(hospital, sync_alerts(engine, store, obs.patient_id, now), now)
+            _audit_cleared(hospital, cleared, now)
         for a in alerts:
             audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
                                     {"severity": a.severity, "urgency": a.urgency,
@@ -702,6 +706,14 @@ def create_app(
         engine = _engine(hospital)
         store = _store(hospital)
         alerts = engine.ingest(obs, now=obs.timestamp)
+        # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
+        # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
+        # if the audit fails from here on, an unacknowledged critical is still on the board.
+        # Before the stamps too: a kind that came back after clearing has had its old stamp pruned,
+        # so it is stamped anew, a new episode (D5).
+        # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
+        wall_now = datetime.now(timezone.utc)
+        cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
         audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
                                 {"value": obs.value, "unit": obs.unit,
                                  "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}))
@@ -709,12 +721,7 @@ def create_app(
             audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
                                     {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
                                      "source": a.source, "evidence": a.supporting_evidence}))
-        # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
-        wall_now = datetime.now(timezone.utc)
-        # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
-        # latches (api/alert_lifecycle.py). Before the stamps: a kind that came back after
-        # clearing has had its old stamp pruned, so it is stamped anew, a new episode (D5).
-        _audit_cleared(hospital, sync_alerts(engine, store, obs.patient_id, wall_now), wall_now)
+        _audit_cleared(hospital, cleared, wall_now)
         for a in engine.active_alerts(obs.patient_id):
             if store.stamp_first_seen(obs.patient_id, a.kind, wall_now):
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,

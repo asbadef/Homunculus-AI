@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
+from homunculus.api.alert_lifecycle import acknowledge_latched, live_keys, sync_alerts
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import profile_from_payload
 from homunculus.api.identity import bounded_role
@@ -40,7 +40,7 @@ def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> No
         elif rec.event_type == "profile":
             _replay_profile(engine, rec)
         elif rec.event_type == "ack":
-            _replay_ack(store, rec)
+            _replay_ack(engine, store, rec)
         elif rec.event_type == "first_seen":
             store.first_seen.setdefault((rec.patient_id, rec.subject),
                                         datetime.fromisoformat(rec.payload["at"]))
@@ -88,12 +88,17 @@ def _replay_profile(engine: Engine, rec: AuditRecord) -> None:
         return  # a payload we cannot read must not fail the whole replay
 
 
-def _replay_ack(store: AckStore, rec: AuditRecord) -> None:
+def _replay_ack(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
     """`role` is replayed as `acknowledged_by`, bounded like the live path: rows written before
     the device role was bounded may hold anything the body sent (a dict, a page of text).
 
     G2-A1 (D7, D8): an `ack` row for a latched alert removed it live, and removes it here — it is
-    not recorded as an acknowledgement, which a later episode of the same kind would inherit."""
+    not recorded as an acknowledgement, which a later episode of the same kind would inherit. For
+    the same reason a row for a kind that is neither firing nor latched at this point of the replay
+    is ignored: the live door answers 404 to it, so it acknowledges nothing, and kept, it would
+    answer the next episode of that kind."""
+    if (rec.patient_id, rec.subject) not in live_keys(engine, store):
+        return
     if acknowledge_latched(store, rec.patient_id, rec.subject) is not None:
         return
     at = datetime.fromisoformat(rec.payload["at"])

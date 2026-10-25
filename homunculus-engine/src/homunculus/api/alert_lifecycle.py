@@ -5,14 +5,18 @@ The engine answers one question — what fires now (pipeline.py rebuilds its buc
 evaluation). Everything the ward attached to an alert lives in the tenant's AckStore, keyed by
 (patient, kind): its acknowledgement, the instant it was first seen, whether it escalated; the
 notifier keeps whether a nurse was told. `sync_alerts` runs after every evaluation — `/ingest`,
-`/clinical` and the replay in `rehydrate` — so the three behave alike (D4):
+`/clinical` and the replay in `rehydrate` — so the three behave alike (D4). The doors run it right
+after `engine.ingest`, before their first audit write: an audit that fails mid-request must not
+leave an evaluation without its hook, or an unacknowledged critical would be off the board until
+some later reading:
 
 * A kind that stopped firing ends its episode. Its ack, first-seen stamp and escalation flag are
   pruned (the door prunes the notifier's dedup with `live_keys`), so if it fires again it is a NEW
   episode: a new first-seen, a new escalation clock, a new nurse notification (D5).
 * Except a critical one nobody acknowledged: it latches (D2). It stays on the board as resolved,
-  unacknowledged — its first-seen kept, its escalation flag dropped, for only a firing alert
-  escalates (D8) — until a clinician acknowledges it, which removes it (`acknowledge_latched`). A
+  unacknowledged — its first-seen kept (and carried in the latch), its escalation flag dropped, for
+  only a firing alert escalates (D8) — until a clinician acknowledges it, which removes it
+  (`acknowledge_latched`). A
   transient critical event must not vanish before anyone saw it. HIGH, MODERATE and LOW never
   latch, and an acknowledged critical leaves with its rule.
 * A latched kind that fires again is active again: the latch is replaced and its episode goes on —
@@ -73,9 +77,12 @@ def sync_alerts(engine: Engine, store: AckStore, patient_id: str, now: datetime)
                if key[0] == patient_id and key[1] not in firing_now]
     for key, alert in dropped:
         del store.firing[key]
-        cleared.append(Cleared(patient_id, key[1], alert.severity, store.first_seen.get(key), RESOLVED))
+        seen = store.first_seen.get(key)
+        cleared.append(Cleared(patient_id, key[1], alert.severity, seen, RESOLVED))
         if alert.severity == LATCHING_SEVERITY and key not in store.acks:
-            store.resolved[key] = {"alert": asdict(alert), "resolved_at": now}
+            # The latch carries its episode's first-seen, so the record of its end can say when the
+            # episode began even if the stamp itself is gone by then (None: never stamped).
+            store.resolved[key] = {"alert": asdict(alert), "resolved_at": now, "first_seen": seen}
     for kind, alert in firing_now.items():
         store.firing[(patient_id, kind)] = alert
     # If an evaluation is ever not followed by its hook, another patient's sync must not prune the
@@ -93,5 +100,7 @@ def acknowledge_latched(store: AckStore, patient_id: str, kind: str) -> Cleared 
     if entry is None:
         return None
     seen = store.first_seen.pop(key, None)
+    if seen is None:
+        seen = entry.get("first_seen")
     store.escalated.discard(key)
     return Cleared(patient_id, kind, entry["alert"]["severity"], seen, ACKED_AFTER_RESOLVE)

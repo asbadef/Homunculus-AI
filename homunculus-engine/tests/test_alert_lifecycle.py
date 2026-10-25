@@ -125,6 +125,42 @@ def test_a_latched_kind_that_fires_again_replaces_the_latch_without_a_cleared_ro
     assert store.first_seen[SHOCK_KEY] == WALL, "the episode goes on: its first-seen is still its own"
 
 
+def test_a_critical_that_fires_again_while_latched_keeps_its_episode_and_a_fresh_clock_follows_only_an_acknowledgement():
+    """O5: nobody has answered the first firing, so the second is the same episode — the clock that
+    escalates it keeps running from the first sight. Only an acknowledgement ends the episode."""
+    engine, store = _shock()                                                      # first seen at WALL
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)                   # latched
+    assert _evaluate(engine, store, SignalCode.LACTATE, 3.4, minute=2) == []      # firing again
+    _stamp(engine, store, minute=2)                                               # the door's stamp
+    assert store.first_seen[SHOCK_KEY] == WALL, "unacknowledged: still the first episode"
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=3)                   # latched again
+    assert store.first_seen[SHOCK_KEY] == WALL
+    acknowledge_latched(store, "bed-3", "septic_shock")                           # answered: it ends
+    _evaluate(engine, store, SignalCode.LACTATE, 3.4, minute=4)
+    _stamp(engine, store, minute=4)
+    assert store.first_seen[SHOCK_KEY] == WALL + timedelta(minutes=4), "now a new episode, a new clock"
+
+
+def test_a_latch_carries_its_episodes_first_seen_to_the_cleared_record_of_its_acknowledgement():
+    engine, store = _shock()
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)
+    assert store.resolved[SHOCK_KEY]["first_seen"] == WALL
+    del store.first_seen[SHOCK_KEY]                       # the stamp is gone, the latch still has it
+    assert acknowledge_latched(store, "bed-3", "septic_shock") == Cleared(
+        "bed-3", "septic_shock", "critical", WALL, ACKED_AFTER_RESOLVE)
+
+
+def test_a_latch_of_an_alert_that_was_never_stamped_has_no_first_seen_to_carry():
+    """Fired and ended inside one /clinical request: no door stamped it."""
+    engine, store = Engine(), AckStore()
+    for code, value in SHOCK:
+        _evaluate(engine, store, code, value, minute=0)
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)
+    assert store.resolved[SHOCK_KEY]["first_seen"] is None
+    assert acknowledge_latched(store, "bed-3", "septic_shock") == Cleared(
+        "bed-3", "septic_shock", "critical", None, ACKED_AFTER_RESOLVE)
+
+
 def test_an_acknowledged_latch_does_not_come_back_on_the_next_normal_reading():
     engine, store = _shock()
     _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)

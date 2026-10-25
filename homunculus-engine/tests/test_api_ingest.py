@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import homunculus.scenarios
 from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.scenarios.loader import load_scenario
 
 SCEN = Path(homunculus.scenarios.__file__).parent
@@ -130,3 +131,37 @@ def test_a_kind_that_returns_after_it_ended_is_a_new_episode_and_a_nurse_is_told
     shock = next(a for b in c.get("/patients", headers=_hdr("tok-hosp1")).json()["patients"]
                  for a in b["alerts"] if a["kind"] == "septic_shock")
     assert shock["acknowledged"] is False, "the old answer belongs to the old episode (D5)"
+
+
+class _FailsOnce(InMemoryAuditLog):
+    """An audit log whose next append of `fail_on` raises once — the database going away
+    mid-request."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on = None
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            self.fail_on = None
+            raise RuntimeError("audit down")
+        return super().append(event)
+
+
+def test_an_ingest_row_that_fails_to_audit_does_not_take_a_critical_off_the_board():
+    """The lifecycle hook follows the evaluation directly, before any audit write: the engine has
+    already moved on when the audit fails, and an unacknowledged critical that cleared on that
+    request must still be on the next read, latched — not missing until some later reading."""
+    audit = _FailsOnce()
+    c = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit),
+                   raise_server_exceptions=False)
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        assert c.post("/ingest", json=fhir, headers=_hdr("tok-hosp1")).status_code == 200
+    audit.fail_on = "ingest"
+    r = c.post("/ingest", json=_fhir("lactate", 1.5, "mmol/L", when="2026-07-14T11:01:00+00:00"),
+               headers=_hdr("tok-hosp1"))
+    assert r.status_code == 500
+    shock = next((a for b in c.get("/patients", headers=_hdr("tok-hosp1")).json()["patients"]
+                  for a in b["alerts"] if a["kind"] == "septic_shock"), None)
+    assert shock is not None, "an unacknowledged critical must not vanish (D2)"
+    assert shock["resolved_at"] is not None and shock["acknowledged"] is False

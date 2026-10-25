@@ -183,3 +183,22 @@ async def test_a_latched_alert_never_escalates_and_its_next_episode_has_its_own_
     assert SHOCK not in store.escalated, "the new episode's clock started at its own first sight"
     await app.state.escalation_cycle(fresh + timedelta(minutes=5))
     assert SHOCK in store.escalated
+
+
+def _told(client, kind="septic_shock"):
+    """What the nurse was told about `kind`: the trigger of each notification, oldest first."""
+    rows = client.get("/audit", params={"patient_id": "bed-3", "limit": 10000},
+                      headers=_hdr("tok")).json()["records"]
+    return [r["payload"]["trigger"] for r in rows
+            if r["subject"] == kind and r["event_type"] == "notification"]
+
+
+def test_a_new_episode_after_an_acknowledged_latch_tells_the_nurse_again():
+    """Pins the notifier prune on the latched /ack path (D5): the acknowledgement removes the latch,
+    so the kind leaves the live keys, and a critical that comes back is told as a new one."""
+    c = _client()
+    _drive_shock(c)
+    _reading(c, "lactate", 1.5, minute=61)              # latched: the same episode, still told
+    assert _ack(c).status_code == 200                   # removed
+    _reading(c, "lactate", 3.4, minute=62)              # a new episode
+    assert _told(c) == ["new", "new"]
