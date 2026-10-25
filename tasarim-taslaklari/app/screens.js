@@ -295,6 +295,41 @@
     setOpen(pid, no, acik) { const r = this.get(pid, no); if (r) { r.kapali = !acik; H.saveData && H.saveData(); } return r; },
     remove(pid, no) { const s = this.store(); if (s[pid]) { s[pid] = s[pid].filter(x => x.no !== no); H.saveData && H.saveData(); } },
   };
+  // Kabul anahtarı -> geliş tipi eşlemesi (hasta360 "Hasta kabul ▾" ve vezne sağ-tık aynı eşlemeyi kullanır)
+  const KABUL_GELIS = { ayaktan:"Ayaktan", gunubirlik:"Günübirlik", yatan:"Yatarak", yogun:"Yoğun", kontrol:"Kontrol", donor:"Ayaktan" };
+  // Ortak "Hasta kabul" formu: mevcut hastaya yeni protokol açar. Hasta dosyası da vezne de buradan geçer → tek tutarlı ekran.
+  // preset: {gelis, bolum, doktor}. onDone(rec) verilmezse hasta dosyasına gider.
+  H.kabulForm = (patient, preset = {}, onDone) => {
+    if (!patient) return;
+    const now = () => H.nowFull ? H.nowFull() : (H.now ? H.now() : new Date().toLocaleString("az-AZ"));
+    const bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
+    const docs = (H.data.users || []).filter(u => u.role === "hekim");
+    const ptipler = (H.data.secenekler && H.data.secenekler.protokol) || ["Genel muayene", "Kontrol", "Preop"];
+    const danismanlar = [...new Set((H.data.users || []).filter(u => u.active !== false).map(u => u.name))];
+    const GELIS = ["Ayaktan", "Acil", "Günübirlik", "Yatarak", "Kontrol", "Yoğun"];
+    const curBed = H.bed && H.bed(patient.bed), curUnit = curBed && H.unit && H.unit(curBed.unitId), att = H.userBy && H.userBy(patient.attending);
+    const preG = GELIS.includes(preset.gelis) ? preset.gelis : "Ayaktan";
+    const preB = preset.bolum || (curUnit && curUnit.tr) || "";
+    const preD = preset.doktor || (att && att.name) || "";
+    H.modal({ title:"Hasta kabul · " + H.esc(vzName(patient.name)), body:`<div class="icd-form">
+        <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${GELIS.map(x => `<option value="${H.esc(x)}"${x === preG ? " selected" : ""}>${x}</option>`).join("")}</select></div>
+        <div class="fr"><label>Protokol tipi</label><select data-f="ptip">${ptipler.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="kf-bol" value="${H.esc(preB)}"><datalist id="kf-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
+        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${docs.map(d => `<option${preD === d.name ? " selected" : ""}>${H.esc(d.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Danışman (ops.)</label><input data-f="danisman" list="kf-dan" placeholder="Hasta danışmanı"><datalist id="kf-dan">${danismanlar.map(d => `<option>${H.esc(d)}</option>`).join("")}</datalist></div>
+        <div class="fr"><label>Kayıt tipi</label><select data-f="kayit"><option value="Kesin kayıt">Kesin kayıt</option><option value="Ön kayıt">Ön kayıt</option></select></div></div>
+        <p class="adm-sub" style="margin-top:6px">Mevcut hastaya yeni protokol açılır; numara otomatik üretilir, hasta kartına kalıcı eklenir.</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kabul et · protokol aç</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+        const gelis = g("gelis"), bolum = g("bolum") || preB || "—", doktor = g("doktor") || "—", ptip = g("ptip"), danisman = g("danisman"), onKayit = g("kayit") === "Ön kayıt";
+        patient.encounter = { "Yatarak":"yatan", "Günübirlik":"gunubirlik", "Yoğun":"yogun" }[gelis] || "ayaktan";
+        patient.onKayit = onKayit;
+        const rec = H.proto.create(patient.id, { bolum, doktor, gelisTipi:gelis, ptip });
+        if (danisman) (H.data.danismanlar = H.data.danismanlar || []).unshift({ id:"dn" + Date.now(), hasta:patient.name, danisman, konu:"Kabul sırasında atandı", durum:"Açık", tarih:now(), not:"" });
+        H.saveData && H.saveData();
+        H.log("Hasta kabul", vzName(patient.name) + " · " + gelis + " · " + rec.no); H.closeModal(); H.toast("Kabul: " + gelis + " · protokol " + rec.no);
+        if (onDone) onDone(rec); else H.go("hasta360", { pid:patient.id, atab:"360", stab:"gelisler", proto:rec.no }); }; } });
+  };
   // Basit sağ-tık/işlem menüsü (İşlem Havuzu)
   function vzMenu(ev, items) {
     document.querySelectorAll(".vz-menu").forEach(m => m.remove());
@@ -809,9 +844,7 @@
         H.go("admission", { tab:"ayaktan", pre:{ name:nm, fin:g("fin").toUpperCase(), phone:g("tel") } }); };
       const dt = root.querySelector("[data-vsdetay]"), dtm = root.querySelector("[data-vsdetaym]"); if (dt && dtm) dt.onclick = () => dtm.classList.toggle("hidden");
       if (body) body.oncontextmenu = (ev) => { const tr = ev.target.closest("[data-h3open]"); if (!tr) return; ev.preventDefault(); const pp = H.pt(tr.dataset.h3open); if (!pp) return;
-        const kabul = (k, l) => ["Hasta kabul: " + l, () => { pp.encounter = k === "yogun" ? "yogun" : (k === "kontrol" || k === "donor" ? "ayaktan" : k);
-          if (H.proto) { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId), att = H.userBy(pp.attending); H.proto.create(pp.id, { bolum:(uu && uu.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:l, ptip:"Genel muayene" }); }
-          H.log("Hasta kabul", vzName(pp.name) + " · " + l); H.toast("Kabul: " + l + " · protokol açıldı"); H.go("vezne", params); }];
+        const kabul = (k, l) => ["Hasta kabul: " + l, () => H.kabulForm(pp, { gelis:KABUL_GELIS[k] || "Ayaktan" }, () => H.go("vezne", params))];
         vzMenu(ev, [
           ["Hasta dosyası aç", () => H.go("hasta360", { pid:pp.id })],
           ...(pp.onKayit ? [["Kesin kayda çevir", () => { pp.onKayit = false; H.saveData && H.saveData(); H.log("Kesin kayıt", vzName(pp.name)); H.toast("Kesin kayda çevrildi"); H.go("vezne", params); }]] : []),
@@ -1629,9 +1662,8 @@
       const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
       const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
-      const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; const kl = (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1];
-        if (H.proto) { const att = H.userBy(p.attending); H.proto.create(p.id, { bolum:(u && u.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:kl, ptip:"Genel muayene" }); }
-        H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + kl + " · protokol açıldı"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      const ka = e.target.closest("[data-kabul]"); if (ka) { root.querySelector("[data-h3kabulm]").classList.add("hidden");
+        const att = H.userBy(p.attending); return H.kabulForm(p, { gelis:KABUL_GELIS[ka.dataset.kabul] || "Ayaktan", bolum:(u && u.tr) || "", doktor:(att && att.name) || "" }); }
       const di = e.target.closest("[data-diger]"); if (di) { const ad = di.dataset.diger; root.querySelector("[data-h3digerm]").classList.add("hidden");
         if (ad === "Kullanılan steril setler") { const list = H.sterSetsOfPatient ? H.sterSetsOfPatient(p.id) : [];
           H.modal({ title:"Kullanılan steril setler · " + H.esc(vzName(p.name)), wide:true,
