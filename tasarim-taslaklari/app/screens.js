@@ -285,7 +285,7 @@
         m.querySelectorAll("[data-hf2]").forEach(b => b.onclick = () => { f2 = b.dataset.hf2; m.querySelectorAll("[data-hf2]").forEach(x => x.classList.toggle("on", x === b)); draw(); });
         const hp = m.querySelector("[data-hproto]"); if (hp) hp.onchange = () => { hproto = hp.value; draw(); };
         m.querySelector("[data-hproviz]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } s.forEach(o => o.durum = "Provizyon istendi"); H.log("Provizyon istendi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("Provizyon istendi (" + s.length + ")"); draw(); };
-        m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } const top = s.reduce((a, o) => a + fiyatOf(o), 0); s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true; H.log("Parçalı fatura", vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼"); H.toast("Parçalı fatura kesildi: " + top + " ₼ (" + s.length + ")"); draw(); };
+        m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } cutInvoice(s, "Parçalı fatura"); };
         m.querySelector("[data-hpaket]").onclick = () => H.toast("Panel paket için paket tanımı gerekir (admin → Hizmet Kartı · Paketler).", "w");
         body.oncontextmenu = (e) => { const tr = e.target.closest("[data-hrow]"); if (!tr) return; e.preventDefault(); const o = (H.data.orders || []).find(x => x.id === tr.dataset.hrow); if (!o) return;
           const needP = (perm, fn) => () => { if (!H.can(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; } fn(); };
@@ -299,12 +299,23 @@
           ]); };
         const selected = () => [...m.querySelectorAll("[data-hsel]:checked")].map(c => (H.data.orders || []).find(o => o.id === c.dataset.hsel)).filter(Boolean);
         const recompute = () => { topEl.textContent = selected().reduce((a, o) => a + fiyatOf(o), 0); };
+        // Adım 3 · zincir: fatura kesilince işlemler "Faturalandı" + protokol fatura durumu + Faturalar + GFK + evrak otomatik oluşur.
+        const cutInvoice = (s, label) => {
+          const top = s.reduce((a, o) => a + fiyatOf(o), 0), kurum = p.kurum || "Özel ödeme";
+          s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
+          const protos = [...new Set(s.map(o => o.protokolNo).filter(Boolean))], fno = "FTR-" + (Date.now() % 1000000);
+          protos.forEach(no => { const pr = H.proto && H.proto.get(p.id, no); if (pr) pr.fatura = { durum:"Kesildi", tutar:Math.round(((pr.fatura && pr.fatura.tutar) || 0) + top / protos.length), kurum }; });
+          (H.data.faturalar = faturalar()).unshift({ id:"fat" + Date.now(), hasta:p.name, protokol:(protos[0] || p.proto || "—") + (p.dx ? " · " + p.dx : ""), kurum, toplam:top, katilim:top, durum:"Bekliyor", protokolNo:protos[0], no:fno });
+          H.data.gfk = gfkRows(); protos.forEach(no => { const ex = H.data.gfk.find(g => g.proto === no); if (ex) ex.durum = "Hasta faturası kesilmiş"; else { const pr = H.proto && H.proto.get(p.id, no); H.data.gfk.unshift({ proto:no, hasta:p.name, gelis:(pr && pr.gelisTipi) || "Ayaktan", ptip:(pr && pr.ptip) || "Normal", bolum:(pr && pr.bolum) || "—", durum:"Hasta faturası kesilmiş" }); } });
+          (H.data.evrak = evrakRows()).unshift({ no:fno, matbu:"", kurum, durum:"Veznede" });
+          H.saveData && H.saveData();
+          H.log(label, vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼" + (protos.length ? " · prot " + protos.join(",") : ""));
+          H.toast(label + ": " + top + " ₼ (" + s.length + " işlem) · fatura + GFK + evrak oluştu"); draw();
+        };
         draw();
         body.addEventListener("change", recompute);
         m.querySelector("[data-hall]").onchange = (e) => { m.querySelectorAll("[data-hsel]:not(:disabled)").forEach(c => c.checked = e.target.checked); recompute(); };
-        m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
-          const top = s.reduce((a, o) => a + fiyatOf(o), 0); s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
-          H.log("Fatura kesildi (işlem havuzu)", vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼"); H.toast("Fatura kesildi: " + top + " ₼ (" + s.length + " işlem)"); draw(); };
+        m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } cutInvoice(s, "Fatura kesildi (işlem havuzu)"); };
         m.querySelector("[data-hindirim]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
           const top = s.reduce((a, o) => a + fiyatOf(o), 0); (H.data.indirimOnay = indirimRows()).unshift({ id:"io" + Date.now(), tarih:H.nowFull ? H.nowFull() : H.now(), hasta:p.name, isteyen:(H.state.user || {}).name || "Vezne", islem:s.map(o => o.ad).join(", ").slice(0, 60), tutar:top, oran:0, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) });
           H.log("İndirime gönderildi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("İndirim onayına gönderildi (" + s.length + " işlem)"); H.closeModal(); };
