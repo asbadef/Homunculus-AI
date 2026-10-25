@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
 from homunculus.api.audit import (
-    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, chain_hash, since_utc)
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, since_utc)
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -96,7 +96,9 @@ class PostgresAuditLog:
 
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
                 event_type: str | None = None, since: datetime | None = None,
-                limit: int = 200) -> list[AuditRecord]:
+                limit: int = 200, newest: bool = False,
+                after_id: int | None = None) -> list[AuditRecord]:
+        _one_order(newest, after_id)
         clauses, params = [], {"limit": limit}
         for column, value in (("tenant", tenant), ("patient_id", patient_id),
                               ("event_type", event_type)):
@@ -110,14 +112,22 @@ class PostgresAuditLog:
             # instant against an instant, whatever the collation and whatever zone the bound was in.
             clauses.append("CAST(ts AS timestamptz) >= CAST(:since AS timestamptz)")
             params["since"] = bound.isoformat()
+        if after_id is not None:
+            clauses.append("id > :after_id")
+            params["after_id"] = after_id
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        # The newest N from the id end, handed back oldest first (G2-A2, D11): `id` is the BIGSERIAL
+        # primary key (migration 0004), walked backwards — no new index, no migration.
+        order = "DESC" if newest else "ASC"
 
         with self._engine.connect() as conn:
             rows = conn.execute(
                 text(f"SELECT id, ts, tenant, event_type, patient_id, subject, payload,"
-                     f" prev_hash, hash FROM audit {where} ORDER BY id ASC LIMIT :limit"),
+                     f" prev_hash, hash FROM audit {where} ORDER BY id {order} LIMIT :limit"),
                 params,
             ).mappings().all()
+        if newest:
+            rows = list(reversed(rows))
 
         return [
             AuditRecord(

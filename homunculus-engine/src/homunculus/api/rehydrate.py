@@ -19,6 +19,7 @@ The escalation chain (X13) is not in the log: a replayed episode's clock (`clock
 chain starts over — the same limitation as `paged` and `escalated`, which are not replayed either."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
@@ -30,7 +31,9 @@ from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
 
-def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> None:
+def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -> None:
+    # Any iterable, read once, in id order (G2-A2, D12): the API hands it `audit.iter_records`,
+    # which reads the log a page at a time, so no cap can drop the newest rows.
     for rec in records:
         if rec.event_type in ("ingest", "chart"):
             # `chart` is a clinician's observation and replays exactly like a device's. It has

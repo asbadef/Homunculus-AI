@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
 from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
-from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, verify_chain
+from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
     board_snapshot, freshness_turned, identity_only_board, patient_board,
 )
@@ -83,6 +83,13 @@ PATIENT_ID_MAX = 128
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
 TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
+
+#: G2-A2 (D12): the most rows one `/audit` answer carries — the newest; the most `/alarm-quality`
+#: reads for its window (it says `truncated` when the window held more); and the rows a restart
+#: replays per read — every row is replayed, a page at a time.
+AUDIT_LIMIT_MAX = 1000
+ALARM_QUALITY_LIMIT_MAX = 20000
+REHYDRATE_PAGE = 5000
 
 
 def _device_role(value: object) -> str:
@@ -248,7 +255,8 @@ def create_app(
         rehydrated.add(hospital)
         engine = engines.setdefault(hospital, Engine())
         store = stores.setdefault(hospital, AckStore())
-        rehydrate(engine, store, audit.records(tenant=hospital, limit=1_000_000))
+        # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
+        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
 
     def _engine(hospital: str) -> Engine:
         _ensure(hospital)
@@ -1069,8 +1077,10 @@ def create_app(
             # reads like a whole one — worse than refusing.
             raise HTTPException(status_code=403,
                                 detail="denetim kaydının tamamı kapsam dışı; bir patient_id verin")
-        recs = audit.records(tenant=hospital, patient_id=patient_id,
-                             event_type=event_type, limit=limit)
+        # The NEWEST rows, oldest first, at most AUDIT_LIMIT_MAX (G2-A2, D12): an auditor asking
+        # about recent activity gets recent rows, not the first ones ever written.
+        recs = audit.records(tenant=hospital, patient_id=patient_id, event_type=event_type,
+                             limit=max(1, min(limit, AUDIT_LIMIT_MAX)), newest=True)
         return {"records": [asdict(r) for r in recs]}
 
     @app.get("/scores/sofa/{patient_id}")
@@ -1183,10 +1193,14 @@ def create_app(
         hospital = caller.hospital
         now = datetime.now(timezone.utc)
         since = now - timedelta(days=max(1, days))
-        recs = [r for r in audit.records(tenant=hospital, limit=limit)
-                if (r.ts or "") >= since.isoformat()]
-        report = alarm_quality(recs, now)
-        return {**report.as_dict(), "days": days}
+        # The window is the backend's to read (G2-A2, D12): its newest rows, at most `cap`, and one
+        # more to know whether it held more — then the report says `truncated` rather than reading
+        # as the whole window (the trends pattern, api/trends.py `_markers`).
+        cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
+        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True)
+        truncated = len(recs) > cap
+        report = alarm_quality(recs[1:] if truncated else recs, now)
+        return {**report.as_dict(), "days": days, "truncated": truncated}
 
     @app.get("/audit/verify")
     async def verify_audit(limit: int = 10000, authorization: str | None = Header(default=None)):

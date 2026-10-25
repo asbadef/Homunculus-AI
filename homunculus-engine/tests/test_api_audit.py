@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport
 
 from homunculus.api.app import create_app
-from homunculus.api.audit import InMemoryAuditLog
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 
 TENANTS = {"tok": "HOSP1"}
 
@@ -87,3 +87,67 @@ def test_view_writes_view_audit_record():
     views = audit.records(tenant="HOSP1", event_type="view")
     assert len(views) == 1
     assert views[0].patient_id == "bed-3" and views[0].payload["role"] == "doctor"
+
+
+# --- G2-A2 (D12): the newest rows, at most AUDIT_LIMIT_MAX; the alarm report reads its window ----
+
+HDR = {"Authorization": "Bearer tok"}
+
+
+def _views(audit, count):
+    for n in range(count):
+        audit.append(AuditEvent("HOSP1", "view", f"bed-{n}", "", {"n": n}))
+
+
+def test_the_trail_is_the_newest_rows_oldest_first():
+    audit = InMemoryAuditLog()
+    _views(audit, 250)
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    body = client.get("/audit", headers=HDR).json()["records"]
+    assert [r["payload"]["n"] for r in body] == list(range(50, 250))
+
+
+def test_the_trail_is_capped_and_a_request_cannot_empty_it():
+    from homunculus.api.app import AUDIT_LIMIT_MAX
+    audit = InMemoryAuditLog()
+    _views(audit, AUDIT_LIMIT_MAX + 5)
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    capped = client.get("/audit", params={"limit": 100000}, headers=HDR).json()["records"]
+    assert len(capped) == AUDIT_LIMIT_MAX
+    assert capped[-1]["payload"]["n"] == AUDIT_LIMIT_MAX + 4
+    one = client.get("/audit", params={"limit": 0}, headers=HDR).json()["records"]
+    assert [r["payload"]["n"] for r in one] == [AUDIT_LIMIT_MAX + 4]
+
+
+class _Spy(InMemoryAuditLog):
+    def __init__(self):
+        super().__init__()
+        self.reads: list[dict] = []
+
+    def records(self, **kw):
+        self.reads.append(kw)
+        return super().records(**kw)
+
+
+def test_the_alarm_report_asks_the_backend_for_its_window_and_says_when_it_was_cut():
+    audit = _Spy()
+    for n in range(5):
+        audit.append(AuditEvent("HOSP1", "first_seen", f"bed-{n}", "news2",
+                                {"at": datetime.now(timezone.utc).isoformat()}))
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    body = client.get("/alarm-quality", params={"limit": 3}, headers=HDR).json()
+    [read] = [r for r in audit.reads if "since" in r]
+    assert (read["newest"], read["limit"]) == (True, 4)       # the cap, and one more to know
+    assert read["since"].tzinfo is not None
+    assert (body["truncated"], body["episodes"]) == (True, 3)
+    body = client.get("/alarm-quality", params={"limit": 5}, headers=HDR).json()
+    assert (body["truncated"], body["episodes"]) == (False, 5)
+
+
+def test_the_alarm_reports_read_is_capped():
+    from homunculus.api.app import ALARM_QUALITY_LIMIT_MAX
+    audit = _Spy()
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    client.get("/alarm-quality", params={"limit": 10**9}, headers=HDR)
+    [read] = [r for r in audit.reads if "since" in r]
+    assert read["limit"] == ALARM_QUALITY_LIMIT_MAX + 1

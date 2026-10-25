@@ -234,3 +234,29 @@ def test_a_restart_rebuilds_the_board_the_ward_had_episode_by_episode():
     shock = next(a for a in live["alerts"] if a["kind"] == "septic_shock")
     assert (shock["first_seen_at"], shock["acknowledged"]) == (stamps[-1], False), \
         "the latch is episode 3's: its own stamp, and no answer inherited from episode 2"
+
+
+def test_a_restart_replays_every_row_a_page_at_a_time(monkeypatch):
+    """G2-A2 (D12): the replay read the first 1 000 000 rows in one go, and on a large tenant the rows
+    it dropped were the newest — the current state. It reads every row by id now, a page at a time;
+    a page of 5 here stands for the real 5000."""
+    import homunculus.api.app as app_module
+    monkeypatch.setattr(app_module, "REHYDRATE_PAGE", 5)
+    reads: list[dict] = []
+
+    class Counting(InMemoryAuditLog):
+        def records(self, **kw):
+            reads.append(kw)
+            return super().records(**kw)
+
+    audit = Counting()
+    for minute, rate in enumerate([80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 140]):
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "heart_rate", {
+            "value": rate, "unit": "/min", "obs_ts": f"2026-07-14T10:{minute:02d}:00+00:00",
+            "device": "mon"}))
+    client = TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit))
+    [card] = client.get("/patients", headers={"Authorization": "Bearer tok"}).json()["patients"]
+    assert card["latest"]["heart_rate"] == 140, "the newest row is the board's"
+    assert {a["kind"] for a in card["alerts"]} == {"news2"}
+    replay = [r for r in reads if r.get("tenant") == "HOSP1" and "after_id" in r]
+    assert [(r["after_id"], r["limit"]) for r in replay] == [(None, 5), (5, 5), (10, 5)]
