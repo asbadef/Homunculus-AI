@@ -337,3 +337,26 @@ def test_the_antibiotic_clock_keeps_its_anchor_while_septic_shock_fires_without_
     assert "sepsis" not in _kinds(eng), "SOFA 4 over a charted baseline of 4 is no rise"
     assert {"septic_shock", "antibiotic_overdue"} <= _kinds(eng)
     assert eng.recognized_at("bed-3") == T0
+
+
+# --- G2-A2 (D6): the alert judges NEWS2 at the reading's own `now`, as the board does -------------
+
+def test_a_pressure_four_hours_old_no_longer_raises_news2():
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)                 # 3 points, a single red parameter, at T0
+    assert {a.kind for a in eng.ingest(o, now=o.timestamp)} == {"news2"}
+    o = _obs(SignalCode.HEART_RATE, 72, minute=240)
+    assert eng.ingest(o, now=o.timestamp) == [], "at +4 h the pressure is out of the total"
+
+
+def test_the_patient_relative_layer_judges_the_same_instant():
+    # RR 26 inside the patient's charted 24-28 is chronic; the four-hour-old SBP 88 is no
+    # contributor at `now`, so every point left is explained and the alert is downgraded. Judged
+    # without `now`, the old pressure read as an acute contributor and kept the alert alarming.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.RESP_RATE: BaselineRange(24, 28)}))
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 26, minute=240)]:
+        eng.ingest(o, now=o.timestamp)
+    [alert] = eng.active_alerts("bed-3")
+    assert (alert.kind, alert.severity, alert.downgraded) == ("news2", "low", True)

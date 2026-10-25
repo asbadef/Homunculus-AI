@@ -69,8 +69,9 @@ class Engine:
         # the fact. Getting it there late would mean the alert had already been raised.
         findings = list(septic_shock.evaluate(state, now, profile))
         findings += news2.evaluate(state, now)
-        # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
-        findings = patient_relative.apply(findings, state, profile)
+        # Patient-relative layer: downgrade chronic-normal, surface acute deviation. At the same
+        # `now` NEWS2 was judged at (G2-A2, D6).
+        findings = patient_relative.apply(findings, state, profile, now)
 
         # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still

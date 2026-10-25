@@ -18,6 +18,7 @@ reasoning states the range is clinician-provided.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 
 from homunculus.canonical import SignalCode
 from homunculus.rules import news2
@@ -63,13 +64,16 @@ def _val(state: PatientState, code: SignalCode) -> float | None:
 
 
 def apply(findings: list[Finding], state: PatientState,
-          profile: PatientProfile | None) -> list[Finding]:
+          profile: PatientProfile | None, now: datetime | None = None) -> list[Finding]:
     """Adjust population findings against the patient's baseline and append acute-change findings.
-    A patient with no profile is left exactly as the population rules produced them."""
+    A patient with no profile is left exactly as the population rules produced them.
+
+    `now` is the instant `news2.evaluate` judged the score at (G2-A2, D6): a vital that has gone
+    stale is no contributor here either, as it is none in the total the finding reports."""
     if profile is None:
         return findings
 
-    result = news2.score(state)
+    result = news2.score(state, now)
     out: list[Finding] = []
     for f in findings:
         out.append(_adjust_news2(f, state, profile, result) if f.kind == "news2" else f)
