@@ -16,6 +16,8 @@ Kullanım yeri ön temizlik → Dekontaminasyon (yıkama/WD) → Muayene & test 
 - [x] **v3:** **Yük (load) kavramı** — sterilizasyonda birden çok set tek döngüye (yüke) alınır (gerçek akış); "Yükler" sekmesi. **Recall-by-load (yük geri çağırma)** — testi başarısız/BI şüpheli yük → içindeki tüm setler + ulaştıkları vakalar listelenir, "Geri çağır" ile hepsi yeniden işleme (Kirli Kabul) alınır; rapor yazdırılır.
 - [x] **v4 — HBYS/hasta bağı (bizim avantajımız):** **Vaka arabası (case cart)** + "Vaka arabaları" sekmesi. Ameliyat programı HBYS'deki ameliyat istemlerinden gelir (hasta+ameliyat); araba steril depodan set toplar; "Ameliyathaneye gönder" → setler **gerçek hastaya** teslim edilir. Teslim serbest metin değil, **programdan hasta/ameliyat** seçilir (`set.pid`). Böylece izlenebilirlik ve geri çağırma **gerçek hastaya** kadar iner (standalone sistemlerde olmayan hastane değeri). **Yeni şablon formu** elden geçirildi: bölüm açılır liste, satır satır parça ekle/sil, **maks. kullanım döngüsü (ömür)** alanı. Modül üst görünümü düzenlendi; arama kutusu artık panoyu da süzer.
 
+- [x] **v5:** **Tamir/bakım statüsü** (set "Bakıma al" → dolaşım dışı, badge/uyarı, geri al); **Loaner/konsinye set** (yeni sette işaret + firma adı, badge, "önce tüm akıştan geçmeli" uyarısı); **KPI** (komuta merkezinde teslim edilen set, toplam yük, aktif araba, bakımda/loaner sayıları); **araba/teslim kilidi** (arabaya ayrılan set depoda tekil teslim edilemez, "arabada" rozeti).
+
 ## Kalan (araştırma önceliğiyle) — öneri sırası
 Zorluk: K=kolay, O=orta.
 2. [ ] **Vaka arabası (case cart) + OR programı** — O. Ameliyat programından gerekli setlerin toplama listesi; arabayı hazırla, eksik seti işaretle. MSÜ'yü ameliyathaneye bağlar.

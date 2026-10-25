@@ -12191,3 +12191,17 @@ Object.assign(window.HMC_SOZLUK, {
   "Parça ekle": { AZ: "Hissə əlavə et", RU: "Добавить деталь", EN: "Add part" },
   "Set no / ad / bölüm ara…": { AZ: "Set nömrəsi / ad / bölmə axtar…", RU: "Поиск набора / отделения…", EN: "Search set no / name / unit…" }
 });
+
+/* === Sterilizasyon v5: bakım/tamir + loaner + KPI · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Bakıma al": { AZ: "Təmirə al", RU: "На ремонт", EN: "Send to repair" },
+  "Bakımdan dön": { AZ: "Təmirdən qaytar", RU: "Вернуть из ремонта", EN: "Return from repair" },
+  "Bakımda": { AZ: "Təmirdə", RU: "В ремонте", EN: "In repair" },
+  "Loaner": { AZ: "Loaner", RU: "Прокатный", EN: "Loaner" },
+  "Loaner / firma seti (konsinye)": { AZ: "Loaner / firma seti (konsiqnasiya)", RU: "Прокатный / консигнационный набор", EN: "Loaner / consignment set" },
+  "Firma adı": { AZ: "Firma adı", RU: "Название компании", EN: "Vendor name" },
+  "Acil": { AZ: "Təcili", RU: "Срочно", EN: "Urgent" },
+  "Teslim edilen set": { AZ: "Təhvil verilən set", RU: "Выданные наборы", EN: "Delivered sets" },
+  "Aktif araba": { AZ: "Aktiv araba", RU: "Активные тележки", EN: "Active carts" },
+  "Toplam yük": { AZ: "Ümumi yük", RU: "Всего загрузок", EN: "Total loads" }
+});
