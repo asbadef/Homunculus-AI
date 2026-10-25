@@ -241,6 +241,7 @@
   const samhiKurum = (k) => /SAMHI|İcbari|Icbari/i.test(k || "");
   const ozelSigorta = (k) => !!k && !samhiKurum(k) && !/Özel ödeme|Ozel odeme|ödeme/i.test(k);
   const EVRAK_DURUM = ["Veznede", "Vezneden teslim edildi", "Medikal muhasebede", "Vezneye iade edildi"];
+  const EVRAK_TIP = ["Nüfus cüzdanı fotokopisi", "İrsaliye nüshası", "Fotoğraf", "Test sonucu", "Fatura nüshası", "Provizyon formu", "Sevk belgesi"];
   const evrakRows = () => (H.data.evrak = H.data.evrak || [
     { no:"1167530", matbu:"508944877", kurum:"Qalf Drilling Services", durum:"Veznede" },
     { no:"1167526", matbu:"1UY7L0J78452", kurum:"İcbari Tibbi Sığorta", durum:"Medikal muhasebede" },
@@ -522,6 +523,33 @@
         };
       } });
   }
+  // Onay bekleyen protokoller (video 17): faturalanmamış protokole süreli onay (Gün → Max. onaylı tarih).
+  function onayProtokolModal() {
+    const fmt = (d) => d.toLocaleDateString("az");
+    const draw = (m) => {
+      const list = gfkRows().filter(x => x.durum !== "Fatura kesildi");
+      m.querySelector("[data-opbody]").innerHTML = list.length ? list.map(x => { const o = x.protokolOnay;
+        return `<tr><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.ptip)}</td><td class="adm-sub">${H.esc(x.gelis)}</td><td>${o ? `<span class="tag ok">Onaylı · ${H.esc(o.maxTarih)}</span>` : `<span class="tag w">Onay bekliyor</span>`}</td><td>${o ? `<span class="adm-sub">${H.esc(o.aciklama || "")}</span>` : `<button class="btn p sm" data-opok="${H.esc(x.proto)}">Onayla (süreli)</button>`}</td></tr>`;
+      }).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Onay bekleyen protokol yok.</td></tr>`;
+    };
+    H.modal({ title:"Onay bekleyen protokoller", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 10px">Faturalanmamış protokollere süreli onay verilir: kaç gün içinde faturalanabileceğine izin (Max. onaylı tarih).</p>
+        <div class="tw"><table class="t"><thead><tr><th style="width:110px">Protokol</th><th>Hasta</th><th>Protokol tipi</th><th>Geliş</th><th style="width:180px">Durum</th><th style="width:180px"></th></tr></thead><tbody data-opbody></tbody></table></div>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) { draw(m);
+        m.querySelector("[data-opbody]").onclick = (e) => { const b = e.target.closest("[data-opok]"); if (!b) return; const x = gfkRows().find(y => y.proto === b.dataset.opok); if (!x) return;
+          H.modal({ title:"Protokol onayı · " + H.esc(x.proto), body:`<div class="icd-form">
+            <div class="fr"><label>Gün (onay süresi)</label><input type="number" data-f="gun" value="5" min="1"></div>
+            <div class="fr"><label>Max. onaylı tarih</label><input data-f="maxt" readonly></div>
+            <div class="fr" style="grid-column:1/-1"><label>Açıklama</label><input data-f="acik" placeholder="ops."></div></div>`,
+            actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Onayla</button>`,
+            onMount(mm) { const gun = mm.querySelector('[data-f="gun"]'), maxt = mm.querySelector('[data-f="maxt"]');
+              const calc = () => { const d = new Date(); d.setDate(d.getDate() + (+gun.value || 0)); maxt.value = fmt(d); };
+              gun.oninput = calc; calc();
+              mm.querySelector("[data-ok]").onclick = () => { x.protokolOnay = { gun:+gun.value || 0, maxTarih:maxt.value, aciklama:(mm.querySelector('[data-f="acik"]').value || "").trim() };
+                H.saveData && H.saveData(); H.log("Protokol onayı", x.proto + " · " + x.protokolOnay.gun + " gün"); H.toast("Protokol onaylandı · son tarih " + x.protokolOnay.maxTarih); H.closeModal(); onayProtokolModal(); }; } });
+        }; } });
+  }
   function railModal(lbl, rd) {
     const head = `<tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr>`;
     const rowHtml = (r, i) => `<tr${rd.pids ? ` data-open="${rd.pids[i]}" style="cursor:pointer"` : ""}>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`;
@@ -580,8 +608,8 @@
     const panEvrak = () => { const e = params.ev || "hepsi", all = evrakRows(), list = e === "hepsi" ? all : all.filter(x => x.durum === e);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ...EVRAK_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-ef="${k}" class="${e === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="tw"><table class="t"><thead><tr><th>Fatura no</th><th>Matbu fatura no</th><th>Kurum</th><th style="width:190px">Evrak durumu</th><th style="width:110px"></th></tr></thead><tbody>
-        ${list.map(x => `<tr><td class="mono">${H.esc(x.no)}</td><td class="mono adm-sub">${H.esc(x.matbu || "—")}</td><td>${H.esc(x.kurum)}</td><td><span class="tag ${x.durum === "Vezneden teslim edildi" ? "ok" : ""}">${H.esc(x.durum)}</span></td><td>${x.durum === "Veznede" ? `<button class="btn p sm" data-evteslim="${x.no}">Teslim et</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Evrak yok.</td></tr>`}</tbody></table></div>
-        <p class="adm-sub" style="margin-top:8px">Fatura evrak teslim takibi (veznede → teslim edildi → medikal muhasebede → iade).</p>`; };
+        ${list.map(x => `<tr><td class="mono">${H.esc(x.no)}</td><td class="mono adm-sub">${H.esc(x.matbu || "—")}</td><td>${H.esc(x.kurum)}</td><td><span class="tag ${/teslim edildi|Medikal/.test(x.durum) ? "ok" : /iade/.test(x.durum) ? "w" : ""}">${H.esc(x.durum)}</span>${(x.hareket || []).length ? ` <span class="adm-sub">(${x.hareket.length} hareket)</span>` : ""}</td><td><button class="btn sm" data-evdetay="${x.no}">Detay / işlem</button></td></tr>`).join("") || `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Evrak yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Fatura evrak teslim takibi (veznede → teslim edildi → medikal muhasebede → iç/dış iade). Satırda "Detay / işlem": evrak kontrol listesi + hareket geçmişi.</p>`; };
     const panIndirim = () => { const d = params.io || "Onay bekliyor", all = indirimRows(), list = d === "hepsi" ? all : all.filter(x => x.durum === d), can = H.canAct("indirim_onay");
       return `<div class="seg" style="margin-bottom:10px">${[["Onay bekliyor", "Onay bekleyen"], ["hepsi", "Hepsi"], ["Onaylandı", "Onaylanan"], ["Reddedildi", "Reddedilen"]].map(([k, l]) => `<button data-io="${k}" class="${d === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="tw"><table class="t"><thead><tr><th>Tarih</th><th>Hasta</th><th>İsteyen</th><th>İşlem</th><th style="width:80px">Tutar</th><th style="width:70px">Oran</th><th>Onay grubu</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
@@ -682,7 +710,7 @@
       ["Arama & kabul", "search", [["Hasta arama", "", "user"], ["Randevu arama", "", "clock"], ["Son hastalar", "", "clock"], ["Gizli / VIP hasta listesi", "", "shield"], ["UHM hasta arama", "", "search"]]],
       ["Fiyat & kampanya", "file", [["Fiyat verme", "fiyat", "file"], ["Kampanyalar", "", "star"], ["Fiyat teklifleri", "fiyat", "file"]]],
       ["İstek & tahsilat", "file", [["İstek havuzu", "", "clock"], ["Ödeme takip", "fatura", "file"], ["Evrak takip", "evrak", "clip"], ["GFK takip", "gfk", "list"], ["Dönem bilgileri", "", "clock"]]],
-      ["Onaylar", "shield", [["Onay bekleyen indirimler", "indirim", "edit"], ["Onay bekleyen iadeler", "iade", "refresh"], ["İade taleplerim", "", "list"], ["Kurum değişiklik onay", "", "edit"]]],
+      ["Onaylar", "shield", [["Onay bekleyen indirimler", "indirim", "edit"], ["Onay bekleyen iadeler", "iade", "refresh"], ["İade taleplerim", "", "list"], ["Onay bekleyen protokoller", "", "clip"], ["Kurum değişiklik onay", "", "edit"]]],
       ["Listeler & diğer", "list", [["Protokol listesi", "", "list"], ["Reçete listesi", "", "file"], ["Doktor iş listesi", "", "users"], ["Hasta danışman", "", "user"], ["Randevulanacak hizmetler", "", "clock"], ["Onam formları", "", "clip"]]],
     ];
     const rail = `<div class="vz-rail">${RAIL.map(([g, gi, items]) => `<div class="vz-rg"><h6>${I(gi) || ""}${H.esc(g)}</h6>${items.map(([l, t, ic]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t || ""}" data-raill="${H.esc(l)}">${I(ic) || ""}<span>${l}</span></button>`).join("")}</div>`).join("")}</div>`;
@@ -878,6 +906,34 @@
           if (x.durum === "Provizyonu alınmamış") x.durum = "Hasta faturası kesilmemiş";
           H.saveData && H.saveData(); H.log("Provizyon/müstehaklık", x.proto + " · " + x.provizyon); H.toast(x.provizyon); H.closeModal(); H.go("vezne", params); }; } });
     }
+    // Evrak detay: kontrol listesi + hareket geçmişi + durum zinciri (video 14).
+    function evrakDetayModal(x) {
+      const now = H.nowFull ? H.nowFull() : new Date().toLocaleString("az-AZ"), per = (H.state.user || {}).name || "Vezne";
+      x.hareket = x.hareket || [];
+      const adv = (yeniDurum, hareketTip, aciklama) => { x.durum = yeniDurum; x.hareket.unshift({ tip:hareketTip, personel:per, tarih:now, aciklama:aciklama || "" }); H.saveData && H.saveData(); H.log("Evrak hareket", x.no + " · " + hareketTip); H.toast(hareketTip); H.closeModal(); evrakDetayModal(x); };
+      const evrakKontrol = () => { H.modal({ title:"Evrak kontrol · " + H.esc(x.no),
+        body:`<p class="adm-sub" style="margin:0 0 8px">Teslim edilecek evrakları işaretleyin.</p>
+          <div class="icd-form" style="grid-template-columns:1fr 1fr">${EVRAK_TIP.map((t, i) => `<label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-evt="${i}"> ${H.esc(t)}</label>`).join("")}</div>
+          <div class="fr" style="margin-top:8px"><label>Açıklama</label><input data-evack placeholder="ops."></div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Tamam · teslim et</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const sel = [...m.querySelectorAll("[data-evt]:checked")].map(c => EVRAK_TIP[+c.dataset.evt]); const ack = (m.querySelector("[data-evack]").value || "").trim(); H.closeModal(); adv("Vezneden teslim edildi", "Vezne teslim etti", [sel.join(", "), ack].filter(Boolean).join(" · ")); }; } }); };
+      const d = x.durum;
+      const actBtns = d === "Veznede" ? `<button class="btn p" data-evkontrol>Evrak kontrol · teslim et</button>`
+        : d === "Vezneden teslim edildi" ? `<button class="btn p" data-evmk>Medikal muhasebe kabul</button>`
+        : d === "Medikal muhasebede" ? `<button class="btn" data-eviade="İç">İç iade</button> <button class="btn" data-eviade="Dış">Dış iade</button>`
+        : d === "Vezneye iade edildi" ? `<button class="btn p" data-evretesl>Yeniden teslim et</button>` : "";
+      const hrows = x.hareket.length ? x.hareket.map(h => `<tr><td>${H.esc(h.tip)}</td><td class="adm-sub">${H.esc(h.personel)}</td><td class="adm-sub">${H.esc(h.tarih)}</td><td class="adm-sub">${H.esc(h.aciklama || "")}</td></tr>`).join("") : `<tr><td colspan="4" class="mute" style="padding:12px;text-align:center">Henüz hareket yok.</td></tr>`;
+      H.modal({ title:"Evrak detay · " + H.esc(x.no), wide:true,
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Fatura no</span><b>${H.esc(x.no)}</b></div><div><span>Matbu no</span><b>${H.esc(x.matbu || "—")}</b></div><div><span>Kurum</span><b>${H.esc(x.kurum)}</b></div><div><span>Durum</span><b>${H.esc(x.durum)}</b></div></div>
+          <div class="r" style="gap:6px;margin-bottom:12px">${actBtns || '<span class="adm-sub">Bu aşamada işlem yok.</span>'}</div>
+          <h6 style="margin:0 0 6px">Hareket geçmişi</h6>
+          <div class="tw"><table class="t"><thead><tr><th>İşlem</th><th>Personel</th><th>Tarih</th><th>Açıklama</th></tr></thead><tbody>${hrows}</tbody></table></div>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { const k = m.querySelector("[data-evkontrol]"); if (k) k.onclick = evrakKontrol;
+          const mk = m.querySelector("[data-evmk]"); if (mk) mk.onclick = () => adv("Medikal muhasebede", "Medikal muhasebe kabul");
+          m.querySelectorAll("[data-eviade]").forEach(b => b.onclick = () => adv("Vezneye iade edildi", "Vezneye iade (" + b.dataset.eviade + " iade)"));
+          const rt = m.querySelector("[data-evretesl]"); if (rt) rt.onclick = () => adv("Vezneden teslim edildi", "Yeniden teslim edildi"); } });
+    }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); const d = donemler[vb.value]; H.toast("Banko: " + vb.value + (d && d.acik ? " · dönem açık #" + d.no : " · dönem kapalı")); return H.go("vezne", params); }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp, fptip:params.fptip });
@@ -898,13 +954,16 @@
         return donemAcModal(); }
       if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } const pk = pendKapanis(); if (pk) { H.toast("Önceki dönem (#" + pk.no + ") Mali İşler onayını bekliyor · devir alınamaz.", "e"); return; } return donemDevirModal(); }
       if (e.target.closest("[data-vozet]")) { donemOzet(); return; }
-      if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
+      if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
+      const evd = e.target.closest("[data-evdetay]"); if (evd) { const x = evrakRows().find(y => y.no === evd.dataset.evdetay); if (x) evrakDetayModal(x); return; }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
       const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); const lbl = rl.dataset.raill;
         if (lbl === "Hasta danışman") return danismanModal();
         if (lbl === "İstek havuzu") return istekHavuzuModal();
+        if (lbl === "Randevu arama") return H.go("randevu", {});
+        if (lbl === "Onay bekleyen protokoller") return onayProtokolModal();
         const rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
@@ -925,7 +984,6 @@
       if (e.target.closest("[data-fsec]")) return hizmetSecModal();
       const fa = e.target.closest("[data-fadd]"); if (fa) { const el = root.querySelector("[data-fhiz]"), ad = (el.value || "").trim(), kod = el.dataset.kod || "", fy = +root.querySelector("[data-ffiyat]").value || (kod ? H.fiyatOf(kod, params.kurum || "Özel ödeme") : 0); if (!ad) { H.toast("Katalogdan hizmet seçin.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, kod, fiyat:fy }); H.go("vezne", params); return; }
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
-      const et = e.target.closest("[data-evteslim]"); if (et) { const x = evrakRows().find(y => y.no === et.dataset.evteslim); if (x) { x.durum = "Vezneden teslim edildi"; H.log("Evrak teslim", x.no); H.toast("Evrak teslim edildi"); H.go("vezne", params); } return; }
       const th = e.target.closest("[data-tahsil]"); if (th) { const x = faturalar().find(y => y.id === th.dataset.tahsil); if (!x) return;
         const kalan = x.katilim - (x.odenen || 0);
         H.modal({ title:"Tahsilat · " + H.esc(vzName(x.hasta)), body:`<div class="icd-form"><div class="fr"><label>Fatura tutarı</label><input value="${x.katilim} ₼" readonly></div>
