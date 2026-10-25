@@ -470,7 +470,21 @@
           klinik:[["13.10.2026", "Ameliyat Raporu", "Dr. Rauf Abbasov"], ["14.10.2026", "Epikriz", "Dr. Rauf Abbasov"]] },
       ];
     }
-    const panKurumsal = () => { kfSeed(); const all = H.data.kurumFatura, kq = (params.kfq || "").toLocaleLowerCase("tr");
+    // Adım 5 · zincirden türeyen kurumsal faturalar: İşlem Havuzu'nda kurumsal kesilen faturalar burada da görünür (kalemler = protokol işlemleri).
+    const kurumsalMu = (k) => k && k !== "Özel ödeme" && !/İcbari|SAMHI/.test(k);
+    const chainKf = () => (H.data.faturalar || []).filter(f => f.protokolNo && kurumsalMu(f.kurum)).map(f => {
+      const ords = (H.data.orders || []).filter(o => o.protokolNo === f.protokolNo), pat = (H.data.patients || []).find(x => x.name === f.hasta) || {};
+      const pr = (H.proto && pat.id) ? H.proto.get(pat.id, f.protokolNo) : null, fy = (o) => o.fiyat != null ? o.fiyat : (o.kod ? H.fiyatOf(o.kod, f.kurum) : 0);
+      return { no:f.no || ("KF-" + f.protokolNo), kurum:f.kurum, tarih:f.tarih || "", durum:f.durum === "Ödendi" ? "Kapandı" : "Açık", donem:new Date().toLocaleDateString("az"),
+        kalemler:ords.length ? ords.map(o => [o.ad || o.cat || "—", o.kod || "—", 1, fy(o)]) : [["(işlem kaydı yok)", "—", 1, f.toplam || 0]],
+        islemler:ords.map(o => [o.at || "", o.ad || o.cat || "", (pr && pr.bolum) || "—", o.by || "", o.durum || ""]),
+        protokoller:[[f.protokolNo, f.hasta, f.tarih || "", (pr && pr.bolum) || "—"]],
+        vezne:[[f.tarih || "", "Fatura tahakkuku", f.toplam || 0, H.state.vezneBanko || "—"]],
+        evrak:(H.data.evrak || []).filter(e => e.no === f.no).map(e => [e.no, e.durum, ""]),
+        notlar:[], klinik:[], _chain:true };
+    });
+    const kfAll = () => { kfSeed(); return [...chainKf(), ...(H.data.kurumFatura || [])]; };
+    const panKurumsal = () => { const all = kfAll(), kq = (params.kfq || "").toLocaleLowerCase("tr");
       const list = all.filter(x => !kq || (x.no + " " + x.kurum).toLocaleLowerCase("tr").includes(kq));
       const sel = all.find(x => x.no === params.kfno) || list[0] || all[0];
       const KFT = [["kalemler", "Kalemler"], ["islemler", "İşlemler"], ["protokoller", "Protokoller"], ["vezne", "Vezne işlemleri"], ["evrak", "Evrak takip"], ["icmal", "İcmal"], ["notlar", "Notlar"], ["klinik", "Klinik dökümanlar"]];
@@ -597,9 +611,9 @@
         railModal(lbl, rd); return; }
       const kfs = e.target.closest("[data-kfsel]"); if (kfs) return H.go("vezne", { tab:"kurumsal", kfno:kfs.dataset.kfsel, kftab:params.kftab });
       const kftb = e.target.closest("[data-kftab]"); if (kftb) return H.go("vezne", { tab:"kurumsal", kfno:params.kfno, kftab:kftb.dataset.kftab });
-      if (e.target.closest("[data-kfyaz]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s && H.printTable) H.printTable("Kurum faturası · " + s.kurum + " · " + s.no, ["Hizmet / işlem", "Kod", "Miktar", "Birim fiyat", "Tutar"], s.kalemler.map(k => [k[0], k[1], k[2], k[3] + " ₼", (k[2] * k[3]) + " ₼"]), { sub:s.kurum + " · " + s.donem }); return; }
-      if (e.target.closest("[data-kficmal]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s) H.exportCsv("Icmal_" + s.no, ["Hizmet", "Kod", "Miktar", "Birim ₼", "Tutar ₼"], s.kalemler.map(k => [k[0], k[1], k[2], k[3], k[2] * k[3]])); return; }
-      if (e.target.closest("[data-kfnotadd]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s) { const t = prompt("Not:"); if (t) { s.notlar.unshift([new Date().toLocaleDateString("tr"), (H.state.user || {}).name || "Vezne", t]); H.go("vezne", { tab:"kurumsal", kfno:s.no, kftab:"notlar" }); } } return; }
+      if (e.target.closest("[data-kfyaz]")) { const s = kfAll().find(x => x.no === params.kfno) || kfAll()[0]; if (s && H.printTable) H.printTable("Kurum faturası · " + s.kurum + " · " + s.no, ["Hizmet / işlem", "Kod", "Miktar", "Birim fiyat", "Tutar"], s.kalemler.map(k => [k[0], k[1], k[2], k[3] + " ₼", (k[2] * k[3]) + " ₼"]), { sub:s.kurum + " · " + s.donem }); return; }
+      if (e.target.closest("[data-kficmal]")) { const s = kfAll().find(x => x.no === params.kfno) || kfAll()[0]; if (s) H.exportCsv("Icmal_" + s.no, ["Hizmet", "Kod", "Miktar", "Birim ₼", "Tutar ₼"], s.kalemler.map(k => [k[0], k[1], k[2], k[3], k[2] * k[3]])); return; }
+      if (e.target.closest("[data-kfnotadd]")) { const s = kfAll().find(x => x.no === params.kfno) || kfAll()[0]; if (s) { const t = prompt("Not:"); if (t) { s.notlar.unshift([new Date().toLocaleDateString("tr"), (H.state.user || {}).name || "Vezne", t]); H.go("vezne", { tab:"kurumsal", kfno:s.no, kftab:"notlar" }); } } return; }
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
       const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
       const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });
