@@ -135,6 +135,24 @@
     H.wireFilter(root);
   } });
 
+  /* ================= YATAN HASTALAR (yatış / transfer / taburcu) ================= */
+  H.register("yatanlar", { title:() => H.t("m_yatanlar"), perm:["beds", "admission"], render(root, params = {}) {
+    const pts = H.myPatients().filter(p => /yatan|yogun/.test(H.encOf(p) || ""));
+    const canTr = H.can("admission");
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_yatanlar")}</h2><p>${pts.length} yatan hasta · yatış · transfer · taburcu</p></div></div>
+      <div class="adm-bar" style="margin-bottom:10px">${H.filterBox("Hasta / yatak / birim ara…")}</div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:80px">Yatak</th><th>Hasta</th><th>Birim</th><th style="width:90px">Yatış</th><th>Hekim</th><th>Tanı</th><th style="width:90px">Durum</th><th style="width:220px"></th></tr></thead><tbody>
+      ${pts.length ? pts.map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId), att = H.userBy(p.attending), e = H.encOf(p), ei = H.ENC[e] || {};
+        return `<tr class="row" data-s="${H.esc(((H.showNames() ? p.name : (b ? b.no : "")) + " " + (b ? b.no : "") + " " + (u ? u.tr : "")).toLocaleLowerCase("tr"))}"><td class="n">${b ? H.esc(b.no) : "—"}</td><td><b>${H.esc(H.showNames() ? p.name : (b ? b.no : "—"))}</b><div class="mute" style="font-size:11.5px">${H.ageText(p)} ${p.sex || ""}</div></td><td class="adm-sub">${u ? H.esc(u.tr) : "—"} <span class="tag">${H.esc(ei.label || e)}</span></td><td class="n">${p.admitDays != null ? p.admitDays + ". gün" : "—"}</td><td class="adm-sub">${H.esc(att ? att.name : "—")}</td><td class="adm-sub">${H.esc(p.dx || "")}</td><td>${p.risk === "crit" ? `<span class="tag crit">Kritik</span>` : p.risk === "high" ? `<span class="tag w">Yüksek</span>` : `<span class="tag ok">Stabil</span>`}</td><td><button class="btn sm" data-yatdosya="${p.id}">Dosya</button> <button class="btn p sm" data-yattransfer="${p.id}">Transfer / Taburcu</button></td></tr>`; }).join("") : `<tr><td colspan="8" class="mute" style="padding:20px;text-align:center">Birimlerinizde yatan hasta yok. Hasta kabulden yatış yapılınca burada görünür.</td></tr>`}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Transfer (yatak/servis değişikliği) ve taburcu, hasta kabul ekranındaki akışla yapılır; buradan hasta seçili açılır. Görüntüleme herkeste, işlem yetkisi kabul görevlisi / sorumlu hemşirededir.</p>`;
+    root.onclick = (e) => {
+      const d = e.target.closest("[data-yatdosya]"); if (d) return H.go("hasta360", { pid:d.dataset.yatdosya });
+      const t = e.target.closest("[data-yattransfer]"); if (t) { if (!canTr) { H.toast("Transfer/taburcu yetkisi kabul görevlisi / sorumlu hemşirededir.", "w"); return; } return H.go("admission", { tab:"transfer", sel:t.dataset.yattransfer }); }
+    };
+    H.wireFilter(root);
+  } });
+
   /* ================= RANDEVU ================= */
   const randevular = () => (H.data.randevular = H.data.randevular || seedRandevu());
   function seedRandevu() {

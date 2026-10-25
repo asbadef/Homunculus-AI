@@ -315,6 +315,7 @@
   H.register("admission", { title:() => "Hasta kabul", perm:["admission", "admission_view"], render(root, params) {
     root.innerHTML = ""; const el = document.createElement("div"); el.className = "adm"; root.appendChild(el);
     if (params && params.tab) A.tab = params.tab;
+    if (params && params.sel) A.tSel = params.sel;   // Yatan Hastalar ekranından hasta ön-seçimli transfer/taburcu
     admissionPage(el);
   } });
 

@@ -259,7 +259,7 @@
     ["beds", "grid", "m_beds", "beds"], ["drislem", "activity", "m_drislem", "results"], ["gelisler", "list", "m_gelisler", "beds"], ["wall", "activity", "m_wall", "beds"], ["unitdash", "chart", "m_unitdash", "beds"], ["tasks", "list", "m_tasks", "tasks"], ["bedside", "tablet", "m_bedside", "bedside"],
     ["alarms", "bell", "m_alarms", "alarms", () => H.openAlarms().length],
     ["hand", "clip", "m_hand", "hand", () => H.data.handovers.filter(h => h.state === "waiting" && H.inScope(h.pid)).length, "y"],
-    ["randevu", "clock", "m_randevu", ["admission", "admission_view"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
+    ["randevu", "clock", "m_randevu", ["admission", "admission_view"]], ["yatanlar", "bed", "m_yatanlar", ["beds", "admission"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
     ["rrt", "zap", "m_rrt", "rrt"], ["pharmacy", "pill", "m_pharmacy", "pharmacy"], ["labislem", "flask", "m_labislem", "lab_islem"], ["numune", "flask", "m_numune", ["numune_islem", "lab_islem", "tasks"]],
     ["sterilizasyon", "box", "m_steril", "steril", null, null, [["pano", "Akış panosu", "steril"], ["depo", "Steril depo", "steril"], ["tanim", "Set tanımları", "steril"], ["komuta", "Komuta merkezi", "steril"]]],
     ["devices", "cpu", "m_devices", "devices", null, null, [["ozet", "Özet", "devices"], ["envanter", "Envanter", "devices"], ["takvim", "Bakım takvimi", "maintenance"], ["ariza", "Arıza kayıtları", "devices"], ["odalar", "Yataklar ve odalar", "devices"]]],

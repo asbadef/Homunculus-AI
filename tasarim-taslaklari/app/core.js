@@ -74,6 +74,7 @@
     m_beds:{ AZ:"Çarpayılar", TR:"Yataklar", RU:"Койки", EN:"Beds" },
     m_gelisler:{ AZ:"Bütün gəlişlər", TR:"Tüm Gelişler", RU:"Все обращения", EN:"All visits" },
     m_drislem:{ AZ:"Həkim iş siyahısı", TR:"Doktor İş Listesi", RU:"Рабочий список врача", EN:"Doctor worklist" },
+    m_yatanlar:{ AZ:"Yatan xəstələr", TR:"Yatan Hastalar", RU:"Стационарные больные", EN:"Inpatients" },
     m_numune:{ AZ:"Nümunə işləmi", TR:"Numune İşlem", RU:"Обработка образцов", EN:"Sample processing" },
     m_randevu:{ AZ:"Randevu", TR:"Randevu", RU:"Запись на приём", EN:"Appointments" },
     m_vezne:{ AZ:"Kassa / Qəbul", TR:"Vezne / Ön Büro", RU:"Касса / Ресепшн", EN:"Cashier / Front Office" },
