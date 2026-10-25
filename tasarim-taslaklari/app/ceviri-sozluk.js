@@ -12042,3 +12042,21 @@ Object.assign(window.HMC_SOZLUK, {
   "Onaylandı": { AZ: "Təsdiqləndi", RU: "Утверждено", EN: "Approved" },
   "Reddedildi": { AZ: "Rədd edildi", RU: "Отклонено", EN: "Rejected" }
 });
+
+/* === Randevu takvim (hafta/slot) + İK nöbet çizelgesi · 25.10.2026 · güvenli ekleme === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Gün": { AZ: "Gün", RU: "День", EN: "Day" },
+  "Hafta": { AZ: "Həftə", RU: "Неделя", EN: "Week" },
+  "Gün takvimi": { AZ: "Gün təqvimi", RU: "Дневной календарь", EN: "Day calendar" },
+  "Hafta takvimi": { AZ: "Həftə təqvimi", RU: "Недельный календарь", EN: "Week calendar" },
+  "Hafta görünümü": { AZ: "Həftə görünüşü", RU: "Недельный вид", EN: "Week view" },
+  "Kapalı": { AZ: "Bağlı", RU: "Закрыт", EN: "Closed" },
+  "Slot kapatıldı": { AZ: "Slot bağlandı", RU: "Слот закрыт", EN: "Slot closed" },
+  "Slot açıldı": { AZ: "Slot açıldı", RU: "Слот открыт", EN: "Slot opened" },
+  "Nöbet çizelgesi": { AZ: "Növbə cədvəli", RU: "График дежурств", EN: "On-call schedule" },
+  "Nöbet / mesai / izin çizelgesi": { AZ: "Növbə / əlavə iş / məzuniyyət cədvəli", RU: "График дежурств / переработок / отпусков", EN: "On-call / overtime / leave schedule" },
+  "Personel": { AZ: "Personal", RU: "Персонал", EN: "Staff" },
+  "Tür": { AZ: "Növ", RU: "Тип", EN: "Type" },
+  "Başlangıç": { AZ: "Başlanğıc", RU: "Начало", EN: "Start" },
+  "Bitiş": { AZ: "Bitmə", RU: "Окончание", EN: "End" }
+});
