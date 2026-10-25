@@ -148,24 +148,32 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     return mounted;
   }
 
-  it("with the stage on explains it: the note, never a sound, the ages, NIBP, the evidence, no sample count", async () => {
+  it("with the stage on explains it: the note, never a sound, the ages, NBP's time, the evidence, no sample count", async () => {
     await legend({ stage: "shadow", beds: [], unassigned: [], feed: { state: "ok" } });
     const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" }).closest("div.rounded-box");
     expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
     expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
     expect(box).toHaveTextContent(/15 saniyədən köhnə dəyər göstərilmir/);
-    expect(box).toHaveTextContent(/NIBP bu mərhələdə göstərilmir/);
+    expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi saatla göstərilir/);
+    expect(box).toHaveTextContent(/ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı/);   // the example and the bound are one sentence (X49): the NBSP after "≤" is inside the «» quote, not here
+    expect(box).toHaveTextContent(/ən azı bu qədər köhnədir/);   // the time is a bound: the value is at least this old (X49)
+    expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
+    expect(box).toHaveTextContent(/dəyəri dəyişən növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // waits for a CHANGED value, after a hub restart or a data interruption (X49)
+    expect(box).toHaveTextContent(/monitorun məlumatı kəsik ikən dəyər dəyişibsə/);   // only a value that CHANGED during the interruption waits (X48, final review M-4)
+    expect(box).toHaveTextContent(/əvvəlki xəstənin ola bilər \(ən çox 2 saat\)/);   // a changed patient's bed may show the previous patient's NBP (X49)
+    expect(box).not.toHaveTextContent(/bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");
     expect(box).toHaveTextContent("əvəzində «köhnə» və son dəyərin yaşı yazılır");     // the cell shows an age
     const table = within(box).getByRole("table", { name: "Hər parametr üzrə bugünkü sübut" });
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Parametr", "Hər parametr üzrə bugünkü sübut"]);
     const rows = within(table).getAllByRole("row").slice(1);
     const labels = rows.map((r) => within(r).getByRole("rowheader").textContent);
-    expect(labels).toEqual(["HR", "PLS", "SpO₂", "etCO₂", "Ta", "ART S", "ART D", "ART M", "RESP"]
+    expect(labels).toEqual(["HR", "PLS", "SpO₂", "etCO₂", "Ta", "ART S", "ART D", "ART M", "RESP", "NBP"]
       .map((p) => expect.stringContaining(p)));
     const partial = labels.filter((label) => label.includes("qismən")).map((label) => label.replace("qismən", ""));
     expect(partial).toEqual(["Ta", "ART D", "ART M", "RESP"]);
     expect(within(rows[0]).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();
+    expect(within(rows[9]).getByText("Monitor ekranı ilə eynidir")).toBeInTheDocument();          // NBP
   });
 
   it("with the stage off shows no legend", async () => {

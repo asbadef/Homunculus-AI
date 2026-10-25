@@ -232,3 +232,261 @@ def test_the_trend_outlives_the_current_value_going_stale():
     entry = device(view.snapshot())["parameters"]["hr"]
     assert entry["value"] is None and entry["status"] == "stale"
     assert entry["history"] == [[1000., 70]]
+
+
+# --- NBP: the time its value last changed ----------------------------------------------------------
+#
+# The monitor repeats its last NBP in every packet as a valid record, so a packet's age says nothing
+# about the cuff. The hub keeps, per device, the last complete valid (systolic, diastolic, mean) and
+# the receipt time of the packet in which it CHANGED: a measurement happened at or before then. A
+# triple seen first after a start has no time at all — it may be hours old.
+
+NBP_SYS, NBP_DIA, NBP_MEAN = 0x1E08, 0x1E07, 0x1E09
+NBP_NAMES = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
+
+
+def nbp(systolic, diastolic, mean, *, valid=(True, True, True)):
+    return (record(NBP_SYS, systolic, valid=valid[0]) + record(NBP_DIA, diastolic, valid=valid[1])
+            + record(NBP_MEAN, mean, valid=valid[2]))
+
+
+def changed_at(view, index=0):
+    parameters = device(view.snapshot(), index)["parameters"]
+    return {name: parameters[name]["changed_at"] for name in NBP_NAMES if name in parameters}
+
+
+def test_an_nbp_seen_first_after_a_start_has_no_change_time():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., PAYLOAD + nbp(120, 80, 93))])
+    parameters = device(view.snapshot())["parameters"]
+    assert (parameters["nbp_systolic"]["value"], parameters["nbp_systolic"]["status"]) == (120, "candidate")
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)          # unknown, never "now"
+    assert "changed_at" not in parameters["hr"] and "changed_at" not in parameters["spo2"]
+
+
+def test_a_changed_triple_is_stamped_with_the_packet_that_showed_it():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.5
+    view.consume([event(1001.5, nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.5)
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 118
+
+
+def test_the_same_triple_repeated_keeps_the_older_time():
+    # Every packet repeats the last NBP. An identical re-measurement looks the same and is not
+    # detected either: the time stays older than the truth, never newer.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    for stamp in (1002., 1003., 1004.):
+        now[0] = stamp
+        view.consume([event(stamp, nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    assert device(view.snapshot())["parameters"]["nbp_mean"]["capture_epoch"] == 1004.
+
+
+def test_a_packet_with_two_of_the_three_neither_counts_nor_replaces_the_triple():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., record(NBP_DIA, 70) + record(NBP_MEAN, 85))])     # no systolic
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1002.
+    view.consume([event(1002., nbp(120, 80, 93))])       # the triple held is still the first one
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+
+
+def test_an_invalid_component_neither_counts_nor_clears():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1002.
+    view.consume([event(1002., nbp(118, 4, 92, valid=(True, False, True)))])     # the monitor shows *** once
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    now[0] = 1003.
+    view.consume([event(1003., nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+
+
+def test_a_newer_value_carried_without_its_triple_has_no_change_time():
+    # A partial packet updates the research view's value; the time of the triple it is not part
+    # of must not be lent to it, or a newer value would read as measured at the older time.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1002.
+    view.consume([event(1002., record(NBP_SYS, 105))])
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 105
+    assert changed_at(view) == {"nbp_systolic": None, "nbp_diastolic": 1001., "nbp_mean": 1001.}
+
+
+def test_a_change_seen_only_after_an_outage_has_no_time():
+    # It may have happened at any moment of the outage. Stamped with the first packet after it, a
+    # measurement as old as the outage would read as minutes old: hidden instead until the next
+    # change seen as it happens, as after a hub restart.
+    now, tick = [1000.], [0.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: tick[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0], tick[0] = 1001., 1.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0], tick[0] = 1600., 600.
+    view.consume([event(1300., nbp(140, 90, 107)), event(1597., nbp(140, 90, 107))])   # the outbox's backlog
+    view.consume([event(1001., nbp(150, 95, 113))])                                   # one already delivered
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)       # a packet 3 s old or older changes nothing
+    assert view.snapshot()["old_or_duplicate_packets"] == 3
+    view.consume([event(1599.2, nbp(140, 90, 107))])                 # the first live packet: changed, but when?
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+    now[0], tick[0] = 1601., 601.
+    view.consume([event(1600.4, nbp(141, 90, 107))])                 # the next change, seen as it happens
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1600.4)
+
+
+@pytest.mark.parametrize(("gap", "stamped"), [(3.0, True), (3.1, False)])
+def test_a_change_keeps_its_time_only_if_a_complete_triple_came_within_the_last_3_s(gap, stamped):
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., PAYLOAD + nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., PAYLOAD + nbp(118, 79, 92))])
+    now[0] = 1002.
+    view.consume([event(1002., PAYLOAD)])                            # HR and SpO₂ go on; no NBP record
+    now[0] = 1001. + gap
+    view.consume([event(1001. + gap, PAYLOAD + nbp(131, 85, 100))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001. + gap if stamped else None)
+
+
+ALL_FLAGGED = (False, False, False)
+
+
+def test_a_flagged_first_packet_after_an_outage_does_not_start_a_run():
+    # A flagged record can mean "not carried in this message type", not "heard": hearing one proves
+    # nothing about having watched the value. The result that follows 0.2 s later may be as old as
+    # the outage, so it must not be stamped as seen live.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    now[0] = 1599.3                                                  # an outage; this is the first packet back
+    view.consume([event(1599.2, nbp(1, 1, 1, valid=ALL_FLAGGED))])
+    now[0] = 1599.5
+    view.consume([event(1599.4, nbp(131, 85, 100))])                 # a result, but since when?
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+
+
+def test_a_lone_component_as_the_first_packet_after_an_outage_does_not_start_a_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    now[0] = 1599.3
+    view.consume([event(1599.2, record(NBP_SYS, 131))])              # one component alone, valid
+    now[0] = 1599.5
+    view.consume([event(1599.4, nbp(131, 85, 100))])
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+
+
+def test_a_result_after_a_long_spell_of_stars_has_no_time_because_flagged_records_prove_no_continuity():
+    # Strict rule: only a run of COMPLETE VALID triples is continuity. A spell of ten minutes of
+    # flagged NBP, one packet a second, leaves the result that ends it unstamped; the next change,
+    # seen right after a complete triple, is stamped again.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    for second in range(1, 600):                                     # 599 packets, 1001 .. 1599
+        now[0] = 1000. + second
+        view.consume([event(now[0], nbp(1, 1, 1, valid=ALL_FLAGGED))])
+    now[0] = 1600.
+    view.consume([event(1600., nbp(131, 85, 100))])
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1601.
+    view.consume([event(1601., nbp(132, 85, 100))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1601.)
+
+
+def test_a_result_after_minutes_of_the_same_triple_is_stamped_because_every_repeat_renews_the_run():
+    # The counterpart of the spell of stars: the monitor repeats its last result in every packet, so
+    # a result that follows ten minutes of a stable triple is preceded by a complete valid triple
+    # one second earlier. If only a CHANGE renewed the run, no real result would ever be stamped.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    for second in range(1, 600):                                     # 599 repeats, 1001 .. 1599
+        now[0] = 1000. + second
+        view.consume([event(now[0], nbp(120, 80, 93))])
+    now[0] = 1600.5
+    view.consume([event(1600.5, nbp(131, 85, 100))])                 # 1.5 s after the last repeat
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1600.5)
+
+
+def test_packets_the_view_drops_do_not_renew_the_run():
+    # Old, already delivered, replayed, undecodable and from-the-future packets are not heard: a
+    # complete triple in one of them must not make the next change look watched.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1600.                                                   # an outage
+    other = nbp(140, 90, 107)
+    view.consume([event(1599., PAYLOAD)])                            # first packet back: no NBP record
+    view.consume([event(1597., other),                               # old: 3 s or more
+                  event(1598.9, other),                              # already delivered: before 1599.
+                  event(1599.5, other, mode="replay"),               # not live
+                  dict(event(1599.6, other), payload_base64="!"),    # not base64
+                  event(1601., other)])                              # from the future
+    snapshot = view.snapshot()
+    assert (snapshot["old_or_duplicate_packets"], snapshot["rejected_packets"]) == (2, 3)
+    view.consume([event(1599.8, nbp(141, 91, 108))])                 # the first live triple, not the dropped ones'
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)              # changed, but when?
+
+
+def test_packets_the_view_drops_neither_clear_the_triple_nor_break_the_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1002.
+    view.consume([dict(event(1001.5, nbp(118, 79, 92)), payload_base64="!"),    # not base64
+                  event(1003., nbp(150, 95, 113))])                             # from the future
+    snapshot = view.snapshot()
+    assert snapshot["rejected_packets"] == 2
+    assert changed_at(view) == {}                                    # the readings are cleared, the triple is not
+    now[0] = 1003.
+    view.consume([event(1002.8, nbp(131, 85, 100))])                 # 1.8 s after the last complete triple
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1002.8)
+
+
+def test_two_devices_keep_their_own_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(2), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93), index=0), event(1000., nbp(120, 80, 93), index=1)])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92), index=0)])
+    for stamp in (1002., 1003., 1004., 1005.):                       # device 0 goes on sending triples
+        now[0] = stamp
+        view.consume([event(stamp, nbp(118, 79, 92), index=0)])
+    view.consume([event(1005., nbp(118, 79, 92), index=1)])          # device 1 is back after 5 s with a new triple
+    assert changed_at(view, 0) == dict.fromkeys(NBP_NAMES, 1001.)
+    assert changed_at(view, 1) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1006.
+    view.consume([event(1006., nbp(131, 85, 100), index=1)])         # device 1's next change, seen live
+    assert changed_at(view, 0) == dict.fromkeys(NBP_NAMES, 1001.)
+    assert changed_at(view, 1) == dict.fromkeys(NBP_NAMES, 1006.)

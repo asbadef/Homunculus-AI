@@ -6,8 +6,9 @@ the hub keeps saying `clinical_forwarding: False`. No imports outside `homunculu
 standard library: the release packs only `edge/` (deploy/infinity/build_transport_release.py).
 
 One body per cycle: for each device, its status and, for each forwarded parameter, the value the
-live view holds now — at most one value per parameter per device per INTERVAL_S. A device is
-named by its address only; a bed comes from the API's approved table, never from here.
+live view holds now — at most one value per parameter per device per INTERVAL_S; NBP also carries
+the time its value last changed. A device is named by its address only; a bed comes from the API's
+approved table, never from here.
 
 Off unless its environment is set (`settings_from_env`), which on the hub only the drop-in
 `93-asama-a-golge.conf` does, through an `EnvironmentFile=`. Its failures never leave its thread;
@@ -24,16 +25,24 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-SCHEMA = "homunculus.infinity-shadow.v1"
+from .infinity_live import NBP
+
+SCHEMA = "homunculus.infinity-shadow.v2"
 INTERVAL_S = 5.0
 MAX_FORWARD_AGE_MS = 3000.0          # = infinity_live.STALE_AFTER_MS: nothing older leaves the hub
 BACKOFF_S = 60.0                     # after 401 or 409
 TIMEOUT_S = 3.0
 MIN_TOKEN = 32
 PORT = 2050                          # the inventory admits no other (infinity_stream.Inventory.parse)
-# NBP is absent on purpose (measurement time not decoded); so is airway RESP (layout unverified).
+# NBP travels with `changed_at`, the time its triple last changed as the live view saw it: the
+# monitor repeats the last NBP in every packet and its own clock is not decoded, so that time is an
+# upper bound of the measurement: the cuff measured then or earlier. Without a change seen as it
+# happened (after a hub start, an outage, or any gap of more than NBP_CONTINUITY_S between complete
+# valid triples; X46) the hub has no time, and no NBP is sent. A newer value of one component that
+# is not the held triple's carries no time either, and is not sent (X38). Airway RESP is absent on
+# purpose (layout unverified).
 FORWARDED = ("hr", "pls", "spo2", "etco2", "temperature",
-             "art_systolic", "art_diastolic", "art_mean", "respiration")
+             "art_systolic", "art_diastolic", "art_mean", "respiration") + NBP
 _STATES = {401: "token_refused", 409: "stage_off", 429: "too_soon"}
 
 log = logging.getLogger(__name__)
@@ -66,7 +75,8 @@ def thin(snapshot, *, now, collector_age, counters):
     """The body for one cycle, from one live-view snapshot: per device its address, the hub's own
     status word and packet age, and each forwarded parameter's current value if it is younger
     than MAX_FORWARD_AGE_MS. A device's "***" travels as `valid: false, value: null`; a stale
-    parameter does not travel. No device id or inventory name leaves the hub."""
+    parameter does not travel; an NBP reading travels only with its `changed_at`. No device id or
+    inventory name leaves the hub."""
     devices = []
     for device in snapshot["devices"]:
         readings = []
@@ -74,10 +84,15 @@ def thin(snapshot, *, now, collector_age, counters):
             entry = device["parameters"].get(name)
             if entry is None or entry["status"] == "stale" or entry["age_ms"] >= MAX_FORWARD_AGE_MS:
                 continue
+            if name in NBP and entry.get("changed_at") is None:
+                continue                                    # its measurement time is not known
             valid = entry["status"] == "candidate"
-            readings.append({"parameter": name, "value": entry["value"] if valid else None,
-                             "unit": entry["unit"], "valid": valid,
-                             "captured_at": float(entry["capture_epoch"])})
+            reading = {"parameter": name, "value": entry["value"] if valid else None,
+                       "unit": entry["unit"], "valid": valid,
+                       "captured_at": float(entry["capture_epoch"])}
+            if name in NBP:
+                reading["changed_at"] = float(entry["changed_at"])
+            readings.append(reading)
         age = device["packet_age_ms"]
         devices.append({"source": device["source_ip"], "group": device["group"], "port": PORT,
                         "status": device["status"], "packet_age_ms": None if age is None else float(age),
