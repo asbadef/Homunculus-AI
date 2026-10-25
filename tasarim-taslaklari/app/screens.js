@@ -87,6 +87,46 @@
     H.wireFilter(root);
   } });
 
+  /* ================= DOKTOR İŞ LİSTESİ ================= */
+  H.register("drislem", { title:() => H.t("m_drislem"), perm:"results", render(root, params = {}) {
+    const me = H.state.user || {}, myName = me.name || "";
+    const today = new Date().toISOString().slice(0, 10);
+    const all = (H.data.randevular = H.data.randevular || seedRandevu());
+    const mine = all.filter(r => (r.doktor || "") === myName);
+    const bekRand = (mine.length ? mine : all).filter(r => (r.tarih || "").slice(0, 10) === today && (r.durum === "Bekliyor" || r.durum === "Geldi"));
+    const fallback = !mine.length && bekRand.length;
+    const myPts = H.myPatients();
+    const pend = (pid, cat) => (H.data.orders || []).filter(o => o.pid === pid && (o.cat || "").includes(cat) && !/Sonuçland|Tamam/.test(o.durum || "")).length;
+    const sonucBek = myPts.reduce((a, p) => a + pend(p.id, "Laboratuvar") + pend(p.id, "Radyoloji"), 0);
+    const kutu = (n, l) => `<div class="box" style="text-align:center;min-width:120px;flex:1"><div style="font-size:26px;font-weight:800;color:var(--pri)">${n}</div><div class="adm-sub">${l}</div></div>`;
+    const muaIco = I("stethoscope") || I("activity") || "";
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_drislem")}</h2><p>${H.esc(myName || "Hekim")} · bugünkü muayene kuyruğu ve hastalarınız</p></div></div>
+      <div class="r" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">${kutu(bekRand.length, "Muayene bekleyen")}${kutu(myPts.length, "Hastam")}${kutu(sonucBek, "Sonuç bekleyen")}</div>
+      <div class="ist-sec ist-hd"><h5>Bugünün randevuları — muayene bekleyen${fallback ? ` <span class="adm-sub">(demo: tüm bölümler)</span>` : ""}</h5></div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:70px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th style="width:100px">Durum</th><th style="width:140px"></th></tr></thead><tbody>
+      ${bekRand.length ? bekRand.slice().sort((a, z) => (a.tarih || "").localeCompare(z.tarih || "")).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").slice(11, 16))}</td><td><b>${H.esc(vzName(r.hasta))}</b></td><td class="adm-sub">${H.esc(r.bolum || "")}</td><td class="adm-sub">${H.esc(r.doktor || "")}</td><td><span class="tag ${r.durum === "Geldi" ? "ok" : "w"}">${H.esc(r.durum)}</span></td><td><button class="btn p sm" data-muarand="${r.id}">${muaIco} Muayeneye al</button></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Bugün muayene bekleyen randevu yok.</td></tr>`}
+      </tbody></table></div>
+      <div class="ist-sec ist-hd" style="margin-top:14px"><h5>Hastalarım</h5></div>
+      <div class="adm-bar" style="margin-bottom:8px">${H.filterBox("Hasta / tanı ara…")}</div>
+      <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th style="width:110px">Başvuru</th><th>Tanı</th><th style="width:60px">Lab</th><th style="width:60px">Rad</th><th>Birim</th><th style="width:120px"></th></tr></thead><tbody>
+      ${myPts.length ? myPts.map(p => { const b = H.bed(p.bed), e = H.encOf(p), ei = H.ENC[e] || {}, un = b && H.unit(b.unitId);
+        return `<tr class="row"><td><b>${H.esc(H.showNames() ? p.name : (b ? b.no : "—"))}</b><div class="mute" style="font-size:11.5px">${H.ageText(p)} ${p.sex}</div></td><td>${H.encIcon(p)} <span class="tag">${H.esc(ei.label || e)}</span> ${H.protoLock(p)}</td><td>${H.esc(p.dx || "")} ${p.icd ? `<span class="mono mute">${H.esc(p.icd)}</span>` : ""}</td><td class="n">${pend(p.id, "Laboratuvar")}</td><td class="n">${pend(p.id, "Radyoloji")}</td><td class="mute" style="font-size:12px">${un ? H.esc(un.tr) : "—"}</td><td><button class="btn p sm" data-muapt="${p.id}">${muaIco} Muayene</button></td></tr>`; }).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Birimlerinizde hasta yok.</td></tr>`}
+      </tbody></table></div>`;
+    root.onclick = (e) => {
+      const mr = e.target.closest("[data-muarand]"); if (mr) { const r = all.find(x => x.id === mr.dataset.muarand); if (!r) return;
+        const pid = pidByName(r.hasta); if (!pid) { H.toast("Hasta kaydı yok · kabule gidiliyor.", "w"); return H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum } }); }
+        const p = H.pt(pid); let pno = H.proto ? H.proto.activeNo(pid) : null;
+        if (!pno) { const rec = H.proto.create(pid, { bolum:r.bolum || "—", doktor:myName || "—", gelisTipi:"Ayaktan", ptip:"Genel muayene" }); pno = rec.no; p.encounter = "ayaktan"; }
+        r.durum = "Geldi"; H.saveData && H.saveData(); H.log("Muayeneye alındı", vzName(r.hasta) + " · " + pno);
+        return H.go("hasta360", { pid, atab:"tedavi", ttab:"muayene", proto:pno }); }
+      const mp = e.target.closest("[data-muapt]"); if (mp) { const p = H.pt(mp.dataset.muapt); if (!p) return;
+        const pno = H.proto ? H.proto.activeNo(p.id) : null;
+        if (!pno) return H.kabulForm(p, {}, (rec) => H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:rec.no }));
+        return H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); }
+    };
+    H.wireFilter(root);
+  } });
+
   /* ================= RANDEVU ================= */
   const randevular = () => (H.data.randevular = H.data.randevular || seedRandevu());
   function seedRandevu() {

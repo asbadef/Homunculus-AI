@@ -73,6 +73,7 @@
     hero_sub:{ AZ:"Cihazlardan gələn məlumatı toplayır, pisləşməni erkən göstərir, doğru komandanı çağırır. Qərarı həkim verir.", TR:"Cihazlardan gelen veriyi toplar, kötüleşmeyi erken gösterir, doğru ekibi çağırır. Kararı hekim verir.", RU:"Собирает данные с приборов, рано показывает ухудшение, вызывает нужную команду. Решение за врачом.", EN:"Collects device data, surfaces deterioration early and calls the right team. The physician decides." },
     m_beds:{ AZ:"Çarpayılar", TR:"Yataklar", RU:"Койки", EN:"Beds" },
     m_gelisler:{ AZ:"Bütün gəlişlər", TR:"Tüm Gelişler", RU:"Все обращения", EN:"All visits" },
+    m_drislem:{ AZ:"Həkim iş siyahısı", TR:"Doktor İş Listesi", RU:"Рабочий список врача", EN:"Doctor worklist" },
     m_randevu:{ AZ:"Randevu", TR:"Randevu", RU:"Запись на приём", EN:"Appointments" },
     m_vezne:{ AZ:"Kassa / Qəbul", TR:"Vezne / Ön Büro", RU:"Касса / Ресепшн", EN:"Cashier / Front Office" },
     m_ik:{ AZ:"İnsan resursları", TR:"İnsan Kaynakları", RU:"Кадры", EN:"Human resources" },
@@ -350,7 +351,7 @@
    *   engine → gerçek üründeki karşılığı (homunculus-engine auth/models.py UserRole). "—" = motorda yok, eklenmesi gerekir. */
   H.data.roles = {
     hekim:    { group:"Klinik", name:"Hekim", az:"Həkim", names:true, engine:"ATTENDING · ASSOCIATE · ONCALL · UNIT_PHYSICIAN",
-                perms:["beds","patient","alarms","hand","results","orders","scores_sign","admission_view","camera"], home:"beds" },
+                perms:["beds","patient","alarms","hand","results","orders","scores_sign","admission_view","camera"], home:"drislem" },
     hemsire:  { group:"Klinik", name:"Hemşire", az:"Tibb bacısı", names:true, engine:"NURSE (sorumlu işaretliyse CHARGE_NURSE)",
                 perms:["beds","patient","tasks","bedside","alarms","hand","forms"], home:"tasks" },
     eczaci:   { group:"Destek", name:"Eczacı", az:"Əczaçı", names:true, engine:"PHARMACIST",

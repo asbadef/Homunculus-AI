@@ -256,7 +256,7 @@
 
   /* ================= uygulama kabuğu ================= */
   const NAV = [
-    ["beds", "grid", "m_beds", "beds"], ["gelisler", "list", "m_gelisler", "beds"], ["wall", "activity", "m_wall", "beds"], ["unitdash", "chart", "m_unitdash", "beds"], ["tasks", "list", "m_tasks", "tasks"], ["bedside", "tablet", "m_bedside", "bedside"],
+    ["beds", "grid", "m_beds", "beds"], ["drislem", "activity", "m_drislem", "results"], ["gelisler", "list", "m_gelisler", "beds"], ["wall", "activity", "m_wall", "beds"], ["unitdash", "chart", "m_unitdash", "beds"], ["tasks", "list", "m_tasks", "tasks"], ["bedside", "tablet", "m_bedside", "bedside"],
     ["alarms", "bell", "m_alarms", "alarms", () => H.openAlarms().length],
     ["hand", "clip", "m_hand", "hand", () => H.data.handovers.filter(h => h.state === "waiting" && H.inScope(h.pid)).length, "y"],
     ["randevu", "clock", "m_randevu", ["admission", "beds"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
