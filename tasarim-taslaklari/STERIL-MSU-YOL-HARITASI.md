@@ -13,10 +13,10 @@ Kullanım yeri ön temizlik → Dekontaminasyon (yıkama/WD) → Muayene & test 
 - [x] Teslim: vaka/ameliyat (ameliyat isteminden seç/serbest) + teslim alan.
 - [x] Komuta merkezi (aşama sayıları, sorunlu/uyarılı setler) + ortak liste filtresi.
 - [x] **v2:** kullanım/döngü sayısı + ömür uyarısı; **kayıp (Lost)** statüsü + bulundu; **etiket yazdır** + **izlenebilirlik raporu**; **ACİL (STAT)** önceliği (üste sıralanır, kırmızı).
+- [x] **v3:** **Yük (load) kavramı** — sterilizasyonda birden çok set tek döngüye (yüke) alınır (gerçek akış); "Yükler" sekmesi. **Recall-by-load (yük geri çağırma)** — testi başarısız/BI şüpheli yük → içindeki tüm setler + ulaştıkları vakalar listelenir, "Geri çağır" ile hepsi yeniden işleme (Kirli Kabul) alınır; rapor yazdırılır.
 
 ## Kalan (araştırma önceliğiyle) — öneri sırası
 Zorluk: K=kolay, O=orta.
-1. [ ] **Recall-by-load (yük geri çağırma)** — O. Testi başarısız/pozitif BI çıkan yük: o yüke giren tüm setleri/vakaları/hastaları listele, hepsini "yeniden işle" olarak işaretle. *En kritik güvenlik özelliği.* Gerektirir: "yük (load)" kavramı — sterilizasyonda birden çok seti tek yüke al.
 2. [ ] **Vaka arabası (case cart) + OR programı** — O. Ameliyat programından gerekli setlerin toplama listesi; arabayı hazırla, eksik seti işaretle. MSÜ'yü ameliyathaneye bağlar.
 3. [ ] **Tamir/bakım statüsü** — O. Bozuk alet/seti "tamirde" işaretle, dolaşımdan çıkar, dönünce geri al.
 4. [ ] **Loaner/konsinye set girişi** — O. Firma setini kaydet, kullanımdan önce zorunlu yeniden-işlemden geçir.
@@ -27,4 +27,4 @@ Zorluk: K=kolay, O=orta.
 9. [ ] **Parametrik serbest bırakma anahtarı** — K. BI beklemeden parametreyle serbest bırakma (doğrulanmış yerlerde).
 
 ## Not
-Recall-by-load ve vaka arabası en değerli iki büyük adım; "yük" kavramını kurunca ikisi de açılır. Önerim sıradaki turda 1 ve 2'yi birlikte yapmak.
+Yük + recall yapıldı. Sıradaki en değerli büyük adım: **vaka arabası (case cart) + ameliyat programı** (madde 2) — MSÜ'yü ameliyathaneye bağlar. Sonra tamir/bakım, loaner, alet-ID, KPI.

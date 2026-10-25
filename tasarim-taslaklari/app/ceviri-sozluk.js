@@ -12151,3 +12151,21 @@ Object.assign(window.HMC_SOZLUK, {
   "teslime hazır (depoda)": { AZ: "təhvilə hazır (anbarda)", RU: "готово к выдаче (склад)", EN: "ready to deliver (store)" },
   "sorunlu set": { AZ: "problemli set", RU: "наборы с проблемой", EN: "problem sets" }
 });
+
+/* === Sterilizasyon v3: yük (load) + geri çağırma (recall) · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Yükler": { AZ: "Yüklər", RU: "Загрузки", EN: "Loads" },
+  "Yük": { AZ: "Yük", RU: "Загрузка", EN: "Load" },
+  "Yük oluştur": { AZ: "Yük yarat", RU: "Создать загрузку", EN: "Build load" },
+  "Yük oluştur (sterilizasyon döngüsü)": { AZ: "Yük yarat (sterilizasiya dövrü)", RU: "Создать загрузку (цикл стерилизации)", EN: "Build load (sterilization cycle)" },
+  "Yükü çalıştır": { AZ: "Yükü işə sal", RU: "Запустить загрузку", EN: "Run load" },
+  "Yüke alınacak setler": { AZ: "Yükə alınacaq setlər", RU: "Наборы для загрузки", EN: "Sets to include" },
+  "Yük geri çağırma": { AZ: "Yükün geri çağırılması", RU: "Отзыв загрузки", EN: "Load recall" },
+  "Geri çağır": { AZ: "Geri çağır", RU: "Отозвать", EN: "Recall" },
+  "Raporu yazdır": { AZ: "Hesabatı çap et", RU: "Печать отчёта", EN: "Print report" },
+  "BI bekliyor": { AZ: "BI gözlənilir", RU: "Ожидание БИ", EN: "BI pending" },
+  "Serbest": { AZ: "Sərbəst", RU: "Выпущено", EN: "Released" },
+  "Geri çağrıldı": { AZ: "Geri çağırıldı", RU: "Отозвано", EN: "Recalled" },
+  "Otoklav · döngü": { AZ: "Avtoklav · dövr", RU: "Автоклав · цикл", EN: "Autoclave · cycle" },
+  "Test (Bowie / BI)": { AZ: "Test (Bowie / BI)", RU: "Тест (Боуи / БИ)", EN: "Test (Bowie / BI)" }
+});

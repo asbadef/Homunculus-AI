@@ -41,7 +41,16 @@
         mk("sk2", "Steril Depo", { dongu:244, raf:"B-11", sonKullanim:addDays(today(), 18) }),   // süresi yaklaşan (uyarı)
       ];
     }
+    if (!H.data.sterLoadSeq) H.data.sterLoadSeq = 7014;
+    if (!H.data.sterLoad) {   // demo yük: iki steril depo seti tek döngüden geldi, biyolojik indikatör "Gözlənilir" (recall denemesi için)
+      const depo = (H.data.sterSet || []).filter(s => s.asama === "Steril Depo");
+      const ld = { id:"ld_demo", no:"YÜK-" + (++H.data.sterLoadSeq), otoklav:"Buxar Otoklavı-2", no2:"D-2039", sic:"134", sure:"7", bowie:"Keçdi", biyo:"Gözlənilir", tarih:now(), setIds:depo.map(s => s.id), durum:"BI bekliyor" };
+      depo.forEach(s => { s.loadId = ld.id; s.otoklav = { otoklav:ld.otoklav, no:ld.no2, sic:ld.sic, sure:ld.sure, bowie:ld.bowie, biyo:ld.biyo, tarih:ld.tarih, yuk:ld.no }; });
+      H.data.sterLoad = [ld];
+    }
   }
+  const loads = () => H.data.sterLoad || [];
+  const loadOf = (id) => loads().find(l => l.id === id);
   const kartOf = (id) => (H.data.sterSetKart || []).find(k => k.id === id) || { ad:"—", bolum:"—", parcalar:[], versiyon:"" };
   const sets = () => H.data.sterSet || [];
   const nextNo = () => "SET-" + (++H.data.sterSeq);
@@ -59,8 +68,8 @@
     const i = asamaIdx(s.asama);
     // Paketleme: parça checklist → eksikse ilerlemez
     if (s.asama === "Paketleme") return paketleModal(s, afterGo);
-    // Sterilizasyon: otoklav döngüsü + test
-    if (s.asama === "Sterilizasyon") return otoklavModal(s, afterGo);
+    // Sterilizasyon: yük (çok set tek döngü) oluştur
+    if (s.asama === "Sterilizasyon") return loadBuilder(s.id, afterGo);
     // Steril Depo: ameliyathaneye teslim
     if (s.asama === "Steril Depo") return teslimModal(s, afterGo);
     // Teslim: yeniden kullanım için kirli kabule döner
@@ -87,23 +96,55 @@
       } });
   }
 
-  function otoklavModal(s, afterGo) {
-    H.modal({ title:"Sterilizasyon döngüsü · " + esc(s.no),
+  // Yük (load) kurucusu: Sterilizasyon aşamasındaki setlerden birkaçı tek otoklav döngüsüne (yüke) alınır.
+  // Test geçerse hepsi birlikte Steril Depoya; "Keçmədi" ise sterilizasyonda tutulur; "Gözlənilir" ise depoya alınır ama yük "BI bekliyor" (recall mümkün).
+  function loadBuilder(preId, afterGo) {
+    const bekle = sets().filter(s => s.asama === "Sterilizasyon" && !s.kayip);
+    if (!bekle.length) { H.toast("Sterilizasyon aşamasında set yok.", "w"); return; }
+    H.modal({ title:"Yük oluştur (sterilizasyon döngüsü)", wide:true,
       body:`<div class="icd-form">
         <div class="fr"><label>Otoklav / cihaz</label><select data-f="otoklav">${OTOKLAVLAR.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
         <div class="fr"><label>Döngü no</label><input data-f="no" placeholder="ör. D-2042"></div>
         <div class="fr"><label>Sıcaklık (°C)</label><input data-f="sic" value="134"></div>
         <div class="fr"><label>Süre (dk)</label><input data-f="sure" value="7"></div>
         <div class="fr"><label>Bowie-Dick testi</label><select data-f="bowie"><option>Keçdi</option><option>Keçmədi</option></select></div>
-        <div class="fr"><label>Biyolojik indikatör</label><select data-f="biyo"><option>Keçdi</option><option>Keçmədi</option><option>Gözlənilir</option></select></div></div>
-        <p class="adm-sub" style="margin-top:8px">Test "Keçmədi" ise set steril depoya alınmaz, uyarı verilir.</p>`,
-      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Döngüyü kaydet</button>`,
+        <div class="fr"><label>Biyolojik indikatör</label><select data-f="biyo"><option>Keçdi</option><option>Gözlənilir</option><option>Keçmədi</option></select></div></div>
+        <div class="ist-sec ist-hd" style="margin:10px 0 4px"><h5>Yüke alınacak setler</h5><span class="adm-sub">${bekle.length} hazır</span></div>
+        <div class="icd-oz" style="max-height:34vh;overflow:auto">${bekle.map(s => `<label><input type="checkbox" data-ls="${s.id}"${s.id === preId || !preId ? " checked" : ""}> ${esc(s.no)} · ${esc(s.ad)} <span class="adm-sub">(${esc(s.bolum)})</span></label>`).join("")}</div>
+        <p class="adm-sub" style="margin-top:8px">Bir yükteki tüm setler aynı döngü/test sonucunu paylaşır. Biyolojik "Gözlənilir" ise setler depoya alınır, yük BI onayı beklenir (pozitif çıkarsa geri çağırılır).</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Yükü çalıştır</button>`,
       onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
-        const o = { otoklav:m.querySelector('[data-f="otoklav"]').value, no:g("no"), sic:g("sic"), sure:g("sure"), bowie:m.querySelector('[data-f="bowie"]').value, biyo:m.querySelector('[data-f="biyo"]').value, tarih:now() };
-        s.otoklav = o;
-        if (o.bowie === "Keçmədi" || o.biyo === "Keçmədi") { s.durum = "Test başarısız"; H.saveData && H.saveData(); H.log("Sterilizasyon testi başarısız", s.no); H.toast("Test keçmədi · set serbest bırakılamaz", "e"); H.closeModal(); afterGo && afterGo(); return; }
-        s.durum = ""; s.dongu = (s.dongu || 0) + 1; s.raf = ""; s.sonKullanim = addDays(today(), RAF_OMUR); push(s, "Steril Depo");
-        H.closeModal(); H.toast("Döngü tamam · Steril Depoya alındı · toplam döngü " + s.dongu + (omurDoldu(s) ? " · ÖMÜR DOLDU, bakıma gönderin" : omurUyari(s) ? " · ömrü yaklaşıyor" : "")); afterGo && afterGo(); }; } });
+        const ids = [...m.querySelectorAll("[data-ls]:checked")].map(c => c.dataset.ls);
+        if (!ids.length) { H.toast("En az bir set seçin.", "w"); return; }
+        const bowie = m.querySelector('[data-f="bowie"]').value, biyo = m.querySelector('[data-f="biyo"]').value, fail = (bowie === "Keçmədi" || biyo === "Keçmədi");
+        const load = { id:"ld" + Date.now(), no:"YÜK-" + (++H.data.sterLoadSeq), otoklav:m.querySelector('[data-f="otoklav"]').value, no2:g("no"), sic:g("sic"), sure:g("sure"), bowie, biyo, tarih:now(), setIds:ids.slice(),
+          durum:fail ? "Test başarısız" : biyo === "Gözlənilir" ? "BI bekliyor" : "Serbest" };
+        (H.data.sterLoad = H.data.sterLoad || []).unshift(load);
+        ids.forEach(id => { const s = sets().find(x => x.id === id); if (!s) return;
+          s.otoklav = { otoklav:load.otoklav, no:load.no2, sic:load.sic, sure:load.sure, bowie, biyo, tarih:load.tarih, yuk:load.no }; s.loadId = load.id;
+          if (fail) { s.durum = "Test başarısız"; }
+          else { s.durum = ""; s.dongu = (s.dongu || 0) + 1; s.raf = ""; s.sonKullanim = addDays(today(), RAF_OMUR); push(s, "Steril Depo"); } });
+        H.saveData && H.saveData(); H.log("Sterilizasyon yükü", load.no + " · " + ids.length + " set · " + load.durum);
+        H.toast(fail ? "Test keçmədi · " + ids.length + " set serbest bırakılmadı" : load.no + " · " + ids.length + " set Steril Depoya alındı" + (biyo === "Gözlənilir" ? " (BI bekliyor)" : ""), fail ? "e" : "ok");
+        H.closeModal(); afterGo && afterGo(); }; } });
+  }
+
+  // Yük geri çağırma (recall-by-load): bir yüke giren tüm setleri (ve ulaştıkları vakaları) bulup yeniden işleme alır.
+  function recallLoad(load, afterGo) {
+    const ls = (load.setIds || []).map(id => sets().find(x => x.id === id)).filter(Boolean);
+    const vakalar = [...new Set(ls.map(s => s.vaka).filter(Boolean))];
+    const satir = ls.map(s => `<tr><td><b>${esc(s.no)}</b></td><td>${esc(s.ad)}</td><td>${esc(s.asama)}</td><td>${esc(s.vaka || "—")}</td></tr>`).join("");
+    H.modal({ title:"Yük geri çağırma · " + esc(load.no), wide:true,
+      body:`<div class="note" style="background:color-mix(in srgb,var(--crit) 10%,transparent);border:1px solid var(--crit);margin:0 0 10px">${I("alert")} Bu yük geri çağrılırsa içindeki <b>${ls.length} set</b> yeniden işleme (Kirli Kabul) alınır. Bu setlerin ulaştığı <b>${vakalar.length} vaka</b> bilgilendirilmelidir.</div>
+        <div class="vz-hk" style="margin-bottom:8px"><div class="kv"><span>Otoklav · döngü</span><span>${esc(load.otoklav)} · ${esc(load.no2 || "—")}</span></div><div class="kv"><span>Tarih</span><span>${esc(load.tarih)}</span></div><div class="kv"><span>Test</span><span>Bowie:${esc(load.bowie)} · BI:${esc(load.biyo)}</span></div><div class="kv"><span>Etkilenen vakalar</span><span>${esc(vakalar.join(", ") || "—")}</span></div></div>
+        <div class="tw"><table class="t"><thead><tr><th>Set no</th><th>Set</th><th>Şu anki aşama</th><th>Ulaştığı vaka</th></tr></thead><tbody>${satir || `<tr><td colspan="4" class="mute">Bu yükte set yok.</td></tr>`}</tbody></table></div>`,
+      actions:`<button class="btn" data-x>Kapat</button><button class="btn" data-yaz>${I("print")} Raporu yazdır</button><button class="btn g" data-recall>${I("alert")} Yükü geri çağır (hepsini yeniden işle)</button>`,
+      onMount(m) {
+        m.querySelector("[data-yaz]").onclick = () => H.printTable && H.printTable("Yük geri çağırma · " + load.no, ["Set no", "Set", "Aşama", "Vaka"], ls.map(s => [s.no, s.ad, s.asama, s.vaka || "—"]), { sub:load.otoklav + " · " + load.tarih + " · Bowie:" + load.bowie + " · BI:" + load.biyo });
+        m.querySelector("[data-recall]").onclick = () => { if (!confirm(ls.length + " set yeniden işleme alınacak. Onaylıyor musunuz?")) return;
+          ls.forEach(s => { s.durum = "Geri çağrıldı"; s.otoklav = null; s.raf = ""; s.sonKullanim = ""; s.eksik = []; s.gecmis.push({ asama:"Geri çağrıldı (yük " + load.no + ")", kim:me(), zaman:now() }); s.asama = "Kirli Kabul"; });
+          load.durum = "Geri çağrıldı"; H.saveData && H.saveData(); H.log("Yük geri çağrıldı", load.no + " · " + ls.length + " set · " + vakalar.length + " vaka");
+          H.toast(load.no + " geri çağrıldı · " + ls.length + " set yeniden işleme alındı", "w"); H.closeModal(); afterGo && afterGo(); }; } });
   }
 
   function teslimModal(s, afterGo) {
@@ -211,7 +252,7 @@
   H.register("sterilizasyon", { title:() => H.t("m_steril"), perm:"steril", render(root, params = {}) {
     seed();
     const tab = params.tab || "pano";
-    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["tanim", "Set tanımları"], ["komuta", "Komuta merkezi"]];
+    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["yukler", "Yükler"], ["tanim", "Set tanımları"], ["komuta", "Komuta merkezi"]];
     const go = () => H.go("sterilizasyon", { tab });
     const rerender = () => H.go("sterilizasyon", params);
 
@@ -229,7 +270,7 @@
 
     const panoHtml = () => `<div class="tw" style="overflow:auto"><div style="display:flex;gap:10px;min-width:900px;align-items:start">
       ${ASAMALAR.map(a => { const list = sets().filter(s => s.asama === a).sort((x, z) => (z.stat ? 1 : 0) - (x.stat ? 1 : 0));
-        return `<div style="flex:1;min-width:150px"><div style="display:flex;align-items:center;gap:6px;font:700 12.5px Figtree;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,${SEVC[a]} 16%,transparent);border-left:3px solid ${SEVC[a]};margin-bottom:8px">${I(ASAMA_IC[a]) || ""} ${esc(a)} <span class="adm-sub" style="margin-left:auto">${list.length}</span></div>
+        return `<div style="flex:1;min-width:150px"><div style="display:flex;align-items:center;gap:6px;font:700 12.5px Figtree;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,${SEVC[a]} 16%,transparent);border-left:3px solid ${SEVC[a]};margin-bottom:8px">${I(ASAMA_IC[a]) || ""} ${esc(a)} <span class="adm-sub" style="margin-left:auto">${list.length}</span>${a === "Sterilizasyon" && list.length ? `<button class="btn sm" data-yukyeni title="Yük oluştur (çok set tek döngü)" style="margin-left:6px;padding:2px 7px">${I("flask") || ""} Yük</button>` : ""}</div>
           ${list.map(kart).join("") || `<div class="adm-sub" style="font-size:11.5px;padding:6px 2px">—</div>`}</div>`; }).join("")}
       </div></div><p class="adm-sub" style="margin-top:8px">Bir karta tıkla → detay + "Sonraki aşamaya al". Paketlemede eksik parça olursa set ilerlemez; sterilizasyonda test "keçmədi" ise serbest bırakılmaz.</p>`;
 
@@ -255,7 +296,13 @@
           <div class="box"><h5>Uyarılar (${uyarilar.length})</h5>${uyarilar.length ? uyarilar.map(([c, t]) => `<div class="note" style="margin:6px 0;padding:7px 9px;border-radius:8px;background:color-mix(in srgb,var(--${c === "crit" ? "crit" : "mid"}) 10%,transparent);font-size:12.5px">${I(c === "crit" ? "alert" : "clock")} ${esc(t)}</div>`).join("") : `<p class="adm-sub">Açık uyarı yok.</p>`}</div></div>
         <p class="adm-sub" style="margin-top:10px">Komuta merkezi: tüm MSÜ akışının özeti. Donanım bağlandığında otoklav doluluğu ve canlı döngüler buraya gerçek veriyle akar.</p>`; };
 
-    const body = { pano:panoHtml, depo:depoHtml, tanim:tanimHtml, komuta:komutaHtml }[tab]();
+    const LDUR = { "Serbest":"ok", "BI bekliyor":"w", "Test başarısız":"crit", "Geri çağrıldı":"crit" };
+    const yukHtml = () => { const L = loads();
+      return `<div class="tw"><table class="t"><thead><tr><th>Yük</th><th>Otoklav · döngü</th><th>Tarih</th><th style="width:60px">Set</th><th>Test (Bowie / BI)</th><th style="width:130px">Durum</th><th style="width:120px"></th></tr></thead><tbody>
+        ${L.length ? L.map(l => `<tr class="row" data-load="${l.id}" style="cursor:pointer"><td><b>${esc(l.no)}</b></td><td class="adm-sub">${esc(l.otoklav)} · ${esc(l.no2 || "—")}</td><td class="mono adm-sub">${esc(l.tarih)}</td><td class="n">${(l.setIds || []).length}</td><td class="adm-sub">${esc(l.bowie)} / ${esc(l.biyo)}</td><td><span class="tag ${LDUR[l.durum] || ""}">${esc(l.durum)}</span></td><td><button class="btn g sm" data-recall="${l.id}">${I("alert") || ""} Geri çağır</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:18px;text-align:center">Henüz yük yok. Sterilizasyon sütununda "Yük" ile oluşturun.</td></tr>`}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Her sterilizasyon döngüsü bir "yük"tür. Biyolojik indikatör pozitif/şüpheli çıkarsa yükü <b>geri çağır</b> → içindeki tüm setler ve ulaştıkları vakalar listelenir, setler yeniden işleme alınır.</p>`; };
+
+    const body = { pano:panoHtml, depo:depoHtml, yukler:yukHtml, tanim:tanimHtml, komuta:komutaHtml }[tab]();
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p>Merkezi Sterilizasyon (MSÜ) · set izleme · ${sets().length} aktif set</p></div><div class="r">${H.filterBox ? H.filterBox("Set / bölüm ara…") : ""}${tab === "tanim" ? `<button class="btn p" data-kartnew>${I("plus")} Yeni şablon</button>` : `<button class="btn p" data-yeniset>${I("plus")} Yeni set (kirli kabul)</button>`}</div></div>
       <div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-stab="${k}" class="${tab === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
       ${body}`;
@@ -264,6 +311,8 @@
       const st = e.target.closest("[data-stab]"); if (st) return H.go("sterilizasyon", { tab:st.dataset.stab });
       if (e.target.closest("[data-yeniset]")) return yeniSet(rerender);
       if (e.target.closest("[data-kartnew]")) return kartForm(null, rerender);
+      if (e.target.closest("[data-yukyeni]")) return loadBuilder(null, rerender);
+      const ld = e.target.closest("[data-load]"); if (ld) { const l = loadOf(ld.dataset.load); if (l) recallLoad(l, rerender); return; }
       const tz = e.target.closest("[data-teslim]"); if (tz) { const s = sets().find(x => x.id === tz.dataset.teslim); if (s) teslimModal(s, rerender); return; }
       const kt = e.target.closest("[data-kart]"); if (kt) { const k = (H.data.sterSetKart || []).find(x => x.id === kt.dataset.kart); if (k) kartForm(k, rerender); return; }
       const se = e.target.closest("[data-set]"); if (se) { const s = sets().find(x => x.id === se.dataset.set); if (s) setDetay(s, rerender); return; }
