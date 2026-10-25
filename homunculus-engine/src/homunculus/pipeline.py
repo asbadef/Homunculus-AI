@@ -65,12 +65,13 @@ class Engine:
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
         # holds, and restarting an overdue antibiotic's hour then would hide that it is overdue.
         #  - The anchor is set the first time a recognition kind fires in an episode.
-        #  - It is dropped only when suspected infection is charted absent (none, or < 1) while no
+        #  - It is dropped only when suspected infection is charted absent (< 1) while no
         #    recognition kind fires — the episode is over and a later one is a second recognition
-        #    with its own hour. Sepsis merely stopping is not that: SOFA reads the latest MAP, so a
-        #    single reading over 70 stops `sepsis` for one evaluation, and an anchor dropped then
-        #    would let an untreated sepsis never go overdue, or give a treated one a false overdue
-        #    when it came back.
+        #    with its own hour. (The `None` branch below is defensive only: an anchor can exist
+        #    only after infection was charted >= 1.) Sepsis merely stopping is not that: SOFA
+        #    reads the latest MAP, so a single reading at 70 or above (MAP 70 scores 0) stops
+        #    `sepsis` for one evaluation, and an anchor dropped then would let an untreated sepsis
+        #    never go overdue, or give a treated one a false overdue when it came back.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.

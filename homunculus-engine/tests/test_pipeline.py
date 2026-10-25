@@ -167,7 +167,8 @@ def test_when_sepsis_stops_the_antibiotic_alerts_leave_the_board_but_the_clock_k
     eng.ingest(o, now=o.timestamp)
     assert {"sepsis", "antibiotic_overdue"} <= _kinds(eng)
     overdue = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_overdue")
-    assert overdue.summary == "Antibiotic OVERDUE by 30 min",         "sepsis back at +90: the hour that ran from +0 closed at +60, not an hour restarted at +90"
+    assert overdue.summary == "Antibiotic OVERDUE by 30 min", \
+        "sepsis back at +90: the hour that ran from +0 closed at +60, not an hour restarted at +90"
     assert eng.recognized_at("bed-3") == T0
 
 
@@ -182,7 +183,8 @@ def test_charting_infection_absent_ends_the_episode_and_its_clock():
     _sepsis_charted(eng, 1.0, minute=90)          # a second episode, seventy minutes later
     assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=90)
     due = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_due")
-    assert due.summary == "Antibiotic window: 60 min remaining",         "the second recognition has its own hour, not the first episode's overdue clock"
+    assert due.summary == "Antibiotic window: 60 min remaining", \
+        "the second recognition has its own hour, not the first episode's overdue clock"
 
 
 def _flapping_map(eng, minute, value):
@@ -208,7 +210,8 @@ def test_a_map_flap_does_not_reset_the_antibiotic_clock():
         else:
             anchors.append(eng.recognized_at("bed-3"))
         if minute % 10 == 0:
-            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"},                 f"sepsis is not firing at +{minute} min: the antibiotic alerts are off the board"
+            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"}, \
+                f"sepsis is not firing at +{minute} min: the antibiotic alerts are off the board"
         if first_overdue is None and "antibiotic_overdue" in _kinds(eng):
             first_overdue = minute
     assert first_overdue == 61, f"overdue one hour after the first recognition (+1 min), saw {first_overdue}"
@@ -232,7 +235,9 @@ def test_a_treated_patient_does_not_get_a_false_overdue_after_a_map_flap():
     ]:
         eng.ingest(o, now=o.timestamp)
         if o.timestamp >= T0 + timedelta(minutes=20):
-            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"},                 f"the antibiotic was given at +20 min: no clock finding at +{(o.timestamp - T0).seconds // 60}"
+            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"}, \
+                "the antibiotic was given at +20 min: " \
+                f"no clock finding at +{(o.timestamp - T0).seconds // 60}"
     assert "sepsis" in _kinds(eng)
     assert eng.recognized_at("bed-3") == T0, "the first recognition's anchor, not a restart at +91"
 
