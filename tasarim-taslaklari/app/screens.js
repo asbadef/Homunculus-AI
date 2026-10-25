@@ -341,6 +341,8 @@
   const vzName = (n) => (H.showNames && !H.showNames()) ? (String(n || "").trim().split(/\s+/).map(w => w ? w[0] + "***" : "").join(" ") || "—") : (n || "—");
   // İsimden hasta kartına bağlantı (liste satırı → hasta dosyası). Tam eşleşme bulunamazsa null.
   const pidByName = (nm) => { nm = String(nm || "").trim(); const p = (H.data.patients || []).find(x => (x.name || "").trim() === nm); return p ? p.id : null; };
+  // Protokolün fatura tutarı: o protokole bağlı fiyatlı order'ların (kod→fiyatOf) toplamı. İstem→fatura zinciri.
+  const protoTutar = (proto, kurum) => (H.data.orders || []).filter(o => o.protokolNo === proto).reduce((a, o) => a + ((o.kod && H.fiyatOf) ? (+H.fiyatOf(o.kod, kurum || "Özel ödeme") || 0) : (+o.tutar || 0)), 0);
 
   /* ===== VERİ ZİNCİRİ · Adım 1: Protokol deposu (kalıcı) =====
    * Tek hasta kartı, altında çok protokol. H.data.protokolKayit[pid] = [ {no,bolum,doktor,gelisTipi,ptip,kapali,tarih,bucket,islemIds[]}, ... ]
@@ -423,7 +425,7 @@
     if (name === "UHM hasta arama") return { cols:["FİN", "Ad Soyad", "Doğum", "Kaynak"], rows:[["5AB12CD", "Nümunə Vətəndaş", "11.09.1996", "UHM (dövlət reyestri)"]], note:"UHM (Unikal Həkim/Vətəndaş reyestri) sorgusu · gerçek bağlantıyı ayrı ekip kurar." };
     if (name === "Onam formları") return { cols:["Form", "Hasta", "Tarih", "Durum"], rows:[["Aydınlatılmış onam", "Elvin Hüseynov", "24.10.2026", "İmzalı"], ["Ameliyat onamı", "Elvin Hüseynov", "23.10.2026", "Bekliyor"]], note:"Onam formları hastaya bağlı tutulur; imzalı/bekleyen takip edilir." };
     if (name === "İade taleplerim") return { cols:["Tip", "Tarih", "Tutar", "Durum"], rows:iadeRows().filter(x => x.eden === ((H.state.user || {}).name)).map(x => [x.tip, x.tarih, x.tutar + " ₼", x.durum]), note:"Yalnız sizin açtığınız iade talepleri; onay zinciri 'İade onay' ekranında." };
-    if (name === "Toplu fatura işlemleri") return { cols:["Protokol", "Hasta", "Kurum", "Tutar", "Durum"], rows:gfkRows().filter(x => x.durum !== "Fatura kesildi").slice(0, 10).map(x => [x.proto, vzName(x.hasta), "—", "—", x.durum]), note:"Fatura kesilmemiş protokoller toplu faturalanabilir (yetkiye bağlı)." };
+    if (name === "Toplu fatura işlemleri") return { cols:["Protokol", "Hasta", "Kurum", "Tutar", "Durum"], rows:gfkRows().filter(x => x.durum !== "Fatura kesildi").slice(0, 10).map(x => { const pid = pidByName(x.hasta), p = pid && H.pt(pid), kurum = (p && p.kurum) || "Özel ödeme", t = protoTutar(x.proto, kurum); return [x.proto, vzName(x.hasta), kurum, t ? t.toFixed(2) + " ₼" : "—", x.durum]; }), note:"Fatura kesilmemiş protokoller toplu faturalanabilir; tutar istem order'larından hesaplanır." };
     if (name === "Randevulanacak hizmetler") return { cols:["Hizmet", "Hasta", "Bölüm", "Durum"], rows:[["MR çekimi", "Nərgiz Əliyeva", "Radiologiya", "Randevu bekliyor"], ["Fizik tedavi", "Nərgiz Əliyeva", "FTR", "Randevu bekliyor"]], note:"Faturalanıp randevusu verilecek hizmetler." };
     if (name === "Hasta danışman") return { cols:["Danışman", "Hasta", "Konu", "Durum"], rows:[["Hasta Danışmanı 1", "Elvin Hüseynov", "Yurtdışı hasta karşılama", "Açık"]], note:"Hasta danışmanı/karşılama takibi." };
     if (name === "Kurum değişiklik onay") return { cols:["Protokol", "Hasta", "Eski kurum", "Yeni kurum", "Durum"], rows:[["50894026", "Nurgül Süleymanova", "Özel ödeme", "SAMHI", "Onay bekliyor"]], note:"Protokol kurum/sigorta değişikliği yetkili rol onayıyla yapılır." };
@@ -649,12 +651,12 @@
   // Toplu fatura işlemleri: fatura kesilmemiş protokolleri seçip toplu faturala.
   function topluFaturaModal() {
     const draw = (m) => { const list = gfkRows().filter(x => x.durum !== "Fatura kesildi");
-      m.querySelector("[data-tfbody]").innerHTML = list.length ? list.map(x => `<tr><td><input type="checkbox" data-tfc="${H.esc(x.proto)}"></td><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.kurum || "—")}</td><td class="adm-sub">${H.esc(x.ptip)}</td><td><span class="tag w">${H.esc(x.durum)}</span></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Faturalanacak protokol yok.</td></tr>`;
+      m.querySelector("[data-tfbody]").innerHTML = list.length ? list.map(x => { const pid = pidByName(x.hasta), p = pid && H.pt(pid), k = (p && p.kurum) || x.kurum || "Özel ödeme", t = protoTutar(x.proto, k); return `<tr><td><input type="checkbox" data-tfc="${H.esc(x.proto)}"></td><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(k)}</td><td class="n">${t ? t.toFixed(2) + " ₼" : "—"}</td><td class="adm-sub">${H.esc(x.ptip)}</td><td><span class="tag w">${H.esc(x.durum)}</span></td></tr>`; }).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Faturalanacak protokol yok.</td></tr>`;
       const c = m.querySelector("[data-tfcount]"); if (c) c.textContent = list.length + " protokol"; };
     H.modal({ title:"Toplu fatura işlemleri", wide:true,
       body:`<p class="adm-sub" style="margin:0 0 8px">Fatura kesilmemiş protokoller; seçip toplu faturalayın.</p>
         <div class="adm-bar"><label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-tfall> Tümünü seç</label><span class="spacer"></span><span class="adm-sub" data-tfcount></span></div>
-        <div class="tw"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:110px">Protokol</th><th>Hasta</th><th>Kurum</th><th>Protokol tipi</th><th style="width:160px">Durum</th></tr></thead><tbody data-tfbody></tbody></table></div>`,
+        <div class="tw"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:110px">Protokol</th><th>Hasta</th><th>Kurum</th><th style="width:110px">Tutar</th><th>Protokol tipi</th><th style="width:160px">Durum</th></tr></thead><tbody data-tfbody></tbody></table></div>`,
       actions:`<button class="btn p" data-tffat>Seçilenleri faturala</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
       onMount(m) { draw(m);
         const all = m.querySelector("[data-tfall]"); if (all) all.onchange = () => m.querySelectorAll("[data-tfc]").forEach(c => { c.checked = all.checked; });
