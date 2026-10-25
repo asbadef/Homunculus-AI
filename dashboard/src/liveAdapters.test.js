@@ -138,6 +138,28 @@ describe("alertsFromPatients", () => {
     expect(alerts[0].events).toEqual([]);
   });
 
+  // G2-A1 (O17): a critical whose rule stopped before anyone acknowledged it stays on the board,
+  // `resolved_at` set, until someone does.
+  it("is RESOLVED when its rule stopped before anyone acknowledged it, with the instant it stopped", () => {
+    const latched = { ...entry, alerts: [{ ...entry.alerts[0], severity: "critical",
+      resolved_at: "2026-08-27T10:04:00Z" }] };
+    const alert = alertsFromPatients([patientFromBoard(latched)])[0];
+    expect(alert.status).toBe("RESOLVED");
+    expect(alert.resolvedAtMs).toBe(Date.parse("2026-08-27T10:04:00Z"));
+    expect(alert.ack).toBeNull();
+    const firing = alertsFromPatients([patientFromBoard(entry)])[0];
+    expect([firing.status, firing.resolvedAtMs]).toEqual(["FIRED", null]);
+  });
+
+  it("names the episode by its first-seen instant: an alarm that cleared and came back is a new one", () => {
+    const again = { ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: "2026-08-27T11:30:00Z" }] };
+    const [first] = alertsFromPatients([patientFromBoard(entry)]);
+    const [second] = alertsFromPatients([patientFromBoard(again)]);
+    expect(first.episode).toBe("bed-3::sepsis::2026-08-27T10:00:00Z");
+    expect(second.episode).not.toBe(first.episode);
+    expect(second.id).toBe(first.id);                 // the alarm itself is the same one
+  });
+
   it("switches to ACKNOWLEDGED and carries who acknowledged it, once the engine says so", () => {
     const acked = { ...entry, alerts: [{ ...entry.alerts[0], acknowledged: true,
       acknowledged_by: "nurse", acknowledged_at: "2026-08-27T10:05:00Z" }] };

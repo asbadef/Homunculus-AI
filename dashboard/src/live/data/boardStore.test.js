@@ -380,6 +380,16 @@ describe("alarm counts and lists", () => {
     expect(alarmCounts({ alerts: escalated, connection: CONNECTION.LIVE }).waiting).toBe(1);
   });
 
+  // G2-A1 (O17): a critical whose condition passed before anyone acknowledged it is still a to-do.
+  it("keeps a RESOLVED alarm in the queue until somebody acknowledges it", () => {
+    const passed = alertsFromPatients(patientsFromBoard(board([
+      entry("P-001", [alert("septic_shock", "critical", { resolved_at: "2026-10-08T09:59:00Z" })]),
+    ])));
+    expect(passed[0].status).toBe("RESOLVED");
+    expect(waitingAlarms({ alerts: passed, connection: CONNECTION.LIVE }).items).toEqual(passed);
+    expect(alarmCounts({ alerts: passed, connection: CONNECTION.LIVE }).waiting).toBe(1);
+  });
+
   // The alarm sound and the notification act on what a board LOADED, whatever its stream is doing
   // (the previous workspace sounded its first load): LIVE, DEGRADED, or still connecting after the
   // first load landed. Only LIVE is `known` — only it may say an alarm stopped waiting. A board that

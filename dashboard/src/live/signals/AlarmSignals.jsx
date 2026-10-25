@@ -14,11 +14,15 @@
 //     first load), and, when the stream has dropped, on what the board last had (the old store kept
 //     its alarms then); on a board that never loaded, or whose load failed, it plays nothing.
 //   * A notification is raised for each critical alarm while the page is in the background
-//     (`document.hidden`), once per alarm, staying until dismissed (`requireInteraction`), with the
-//     old vibration pattern and, as the old one, a `tag` per alarm, so that two tabs of the same
-//     browser replace each other's rather than stack. Its text names the alarm's bed — the HIS bed
-//     label, else the patient id (liveAdapters.js `bedLabel`), exactly as the old one did (the
-//     user's decision, 13.10).
+//     (`document.hidden`), once per alarm episode, staying until dismissed (`requireInteraction`),
+//     with the old vibration pattern and, as the old one, a `tag` per alarm — per EPISODE since
+//     G2-A1, so a critical that cleared and came back is a new notification, not a silent
+//     replacement under the old tag —, so that two tabs of the same browser replace each other's
+//     rather than stack. Its text names the alarm's bed — the HIS bed label, else the patient id
+//     (liveAdapters.js `bedLabel`), exactly as the old one did (the user's decision, 13.10).
+//   * A RESOLVED alarm (G2-A1: a critical whose rule stopped before anyone acknowledged it) still
+//     waits, so a notification already raised for it stays; but it sounds nothing and raises no
+//     new notification — the sound and the vibration stop at resolve (signals.js `rings`).
 // What is new, because the old workspace had no lock screen and never ended a sound at sign-out:
 //   * It sits OUTSIDE the phases (LiveApp.jsx): the shell is unmounted when the screen locks, and a
 //     locked ward PC must still alert. The board runs while locked (`seesBoard`), so does the sound.
@@ -64,10 +68,11 @@ function fnv1a(text) {
   return hash.toString(16).padStart(8, "0");
 }
 
-/** The tag of one alarm's notification: a hash of its key, never the key — the key is
- *  `<patient_id>::<kind>`, and the patient id stays out of what the page hands the operating
- *  system (Decision 21). Two different alarms sharing a 32-bit hash would replace each other's
- *  notification; with a ward's handful of open alarms that is about one in a hundred million. */
+/** The tag of one alarm's notification: a hash of its key, never the key — the key is the
+ *  alarm's episode, `<patient_id>::<kind>::<first seen>` (liveAdapters.js `episode`, G2-A1), and
+ *  the patient id stays out of what the page hands the operating system (Decision 21). Two
+ *  different alarms sharing a 32-bit hash would replace each other's notification; with a ward's
+ *  handful of open alarms that is about one in a hundred million. */
 export const alarmTag = (key) => TAG_PREFIX + fnv1a(String(key));
 
 const SignalsContext = createContext(null);
@@ -211,7 +216,7 @@ export function AlarmSignals({ children }) {
     return () => window.removeEventListener("pagehide", closeAll);
   }, []);
 
-  // The notifications. Keyed by alarm id — or LOCKED, the one raised while locked.
+  // The notifications. Keyed by alarm EPISODE (G2-A1) — or LOCKED, the one raised while locked.
   const { alerts, connection, loaded } = board;
   useEffect(() => {
     const open = raised.current;
@@ -227,24 +232,26 @@ export function AlarmSignals({ children }) {
       for (const key of [...open.keys()]) close(key);
       return;
     }
-    const { known, items } = notifyFor({ alerts, connection, loaded });
-    const keys = locked ? (items.length ? [LOCKED] : []) : items.map((a) => a.id);
+    const { known, items, ringing } = notifyFor({ alerts, connection, loaded });
+    const keys = locked ? (items.length ? [LOCKED] : []) : items.map((a) => a.episode);
     for (const key of [...open.keys()]) {
       const lockChanged = locked !== (key === LOCKED);
       // Only a LIVE board may say an alarm stopped waiting; a lock or an unlock retires the other kind.
       if (lockChanged || (known && !keys.includes(key))) close(key);
     }
     if (!hidden) return;
+    // Raised only for what still rings: a RESOLVED alarm keeps a notification it already has, and
+    // gets no new one (signals.js `notifyFor`, G2-A1).
     if (locked) {
-      if (keys.length && !open.has(LOCKED)) {
+      if (ringing.length && !open.has(LOCKED)) {
         keep(LOCKED, raise(t("signals.notifyTitle"), t("signals.notifyBodyLocked"), { tag: TAG_PREFIX + LOCKED }));
       }
       return;
     }
-    for (const alarm of items) {
-      if (open.has(alarm.id)) continue;
-      keep(alarm.id, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
-        { tag: alarmTag(alarm.id) }));
+    for (const alarm of ringing) {
+      if (open.has(alarm.episode)) continue;
+      keep(alarm.episode, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
+        { tag: alarmTag(alarm.episode) }));
     }
   }, [active, permission, alerts, connection, loaded, locked, hidden, t]);
 

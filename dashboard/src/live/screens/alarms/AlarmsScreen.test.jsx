@@ -5,6 +5,7 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
 import { AlarmsScreen } from "./AlarmsScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -178,6 +179,30 @@ describe("the alarms screen", () => {
       expect(screen.getByText("Gördü: ayse")).toBeInTheDocument();
       // It moved to the second section: the button for it is gone.
       expect(screen.queryByRole("button", { name: "Gördüm" })).toBeNull();
+    });
+
+    // G2-A1 (O17): a critical whose condition passed before anyone acknowledged it.
+    it("keeps a critical whose condition passed waiting, with its badge, and still asks for the acknowledgement", async () => {
+      const passed = alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) });
+      const { api } = await open({
+        payload: withAlarms(passed),
+        setup: (fake) => fake.acknowledge.mockResolvedValue(entry("S-001", [], { ...CARD })),
+      });
+      const waiting = screen.getByRole("heading", { level: 2, name: /Cavab gözləyir/ }).parentElement;
+      const row = within(waiting).getByText("Septic shock criteria met").closest("li");
+      expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+      expect(row).toHaveTextContent(`keçdiyi saat: ${hhmm(NOW - 60_000)}`);
+      await act(async () => {
+        fireEvent.click(within(row).getByRole("button", { name: "Gördüm" }));
+        await settle();
+      });
+      expect(api.acknowledge).toHaveBeenCalledWith("S-001", "septic_shock");
+      expect(screen.queryByText("Septic shock criteria met")).toBeNull();     // the ack removed it
+    });
+
+    it("shows no such badge on an alarm that still fires", async () => {
+      await open({ payload: withAlarms(alarm("septic_shock", "critical")) });
+      expect(screen.queryByText("keçdi · təsdiqlənməyib")).toBeNull();
     });
 
     it("a refusal is shown and the list is NOT changed — nothing was acknowledged", async () => {

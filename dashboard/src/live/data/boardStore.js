@@ -463,6 +463,9 @@ const NEVER_SUPPRESSED = new Set(["critical", "high"]);
  */
 export const isChronicExpected = (a) => a?.downgraded === true && !NEVER_SUPPRESSED.has(a?.severity);
 
+// A RESOLVED alarm (G2-A1: a critical whose rule stopped before anyone acknowledged it) is never
+// acknowledged — an acknowledgement removes it — so it needs an answer, and the bell, the rail and
+// the lock screen count it. Only the sound and the notification's vibration stop (signals.js).
 const needsAnswer = (a) => !a.ack && !isChronicExpected(a);
 
 /** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or

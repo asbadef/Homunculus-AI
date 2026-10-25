@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../session/mount.testutil.jsx";
-import { alarm, board, entry, identity } from "../data/board.testutil.js";
+import { ago, alarm, board, entry, identity } from "../data/board.testutil.js";
 import { ANNOUNCE_DELAY_MS, Modal } from "../ui/index.js";
 import { alarmTag, useAlarmSignals } from "./AlarmSignals.jsx";
 import { fakeAudio, fakeNotifications, onPage } from "./fakeAudio.testutil.js";
@@ -109,6 +109,17 @@ describe("the alarm sound", () => {
     fireEvent.click(document.body);
     await flush();
     act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "ayse" })])); });
+    tick(10000);
+    expect(audio.pulses()).toHaveLength(10);
+  });
+
+  // G2-A1 (O17): the condition passed, nobody has acknowledged it yet — the screens keep it, the
+  // speaker does not.
+  it("stops when the alarm's condition passes, though it still waits for an answer", async () => {
+    const { audio, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])]);
+    fireEvent.click(document.body);
+    await flush();
+    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { resolved_at: ago(1) })])); });
     tick(10000);
     expect(audio.pulses()).toHaveLength(10);
   });
@@ -264,7 +275,7 @@ describe("the critical-alarm notification", () => {
   it("tags each notification so the browser replaces it rather than repeating it", async () => {
     const { notes, store, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { sound: false });
     act(() => { page.setHidden(true); });
-    expect(notes.shown[0].options.tag).toBe(alarmTag("S-001::septic_shock"));
+    expect(notes.shown[0].options.tag).toBe(alarmTag(`S-001::septic_shock::${ago(247)}`));   // its episode (G2-A1)
     act(() => { stream.drop(); });
     await act(async () => { store.lock(); });
     expect(notes.open().map((n) => n.options.tag)).toEqual(["homunculus-alarm:locked"]);
@@ -279,6 +290,29 @@ describe("the critical-alarm notification", () => {
     expect(tag).not.toContain("S-001");
     expect(alarmTag("S-001::septic_shock")).toBe(tag);
     expect(alarmTag("S-002::septic_shock")).not.toBe(tag);
+  });
+
+  // G2-A1 (O17): a critical whose condition passed still waits for its answer — the notification it
+  // has stays — but it vibrates no more, so it raises none of its own.
+  it("keeps the notification of an alarm whose condition passed, and raises none for one that passed unseen", async () => {
+    const { notes, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { sound: false });
+    act(() => { page.setHidden(true); });
+    expect(notes.open()).toHaveLength(1);
+    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { resolved_at: ago(1) })])); });
+    expect(notes.open()).toHaveLength(1);
+    act(() => { stream.frame(reaBed("S-002", [alarm("septic_shock", "critical", { resolved_at: ago(1) })])); });
+    expect(notes.shown).toHaveLength(1);
+  });
+
+  // A critical that cleared and fired again is a new episode: a new notification under a tag of its
+  // own, so the browser shows it again instead of replacing the old one without a sound.
+  it("raises a new notification, under a tag of its own, when an alarm fires again as a new episode", async () => {
+    const { notes, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { sound: false });
+    act(() => { page.setHidden(true); });
+    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { first_seen_at: ago(5) })])); });
+    expect(notes.shown).toHaveLength(2);
+    expect(notes.shown[0].closed).toBe(true);
+    expect(notes.shown[1].options.tag).not.toBe(notes.shown[0].options.tag);
   });
 
   // Closed from outside — the user, the operating system, another tab closing the same tag as it
