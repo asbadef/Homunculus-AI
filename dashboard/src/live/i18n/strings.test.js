@@ -44,6 +44,7 @@ const NEUTRAL = new Set([
   // Aşama A (monitor) · neutral — the bedside monitor's own labels, so the strip reads against its screen
   "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
+  "monitor.p.nbp", //              NBP — the Kappa's own label for the cuff pressure
 
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
@@ -137,6 +138,7 @@ const AZ_SAME_AS_TR = new Set([
   // Aşama A (monitor) · az = tr — the bedside monitor's own labels (HR, PLS, SpO₂, ART S…), not words
   "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
+  "monitor.p.nbp", //        NBP — the monitor's label, not a word
 
 ]);
 
@@ -197,5 +199,20 @@ describe("live UI dictionaries", () => {
   it("names keys <namespace>.<key>, nested keys joined with dots", () => {
     expect(DICTIONARIES.az["common.close"]).toBe("Bağla");
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");
+  });
+
+  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor» — so a
+  // clinician can match the legend to what the cell prints. If the cell's wording changes, the
+  // legend has to change with it: this holds the two together, language by language.
+  it("the NBP legend quotes the words the strip itself prints, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const legend = DICTIONARIES[lang]["monitor.legendNbp"];
+      const waiting = DICTIONARIES[lang]["monitor.nbpWaiting"];
+      const measured = DICTIONARIES[lang]["monitor.nbpMeasured"].split("{")[0];
+      expect(waiting.length, `${lang} nbpWaiting`).toBeGreaterThan(0);
+      expect(measured.trim().length, `${lang} nbpMeasured, up to its first {`).toBeGreaterThan(0);
+      expect(legend, `${lang} legendNbp quotes nbpWaiting "${waiting}"`).toContain(waiting);
+      expect(legend, `${lang} legendNbp quotes nbpMeasured "${measured}"`).toContain(measured);
+    }
   });
 });

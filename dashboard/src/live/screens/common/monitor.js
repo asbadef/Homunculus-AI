@@ -10,9 +10,10 @@
 // or not the next poll comes, and a wrong clock in this browser cannot make it look younger.
 import { ageParts } from "./feedHealth.js";
 
-/** The parameters in the API's own order (api/infinity_shadow.py PARAMETERS). */
+/** The parameters in the API's own order (api/infinity_shadow.py PARAMETERS), NBP's three readings
+ *  being the one `nbp` entry the board sends last. */
 export const PARAM_ORDER = Object.freeze(["hr", "pls", "spo2", "etco2", "temperature", "art_systolic",
-  "art_diastolic", "art_mean", "respiration"]);
+  "art_diastolic", "art_mean", "respiration", "nbp"]);
 
 /** Each parameter's evidence today, and the four only partly checked — the API's own tables
  *  (api/infinity_shadow.py EVIDENCE, PARTIAL; monitor.test.js holds this copy to them). The
@@ -20,7 +21,7 @@ export const PARAM_ORDER = Object.freeze(["hr", "pls", "spo2", "etco2", "tempera
 export const EVIDENCE = Object.freeze({
   hr: "screen_match_two_devices", pls: "screen_match_two_devices", spo2: "screen_match_two_devices",
   etco2: "screen_match_two_devices", art_systolic: "screen_match", temperature: "screen_match_site_unknown",
-  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap",
+  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap", nbp: "screen_match",
 });
 export const PARTIAL = Object.freeze(new Set(["temperature", "art_mean", "art_diastolic", "respiration"]));
 
@@ -68,15 +69,35 @@ export function displayAge(param, nowMs, fetchedAtMs) {
 /**
  * What one parameter's cell may show:
  *   {kind: "value", value, ageS}   a number, fresh (<= maxAgeS) and valid, from a working feed
+ *   {kind: "nbp", systolic, diastolic, mean, changedAtMs, measuredAgeS, ageS}
+ *                                  NBP, fresh and valid, with the time its value last changed — an
+ *                                  upper bound of the measurement — and how long ago that was
  *   {kind: "invalid", ageS}        the monitor itself shows "***"
- *   {kind: "old", ageS, lastAt}    anything else — the number is never drawn
+ *   {kind: "old", ageS, lastAt}    anything else — the number is never drawn. For NBP the age is the
+ *                                  change's, and `lastAt` null means no change has been seen yet
  */
 export function cellOf(param, { nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, feedOk = true } = {}) {
   const ageS = displayAge(param, nowMs, fetchedAtMs);
   const fresh = feedOk && ageS !== null && ageS <= maxAgeS;
+  if (param?.parameter === "nbp") return nbpCellOf(param, { ageS, fresh, nowMs, fetchedAtMs });
   if (fresh && param.state === "value" && Number.isFinite(param.value)) return { kind: "value", value: param.value, ageS };
   if (fresh && param.state === "invalid") return { kind: "invalid", ageS };
   return { kind: "old", ageS, lastAt: param?.last_at ?? null };
+}
+
+/** NBP's cell. The time since its value changed is the server's `measured_age_s`, aged like any
+ *  other age; the two-hour limit is the API's (past it the answer says `state: "old"`) and is never
+ *  decided here. */
+function nbpCellOf(param, { ageS, fresh, nowMs, fetchedAtMs }) {
+  const changedAtMs = Date.parse(param.changed_at ?? "");
+  if (!Number.isFinite(changedAtMs)) return { kind: "old", ageS: null, lastAt: null };
+  const measuredAgeS = displayAge({ age_s: param.measured_age_s }, nowMs, fetchedAtMs);
+  const { systolic, diastolic, mean } = param;
+  if (fresh && measuredAgeS !== null && param.state === "value" && [systolic, diastolic, mean].every(Number.isFinite)) {
+    return { kind: "nbp", systolic, diastolic, mean, changedAtMs, measuredAgeS, ageS };
+  }
+  if (fresh && param.state === "invalid") return { kind: "invalid", ageS };
+  return { kind: "old", ageS: measuredAgeS, lastAt: param.changed_at };
 }
 
 /** An age in the board's own words ("3 san", "2 dəq"), rounded up; null for none. */
@@ -127,8 +148,10 @@ export function reasonKey(reason) {
   return "monitor.reasonTable";
 }
 
-/** The newest instant a device's parameters were captured, in ms; null when it holds none. */
+/** The newest instant a device's parameters were captured, in ms; null when it holds none. NBP's
+ *  entry is left out: withheld, its `last_at` is when its value changed, not when the monitor sent. */
 export function lastSeenMs(entry) {
-  const stamps = (entry?.parameters ?? []).map((p) => Date.parse(p.last_at)).filter(Number.isFinite);
+  const stamps = (entry?.parameters ?? []).filter((p) => p.parameter !== "nbp")
+    .map((p) => Date.parse(p.last_at)).filter(Number.isFinite);
   return stamps.length ? Math.max(...stamps) : null;
 }

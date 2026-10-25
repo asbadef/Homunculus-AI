@@ -50,6 +50,68 @@ class TestTheUnitIsTheEpisode:
                    rec("first_seen", "bed-1", "sepsis", 90), rec("ack", "bed-1", "sepsis", 93)]
         assert alarm_quality(records, _now(200)).episodes == 2
 
+    def test_two_episodes_of_one_kind_each_end_at_their_alert_cleared_row(self):
+        """G2-A1 (O17): a heart rate of 140 → 80 → 140 → 80 is two NEWS2 episodes, each closed when
+        its rule stopped. The `alert` row that opens the second one (the door writes it before the
+        `first_seen`) is no repeat of the first: that one had ended."""
+        records = [rec("alert", "bed-1", "news2", 0), rec("first_seen", "bed-1", "news2", 0),
+                   rec("alert_cleared", "bed-1", "news2", 1, reason="resolved", severity="moderate"),
+                   rec("alert", "bed-1", "news2", 2), rec("first_seen", "bed-1", "news2", 2),
+                   rec("ack", "bed-1", "news2", 2.5, role="ayse"),
+                   rec("alert_cleared", "bed-1", "news2", 3, reason="resolved", severity="moderate")]
+        episodes = build_episodes(records)
+        assert [(e.started, e.resolved_at, e.ended_at) for e in episodes] == [
+            (_now(0), _now(1), _now(1)), (_now(2), _now(3), _now(3))]
+        report = alarm_quality(records, _now(60))
+        assert (report.episodes, report.repeats, report.answered) == (2, 0, 1)
+
+    def test_a_latched_critical_stays_open_until_the_acknowledgement_that_removes_it(self):
+        """A critical nobody answered latches when its rule stops (`alert_cleared`, resolved); the
+        acknowledgement that removes it — `ack`, then `alert_cleared`, acked_after_resolve — answers
+        it. Closed at the first row, that answer would be dropped and the alarm counted as ignored."""
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical"),
+                   rec("ack", "bed-1", "septic_shock", 4, role="ayse"),
+                   rec("alert_cleared", "bed-1", "septic_shock", 4, reason="acked_after_resolve",
+                       severity="critical")]
+        (episode,) = build_episodes(records)
+        assert (episode.resolved_at, episode.answered_at, episode.ended_at) == (_now(2), _now(4), _now(4))
+        report = alarm_quality(records, _now(60))
+        assert (report.answered, report.unanswered, report.median_response_sec) == (1, 0, 240.0)
+
+    def test_a_latched_critical_is_answered_whichever_row_the_acknowledgement_writes_first(self):
+        """`/ack` writes two rows for one act, an `ack` and an `alert_cleared` (acked_after_resolve),
+        and the report must not hang on their order: the cleared row alone is the acknowledgement."""
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical"),
+                   rec("alert_cleared", "bed-1", "septic_shock", 4, reason="acked_after_resolve",
+                       severity="critical"),
+                   rec("ack", "bed-1", "septic_shock", 4, role="ayse")]   # lands after the close
+        (episode,) = build_episodes(records)
+        assert (episode.resolved_at, episode.answered_at, episode.ended_at) == (_now(2), _now(4), _now(4))
+        report = alarm_quality(records, _now(60))
+        assert (report.answered, report.unanswered, report.median_response_sec) == (1, 0, 240.0)
+
+    def test_a_latched_critical_that_fires_again_and_stops_again_reports_its_last_stop(self):
+        """The latch replaces itself when its kind fires again, with no row for the return; the stop
+        that follows writes a second `resolved` row, and the board shows that one."""
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical"),
+                   rec("alert_cleared", "bed-1", "septic_shock", 5, reason="resolved", severity="critical"),
+                   rec("ack", "bed-1", "septic_shock", 7, role="ayse"),
+                   rec("alert_cleared", "bed-1", "septic_shock", 7, reason="acked_after_resolve",
+                       severity="critical")]
+        (episode,) = build_episodes(records)
+        assert (episode.resolved_at, episode.answered_at, episode.ended_at) == (_now(5), _now(7), _now(7))
+
+    def test_an_answered_critical_ends_when_its_rule_stops(self):
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("ack", "bed-1", "septic_shock", 1, role="ayse"),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical"),
+                   rec("escalation", "bed-1", "septic_shock", 7)]       # no episode is open any more
+        (episode,) = build_episodes(records)
+        assert (episode.ended_at, episode.escalated) == (_now(2), False)
+
     def test_an_ack_for_an_episode_outside_the_window_is_dropped_not_invented(self):
         """Its `first_seen` belongs to the previous window; opening an episode for it here would
         double-count the same disturbance in two reports."""

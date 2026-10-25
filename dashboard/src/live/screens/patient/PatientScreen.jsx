@@ -100,6 +100,8 @@ function Finding({ alarm }) {
         <RiskPill risk={severity} measured />
         <h3 lang="en" className="m-0 min-w-0 flex-1 font-display text-15 font-bold">{summaryOf(alarm) ?? t("board.findingUnnamed")}</h3>
         {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
+        {/* G2-A1 (O17): the alarms screen's own badge — this finding's condition passed before anyone acknowledged it. */}
+        {alarm.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
         {alarm.downgraded ? <StatusPill tone="neutral" icon="minus">{t("patient.recoDowngraded")}</StatusPill> : null}
       </div>
       <p className="m-0 mt-1 text-12.5 text-mute">{t("patient.recoDecision")}</p>

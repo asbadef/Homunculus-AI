@@ -1,4 +1,5 @@
-"""Aşama A's hub forwarder: thinned, fresh, no NBP, display only, off unless its environment is set.
+"""Aşama A's hub forwarder: thinned, fresh, NBP only with the time it changed, display only, off unless
+its environment is set.
 
 Synthetic only: the live view's own test inventory (192.0.2.x / 239.20.1.x) and the records
 decoder's test records. The end-to-end tests carry a `thin` body into the clinical API's shadow
@@ -61,13 +62,42 @@ def _names(body, index=0):
 
 # --- thin ----------------------------------------------------------------------------------------
 
-def test_thin_sends_hr_and_spo2_and_never_nbp():
+def _nbp(systolic, diastolic, mean):
+    return record(NBP_SYS, systolic) + record(NBP_DIA, diastolic) + record(NBP_MEAN, mean)
+
+
+def test_thin_sends_nbp_with_its_change_time_and_not_before_a_change_was_seen():
     view, now = _view()
-    view.consume([event(T - 0.2, PAYLOAD + record(NBP_SYS, 120) + record(NBP_DIA, 80) + record(NBP_MEAN, 93))])
+    view.consume([event(T - 2.2, PAYLOAD + _nbp(120, 80, 93))])     # first seen after a start: time unknown
     body = _thin(view, now)
-    assert _names(body) == ["hr", "spo2"]
-    assert not [n for n in FORWARDED if n.startswith("nbp_")]
-    assert "nbp" not in json.dumps(body)
+    assert _names(body) == ["hr", "spo2"] and "nbp" not in json.dumps(body)
+    view.consume([event(T - 1.2, PAYLOAD + _nbp(118, 79, 92))])     # the triple changed: measured at or before
+    view.consume([event(T - 0.2, PAYLOAD + _nbp(118, 79, 92))])     # and repeated in every packet
+    readings = _thin(view, now)["devices"][0]["readings"]
+    assert [r["parameter"] for r in readings] == ["hr", "spo2", "nbp_systolic", "nbp_diastolic", "nbp_mean"]
+    assert readings[2] == {"parameter": "nbp_systolic", "value": 118, "unit": "mmHg", "valid": True,
+                           "captured_at": T - 0.2, "changed_at": T - 1.2}
+    assert {r["changed_at"] for r in readings[2:]} == {T - 1.2}
+    assert not any("changed_at" in r for r in readings[:2])
+    assert [n for n in FORWARDED if n.startswith("nbp_")] == ["nbp_systolic", "nbp_diastolic", "nbp_mean"]
+
+
+def test_a_newer_nbp_value_without_its_triple_is_not_sent_with_the_older_time():
+    view, now = _view()
+    view.consume([event(T - 2.2, _nbp(120, 80, 93)), event(T - 1.2, _nbp(118, 79, 92))])
+    view.consume([event(T - 0.2, record(NBP_SYS, 105))])           # a packet carrying the systolic alone
+    assert _names(_thin(view, now)) == ["nbp_diastolic", "nbp_mean"]
+
+
+def test_an_nbp_three_seconds_old_never_leaves_the_hub():
+    view, now = _view()
+    view.consume([event(T - 1.0, _nbp(120, 80, 93)), event(T - 0.5, _nbp(118, 79, 92))])
+    now[0] = T + 2.4                                               # the packet is 2.9 s old
+    assert _names(_thin(view, now)) == ["nbp_systolic", "nbp_diastolic", "nbp_mean"]
+    now[0] = T + 2.5                                               # 3.0 s: no older value leaves the hub
+    entry = view.snapshot()["devices"][0]["parameters"]["nbp_systolic"]
+    assert (entry["status"], entry["changed_at"]) == ("stale", T - 0.5)    # stale, yet it keeps its time
+    assert _names(_thin(view, now)) == []                          # so it is thin() that drops it
 
 
 def test_airway_respiration_is_never_sent_and_impedance_respiration_is():
@@ -144,7 +174,7 @@ def test_the_body_names_the_forwarder_the_hub_and_the_decoder():
     view, now = _view()
     view.consume([event(T - 0.2, PAYLOAD)])
     body = _thin(view, now, collector_age=None, counters={"sent": 7, "failed": 2})
-    assert (body["schema"], body["sent_at"]) == (SCHEMA, T)
+    assert (body["schema"], body["sent_at"]) == (SCHEMA, T) and SCHEMA == "homunculus.infinity-shadow.v2"
     assert body["forwarder"] == {"interval_s": INTERVAL_S, "sent": 7, "failed": 2,
                                  "decoder": "homunculus.infinity-preview.v3"}
     assert body["hub"] == {"collector_age_s": None, "accepted_packets": 1, "old_or_duplicate_packets": 0}
@@ -380,7 +410,7 @@ def _api(tmp_path, clock, *, stage="shadow"):
                                  shadow_clock=clock))
 
 
-def _run_cycles(view, now, client, cycles, collector_age=lambda: 1.0):
+def _run_cycles(view, now, client, cycles, collector_age=lambda: 1.0, payload=PAYLOAD):
     """The real loop, the real sender; the live view and the API on one clock."""
     stop, pauses = threading.Event(), []
     sender = ShadowSender("https://api.test/infinity-shadow/readings", TOKEN, "unused", opener=ClientOpener(client))
@@ -389,7 +419,7 @@ def _run_cycles(view, now, client, cycles, collector_age=lambda: 1.0):
     def wait(pause):
         pauses.append(pause)
         now[0] += pause
-        view.consume([event(now[0] - 0.3, PAYLOAD, index=0, inv=inv)])       # the monitor keeps sending
+        view.consume([event(now[0] - 0.3, payload, index=0, inv=inv)])       # the monitor keeps sending
         if len(pauses) >= cycles:
             stop.set()
 
@@ -399,15 +429,21 @@ def _run_cycles(view, now, client, cycles, collector_age=lambda: 1.0):
 
 def test_a_thinned_body_lands_in_the_api_lane_and_on_the_board(tmp_path):
     view, now = _view(2)
-    view.consume([event(T - 0.3, PAYLOAD, index=0, inv=inventory(2))])
+    view.consume([event(T - 0.5, PAYLOAD + _nbp(120, 80, 93), index=0, inv=inventory(2)),
+                  event(T - 0.3, PAYLOAD + _nbp(118, 79, 92), index=0, inv=inventory(2))])   # NBP changed at T - 0.3
     client = _api(tmp_path, lambda: now[0])
-    assert _run_cycles(view, now, client, 3) == [INTERVAL_S] * 3
+    assert _run_cycles(view, now, client, 3, payload=PAYLOAD + _nbp(118, 79, 92)) == [INTERVAL_S] * 3
     board = client.get("/infinity-shadow/board", headers={"Authorization": f"Bearer {DEVICE}"}).json()
     (bed,) = board["beds"]
     assert (bed["bed_label"], bed["source"], bed["status"]) == ("B-1", "192.0.2.1", "streaming")
     params = {p["parameter"]: p for p in bed["parameters"]}
     assert (params["hr"]["state"], params["hr"]["value"], params["hr"]["unit"]) == ("value", 70, "bpm")
     assert params["spo2"]["value"] == 97
+    nbp = params["nbp"]
+    assert (nbp["state"], nbp["systolic"], nbp["diastolic"], nbp["mean"], nbp["unit"]) == ("value", 118, 79, 92, "mmHg")
+    assert nbp["changed_at"] == datetime.datetime.fromtimestamp(T - 0.3, datetime.timezone.utc).isoformat()
+    assert nbp["measured_age_s"] == 15.3                           # at T + 15, the third cycle's end
+    assert not [p for p in params if p.startswith("nbp_")]
     (unheard,) = board["unassigned"]
     assert (unheard["source"], unheard["reason"], unheard["status"]) == ("192.0.2.2", "not_in_table", "waiting")
     feed = board["feed"]

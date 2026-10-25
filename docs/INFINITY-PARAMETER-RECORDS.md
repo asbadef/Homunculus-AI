@@ -133,11 +133,27 @@ ofsetleri kayar ve profil sessizce yanlış alan okumaya başlar.
   değil", "MAP bağıntısı ve ekran eğilimi", "Yalnız yapısal kontrol (MAP bağıntısı); ekranla
   karşılaştırılmadı". Kısmi doğrulanan parametre "KISMİ" rozeti taşır; hangi parametrenin hangi
   düzeyde olduğu Ayarlar'daki açıklamada ve Aşama A planının tablosundadır. Cihazın geçersiz
-  işaretlediği değer sayı olarak değil `***` olarak çizilir. **NBP şeritte yoktur, bilerek:** son
-  NBP her pakette geçerli kayıt olarak yinelenir (yukarıda "Geçerlilik bayrağı") ve cihaz zaman
-  damgası çözülmediği için manşonun ne zaman ölçtüğü bilinemez. Şeritte yaşı anlamsız tek değer
-  olurdu; hastanın değiştiği bir yatakta önceki hastanın NBP'si de olabilirdi. NBP başucu
-  monitöründen okunur.
+  işaretlediği değer sayı olarak değil `***` olarak çizilir.
+- **NBP şeritte, değerinin son değiştiği saatle (NBP dilimi, hub sürümü R4).** Son NBP her pakette
+  geçerli kayıt olarak yinelenir (yukarıda "Geçerlilik bayrağı") ve cihaz zaman damgası
+  çözülmediği için paketin yaşı manşonun ne zaman ölçtüğünü söylemez. Hub bunun yerine, cihaz
+  başına (sistolik, diyastolik, ortalama) üçlüsünün **değiştiği** paketin alınış saatini tutar:
+  ölçüm o anda ya da daha önce olmuştur, saat bir **üst sınırdır** ve şerit "ölçüm ≤ SS:DD (N dk)"
+  yazar. Değişiklik, ancak bir önceki tam ve geçerli üçlü en çok 3 saniye önce gelmişse saatini
+  alır; daha uzun bir boşluktan sonra (ağ ya da cihaz kesintisi, `***` ya da eksik bileşenli
+  paketlerle geçen bir süre) görülen değişikliğin saati bilinmez, çünkü boşluğun herhangi bir
+  anında olmuş olabilir. Gösterilen saat, hub saatine göre, gerçeğinden en çok 3 saniye yeni
+  olabilir; işçi ile API saatleri arasındaki en çok 2 saniyelik kayma şeritteki her yaş için
+  aynıdır. Hub yeniden başladıktan sonra, ya da değer böyle bir boşluk sırasında değiştiyse, NBP
+  değeri değiştiren bir sonraki ölçüme kadar gösterilmez ("— ölçüm bekleniyor"); aynı değer bir
+  kesintiden sonra geri gelirse eski, hâlâ doğru saatiyle hemen görünür. Değeri 2 saatten uzun
+  süredir değişmemiş NBP gösterilmez ("— eski · 3 sa"): API bunu 2 saatten 15 saniye önce
+  (tarayıcının bir değeri gösterme penceresi) keser ki hiçbir ekranda NBP 2 saati geçmesin. Aynı
+  değerle yinelenen bir ölçüm fark edilmez: saat gerçeğinden eski kalır, hiçbir zaman yeni değil.
+  Üç bileşen tek bir pakette, geçerli ve tam gelmelidir; eksik ya da `***` bileşenli paket ne
+  değişiklik sayılır, ne tutulan üçlüyü siler, ne de 3 saniyelik süreyi başlatır ya da sürdürür.
+  Hastanın değiştiği bir yatakta önceki hastanın NBP'si, yeni ölçüme ya da 2 saate kadar
+  görünebilir; cihaz→hasta bağı geldiğinde (Aşama B) bağ değişince NBP sıfırlanacak.
 
 ## Uygulama ve dağıtım — 22 Eylül 2026
 

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
 from homunculus.api.identity import Caller
-from homunculus.api.infinity_shadow import SCHEMA, ShadowSettings, shadow_settings_from_env
+from homunculus.api.infinity_shadow import SCHEMA, SCHEMA_V1, ShadowSettings, shadow_settings_from_env
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
 from homunculus.scope import Scope, ScopeReason
 from homunculus.tenant.bedmap import BedMap, BedRef
@@ -247,6 +247,71 @@ def test_a_valid_post_is_200_with_its_counts(tmp_path):
                                                             "unknown_parameter": 0, "duplicate": 0}}
 
 
+def _with_nbp(body, source="192.0.2.10", *, changed_at):
+    """The body with the forwarder's three NBP readings added to one device (v2)."""
+    for device in body["devices"]:
+        if device["source"] == source:
+            captured = device["readings"][0]["captured_at"]
+            device["readings"] += [{"parameter": name, "value": value, "unit": "mmHg", "valid": True,
+                                    "captured_at": captured, "changed_at": changed_at}
+                                   for name, value in (("nbp_systolic", 118), ("nbp_diastolic", 79),
+                                                       ("nbp_mean", 92))]
+    return body
+
+
+def test_a_v1_body_from_the_r3_hub_is_still_200(tmp_path):
+    # The API is deployed first; until drop-in 94 the hub keeps sending v1.
+    client, clock, _ = _app(tmp_path)
+    response = _post(client, clock, body={**_body(clock.t), "schema": SCHEMA_V1})
+    assert response.status_code == 200 and response.json()["accepted"] == 10
+    board = _board(client)                                           # and the strip is as it was: no NBP
+    assert [p["parameter"] for p in board["beds"][0]["parameters"]] == ["hr", "spo2"]
+
+
+def test_a_v2_body_puts_nbp_on_the_board_as_one_entry_with_the_time_it_changed(tmp_path):
+    client, clock, _ = _app(tmp_path)
+    assert SCHEMA == "homunculus.infinity-shadow.v2"
+    assert _post(client, clock, body=_with_nbp(_body(clock.t), changed_at=clock.t - 754.0)).json()["accepted"] == 13
+    clock.t += 2.0
+    board = _board(client)
+    one = next(b for b in board["beds"] if b["source"] == "192.0.2.10")
+    entry = one["parameters"][-1]
+    assert [p["parameter"] for p in one["parameters"]] == ["hr", "spo2", "nbp"]
+    assert (entry["state"], entry["systolic"], entry["diastolic"], entry["mean"], entry["unit"]) == (
+        "value", 118, 79, 92, "mmHg")
+    assert entry["changed_at"].startswith("2027-01-15T07:47:26") and entry["measured_age_s"] == 756.0
+    assert (entry["age_s"], entry["evidence"], entry["partial"]) == (2.4, "screen_match", False)
+    assert "nbp_systolic" not in json.dumps(board)                   # the wire's names stop at the API
+
+
+def test_a_change_time_on_anything_but_nbp_refuses_the_body(tmp_path):
+    client, clock, _ = _app(tmp_path)
+    body = _body(clock.t)
+    body["devices"][0]["readings"][0]["changed_at"] = clock.t - 60.0
+    response = _post(client, clock, body=body)
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+    assert _board(client)["feed"]["state"] == "never"
+
+
+@pytest.mark.parametrize("path", [("sent_at",), ("forwarder", "interval_s"), ("hub", "collector_age_s"),
+                                  ("devices", 0, "packet_age_ms"), ("devices", 0, "readings", 0, "value"),
+                                  ("devices", 0, "readings", 0, "captured_at")])
+def test_an_integer_too_large_for_a_float_is_400_in_any_numeric_field_and_keeps_nothing(tmp_path, path):
+    # JSON `1` followed by 400 zeros parses to a Python int; `math.isfinite` cannot turn it into a
+    # float. Asked of the wire (no re-raised server error), so a 500 shows as a 500.
+    client, clock, _ = _app(tmp_path)
+    wire = TestClient(client.app, raise_server_exceptions=False)
+    body = _body(clock.t)
+    holder = body
+    for key in path[:-1]:
+        holder = holder[key]
+    holder[path[-1]] = 10 ** 400
+    response = wire.post("/infinity-shadow/readings", content=json.dumps(body).encode(),
+                         headers={**_hdr(SHADOW), "Content-Type": "application/json"})
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+    assert _board(wire)["feed"]["state"] == "never"                  # nothing was kept
+
+
 # --- GET -------------------------------------------------------------------------------------------
 
 def test_the_board_with_the_stage_off_is_exactly_stage_off(tmp_path):
@@ -397,10 +462,12 @@ def test_the_board_body_carries_evidence_state_ages_the_table_and_the_feed(tmp_p
     assert board["table"] == {"status": "ok", "reason": None, "version": 7,
                               "sha256": hashlib.sha256(raw).hexdigest(), "approved_at": "2026-07-14",
                               "site": "synthetic"}
-    hr, spo2 = board["beds"][0]["parameters"]
+    hr, spo2, nbp = board["beds"][0]["parameters"]
     assert (hr["parameter"], hr["state"], hr["value"], hr["unit"], hr["age_s"], hr["evidence"]) == (
         "hr", "value", 72, "bpm", 2.4, "screen_match_two_devices")
     assert (spo2["state"], spo2["value"]) == ("invalid", None)
+    assert (nbp["parameter"], nbp["state"], nbp["systolic"], nbp["last_at"], nbp["changed_at"]) == (
+        "nbp", "old", None, None, None)                              # no NBP came: awaiting a change
     feed = board["feed"]
     assert (feed["state"], feed["last_post_age_s"], feed["collector_connected"]) == ("ok", 2.0, True)
     assert feed["devices"] == {"total": 5, "streaming": 5, "standby": 0, "silent": 0, "waiting": 0,

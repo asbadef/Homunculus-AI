@@ -32,7 +32,7 @@ import { useShell } from "../../shell/ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readPref, writePref } from "../../prefs.js";
-import { Box, Empty, Field, Icon, Input, RiskPill, Seg, Table } from "../../ui/index.js";
+import { Box, Empty, Field, Icon, Input, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
@@ -182,6 +182,8 @@ function BedList({ patients, alertsOf, monitored }) {
               <td className={p.display_name ? "" : "italic text-mute"}>
                 {nameOf(p, t)}
                 {open.length ? <small lang="en" className="block text-11 text-mute">{summaryOf(open[0]) ?? t("board.findingUnnamed")}</small> : null}
+                {/* G2-A1 (O17): outside the `lang="en"` line — the badge is the interface's own words. */}
+                {open[0]?.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
                 {/* Aşama A: the list has no room for the strip, so it says where the strip is —
                     a linked monitor is never silently dropped. No value of it appears here. */}
                 {monitored.has(p.patient_id) ? <small data-monitor-slot="" className="block text-11 text-mute">{t("monitor.inCards")}</small> : null}

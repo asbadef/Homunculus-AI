@@ -7,7 +7,9 @@
 // needs `audit.view`, which no nurse has, and whose reads return the OLDEST rows first (a known
 // engine defect, roadmap "Dalga 0'dan açık kalanlar"). An empty "closed today" section would read
 // as "nothing was closed today", which is a different and false statement. So the screen says in
-// one sentence where a closed alarm went, and shows two sections.
+// one sentence where a closed alarm went, and shows two sections. Since G2-A1 one kind of alarm
+// stays although its condition passed: a critical nobody acknowledged (status RESOLVED). It waits
+// in the first section, with a badge, until someone acknowledges it — which removes it.
 //
 // ONE ESCALATION FACT, NOT A LADDER. The prototype draws three pills — 3 / 5 / 10 minutes,
 // charge nurse / physician / rapid-response — and advances them when a human clicks "Escalate".
@@ -54,7 +56,11 @@ function oldestFirst(a, b) {
   return (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity);
 }
 function worstFirst(a, b) {
-  return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || oldestFirst(a, b);
+  // After severity, an alarm that still fires before a critical that passed unacknowledged
+  // (G2-A1): the latter waits for an answer, but the former is what is happening now.
+  return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
+    || (a.status === "RESOLVED") - (b.status === "RESOLVED")
+    || oldestFirst(a, b);
 }
 
 function Row({ alarm, nowMs, canAck, onAck, busy }) {
@@ -86,6 +92,16 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
           )}
           {Number.isFinite(alarm.firstSeenAtMs) ? <span className="font-data">{hhmm(alarm.firstSeenAtMs)}</span> : null}
           {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
+          {/* G2-A1 (O17): a critical whose condition passed before anyone acknowledged it stays
+              here, waiting, until someone does. Its sound has stopped (signals.js); the badge and
+              the instant it passed say why it is still on the list. */}
+          {alarm.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
+          {alarm.status === "RESOLVED" && Number.isFinite(alarm.resolvedAtMs) ? (
+            <span>
+              <span className="sr-only">{`${t("alarms.resolvedAt")}: `}</span>
+              <span className="font-data">{hhmm(alarm.resolvedAtMs)}</span>
+            </span>
+          ) : null}
           {/* Visible, and marked as the engine's own explanation — but NOT in the counts that mean
               "someone must answer this" (boardStore `needsAnswer`). */}
           <ChronicExpected alarm={alarm} />
@@ -95,7 +111,8 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
       </div>
       {canAck && alarm.status !== "ACKNOWLEDGED" ? (
         <>
-          <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}>
+          <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}
+            aria-label={t("alarms.ackLabel", { bed, kind: alarm.kind })}>
             {t("alarms.seen")}
           </Button>
           {/* A busy Button reads only "unavailable" to a screen reader; the words come from here

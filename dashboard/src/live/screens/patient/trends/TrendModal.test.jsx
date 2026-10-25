@@ -319,8 +319,8 @@ describe("the big chart's legend", () => {
   it("explains every mark in words: the server's NEWS2 source, both band tones, both marks, the dashed line", async () => {
     await open();
     expect(legend()).toHaveTextContent("NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017");
-    // ▲ is the finding's first detection for this patient, not every episode (O17).
-    for (const words of ["1–2 bal", "3 bal", "siqnalın ilk aşkarlanması", "antibiotik", "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil"]) {
+    // ▲ is where an alarm episode began (G2-A1, O17): one mark per episode.
+    for (const words of ["1–2 bal", "3 bal", "siqnalın başladığı an", "antibiotik", "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil"]) {
       expect(legend()).toHaveTextContent(words);
     }
     expect(legend()).not.toHaveTextContent("xəstənin norması");            // none charted
@@ -588,7 +588,7 @@ describe("the big chart as a table", () => {
     for (const value of [80, 64, 70]) expect(cells("map", value)[3].textContent).toBe("");
   });
 
-  it("carries the legend's notes into the table — thinned, marks cut short, an alarm's first detection — but not the chart's swatches", async () => {
+  it("carries the legend's notes into the table — thinned, marks cut short, when an alarm began — but not the chart's swatches", async () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
       [point(90, 84, 0), point(60, 90, 0), point(30, 96, 1)], { thinned: true, total_points: 2500 })], { hours, markers_truncated: true })));
     await table();
@@ -596,7 +596,7 @@ describe("the big chart as a table", () => {
     expect(notes).toHaveAttribute("role", "list");
     expect(notes).toHaveTextContent("Nəbz seyrəldildi: 2500 nöqtədən 3");
     expect(notes).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
-    expect(notes).toHaveTextContent("siqnalın ilk aşkarlanması");
+    expect(notes).toHaveTextContent("siqnalın başladığı an");
     expect(dialog().querySelector("[data-legend]")).toBeNull();
   });
 

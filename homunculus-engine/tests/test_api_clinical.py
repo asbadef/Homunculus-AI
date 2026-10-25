@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.clinical import ClinicalEntryError, build_entries
 from homunculus.canonical import SignalCode
 
@@ -27,6 +28,21 @@ def client():
     app = create_app({TOKEN: "h1"}, run_escalation_loop=False)
     with TestClient(app) as c:
         yield c
+
+
+class _FailsOnce(InMemoryAuditLog):
+    """An audit log whose next append of `fail_on` raises once — the database going away
+    mid-request."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on = None
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            self.fail_on = None
+            raise RuntimeError("audit down")
+        return super().append(event)
 
 
 def _chart(client, patient_id: str, entries: list[dict], at: datetime = WHEN):
@@ -181,3 +197,120 @@ class TestBuildEntries:
         assert {e.observation.code for e in built} == {
             SignalCode.ARTERIAL_PH, SignalCode.BICARBONATE, SignalCode.SODIUM,
             SignalCode.POTASSIUM, SignalCode.HAEMATOCRIT, SignalCode.WHITE_CELL_COUNT}
+
+
+class TestChartingEndsAnAlert:
+    """G2-A1 (O17): charting is often what ends an alert — the antibiotic given, the infection
+    ruled out — and this door ends it exactly as /ingest does."""
+
+    def _rows(self, client, kind, event_type):
+        rows = client.get("/audit", params={"patient_id": "bed-3", "limit": 10000},
+                          headers=AUTH).json()["records"]
+        return [r for r in rows if r["subject"] == kind and r["event_type"] == event_type]
+
+    def _alert(self, client, kind):
+        board = client.get("/patients", headers=AUTH).json()["patients"]
+        return next((a for b in board for a in b["alerts"] if a["kind"] == kind), None)
+
+    def _ingest(self, client, code, value, minute):
+        fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
+                "subject": {"reference": "Patient/bed-3"},
+                "effectiveDateTime": (WHEN + timedelta(minutes=minute)).isoformat(),
+                "valueQuantity": {"value": value, "unit": ""}}
+        assert client.post("/ingest", json=fhir, headers=AUTH).status_code == 200
+
+    def test_charting_the_antibiotic_ends_the_clock_and_its_episode(self, client):
+        _chart(client, "bed-3", [
+            {"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 80}])
+        _chart(client, "bed-3", [{"code": "creatinine", "value": 2.4}])
+        assert self._alert(client, "antibiotic_due") is not None
+        _chart(client, "bed-3", [{"code": "antibiotic_administered", "value": 1}],
+               at=WHEN + timedelta(minutes=20))
+        assert self._alert(client, "antibiotic_due") is None
+        (closed,) = self._rows(client, "antibiotic_due", "alert_cleared")
+        assert (closed["payload"]["reason"], closed["payload"]["severity"]) == ("resolved", "high")
+
+    def test_a_critical_that_charting_ends_latches_until_it_is_acknowledged(self, client):
+        _chart(client, "bed-3", [
+            {"code": "suspected_infection", "value": 1}, {"code": "lactate", "value": 3.4},
+            {"code": "norepinephrine_rate", "value": 0.08}, {"code": "weight_kg", "value": 50}])
+        _chart(client, "bed-3", [{"code": "crystalloid_bolus_ml", "value": 1600}])
+        assert self._alert(client, "septic_shock")["resolved_at"] is None
+        _chart(client, "bed-3", [{"code": "suspected_infection", "value": 0}],
+               at=WHEN + timedelta(minutes=10))
+        shock = self._alert(client, "septic_shock")
+        assert shock["resolved_at"] is not None and shock["acknowledged"] is False
+        assert self._alert(client, "sepsis") is None, "HIGH does not latch"
+        _chart(client, "bed-3", [{"code": "lactate", "value": 3.0}], at=WHEN + timedelta(minutes=15))
+        assert len(self._rows(client, "septic_shock", "first_seen")) == 1, \
+            "a latched alert keeps its episode's stamp: charting does not open another"
+
+    def test_a_critical_that_fired_and_ended_in_one_request_is_never_stamped(self, client):
+        """Charting stamps this patient's FIRING alerts only: a latched one was never seen firing
+        here, and a stamp now would open an episode after its end."""
+        _chart(client, "bed-3", [
+            {"code": "suspected_infection", "value": 1}, {"code": "lactate", "value": 3.4},
+            {"code": "norepinephrine_rate", "value": 0.08}, {"code": "weight_kg", "value": 50},
+            {"code": "crystalloid_bolus_ml", "value": 1600},
+            {"code": "suspected_infection", "value": 0}])
+        assert self._alert(client, "septic_shock")["resolved_at"] is not None, "it latched"
+        _chart(client, "bed-3", [{"code": "lactate", "value": 3.0}], at=WHEN + timedelta(minutes=5))
+        assert self._rows(client, "septic_shock", "first_seen") == []
+
+    def test_a_kind_charting_ended_tells_the_nurse_again_when_it_returns(self, client):
+        """Pins the notifier prune on this door (D5): charting that ends an acknowledged alert takes
+        the kind out of the live keys, so a later reading that brings it back is a new episode."""
+        for code, value in [("suspected_infection", 1.0), ("weight_kg", 100.0),
+                            ("crystalloid_bolus_ml", 3000.0), ("map", 60.0),
+                            ("norepinephrine_rate", 0.12), ("lactate", 3.1)]:
+            self._ingest(client, code, value, minute=0)
+        r = client.post("/ack", json={"patient_id": "bed-3", "kind": "septic_shock", "role": "nurse"},
+                        headers=AUTH)
+        assert r.status_code == 200
+        _chart(client, "bed-3", [{"code": "suspected_infection", "value": 0}],
+               at=WHEN + timedelta(minutes=1))
+        assert self._alert(client, "septic_shock") is None, "answered, so it left with its rule"
+        self._ingest(client, "suspected_infection", 1.0, minute=2)
+        assert [r["payload"]["trigger"] for r in self._rows(client, "septic_shock", "notification")] \
+            == ["new", "new"]
+
+    def test_a_shock_ended_and_restarted_in_one_request_tells_the_nurse_again(self, client):
+        """Pins the notifier prune after EACH entry (D5): `[norepinephrine 0, dopamine 5]` ends an
+        acknowledged shock and starts a new one inside one request. The acknowledgement is lost, as
+        a new episode's should be; the nurse's dedup has to be re-armed between the two entries, or
+        the end-of-request prune finds the shock live again and the new episode goes untold. This
+        door tells nobody itself — the next reading of the bed does."""
+        for code, value in [("suspected_infection", 1.0), ("weight_kg", 100.0),
+                            ("crystalloid_bolus_ml", 3000.0), ("map", 60.0),
+                            ("norepinephrine_rate", 0.12), ("lactate", 3.1)]:
+            self._ingest(client, code, value, minute=0)
+        r = client.post("/ack", json={"patient_id": "bed-3", "kind": "septic_shock", "role": "nurse"},
+                        headers=AUTH)
+        assert r.status_code == 200
+        _chart(client, "bed-3", [{"code": "norepinephrine_rate", "value": 0},
+                                 {"code": "dopamine_rate", "value": 5}],
+               at=WHEN + timedelta(minutes=1))
+        shock = self._alert(client, "septic_shock")
+        assert shock is not None and shock["acknowledged"] is False, "a new episode: not answered"
+        self._ingest(client, "map", 60.0, minute=2)
+        assert [r["payload"]["trigger"] for r in self._rows(client, "septic_shock", "notification")] \
+            == ["new", "new"]
+
+    def test_a_chart_row_that_fails_to_audit_does_not_take_a_critical_off_the_board(self):
+        """The lifecycle hook follows the evaluation directly, before any audit write: an audit
+        that fails mid-request cannot leave an unacknowledged critical off the board."""
+        audit = _FailsOnce()
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit)
+        with TestClient(app, raise_server_exceptions=False) as c:
+            _chart(c, "bed-3", [
+                {"code": "suspected_infection", "value": 1}, {"code": "lactate", "value": 3.4},
+                {"code": "norepinephrine_rate", "value": 0.08}, {"code": "weight_kg", "value": 50},
+                {"code": "crystalloid_bolus_ml", "value": 1600}])
+            assert self._alert(c, "septic_shock")["resolved_at"] is None
+            audit.fail_on = "chart"
+            ended = _chart(c, "bed-3", [{"code": "suspected_infection", "value": 0}],
+                           at=WHEN + timedelta(minutes=10))
+            assert ended.status_code == 500
+            shock = self._alert(c, "septic_shock")
+            assert shock is not None, "an unacknowledged critical must not vanish (D2)"
+            assert shock["resolved_at"] is not None and shock["acknowledged"] is False

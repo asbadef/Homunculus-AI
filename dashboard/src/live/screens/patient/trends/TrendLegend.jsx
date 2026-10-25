@@ -97,8 +97,8 @@ export function TrendLegend({ card, channels, source, truncated = false }) {
       {card.series.length > 1 ? card.series.map((s) => (
         <Item key={s.key}><Glyph kind="dot" color={s.color} hollow={s.hollow} /> {t(s.labelKey)}</Item>
       )) : null}
-      {/* ▲ is a finding's FIRST DETECTION for this patient (its `first_seen` stamp), not every
-          alarm episode: the engine's active alerts never clear a kind today (O17). */}
+      {/* ▲ is where an alarm EPISODE began (its `first_seen` stamp): since G2-A1 (O17) an alert
+          clears when its rule stops firing, and a return is a new episode with a mark of its own. */}
       <Item><Glyph kind="alarm" /> {t("patient.trendsLegendAlarm")}</Item>
       <Item><Glyph kind="antibiotic" /> {t("patient.trendsMarkerAntibiotic")}</Item>
       <NoteItems card={card} channels={channels} truncated={truncated} />

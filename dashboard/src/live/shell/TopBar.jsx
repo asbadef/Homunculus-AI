@@ -10,7 +10,7 @@ import { useSession } from "../session/SessionProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { waitingAlarms } from "../data/boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
-import { Icon, RiskPill } from "../ui/index.js";
+import { Icon, RiskPill, StatusPill } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { MenuButton, Popover, TOOL_BUTTON } from "./Menu.jsx";
 import { LanguageMenu, ThemeToggle } from "./Prefs.jsx";
@@ -220,6 +220,9 @@ function Bell() {
                     <span className="min-w-0">
                       <b className="block font-data text-13">{a.bedLabel}</b>
                       <span lang="en" className="block text-12 text-mute">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
+                      {/* G2-A1 (O17): a critical whose condition passed still waits for its answer;
+                          the badge is the alarms screen's own, outside the `lang="en"` line. */}
+                      {a.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
                     </span>
                     <span className="whitespace-nowrap font-data text-11 font-semibold text-mute">
                       {a.firstSeenAtMs ? t("shell.bellSince", { time: hhmm(a.firstSeenAtMs) }) : "—"}

@@ -85,7 +85,9 @@ def shadow_settings_from_env(env: Mapping[str, str], tenants: Mapping[str, str])
 
 # --- the wire format and the store ---------------------------------------------------------------
 
-SCHEMA = "homunculus.infinity-shadow.v1"
+SCHEMA_V1 = "homunculus.infinity-shadow.v1"     # the R3 hub's: no NBP
+SCHEMA = "homunculus.infinity-shadow.v2"        # v1, and NBP's three readings with `changed_at`
+SCHEMAS = (SCHEMA_V1, SCHEMA)                   # a tuple: a fuzzed list or dict compares, never hashes
 # parameter -> (wire unit, integrity bounds). Integrity, NOT clinical: a value outside what the
 # record can mean is a decoding fault, rejected and counted; 0 is inside every bound.
 PARAMETERS = {
@@ -93,14 +95,24 @@ PARAMETERS = {
     "etco2": ("mmHg", 0, 150), "temperature": ("C", 0, 50),
     "art_systolic": ("mmHg", 0, 400), "art_diastolic": ("mmHg", 0, 400), "art_mean": ("mmHg", 0, 400),
     "respiration": ("/min", 0, 200),
+    "nbp_systolic": ("mmHg", 0, 400), "nbp_diastolic": ("mmHg", 0, 400), "nbp_mean": ("mmHg", 0, 400),
 }
-# Design §4.1 / docs/INFINITY-PARAMETER-RECORDS.md:36-50. NBP and airway RESP are absent on purpose:
-# NBP's measurement time is not decoded, airway RESP is not verified. N is recorded for none.
+# NBP: the monitor repeats its last NBP in every packet, so the packet's time says nothing about the
+# cuff. The hub sends the time the triple last CHANGED (`changed_at`, an upper bound of the
+# measurement); the board shows the three as ONE entry, `nbp`, and withholds it early enough that no
+# screen draws it once that time is more than NBP_MAX_MEASURED_AGE_S old (`_nbp_view`: a browser
+# keeps drawing a "value" answer for up to DISPLAY_MAX_AGE_S). A tuple, for the same reason as SCHEMAS.
+NBP = "nbp"
+NBP_PARTS = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
+NBP_MAX_MEASURED_AGE_S = 7200.0
+# Design §4.1 / docs/INFINITY-PARAMETER-RECORDS.md:36-50, by the name the board shows. Airway RESP
+# is absent on purpose (not verified). N is recorded for none.
 EVIDENCE = {
     "hr": "screen_match_two_devices", "pls": "screen_match_two_devices",
     "spo2": "screen_match_two_devices", "etco2": "screen_match_two_devices",
     "art_systolic": "screen_match", "temperature": "screen_match_site_unknown",
     "art_mean": "structural", "art_diastolic": "structural_trend", "respiration": "range_overlap",
+    "nbp": "screen_match",
 }
 PARTIAL = frozenset({"temperature", "art_mean", "art_diastolic", "respiration"})
 DEVICE_STATUSES = ("streaming", "no_parameters", "stale", "waiting", "unsupported")
@@ -120,6 +132,7 @@ _FORWARDER = frozenset({"interval_s", "sent", "failed", "decoder"})
 _HUB = frozenset({"collector_age_s", "accepted_packets", "old_or_duplicate_packets"})
 _DEVICE = frozenset({"source", "group", "port", "status", "packet_age_ms", "readings"})
 _READING = frozenset({"parameter", "value", "unit", "valid", "captured_at"})
+_NBP_READING = _READING | {"changed_at"}            # v2, and only for NBP_PARTS
 
 
 class ShadowRejected(ValueError):
@@ -138,7 +151,7 @@ class DeviceView:
     status: str                  # streaming | standby | silent | waiting | unsupported | unknown
     status_age_s: float
     packet_age_ms: float | None
-    parameters: tuple[dict, ...]  # in PARAMETERS order
+    parameters: tuple[dict, ...]  # in PARAMETERS order; NBP's three folded into `nbp`, last
 
 
 @dataclass
@@ -148,6 +161,7 @@ class _Held:
     unit: str
     captured_at: float
     received_at: float
+    changed_at: float | None = None      # NBP only: when its value last changed, as the hub saw it
 
 
 @dataclass
@@ -160,7 +174,12 @@ class _Device:
 
 
 def _number(value: Any) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:          # an int too large for a float (JSON `1` and 400 zeros): not a number here
+        return False
 
 
 def _count(value: Any) -> bool:
@@ -180,8 +199,9 @@ def _iso(epoch: float) -> str:
 def _validate(body: Any) -> None:
     """The whole schema, before anything is kept: one violation refuses the body."""
     _closed(body, _TOP)
-    if body["schema"] != SCHEMA or not _number(body["sent_at"]):
+    if body["schema"] not in SCHEMAS or not _number(body["sent_at"]):
         raise ShadowRejected("schema")
+    v2 = body["schema"] == SCHEMA
     forwarder = _closed(body["forwarder"], _FORWARDER)
     decoder = forwarder["decoder"]
     if not (_number(forwarder["interval_s"]) and 0 <= forwarder["interval_s"] <= 3600
@@ -213,7 +233,9 @@ def _validate(body: Any) -> None:
             raise ShadowRejected("readings")
         names = set()
         for reading in readings:
-            _closed(reading, _READING)
+            # v2: an NBP reading carries the time its value last changed, and nothing else does.
+            nbp = v2 and isinstance(reading, dict) and reading.get("parameter") in NBP_PARTS
+            _closed(reading, _NBP_READING if nbp else _READING)
             name, valid = reading["parameter"], reading["valid"]
             if not (isinstance(name, str) and len(name) <= 64 and name not in names
                     and isinstance(reading["unit"], str) and len(reading["unit"]) <= 16
@@ -222,6 +244,10 @@ def _validate(body: Any) -> None:
             # valid <=> a finite number; a device's "***" travels as valid false, value null.
             if (valid and not _number(reading["value"])) or (not valid and reading["value"] is not None):
                 raise ShadowRejected("value")
+            # A change is seen in a packet, so it is never after that packet; with `_judge`'s clock
+            # rule on `captured_at` it is never more than 2 s ahead of the API either.
+            if nbp and not (_number(reading["changed_at"]) and 0 < reading["changed_at"] <= reading["captured_at"]):
+                raise ShadowRejected("changed_at")
             names.add(name)
 
 
@@ -252,6 +278,7 @@ class ShadowStore:
         self._collector_age: float | None = None
         self._rejected = dict.fromkeys(REJECTIONS, 0)
         self._lag = [0] * (2 + len(LAG_BUCKETS_MS) + 1)        # count, total, buckets (0a layout)
+        self._nbp_lane = False                 # the last body was v2: the hub can send NBP at all
 
     def ingest(self, body: Any) -> dict:
         """Keep a forwarder body. `TooSoon` within 1 s of the last; `ShadowRejected` for a schema
@@ -275,14 +302,17 @@ class ShadowStore:
                 if reason:
                     counts[reason] += 1
                     continue
+                changed = reading.get("changed_at")
                 held.readings[reading["parameter"]] = _Held(reading["value"], reading["valid"], reading["unit"],
-                                                            float(reading["captured_at"]), now)
+                                                            float(reading["captured_at"]), now,
+                                                            None if changed is None else float(changed))
                 self._count_lag((now - reading["captured_at"]) * 1000)
                 accepted += 1
         while len(self._devices) > MAX_DEVICES:              # the least recently reported goes
             del self._devices[min(self._devices, key=lambda s: self._devices[s].status_at)]
         self._last_post, self._last_post_wall, self._posts = tick, now, self._posts + 1
         self._forwarder = dict(body["forwarder"])
+        self._nbp_lane = body["schema"] == SCHEMA
         self._hub = {"accepted_packets": body["hub"]["accepted_packets"],
                      "old_or_duplicate_packets": body["hub"]["old_or_duplicate_packets"]}
         age = body["hub"]["collector_age_s"]
@@ -301,7 +331,12 @@ class ShadowStore:
             age = tick - held.status_at
             status = "unknown" if not 0 <= age <= SILENT_AFTER_S else SHOWN_STATUS[held.status]
             parameters = tuple(self._view(name, held.readings[name], now)
-                               for name in PARAMETERS if name in held.readings)
+                               for name in PARAMETERS if name in held.readings and name not in NBP_PARTS)
+            # A device showing anything says what its NBP is doing — while the hub speaks v2, or
+            # while NBP readings from before are still held. An R3 hub cannot send NBP: nothing is
+            # said of it then, rather than "awaiting a measurement".
+            if held.readings and (self._nbp_lane or any(name in held.readings for name in NBP_PARTS)):
+                parameters += (self._nbp_view(held.readings, now),)
             views[source] = DeviceView(source, held.group, PORT, status, round(max(0.0, age), 1),
                                        held.packet_age_ms, parameters)
         return views
@@ -331,7 +366,8 @@ class ShadowStore:
     @staticmethod
     def _judge(held: _Device, reading: dict, now: float) -> str | None:
         spec = PARAMETERS.get(reading["parameter"])
-        if spec is None:
+        # A v1 body never carried NBP's change time, so its NBP stays unknown, as v1 always had it.
+        if spec is None or (reading["parameter"] in NBP_PARTS and "changed_at" not in reading):
             return "unknown_parameter"
         unit, low, high = spec
         if reading["unit"] != unit:
@@ -362,6 +398,36 @@ class ShadowStore:
         return {"parameter": name, "state": state, "value": value, "unit": held.unit,
                 "age_s": round(max(0.0, age), 1), "last_at": _iso(held.captured_at),
                 "evidence": EVIDENCE[name], "partial": name in PARTIAL}
+
+    @staticmethod
+    def _nbp_view(readings: Mapping[str, _Held], now: float) -> dict:
+        """NBP's three held readings as ONE entry. A number only when all three are held, came with
+        one change time, are fresh and valid, and that change is at most NBP_MAX_MEASURED_AGE_S
+        less DISPLAY_MAX_AGE_S old (below). `age_s`/`last_at` are the packet's while it is shown and
+        the change's once it is withheld; with no complete triple of one change there is no time at
+        all: "awaiting a measurement"."""
+        entry = {"parameter": NBP, "state": "old", "systolic": None, "diastolic": None, "mean": None,
+                 "unit": PARAMETERS[NBP_PARTS[0]][0], "age_s": None, "last_at": None, "changed_at": None,
+                 "measured_age_s": None, "evidence": EVIDENCE[NBP], "partial": NBP in PARTIAL}
+        parts = [readings.get(name) for name in NBP_PARTS]
+        if any(part is None for part in parts) or len({part.changed_at for part in parts}) != 1:
+            return entry
+        changed = parts[0].changed_at
+        captured = min(part.captured_at for part in parts)
+        age, measured = now - captured, now - changed
+        entry.update(changed_at=_iso(changed), measured_age_s=round(max(0.0, measured), 1))
+        # A browser draws a "value" answer until its packet is the board's `display_max_age_s` old
+        # (DISPLAY_MAX_AGE_S; the dashboard's monitor.js cellOf/maxAgeOf, whose own copy is never
+        # longer and is held equal by monitor.test.js), between polls and across failed ones, and it
+        # ages the change with it. Withheld that much before the two hours, NBP is never drawn past them.
+        if not (0 <= age <= DISPLAY_MAX_AGE_S and 0 <= measured <= NBP_MAX_MEASURED_AGE_S - DISPLAY_MAX_AGE_S):
+            entry.update(age_s=round(max(0.0, measured), 1), last_at=_iso(changed))
+        elif not all(part.valid for part in parts):
+            entry.update(state="invalid", age_s=round(age, 1), last_at=_iso(captured))      # the monitor shows ***
+        else:
+            entry.update(state="value", systolic=parts[0].value, diastolic=parts[1].value, mean=parts[2].value,
+                         age_s=round(age, 1), last_at=_iso(captured))
+        return entry
 
     def _expire(self, now: float) -> None:
         """Forget what is too old, and what is further ahead than any arrival is allowed to be: after
@@ -405,7 +471,8 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
       and its id; two or more `"ambiguous"` and no id; none, or a row without `bed_id`, `"none"`.
       A link the caller's scope does not reach (`patient_visible`) is reported as hidden.
     - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
-    Parameters are in PARAMETERS order, beds by label, unassigned devices by address."""
+    Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last, beds by label,
+    unassigned devices by address."""
     beds: list[dict] = []
     unassigned: list[dict] = []
     # How many devices the table puts on each bed right now. parse_table refuses two at once; this

@@ -187,6 +187,8 @@ The runner starts the thread **only** when it runs as the hub, with `--unverifie
 - **It is consistent.** Stage B excludes NBP until its time is validated (design §4.2(d), §8.4).
 - *The cost:* a bed without an arterial line shows no blood pressure on the strip. The legend says that NIBP is withheld on purpose and that the monitor is the place to read it.
 
+> **Superseded by the NBP slice (user decision 2026-10-22).** NBP is now shown, with the time its value last *changed* as the hub saw it — an upper bound of the measurement ("ölçüm ≤ SS:DD"), kept only for a change seen within 3 s of the previous complete valid triple (so the time is at most 3 s too fresh, on the hub's clock); hidden after a hub start, or when the value changed during an outage or any longer gap between complete valid triples, until the next change; withheld by the API 2 h after the change (15 s early, so that no screen shows it past 2 h — X50). The first reason above is answered by the bound; the third stays open until device→patient links exist (Stage B resets NBP on a link change). Hub release R4 (drop-in `94-nbp.conf`), wire schema `homunculus.infinity-shadow.v2`. Spec `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md`, plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`.
+
 **Also excluded: `respiration_airway`** (`0x1F06`). The decoder itself marks it `unverified_layout` (`edge/infinity_records.py:51`), and no observed bed displayed it.
 
 **Units.** The decoder already gives canonical units and scale: temperature is divided by 10 (`edge/infinity_records.py:43, 249`), and a record whose unit code is not the expected one is dropped (`:70`). The forwarder sends the decoder's unit string verbatim, and the API checks it against a closed table: `hr`/`pls` `bpm`, `spo2` `%`, `etco2` `mmHg`, `temperature` `C`, `art_*` `mmHg`, `respiration` `/min`. A mismatch is rejected and counted as `unit`. There is no conversion anywhere. **Known gap:** a monitor set to show etCO₂ in kPa sends a record the decoder drops without counting (design §4.1). On the strip, etCO₂ is then simply absent, not wrong. The decoder counter is Stage B's (Not in this plan).
@@ -301,7 +303,7 @@ The runner starts the thread **only** when it runs as the hub, with `--unverifie
 | `art_mean` | `structural` | MAP identity only (≤ 3 mmHg in 150 packets); not compared with the screen | shown, marked **kısmi** |
 | `art_diastolic` | `structural_trend` | MAP identity + the screen's trend | shown, marked **kısmi** |
 | `respiration` (impedance) | `range_overlap` | range overlap on one bed; not identical to the screen | shown, marked **kısmi** |
-| `nbp_*` | — | identical to the screen, but the measurement time is not decoded | **not shown** |
+| `nbp_*` | — | identical to the screen, but the measurement time is not decoded | **not shown** (since the NBP slice: shown as one `nbp` entry, `screen_match`, with the time its value last changed) |
 | `respiration_airway` | — | not validated | **not shown** |
 
 ---
@@ -526,7 +528,7 @@ Each carries the alternative it rejected.
    - *Cost accepted:* a "hub down" and a "forwarder down" look the same on the board. That is fine for the ward, and operations tell them apart with `transport_check.py`.
 2. **5 s cadence; 3 s at forward, 10 s at arrival, 15 s on screen, 120 s in memory.**
    - *Rejected:* **1 s**, which invites "this is a monitor"; **60 s** (the design's NEWS2 default), where a strip value is up to 60 s old and the ages train people to ignore them.
-3. **NBP is not shown in Stage A.** *Rejected:* **showing it with a "measurement time unknown" mark** (Forwarder, NBP).
+3. **NBP is not shown in Stage A.** *Rejected:* **showing it with a "measurement time unknown" mark** (Forwarder, NBP). *Superseded 2026-10-22:* shown with the time its value last changed, an upper bound, not a mark (the NBP slice's plan, `2026-10-22-infinity-nbp-degisim-saati.md`).
 4. **`respiration_airway` is not shown.** It is unverified in the decoder itself.
 5. **A dedicated shadow token, not a `TENANTS` device token.** *Rejected:* **the design's `TENANTS` token**, which passes every permission check and can write `/ingest`.
 6. **Memory only: no audit row, no database table, no file.**

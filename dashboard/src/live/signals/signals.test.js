@@ -82,6 +82,14 @@ describe("what the page plays", () => {
     expect(soundFor(escalated)).toBe("critical");
     expect(notifyFor(escalated).items.map((a) => a.id)).toEqual(["S-001::a"]);
   });
+
+  // G2-A1 (O17): a critical whose rule stopped before anyone acknowledged it still waits for its
+  // answer, but it rings no more — the sound and the vibration stop at resolve (D11).
+  it("is silent for a RESOLVED alarm that still waits, and plays what still fires", () => {
+    const passed = alarm("a", "critical", { resolved_at: "2026-10-08T09:59:00Z" });
+    expect(soundFor(ward([passed]))).toBeNull();
+    expect(soundFor(ward([passed, alarm("b", "moderate")]))).toBe("moderate");
+  });
 });
 
 describe("what raises a notification", () => {
@@ -94,9 +102,18 @@ describe("what raises a notification", () => {
   });
 
   it("names nothing it cannot know, and says whether the board is LIVE", () => {
-    expect(notifyFor(ward([alarm("a", "critical")], CONNECTION.UNAVAILABLE, false))).toEqual({ known: false, items: [] });
+    expect(notifyFor(ward([alarm("a", "critical")], CONNECTION.UNAVAILABLE, false))).toEqual({ known: false, items: [], ringing: [] });
     const stale = notifyFor(ward([alarm("a", "critical")], CONNECTION.DEGRADED));
     expect(stale.known).toBe(false);
     expect(stale.items).toHaveLength(1);
+  });
+
+  it("keeps a RESOLVED alarm among those that wait, but raises no new notification for it", () => {
+    const { items, ringing } = notifyFor(ward([
+      alarm("a", "critical", { resolved_at: "2026-10-08T09:59:00Z" }), alarm("b", "critical"),
+    ]));
+    // Same severity and age: the one that still fires comes first (boardStore `queue`).
+    expect(items.map((a) => a.id)).toEqual(["S-002::b", "S-001::a"]);
+    expect(ringing.map((a) => a.id)).toEqual(["S-002::b"]);
   });
 });

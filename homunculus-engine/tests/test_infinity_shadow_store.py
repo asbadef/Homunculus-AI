@@ -1,21 +1,24 @@
 """Aşama A's shadow store: in memory, bounded, forgetting, and connected to nothing.
 
-The wire format is `homunculus.infinity-shadow.v1` (the hub forwarder's body). A body that breaks
-the schema is refused whole; a reading that is well-formed but cannot be shown (too old, from the
-future, the wrong unit, outside the record's integrity bounds, an unknown or excluded parameter,
-not newer than the one held) is rejected and counted. Synthetic sources only (192.0.2.x).
+The wire format is `homunculus.infinity-shadow.v2` (the hub forwarder's body; v1, the R3 hub's, is
+still taken). A body that breaks the schema is refused whole; a reading that is well-formed but
+cannot be shown (too old, from the future, the wrong unit, outside the record's integrity bounds, an
+unknown or excluded parameter, not newer than the one held) is rejected and counted. NBP travels as
+three readings with the time their value last changed and is shown as one entry. Synthetic sources
+only (192.0.2.x).
 """
 from __future__ import annotations
 
 import copy
 import inspect
 import math
+from datetime import datetime, timezone
 
 import pytest
 
 from homunculus.api.infinity_shadow import (
-    DISPLAY_MAX_AGE_S, EVIDENCE, FORGET_AFTER_S, LAG_BUCKETS_MS, PARAMETERS, PARTIAL, SCHEMA,
-    ShadowRejected, ShadowStore, TooSoon,
+    DISPLAY_MAX_AGE_S, EVIDENCE, FORGET_AFTER_S, LAG_BUCKETS_MS, NBP, NBP_MAX_MEASURED_AGE_S, NBP_PARTS,
+    PARAMETERS, PARTIAL, SCHEMA, SCHEMA_V1, ShadowRejected, ShadowStore, TooSoon,
 )
 
 T0 = 1_800_000_000.0
@@ -29,9 +32,18 @@ class Clock:
         return self.t
 
 
-def reading(parameter="hr", value=72, unit="bpm", *, valid=True, captured_at=T0 - 0.5):
-    return {"parameter": parameter, "value": value if valid else None, "unit": unit, "valid": valid,
-            "captured_at": captured_at}
+def reading(parameter="hr", value=72, unit="bpm", *, valid=True, captured_at=T0 - 0.5, changed_at=None):
+    out = {"parameter": parameter, "value": value if valid else None, "unit": unit, "valid": valid,
+           "captured_at": captured_at}
+    if changed_at is not None:
+        out["changed_at"] = changed_at
+    return out
+
+
+def nbp(systolic=118, diastolic=79, mean=92, *, captured_at=T0 - 0.5, changed_at=T0 - 600.0):
+    """The forwarder's three NBP readings: one packet, one change time."""
+    return [reading(name, value, "mmHg", captured_at=captured_at, changed_at=changed_at)
+            for name, value in zip(NBP_PARTS, (systolic, diastolic, mean))]
 
 
 def device(source="192.0.2.10", *readings, status="streaming", packet_age_ms=100.0, group=None):
@@ -40,8 +52,8 @@ def device(source="192.0.2.10", *readings, status="streaming", packet_age_ms=100
             "packet_age_ms": packet_age_ms, "readings": list(readings)}
 
 
-def body(*devices, sent_at=T0, collector_age_s=1.0, sent=10, failed=0):
-    return {"schema": SCHEMA, "sent_at": sent_at,
+def body(*devices, sent_at=T0, collector_age_s=1.0, sent=10, failed=0, schema=SCHEMA):
+    return {"schema": schema, "sent_at": sent_at,
             "forwarder": {"interval_s": 5, "sent": sent, "failed": failed,
                           "decoder": "homunculus.infinity-preview.v3"},
             "hub": {"collector_age_s": collector_age_s, "accepted_packets": 100,
@@ -53,13 +65,22 @@ def _params(store, source="192.0.2.10", now=None):
     return {p["parameter"]: p for p in store.devices(now)[source].parameters}
 
 
+def _iso(epoch):
+    return datetime.fromtimestamp(epoch, timezone.utc).isoformat()
+
+
 # --- the parameter table -------------------------------------------------------------------------
 
-def test_the_parameter_table_excludes_nbp_and_airway_respiration():
-    assert not any(name.startswith("nbp_") for name in PARAMETERS)
+def test_the_parameter_table_takes_nbp_with_its_change_time_and_still_excludes_airway_respiration():
+    assert NBP_PARTS == ("nbp_systolic", "nbp_diastolic", "nbp_mean")
+    assert all(PARAMETERS[name] == ("mmHg", 0, 400) for name in NBP_PARTS)
     assert "respiration_airway" not in PARAMETERS
-    assert set(EVIDENCE) == set(PARAMETERS) and PARTIAL < set(PARAMETERS)
+    # The board shows the three as ONE entry, `nbp`; the evidence table names what the board shows.
+    assert set(EVIDENCE) == (set(PARAMETERS) - set(NBP_PARTS)) | {NBP}
+    assert EVIDENCE[NBP] == "screen_match" and NBP not in PARTIAL and PARTIAL < set(EVIDENCE)
     assert all(low == 0 for _, low, _ in PARAMETERS.values())          # 0 is inside every bound
+    assert NBP_MAX_MEASURED_AGE_S == 7200.0
+    assert (SCHEMA_V1, SCHEMA) == ("homunculus.infinity-shadow.v1", "homunculus.infinity-shadow.v2")
 
 
 # --- ingest --------------------------------------------------------------------------------------
@@ -87,7 +108,6 @@ def test_each_unshowable_reading_is_rejected_and_counted():
         reading("pls", 80, "bpm", captured_at=T0 + 2.0 + 2.5),         # clock (> 2 s ahead)
         reading("etco2", 5, "kPa"),                                     # unit (no conversion anywhere)
         reading("art_mean", 401, "mmHg"),                               # range
-        reading("nbp_systolic", 120, "mmHg"),                           # unknown_parameter
         reading("respiration_airway", 14, "/min"),                      # unknown_parameter
         reading("foo", 1, "x"),                                         # unknown_parameter
         reading("hr", 75, captured_at=T0 - 1.0),                        # duplicate (not newer)
@@ -96,12 +116,50 @@ def test_each_unshowable_reading_is_rejected_and_counted():
     )))
     assert answer["accepted"] == 2
     assert answer["rejected"] == {"too_old": 1, "clock": 1, "unit": 1, "range": 1,
-                                  "unknown_parameter": 3, "duplicate": 1}
+                                  "unknown_parameter": 2, "duplicate": 1}
     params = _params(store)
     assert params["hr"]["value"] == 70                                  # the held one stays
     assert params["temperature"]["value"] == 0
-    assert "nbp_systolic" not in params and "spo2" not in params and "etco2" not in params
+    assert "spo2" not in params and "etco2" not in params
     assert store.feed(T0 + 2.0)["rejected"] == answer["rejected"]       # cumulative
+
+
+def test_a_v1_body_is_still_taken_and_shows_no_nbp_at_all():
+    # The R3 hub keeps posting v1 until its own release changes (the API goes first), and v1 never
+    # carried NBP's change time: an NBP in a v1 body stays an unknown parameter, as it always was,
+    # and the board says nothing of NBP — "awaiting a measurement" would be untrue of a hub that
+    # cannot send one.
+    store = ShadowStore(Clock())
+    answer = store.ingest(body(device("192.0.2.10", reading(), reading("nbp_systolic", 120, "mmHg")),
+                               schema=SCHEMA_V1))
+    assert answer["accepted"] == 1 and answer["rejected"]["unknown_parameter"] == 1
+    params = _params(store)
+    assert params["hr"]["value"] == 72 and NBP not in params
+
+
+def test_after_a_hub_rolled_back_to_v1_its_held_nbp_ages_out_and_then_nbp_is_not_shown():
+    clock = Clock()
+    store = ShadowStore(clock)
+    store.ingest(body(device("192.0.2.10", reading(captured_at=T0 - 0.5), *nbp(captured_at=T0 - 0.5))))
+    clock.t = T0 + 20.0                                               # the hub restarted on R3
+    store.ingest(body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), schema=SCHEMA_V1))
+    held = _params(store)[NBP]
+    assert (held["state"], held["systolic"], held["changed_at"]) == ("old", None, _iso(T0 - 600.0))
+    clock.t = T0 + FORGET_AFTER_S + 5.0
+    store.ingest(body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), schema=SCHEMA_V1))
+    assert NBP not in _params(store)
+
+
+def test_nbp_is_judged_by_its_packet_time_like_any_reading():
+    clock = Clock()
+    store = ShadowStore(clock)
+    answer = store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 10.5, changed_at=T0 - 11.0))))
+    assert (answer["accepted"], answer["rejected"]["too_old"]) == (0, 3)
+    clock.t += 1.5
+    # 401 is past the record's integrity bound, as for ART; a change seen in the packet itself is taken.
+    answer = store.ingest(body(device("192.0.2.10", *nbp(401, 79, 92, captured_at=clock.t - 0.5,
+                                                         changed_at=clock.t - 0.5))))
+    assert (answer["accepted"], answer["rejected"]["range"]) == (2, 1)
 
 
 def test_spo2_101_is_out_of_range_and_hr_0_is_a_value():
@@ -131,7 +189,14 @@ SCHEMA_VIOLATIONS = {
     "unknown device key": lambda b: b["devices"][0].update(device_id="BED05"),
     "unknown reading key": lambda b: b["devices"][0]["readings"][0].update(note="x"),
     "missing key": lambda b: b["hub"].pop("collector_age_s"),
-    "wrong schema": lambda b: b.update(schema="homunculus.infinity-shadow.v2"),
+    "wrong schema": lambda b: b.update(schema="homunculus.infinity-shadow.v3"),
+    "changed_at on hr": lambda b: b["devices"][0]["readings"][0].update(changed_at=T0 - 60.0),
+    "nbp without changed_at": lambda b: b["devices"][0]["readings"].append(reading("nbp_mean", 92, "mmHg")),
+    "changed_at after captured_at": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=T0 - 0.4)),
+    "changed_at zero": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=0)),
+    "changed_at nan": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=float("nan"))),
+    "changed_at text": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at="12:00")),
+    "changed_at in a v1 body": lambda b: (b.update(schema=SCHEMA_V1), b["devices"][0]["readings"].extend(nbp())),
     "101 devices": lambda b: b.update(devices=[device(f"192.0.2.{i + 1}") for i in range(101)]),
     "17 readings": lambda b: b["devices"][0].update(readings=[reading(captured_at=T0 - i / 100)
                                                                for i in range(17)]),
@@ -199,10 +264,142 @@ def test_each_parameter_carries_unit_evidence_and_partial_in_table_order():
     store.ingest(body(device("192.0.2.10", reading("respiration", 14, "/min"), reading("hr", 72),
                              reading("temperature", 36.6, "C"))))
     params = store.devices(T0)["192.0.2.10"].parameters
-    assert [p["parameter"] for p in params] == ["hr", "temperature", "respiration"]
+    assert [p["parameter"] for p in params] == ["hr", "temperature", "respiration", "nbp"]
     by = {p["parameter"]: p for p in params}
     assert by["hr"]["evidence"] == "screen_match_two_devices" and by["hr"]["partial"] is False
     assert by["temperature"]["unit"] == "C" and by["temperature"]["partial"] is True
+
+
+# --- NBP: three readings, one entry, shown with the time its value last changed ------------------
+
+def _waiting():
+    return {"parameter": "nbp", "state": "old", "systolic": None, "diastolic": None, "mean": None,
+            "unit": "mmHg", "age_s": None, "last_at": None, "changed_at": None, "measured_age_s": None,
+            "evidence": "screen_match", "partial": False}
+
+
+def test_three_nbp_readings_are_one_entry_with_the_time_their_value_changed():
+    store = ShadowStore(Clock())
+    answer = store.ingest(body(device("192.0.2.10", reading(), *nbp(captured_at=T0 - 0.5, changed_at=T0 - 600.0))))
+    assert answer["accepted"] == 4
+    params = store.devices(T0)["192.0.2.10"].parameters
+    assert [p["parameter"] for p in params] == ["hr", "nbp"]           # after every other parameter
+    assert params[1] == {"parameter": "nbp", "state": "value", "systolic": 118, "diastolic": 79, "mean": 92,
+                         "unit": "mmHg", "age_s": 0.5, "last_at": _iso(T0 - 0.5),
+                         "changed_at": _iso(T0 - 600.0), "measured_age_s": 600.0,
+                         "evidence": "screen_match", "partial": False}
+
+
+# A browser keeps drawing a "value" answer, ageing it, until its packet is the board's
+# `display_max_age_s` old (dashboard monitor.js cellOf, maxAgeOf): DISPLAY_MAX_AGE_S, between polls
+# and across failed ones. The API withholds NBP that much before its two hours, so no screen draws it
+# past them (final review M-3).
+NBP_SHOWN_LIMIT_S = NBP_MAX_MEASURED_AGE_S - DISPLAY_MAX_AGE_S
+
+
+def test_nbp_is_withheld_once_its_value_changed_more_than_two_hours_less_the_browsers_window_ago():
+    assert NBP_SHOWN_LIMIT_S == 7185.0
+    store = ShadowStore(Clock())
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=T0 - 7184.5))))
+    shown = _params(store, now=T0)[NBP]
+    assert (shown["state"], shown["systolic"], shown["measured_age_s"]) == ("value", 118, 7184.5)
+    withheld = _params(store, now=T0 + 1.0)[NBP]          # the packet is 1.5 s old: only the change is too old
+    assert withheld == {**_waiting(), "age_s": 7185.5, "last_at": _iso(T0 - 7184.5),
+                        "changed_at": _iso(T0 - 7184.5), "measured_age_s": 7185.5}
+
+
+def test_a_change_exactly_the_limit_old_is_shown_and_one_microsecond_older_is_withheld():
+    for extra, state in ((0.0, "value"), (1e-6, "old")):
+        store = ShadowStore(Clock())
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5,
+                                                    changed_at=T0 - NBP_SHOWN_LIMIT_S - extra))))
+        shown = _params(store, now=T0)[NBP]
+        assert (shown["state"], shown["systolic"] is None) == (state, state == "old"), extra
+
+
+def test_no_nbp_value_answer_can_be_drawn_past_two_hours_by_a_browser_ageing_it():
+    # The browser draws a "value" answer until age_s + the time since it arrived passes
+    # DISPLAY_MAX_AGE_S, ageing the change with it: the oldest change it can draw is
+    # measured_age_s + DISPLAY_MAX_AGE_S - age_s. A packet 0 s old with a change at the limit is the
+    # worst case, and it is exactly two hours.
+    drawn = []
+    for change in (600.0, NBP_SHOWN_LIMIT_S - 1.0, NBP_SHOWN_LIMIT_S - 0.05, NBP_SHOWN_LIMIT_S,
+                   NBP_SHOWN_LIMIT_S + 1e-6, NBP_SHOWN_LIMIT_S + 1.0, NBP_MAX_MEASURED_AGE_S - 0.5,
+                   NBP_MAX_MEASURED_AGE_S):
+        store = ShadowStore(Clock())
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0, changed_at=T0 - change))))
+        for packet in (0.0, 0.04, 0.5, 5.0, 14.9):
+            entry = _params(store, now=T0 + packet)[NBP]
+            if entry["state"] == "value":
+                drawn.append(entry["measured_age_s"] + DISPLAY_MAX_AGE_S - entry["age_s"])
+    assert max(drawn) == NBP_MAX_MEASURED_AGE_S
+
+
+def test_nbp_keeps_showing_while_every_post_repeats_the_same_change():
+    clock = Clock()
+    store = ShadowStore(clock)
+    changed = T0 - 90.0
+    for step in range(5):                            # the packets move on, the change does not
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=clock.t - 0.5, changed_at=changed))))
+        shown = _params(store, now=clock.t)[NBP]
+        assert (shown["state"], shown["systolic"], shown["changed_at"], shown["measured_age_s"]) == (
+            "value", 118, _iso(changed), 90.0 + 5.0 * step), step
+        clock.t += 5.0
+
+
+def test_a_silent_monitors_nbp_goes_old_like_any_value_and_is_aged_by_its_change():
+    store = ShadowStore(Clock())
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0, changed_at=T0 - 300.0))))
+    assert _params(store, now=T0 + 14.9)[NBP]["state"] == "value"
+    old = _params(store, now=T0 + 15.1)[NBP]
+    assert (old["state"], old["systolic"], old["age_s"], old["last_at"]) == ("old", None, 315.1, _iso(T0 - 300.0))
+
+
+def test_a_device_holding_readings_but_no_nbp_shows_it_awaiting_a_change():
+    store = ShadowStore(Clock())
+    store.ingest(body(device("192.0.2.10", reading()), device("192.0.2.11")))
+    assert _params(store)[NBP] == _waiting()
+    assert store.devices(T0)["192.0.2.11"].parameters == ()            # nothing held: no entry at all
+
+
+@pytest.mark.parametrize("parts", [NBP_PARTS[:2], NBP_PARTS[1:], NBP_PARTS[:1]])
+def test_fewer_than_three_nbp_readings_show_no_number(parts):
+    store = ShadowStore(Clock())
+    store.ingest(body(device("192.0.2.10", *[r for r in nbp() if r["parameter"] in parts])))
+    assert _params(store)[NBP] == _waiting()
+
+
+def test_three_readings_from_two_changes_are_never_shown_as_one_measurement():
+    clock = Clock()
+    store = ShadowStore(clock)
+    store.ingest(body(device("192.0.2.10", *nbp(118, 79, 92, captured_at=T0 - 0.5, changed_at=T0 - 600.0))))
+    clock.t += 5
+    later = nbp(131, 85, 100, captured_at=clock.t - 0.5, changed_at=clock.t - 1.0)
+    store.ingest(body(device("192.0.2.10", *later[1:])))               # the systolic did not come this time
+    assert _params(store)[NBP] == _waiting()
+
+
+def test_one_change_is_withheld_as_soon_as_any_of_its_three_readings_stops_arriving():
+    # One change time, but the systolic last came 20.5 s ago: the triple is as old as its oldest
+    # reading, not its newest, so no number is drawn beside a part that went quiet.
+    clock = Clock()
+    store = ShadowStore(clock)
+    changed = T0 - 600.0
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=changed))))
+    clock.t = T0 + 20.0
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=clock.t - 0.5, changed_at=changed)[1:])))
+    assert _params(store)[NBP] == {**_waiting(), "age_s": 620.0, "last_at": _iso(changed),
+                                   "changed_at": _iso(changed), "measured_age_s": 620.0}
+
+
+def test_an_nbp_the_device_flags_invalid_is_stars_and_no_number():
+    store = ShadowStore(Clock())
+    parts = nbp()
+    parts[1] = reading("nbp_diastolic", None, "mmHg", valid=False, changed_at=T0 - 600.0)
+    store.ingest(body(device("192.0.2.10", *parts)))
+    entry = _params(store)[NBP]
+    assert (entry["state"], entry["systolic"], entry["diastolic"], entry["changed_at"]) == (
+        "invalid", None, None, _iso(T0 - 600.0))
 
 
 def test_a_parameter_is_forgotten_after_120_s():
@@ -332,20 +529,23 @@ def test_two_monitors_on_one_bed_link_neither_to_its_patient():
 
 # --- bounds --------------------------------------------------------------------------------------
 
-def test_the_store_stays_bounded_at_100_devices_by_9_parameters():
+def test_the_store_stays_bounded_at_100_devices_by_12_readings():
     clock = Clock()
     store = ShadowStore(clock)
     units = {name: unit for name, (unit, _, _) in PARAMETERS.items()}
+    assert len(units) == 12
     sizes = []
     for cycle in range(30):
         clock.t = T0 + cycle * 5
         devices = [device(f"192.0.2.{i + 1}" if i < 50 else f"198.51.100.{i - 49}",
-                          *(reading(name, 1, unit, captured_at=clock.t - 0.1) for name, unit in units.items()))
+                          *(reading(name, 1, unit, captured_at=clock.t - 0.1,
+                                    changed_at=clock.t - 60.0 if name in NBP_PARTS else None)
+                            for name, unit in units.items()))
                    for i in range(100)]
         store.ingest(body(*devices))
         views = store.devices(clock.t)
         sizes.append((len(views), sum(len(v.parameters) for v in views.values())))
-    assert set(sizes) == {(100, 900)}
+    assert set(sizes) == {(100, 1000)}             # nine entries, and the one the three NBP readings make
     # A hundred new sources replace the least recently reported, never grow the store.
     clock.t += 5
     store.ingest(body(*[device(f"203.0.113.{i + 1}") for i in range(100)]))
@@ -354,13 +554,14 @@ def test_the_store_stays_bounded_at_100_devices_by_9_parameters():
 
 def test_any_mangled_body_is_refused_or_taken_never_an_error():
     # The review's fuzzer, deterministic: 2000 bodies with one to three fields replaced by odd
-    # values (None, NaN, inf, 10**20, 2**63, nested containers, the wrong strings). Each is refused
-    # whole or taken; nothing else is raised, and the store stays readable and bounded.
+    # values (None, NaN, inf, 10**20, 2**63, 10**400, nested containers, the wrong strings). Each is refused
+    # whole or taken; nothing else is raised, and the store stays readable and bounded. The seed
+    # carries a complete NBP triple, so `changed_at` and the fold are fuzzed as well.
     import json as _json
     import random
 
     weird = [None, True, False, 0, -1, 1.5, float("nan"), float("inf"), -0.0, 10**20, "", "x", "192.0.2.10",
-             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63]
+             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63, 10**400]
 
     def paths(obj, prefix=()):
         yield prefix
@@ -378,7 +579,8 @@ def test_any_mangled_body_is_refused_or_taken_never_an_error():
     for _ in range(2000):
         clock.t += 1.5
         raw = body(device("192.0.2.10", reading(captured_at=clock.t - 0.5),
-                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5)), sent_at=clock.t)
+                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5),
+                          *nbp(captured_at=clock.t - 0.5, changed_at=clock.t - 30.0)), sent_at=clock.t)
         for _ in range(rng.randint(1, 3)):
             target = rng.choice([p for p in paths(raw) if p])
             holder = raw

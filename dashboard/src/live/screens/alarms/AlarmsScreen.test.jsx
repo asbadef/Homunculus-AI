@@ -5,9 +5,14 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
 import { AlarmsScreen } from "./AlarmsScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** The acknowledge button. Its accessible name is "<bed> · <kind> siqnalı: gördüm" (it names the
+ *  alarm it answers), so it is found by the word and not by the whole name. */
+const SEEN = /gördüm/i;
 
 /** The screen inside a real session and board store. `connection`: "live" | "degraded" |
  *  "unavailable"; `perms` decides whether the acknowledge button exists at all. */
@@ -171,13 +176,62 @@ describe("the alarms screen", () => {
         setup: (fake) => fake.acknowledge.mockResolvedValue(acked),
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        fireEvent.click(screen.getByRole("button", { name: SEEN }));
         await settle();
       });
       expect(api.acknowledge).toHaveBeenCalledWith("S-001", "news2");
       expect(screen.getByText("Gördü: ayse")).toBeInTheDocument();
       // It moved to the second section: the button for it is gone.
-      expect(screen.queryByRole("button", { name: "Gördüm" })).toBeNull();
+      expect(screen.queryByRole("button", { name: SEEN })).toBeNull();
+    });
+
+    // G2-A1 (O17): a critical whose condition passed before anyone acknowledged it.
+    it("keeps a critical whose condition passed waiting, with its badge, and still asks for the acknowledgement", async () => {
+      const passed = alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) });
+      const { api } = await open({
+        payload: withAlarms(passed),
+        setup: (fake) => fake.acknowledge.mockResolvedValue(entry("S-001", [], { ...CARD })),
+      });
+      const waiting = screen.getByRole("heading", { level: 2, name: /Cavab gözləyir/ }).parentElement;
+      const row = within(waiting).getByText("Septic shock criteria met").closest("li");
+      expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+      expect(row).toHaveTextContent(`keçdiyi saat: ${hhmm(NOW - 60_000)}`);
+      await act(async () => {
+        fireEvent.click(within(row).getByRole("button", { name: SEEN }));
+        await settle();
+      });
+      expect(api.acknowledge).toHaveBeenCalledWith("S-001", "septic_shock");
+      expect(screen.queryByText("Septic shock criteria met")).toBeNull();     // the ack removed it
+    });
+
+    // After severity, an alarm that still fires comes first — even when the one that passed is older.
+    it("lists a critical that still fires above one that passed, though the latter is older", async () => {
+      await open({
+        payload: withAlarms(
+          alarm("septic_shock", "critical", { summary: "Passed critical", first_seen_at: ago(900), resolved_at: ago(60) }),
+          alarm("sepsis", "critical", { summary: "Firing critical", first_seen_at: ago(120) }),
+        ),
+      });
+      const waiting = screen.getByRole("heading", { level: 2, name: /Cavab gözləyir/ }).parentElement;
+      const rows = within(waiting).getAllByRole("listitem");
+      expect(rows[0]).toHaveTextContent("Firing critical");
+      expect(rows[1]).toHaveTextContent("Passed critical");
+    });
+
+    it("shows no such badge on an alarm that still fires", async () => {
+      await open({ payload: withAlarms(alarm("septic_shock", "critical")) });
+      expect(screen.queryByText("keçdi · təsdiqlənməyib")).toBeNull();
+    });
+
+    // Several rows carry the same button; read alone, "Gördüm" says nothing about WHICH alarm it
+    // answers. The name carries the bed and the kind (the words the refusal toast uses), and still
+    // contains the visible word, so a voice-control user who says it is understood.
+    it("names the alarm its acknowledge button answers — the bed and the kind — and keeps the visible word", async () => {
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      const button = screen.getByRole("button", { name: /gördüm/i });
+      expect(button).toHaveAccessibleName(/REA-01 · 2/);
+      expect(button).toHaveAccessibleName(/news2/);
+      expect(button).toHaveTextContent("Gördüm");
     });
 
     it("a refusal is shown and the list is NOT changed — nothing was acknowledged", async () => {
@@ -186,13 +240,13 @@ describe("the alarms screen", () => {
         setup: (fake) => fake.acknowledge.mockRejectedValue(refusal(403, "permission required: alerts.ack")),
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        fireEvent.click(screen.getByRole("button", { name: SEEN }));
         await settle();
       });
       expect(api.acknowledge).toHaveBeenCalled();
       const alerts = screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
       expect(alerts).toContain("səlahiyyətiniz yoxdur (alerts.ack)");
-      expect(screen.getByRole("button", { name: "Gördüm" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: SEEN })).toBeInTheDocument();
     });
 
     it("an alarm somebody else answered says so", async () => {
@@ -201,7 +255,7 @@ describe("the alarms screen", () => {
         setup: (fake) => fake.acknowledge.mockRejectedValue(refusal(404, "no such active alert")),
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        fireEvent.click(screen.getByRole("button", { name: SEEN }));
         await settle();
       });
       expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" "))
@@ -217,7 +271,7 @@ describe("the alarms screen", () => {
         setup: (fake) => fake.acknowledge.mockRejectedValue(refusal(403, "permission required: alerts.ack")),
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        fireEvent.click(screen.getByRole("button", { name: SEEN }));
         await settle();
       });
       const said = within(screen.getByRole("region", { name: "Bildirişlər" })).getAllByText(/REA-01 · 2 · news2/);
@@ -248,13 +302,13 @@ describe("the alarms screen", () => {
       await act(async () => { await mounted.board.start(); });
       await act(async () => { mounted.stream.open(); await settle(); });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        fireEvent.click(screen.getByRole("button", { name: SEEN }));
         await settle();
       });
       const said = () => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(/səlahiyyətiniz yoxdur/);
       expect(said().length).toBeGreaterThan(0);
       await act(async () => { leave(); await settle(); });
-      expect(screen.queryByRole("button", { name: "Gördüm" })).toBeNull();   // the screen is gone
+      expect(screen.queryByRole("button", { name: SEEN })).toBeNull();   // the screen is gone
       expect(said().length).toBeGreaterThan(0);                              // the refusal is not
     });
 
@@ -264,7 +318,7 @@ describe("the alarms screen", () => {
         payload: withAlarms(alarm("news2")),
         setup: (fake) => fake.acknowledge.mockImplementation(() => new Promise((resolve) => { release = resolve; })),
       });
-      const button = screen.getByRole("button", { name: "Gördüm" });
+      const button = screen.getByRole("button", { name: SEEN });
       await act(async () => { fireEvent.click(button); await settle(); });
       expect(button).toHaveAttribute("aria-busy", "true");
       await waitFor(
@@ -278,7 +332,7 @@ describe("the alarms screen", () => {
 
     it("no button at all without the right, and the reason is on the screen", async () => {
       await open({ payload: withAlarms(alarm("news2")), perms: ["board.view"] });
-      expect(screen.queryByRole("button", { name: "Gördüm" })).toBeNull();
+      expect(screen.queryByRole("button", { name: SEEN })).toBeNull();
       expect(screen.getByText(/«alerts.ack» səlahiyyəti lazımdır/)).toBeInTheDocument();
     });
   });

@@ -353,13 +353,51 @@ Plan and copy-paste deploy blocks:
 - Release R3 `/opt/homunculus-infinity/transport-3940346adc66ca7b` (tarball sha256
   `e55325f9…`): the Stage 0a decoder and transport unchanged, plus a forwarder thread that
   reads the live view every 5 s and posts at most one value per parameter per device, only
-  values younger than 3 s, never NBP.
+  values younger than 3 s, never NBP (R4, below, adds NBP).
 - `92-asama-a-kod.conf` — the same as `90-transport-0a-duzeltme.conf` with the release path
   changed to R3. Code present, forwarder OFF. Created 2026-10-19 08:49 UTC.
 - `93-asama-a-golge.conf` — adds only
   `EnvironmentFile=/etc/homunculus-infinity-pilot/shadow-forwarder.env`. Its presence turns
   the forwarder ON (journal line `Shadow display forwarding ENABLED`). Created 2026-10-19
   09:00:13 UTC.
+
+**R4 — NBP on the strip** (spec `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md`,
+plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
+
+- Release R4 `/opt/homunculus-infinity/transport-eeba1f4702719919`: R3 plus, in the live view, the
+  time each device's NBP triple last changed (kept only when a complete valid triple came within
+  3 s before the change; flagged or partial NBP neither starts nor continues that run), and the
+  forwarder's schema `homunculus.infinity-shadow.v2` — NBP's three readings with `changed_at`, sent
+  only once such a change has been seen since the hub started. The name is the files' hash: the
+  same two edge files always give it.
+- `94-nbp.conf` — `92-asama-a-kod.conf` with the release path changed to R4, checked by `diff`
+  before it is installed. 93 stays (the forwarder stays on).
+- **Order: the API and web first** (they take v1 and v2 and draw `nbp`), **then the hub.** An R4
+  hub posting v2 to an older API is refused whole (400), which the forwarder's `failed` counter and
+  `shadow_check.py` show. The worker (.74) does not change.
+- **Rollback — the hub first, the API only after it:** delete `94-nbp.conf`, `systemctl
+  daemon-reload`, restart the hub: R3, v1, no NBP; the API keeps taking v1. API and web go back by
+  image tag, as for every release, but only once the hub is on R3 again: an R4 hub posting v2 to
+  the old API is refused whole (400) and the strip goes dark. The blocks run G-1 before G-2 for
+  this reason.
+- The API withholds NBP once its change is older than 2 h − 15 s (`NBP_MAX_MEASURED_AGE_S −
+  DISPLAY_MAX_AGE_S`, the browser's display window for a value), so no screen shows NBP past 2 h;
+  the browser compares no age with a number (X50).
+- `shadow_check.py` prints one more line, `nbp: N cihazda ölçüm saati ≤ ile gösteriliyor (en eski
+  M dk önce), W cihazda ölçüm bekleniyor, O cihazda gizli (eski)` — counts and an age, never a
+  pressure.
+- Deploy record (2026-10-25, blocks `C:\tmp\infinity-a-releases\NBP-bloklari.txt`): C-2 built api
+  and web at `f72dafa` (containers started 07:57:26 UTC; images `b49b062c…` / `426cebc0…`). A first
+  C-2 had been pasted at 07:47 UTC before C-1 and rebuilt `0ea1d05` unchanged (new image ids, same
+  content) — C-3's content checks (the NBP constants in the api container, `nbpWaiting` in the served
+  chunks) caught it; C-1 and C-2 were rerun. D-1 installed R4 and `94-nbp.conf` and restarted the
+  hub at 08:00:42 UTC (journal: forwarder `starting -> ok`). D-2: transport_check KABUL (hub 8.1 %
+  of a core), shadow_check 300 s six KABUL with 60 v2 bodies accepted, `nbp: 2 cihazda ölçüm saati
+  ≤ ile gösteriliyor (en eski 3 dk önce), 5 cihazda ölçüm bekleniyor, 0 cihazda gizli (eski)`,
+  PANO_OZET equal to P-önce. Walk: accepted by the user as a whole ("okey"); E-3 bekliyor (no bed
+  past 2 h at hand); E-4 and E-5 verified by the agent. A-3 (O30) before B: every NBP bed shows a
+  regular 3.00–3.01 s gap between complete valid triples about every 45 s and none longer; the user
+  chose to deploy as is and to widen `NBP_CONTINUITY_S` with a day's evidence (O38).
 
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 

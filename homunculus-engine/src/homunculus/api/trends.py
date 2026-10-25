@@ -37,12 +37,11 @@ TRENDS_HOURS = (6, 24, 72)
 #: Above this many readings in a window a channel is thinned (`state/timeline.py` `thin`), D8.
 TRENDS_MAX_POINTS = 2000
 #: The most alarm-episode rows kept for one patient's window. An episode is a `first_seen` row.
-#: Today the engine never drops an alert kind from `active_alerts` (pipeline.py:93–96 only ever sets
-#: `bucket[kind]`), so `AckStore.prune` has nothing to drop and `first_seen` is stamped once per
-#: (patient, kind): a ▲ on a chart means "the first time this finding was raised for this patient",
-#: and a window holds a handful. IF alert episodes are ever cleared and re-raised, a flapping alert
-#: would write a `first_seen` row each time it came back — about 30 an hour at one reading a minute,
-#: about 2 160 in the 72-hour window — and this bound sits above that. The read is oldest-first
+#: Since G2-A1 (O17) the engine drops a kind from `active_alerts` on the first reading that does not
+#: produce it (pipeline.py), the stamp is pruned with it and stamped again when the kind returns: a ▲
+#: on a chart means "an alert began here", once per episode. A flapping alert therefore writes a
+#: `first_seen` row each time it comes back — about 30 an hour at one reading a minute, about 2 160
+#: in the 72-hour window — and this bound sits above that. The read is oldest-first
 #: (`records` orders by id), so a window that ever held more would lose its NEWEST marks; the read
 #: asks for one row more than the limit, and `markers_truncated` is true only when that extra row
 #: came back, i.e. when something was actually cut.
