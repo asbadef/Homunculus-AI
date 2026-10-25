@@ -135,6 +135,16 @@ def test_the_nbp_line_counts_devices_and_the_oldest_change_and_never_prints_a_pr
     assert "nbp: 0 cihazda" in "\n".join(check.report(BEFORE, AFTER, window_s=300, **EXPECT))
 
 
+def test_the_nbp_line_names_the_oldest_change_among_every_device_showing_one():
+    # Three devices show NBP, the oldest change in the middle: the line names that one, not the first,
+    # the last or the youngest.
+    after = board()
+    for card, measured in ((after["beds"][0], 300.0), (after["beds"][1], 2821.0), (after["unassigned"][0], 1200.0)):
+        card["parameters"].append(nbp("value", measured=measured, changed="2026-10-20T08:13:00+00:00"))
+    assert check.nbp_line(after) == ("nbp: 3 cihazda ölçüm saati ≤ ile gösteriliyor (en eski 48 dk önce), "
+                                     "0 cihazda ölçüm bekleniyor, 0 cihazda gizli (eski)")
+
+
 def test_a_missing_endpoint_is_stage_yok_and_the_board_hash_is_still_printed(tmp_path, capsys):
     env = tmp_path / ".env"
     env.write_text(f"TENANT_SLUG=demo\nTENANT_TOKEN={TOKEN}\n", encoding="utf-8")

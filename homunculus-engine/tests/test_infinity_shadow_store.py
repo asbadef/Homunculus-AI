@@ -353,6 +353,19 @@ def test_three_readings_from_two_changes_are_never_shown_as_one_measurement():
     assert _params(store)[NBP] == _waiting()
 
 
+def test_one_change_is_withheld_as_soon_as_any_of_its_three_readings_stops_arriving():
+    # One change time, but the systolic last came 20.5 s ago: the triple is as old as its oldest
+    # reading, not its newest, so no number is drawn beside a part that went quiet.
+    clock = Clock()
+    store = ShadowStore(clock)
+    changed = T0 - 600.0
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=changed))))
+    clock.t = T0 + 20.0
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=clock.t - 0.5, changed_at=changed)[1:])))
+    assert _params(store)[NBP] == {**_waiting(), "age_s": 620.0, "last_at": _iso(changed),
+                                   "changed_at": _iso(changed), "measured_age_s": 620.0}
+
+
 def test_an_nbp_the_device_flags_invalid_is_stars_and_no_number():
     store = ShadowStore(Clock())
     parts = nbp()

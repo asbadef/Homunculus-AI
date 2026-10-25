@@ -192,10 +192,18 @@ describe("the tables", () => {
   });
 
   it("holds no threshold, band or colour that depends on a value", () => {
-    const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "monitor.js"), "utf8");
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const source = fs.readFileSync(path.join(here, "monitor.js"), "utf8");
     expect(source).not.toMatch(/text-(?:crit|high|mid|low|ok|v-)|bg-(?:crit|high|mid|low|ok)/);
     expect(source).not.toMatch(/value\s*[<>]=?\s*\d/);
-    expect(source).not.toMatch(/\b(?:value|systolic|diastolic|mean)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:value|systolic|diastolic|mean)\b/);
-    expect(source).not.toMatch(/\b(?:ageS|measuredAgeS|age_s|measured_age_s)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:ageS|measuredAgeS|age_s|measured_age_s)\b/);
+    // X47, over the rules and over the strip that draws them (MonitorStrip.jsx's NbpValue and Cell):
+    // no value, NBP part or age is compared with a number of the browser's own. The strip's colours
+    // are held by its own sweep (MonitorStrip.test.jsx), since its header names `text-v-hr` as what
+    // it never uses.
+    for (const file of ["monitor.js", "MonitorStrip.jsx"]) {
+      const code = fs.readFileSync(path.join(here, file), "utf8");
+      expect(code, file).not.toMatch(/\b(?:value|systolic|diastolic|mean)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:value|systolic|diastolic|mean)\b/);
+      expect(code, file).not.toMatch(/\b(?:ageS|measuredAgeS|age_s|measured_age_s)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:ageS|measuredAgeS|age_s|measured_age_s)\b/);
+    }
   });
 });
