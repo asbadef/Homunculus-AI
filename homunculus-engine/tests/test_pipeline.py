@@ -571,6 +571,33 @@ def test_the_held_note_lists_the_longest_stale_vital_first():
     assert held.stale_inputs == ["systolic BP", "resp rate"]
 
 
+def test_a_back_dated_reading_cannot_undo_the_hold_or_raise_news2_on_a_stale_value():
+    # X9e. The doors judge a reading at its own time, never past the wall clock (X10). Stamped 25
+    # minutes in the past, a reading was judged at that past instant, where the later readings are
+    # fresh and the pressure, stale at the wall clock, was not yet: NEWS2 jumped to 7, immediate.
+    # NEWS2 is judged no earlier than this patient's last NEWS2 judgement.
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                               # 3 + 2 + 1 = 6
+        eng.ingest(o, now=o.timestamp)
+    for code, value in [(SignalCode.RESP_RATE, 22), (SignalCode.HEART_RATE, 105)]:
+        o = _obs(code, value, minute=70)
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in before.clinical_reasoning
+    late = _obs(SignalCode.TEMPERATURE, 38.5, minute=45)   # arrives at +70, stamped 25 min earlier
+    eng.ingest(late, now=late.timestamp)                   # the doors' clamp: min(stamp, wall)
+    held = _news2(eng)
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+    fresh = _obs(SignalCode.SBP, 88, minute=71)            # a pressure measured now
+    eng.ingest(fresh, now=fresh.timestamp)
+    alert = _news2(eng)
+    assert (alert.summary.split()[1], alert.severity, alert.urgency) == ("7", "high", "immediate"), \
+        "a fresh 7 is the alert, as before"
+    assert "Held" not in alert.clinical_reasoning
+
+
 def test_a_held_alert_is_still_downgraded_by_the_baseline_that_explains_it():
     # Kept as last scored, the held alert keeps the downgrade it was scored with: the stale pressure
     # inside its charted range still explains it. Judged again at `now` the pressure would be no

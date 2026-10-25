@@ -40,6 +40,8 @@ class Engine:
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
         # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
         self._held_news2_alert: dict[str, Alert] = {}
+        # G2-A2 X9e: patient -> the latest instant NEWS2 was judged at; it never goes back.
+        self._news2_judged_at: dict[str, datetime] = {}
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
 
@@ -75,11 +77,19 @@ class Engine:
         # baseline SOFA is part of the Sepsis-3 criterion itself, not a downgrade applied after
         # the fact. Getting it there late would mean the alert had already been raised.
         findings = list(septic_shock.evaluate(state, now, profile))
-        news2_findings = news2.evaluate(state, now)
+        # NEWS2 — the rule, the patient-relative layer and the hold — is judged no earlier than this
+        # patient's last NEWS2 judgement (G2-A2, X9e). The doors judge a reading at its own time,
+        # never past the wall clock (X10); a reading stamped in the past was judged at that past
+        # instant, where every later reading is fresh and a stale one not yet stale, and a vital
+        # stale at the wall clock lifted NEWS2 again — or ended a hold. `now` is unchanged for
+        # everything else: the antibiotic anchor, sepsis and shock, the model.
+        judge_at = max(now, self._news2_judged_at.get(obs.patient_id, now))
+        self._news2_judged_at[obs.patient_id] = judge_at
+        news2_findings = news2.evaluate(state, judge_at)
         findings += news2_findings
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation. At the same
-        # `now` NEWS2 was judged at (G2-A2, D6).
-        findings = patient_relative.apply(findings, state, profile, now)
+        # instant NEWS2 was judged at (G2-A2, D6).
+        findings = patient_relative.apply(findings, state, profile, judge_at)
 
         # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
@@ -135,7 +145,7 @@ class Engine:
         alerts = [to_alert(f, obs.patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
         # Staleness may withhold a new NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
-        held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, now)
+        held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, judge_at)
         if held is not None:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
