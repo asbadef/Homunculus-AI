@@ -906,7 +906,12 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     girilmemişse motorun 0 varsaydığını söyler;
   - **ilaç ve antibiyotik:** motorun yayımladığı vazopressör/inotrop kayıtları, antibiyotiğin
     verildiği saat ya da penceresinin dolduğu saat; antibiyotik kaydı yoksa "kimse kaydetmedi —
-    verilmediği anlamına gelmez".
+    verilmediği anlamına gelmez". Antibiyotik penceresi (1 saat) sepsisin ya da septik şokun fark
+    edildiği anda başlar; antibiyotik uyarıları yalnız sepsis ya da septik şok sürerken görünür,
+    ama pencere altta saymaya devam eder (sepsis geri gelirse geçen gerçek süre görünür) ve yalnız
+    klinisyen şüpheli enfeksiyonu "yok" olarak işaretleyince biter. Bu işaret 60 dakika içinde
+    düzeltilirse (enfeksiyon yeniden "var" işaretlenirse) eski pencere geri gelir — düzeltme aynı
+    olaydır; 60 dakikadan sonrası yeni bir pencere başlatır.
 - *Şüpheli enfeksiyon — ekranın yazdığı iki şeyden biri* (öteki hastanın normali, 3.7): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
@@ -937,13 +942,18 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
    zamana dek ekran karar vermez, iki olguyu birlikte gösterir.
 2. **"Kapanan alarm nereye gitti?"** Panodan düştü. Bir alarm, kuralı onu üretmeyi bıraktığı ilk
    ölçümde kapanır — bekleme süresi yok (G2-A1, O17'nin kararı, 25.10.2026). Tek istisna:
-   **kimsenin onaylamadığı kritik bir alarm** durumu geçince de listede «geçti · onaylanmadı»
-   olarak kalır, sesi durur; biri onaylayınca kalkar. Onaylanmış bir kritik alarm ile yüksek, orta
-   ve düşük alarmlar kuralla birlikte gider. Aynı alarm yeniden çıkarsa yeni bir bölümdür: yeni ilk
-   görülme anı, yeni eskalasyon saati, hemşireye yeni bildirim — gidip gelen bir değer (nabız
-   140 → 80 → 140) her dönüşünde yeniden bildirir; bunun için bilerek bir bekleme yok. Motor yalnız
-   açık alarmları gönderiyor ve alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim
-   kaydında (`alert_cleared`; `audit.view` ister).
+   **kimsenin onaylamadığı kritik bir alarm** durumu geçince de her yüzeyde (alarm listesi, yatak
+   kartı, yatak listesi, zil, hasta ekranı) «geçti · onaylanmadı» olarak kalır, sesi durur; biri
+   onaylayınca kalkar. Onaylanmış bir kritik alarm ile yüksek, orta ve düşük alarmlar kuralla
+   birlikte gider. Aynı alarm yeniden çıkarsa yeni bir bölümdür: yeni ilk görülme anı (eğride yeni
+   ▲) ve — aciliyeti «anında» olan alarmlarda — hemşireye yeni bildirim; gidip gelen bir değer
+   (nabız 140 → 80 → 140) her dönüşünde yeniden bildirir, bunun için bilerek bir bekleme yok.
+   Kimsenin onaylamadığı bir kritik alarm «geçti · onaylanmadı» durumundayken yeniden çıkarsa
+   aynı bölümdür, yeni bildirim getirmez (O5). Eskalasyon saati kapanmayla sıfırlanmaz: dönüş
+   eskalasyon süresi (5 dk) içindeyse önceki bölümün saati sürer ve doktor yeniden çağrılmaz; daha
+   uzun bir aradan sonraki dönüş yeni bir saat başlatır (G2-A1 X13). Motor yalnız açık alarmları
+   gönderiyor ve alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim kaydında
+   (`alert_cleared`; `audit.view` ister).
    Ekran boş bir "kapananlar" bölümü çizmez — boş bölüm "hiçbir şey kapanmadı" diye okunurdu —
    bunu tek cümleyle söyler.
 3. **"Vital eğrileri nerede?"** Hasta ekranının altında, "Vital eğrileri" kutusunda (Grup 2 ·
