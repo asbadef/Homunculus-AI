@@ -720,6 +720,7 @@
     ["diyetliste", "Diyet Listesi", "admin_system", "list"],   // diyet listesi + öğün giriş saatleri; doktor diyet isteminde seçer
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
+    ["ilacliste", "İlaç Listesi", "admin_system", "pill"],   // ilaç.xlsx'ten türetilmiş ilaç kataloğu (ara + ekle); doktor İstem/reçetede, hemşire uygulamada seçer
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
     ["cihazliste", "Cihaz Listesi", "admin_system", "activity"],   // RIS/yazar kasa/hasta çağrı ekranı; IP/MAC/port tanımı
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
@@ -737,7 +738,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "guvenlik", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "guvenlik", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "ilacliste", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "parametre", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -763,7 +764,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, ilacliste:tabIlac, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          parametre:tabParametre, guvenlik:tabGuvenlik,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
@@ -878,6 +879,47 @@
     body.querySelector("[data-icdq]").addEventListener("input", e => { AD.icdq = e.target.value; draw(); });
     body.querySelector("[data-icdnew]").addEventListener("click", () => icdForm(null, draw));
     list.addEventListener("click", e => { const tr = e.target.closest("[data-edit]"); if (!tr) return; const row = ALL.find(x => x[0] === tr.dataset.edit); if (row) icdForm({ kod:row[0], ad:row[1] }, draw); });
+  }
+
+  // İlaç kataloğu (H.ILAC = ilaç.xlsx'ten; admin ekler H.data.ilacEk'e). Doktor İstem/reçetede, hemşire uygulamada seçer.
+  function tabIlac(body) {
+    const add = (H.data.ilacEk = H.data.ilacEk || []);
+    const ALL = () => (H.ILAC || []).concat(add);
+    body.innerHTML = `<div class="adm-bar"><input data-ilq placeholder="İlaç adı / kod / grup ara (ör. seftriakson)" value="${esc(AD.ilq || "")}"><span class="spacer"></span><span class="adm-sub" data-ilcount></span><button class="btn p" data-ilnew>+ Yeni ilaç</button></div>
+      <div data-illist></div>
+      <p class="adm-sub" style="margin-top:10px">İlaç kataloğu — ilaç.xlsx'ten türetilmiş ${(H.ILAC || []).length} temsili ilaç (tam liste 23.866 kalem). Admin yeni ilaç ekler; doktor İstem/reçetede, hemşire ilaç uygulamada bu listeden seçer. Katalog ilaçları salt-görünür; eklenenler düzenlenir/silinir.</p>`;
+    const list = body.querySelector("[data-illist]");
+    const draw = () => {
+      const q = norm(AD.ilq || ""), a = ALL();
+      const res = q ? a.filter(x => norm(x[1]).includes(q) || norm(x[0]).includes(q) || norm(x[2] || "").includes(q)) : a;
+      const shown = res.slice(0, 200);
+      body.querySelector("[data-ilcount]").textContent = a.length.toLocaleString("tr") + " ilaç";
+      list.innerHTML = `<div class="adm-sub" style="margin:6px 0">${res.length.toLocaleString("tr")} sonuç${res.length > 200 ? " · ilk 200 (aramayı daraltın)" : ""}</div>
+        ${shown.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:150px">Kod</th><th>Ad</th><th>Grup</th><th>Form</th><th style="width:90px">Fiyat</th><th>Özellik</th><th style="width:44px"></th></tr></thead><tbody>${shown.map(x => { const ai = add.indexOf(x); return `<tr${ai < 0 ? "" : ` data-iledit="${ai}" style="cursor:pointer"`}><td class="mono adm-sub">${esc(x[0])}</td><td><b>${esc(x[1])}</b></td><td class="adm-sub">${esc(x[2] || "")}</td><td class="adm-sub">${esc(x[3] || "")}</td><td style="text-align:right">${x[4] ? esc(x[4]) + " ₼" : "—"}</td><td class="adm-sub">${esc(x[5] || "")}</td><td>${ai < 0 ? "" : `<button class="btn g sm" data-ildel="${ai}" title="Sil">×</button>`}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen ilaç yok.</div>`}`;
+    };
+    draw();
+    body.querySelector("[data-ilq]").addEventListener("input", e => { AD.ilq = e.target.value; draw(); });
+    body.querySelector("[data-ilnew]").addEventListener("click", () => ilacForm(null, draw));
+    list.addEventListener("click", e => { const dl = e.target.closest("[data-ildel]"); if (dl) { add.splice(+dl.dataset.ildel, 1); H.saveData && H.saveData(); H.log("İlaç silindi"); draw(); return; } const tr = e.target.closest("[data-iledit]"); if (tr) { const row = add[+tr.dataset.iledit]; if (row) ilacForm(row, draw); } });
+  }
+  function ilacForm(existing, redraw) {
+    const add = (H.data.ilacEk = H.data.ilacEk || []);
+    const e = existing || [];
+    H.modal({ title:existing ? "İlaç düzenle" : "Yeni ilaç", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kod / barkod</label><input data-f="kod" value="${esc(e[0] || "")}"></div>
+        <div class="fr"><label>Ad</label><input data-f="ad" value="${esc(e[1] || "")}"></div>
+        <div class="fr"><label>Grup</label><input data-f="grup" value="${esc(e[2] || "")}" placeholder="ör. ANTİBİYOTİK"></div>
+        <div class="fr"><label>Farmasötik form</label><input data-f="form" value="${esc(e[3] || "")}" placeholder="ör. Tablet"></div>
+        <div class="fr"><label>Fiyat (₼)</label><input data-f="fiyat" type="number" value="${esc(e[4] || "")}"></div>
+        <div class="fr"><label>Özellik</label><input data-f="flags" value="${esc(e[5] || "")}" placeholder="YR SZ PD MJ ID"></div></div>
+        <p class="adm-sub" style="margin-top:6px">YR: yüksek riskli · SZ: soğuk zincir · PD: pediatrik · MJ: majistral · ID: ışığa duyarlı.</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
+        const kod = g("kod"), ad = g("ad"); if (!ad) { H.toast("İlaç adı gerekli.", "w"); return; }
+        const row = [kod, ad, g("grup"), g("form"), +g("fiyat") || 0, g("flags")];
+        if (existing) { const i = add.indexOf(existing); if (i >= 0) add[i] = row; } else add.unshift(row);
+        H.saveData && H.saveData(); H.log(existing ? "İlaç düzenlendi" : "İlaç eklendi", ad); H.closeModal(); H.toast("Kaydedildi: " + ad); redraw(); }; } });
   }
 
   // Tanı ekle/düzenle formu (modal): çekirdek alanlar + ICD Özellikleri. Kronik/Bulaşıcı özelliklerden türetilir.

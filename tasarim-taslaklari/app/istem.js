@@ -161,7 +161,7 @@
       onMount(m) { m.querySelector("[data-ok]").onclick = () => { const o = build(m); if (!o) return; addOrder(p, o); H.toast("İstem eklendi: " + (o.ad || o.cat)); H.closeModal(); rerender(); }; } });
 
     if (type === "ilac") return simple("İlaç istemi",
-      `<div class="fr"><label>İlaç</label><input data-f="ad" placeholder="ör. Seftriakson 1 g"></div>
+      `<div class="fr"><label>İlaç</label><input data-f="ad" list="istem-ilac" placeholder="İlaç ara (katalogdan)"><datalist id="istem-ilac">${((H.ILAC || []).concat(H.data.ilacEk || [])).map(d => `<option value="${esc(d[1])}">`).join("")}</datalist></div>
        <div class="fr"><label>Doz / yol</label><input data-f="doz" placeholder="ör. 2x1 IV"></div>
        <div class="fr"><label>Süre</label><input data-f="sure" placeholder="ör. 7 gün"></div>`,
       (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("İlaç gerekli.", "w"); return null; } return { cat:"İlaç", ad, detay:[val(m, "doz"), val(m, "sure")].filter(Boolean).join(" · ") }; });
