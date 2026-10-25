@@ -159,7 +159,7 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(box).toHaveTextContent(/ən azı bu qədər köhnədir/);   // the time is a bound: the value is at least this old (X49)
     expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
     expect(box).toHaveTextContent(/dəyəri dəyişən növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // waits for a CHANGED value, after a hub restart or a data interruption (X49)
-    expect(box).toHaveTextContent(/monitorun məlumatı kəsildikdən sonra/);   // the interruption is named (X48)
+    expect(box).toHaveTextContent(/monitorun məlumatı kəsik ikən dəyər dəyişibsə/);   // only a value that CHANGED during the interruption waits (X48, final review M-4)
     expect(box).toHaveTextContent(/əvvəlki xəstənin ola bilər \(ən çox 2 saat\)/);   // a changed patient's bed may show the previous patient's NBP (X49)
     expect(box).not.toHaveTextContent(/bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");

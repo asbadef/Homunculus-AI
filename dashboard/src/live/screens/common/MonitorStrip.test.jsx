@@ -156,11 +156,11 @@ describe("NBP, with the time its value last changed", () => {
 
   it("tells a screen reader the numbers and that the cuff measured at or before that time", () => {
     const { unmount } = show(<Strip entry={card([NBP])} />);
-    expect(within(region()).getByText(`118 bölü 79, orta 92 mmHg; ölçmə ${TIME} və ya daha əvvəl, 10 dəq əvvəl`))
+    expect(within(region()).getByText(`118 bölü 79, orta 92 mmHg; ölçmə ${TIME} və ya daha əvvəl, ən azı 10 dəq əvvəl`))
       .toHaveClass("sr-only");
     unmount();
     show(<Strip entry={card([NBP])} />, "en");
-    expect(screen.getByText(`118 over 79, mean 92 mmHg; measured at or before ${TIME}, 10 min ago`)).toHaveClass("sr-only");
+    expect(screen.getByText(`118 over 79, mean 92 mmHg; measured at or before ${TIME}, at least 10 min ago`)).toHaveClass("sr-only");
     expect(screen.getByRole("definition")).toHaveTextContent(`measured ≤ ${TIME} (10 min)`);
   });
 
