@@ -161,9 +161,16 @@ def build_episodes(records: list[AuditRecord]) -> list[Episode]:
             episode = open_episode.get(key)
             if episode is None:
                 continue
-            if episode.resolved_at is None:
+            reason = rec.payload.get("reason")
+            # Every stop moves resolved_at: a latched critical that fires again and stops again
+            # writes a second `resolved` row, and the board shows that last stop.
+            if reason == "resolved" or episode.resolved_at is None:
                 episode.resolved_at = when
-            latched = (rec.payload.get("reason") == "resolved"
+            # `/ack` writes an `ack` row and this row for one act; the report must not depend on
+            # which lands first, so the row that removes a latch is itself the answer.
+            if reason == "acked_after_resolve" and episode.answered_at is None:
+                episode.answered_at = when or episode.started
+            latched = (reason == "resolved"
                        and rec.payload.get("severity") == "critical"
                        and episode.answered_at is None)
             if not latched:

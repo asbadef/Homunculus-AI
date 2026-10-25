@@ -67,18 +67,25 @@ _SHOCK = [(SignalCode.SUSPECTED_INFECTION, 1.0), (SignalCode.WEIGHT_KG, 100),
           (SignalCode.NOREPINEPHRINE_RATE, 0.12), (SignalCode.LACTATE, 3.1)]
 
 
-def _latched():
-    """bed-3 in septic shock, first seen at T0; two minutes later the lactate is back under 2. The
-    shock latches — nobody acknowledged it — while sepsis and the antibiotic clock still fire."""
+def _latch_shock(eng, store, patient_id, minutes):
+    """`patient_id` in septic shock, first seen at T0; `minutes` later the lactate is back under 2.
+    The shock latches — nobody acknowledged it — while sepsis and the antibiotic clock still fire."""
     from homunculus.api.alert_lifecycle import sync_alerts
-    eng, store = Engine(), AckStore()
     for code, value in _SHOCK:
-        eng.ingest(Observation("bed-3", code, value, "u", T0, "mon"), now=T0)
-        sync_alerts(eng, store, "bed-3", T0)
-    for a in eng.active_alerts("bed-3"):
-        store.stamp_first_seen("bed-3", a.kind, T0)
-    eng.ingest(Observation("bed-3", SignalCode.LACTATE, 1.5, "u", T0, "lab"), now=T0)
-    sync_alerts(eng, store, "bed-3", T0 + timedelta(minutes=2))
+        eng.ingest(Observation(patient_id, code, value, "u", T0, "mon"), now=T0)
+        sync_alerts(eng, store, patient_id, T0)
+    for a in eng.active_alerts(patient_id):
+        store.stamp_first_seen(patient_id, a.kind, T0)
+    eng.ingest(Observation(patient_id, SignalCode.LACTATE, 1.5, "u", T0, "lab"), now=T0)
+    sync_alerts(eng, store, patient_id, T0 + timedelta(minutes=minutes))
+
+
+def _latched():
+    """bed-3's shock latches two minutes in. bed-4's latches too, three minutes later: another
+    patient's latch is in the store the whole time, and no board but bed-4's may list it."""
+    eng, store = Engine(), AckStore()
+    _latch_shock(eng, store, "bed-3", 2)
+    _latch_shock(eng, store, "bed-4", 5)
     return eng, store
 
 
@@ -102,3 +109,33 @@ def test_an_alert_both_firing_and_latched_is_listed_once_as_firing():
     eng.ingest(Observation("bed-3", SignalCode.LACTATE, 3.4, "u", T0, "lab"), now=T0)
     shocks = [a for a in patient_board(eng, "bed-3", store)["alerts"] if a["kind"] == "septic_shock"]
     assert len(shocks) == 1 and shocks[0]["resolved_at"] is None
+
+
+def test_a_card_lists_only_its_own_patients_latched_critical():
+    eng, store = _latched()
+    assert {("bed-3", "septic_shock"), ("bed-4", "septic_shock")} <= set(store.resolved)
+    board = patient_board(eng, "bed-3", store)
+    assert all(a["patient_id"] == "bed-3" for a in board["alerts"]), "bed-4's latch is not on bed-3"
+    assert [a["kind"] for a in board["alerts"]].count("septic_shock") == 1
+    assert len(board["alerts"]) == 3
+    # The other way round: bed-4's own card still carries its own latch, resolved when it resolved.
+    theirs = [a for a in patient_board(eng, "bed-4", store)["alerts"] if a["resolved_at"] is not None]
+    assert [(a["patient_id"], a["kind"], a["resolved_at"]) for a in theirs] == [
+        ("bed-4", "septic_shock", (T0 + timedelta(minutes=5)).isoformat())]
+
+
+def test_latched_criticals_are_listed_oldest_resolution_first():
+    """Two criticals latched on bed-3, the shock first and the antibiotic clock an hour later. The
+    order is the resolution's, not the kinds' alphabet (antibiotic_overdue sorts before septic_shock)."""
+    from homunculus.api.alert_lifecycle import sync_alerts
+    eng, store = _latched()
+    late = T0 + timedelta(minutes=61)       # the hour is up with no antibiotic charted: overdue, critical
+    eng.ingest(Observation("bed-3", SignalCode.HEART_RATE, 90.0, "bpm", late, "mon"), now=late)
+    sync_alerts(eng, store, "bed-3", late)
+    given = T0 + timedelta(minutes=64)      # then it is given, and the overdue clock stops
+    eng.ingest(Observation("bed-3", SignalCode.ANTIBIOTIC_ADMINISTERED, 1.0, "u", given, "mon"), now=given)
+    sync_alerts(eng, store, "bed-3", given)
+    latched = [(a["kind"], a["resolved_at"]) for a in patient_board(eng, "bed-3", store)["alerts"]
+               if a["resolved_at"] is not None]
+    assert latched == [("septic_shock", (T0 + timedelta(minutes=2)).isoformat()),
+                       ("antibiotic_overdue", given.isoformat())]
