@@ -50,6 +50,9 @@ PERMISSIONS: dict[str, str] = {
     "clinical.chart": "Chart clinician-observed inputs (infection suspicion, pressor, fluids, "
                       "GCS…) and the patient's own baseline",
     "scores.sign": "Sign a severity-score form (SOFA) with corrections",
+
+    # G2-B1a — a ward turns its beds over at night without an administrator (spec D8).
+    "beds.release": "Mark a cleaned bed free again (housekeeping → available), in one's own units",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -144,12 +147,13 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
-                     "shifts.manage", "break_glass.use", "clinical.chart")},
+                     "shifts.manage", "break_glass.use", "clinical.chart", "beds.release")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "admissions.transfer.confirm", "handover.sign", "clinical.chart")},
+                     "admissions.transfer.confirm", "handover.sign", "clinical.chart",
+                     "beds.release")},
     {"slug": "rapid_response", "kind": "extra", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
