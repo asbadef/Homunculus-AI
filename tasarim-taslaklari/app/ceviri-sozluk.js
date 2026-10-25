@@ -2,6 +2,10 @@
  * Tarayıcıyla ekranlardan toplandı (her rol × sayfa × sekme), çeviri ajanlarıyla dolduruldu. Elle düzeltme buraya. */
 window.HMC_SOZLUK = {
 /* 2026-10-25 · yeni ekranlar (Kurumsal Faturalama, Hizmet Kartı sekmeleri, Güvenlik seçimi, Tedavi sekmesi) */
+"Kurum bazlı açık alacak": { "AZ":"Qurum əsaslı açıq alacaq", "EN":"Open receivables by institution", "RU":"Открытая дебиторка по учреждениям" },
+"Fatura durumu (GFK)": { "AZ":"Faktura vəziyyəti (GFK)", "EN":"Invoice status (GFK)", "RU":"Статус счёта (GFK)" },
+"İndirim / iade onayları": { "AZ":"Endirim / geri qaytarma təsdiqləri", "EN":"Discount / refund approvals", "RU":"Одобрения скидок / возвратов" },
+"Açık alacak ₼": { "AZ":"Açıq alacaq ₼", "EN":"Open receivable ₼", "RU":"Открытая дебиторка ₼" },
 "Diş planı": { "AZ":"Diş planı", "EN":"Dental plan", "RU":"Стоматологический план" },
 "Diş şeması (FDI)": { "AZ":"Diş sxemi (FDI)", "EN":"Dental chart (FDI)", "RU":"Зубная схема (FDI)" },
 "Tedavi planı": { "AZ":"Müalicə planı", "EN":"Treatment plan", "RU":"План лечения" },
