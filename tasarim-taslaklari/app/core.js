@@ -364,6 +364,10 @@
                 perms:["quality","audit"], home:"quality" },
     sistem:   { group:"Yönetim", name:"Sistem yöneticisi (BT)", az:"Sistem inzibatçısı (İT)", names:false, engine:"HOSPITAL_ADMIN",
                 perms:["admin_users","admin_structure","admin_roles","admin_system","admin_integrations","admin_camera","audit","occupancy","destek_yonet"], home:"admin" },
+    msu:      { group:"Destek", name:"Sterilizasyon (MSÜ) personeli", az:"Sterilizasiya (MSŞ) işçisi", names:false, engine:"— (motorda yok)",
+                perms:["steril"], home:"sterilizasyon" },
+    laborant: { group:"Destek", name:"Laboratuvar / Görüntüleme teknisyeni", az:"Laboratoriya / Görüntüləmə texniki", names:true, engine:"— (motorda yok)",
+                perms:["lab_islem"], home:"labislem" },
   };
   // Destek / İş takip: her kullanıcı talep açabilir; yönetimi (çözme/kapatma) ayrı yetki (destek_yonet).
   Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
@@ -427,6 +431,8 @@
     { u:"mudur.rauf",  pw:"Demo123!", name:"Dr. Rauf Abbasov",       role:"yonetici", units:"*", title:"Baş həkim" },
     { u:"admin",       pw:"Admin123!", name:"Sistem İnzibatçısı",    role:"sistem",   units:"*", title:"İT şöbəsi" },
     { u:"kalite.tural", pw:"Demo123!", name:"Tural Mikayılov",       role:"kalite",   units:"*", title:"Keyfiyyət şöbəsi" },
+    { u:"msu.aygun",   pw:"Demo123!", name:"Aygün Hüseynova",        role:"msu",      units:"*", title:"Sterilizasiya (MSŞ) texniki" },
+    { u:"lab.elnur",   pw:"Demo123!", name:"Elnur Qədirov",          role:"laborant", units:"*", title:"Laboratoriya texniki" },
     { u:"yeni.hekim",  pw:"Gecici1!", name:"Dr. Aynur Cəfərli",      role:"hekim",    units:["dax"], mustChange:true, title:"Yeni hesab · ilk giriş" },
   ].map(x => Object.assign({ active:true, fails:0, lockedUntil:0, lastLogin:"—", extras:[] }, x, x.units === "*" ? { units:H.units().map(u => u.id) } : {}));
   H.MFA_CODE = "123456"; H.RESET_CODE = "482913";

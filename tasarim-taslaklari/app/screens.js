@@ -1266,7 +1266,7 @@
 
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
-  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary"], render(root, params = {}) {
+  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary", "lab_islem"], render(root, params = {}) {
     const cats = { lab:["Laboratuvar"], rad:["Radyoloji"], kan:["Kan ürünü"] };
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));

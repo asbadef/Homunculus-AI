@@ -1696,7 +1696,7 @@
   /* ---------- Kullanıcılar ---------- */
   const isLocked = (x) => x.lockedUntil && x.lockedUntil > Date.now();
   const unitNames = (ids) => { const all = H.units(); if (all.every(u => ids.includes(u.id))) return "Tüm birimler"; return ids.map(i => (H.unit(i) || { tr:i }).tr).join(", ") || "—"; };
-  const USER_PFX = { hekim:"dr.", hemsire:"hs.", kabul:"kabul.", eczaci:"ecz.", biyomed:"bio.", yonetici:"mudur.", kalite:"kalite.", sistem:"it." };
+  const USER_PFX = { hekim:"dr.", hemsire:"hs.", kabul:"kabul.", eczaci:"ecz.", biyomed:"bio.", yonetici:"mudur.", kalite:"kalite.", sistem:"it.", msu:"msu.", laborant:"lab." };
 
   function tabUsers(body, draw) {
     const roles = Object.entries(H.data.roles);
