@@ -523,6 +523,28 @@
         };
       } });
   }
+  // Onam formları (video 6): bekleyen onam/dosya kayıtları; dosya yükleyince tamamlanır.
+  function onamStore() { return H.data.onamlar = H.data.onamlar || [
+    { id:"on1", tip:"Onam formu", ad:"Ameliyat onamı", hasta:"Elvin Hüseynov", proto:"2026-104501", bolum:"Kardiologiya", durum:"Bekliyor" },
+    { id:"on2", tip:"Dosya", ad:"Pasaport", hasta:"Nobatxanım Dadaşova", proto:"2026-104812", bolum:"Oftalmologiya", durum:"Bekliyor" },
+    { id:"on3", tip:"Dosya", ad:"Nüfus cüzdanı fotokopisi", hasta:"Nərgiz Əliyeva", proto:"2026-104533", bolum:"Daxili", durum:"Bekliyor" },
+    { id:"on4", tip:"Onam formu", ad:"Aydınlatılmış onam", hasta:"Elvin Hüseynov", proto:"2026-104501", bolum:"Kardiologiya", durum:"Tamamlandı" },
+  ]; }
+  function onamModal() {
+    let f = "Bekliyor";
+    const draw = (m) => { const list = onamStore().filter(x => f === "hepsi" ? true : x.durum === f);
+      m.querySelector("[data-onbody]").innerHTML = list.length ? list.map(x => `<tr><td><span class="tag">${H.esc(x.tip)}</span></td><td><b>${H.esc(x.ad)}</b></td><td>${H.esc(vzName(x.hasta))}</td><td class="mono adm-sub">${H.esc(x.proto)}</td><td class="adm-sub">${H.esc(x.bolum || "—")}</td><td><span class="tag ${x.durum === "Tamamlandı" ? "ok" : "w"}">${H.esc(x.durum)}</span></td><td>${x.durum === "Bekliyor" ? `<button class="btn p sm" data-onyukle="${x.id}">${x.tip === "Dosya" ? "Dosya yükle" : "İmzalı yükle"} · tamamla</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`;
+      m.querySelectorAll("[data-onseg]").forEach(b => b.classList.toggle("on", b.dataset.onseg === f));
+    };
+    H.modal({ title:"Onam formları / dosya kontrol", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 8px">Eksik onam formu ve dosyalar burada bekler; yükleyip tamamlayınca listeden düşer (çıkış/fatura öncesi kontrol).</p>
+        <div class="seg" style="margin-bottom:10px">${[["Bekliyor", "Bekleyen"], ["Tamamlandı", "Tamamlanmış"], ["hepsi", "Tümü"]].map(([k, l]) => `<button data-onseg="${k}">${l}</button>`).join("")}</div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:90px">Tip</th><th>Doküman</th><th>Hasta</th><th style="width:110px">Protokol</th><th>Bölüm</th><th style="width:120px">Durum</th><th style="width:180px"></th></tr></thead><tbody data-onbody></tbody></table></div>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) { draw(m);
+        m.querySelector(".seg").onclick = (e) => { const b = e.target.closest("[data-onseg]"); if (b) { f = b.dataset.onseg; draw(m); } };
+        m.querySelector("[data-onbody]").onclick = (e) => { const b = e.target.closest("[data-onyukle]"); if (!b) return; const x = onamStore().find(y => y.id === b.dataset.onyukle); if (x) { x.durum = "Tamamlandı"; x.yukleyen = (H.state.user || {}).name || "Vezne"; H.saveData && H.saveData(); H.log("Onam/dosya tamamlandı", x.ad + " · " + x.hasta); H.toast(x.ad + " yüklendi · tamamlandı"); draw(m); } }; } });
+  }
   // Onay bekleyen protokoller (video 17): faturalanmamış protokole süreli onay (Gün → Max. onaylı tarih).
   function onayProtokolModal() {
     const fmt = (d) => d.toLocaleDateString("az");
@@ -964,6 +986,7 @@
         if (lbl === "İstek havuzu") return istekHavuzuModal();
         if (lbl === "Randevu arama") return H.go("randevu", {});
         if (lbl === "Onay bekleyen protokoller") return onayProtokolModal();
+        if (lbl === "Onam formları") return onamModal();
         const rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
