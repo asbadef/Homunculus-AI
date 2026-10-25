@@ -27,6 +27,7 @@ from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
+from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, verify_chain
 from homunculus.api.board import board_snapshot, identity_only_board, patient_board
 from homunculus.api.patient_identity import (
@@ -255,12 +256,18 @@ def create_app(
         _ensure(hospital)
         return stores.setdefault(hospital, AckStore())
 
-    def _live_keys(engine: Engine) -> set[tuple[str, str]]:
-        return {(pid, a.kind) for pid in engine.patient_ids() for a in engine.active_alerts(pid)}
+    def _audit_cleared(hospital: str, cleared: list[Cleared], at: datetime) -> None:
+        """G2-A1, D6: an episode's end is audited as its start (`first_seen`) is — the alarm-quality
+        report reads both. A restart does not replay these: they follow from the rows it does."""
+        for item in cleared:
+            audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
+                                    item.payload(at)))
 
     async def _escalation_cycle(now: datetime) -> None:
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
+            # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
+            # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
             newly = escalate(alerts, store.acks, store.first_seen, now, escalate_after)
             if newly != store.escalated:
@@ -585,6 +592,7 @@ def create_app(
         engine = _engine(hospital)
         store = _store(hospital)
         alerts: list = []
+        now = datetime.now(timezone.utc)
         for item in charted:
             obs = item.observation
             alerts = engine.ingest(obs, now=obs.timestamp)
@@ -592,6 +600,10 @@ def create_app(
                                     {"value": obs.value, "unit": obs.unit,
                                      "obs_ts": obs.timestamp.isoformat(),
                                      "charted_by": item.charted_by}))
+            # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
+            # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
+            # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
+            _audit_cleared(hospital, sync_alerts(engine, store, obs.patient_id, now), now)
         for a in alerts:
             audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
                                     {"severity": a.severity, "urgency": a.urgency,
@@ -603,11 +615,14 @@ def create_app(
         # count), and, worse, `rehydrate` had no row to replay, so a restart handed such an alert a
         # fresh escalation clock. An alarm that had gone unanswered for four minutes started its
         # five-minute grace over again after a deploy, and nothing looked broken.
-        now = datetime.now(timezone.utc)
-        for pid, kind in _live_keys(engine):
-            if store.stamp_first_seen(pid, kind, now):
-                audit.append(AuditEvent(hospital, "first_seen", pid, kind,
+        # This patient's FIRING alerts only (G2-A1): a latched one keeps its episode's stamp, and
+        # stamping it now would open an episode after its end.
+        for a in engine.active_alerts(patient_id):
+            if store.stamp_first_seen(patient_id, a.kind, now):
+                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind,
                                         {"at": now.isoformat()}))
+        # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
+        notifier.prune(hospital, live_keys(engine, store))
 
         board = patient_board(engine, patient_id, store,
                               identity=identities.get(hospital, patient_id), bedmap=bedmap)
@@ -696,11 +711,14 @@ def create_app(
                                      "source": a.source, "evidence": a.supporting_evidence}))
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
         wall_now = datetime.now(timezone.utc)
+        # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
+        # latches (api/alert_lifecycle.py). Before the stamps: a kind that came back after
+        # clearing has had its old stamp pruned, so it is stamped anew, a new episode (D5).
+        _audit_cleared(hospital, sync_alerts(engine, store, obs.patient_id, wall_now), wall_now)
         for a in engine.active_alerts(obs.patient_id):
             if store.stamp_first_seen(obs.patient_id, a.kind, wall_now):
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
-        store.prune(_live_keys(engine))
         await broadcaster.publish(hospital, patient_board(
             engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id),
             bedmap=bedmap))
@@ -709,7 +727,7 @@ def create_app(
             await hub.publish(hospital, note)
             audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                     {"audience": note.audience, "trigger": note.trigger}))
-        notifier.prune(hospital, _live_keys(engine))
+        notifier.prune(hospital, live_keys(engine, store))
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
     @app.post("/ack")
@@ -726,12 +744,19 @@ def create_app(
         # A clinician is attributed from the signed token; only the device path may name a role.
         who = _attribution(caller, body)
         await _require_patient(caller, authorization, patient_id)
-        if (patient_id, kind) not in _live_keys(engine):
-            raise HTTPException(status_code=404, detail="no such active alert")
-        store.acknowledge(patient_id, kind, who["role"], datetime.now(timezone.utc))
-        store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
-        audit.append(AuditEvent(hospital, "ack", patient_id, kind,
-                                {**who, "at": datetime.now(timezone.utc).isoformat()}))
+        now = datetime.now(timezone.utc)
+        # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
+        # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
+        latched = acknowledge_latched(store, patient_id, kind)
+        if latched is None:
+            if (patient_id, kind) not in live_keys(engine, store):
+                raise HTTPException(status_code=404, detail="no such active alert")
+            store.acknowledge(patient_id, kind, who["role"], now)
+            store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
+        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
+        if latched is not None:
+            _audit_cleared(hospital, [latched], now)
+            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
         board = patient_board(engine, patient_id, store,
                               identity=identities.get(hospital, patient_id), bedmap=bedmap)
         await broadcaster.publish(hospital, board)

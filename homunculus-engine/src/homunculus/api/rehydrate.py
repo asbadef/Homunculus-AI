@@ -6,12 +6,19 @@ The append-only audit is the event log: replaying its `ingest`, `chart`, `profil
 restart would otherwise lose. `first_seen` keeps the earliest stamp per (patient, kind), so an
 alert's escalation clock runs on across a restart instead of starting over. Replay calls the
 engine/store directly, so it writes NO new audit records. Deliberately NOT replayed: the derived
-`escalated` set and the `alert`, `escalation` and `notification` records (derived or transient)."""
+`escalated` set and the `alert`, `escalation` and `notification` records (derived or transient).
+
+Since G2-A1 (O17, D7) every replayed `ingest` and `chart` runs through the lifecycle hook the doors
+run (api/alert_lifecycle.py): a closed episode's stamp and ack are pruned as they were live — so
+the `first_seen` row of the next episode sets that episode's own stamp —, a critical nobody
+acknowledged latches again, and an `ack` row for a latched alert removes it. The `alert_cleared`
+rows follow from those and are not replayed."""
 from __future__ import annotations
 
 from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import profile_from_payload
 from homunculus.api.identity import bounded_role
@@ -26,7 +33,10 @@ def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> No
             # to: a charted `suspected_infection` that a restart forgot would take the sepsis,
             # septic-shock and antibiotic-clock alerts down with it, silently, on a patient the
             # ward believes is being watched for exactly those.
-            _replay_ingest(engine, rec)
+            if _replay_ingest(engine, rec):
+                # G2-A1 (D7): through the hook, as the door ran it. What it clears was audited
+                # live (`alert_cleared`) and is not written again.
+                sync_alerts(engine, store, rec.patient_id, _written_at(rec))
         elif rec.event_type == "profile":
             _replay_profile(engine, rec)
         elif rec.event_type == "ack":
@@ -37,16 +47,27 @@ def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> No
         # alert / escalation / notification are derived or transient — nothing to replay.
 
 
-def _replay_ingest(engine: Engine, rec: AuditRecord) -> None:
+def _replay_ingest(engine: Engine, rec: AuditRecord) -> bool:
+    """Replay one observation; False when its signal is unknown and it was skipped."""
     try:
         code = SignalCode(rec.subject)
     except ValueError:
-        return  # unknown signal slug — skip rather than fail the whole replay
+        return False  # unknown signal slug — skip rather than fail the whole replay
     p = rec.payload
     ts = datetime.fromisoformat(p["obs_ts"])
     obs = Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
                       unit=p.get("unit", ""), timestamp=ts, source_device=p.get("device", "replay"))
     engine.ingest(obs, now=ts)
+    return True
+
+
+def _written_at(rec: AuditRecord) -> datetime:
+    """When the row was written — the wall clock the door's hook ran at, to within the request: a
+    latched alert's `resolved_at`. A row whose time cannot be read gives its observation's."""
+    try:
+        return datetime.fromisoformat(rec.ts)
+    except (TypeError, ValueError):
+        return datetime.fromisoformat(rec.payload["obs_ts"])
 
 
 def _replay_profile(engine: Engine, rec: AuditRecord) -> None:
@@ -69,6 +90,11 @@ def _replay_profile(engine: Engine, rec: AuditRecord) -> None:
 
 def _replay_ack(store: AckStore, rec: AuditRecord) -> None:
     """`role` is replayed as `acknowledged_by`, bounded like the live path: rows written before
-    the device role was bounded may hold anything the body sent (a dict, a page of text)."""
+    the device role was bounded may hold anything the body sent (a dict, a page of text).
+
+    G2-A1 (D7, D8): an `ack` row for a latched alert removed it live, and removes it here — it is
+    not recorded as an acknowledgement, which a later episode of the same kind would inherit."""
+    if acknowledge_latched(store, rec.patient_id, rec.subject) is not None:
+        return
     at = datetime.fromisoformat(rec.payload["at"])
     store.acknowledge(rec.patient_id, rec.subject, bounded_role(rec.payload.get("role")), at)

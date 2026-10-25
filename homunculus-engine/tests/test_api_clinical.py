@@ -181,3 +181,43 @@ class TestBuildEntries:
         assert {e.observation.code for e in built} == {
             SignalCode.ARTERIAL_PH, SignalCode.BICARBONATE, SignalCode.SODIUM,
             SignalCode.POTASSIUM, SignalCode.HAEMATOCRIT, SignalCode.WHITE_CELL_COUNT}
+
+
+class TestChartingEndsAnAlert:
+    """G2-A1 (O17): charting is often what ends an alert — the antibiotic given, the infection
+    ruled out — and this door ends it exactly as /ingest does."""
+
+    def _rows(self, client, kind, event_type):
+        rows = client.get("/audit", params={"patient_id": "bed-3", "limit": 10000},
+                          headers=AUTH).json()["records"]
+        return [r for r in rows if r["subject"] == kind and r["event_type"] == event_type]
+
+    def _alert(self, client, kind):
+        board = client.get("/patients", headers=AUTH).json()["patients"]
+        return next((a for b in board for a in b["alerts"] if a["kind"] == kind), None)
+
+    def test_charting_the_antibiotic_ends_the_clock_and_its_episode(self, client):
+        _chart(client, "bed-3", [
+            {"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 80}])
+        _chart(client, "bed-3", [{"code": "creatinine", "value": 2.4}])
+        assert self._alert(client, "antibiotic_due") is not None
+        _chart(client, "bed-3", [{"code": "antibiotic_administered", "value": 1}],
+               at=WHEN + timedelta(minutes=20))
+        assert self._alert(client, "antibiotic_due") is None
+        (closed,) = self._rows(client, "antibiotic_due", "alert_cleared")
+        assert (closed["payload"]["reason"], closed["payload"]["severity"]) == ("resolved", "high")
+
+    def test_a_critical_that_charting_ends_latches_until_it_is_acknowledged(self, client):
+        _chart(client, "bed-3", [
+            {"code": "suspected_infection", "value": 1}, {"code": "lactate", "value": 3.4},
+            {"code": "norepinephrine_rate", "value": 0.08}, {"code": "weight_kg", "value": 50}])
+        _chart(client, "bed-3", [{"code": "crystalloid_bolus_ml", "value": 1600}])
+        assert self._alert(client, "septic_shock")["resolved_at"] is None
+        _chart(client, "bed-3", [{"code": "suspected_infection", "value": 0}],
+               at=WHEN + timedelta(minutes=10))
+        shock = self._alert(client, "septic_shock")
+        assert shock["resolved_at"] is not None and shock["acknowledged"] is False
+        assert self._alert(client, "sepsis") is None, "HIGH does not latch"
+        _chart(client, "bed-3", [{"code": "lactate", "value": 3.0}], at=WHEN + timedelta(minutes=15))
+        assert len(self._rows(client, "septic_shock", "first_seen")) == 1, \
+            "a latched alert keeps its episode's stamp: charting does not open another"

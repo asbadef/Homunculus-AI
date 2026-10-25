@@ -89,3 +89,44 @@ def test_patients_snapshot_lists_patients_with_risk_and_latest():
 def test_patients_requires_a_tenant_token():
     c = _client()
     assert c.get("/patients").status_code == 401
+
+
+# --- G2-A1 (O17): an alert ends on the first reading that does not produce it ---------------------
+
+def _alerts_of(c, patient="bed-3"):
+    board = c.get("/patients", headers=_hdr("tok-hosp1")).json()["patients"]
+    return [a["kind"] for b in board if b["patient_id"] == patient for a in b["alerts"]]
+
+
+def _rows(c, kind, *types):
+    rows = c.get("/audit", params={"patient_id": "bed-3", "limit": 10000},
+                 headers=_hdr("tok-hosp1")).json()["records"]
+    return [r for r in rows if r["subject"] == kind and r["event_type"] in types]
+
+
+def test_a_moderate_alert_leaves_the_board_on_the_first_normal_reading():
+    c = _client()
+    c.post("/ingest", json=_fhir("heart_rate", 140, "/min"), headers=_hdr("tok-hosp1"))
+    assert _alerts_of(c) == ["news2"], "140/min alone: a single red parameter, NEWS2 moderate"
+    c.post("/ingest", json=_fhir("heart_rate", 80, "/min", when="2026-07-14T10:01:00+00:00"),
+           headers=_hdr("tok-hosp1"))
+    assert _alerts_of(c) == []
+    (opened,) = _rows(c, "news2", "first_seen")
+    (closed,) = _rows(c, "news2", "alert_cleared")
+    assert (closed["payload"]["reason"], closed["payload"]["severity"]) == ("resolved", "moderate")
+    assert closed["payload"]["first_seen"] == opened["payload"]["at"]
+
+
+def test_a_kind_that_returns_after_it_ended_is_a_new_episode_and_a_nurse_is_told_again():
+    c = _client()
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        c.post("/ingest", json=fhir, headers=_hdr("tok-hosp1"))
+    c.post("/ack", json={"patient_id": "bed-3", "kind": "septic_shock", "role": "nurse"},
+           headers=_hdr("tok-hosp1"))
+    for value, when in [(1.5, "2026-07-14T11:01:00+00:00"), (3.4, "2026-07-14T11:02:00+00:00")]:
+        c.post("/ingest", json=_fhir("lactate", value, "mmol/L", when=when), headers=_hdr("tok-hosp1"))
+    trail = [r["event_type"] for r in _rows(c, "septic_shock", "first_seen", "notification", "alert_cleared")]
+    assert trail == ["first_seen", "notification", "alert_cleared", "first_seen", "notification"]
+    shock = next(a for b in c.get("/patients", headers=_hdr("tok-hosp1")).json()["patients"]
+                 for a in b["alerts"] if a["kind"] == "septic_shock")
+    assert shock["acknowledged"] is False, "the old answer belongs to the old episode (D5)"
