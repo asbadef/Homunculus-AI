@@ -33,9 +33,9 @@
 Her rol sol menüde yalnız kendi işini görüyor (NAV taraması tüm roller için yapıldı, 2 leak kapatıldı). Kalan denetim: **ekran-içi buton/aksiyon yetkisi** (bir ekranı görüp bazı butonları görmemesi gereken rol) — numune/ilaç/eczanede test edildi; tam tarama "kapsama turunda".
 
 ## Eksik / kopuk — SIRADA (kaybolmasın)
-1. [x] **İlaç/hizmet → fatura fiyat zinciri (1. halka)** (v0219): İstem order'ı `kod` taşır → `fiyatOf` fiyatlar → İş Havuzu'nda tutar/toplam. *Kalan: faturaya otomatik satır postalama.*
-2. [x] **Eczane derinliği** (v0220): Bekliyor/Karşılandı/Reddedildi/Transfer + Onayla/Reddet/Transfer/Muadil/Etkileşim. *Kalan: stok/miadı/iade/ITS + tam DDI motoru.*
-3. [x] **Lab/Rad anormal vurgu** (v0221): H.LABREF referans aralıkları + yapısal sonuç + ↑/↓ renkli işaret. *Kalan: zaman-içi trend + admin referans düzenleme + rad PACS.*
+1. [x] **İlaç/hizmet → fatura fiyat zinciri** (v0219+v0225): İstem order'ı `kod` taşır → `fiyatOf` → İş Havuzu tutar/toplam **+ vezne Toplu fatura'da protokol tutarı** (`protoTutar`). *Kalan: faturada satır-kalem kesinleştirme + indirim/kurum payı.*
+2. [x] **Eczane derinliği + stok** (v0220+v0224): durum sekmeleri + Onayla/Reddet/Transfer/Muadil/Etkileşim **+ Stok durumu (kritik stok + miadı geçen/yaklaşan)**. *Kalan: iade/zayi/ITS + tam DDI motoru (gerçek veri tabanı).*
+3. [x] **Lab/Rad anormal vurgu + trend** (v0221+v0223): referans aralıkları **yaşa göre (yetişkin/çocuk/yenidoğan — NICU)** + yapısal sonuç + ↑/↓ renkli + **zaman-içi trend (↗/↘)**. *Kalan: admin referans düzenleme + rad PACS.*
 4. [x] **Yatan/servis** (v0222): `yatanlar` ekranı (yatan/yoğun liste) + Transfer/Taburcu mevcut admission akışına hasta ön-seçimli bağlandı; yetki gated. *Kalan: yatan gözlem/flowsheet derinliği.*
 5. [~] **Buton-seviyesi yetki kapsama turu**: yeni ekranların (numune/eczane/yatanlar/ilaç admin/drislem) aksiyon yetkileri test edildi; ana hassas vezne aksiyonları (indirim/fatura iptal/toplu fatura/dönem onay) `canAct` ile gated. *Kalan: tüm 40 ekranın buton-buton tam taraması (sahibin testiyle birlikte).*
 6. **Lab/Radyoloji tekniker süreci** (sahip anlatacak): numune Kabul→çalışma→sonuç onay→rapor zinciri derinliği.
