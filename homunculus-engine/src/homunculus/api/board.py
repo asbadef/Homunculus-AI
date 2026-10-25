@@ -56,20 +56,44 @@ def _latest_at(state) -> dict:
     return out
 
 
-def _news2(state) -> dict:
+def _iso(at: datetime | None) -> str | None:
+    return None if at is None else at.isoformat()
+
+
+def _news2(state, now: datetime) -> dict:
     """The engine's NEWS2, in the shape the board carries it.
 
     `total` is always a number — NEWS2 scores a missing parameter as 0 — so `partial` and
     `missing` are what tell a reader whether that number is the whole story.
+
+    G2-A2. Judged at `now` (D3): a vital past its window is out of the total and named in `stale`
+    (D1); `assumed` names the inputs scored as air and Alert because nothing current is charted
+    (D7). `measured_at` and `fresh_until` carry each of the seven inputs' last reading and the end
+    of its window, ISO-8601 or None (D4). The API sends the stamp, never an age — an age baked into
+    a payload is wrong a minute after it was published — and "too old" is `stale`, never a
+    comparison the screen makes with `fresh_until`.
     """
-    result = news2_score(state)
+    result = news2_score(state, now)
     return {
         "total": result.total,
         "partial": result.partial,
         "missing": list(result.missing),
         "red_param": result.red_param,
         "breakdown": dict(result.breakdown),
+        "stale": list(result.stale),
+        "assumed": list(result.assumed),
+        "measured_at": {name: _iso(at) for name, at in result.measured_at.items()},
+        "fresh_until": {name: _iso(at) for name, at in result.fresh_until.items()},
     }
+
+
+def freshness_turned(state, since: datetime, until: datetime) -> bool:
+    """Whether one of this patient's NEWS2 inputs stopped counting in (since, until] — a reading's
+    window closed, or a charted value expired (G2-A2, D5). Pure: the escalation cycle asks it of
+    every measured patient and republishes the board when the answer is yes, because nothing else
+    would — a feed that stops is exactly when no further frame arrives."""
+    return any(at is not None and since < at <= until
+               for at in news2_score(state).fresh_until.values())
 
 
 _PRESSORS = {
@@ -246,9 +270,14 @@ def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) ->
 
 def patient_board(engine: Engine, patient_id: str, store: AckStore,
                   identity: IdentityRecord | None = None,
-                  bedmap: BedMap | None = None) -> dict:
+                  bedmap: BedMap | None = None, now: datetime | None = None) -> dict:
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
+    # One instant for the whole card (G2-A2, D3, X2): NEWS2's freshness and the antibiotic clock
+    # are judged at the wall clock unless the caller names a moment (the escalation cycle, tests).
+    # Never `obs.timestamp`: that is the rule's own time at ingest, and a board judged at it would
+    # never age.
+    now = now or datetime.now(timezone.utc)
     return {
         "patient_id": patient_id,
         "identity": ({**identity.as_board(), **_bed_resolution(identity, bedmap)}
@@ -271,23 +300,24 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
             # product cannot show two different numbers under one label; the dashboard reads this
             # instead of scoring again. `partial` and `missing` travel with it because a score
             # computed from four of five vitals can only understate, and saying so is the point.
-            "news2": _news2(state),
+            "news2": _news2(state, now),
         },
         # Outside `latest` on purpose: these are not measurements, they are the clinical context
         # a measurement is scored in.
         "sepsis": _sepsis_context(engine, state, patient_id),
         # Infusions, the antibiotic clock, and the two numbers a pharmacist reads them against.
-        "meds": _meds(engine, state, patient_id),
+        "meds": _meds(engine, state, patient_id, now),
     }
 
 
 def board_snapshot(engine: Engine, store: AckStore,
                    identities: IdentityStore | None = None, hospital: str = "",
-                   bedmap: BedMap | None = None) -> list[dict]:
+                   bedmap: BedMap | None = None, now: datetime | None = None) -> list[dict]:
     measured = engine.patient_ids()
+    now = now or datetime.now(timezone.utc)      # every card judged at one instant (G2-A2, D3)
     boards = [patient_board(engine, pid, store,
                             identity=identities.get(hospital, pid) if identities else None,
-                            bedmap=bedmap)
+                            bedmap=bedmap, now=now)
               for pid in measured]
     if identities is not None:
         seen = set(measured)

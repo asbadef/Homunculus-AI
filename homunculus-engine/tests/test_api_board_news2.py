@@ -37,8 +37,10 @@ def _engine(signals: dict[SignalCode, tuple[float, str]], at: datetime = WHEN) -
     return engine
 
 
-def _board(engine: Engine) -> dict:
-    return patient_board(engine, "bed-1", AckStore())
+def _board(engine: Engine, now: datetime = WHEN) -> dict:
+    # G2-A2 (D3): the board judges freshness at `now`, the wall clock unless named; these
+    # readings are stamped WHEN.
+    return patient_board(engine, "bed-1", AckStore(), now=now)
 
 
 def test_board_carries_the_engines_news2_not_nothing():
@@ -113,3 +115,60 @@ def test_the_new_chemistry_signals_can_be_carried():
     state = engine.state("bed-1")
     for code, (value, _unit) in chemistry.items():
         assert state.latest(code).value == value
+
+
+# --- G2-A2: what the card is told about each input's age, and what was assumed -------------------
+
+STALE_AT_61_MIN = ["respiration_rate", "spo2", "systolic_bp", "pulse"]
+
+
+def test_a_vital_past_its_window_leaves_the_boards_total_and_is_named():
+    news2 = _board(_engine(DETERIORATING), now=WHEN + timedelta(minutes=61))["latest"]["news2"]
+    assert news2["stale"] == STALE_AT_61_MIN
+    assert news2["total"] == 2                 # the temperature's 2 h window is still open
+    assert (news2["partial"], news2["missing"]) == (True, [])
+    assert sum(news2["breakdown"].values()) == news2["total"]
+
+
+def test_the_board_sends_each_inputs_stamp_and_window_end_never_an_age():
+    news2 = _board(_engine(DETERIORATING))["latest"]["news2"]
+    names = ["respiration_rate", "spo2", "systolic_bp", "pulse", "temperature",
+             "air_or_oxygen", "consciousness"]
+    assert list(news2["measured_at"]) == list(news2["fresh_until"]) == names
+    assert news2["measured_at"]["spo2"] == WHEN.isoformat()
+    assert news2["fresh_until"]["spo2"] == (WHEN + timedelta(hours=1)).isoformat()
+    assert news2["fresh_until"]["temperature"] == (WHEN + timedelta(hours=2)).isoformat()
+    assert (news2["measured_at"]["air_or_oxygen"], news2["fresh_until"]["consciousness"]) == (None, None)
+    assert news2["stale"] == []
+
+
+def test_air_and_alert_are_assumed_on_the_board_and_the_breakdown_still_sums():
+    news2 = _board(_engine(DETERIORATING))["latest"]["news2"]
+    assert news2["assumed"] == ["air_or_oxygen", "consciousness"]
+    assert news2["partial"] is False
+    assert sum(news2["breakdown"].values()) == news2["total"] == 14
+
+
+def test_a_board_built_without_now_judges_at_the_wall_clock(monkeypatch):
+    """D3: `obs.timestamp` is the rule's own time at ingest; a board judged at it never ages."""
+    import homunculus.api.board as board_module
+
+    class Frozen(datetime):
+        at = WHEN
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.at
+
+    engine = _engine(DETERIORATING)
+    monkeypatch.setattr(board_module, "datetime", Frozen)
+    Frozen.at = WHEN + timedelta(minutes=30)
+    assert patient_board(engine, "bed-1", AckStore())["latest"]["news2"]["stale"] == []
+    Frozen.at = WHEN + timedelta(minutes=61)
+    assert patient_board(engine, "bed-1", AckStore())["latest"]["news2"]["stale"] == STALE_AT_61_MIN
+
+
+def test_the_snapshot_judges_every_card_at_one_instant():
+    from homunculus.api.board import board_snapshot
+    [card] = board_snapshot(_engine(DETERIORATING), AckStore(), now=WHEN + timedelta(minutes=61))
+    assert card["latest"]["news2"]["stale"] == STALE_AT_61_MIN

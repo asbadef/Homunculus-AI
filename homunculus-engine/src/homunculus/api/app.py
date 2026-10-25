@@ -29,7 +29,9 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
 from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, verify_chain
-from homunculus.api.board import board_snapshot, identity_only_board, patient_board
+from homunculus.api.board import (
+    board_snapshot, freshness_turned, identity_only_board, patient_board,
+)
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
     parse_fhir_patient,
@@ -263,6 +265,26 @@ def create_app(
             audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
                                     item.payload(at)))
 
+    # G2-A2 (D5): the previous escalation cycle's `now`; None until a cycle has run.
+    freshness_since: list[datetime | None] = [None]
+
+    async def _republish_turned(hospital: str, engine: Engine, store: AckStore, now: datetime,
+                                published: set[str]) -> None:
+        """G2-A2 (D5): republish, judged at `now`, each measured patient one of whose NEWS2 inputs
+        stopped counting since the previous cycle (`board.freshness_turned`). A reading's window
+        closes with no frame to say so — a feed that stops is exactly when no further frame
+        arrives — and without this the card would read fresh until a reload. The first cycle after
+        a start has nothing to compare with and republishes nothing: `/patients` on (re)connect is
+        judged at its own moment. `published` are the patients this cycle has already sent."""
+        since = freshness_since[0]
+        if since is None:
+            return
+        for pid in engine.patient_ids():
+            if pid not in published and freshness_turned(engine.state(pid), since, now):
+                await broadcaster.publish(hospital, patient_board(
+                    engine, pid, store, identity=identities.get(hospital, pid), bedmap=bedmap,
+                    now=now))
+
     async def _escalation_cycle(now: datetime) -> None:
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
@@ -273,14 +295,16 @@ def create_app(
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
+            changed: set[str] = set()
             if newly != store.escalated:
                 added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
+                    # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, patient_board(
                         engine, pid, store, identity=identities.get(hospital, pid),
-                        bedmap=bedmap))
+                        bedmap=bedmap, now=now))
                 # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
                 # critical that latches and returns, or an alert that clears and returns within the
                 # delay, is "added" again — but the doctor was told about this chain already. A new
@@ -296,6 +320,8 @@ def create_app(
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+            await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
+        freshness_since[0] = now                                             # G2-A2 (D5)
 
         # Retention: a card discharged more than DISCHARGED_TTL ago leaves the board (or keeps its
         # readings and loses its name). Every tenant this app serves is swept, engine or not — the
