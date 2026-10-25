@@ -8,8 +8,10 @@
   --band-al:rgba(239,68,68,.12); --band-n:rgba(34,184,214,.13); --grid:#1c2c45;
   --body-fill:#e9eef5; --body-line:#9aa8bb; --body-detail:#c3ccd8; --body-sel:#8b7cff;
   --shadow:0 12px 30px rgba(0,0,0,.45); --fs:1;
+  color-scheme:dark;   /* native datalist/select/date açılır panelleri temayla uyumlu çizsin */
 }
 [data-theme="gun"] {
+  color-scheme:light;
   --page:#eef0f3; --app:#f4f6f9; --rail:#ffffff; --card:#ffffff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
   --pri:#0e7490; --onpri:#ffffff; --priSoft:#e0f2f7;
   --att:#fffaeb; --attLine:#f3dc9a; --attIco:#fdf0c8; --attInk:#9a6a00;
