@@ -535,6 +535,17 @@ def create_app(
             return _UNSCOPED
         return await resolve_scope(credential)
 
+    def _readable(scope: Scope) -> Scope:   # G2-A2 (D13)
+        """Refuse a scope that could not be read, before anything takes it for an answer: 503, the
+        stream ticket's own answer (G2-A2, D13). A look-up that failed — a database blip, no
+        membership the resolver could find — is not "out of scope": a 404 would tell a ward its
+        patient is gone, a `scope_denied` row would record an access violation nobody committed,
+        and an empty board would read as a quiet ward. The dashboard maps the detail
+        (`apiErrors.js`), and a failed `/patients` load already shows UNAVAILABLE."""
+        if scope.reason == UNKNOWN_SCOPE.reason:
+            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
+        return scope
+
     async def _require_patient(caller: Caller, authorization: str | None,
                                patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
@@ -554,10 +565,13 @@ def create_app(
         It runs after the route's permission check: a permission says what a caller may do, the
         scope says to whom, and both must hold.
 
-        `scope` is the caller's scope when the route has already resolved it (the trends route
-        needs it first, to answer 503 for one that cannot be read). Passing it spares a second
-        look-up, and a second chance for a blip to turn a readable scope into "not found". Every
-        other route leaves it out and the scope is resolved here.
+        A scope that cannot be read is 503 here, right after it is resolved and before the check
+        and the audit row (`_readable`, G2-A2, D13): "we could not find out" is not "not yours".
+
+        `scope` is the caller's scope when the route has already resolved it (the trends route,
+        which polls every minute). Passing it spares a second look-up, and a second chance for a
+        blip to turn a readable scope into an unreadable one. Every other route leaves it out and
+        the scope is resolved here.
 
         The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
         the board publishes for that patient (same identity, same bed map). It is NOT built with
@@ -565,7 +579,7 @@ def create_app(
         probe for a made-up id would put that id on every board in the hospital.
         """
         hospital = caller.hospital
-        scope = scope if scope is not None else await _scope(authorization)
+        scope = _readable(scope if scope is not None else await _scope(authorization))
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
@@ -863,7 +877,8 @@ def create_app(
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)
         hospital = caller.hospital
-        scope = await _scope(authorization)
+        # 503 before the board is narrowed (G2-A2, D13): an unreadable scope is not an empty one.
+        scope = _readable(await _scope(authorization))
         result = apply_scope(
             board_snapshot(_engine(hospital), _store(hospital), identities=identities,
                            hospital=hospital, bedmap=bedmap),
@@ -889,8 +904,8 @@ def create_app(
 
         `hours` is read as text so that anything but 6, 24 or 72 is this route's 400, in the
         reader's words, rather than FastAPI's 422. A scope that cannot be read is 503, as the stream
-        ticket answers it: `_require_patient` would call it "not found", which tells a screen the
-        patient is gone when only the look-up failed. Out of scope and unknown stay one 404.
+        ticket answers it — `_require_patient` answers so for every single-patient route since
+        G2-A2 (D13). Out of scope and unknown stay one 404.
 
         The scope is resolved once, here, and handed to `_require_patient`: the chart polls every
         minute, and a second look-up would double that work and give a blip between the two a way
@@ -901,8 +916,6 @@ def create_app(
         if hours not in TREND_WINDOWS_TEXT:
             raise HTTPException(status_code=400, detail="geçersiz hours: 6, 24 veya 72 olmalı")
         scope = await _scope(authorization)
-        if scope.reason == UNKNOWN_SCOPE.reason:
-            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
         await _require_patient(caller, authorization, patient_id, scope=scope)
         _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
@@ -1083,7 +1096,7 @@ def create_app(
             # carries no PHI, but it does carry who was alerted about whom and when, which is
             # the same question the board answers and must get the same answer.
             await _require_patient(caller, authorization, patient_id)
-        elif not (await _scope(authorization)).unrestricted:
+        elif not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The unfiltered trail spans every bed in the hospital. It is an administrator's and
             # an auditor's view, and narrowing it per bed would produce a partial record that
             # reads like a whole one — worse than refusing.
@@ -1197,7 +1210,7 @@ def create_app(
         """
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
-        if not (await _scope(authorization)).unrestricted:
+        if not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The report spans every bed in the hospital — its noisiest beds are patient ids —
             # so it follows the whole-trail rule of /audit rather than leaking past a scope.
             raise HTTPException(status_code=403,
