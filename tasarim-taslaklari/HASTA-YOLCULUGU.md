@@ -17,6 +17,13 @@
 | 10 | **Fatura / tahsilat** | vezne | `vezne` | vezne | ✅ · *ilaç/hizmet fiyatının faturaya otomatik akışı eksik* |
 | 11 | **Taburcu / epikriz** | hekim | hasta360 → Dokümanlar → Epikriz | results | ✅ epikriz editörü var |
 
+## Genel yapı/mantık denetimi (25.10 — otomatik tarama)
+- **40 ekranın hepsi kayıtlı**, hiçbir `H.go`/NAV hedefi kırık değil. ✅
+- **Yetki tutarlı**: her ekranın register perm'i mantıklı; hassas vezne aksiyonları (indirim/fatura iptal/toplu fatura/dönem onay) `canAct` ile kilitli, kabul rolünden doğru şekilde kısıtlı. ✅
+- **Ölü buton yok**: 342 özel `data-*` aksiyonunun 340'ı dinleyiciye bağlı; kalan 2 yanlış pozitif (`data-snooze` `g()` helper'ıyla, `data-aid` sadece kapsayıcı kimlik). ✅
+- **Süreç tutarlılığı örneği**: taburcu hastayı `H.data.patients`'ten siler → Yatan Hastalar/Gelişler listelerinden otomatik düşer. ✅
+- Küçük not (zararsız): `numune` register perm'inde `results` var ama NAV'da yok — doktor sidebar'da görmez, derin link ile görebilir (numune görüntüleme, işlem değil).
+
 ## Bu denetimde bulunan ve DÜZELTİLEN
 - **Rol sızıntısı:** hemşire Randevu+Lab tekniker ekranını, Mali İşler Lab tekniker ekranını görüyordu → dar yetkiye bağlandı. (v0216–0217)
 - **Eczane kopukluğu:** doktorun ilaç istemi eczaneye düşmüyordu → `pharmacy`'ye "karşılanacak ilaç istemleri + Karşıla" eklendi. (v0218)
