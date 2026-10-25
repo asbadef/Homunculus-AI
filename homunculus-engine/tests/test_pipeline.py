@@ -375,11 +375,13 @@ def test_the_patient_relative_layer_judges_the_same_instant():
 # Judged at each reading, the first readings of a set taken more than an hour after the last saw the
 # rest stale, fell below the band and ended the alert, which the next reading raised again as a new
 # episode — a new nurse notification, the acknowledgement gone. A running alert the score at `now`
-# no longer reaches is now held while a vital is stale, and says what it is held on. It is kept
-# exactly as last scored (X9b): re-scored on the stale readings it climbed a band on a value hours
-# old. It ends when no vital is stale and the score is below the band, or when even the stale
-# values, counted at their last reading, no longer reach the band (X9c: that score only ends a
-# hold, it is never shown). Synthetic values throughout.
+# no longer reaches is now held while a vital is stale, and says what it is held on. It keeps its
+# last score (X9b) — re-scored on the stale readings it climbed a band on a value hours old — or
+# steps down, never up, to the lower band its stale values still reach at their last reading
+# (X9d); within one band it keeps its number. It ends when no vital is stale and the score is below
+# the band, or when even the stale values, counted at their last reading, no longer reach the band
+# (X9c). An expired chart holds like a stale vital (X11, the last tests here), and a hold has an
+# end (X12, the section below). Synthetic values throughout.
 
 _SPOT_CHECK = [(SignalCode.HEART_RATE, 105), (SignalCode.RESP_RATE, 22), (SignalCode.SPO2, 95),
                (SignalCode.SBP, 105), (SignalCode.TEMPERATURE, 38.5)]     # NEWS2 1+2+1+1+1 = 6

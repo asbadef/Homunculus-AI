@@ -839,12 +839,16 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     "eski"ye motor karar verir). Yeni ölçüm gelmese de kart güncellenir: pencere kapanınca pano en
     geç ~20 saniye içinde yeniden gönderilir. Alarm da aynı skoru kullanır: eski bir ölçüm artık
     NEWS2'yi alarm bandına çıkaramaz. Çalışan bir NEWS2 alarmını da eski girdi bitiremez: alarm
-    son puanlandığı gibi kalır, eski bir değerle yükselmez; okumalar — eskiler son değerleriyle
-    sayılarak — bandın altına inince biter.
+    son puanlandığı gibi kalır, eski bir değerle yükselmez; eski değerlerin hâlâ ulaştığı daha
+    düşük banda iner, hiç yukarı çıkmaz; okumalar — eskiler son değerleriyle sayılarak — bandın
+    altına inince biter. Süresi dolan bir oksijen ya da bilinç kaydı da alarmı eski bir vital gibi
+    tutar; tutma sınırsız değildir: girdi eskidikten sonra 8 saat içinde yeniden ölçülmezse alarm
+    biter. Saati ileri giden bir cihazın ölçümü öbür okumaları eskitmez.
     **Oksijen ve bilinç kaydedilmemişse varsayılır, söylenerek:**
     oda havası ve uyanık sayılır, kartta «varsayıldı: oda havası, uyanık» hapı çıkar; skor bunun
     için "kısmi" sayılmaz. Kaydedilmiş bir oksijen ya da ACVPU değeri 8 saat (bir vardiya) geçerlidir;
-    sonra yeniden varsayılır ve hap "son kayıt …" der — süresi dolan "oksijen alıyor" toplamdan 2
+    sonra yeniden varsayılır ve hap son kaydı değeriyle söyler («oda havası (son kayıt: oksijende,
+    9 sa önce)», «uyanık (son kayıt: U, 9 sa önce)») — süresi dolan "oksijen alıyor" toplamdan 2
     puan, V/P/U 3 puan düşürür. Pencereler ve 8 saat işletme varsayılanıdır, klinik iddia değildir;
     bir klinik değerlendirme değiştirene kadar böyledir. "Yeni konfüzyon" ayrıca modellenmez:
     ACVPU'da uyanık dışındaki her değer 3 puandır.

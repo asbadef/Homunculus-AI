@@ -664,7 +664,8 @@ def create_app(
         store = _store(hospital)
         # One wall-clock instant per request, as in /ingest: each entry is judged at its charted
         # time but never past the wall clock (G2-A2, X10) — a `recorded_at` in the future would
-        # age every other input to it. The audit row keeps the stamp; the replay judges at it.
+        # age every other input to it. The audit row keeps the stamp; the replay judges at
+        # min(the stamp, the row's write time) (rehydrate, X10b).
         now = datetime.now(timezone.utc)
         alerts: list = []
         for item in charted:
@@ -784,7 +785,8 @@ def create_app(
         store = _store(hospital)
         # One wall-clock instant per request. The rules judge at the reading's own time but never
         # past the wall clock (G2-A2, X10): judged at a stamp in the future, every other input
-        # would be aged to it. The audit row keeps the stamp; the replay judges at it (rehydrate).
+        # would be aged to it. The audit row keeps the stamp; the replay judges at min(the stamp,
+        # the row's write time) (rehydrate, X10b).
         wall_now = datetime.now(timezone.utc)
         alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
         # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
