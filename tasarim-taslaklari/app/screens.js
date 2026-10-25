@@ -934,13 +934,13 @@
       const ids = [...zf.map(x => "chain|" + x.no), ...df.map(x => "demo|" + x.no)];
       return tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"], rows, [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]], ids); };
     const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
-      byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
+      byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]], byProto(p._odeme).map(x => String(p._odeme.indexOf(x))));
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
-      byProto(p._indirim).map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
+      byProto(p._indirim).map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]], byProto(p._indirim).map(x => String(p._indirim.indexOf(x))));
     const dosyaHtml = () => tabloHtml("dosya", ["Bağlantı tipi", "Döküman grubu", "Bağlantı id", "Dosya tipi", "Dosya adı", "Kayıt tarihi"],
       p._dosya.map(x => [x.bag, x.grup, x.bagId, x.tip, x.ad, x.tarih]), [["Ekle", "plus"], ["Tarayıcıdan yükle", "plus"], ["Dijital imzadan getir", "edit"], ["Sil", "trash"]]);
     const notHtml = () => tabloHtml("notlar", ["Tarih", "Not tipi", "Not türü", "Ekleyen kullanıcı", "Not"],
-      p._not.map(x => [x.tarih, x.tip, x.tur, x.ekleyen, x.metin]), [["Ekle", "plus"], ["Sil", "trash"]]);
+      p._not.map(x => [x.tarih, x.tip, x.tur, x.ekleyen, x.metin]), [["Ekle", "plus"], ["Sil", "trash"]], p._not.map((_, i) => String(i)));
     const teklifHtml = () => { const t = p._teklif[0];
       return `<div class="seg" style="margin-bottom:10px"><button class="on">Ameliyat teklifleri</button><button>Tüm teklifler</button></div>
       ${tbar([["Yeni", "plus"], ["Teklif üzerinden oluştur", "edit"], ["Güncelle", "refresh"], ["Yazdır", "print"], ["İptal", "trash"]])}
@@ -1018,8 +1018,8 @@
       if (alt === "dosya") { body.innerHTML = split(dosyaHtml()); return; }
       if (alt === "notlar") { body.innerHTML = split(notHtml()); return; }
       if (alt === "teklif") { body.innerHTML = teklifHtml(); return; }
-      if (alt === "online") { body.innerHTML = tabloHtml("online", ["Tarih", "Kanal", "Tutar", "Durum", "Referans"], p._online.map(x => [x.tarih, x.kanal, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
-      if (alt === "pos") { body.innerHTML = tabloHtml("pos", ["Tarih", "Terminal", "Kart", "Tutar", "Durum", "Referans"], p._pos.map(x => [x.tarih, x.terminal, x.kart, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
+      if (alt === "online") { body.innerHTML = tabloHtml("online", ["Tarih", "Kanal", "Tutar", "Durum", "Referans"], p._online.map(x => [x.tarih, x.kanal, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]], p._online.map((_, i) => String(i))); return; }
+      if (alt === "pos") { body.innerHTML = tabloHtml("pos", ["Tarih", "Terminal", "Kart", "Tutar", "Durum", "Referans"], p._pos.map(x => [x.tarih, x.terminal, x.kart, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]], p._pos.map((_, i) => String(i))); return; }
       if (alt === "anlasma") { body.innerHTML = tabloHtml("anlasma", ["Kurum", "Anlaşma tipi", "Kullanım", "Durum"], p._anlasma.map(x => [x.kurum, x.tip, x.kullanim, x.durum]), [["Yenile", "refresh"]]); return; }
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
@@ -1067,10 +1067,26 @@
         ["Yazdır", () => H.printTable ? H.printTable("Fatura · " + no, ["Alan", "Değer"], [["Fatura no", no], ["Tarih", f.tarih || ""], ["Durum", f.durum || ""], ["Tutar", tutar + " ₼"]]) : H.toast("Yazdırma yok", "w")],
       ]);
     }
+    // Ödeme/İndirim/Not/Online/POS sağ-tık: satıra etki eden gerçek aksiyonlar.
+    const ROW_FIELD = { odeme:"_odeme", indirim:"_indirim", notlar:"_not", online:"_online", pos:"_pos" };
+    function rowMenu(e, ctx, idx) {
+      const arr = p[ROW_FIELD[ctx]] || [], it = arr[+idx]; if (!it) { H.toast("Kayıt bulunamadı.", "e"); return; }
+      const reDraw = () => H.go("hasta360", { pid:p.id, atab:ana, stab:alt, proto:params.proto });
+      const num = (v) => +String(v == null ? 0 : v).replace(/[^\d.,-]/g, "").replace(",", ".") || 0;
+      const act = (label) => () => {
+        if (/^İptal et$|^İptal$/.test(label)) { if (ctx === "notlar" || ctx === "indirim") arr.splice(+idx, 1); else it.durum = "İptal"; H.saveData && H.saveData(); H.log(label, ctx); H.toast(label + " yapıldı", "w"); reDraw(); return; }
+        if (label === "Sil") { arr.splice(+idx, 1); H.saveData && H.saveData(); H.toast("Silindi", "w"); reDraw(); return; }
+        if (label === "İade" || label === "İade talebi") { (H.data.iadeTalep = iadeRows()).unshift({ id:"ia" + Date.now(), tip:(ctx === "online" || ctx === "pos") ? "Avans İade" : "Fatura İade", tarih:H.nowFull ? H.nowFull() : H.now(), eden:p.name, tutar:num(it.tutar), dep:"Protokolden", aciklama:label + " · " + ctx, durum:"Onay bekliyor", proto:it.proto || p.proto, zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) }); H.saveData && H.saveData(); H.log("İade talebi", ctx); H.toast("İade talebi oluşturuldu (onay bekliyor)."); return; }
+        if (label === "Dekont" || /Yazdır|Karekod/.test(label)) { if (H.printTable) H.printTable((label === "Dekont" ? "Dekont" : "Çıktı") + " · " + vzName(p.name), ["Alan", "Değer"], Object.entries(it).slice(0, 12).map(([k, v]) => [k, String(v)])); return; }
+        H.toast(label + " işaretlendi"); // bilgi amaçlı (tarihçe, iptalleri göster, dosyalar, kurum avans…)
+      };
+      vzMenu(e, SAGTIK[ctx].map(l => [l, act(l)]));
+    }
     root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
-      e.preventDefault();
-      if (tr.dataset.ctx === "faturalar" && tr.dataset.rid) return faturaMenu(e, tr.dataset.rid);
-      vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
+      e.preventDefault(); const ctx = tr.dataset.ctx;
+      if (ctx === "faturalar" && tr.dataset.rid) return faturaMenu(e, tr.dataset.rid);
+      if (ROW_FIELD[ctx] && tr.dataset.rid != null) return rowMenu(e, ctx, tr.dataset.rid);
+      vzMenu(e, SAGTIK[ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
     root.onclick = (e) => {
       const tex = e.target.closest("[data-h3tblexp],[data-h3tblyaz]"); if (tex) { const tw = tex.closest(".r") && tex.closest(".r").nextElementSibling, tbl = tw && tw.querySelector("table.t");
         if (!tbl || !tbl.tHead) { H.toast("Bu sekmede aktarılacak tablo yok.", "w"); return; }
