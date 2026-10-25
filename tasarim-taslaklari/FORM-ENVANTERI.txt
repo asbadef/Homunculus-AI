@@ -1,0 +1,3739 @@
+SHEETS: Sheet
+
+===== SHEET: Sheet (3736x2) =====
+r0: Form / Grup | Menü Tipi
+r1: Hasta Kabul | Ana Menü
+r2: Hasta İşlemleri | Ana Menü
+r3: Hasta Ön Kayıt | Ana Menü
+r4: Hasta Kayıt | Dialog Form
+r5: Hasta Kabul | Dialog Form
+r6: Protokol Düzenleme | Dialog Form
+r7: Protokol İşlemler Düzenleme | Dialog Form
+r8: Hasta Protokol | Dialog Form
+r9: Hasta Uyarı | Dialog Form
+r10: Bekleyen İşlemler | Dialog Form
+r11: Kurum Provizyon | Dialog Form
+r12: Protokol Aktarma | Dialog Form
+r13: Protokol Birleştirme | Dialog Form
+r14: Hasta Birleştirme | Dialog Form
+r15: Vezne Paneli | Ana Menü
+r16: Protokol Uyarı | Dialog Form
+r17: Medula Rapor | Ana Menü
+r18: Kara Liste | Ana Menü
+r19: Kara Liste Kayıt | Dialog Form
+r20: Kurum Provizyon Islem Tipleri | Dialog Form
+r21: Pyxis İstasyonları | Dialog Form
+r22: Hasta Refakatçi Listesi | Dialog Form
+r23: Hasta Refakatçi | Dialog Form
+r24: Check-Up Paket Düzenle | Dialog Form
+r25: Ücretli Hasta Paket Oluştur | Dialog Form
+r26: Kurum Açıklaması | Dialog Form
+r27: E-Reçete | Ana Menü
+r28: Kurum Açıklaması | Dialog Form
+r29: Medula Rapor Listesi | Ana Menü
+r30: Protokol İşlem Tarihçe | Dialog Form
+r31: MultiDisipliner Toplanti Tutanagi | Dialog Form
+r32: Kontrol Muayenesi | Dialog Form
+r33: Protokol Sorumlu Personel Listesi | Dialog Form
+r34: Toplu Hasta Kayıt | Ana Menü
+r35: Ödeme Durumu | Dialog Form
+r36: Tedavi Bilgileri Aktar | Dialog Form
+r37: Özel Hasta Bilgileri | Dialog Form
+r38: Diğer Özellikler | Dialog Form
+r39: Medula Tıbbi Malzeme Rapor Onay İşlemleri | Ana Menü
+r40: Protokol İşlem Düzenleme | Dialog Form
+r41: Protokol Bilgileri | Dialog Form
+r42: Protokol Sureç Seçim | Dialog Form
+r43: Hasta Sevk Listesi | Ana Menü
+r44: Hasta Sevk | Dialog Form
+r45: Hasta KVKK Onayı | Dialog Form
+r46: Hasta Referans Kişiler | Dialog Form
+r47: HES Kodu Sorgulama | Ana Menü
+r48: Protokol Defteri İmza | Dialog Form
+r49: Hasta Değişim Logu | Dialog Form
+r50: Kurum Değişiklik | Dialog Form
+r51: Hasta Referans Protokol Seçim | Dialog Form
+r52: SPK Bilgileri | Dialog Form
+r53: Hasta Finans | Dialog Form
+r54: Dijital Marketing | Dialog Form
+r55: Merkezi Hasta Birleştirme | Dialog Form
+r56: Kurum Veri Aktarım Onayı | Dialog Form
+r57: Toplu Mernis Sorgulama | Ana Menü
+r58: Sevk Bilgileri | Dialog Form
+r59: EKDS Seçim | Dialog Form
+r60: Vezne İşlemleri | Ana Menü
+r61: Fatura - Tahsilat | Dialog Form
+r62: İndirim | Dialog Form
+r63: Avans | Dialog Form
+r64: İade | Dialog Form
+r65: Bekleyen Avans | Dialog Form
+r66: Tahsil Edilmiş İşlemler | Dialog Form
+r67: Kurum Fatura | Dialog Form
+r68: İndirim Onay | Dialog Form
+r69: Fatura Evrak Teslim | Ana Menü
+r70: Fatura Tipi Seçim | Dialog Form
+r71: Fatura | Dialog Form
+r72: Tahsilat | Dialog Form
+r73: Tahsilat - Fatura | Dialog Form
+r74: Vezne Dönem | Dialog Form
+r75: İndirim Onay Listesi | Ana Menü
+r76: İade | Dialog Form
+r77: Avans Aktar | Dialog Form
+r78: Hasta Faturası | Dialog Form
+r79: Hızlı Tahsilat | Dialog Form
+r80: Katılım Payı İndirim | Dialog Form
+r81:  Açık Hesap Takibi | Ana Menü
+r82: Tahilat-Fatura(Yeni) | Dialog Form
+r83: Gider Makbuzu | Dialog Form
+r84: Vezne Dönem Nakit Detay | Dialog Form
+r85: Gider Makbuzu Güncelleme | Dialog Form
+r86: Fatura Düzenleme | Dialog Form
+r87: İndirim İşlem Tipi | Dialog Form
+r88: Fatura  | Dialog Form
+r89: Fatura  | Dialog Form
+r90: Borçlu İşlemler  | Dialog Form
+r91: Tahsilat Ödeme Bilgileri  | Dialog Form
+r92: Vezne Dönem Kasa Hareketleri | Dialog Form
+r93: Vezne Dönem Kasa Hareket Girişi | Dialog Form
+r94: Hasta Paneli | Dialog Form
+r95: İşlem Listesi | Dialog Form
+r96: Fatura-Tahsilat Listesi | Dialog Form
+r97: Protokol Çıktı Listesi | Dialog Form
+r98: Faturalanmayan İşlem Listesi | Dialog Form
+r99: Protokol Bilgileri | Dialog Form
+r100: Fatura Tahsilat İşlemleri | Dialog Form
+r101: Hasta Protokol Listesi | Dialog Form
+r102: Faturalanacak İşlem Seçim | Dialog Form
+r103: Hasta Bilgi Kartı | Dialog Form
+r104: Fatura Ödeme İşlemi | Dialog Form
+r105: Fatura Ödeme Listesi | Dialog Form
+r106: Takip Bilgileri | Dialog Form
+r107: Hizmet Kayıt | Dialog Form
+r108: Medula Raporları | Dialog Form
+r109: İşlem Listesi | Dialog Form
+r110: İptal Edilen İşlemler | Dialog Form
+r111: Fiyatlar | Dialog Form
+r112: Hakediş Düzenleme | Dialog Form
+r113: Hakediş Paket Düzenleme | Dialog Form
+r114: Vezne Paneli | Ana Menü
+r115: Vezne Dönem Düzenleme | Dialog Form
+r116: Vezne Dönem Aç | Dialog Form
+r117: Vezne Dönem Kapama | Dialog Form
+r118: Tahsilat Düzenleme | Dialog Form
+r119: Vezne Dönem Kapama Onaya Gönderme Nedenleri  | Dialog Form
+r120: İndirim | Dialog Form
+r121: Şubeler Arası Virman | Dialog Form
+r122: Şubeler Arası Virman Talep | Dialog Form
+r123: Hastadan Hastaya Virman Talep | Dialog Form
+r124: FAST Karekod Olusturma | Dialog Form
+r125: Kupon Kod Onay | Dialog Form
+r126:  İndirim Döküman Takibi | Ana Menü
+r127: Ortak | Ana Menü
+r128: Hizmet Seçim | Dialog Form
+r129: Kurumsal Mesajlar | Dialog Form
+r130: Hasta Arama | Dialog Form
+r131: Doktor Seçim | Dialog Form
+r132: Fiyat Öğrenme | Ana Menü
+r133: Protokol Seçim | Dialog Form
+r134: Protokol Seçim | Dialog Form
+r135: Paket Giriş | Dialog Form
+r136: HET Hesaplama | Dialog Form
+r137: Diş Hizmet Seçim | Dialog Form
+r138: Paket Giriş | Dialog Form
+r139: İstek Seçim | Dialog Form
+r140: Diş Hizmet Seçim | Dialog Form
+r141: Protokol Seçim | Dialog Form
+r142: Triaj Bilgisi Hizmet Kontrol | Dialog Form
+r143: Hizmet Döküm Kriterleri | Dialog Form
+r144: Hasta Fotoğraf | Dialog Form
+r145: Hizmet Bağlı İşlem Giriş | Dialog Form
+r146: İşlem Seçim | Dialog Form
+r147: Periyodik Hizmet Giriş | Dialog Form
+r148: Hasta Yakınları | Dialog Form
+r149: Hasta Yakını | Dialog Form
+r150: Refenras Bilgileri | Dialog Form
+r151: Mesajlar | Dialog Form
+r152: Randevu protokol Eşleştir | Dialog Form
+r153: Merkezi Hasta Bilgileri | Ana Menü
+r154: Protokol Tarihçe | Dialog Form
+r155: Ameliyat İçerik Düzenle | Dialog Form
+r156: Biyometrik Kimlik Sorgula | Ana Menü
+r157: Protokol İşlem Seçim | Dialog Form
+r158: Günlük Kur Listesi | Dialog Form
+r159: Protokol Listesi | Dialog Form
+r160: Kurum İçi Formlar Listesi | Dialog Form
+r161: Medula Müstehaklık Sorgulama | Ana Menü
+r162: Protokol İşlem Kdv Düzenleme | Dialog Form
+r163: Hizmet Sırala | Dialog Form
+r164: Dosya Seçim | Dialog Form
+r165: Fatura Özellik Seçim | Dialog Form
+r166: İndirim Düzenleme | Dialog Form
+r167: Tutar Düzenleme | Dialog Form
+r168: SGK Hizmet Döküm Kriterleri | Dialog Form
+r169: Katılım Payı Düzenleme | Dialog Form
+r170: Dosya Maliyet Hizmet Listesi | Dialog Form
+r171: Ek Maliyet Hizmeti Ekleme | Dialog Form
+r172: Hasta Tercüman Listesi | Dialog Form
+r173: Hastanın Protokol Listesi | Dialog Form
+r174: Medula Yurtdışı Yardım Hakkı Sorgulama | Ana Menü
+r175: Miktar Girişi | Dialog Form
+r176: KDV Düzenle | Dialog Form
+r177: Medula Reçete Sorgula | Ana Menü
+r178: Hizmet Girişi | Dialog Form
+r179: Misafir İnternet Kullanıcı (Şifre)  | Ana Menü
+r180: Merkez Hasta Seçim | Dialog Form
+r181: Hasta Rapor | Ana Menü
+r182: Şube Bazlı Protokol Seçim | Dialog Form
+r183: Onaylanmış Virman Listesi | Dialog Form
+r184: Hizmet Bağlı İşlem Malzeme Girişi | Dialog Form
+r185: Kurum Mustehaklik Sorgulama | Ana Menü
+r186: Numune Alım Yeri Seçim | Dialog Form
+r187: Hasta Barkod Girişi | Dialog Form
+r188: EKDS Sorgulama | Ana Menü
+r189: Hasta Arama Çoklu Seçim | Dialog Form
+r190: Hasta Araç Plaka Listesi | Dialog Form
+r191:  | Ana Menü
+r192: Hasta Barkodu | Dialog Form
+r193: Anlaşmalı Kurum Faturası | Dialog Form
+r194: Büyük Boy Fatura | Dialog Form
+r195: Dörtte Bir Fatura | Dialog Form
+r196: Hasta Kol Bandı Barkodu | Dialog Form
+r197: Protokol Barkodu | Dialog Form
+r198: Hizmet Dökümü | Dialog Form
+r199: Tetkik İstem Raporu | Dialog Form
+r200: Randevu Listesi | Dialog Form
+r201: SGK Hizmet Dökümü | Dialog Form
+r202: Tahsilat Makbuzu | Dialog Form
+r203: SGK Taahhütnamesi | Dialog Form
+r204: ÖSS Taahhütnamesi | Dialog Form
+r205: Ücretli Taahhütnamesi | Dialog Form
+r206: Acil Halin Sona Ermesi Taahhütnamesi | Dialog Form
+r207: İndirim Onay Formu | Dialog Form
+r208: İndirim Analizi | Dialog Form
+r209: Randevu Listesi | Dialog Form
+r210: Ameliyat Notu | Dialog Form
+r211: İndirim Analizi Detay | Dialog Form
+r212: Hasta Onam Formu | Dialog Form
+r213: Hasta Refakatçi Formu | Dialog Form
+r214: Çalışabilir Kağıdı | Dialog Form
+r215: Tetkik İstem Raporu | Dialog Form
+r216: Protokol Defteri | Dialog Form
+r217: Hizmet Barkodu | Dialog Form
+r218: Protokol Dinamik İçerik | Dialog Form
+r219: İndirim Onay Listesi | Dialog Form
+r220: Protokol Listesi | Dialog Form
+r221: Hasta Bilgilendirme Barkodu | Dialog Form
+r222: Senet Kesintisi | Dialog Form
+r223: Maaş Kesintisi | Dialog Form
+r224: Emanet Kayit Formu | Dialog Form
+r225: Kasa Kapanış | Dialog Form
+r226: E-Fatura | Dialog Form
+r227: ÖSS Hasta Bilgi Formu | Dialog Form
+r228: Kök Nakil Kontrol Formu | Dialog Form
+r229: Bebek-Anne Kol Bandı Erkek | Dialog Form
+r230: Bebek-Anne Kol Bandı Kız | Dialog Form
+r231: Gider Makbuzu | Dialog Form
+r232: E-Arşiv | Dialog Form
+r233: Gider Makbuzu Faturası | Dialog Form
+r234: Hasta İletişim Onay Formu | Dialog Form
+r235: Proforma | Dialog Form
+r236: Avans İadesi | Dialog Form
+r237: Fatura Hizmet Dökümü | Dialog Form
+r238: Fatura Evrak Takip | Dialog Form
+r239: Özel Onay Verilmiş İşlemler | Dialog Form
+r240: İade Onay Formu | Dialog Form
+r241: Yatış İstek Formu | Dialog Form
+r242: KVKK Red Formu | Dialog Form
+r243: Randevu Bilgilendirme | Dialog Form
+r244: Randevu Bilgilendirme | Dialog Form
+r245: SGK Hasta Faturası | Dialog Form
+r246: Randevu Bilgilendirme | Dialog Form
+r247: Protokol Borç Takip Listesi | Dialog Form
+r248: FAST Karekod (Hesap Bilgileri) | Dialog Form
+r249: Adli Vaka Protokol Defteri | Dialog Form
+r250: ASOS Bilgi Formu | Dialog Form
+r251: Reçete İlaç Barkodu | Dialog Form
+r252: Para İadesi Makbuzu | Dialog Form
+r253: Ameliyat Kayıt Defteri | Dialog Form
+r254: Analizler | Ana Menü
+r255: Yatış | Ana Menü
+r256: Yatak Durum Listesi | Ana Menü
+r257: Acil Servis 112 | Ana Menü
+r258: Acil Servis 112 Gönderimleri | Ana Menü
+r259: Yatan Hasta Paneli(Hasta Kabul) | Ana Menü
+r260: Hasta Emanet Listesi | Ana Menü
+r261: Hasta Emanet | Dialog Form
+r262: Hasta İzin Listesi | Dialog Form
+r263: Hasta İzin | Dialog Form
+r264: Refakatçi Listesi | Ana Menü
+r265: Hasta Yatış Bilgileri | Dialog Form
+r266: Rezerve Yatak Tanımlama | Dialog Form
+r267: Yatış İstek Listesi | Ana Menü
+r268: KBS Listesi | Ana Menü
+r269: Servis Bilgileri | Dialog Form
+r270: Acil | Ana Menü
+r271: Triaj Değerlendirme Listesi | Ana Menü
+r272: Triaj Değerlendirme | Dialog Form
+r273: Tanımlar | Ana Menü
+r274: Hasta Kabul Hizmet | Dialog Form
+r275: Hasta Çalıştığı Kurum | Dialog Form
+r276: Hasta Çalıştığı Kurum Listesi | Ana Menü
+r277: Hasta Özellik | Dialog Form
+r278: Protokol Süreç Tanım | Dialog Form
+r279: Protokol Süreç Listesi | Ana Menü
+r280: ICD Listesi | Dialog Form
+r281: Protokol Süreç Detay Listesi | Dialog Form
+r282: Protokol Süreç Detay Tanım | Dialog Form
+r283: Doktor - Danışman Listesi | Ana Menü
+r284: VIP Tarihçe | Ana Menü
+r285: Vezne Paneli | Ana Menü
+r286: Hasta 360 | Ana Menü
+r287: Hasta Kartı | Dialog Form
+r288: Gelişler | Dialog Form
+r289: Faturalar | Dialog Form
+r290: Ödemeler | Dialog Form
+r291: İndirimler | Dialog Form
+r292: Dosyalar/Resimler | Dialog Form
+r293: Notlar | Dialog Form
+r294: Teklifler | Dialog Form
+r295: Online Ödemeler | Dialog Form
+r296: Anlaşmalarım | Dialog Form
+r297: Pos İşlem Ödeme Listesi | Dialog Form
+r298: Hasta İş Havuzu | Ana Menü
+r299: İstek Havuzu | Dialog Form
+r300: İşlem Havuzu | Dialog Form
+r301: Provizyon Takip | Dialog Form
+r302: Randevular | Dialog Form
+r303: Yatış İstekleri | Dialog Form
+r304: Onam Formları | Dialog Form
+r305: Hizmet Randevuları | Dialog Form
+r306: Tetkik Havuzu | Dialog Form
+r307: Arşiv | Dialog Form
+r308: Randevular | Dialog Form
+r309: Anlaşma Kullanımlarım | Dialog Form
+r310: Vezne 360 | Ana Menü
+r311: Hasta Arama | Dialog Form
+r312: Randevu Arama | Dialog Form
+r313: Son Hastalar | Dialog Form
+r314: Fiyat Verme | Dialog Form
+r315: Dönem Bilgileri | Dialog Form
+r316: Reçete Listesi | Dialog Form
+r317: Kampanyalar | Dialog Form
+r318: Gizli Hasta Yetkilendirme | Dialog Form
+r319: Randevu Arama | Dialog Form
+r320: Doktor İş Listesi | Dialog Form
+r321: UHM Hasta Arama | Dialog Form
+r322: Vezne İş Havuzu | Ana Menü
+r323: Evrak Takip | Dialog Form
+r324: Ödeme Takip | Dialog Form
+r325: GFK Takip | Dialog Form
+r326: Onam Formları | Dialog Form
+r327: Medula | Dialog Form
+r328: Onay Bekleyen İndirimler | Dialog Form
+r329: Onay Bekleyen İadeler | Dialog Form
+r330: Toplu Fatura İşlemleri | Dialog Form
+r331: İade Taleplerim | Dialog Form
+r332: Bekleyen Randevu Hizmetleri | Dialog Form
+r333: Onay Bekleyen Protokoller | Dialog Form
+r334: Fiyat Teklifleri | Dialog Form
+r335: Hasta Danışman | Dialog Form
+r336: Randevulanacak Hizmetler (PRM) | Dialog Form
+r337: Kurum Değişiklik Onay | Dialog Form
+r338: Protokol Listesi | Dialog Form
+r339: Reçete Listesi | Dialog Form
+r340: Tedavi | Ana Menü
+r341: Laboratuar | Dialog Form
+r342: Radyoloji | Dialog Form
+r343: Patoloji | Dialog Form
+r344: Tanılar | Dialog Form
+r345: Klinik Dokümanlar | Dialog Form
+r346: Laboratuvar | Dialog Form
+r347: Patoloji | Dialog Form
+r348: Diş Tedavi Planları | Dialog Form
+r349: Aktarım Bilgileri | Dialog Form
+r350: ComedEMR Order Listesi | Dialog Form
+r351: ComedEMR Ayaktan İlaç İstem Önerileri | Dialog Form
+r352: Reçete İlaç Listesi | Dialog Form
+r353: Dialog | Ana Menü
+r354: OSS Provizyon | Dialog Form
+r355: Hizmet Giriş | Dialog Form
+r356: Kurum Fatura | Dialog Form
+r357: Hasta Fatura | Dialog Form
+r358: İade Fatura | Dialog Form
+r359: Fatura Ödeme | Dialog Form
+r360: Kurum İndirim | Dialog Form
+r361: Faturalanacak Protokol Seçim | Dialog Form
+r362: Ödeme Bilgileri | Dialog Form
+r363: Fiyat Öğrenme | Dialog Form
+r364: Paket Dağılım | Dialog Form
+r365: İptal Faturalar | Dialog Form
+r366: İptal Ödemeler | Dialog Form
+r367: İptal İşlemler | Dialog Form
+r368: İade Talebi | Dialog Form
+r369: Paket İşlem Seçim  | Dialog Form
+r370: Toplu Fatura  | Dialog Form
+r371: İade Fatura  | Dialog Form
+r372: Toplu Fatura Detay | Dialog Form
+r373: Ameliyathane Hizmet İşlem | Dialog Form
+r374: Hastanın Teklifleri | Dialog Form
+r375: Protokol Otomatik Hizmet Listesi | Dialog Form
+r376: Provizyon | Dialog Form
+r377: Hizmet Seçim | Dialog Form
+r378: Protokol Onayı | Dialog Form
+r379: Vezne Dönem Devir | Dialog Form
+r380: Fatura Ödeme Listesi | Dialog Form
+r381: Teklif Kayit | Dialog Form
+r382: Paket Limit İzlem | Dialog Form
+r383: Avans İade | Dialog Form
+r384: Hazırlık Açıklaması | Dialog Form
+r385: Bebek Hasta Seçim | Dialog Form
+r386: Donör Bilgileri | Dialog Form
+r387: Anestezi Hizmet Işlem | Dialog Form
+r388: İşlem Tarihçe | Dialog Form
+r389: İşlem Seçim | Dialog Form
+r390: Dosya Seçim  | Dialog Form
+r391: Mobil Kimlik Okuma | Dialog Form
+r392: SGK Anestezi Hizmet Işlem | Dialog Form
+r393: Hasta Arşiv Bilgisi | Dialog Form
+r394: Merkez Dosya Listesi | Dialog Form
+r395: Pasaport Okuma | Dialog Form
+r396: ERP Aktarım Para Bilgileri | Dialog Form
+r397: Not İptal Listesi | Dialog Form
+r398: Email - SMS Listesi | Dialog Form
+r399: Zoho Hasta Bilgileri | Dialog Form
+r400: Ödeme Fatura Eşleştirme Tarihçe | Dialog Form
+r401: Mustehaklik Seçim | Dialog Form
+r402: Diğer Hizmetler Kesi Uygulama | Dialog Form
+r403: KIB Puan Kullanım | Dialog Form
+r404: Protokol Detay | Dialog Form
+r405: USS Poliçe Bilgileri | Dialog Form
+r406: Health Türkiye | Dialog Form
+r407: Virman İşlemleri | Dialog Form
+r408: USS Ambulans Fatura Bilgisi | Dialog Form
+r409: Canlı Mesajlaşma | Dialog Form
+r410: İade Fatura Talebi | Dialog Form
+r411: Katılım Payı Aktar | Dialog Form
+r412: Hasta Yönlendirme Listesi | Dialog Form
+r413: Protokol Detay | Dialog Form
+r414: Medula | Ana Menü
+r415: Takipler | Dialog Form
+r416: Raporlar | Dialog Form
+r417: Hizmet Kayit | Dialog Form
+r418: Migrasyon | Ana Menü
+r419: Fatura | Dialog Form
+r420: Protokol İşlem | Dialog Form
+r421: Ödeme | Dialog Form
+r422: Tedavi | Ana Menü
+r423: Tanımlar | Ana Menü
+r424: Rapor Şablon Tanımlama | Dialog Form
+r425: Rapor Şablon Seçim | Dialog Form
+r426: Gözlem Notu | Dialog Form
+r427: Yaşam Bulgusu | Dialog Form
+r428: Hizmet İstem Tipi Listesi | Ana Menü
+r429: Hizmet İstem Tipi | Dialog Form
+r430: Rapor Bölüm | Dialog Form
+r431: Hizmet Rapor Şablonları | Ana Menü
+r432: Epikriz Rapor Şablonları | Ana Menü
+r433: Özet Epikriz Rapor Şablonları | Ana Menü
+r434: Diğer Tıbbi Rapor Şablonları | Ana Menü
+r435: Anamnez Seçenek | Dialog Form
+r436: Anamnez Seçenek Seçim | Dialog Form
+r437: Anamnez Seçenek Seçim | Dialog Form
+r438: Gebelik Başlat | Dialog Form
+r439: Gebelik Bitir | Dialog Form
+r440: Gebelik Takip | Dialog Form
+r441: Aşı | Dialog Form
+r442: Asi Listesi | Ana Menü
+r443: Aşı Takvimi | Dialog Form
+r444: Aşı Seçim | Dialog Form
+r445: Standart Persantil | Dialog Form
+r446: Standart Persantil Listesi | Ana Menü
+r447: Hasta Anamnez Aktarım | Dialog Form
+r448: AÇSAP Formu | Dialog Form
+r449: Hasta Düşme Riski | Dialog Form
+r450: Bası Yarası Riski Beş Yaş Altı | Dialog Form
+r451: Bası Yarası Riski | Dialog Form
+r452: Bası Yarası Değerlendirme | Dialog Form
+r453: Hasta Sınıflandırma Kriteri | Dialog Form
+r454: Ameliyat Ekip Şablonları | Ana Menü
+r455: Ameliyat Ekip Şablon Tanım | Dialog Form
+r456: Ameliyat Ekip Şablon Seçim | Dialog Form
+r457: Gözlem Notu Şablon | Dialog Form
+r458: Fetal Gelişim İzlem Listesi | Dialog Form
+r459: Fetal Gelişim İzlem | Dialog Form
+r460: Laboratuar Rapor Şablonları | Ana Menü
+r461: Genel İstek Tasarım | Ana Menü
+r462: Genel İstek Grubu | Dialog Form
+r463: Genel İstek Grubu | Dialog Form
+r464: Genel İstek İşlem Grubu | Dialog Form
+r465: Epikriz Şablon | Dialog Form
+r466: Epikriz Şablon Listesi | Ana Menü
+r467: Epikriz Şablon Seçim | Dialog Form
+r468: Order Uyari | Dialog Form
+r469: Order Uygulama Zaman Şablonu | Ana Menü
+r470: Euroscore Risk Tipleri | Dialog Form
+r471: Apache II Detay | Dialog Form
+r472: Patoloji Rapor Şablonları | Ana Menü
+r473: Patoloji Rapor Şablon Seçim | Dialog Form
+r474: Reçete Şablon Listesi | Ana Menü
+r475: Özel Muayene Seçenek | Dialog Form
+r476: Özel Muayene Seçenek Listesi | Dialog Form
+r477: FTR Modalite Şablon | Dialog Form
+r478: FTR Modalite Şablon Listesi | Dialog Form
+r479: Anamnez Veri Tipi | Dialog Form
+r480: Anamnez Veri Tipi Listesi | Dialog Form
+r481: Ultrason Listesi | Dialog Form
+r482: Anestezi Risk Grubu | Dialog Form
+r483: Anestezi Risk Grubu Listesi | Ana Menü
+r484: Medula Rapor Etken Madde Şablon Listesi | Ana Menü
+r485: FTR Seans Tanım Listesi | Ana Menü
+r486: FTR Modalite Tipi  | Dialog Form
+r487: FTR Modalite  | Dialog Form
+r488: FTR Vücut Bölgesi | Dialog Form
+r489: İlaç Risk Yönetimi | Dialog Form
+r490: İlaç Risk Yönetimi Listesi | Ana Menü
+r491: Geçmiş Ağrı Listesi | Dialog Form
+r492: Riskli İlaçlar ve Etken Maddeler Listesi | Dialog Form
+r493: Standart Düşme Önleme Uygulamaları | Dialog Form
+r494: Yüksek Düşme Riskli Hastalarda Ek Uygulamalar | Dialog Form
+r495: İlaç Uygulama Hız Şekli Listesi | Ana Menü
+r496: İlaç Uygulama Hız Şekli  | Dialog Form
+r497: İlaç Uygulama Şekli  | Dialog Form
+r498: Riskli İlaçlar ve Etken Maddeler Listesi | Dialog Form
+r499: Muayene Resimleri | Dialog Form
+r500: Yatış Tarihçe Listesi | Dialog Form
+r501: MultiDisipliner Konsey Rapor Doktor Şablon | Ana Menü
+r502: Persantil Tanım | Dialog Form
+r503: Multidisipliner Konsey Tipi | Dialog Form
+r504: FTR Modalite Çoklu Ekleme | Dialog Form
+r505: Muayene Zorunlu Alan Listesi | Ana Menü
+r506: Muayene Zorunlu Alan | Dialog Form
+r507: Rapor Ameliyat Şablon Tanımlama | Dialog Form
+r508: Ameliyat Rapor Şablon Seçim | Dialog Form
+r509: Ameliyat Rapor Şablonları | Ana Menü
+r510: Kan ve Vücut Sıvısı Sıçraması Bildirim Tanım | Dialog Form
+r511: Gözlem Notu Şablon | Dialog Form
+r512: Bakım Planı Tanımlama | Ana Menü
+r513: Bakım Planı Tanım | Dialog Form
+r514: Bakım Planı Bulgu Tanım | Dialog Form
+r515: Tıbbı Form Listesi | Ana Menü
+r516: Boy Kilo Takip | Dialog Form
+r517: Vas Ağrı Skalası | Dialog Form
+r518: Wong Baker Ağrı Skalası | Dialog Form
+r519: Patoloji Rapor Şablon Grubu Tanım | Dialog Form
+r520: Kat Personel Listesi | Ana Menü
+r521: Yenidoğan Yoğunbakim Tetkik Şablon Listesi | Ana Menü
+r522: Personel Aşı | Dialog Form
+r523: Muayene Özel Durum | Dialog Form
+r524: Genel Tanımlar | Ana Menü
+r525: Bakım Planı Alt Bölüm Tanım | Dialog Form
+r526: Muayene Şablon Listesi | Ana Menü
+r527: Göz Cihaz Eşleştirme Listesi | Ana Menü
+r528: Göz Cihaz Eşleştirme | Dialog Form
+r529: Bakım Planı Şablon Tanım(Virginia Henderson) | Ana Menü
+r530: Bakım Planı Şablon Seçim(Virginia Henderson) | Dialog Form
+r531: Eğitim Şablonları | Ana Menü
+r532: Kapanmış Hasta Dosyası Kontrol | Ana Menü
+r533: Özgeçmiş Seçenek Listesi | Ana Menü
+r534: Özgeçmiş Seçenek | Dialog Form
+r535: Boy Kilo Giriş | Dialog Form
+r536: Hasta Sınıflandırma Kriteri  | Dialog Form
+r537: Hasta Bağımlılık Grupları  | Dialog Form
+r538: NSRAS(Yeni Doğan Cilt Risk Değerlendirme Ölçeği) | Dialog Form
+r539: E-Rapor Tanımı | Dialog Form
+r540: Bilinç Nabız Ödem Takip | Dialog Form
+r541: Gastroenteroloji Rapor Şablonları | Ana Menü
+r542: SKRS İlaç Listesi | Ana Menü
+r543: Sonraki Geliş Nedeni | Dialog Form
+r544: Alfa/Kappa | Dialog Form
+r545: Düzeltilmiş GK | Dialog Form
+r546: Düzeltilmemiş GK | Dialog Form
+r547: Endişe Durumu | Dialog Form
+r548: Medikal Cihaz | Dialog Form
+r549: Ameliyat | Ana Menü
+r550: Fiyatlandirma Listesi | Ana Menü
+r551: Fiyatlandırma İşlem | Dialog Form
+r552: Ameliyathane | Ana Menü
+r553: Ameliyat İşlem | Dialog Form
+r554: Anestezi Değerlendirme | Dialog Form
+r555: Ameliyat Randevu Kayıt | Dialog Form
+r556: Euroscore Değerlendirme | Dialog Form
+r557: Misafir Doktor Randevu Kayıt | Dialog Form
+r558: Ameliyathane Durumu | Ana Menü
+r559: Anestezi Değerlendirme Formu | Dialog Form
+r560: Anestezi Değerlendirme Listesi | Dialog Form
+r561: Ameliyat Tarihçe | Dialog Form
+r562: Ameliyat Rapor | Dialog Form
+r563: Ameliyat Özellikli Malzeme Tanımlama | Dialog Form
+r564: Ameliyat Planları | Ana Menü
+r565: Ameliyat Bitiş Bilgileri | Dialog Form
+r566: Ameliyat Seçim | Dialog Form
+r567: Müdahale İşlem | Dialog Form
+r568: Doktor | Ana Menü
+r569: Hasta Takip | Ana Menü
+r570: EHU Onay Listesi | Ana Menü
+r571: Hasta Çıkış Bilgileri | Dialog Form
+r572: EHU Onay Açıklama | Dialog Form
+r573: Yatan Hasta Paneli(Doktor) | Ana Menü
+r574: Medula Reçete Yatan Hasta Onayı | Ana Menü
+r575: Hasta Diyet Listesi | Ana Menü
+r576: Hastaya İşlenen Hizmet-Malzeme Listesi | Ana Menü
+r577: Uzman Hekim Onay | Dialog Form
+r578: Order İşlemleri | Dialog Form
+r579: İşyeri Hekimi Hasta Takip | Ana Menü
+r580: Yatan Hasta Paneli | Dialog Form
+r581: Hasta Takip(Anestezist) | Ana Menü
+r582: Onay Bekleyen İşlemler | Dialog Form
+r583: Gecikmiş Epikrizlerim | Dialog Form
+r584: Ön Anamnez | Dialog Form
+r585: Yenidoğan Tanılama Ve Takip Listesi | Dialog Form
+r586: Yatan Hasta Paneli | Ana Menü
+r587: Pediatrik Travma | Dialog Form
+r588: Favori Tanılar | Ana Menü
+r589: Hemsire | Ana Menü
+r590: Servis Islemleri | Dialog Form
+r591: Hizmet İstem | Dialog Form
+r592: Hizmet İstem Uygulama | Dialog Form
+r593: İlaç İstem Uygulama | Dialog Form
+r594: Hasta Çıkış İptal/Güncelleme | Dialog Form
+r595: AKBS Gönderim Listesi | Dialog Form
+r596: Hemşire Bilgileri | Dialog Form
+r597: Hemşire Hasta Sınıflandırma | Dialog Form
+r598: Yatan Hasta İşlemleri | Dialog Form
+r599: Hasta Çıkış | Dialog Form
+r600: Ayaktan Hasta İşlemleri | Ana Menü
+r601: Yatan Hasta Paneli(Hemşire) | Ana Menü
+r602: Order Uygulama | Dialog Form
+r603: Hasta Kayıt | Dialog Form
+r604: Hasta Bilgi | Dialog Form
+r605: Yenidoğan Yoğun Bakım Hasta Tanılama | Dialog Form
+r606: Erişkin Hasta Tanılama | Dialog Form
+r607: Yenidoğan Tanılama ve Takip Formu | Dialog Form
+r608: Yatan Çocuk Hasta Hemşire Tanılama Formu (31 Gün - 9 Yaş) | Dialog Form
+r609: Hasta Düşme Riski Değerlendirme 16 Yaş Üstü (İtaki Düşme Riski) Formu | Dialog Form
+r610: Hasta Düşme Riski Değerlendirme 0-16 Yaş (Harizmi Düşme Riski) Formu | Dialog Form
+r611: Order Takip Çizelgesi | Dialog Form
+r612: Malzeme Numune Değerlendirme Listesi | Ana Menü
+r613: Malzeme Numune Değerlendirme | Dialog Form
+r614: Yatan Erişkin Hasta Hemşire Tanılama Formu (10 yaş ve üstü) | Dialog Form
+r615: Alkol Muayene Formu | Dialog Form
+r616: Acil Müşahede Formu | Dialog Form
+r617: Advers Etki Formu | Dialog Form
+r618: Refakatçi Rasyon Listesi | Ana Menü
+r619: Yatan Hasta Paneli | Ana Menü
+r620: Numune İşlem | Dialog Form
+r621: Malzeme İstekleri | Dialog Form
+r622: BakimPlaniSecim | Dialog Form
+r623: HastaBakimPlani | Dialog Form
+r624: İş Planı | Dialog Form
+r625: Bakım Planı Durum Değiştir | Dialog Form
+r626: İş Planı | Ana Menü
+r627: Pediarik Hematoloji Onkoloji Ayaktan Hasta Kabul ve Tanılama | Dialog Form
+r628: Tıbbi Form Listesi | Dialog Form
+r629: Tıbbi Form-Skala | Dialog Form
+r630: Yatan Hasta Diyet Paneli | Ana Menü
+r631: Kateter İşlem | Dialog Form
+r632: Kateter Tüp Materyal İşlem | Dialog Form
+r633: Sıvı Dengesi İzlem | Dialog Form
+r634: Sıvı Dengesi İşlem | Dialog Form
+r635: Sıvı Dengesi Çıkış İşlem | Dialog Form
+r636: Toksitite Değerlendirmesi | Dialog Form
+r637: ReUse Kullanım Bildirimleri | Ana Menü
+r638: Narkotik ve Psikotrop İlaç Takip Formu | Dialog Form
+r639: Bakım Planı Seçim | Dialog Form
+r640: Yenidoğan Epikriz | Dialog Form
+r641: Hasta Fiziksel Muayene Bilgileri | Dialog Form
+r642: Ayaktan Hasta Paneli | Ana Menü
+r643: Bakım Planları | Dialog Form
+r644: Bakım Planı Güncelle | Dialog Form
+r645: Ayaktan Hasta Paneli | Dialog Form
+r646: Hizmet Order Listesi | Ana Menü
+r647: Hasta Eğitim Listesi | Dialog Form
+r648: Hasta Eğitim | Dialog Form
+r649: Şift Yönetimi | Ana Menü
+r650: Hatırlatıcı | Dialog Form
+r651: Kapanmış Hasta Dosyası Kontrol | Dialog Form
+r652: Refakatçi Gerekçe | Dialog Form
+r653: Hasta Kısıtlama | Dialog Form
+r654: Hasta Kısıtlama Farmakoloji | Dialog Form
+r655: İzolasyon Bildirim ve Uygulama Formu | Dialog Form
+r656: İzolasyon Listesi | Ana Menü
+r657: İzolasyon Listesi | Dialog Form
+r658: Hasta Düşme Riski Değerlendirme 0-18 Yaş (Harizmi Düşme Riski) Formu II | Dialog Form
+r659: Hasta Düşme Riski Değerlendirme 18 Yaş Üstü (İtaki II Düşme Riski) Formu | Dialog Form
+r660: Miktar Girişi | Dialog Form
+r661: Yatan Hasta Numune Alma | Dialog Form
+r662: Numune İşlem | Dialog Form
+r663: E-Nabız Yoğun Bakım Değerlendirme | Dialog Form
+r664: E-Nabız Paket 277 | Dialog Form
+r665: E-Nabız Paket 276 | Dialog Form
+r666: (Ordinatrum/Arc) Paket 278 Toplu Listeleme | Dialog Form
+r667: 278 Gönderim Sayısı Sorgulama | Dialog Form
+r668: Manuel Kan Gazı Sonucu Ekleme | Dialog Form
+r669: Doktor | Ana Menü
+r670: Genel Muayene | Dialog Form
+r671: Tanı Seçim | Dialog Form
+r672: Şablon Seçim | Dialog Form
+r673: Ağrı Bilgisi | Dialog Form
+r674: Genel Muayene Özet | Dialog Form
+r675: İlaç Order Uygulama | Dialog Form
+r676: Reçete | Dialog Form
+r677: Medula Rapor | Dialog Form
+r678: Order | Dialog Form
+r679: Order Uygulama Bilgileri | Dialog Form
+r680: Medula Reçete İşleri | Dialog Form
+r681: Medula Reçete Açıklama | Dialog Form
+r682: Medula Reçete Listesi | Dialog Form
+r683: Order | Dialog Form
+r684: Epikriz Düzenleme | Dialog Form
+r685: Geçmiş Epikriz Listesi | Dialog Form
+r686: Hasta Sıra | Dialog Form
+r687: Diş Tedavi Teşhiş - Planlama | Dialog Form
+r688: ApacheII | Dialog Form
+r689: Nutrisyon Risk Tarama | Dialog Form
+r690: Sofa Score | Dialog Form
+r691: Medula Reçete Okuma | Dialog Form
+r692: Not Giriş | Dialog Form
+r693: Reçete Şablon Ekle | Dialog Form
+r694: Fiziksel Muayene | Dialog Form
+r695: SNAP II Score | Dialog Form
+r696: Persantil | Dialog Form
+r697: Saç Ekimi Muayene  | Dialog Form
+r698: Aktarım Bilgisi  | Dialog Form
+r699: SAPSII | Dialog Form
+r700: Göz Cihaz Veri Aktarımı | Dialog Form
+r701: İşyeri Hekimi Muayene | Dialog Form
+r702: Muayene Şablon | Dialog Form
+r703: Anestezi Değerlendirme | Dialog Form
+r704: Icon İndeks Tablo | Dialog Form
+r705: Icon İndeks | Dialog Form
+r706: Order Güncelleme | Dialog Form
+r707: Order | Dialog Form
+r708: Akılcı Antibiyotik | Dialog Form
+r709: Renkli Reçete Listesi | Dialog Form
+r710: Ağrı Bilgisi | Dialog Form
+r711: PRISM(Pediatric Risk of Mortality) | Dialog Form
+r712: Medula Tıbbi Malzeme Reçete İşleri | Dialog Form
+r713: Medula Rapor Seçim | Dialog Form
+r714: Epikriz Listesi | Dialog Form
+r715: Tıbbi Form Listesi | Dialog Form
+r716: Nutrisyon Risk Tarama (Çocuk) | Dialog Form
+r717: Çocuk Nutrisyonel Tarama | Dialog Form
+r718: Kan Şekeri Kontrol | Dialog Form
+r719: Beslenme Risk Değerlendirmesi | Dialog Form
+r720: Genel Yoğun Bakım Ünitesi Ventilatör İlişkili Pnönoni Takip Formu | Dialog Form
+r721: Muayene Öz Geçmiş İlaç Listesi | Dialog Form
+r722: NEOMOD | Dialog Form
+r723: NEOMOD Skorlama | Dialog Form
+r724: Pospartum Depresyon | Dialog Form
+r725: Pospartum Depresyon Skorlama | Dialog Form
+r726: Düşme Sonrası Hasta Değerlendirme | Dialog Form
+r727: Düşme Sonrası Hasta Değerlendirme Listesi | Dialog Form
+r728: Revised Trauma | Dialog Form
+r729: Revised Trauma Skorlama | Dialog Form
+r730: Nadir Hastalık Bilgisi | Dialog Form
+r731: Kateter İliskili İdrar Yolu Enfeksiyon Önlem Paketi Kontrol Listesi | Dialog Form
+r732: Santral Kateter İlişkili Kan Dolaşımı Enfeksiyon Önlem Paketi Kontrol Listesi | Dialog Form
+r733: Medula Kemik iligi | Dialog Form
+r734: USS Reçete Listesi | Dialog Form
+r735: Evde Sağlık Hizmeti İhtiyacı Bilgileri | Dialog Form
+r736: E-Nabız Hekim Mesajlaşma | Dialog Form
+r737: Protokol Toplu Çıktı | Dialog Form
+r738: Göz Epikriz Listesi | Dialog Form
+r739: Istek | Ana Menü
+r740: Yatış Planlama | Dialog Form
+r741: Genel İstek | Dialog Form
+r742: Konsultasyon | Dialog Form
+r743: Kan İstek | Dialog Form
+r744: Diş Tedavi İstek | Dialog Form
+r745: FTR Randevu İstek | Dialog Form
+r746: Yatış İstekleri | Dialog Form
+r747: Ameliyat İstek | Dialog Form
+r748: Kök Hücre İstek | Dialog Form
+r749: Bekleyen Ameliyat İşlemleri | Dialog Form
+r750: Genel İstek Seçim | Dialog Form
+r751: VK Sevk Bildir | Dialog Form
+r752: VK Mesaj Gönder | Dialog Form
+r753: Kan İstek | Dialog Form
+r754: Kök Hücre İstek Listesi | Dialog Form
+r755: Refere İstek | Dialog Form
+r756: Diş Konsultasyon | Dialog Form
+r757: Müdahale İstek | Dialog Form
+r758:  | Ana Menü
+r759: Epikriz | Dialog Form
+r760: Hizmet | Dialog Form
+r761: Ameliyat Raporu | Dialog Form
+r762: Hasta Bilgilendirme ve Taburcu Formu | Dialog Form
+r763: Gözlük Reçetesi | Dialog Form
+r764: Taahütname | Dialog Form
+r765: Bası Yarası Değerlendirme Formu | Dialog Form
+r766: Bası Yarası Riski Değerlendirme Formu | Dialog Form
+r767: Bası Yarası Riski Beş Yaş Altı Değerlendirme Formu | Dialog Form
+r768: Hasta Düşme Riski | Dialog Form
+r769: Beslenme Puan Ölçeği | Dialog Form
+r770: Ağrı Değerlendirme Formu | Dialog Form
+r771: Reçete | Dialog Form
+r772: Order Uygulama Raporu | Dialog Form
+r773: Yatan Hasta Bilgileri | Dialog Form
+r774: Yatan Hasta Listesi | Dialog Form
+r775: Order Formu | Dialog Form
+r776: Konsultasyon Raporu | Dialog Form
+r777: Hizmet İstek ve Uygulama Raporu | Dialog Form
+r778: Yaşam Bulguları | Dialog Form
+r779: Gözlem Notu | Dialog Form
+r780: Order Formu | Dialog Form
+r781: FTR Muayene Raporu | Dialog Form
+r782: FTR Muayene Değerlendirme Raporu | Dialog Form
+r783: Malzeme Muafiyet Raporu | Dialog Form
+r784: Hasta Tabelası | Dialog Form
+r785: Özet Epikriz | Dialog Form
+r786: Etkileşim Sorgulama | Dialog Form
+r787: Nutrisyon Risk Tarama Raporu | Dialog Form
+r788: Apache II Score Raporu | Dialog Form
+r789: Sofa Score Raporu | Dialog Form
+r790: Diş Muayene Raporu | Dialog Form
+r791: Epikriz | Dialog Form
+r792: Hasta Muayene Formu | Dialog Form
+r793: Anestezi Öncesi Değerlendirme | Dialog Form
+r794: Order Takip Çizelgesi | Dialog Form
+r795: Erişkin Hasta Tanılama Formu | Dialog Form
+r796: Yenidoğan Yoğun Bakım Hasta Tanılama Formu | Dialog Form
+r797: SNAP II Raporu | Dialog Form
+r798: Yenidoğan Tanılama ve Takip Formu | Dialog Form
+r799: İlaç Güvenlik İzlem Formu | Dialog Form
+r800: Hasta Onay Formu | Dialog Form
+r801: Kadın Doğum Muayene Raporu | Dialog Form
+r802: Harizmi Düşme Riski Raporu | Dialog Form
+r803: İtaki Düşme Riski Raporu | Dialog Form
+r804: Hasta Kayıt Kabul Bilgi Formu | Dialog Form
+r805: Poliklinik Hizmetleri Genel Rıza Belgesi | Dialog Form
+r806: Medikal Tedavi Genel Rıza Belgesi | Dialog Form
+r807: Rasyon Listesi | Dialog Form
+r808: Rasyon Kartı | Dialog Form
+r809: Bildirimi Zorunlu Hastalık | Dialog Form
+r810: Alkol Muayene | Dialog Form
+r811: Acil Servis Musahade | Dialog Form
+r812: EHU Onay Formu | Dialog Form
+r813: MultiDisipliner Disipliner Konsey Raporu | Dialog Form
+r814: Diyet Takip Çizelgesi | Dialog Form
+r815: SAPSII Raporu | Dialog Form
+r816: Diyetisyen Değerlendirme | Dialog Form
+r817: Kemoterapi Seans Formu | Dialog Form
+r818: Kemoterapi Tedavi Formu | Dialog Form
+r819: İş Yeri Hekimi Muayene Raporu | Dialog Form
+r820: Reçete İlaç Barkod | Dialog Form
+r821: Diş Icon İndeks | Dialog Form
+r822: Göz Anamnez Rapor | Dialog Form
+r823: Kateter - Tüp - Materyal Listesi | Dialog Form
+r824: Tıbbi Form - Skala | Dialog Form
+r825: Euroscore Raporu | Dialog Form
+r826: Bakım Planı Raporu | Dialog Form
+r827: Yenigoğan Epikriz Raporu | Dialog Form
+r828: Kapanmış Hasta Dosyası Kontrol | Dialog Form
+r829: Diş Muayene Raporu | Dialog Form
+r830: Persantil | Dialog Form
+r831: influenza (Grip) Sürveyans Raporu | Dialog Form
+r832: Kemoterapi İlaç Hazırlama Listesi | Dialog Form
+r833: Kemoterapi İlaç Listesi | Dialog Form
+r834: Aktarım Bilgisi | Dialog Form
+r835: PRISM | Dialog Form
+r836: Tıbbi Malzeme Reçetesi | Dialog Form
+r837: Refakatçi Gerekçe | Dialog Form
+r838: Yatan Çocuk Hasta Tanılama Formu | Dialog Form
+r839: Hasta Kısıtlama | Dialog Form
+r840: Yenidoğan Cilt Risk Ölçeği | Dialog Form
+r841: Yüksek Düşme Riskli Hastalarda Uygulamalar | Dialog Form
+r842: Yüksek Riskli İlaçlar Ve Etken Madde | Dialog Form
+r843: Harizmi II Düşme Riski Raporu | Dialog Form
+r844: İtaki II Düşme Riski Raporu | Dialog Form
+r845: Nutrisyon Risk Tarama (Çocuk) Raporu | Dialog Form
+r846: Çocuk Nutrisyonel Tarama Raporu | Dialog Form
+r847: Kan Şekeri Kontrol Raporu | Dialog Form
+r848: Aşı Kullanım Barkodu | Dialog Form
+r849: Hasta Nakil Raporu | Dialog Form
+r850: Hasta Eğitim Raporu | Dialog Form
+r851: Genel Yoğun Bakım Santral Venöz Kateter İlişkili Kan Dolaşımı Enfeksiyonu Takip Formu | Dialog Form
+r852: Genel Yoğun Bakım Üriner Kateter İlişkili Üriner Sistem Enfeksiyonu Takip Formu | Dialog Form
+r853: Genel Yoğun Bakım Ünitesi Ventilatör İlişkili Pnönoni Takip Formu | Dialog Form
+r854: Medula Evrak Hekim İlaç Order | Dialog Form
+r855: Diğer Order Takip Çizelgesi | Dialog Form
+r856: NEOMOD | Dialog Form
+r857: Pediatrik Travma | Dialog Form
+r858: Pospartum Depresyon | Dialog Form
+r859: Bilinç Nabız Ödem | Dialog Form
+r860: Düşme Sonrası Hasta Değerlendirme | Dialog Form
+r861: Revised Trauma | Dialog Form
+r862: Order E-İmza | Dialog Form
+r863: Gebelik | Dialog Form
+r864: Diş Fiyatlandırma | Dialog Form
+r865: Aşı Kartı | Dialog Form
+r866: Hasta Aşı Kullanım Bilgileri | Dialog Form
+r867: Kök Hücre İstek Bilgileri | Dialog Form
+r868: Diş Konsultasyon Raporu | Dialog Form
+r869: Göz Epikriz | Dialog Form
+r870: Medula İlaç Malzeme | Dialog Form
+r871: Kayıt Defteri | Dialog Form
+r872: İşlemler | Ana Menü
+r873: Rapor İşlem | Ana Menü
+r874: MultiDisipliner Konsey Rapor Listesi | Ana Menü
+r875: MultiDisipliner Konsey Rapor Onay | Dialog Form
+r876: MultiDisipliner Konsey Raporu | Dialog Form
+r877: Kan ve Vücut Sıvısı Sıçrama Bildirim Listesi | Ana Menü
+r878: Hizmet Rapor | Dialog Form
+r879: Konsultasyon Listesi | Ana Menü
+r880: Hizmet Raporları | Ana Menü
+r881: Hasta Aktarım Listesi | Ana Menü
+r882: E-İmza Bekleyen Evrak Listesi | Ana Menü
+r883: İstek Listesi | Dialog Form
+r884: Refere İstek Yönetimi | Ana Menü
+r885: Diyet | Ana Menü
+r886: Diyet Listesi | Ana Menü
+r887: Diyet Seçim | Dialog Form
+r888: Diyet Seçim | Dialog Form
+r889: Yiyecek | Dialog Form
+r890: Yiyecek Listesi | Ana Menü
+r891: Yemek İçeriği | Dialog Form
+r892: Yemek | Dialog Form
+r893: Yemek Listesi | Ana Menü
+r894: Diyet Şablon | Ana Menü
+r895: Diyet | Dialog Form
+r896: Diyet İçerik | Dialog Form
+r897: Diyet İstek | Dialog Form
+r898: Diyet Kisitlamalari | Ana Menü
+r899: Diyet Tipi | Dialog Form
+r900: Mutfak Listesi | Ana Menü
+r901: Hasta Diyetleri | Dialog Form
+r902: Diyetisyen Değerlendirme Formu | Dialog Form
+r903: Diyet İstek Uygula | Dialog Form
+r904: Diyet İstek Tarihçe | Dialog Form
+r905: Vademecum İlaç Gıda Etkileşim Uyarıları | Ana Menü
+r906: Vademecum İlaç Gıda Etkileşim | Dialog Form
+r907: Kontrol Paneli | Ana Menü
+r908: Geçmiş Muayene | Dialog Form
+r909: Tetkik-Tahlil Sonuçları | Dialog Form
+r910: Hizmet Raporları | Dialog Form
+r911: Tetkik-Tahlil Sonuçları | Dialog Form
+r912: Epikriz Geçmişi | Dialog Form
+r913: Tele Tıp Görüntüleme Sonuçları | Dialog Form
+r914: Ulusal Sağlık Sistemi Test Sorgulama Sonuçları | Dialog Form
+r915: Akılcı Test Sorgulama Sonuçları | Dialog Form
+r916: Onkoloji | Ana Menü
+r917: Onkoloji Protokol Tanım | Dialog Form
+r918: Kemoterapi Tedavi Başlat | Dialog Form
+r919: Onkoloji Seans Listesi | Ana Menü
+r920: Hemşire Seans Uygulaması | Dialog Form
+r921: Evreleme | Dialog Form
+r922: Evre Grup Kod Listesi | Dialog Form
+r923: Kemoterapi Seans Uygula | Dialog Form
+r924: Seans Paneli | Ana Menü
+r925: Onkoloji Protokol Tanım | Dialog Form
+r926: Protokol Listesi | Ana Menü
+r927: Kemoterapi Tedavi Başlat 2 | Dialog Form
+r928: Seans | Dialog Form
+r929: Onkoloji Protokol Grubu | Dialog Form
+r930: İlaç Düzenleme | Dialog Form
+r931: İlaç Ekle | Dialog Form
+r932: Günlük Seans Sayıları | Dialog Form
+r933: Seans Tarihi Düzenle | Dialog Form
+r934: Boy-Kilo | Dialog Form
+r935: Tarihçe | Dialog Form
+r936: Poliklinik | Ana Menü
+r937: Muayene | Dialog Form
+r938: Tahlil Sonuçları | Dialog Form
+r939: Tetkik Sonuçları | Dialog Form
+r940: Konsultasyon | Dialog Form
+r941: Patoloji Sonuçları | Dialog Form
+r942: Ameliyat Notu | Dialog Form
+r943: Muayene | Dialog Form
+r944: Muayene Seçenekleri | Dialog Form
+r945: Ameliyat Bilgileri | Dialog Form
+r946: Protokol İşlemleri | Dialog Form
+r947: Hasta İzlem | Dialog Form
+r948: Order | Dialog Form
+r949: Hasta Seçim | Dialog Form
+r950: Anamnez Detay | Dialog Form
+r951: Anamnez Detay | Dialog Form
+r952: Anamnez Detay | Dialog Form
+r953: Anamnez Detay | Dialog Form
+r954: Anamnez Detay | Dialog Form
+r955: Anamnez Detay | Dialog Form
+r956: Anamnez Detay | Dialog Form
+r957: Anamnez Detay | Dialog Form
+r958: Epikriz Paneli | Dialog Form
+r959: Rapor İşlemleri | Dialog Form
+r960: Triaj seçim | Dialog Form
+r961: Anestezi Değerlendirme | Dialog Form
+r962: Hasta Bilgileri | Dialog Form
+r963: Hematoloji Muayene | Dialog Form
+r964: Görüşmeci Muayene | Dialog Form
+r965: Diyetisyen Muayene | Dialog Form
+r966: Diyetisyen Muayene Ölçümleri | Dialog Form
+r967: Diğer Şube Bilgileri | Dialog Form
+r968: İş Yeri Hekimi Muayene | Dialog Form
+r969: İş Yeri Hekimi Muayene Detay | Dialog Form
+r970: İş Yeri Hekimi Muayene | Dialog Form
+r971: Kanser Kayıt Bilgi Formu | Dialog Form
+r972: Muayene Notu | Dialog Form
+r973: Anamnez Detay | Dialog Form
+r974: Panel Görünümü | Dialog Form
+r975: İşlem Paneli | Dialog Form
+r976: Muayene Detay | Dialog Form
+r977: Göz Muayene Tarihçe | Dialog Form
+r978: Göz Muayene Cihaz Sonuçları | Dialog Form
+r979: Saç Ekimi Muayene | Dialog Form
+r980: Medikal Tedavi | Dialog Form
+r981: Tahlil Sonuçları | Dialog Form
+r982: Tarih Seçim | Dialog Form
+r983: Hasta Dökümanları | Dialog Form
+r984: Muayene Detay | Dialog Form
+r985: Aşı Kartı Bilgileri | Dialog Form
+r986: Muayene Detay | Dialog Form
+r987: Reçeteler | Dialog Form
+r988: Muayene | Dialog Form
+r989: Tanı Geçmişi | Dialog Form
+r990: Diş Konsultasyon | Dialog Form
+r991: Muayene | Dialog Form
+r992: Tarihçe | Dialog Form
+r993: Aşı Takip | Ana Menü
+r994: Aşı Kullanım Bilgileri | Ana Menü
+r995: Aşı Stok Giriş Çıkış İşlemleri | Ana Menü
+r996: Aşı Stok Durumu | Ana Menü
+r997: Aşı Uygulam Bilgileri | Dialog Form
+r998: Aşı Erteleme/İptal Bilgileri | Dialog Form
+r999: Birime Ait USS Aşı Listesi | Ana Menü
+r1000: Hematoloji | Ana Menü
+r1001: Hematoloji Protokol Tanım | Dialog Form
+r1002: Hematoloji Tedavi Plan Tanım | Dialog Form
+r1003: Hematoloji Tedavi Protokolleri | Ana Menü
+r1004: Hematoloji Tedavi Planları | Ana Menü
+r1005: Hematoloji Tedavi Başlat | Dialog Form
+r1006: Hematoloji Protokol Durum Degistir | Dialog Form
+r1007: Hematoloji Seans Durum Degistir | Dialog Form
+r1008: Ortak | Ana Menü
+r1009: Hasta Gözlem Notu Güncelleme | Dialog Form
+r1010: Order Listesi | Dialog Form
+r1011: Order Pas Geç Karekod Girişi | Dialog Form
+r1012: Diyaliz | Ana Menü
+r1013: Entegrasyon Tanım Listesi | Ana Menü
+r1014: DYOB Diyaliz Hasta Listesi | Ana Menü
+r1015: Test Bilgileri | Dialog Form
+r1016: Diyaliz Bilgileri | Dialog Form
+r1017: Diyaliz Randevu Listesi | Ana Menü
+r1018: Diyaliz Sonlandırma Nedeni Seçim | Dialog Form
+r1019: DYOB Servis Veri Gönderimi | Ana Menü
+r1020: Hasta Seçim | Dialog Form
+r1021: Laboratuvar | Ana Menü
+r1022: Tanımlar | Ana Menü
+r1023: Genel Tanımlar | Ana Menü
+r1024: Numune Tipi | Dialog Form
+r1025: Tüp Tipi | Dialog Form
+r1026: Laboratuar | Dialog Form
+r1027: Kit Tipi | Dialog Form
+r1028: Test Listesi | Ana Menü
+r1029: Test | Dialog Form
+r1030: Test Normal Değer | Dialog Form
+r1031: Test Parametre Seçim | Dialog Form
+r1032: Test Grubu | Dialog Form
+r1033: Test İptal Açıklama Listesi | Ana Menü
+r1034: Test İptal Açıklama | Dialog Form
+r1035: Test İptal Açıklama Grubu | Dialog Form
+r1036: Test Tarihçe | Dialog Form
+r1037: Laboratuar Bölüm | Dialog Form
+r1038: Donör Soru Listesi | Ana Menü
+r1039: Donör Soru Formu | Dialog Form
+r1040: Örnek Tanım | Dialog Form
+r1041: Antibiotik Şablon | Dialog Form
+r1042: Kontrol Numune Tipi | Dialog Form
+r1043: Kontrol Numune | Dialog Form
+r1044: Laboratuar Süreç Ayarı | Ana Menü
+r1045: Riskli Değer | Dialog Form
+r1046: Hesaplamalı Testler | Ana Menü
+r1047: Uygulama Türü | Dialog Form
+r1048: Antibiyotik Şablonları | Ana Menü
+r1049: Numune Depo Listesi | Ana Menü
+r1050: Depo | Dialog Form
+r1051: Raf | Dialog Form
+r1052: Numune Alındığı Bölge | Dialog Form
+r1053: Rapor Gurbu | Dialog Form
+r1054:  Reaksiyon Tipi | Dialog Form
+r1055:  Kan Ürün Tipi | Dialog Form
+r1056: Bakteri - Antibiyotik Tanımı | Ana Menü
+r1057: Numune İşlem | Ana Menü
+r1058: Numune İşlem | Ana Menü
+r1059: Süre Barkodu Sonuç Tarihi Onay | Dialog Form
+r1060: Numune Hata | Dialog Form
+r1061: Numune Arşiv | Ana Menü
+r1062: Numune Bul | Ana Menü
+r1063: Numune Değiştirme/Birleştirme | Dialog Form
+r1064: Numune Defter Listesi | Ana Menü
+r1065: Numune Veriniz | Dialog Form
+r1066: Test Seçiniz | Dialog Form
+r1067: Comed Numune Alma | Ana Menü
+r1068: Not Ekle | Dialog Form
+r1069: Laboratuvar İşlem | Ana Menü
+r1070: Bakteri - Antibiotik Seçim | Dialog Form
+r1071: Laboratuvar Test İşlem | Ana Menü
+r1072: Test İşlem | Dialog Form
+r1073: Kritik Değer Bildirim | Dialog Form
+r1074: Numune Kabul | Ana Menü
+r1075: Test İşlem Aktarim Listesi | Ana Menü
+r1076: Barkodla Numune Kabul | Dialog Form
+r1077: Cihaz Sonuç Aktarım | Dialog Form
+r1078: Hesaplamalı Test Ekle | Dialog Form
+r1079: Form-D14 | Dialog Form
+r1080: Sonuç Gönderim | Ana Menü
+r1081: Kritik Değer Bildirim Cevap | Dialog Form
+r1082: Test İşlem Cihaz | Dialog Form
+r1083: Ortak | Ana Menü
+r1084: İptal Açıklaması | Dialog Form
+r1085: Test Tekli Seçim | Dialog Form
+r1086: Test Çoklu Seçim | Dialog Form
+r1087: Patoloji Seçim | Dialog Form
+r1088: Patoloji Tanı Çoklu Seçim | Dialog Form
+r1089: Patoloji Kimyasal Çoklu Seçim | Dialog Form
+r1090: Patoloji İstek Seçim | Dialog Form
+r1091: Bakteri Seçim | Dialog Form
+r1092: Antibiyotik Seçim | Dialog Form
+r1093: Ek Test Seçim | Dialog Form
+r1094: Son Üç Sonuç | Dialog Form
+r1095: Sonuç Seçim | Dialog Form
+r1096: Direkt Sonuç Girilen Testler | Dialog Form
+r1097: Numunenin Alınacağı Bölge Seçim | Dialog Form
+r1098: Comed Rapor Sonucu | Dialog Form
+r1099: Kültür Seçim | Dialog Form
+r1100: Bakteri Seçim | Dialog Form
+r1101: Geç Onaylanama Nedenleri | Dialog Form
+r1102: Comed Dosya | Dialog Form
+r1103: Patoloji Öze Yöntemler Çoklu Seçim | Dialog Form
+r1104:  | Ana Menü
+r1105: Donör Barkodu | Dialog Form
+r1106: Numune Barkodu | Dialog Form
+r1107: Numune Barkodu | Dialog Form
+r1108: Numune Süre Barkodu | Dialog Form
+r1109: Numune Barkodu | Dialog Form
+r1110: Kan Grubu Barkodu | Dialog Form
+r1111: Kan Ürün Barkodu | Dialog Form
+r1112: Cross Barkodu | Dialog Form
+r1113: Patoloji Barkodu | Dialog Form
+r1114: Kalibrasyon Kontrol Barkodu | Dialog Form
+r1115: Besiyer Numune Barkodu | Dialog Form
+r1116: Kultur Tarama Numune Barkodu8 | Dialog Form
+r1117: Rezerve Barkodu | Dialog Form
+r1118: Kök Hücre Toplama Barkodu | Dialog Form
+r1119: Kök Hücre Taşıma Barkodu | Dialog Form
+r1120: Kök Hücre İşleme Barkodu | Dialog Form
+r1121:  | Ana Menü
+r1122: Test Sonuç Raporu | Dialog Form
+r1123: Kritik Değer Bildirim Formu | Dialog Form
+r1124: Patoloji Sonuc Raporu | Dialog Form
+r1125: Donör Sorgulama Formu | Dialog Form
+r1126: Transfüzyon Takip Formu | Dialog Form
+r1127: Laboratuvar İstek Formu | Dialog Form
+r1128: Test Sonuc Raporu(Protokol Bazlı) | Dialog Form
+r1129: Patoloji Sonuc Raporu | Dialog Form
+r1130: Patoloji Sonuc Raporu | Dialog Form
+r1131: Kan İstem Formu | Dialog Form
+r1132: Cross Raporu | Dialog Form
+r1133: Test Sonuç(Rapor Tipinde) Raporu | Dialog Form
+r1134: Patoloji İstek Formu | Dialog Form
+r1135: Test Sonuc Raporu(Hasta Bazlı) | Dialog Form
+r1136: Hasta Bazlı Test Calışma Analizi | Dialog Form
+r1137: Kültür Sonuç Raporu | Dialog Form
+r1138: Patoloji Sonuc Raporu | Dialog Form
+r1139: Transfüzyon Merkezi Raporu | Dialog Form
+r1140: Kültür Tarama Sonuçlar | Dialog Form
+r1141: Numune Kabul Defteri | Dialog Form
+r1142: Numune Alma Defteri | Dialog Form
+r1143: Form D14 | Dialog Form
+r1144: Form Hasta Reaksiyon | Dialog Form
+r1145: Cross Match Kayıt Defteri | Dialog Form
+r1146: Analizler | Ana Menü
+r1147: Test Geçmiş Sonuç | Dialog Form
+r1148: Çalışılan Test | Ana Menü
+r1149: Kontrol-Kalibrasyon Sonuç Giriş | Dialog Form
+r1150: Kontrol-Kalibrasyon Sonuçları | Ana Menü
+r1151: Kan Transfüzyon Merkezi | Ana Menü
+r1152: Kan İstek Karşılama Listesi | Ana Menü
+r1153: Kan Siparişleri | Ana Menü
+r1154: Kan Sipariş | Dialog Form
+r1155: Kan İrsaliye | Ana Menü
+r1156: Kan İrsaliye | Dialog Form
+r1157: Donör Listesi | Ana Menü
+r1158: Donör Sorgulama | Dialog Form
+r1159: Donör Muayene | Dialog Form
+r1160: Kan Ürün Transfer | Dialog Form
+r1161: Kan Ürün Rezervasyon | Dialog Form
+r1162: Bağış | Dialog Form
+r1163: Kan Stok Durumu | Ana Menü
+r1164: Donör Test Toplu Onay | Dialog Form
+r1165: Tam Kan Stoğu | Ana Menü
+r1166: Kan Ürün Oluştur | Dialog Form
+r1167: Kan Ürün Miad Bilgileri | Dialog Form
+r1168: Cross Match Uygulama | Dialog Form
+r1169: Kan Ürün Listesi | Ana Menü
+r1170: Kan Sipariş Güncelle | Dialog Form
+r1171: Kan Ürün Seçim | Dialog Form
+r1172: Kan İstek İşlem Listesi | Dialog Form
+r1173: Donör Red Bilgileri | Dialog Form
+r1174: Kızılay Bağış Bildir | Dialog Form
+r1175: Hasta Reaksiyon | Dialog Form
+r1176: Barkodla Teslim Al | Dialog Form
+r1177: Bölme Sayısı | Dialog Form
+r1178: EMR Donör Listesi | Dialog Form
+r1179: Donor Lab. Sonuç Uygunluk Kontrol | Dialog Form
+r1180: Donör Listesi(Comed LIS) | Ana Menü
+r1181: Kan Subgrup Detay | Dialog Form
+r1182: Kök Hücre Bağışı | Dialog Form
+r1183: Patoloji | Ana Menü
+r1184: Patoloji İstek | Dialog Form
+r1185: Patoloji Örnek Kabul | Dialog Form
+r1186: Patoloji İşlem | Ana Menü
+r1187: Patoloji İşlem Detay | Dialog Form
+r1188: Patoloji Listesi | Ana Menü
+r1189: Patoloji | Dialog Form
+r1190: Patoloji Grubu | Dialog Form
+r1191: Tüm Patoloji İstekleri | Dialog Form
+r1192: Patoloji Rapor İzleme | Ana Menü
+r1193: Patoloji İsteyen Doktor Değistirme | Dialog Form
+r1194: Patoloji İşlem Detay Yeni | Dialog Form
+r1195: ICD-O Tanım Listesi | Ana Menü
+r1196: ICD-O Tanım | Dialog Form
+r1197: İstem Birleştir | Dialog Form
+r1198: Patoloji İşlem Düzenleme | Dialog Form
+r1199: Dış Laboratuar | Ana Menü
+r1200: Dış Laboratuar Test İşlem | Ana Menü
+r1201: Dış Laboratuar Gönderim | Dialog Form
+r1202: Dış Laboratuar Sonuçları | Dialog Form
+r1203: Dış Laboratuar Test Tanımı | Dialog Form
+r1204: Centro Test Gönderim | Dialog Form
+r1205: Synevo Test Gönderim | Dialog Form
+r1206: Synevo Test Gönderim | Dialog Form
+r1207: Centro(Tenay) Test Gönderim | Dialog Form
+r1208: Kök Hücre İşleme | Ana Menü
+r1209: Donör Test Toplu Onay | Dialog Form
+r1210: Ürün Stoğu | Ana Menü
+r1211: Kök Hücre İstek Karşılama Listesi | Ana Menü
+r1212: Kök Hücre İstek Karşılama Listesi | Dialog Form
+r1213: Mikrobiyoloji | Ana Menü
+r1214: Numune Kabul | Ana Menü
+r1215: Test İşlem | Ana Menü
+r1216: Kültür Sonuçları | Dialog Form
+r1217: Kültür Tarama | Ana Menü
+r1218: Kültür Tarama İstek | Ana Menü
+r1219: Kültür Tarama Test İşlem | Ana Menü
+r1220: Kültür Tarama Sonuç | Dialog Form
+r1221: Hsys-Lbys | Ana Menü
+r1222: Hsys-Lbys Aktarım Listesi | Ana Menü
+r1223: Hsys Barkod Ekle | Dialog Form
+r1224: Hsys-Lbys Tarihçe | Dialog Form
+r1225:  | Ana Menü
+r1226: Numune Barkodu | Dialog Form
+r1227: Numune Süre Barkodu | Dialog Form
+r1228: Tetkik ve Radyoloji | Ana Menü
+r1229: Tanımlar | Ana Menü
+r1230: Tetkik Listesi | Ana Menü
+r1231: Tetkik | Dialog Form
+r1232: Tetkik Grubu | Dialog Form
+r1233: Tetkik ve Radyoloji Süreci Ayarı | Ana Menü
+r1234: Tetkik İşlem Filtre Şablon | Dialog Form
+r1235: Radyoloji Rapor Şablonları | Ana Menü
+r1236: Tetkik Tarihçe | Dialog Form
+r1237: Genel Tanım Listesi | Ana Menü
+r1238: İşlemler | Ana Menü
+r1239: Radyoloji Tetkik İşlem | Ana Menü
+r1240: Radyoloji Tetkik İşlem Detay | Dialog Form
+r1241: Takibe Al | Dialog Form
+r1242: Eğitim Listesine Gönder | Dialog Form
+r1243: Tarihçe | Dialog Form
+r1244: Tetkik İşlem Ek Rapor | Dialog Form
+r1245: Radyoloji Defter Listesi | Ana Menü
+r1246: TELETIP Gönderimi | Ana Menü
+r1247: TELETIP Durum | Dialog Form
+r1248: Radyoloji Rapor İşlem | Dialog Form
+r1249: Ortak | Ana Menü
+r1250: Tetkik Seçim | Dialog Form
+r1251: Tetkik Seçim | Dialog Form
+r1252: Diktasyon | Dialog Form
+r1253: Radyoloji Sonuç | Dialog Form
+r1254: Aktarım Tetkik Görüntüleri | Dialog Form
+r1255: Ek Rapor Sonuç | Dialog Form
+r1256: Raporlar | Ana Menü
+r1257: Tetkik Raporu | Dialog Form
+r1258: Radyoloji Barkodu | Dialog Form
+r1259: Radyoloji Defteri | Dialog Form
+r1260: Analizler | Ana Menü
+r1261: Tarayıcı | Ana Menü
+r1262: Tarayıcı | Dialog Form
+r1263: Resim Görütüleyici | Dialog Form
+r1264: Merkezi Radyoloji | Ana Menü
+r1265: Merkezi Radyoloji İş Havuzu | Ana Menü
+r1266: Konsültasyon | Ana Menü
+r1267: Tetkik İslem Konsültasyon | Dialog Form
+r1268: Tetkik İslem Konsültasyon | Dialog Form
+r1269: Tetkik İşlem Konsültasyon Listesi | Dialog Form
+r1270: Diktasyon MDI | Dialog Form
+r1271: Merkezi Radyoloji Konsültasyon MDI | Dialog Form
+r1272: Tetkik Kural Listesi | Ana Menü
+r1273: Tetkik Kural Tanım | Dialog Form
+r1274: Stok | Ana Menü
+r1275: Tanımlar | Ana Menü
+r1276: Malzeme Listesi | Ana Menü
+r1277: Malzeme | Dialog Form
+r1278: Malzeme Grubu | Dialog Form
+r1279: Depo Listesi | Ana Menü
+r1280: Depo | Dialog Form
+r1281: Eşdeğer Ürün Grubu Listesi | Ana Menü
+r1282: Eşdeğer Ürün Grubu | Dialog Form
+r1283: UBB Listesi | Ana Menü
+r1284: UBB | Dialog Form
+r1285: Malzeme Lotları | Dialog Form
+r1286: Malzeme Fiyat Baremleri | Ana Menü
+r1287: Fiş Ayarları | Ana Menü
+r1288: Stok Seviye Ayarı | Ana Menü
+r1289: Varsayılan Değer Girişi | Dialog Form
+r1290: GMDN Listesi | Dialog Form
+r1291: GMDN | Dialog Form
+r1292: GMDN Grubu | Dialog Form
+r1293: Ecri Listesi | Ana Menü
+r1294: Ecri | Dialog Form
+r1295: Seri Bilgileri | Dialog Form
+r1296: Lot Bilgileri | Dialog Form
+r1297: Lot Listesi | Ana Menü
+r1298: Talep Ayarları | Ana Menü
+r1299: Eşdeğer Ürün Stok Bilgisi | Dialog Form
+r1300: Talep Şablon Listesi | Ana Menü
+r1301: Stok Talep Şablon | Dialog Form
+r1302: Malzeme Tipi | Ana Menü
+r1303: Stok Devir | Ana Menü
+r1304: Malzeme Fiyat Tarihçe | Dialog Form
+r1305: Malzeme Fiyat Güncelleme | Ana Menü
+r1306: Ameliyat Paket Şablon Listesi | Ana Menü
+r1307: Ameliyat Paket Şablon | Dialog Form
+r1308: Ameliyat Paket Şablon İçerik | Dialog Form
+r1309: Sut Fiyat Listesi | Ana Menü
+r1310: Talep Ayar Listesi | Ana Menü
+r1311: Talep Ayar | Dialog Form
+r1312: Seri Listesi | Ana Menü
+r1313: Marka - Model Listesi | Ana Menü
+r1314: Model | Dialog Form
+r1315: Malzeme Alt Tipi | Dialog Form
+r1316: Doz Kısıtlama | Dialog Form
+r1317: Stok Devir Yeni | Ana Menü
+r1318: Malzeme Ölçü Birimi | Dialog Form
+r1319: Malzeme Tedadikci Üretici Firma | Dialog Form
+r1320: Barkodlu Çıkış Yapılan Ürünler | Ana Menü
+r1321: Malzeme Barkod | Dialog Form
+r1322: Malzeme Firma Fiyat | Dialog Form
+r1323: Bohça Tanım Listesi | Ana Menü
+r1324: Bohça Tanım | Dialog Form
+r1325: Bohça Malzeme Tanım | Dialog Form
+r1326: İleri Tarihli Malzeme Fiyat Listesi | Ana Menü
+r1327: Malzeme Fiyat Kayıt | Dialog Form
+r1328: Malzeme Fiyat Tarihi Kayıt | Dialog Form
+r1329: Malzeme-Depo Stockart Pasif Listesi | Ana Menü
+r1330: Malzeme-Depo Stockart Pasif | Dialog Form
+r1331: İrsaliye Belge No Tanımı | Ana Menü
+r1332: Birlikte İşlenecek Malzeme | Dialog Form
+r1333: İşlemler | Ana Menü
+r1334: Stok Fişleri | Ana Menü
+r1335: Stok Fiş | Dialog Form
+r1336: Yapılan Talepler | Ana Menü
+r1337: Stok Talep | Dialog Form
+r1338: Talep Karşılama Listesi | Ana Menü
+r1339: Talep Karşılama | Dialog Form
+r1340: Onay Bekleyen İşlemler | Ana Menü
+r1341: Sayımlar | Ana Menü
+r1342: Sayım | Dialog Form
+r1343: Sayım Malzeme Seç | Dialog Form
+r1344: Satınalma Talepleri | Ana Menü
+r1345: Satınalma Talep Ekle/Güncelle | Dialog Form
+r1346: Stok İhtiyaç Analizi | Ana Menü
+r1347: Stok Takip Lot Geçiş Fişi | Dialog Form
+r1348: Hastadan İade | Dialog Form
+r1349: Malzeme Firma Fiyat Listesi | Ana Menü
+r1350: Ameliyat Listesi | Ana Menü
+r1351: Numune Değerlendirme | Dialog Form
+r1352: Numune Değerlendirme Listesi | Ana Menü
+r1353: Maliyetlendirme | Ana Menü
+r1354: Hastaya Çıkış | Dialog Form
+r1355: Konsinye Kullanım Takip | Ana Menü
+r1356: Özellikli Malzeme Kullanım Takip | Ana Menü
+r1357: Kan Kullanım Takip | Ana Menü
+r1358: Demirbaş Alımları | Ana Menü
+r1359: Ameliyat Paket Ekle | Dialog Form
+r1360: Ameliyat Paketleri | Ana Menü
+r1361: Ameliyat Paket İçerik | Dialog Form
+r1362: Cafe Stok Takip | Ana Menü
+r1363: Talep Karşılama Listesi Yeni | Ana Menü
+r1364: Talep Karşılama | Dialog Form
+r1365: Stok Kontrol | Ana Menü
+r1366: Stok Takip Yöntemi | Ana Menü
+r1367: Stok Takip Yöntemi Çevrim | Dialog Form
+r1368: Miadı Geçen Ürünler Listesi | Ana Menü
+r1369: Merkezden Gönderilen Stok Fişleri | Ana Menü
+r1370: Malzeme Fiyat Baremlerine Göre Fiyatları Güncelle | Ana Menü
+r1371: Barkod İşlem | Dialog Form
+r1372: Alım Değerlendirme Listesi | Ana Menü
+r1373: Alım Değerlendirme | Dialog Form
+r1374: Hasta Talep Karşılama Listesi | Ana Menü
+r1375: Analizler | Ana Menü
+r1376: Stok Fiş | Dialog Form
+r1377: İlaç Barkod | Dialog Form
+r1378: İrsaliye | Dialog Form
+r1379: Kan Ürün Barkodu | Dialog Form
+r1380: Lot Barkodu | Dialog Form
+r1381: Malzeme Barkod | Dialog Form
+r1382: İmha Raporu | Dialog Form
+r1383: Stok Talep | Dialog Form
+r1384: Hasta İlaç Barkod | Dialog Form
+r1385: Seri Barkodu | Dialog Form
+r1386: Varlık Barkodu | Dialog Form
+r1387: Stok Talep Karşılama | Dialog Form
+r1388: Numune Değerlendirme | Dialog Form
+r1389: İlaç Order | Dialog Form
+r1390: Stok İşlem | Dialog Form
+r1391: Etkilesim Sorgulama | Dialog Form
+r1392: Ameliyat Paket İçerik | Dialog Form
+r1393: ReUse Kullanım Bildirim Raporu | Dialog Form
+r1394: Sterilizasyon Yükleme Raporu | Dialog Form
+r1395: İlaç Order Kat Bazlı | Dialog Form
+r1396: Onay Bekleyen İade İstek Listesi | Dialog Form
+r1397: Ortak | Ana Menü
+r1398: Malzeme Tipi Çoklu Seçim | Dialog Form
+r1399: Malzeme Tipi Seçim | Dialog Form
+r1400: Malzeme Çoklu Seçim | Dialog Form
+r1401: Malzeme Grubu Seçim | Dialog Form
+r1402: Eşdeğer Ürün Grubu Listesi | Dialog Form
+r1403: SUT EkListe Kodu Seçim | Dialog Form
+r1404: UBB Seçim | Dialog Form
+r1405: Fiş Tipi Seçim | Dialog Form
+r1406: Stok Talep Tipi Seçim | Dialog Form
+r1407: Depo Seçim | Dialog Form
+r1408: Depo Çoklu Seçim  | Dialog Form
+r1409: Etken Madde Çoklu Seçim | Dialog Form
+r1410: Raf Seçim | Dialog Form
+r1411: Lot Seçim | Dialog Form
+r1412: Sayım Tipi Seçim | Dialog Form
+r1413: Eşdeğer Ürün Seçim | Dialog Form
+r1414: İlaç Etken Madde Seçim | Dialog Form
+r1415: İlaç Seçim | Dialog Form
+r1416: Malzeme Seçim | Dialog Form
+r1417: Şablon Seçim | Dialog Form
+r1418: Varlık Seçim | Dialog Form
+r1419: Miktar Girişi | Dialog Form
+r1420: Hasta Stok | Dialog Form
+r1421: Hasta Stok İşlem | Dialog Form
+r1422: Kan Ürün Seçim | Dialog Form
+r1423: Satınalma Bilgisi | Dialog Form
+r1424: Seri Seçim | Dialog Form
+r1425: Malzeme Güncelleme | Dialog Form
+r1426: Miktar Girişi | Dialog Form
+r1427: Eşdeğer Alternatif Ürün Seçim | Dialog Form
+r1428: Varlık Grubu Seçim | Dialog Form
+r1429: Varlık Seçim | Dialog Form
+r1430: Lokasyon Bazlı Varlık Seçim | Dialog Form
+r1431: Ameliyat Malzeme Paket Şablon Seçim | Dialog Form
+r1432: Bakım Kalibrasyon Planlama | Dialog Form
+r1433: Bakım Kalibrasyon Gerçekleştirme | Dialog Form
+r1434: Ameliyat Malzeme Paket Seçim | Dialog Form
+r1435: Malzeme Seçim | Dialog Form
+r1436: Seçilen Malzeme | Dialog Form
+r1437: Stok Talep Tipi Seçim | Dialog Form
+r1438: Malzeme Depo Lot/Seri Seçim | Dialog Form
+r1439: Talep Ek Bilgi | Dialog Form
+r1440: Hasta Stok | Dialog Form
+r1441: ÜTS Bildirim Seçim | Dialog Form
+r1442: Stok Fiş Seçim | Dialog Form
+r1443: Eşdeğer Ürün Seçim | Dialog Form
+r1444: Malzeme Üretim Reçetesi Seçim | Dialog Form
+r1445: Ameliyat Bohça Seçim | Dialog Form
+r1446: Detay Bilgiler | Dialog Form
+r1447: İrsaliye Kalem Seçim | Dialog Form
+r1448: İlaç Karekod Detay Listesi | Dialog Form
+r1449: İlaç Karekod Detay Listesi | Dialog Form
+r1450: Analizler | Ana Menü
+r1451: Varlık | Ana Menü
+r1452: Varlık Listesi | Ana Menü
+r1453: Varlık | Dialog Form
+r1454: Varlık Grubu | Dialog Form
+r1455: Varlık Bilgileri | Dialog Form
+r1456: Varlık Aksam | Dialog Form
+r1457: Demirbaş Listesi | Ana Menü
+r1458: Zimmet | Dialog Form
+r1459: Varlık Giriş | Dialog Form
+r1460: Varlık Bakım Planları | Ana Menü
+r1461: Varlık Bakım | Dialog Form
+r1462: Varlık Kalibrasyon Planları | Ana Menü
+r1463: Varlık Kalibrasyon | Dialog Form
+r1464: Arıza Bildirim Listesi | Ana Menü
+r1465: Anlaşma Tanım | Dialog Form
+r1466: Anlaşma Grubu | Dialog Form
+r1467: Anlaşma Listesi | Ana Menü
+r1468: Varlık Sigorta | Dialog Form
+r1469: ÜTS | Ana Menü
+r1470: Kabul Edilecek Ürün Listesi | Ana Menü
+r1471: Kabul Edilen Ürün Listesi | Ana Menü
+r1472: Verilen Ürün Listesi | Ana Menü
+r1473: Kullanım Bildirimi Yapılacak Ürün Listesi | Ana Menü
+r1474: Kullanım Bildirimi Yapılmış Ürün Listesi | Ana Menü
+r1475: Bildirim | Dialog Form
+r1476: Manuel Bildirim Bilgileri Girişi | Dialog Form
+r1477: İrsaliye Kalemleri ÜTS Toplu Ürün Eşleştirme | Dialog Form
+r1478: Çoklu Alma Bildirimi Yap | Dialog Form
+r1479: Zayi ve Tüketim Bildirim Listesi | Ana Menü
+r1480: Zayi ve Tüketim Bildirim | Dialog Form
+r1481: Toplu Verme Bildirimi | Dialog Form
+r1482: Satın Alma | Ana Menü
+r1483: İşlemler | Ana Menü
+r1484: Fatura | Ana Menü
+r1485: Fatura Ekle/Güncelle | Dialog Form
+r1486: Fatura-İrsaliye Bağlantısı | Dialog Form
+r1487: İrsaliye-Fatura Bağlantısı | Dialog Form
+r1488: Malzeme Fiyat Güncelleme | Dialog Form
+r1489: Satınalma Talep Değerlendirme Listesi | Ana Menü
+r1490: Satınalma Talep Değerlendirme | Dialog Form
+r1491: Sipariş Listesi | Ana Menü
+r1492: Sipariş Ekle/Güncelle | Dialog Form
+r1493: Teklif Listesi | Ana Menü
+r1494: Teklif Ekle/Güncelle | Dialog Form
+r1495: Sipariş Talep Bağlantısı | Dialog Form
+r1496: Teklif İstek Listesi | Ana Menü
+r1497: Teklif İstek Ekle/Güncelle | Dialog Form
+r1498: Teklif Değerlendirme | Dialog Form
+r1499: Sipariş Onay Listesi | Ana Menü
+r1500: Sipariş Onay Durum Listesi | Dialog Form
+r1501: Tekliften Malzeme Firma Fiyat Kaydı Oluştur | Dialog Form
+r1502: Teklif İstek Listesi Yeni | Ana Menü
+r1503: Sipariş Teslimat Bilgisi | Dialog Form
+r1504: GIB Gelen Fatura Kalemleri Eşleştirme | Dialog Form
+r1505: Ortak | Ana Menü
+r1506: Fatura Tipi Seçim | Dialog Form
+r1507: İrsaliye Seçim | Dialog Form
+r1508: Alınan Hizmet Seçim | Dialog Form
+r1509: Sözleşme Seçim | Dialog Form
+r1510: Sipariş Seçim | Dialog Form
+r1511: Fatura Seçim | Dialog Form
+r1512: Alınan Hizmet Grubu Seçim | Dialog Form
+r1513: Cari Seçim | Dialog Form
+r1514: Varsayılan Malzeme Alım Fatura Bilgisi Seçim | Dialog Form
+r1515: Satınalma Talep Kalem Çoklu Seçim | Dialog Form
+r1516: Analizler | Ana Menü
+r1517: Tanim | Ana Menü
+r1518: Alınan Hizmet Listesi | Ana Menü
+r1519: Hizmet Ekle/Güncelle | Dialog Form
+r1520: Hizmet Grubu Ekle/Güncelle | Dialog Form
+r1521: Alınan Hizmet Tipi | Dialog Form
+r1522: Sipariş Onay Ayar Listesi | Ana Menü
+r1523: Sipariş Onay Ayar | Dialog Form
+r1524: Alınan Hizmet Tipi Listesi | Ana Menü
+r1525: Varsayılan Malzeme Alım Fatura Bilgileri | Ana Menü
+r1526: Varsayılan Malzeme Alım Fatura Bilgisi | Dialog Form
+r1527: Cari Şablon Listesi | Ana Menü
+r1528: Cari Şablon Tanım | Dialog Form
+r1529: GIB Gelen Fatura Kalemleri Eşleştirme Listesi | Ana Menü
+r1530: Sözleşme | Ana Menü
+r1531: Sözleşme Tanım | Dialog Form
+r1532: Sözleşme Grubu | Dialog Form
+r1533: Sözleşme Listesi | Ana Menü
+r1534: Raporlar | Ana Menü
+r1535: Sipariş Takip Formu | Dialog Form
+r1536: Sipariş | Dialog Form
+r1537: Tedarikçi Tanımlama Formu | Dialog Form
+r1538: Teklif İstek Formu | Dialog Form
+r1539: Fatura | Dialog Form
+r1540: Teklif Değerlendirme Formu | Dialog Form
+r1541: Teklif Formu | Dialog Form
+r1542: Faturalar | Dialog Form
+r1543: Sözleşmeler | Dialog Form
+r1544: Malzeme Bazlı Teklif | Dialog Form
+r1545: Anlaşma | Ana Menü
+r1546: Anlaşma Tanım | Dialog Form
+r1547: Anlaşma Grubu | Dialog Form
+r1548: Anlaşma Listesi | Ana Menü
+r1549: Merkezi Satınalma İşlemleri | Ana Menü
+r1550: Merkezi Satınalma Talep Değerlendirme Listesi | Ana Menü
+r1551: Merkezi Anlaşma Listesi | Ana Menü
+r1552: Merkezi Teklif İstek Listesi | Ana Menü
+r1553: Merkezi Sipariş Listesi | Ana Menü
+r1554: Merkezi Anlaşma Tanım | Dialog Form
+r1555: Merkezi Teklif İstek Ekle/Güncelle | Dialog Form
+r1556: Merkezi Teklif Değerlendirme | Dialog Form
+r1557: Merkezi Teklif Ekle/Güncelle | Dialog Form
+r1558: Finans | Ana Menü
+r1559: Tanımlar | Ana Menü
+r1560: Cari Listesi | Ana Menü
+r1561: Cari | Dialog Form
+r1562: Cari Grubu | Dialog Form
+r1563: Cari Seçim | Dialog Form
+r1564: Banka Listesi | Ana Menü
+r1565: Banka | Dialog Form
+r1566: Banka Şubesi | Dialog Form
+r1567: Banka Hesabı | Dialog Form
+r1568: Banka Pos Cihazı | Dialog Form
+r1569: Cari Banka Hesabı | Dialog Form
+r1570: Cari Yetkili | Dialog Form
+r1571: Varsayılan Muhasebe Bilgileri | Ana Menü
+r1572: Ödeme Grubu | Dialog Form
+r1573: Masraf Merkezi Listesi | Ana Menü
+r1574: Masraf Merkezi | Dialog Form
+r1575: Yazar Kasa | Dialog Form
+r1576: Ödeme Planı | Ana Menü
+r1577: Mesai Listesi | Ana Menü
+r1578: Mesai Listesi | Dialog Form
+r1579: Fatura Şablon Listesi | Ana Menü
+r1580: Fatura Şablon | Dialog Form
+r1581: Muhsebe Kodu Listesi | Ana Menü
+r1582: E-Arşiv Fatura Numarator Listesi | Ana Menü
+r1583: E-Arşiv Fatura Numaratör | Dialog Form
+r1584: Muhasebe Entegrasyon Alan Eşleştirme | Dialog Form
+r1585: Muhasebe Entegrasyon Alan Eşleştirme Listesi | Ana Menü
+r1586: Cari Değerlendirme Soru Listesi | Ana Menü
+r1587: Cari Değerlendirme Sorusu | Dialog Form
+r1588: SAP Aktarım Ayar | Dialog Form
+r1589: Kurum Avans Listesi | Dialog Form
+r1590: E-Fatura Numarator Listesi | Ana Menü
+r1591: E-Fatura Numaratör | Dialog Form
+r1592: Alt Ödeme Tipi Listesi | Ana Menü
+r1593: Alt Ödeme Tipi | Dialog Form
+r1594: İndirim Onay Grubu Tanım | Dialog Form
+r1595: İndirim Onay Grubu Listesi | Ana Menü
+r1596: İndirim Onay Grubu Alıcı Tanımı | Dialog Form
+r1597: Fatura Dönem | Dialog Form
+r1598: Fatura Dönem Listesi | Dialog Form
+r1599: Kredi Kartı Komisyon Tanım | Dialog Form
+r1600: Virman Onay Tanım Listesi | Ana Menü
+r1601: Virman Onay Tanım Alıcı Tanımı | Dialog Form
+r1602: Vezne İade Departman Listesi | Ana Menü
+r1603: Vezne İade Departman Tanım | Dialog Form
+r1604: Fatura Kalem Doktor Listesi | Ana Menü
+r1605: Ortak | Ana Menü
+r1606: Cari Seçim | Dialog Form
+r1607: Banka Hesabı Seçim | Dialog Form
+r1608: Banka Hesabı Seçim | Dialog Form
+r1609: Cari Seçim | Dialog Form
+r1610: Sorgu Seçim | Dialog Form
+r1611: MuhasebeKodu Seçim | Dialog Form
+r1612: Masraf Merkezi Seçim | Dialog Form
+r1613: Dağıtım Anahtarı Seçim | Dialog Form
+r1614: Senaryo Seçim | Dialog Form
+r1615: Devre Seçim | Dialog Form
+r1616: Fatura Seçim | Dialog Form
+r1617: Vezne Dönem | Dialog Form
+r1618: Fatura Çoklu Seçim | Dialog Form
+r1619: Cari Seçim (ITS Bildirimleri için) | Dialog Form
+r1620: Varsayılan Muhasebe Bilgileri Seçim | Dialog Form
+r1621: Tarihçe | Dialog Form
+r1622: Fatura Seçim | Dialog Form
+r1623: İşlemler | Ana Menü
+r1624: Kasa Teslim | Ana Menü
+r1625: Cari - Personel - Senet Borç Takip | Ana Menü
+r1626: Ödeme İşlem Listesi | Ana Menü
+r1627: Bütçe Giriş - Çıkış | Dialog Form
+r1628: Ödeme Giriş - Çıkış | Dialog Form
+r1629: Vezne Donem Kapama Ve Onay | Ana Menü
+r1630: Vezne Donem Protokol Islemleri | Dialog Form
+r1631: Vezne Fatura Zimmet Tanımları | Ana Menü
+r1632: Vezne Fatura Zimmet | Dialog Form
+r1633: Vezne Fatura Zimmet | Dialog Form
+r1634: E-Fatura | Dialog Form
+r1635: E-Defter Kaynak Belge Detayi | Dialog Form
+r1636: Kapalı Dönem Vezne Bilgileri | Dialog Form
+r1637: Cari Değerlendirme | Dialog Form
+r1638: Cari Ödeme İşlemleri | Ana Menü
+r1639: Ödeme Girişi | Dialog Form
+r1640: Fatura Ödeme Takibi | Ana Menü
+r1641: Fatura Ödeme Eşleştir | Dialog Form
+r1642: Dekont Listesi | Ana Menü
+r1643: Dekont | Dialog Form
+r1644: Onay Bekleyen İadeler | Ana Menü
+r1645: Ana Kasa Kapama | Ana Menü
+r1646: Onay Bekleyen Virmanlar | Ana Menü
+r1647: Kredi Karti Kontrol | Dialog Form
+r1648: Nakit Kontrol | Dialog Form
+r1649: Rapor | Ana Menü
+r1650: Kasa Döküm | Dialog Form
+r1651: Kasa Döküm Özet | Dialog Form
+r1652: Kasa Döküm | Dialog Form
+r1653: İşlem Bazlı Özet Hakediş | Dialog Form
+r1654: Hakediş Ödeme | Dialog Form
+r1655: Doktor Hakediş | Dialog Form
+r1656: Hakediş | Dialog Form
+r1657: Maliyet Muhasebesi Dağıtım | Dialog Form
+r1658: Maliyet Muhasebesi Dağıtım Detay | Dialog Form
+r1659: Hakediş Ödeme | Dialog Form
+r1660: Hakediş Ödeme Yeni | Dialog Form
+r1661: Hakediş | Ana Menü
+r1662: Hakediş Havuzları | Ana Menü
+r1663: Doktor Seç | Dialog Form
+r1664: Hakediş Şablonları | Dialog Form
+r1665: Hakediş Anlaşmaları | Ana Menü
+r1666: Şablon Seç | Dialog Form
+r1667: Protokol Paket içi Giderler | Dialog Form
+r1668: Hakediş Detay | Dialog Form
+r1669: Hakediş Ödeme | Ana Menü
+r1670: Hakediş Ödeme Bilgileri | Dialog Form
+r1671: Hakediş Hizmet Analizi | Ana Menü
+r1672: Hakediş Gider Analizi | Ana Menü
+r1673: Hakediş Dönem Seç | Dialog Form
+r1674: Hakediş Hesaplama Son | Ana Menü
+r1675: Hakediş İşlemleri | Dialog Form
+r1676: Hakediş Maliyet | Dialog Form
+r1677: Hakediş Anlaşma Detay | Dialog Form
+r1678: Hakediş Anlaşma Seç | Dialog Form
+r1679: Hakediş Görüşmeci | Ana Menü
+r1680: Hakediş Şablon Listesi | Ana Menü
+r1681: Dış Laboratuvar Hakediş | Ana Menü
+r1682: Özel Onaylı Protokol Listesi | Dialog Form
+r1683: Hakediş Giderlerini Yönet | Dialog Form
+r1684: Paket Dışı İşlem Gider Düşümü | Ana Menü
+r1685: Eriyen Fix Uygula | Dialog Form
+r1686: Havuz Anlaşma | Dialog Form
+r1687: Havuz Tanımı | Dialog Form
+r1688: Hakediş Geri Al | Dialog Form
+r1689: Genel Tanımlar | Ana Menü
+r1690: Hakediş (Diğer) | Ana Menü
+r1691: Doktor Hakediş Hesaplama | Ana Menü
+r1692: Geldiği Yer Hakediş Hesaplama | Ana Menü
+r1693: Paket Dağılım | Ana Menü
+r1694: Geldiği Yer Hakediş Oranları | Ana Menü
+r1695: Hizmet Dağılım | Ana Menü
+r1696: Doktor Anlaşmaları | Ana Menü
+r1697: Geldiği Yer Hakediş Tanımı | Dialog Form
+r1698: Referans Hakediş Hesaplama | Ana Menü
+r1699: Kesinti | Dialog Form
+r1700: Tahsilat Bilgileri Listesi | Dialog Form
+r1701: Hakediş Hesaplama - 2 | Ana Menü
+r1702: Hakediş Onay Tarihçe | Dialog Form
+r1703: Dış Hizmetlerin Mutabakatı | Ana Menü
+r1704: Maliyet Muhasebesi | Ana Menü
+r1705: MM Seviye | Dialog Form
+r1706: Dağıtım Anahtarı | Dialog Form
+r1707: Maliyet Muhasebesi Sorguları | Ana Menü
+r1708: Senaryo | Dialog Form
+r1709: 5- Dağıtım Anahtarı Veri Girişi | Dialog Form
+r1710: Veri Kaynak Tanımları | Ana Menü
+r1711: Hesap Planı Eşleştir | Dialog Form
+r1712: Veri Kaynak Değerleri | Ana Menü
+r1713: Senaryo Listesi | Ana Menü
+r1714: Dağıtım Çalıştır | Dialog Form
+r1715: Dağıtım Listesi | Ana Menü
+r1716: Dağıtım Rapor | Ana Menü
+r1717: Masraf Merkezi Hareket Listesi | Ana Menü
+r1718: Personel Maliyet Listesi | Ana Menü
+r1719: Personel Maliyet | Dialog Form
+r1720: Masraf Merkezi Maliyet Listesi | Ana Menü
+r1721: Masraf Merkezi Maliyet | Dialog Form
+r1722: Bölüm Bazlı Ciro (MM Gider Detaylı) | Ana Menü
+r1723: Dağıtım Listesi (Doktor) | Ana Menü
+r1724: Doktor Dağıtım Çalıştır | Dialog Form
+r1725: MM - Personel Listesi | Ana Menü
+r1726: Masraf Merkezi Bazli Doktor Dağıtım Raporu | Ana Menü
+r1727: Entegrasyon | Ana Menü
+r1728: Giden E-Fatura İşlemleri | Ana Menü
+r1729: Gelen E-Fatura İşlemleri | Ana Menü
+r1730: Logo Fatura Aktarım | Ana Menü
+r1731: Logo Tahsilat Aktarım | Ana Menü
+r1732: Logo GO Fatura Aktarım | Ana Menü
+r1733: Logo GO Tahsilat Aktarım | Ana Menü
+r1734: Netsis Fatura Aktarım | Dialog Form
+r1735: Netsis Tahsilat Aktarım | Dialog Form
+r1736: Mikro Fatura Aktarım | Ana Menü
+r1737: Mikro Tahsilat Aktarım | Ana Menü
+r1738: Datasoft Fatura Aktarım | Ana Menü
+r1739: SAP Fatura Aktarım | Ana Menü
+r1740: SAP Tahsilat Aktarım | Ana Menü
+r1741: SAP SMM Aktarım | Ana Menü
+r1742: Orka Fatura Aktarım | Ana Menü
+r1743: Mikro Fatura Aktarım ASG | Ana Menü
+r1744: Mikro Tahsilat Aktarım ASG | Ana Menü
+r1745: Mikro Eksik Tahsilat Aktarim ASG | Ana Menü
+r1746: Orka Tahsilat Aktarım | Ana Menü
+r1747: E-Fatura Gönderim Detay | Dialog Form
+r1748: Gelen İrsaliye Listesi | Ana Menü
+r1749: E-İrsaliye Önizleme | Dialog Form
+r1750: Logo Hasta Aktarım | Ana Menü
+r1751: ETA Fatura Aktarım | Ana Menü
+r1752: IK | Ana Menü
+r1753: Tanımlar | Ana Menü
+r1754: Personel Listesi | Ana Menü
+r1755: Personel | Dialog Form
+r1756: Misafir Kaynak Listesi | Ana Menü
+r1757: Misafir Kaynak | Dialog Form
+r1758: Personel Nöbet İzin Mesai | Dialog Form
+r1759: Doktor Seçim | Dialog Form
+r1760: Hemşire Seçim | Dialog Form
+r1761: Medula Doktor Sorgula | Dialog Form
+r1762: Personel Yakını | Dialog Form
+r1763: İzin-Nöbet-Mesai Tarihçe | Dialog Form
+r1764: Personel Okul | Dialog Form
+r1765: Personel Kurs | Dialog Form
+r1766: Personel Dil | Dialog Form
+r1767: Hastane Mesai Saatleri | Ana Menü
+r1768: Nöbetçi Personel Listesi | Ana Menü
+r1769: Nöbetçi Personel | Dialog Form
+r1770: Personel Bilimsel Yayin | Dialog Form
+r1771: Personel Mesleki Üyelik | Dialog Form
+r1772: Organizasyon Şeması | Ana Menü
+r1773: Organizasyon Şeması Tanım | Dialog Form
+r1774: Organizasyon Şeması(Ortak) | Ana Menü
+r1775: İzin Tipleri | Ana Menü
+r1776: İzin Tipi | Dialog Form
+r1777: Egitim Grubu | Ana Menü
+r1778: Egitim Grubu | Dialog Form
+r1779: Egitim Listesi | Ana Menü
+r1780: Egitim | Dialog Form
+r1781: Personel Aktarım | Ana Menü
+r1782: Nöbetçi Konsultasyon Doktor Listesi | Ana Menü
+r1783: Nöbetçi Konsultasyon Doktor | Dialog Form
+r1784: Resmi Tatil Listesi | Ana Menü
+r1785: Resmi Tatil Tanımlama | Dialog Form
+r1786: Norm Kadro Listesi | Ana Menü
+r1787: Personel Ve Personel Yakını Seçimi | Dialog Form
+r1788: Yakınlık Tanım | Ana Menü
+r1789: Personel Yakınlık Tipi | Dialog Form
+r1790: Personel Çalışma Takvimi | Dialog Form
+r1791: Doktor Kara Liste | Dialog Form
+r1792: Personel CV | Dialog Form
+r1793: İade Onay Seviyesi | Dialog Form
+r1794: Personel Tarihçe | Dialog Form
+r1795: Personel Log | Dialog Form
+r1796: Randevu Kapama Bilgileri | Dialog Form
+r1797: Personel Hatırlatma | Dialog Form
+r1798: Personel Sigorta Bilgileri | Dialog Form
+r1799: Personel Doktor | Dialog Form
+r1800: Personel Listesi Demo | Ana Menü
+r1801: Personel Demo | Dialog Form
+r1802: Kıdem Listesi | Ana Menü
+r1803: Kıdem Tanım | Dialog Form
+r1804: Ortak | Ana Menü
+r1805: Personel Seçim | Dialog Form
+r1806: Personel Seçim | Dialog Form
+r1807: Organizasyon Şeması Seçim | Dialog Form
+r1808:  | Ana Menü
+r1809: Zimmet | Dialog Form
+r1810: İzin | Dialog Form
+r1811: Kullanıcı Barkodu | Dialog Form
+r1812: Personel Kartı | Dialog Form
+r1813: İşlemler | Ana Menü
+r1814: İzinlerim | Ana Menü
+r1815: İzin Talebi | Dialog Form
+r1816: Onayımı Bekleyen İzinler | Ana Menü
+r1817: Yönetici İzin Onay | Dialog Form
+r1818: Onay Bekleyen İzinler(IK) | Ana Menü
+r1819: IK İzin Onay | Dialog Form
+r1820: Hızlı İzin Talebi | Dialog Form
+r1821: Eğitim Planı Listesi | Ana Menü
+r1822: Eğitim Planı | Dialog Form
+r1823: Eğitimlerim | Ana Menü
+r1824: Toplu Eğitim Planı | Dialog Form
+r1825: Bildiriler | Ana Menü
+r1826: Vize Süresi Hatırlatma | Ana Menü
+r1827: Ortak | Ana Menü
+r1828: Genel | Dialog Form
+r1829: Açıklama | Dialog Form
+r1830: Doktor Çoklu Seçim | Dialog Form
+r1831: Ölçü Birimi Seçim | Dialog Form
+r1832: Cihaz Çoklu Seçim | Dialog Form
+r1833: Hizmet Grubu Seçim | Dialog Form
+r1834: Hizmet Malzeme Tipi Seçim | Dialog Form
+r1835: Hizmet Seçim | Dialog Form
+r1836: Bolum Seçim | Dialog Form
+r1837: Yatak Seçim | Dialog Form
+r1838: Arşiv Tipi Seçim | Dialog Form
+r1839: Mesaj Tipi Seçim | Dialog Form
+r1840: Mesaj | Dialog Form
+r1841: Personel Danışma | Ana Menü
+r1842: Sözleşme Seçim | Dialog Form
+r1843: Bina Birim Seçim | Dialog Form
+r1844: Branş Seçim | Dialog Form
+r1845: Pusula Resim Görüntüleyicisi | Dialog Form
+r1846: Pusula Dosya Görüntüleyicisi | Dialog Form
+r1847: Açıklama | Dialog Form
+r1848: Rapor Güncelleme | Dialog Form
+r1849: Test Açıklama Listesi | Ana Menü
+r1850: Hizmet Listesi | Ana Menü
+r1851: Rapor Tasarim Seçim | Dialog Form
+r1852: Rapor Tasarim Çoklu Seçim | Dialog Form
+r1853: Diş Hizmet Seçim | Dialog Form
+r1854: Tarih Seçim | Dialog Form
+r1855: Seçim | Dialog Form
+r1856: Rapor Tipi Seçim | Dialog Form
+r1857: Sistem Formları | Dialog Form
+r1858: Sistem Formları Seçim | Dialog Form
+r1859: Resim Görüntüleyici | Dialog Form
+r1860: E-İmza PIN | Dialog Form
+r1861: Bölüm Seçim | Dialog Form
+r1862: İlaç Listesi | Ana Menü
+r1863: Text Giriş | Dialog Form
+r1864: Seçim | Dialog Form
+r1865: Günlük Kur Listesi | Ana Menü
+r1866: Yetki Devri | Ana Menü
+r1867: Tarih Filtrele | Dialog Form
+r1868: Seçim | Dialog Form
+r1869: Seçim | Dialog Form
+r1870: Çoklu Açıklama Seçim | Dialog Form
+r1871: Formül Değiştirme | Dialog Form
+r1872: Genel Seçim | Dialog Form
+r1873: LOINC Listesi | Dialog Form
+r1874: Protokol Listesi | Dialog Form
+r1875: Seçim | Dialog Form
+r1876: Seçim | Dialog Form
+r1877: Stok Talep Listesi | Ana Menü
+r1878: Stok Talep | Dialog Form
+r1879: Medula Sağlık Tesisi Arama | Ana Menü
+r1880: Seçim | Dialog Form
+r1881: Sıkça Sorulan Sorular | Ana Menü
+r1882: Vademecum Sözlük | Ana Menü
+r1883: Hizmet Seçim | Dialog Form
+r1884: Açıklama | Dialog Form
+r1885: Bina Birim Seçim | Dialog Form
+r1886: Seçim | Dialog Form
+r1887: Mesaj | Dialog Form
+r1888: Tarih ve Açıklama giriniz | Dialog Form
+r1889: Mesaj | Dialog Form
+r1890: Tarih Aralık Seçim | Dialog Form
+r1891: Mesaj | Dialog Form
+r1892: Mak- Min Değerler | Dialog Form
+r1893: Malzemeye Bağlı Hizmet Girişi | Dialog Form
+r1894: Seçim | Dialog Form
+r1895: Küsürat Güncelleme | Dialog Form
+r1896: Dinamik Rapor Listesi | Dialog Form
+r1897: Hasta Onam Formu Giriş | Dialog Form
+r1898: Form Seçim | Dialog Form
+r1899: Text Giriş | Dialog Form
+r1900: Hasta Protokol Listesi | Dialog Form
+r1901: İstek-Yanıt Görüntüleyici | Dialog Form
+r1902: Medikal Cihaz Seçim | Dialog Form
+r1903: Pusula Anket Listesi | Ana Menü
+r1904: Seçim | Dialog Form
+r1905: Tanımlar | Ana Menü
+r1906: Yazıcı Ayarları Listesi | Dialog Form
+r1907: Mesaj Kalıpları | Ana Menü
+r1908: TSIM Sorgu Paneli | Dialog Form
+r1909: TSIM Sorgu Grubu | Dialog Form
+r1910: TSIM Sorgu | Dialog Form
+r1911: Sıkça Sorulan Soru Tanımları | Ana Menü
+r1912: Mesaj Şablonları | Ana Menü
+r1913: Mesaj Şablonu Ekle | Dialog Form
+r1914: Mesaj Şablonu Gönder | Dialog Form
+r1915: Maliyet Ek Hizmetleri Listesi | Ana Menü
+r1916: Maliyet Ek Hizmetleri | Dialog Form
+r1917: Mesaj Şablonu Kullanıcı Grupları | Ana Menü
+r1918: Kullanıcı Grubu | Dialog Form
+r1919: Gen Kodu Seçimi | Dialog Form
+r1920: Mesaj Kalıp Dil Ekle/Düzenle | Dialog Form
+r1921: Genel Filtre Listesi | Ana Menü
+r1922: Genel Filtre Tanım | Dialog Form
+r1923: Mesaj Kalıp Ekle | Dialog Form
+r1924: Mesajlar | Ana Menü
+r1925: Giden Mesaj Listesi | Ana Menü
+r1926: Canlı Mesaj Listesi | Ana Menü
+r1927: Canlı Mesaj Gönder | Dialog Form
+r1928: Mesaj Oku | Dialog Form
+r1929: İşlemler | Ana Menü
+r1930: İş Emri İşlem Uygulama | Dialog Form
+r1931: İş Emri Atama | Dialog Form
+r1932: İş Emri Talep | Dialog Form
+r1933: İş Emri Hareketi Detay | Dialog Form
+r1934: İş Emri Değerlendirme | Ana Menü
+r1935: İş Emirlerim | Ana Menü
+r1936: İş Emri Aktarım | Dialog Form
+r1937: İş Emri Bildirim Atama | Dialog Form
+r1938: İş Emri Bildirim Detay | Dialog Form
+r1939: İş Emri İşlem | Dialog Form
+r1940: Hasta Arama | Dialog Form
+r1941: Nöbet Listem | Ana Menü
+r1942: Protokol Arama (Yeni) | Dialog Form
+r1943: Hasta İlişkileri | Ana Menü
+r1944: Anket Şablonu | Dialog Form
+r1945: Anket Şablon Kategori Seçim | Dialog Form
+r1946: Anket Şablon Kategori | Dialog Form
+r1947: Anket Şablon Kategori Listesi | Ana Menü
+r1948: Anket Şablonu | Dialog Form
+r1949: Anket Şablonu | Dialog Form
+r1950: Anket Şablonu | Dialog Form
+r1951: Anket Şablonu | Dialog Form
+r1952: Anket Listesi | Ana Menü
+r1953: Anket | Dialog Form
+r1954: Bildirim Listesi | Ana Menü
+r1955: Bildirim | Dialog Form
+r1956: Bildirim Geri Arama Listesi | Ana Menü
+r1957: Bildirim Geri Arama | Dialog Form
+r1958: Bildirim Öncelik Açıklama Listesi | Ana Menü
+r1959: Bildirim Öncelik Açıklama | Dialog Form
+r1960: Bildirim Yönlendirme | Dialog Form
+r1961: Bildirim Degerlendirme | Dialog Form
+r1962: Bildirim Konu | Dialog Form
+r1963: Genel Tanımlar | Ana Menü
+r1964: Birim | Dialog Form
+r1965: Ana Konu | Dialog Form
+r1966: Anket Sonuç Değerlendirme | Ana Menü
+r1967: Bildirim | Dialog Form
+r1968: Bildirim Yontemi | Dialog Form
+r1969: Anket | Dialog Form
+r1970: Anket Sonuç Değerlendirme Grafik | Dialog Form
+r1971: SMS | Ana Menü
+r1972: SMS Gönderim | Ana Menü
+r1973: Giden SMS Listesi | Ana Menü
+r1974: SMS Gönder | Dialog Form
+r1975: Raporlar | Ana Menü
+r1976: Tasarımsal Formlar | Dialog Form
+r1977: Bildirim | Dialog Form
+r1978: Excel İşlemleri | Ana Menü
+r1979: Excel veri Aktarımı | Ana Menü
+r1980: Excel Tablo Ayar Listesi | Ana Menü
+r1981: Excel veri Aktarımı (Yeni) | Ana Menü
+r1982: Excel Veri Taslak Kaydet | Dialog Form
+r1983: Excel Veri Taslak Seçim | Dialog Form
+r1984: Email | Ana Menü
+r1985: Giden Email Listesi | Ana Menü
+r1986: Anket | Ana Menü
+r1987: Anket Listesi | Ana Menü
+r1988: Anket | Dialog Form
+r1989: Randevu | Ana Menü
+r1990: Tanımlar | Ana Menü
+r1991: Verilemeyen Randevu | Dialog Form
+r1992: Poliklinik Randevu Kaynakları | Ana Menü
+r1993: Bölüm Randevu Özellikleri | Dialog Form
+r1994: Cihaz Çalışma Takvimi | Ana Menü
+r1995: Randevu Bilgilendirme Mesajları | Ana Menü
+r1996: Bölüm Randevu Tipi | Dialog Form
+r1997: Randevu Kaynak Grupları | Ana Menü
+r1998: Kaynak Grubu Tanım | Dialog Form
+r1999: Randevu Kaynak Çalışma Takvimi | Ana Menü
+r2000: Randevu Kural Listesi | Ana Menü
+r2001: Randevu Kural | Dialog Form
+r2002:  | Ana Menü
+r2003: Randevu Formu | Dialog Form
+r2004: Randevu Çizelgesi | Dialog Form
+r2005: Randevu Kayıt | Dialog Form
+r2006: İşlemler | Ana Menü
+r2007: Hasta Arama | Dialog Form
+r2008: Randevu Kayıt | Dialog Form
+r2009: Cihaz Randevusu | Ana Menü
+r2010: Randevu Kapatma | Dialog Form
+r2011: Poliklinik Randevusu | Ana Menü
+r2012: Cihaz Randevusu | Dialog Form
+r2013: Periyodik Randevu Kapatma | Dialog Form
+r2014: Cihaz Randevu Kayıt | Dialog Form
+r2015: Randevu Kapatma | Dialog Form
+r2016: Diş Randevusu | Ana Menü
+r2017: Diş Randevu Kayıt | Dialog Form
+r2018: Periyodik Randevu Kapatma | Dialog Form
+r2019: Randevu Tarihçe | Dialog Form
+r2020: Plansız Mesai | Dialog Form
+r2021: Randevu Takip | Ana Menü
+r2022: Hasta Randevu Listesi | Dialog Form
+r2023: FTR Randevusu | Ana Menü
+r2024: FTR Randevu Kayıt | Dialog Form
+r2025: Randevu Tamamla | Dialog Form
+r2026: Cihaz Randevusu(Yeni) | Ana Menü
+r2027: Cihaz Randevu Kayıt(Yeni) | Dialog Form
+r2028: Randevu Bilgilendirme | Dialog Form
+r2029: Birim Randevusu | Ana Menü
+r2030: Birim Randevu Kayıt | Dialog Form
+r2031: Kemoterapi Randevusu | Dialog Form
+r2032: Kemoterapi Randevu | Dialog Form
+r2033: Kemoterapi Randevu | Ana Menü
+r2034: Hizmet Randevu | Ana Menü
+r2035: Hizmet Randevu Kayıt | Dialog Form
+r2036: Randevu Kaynak Seçim | Dialog Form
+r2037: Kemoterapi Randevu | Dialog Form
+r2038: Kemoterapi Randevu Kayıt (Periyodik) | Dialog Form
+r2039: Hasta Randevu | Ana Menü
+r2040: Randevu Kayıt | Dialog Form
+r2041: Hasta Ön Kayıt | Dialog Form
+r2042: Randevu Kaynak Çalışma Planı | Ana Menü
+r2043: Randevu Temsilci Atama | Dialog Form
+r2044: Plansız Mesai | Dialog Form
+r2045: Genel | Ana Menü
+r2046: Genel Randevu Bilgileri | Dialog Form
+r2047: Periyodik Kapalı Randevu İptal | Dialog Form
+r2048: Periyodik Kapalı Randevu İptal | Dialog Form
+r2049: Uygun Kaynak Seçim | Dialog Form
+r2050: Poliklinik Randevu Durumu | Ana Menü
+r2051: Randevu Çizelgesi | Dialog Form
+r2052: Hasta Arama | Dialog Form
+r2053: Birim Randevu Durumu | Ana Menü
+r2054: Verilemeyen Randevu Listesi | Dialog Form
+r2055: Randevularım | Dialog Form
+r2056: Randevu Okuma | Dialog Form
+r2057: Randevu Tipi | Ana Menü
+r2058: Kaynak Planlama | Ana Menü
+r2059: Doktor Çalışma Takvimi | Dialog Form
+r2060: Cihaz Çalışma Takvimi | Dialog Form
+r2061: Ameliyathane Çalışma Takvimi | Dialog Form
+r2062: Barkod | Ana Menü
+r2063: Control Randevu Barkod | Dialog Form
+r2064: Çağrı Merkezi 360 | Ana Menü
+r2065: Ameliyat Randevu | Ana Menü
+r2066: Cihaz Randevu | Ana Menü
+r2067: Medikal Muhasebe | Ana Menü
+r2068: Medula İşlemleri | Ana Menü
+r2069: Medula Takip | Dialog Form
+r2070: Takip Seç | Dialog Form
+r2071: Diabet Takip | Dialog Form
+r2072: Kısayol(Protokol) | Dialog Form
+r2073: Takip Ara | Dialog Form
+r2074: Medula Fatura Tutar Oku | Dialog Form
+r2075: Medula Hizmet Kayıt Oku | Dialog Form
+r2076: Takip Güncelleme | Dialog Form
+r2077: Yatış Oku | Dialog Form
+r2078: Medula Tanı Seçim | Dialog Form
+r2079: Medula Teşhis ve Tanı Seçim | Dialog Form
+r2080: Medula İlaç Ara | Dialog Form
+r2081: Taburcu Bilgisi Güncelle | Dialog Form
+r2082: Başvuru Eşleştir | Dialog Form
+r2083: Medula Örneklenen Takipler | Ana Menü
+r2084: Medula Katılım Payı Ücreti | Ana Menü
+r2085: Medula Fatura Oku | Dialog Form
+r2086: Medula Protokol İşlem Düzenleme | Dialog Form
+r2087: SGK Faturalanmış Hasta Listesi | Ana Menü
+r2088: Medula Ameliyat Bilgileri | Dialog Form
+r2089: Medula Sağlık Tesis Ara | Dialog Form
+r2090: Medula Dönem Eşleştirme | Ana Menü
+r2091: Medula İlaç Listesi | Dialog Form
+r2092: Medula Diş Taahhut | Dialog Form
+r2093: Medula Rapor Şablon | Dialog Form
+r2094: Medula Sevk Bildir | Dialog Form
+r2095: Medula Sevk Kayıt | Dialog Form
+r2096: Medula Sevk Mutat Dışı Araç Rapor | Dialog Form
+r2097: Medula Teşhis Listesi Oluştur | Dialog Form
+r2098: Medula İşGörememezlik İşlemleri | Dialog Form
+r2099: Medula İşGörememezlik Mevcut Rapor | Dialog Form
+r2100: Medula İşGörememezlik Girişi | Dialog Form
+r2101: Medula İşGörememezlik ÖN SEÇİM | Dialog Form
+r2102: Medula İşGörememezlik ÖN SEÇİM Cevap | Dialog Form
+r2103: Medula Dönem Analizi | Ana Menü
+r2104: Medula Dönem Takip Listesi | Dialog Form
+r2105: Medula Sorgu Seçim | Dialog Form
+r2106: Medula Kesinti Yapılan İşlemler | Ana Menü
+r2107: Medula Kesinti Sorgulama | Dialog Form
+r2108: Medula Filtre | Dialog Form
+r2109: Gözlük Reçetesi | Dialog Form
+r2110: Medula Detaylı Filtre | Dialog Form
+r2111: Medula Medula Kanser Tanı İşlemleri | Dialog Form
+r2112: Takip Bilgileri | Dialog Form
+r2113: Sevk Ara | Dialog Form
+r2114: Medula Toplu Hizmet Kayıt | Dialog Form
+r2115: Medula Toplu Fatura Tutar Onay | Dialog Form
+r2116: Medula | Ana Menü
+r2117: Medula Takip Bilgileri Özet | Dialog Form
+r2118: Medula Toplu İşlem Güncelleme | Dialog Form
+r2119: Medula Örneklenen Takipler | Dialog Form
+r2120: Medula Yatak Listesi | Ana Menü
+r2121: Medula Yatak Sorgula | Dialog Form
+r2122: Medula Yatak Seçim | Dialog Form
+r2123: Kesinti İtiraz Açıklama | Dialog Form
+r2124: Medula Optik Reçete Şablon | Dialog Form
+r2125: Hasta Bazlı Takip Bilgileri | Ana Menü
+r2126: Medula İlaç Birim Takibi | Ana Menü
+r2127: Medula Damar İzi Sorgulama | Dialog Form
+r2128: SGK Toplu Faturalama Listesi | Ana Menü
+r2129: SGK Toplu Faturalama Listesi | Dialog Form
+r2130: Tahsilat | Dialog Form
+r2131: Medula Kesinti Listesi | Dialog Form
+r2132: Hizmet / Malzeme Ayrıntılı Bilgi | Dialog Form
+r2133: SGK Dönem Fatura | Dialog Form
+r2134: Medula Evrak Kayıt | Dialog Form
+r2135: Takip Geçmişi | Dialog Form
+r2136: Medula Protokol Dosya Listesi | Dialog Form
+r2137: Medula Kişi İşlem Geçmişi Sorgulama | Dialog Form
+r2138: SGK Dönem E-Fatura | Ana Menü
+r2139: SGK Dönem Faturaları | Ana Menü
+r2140: Hizmet Giriş | Dialog Form
+r2141: Tutar Eşitleme Yapılan TSS Protokolleri | Ana Menü
+r2142: Fatura Kişi Bazlı Analiz Listesi | Ana Menü
+r2143: Medula XML Bilgisi | Dialog Form
+r2144: Klinik Dökümanlar | Dialog Form
+r2145: Medula Fatura Dönemi | Dialog Form
+r2146: Medula Fatura Dönemi Listesi | Dialog Form
+r2147: Yurt Dışı Yardım Hakkı | Dialog Form
+r2148: Medula Filtre | Dialog Form
+r2149: Medula Detaylı Filtre | Dialog Form
+r2150: Medula Ceza-i İşlem | Dialog Form
+r2151: Medula Ceza-i İşlem | Ana Menü
+r2152: Medula Tıbbi Malzeme Listesi | Dialog Form
+r2153: Medula Sözleşme Kuralları | Dialog Form
+r2154: Medula Sözleşme Kuralları | Dialog Form
+r2155: Medula Takip Log | Dialog Form
+r2156: Email Listesi | Dialog Form
+r2157: Medula EKDS Sorgulama | Dialog Form
+r2158: Akılcı Test istem Sorgulama Listesi | Dialog Form
+r2159: SGK Kesinti ve Ceza Takibi Listesi | Ana Menü
+r2160: SGK Kesinti ve Ceza Takibi | Dialog Form
+r2161: Tanımlar | Ana Menü
+r2162: Branş Görüş Bilgisi | Dialog Form
+r2163: Çocuk Bilgisi | Dialog Form
+r2164: Etken Madde Bilgisi | Dialog Form
+r2165: Hasta Yatış Bilgisi | Dialog Form
+r2166: Malzeme Bilgisi | Dialog Form
+r2167: Seans Bilgisi | Dialog Form
+r2168: Teşhis Bilgisi | Dialog Form
+r2169: Taş Bilgisi | Dialog Form
+r2170: Kural Tanım  | Dialog Form
+r2171: Kural Tanım Listesi | Dialog Form
+r2172: Kural Tanım Grubu | Dialog Form
+r2173: Kurumsal Mesaj Listesi | Ana Menü
+r2174: Kurumsal Mesaj | Dialog Form
+r2175: Kural Grubu | Dialog Form
+r2176: Kural Listesi | Ana Menü
+r2177: Kural Girişi  | Dialog Form
+r2178: Medula Rapor Şablon Listesi | Ana Menü
+r2179: Medula Rapor Şablon Tanımı | Dialog Form
+r2180: Medula Etiket | Dialog Form
+r2181: Medula Etiket | Dialog Form
+r2182: Medula Etiket Listesi | Dialog Form
+r2183: Medula Dönem Listesi | Ana Menü
+r2184: Medula Dönem | Dialog Form
+r2185: Hizmet Listesi | Ana Menü
+r2186: Hizmet Kartı | Dialog Form
+r2187: Zorunlu Evrak Tanımı | Dialog Form
+r2188: Kurum Evrak Süresi Tanımı | Dialog Form
+r2189: SGK Payı Düşüm Yöntemi Tanımı | Dialog Form
+r2190: Poliçe Türü Tanımı | Ana Menü
+r2191: Tarihçe | Dialog Form
+r2192: Hizmet Tarihçe | Dialog Form
+r2193: Zorunlu Evrak Hizmet Tanımı | Ana Menü
+r2194: Hizmet Şablon Tanım | Dialog Form
+r2195: Hizmet Şablon Listesi | Ana Menü
+r2196: Tetkik Birim Maliyet Listesi | Ana Menü
+r2197: Tetkik Birim Maliyet | Dialog Form
+r2198: Tetkik Seçim | Dialog Form
+r2199: Ameliyathane Ek Süre | Dialog Form
+r2200: Doktor Fiyat Grubu Listesi | Ana Menü
+r2201: Fiyat Grubu | Dialog Form
+r2202: Doktor Fiyat Ünvan Grubu Listesi | Ana Menü
+r2203: Fiyat Ünvan Tanımı | Dialog Form
+r2204: Hizmet Birim Maliyet | Dialog Form
+r2205: Ortak | Ana Menü
+r2206: İcmal Seçim | Dialog Form
+r2207: Medula Teşhis Seçim | Dialog Form
+r2208: Diabet Takip Seçim | Dialog Form
+r2209: Medula Rapor Seçim | Dialog Form
+r2210: Medula Teşhis Seçim | Dialog Form
+r2211: İcmal | Dialog Form
+r2212: İcmal Listesi | Ana Menü
+r2213: İcmal Birleştir | Dialog Form
+r2214: Kurumsal Seçim | Dialog Form
+r2215: Paket Seçim | Dialog Form
+r2216: SGK Tek Fatura | Dialog Form
+r2217: Kesinti Bilgileri | Dialog Form
+r2218: Ödeme Listesi | Dialog Form
+r2219: Genel Fatura Analizi Detay | Ana Menü
+r2220: Tedavi Teklif Seçim | Dialog Form
+r2221: Sağlık Tesis Listesi | Dialog Form
+r2222: Medula SUT Ek Liste | Dialog Form
+r2223: Kategori Seçim | Dialog Form
+r2224: Kurum Hizmet Seçim | Dialog Form
+r2225: Paket Limit Şablon Seçim | Dialog Form
+r2226: Paket Dağılım Şablon Seçim | Dialog Form
+r2227: Paket Seçim | Dialog Form
+r2228: Kurum Seçim (Çoklu) | Dialog Form
+r2229: Kurum Hizmet Seçim | Dialog Form
+r2230: Paket Limit Şablon Tarihçe | Dialog Form
+r2231: Fatura Gönderim Log | Dialog Form
+r2232: Rapor | Ana Menü
+r2233: Medula Rapor | Dialog Form
+r2234: Branş Görüş Bilgisi | Dialog Form
+r2235: Çocuk Bilgisi | Dialog Form
+r2236: Etken Madde Bilgisi | Dialog Form
+r2237: Hasta Yatış Bilgisi | Dialog Form
+r2238: Malzeme Bilgisi | Dialog Form
+r2239: Seans Bilgisi | Dialog Form
+r2240: Teşhis Bilgisi | Dialog Form
+r2241: Taş Bilgisi | Dialog Form
+r2242: Medula Rapor Okuma | Dialog Form
+r2243: SGK Hasta Faturası | Dialog Form
+r2244: Medula SUT Kuralı Oku | Dialog Form
+r2245: İlaç Kullanım Raporu | Dialog Form
+r2246: Analık Raporu | Dialog Form
+r2247: Doğum Öncesi Çalışabilir Raporu | Dialog Form
+r2248: Tedavi Raporu | Dialog Form
+r2249: İş Kazası Raporu | Dialog Form
+r2250: Maluliyet Raporu | Dialog Form
+r2251: Protez Raporu | Dialog Form
+r2252: İcmal Faturası | Dialog Form
+r2253: İcmal Dökümü | Dialog Form
+r2254: ESWL Raporu | Dialog Form
+r2255: FTR Raporu | Dialog Form
+r2256: İş Göremezlik Raporu | Dialog Form
+r2257: Medula Rapor Okuma | Dialog Form
+r2258: Tedavi Teklif Dökümü | Dialog Form
+r2259: Tedavi Teklif Hizmet Dökümü | Dialog Form
+r2260: SGK Toplu Fatura Dökümü | Dialog Form
+r2261: Claimer Ibraname | Dialog Form
+r2262: İcmal Faturası Detaylı | Dialog Form
+r2263: İcmal Hizmet Döküm | Dialog Form
+r2264: Kesinti Itiraz | Dialog Form
+r2265: Medula Tıbbi Malzeme Raporu | Dialog Form
+r2266: Tıbbi Malzeme Kullanım Raporu | Dialog Form
+r2267: Tedavi Teklif Kalem | Dialog Form
+r2268: Medula Raporu | Dialog Form
+r2269: Maluliyet Branş Görüş Bilgisi | Dialog Form
+r2270: Komisyon Tutanağı | Dialog Form
+r2271: İnceleyici Hekim Görüş Formu | Dialog Form
+r2272: Tıbbi Gereklilik Raporu | Dialog Form
+r2273: İcmal Hizmet Döküm(Tümü) | Dialog Form
+r2274: Ödeme Yazısı | Dialog Form
+r2275: Fiyat Öğrenme | Dialog Form
+r2276: Kurum Faturalama | Ana Menü
+r2277: İcmal Fatura | Dialog Form
+r2278: ÖSS ve AK Fatura İşlemleri | Ana Menü
+r2279: Fatura Ödeme İşlemi | Dialog Form
+r2280: Kurum Faturalama Yeni | Ana Menü
+r2281: MCC Süreç Takip | Ana Menü
+r2282: Dosya Listesi | Ana Menü
+r2283: Dosya Tarihçe | Dialog Form
+r2284: Analizler | Ana Menü
+r2285: Anlaşmalı Kurumlar | Ana Menü
+r2286: Anlaşma | Dialog Form
+r2287: (Anlaşmalar) Fiyatlandırma | Ana Menü
+r2288: Kurum | Dialog Form
+r2289: Anlaşmalı Kurumlar | Ana Menü
+r2290: Kural Şablon | Dialog Form
+r2291: Kural | Dialog Form
+r2292: Kural Listesi | Ana Menü
+r2293: Şablon Seçim | Dialog Form
+r2294: Hesaplanmış Anlaşma Fiyatları | Ana Menü
+r2295: Anlaşma Fiyatları | Ana Menü
+r2296: Anlaşma Fiyat Değişkenleri | Ana Menü
+r2297: Anlaşma Fiyat Değişken | Dialog Form
+r2298: Tedavi Teklif İşlemleri | Ana Menü
+r2299: Tedavi Teklif | Dialog Form
+r2300: Teklif Hizmet Döküm | Dialog Form
+r2301: Kurum Komisyon Oranları | Dialog Form
+r2302: Teklif Dökümü | Dialog Form
+r2303: Fiyatlandırma Tarihçe | Dialog Form
+r2304: Yabancı Hasta Bildirimi  | Ana Menü
+r2305: Bağlı İşlem Fiyatlandırma  | Dialog Form
+r2306: Kurum Hasta Listesi | Dialog Form
+r2307: Kurum Hasta | Dialog Form
+r2308: Kurum Grubu | Dialog Form
+r2309: Anlaşma Seçim | Dialog Form
+r2310: Paket Limit Yönetimi | Ana Menü
+r2311: Paket Limit Şablon Tanımı | Ana Menü
+r2312: Hizmet-Şablon Bağlantı Detayları | Dialog Form
+r2313: Kesi Kural Tanım | Dialog Form
+r2314: Şirket Listesi | Ana Menü
+r2315: Şirket Seçim | Dialog Form
+r2316: Limit Şablon Kriteri | Dialog Form
+r2317: Dağılım Şablon Kriteri | Dialog Form
+r2318: Şirket | Dialog Form
+r2319: Entgere Kurum Listesi | Ana Menü
+r2320: Entegrasyon Kurumu | Dialog Form
+r2321: Teklif Tarihçe | Dialog Form
+r2322: Kur Seçim | Dialog Form
+r2323: Paket Limit Şablon Tarihçe | Dialog Form
+r2324: Fiyatlandırma Formul Detay Aktarım | Dialog Form
+r2325: Kurum Grubu | Dialog Form
+r2326: Kurum İlaç Karlılık | Dialog Form
+r2327: Kurum İlaç Karlılık Tarihçe | Dialog Form
+r2328: Claimer İşlemleri | Ana Menü
+r2329: Sigorta Sorgulama | Dialog Form
+r2330: Provizyon | Dialog Form
+r2331: Claimer Kurum Tanım | Dialog Form
+r2332: Claimer Kurum Tanım | Dialog Form
+r2333: Claimer Paket Listesi | Dialog Form
+r2334: Silinmiş Provizyon, Dosya Listesi | Dialog Form
+r2335: Sigorta Sorgulama | Dialog Form
+r2336: TİG | Ana Menü
+r2337: TIG Gönderim İşlemleri | Ana Menü
+r2338: TIG Branş Bilgisi Gönderim Listesi | Ana Menü
+r2339: TIG Branş Bilgisi Gönderim  | Dialog Form
+r2340: TIG Gönderim Listesi | Ana Menü
+r2341: Tarifeler | Ana Menü
+r2342: Tarife Listesi | Ana Menü
+r2343: Tarife Yönetimi | Ana Menü
+r2344: Kategori Listesi | Ana Menü
+r2345: Hizmet Fiyat Listesi | Ana Menü
+r2346: Paket Limit Şablonları | Ana Menü
+r2347: Paket Dağılım Şablonları | Ana Menü
+r2348: Kategori Tanım | Dialog Form
+r2349: Anlaşma Formül | Dialog Form
+r2350: Paket Tanımı | Dialog Form
+r2351: Kategori Tipi Tanımı | Dialog Form
+r2352: Paket Dağılım Şablon Tanımı | Dialog Form
+r2353: Kategori | Dialog Form
+r2354: Kurum Hizmet | Dialog Form
+r2355: Katsayi | Dialog Form
+r2356: Kurum Hizmet Listesi | Dialog Form
+r2357: Anlaşma Formül Kopyalama | Dialog Form
+r2358: Genel Liste Eşleştirme | Dialog Form
+r2359: Ameliyat Hizmet Şablonları | Ana Menü
+r2360: Ameliyat Hizmet Oran Tanımı | Dialog Form
+r2361: Ameliyat Hizmet Şablon Tanımı | Dialog Form
+r2362: Ameliyat Hizmet Şablon Seçim | Dialog Form
+r2363: Anlaşma Paket Aktarım | Dialog Form
+r2364: Kategori Tipi Listesi | Dialog Form
+r2365: DSH Listesi | Ana Menü
+r2366: DSH Oranı | Dialog Form
+r2367: Toplu Paket Oluştur | Dialog Form
+r2368: Kurum Bazlı Ödenen Malzemeler | Ana Menü
+r2369: Provizyon İndirim Şablonları | Ana Menü
+r2370: Şablon Tanımı | Dialog Form
+r2371: Şablon Seçimi | Dialog Form
+r2372: Anlaşma Formül Tarihçe | Dialog Form
+r2373: Tarife Önizleme | Ana Menü
+r2374: Kopya Adeti | Dialog Form
+r2375: Anlaşma Formül Aktarım | Dialog Form
+r2376: Anlaşma Tarihçe | Dialog Form
+r2377: Malzemeye Bağlı Hizmetler | Ana Menü
+r2378: Anlaşma Formul Notu | Dialog Form
+r2379: Limit Şablon Grubu | Dialog Form
+r2380: Provizyon Oran Tanımı | Dialog Form
+r2381: Zorunlu ameliyathane İşlem Tipi Tanım | Dialog Form
+r2382: Kurum Hizmet Fiyat | Dialog Form
+r2383: Ameliyathane Hizmetleri Şablon Tanımı | Dialog Form
+r2384: Kesi Kural Tanım | Dialog Form
+r2385: Kurum Hizmet Fiyat | Dialog Form
+r2386: Tarife Yönetimi Tarihçe | Dialog Form
+r2387: Tarife Formül Önizleme | Ana Menü
+r2388: Ödeme İşlemleri | Ana Menü
+r2389: Fatura Listesi | Ana Menü
+r2390: Havuz Ödemeler | Ana Menü
+r2391: Havuz Ödeme/Fatura Eşleştirme | Ana Menü
+r2392: Tahsilat/Avans Listesi | Ana Menü
+r2393: Havuz Ödeme Girişi | Dialog Form
+r2394: Havuz Ödeme Fatura Eşleştir | Dialog Form
+r2395: Fatura Kalem Ödeme | Dialog Form
+r2396: Hasta Avans Girişi | Dialog Form
+r2397: Şube Virman Girişi | Dialog Form
+r2398: Havuz Ödeme Bloke Girişi | Dialog Form
+r2399: Satış İade Listesi | Dialog Form
+r2400: MediGap İşlemleri | Ana Menü
+r2401: Hasta Kabul Provizyon | Dialog Form
+r2402: Kurum Tanım Bilgileri | Dialog Form
+r2403: Dosya Gönderim | Dialog Form
+r2404: Fatura İşlemleri | Ana Menü
+r2405: Fatura Pasaport Takibi | Ana Menü
+r2406: Hukuksal Takip Faturaları | Ana Menü
+r2407: Hukuksal Takip | Dialog Form
+r2408: Kurumsal Faturalama | Ana Menü
+r2409: İcmal Faturalama | Ana Menü
+r2410: Fatura Evrak Takip Açıklama | Dialog Form
+r2411: Fatura Evrak Takip Kargo Bilgileri | Dialog Form
+r2412: Fatura Evrak Kuruma Teslim | Dialog Form
+r2413: Fatura Evrak Takip Detay | Dialog Form
+r2414: İcmal | Dialog Form
+r2415: Evrak Kontrol | Dialog Form
+r2416: Barkodla Fatura Teslim | Dialog Form
+r2417: Entegrasyon Dosya Gönderim Takip | Ana Menü
+r2418: Barkodla İcmale Atama | Dialog Form
+r2419: Provizyon Dosya İşlemleri | Dialog Form
+r2420: Manuel Dosya Ekleme | Dialog Form
+r2421: Dosya Seçim | Dialog Form
+r2422: Toplu Provizyon Güncelleme | Ana Menü
+r2423: Dosya Gönderim Tarihçe | Dialog Form
+r2424: Provizyon Tarihçe | Dialog Form
+r2425: Fatura Etiket | Dialog Form
+r2426: Fatura Etiket Seçim | Dialog Form
+r2427: Fatura Etiket Listesi | Dialog Form
+r2428: Protokol Pasaport Takibi | Ana Menü
+r2429: Kurumsal Faturalama Şablon | Dialog Form
+r2430: Toplu Proforma İşlemleri | Ana Menü
+r2431: Protokol Zorunlu Evrak | Dialog Form
+r2432: Barkodla Fatura Etiketleme | Dialog Form
+r2433: Kurumsal Faturalama Filtre | Dialog Form
+r2434: Toplu Yeniden Fiyatlandır | Ana Menü
+r2435: Toplu Provizyon Alma | Ana Menü
+r2436: Toplu Provizyon Güncelleme (Yeni) | Ana Menü
+r2437: Protein İşlemleri | Ana Menü
+r2438: Hasta Kabul Provizyon | Dialog Form
+r2439: Protein Doküman İşlemleri | Dialog Form
+r2440: Protein Ödeme Sorgulama | Dialog Form
+r2441: Acıbadem İşlemleri | Ana Menü
+r2442: Dosya Gönderim | Dialog Form
+r2443: Dosya Paket Ve Ödeme Sorgulama | Dialog Form
+r2444: Excel İşlemleri | Ana Menü
+r2445: Formül Listesi | Ana Menü
+r2446: Kategori Listesi | Ana Menü
+r2447: Hizmet Fiyat Listesi | Ana Menü
+r2448: Ameliyat Hizmet Şablon Listesi | Ana Menü
+r2449: Anlaşma Paket Listesi | Ana Menü
+r2450: Panel Paket Fiyat | Ana Menü
+r2451: Paket Limit Şablonu | Ana Menü
+r2452: Anlaşma Paket İçerik | Ana Menü
+r2453: Hizmet Bölüm Kod Listesi | Ana Menü
+r2454: Hizmet Eşleştirme Listesi | Ana Menü
+r2455: Medula Birlikte Yapılan İşlem Listesi | Ana Menü
+r2456: Hizmet Maliyet Listesi | Ana Menü
+r2457: Tetkik Maliyet Listesi | Ana Menü
+r2458: Anadolu Sigorta İşlemleri | Ana Menü
+r2459: Müstehaklık Sorgulama | Dialog Form
+r2460: Provizyon Seçim | Dialog Form
+r2461: Dosya Gönderim | Dialog Form
+r2462: Paket İşlemleri | Dialog Form
+r2463: Ön Provizyon | Dialog Form
+r2464: Provizyon İptal Açıklama | Dialog Form
+r2465: PortTSS İşlemleri | Ana Menü
+r2466: Hasta Müstehaklık | Dialog Form
+r2467: Kurum  İcmal Seçim | Dialog Form
+r2468: PortTSS  İcmal İşlemleri | Dialog Form
+r2469: Teklif İşlemleri | Ana Menü
+r2470: Teklif Şablon Listesi | Ana Menü
+r2471: Teklif Şablonu | Dialog Form
+r2472: Allianz Sigorta İşlemleri | Ana Menü
+r2473: Allianz İcmal Sorgulama | Dialog Form
+r2474: Allianz Sigortalı Sorgulama | Dialog Form
+r2475: Allianz Provizyon İptal Açıklama | Dialog Form
+r2476: Provizyon | Ana Menü
+r2477: Ön Provizyon | Dialog Form
+r2478: Provizyon Dosya Ekleme | Dialog Form
+r2479: Kampanya | Ana Menü
+r2480: Kampanya Listesi | Ana Menü
+r2481: Kampanya | Dialog Form
+r2482: Hasta Gruplari | Ana Menü
+r2483: Hasta Grubu | Dialog Form
+r2484: Kampanya Bilgilendirme | Dialog Form
+r2485: Kampanya Sağlık Kart Seçim | Dialog Form
+r2486: Kampanya Seçim | Dialog Form
+r2487: Mobil Kampanya | Dialog Form
+r2488: Kampanya Kupon Girişi | Dialog Form
+r2489: Sağlık Kart Listesi | Ana Menü
+r2490: Sağlık Kartı | Dialog Form
+r2491: Boss İşlemleri | Ana Menü
+r2492: Boss Kart İşlemleri | Dialog Form
+r2493: Ekinoks Sigorta İşlemleri | Ana Menü
+r2494: Ekinoks Müstehaklık Sorgulama | Dialog Form
+r2495: Oto.Provizyon | Ana Menü
+r2496: Oto.Provizyon Güncelleme Listesi | Ana Menü
+r2497: Provizyonu Faturaya Çevir Listesi | Ana Menü
+r2498: Fatura GİB Gonderim Listesi | Ana Menü
+r2499: Fatura Dosya Gonderim Listesi | Ana Menü
+r2500: Fatura Kuruma Teslim Listesi | Ana Menü
+r2501: Klinik Araştırma | Ana Menü
+r2502: Döngü Listesi | Ana Menü
+r2503: Döngü | Dialog Form
+r2504: Döngü İşlem | Dialog Form
+r2505: Döngü Seçim | Dialog Form
+r2506: Döngü Geçmişi | Dialog Form
+r2507: Sistem | Ana Menü
+r2508: Güvenlik | Ana Menü
+r2509: Güvenlik Tanimlari | Ana Menü
+r2510: Değişken Tanimlari | Ana Menü
+r2511: Kullanıcı Grubu | Dialog Form
+r2512: Kullanıcı | Dialog Form
+r2513: Rol Grubu | Dialog Form
+r2514: Rol | Dialog Form
+r2515: Yetki Seçim | Dialog Form
+r2516: Form Seçim | Dialog Form
+r2517: Rol Seçim | Dialog Form
+r2518: Kullanıcı Seçim | Dialog Form
+r2519: Veri Seçim | Dialog Form
+r2520: Kullanıcı Gurubu Seçim | Dialog Form
+r2521: Değişken Tanımı | Dialog Form
+r2522: Rol Görev | Ana Menü
+r2523: Yetki | Dialog Form
+r2524: Süper Admin Yetki Listesi | Ana Menü
+r2525: Süper Admin Yetki | Dialog Form
+r2526: Versiyon | Ana Menü
+r2527: Versiyon Listesi | Ana Menü
+r2528: Versiyon Detay | Dialog Form
+r2529: Giriş | Dialog Form
+r2530: Versiyon Önizleme | Dialog Form
+r2531: Versiyon Yükleme | Dialog Form
+r2532: Giriş Paneli | Ana Menü
+r2533: Versiyon Denetleme | Ana Menü
+r2534: Versiyon Dökümanı | Ana Menü
+r2535: Tanımlar | Ana Menü
+r2536: Paket İçi Dağılım | Ana Menü
+r2537: Ameliyat İçerik Şablonu | Ana Menü
+r2538: Aktivite Tanım | Dialog Form
+r2539: Aktivite Listesi | Ana Menü
+r2540: Aktivite | Dialog Form
+r2541: Ameliyathane Tanım | Dialog Form
+r2542: Ameliyathane Grubu | Dialog Form
+r2543: Ameliyathane Listesi | Ana Menü
+r2544: SQL Tanım | Dialog Form
+r2545: İş Emri Tipi Tanım | Dialog Form
+r2546: İş Emri Grubu Tanım | Dialog Form
+r2547: İş Emri Islem Tanım | Dialog Form
+r2548: İş Emri Grubu Listesi | Ana Menü
+r2549: Talep Edilen İşlem Türü | Dialog Form
+r2550: Açıklama | Dialog Form
+r2551: Açıklama Listesi | Ana Menü
+r2552: Bina Birim Listesi | Ana Menü
+r2553: Bina Birim | Dialog Form
+r2554: Yatak Tipi Listesi | Ana Menü
+r2555: Yatak | Dialog Form
+r2556: Yatak Tipi | Dialog Form
+r2557: Branş Listesi | Ana Menü
+r2558: Branş | Dialog Form
+r2559: Bölüm | Dialog Form
+r2560: Bölüm Listesi | Ana Menü
+r2561: Cihaz Listesi | Ana Menü
+r2562: Cihaz | Dialog Form
+r2563: Dönem Listesi | Ana Menü
+r2564: Dönem | Dialog Form
+r2565: Ülke İl İlçe Listesi | Ana Menü
+r2566: Ülke | Dialog Form
+r2567: İl | Dialog Form
+r2568: İlçe | Dialog Form
+r2569: Genel Tanım Listesi | Ana Menü
+r2570: Genel Tanım | Dialog Form
+r2571: Versiyon Bilgilendirme | Ana Menü
+r2572: Otomatik Hizmet Tanım Listesi | Ana Menü
+r2573: Otomatik Hizmet Tanımı | Dialog Form
+r2574: Hizmet Listesi | Ana Menü
+r2575: Hizmet Grubu | Dialog Form
+r2576: Hizmet Alt Tipi | Dialog Form
+r2577: Hizmet Alt Tipi Listesi | Ana Menü
+r2578: Not Tanım | Dialog Form
+r2579: Not Listesi | Dialog Form
+r2580: Döküman Grubu | Dialog Form
+r2581: Dosya Upload | Dialog Form
+r2582: Döküman Listesi | Ana Menü
+r2583: Dosya Listesi | Dialog Form
+r2584: Personel Bilgilendirme | Ana Menü
+r2585: Günlük Kur Listesi | Ana Menü
+r2586: Günlük Kur  | Dialog Form
+r2587: SQL Tanım Listesi | Ana Menü
+r2588: SQL Tanım Kategori | Dialog Form
+r2589: Yetki Kodu Listesi | Ana Menü
+r2590: Yetki Kodu | Dialog Form
+r2591: Toplu Hizmet Cari Fiyat Güncelleme | Dialog Form
+r2592: Hatırlatıcı Not | Dialog Form
+r2593: Not Hatırlatma | Dialog Form
+r2594: Hizmet | Dialog Form
+r2595: Ameliyat Paket Hizmeti | Dialog Form
+r2596: Checkup Paket Hizmeti  | Dialog Form
+r2597: Acil Servis 112 Bölüm Listesi | Ana Menü
+r2598: Acil Servis 112 Bölüm | Dialog Form
+r2599: Özel Değer | Dialog Form
+r2600: Özel Değer Listesi | Ana Menü
+r2601: ICD | Dialog Form
+r2602: ICD Grup Seçimi | Dialog Form
+r2603: ICD Grubu | Dialog Form
+r2604: ICD Listesi | Ana Menü
+r2605: Protokol Defter Tanımı | Dialog Form
+r2606: Protokol Defter Listesi | Ana Menü
+r2607: İlan Panosu | Ana Menü
+r2608: Protokol Tipi | Dialog Form
+r2609: Provizyon-Tedavi Tipi Açıklama | Ana Menü
+r2610: Hastane Listesi | Ana Menü
+r2611: Hastane | Dialog Form
+r2612: Ölçü Birimi Listesi | Ana Menü
+r2613: Ölçü Birimi | Dialog Form
+r2614: Para Birimi Listesi | Ana Menü
+r2615: Bina Birim Özellik Tipi Listesi | Ana Menü
+r2616: Bina Birim Özellik Tipi | Dialog Form
+r2617: Tablet Tanım | Dialog Form
+r2618: Tablet İşlem | Dialog Form
+r2619: Hizmet Alt Tipi Dinamik | Dialog Form
+r2620: Hizmet Alt Tipi Dinamik Listesi | Ana Menü
+r2621: Protokol Tipleri | Ana Menü
+r2622: SUT Ek Liste | Ana Menü
+r2623: Hizmet Özellik | Dialog Form
+r2624: Defter No Oluştur | Dialog Form
+r2625: Sağlık Tesis Listesi | Ana Menü
+r2626: Sağlık Tesisi | Dialog Form
+r2627: Hizmet Tarihçe | Dialog Form
+r2628: E-Nabız Sağlık Tesisi | Dialog Form
+r2629: Vergi Muafiyet | Dialog Form
+r2630: Vergi Muafiyet Listesi | Ana Menü
+r2631: Hizmet İşlem Tipi | Dialog Form
+r2632: Medula Hizmet Tipi | Dialog Form
+r2633: Sağlık Merkezi Listesi | Ana Menü
+r2634: Sağlık Merkezi | Dialog Form
+r2635: Para Birimi Seçim | Dialog Form
+r2636: Pyxis Parametreler Listesi | Ana Menü
+r2637: Pyxis Parametreler | Dialog Form
+r2638: Hatalı Telefon Numaraları | Ana Menü
+r2639: Zorunlu Döküman Listesi | Ana Menü
+r2640: Zorunlu Döküman | Dialog Form
+r2641: Dosya Tipi | Dialog Form
+r2642: Bölüm Randevu Tipi | Dialog Form
+r2643: Not Tarihçe | Dialog Form
+r2644: Para Birimi | Dialog Form
+r2645: Kur Çarpan Listesi | Dialog Form
+r2646: Kur Çarpanı | Dialog Form
+r2647: Protokol Kapatma Kriterleri Listesi | Ana Menü
+r2648: Protokol Kapatma Kriterleri | Dialog Form
+r2649: Hatalı Kayıt Listesi | Ana Menü
+r2650: Hatalı Kayıt | Dialog Form
+r2651: Semt | Dialog Form
+r2652: Mahalle | Dialog Form
+r2653: SQL Tanım Mail Gönderim Takvimi | Dialog Form
+r2654: Hizmet SUT Listesi Yeni Fiyatlandırma | Ana Menü
+r2655: Tarayıcıdan Dosya Yükle | Dialog Form
+r2656: Tarayıcıdan Dosya Yükle | Dialog Form
+r2657: Dosya Yolu Listesi | Ana Menü
+r2658: Dosya Yolu | Dialog Form
+r2659: Hastane Bağlantı Listesi | Ana Menü
+r2660: Hastane Bağlantı | Dialog Form
+r2661: EKDS Evrak Ekleme | Dialog Form
+r2662: IP Adresli Yazıcı Listesi | Ana Menü
+r2663: IP Adresli Yazıcı | Dialog Form
+r2664: İzleme | Ana Menü
+r2665: Log İzleme | Ana Menü
+r2666: Log İzleme Detay | Dialog Form
+r2667: Kullanıcı İzleme | Ana Menü
+r2668: Kullanıcı İzleme Mesaj | Dialog Form
+r2669: Yetki İzleme | Ana Menü
+r2670: Değişken Log | Ana Menü
+r2671: Yetki Log | Ana Menü
+r2672: Açık Oturumlar | Ana Menü
+r2673: Finansal Veri İzleme | Ana Menü
+r2674: ComedEMR Yetki Log | Ana Menü
+r2675: Genel | Ana Menü
+r2676: İş Emri İşlem Seçim | Dialog Form
+r2677: Cihaz Seçim | Dialog Form
+r2678: Not Listesi | Ana Menü
+r2679: Yardım | Dialog Form
+r2680: Özellik | Dialog Form
+r2681: Şifre Doğrula | Dialog Form
+r2682: Mobil Uygulama Barkod | Dialog Form
+r2683: PDF Önizleme | Ana Menü
+r2684: Mobil Finans Karekod | Dialog Form
+r2685: Arama Kriteri Şablon Seçim | Dialog Form
+r2686: Kilitli Tablo Listesi | Ana Menü
+r2687: IP Yazıcıya Gönderim Ayar | Ana Menü
+r2688: Servis | Ana Menü
+r2689: HL7 Mesaj Listesi | Ana Menü
+r2690: Pyxis Hasta Kayıt | Dialog Form
+r2691: Pyxis İlaç Tanım | Dialog Form
+r2692: Pyxis Stok İşlem | Dialog Form
+r2693: Pyxis Order İstem | Dialog Form
+r2694: Merkez Senkronizasyon | Ana Menü
+r2695: Merkezi Senkronizasyon Servisi Ayarı | Dialog Form
+r2696: Mobil Kapı Ekranı Yönetimi | Ana Menü
+r2697: Skrs Güncelleme | Ana Menü
+r2698: Agent Yönetim | Ana Menü
+r2699: Detaylı Job Logu | Dialog Form
+r2700: Job Grup | Dialog Form
+r2701: Job Güncelleme | Dialog Form
+r2702: Job Ekleme | Dialog Form
+r2703: Pos Cihazı Bağlantı | Dialog Form
+r2704: Ingenico İşlem | Ana Menü
+r2705: Pos Cihazı Bağlantı | Dialog Form
+r2706: Form Tasarım | Ana Menü
+r2707: Tasarımsal Formlar | Ana Menü
+r2708: Tasarım Yap | Dialog Form
+r2709: Kontrol Özeliikleri | Dialog Form
+r2710: Form Özeliikleri | Dialog Form
+r2711: Tasarımsal Form Rapor | Dialog Form
+r2712: Form Tasarım Yönetimi | Dialog Form
+r2713: Tıbbi Form Listesi | Ana Menü
+r2714: Tıbbi Form Tanım | Dialog Form
+r2715: Tıbbi Form Detay Grup Listesi | Ana Menü
+r2716: Tıbbi Form Detay Grup | Dialog Form
+r2717: Tıbbi Form Detay Listesi | Ana Menü
+r2718: Tıbbi Form Detay | Dialog Form
+r2719: Tıbbi Form Detay Kalem Listesi | Ana Menü
+r2720: Tıbbi Form Detay Kalem | Dialog Form
+r2721: Veritabanı Yönetimi | Ana Menü
+r2722: Loglama Tanımları | Ana Menü
+r2723: Çalışan Sql Sorguları | Ana Menü
+r2724: Merkez İslemleri | Ana Menü
+r2725: Tanımlamalar | Dialog Form
+r2726: Merkezi Tablolar | Ana Menü
+r2727: Toplu Veri Aktarımı | Ana Menü
+r2728: Tek Kayıt Veri Aktarımı | Dialog Form
+r2729: Rapor Tasarım | Ana Menü
+r2730: Rapor Çıktı Şablonları | Ana Menü
+r2731: Rapor Özellikleri | Dialog Form
+r2732: Rapor Tasarim Varsayilan | Ana Menü
+r2733: Tercihler | Dialog Form
+r2734: Hastane Logo Listesi | Ana Menü
+r2735: Hastane Logo | Dialog Form
+r2736: Dinamik Rapor Dizayn Seç | Dialog Form
+r2737: Rapor Detay | Dialog Form
+r2738: DinamikForm | Ana Menü
+r2739: Parametre Listesi | Ana Menü
+r2740: Parametre Grubu | Dialog Form
+r2741: Parametre | Dialog Form
+r2742: Döküman Listesi | Ana Menü
+r2743: Döküman Grubu | Dialog Form
+r2744: Döküman Tasarım | Dialog Form
+r2745: Parametre Seçim | Dialog Form
+r2746: Döküman Seçim | Dialog Form
+r2747: Kayıtlı Dökümanlar | Ana Menü
+r2748: Döküman Kayıt | Dialog Form
+r2749: Onam Seçim | Dialog Form
+r2750: Cihaz Seçimi | Ana Menü
+r2751: Dijital İmza Manuel İmzacı Seçimi | Dialog Form
+r2752:  | Ana Menü
+r2753: Dinamik Rapor | Dialog Form
+r2754: Lisans | Ana Menü
+r2755: Lisans Güncelleme | Ana Menü
+r2756: Lisans Güncelleme(LBYS) | Ana Menü
+r2757: Lokalizasyon | Ana Menü
+r2758: Lokalizasyon Tanim Listesi | Ana Menü
+r2759: Lokalizasyon Tanım | Dialog Form
+r2760: Bileşen Çeviri | Dialog Form
+r2761: Ana Veri Çeviri Listesi | Ana Menü
+r2762: Genel Çeviri Listesi | Ana Menü
+r2763: Çeviri | Dialog Form
+r2764: Mesaj Çeviri Listesi | Ana Menü
+r2765: Mesaj Çeviri | Dialog Form
+r2766: Tablo Çeviri Listesi | Ana Menü
+r2767: Tablo Çeviri | Dialog Form
+r2768: Tıbbi Arşiv | Ana Menü
+r2769: Tanımlar | Ana Menü
+r2770: Dosya İçerik Listesi | Ana Menü
+r2771: Arşiv Tipi | Dialog Form
+r2772: Dosya İçerik Tipi | Dialog Form
+r2773: Arşiv Kontrol | Dialog Form
+r2774: Arşiv Dolap Listesi | Ana Menü
+r2775: Arşiv Dolap | Dialog Form
+r2776: İşlemler | Ana Menü
+r2777: Arşiv Talep Listesi | Ana Menü
+r2778: Arşiv Talep | Dialog Form
+r2779: Dosya Talep | Dialog Form
+r2780: Dosya Kayıt Listesi | Ana Menü
+r2781: Dosya Kayıt | Dialog Form
+r2782: Arşiv İşlem Detay | Dialog Form
+r2783: Arşiv Log Listesi | Dialog Form
+r2784: Medikal Muhasebe Açıklama | Dialog Form
+r2785: Yapılan Arşiv Talepleri | Ana Menü
+r2786: Dosya Kayıt Listesi Yeni | Ana Menü
+r2787: Dosya Kayıt | Dialog Form
+r2788: Arşiv Talep | Dialog Form
+r2789: [TEST] Dosya Kayıt | Dialog Form
+r2790: Dijital Arşiv Listesi | Ana Menü
+r2791: Dijital Arşiv | Dialog Form
+r2792: Raporlar | Ana Menü
+r2793: Arşiv Barkodu | Dialog Form
+r2794: Eczane | Ana Menü
+r2795: Tanım | Ana Menü
+r2796: İlaç Listesi | Ana Menü
+r2797: İlaç | Dialog Form
+r2798: Etken Madde Listesi | Ana Menü
+r2799: Etken Madde | Dialog Form
+r2800: Etken Madde Grubu | Dialog Form
+r2801: Etken Madde Sorgula | Dialog Form
+r2802:  İlaç Fiyat Güncelleme | Ana Menü
+r2803: Medula İlaç Listesi | Ana Menü
+r2804: ComedEMR İlaç Listesi | Ana Menü
+r2805: ComedEMR Product | Dialog Form
+r2806: ComedEMR İlaç Eşleştirmesi | Ana Menü
+r2807: Veriliş Yolu Listesi | Dialog Form
+r2808: Veriliş Yolu | Dialog Form
+r2809: İlaç Kısa Ad Listesi | Dialog Form
+r2810: İlaç Kısa Ad | Dialog Form
+r2811: İlaç Kullanım Kuralları | Dialog Form
+r2812: İlaç Kullanım Kuralı Ekle/Güncelle | Dialog Form
+r2813: Grup Ekle/Güncelle | Dialog Form
+r2814: Malzeme Üretim Reçete Listesi | Ana Menü
+r2815: Üretim Reçetesi | Dialog Form
+r2816: Malzeme Üretim Fişi | Dialog Form
+r2817: Malzeme Üretim Fişi Listesi | Ana Menü
+r2818: ComedEMR Etken Madde Listesi | Ana Menü
+r2819: ComedEMR Etken Madde Kayıt | Dialog Form
+r2820: Laboratuvar Test ATC Eşleştirme Listesi | Ana Menü
+r2821: Laboratuvar Test ATC Eşleştirme | Dialog Form
+r2822: Laboratuvar Test ATC Eşleştirme | Dialog Form
+r2823: ComedEMR İlaç Tarihçe | Dialog Form
+r2824: İlaç Entegrasyon Kontrolü | Ana Menü
+r2825: ComedEMR İlaç Kartı Seçim | Dialog Form
+r2826: İşlemler | Ana Menü
+r2827:  İlaç Talep Karşılama Listesi | Ana Menü
+r2828: Onay Bekleyen İşlemler | Ana Menü
+r2829: ITS Bildirim Listesi | Ana Menü
+r2830: ITS Bildirim | Dialog Form
+r2831: ITS Bildirim Tipi Seçim | Dialog Form
+r2832: ITS Bildirim Detay Seçim | Dialog Form
+r2833: PTS Listesi | Dialog Form
+r2834: ITS Bildirimi Yapılmamış Alımlar | Ana Menü
+r2835: Order Değerlendirme | Ana Menü
+r2836: ITS Ürün Sorgulama | Ana Menü
+r2837: Hasta Stok | Ana Menü
+r2838: ITS Referans Servisleri | Ana Menü
+r2839: ITS Bildirimi Yapılmamış Harcamalar | Ana Menü
+r2840: Lot/Seri İşlemleri | Ana Menü
+r2841: Hasta İlaç Kullanım Bilgisi | Ana Menü
+r2842: Order | Dialog Form
+r2843: Order Onaylama(Yeni) | Dialog Form
+r2844: Order Analiz | Ana Menü
+r2845: Order Onay İşlemleri | Dialog Form
+r2846: Hasta Order Geçmişi | Dialog Form
+r2847: Miadı Geçen Ürünler Listesi | Ana Menü
+r2848: Talep Karşılama Listesi Yeni | Ana Menü
+r2849: ITS Birim Sarf Yapılacak Listesi | Ana Menü
+r2850: Hasta Reçete Bilgisi | Ana Menü
+r2851: PTS Dosya Gönderi | Dialog Form
+r2852: Karekod Listesi | Ana Menü
+r2853: ITS Sarf Bildirimi Yapılanlar Listesi | Ana Menü
+r2854: Karekod Giriş | Dialog Form
+r2855: Depo Bazlı Karekod Listesi | Ana Menü
+r2856: Vademecum | Ana Menü
+r2857: Etkileşim Sorgulama | Dialog Form
+r2858: İlaç | Dialog Form
+r2859: Vademecum Güncelleme Sorgulama | Dialog Form
+r2860: Comed EMR İlaç Listesi Vademecum Güncelleme | Ana Menü
+r2861: Vademecum Toplu Güncelleme | Ana Menü
+r2862: Comed EMR İlaç Kartı Ekle | Dialog Form
+r2863: Comed EMR Kartı Seçim | Dialog Form
+r2864: Vademecum - SGK Eşdeğer Grup Kodları Güncelleme | Ana Menü
+r2865: İstatistik ve Analizler | Ana Menü
+r2866: Dinamik Raporlar | Ana Menü
+r2867: Dinamik Rapor | Dialog Form
+r2868: Dinamik Rapor Listesi | Ana Menü
+r2869: Hasta Kabul | Ana Menü
+r2870: Fatura Analizi | Ana Menü
+r2871: Hasta İndirim Analizi | Ana Menü
+r2872: Medula Takip Analizi | Ana Menü
+r2873: Protokol Borç Takip | Ana Menü
+r2874: Protokol Listesi | Ana Menü
+r2875: Protokol İptal Analizi | Ana Menü
+r2876: Fatura İptal Analizi | Ana Menü
+r2877: Vezne İşlem İptal Analizi | Ana Menü
+r2878: Protokol İşlem İptal Analizi | Ana Menü
+r2879: Doktor Protokol Sayı Analizi | Ana Menü
+r2880: Vezne Borç Takip | Ana Menü
+r2881: Protokol Fiyat Log | Ana Menü
+r2882: Vezne Tahakkuk Tahsilat Analizi | Ana Menü
+r2883: Bekleyen Avans Listesi | Ana Menü
+r2884: Banko Vezne Fatura Analizi | Ana Menü
+r2885: Yeni Muayene Gelişi | Ana Menü
+r2886: Hasta Geliş Analizi | Ana Menü
+r2887: Aynı Gün Geliş Analizi | Ana Menü
+r2888: Doktor İşlem Analizi | Ana Menü
+r2889: Vezne Açık Hesap Analizi | Ana Menü
+r2890: Personel Ve Yakını Açık Hesap Analizi | Ana Menü
+r2891: Hasta Adres Analizi | Ana Menü
+r2892: Faturalanmamış Tahsilat Analizi | Ana Menü
+r2893: Faturalanmamış Protokol Analizi | Ana Menü
+r2894: TSIM(Test) | Ana Menü
+r2895: Damar İzi Analizi | Ana Menü
+r2896: Protokol Maliyet | Dialog Form
+r2897: Görüşmeci Analizi | Ana Menü
+r2898: Vezne Genel Iptal Analizi | Ana Menü
+r2899: Vezne Genel Iptal Analizi Detay | Dialog Form
+r2900: Protokol Bazlı Hizmet Analizi | Ana Menü
+r2901: Protokol Fatura-Tahsilat Analizi | Ana Menü
+r2902: Doktor Referanslı Protokol Listesi | Ana Menü
+r2903: Tahsilat Analizi | Ana Menü
+r2904: Hasta Borç Takip | Ana Menü
+r2905: Merkezi Protokol Listesi | Ana Menü
+r2906: Mernis Sorgu Raporu | Ana Menü
+r2907: Hasta Danışman Raporu | Ana Menü
+r2908: Laboratuar | Ana Menü
+r2909: Lab İşlem Durumu | Ana Menü
+r2910: Test Analiz | Ana Menü
+r2911: Analitik Dönem Analizi | Ana Menü
+r2912: Kritik Değer Bildirim Listesi | Ana Menü
+r2913: Lab Maliyet Analizi | Ana Menü
+r2914: Test Calışma Süre Analizi | Ana Menü
+r2915: Hasta Bazlı Çalışılan Test Analizi | Ana Menü
+r2916: Transfüzyon Merkez Analizi | Ana Menü
+r2917: Panik Değer Bildirim Analizi | Ana Menü
+r2918: Bakteri Antibiyotik Analizi | Ana Menü
+r2919: Medikal Finans | Ana Menü
+r2920: Protokol Fatura Durumu | Ana Menü
+r2921: Kurumsal Vade Alacak Raporu | Ana Menü
+r2922: Ameliyat Gelir Gider Analizi | Ana Menü
+r2923: Fatura Kayıt Analizi | Ana Menü
+r2924: Hizmet Kayıt Analizi | Ana Menü
+r2925: Günlük Muayene Kota Analizi | Ana Menü
+r2926: Kurum Fatura Analizi | Ana Menü
+r2927: Fiyatlandırma Değişim Analizi | Ana Menü
+r2928: Claimer Provizyon İşlemleri | Ana Menü
+r2929: Fatura Analizi | Ana Menü
+r2930: Tahsilat Analizi | Ana Menü
+r2931: Kurum Detaylı Fatura Analizi  | Ana Menü
+r2932: Kurumsal Faturalama Analizi  | Ana Menü
+r2933: Medula Dönem Analizi | Ana Menü
+r2934: Medula Faturalama Raporu (DDO) | Ana Menü
+r2935: Kurumsal Faturalama Raporu  | Ana Menü
+r2936: Kurumsal Faturalama Raporu (DDO) | Ana Menü
+r2937: SGK Hizmet Kayıt İşlem Kuyruğu Raporu | Ana Menü
+r2938: SGK Fatura Kayıt İşlem Kuyruğu Raporu | Ana Menü
+r2939: Randevu | Ana Menü
+r2940: Randevu Takip Raporu | Ana Menü
+r2941: Verilemeyen Randevu Takip Raporu | Ana Menü
+r2942: Randevu Takip Raporu(Yetkili) | Ana Menü
+r2943: PRM Randevu Takip Raporu | Ana Menü
+r2944: Randevu Takip Raporu (Merkez) | Ana Menü
+r2945: Tetkik ve Radyoloji | Ana Menü
+r2946: Tetkik Analiz | Ana Menü
+r2947: RIS Panik Değer Bildirim Analizi | Ana Menü
+r2948: Satınalma | Ana Menü
+r2949: Fatura Analizi | Ana Menü
+r2950: Satınalma Talep Analizi | Ana Menü
+r2951: Sipariş Analizi | Ana Menü
+r2952: İrsaliye Analizi | Ana Menü
+r2953: Stok | Ana Menü
+r2954: Hareketsiz Ürünler | Ana Menü
+r2955: Stok Durumu | Ana Menü
+r2956: Stok İşlem Listesi | Ana Menü
+r2957: Sayım Listesi | Ana Menü
+r2958: İlaç Stok İşlem Analizi | Ana Menü
+r2959: Varlık Zimmet ve Lokasyon Bilgileri | Ana Menü
+r2960: Kritik Miktar Altındaki Stok | Dialog Form
+r2961: Miadı Yaklaşan Ürünler | Ana Menü
+r2962: Miadı Yaklaşan Ürünler | Dialog Form
+r2963: Stok Hareket | Ana Menü
+r2964: Stok Muhasebe Gider Analizi | Ana Menü
+r2965: Mesai Dışı Antibiyotik Kullanımı | Ana Menü
+r2966: Stok Dönem Analizi | Ana Menü
+r2967: Stok Extre | Dialog Form
+r2968: ReUse Analizi | Ana Menü
+r2969: Sarf Analizi | Ana Menü
+r2970: Merkezi Stok Durumu | Ana Menü
+r2971: Yönetim Raporları | Ana Menü
+r2972: Ciro | Ana Menü
+r2973: Bölüm Bazlı Ciro | Ana Menü
+r2974: Doktor Bazlı Ciro | Ana Menü
+r2975: Hizmet Analizi | Ana Menü
+r2976: Hastaya İşlenen Malzemeler | Ana Menü
+r2977: Protokol Ciro Özet Analizi | Ana Menü
+r2978: Protokol Ciro Analizi | Ana Menü
+r2979: Hasta Ciro Analizi | Ana Menü
+r2980: Genel Fatura Analizi | Ana Menü
+r2981: Ciro İşlem Tipi | Dialog Form
+r2982: Doktor Verimlilik Analizi | Ana Menü
+r2983: Kurum Bazlı Ciro | Ana Menü
+r2984: İşlem Bazlı Ciro | Ana Menü
+r2985: Genel Fatura Faaliyet Raporu | Ana Menü
+r2986: Poliklinik Sayılarının Yatış ve Ameliyata Dönüş Oranı | Ana Menü
+r2987: Hizmet Analizi(Fiyat İçermez) | Ana Menü
+r2988: Bölüm Bazlı Ciro (Yetkili) | Ana Menü
+r2989: Doktor Bazlı Ciro (Yetkili) | Ana Menü
+r2990: Protokol Ciro Analizi(Yetkili) | Ana Menü
+r2991: Ciro Değişim Analizi | Ana Menü
+r2992: Doktor Bazlı Ciro (Detaylı) | Ana Menü
+r2993: Ciro Dağılım Analizi | Ana Menü
+r2994: Ciro Dağılım Analizi(Detay) | Dialog Form
+r2995: Yabancı Hasta Ciro Analizi | Ana Menü
+r2996: Günlük Nakit Akış Analizi | Ana Menü
+r2997: Doktor Bazlı Ciro (Detaylı,Yetkili) | Ana Menü
+r2998: Ciro Detay Analizi | Ana Menü
+r2999: Veri Dışa Aktarım Takibi | Ana Menü
+r3000: Tahsilat Detay | Dialog Form
+r3001: Protokol Detay | Dialog Form
+r3002: Veri Yazdırma Takibi | Ana Menü
+r3003: IK | Ana Menü
+r3004: Personel Borç Takip Analizi | Ana Menü
+r3005: Personel Eğitim Katılım Analizi | Ana Menü
+r3006: Personel İzin Takip Analizi | Ana Menü
+r3007: Personel Norm Kadro Analizi | Ana Menü
+r3008: Yatan Hasta | Ana Menü
+r3009: Muayene Analizi | Ana Menü
+r3010: Yatan Hasta Listesi | Ana Menü
+r3011: Yatak Doluluk Oranları | Ana Menü
+r3012: Diyet Analizi | Ana Menü
+r3013: Numune Alma Analizi | Ana Menü
+r3014: Order Uygulama Analizi | Ana Menü
+r3015: Hemşire Bakım Planı Analizi | Ana Menü
+r3016: Taburcu Hasta Listesi | Ana Menü
+r3017: Tedavi | Ana Menü
+r3018: Doktor Hakediş İşlemleri | Ana Menü
+r3019: Tedavi Analiz | Ana Menü
+r3020: Tıbbi Form Analizi | Ana Menü
+r3021: Muayene Bekleme Analizi | Ana Menü
+r3022: Kemoterapi Protokol Analizi | Ana Menü
+r3023: Snap II Analiz | Ana Menü
+r3024: Finans | Ana Menü
+r3025: Hakediş Analizi | Ana Menü
+r3026: Faturasız Tahsilat Analizi | Ana Menü
+r3027: Tahsilatsız Fatura Analizi | Ana Menü
+r3028: Ay Bazlı Vade Alacak Raporu | Ana Menü
+r3029: Tahsilat Analiz Raporu | Ana Menü
+r3030: Fatura Analiz Raporu | Ana Menü
+r3031: Cari Bakiye Analizi | Ana Menü
+r3032: Merkezi Cari Bakiye Analizi | Ana Menü
+r3033: Merkezi Dosya Analizi | Ana Menü
+r3034: Genel İstatistik Detaylı | Ana Menü
+r3035: Günlük Finans Hareketleri | Ana Menü
+r3036: Cari Hesap Ekstresi | Ana Menü
+r3037: Tahsil Edilecek Faturalar | Ana Menü
+r3038: Merkezi Fatura Listesi | Ana Menü
+r3039: Cari Bakiye Analizi Detaylı | Ana Menü
+r3040: Fatura Kalem Raporu | Ana Menü
+r3041: Genel | Ana Menü
+r3042: Kalite | Ana Menü
+r3043: TSIM | Ana Menü
+r3044: JCI | Ana Menü
+r3045: Sorgu | Dialog Form
+r3046: Sorgu Grup | Dialog Form
+r3047: Sorgu Grup Seçim | Dialog Form
+r3048:  | Ana Menü
+r3049: Cari Hesap Ekstresi | Dialog Form
+r3050: Stok Durumu | Dialog Form
+r3051: İlaç Stok İşlem Analizi | Dialog Form
+r3052: Kurum | Ana Menü
+r3053: Ciro Detay Raporu | Ana Menü
+r3054: Ciro Özet Raporu | Ana Menü
+r3055: Muayene Sayıları Raporu | Ana Menü
+r3056: Genel İstatistik Raporu | Ana Menü
+r3057: Günlük İstatistik Raporu | Ana Menü
+r3058: Comed | Ana Menü
+r3059: Order Uygulama Analizi | Ana Menü
+r3060: Glaskow Skoru Analizi | Ana Menü
+r3061: Apache İki Analizi | Ana Menü
+r3062: Mortalite Analizi | Ana Menü
+r3063: Hasta Bakım Planı Analizi | Ana Menü
+r3064: Snap İki Analizi | Ana Menü
+r3065: PRISM Analizi | Ana Menü
+r3066: Hakediş | Ana Menü
+r3067: Hakediş Durum Raporu | Ana Menü
+r3068: Diş Tedavi | Ana Menü
+r3069: Doktor | Ana Menü
+r3070: Hasta Randevu - Takip | Ana Menü
+r3071: Ortodonti Tedavi Hizmet Takip | Ana Menü
+r3072: Muayene | Ana Menü
+r3073: Diş Teşhiş - Tedavi - Planlama | Dialog Form
+r3074: Diş Muayene | Dialog Form
+r3075: Diş Ağrı Bilgisi | Dialog Form
+r3076: Diş Şeması | Dialog Form
+r3077: Diş İşlem Seçenekleri | Dialog Form
+r3078: Diş Tedavi Planlama | Dialog Form
+r3079: Diş Protez Takip Listesi | Ana Menü
+r3080: Diş Protez Takip Detay | Dialog Form
+r3081: Diş Protez Takip | Dialog Form
+r3082: Diş Teshis | Dialog Form
+r3083: Diş Tedavi İndirim | Dialog Form
+r3084: Diş Tedavi Planları | Dialog Form
+r3085: İptal Edilen Diş Tedavi Planlamaları | Dialog Form
+r3086: Vezne İşlemleri | Ana Menü
+r3087: Diş Tedavi Ödeme Planı Tahsilat | Dialog Form
+r3088: Diş Tedavi Planı - Vezne | Dialog Form
+r3089:  | Ana Menü
+r3090: Diş Tedavi Ödeme Plani | Dialog Form
+r3091: Tanımlar | Ana Menü
+r3092: Diş Teşhis | Dialog Form
+r3093: Genel Tanımlar | Ana Menü
+r3094: Diş Protez İşlem Türü | Dialog Form
+r3095: Hizmet Listesi | Ana Menü
+r3096: Diş Tedavi Türü | Dialog Form
+r3097: Fiyatlandırma | Ana Menü
+r3098: Diş Fiyatlandırma Listesi | Ana Menü
+r3099: İndirim | Dialog Form
+r3100: Diş Fiyatlandırma Log | Dialog Form
+r3101: CRM | Ana Menü
+r3102: Tanımlar | Ana Menü
+r3103: Arama Filtre | Dialog Form
+r3104: Genel Tanımları | Ana Menü
+r3105: Periyod | Dialog Form
+r3106: Takip Gurubu | Dialog Form
+r3107: Takip Sonucu | Dialog Form
+r3108: Erişim Kanalı | Dialog Form
+r3109: Takip Alt Sonucu  | Dialog Form
+r3110: Arama Konusu | Dialog Form
+r3111: Takip İstemeyen Hasta Listesi | Ana Menü
+r3112: Takip İstemeyen Hasta | Dialog Form
+r3113: Departman | Dialog Form
+r3114: Gelen SMS Grubu | Dialog Form
+r3115: SMS Cevap Grubu | Dialog Form
+r3116: İşlemler | Ana Menü
+r3117: Hasta Arama | Ana Menü
+r3118: Takip Başlat | Dialog Form
+r3119: Takip Listesi | Ana Menü
+r3120: Takip Kapama | Dialog Form
+r3121: Gelen Aramalar | Ana Menü
+r3122: Gelen Arama | Dialog Form
+r3123: Takip Başlat | Dialog Form
+r3124: Gelen SMS Listesi | Ana Menü
+r3125: Gelen SMS  | Dialog Form
+r3126: Hasta Takip Özet Bilgileri | Dialog Form
+r3127: Gelen Arama Kayıt | Dialog Form
+r3128: Takip Kapama | Dialog Form
+r3129: Gelen Aramalar | Dialog Form
+r3130: Toplu Hasta Not Girişi | Ana Menü
+r3131: Anket | Ana Menü
+r3132: Hasta Listesi | Ana Menü
+r3133: Personel Listesi | Ana Menü
+r3134: Anket Gönder | Dialog Form
+r3135: Yayınlanan Anket Listesi | Ana Menü
+r3136: Anket Yayın Grubu | Dialog Form
+r3137: Dijital Arşiv | Ana Menü
+r3138: Tanımlar | Ana Menü
+r3139: Doküman Listesi | Ana Menü
+r3140: Doküman | Dialog Form
+r3141: Doküman Ağacı | Dialog Form
+r3142: Doküman Viewer | Ana Menü
+r3143: Doküman Arama | Ana Menü
+r3144: Döküman Yönetimi | Ana Menü
+r3145: Tanımlar | Ana Menü
+r3146: Genel Tanım | Ana Menü
+r3147: Evrak Tipi | Dialog Form
+r3148: Kargo Tanim | Dialog Form
+r3149: Sık Kullanılan Kurumlar | Dialog Form
+r3150: Ek Evrak Tanım | Dialog Form
+r3151: Evrak Takip | Ana Menü
+r3152: Gelen Evrak Kayıt | Dialog Form
+r3153: Genel İşlem Listesi | Ana Menü
+r3154: Giden Evrak Kayıt | Dialog Form
+r3155: Prokol Defteri Listesi | Ana Menü
+r3156:  | Ana Menü
+r3157: Evrak Barkodu | Dialog Form
+r3158: Sterilizasyon | Ana Menü
+r3159: Tanım | Ana Menü
+r3160: ReUse Malzeme Listesi | Ana Menü
+r3161: İşlemler | Ana Menü
+r3162: ReUse Malzeme Stok Durumu | Ana Menü
+r3163: ReUse Kullanım Analiz | Ana Menü
+r3164: ReUse Kullanım Bildirim | Dialog Form
+r3165: ReUse Kullanım Kirli Kabul | Ana Menü
+r3166: Yükleme Bilgileri | Dialog Form
+r3167: Sterilizasyona Gönder | Ana Menü
+r3168: Kalite | Ana Menü
+r3169: Güvenlik Raporlama Sistemi | Ana Menü
+r3170: Güvenlik Raporlama Sistemi Listesi | Ana Menü
+r3171: Güvenlik Raporlama Sistemi Bildirimi | Dialog Form
+r3172: Çalışan İstenmeyen Olay Bildirimi | Dialog Form
+r3173: KDS | Ana Menü
+r3174: KDS Tanım Listesi | Ana Menü
+r3175: KDS Grubu | Dialog Form
+r3176: KDS Tanım | Dialog Form
+r3177: KDS Bildirim Listesi | Ana Menü
+r3178: KDS Bildirim | Dialog Form
+r3179: KDS Sorgu Listesi | Ana Menü
+r3180: KDS Bildirim | Dialog Form
+r3181: İşlemler | Ana Menü
+r3182: Klinik Kalite Göstergeleri | Ana Menü
+r3183: Sorgu | Dialog Form
+r3184: Sorgu Grup | Dialog Form
+r3185: Rapor | Ana Menü
+r3186: Güvenlik Raporlama Sistemi | Dialog Form
+r3187: Entegrasyon | Ana Menü
+r3188: Tanımlar | Ana Menü
+r3189: Ana Veri Eşleştirme | Ana Menü
+r3190: Hastane Düzenle | Dialog Form
+r3191: Fatura Şablon Listesi | Ana Menü
+r3192: Fatura Şablon | Dialog Form
+r3193: SAP Log Detay | Dialog Form
+r3194: İşlem Eşleştirme Log Detay | Dialog Form
+r3195: SAP (ASM) | Ana Menü
+r3196: Fatura Aktarım | Ana Menü
+r3197: Tahsilat Aktarım | Ana Menü
+r3198: Hizmet Aktarım | Ana Menü
+r3199: İlaç Aktarım | Ana Menü
+r3200: Hasta Aktarım | Ana Menü
+r3201: Cari Aktarım | Ana Menü
+r3202: Malzeme Fiyat Güncelleme | Ana Menü
+r3203: Doktor Aktarım | Ana Menü
+r3204: Gelen E-Fatura Listesi | Ana Menü
+r3205: Malzeme Fiyat Güncelleme (Excel) | Ana Menü
+r3206: Fatura Kalem Listesi | Ana Menü
+r3207: Fatura Doktor Takip | Ana Menü
+r3208: Katılım Payı (İade) Aktarım | Ana Menü
+r3209: Oracle (ERP) | Ana Menü
+r3210: Fatura Aktarım | Ana Menü
+r3211: Özellikli Malzeme Faturaları | Ana Menü
+r3212: Tahsilat Aktarım | Ana Menü
+r3213: Oracle Depo Stok Miktar Bilgileri | Ana Menü
+r3214: Dekont İade | Dialog Form
+r3215: Oracle Arayüz Tabloları Aktarım Durum | Ana Menü
+r3216: Fatura Aktarım Raporu | Ana Menü
+r3217: A Patoloji Sonuçları | Ana Menü
+r3218: A Patoloji Sonuçları | Ana Menü
+r3219: Hasta Patoloji Sonuçları | Dialog Form
+r3220: SAP (Memorial) | Ana Menü
+r3221: Hastaya İşlenen Malzeme/İlaç Aktarım Listesi | Ana Menü
+r3222: Hasta Aktarim | Ana Menü
+r3223: Fatura Aktarım | Ana Menü
+r3224: Tahsilat Aktarim | Ana Menü
+r3225: Stok Nakli Onay | Ana Menü
+r3226: Kurum Havale Dağıtım | Ana Menü
+r3227: Cari Aktarım | Ana Menü
+r3228: ÜTS Bildirim Sorgulama | Ana Menü
+r3229: SAP Malzeme-Hizmet Tipi Eşleştirme | Ana Menü
+r3230: SAP Aktarım Detayı | Dialog Form
+r3231: Gelen İade | Ana Menü
+r3232: Satış İade | Dialog Form
+r3233: Satış İade | Dialog Form
+r3234: Fatura Listesi | Dialog Form
+r3235: Hakediş Aktarımı | Ana Menü
+r3236: Havuz Ödeme Aktarımı | Ana Menü
+r3237: Matbu No Seri Listesi | Dialog Form
+r3238: Depo Transfer Fiş Listesi Yeni | Ana Menü
+r3239: Sarf Aktarım Listesi | Ana Menü
+r3240: Eczane Stok Seviye Aktarım | Ana Menü
+r3241: Satış İade | Dialog Form
+r3242: Satış İade | Dialog Form
+r3243: İlaç Fire Aktarım Listesi | Ana Menü
+r3244: Video Klinik | Ana Menü
+r3245: Protokol Takip | Ana Menü
+r3246: Randevu Takip | Ana Menü
+r3247: Hizmet Gönderim | Dialog Form
+r3248: Logo Güven | Ana Menü
+r3249: Fatura Aktarım | Ana Menü
+r3250: Tahsilat Aktarım | Ana Menü
+r3251: Havuz Ödeme Aktarım | Ana Menü
+r3252: VNA | Ana Menü
+r3253: VNA Dosya Kayit | Ana Menü
+r3254: VNA Dosya Göster | Ana Menü
+r3255: İzibiz ASM | Ana Menü
+r3256: E-Fatura Aktarım | Ana Menü
+r3257: E-Arşiv Fatura Aktarım | Ana Menü
+r3258: GIB Cari Senkronizasyon | Ana Menü
+r3259: İzibiz Güven | Ana Menü
+r3260: E-Fatura Aktarım | Ana Menü
+r3261: E-Arşiv Fatura Aktarım | Ana Menü
+r3262: Netsis DCH | Ana Menü
+r3263: Fatura Log | Dialog Form
+r3264: Fatura Aktarım | Ana Menü
+r3265: Fiş Aktarım | Ana Menü
+r3266: Tahsilat Aktarım | Ana Menü
+r3267: Evira Güven | Ana Menü
+r3268: Talep ARADB Aktarım Durum Listesi | Ana Menü
+r3269: ARADB TALEP FİŞLERİ | Dialog Form
+r3270: Sipariş ARADB Aktarım Durum Listesi | Ana Menü
+r3271: ARADB SİPARİŞ FİŞLERİ | Dialog Form
+r3272: Stok Fiş ARADB Aktarım Durum Listesi | Ana Menü
+r3273: ARC (Yoğun Bakım Entegrasyonu) | Ana Menü
+r3274: ARC Model Eşleştirme | Ana Menü
+r3275: İzibiz | Ana Menü
+r3276: E-Fatura Aktarım | Ana Menü
+r3277: E-Arşiv Fatura Aktarım | Ana Menü
+r3278: Patient Portal | Ana Menü
+r3279: Hastane Bilgi | Ana Menü
+r3280: Hastane Düzenle | Dialog Form
+r3281: Ödeme Listesi | Ana Menü
+r3282: Online Randevu Listesi | Ana Menü
+r3283: Klinik Döküman | Ana Menü
+r3284: Döküman Düzenle | Dialog Form
+r3285: Protokol Listesi | Ana Menü
+r3286: Bildirim Listesi | Ana Menü
+r3287: Profil Oluştur | Ana Menü
+r3288: Yabanci Dil | Dialog Form
+r3289: Dil Ekle | Dialog Form
+r3290: Kurum Şablonları | Ana Menü
+r3291: Kurum Ekle | Dialog Form
+r3292: Tercüman İhtiyacı Olan Randevular | Ana Menü
+r3293: Mobil Kullanıcılar | Ana Menü
+r3294: Online Ödeme Listesi | Dialog Form
+r3295: Toplu Profil Listesi | Ana Menü
+r3296: Toplu Profil Oluştur | Dialog Form
+r3297: Kurum Detay | Ana Menü
+r3298: Kurum Checkin Ekle | Dialog Form
+r3299: Mobil Barkod Doğrula | Dialog Form
+r3300: Bankosuz Hastanecilik | Ana Menü
+r3301: Puan Takibi  | Ana Menü
+r3302: Ön Anamnez Bilgileri | Dialog Form
+r3303: Online Randevu Listesi (PRM) | Dialog Form
+r3304: Ödeme Emri | Dialog Form
+r3305: Borda Lighthouse | Ana Menü
+r3306: Log | Ana Menü
+r3307: BordaLightHouseAktarim | Dialog Form
+r3308: Borda Lighthouse Bildirim Havuzu | Ana Menü
+r3309: MLP Online Görüşme | Ana Menü
+r3310: Randevu Takip | Ana Menü
+r3311: SAP (MLP Bakü) | Ana Menü
+r3312: Fatura Aktarım | Ana Menü
+r3313: Tahsilat Aktarım | Ana Menü
+r3314: Logo | Ana Menü
+r3315: Fatura Aktarım | Ana Menü
+r3316: Aktarım Önizleme | Dialog Form
+r3317: Tahsilat Aktarım | Ana Menü
+r3318: Pisano | Ana Menü
+r3319: Hasta Gönderimi (Pisano) | Ana Menü
+r3320: Ayaktan Hasta Gönderimi (Pisano) | Ana Menü
+r3321: Netsis | Ana Menü
+r3322: Fatura Aktarım | Ana Menü
+r3323: Tahsilat Aktarım | Ana Menü
+r3324: Mobil Finans | Ana Menü
+r3325: Raporlar | Ana Menü
+r3326: SAP (Kızılay) | Ana Menü
+r3327: Fatura Aktarım | Ana Menü
+r3328: Tahsilat Aktarım | Ana Menü
+r3329: Talep Listesi | Dialog Form
+r3330: Tüketim Aktarım Listesi | Ana Menü
+r3331: Malzeme Aktarım Listesi | Ana Menü
+r3332: Cari Aktarım Listesi | Ana Menü
+r3333: Depo Stok Miktarı Eşitleme Listesi | Ana Menü
+r3334: Personel Aktarım Listesi | Ana Menü
+r3335: Personel Yakını Aktarım Listesi | Ana Menü
+r3336: IScala | Ana Menü
+r3337: Iscala Fatura Aktarım | Ana Menü
+r3338: Dijital İmza Entegrasyonu | Ana Menü
+r3339: Dijital İmza Tanım | Ana Menü
+r3340: Dijital İmza Döküman Alan Tanımı | Dialog Form
+r3341: Dijital İmza Döküman Alan Listesi | Ana Menü
+r3342: Dijital İmza Cihaz Tanım Listesi | Ana Menü
+r3343: Dijital İmza Cihaz Tanımı | Dialog Form
+r3344: Dijital Personel Çalışma Saatleri | Ana Menü
+r3345: Pdf  Listesi | Ana Menü
+r3346: Pdf | Dialog Form
+r3347: Alanlar | Dialog Form
+r3348: Dijital İmza İşlem | Ana Menü
+r3349: Dijital İmza Entegrasyon Listesi | Ana Menü
+r3350: Teklif Yönetimi | Ana Menü
+r3351: Cari Aktarım Listesi (Teklif Yönetimi) | Ana Menü
+r3352: Billboard (Doktor Kapı Ekranı) | Ana Menü
+r3353: Billboard Hekim Resim Transferi | Ana Menü
+r3354: Doktor Aktarım | Ana Menü
+r3355: Mobil Dev | Ana Menü
+r3356: Double Kod Giriş | Dialog Form
+r3357: Oracle (MPH) | Ana Menü
+r3358: Ana Veri Eşleştirme (MPH) | Ana Menü
+r3359: Hesap Planı Listesi | Ana Menü
+r3360: Hesap Planı | Dialog Form
+r3361: Fatura Aktarım Listesi (MPH) | Ana Menü
+r3362: Malzeme Aktarım Listesi (MPH) | Ana Menü
+r3363: Tahsilat Aktarım Listesi (MPH) | Ana Menü
+r3364: Teslim Alma Listesi (MPH) | Ana Menü
+r3365: Teslim Alma (MPH) | Dialog Form
+r3366: Oracle Malzeme Hareket Listesi (MPH) | Ana Menü
+r3367: Oracle Malzeme Hareket (MPH) | Dialog Form
+r3368: Pusula Malzeme Hareket Listesi (MPH) | Ana Menü
+r3369: Stok Devi Listesi (MPH) | Ana Menü
+r3370: Datecs | Ana Menü
+r3371: Fatura Listesi (Datecs) | Ana Menü
+r3372: Datecs Havuzu | Ana Menü
+r3373: Oracle (ASG) | Ana Menü
+r3374: Oracle Fatura Aktarım | Ana Menü
+r3375: Oracle Tahsilat Aktarım | Ana Menü
+r3376: Oracle Hasta Aktarım | Ana Menü
+r3377: Oracle Kod Eşleştirme | Ana Menü
+r3378: Oracle Stok Kalem Aktarım | Ana Menü
+r3379: Oracle Stok Teslim Alma Aktarım (Yeni) | Ana Menü
+r3380: Pusula Stok İşlem Aktarım Listesi | Ana Menü
+r3381: Teslim Alma | Dialog Form
+r3382: Oracle Hareket Aktarım Listesi | Ana Menü
+r3383: Omnitech | Ana Menü
+r3384: Omnitech Fatura Listesi | Ana Menü
+r3385: Omnitech Avans Listesi | Ana Menü
+r3386: EDM | Ana Menü
+r3387: EDM E-Fatura Aktarım | Ana Menü
+r3388: EDM E-Arsiv Aktarım | Ana Menü
+r3389: Numaratör | Dialog Form
+r3390: Numarator Listesi | Ana Menü
+r3391: Kiosk | Ana Menü
+r3392: Provizyon Bekleyen Listesi | Ana Menü
+r3393: Provizyon Kurum Listesi | Ana Menü
+r3394: Kiosk Provizyon Kurum Ekle | Dialog Form
+r3395: Dünya Göz Axapta Entegrasyonu | Ana Menü
+r3396: Axapta Eldeki Stoklar | Ana Menü
+r3397: Axapta Karekod Listesi | Ana Menü
+r3398: Axapta Stok Sarfiyat Listesi | Ana Menü
+r3399: Axapta Kod Eşleştirme Listesi | Ana Menü
+r3400: Axapta Malzeme Aktarım Listesi | Ana Menü
+r3401: Axapta Malzeme Fiyat Tarihçe Aktarım Listesi | Ana Menü
+r3402: Axapta SGK Fatura Alanları Aktarım Listesi | Ana Menü
+r3403: Pusula GPT Entegrasyonu | Ana Menü
+r3404: Pusula GPT | Ana Menü
+r3405: Diktasyon | Ana Menü
+r3406: MLP Diktasyon | Ana Menü
+r3407: ComedEMR | Ana Menü
+r3408: Tanımlar | Ana Menü
+r3409: Rapor Tasarım Listesi | Ana Menü
+r3410: Patoloji Tanımı | Ana Menü
+r3411: İlgili Bölüm Tanımı | Ana Menü
+r3412: Order Tanım | Dialog Form
+r3413: Order Tanım Listesi | Ana Menü
+r3414: Kullanıcı Sayfa Kontrol Tanımlamaları | Ana Menü
+r3415: Kullanıcı Sayfa Kontrol Tanımı | Dialog Form
+r3416: Order Uygulama Bilgisi Tanımları | Ana Menü
+r3417: Order Uygulama Bilgisi | Dialog Form
+r3418: İlaç Kuralları Listesi | Ana Menü
+r3419: İlaç Kuralları Tanımı | Dialog Form
+r3420: Kurum İlaç Karlılık Listesi | Ana Menü
+r3421: Güvenlik | Ana Menü
+r3422: Genel Yetkiler ve Parametreler | Ana Menü
+r3423: Parametre && Yetki | Dialog Form
+r3424: Kullanıcı Yetkileri && Rol Listesi | Ana Menü
+r3425: Yetki Seçimi | Dialog Form
+r3426: Rol Tanımı | Dialog Form
+r3427: Rol Seçimi | Dialog Form
+r3428: Kullanıcı Seçimi | Dialog Form
+r3429: Parametreler | Ana Menü
+r3430: Merkezi Parametreler | Ana Menü
+r3431: İşlemler | Ana Menü
+r3432: Order | Dialog Form
+r3433: Klinik Döküman | Dialog Form
+r3434: Epikriz | Dialog Form
+r3435: Toplu Özet Epikriz Oluşturma | Dialog Form
+r3436: Ameliyat Randevusu | Dialog Form
+r3437: Cihaz Randevu | Dialog Form
+r3438: Dashboard | Dialog Form
+r3439: Comed Epikriz Oluşturma | Dialog Form
+r3440: Doktor Hakediş | Dialog Form
+r3441: Sampling | Dialog Form
+r3442: Ortak Sayfa Görüntüleyicisi | Dialog Form
+r3443: Radyoloji Sayfa Görüntüleyicisi | Dialog Form
+r3444: PRM | Dialog Form
+r3445: Ameliyat Notu (Comed EMR) | Dialog Form
+r3446: MSO Dosyası | Dialog Form
+r3447: Hasta Takip | Dialog Form
+r3448: Ameliyat İstek | Dialog Form
+r3449: Reçete Ekle | Dialog Form
+r3450: Kullanıcı Memnuniyet Anketi | Dialog Form
+r3451: Randevu Listesi | Dialog Form
+r3452: Auto Note | Dialog Form
+r3453: ComedEMR Rapor | Ana Menü
+r3454: Aktivite Formu | Dialog Form
+r3455: Dokümanlar | Dialog Form
+r3456: Dokümanlar | Dialog Form
+r3457: Patoloji Dokümanlar | Dialog Form
+r3458: Patoloji Barkod | Dialog Form
+r3459: Aktivite Formu | Dialog Form
+r3460: Order Rapor | Dialog Form
+r3461: Order Diğer Rapor | Dialog Form
+r3462: Order Transfer Rapor | Dialog Form
+r3463: Eczane Barkod | Dialog Form
+r3464: Kemoterapi Rapor | Dialog Form
+r3465: İstek Formu | Dialog Form
+r3466: Eczane Barkod | Dialog Form
+r3467: Aşı Geçmişi | Dialog Form
+r3468: Rasyon Kartı | Dialog Form
+r3469: Patoloji Dokümanlar | Dialog Form
+r3470: Lab İstem Formu | Dialog Form
+r3471: Çoklu Klinik Dokümanlar | Dialog Form
+r3472: Hemodiyaliz Rapor | Dialog Form
+r3473: Diet Barkodu | Dialog Form
+r3474: Eczane Genel Durum Hasta Detayı | Dialog Form
+r3475: Ipac Order | Dialog Form
+r3476: Eczane Sıklık Barkod | Dialog Form
+r3477: Approved IPAC Orders | Dialog Form
+r3478: Pharmac yGeneral Order Stocks | Dialog Form
+r3479: FTR | Dialog Form
+r3480: FTR Tedavi Formu | Dialog Form
+r3481: Uygulanacak İşlemler Çıktı Raporu | Dialog Form
+r3482: Fiyat Hesaplama Formu | Dialog Form
+r3483: Malzeme Sepeti | Dialog Form
+r3484: Numune Barkod | Dialog Form
+r3485: Kritik Değer Bildirim Formu | Dialog Form
+r3486: Hemşire Bakım Planı | Dialog Form
+r3487: Hemşire İade | Dialog Form
+r3488: Gebelik Takip | Dialog Form
+r3489: Eczane Barkod | Dialog Form
+r3490: Pharmacy Stock Tracking | Dialog Form
+r3491: Yatan Hastalar | Dialog Form
+r3492: Süre Barkod | Dialog Form
+r3493: Hemşire Stok Durumu | Dialog Form
+r3494: Hemşire Vaka Takip | Dialog Form
+r3495: E-Nabız Aşı Takvimi | Dialog Form
+r3496: Eczane Barkod | Dialog Form
+r3497: Aşı Takvimi | Dialog Form
+r3498: Patient Stocks | Dialog Form
+r3499: Emr Ameliyat İstekleri | Dialog Form
+r3500: Anne Sütü Barkodu | Dialog Form
+r3501: Kemoterapi Eczane Barkod | Dialog Form
+r3502: Diyetetik Yatan Hasta Beslenmesi | Dialog Form
+r3503: ENabız | Dialog Form
+r3504: Yoğun Bakım Izlem | Dialog Form
+r3505: Patoloji | Dialog Form
+r3506: Onkoloji | Ana Menü
+r3507: Kemoterapi Tedavi Planları | Dialog Form
+r3508: Patoloji | Dialog Form
+r3509: Patoloji Sonuç | Dialog Form
+r3510: Hasta Bilgilendirme | Ana Menü
+r3511: Hasta Çağırma | Dialog Form
+r3512: Billboard | Dialog Form
+r3513: Lokalizasyon | Ana Menü
+r3514:  Comed Dil Ceviri Listesi | Ana Menü
+r3515: Comed Ceviri | Dialog Form
+r3516: Merkez | Ana Menü
+r3517: Tanımlar | Ana Menü
+r3518: Merkezi Kurum Listesi | Ana Menü
+r3519: Merkezi Kurum | Dialog Form
+r3520: Kurum Etiket Listesi | Ana Menü
+r3521: Kurum Etiket | Dialog Form
+r3522: Merkezi Tablo Yönetimi | Ana Menü
+r3523: Kurum Etiket Secim | Dialog Form
+r3524: Merkezi Patoloji Bina Birim Listesi | Ana Menü
+r3525: Merkezi Patoloji Bina Biri | Dialog Form
+r3526: Medikal Muhasebe | Ana Menü
+r3527: Formül Yönetimi | Ana Menü
+r3528: Paket Yönetimi | Ana Menü
+r3529: Paket Aktarım | Dialog Form
+r3530: Fiyat Kategorileri | Ana Menü
+r3531: Şube Paket Bilgileri | Ana Menü
+r3532: Kurum Özellik Aktarım | Dialog Form
+r3533: Kurum Özellik Yönetimi | Ana Menü
+r3534: Finans | Ana Menü
+r3535: Onay Bekleyen İadeler | Ana Menü
+r3536: Onay Bekleyen Protokol Listesi | Ana Menü
+r3537: İş Emri Değerlendirme | Ana Menü
+r3538: Şube - Ana Veri Ayarları | Ana Menü
+r3539: Şube - Ana Veri Eşleştirme Listesi | Ana Menü
+r3540: Sistem | Ana Menü
+r3541: Güvenlik Tanımları | Ana Menü
+r3542: Kullanıcı Aktar | Dialog Form
+r3543: Hakediş | Ana Menü
+r3544: Tanımlar | Ana Menü
+r3545: Dönem | Dialog Form
+r3546: Dönem Listesi | Ana Menü
+r3547: Havuz Listesi | Ana Menü
+r3548: Anlaşma | Dialog Form
+r3549: Anlaşma Listesi | Ana Menü
+r3550: Anlaşma İçerikleri | Ana Menü
+r3551: Anlaşma Formül | Dialog Form
+r3552: Formül Değişken | Dialog Form
+r3553: Formül Değişken Listesi | Ana Menü
+r3554: Anlaşma Formul Listesi | Dialog Form
+r3555: Havuz Listesi | Dialog Form
+r3556: Dönem Seçimi | Dialog Form
+r3557: Eriyen Fix Borç Listesi | Dialog Form
+r3558: Kapak Listesi | Ana Menü
+r3559: Kapak Tanımı | Dialog Form
+r3560: Kesinti Girişi | Dialog Form
+r3561: Dönem İşlemleri | Dialog Form
+r3562: Formül Aktarım | Dialog Form
+r3563: Fix Borcu Seçim | Dialog Form
+r3564: Anlaşma Listesi | Dialog Form
+r3565: Kur Tanımı | Dialog Form
+r3566: Geldiği Yer / Referans | Ana Menü
+r3567: Hakediş Sorgu Tanımı | Dialog Form
+r3568: Hakediş Gider Tanım | Ana Menü
+r3569: Genel Tanım Listesi | Ana Menü
+r3570: Gider Tanımları | Ana Menü
+r3571: Gider Tanımı | Dialog Form
+r3572: Gider Türü Tanımı | Dialog Form
+r3573: Gider Tanım Aktarım | Dialog Form
+r3574: İşlemler | Ana Menü
+r3575: Hakediş Oluşturma (Faturadan) | Ana Menü
+r3576: Dönem Bekleyen Hakedişler | Ana Menü
+r3577: Döneme Alınan Hakedişler | Ana Menü
+r3578: Dönem Onaylama | Dialog Form
+r3579: Dönem Dışı İşlemler | Dialog Form
+r3580: Hakediş Fatura Kontrol | Ana Menü
+r3581: Hakediş Oluşturma (Hizmet Başı) | Ana Menü
+r3582: Paket Dağılım | Ana Menü
+r3583: Hakediş Tutar Listesi | Dialog Form
+r3584: Doktor Hakediş Rapor | Ana Menü
+r3585: Dönem Onaylama (Çoklu) | Dialog Form
+r3586: Hakediş Sorgu Listesi | Ana Menü
+r3587: Hakediş İşlemleri | Ana Menü
+r3588: Mesaj | Ana Menü
+r3589: Hakediş Oluşturma (Fatura Takip) | Ana Menü
+r3590: Hakediş Fatura Oluşturma | Dialog Form
+r3591: Hakediş Kalem Oluşturma | Dialog Form
+r3592: Doktor Hakediş İşlemleri (DGH) | Ana Menü
+r3593: Rapor | Ana Menü
+r3594: Hakediş | Dialog Form
+r3595: Referans Hakediş Dönem | Dialog Form
+r3596: Referans Hakediş Detay | Dialog Form
+r3597: Hakediş Hizmet Özet | Dialog Form
+r3598: Excel | Ana Menü
+r3599: Hakediş İşlemleri | Ana Menü
+r3600: Hakediş İşlemleri(MLP) | Ana Menü
+r3601: Hakediş Formül Listesi | Ana Menü
+r3602: Hasta Referans Listesi | Ana Menü
+r3603: Referans Hakediş | Ana Menü
+r3604: Hakediş Oluşturma (Faturadan) | Ana Menü
+r3605: Dönem Bekleyen Hakedişler | Ana Menü
+r3606: Döneme Alınan Hakedişler | Ana Menü
+r3607: Dönem Dışı İşlemler | Dialog Form
+r3608: Formül Oranı Güncelleme | Dialog Form
+r3609: E-Nabız | Ana Menü
+r3610: Tanımlar | Ana Menü
+r3611: Olay Afet Bilgisi Listesi | Ana Menü
+r3612: Geleneksek ve Tamamlayıcı Tıp Uygulamaları | Dialog Form
+r3613: ENabız Gönderilmeyecek Paketler | Dialog Form
+r3614: Sağlık - Net Ayarları | Ana Menü
+r3615: Kısıtlanacak İşlemler | Ana Menü
+r3616: İşlemler Seçim | Dialog Form
+r3617: Otomatik Oluşan ICD Tanımı | Ana Menü
+r3618: İşlemler | Ana Menü
+r3619: Bulaşıcı Hastalık Listesi | Ana Menü
+r3620: Online Protokol Listesi | Dialog Form
+r3621: E-Rapor KurumSeçim | Dialog Form
+r3622: ENabız Gönderim | Ana Menü
+r3623: E-Rapor | Ana Menü
+r3624: Olay Afet Bilgisi | Dialog Form
+r3625: ENabız Yatak Bilgisi Gönderim | Ana Menü
+r3626: ENabız Nöbetçi Personel Bilgisi Gönderim | Ana Menü
+r3627: Aşı Erteleme / İptal Sebebi | Dialog Form
+r3628: Form 014-D Listesi | Ana Menü
+r3629: İnfluenza (Grip) Sürveyans | Ana Menü
+r3630: Hasta Nakil Listesi | Ana Menü
+r3631: Hasta Nakil Bilgileri | Dialog Form
+r3632: Yenidoğan Hasta Nakil Bilgileri | Dialog Form
+r3633: Bulaşıcı Hastalık Seçim | Dialog Form
+r3634: Gün Sonu Verisi Gönderimi | Ana Menü
+r3635: Ölüm Bildirim Listesi | Ana Menü
+r3636: Ölüm Bildirimi | Dialog Form
+r3637: Olay Afet Bildirim Listesi | Ana Menü
+r3638: Sağlık Tesisi Bilgileri Gönderimi | Ana Menü
+r3639: Bebek Ölüm Bildirimi | Dialog Form
+r3640: Gün Sonu Listeleme | Ana Menü
+r3641: Gün Sonu Karşılaştırma | Ana Menü
+r3642: Epikriz Bilgisi | Dialog Form
+r3643: Kuruma Ait Olmayan İşlem Listesi | Ana Menü
+r3644: ENabız XML | Dialog Form
+r3645: ASOS Bilgi Formu | Dialog Form
+r3646: Tıbbi Atık Bildirim Listesi | Ana Menü
+r3647: Tıbbi Atık Bildirim | Dialog Form
+r3648: ENabız 278 Toplu Gönderim | Ana Menü
+r3649: ENabız 277 Toplu Gönderim | Ana Menü
+r3650: ENabız 278 Gönderim Sorgulama | Ana Menü
+r3651: ASOS Bilgi Formu Tanımı | Dialog Form
+r3652: Paketler | Ana Menü
+r3653: Yoğun Bakım İzlem | Dialog Form
+r3654: Patoloji | Dialog Form
+r3655: Persantil ve Bebek / Çocuk İzlem | Dialog Form
+r3656: Muayene Kanser Bildirim | Dialog Form
+r3657: Muayene Verem Bildirim | Dialog Form
+r3658: Muayene Obezite Bildirim | Dialog Form
+r3659: Muayene Diyabet Bildirim | Dialog Form
+r3660: Muayene Paraziter Hastalik Bildirim | Dialog Form
+r3661: Muayene Bulaşıcı Hastalık Kesin Vaka Bildirim | Dialog Form
+r3662: Muayene Bulasici Hastalik Olasi Vaka Bildirim | Dialog Form
+r3663: Muayene Kronik Hastalik Bildirim | Dialog Form
+r3664: Muayene Adres Bilgisi | Dialog Form
+r3665: Muayene Kuduz Profilaksi İzlem | Dialog Form
+r3666: Muayene Kuduz Şüpheli Temas Bildirim | Dialog Form
+r3667: Kuduz Riskli Temas | Dialog Form
+r3668: Muayene Sıtma | Dialog Form
+r3669: Muayene Zehirlenme | Dialog Form
+r3670: Muayene Madde Bağımlılığı Bildirim | Dialog Form
+r3671: Muayene HIV Tespit | Dialog Form
+r3672: Lohusa İzlem Listesi | Dialog Form
+r3673: Muayene Lohusa İzlem | Dialog Form
+r3674: Muayene Mesleki Maruziyet | Dialog Form
+r3675: Özellikli Izlem (Hastane) | Dialog Form
+r3676: Muayene Özellik İzlem Listesi | Dialog Form
+r3677: Pandemi Aşı Sonrası İstenmeyen Etki | Dialog Form
+r3678: Pandemi Aşı Sonrası İstenmeyen Etki Listesi | Dialog Form
+r3679: Kan Tranfuzyonu | Dialog Form
+r3680: TAVI Kayıt | Dialog Form
+r3681: TAVI Girişim ve İşlem Sonu | Dialog Form
+r3682: Enfeksiyon Etkeni Bildirim | Dialog Form
+r3683: Girişimsel Kardiyoloji Rapor Kayıt | Dialog Form
+r3684: Left Dominance | Dialog Form
+r3685: Right Dominance | Dialog Form
+r3686: Girişimsel Kardiyoloji Rapor Listesi | Dialog Form
+r3687: Anjjiyografi Rapor Kayıt | Dialog Form
+r3688: Kalp Duvarı | Dialog Form
+r3689: Anjiyografi Rapor Kayıt Listesi | Dialog Form
+r3690: Sağlık Meslek Hizmet Birimi Talep | Dialog Form
+r3691: Trafik Kazası Yaralı Skorlama | Dialog Form
+r3692: Analizler | Ana Menü
+r3693:  E-Nabız Paket Gönderim Oranları Raporu | Ana Menü
+r3694: ENabız Takip Sorgulama | Ana Menü
+r3695: Arşiv | Ana Menü
+r3696: ENabız Arşiv | Ana Menü
+r3697: Medula Arşiv | Ana Menü
+r3698: EDM | Ana Menü
+r3699: EDM E-Fatura Aktarım | Ana Menü
+r3700: EDM E-Arsiv Aktarım | Ana Menü
+r3701: Numaratör | Dialog Form
+r3702: Numarator Listesi | Ana Menü
+r3703: Poliçe Yönetimi | Ana Menü
+r3704: Paket | Ana Menü
+r3705: Paket Listesi | Ana Menü
+r3706: Paket Tanımı | Dialog Form
+r3707: Paket Kriter Tanımı | Dialog Form
+r3708: Anlasma | Ana Menü
+r3709: Anlaşma Listesi | Ana Menü
+r3710: Paket Seçim | Dialog Form
+r3711: Anlaşma | Dialog Form
+r3712: Anlaşma Kriter Tanım | Dialog Form
+r3713: Anlaşma Hak Sahibi Tanım | Dialog Form
+r3714: Provizyon | Ana Menü
+r3715: Provizyon | Dialog Form
+r3716: Kiosk | Ana Menü
+r3717: Tanımlar | Ana Menü
+r3718: Kullanıcı Pin Listesi | Ana Menü
+r3719: Kiosk Yetkili Kullanıcı Ekle | Dialog Form
+r3720: Kiosk Kullanıcı Pin | Dialog Form
+r3721: Kiosk Kurum Listesi | Ana Menü
+r3722: Kiosk Kurum | Dialog Form
+r3723: Kiosk Doktor Listesi | Ana Menü
+r3724: Kiosk Listesi | Ana Menü
+r3725: Kurum Seçim Kuralı | Dialog Form
+r3726: Kurum Grubu Listesi | Ana Menü
+r3727: Kurum Grubu | Dialog Form
+r3728: İşlemler | Ana Menü
+r3729: Mobil | Ana Menü
+r3730: Tanımlar | Ana Menü
+r3731: Cihaz Listesi | Ana Menü
+r3732: Bölüm Sorumluları | Ana Menü
+r3733: Görev Tipleri | Dialog Form
+r3734: Görev Ayarları | Ana Menü
+r3735: Etiket Tanımları | Ana Menü
