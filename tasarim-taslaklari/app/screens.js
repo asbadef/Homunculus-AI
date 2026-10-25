@@ -1068,8 +1068,13 @@
       byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]], byProto(p._odeme).map(x => String(p._odeme.indexOf(x))));
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
       byProto(p._indirim).map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]], byProto(p._indirim).map(x => String(p._indirim.indexOf(x))));
-    const dosyaHtml = () => tabloHtml("dosya", ["Bağlantı tipi", "Döküman grubu", "Bağlantı id", "Dosya tipi", "Dosya adı", "Kayıt tarihi"],
-      p._dosya.map(x => [x.bag, x.grup, x.bagId, x.tip, x.ad, x.tarih]), [["Ekle", "plus"], ["Tarayıcıdan yükle", "plus"], ["Dijital imzadan getir", "edit"], ["Sil", "trash"]]);
+    const DOSYA_TIP = ["Nüfus cüzdanı fotokopisi", "Pasaport", "Fotoğraf", "Fatura nüshası", "İrsaliye nüshası", "Test sonucu", "Reçete", "Sipariş nüshası", "Garanti belgesi", "Kalibrasyon sertifikası", "Kullanım kitapçığı", "Tıbbi form", "Radyoloji evrak", "Diğer"];
+    const DOSYA_GRUP = ["Hasta dosyaları", "Onam formları", "Kimlik", "Protokol", "Fatura / mali", "Radyoloji", "Laboratuvar"];
+    const DOSYA_BAG = ["Hasta", "Protokol", "Fatura", "Cihaz"];
+    const dosyaHtml = () => `<div class="r" style="gap:6px;margin-bottom:10px"><button class="btn p sm" data-dosyaekle>${I("plus") || ""} Dosya ekle</button><button class="btn sm" data-dosyatara>${I("plus") || ""} Tarayıcıdan yükle</button><button class="btn sm" data-dosyaimza>${I("edit") || ""} Dijital imzadan getir</button><span class="spacer"></span><button class="btn sm" data-h3tblexp>${I("save") || ""} Excel</button><button class="btn sm" data-h3tblyaz>${I("print") || ""} Yazdır</button></div>
+      <div class="tw"><table class="t"><thead><tr><th>Bağlantı tipi</th><th>Döküman grubu</th><th>Bağlantı id</th><th>Dosya tipi</th><th>Dosya adı</th><th>Kayıt tarihi</th><th style="width:44px"></th></tr></thead><tbody>
+      ${p._dosya.length ? p._dosya.map((x, i) => `<tr><td>${H.esc(x.bag)}</td><td class="adm-sub">${H.esc(x.grup)}</td><td class="mono adm-sub">${H.esc(x.bagId || "—")}</td><td>${H.esc(x.tip)}</td><td><b>${H.esc(x.ad)}</b></td><td class="mono adm-sub">${H.esc(x.tarih)}</td><td><button class="btn g sm" data-dosyadel="${i}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:18px;text-align:center">Dosya yok. "Dosya ekle" ile ekleyin.</td></tr>`}
+      </tbody></table></div><p class="adm-sub" style="margin-top:8px">Doküman tipi/grubu seçilerek hastaya belge eklenir. (Gerçek dosya yükleme/tarama ayrı ekip; burada kayıt tutulur.)</p>`;
     const notHtml = () => tabloHtml("notlar", ["Tarih", "Not tipi", "Not türü", "Ekleyen kullanıcı", "Not"],
       p._not.map(x => [x.tarih, x.tip, x.tur, x.ekleyen, x.metin]), [["Ekle", "plus"], ["Sil", "trash"]], p._not.map((_, i) => String(i)));
     const teklifHtml = () => { const t = p._teklif[0];
@@ -1276,6 +1281,20 @@
       if (e.target.closest("[data-ihrand]")) { H.toast("Randevu ekranı açılıyor"); return H.go("randevu"); }
       if (e.target.closest("[data-ihhazir]")) { const t = prompt("Hazırlık açıklaması (hastaya):"); if (t) H.toast("Hazırlık açıklaması kaydedildi."); return; }
       if (e.target.closest("[data-ihonam]")) { const p2 = H.pt(p.id); (p2._dosya = p2._dosya || []).unshift({ bag:"Protokol", grup:"Onam formları", bagId:p2.proto || "", tip:"PDF", ad:"onam-" + Date.now() + ".pdf", tarih:new Date().toLocaleDateString("az") }); H.saveData && H.saveData(); H.toast("Onam formu eklendi."); return; }
+      const dsek = e.target.closest("[data-dosyaekle]"), dstr = e.target.closest("[data-dosyatara]"), dsim = e.target.closest("[data-dosyaimza]");
+      if (dsek || dstr || dsim) { const tara = !!dstr, imza = !!dsim;
+        H.modal({ title:imza ? "Dijital imzadan getir" : tara ? "Tarayıcıdan yükle" : "Dosya ekle", body:`<div class="icd-form">
+          <div class="fr"><label>Bağlantı tipi</label><select data-f="bag">${DOSYA_BAG.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Döküman grubu</label><select data-f="grup">${DOSYA_GRUP.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Dosya tipi</label><select data-f="tip">${DOSYA_TIP.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Dosya adı</label><input data-f="ad" placeholder="${tara ? "tarama otomatik adlanır" : "ör. kimlik-on.jpg"}"></div></div>
+          <p class="adm-sub" style="margin-top:8px">${tara ? "Tarayıcı entegrasyonu ayrı ekip; burada kayıt oluşturulur." : imza ? "Dijital imza servisinden belge çekme ayrı ekip; kayıt oluşturulur." : "Doküman tipi/grubu seçin, belge hastaya bağlanır."}</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Ekle</button>`,
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => m.querySelector(`[data-f="${s}"]`).value;
+            const ad = (g("ad") || "").trim() || (tara ? "tarama-" + Date.now() + ".pdf" : imza ? "imzali-" + Date.now() + ".pdf" : "belge-" + Date.now());
+            p._dosya.unshift({ bag:g("bag"), grup:g("grup"), bagId:p.proto || "", tip:g("tip"), ad, tarih:new Date().toLocaleDateString("az") });
+            H.saveData && H.saveData(); H.log("Dosya eklendi", ad); H.toast("Dosya eklendi"); H.closeModal(); H.go("hasta360", { pid:p.id, atab:ana, stab:alt, proto:params.proto }); }; } }); return; }
+      const dsdel = e.target.closest("[data-dosyadel]"); if (dsdel) { if (!confirm("Bu dosya kaydı silinsin mi?")) return; p._dosya.splice(+dsdel.dataset.dosyadel, 1); H.saveData && H.saveData(); H.toast("Silindi", "w"); H.go("hasta360", { pid:p.id, atab:ana, stab:alt, proto:params.proto }); return; }
       if (e.target.closest("[data-h3islem]")) { vzIslemHavuzu(p.id); return; }
       if (e.target.closest("[data-h3save]")) { body.querySelectorAll("[data-hf]").forEach(el => { p[el.dataset.hf] = el.value; }); if (p.ad || p.soyad) p.name = ((p.ad || "") + " " + (p.soyad || "")).trim() || p.name; if (p.sexT) p.sex = p.sexT === "Kişi" ? "E" : "K"; H.log("Hasta kartı kaydedildi", vzName(p.name)); H.toast("Hasta kartı kaydedildi"); return; }
     };
