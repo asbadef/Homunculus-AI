@@ -32,5 +32,5 @@ Dev sunucu açıkken (`localhost:5180`):
 - [x] Faz 1 — açılış taraması: 10 rol × 36 ekran = 360 kombinasyon, **0 hata**.
 - [x] Faz 2 — buton/etkileşim: steril(8 sekme)+vezne(8)+İK+randevu(3)+medmuhasebe+raporlar+hasta360+lab(3)+istakip+admin(5)+patient butonları/satırları tek tek tıklandı, **0 hata**.
 - [x] Faz 3 — görsel: sterilizasyon 8 sekme + şablon/detay modalleri incelendi; tasarım/renk/hizalama **temiz** (parça formu düzeltmesi doğrulandı).
-- [~] Faz 4 — çeviri: steril modülündeki kısa etiketler + ana açıklama cümleleri AZ'ye çevrildi. **Kalan:** sayı içeren birleşik metinler (KPI satırı, parametrik anahtar açıklaması, "Sonraki aşamaya al → X" butonu) ve `<b>` içeren cümleler — bunlar tüm uygulamada aynı desen (genel çeviri turu).
-- [ ] Faz 5 — diğer modüllerin görsel/çeviri turu (vezne, İK, randevu, admin…) + regresyon.
+- [~] Faz 4 — çeviri: `qa/i18n.py` ile çevrilmemiş UI etiketleri otomatik çıkarıldı (350 aday). Gerçek Türkçe etiketler toplu çevrildi → **350 → 189** (161 etiket AZ/RU/EN sözlüğe eklendi). Vezne/hasta360/admin/raporlar/İK artık büyük ölçüde Azerice. **Kalan 189:** çoğunlukla zaten-AZ veri (bölüm/kişi adları), sayı içeren dinamik metinler (alt başlıklar, "N aktif set"), kod/yetki anahtarları (pt_*, steril) ve az sayıda uzun admin yetki açıklaması. Dinamik/birleşik metinler sözlükle çevrilemez (kod değişikliği gerekir).
+- [x] Faz 5 — diğer modüller görsel incelendi (vezne/randevu/İK ekran görüntüleri): tasarım/renk temiz. Regresyon: smoke tekrar **0 hata**.
