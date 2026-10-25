@@ -1866,6 +1866,8 @@
   try { const sv = JSON.parse(localStorage.getItem("hmc.roles") || "null"); if (sv) Object.entries(sv).forEach(([k, v]) => { if (H.data.roles[k] && Array.isArray(v.perms)) H.data.roles[k].perms = v.perms; }); } catch {}
   // Her zaman açık olması gereken temel yetkiler, kayıtlı roller geri yüklendikten sonra da garanti edilir (ör. destek talebi herkeste).
   Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
+  // Sterilizasyon (MSÜ) modülü: klinik + yönetim rollerine açık (yükleme sonrası garanti).
+  ["hekim", "hemsire", "kabul", "yonetici", "kalite", "sistem"].forEach(k => { const r = H.data.roles[k]; if (r && !r.perms.includes("steril")) r.perms.push("steril"); });
   H.saveRoles = () => { try { localStorage.setItem("hmc.roles", JSON.stringify(Object.fromEntries(Object.entries(H.data.roles).map(([k, r]) => [k, { perms:r.perms }])))); } catch {} };
   const protectedPerm = (r, p) => p.startsWith("admin_") && (r === me().role || (r === "sistem" && (p === "admin_roles" || p === "admin_users")));
   const permLabel = (p) => (PERMS.flatMap(g => g[1]).find(x => x[0] === p) || [p, p])[1];

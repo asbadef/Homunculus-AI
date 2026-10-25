@@ -77,6 +77,7 @@
     m_vezne:{ AZ:"Kassa / Qəbul", TR:"Vezne / Ön Büro", RU:"Касса / Ресепшн", EN:"Cashier / Front Office" },
     m_ik:{ AZ:"İnsan resursları", TR:"İnsan Kaynakları", RU:"Кадры", EN:"Human resources" },
     m_labislem:{ AZ:"Laboratoriya / Radiologiya", TR:"Laboratuvar / Radyoloji", RU:"Лаборатория / Радиология", EN:"Lab / Radiology" },
+    m_steril:{ AZ:"Sterilizasiya (MSŞ)", TR:"Sterilizasyon (MSÜ)", RU:"Стерилизация (ЦСО)", EN:"Sterilization (CSSD)" },
     m_raporlar:{ AZ:"Hesabatlar", TR:"Raporlar", RU:"Отчёты", EN:"Reports" },
     m_istakip:{ AZ:"Dəstək / İş izləmə", TR:"Destek / İş Takip", RU:"Поддержка / Заявки", EN:"Support / Tickets" },
     m_tasks:{ AZ:"Tapşırıqlar", TR:"Görevlerim", RU:"Задачи", EN:"My tasks" },
@@ -651,7 +652,7 @@
    * böylece her açılışta tazelenir ve kırılmaz. Hasta kimlikleri sabit üretildiği için istem/fatura bağları korunur.
    * Şema değişince PERSIST_VER artırılır → eski kayıt yok sayılır. Roller ayrı (hmc.roles) saklanır. */
   const PERSIST_VER = "v2";   // v2: demo fatura/gfk/iade adları klinik hastalarla hizalandı (eski kayıt sıfırlanır)
-  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "iptaller", "vezneDonemNo", "vezneDonemAcik", "vezneDevir", "rndDoktorSeeded"];
+  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "iptaller", "vezneDonemNo", "vezneDonemAcik", "vezneDevir", "rndDoktorSeeded"];
   try { const raw = localStorage.getItem("hmc.data." + PERSIST_VER); if (raw) { const o = JSON.parse(raw); PERSIST_KEYS.forEach(k => { if (o[k] !== undefined) H.data[k] = o[k]; }); } }
   catch (e) { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} }
   H.saveData = () => { try { const o = {}; PERSIST_KEYS.forEach(k => { if (H.data[k] !== undefined) o[k] = H.data[k]; }); localStorage.setItem("hmc.data." + PERSIST_VER, JSON.stringify(o)); } catch (e) {} };

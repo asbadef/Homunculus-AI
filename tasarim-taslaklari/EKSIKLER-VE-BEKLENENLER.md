@@ -10,6 +10,18 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 - [x] **Kurumsal Faturalama iki yerde** — KARAR (ben verdim): asıl ev **Medikal Muhasebe** (mutabakat/alacak işi), Vezne'deki sekme **kısayol/çalışma yüzeyi**. Tek kod, iki yerden açılır (kopya yok); vezne ekranına "aynı kayıt Medikal Muhasebe'den de açılır" notu eklendi.
 - [ ] Rapor: listeden çıkarılan raporların `reportData()` yardımcıları duruyor (ölü kod, zararsız). İstenirse temizlenir.
 
+## Y. Yeni modül: Sterilizasyon (MSÜ / CSSD) — 25.10.2026
+Sterisys.com.tr incelenerek benzeri, demo veriyle uçtan uca çalışan bir modül kuruldu (`app/steril.js`). Sol menüde "Sterilizasyon (MSÜ)", yetki `steril` (klinik + yönetim rollerine açık), kalıcı, varsayılan AZ.
+- **Akış panosu:** 6 sütun (Kirli Kabul → Yıkama → Paketleme → Sterilizasyon → Steril Depo → Teslim). Set kartları aşama aşama ilerler; her adımda kim+ne zaman kaydı.
+- **Paketleme:** parça checklist — eksikse set "Eksik", ilerleyemez.
+- **Sterilizasyon:** otoklav + döngü no/sıcaklık/süre + Bowie-Dick/biyolojik test; test keçmədi ise serbest bırakılmaz.
+- **Steril depo:** raf + son kullanım + FIFO/30 gün uyarısı.
+- **Teslim:** vaka/ameliyat (mevcut ameliyat istemlerinden seçilir ya da serbest) + teslim alan; sonra yeniden kullanıma döner.
+- **Set tanımları:** şablon (ad/bölüm/versiyon/parça listesi) — paketleme checklist'inin kaynağı.
+- **Komuta merkezi:** aşama sayıları, bugünkü döngü, sorunlu setler, uyarı listesi.
+- Donanım (barkod okuyucu/otoklav/HBYS) = ayrı ekip; burada tıkla/kod-gir ile canlandırılır.
+- [ ] İleride: set ömrü/kullanım sayısı, kayıp set ("Lost") statüsü, yazdırma belgeleri (etiket/izlenebilirlik raporu).
+
 ## A2. Tarama turu bulguları (25.10.2026)
 - [x] **Liste filtresi eksikti** — Gelişler, Raporlar, İş Takip, Laboratuvar/Radyoloji, Medikal Muhasebe ve İK ekranlarında arama/filtre kutusu yoktu (sahibin "çoğu ekranda filtreleme yok" şikâyeti). Ortak `H.filterBox`/`H.wireFilter` eklendi; kutuya yazınca tablo satırları (raporlarda kartlar) anında süzülür. Vezne'de zaten vardı.
 - [x] İstem modülü tarandı: tüm istem düğmelerinin (lab/rad/hizmet/kons/diyet/bakım/ilaç/reçete/kan/ameliyat) gerçek karşılığı var; "yakında eklenecek" metni ulaşılamayan ölü daldı (zararsız, bırakıldı).
