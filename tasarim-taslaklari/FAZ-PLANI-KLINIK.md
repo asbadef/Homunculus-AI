@@ -42,5 +42,21 @@ Kaynak: `DOKTOR-SUREC-ANALIZ.md`, referans CoMed görselleri, kod taraması.
 
 Her fazdan sonra: smoke 0 hata, commit, sahip test/bildirim, düzeltme.
 
+## Eczane / stok fazı (referans görsellerden — 25.10 akşam)
+Eczane referansı zengin: Order Değerlendirme, İlaç Talep Karşılama, Onay Bekleyen İşlemler (teslim/gönderilen/iade), Hasta Stok, Order Analiz, Miadı Geçen/Yaklaşan, İlaç Listesi (tam ilaç kartı: fiyat/SUT/eşdeğer/depolama/tedarikçi/barkod/bağlı hizmet), Hasta Reçete Bilgisi, İade/Zayi, ITS/karekod, pharmacy-extended order akışı (Bekliyor→Onaylandı→Transfer→Reddedildi→İptal; İşlemi Al; Onayla/Transfer/Reddet; Vademecum DDI etkileşim sorgulama; muadil seçimi).
+| # | Süreç | Durum |
+|---|-------|-------|
+| F-E1 | **İlaç kataloğu içe aktarma** (ilaç.xlsx→H.ILAC 1500) + admin İlaç Listesi + İstem seçimi | **[x] bitti (v0215)** |
+| F-E2 | Eczane order karşılama (Bekliyor/Onayla/Transfer/Reddet + muadil + karşılanan miktar) | mevcut `pharmacy` ekranı var, referans derinliği yok |
+| F-E3 | Vademecum DDI / etkileşim sorgulama (ilaç-ilaç, gebelik, tanı) | EKSİK |
+| F-E4 | İlaç kartı derinliği (etken madde, eşdeğer/muadil, depolama, tedarikçi, SUT, barkod/karekod) | EKSİK (şu an 6 alan) |
+| F-E5 | Stok/depo: hasta stok, miadı geçen/yaklaşan, kritik stok, iade/zayi, ITS | EKSİK/kısmi |
+
+## Uçtan uca hedef (sahibin isteği)
+Bir hasta hastaneye gelir → kabul → randevu/muayene → istem (lab/rad/ilaç) → numune → sonuç → tedavi/ilaç uygulama → eczane karşılama → fatura/vezne → taburcu/epikriz. **Her adım yetki-kilitli, admin'den yönetilebilir, veriler rapora tutarlı yansır.** Kalan kopukluklar yukarıdaki fazlarda.
+
 ## İlerleme
-- [x] Faz 1 planlandı — numune akışı kuruluyor.
+- [x] Faz 1: Numune akışı (v0214).
+- [x] F-E1: İlaç kataloğu + admin İlaç Listesi + İstem seçimi (v0215).
+- [ ] Sırada: sahip lab/radyoloji tekniker sürecini anlatacak → F2/F3. Paralelde eczane derinliği (F-E2..E5), hemşire derinliği (F4/F5), yatan/servis (F6/F7), admin+yetki kapsama turu, veri-rapor tutarlılık denetimi.
+- **Not (unutulmasın):** üst bar sadeleştirme (F10), İş Listesi sayaç tıklanır filtre, lab/rad sonuç trend+anormal vurgu, numune ayrı ekran (hemşire/laborant), Finansal durumu gerçek faturaya bağlama, hizmet listesi.xlsx + tanı listesi.xlsx + formlar.xls + yetki.xls içe aktarma.
