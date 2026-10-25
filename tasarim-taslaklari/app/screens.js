@@ -1340,7 +1340,7 @@
       pos:["Dekont", "İade", "İptal", "Fatura eşleştir"],
       anlasma:["Detay", "Kullanım geçmişi"],
     };
-    const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}<span class="spacer"></span><button class="btn sm" data-h3tblexp>${I("save") || ""} Excel</button><button class="btn sm" data-h3tblyaz>${I("print") || ""} Yazdır</button></div>`;
+    const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm"${b[2] ? ` data-tbact="${b[2]}"` : ""}>${I(b[1]) || ""} ${b[0]}</button>`).join("")}<span class="spacer"></span><button class="btn sm" data-h3tblexp>${I("save") || ""} Excel</button><button class="btn sm" data-h3tblyaz>${I("print") || ""} Yazdır</button></div>`;
     const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
     const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
     const selProto = params.proto || "tumu";
@@ -1379,7 +1379,7 @@
       const ids = [...zf.map(x => "chain|" + x.no), ...df.map(x => "demo|" + x.no)];
       return tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"], rows, [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]], ids); };
     const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
-      byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]], byProto(p._odeme).map(x => String(p._odeme.indexOf(x))));
+      byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Avans", "plus", "avans"], ["Kurum avans", "plus", "kurumavans"], ["Katkı payı", "plus", "katkipayi"], ["İade talebi", "edit", "iadetalep"]], byProto(p._odeme).map(x => String(p._odeme.indexOf(x))));
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
       byProto(p._indirim).map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]], byProto(p._indirim).map(x => String(p._indirim.indexOf(x))));
     const DOSYA_TIP = ["Nüfus cüzdanı fotokopisi", "Pasaport", "Fotoğraf", "Fatura nüshası", "İrsaliye nüshası", "Test sonucu", "Reçete", "Sipariş nüshası", "Garanti belgesi", "Kalibrasyon sertifikası", "Kullanım kitapçığı", "Tıbbi form", "Radyoloji evrak", "Diğer"];
@@ -1537,7 +1537,35 @@
       if (ctx === "faturalar" && tr.dataset.rid) return faturaMenu(e, tr.dataset.rid);
       if (ROW_FIELD[ctx] && tr.dataset.rid != null) return rowMenu(e, ctx, tr.dataset.rid);
       vzMenu(e, SAGTIK[ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
+    // Ödemeler sekmesi aksiyonları (video 2): Avans / Kurum avans / Katkı payı / İade talebi.
+    function odemeAction(act, p) {
+      const now = H.nowFull ? H.nowFull() : new Date().toLocaleString("az"), sube = H.state.vezneBanko || "Mərkəz";
+      const reRender = () => H.go("hasta360", { pid:p.id, atab:"360", stab:"odeme", proto:params.proto });
+      if (act === "iadetalep") {
+        H.modal({ title:"İade talebi · " + H.esc(vzName(p.name)), body:`<div class="icd-form">
+          <div class="fr"><label>Tip</label><select data-f="tip"><option>Avans İade</option><option>Fatura İade</option></select></div>
+          <div class="fr"><label>Tutar ₼</label><input type="number" data-f="tutar" placeholder="0"></div>
+          <div class="fr"><label>Departman</label><select data-f="dep">${["Genel İade", "Vezne İade", "Kurum İade"].map(d => `<option>${d}</option>`).join("")}</select></div>
+          <div class="fr" style="grid-column:1/-1"><label>Açıklama</label><input data-f="acik" placeholder="iade nedeni"></div></div>
+          <p class="adm-sub" style="margin-top:6px">Talep, "Onay bekleyen iadeler" ekranına düşer; yetkili rol onaylar.</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Talep oluştur</button>`,
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => (m.querySelector(`[data-f="${k}"]`).value || "").trim(); const tutar = +g("tutar") || 0; if (!tutar) { H.toast("Tutar girin.", "w"); return; }
+            (H.data.iadeTalep = H.data.iadeTalep || []).unshift({ id:"ia" + Date.now(), tip:m.querySelector('[data-f="tip"]').value, tarih:now, eden:p.name, tutar, dep:m.querySelector('[data-f="dep"]').value, aciklama:g("acik"), durum:"Onay bekliyor", proto:p.proto || "—", zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "—"]]) });
+            H.saveData && H.saveData(); H.log("İade talebi", p.name + " · " + tutar + " ₼"); H.toast("İade talebi oluşturuldu · onaya düştü"); H.closeModal(); reRender(); }; } });
+        return;
+      }
+      const titleMap = { avans:"Avans al", kurumavans:"Kurum avansı al", katkipayi:"Katkı payı tahsil" }, islemMap = { avans:"Avans", kurumavans:"Avans (kurum)", katkipayi:"Katkı payı" }, kh = act === "kurumavans" ? "Kurum" : "Hasta";
+      H.modal({ title:(titleMap[act] || "İşlem") + " · " + H.esc(vzName(p.name)), body:`<div class="icd-form">
+        <div class="fr"><label>Tutar ₼</label><input type="number" data-f="tutar" placeholder="0"></div>
+        <div class="fr"><label>Ödeme tipi</label><select data-f="odeme">${["Nakit", "Kredi kartı", "Havale/EFT"].map(o => `<option>${o}</option>`).join("")}</select></div>
+        <div class="fr" style="grid-column:1/-1"><label>Açıklama</label><input data-f="acik" placeholder="ops."></div></div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const tutar = +(m.querySelector('[data-f="tutar"]').value) || 0; if (!tutar) { H.toast("Tutar girin.", "w"); return; }
+          (p._odeme = p._odeme || []).unshift({ proto:p.proto || "—", tarih:now, sube, kurumHasta:kh, islem:islemMap[act], sap:"—", odeme:m.querySelector('[data-f="odeme"]').value, pb:"₼", kur:1, tutar });
+          H.saveData && H.saveData(); H.log(titleMap[act], p.name + " · " + tutar + " ₼"); H.toast(titleMap[act] + ": " + tutar + " ₼"); H.closeModal(); reRender(); }; } });
+    }
     root.onclick = (e) => {
+      const tbact = e.target.closest("[data-tbact]"); if (tbact) { odemeAction(tbact.dataset.tbact, p); return; }
       const tex = e.target.closest("[data-h3tblexp],[data-h3tblyaz]"); if (tex) { const tw = tex.closest(".r") && tex.closest(".r").nextElementSibling, tbl = tw && tw.querySelector("table.t");
         if (!tbl || !tbl.tHead) { H.toast("Bu sekmede aktarılacak tablo yok.", "w"); return; }
         const cols = [...tbl.tHead.rows[0].cells].map(c => c.textContent.replace(/\s+/g, " ").trim()); while (cols.length && cols[cols.length - 1] === "") cols.pop();
