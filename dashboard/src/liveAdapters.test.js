@@ -151,6 +151,17 @@ describe("alertsFromPatients", () => {
     expect([firing.status, firing.resolvedAtMs]).toEqual(["FIRED", null]);
   });
 
+  // A latched alarm that someone then acknowledged is ACKNOWLEDGED, not RESOLVED: the answer wins,
+  // so it leaves the waiting queue whether or not the engine still sends `resolved_at`.
+  it("is ACKNOWLEDGED, not RESOLVED, once someone acknowledged it — whatever `resolved_at` says", () => {
+    const answered = { ...entry, alerts: [{ ...entry.alerts[0], severity: "critical",
+      resolved_at: "2026-08-27T10:04:00Z", acknowledged: true, acknowledged_by: "ayse",
+      acknowledged_at: "2026-08-27T10:06:00Z" }] };
+    const alert = alertsFromPatients([patientFromBoard(answered)])[0];
+    expect(alert.status).toBe("ACKNOWLEDGED");
+    expect(alert.ackBy).toBe("ayse");
+  });
+
   it("names the episode by its first-seen instant: an alarm that cleared and came back is a new one", () => {
     const again = { ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: "2026-08-27T11:30:00Z" }] };
     const [first] = alertsFromPatients([patientFromBoard(entry)]);

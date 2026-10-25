@@ -428,6 +428,25 @@ describe("the top bar", () => {
     expect(within(panel).queryByRole("link", { name: /^Siqnallar/ })).toBeNull();
   });
 
+  // G2-A1 (O17): a critical whose condition passed still waits for its acknowledgement, so the bell
+  // lists it — and says so on the row, because the card behind it is drawn calm.
+  it("marks a critical that passed unacknowledged on its row, and no other row", async () => {
+    const patients = [
+      { patient_id: "P-001", risk: "high", vitals: {}, identity: { bed_label: "REA-01" },
+        alerts: [{ kind: "news2", severity: "high", summary: "NEWS2 7", acknowledged: false }] },
+      { patient_id: "P-002", risk: "none", vitals: {}, identity: { bed_label: "REA-02" },
+        alerts: [{ kind: "septic_shock", severity: "critical", summary: "Septic shock criteria met",
+          acknowledged: false, resolved_at: "2026-10-07T08:00:00Z" }] },
+    ];
+    const { stream } = await renderShell({ patients });
+    await act(async () => { stream.open(); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: /2 siqnal cavab gözləyir/ }));
+    const panel = screen.getByRole("region", { name: /Cavab gözləyən siqnallar/ });
+    const passed = within(panel).getByText("Septic shock criteria met").closest("li");
+    expect(within(passed).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+    expect(within(panel).getAllByText("keçdi · təsdiqlənməyib")).toHaveLength(1);
+  });
+
   it("lists the worst alarms and says how many more are waiting", async () => {
     const patients = Array.from({ length: BELL_LIST_MAX + 2 }, (_, i) => ({
       patient_id: `P-${i}`, risk: "high", vitals: {},

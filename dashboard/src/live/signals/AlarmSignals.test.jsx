@@ -304,6 +304,18 @@ describe("the critical-alarm notification", () => {
     expect(notes.shown).toHaveLength(1);
   });
 
+  // The lock screen's one generic notification is raised for what still rings, not for what merely
+  // waits: a locked ward whose only alarm passed unacknowledged says nothing — and goes on to say it
+  // the moment a critical fires.
+  it("raises no locked-screen notification for a ward whose only alarm passed unacknowledged", async () => {
+    const { notes, store, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical", { resolved_at: ago(1) })])], { sound: false });
+    act(() => { page.setHidden(true); });
+    await act(async () => { store.lock(); });
+    expect(notes.shown).toHaveLength(0);
+    act(() => { stream.frame(reaBed("S-002", [alarm("septic_shock", "critical")])); });
+    expect(notes.open().map((n) => n.options.tag)).toEqual(["homunculus-alarm:locked"]);
+  });
+
   // A critical that cleared and fired again is a new episode: a new notification under a tag of its
   // own, so the browser shows it again instead of replacing the old one without a sound.
   it("raises a new notification, under a tag of its own, when an alarm fires again as a new episode", async () => {

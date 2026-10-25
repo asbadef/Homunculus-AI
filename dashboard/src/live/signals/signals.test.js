@@ -112,7 +112,8 @@ describe("what raises a notification", () => {
     const { items, ringing } = notifyFor(ward([
       alarm("a", "critical", { resolved_at: "2026-10-08T09:59:00Z" }), alarm("b", "critical"),
     ]));
-    expect(items.map((a) => a.id)).toEqual(["S-001::a", "S-002::b"]);
+    // Same severity and age: the one that still fires comes first (boardStore `queue`).
+    expect(items.map((a) => a.id)).toEqual(["S-002::b", "S-001::a"]);
     expect(ringing.map((a) => a.id)).toEqual(["S-002::b"]);
   });
 });

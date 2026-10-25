@@ -56,7 +56,11 @@ function oldestFirst(a, b) {
   return (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity);
 }
 function worstFirst(a, b) {
-  return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || oldestFirst(a, b);
+  // After severity, an alarm that still fires before a critical that passed unacknowledged
+  // (G2-A1): the latter waits for an answer, but the former is what is happening now.
+  return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
+    || (a.status === "RESOLVED") - (b.status === "RESOLVED")
+    || oldestFirst(a, b);
 }
 
 function Row({ alarm, nowMs, canAck, onAck, busy }) {
@@ -107,7 +111,8 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
       </div>
       {canAck && alarm.status !== "ACKNOWLEDGED" ? (
         <>
-          <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}>
+          <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}
+            aria-label={t("alarms.ackLabel", { bed, kind: alarm.kind })}>
             {t("alarms.seen")}
           </Button>
           {/* A busy Button reads only "unavailable" to a screen reader; the words come from here

@@ -164,6 +164,21 @@ describe("the patient screen", () => {
       expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();
     });
 
+    // G2-A1 (O17): the same badge the alarms screen gives a critical whose condition passed before
+    // anyone acknowledged it — the finding is still listed, and it must not read as a live one.
+    it("marks a finding whose condition passed unacknowledged, and not one that still fires", async () => {
+      await open({
+        payload: board([entry("S-001", [
+          alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) }),
+          alarm("news2", "high", { summary: "NEWS2 7" }),
+        ], { ...FULL })]),
+      });
+      const passed = screen.getByRole("heading", { level: 3, name: /Septic shock/ }).closest("li");
+      expect(within(passed).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+      const firing = screen.getByRole("heading", { level: 3, name: /NEWS2 7/ }).closest("li");
+      expect(within(firing).queryByText("keçdi · təsdiqlənməyib")).toBeNull();
+    });
+
     it("says when the patient's own charted normal lowered a finding, and why", async () => {
       await open({ payload: board([entry("S-001", [alarm("news2", "low", { downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." })], { ...FULL, risk: "low" })]) });
       expect(screen.getByText("Xəstənin öz normasına görə aşağı salınıb")).toBeInTheDocument();

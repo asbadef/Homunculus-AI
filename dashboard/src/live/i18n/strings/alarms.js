@@ -33,6 +33,9 @@ export default {
     resolvedAt: "geçtiği saat",
     seen: "Gördüm",
     seeing: "Kaydediliyor…",
+    // The acknowledge button's accessible name (a11y): every row carries the same word, so the name
+    // says WHICH alarm — the bed and the kind — and still contains the visible word.
+    ackLabel: "{bed} · {kind} alarmı: gördüm",
     seenBy: "Gördü: {who}",
     noAckPerm: "Alarmları siz onaylayamazsınız — bunun için «alerts.ack» yetkisi gerekir.",
     notLive: "Pano güncel değil; onay sunucuya gider ama liste eski olabilir.",
@@ -62,6 +65,7 @@ export default {
     resolvedAt: "keçdiyi saat",
     seen: "Gördüm",
     seeing: "Yadda saxlanılır…",
+    ackLabel: "{bed} · {kind} siqnalı: gördüm",
     seenBy: "Gördü: {who}",
     noAckPerm: "Siqnalları siz təsdiqləyə bilmirsiniz — bunun üçün «alerts.ack» səlahiyyəti lazımdır.",
     notLive: "Panel güncəl deyil; təsdiq serverə gedir, lakin siyahı köhnə ola bilər.",
@@ -91,6 +95,7 @@ export default {
     resolvedAt: "время, когда прошло",
     seen: "Принято",
     seeing: "Сохраняется…",
+    ackLabel: "{bed} · {kind}, тревога: принято",
     seenBy: "Принял: {who}",
     noAckPerm: "Вы не можете принимать тревоги — для этого нужно право «alerts.ack».",
     notLive: "Панель неактуальна; подтверждение уйдёт на сервер, но список может быть устаревшим.",
@@ -120,6 +125,7 @@ export default {
     resolvedAt: "resolved at",
     seen: "Seen",
     seeing: "Saving…",
+    ackLabel: "{bed} · {kind} alarm: seen",
     seenBy: "Seen by {who}",
     noAckPerm: "You cannot acknowledge alarms — that needs the \"alerts.ack\" right.",
     notLive: "The board is out of date; the acknowledgement does reach the server, but the list may be stale.",

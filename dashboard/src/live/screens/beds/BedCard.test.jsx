@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { patientFromBoard, alertsFromPatients } from "../../../liveAdapters.js";
@@ -172,6 +172,21 @@ describe("the bed card — what it says, and what it refuses to", () => {
     it("an acknowledged alarm leaves the card's own list", () => {
       card(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse" })], { at: measured(30) }));
       expect(screen.queryByText("NEWS2 7")).toBeNull();
+    });
+
+    // G2-A1 (O17): the engine computes `risk` from the alarms that still FIRE, so a bed whose only
+    // alarm is a critical that passed unacknowledged is drawn calm — and its card still lists the
+    // critical line. The badge is what says why; without it the card contradicts itself.
+    it("keeps a critical that passed unacknowledged on the card, with the badge the alarms screen gives it", () => {
+      card(entry("S-001", [
+        alarm("news2", "high", { summary: "NEWS2 7" }),
+        alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) }),
+      ], { at: measured(30) }));
+      const line = screen.getByText("Septic shock criteria met").closest("li");
+      expect(within(line).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+      // Only the latched line carries it: the one that still fires does not.
+      expect(screen.getAllByText("keçdi · təsdiqlənməyib")).toHaveLength(1);
+      expect(within(screen.getByText("NEWS2 7").closest("li")).queryByText("keçdi · təsdiqlənməyib")).toBeNull();
     });
 
     it("an alarm with severity \"none\" can never read \"no finding\"", () => {

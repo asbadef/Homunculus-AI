@@ -485,7 +485,8 @@ export function alarmCounts({ alerts = [], connection } = {}) {
 }
 
 /** The alarms somebody must answer (`items`, for the bell and the rail's count): a severity this
- *  build does not know first — it may be the worst —, then the most severe, then the oldest first.
+ *  build does not know first — it may be the worst —, then the most severe, an alarm that still
+ *  fires before one that passed unacknowledged (RESOLVED), then the oldest first.
  *  A chronic-expected finding is not among them (`needsAnswer`); it is still on the card and in
  *  the alarms list. */
 export function waitingAlarms({ alerts = [], connection } = {}) {
@@ -495,10 +496,12 @@ export function waitingAlarms({ alerts = [], connection } = {}) {
 }
 
 /** The alarms somebody must answer (`needsAnswer`), unknown severity first, then the most severe,
- *  then the oldest. The one ordering `waitingAlarms` and `alarmsToSignal` share. */
+ *  firing before RESOLVED, then the oldest. The one ordering `waitingAlarms` and `alarmsToSignal` share. */
 function queue(alerts) {
   const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
+  // After severity, one that still fires before one that passed unacknowledged (RESOLVED, G2-A1).
   return alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
+    || (a.status === "RESOLVED") - (b.status === "RESOLVED")
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
 }
 
