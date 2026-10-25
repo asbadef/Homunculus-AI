@@ -26,3 +26,18 @@ def test_prune_drops_entries_no_longer_live():
     s.escalated.add(("bed-3", "septic_shock"))
     s.prune(live_keys=set())
     assert s.first_seen == {} and s.acks == {} and s.escalated == set()
+
+
+def test_prune_with_the_firing_keys_unlatches_a_refired_alert_and_keeps_only_firing_escalations():
+    # G2-A1: a latched (resolved) key is live but not firing — it keeps its first-seen and loses
+    # its escalation; a latched key that fires again is no longer latched.
+    s = AckStore()
+    latched, refired = ("bed-3", "septic_shock"), ("bed-4", "septic_shock")
+    for key in (latched, refired):
+        s.first_seen[key] = T0
+        s.escalated.add(key)
+        s.resolved[key] = {"alert": {"severity": "critical"}, "resolved_at": T0}
+    s.prune(live_keys={latched, refired}, firing_keys={refired})
+    assert set(s.first_seen) == {latched, refired}
+    assert s.escalated == {refired}
+    assert set(s.resolved) == {latched}
