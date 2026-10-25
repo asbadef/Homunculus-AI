@@ -301,13 +301,13 @@
       <div class="fr"><label>Maks. kullanım döngüsü (ömür)</label><input data-f="maxDongu" type="number" min="0" value="${esc(k.maxDongu || "")}" placeholder="ör. 300"></div>
       <div class="fr"><label>Not</label><input data-f="not" value="${esc(k.not || "")}" placeholder="ops."></div>
       <div class="fr" style="grid-column:1/-1"><label>Parça listesi <span class="adm-sub" data-pcount></span></label>
-        <div data-plist>${((k.parcalar || []).length ? k.parcalar : [""]).map(p => `<div class="r" style="gap:6px;margin-bottom:5px"><input data-pline value="${esc(p)}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1"><button type="button" class="btn g sm" data-prm>${I("trash") || "×"}</button></div>`).join("")}</div>
+        <div data-plist>${((k.parcalar || []).length ? k.parcalar : [""]).map(p => `<div class="ster-pline" style="display:flex;gap:6px;margin-bottom:5px;align-items:center"><input data-pline value="${esc(p)}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1;min-width:0"><button type="button" class="btn g sm" data-prm style="flex:none" title="Satırı sil">${I("trash") || "×"}</button></div>`).join("")}</div>
         <button type="button" class="btn sm" data-padd style="margin-top:2px">${I("plus") || "+"} Parça ekle</button>
         <p class="adm-sub" style="margin-top:6px">Bu liste, paketleme aşamasında teknikerin tek tek işaretleyeceği kontrol föyüdür.</p></div></div>`,
       actions:`${existing ? `<button class="btn g" data-del>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
       onMount(m) { draw(m);
         const plist = m.querySelector("[data-plist]");
-        const addRow = (val) => { const d = document.createElement("div"); d.className = "r"; d.style = "gap:6px;margin-bottom:5px"; d.innerHTML = `<input data-pline value="${esc(val || "")}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1"><button type="button" class="btn g sm" data-prm>${I("trash") || "×"}</button>`; plist.appendChild(d); d.querySelector("[data-pline]").focus(); draw(m); };
+        const addRow = (val) => { const d = document.createElement("div"); d.className = "ster-pline"; d.style = "display:flex;gap:6px;margin-bottom:5px;align-items:center"; d.innerHTML = `<input data-pline value="${esc(val || "")}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1;min-width:0"><button type="button" class="btn g sm" data-prm style="flex:none" title="Satırı sil">${I("trash") || "×"}</button>`; plist.appendChild(d); d.querySelector("[data-pline]").focus(); draw(m); };
         m.querySelector("[data-padd]").onclick = () => addRow("");
         plist.addEventListener("click", (e) => { const rm = e.target.closest("[data-prm]"); if (rm) { rm.closest(".r").remove(); draw(m); } });
         plist.addEventListener("input", () => draw(m));
