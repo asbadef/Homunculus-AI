@@ -271,11 +271,32 @@ def test_the_alert_scores_what_the_board_scores():
 
 def test_the_partial_note_names_a_stale_vital_with_the_missing_ones():
     [f] = news2.evaluate(_aged({"SBP": timedelta(hours=4)}, RESP_RATE=28, SBP=120), T0)
-    assert "partial NEWS2: spo2, systolic_bp, pulse, temperature not recently recorded" in f.reasoning
+    assert "partial NEWS2: SpO2, systolic BP, pulse, temperature not recently recorded" in f.reasoning
 
 
 def test_the_alert_says_what_it_assumed_and_is_not_partial_for_it():
     [f] = news2.evaluate(_state(**{**FIVE, "RESP_RATE": 28}), T0)
     assert f.reasoning.endswith(
-        " Assumed, nothing current charted: air_or_oxygen as room air, consciousness as Alert.")
+        " Assumed, nothing current charted: supplemental oxygen as room air, consciousness as Alert.")
     assert "partial" not in f.reasoning.lower()
+
+
+def test_the_recency_note_says_the_stale_value_is_not_in_the_score():
+    [f] = news2.evaluate(_aged({"SBP": timedelta(hours=4)}, RESP_RATE=28, SBP=88), T0)
+    assert (" Data recency: systolic BP older than the expected refresh window; "
+            "not counted in the score.") in f.reasoning
+    assert f.summary.startswith("NEWS2 3 ")      # RR 28's 3: the stale SBP 88's 3 is not in it
+
+
+def test_the_reasoning_names_every_input_by_one_label():
+    # Review of G2-A2 Task 1: the notes said "systolic_bp" next to the recency note's "systolic BP".
+    # Every note now uses the label the recency note uses; none uses a breakdown key.
+    st = _aged({"SBP": timedelta(hours=4)}, RESP_RATE=28, SPO2=91, SBP=88, SUPPLEMENTAL_OXYGEN=1.0)
+    [f] = news2.evaluate(st, T0)
+    assert "Contributing: resp rate 3, SpO2 3, supplemental oxygen 2." in f.reasoning
+    assert "partial NEWS2: systolic BP, pulse, temperature not recently recorded" in f.reasoning
+    assert "Data recency: systolic BP " in f.reasoning
+    assert f.reasoning.endswith(" Assumed, nothing current charted: consciousness as Alert.")
+    for key in ("respiration_rate", "spo2", "systolic_bp", "air_or_oxygen"):
+        assert key not in f.reasoning
+    assert set(news2.INPUT_LABEL) == set(news2.score(st, T0).breakdown)

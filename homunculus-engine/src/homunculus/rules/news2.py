@@ -240,10 +240,16 @@ _VITAL_LABEL: dict[SignalCode, str] = {
     SignalCode.RESP_RATE: "resp rate", SignalCode.SPO2: "SpO2", SignalCode.SBP: "systolic BP",
     SignalCode.HEART_RATE: "pulse", SignalCode.TEMPERATURE: "temperature",
 }
-# What an assumed input was scored as, in the alert's reasoning (G2-A2, D7).
-_ASSUMED_AS: dict[str, str] = {
-    "air_or_oxygen": "air_or_oxygen as room air", "consciousness": "consciousness as Alert",
+#: How the reasoning names each of the seven inputs, keyed by the names `score()` puts in its
+#: breakdown: the vitals as the recency note (and `stale_inputs`) names them, the two charted inputs
+#: as the patient-relative notes do. One word per input in every note, a held alert's (pipeline,
+#: G2-A2 X9) included; a breakdown key is never shown.
+INPUT_LABEL: dict[str, str] = {
+    **{name: _VITAL_LABEL[_INPUT_SIGNAL[name]] for name in _CORE_VITALS},
+    "air_or_oxygen": "supplemental oxygen", "consciousness": "consciousness",
 }
+# What an assumed input was scored as, in the alert's reasoning (G2-A2, D7).
+_ASSUMED_AS: dict[str, str] = {"air_or_oxygen": "room air", "consciousness": "Alert"}
 
 
 def _stale_vital_labels(state: PatientState, now: datetime) -> list[str]:
@@ -266,12 +272,12 @@ def evaluate(state: PatientState, now: datetime | None = None) -> list[Finding]:
     severity, urgency, response = band
 
     contributing = ", ".join(
-        f"{name} {pts}" for name, pts in result.breakdown.items() if pts > 0
+        f"{INPUT_LABEL[name]} {pts}" for name, pts in result.breakdown.items() if pts > 0
     )
     partial_note = ""
     if result.partial:
         # Missing and stale alike, in breakdown order (G2-A2, X1): neither is in the total.
-        absent = [name for name in result.breakdown
+        absent = [INPUT_LABEL[name] for name in result.breakdown
                   if name in result.missing or name in result.stale]
         partial_note = (
             f" This is a partial NEWS2: {', '.join(absent)} not recently recorded, "
@@ -280,13 +286,15 @@ def evaluate(state: PatientState, now: datetime | None = None) -> list[Finding]:
     stale = _stale_vital_labels(state, now) if now is not None else []
     stale_note = ""
     if stale:
+        # Since G2-A2 (D1) a stale vital scores 0: the note says it is out, not to be borne in mind.
         stale_note = (f" Data recency: {', '.join(stale)} older than the expected refresh window; "
-                      f"interpret the score with that in mind.")
+                      f"not counted in the score.")
     assumed_note = ""
     if result.assumed:
         # G2-A2 (D7): an assumption is said out loud, and is not counted as partial.
         assumed_note = (" Assumed, nothing current charted: "
-                        + ", ".join(_ASSUMED_AS[name] for name in result.assumed) + ".")
+                        + ", ".join(f"{INPUT_LABEL[name]} as {_ASSUMED_AS[name]}"
+                                    for name in result.assumed) + ".")
     reasoning = (
         f"NEWS2 {result.total} ({response}). Contributing: {contributing}. "
         f"Screen for deterioration, not a diagnosis; the response is review, not an order."
