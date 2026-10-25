@@ -129,17 +129,23 @@ class _Spy(InMemoryAuditLog):
         return super().records(**kw)
 
 
-def test_the_alarm_report_asks_the_backend_for_its_window_and_says_when_it_was_cut():
-    audit = _Spy()
-    for n in range(5):
+def _first_seens(audit, count):
+    """One alarm episode per bed, bed-0 the oldest row and bed-(count-1) the newest."""
+    for n in range(count):
         audit.append(AuditEvent("HOSP1", "first_seen", f"bed-{n}", "news2",
                                 {"at": datetime.now(timezone.utc).isoformat()}))
+
+
+def test_the_alarm_report_asks_the_backend_for_its_window_and_says_when_it_was_cut():
+    audit = _Spy()
+    _first_seens(audit, 5)
     client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
     body = client.get("/alarm-quality", params={"limit": 3}, headers=HDR).json()
     [read] = [r for r in audit.reads if "since" in r]
     assert (read["newest"], read["limit"]) == (True, 4)       # the cap, and one more to know
     assert read["since"].tzinfo is not None
     assert (body["truncated"], body["episodes"]) == (True, 3)
+    assert {b["patient_id"] for b in body["noisiest_beds"]} == {"bed-2", "bed-3", "bed-4"},         "the cut keeps the newest rows: the oldest one — the extra row read to know — is dropped"
     body = client.get("/alarm-quality", params={"limit": 5}, headers=HDR).json()
     assert (body["truncated"], body["episodes"]) == (False, 5)
 
@@ -151,3 +157,18 @@ def test_the_alarm_reports_read_is_capped():
     client.get("/alarm-quality", params={"limit": 10**9}, headers=HDR)
     [read] = [r for r in audit.reads if "since" in r]
     assert read["limit"] == ALARM_QUALITY_LIMIT_MAX + 1
+
+
+def test_the_alarm_reports_limit_is_clamped_up_to_one_row():
+    """`limit=0` or a negative one is one row — the newest — like /audit's, not an empty read and not
+    a slice from the wrong end."""
+    audit = _Spy()
+    _first_seens(audit, 3)
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    for limit in (0, -5):
+        audit.reads.clear()
+        body = client.get("/alarm-quality", params={"limit": limit}, headers=HDR).json()
+        [read] = [r for r in audit.reads if "since" in r]
+        assert (read["newest"], read["limit"]) == (True, 2), limit      # a cap of 1, and one more
+        assert (body["truncated"], body["episodes"]) == (True, 1), limit
+        assert [b["patient_id"] for b in body["noisiest_beds"]] == ["bed-2"], limit

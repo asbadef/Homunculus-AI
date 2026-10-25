@@ -249,14 +249,21 @@ def create_app(
     rehydrated: set[str] = set()
 
     def _ensure(hospital: str) -> None:
-        """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing)."""
+        """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing).
+
+        The replay runs into an engine and a store nothing else can see yet, and they are installed
+        — the tenant marked rehydrated — only when every page has been read (G2-A2, Task 4 review).
+        A page read that fails midway installs nothing and the error goes up; the next request
+        replays again, instead of serving the half-replayed board of a replay that never finished."""
         if hospital in rehydrated:
             return
-        rehydrated.add(hospital)
-        engine = engines.setdefault(hospital, Engine())
-        store = stores.setdefault(hospital, AckStore())
+        engine = Engine()
+        store = AckStore()
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
         rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
+        engines[hospital] = engine
+        stores[hospital] = store
+        rehydrated.add(hospital)
 
     def _engine(hospital: str) -> Engine:
         _ensure(hospital)

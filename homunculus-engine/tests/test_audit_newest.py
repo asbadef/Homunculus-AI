@@ -140,6 +140,8 @@ def test_postgres_keeps_newest_to_the_window_and_the_filters(pg_log):
     pg_log.append(_event(13, patient_id="S-002"))
     rows = pg_log.records(tenant="HOSP1", patient_id="S-001", since=bound, newest=True, limit=2)
     assert [r.id for r in rows] == [r.id for r in kept[-2:]]
+    rows = pg_log.records(tenant="HOSP1", patient_id="S-001", since=bound, newest=True, limit=10)
+    assert [r.id for r in rows] == [r.id for r in kept]          # the window's rows, none older
 
 
 @requires_db

@@ -260,3 +260,45 @@ def test_a_restart_replays_every_row_a_page_at_a_time(monkeypatch):
     assert {a["kind"] for a in card["alerts"]} == {"news2"}
     replay = [r for r in reads if r.get("tenant") == "HOSP1" and "after_id" in r]
     assert [(r["after_id"], r["limit"]) for r in replay] == [(None, 5), (5, 5), (10, 5)]
+
+
+def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retries(monkeypatch):
+    """G2-A2, Task 4 review: the tenant was marked rehydrated, and its engine built, BEFORE the replay
+    ran — so a page read that failed (a database hiccup; ~200 reads at a million rows) answered 500
+    once and the next request served the half-replayed engine as the board: an old heart rate and
+    the NEWS2 alert gone — believable, and wrong. A failed replay installs nothing; the next request
+    reads the log again, from the first row."""
+    import homunculus.api.app as app_module
+    monkeypatch.setattr(app_module, "REHYDRATE_PAGE", 5)
+
+    class FailsOnce(InMemoryAuditLog):
+        def __init__(self):
+            super().__init__()
+            self.after_ids: list = []
+            self.failed = False
+
+        def records(self, **kw):
+            self.after_ids.append(kw.get("after_id"))
+            if kw.get("after_id") == 5 and not self.failed:      # the second page, once
+                self.failed = True
+                raise RuntimeError("page read failed")
+            return super().records(**kw)
+
+    audit = FailsOnce()
+    for minute, rate in enumerate([80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 140]):
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "heart_rate", {
+            "value": rate, "unit": "/min", "obs_ts": f"2026-07-14T10:{minute:02d}:00+00:00",
+            "device": "mon"}))
+    app = create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)
+    client = TestClient(app, raise_server_exceptions=False)
+    hdr = {"Authorization": "Bearer tok"}
+
+    assert client.get("/patients", headers=hdr).status_code == 500
+    assert "HOSP1" not in app.state.ack_stores, "a replay that did not finish installed its store"
+
+    again = client.get("/patients", headers=hdr)
+    assert again.status_code == 200
+    [card] = again.json()["patients"]
+    assert card["latest"]["heart_rate"] == 140, "the retry replayed every row, the newest included"
+    assert {a["kind"] for a in card["alerts"]} == {"news2"}
+    assert audit.after_ids == [None, 5, None, 5, 10], "the retry reads the log from the first row"
