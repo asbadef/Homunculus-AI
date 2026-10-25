@@ -636,7 +636,7 @@
    * böylece her açılışta tazelenir ve kırılmaz. Hasta kimlikleri sabit üretildiği için istem/fatura bağları korunur.
    * Şema değişince PERSIST_VER artırılır → eski kayıt yok sayılır. Roller ayrı (hmc.roles) saklanır. */
   const PERSIST_VER = "v1";
-  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "iptaller", "vezneDonemNo", "vezneDonemAcik", "vezneDevir", "rndDoktorSeeded"];
+  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "iptaller", "vezneDonemNo", "vezneDonemAcik", "vezneDevir", "rndDoktorSeeded"];
   try { const raw = localStorage.getItem("hmc.data." + PERSIST_VER); if (raw) { const o = JSON.parse(raw); PERSIST_KEYS.forEach(k => { if (o[k] !== undefined) H.data[k] = o[k]; }); } }
   catch (e) { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} }
   H.saveData = () => { try { const o = {}; PERSIST_KEYS.forEach(k => { if (H.data[k] !== undefined) o[k] = H.data[k]; }); localStorage.setItem("hmc.data." + PERSIST_VER, JSON.stringify(o)); } catch (e) {} };

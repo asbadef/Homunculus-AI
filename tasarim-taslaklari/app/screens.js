@@ -201,6 +201,23 @@
   const vzName = (n) => (H.showNames && !H.showNames()) ? (String(n || "").trim().split(/\s+/).map(w => w ? w[0] + "***" : "").join(" ") || "—") : (n || "—");
   // İsimden hasta kartına bağlantı (liste satırı → hasta dosyası). Tam eşleşme bulunamazsa null.
   const pidByName = (nm) => { nm = String(nm || "").trim(); const p = (H.data.patients || []).find(x => (x.name || "").trim() === nm); return p ? p.id : null; };
+
+  /* ===== VERİ ZİNCİRİ · Adım 1: Protokol deposu (kalıcı) =====
+   * Tek hasta kartı, altında çok protokol. H.data.protokolKayit[pid] = [ {no,bolum,doktor,gelisTipi,ptip,kapali,tarih,bucket,islemIds[]}, ... ]
+   * İşlemler (orders) ileride protokolNo ile buna bağlanacak; fatura/GFK/evrak bundan türeyecek (Adım 3–5). */
+  const PROTO_BUCKETS = ["Bu hafta", "İki hafta önce", "Son ay", "Daha eski"];
+  const bugunStr = () => { try { return new Date().toLocaleDateString("az"); } catch { return new Date().toLocaleDateString(); } };
+  H.proto = {
+    store() { return (H.data.protokolKayit = H.data.protokolKayit || {}); },
+    list(pid) { return (this.store()[pid] || []).slice(); },
+    get(pid, no) { return (this.store()[pid] || []).find(x => x.no === no); },
+    nextNo() { H.data.protoSeq = (H.data.protoSeq || 50894100) + 1; return String(H.data.protoSeq); },
+    // Mevcut demo protokollerini (p._protokoller) bir kez depoya taşır; sonra depo gerçek kaynaktır.
+    seedFrom(pid, arr) { const s = this.store(); if (!s[pid]) { s[pid] = (arr || []).map(x => Object.assign({ islemIds:[] }, x)); } return s[pid]; },
+    create(pid, d) { const s = this.store(), list = s[pid] = s[pid] || []; const rec = Object.assign({ no:this.nextNo(), tarih:bugunStr(), bucket:"Bu hafta", kapali:false, islemIds:[] }, d || {}); list.unshift(rec); H.saveData && H.saveData(); return rec; },
+    setOpen(pid, no, acik) { const r = this.get(pid, no); if (r) { r.kapali = !acik; H.saveData && H.saveData(); } return r; },
+    remove(pid, no) { const s = this.store(); if (s[pid]) { s[pid] = s[pid].filter(x => x.no !== no); H.saveData && H.saveData(); } },
+  };
   // Basit sağ-tık/işlem menüsü (İşlem Havuzu)
   function vzMenu(ev, items) {
     document.querySelectorAll(".vz-menu").forEach(m => m.remove());
@@ -769,6 +786,7 @@
         { no:pno(48651), tarih:"14.08.2026", bolum:bn(3), doktor:"Dr. Məhərrəm Nəbiyev", gelisTipi:"Ayaktan", ptip:"Kontrol", kapali:true, bucket:"Daha eski" },
         { no:pno(65928), tarih:"28.07.2026", bolum:bn(4), doktor:"Dr. Cavanşir Vahabov", gelisTipi:"Yatarak", ptip:"Ameliyat", kapali:true, bucket:"Daha eski" },
       ];
+      if (H.proto) H.proto.seedFrom(p.id, p._protokoller);   // demo protokolleri kalıcı depoya bir kez taşı
       p._fatura = p._fatura || [
         { proto:String(base), tarih:"24.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pr, parent:"", durum:"Açık", pb:"₼", tutar:420, kdv:0 },
         { proto:String(base), tarih:"20.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pno(7), parent:"", durum:"Ödendi", pb:"₼", tutar:180, kdv:0 },
@@ -812,10 +830,12 @@
     const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
     const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
     const selProto = params.proto || "tumu";
-    const protoList = () => { const ps = p._protokoller || [], buckets = {};
-      ps.forEach(x => { (buckets[x.bucket] = buckets[x.bucket] || []).push(x); });
-      const row = (x) => `<div class="h360-prow${selProto === x.no ? " on" : ""}" data-proto="${H.esc(x.no)}"><span class="pr-lock ${x.kapali ? "bad" : "ok"}">${x.kapali ? (I("lock") || "") : (I("ok") || "")}</span><div><b class="mono">${H.esc(x.no)}</b><div class="adm-sub" style="font-size:11px">${H.esc(x.tarih)} · ${H.esc(x.bolum)}</div></div></div>`;
-      return `<div class="h360-plist"><div class="h360-pbar">${I("refresh") || ""} Protokoller (${ps.length})</div><div class="h360-prow${selProto === "tumu" ? " on" : ""}" data-proto="tumu"><b>TÜMÜ</b></div>${Object.entries(buckets).map(([b, list]) => `<div class="h360-pgrp">${H.esc(b)}</div>${list.map(row).join("")}`).join("")}</div>`; };
+    const protoList = () => { const ps = (H.proto ? H.proto.list(p.id) : (p._protokoller || [])), buckets = {};
+      ps.forEach(x => { const b = x.bucket || "Daha eski"; (buckets[b] = buckets[b] || []).push(x); });
+      const order = [...PROTO_BUCKETS, ...Object.keys(buckets).filter(b => !PROTO_BUCKETS.includes(b))];
+      const row = (x) => `<div class="h360-prow${selProto === x.no ? " on" : ""}" data-proto="${H.esc(x.no)}"><span class="pr-lock ${x.kapali ? "bad" : "ok"}" data-protolock="${H.esc(x.no)}" title="${x.kapali ? "Kapalı · açmak için tıkla" : "Açık · kapatmak için tıkla"}">${x.kapali ? (I("lock") || "") : (I("ok") || "")}</span><div><b class="mono">${H.esc(x.no)}</b><div class="adm-sub" style="font-size:11px">${H.esc(x.tarih)} · ${H.esc(x.bolum)}</div></div></div>`;
+      const newBtn = H.can("admission") ? `<button class="btn p sm" data-protonew title="Yeni protokol aç">${I("plus") || "+"}</button>` : "";
+      return `<div class="h360-plist"><div class="h360-pbar">${I("refresh") || ""} Protokoller (${ps.length})<span class="spacer"></span>${newBtn}</div><div class="h360-prow${selProto === "tumu" ? " on" : ""}" data-proto="tumu"><b>TÜMÜ</b></div>${order.filter(b => buckets[b]).map(b => `<div class="h360-pgrp">${H.esc(b)}</div>${buckets[b].map(row).join("")}`).join("")}</div>`; };
     const split = (right) => `<div class="h360-2col">${protoList()}<div class="h360-pdetail">${right}</div></div>`;
     const byProto = (arr) => selProto === "tumu" ? arr : arr.filter(x => (x.proto || "") === selProto);
     const gelisHtml = () => `<div class="h360-cards">
@@ -929,6 +949,22 @@
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
     drawBody();
+    function protoNewModal() {
+      const bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
+      const docs = (H.data.users || []).filter(u => u.role === "hekim");
+      const ptipler = (H.data.secenekler && H.data.secenekler.protokol) || ["Genel muayene", "Kontrol", "Preop"];
+      H.modal({ title:"Yeni protokol · " + H.esc(vzName(p.name)), body:`<div class="icd-form">
+          <div class="fr"><label>Bölüm</label><input data-f="bolum" list="pn-bol" value="${H.esc((u && u.tr) || "")}"><datalist id="pn-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
+          <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${docs.map(d => `<option${doctor && doctor.name === d.name ? " selected" : ""}>${H.esc(d.name)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${["Ayaktan", "Acil", "Günübirlik", "Yatarak", "Kontrol"].map(x => `<option>${x}</option>`).join("")}</select></div>
+          <div class="fr"><label>Protokol tipi</label><select data-f="ptip">${ptipler.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div></div>
+          <p class="adm-sub" style="margin-top:6px">Yeni protokol numarası otomatik üretilir; hasta kartına kalıcı eklenir.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Protokol aç</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          const rec = H.proto.create(p.id, { bolum:g("bolum") || ((u && u.tr) || "—"), doktor:m.querySelector('[data-f="doktor"]').value || "—", gelisTipi:m.querySelector('[data-f="gelis"]').value, ptip:m.querySelector('[data-f="ptip"]').value });
+          H.log("Protokol açıldı", vzName(p.name) + " · " + rec.no); H.closeModal(); H.toast("Protokol açıldı: " + rec.no);
+          H.go("hasta360", { pid:p.id, atab:params.atab || "360", stab:params.stab || "gelisler", proto:rec.no }); }; } });
+    }
     function onayModal(tur) {
       const kvkk = tur === "kvkk", ad = kvkk ? "KVKK / Kişisel veri onayı" : "Ticari elektronik ileti (ETK) onayı";
       const metin = kvkk ? "Hastanın kişisel ve sağlık verilerinin tedavi ve yasal yükümlülükler için işlenmesine dair aydınlatma onayı." : "Hastaya randevu, kampanya ve bilgilendirme amaçlı SMS/e-posta gönderilmesine izin.";
@@ -956,6 +992,12 @@
         return; }
       const an = e.target.closest("[data-h3ana]"); if (an) return H.go("hasta360", { pid:p.id, atab:an.dataset.h3ana, stab:"kart" });
       const al = e.target.closest("[data-h3alt]"); if (al) return H.go("hasta360", { pid:p.id, atab:"360", stab:al.dataset.h3alt });
+      if (e.target.closest("[data-protonew]")) { if (!H.can("admission")) { H.toast("Protokol açma yetkiniz yok.", "e"); return; } protoNewModal(); return; }
+      const pl = e.target.closest("[data-protolock]"); if (pl) { const no = pl.dataset.protolock, r = H.proto && H.proto.get(p.id, no); if (!r) return;
+        const acarak = r.kapali, perm = acarak ? "protokol_duzenle" : "admission";
+        if (!H.can(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; }
+        H.proto.setOpen(p.id, no, acarak); H.log(acarak ? "Protokol yeniden açıldı" : "Protokol kapatıldı", vzName(p.name) + " · " + no); H.toast(acarak ? "Protokol açıldı: " + no : "Protokol kapatıldı: " + no, acarak ? "" : "w");
+        return H.go("hasta360", { pid:p.id, atab:params.atab || "360", stab:params.stab || alt, proto:params.proto || "tumu" }); }
       const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
       const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }

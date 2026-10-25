@@ -43,5 +43,6 @@ protokol aç/kapa/sil, işlem tarih/doktor düzenle, fatura kes/iptal, tahsilat 
 
 ## Durum
 - [x] Kalıcılık (localStorage, düz listeler) · varsayılan dil AZ
-- [ ] Adım 1 — protokol deposu + API
-- [ ] Adım 2–6 — sırayla
+- [x] **Adım 1 — protokol deposu + API** (`H.proto`): `H.data.protokolKayit[pid]` kalıcı; hasta360 protokol listesi depodan okur; "+ Yeni protokol" gerçek protokol açar (otomatik no, kalıcı); protokol kilidine tıkla aç/kapat (yetkili: kapat=admission, yeniden aç=protokol_duzenle). Mevcut demo protokoller bir kez depoya taşınır. Hasta kimlikleri sabit olduğu için bağ yenilemede korunur.
+- [ ] Adım 2 — İstem → protokol bağı (işlem eklenirken aktif protokole)
+- [ ] Adım 3–6 — fatura/GFK/evrak zinciri, vezne+medikal muhasebe tek kaynaktan, 927 yetki bağı
