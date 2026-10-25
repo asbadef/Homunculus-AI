@@ -1615,7 +1615,7 @@
         if (tt === "laboratuvar") { body.innerHTML = seg + ordTable(/Laboratuvar|Lab/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Laboratuvar istemi yok. Doktor istem yapınca burada görünür.", true); return; }
         if (tt === "radyoloji") { body.innerHTML = seg + ordTable(/Radyoloji|Görüntüleme/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Radyoloji / görüntüleme istemi yok.", true); return; }
         if (tt === "patoloji") { body.innerHTML = seg + ordTable(/Patoloji/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Patoloji istemi yok.", true); return; }
-        if (tt === "recete") { body.innerHTML = seg + ordTable(/İlaç|Reçete|ilac/i, ["İlaç", "Kod", "Tarih", "Durum"], "Reçete / ilaç istemi yok.", false); return; }
+        if (tt === "recete") { body.innerHTML = seg + `<div class="r" style="margin-bottom:8px">${(H.can("orders") || H.can("results")) ? `<button class="btn p sm" data-receteyap>${I("pill") || ""} Reçete / ilaç istemi yap</button>` : ""}</div>` + ordTable(/İlaç|Reçete|ilac/i, ["İlaç", "Kod", "Tarih", "Durum"], "Reçete / ilaç istemi yok. Klinik personel 'Reçete / ilaç istemi yap' ile ekler.", false); const rb = body.querySelector("[data-receteyap]"); if (rb) rb.onclick = () => istemModal(p); return; }
         // tanilar (ICD) — hastanın tanı listesi; ICD katalogundan ara-ekle
         p._tanilar = p._tanilar || (p.dx ? [{ kod:"", ad:p.dx, tip:"Ön tanı" }] : []);
         const TAN_TIP = ["Ön tanı", "Kesin tanı", "Ayırıcı tanı"];
