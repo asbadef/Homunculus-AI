@@ -52,7 +52,7 @@ from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.auth.permissions import validate_permissions
-from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
+from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
@@ -78,7 +78,7 @@ BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE 
 SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
-PATIENT_ID_MAX = 128
+# PATIENT_ID_MAX is the gateway's since G2-A2 (D14): a body's id and an ingested one are capped alike.
 
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.

@@ -76,3 +76,61 @@ def test_the_ingest_door_answers_400_to_a_nan_token_and_records_nothing():
         assert r.status_code == 400 and "finite" in r.json()["detail"]
         records = client.get("/audit", headers=auth).json()["records"]
         assert [x for x in records if x["event_type"] == "ingest"] == []
+
+
+# --- G2-A2 (D14): one patient-id rule for every resource /ingest takes ------------------------
+#
+# A blank id merged every reading that carried one into one pseudo-patient; a 129-character id is a
+# feed error; a subject that is not an object raised AttributeError, which /ingest answered with
+# 500. Each is a GatewayError now, and so a 400.
+
+BAD_SUBJECTS = {
+    "blank": {"reference": "Patient/"},
+    "whitespace": {"reference": "Patient/   "},
+    "129 characters": {"reference": "Patient/" + "p" * 129},
+    "a number": {"reference": 7},
+    "a null reference": {"reference": None},
+    "a string subject": "x",
+    "a list subject": ["Patient/bed-3"],
+    "a null subject": None,
+}
+
+
+@pytest.mark.parametrize("subject", list(BAD_SUBJECTS.values()), ids=list(BAD_SUBJECTS))
+def test_a_patient_id_that_is_not_one_raises_gateway_error(subject):
+    bad = {**_fhir("lactate", 3.1), "subject": subject}
+    with pytest.raises(GatewayError):
+        parse_fhir_observation(bad)
+
+
+def test_a_128_character_id_is_still_an_id_and_an_id_is_stripped():
+    assert parse_fhir_observation(_fhir("lactate", 3.1, patient="p" * 128)).patient_id == "p" * 128
+    assert parse_fhir_observation(_fhir("lactate", 3.1, patient="  bed-3 ")).patient_id == "bed-3"
+
+
+def test_patient_id_from_is_the_one_rule():
+    from homunculus.gateway.fhir import PATIENT_ID_MAX, patient_id_from
+    assert PATIENT_ID_MAX == 128
+    assert patient_id_from("  p-1 ", what="the id") == "p-1"
+    with pytest.raises(GatewayError, match="missing the id"):
+        patient_id_from("   ", what="the id")
+    with pytest.raises(GatewayError, match="the id is longer than 128 characters"):
+        patient_id_from("p" * 129, what="the id")
+    with pytest.raises(GatewayError, match="the id is not a string"):
+        patient_id_from(7, what="the id")
+
+
+@pytest.mark.parametrize("name", ["blank", "129 characters", "a string subject", "a number"])
+def test_the_ingest_door_answers_400_not_500_and_records_nothing(name):
+    from fastapi.testclient import TestClient
+    from homunculus.api.app import create_app
+
+    auth = {"Authorization": "Bearer tok"}
+    bad = {**_fhir("lactate", 3.1), "subject": BAD_SUBJECTS[name]}
+    app = create_app({"tok": "h1"}, run_escalation_loop=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        r = client.post("/ingest", json=bad, headers=auth)
+        assert r.status_code == 400, r.text
+        records = client.get("/audit", headers=auth).json()["records"]
+        assert [x for x in records if x["event_type"] == "ingest"] == []
+        assert client.get("/patients", headers=auth).json()["patients"] == []
