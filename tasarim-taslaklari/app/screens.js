@@ -122,23 +122,44 @@
       <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
       ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
       </tbody></table></div>`;
-    const takvimHtml = () => { const drs = randevuDoktorlari(), pad = (n) => String(n).padStart(2, "0"), SAAT = [];
-      for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
+    const pad = (n) => String(n).padStart(2, "0"), SAAT = [];
+    for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
+    const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
+    const kapali = H.data.slotKapali = H.data.slotKapali || [];          // "YYYY-MM-DDTHH:MM|Doktor" biçiminde kapalı slotlar
+    const slotKey = (t, d) => t + "|" + d;
+    // hücre: dolu randevu → renkli, kapalıysa → gri "Kapalı", boşsa → randevu ver
+    const cellHtml = (tarih, saat, dr) => { const a = all.find(r => (r.tarih || "").slice(0, 16) === tarih && r.doktor === dr);
+      if (a) return `<td data-rndopen="${a.id}" style="cursor:pointer;background:color-mix(in srgb,${SEVC[a.durum] || "var(--mid)"} 20%,transparent);border-left:3px solid ${SEVC[a.durum] || "var(--mid)"}"><b>${H.esc(a.hasta)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(a.tur || a.bolum || "")} · ${H.esc(a.durum)}</div></td>`;
+      if (kapali.includes(slotKey(tarih, dr))) return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="Kapalı · açmak için tıkla">Kapalı</td>`;
+      return `<td data-rndcell="${tarih}|${H.esc(dr)}" style="cursor:pointer" title="Boş · tıkla randevu ver, sağ tık slot kapat"></td>`; };
+    const takvimHtml = () => { const drs = randevuDoktorlari();
       const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
-      const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
       const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center"><button class="btn sm" data-rndgun="-1">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndgun="1">${I("right") || "›"}</button><span class="adm-sub">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
       if (!drs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
-      const cellOf = (saat, dr) => dayAppts.find(r => (r.tarih || "").slice(11, 16) === saat && r.doktor === dr);
       return bar + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
-        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => { const a = cellOf(s, d); return a ? `<td data-rndopen="${a.id}" style="cursor:pointer;background:color-mix(in srgb,${SEVC[a.durum] || "var(--mid)"} 20%,transparent);border-left:3px solid ${SEVC[a.durum] || "var(--mid)"}"><b>${H.esc(a.hasta)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(a.tur || a.bolum || "")} · ${H.esc(a.durum)}</div></td>` : `<td data-rndcell="${gun}T${s}|${H.esc(d)}" style="cursor:pointer" title="Boş · randevu ver"></td>`; }).join("")}</tr>`).join("")}
-        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Doluysa tıkla (randevu detayı) · boşsa tıkla (o saate/doktora randevu ver). Renk = durum.</p>`; };
-    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" && view === "liste" ? " geçmişi" : ""}</h2><p>${view === "takvim" ? "Gün takvimi · " + gun : list.length + " randevu"} · poliklinik / bölüm</p></div><div class="r"><button class="btn ${view === "liste" ? "p" : ""}" data-rndview="liste">Liste</button><button class="btn ${view === "takvim" ? "p" : ""}" data-rndview="takvim">Takvim</button><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
-      ${view === "takvim" ? takvimHtml() : listeHtml()}`;
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => cellHtml(gun + "T" + s, s, d)).join("")}</tr>`).join("")}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Doluysa tıkla (randevu detayı) · boşsa tıkla (randevu ver) · boşa sağ tık (slot kapat). Renk = durum.</p>`; };
+    const haftaHtml = () => { const drs = randevuDoktorlari(); if (!drs.length) return `<div class="empty">Randevu takvimi tanımlı doktor yok.</div>`;
+      const dr = params.dr && drs.includes(params.dr) ? params.dr : drs[0];
+      const g0 = new Date(gun), gunler = []; for (let i = 0; i < 7; i++) { const d = new Date(g0); d.setDate(g0.getDate() + i); gunler.push(d.toISOString().slice(0, 10)); }
+      const GAD = ["Baz", "Çər", "Cüm", "Şən", "Baz", "B.e", "Ç.a"];                 // azerice gün kısaltmaları (gösterim)
+      const dgun = (iso) => { const d = new Date(iso); return GAD[d.getDay()] + " " + pad(d.getDate()) + "." + pad(d.getMonth() + 1); };
+      const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndhaftagun="-7">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndhaftagun="7">${I("right") || "›"}</button><select data-rnddr>${drs.map(d => `<option${d === dr ? " selected" : ""}>${H.esc(d)}</option>`).join("")}</select><span class="adm-sub">Hafta görünümü · ${H.esc(dr)}</span></div>`;
+      return bar + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${gunler.map(iso => `<th>${dgun(iso)}</th>`).join("")}</tr></thead><tbody>
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${gunler.map(iso => cellHtml(iso + "T" + s, s, dr)).join("")}</tr>`).join("")}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bir doktorun haftası. Boşa tıkla (randevu ver) · boşa sağ tık (slot kapat) · kapalıya tıkla (aç).</p>`; };
+    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" && view === "liste" ? " geçmişi" : ""}</h2><p>${view === "takvim" ? "Gün takvimi · " + gun : view === "hafta" ? "Hafta takvimi · " + gun : list.length + " randevu"} · poliklinik / bölüm</p></div><div class="r"><button class="btn ${view === "liste" ? "p" : ""}" data-rndview="liste">Liste</button><button class="btn ${view === "takvim" ? "p" : ""}" data-rndview="takvim">Gün</button><button class="btn ${view === "hafta" ? "p" : ""}" data-rndview="hafta">Hafta</button><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
+      ${view === "takvim" ? takvimHtml() : view === "hafta" ? haftaHtml() : listeHtml()}`;
     root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + st.value); } return; }
-      const gs = e.target.closest("[data-rndgunset]"); if (gs) return H.go("randevu", { view:"takvim", gun:gs.value }); };
+      const gs = e.target.closest("[data-rndgunset]"); if (gs) return H.go("randevu", { view:view === "hafta" ? "hafta" : "takvim", gun:gs.value, dr:params.dr });
+      const dd = e.target.closest("[data-rnddr]"); if (dd) return H.go("randevu", { view:"hafta", gun, dr:dd.value }); };
+    root.oncontextmenu = (e) => { const rc = e.target.closest("[data-rndcell]"); if (!rc) return; e.preventDefault();
+      const key = rc.dataset.rndcell; if (!kapali.includes(key)) { kapali.push(key); H.saveData && H.saveData(); H.toast("Slot kapatıldı"); H.go("randevu", params); } };
     root.onclick = (e) => {
-      const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f });
+      const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f, dr:params.dr });
       const rg = e.target.closest("[data-rndgun]"); if (rg) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rg.dataset.rndgun)); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
+      const rh = e.target.closest("[data-rndhaftagun]"); if (rh) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rh.dataset.rndhaftagun)); return H.go("randevu", { view:"hafta", gun:dd.toISOString().slice(0, 10), dr:params.dr }); }
+      const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
       const ro = e.target.closest("[data-rndopen]"); if (ro) { const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
       const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
@@ -1253,7 +1274,7 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r"><button class="btn" data-nobetciz>${I("calendar") || ""} Nöbet çizelgesi</button><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
@@ -1261,6 +1282,7 @@
     root.onclick = (e) => {
       if (e.target.closest("[data-persexp]")) { H.exportCsv("Personel_listesi", ["Ad", "Kullanıcı/Kimlik", "Ünvan", "Rol/tip", "Birimler", "Durum"], staff.map(u => [u.name, u.u, u.title, u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", "), u.active ? "Aktif" : "Pasif"])); H.toast("Excel (CSV) indirildi"); return; }
       if (e.target.closest("[data-persyaz]")) { if (H.printTable) H.printTable("Personel listesi", ["Ad", "Unvan", "Rol / tip", "Birimler", "Durum"], staff.map(u => [u.name, u.title || "—", u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—", u.active ? "Aktif" : "Pasif"])); return; }
+      if (e.target.closest("[data-nobetciz]")) return nobetCiz();
       if (e.target.closest("[data-persnew]")) return persForm(null);
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
       const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
@@ -1273,6 +1295,25 @@
           <p class="adm-sub" style="margin-top:8px">Bu bir <b>login hesabı</b>. Personel kartı (SGK/izin/çalışma takvimi/zimmet) İK'dan "Personel ekle" ile açılır; yetki/rol ataması Yönetim → Kullanıcılar ve Roller'den yapılır.</p>`,
         actions:`<button class="btn" data-x>Kapat</button>${H.can("admin_users") ? `<button class="btn p" data-usrol>Yetki / rol ekranı</button>` : ""}`,
         onMount(m) { const b = m.querySelector("[data-usrol]"); if (b) b.onclick = () => { H.closeModal(); H.go("admin", { tab:"users" }); }; } });
+    }
+    function nobetCiz() {
+      // tüm personel kartlarındaki nöbet/mesai/izin satırlarını tek listede, tarihe göre topla
+      const rows = [];
+      (H.data.personel || []).forEach(p => { const ad = ((p.ad || "") + " " + (p.soyad || "")).trim() || p.kimlik || "—";
+        (p.nobetler || []).forEach(r => rows.push([ad, "Nöbet", r[0] || "", r[1] || "", r[2] || ""]));
+        (p.mesailer || []).forEach(r => rows.push([ad, "Mesai", r[0] || "", r[1] || "", (r[2] ? r[2] + " · " : "") + (r[3] || "")]));
+        (p.izinler || []).forEach(r => rows.push([ad, "İzin", r[0] || "", r[1] || "", r[2] || ""])); });
+      rows.sort((a, z) => String(a[2]).localeCompare(String(z[2])));
+      const cols = ["Personel", "Tür", "Başlangıç", "Bitiş", "Açıklama"];
+      const TURC = { "Nöbet":"crit", "Mesai":"mid", "İzin":"ok" };
+      H.modal({ title:"Nöbet / mesai / izin çizelgesi", wide:true,
+        body:`<div class="r" style="gap:8px;margin-bottom:8px"><button class="btn sm" data-ncexp>${I("save") || ""} Excel</button><button class="btn sm" data-ncyaz>${I("print") || ""} Yazdır</button><span class="adm-sub" style="align-self:center">${rows.length} kayıt · personel kartlarından toplanır</span></div>
+          <div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>
+          ${rows.length ? rows.map(r => `<tr><td><b>${H.esc(r[0])}</b></td><td><span class="tag ${TURC[r[1]] || ""}">${H.esc(r[1])}</span></td><td class="mono adm-sub">${H.esc(r[2])}</td><td class="mono adm-sub">${H.esc(r[3])}</td><td class="adm-sub">${H.esc(r[4])}</td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Kayıt yok. Personel kartı → Nöbet / Mesai / İzin sekmesinden eklenir.</td></tr>`}
+          </tbody></table></div>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { m.querySelector("[data-ncexp]").onclick = () => { H.exportCsv && H.exportCsv("Nobet_cizelgesi", cols, rows); H.toast("Excel indirildi"); };
+          m.querySelector("[data-ncyaz]").onclick = () => H.printTable && H.printTable("Nöbet / mesai / izin çizelgesi", cols, rows); } });
     }
     function persForm(existing, seed) {
       const p = existing || (seed ? { ad:(seed.name || "").trim().split(/\s+/)[0] || "", soyad:(seed.name || "").trim().split(/\s+/).slice(1).join(" "), kimlik:seed.u || "", unvan:seed.title || "", tip:(H.data.roles[seed.role] || { name:seed.role }).name || "", bolum:(seed.units && seed.units !== "*" && seed.units[0] && (H.unit(seed.units[0]) || {}).tr) || "" } : {}), bols = H.data.bolumler || [];
