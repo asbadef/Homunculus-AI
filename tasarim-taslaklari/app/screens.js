@@ -853,7 +853,7 @@
           m.querySelector("[data-kkaydet]").onclick = () => { cur.kapanis = read(m); H.saveData && H.saveData(); H.toast("Sayım kaydedildi"); };
           m.querySelector("[data-kkapat]").onclick = () => { const k = read(m); cur.kapanis = k; cur.acik = false; cur.onay = "bekliyor";
             const sayilan = Object.values(k.sayim).reduce((a, v) => a + (+v || 0), 0), beklenen = tahsil;
-            (H.data.vezneKapanislar = H.data.vezneKapanislar || []).unshift({ id:"vk" + Date.now(), no:cur.no, banko, vezne:(H.state.user || {}).name || "—", vezneU:(H.state.user || {}).u, kapanisT:now, sayim:k.sayim, beklenen, sayilan, fark:+(sayilan - beklenen).toFixed(2), onay:"bekliyor", onaylayan:null, redNot:"" });
+            (H.data.vezneKapanislar = H.data.vezneKapanislar || []).unshift({ id:"vk" + Date.now(), no:cur.no, banko, vezne:(H.state.user || {}).name || "—", vezneU:(H.state.user || {}).u, kapanisT:now, sayim:k.sayim, beklenenKanal:Object.fromEntries(SAY.map(([kk, , vv]) => [kk, vv])), beklenen, sayilan, fark:+(sayilan - beklenen).toFixed(2), onay:"bekliyor", onaylayan:null, redNot:"" });
             H.log("Vezne dönem kapatıldı (onay bekliyor)", "#" + cur.no + " · " + banko + " · sayılan " + sayilan + " / beklenen " + beklenen + " ₼"); H.saveData && H.saveData();
             H.toast(banko + " dönemi kapatıldı · Mali İşler onayı bekleniyor", "w"); H.closeModal(); H.go("vezne", params); }; } });
     }
@@ -1093,20 +1093,35 @@
       ${list.length ? list.map(x => `<tr><td class="mono">#${H.esc(String(x.no))}</td><td><b>${H.esc(x.vezne)}</b></td><td class="adm-sub">${H.esc(x.banko)}</td><td class="adm-sub">${H.esc(x.kapanisT || "—")}</td><td class="n">${para(x.beklenen)}</td><td class="n">${para(x.sayilan)}</td><td class="n">${farkTag(x)}</td><td>${durTag(x.onay)}${x.redNot ? `<div class="adm-sub" style="font-size:11px">${H.esc(x.redNot)}</div>` : ""}${x.onaylayan ? `<div class="adm-sub" style="font-size:11px">${H.esc(x.onaylayan)}</div>` : ""}</td><td>${x.onay === "bekliyor" && can ? `<button class="btn p sm" data-vkdetay="${x.id}">İncele</button> <button class="btn p sm" data-vkonay="${x.id}">Teslim al / Onayla</button> <button class="btn g sm" data-vkred="${x.id}">Reddet</button>` : `<button class="btn sm" data-vkdetay="${x.id}">İncele</button>`}</td></tr>`).join("") : `<tr><td colspan="9" class="mute" style="padding:20px;text-align:center">Bu durumda dönem yok.</td></tr>`}</tbody></table></div>
       <p class="adm-sub" style="margin-top:8px">Fark yeşil (0) ise kasa tam; kırmızı ise eksik/fazla var, incelenir. Onaylanınca dönem kilitlenir ve kasiyer yeni dönem/kasa açabilir. Reddedilince dönem kasiyere geri açılır.</p>`;
     const rec = (id) => (H.data.vezneKapanislar || []).find(x => x.id === id);
+    const SAYAD = { nakit:"Nakit", kk:"Kredi kartı", havale:"Havale/EFT", cek:"Çek", senet:"Senet", usd:"USD", eur:"EUR", avans:"Avans", katilim:"Katılım payı" };
+    function onayla(x) { x.onay = "onaylandi"; x.onaylayan = (H.state.user || {}).name || "Mali İşler"; const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) dl[x.banko].onay = "onaylandi"; H.saveData && H.saveData(); H.log("Vezne dönem onaylandı", "#" + x.no + " · " + x.banko + " · fark " + (x.fark || 0) + " ₼"); H.toast("Kasa teslim alındı · dönem #" + x.no + " onaylandı"); H.go("donemonay", params); }
+    function reddet(x) { const not = prompt("Red nedeni (kasiyere iletilecek):", "Kasa farkı var, yeniden sayın."); if (not == null) return; x.onay = "reddedildi"; x.redNot = not.trim(); const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) { dl[x.banko].acik = true; dl[x.banko].onay = null; } H.saveData && H.saveData(); H.log("Vezne dönem reddedildi", "#" + x.no + " · " + x.banko); H.toast("Dönem reddedildi · kasiyere geri açıldı", "w"); H.go("donemonay", params); }
     function detay(x) {
-      const SAYAD = { nakit:"Nakit", kk:"Kredi kartı", havale:"Havale/EFT", cek:"Çek", senet:"Senet", usd:"USD", eur:"EUR", avans:"Avans", katilim:"Katılım payı" };
-      const rows = Object.entries(x.sayim || {}).filter(([, v]) => +v).map(([k, v]) => `<tr><td>${H.esc(SAYAD[k] || k)}</td><td class="n">${para(v)}</td></tr>`).join("") || `<tr><td colspan="2" class="mute" style="padding:12px;text-align:center">Sayım girilmemiş.</td></tr>`;
-      H.modal({ title:`Kasa teslim · #${x.no} · ${H.esc(x.vezne)}`,
-        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Banko</span><b>${H.esc(x.banko)}</b></div><div><span>Beklenen (sistem)</span><b>${para(x.beklenen)}</b></div><div><span>Sayılan (kasiyer)</span><b>${para(x.sayilan)}</b></div><div><span>Fark</span><b style="color:${(x.fark || 0) === 0 ? "var(--ok)" : "var(--crit)"}">${(x.fark || 0) > 0 ? "+" : ""}${para(x.fark)}</b></div></div>
-          <div class="tw"><table class="t"><thead><tr><th>Para türü</th><th style="width:140px">Sayılan ₼</th></tr></thead><tbody>${rows}</tbody></table></div>`,
-        actions:`<button class="btn" data-x>Kapat</button>` });
+      const chans = [...new Set([...Object.keys(x.beklenenKanal || {}), ...Object.keys(x.sayim || {})])].filter(k => (x.beklenenKanal || {})[k] || (x.sayim || {})[k]);
+      const krows = chans.length ? chans.map(k => { const bek = (x.beklenenKanal || {})[k] || 0, say = (x.sayim || {})[k] || 0, fk = +(say - bek).toFixed(2);
+        return `<tr><td>${H.esc(SAYAD[k] || k)}</td><td class="n">${para(bek)}</td><td class="n">${para(say)}</td><td class="n"><span class="tag ${fk === 0 ? "ok" : "w"}">${fk > 0 ? "+" : ""}${para(fk)}</span></td></tr>`; }).join("")
+        : `<tr><td colspan="4" class="mute" style="padding:12px;text-align:center">Sayım/beklenen kaydı yok.</td></tr>`;
+      const tah = (H.data.faturalar || []).filter(f => f.banko === x.banko && f.durum === "Ödendi");
+      const trows = tah.length ? tah.map(f => `<tr><td><b>${H.esc(vzName(f.hasta))}</b></td><td class="mono adm-sub">${H.esc(f.protokol || "—")}</td><td class="adm-sub">${H.esc(f.odemeTipi || "—")}</td><td class="n">${para(f.katilim)}</td></tr>`).join("")
+        : `<tr><td colspan="4" class="mute" style="padding:12px;text-align:center">Bu döneme bağlı tahsilat kaydı yok (demo).</td></tr>`;
+      const bekliyor = x.onay === "bekliyor";
+      H.modal({ title:`Kasa teslim · #${x.no} · ${H.esc(x.vezne)}`, wide:true,
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Banko</span><b>${H.esc(x.banko)}</b></div><div><span>Beklenen (sistem)</span><b>${para(x.beklenen)}</b></div><div><span>Sayılan (kasiyer)</span><b>${para(x.sayilan)}</b></div><div><span>Fark</span><b style="color:${(x.fark || 0) === 0 ? "var(--ok)" : "var(--crit)"}">${(x.fark || 0) > 0 ? "+" : ""}${para(x.fark)}</b></div><div><span>Durum</span><b>${x.onay === "onaylandi" ? "Onaylandı" : x.onay === "reddedildi" ? "Reddedildi" : "Onay bekliyor"}</b></div></div>
+          <h6 style="margin:0 0 6px">Kasa kontrolü (kanal bazında)</h6>
+          <div class="tw"><table class="t"><thead><tr><th>Para türü</th><th style="width:120px">Beklenen ₼</th><th style="width:120px">Sayılan ₼</th><th style="width:130px">Fark ₼</th></tr></thead><tbody>${krows}</tbody></table></div>
+          <h6 style="margin:14px 0 6px">Dönem tahsilatları (açılan hastalar)</h6>
+          <div class="tw" style="max-height:34vh;overflow:auto"><table class="t"><thead><tr><th>Hasta</th><th style="width:110px">Protokol</th><th style="width:130px">Ödeme tipi</th><th style="width:110px">Tahsilat ₼</th></tr></thead><tbody>${trows}</tbody></table></div>`,
+        actions:`<button class="btn" data-x>Kapat</button>${bekliyor && can ? `<span class="spacer"></span><button class="btn g" data-dred>Reddet</button><button class="btn p" data-don>Teslim al / Onayla</button>` : ""}`,
+        onMount(m) { const o = m.querySelector("[data-don]"), r = m.querySelector("[data-dred]");
+          if (o) o.onclick = () => { H.closeModal(); onayla(x); };
+          if (r) r.onclick = () => { reddet(x); if (x.onay === "reddedildi") H.closeModal(); }; } });
     }
     root.onclick = (e) => {
       const seg = e.target.closest("[data-fseg]"); if (seg) return H.go("donemonay", { f:seg.dataset.fseg });
       const dt = e.target.closest("[data-vkdetay]"); if (dt) { const x = rec(dt.dataset.vkdetay); if (x) detay(x); return; }
       if (!can) return;
-      const on = e.target.closest("[data-vkonay]"); if (on) { const x = rec(on.dataset.vkonay); if (x) { x.onay = "onaylandi"; x.onaylayan = (H.state.user || {}).name || "Mali İşler"; const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) dl[x.banko].onay = "onaylandi"; H.saveData && H.saveData(); H.log("Vezne dönem onaylandı", "#" + x.no + " · " + x.banko + " · fark " + (x.fark || 0) + " ₼"); H.toast("Kasa teslim alındı · dönem #" + x.no + " onaylandı"); H.go("donemonay", params); } return; }
-      const rd = e.target.closest("[data-vkred]"); if (rd) { const x = rec(rd.dataset.vkred); if (x) { const not = prompt("Red nedeni (kasiyere iletilecek):", "Kasa farkı var, yeniden sayın."); if (not == null) return; x.onay = "reddedildi"; x.redNot = not.trim(); const dl = H.data.vezneDonemler || {}; if (dl[x.banko]) { dl[x.banko].acik = true; dl[x.banko].onay = null; } H.saveData && H.saveData(); H.log("Vezne dönem reddedildi", "#" + x.no + " · " + x.banko); H.toast("Dönem reddedildi · kasiyere geri açıldı", "w"); H.go("donemonay", params); } return; }
+      const on = e.target.closest("[data-vkonay]"); if (on) { const x = rec(on.dataset.vkonay); if (x) onayla(x); return; }
+      const rd = e.target.closest("[data-vkred]"); if (rd) { const x = rec(rd.dataset.vkred); if (x) reddet(x); return; }
     };
   } });
 

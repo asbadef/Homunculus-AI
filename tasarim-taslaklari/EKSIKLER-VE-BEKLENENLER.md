@@ -61,5 +61,10 @@ Bekleyen / planlanacak:
 - [ ] **Hakediş modülü** — doktor-hastane anlaşması; doktor adına açılan kayıt/hizmetlerden otomatik hakediş; doktor kendi protokol/hizmet bazlı ödemelerini görür (admin anlaşma tanımlar).
 - [ ] **Hastane kurulum sihirbazı (deployment)** — yeni hastaneye satışta admin'in aktivasyon adımları: hastane/şube, bina-kat-birim, banko/kasa, kullanıcı-rol, hizmet+fiyat, kurum/sigorta, kampanya, protokol/doküman tipleri. Her hastane farklı → veri odaklı, adım adım kontrol listesi.
 - [ ] **Durum renk sistemi** — açık/kapalı, onay bekliyor/onaylı/red, fark 0/var, fatura bekleyen/ödendi gibi durumlar tutarlı renklerle (tag ok/w/crit) okunur; belgelenir.
+- [ ] **Hasta kabul "tek ekran"** — şu an 3 giriş noktası var (Vezne arama → ayrı admission sayfası → hasta dosyası "Hasta kabul" menüsü); tek akışta toplanacak (mantık hatası).
+- [ ] **Hasta Dosyası üst barı sadeleştirme** — 4 sıra (başlık + ana sekme + butonlar + alt sekme) yoğun; daha sade, kullanıcının ne yapacağını kolay anladığı düzen.
+- [ ] **Rol bazlı sol panel ince ayarı + çapraz erişim** — her rol yalnız kendi işini görür; ama Mali İşler gibi roller gerektiğinde protokol detayına erişebilir.
+- [ ] **Tanıtım / giriş sayfası** — HBYS'ye göre yenilenecek (sol panel vb.) — ileride.
+- [ ] **Mobil app** — doktor / hemşire / hasta için uygulama kısımları (mevcut ama eksik) — ileride.
 - [ ] **Doktor + hemşire video analizi** — Homunculus `Doktor Eğitimleri` (35) + `Hemşirelik Eğitimleri` (23) videoları; klinik modül eksiklerini çıkarmak için.
 - Referans listeler nereye oturuyor: `yetki.xls` → ince yetki kataloğu (detayYetki/927), `formlar.xls` (3188) → form envanteri/FORM-DURUM, `hizmet listesi.xlsx` → hizmet kartı+fiyat (H.HIZMET), `tanı listesi.xlsx` → ICD/tanı. Admin tanımlarına içe aktarma planlanacak.
