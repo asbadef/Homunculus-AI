@@ -211,6 +211,8 @@
     store() { return (H.data.protokolKayit = H.data.protokolKayit || {}); },
     list(pid) { return (this.store()[pid] || []).slice(); },
     get(pid, no) { return (this.store()[pid] || []).find(x => x.no === no); },
+    // İstem bağlanacak protokol: ekranda seçili (tumu değilse) → yoksa açık (son) protokol → yoksa en yeni. (Ozan kararı)
+    activeNo(pid, sel) { if (sel && sel !== "tumu") return sel; const list = this.list(pid); return ((list.find(x => !x.kapali)) || list[0] || {}).no; },
     nextNo() { H.data.protoSeq = (H.data.protoSeq || 50894100) + 1; return String(H.data.protoSeq); },
     // Mevcut demo protokollerini (p._protokoller) bir kez depoya taşır; sonra depo gerçek kaynaktır.
     seedFrom(pid, arr) { const s = this.store(); if (!s[pid]) { s[pid] = (arr || []).map(x => Object.assign({ islemIds:[] }, x)); } return s[pid]; },
@@ -269,18 +271,19 @@
     const p = H.pt(pid); if (!p) return; const kurum = p.kurum || "Özel ödeme";
     const fiyatOf = (o) => o.fiyat != null ? o.fiyat : (o.kod ? H.fiyatOf(o.kod, kurum) : 0);
     H.modal({ title:"İşlem havuzu · " + H.esc(vzName(p.name)), wide:true,
-      body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag">Kurum: ${H.esc(kurum)}</span><span class="spacer"></span><div class="seg"><button data-hf2="bekleyen" class="on">Fatura bekleyen</button><button data-hf2="tumu">Tümü</button></div></div>
+      body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag">Kurum: ${H.esc(kurum)}</span><label class="adm-sub">Protokol</label><select data-hproto><option value="tumu">Tüm protokoller</option>${(H.proto ? H.proto.list(p.id) : []).map(x => `<option value="${H.esc(x.no)}">${H.esc(x.no)}${x.kapali ? " (kapalı)" : ""} · ${H.esc(x.bolum)}</option>`).join("")}</select><span class="spacer"></span><div class="seg"><button data-hf2="bekleyen" class="on">Fatura bekleyen</button><button data-hf2="tumu">Tümü</button></div></div>
         <div class="r" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><button class="btn p sm" data-hfatura>Fatura kes</button><button class="btn sm" data-hparcali>Parçalı fatura</button><button class="btn sm" data-hindirim>İndirime gönder</button><button class="btn sm" data-hproviz>Provizyon iste</button><button class="btn sm" data-hpaket>Panel paket</button><button class="btn g sm" data-hbekle>Bekleyene at</button></div>
-        <div class="tw"><table class="t"><thead><tr><th style="width:34px"><input type="checkbox" data-hall></th><th>İşlem</th><th>Tür</th><th style="width:90px">Fiyat</th><th style="width:120px">Durum</th></tr></thead><tbody data-hbody></tbody></table></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:34px"><input type="checkbox" data-hall></th><th>İşlem</th><th>Tür</th><th style="width:90px">Protokol</th><th style="width:90px">Fiyat</th><th style="width:120px">Durum</th></tr></thead><tbody data-hbody></tbody></table></div>
         <div class="adm-bar" style="margin-top:10px"><b>Seçili toplam: <span data-htop>0</span> ₼</b><span class="spacer"></span><span class="adm-sub">Satıra sağ tıklayın: Doktor · Tarih · Tutar · Yeniden fiyatlandır · Özel onay · Durum · Yazdır · Diğer</span></div>`,
       actions:`<button class="btn" data-x>Kapat</button>`,
       onMount(m) {
         const body = m.querySelector("[data-hbody]"), topEl = m.querySelector("[data-htop]");
-        let f2 = "bekleyen";
-        const draw = () => { const ords = (H.data.orders || []).filter(o => o.pid === p.id && (f2 === "tumu" || o.durum !== "Faturalandı"));
-          body.innerHTML = ords.length ? ords.map(o => `<tr data-hrow="${o.id}" style="cursor:context-menu"><td><input type="checkbox" data-hsel="${o.id}" ${o.durum === "Faturalandı" ? "disabled" : ""}></td><td><b>${H.esc(o.ad || o.cat || "—")}</b><div class="adm-sub" style="font-size:11px">${H.esc(o.at || "")} · ${H.esc(o.by || "")}</div></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="n">${fiyatOf(o)} ₼</td><td><span class="tag ${o.durum === "Faturalandı" ? "ok" : ""}">${H.esc(o.durum || "İstendi")}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">${f2 === "bekleyen" ? "Fatura bekleyen işlem yok." : "İşlem yok. Doktor istem yapınca ya da vezne tetkik isteyince burada görünür."}</td></tr>`;
-          recompute(); };
+        let f2 = "bekleyen", hproto = "tumu";
+        const draw = () => { const ords = (H.data.orders || []).filter(o => o.pid === p.id && (hproto === "tumu" || o.protokolNo === hproto) && (f2 === "tumu" || o.durum !== "Faturalandı"));
+          body.innerHTML = ords.length ? ords.map(o => `<tr data-hrow="${o.id}" style="cursor:context-menu"><td><input type="checkbox" data-hsel="${o.id}" ${o.durum === "Faturalandı" ? "disabled" : ""}></td><td><b>${H.esc(o.ad || o.cat || "—")}</b><div class="adm-sub" style="font-size:11px">${H.esc(o.at || "")} · ${H.esc(o.by || "")}</div></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="mono adm-sub">${H.esc(o.protokolNo || "—")}</td><td class="n">${fiyatOf(o)} ₼</td><td><span class="tag ${o.durum === "Faturalandı" ? "ok" : ""}">${H.esc(o.durum || "İstendi")}</span></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">${f2 === "bekleyen" ? "Fatura bekleyen işlem yok." : "İşlem yok. Doktor istem yapınca ya da vezne tetkik isteyince burada görünür."}</td></tr>`;
+          recompute(); H.saveData && H.saveData(); };
         m.querySelectorAll("[data-hf2]").forEach(b => b.onclick = () => { f2 = b.dataset.hf2; m.querySelectorAll("[data-hf2]").forEach(x => x.classList.toggle("on", x === b)); draw(); });
+        const hp = m.querySelector("[data-hproto]"); if (hp) hp.onchange = () => { hproto = hp.value; draw(); };
         m.querySelector("[data-hproviz]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } s.forEach(o => o.durum = "Provizyon istendi"); H.log("Provizyon istendi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("Provizyon istendi (" + s.length + ")"); draw(); };
         m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } const top = s.reduce((a, o) => a + fiyatOf(o), 0); s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true; H.log("Parçalı fatura", vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼"); H.toast("Parçalı fatura kesildi: " + top + " ₼ (" + s.length + ")"); draw(); };
         m.querySelector("[data-hpaket]").onclick = () => H.toast("Panel paket için paket tanımı gerekir (admin → Hizmet Kartı · Paketler).", "w");
@@ -331,7 +334,7 @@
           if (!H.protoOpen(p)) { H.toast("Protokol kapalı · istek eklenemez.", "e"); return; }
           const ad = (inp.value || "").trim(), kod = inp.dataset.kod || "", tip = inp.dataset.tip || ""; if (!ad) { H.toast("Katalogdan tetkik seçin.", "w"); return; }
           const cat = /Radyoloji/.test(tip) ? "Radyoloji" : /Patoloji/.test(tip) ? "Patoloji" : "Laboratuvar";
-          (H.data.orders = H.data.orders || []).unshift({ id:"ord" + Date.now() + Math.floor(Math.random() * 1e3), pid:p.id, cat, ad, kod, by:(H.state.user || {}).name || "Vezne", at:H.nowFull ? H.nowFull() : H.now(), durum:"İstendi", vzIstek:true });
+          (H.data.orders = H.data.orders || []).unshift({ id:"ord" + Date.now() + Math.floor(Math.random() * 1e3), pid:p.id, cat, ad, kod, by:(H.state.user || {}).name || "Vezne", at:H.nowFull ? H.nowFull() : H.now(), durum:"İstendi", vzIstek:true, protokolNo:(H.proto ? H.proto.activeNo(p.id) : undefined) }); H.saveData && H.saveData();
           H.log("Vezneden tetkik isteği", vzName(p.name) + " · " + ad); H.toast("İstek eklendi: " + ad); inp.value = ""; inp.dataset.kod = ""; drawL();
         };
         document.addEventListener("click", (e) => { const cb = m.querySelector(".amel-cb"); if (cb && !cb.contains(e.target)) dd.classList.add("hidden"); });
@@ -903,8 +906,8 @@
         // Doktor istem düzenleme (yetki: protokol_duzenle) — tarih/doktor değiştirilebilir; genel istem tablosu
         const canProt = H.can("protokol_duzenle");
         const ordTable = (re, cols, empty, sonuc) => { const rows = (H.data.orders || []).map((o, gi) => [o, gi]).filter(([o]) => o.pid === p.id && re.test(o.cat || ""));
-          const head = [...cols, ...(canProt ? ["Düzenle"] : [])];
-          return `<div class="tw"><table class="t"><thead><tr>${head.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(([o, gi]) => { const cells = sonuc ? [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"] : [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi"];
+          const head = [cols[0], cols[1], "Protokol", ...cols.slice(2), ...(canProt ? ["Düzenle"] : [])];
+          return `<div class="tw"><table class="t"><thead><tr>${head.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(([o, gi]) => { const cells = sonuc ? [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"] : [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi"];
             return `<tr>${cells.map((c, i) => `<td${i > 1 ? ' class="n"' : ""}>${H.esc(String(c))}</td>`).join("")}${canProt ? `<td><button class="btn g sm" data-ordi="${gi}">${I("edit") || "Düzenle"}</button></td>` : ""}</tr>`; }).join("") : `<tr><td colspan="${head.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`; };
         if (tt === "dokuman") { body.innerHTML = seg + `<div data-docswrap>${H.docs ? H.docs.html(p) : `<div class="empty">Klinik döküman modülü yok.</div>`}</div>`; if (H.docs && H.docs.after) try { H.docs.after(body.querySelector("[data-docswrap]"), p); } catch (e) {} return; }
         if (tt === "laboratuvar") { body.innerHTML = seg + ordTable(/Laboratuvar|Lab/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Laboratuvar istemi yok. Doktor istem yapınca burada görünür.", true); return; }

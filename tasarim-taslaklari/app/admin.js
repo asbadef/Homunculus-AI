@@ -483,7 +483,7 @@
             erisim:body.querySelector('[data-f="erisim"]').value, tercih:body.querySelector('[data-f="tercih"]').value, kurum:body.querySelector('[data-f="kurum"]').value,
             phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:enc, admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
         const tanim = (H.data.hizmetTanim || []).find(t => norm(t.bolum) === norm(bolum));
-        if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi" }); }
+        if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi", protokolNo:(H.proto ? H.proto.activeNo(p.id) : undefined) }); H.saveData && H.saveData(); }
         H.log("Ayaktan kayıt açıldı", name + " · " + bolum + (tanim ? " · " + tanim.hizmetAd : ""));
         H.toast(name + " · ayaktan kayıt açıldı, iş listesine düştü"); H.go("gelisler", { enc:"ayaktan" });
       };

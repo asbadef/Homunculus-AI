@@ -34,8 +34,10 @@
   const all = () => (H.data.orders = H.data.orders || []);
   const ordersOf = (p) => all().filter(o => o.pid === p.id);
   function addOrder(p, o) {
-    all().unshift(Object.assign({ id:"ord" + Date.now() + Math.floor(Math.random() * 1e3), pid:p.id, by:me(), at:now(), durum:"İstendi" }, o));
-    H.log("İstem oluşturuldu", bedNo(p) + " · " + o.cat + " · " + (o.ad || ""));
+    const protokolNo = (H.proto ? H.proto.activeNo(p.id) : undefined);   // istem, hastanın aktif/açık protokolüne bağlanır
+    all().unshift(Object.assign({ id:"ord" + Date.now() + Math.floor(Math.random() * 1e3), pid:p.id, by:me(), at:now(), durum:"İstendi", protokolNo }, o));
+    H.saveData && H.saveData();
+    H.log("İstem oluşturuldu", bedNo(p) + " · " + o.cat + " · " + (o.ad || "") + (protokolNo ? " · prot " + protokolNo : ""));
   }
 
   // İstem başlatıcı grupları. Katalogdan seçilenler "kat" ile işaretli; ötekiler kendi kısa formunu açar.
