@@ -314,6 +314,28 @@
     if (name === "Kurum değişiklik onay") return { cols:["Protokol", "Hasta", "Eski kurum", "Yeni kurum", "Durum"], rows:[["50894026", "Nurgül Süleymanova", "Özel ödeme", "SAMHI", "Onay bekliyor"]], note:"Protokol kurum/sigorta değişikliği yetkili rol onayıyla yapılır." };
     return null;
   }
+  /* ---------------- Klinik doküman görüntüleyici (yalnız okuma) + antetli çıktı ---------------- */
+  function docPrintLetterhead(title, metaRows, bodyHtml) {
+    const h = H.data.hospital || {}, w = window.open("", "_blank"); if (!w) { H.toast("Yazdırma penceresi engellendi (pop-up izni gerekli).", "e"); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${H.esc(title)}</title>
+      <style>body{font:13px system-ui,Arial;padding:28px;color:#111}.hd{text-align:center;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px}.hd b{font-size:18px}.hd small{color:#555}.m{width:100%;border-collapse:collapse;margin:10px 0}.m td{padding:3px 6px;font-size:12px}.m td:first-child{color:#555;width:150px}h2{font-size:15px;text-align:center;margin:8px 0 12px}.sig{display:flex;justify-content:space-around;margin-top:70px;text-align:center;font-size:12px}</style></head>
+      <body><div class="hd"><b>${H.esc(h.name || "Hastane")}</b><br><small>${H.esc(h.adres || "Bakı")}</small></div><h2>${H.esc(title)}</h2>
+      <table class="m">${metaRows.map(r => `<tr><td>${H.esc(r[0])}</td><td><b>${H.esc(r[1])}</b></td></tr>`).join("")}</table>
+      <div style="line-height:1.7">${bodyHtml}</div><div class="sig"><div>Düzenleyen<br><br>İmza</div><div>Baş Həkim<br><br>İmza</div></div>
+      <script>window.onload=function(){setTimeout(function(){try{window.print()}catch(e){}},200)}<\/script></body></html>`);
+    w.document.close(); H.log("Klinik doküman çıktı", title);
+  }
+  function klinikDocView(k, sel) {
+    const baslik = k[1] || "Klinik döküman", tarih = k[0] || "", doktor = k[2] || "", kurum = (sel && sel.kurum) || "";
+    const meta = [["Belge", baslik], ["Tarih", tarih], ["Düzenleyen", doktor]].concat(kurum ? [["Kurum", kurum]] : []);
+    H.modal({ title:baslik + " · görüntüle", wide:true,
+      body:`<div class="vz-hk" style="margin-bottom:10px">${meta.map(r => `<div class="kv"><span>${H.esc(r[0])}</span><span>${H.esc(r[1])}</span></div>`).join("")}</div>
+        <div class="box"><p style="margin:0;line-height:1.7">Bu belge hekim/hemşire tarafından <b>klinik sistemde</b> oluşturulmuştur. Vezne/ön büro yalnız <b>okuyabilir ve çıktı alabilir</b>, değiştiremez.</p>
+        <p class="adm-sub" style="margin-top:8px">${H.esc(baslik)} içeriği klinik modülde tutulur; tam, antetli çıktı için "Antetli yazdır".</p></div>`,
+      actions:`<button class="btn" data-x>Kapat</button><button class="btn p" data-dyaz>${I("print") || ""} Antetli yazdır</button>`,
+      onMount(m) { m.querySelector("[data-dyaz]").onclick = () => docPrintLetterhead(baslik, meta, "<p>" + H.esc(baslik) + " — klinik belge içeriği (demo).</p>"); } });
+  }
+
   /* ---------------- Hasta Danışman (danışman → hasta atama/takip) ---------------- */
   const DN_DURUM = ["Açık", "Takipte", "Kapandı"], DN_DURC = { "Açık":"w", "Takipte":"", "Kapandı":"ok" };
   const DN_KONU = ["Yurtdışı hasta karşılama", "VIP refakat", "Tercüman / dil desteği", "Konaklama / transfer", "Fiyat / paket bilgilendirme", "Şikâyet / memnuniyet", "Diğer"];
@@ -601,7 +623,7 @@
       else if (kft === "vezne") pane = tbl(["Tarih", "İşlem", "Tutar", "Banko"], sel.vezne.map(v => [v[0], v[1], v[2] + " ₼", v[3]]));
       else if (kft === "evrak") pane = tbl(["Evrak", "Durum", "Tarih"], sel.evrak);
       else if (kft === "notlar") pane = `<div class="r" style="margin-bottom:8px"><button class="btn p sm" data-kfnotadd>+ Not ekle</button></div>` + tbl(["Tarih", "Kullanıcı", "Not"], sel.notlar);
-      else if (kft === "klinik") pane = tbl(["Tarih", "Döküman", "Doktor"], sel.klinik);
+      else if (kft === "klinik") pane = `<div class="tw"><table class="t"><thead><tr><th>Tarih</th><th>Döküman</th><th>Doktor</th><th style="width:44px"></th></tr></thead><tbody>${(sel.klinik || []).length ? sel.klinik.map((k, i) => `<tr class="row" data-kldoc="${i}" style="cursor:pointer"><td class="mono adm-sub">${H.esc(k[0])}</td><td><b>${H.esc(k[1])}</b></td><td class="adm-sub">${H.esc(k[2])}</td><td>${I("eye") || "👁"}</td></tr>`).join("") : `<tr><td colspan="4" class="mute" style="padding:16px;text-align:center">Klinik döküman yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">Hekim/hemşire yazmış belgeler. Satıra tıkla → görüntüle + antetli çıktı (yalnız okuma).</p>`;
       else { const top = sel.kalemler.reduce((a, k) => a + k[2] * k[3], 0), avans = sel.vezne.filter(v => /[Aa]vans/.test(v[1])).reduce((a, v) => a + v[2], 0);
         pane = tbl(["Kalem", "Değer"], [["Fatura no", sel.no], ["Kurum", sel.kurum], ["Dönem", sel.donem], ["Durum", sel.durum], ["Kalem sayısı", sel.kalemler.length], ["Protokol sayısı", sel.protokoller.length], ["Toplam tutar", top + " ₼"], ["Alınan avans", avans + " ₼"], ["Kalan", (top - avans) + " ₼"]]); }
       return `<div class="g2" style="align-items:start;grid-template-columns:320px 1fr;gap:14px">
@@ -764,6 +786,7 @@
         const rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
+      const kld = e.target.closest("[data-kldoc]"); if (kld) { const all = kfAll(), sel = all.find(x => x.no === params.kfno) || all[0]; const k = sel && (sel.klinik || [])[+kld.dataset.kldoc]; if (k) klinikDocView(k, sel); return; }
       const kfs = e.target.closest("[data-kfsel]"); if (kfs) return H.go("vezne", { tab:"kurumsal", kfno:kfs.dataset.kfsel, kftab:params.kftab });
       const kftb = e.target.closest("[data-kftab]"); if (kftb) return H.go("vezne", { tab:"kurumsal", kfno:params.kfno, kftab:kftb.dataset.kftab });
       if (e.target.closest("[data-kfyaz]")) { const s = kfAll().find(x => x.no === params.kfno) || kfAll()[0]; if (s && H.printTable) H.printTable("Kurum faturası · " + s.kurum + " · " + s.no, ["Hizmet / işlem", "Kod", "Miktar", "Birim fiyat", "Tutar"], s.kalemler.map(k => [k[0], k[1], k[2], k[3] + " ₼", (k[2] * k[3]) + " ₼"]), { sub:s.kurum + " · " + s.donem }); return; }
