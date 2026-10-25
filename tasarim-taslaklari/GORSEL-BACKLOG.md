@@ -31,10 +31,11 @@
 - [x] İnce-taneli vezne yetkileri admin matrisinde (kapalı protokolde ekle/sil, tahsilat değiştir, protokole aktar, fatura iptal, avans, kurum değişiklik, toplu fatura)
 - [x] **Kurumsal Faturalama çok panelli ekran (#61)** — vezne sekmesi + sağ ray; sol kurum fatura listesi + 8 dikey sekme (Kalemler/İşlemler/Protokoller/Vezne/Evrak/İcmal/Notlar/Klinik Dök.); icmal CSV, not ekleme (2026-10-25)
 
-## FAZ T — TEDAVİ / DOKTOR (ileride tamamlanacak — unutulmayacak)
-- [ ] Tedavi sekmesi: Klinik Dokümanlar / Laboratuvar / Radyoloji / Patoloji / Tanılar / Diş Planları / Aktarım / Reçete İlaç Listesi
-- [ ] Doktor iş listesi → istem (tetkik/radyoloji/ilaç/hizmet) → epikriz (şablona göre)
-- [ ] Doktor girdiği hizmet/tarih düzenleme (yetkiye bağlı)
+## FAZ T — TEDAVİ / DOKTOR (2026-10-25 · çekirdek tamamlandı)
+- [x] **Tedavi sekmesi** (hasta360): Klinik Dokümanlar (muayene/epikriz/izlem editörü — docs.js) / Laboratuvar / Radyoloji / Patoloji / **Tanılar (ICD ara-ekle)** / Reçete-ilaç; Arşiv sekmesi aktarım tablosu
+- [x] Doktor iş listesi → istem (İş Havuzu · İstek) → epikriz (docs muayene notu, şablona göre) akışı yüzeye çıktı
+- [~] Doktor girdiği hizmet/tarih düzenleme — yetki (`protokol_duzenle`) tanımlı; derin düzenleme UI'si ileride
+- [ ] Diş tedavi planları · branşa özel detaylı muayene formları (şimdilik Göz formu hazır) — ileride
 
 ## YENİ (2026-10-25, 2. büyük tur — #239-296 + yetki.xls)
 - [x] **Tek hasta kartı → çok protokol** modeli: Hasta Dosyası'nda sol tarih-gruplu protokol listesi (İki hafta önce/Son ay/Daha eski) + "TÜMÜ"; Gelişler/Faturalar/Ödemeler/İndirimler/Dosyalar/Notlar seçili protokole göre

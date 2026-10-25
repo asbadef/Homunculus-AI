@@ -800,8 +800,39 @@
         else { inner = T(["Protokol", "Tarih", "Arşiv no", "Durum"], [[p.proto || "—", "—", "—", "Arşivde"]], "Arşiv kaydı yok."); }
         body.innerHTML = seg + inner; return;
       }
-      if (ana === "tedavi") { body.innerHTML = placeholder("Tedavi (Klinik dokümanlar / Lab / Radyoloji / Patoloji / Tanılar)"); return; }
-      if (ana === "arsiv") { body.innerHTML = placeholder("Arşiv (aktarım protokolleri / işlemler)"); return; }
+      if (ana === "tedavi") {
+        const tt = params.ttab || "dokuman", ords = (H.data.orders || []).filter(o => o.pid === p.id);
+        const TT = [["dokuman", "Klinik dokümanlar"], ["laboratuvar", "Laboratuvar"], ["radyoloji", "Radyoloji / görüntüleme"], ["patoloji", "Patoloji"], ["tanilar", "Tanılar (ICD)"], ["recete", "Reçete / ilaç"]];
+        const seg = `<div class="seg" style="margin:4px 0 12px;flex-wrap:wrap">${TT.map(([k, l]) => `<button data-ttab="${k}" class="${tt === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+        const T = (cols, rows, empty) => `<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`;
+        if (tt === "dokuman") { body.innerHTML = seg + `<div data-docswrap>${H.docs ? H.docs.html(p) : `<div class="empty">Klinik döküman modülü yok.</div>`}</div>`; if (H.docs && H.docs.after) try { H.docs.after(body.querySelector("[data-docswrap]"), p); } catch (e) {} return; }
+        if (tt === "laboratuvar") { const r = ords.filter(o => /Laboratuvar|Lab/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Laboratuvar istemi yok. Doktor istem yapınca burada görünür."); return; }
+        if (tt === "radyoloji") { const r = ords.filter(o => /Radyoloji|Görüntüleme/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Radyoloji / görüntüleme istemi yok."); return; }
+        if (tt === "patoloji") { const r = ords.filter(o => /Patoloji/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Patoloji istemi yok."); return; }
+        if (tt === "recete") { const r = ords.filter(o => /İlaç|Reçete|ilac/i.test(o.cat || "")); body.innerHTML = seg + T(["İlaç", "Kod", "Tarih", "Durum"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi"]), "Reçete / ilaç istemi yok."); return; }
+        // tanilar (ICD) — hastanın tanı listesi; ICD katalogundan ara-ekle
+        p._tanilar = p._tanilar || (p.dx ? [{ kod:"", ad:p.dx, tip:"Ön tanı" }] : []);
+        const TAN_TIP = ["Ön tanı", "Kesin tanı", "Ayırıcı tanı"];
+        body.innerHTML = seg + `<div class="rc-add" style="margin-bottom:10px;gap:6px;flex-wrap:wrap"><div class="amel-cb" style="flex:1;min-width:240px"><input data-tanq placeholder="Tanı ara (ICD kod / ad)" autocomplete="off"><div class="amel-dd hidden" data-tandd></div></div>
+          <select data-tantip>${TAN_TIP.map(x => `<option>${x}</option>`).join("")}</select><button class="btn p sm" data-tanekle>Ekle</button></div>
+          <div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Tanı</th><th style="width:120px">Tip</th><th style="width:44px"></th></tr></thead><tbody>
+          ${p._tanilar.length ? p._tanilar.map((t, i) => `<tr><td class="mono adm-sub">${H.esc(t.kod || "—")}</td><td><b>${H.esc(t.ad)}</b></td><td class="adm-sub">${H.esc(t.tip || "")}</td><td><button class="btn g sm" data-tandel="${i}">${I("x") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="4" class="mute" style="padding:16px;text-align:center">Tanı yok. Yukarıdan ICD katalogundan ekleyin.</td></tr>`}</tbody></table></div>
+          <p class="adm-sub" style="margin-top:8px">Tanılar ICD-10 katalogundan seçilir; muayene dökümanına ve protokole işlenir. Ana tanı ve taraf tipi muayene ekranında belirlenir.</p>`;
+        const tq = body.querySelector("[data-tanq]"), tdd = body.querySelector("[data-tandd]");
+        const showT = () => { const q = (tq.value || "").trim().toLocaleLowerCase("tr"); const hits = (H.ICD || []).filter(r => !q || (r[0] + " " + r[1]).toLocaleLowerCase("tr").includes(q)).slice(0, 40);
+          tdd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-ic="${H.esc(r[0])}" data-ia="${H.esc(r[1])}"><b>${H.esc(r[1])}</b> <span class="mono adm-sub">${H.esc(r[0])}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen tanı yok</div>`; tdd.classList.remove("hidden"); };
+        tq.oninput = showT; tq.onfocus = showT;
+        tdd.onclick = (ev) => { const o = ev.target.closest("[data-ic]"); if (!o) return; tq.value = o.dataset.ia; tq.dataset.kod = o.dataset.ic; tdd.classList.add("hidden"); };
+        document.addEventListener("click", (ev) => { const cb = body.querySelector(".amel-cb"); if (cb && !cb.contains(ev.target)) tdd.classList.add("hidden"); });
+        body.querySelector("[data-tanekle]").onclick = () => { const ad = (tq.value || "").trim(); if (!ad) { H.toast("Tanı seçin ya da yazın.", "w"); return; }
+          p._tanilar.push({ kod:tq.dataset.kod || "", ad, tip:body.querySelector("[data-tantip]").value }); if (!p.dx) p.dx = ad; H.log("Tanı eklendi", vzName(p.name) + " · " + ad); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"tanilar" }); };
+        body.querySelector("tbody").addEventListener("click", (ev) => { const d = ev.target.closest("[data-tandel]"); if (d) { p._tanilar.splice(+d.dataset.tandel, 1); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"tanilar" }); } });
+        return;
+      }
+      if (ana === "arsiv") { const ords = (H.data.orders || []).filter(o => o.pid === p.id);
+        body.innerHTML = `<p class="adm-sub" style="margin-top:0">Aktarım protokolleri ve işlemleri — başka protokolden bu hastaya aktarılan kayıtlar.</p>
+          <div class="tw"><table class="t"><thead><tr><th>Protokol</th><th>Tarih</th><th>Bölüm</th><th>İşlem</th><th>Durum</th></tr></thead><tbody>${ords.length ? ords.slice(0, 20).map(o => `<tr><td class="mono adm-sub">${H.esc(p.proto || "—")}</td><td class="adm-sub">${H.esc(o.at || "—")}</td><td class="adm-sub">${H.esc(o.cat || "—")}</td><td>${H.esc(o.ad || "—")}</td><td><span class="tag">${H.esc(o.durum || "—")}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Aktarım kaydı yok.</td></tr>`}</tbody></table></div>`;
+        return; }
       // ana === 360
       if (alt === "kart") { body.innerHTML = kartHtml(); return; }
       if (alt === "gelisler") { body.innerHTML = split(gelisHtml()); return; }
@@ -850,6 +881,7 @@
       if (e.target.closest("[data-h3yaz]")) { H.toast("Yazdır çıktıları (tasarım)"); return; }
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
       const ihb = e.target.closest("[data-ih]"); if (ihb) return H.go("hasta360", { pid:p.id, atab:"ishavuzu", ihtab:ihb.dataset.ih });
+      const ttb = e.target.closest("[data-ttab]"); if (ttb) return H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:ttb.dataset.ttab });
       if (e.target.closest("[data-ihrand]")) { H.toast("Randevu ekranı açılıyor"); return H.go("randevu"); }
       if (e.target.closest("[data-ihhazir]")) { H.toast("Hazırlık açıklaması · tasarım", "w"); return; }
       if (e.target.closest("[data-ihonam]")) { H.toast("Onam formu ekle · tasarım", "w"); return; }
