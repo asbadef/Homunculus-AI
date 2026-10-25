@@ -197,6 +197,7 @@
   const canPrintPt = () => !!me() && H.showNames() && H.can("patient");
   const canDoc = (k) => {
     if (!me()) return false;
+    if (k === "table") return true;   // genel liste/tablo yazdırma: ekrandaki veriyi basar (giriş yapan herkes)
     // Biyomedikal belgeleri hasta bilgisi taşımaz: ad görme yetkisi aranmaz, cihaz yetkisi yeter.
     if (k === "dev" || k === "pm" || k === "wo") return H.can("devices");
     if (k === "iso") return H.can("patient") || H.can("beds") || H.can("quality");   // kapı kartında ad yok
@@ -622,7 +623,15 @@
   const PV = { key:null, ctx:null, pages:0 };
   const docKeyOf = (key, ctx) => key + "|" + (ctx.form ? ctx.form + (ctx.blank ? ":bos" : "") + "|" : "") + (ctx.wo || ctx.dev || ctx.pid || (ctx.units ? ctx.units.map(u => u.id).join(",") : "") || (ctx.pids ? me().u + ":" + ctx.pids.join(",") : "") || "all");
 
+  // Genel liste/tablo belgesi: ekranlardaki tablo verisini (cols/rows) yazdırma önizlemesine döker.
+  function docTable(ctx) {
+    const cols = ctx.cols || [], rows = ctx.rows || [];
+    const head = `<tr>${cols.map(c => `<th>${E(String(c))}</th>`).join("")}</tr>`;
+    const trs = rows.length ? rows.map(r => `<tr>${(Array.isArray(r) ? r : [r]).map((c, i) => `<td${i > 0 ? ' class="mono"' : ""}>${E(c == null ? "" : String(c))}</td>`).join("")}</tr>`) : [`<tr><td colspan="${cols.length || 1}">—</td></tr>`];
+    return { title:ctx.title || "Liste", blocks:[{ table:{ cls:"pr-oc", head, rows:trs } }], unitLine:ctx.sub || "", land:cols.length > 5 };
+  }
   function build(key, ctx) {
+    if (key === "table") return docTable(ctx);
     if (STK.includes(key)) return docStk(key, H.pt(ctx.pid), ctx);
     if (key === "occ") return docOcc(ctx.units);
     if (key === "iso") return docIso((ctx.pids || [ctx.pid]).map(H.pt).filter(Boolean));
@@ -786,6 +795,8 @@
   }
 
   H.print = { open, close, copies:COPIES, docs:Object.keys(DOC_T), canDoc };
+  // Ekranlardan çağrılır: H.printTable("Başlık", ["Kolon",...], [[hücre,...],...], {sub, land})
+  H.printTable = (title, cols, rows, opts) => open("table", { title, cols, rows, sub:(opts || {}).sub, land:(opts || {}).land });
 
   /* ================= düğmeleri yerleştir ================= */
   function ddHtml() {

@@ -1086,7 +1086,7 @@
   H.klinikBolumler = () => { bolumSeed(); return (H.data.bolumler || []).filter(b => b.tip !== "İdari Birim"); };
   function tabBolum(body) {
     bolumSeed(); const ALL = H.data.bolumler, ft = AD.blTip || "";
-    body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><select data-bltip><option value="">Tüm tipler</option>${BOLUM_TIP.map(t => `<option${ft === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn" data-blexp>${I("save") || ""} Excel</button><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
+    body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><select data-bltip><option value="">Tüm tipler</option>${BOLUM_TIP.map(t => `<option${ft === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn" data-blexp>${I("save") || ""} Excel</button><button class="btn" data-blyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
       <div data-bllist></div>
       <p class="adm-sub" style="margin-top:10px">Bölümler (idari + klinik + yoğun bakım). Admin tanımlar; kabul, randevu, otomatik hizmet tanımı ve epikriz bu listeyi kullanır. Satıra tıkla düzenle; "Randevu tipleri" ile bölümün randevu tiplerini tanımla.</p>`;
     const list = body.querySelector("[data-bllist]");
@@ -1100,6 +1100,7 @@
     body.querySelector("[data-blq]").addEventListener("input", e => { AD.blq = e.target.value; draw(); });
     body.querySelector("[data-bltip]").addEventListener("change", e => { AD.blTip = e.target.value; draw(); });
     body.querySelector("[data-blexp]").addEventListener("click", () => { const res = resOf(); H.exportCsv ? H.exportCsv("Bolum_listesi", ["Kod", "Bölüm", "Tip", "Branş", "Şube"], res.map(x => [x.kod, x.ad, x.tip, x.brans, x.sube])) : H.toast("Dışa aktarma yok", "w"); });
+    body.querySelector("[data-blyaz]").addEventListener("click", () => { const res = resOf(); H.printTable ? H.printTable("Bölüm / branş listesi", ["Kod", "Bölüm", "Tip", "Branş", "Şube"], res.map(x => [x.kod, x.ad, x.tip, x.brans, x.sube])) : H.toast("Yazdırma yok", "w"); });
     body.querySelector("[data-blnew]").addEventListener("click", () => bolumForm(null, draw));
     list.addEventListener("click", e => {
       const del = e.target.closest("[data-bldel]"); if (del) { e.stopPropagation(); if (confirm("Bu bölüm silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.bldel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
@@ -1582,7 +1583,9 @@
     const samhiK = kurumlar.find(k => /SAMHI|İcbari/.test(k)) || "İcbari Tibbi Sığorta (SAMHI)";
     const pr = (kod, k) => { const ov = H.data.fiyatlar && H.data.fiyatlar[kod] && H.data.fiyatlar[kod][k]; return ov != null ? ov : H.fiyatOf(kod, k); };
     hkSeed();
-    body.innerHTML = `<div class="adm-bar"><input data-fzq placeholder="Hizmet ara (ad / kod)" value="${esc(AD.fzq || "")}" style="flex:1;min-width:240px"><span class="spacer"></span><span class="adm-sub" data-fzcount></span>${can ? `<button class="btn p" data-hknew>+ Yeni hizmet</button>` : `<span class="adm-sub">düzenleme için fiyat yetkisi gerekir</span>`}</div>
+    const fzRows = () => { const q = norm(AD.fzq || ""); const custom = (H.data.hizmetKartlari || []).filter(c => !q || norm(c.ad + " " + (c.kod || "")).includes(q)).map(c => [c.kod || "—", c.ad, c.tip || "—", (c.fiyat || 0) + " ₼", "—"]);
+      const hits = ((H.HIZMET || []).filter(r => !q || norm(r[1] + " " + r[2] + " " + r[0]).includes(q)).slice(0, 200)).map(r => [r[0], hz(r), tipOf(r), pr(r[0], "Özel ödeme") + " ₼", pr(r[0], samhiK) + " ₼"]); return custom.concat(hits); };
+    body.innerHTML = `<div class="adm-bar"><input data-fzq placeholder="Hizmet ara (ad / kod)" value="${esc(AD.fzq || "")}" style="flex:1;min-width:240px"><span class="spacer"></span><span class="adm-sub" data-fzcount></span><button class="btn" data-fzexp>${I("save") || ""} Excel</button><button class="btn" data-fzyaz>${I("print") || ""} Yazdır</button>${can ? `<button class="btn p" data-hknew>+ Yeni hizmet</button>` : `<span class="adm-sub">düzenleme için fiyat yetkisi gerekir</span>`}</div>
       <div data-fzlist></div>
       <p class="adm-sub" style="margin-top:10px">Hizmet kartı + fiyatları tek ekranda. "+ Yeni hizmet" ile kendi hizmetini (kendi kodumuzla) tanımlarsın; standart katalog hizmetine tıklayıp kuruma göre fiyatını düzenlersin. Kendi tanımladıkların listenin başında "yeni" etiketiyle görünür.</p>`;
     const list = body.querySelector("[data-fzlist]");
@@ -1596,6 +1599,9 @@
     };
     draw();
     const qi = body.querySelector("[data-fzq]"); qi.addEventListener("input", () => { AD.fzq = qi.value; draw(); });
+    const COLH = ["Kod", "Hizmet", "Tip", "Özel ödeme", "SAMHI"];
+    body.querySelector("[data-fzexp]").addEventListener("click", () => { H.exportCsv ? H.exportCsv("Hizmet_fiyatlari", COLH, fzRows()) : H.toast("Dışa aktarma yok", "w"); });
+    body.querySelector("[data-fzyaz]").addEventListener("click", () => { H.printTable ? H.printTable("Hizmet fiyatları", COLH, fzRows()) : H.toast("Yazdırma yok", "w"); });
     const nb = body.querySelector("[data-hknew]"); if (nb) nb.addEventListener("click", () => hizmetKartForm(null, draw));
     list.addEventListener("click", (e) => {
       const hkr = e.target.closest("[data-hkrow]"); if (hkr) { if (!can) { H.toast("Yetkiniz yok.", "e"); return; } const c = (H.data.hizmetKartlari || []).find(x => x.id === hkr.dataset.hkrow); if (c) hizmetKartForm(c, draw); return; }

@@ -455,7 +455,22 @@
     ];
     const rail = `<div class="vz-rail">${RAIL.map(([g, items]) => `<div class="vz-rg"><h6>${g}</h6>${items.map(([l, t]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t}" data-raill="${H.esc(l)}">${l}</button>`).join("")}</div>`).join("")}</div>`;
     const kabulBar = `<div class="rc-add" style="margin-bottom:10px"><b style="align-self:center;font-size:13px">Hasta kabul:</b><input data-fin placeholder="FİN / Hasta no ile ara (hasta gelince kimliği girilir)" style="flex:1;min-width:240px"><button class="btn p sm" data-finara>${I("search") || ""} Ara / Kabul</button></div>`;
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${panel}</div>${rail}</div>`;
+    // Geçerli vezne sekmesinin tablo verisi (Excel/Yazdır için).
+    const vzTableData = () => {
+      if (tab === "fatura") return { title:"Faturalar", cols:["Hasta", "Protokol", "Kurum", "Toplam ₼", "Katılım ₼", "Durum"], rows:faturalar().map(x => [vzName(x.hasta), x.protokol, x.kurum, x.toplam, x.katilim, x.durum]) };
+      if (tab === "gfk") return { title:"GFK takip", cols:["Protokol", "Hasta", "Geliş", "Protokol tipi", "Bölüm", "Durum"], rows:gfkRows().map(x => [x.proto, vzName(x.hasta), x.gelis, x.ptip, x.bolum, x.durum]) };
+      if (tab === "evrak") return { title:"Evrak takip", cols:["Fatura no", "Matbu no", "Kurum", "Durum"], rows:evrakRows().map(x => [x.no, x.matbu || "—", x.kurum, x.durum]) };
+      if (tab === "indirim") return { title:"İndirim onay", cols:["Tarih", "Hasta", "İşlem", "Tutar ₼", "Oran %", "Durum"], rows:indirimRows().map(x => [x.tarih, vzName(x.hasta), x.islem, x.tutar, x.oran, x.durum]) };
+      if (tab === "iade") return { title:"İade talepleri", cols:["Tip", "Tarih", "Talep eden", "Tutar ₼", "Durum"], rows:iadeRows().map(x => [x.tip, x.tarih, vzName(x.eden), x.tutar, x.durum]) };
+      if (tab === "fiyat") return { title:"Fiyat verme", cols:["İşlem", "Fiyat ₼"], rows:(H.data.vFiyat || []).map(r => [r.ad, r.fiyat]) };
+      if (tab === "giris") return { title:"Hasta listesi", cols:["Hasta no", "Kimlik", "Ad Soyad", "Telefon"], rows:(H.data.patients || []).map(p => [p.hn || "—", p.fin || "—", vzName(p.name), p.phone || "—"]) };
+      return null;
+    };
+    const vzTab = vzTableData();
+    const vzTools = vzTab ? `<div class="r" style="justify-content:flex-end;gap:6px;margin:-2px 0 10px"><button class="btn sm" data-vzexp>${I("save") || ""} Excel</button><button class="btn sm" data-vzyaz>${I("print") || ""} Yazdır</button></div>` : "";
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${vzTools}${panel}</div>${rail}</div>`;
+    { const xp = root.querySelector("[data-vzexp]"); if (xp) xp.onclick = () => { H.exportCsv ? H.exportCsv("Vezne_" + tab, vzTab.cols, vzTab.rows) : H.toast("Dışa aktarma yok", "w"); };
+      const yz = root.querySelector("[data-vzyaz]"); if (yz) yz.onclick = () => { H.printTable ? H.printTable(vzTab.title, vzTab.cols, vzTab.rows) : H.toast("Yazdırma yok", "w"); }; }
     { const fi = root.querySelector("[data-fin]"); if (fi) fi.addEventListener("keydown", (ev) => { if (ev.key === "Enter") vzFinAra(root); }); }
     if (tab === "giris") {
       const body = root.querySelector("[data-vsbody]"), cnt = root.querySelector("[data-vscount]"), inputs = [...root.querySelectorAll("[data-vs]")];
@@ -534,7 +549,7 @@
         railModal(lbl, rd); return; }
       const kfs = e.target.closest("[data-kfsel]"); if (kfs) return H.go("vezne", { tab:"kurumsal", kfno:kfs.dataset.kfsel, kftab:params.kftab });
       const kftb = e.target.closest("[data-kftab]"); if (kftb) return H.go("vezne", { tab:"kurumsal", kfno:params.kfno, kftab:kftb.dataset.kftab });
-      if (e.target.closest("[data-kfyaz]")) { H.toast("Kurum faturası yazdırılıyor (tasarım)"); return; }
+      if (e.target.closest("[data-kfyaz]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s && H.printTable) H.printTable("Kurum faturası · " + s.kurum + " · " + s.no, ["Hizmet / işlem", "Kod", "Miktar", "Birim fiyat", "Tutar"], s.kalemler.map(k => [k[0], k[1], k[2], k[3] + " ₼", (k[2] * k[3]) + " ₼"]), { sub:s.kurum + " · " + s.donem }); return; }
       if (e.target.closest("[data-kficmal]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s) H.exportCsv("Icmal_" + s.no, ["Hizmet", "Kod", "Miktar", "Birim ₼", "Tutar ₼"], s.kalemler.map(k => [k[0], k[1], k[2], k[3], k[2] * k[3]])); return; }
       if (e.target.closest("[data-kfnotadd]")) { const s = (H.data.kurumFatura || []).find(x => x.no === params.kfno) || (H.data.kurumFatura || [])[0]; if (s) { const t = prompt("Not:"); if (t) { s.notlar.unshift([new Date().toLocaleDateString("tr"), (H.state.user || {}).name || "Vezne", t]); H.go("vezne", { tab:"kurumsal", kfno:s.no, kftab:"notlar" }); } } return; }
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
@@ -568,12 +583,13 @@
       ["İndirim / iade onayları", "Yetkili onayı bekleyen indirim ve iadeler", "vezne", { tab:"indirim" }]];
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_medmuhasebe")}</h2><p>Kurumsal faturalama, evrak ve alacak takibi · vezne ile bağlantılı</p></div></div>
       <div class="g2" style="align-items:start">${cards.map(([t, d, pg, pr]) => `<button class="card" style="text-align:left;cursor:pointer" data-mmgo="${pg}" data-mmp='${H.esc(JSON.stringify(pr))}'><b style="font:700 15px 'Space Grotesk'">${H.esc(t)}</b><div class="adm-sub" style="margin-top:4px">${H.esc(d)}</div></button>`).join("")}</div>
-      <div class="ist-sec ist-hd" style="margin-top:16px"><h5>Kurum bazlı açık alacak</h5><button class="btn sm" data-mmexp>${I("save") || ""} Excel</button></div>
+      <div class="ist-sec ist-hd" style="margin-top:16px"><h5>Kurum bazlı açık alacak</h5><div class="r" style="gap:6px"><button class="btn sm" data-mmexp>${I("save") || ""} Excel</button><button class="btn sm" data-mmyaz>${I("print") || ""} Yazdır</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Kurum / sigorta</th><th style="width:120px">Fatura</th><th style="width:150px">Açık alacak ₼</th></tr></thead><tbody>
       ${Object.keys(alacak).length ? Object.entries(alacak).sort((a, b) => b[1].t - a[1].t).map(([k, v]) => `<tr><td><b>${H.esc(k)}</b></td><td class="n">${v.a}</td><td class="n">${v.t} ₼</td></tr>`).join("") : `<tr><td colspan="3" class="mute" style="padding:16px;text-align:center">Açık alacak yok.</td></tr>`}</tbody></table></div>
       <p class="adm-sub" style="margin-top:10px">Medikal muhasebe, kurumlara kesilen faturaların ve tahsilatının takip edildiği yerdir. Detay kurgu (hakediş, kurum mutabakatı, SAMHI dönem icmali) referans görsellerle oturtulacak.</p>`;
     root.onclick = (e) => { const g = e.target.closest("[data-mmgo]"); if (g) { let pr = {}; try { pr = JSON.parse(g.dataset.mmp); } catch {} return H.go(g.dataset.mmgo, pr); }
-      if (e.target.closest("[data-mmexp]")) { H.exportCsv("Kurum_acik_alacak", ["Kurum", "Fatura", "Açık alacak ₼"], Object.entries(alacak).map(([k, v]) => [k, v.a, v.t])); H.toast("Excel (CSV) indirildi"); } };
+      if (e.target.closest("[data-mmexp]")) { H.exportCsv("Kurum_acik_alacak", ["Kurum", "Fatura", "Açık alacak ₼"], Object.entries(alacak).map(([k, v]) => [k, v.a, v.t])); H.toast("Excel (CSV) indirildi"); return; }
+      if (e.target.closest("[data-mmyaz]")) { if (H.printTable) H.printTable("Kurum bazlı açık alacak", ["Kurum / sigorta", "Fatura", "Açık alacak ₼"], Object.entries(alacak).sort((a, b) => b[1].t - a[1].t).map(([k, v]) => [k, v.a, v.t + " ₼"])); } };
   } });
 
   /* ================= YÖNETİM RAPORLARI (başlık kataloğu · içerik yapım aşamasında) ================= */
@@ -605,7 +621,7 @@
         actions:`<button class="btn" data-exp>${I("save") || ""} Excel'e aktar</button><button class="btn" data-rapyaz>${I("print") || ""} Yazdır</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
         onMount(m) { m.querySelector("[data-exp]").onclick = () => { csvExport(name, d.cols, d.rows); H.toast("Excel (CSV) indirildi"); };
           const u = m.querySelector("[data-rfuygula]"); if (u) u.onclick = () => H.toast("Filtre uygulandı (tarih/bölüm/doktor)");
-          const y = m.querySelector("[data-rapyaz]"); if (y) y.onclick = () => H.toast(name + " yazdırılıyor"); } });
+          const y = m.querySelector("[data-rapyaz]"); if (y) y.onclick = () => H.printTable ? H.printTable(name, d.cols, d.rows) : H.toast("Yazdırma yok", "w"); } });
     };
   } });
   // Rapor/tabloyu Excel'in açacağı CSV olarak indirir (UTF-8 BOM + ; ayracı).
@@ -1056,13 +1072,14 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
       <p class="adm-sub" style="margin-top:8px">Login hesapları Yönetim → Kullanıcılar'da; buradan HR personel kartı (doktor/hemşire/idari…) eklenir. Satıra tıklayınca personel kartı / kullanıcı detayı açılır.</p>`;
     root.onclick = (e) => {
       if (e.target.closest("[data-persexp]")) { H.exportCsv("Personel_listesi", ["Ad", "Kullanıcı/Kimlik", "Ünvan", "Rol/tip", "Birimler", "Durum"], staff.map(u => [u.name, u.u, u.title, u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", "), u.active ? "Aktif" : "Pasif"])); H.toast("Excel (CSV) indirildi"); return; }
+      if (e.target.closest("[data-persyaz]")) { if (H.printTable) H.printTable("Personel listesi", ["Ad", "Unvan", "Rol / tip", "Birimler", "Durum"], staff.map(u => [u.name, u.title || "—", u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—", u.active ? "Aktif" : "Pasif"])); return; }
       if (e.target.closest("[data-persnew]")) return persForm(null);
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
       const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
