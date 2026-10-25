@@ -899,3 +899,11 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .tfilter { font:600 13px Figtree; border-radius:10px; padding:8px 12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); }
 .tfilter::placeholder { color:var(--mute); font-weight:500; }
 .tfilter:focus { outline:none; border-color:var(--acc, var(--mid)); }
+
+/* Vezne sol panel: ikonlu gruplar (QA redesign 25.10.2026) */
+.vz-rg h6{display:flex;align-items:center;gap:6px}
+.vz-rg h6 svg{width:13px;height:13px;opacity:.75}
+.vz-ri{display:flex;align-items:center;gap:8px}
+.vz-ri svg{width:15px;height:15px;flex:none;opacity:.7}
+.vz-ri span{min-width:0}
+.vz-ri.on svg{opacity:1;color:var(--pri)}

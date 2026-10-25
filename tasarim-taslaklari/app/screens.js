@@ -568,11 +568,15 @@
           ${pane}</div></div>
         <p class="adm-sub" style="margin-top:10px">Kurumsal faturalama: anlaşmalı kurumun dönem faturası; soldan fatura seçilir, sağda kalemler/işlemler/protokoller/vezne/evrak/icmal/notlar/klinik dökümanlar görülür. İcmal kuruma gönderilecek özettir. <b>Aynı kayıt Medikal Muhasebe'den de açılır</b> (asıl ev orası; bu, veznedeki kısayol).</p>`; };
     const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, kurumsal:panKurumsal, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
+    // Sol panel: işleve göre 5 mantıklı grup + ikon (referanstan farklı, kullanıcıya daha kolay). [etiket, tab, ikon]
     const RAIL = [
-      ["Vezne paneli", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Fiyat verme", "fiyat"], ["Kampanyalar", ""], ["Dönem bilgileri", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""], ["UHM hasta arama", ""]]],
-      ["Vezne iş havuzu", [["Evrak takip", "evrak"], ["Ödeme takip", "fatura"], ["GFK takip", "gfk"], ["Onam formları", ""], ["Onay bekleyen indirimler", "indirim"], ["Onay bekleyen iadeler", "iade"], ["İade taleplerim", ""], ["Randevulanacak hizmetler", ""], ["Fiyat teklifleri", "fiyat"], ["Hasta danışman", ""], ["Kurum değişiklik onay", ""], ["Protokol listesi", ""], ["Reçete listesi", ""]]],
+      ["Arama & kabul", "search", [["Hasta arama", "", "user"], ["Randevu arama", "", "clock"], ["Son hastalar", "", "clock"], ["Gizli / VIP hasta listesi", "", "shield"], ["UHM hasta arama", "", "search"]]],
+      ["Fiyat & kampanya", "file", [["Fiyat verme", "fiyat", "file"], ["Kampanyalar", "", "star"], ["Fiyat teklifleri", "fiyat", "file"]]],
+      ["Tahsilat & evrak", "file", [["Ödeme takip", "fatura", "file"], ["Evrak takip", "evrak", "clip"], ["GFK takip", "gfk", "list"], ["Dönem bilgileri", "", "clock"]]],
+      ["Onaylar", "shield", [["Onay bekleyen indirimler", "indirim", "edit"], ["Onay bekleyen iadeler", "iade", "refresh"], ["İade taleplerim", "", "list"], ["Kurum değişiklik onay", "", "edit"]]],
+      ["Listeler & diğer", "list", [["Protokol listesi", "", "list"], ["Reçete listesi", "", "file"], ["Doktor iş listesi", "", "users"], ["Hasta danışman", "", "user"], ["Randevulanacak hizmetler", "", "clock"], ["Onam formları", "", "clip"]]],
     ];
-    const rail = `<div class="vz-rail">${RAIL.map(([g, items]) => `<div class="vz-rg"><h6>${g}</h6>${items.map(([l, t]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t}" data-raill="${H.esc(l)}">${l}</button>`).join("")}</div>`).join("")}</div>`;
+    const rail = `<div class="vz-rail">${RAIL.map(([g, gi, items]) => `<div class="vz-rg"><h6>${I(gi) || ""}${H.esc(g)}</h6>${items.map(([l, t, ic]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t || ""}" data-raill="${H.esc(l)}">${I(ic) || ""}<span>${l}</span></button>`).join("")}</div>`).join("")}</div>`;
     const kabulBar = `<div class="rc-add" style="margin-bottom:10px"><b style="align-self:center;font-size:13px">Hasta kabul:</b><input data-fin placeholder="FİN / Hasta no ile ara (hasta gelince kimliği girilir)" style="flex:1;min-width:240px"><button class="btn p sm" data-finara>${I("search") || ""} Ara / Kabul</button></div>`;
     // Geçerli vezne sekmesinin tablo verisi (Excel/Yazdır için).
     const vzTableData = () => {
@@ -587,7 +591,7 @@
     };
     const vzTab = vzTableData();
     const vzTools = vzTab ? `<div class="r" style="justify-content:flex-end;gap:6px;margin:-2px 0 10px"><button class="btn sm" data-vzexp>${I("save") || ""} Excel</button><button class="btn sm" data-vzyaz>${I("print") || ""} Yazdır</button></div>` : "";
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo}</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${vzTools}${panel}</div>${rail}</div>`;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)}${donemNo ? " · dönem #" + donemNo : " · dönem kapalı"}</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${vzTools}${panel}</div>${rail}</div>`;
     { const xp = root.querySelector("[data-vzexp]"); if (xp) xp.onclick = () => { H.exportCsv ? H.exportCsv("Vezne_" + tab, vzTab.cols, vzTab.rows) : H.toast("Dışa aktarma yok", "w"); };
       const yz = root.querySelector("[data-vzyaz]"); if (yz) yz.onclick = () => { H.printTable ? H.printTable(vzTab.title, vzTab.cols, vzTab.rows) : H.toast("Yazdırma yok", "w"); }; }
     { const fi = root.querySelector("[data-fin]"); if (fi) fi.addEventListener("keydown", (ev) => { if (ev.key === "Enter") vzFinAra(root); }); }
@@ -634,6 +638,25 @@
       });
     }
     if (tab === "kurumsal") { const q = root.querySelector("[data-kfq]"); if (q) q.oninput = () => { const v = q.value.toLocaleLowerCase("tr"); root.querySelectorAll("[data-kfsel]").forEach(tr => { tr.style.display = tr.textContent.toLocaleLowerCase("tr").includes(v) ? "" : "none"; }); }; }
+    function donemAcModal() {
+      const MESAI = ["Gündüz", "Gecə", "24 saat", "Həftəsonu"], YKASA = ["Yazar Kasa 1", "Yazar Kasa 2", "—"], YKCIHAZ = ["Ingenico Desk/5000", "PAX A920", "—"], POSL = ["POS-1 (Kapital)", "POS-2 (Paşa)", "—"];
+      const vzAd = (H.state.user || {}).name || "—", now = H.nowFull ? H.nowFull() : new Date().toLocaleString("az-AZ");
+      H.modal({ title:"Dönem aç · " + H.esc(banko), body:`<div class="icd-form">
+        <div class="fr"><label>Vezne / kullanıcı</label><input value="${H.esc(vzAd)}" readonly></div>
+        <div class="fr"><label>Banko / kasa</label><input value="${H.esc(banko)}" readonly></div>
+        <div class="fr"><label>Dönem başlangıç</label><input value="${H.esc(now)}" readonly></div>
+        <div class="fr"><label>Max. kapanış tarihi (ops.)</label><input type="datetime-local" data-f="max"></div>
+        <div class="fr"><label>Mesai tipi</label><select data-f="mesai">${MESAI.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Yazar kasa</label><select data-f="ykasa">${YKASA.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Yazar kasa cihazı</label><select data-f="ykcihaz">${YKCIHAZ.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>POS</label><select data-f="pos">${POSL.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Açılış matbu no</label><input data-f="matbu" placeholder="ör. A-100245"></div></div>
+        <p class="adm-sub" style="margin-top:8px">Bu banko için yeni dönem açılır. Dönem boyunca yaptığın işlemler bu bankodan takip edilir.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Dönemi aç</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => { const el = m.querySelector(`[data-f="${k}"]`); return el ? el.value : ""; };
+          cur.no = ++H.data.vezneDonemSeq; cur.acik = true; cur.acilis = { mesai:g("mesai"), ykasa:g("ykasa"), ykcihaz:g("ykcihaz"), pos:g("pos"), matbu:g("matbu"), max:g("max"), baslangic:now, vezne:vzAd };
+          H.saveData && H.saveData(); H.log("Vezne dönem açıldı", banko + " · #" + cur.no); H.toast(banko + " · dönem açıldı: #" + cur.no); H.closeModal(); H.go("vezne", params); }; } });
+    }
     function donemOzet() {
       const all = faturalar(), odenen = all.filter(x => x.durum === "Ödendi"), bekleyen = all.filter(x => x.durum !== "Ödendi");
       const kanal = {}; odenen.forEach(x => { const k = x.odemeTipi || "Nakit"; kanal[k] = (kanal[k] || 0) + (x.katilim || 0); });
@@ -660,9 +683,8 @@
       const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; }
-        if (cur.acik) { cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko); H.toast(banko + " dönemi kapatıldı · bu bankoda işlem yapılamaz", "w"); }
-        else { cur.no = ++H.data.vezneDonemSeq; cur.acik = true; H.log("Vezne dönem açıldı", "#" + cur.no + " · " + banko); H.toast(banko + " · yeni dönem açıldı: #" + cur.no); }
-        H.saveData && H.saveData(); return H.go("vezne", params); }
+        if (cur.acik) { if (!confirm(banko + " dönemi kapatılsın mı? Kapatınca bu bankoda işlem yapılamaz.")) return; cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko); H.saveData && H.saveData(); H.toast(banko + " dönemi kapatıldı", "w"); return H.go("vezne", params); }
+        return donemAcModal(); }
       if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } cur.no = ++H.data.vezneDonemSeq; cur.acik = true; H.log("Dönem devir alındı", banko + " → #" + cur.no); H.saveData && H.saveData(); H.toast(banko + " · devir alındı · yeni dönem #" + cur.no + " açıldı"); return H.go("vezne", params); }
       if (e.target.closest("[data-vozet]")) { donemOzet(); return; }
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }

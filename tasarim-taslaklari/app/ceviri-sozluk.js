@@ -12434,3 +12434,26 @@ Object.assign(window.HMC_SOZLUK, {
   "Bölüm / branş": { AZ:"Bölmə / ixtisas", RU:"Отделение / специальность", EN:"Unit / specialty" },
   "Bölümler": { AZ:"Bölmələr", RU:"Отделения", EN:"Units" }
 });
+
+/* === Vezne sol panel redesign + dönem aç ekranı · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Arama & kabul": { AZ:"Axtarış & qəbul", RU:"Поиск и приём", EN:"Search & admit" },
+  "Fiyat & kampanya": { AZ:"Qiymət & kampaniya", RU:"Цены и кампании", EN:"Pricing & campaigns" },
+  "Tahsilat & evrak": { AZ:"Yığım & sənəd", RU:"Сборы и документы", EN:"Collection & docs" },
+  "Onaylar": { AZ:"Təsdiqlər", RU:"Утверждения", EN:"Approvals" },
+  "Listeler & diğer": { AZ:"Siyahılar & digər", RU:"Списки и прочее", EN:"Lists & other" },
+  "Dönemi kapat": { AZ:"Dövrü bağla", RU:"Закрыть период", EN:"Close period" },
+  "Bu bankoda dönem aç": { AZ:"Bu bankoda dövr aç", RU:"Открыть период на этой кассе", EN:"Open period on this desk" },
+  "Devir alarak aç": { AZ:"Dövr götürərək aç", RU:"Открыть с переносом", EN:"Open with carryover" },
+  "Dönem özeti": { AZ:"Dövr xülasəsi", RU:"Сводка периода", EN:"Period summary" },
+  "Dönem aç": { AZ:"Dövr aç", RU:"Открыть период", EN:"Open period" },
+  "Dönemi aç": { AZ:"Dövrü aç", RU:"Открыть период", EN:"Open period" },
+  "Vezne / kullanıcı": { AZ:"Kassa / istifadəçi", RU:"Касса / пользователь", EN:"Cashier / user" },
+  "Banko / kasa": { AZ:"Banko / kassa", RU:"Касса / банко", EN:"Desk / cashier" },
+  "Dönem başlangıç": { AZ:"Dövr başlanğıcı", RU:"Начало периода", EN:"Period start" },
+  "Max. kapanış tarihi (ops.)": { AZ:"Maks. bağlanma tarixi (ops.)", RU:"Макс. дата закрытия (опц.)", EN:"Max close date (opt.)" },
+  "Mesai tipi": { AZ:"İş rejimi", RU:"Тип смены", EN:"Shift type" },
+  "Yazar kasa": { AZ:"Yazar kassa", RU:"Кассовый аппарат", EN:"Cash register" },
+  "Yazar kasa cihazı": { AZ:"Yazar kassa cihazı", RU:"Устройство кассы", EN:"Cash register device" },
+  "Açılış matbu no": { AZ:"Açılış çap nömrəsi", RU:"№ открытия (печатный)", EN:"Opening printed no" }
+});
