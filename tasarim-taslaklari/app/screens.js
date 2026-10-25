@@ -123,8 +123,8 @@
     const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
     const view = params.view || "liste", gun = params.gun || new Date().toISOString().slice(0, 10);
     const listeHtml = () => `<div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
-      <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
-      ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
+      <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:130px"></th></tr></thead><tbody>
+      ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td>${["Tamamlandı", "İptal"].includes(r.durum) ? "" : `<button class="btn p sm" data-rndkabul="${r.id}" title="Hasta kabul (protokol aç)">Kabul</button> `}<button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
       </tbody></table></div>`;
     const pad = (n) => String(n).padStart(2, "0"), SAAT = [];
     for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
@@ -167,11 +167,20 @@
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
       const ro = e.target.closest("[data-rndopen]"); if (ro) { const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
       const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
+      const rk = e.target.closest("[data-rndkabul]"); if (rk) { const r = all.find(x => x.id === rk.dataset.rndkabul); if (r) rndKabul(r); return; }
       const del = e.target.closest("[data-rnddel]"); if (del) { const i = all.findIndex(x => x.id === del.dataset.rnddel); if (i >= 0 && confirm("Bu randevu silinsin mi?")) { all.splice(i, 1); H.toast("Randevu silindi", "w"); H.go("randevu", params); } return; }
       if (e.target.closest("[data-rndexp]") || e.target.closest("[data-rndyaz]")) { const cols = ["Saat", "Hasta", "Bölüm", "Doktor", "Not", "Durum"], rows = list.map(r => [(r.tarih || "").replace("T", " "), r.hasta, r.bolum, r.doktor, r.not || "", r.durum]);
         if (e.target.closest("[data-rndexp]")) { H.exportCsv ? (H.exportCsv("Randevular", cols, rows), H.toast("Excel indirildi")) : H.toast("yok", "w"); } else { H.printTable ? H.printTable("Randevular", cols, rows) : H.toast("yok", "w"); } return; }
       if (e.target.closest("[data-rndnew]")) return rndForm();
     };
+    // Randevudan hasta kabul: kayıtlı hastaya protokol açar (→ dosyası), kayıt yoksa ayaktan kayda (önden dolu) gider.
+    function rndKabul(r) {
+      r.durum = "Geldi"; H.saveData && H.saveData();
+      const pat = (H.data.patients || []).find(p => p.name === r.hasta);
+      if (pat) { if (H.proto) { const att = H.userBy(pat.attending); H.proto.create(pat.id, { bolum:r.bolum || "—", doktor:r.doktor || (att && att.name) || "—", gelisTipi:"Ayaktan", ptip:r.tur || "Genel muayene" }); }
+        H.log("Randevudan kabul", r.hasta + " · protokol açıldı"); H.toast("Kabul edildi · protokol açıldı"); H.go("hasta360", { pid:pat.id }); }
+      else { H.toast("Hasta kaydı yok · ayaktan kayıt açılıyor"); H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum } }); }
+    }
     function rndDetay(r) {
       H.modal({ title:"Randevu · " + H.esc(r.hasta), body:`<div class="icd-form">
           <div class="fr"><label>Hasta</label><input value="${H.esc(r.hasta)}" readonly></div>
@@ -180,8 +189,9 @@
           <div class="fr"><label>Doktor</label><input value="${H.esc(r.doktor || "")}" readonly></div>
           <div class="fr"><label>Durum</label><select data-f="durum">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></div>
           <div class="fr"><label>Not</label><input value="${H.esc(r.not || "")}" readonly></div></div>`,
-        actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
+        actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><button class="btn p" data-rdkabul>${I("ok") || ""} Kabul et (protokol aç)</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
         onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); };
+          m.querySelector("[data-rdkabul]").onclick = () => { H.closeModal(); rndKabul(r); };
           m.querySelector("[data-rddel]").onclick = () => { if (!confirm("Bu randevu silinsin mi?")) return; const i = all.findIndex(x => x.id === r.id); if (i >= 0) all.splice(i, 1); H.saveData && H.saveData(); H.closeModal(); H.toast("Randevu silindi", "w"); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); }; } });
     }
     function rndForm(pre) {
@@ -482,6 +492,33 @@
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-yeni>Yeni kayıt aç</button>`,
       onMount(m) { m.querySelector("[data-yeni]").onclick = () => { H.closeModal(); H.go("admission", { tab:"ayaktan", pre:/^[A-Za-z0-9]{7}$/.test(raw) ? { fin:raw.toUpperCase() } : { name:raw } }); }; } });
   }
+  // İstek havuzu: doktor/hemşirenin açtığı istemler (durum "İstendi") burada bekler; vezne seçip "İşleme Al" ile protokole geçirir.
+  function istekHavuzuModal() {
+    const draw = (m) => {
+      const reqs = (H.data.orders || []).filter(o => (o.durum || "İstendi") === "İstendi");
+      const body = m.querySelector("[data-ihbody]");
+      body.innerHTML = reqs.length ? reqs.map(o => { const p = H.pt(o.pid) || {};
+        return `<tr><td><input type="checkbox" data-ihc="${H.esc(o.id)}"></td><td><b>${H.esc(vzName(p.name || "—"))}</b></td><td class="mono adm-sub">${H.esc(o.protokolNo || "—")}</td><td class="adm-sub">${H.esc(o.cat || "—")}</td><td>${H.esc(o.ad || "—")}</td><td class="adm-sub">${H.esc(o.by || "—")}</td><td class="adm-sub">${H.esc(o.at || "—")}</td></tr>`;
+      }).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">İşleme alınacak istem yok.</td></tr>`;
+      const cnt = m.querySelector("[data-ihcount]"); if (cnt) cnt.textContent = reqs.length + " bekleyen istem";
+    };
+    H.modal({ title:"İstek havuzu · doktor/hemşire istemleri", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 10px">Doktor ve hemşirenin açtığı tetkik/işlem istemleri burada bekler. Seçip <b>İşleme Al</b> deyince hastanın protokolüne (işlem havuzu) geçer ve faturalanabilir olur.</p>
+        <div class="adm-bar"><label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-ihall> Tümünü seç</label><span class="spacer"></span><span class="adm-sub" data-ihcount></span></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:34px"></th><th>Hasta</th><th style="width:120px">Protokol</th><th>Tür</th><th>İstem</th><th>İsteyen</th><th style="width:120px">Tarih</th></tr></thead><tbody data-ihbody></tbody></table></div>`,
+      actions:`<button class="btn p" data-ihal>${I("ok") || ""} İşleme Al</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
+      onMount(m) {
+        draw(m);
+        const all = m.querySelector("[data-ihall]"); if (all) all.onchange = () => m.querySelectorAll("[data-ihc]").forEach(c => { c.checked = all.checked; });
+        m.querySelector("[data-ihal]").onclick = () => {
+          const ids = [...m.querySelectorAll("[data-ihc]:checked")].map(c => c.dataset.ihc);
+          if (!ids.length) { H.toast("İstem seçin.", "w"); return; }
+          (H.data.orders || []).forEach(o => { if (ids.includes(o.id)) o.durum = "İşlemde"; });
+          H.saveData && H.saveData(); H.log("İşleme alındı", ids.length + " istem"); H.toast(ids.length + " istem işleme alındı · protokole geçti"); draw(m);
+          const all2 = m.querySelector("[data-ihall]"); if (all2) all2.checked = false;
+        };
+      } });
+  }
   function railModal(lbl, rd) {
     const head = `<tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr>`;
     const rowHtml = (r, i) => `<tr${rd.pids ? ` data-open="${rd.pids[i]}" style="cursor:pointer"` : ""}>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`;
@@ -639,7 +676,7 @@
     const RAIL = [
       ["Arama & kabul", "search", [["Hasta arama", "", "user"], ["Randevu arama", "", "clock"], ["Son hastalar", "", "clock"], ["Gizli / VIP hasta listesi", "", "shield"], ["UHM hasta arama", "", "search"]]],
       ["Fiyat & kampanya", "file", [["Fiyat verme", "fiyat", "file"], ["Kampanyalar", "", "star"], ["Fiyat teklifleri", "fiyat", "file"]]],
-      ["Tahsilat & evrak", "file", [["Ödeme takip", "fatura", "file"], ["Evrak takip", "evrak", "clip"], ["GFK takip", "gfk", "list"], ["Dönem bilgileri", "", "clock"]]],
+      ["İstek & tahsilat", "file", [["İstek havuzu", "", "clock"], ["Ödeme takip", "fatura", "file"], ["Evrak takip", "evrak", "clip"], ["GFK takip", "gfk", "list"], ["Dönem bilgileri", "", "clock"]]],
       ["Onaylar", "shield", [["Onay bekleyen indirimler", "indirim", "edit"], ["Onay bekleyen iadeler", "iade", "refresh"], ["İade taleplerim", "", "list"], ["Kurum değişiklik onay", "", "edit"]]],
       ["Listeler & diğer", "list", [["Protokol listesi", "", "list"], ["Reçete listesi", "", "file"], ["Doktor iş listesi", "", "users"], ["Hasta danışman", "", "user"], ["Randevulanacak hizmetler", "", "clock"], ["Onam formları", "", "clip"]]],
     ];
@@ -680,6 +717,7 @@
           H.log("Hasta kabul", vzName(pp.name) + " · " + l); H.toast("Kabul: " + l + " · protokol açıldı"); H.go("vezne", params); }];
         vzMenu(ev, [
           ["Hasta dosyası aç", () => H.go("hasta360", { pid:pp.id })],
+          ...(pp.onKayit ? [["Kesin kayda çevir", () => { pp.onKayit = false; H.saveData && H.saveData(); H.log("Kesin kayıt", vzName(pp.name)); H.toast("Kesin kayda çevrildi"); H.go("vezne", params); }]] : []),
           ["Birleştir (eşleştir)", () => H.go("admission", { tab:"eslesme" })],
           kabul("ayaktan", "Poliklinik"), kabul("ayaktan", "Acil"), kabul("gunubirlik", "Günübirlik"), kabul("yatan", "Yatış"), kabul("kontrol", "Kontrol"), kabul("donor", "Donör"),
           ["Yeni doğan kaydı aç", () => H.toast("Yeni doğan: anneye bağlı bebek protokolü açılır (yakında).", "w")],
@@ -763,6 +801,53 @@
         actions:`<button class="btn" data-x>Kapat</button><button class="btn p" data-ozetyaz>${I("print") || ""} Yazdır</button>`,
         onMount(m) { const y = m.querySelector("[data-ozetyaz]"); if (y) y.onclick = () => H.toast("Dönem özeti yazdırılıyor"); } });
     }
+    // Dönem devir al: başka veznenin açık dönemindeki faturalanmamış protokolleri kendi dönemine devralır (vardiya devri).
+    function donemDevirModal() {
+      const kaynaklar = acikBankolar.filter(b => b !== banko);
+      const kList = kaynaklar.length ? kaynaklar.map(b => ({ ad:b, no:(donemler[b] || {}).no })) : [{ ad:"Gecə vezne (ADMINNT)", no:3888 }, { ad:"Berna Çolak", no:3864 }];
+      const devredilebilir = gfkRows().filter(x => x.durum !== "Fatura kesildi");
+      let src = kList[0].ad;
+      const draw = (m) => {
+        m.querySelector("[data-dvsrc]").innerHTML = kList.map(k => `<button class="btn sm${k.ad === src ? " p" : ""}" data-dvs="${H.esc(k.ad)}">${H.esc(k.ad)}${k.no ? " · #" + H.esc(String(k.no)) : ""}</button>`).join("");
+        m.querySelector("[data-dvbody]").innerHTML = devredilebilir.length ? devredilebilir.map(x => `<tr><td><input type="checkbox" data-dvc="${H.esc(x.proto)}"></td><td class="adm-sub">${/SGK|provizyon|müstehak/i.test(x.durum) ? "SGK takibi eksik" : "Faturalanmamış"}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="mono adm-sub">${H.esc(x.proto)}</td><td>${H.esc(x.gelis)}</td><td class="adm-sub">${H.esc(x.ptip)}</td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:14px;text-align:center">Devralınacak protokol yok.</td></tr>`;
+      };
+      H.modal({ title:"Dönem devir al · " + H.esc(banko), wide:true,
+        body:`<p class="adm-sub" style="margin:0 0 10px">Ayrılan/başka veznenin açık dönemindeki faturalanmamış protokolleri kendi dönemine devralırsın; sonra bu banko için yeni dönem açılır (vardiya devri).</p>
+          <h6 style="margin:0 0 6px">Açık dönemler (diğer vezneler)</h6><div class="r" data-dvsrc style="gap:6px;margin-bottom:12px;flex-wrap:wrap"></div>
+          <div class="adm-bar"><b style="align-self:center">Devralınacak protokoller</b><span class="spacer"></span><label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-dvall> Tümünü seç</label></div>
+          <div class="tw"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:130px">Tip</th><th>Hasta</th><th style="width:110px">Protokol</th><th>Geliş</th><th>Protokol tipi</th></tr></thead><tbody data-dvbody></tbody></table></div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-dvok>Seçilenleri devral ve dönem aç</button>`,
+        onMount(m) { draw(m);
+          m.querySelector("[data-dvsrc]").onclick = e => { const b = e.target.closest("[data-dvs]"); if (b) { src = b.dataset.dvs; draw(m); } };
+          const all = m.querySelector("[data-dvall]"); if (all) all.onchange = () => m.querySelectorAll("[data-dvc]").forEach(c => { c.checked = all.checked; });
+          m.querySelector("[data-dvok]").onclick = () => { const sel = [...m.querySelectorAll("[data-dvc]:checked")].length;
+            cur.no = ++H.data.vezneDonemSeq; cur.acik = true; cur.devir = { kaynak:src, adet:sel };
+            H.saveData && H.saveData(); H.log("Dönem devir alındı", banko + " ← " + src + " · " + sel + " protokol · #" + cur.no);
+            H.toast(banko + " · " + sel + " protokol devralındı · dönem #" + cur.no + " açıldı"); H.closeModal(); H.go("vezne", params); }; } });
+    }
+    // Kasa kapama: fiziken sayılan tutarlar + kapatmadan önce ele alınacak bekleyen işler (faturalanmamış/SGK eksik protokoller).
+    function donemKapatModal() {
+      const allF = faturalar(), odenen = allF.filter(x => x.durum === "Ödendi");
+      const kanal = {}; odenen.forEach(x => { const k = x.odemeTipi || "Nakit"; kanal[k] = (kanal[k] || 0) + (x.katilim || 0); });
+      const tahsil = odenen.reduce((a, x) => a + (x.katilim || 0), 0);
+      const pick = (...ks) => ks.reduce((a, k) => a + (kanal[k] || 0), 0);
+      const bekleyen = gfkRows().filter(x => x.durum !== "Fatura kesildi");
+      const SAY = [["nakit", "Nakit ₼", pick("Nakit")], ["kk", "Kredi kartı ₼", pick("Kredi kartı", "Kredi Kartı", "Kart")], ["havale", "Havale/EFT ₼", pick("Havale", "Havale/EFT", "EFT")], ["cek", "Çek ₼", 0], ["senet", "Senet ₼", 0], ["usd", "USD $", 0], ["eur", "EUR €", 0], ["avans", "Avans ₼", 0], ["katilim", "Katılım payı ₼", 0]];
+      const now = H.nowFull ? H.nowFull() : new Date().toLocaleString("az-AZ");
+      const read = (m) => { const o = {}; SAY.forEach(([k]) => { const el = m.querySelector(`[data-say="${k}"]`); o[k] = +(el && el.value) || 0; }); const acks = {}; m.querySelectorAll("[data-kack]").forEach(el => { if (el.value.trim()) acks[el.dataset.kack] = el.value.trim(); }); return { sayim:o, aciklamalar:acks, kapanis:now }; };
+      H.modal({ title:`Dönem kapama · #${donemNo} · ${H.esc(banko)}`, wide:true,
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Dönem</span><b>#${donemNo}</b></div><div><span>Sistem tahsilatı</span><b>${tahsil} ₼</b></div><div><span>Nakit (sistem)</span><b>${pick("Nakit")} ₼</b></div><div><span>Kart (sistem)</span><b>${pick("Kredi kartı", "Kredi Kartı", "Kart")} ₼</b></div></div>
+          <h6 style="margin:0 0 6px">Kasa sayımı (fiziken sayılan)</h6>
+          <div class="icd-form">${SAY.map(([k, l, v]) => `<div class="fr"><label>${l}</label><input type="number" data-say="${k}" value="${v}" placeholder="0"></div>`).join("")}</div>
+          <h6 style="margin:14px 0 6px">Bekleyen iş listesi (kapatmadan önce)</h6>
+          <div class="tw"><table class="t"><thead><tr><th style="width:130px">Tip</th><th>Hasta</th><th style="width:110px">Protokol</th><th>Protokol tipi</th><th style="width:220px">Açıklama</th></tr></thead><tbody>
+          ${bekleyen.length ? bekleyen.map(x => `<tr><td class="adm-sub">${/SGK|provizyon|müstehak/i.test(x.durum) ? "SGK takibi eksik" : "Faturalanmamış"}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="mono adm-sub">${H.esc(x.proto)}</td><td class="adm-sub">${H.esc(x.ptip)}</td><td><input data-kack="${H.esc(x.proto)}" placeholder="açıklama / not"></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:14px;text-align:center">Bekleyen iş yok.</td></tr>`}</tbody></table></div>
+          <p class="adm-sub" style="margin-top:8px">Önce sayımı kaydet, sonra dönemi kapat. Kapanınca bu bankoda işlem yapılamaz; özet kasa raporu olarak alınır.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn" data-kkaydet>Sayımı kaydet</button><button class="btn p" data-kkapat>Dönemi kapat</button>`,
+        onMount(m) {
+          m.querySelector("[data-kkaydet]").onclick = () => { cur.kapanis = read(m); H.saveData && H.saveData(); H.toast("Sayım kaydedildi"); };
+          m.querySelector("[data-kkapat]").onclick = () => { cur.kapanis = read(m); cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko + " · sayım nakit " + cur.kapanis.sayim.nakit + " ₼"); H.saveData && H.saveData(); H.toast(banko + " dönemi kapatıldı", "w"); H.closeModal(); H.go("vezne", params); }; } });
+    }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); const d = donemler[vb.value]; H.toast("Banko: " + vb.value + (d && d.acik ? " · dönem açık #" + d.no : " · dönem kapalı")); return H.go("vezne", params); }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp, fptip:params.fptip });
@@ -776,9 +861,9 @@
       const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; }
-        if (cur.acik) { if (!confirm(banko + " dönemi kapatılsın mı? Kapatınca bu bankoda işlem yapılamaz.")) return; cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko); H.saveData && H.saveData(); H.toast(banko + " dönemi kapatıldı", "w"); return H.go("vezne", params); }
+        if (cur.acik) return donemKapatModal();
         return donemAcModal(); }
-      if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } cur.no = ++H.data.vezneDonemSeq; cur.acik = true; H.log("Dönem devir alındı", banko + " → #" + cur.no); H.saveData && H.saveData(); H.toast(banko + " · devir alındı · yeni dönem #" + cur.no + " açıldı"); return H.go("vezne", params); }
+      if (e.target.closest("[data-vdevir]")) { if (!donemYetki) { H.toast("Devir yetkiniz yok.", "e"); return; } return donemDevirModal(); }
       if (e.target.closest("[data-vozet]")) { donemOzet(); return; }
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
@@ -786,6 +871,7 @@
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
       const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); const lbl = rl.dataset.raill;
         if (lbl === "Hasta danışman") return danismanModal();
+        if (lbl === "İstek havuzu") return istekHavuzuModal();
         const rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
@@ -970,7 +1056,8 @@
       <div class="h360-meta">
         <div><span>FİN</span><b>${H.esc(p.fin || "—")}</b></div><div><span>Hasta no</span><b>${H.esc(p.hn || "—")}</b></div><div><span>Protokol</span><b>${H.esc(p.proto || "—")}</b></div>
         <div><span>Hasta tipi</span><b>${H.esc(p.hastaTipi || "Normal")}</b></div><div><span>Uyruk</span><b>${H.esc(p.uyruk || "Azərbaycan")}</b></div>
-        <div><span>Cinsiyet · yaş</span><b>${p.sex === "E" ? "Kişi" : "Qadın"} · ${p.age || "—"}</b></div><div><span>Yatak</span><b>${b ? H.esc(b.no) : "—"}</b></div><div><span>Banko</span><b>${H.esc(H.state.vezneBanko || "—")}</b></div></div></div>`;
+        <div><span>Cinsiyet · yaş</span><b>${p.sex === "E" ? "Kişi" : "Qadın"} · ${p.age || "—"}</b></div><div><span>Yatak</span><b>${b ? H.esc(b.no) : "—"}</b></div><div><span>Banko</span><b>${H.esc(H.state.vezneBanko || "—")}</b></div>
+        <div><span>Kayıt</span><b${p.onKayit ? ' style="color:var(--mid)"' : ""}>${p.onKayit ? "Ön kayıt" : "Kesin kayıt"}</b></div>${(() => { const d = (H.data.danismanlar || []).find(x => x.hasta === p.name && x.durum !== "Kapandı"); return d ? `<div><span>Danışman</span><b>${H.esc(d.danisman)}</b></div>` : ""; })()}</div></div>`;
     const anaTabs = `<div class="seg h360-ana">${H360_ANA.map(([k, l]) => `<button data-h3ana="${k}" class="${ana === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const toolbar = `<div class="h360-tools">
       <button class="btn p sm" data-h3save>${I("save") || ""} Kaydet</button>

@@ -465,7 +465,8 @@
           <div class="box"><h5>${I("clip")} Başvuru</h5>
             ${fld("gelis", "Geliş tipi", sel("gelis", gelisL, "Ayaktan"), 1)}
             ${fld("protokol", "Protokol tipi", sel("protokol", protoL, protoL[0] || ""))}
-            ${fld("bolum", "Bölüm", `<input data-f="bolum" list="ay-bol" placeholder="Bölüm seçin"><datalist id="ay-bol">${bols.map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist>`, 1)}
+            ${fld("kayittipi", "Kayıt tipi", sel("kayittipi", ["Kesin kayıt", "Ön kayıt"], "Kesin kayıt"))}
+            ${fld("bolum", "Bölüm", `<input data-f="bolum" list="ay-bol" placeholder="Bölüm seçin" value="${esc(pre.bolum || "")}"><datalist id="ay-bol">${bols.map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist>`, 1)}
             ${fld("doktor", "Doktor", `<select data-f="doktor"><option value="">—</option>${hekims.map(u => `<option value="${esc(u.u)}">${esc(u.name)}</option>`).join("")}</select>`)}
             ${fld("neden", "Geliş nedeni", inp("neden", "", 'placeholder="Şikayet / amaç"'))}
             ${fld("erisim", "Erişim kanalı", sel("erisim", ["", ...erisimL], ""))}
@@ -485,7 +486,7 @@
         const p = admit({ name, sex:g("sex") || "K", age:+g("age") || 0, ageGroup:"adult", dx:g("neden") || "Ayaktan başvuru", attending:doktor || null, blood:"Bilinmiyor",
           meta:{ temp:true, encounter:enc, source:"ayaktan", proto:nextG(), fin:g("fin").toUpperCase(), bolum, gelis, protokol:body.querySelector('[data-f="protokol"]').value,
             erisim:body.querySelector('[data-f="erisim"]').value, tercih:body.querySelector('[data-f="tercih"]').value, kurum:body.querySelector('[data-f="kurum"]').value,
-            phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:enc, admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
+            phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:enc, onKayit:body.querySelector('[data-f="kayittipi"]').value === "Ön kayıt", admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
         if (H.proto) H.proto.create(p.id, { no:p.proto, bolum, doktor:doktor || "—", gelisTipi:gelis, ptip:body.querySelector('[data-f="protokol"]').value || "Genel muayene" });   // kabulde protokol otomatik açılır
         const tanim = (H.data.hizmetTanim || []).find(t => norm(t.bolum) === norm(bolum));
         if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi", protokolNo:(H.proto ? H.proto.activeNo(p.id) : undefined) }); H.saveData && H.saveData(); }
