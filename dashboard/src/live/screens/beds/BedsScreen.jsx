@@ -144,8 +144,9 @@ function Waiting({ nowMs }) {
 
 /** The list view (the prototype's `table.t`). The numbers are written in `ink`, not in the
  *  channels' own colours: on `card2` — which the table's header and zebra use — `--v-map` and
- *  `--v-spo` fall under 4.5:1 in daylight (Wave 1B's contrast table). */
-function BedList({ patients, alertsOf, monitored }) {
+ *  `--v-spo` fall under 4.5:1 in daylight (Wave 1B's contrast table).
+ *  `nowMs` (G2-A2, D10): the screen's clock, for the NEWS2 cell's ages. */
+function BedList({ patients, alertsOf, monitored, nowMs }) {
   const { t } = useI18n();
   return (
     <Table caption={t("beds.caption")}>
@@ -194,7 +195,7 @@ function BedList({ patients, alertsOf, monitored }) {
               <td>{cell("spo2")}</td>
               <td>{cell("resp_rate")}</td>
               <td>{cell("temperature")}</td>
-              <td><News2 news2={p.news2} /></td>
+              <td><News2 news2={p.news2} nowMs={nowMs} /></td>
               <td className="whitespace-nowrap font-data">{last === null ? "—" : hhmm(last)}</td>
             </tr>
           );
@@ -347,7 +348,7 @@ export function BedsScreen() {
                   : t("board.connecting")}
         </Empty>
       ) : view === "liste" ? (
-        <BedList patients={shown} alertsOf={alertsOf} monitored={linked} />
+        <BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} />
       ) : (
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
           {shown.map((p) => (

@@ -376,7 +376,8 @@ export function PatientScreen({ params }) {
             </div>
             <div className="flex flex-col items-end gap-1.5">
               <RiskPill risk={patient.risk} measured={measured} />
-              <News2 news2={patient.news2} />
+              {/* G2-A2 (D10): the screen's clock, so a stale input's age is the server's. */}
+              <News2 news2={patient.news2} nowMs={nowMs} />
             </div>
           </header>
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>

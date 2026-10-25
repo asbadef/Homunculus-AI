@@ -146,7 +146,8 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
         <Vitals patient={patient} />
 
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2 text-11 text-mute">
-          <News2 news2={patient?.news2} />
+          {/* G2-A2 (D10): the card's clock, so a stale input's age is the server's. */}
+          <News2 news2={patient?.news2} nowMs={nowMs} />
           {last !== null ? <span>{t("board.measuredAt", { time: hhmm(last) })}</span> : null}
           {stale > 0 ? <span className="text-att-ink">{t("beds.staleChannels", { count: stale })}</span> : null}
           <span className="ml-auto flex items-center gap-1">

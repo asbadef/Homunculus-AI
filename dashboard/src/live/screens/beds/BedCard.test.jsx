@@ -161,6 +161,35 @@ describe("the bed card — what it says, and what it refuses to", () => {
       expect(screen.getByText("Aşağı")).toBeInTheDocument();
       expect(container.querySelector("[data-rail]")).toHaveAttribute("data-rail", "low");
     });
+
+    // G2-A2 (D10): the engine names what it left out of the total (`stale`) and what it scored as
+    // room air and Alert (`assumed`). The card prints each stale input's age from the engine's
+    // stamp (`measured_at`) and judges nothing itself.
+    it("names a stale input with its age, from the engine's stamp", () => {
+      card(entry("S-001", [], {
+        at: measured(30),
+        score: news2({ total: 4, partial: true, stale: ["spo2", "temperature"],
+          measured_at: { spo2: ago(7200), temperature: ago(7500) } }),
+      }));
+      expect(screen.getByText("köhnə məlumat: SpO2 · 2 saat əvvəl, temperatur · 3 saat əvvəl")).toBeInTheDocument();
+      expect(screen.getByText(/Pəncərəsini keçmiş ölçmə bala daxil edilmir/)).toBeInTheDocument();
+    });
+
+    it("marks the assumed inputs, and says when an expired chart was last made", () => {
+      card(entry("S-001", [], {
+        at: measured(30),
+        score: news2({ assumed: ["air_or_oxygen", "consciousness"], measured_at: { air_or_oxygen: ago(9 * 3600) } }),
+      }));
+      expect(screen.getByText("fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq")).toBeInTheDocument();
+      expect(screen.getByText("(heç qeyd edilməyib)")).toBeInTheDocument();   // consciousness, read out
+      expect(screen.queryByText("qismən")).toBeNull();                         // an assumption is not partial
+    });
+
+    it("says nothing more when nothing is stale or assumed", () => {
+      card(entry("S-001", [], { at: measured(30), score: news2({ total: 2 }) }));
+      expect(screen.queryByText(/köhnə məlumat/)).toBeNull();
+      expect(screen.queryByText(/fərz edildi/)).toBeNull();
+    });
   });
 
   describe("the open alarms", () => {

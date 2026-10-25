@@ -193,6 +193,16 @@ describe("the bed board", () => {
       expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
     });
 
+    // G2-A2 (D10): the list's NEWS2 cell says what the card says, against the same clock.
+    it("the list names a stale NEWS2 input with its age", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...CARD, score: news2({ total: 3, partial: true, stale: ["pulse"], measured_at: { pulse: ago(4000) } }),
+      })]) });
+      fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
+      const row = screen.getByRole("table").querySelector("tbody tr");
+      expect(within(row).getByText("köhnə məlumat: nəbz · 67 dəq əvvəl")).toBeInTheDocument();
+    });
+
     it("keeps the chosen view in this browser", async () => {
       await open({ payload: board([entry("S-001", [], CARD)]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
