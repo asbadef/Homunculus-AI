@@ -90,9 +90,9 @@
   function seedRandevu() {
     const now = new Date(), d = (h, m) => { const x = new Date(now); x.setHours(h, m, 0, 0); return x.toISOString().slice(0, 16); };
     return [
-      { id:"rnd1", hasta:"Günel Məmmədova", bolum:"Mamalıq-Ginekologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 0), durum:"Bekliyor", not:"Hamiləlik izləmi" },
-      { id:"rnd2", hasta:"Orxan Əliyev", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 30), durum:"Bekliyor", not:"Hipertansiyon kontrolü" },
-      { id:"rnd3", hasta:"Elvin Səmədov", bolum:"Oftalmologiya", doktor:"Dr. Kamran Rzayev", tarih:d(10, 15), durum:"Geldi", not:"Check-up" },
+      { id:"rnd1", hasta:"Elvin Hüseynov", bolum:"Mamalıq-Ginekologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 0), durum:"Bekliyor", not:"Hamiləlik izləmi" },
+      { id:"rnd2", hasta:"Nərgiz Əliyeva", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 30), durum:"Bekliyor", not:"Hipertansiyon kontrolü" },
+      { id:"rnd3", hasta:"Rəşad Məmmədov", bolum:"Oftalmologiya", doktor:"Dr. Kamran Rzayev", tarih:d(10, 15), durum:"Geldi", not:"Check-up" },
     ];
   }
   const RND_DURUM = ["Bekliyor", "Geldi", "Tamamlandı", "Gelmedi", "İptal"];
@@ -153,19 +153,19 @@
 
   /* ================= VEZNE / FATURALAMA ================= */
   const faturalar = () => (H.data.faturalar = H.data.faturalar || [
-    { id:"fat1", hasta:"Günel Məmmədova", protokol:"Ayaktan · Hamiləlik izləmi", kurum:"İcbari Tibbi Sığorta (SAMHI)", toplam:85, katilim:0, durum:"Bekliyor" },
-    { id:"fat2", hasta:"Orxan Əliyev", protokol:"Ayaktan · Kardioloji", kurum:"Özel ödeme", toplam:60, katilim:60, durum:"Bekliyor" },
-    { id:"fat3", hasta:"Elvin Səmədov", protokol:"Günübirlik · Check-up", kurum:"Kurum anlaşması", toplam:240, katilim:48, durum:"Ödendi" },
+    { id:"fat1", hasta:"Elvin Hüseynov", protokol:"Ayaktan · Hamiləlik izləmi", kurum:"İcbari Tibbi Sığorta (SAMHI)", toplam:85, katilim:0, durum:"Bekliyor" },
+    { id:"fat2", hasta:"Nərgiz Əliyeva", protokol:"Ayaktan · Kardioloji", kurum:"Özel ödeme", toplam:60, katilim:60, durum:"Bekliyor" },
+    { id:"fat3", hasta:"Rəşad Məmmədov", protokol:"Günübirlik · Check-up", kurum:"Kurum anlaşması", toplam:240, katilim:48, durum:"Ödendi" },
   ]);
   // Bankolar tercihen admin "Kayıt Seçenekleri" > banko listesinden; yoksa yedek.
   const BANKOLAR = () => (H.data.secenekler && H.data.secenekler.banko && H.data.secenekler.banko.length ? H.data.secenekler.banko : (H.data.bankolar = H.data.bankolar || ["Yatan Kasası", "Estetik Kasası", "Pediatri Kasası", "Preop Kasası", "Eczane Kasası", "Ofis Kasası", "Acil Kasası"]));
   const ODEME_TIP = ["Kart", "Nakit", "Havale"];
   const GFK_DURUM = ["Hasta faturası kesilmiş", "Kurum faturası kesilmiş", "Provizyonu alınmamış", "Hasta faturası kesilmemiş"];
   const gfkRows = () => (H.data.gfk = H.data.gfk || [
-    { proto:"50873355", hasta:"Günel Məmmədova", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Kardiologiya", durum:"Hasta faturası kesilmiş" },
-    { proto:"50874258", hasta:"Orxan Əliyev", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Daxili Xəstəliklər", durum:"Provizyonu alınmamış" },
-    { proto:"50875215", hasta:"Elvin Səmədov", gelis:"Günübirlik", ptip:"Check-up", bolum:"Check Up", durum:"Kurum faturası kesilmiş" },
-    { proto:"50876568", hasta:"Ayan Hümbətova", gelis:"Ayaktan", ptip:"Kontrol", bolum:"Dermatologiya", durum:"Hasta faturası kesilmemiş" },
+    { proto:"50873355", hasta:"Elvin Hüseynov", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Kardiologiya", durum:"Hasta faturası kesilmiş" },
+    { proto:"50874258", hasta:"Nərgiz Əliyeva", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Daxili Xəstəliklər", durum:"Provizyonu alınmamış" },
+    { proto:"50875215", hasta:"Rəşad Məmmədov", gelis:"Günübirlik", ptip:"Check-up", bolum:"Check Up", durum:"Kurum faturası kesilmiş" },
+    { proto:"50876568", hasta:"Səbinə Vəliyeva", gelis:"Ayaktan", ptip:"Kontrol", bolum:"Dermatologiya", durum:"Hasta faturası kesilmemiş" },
   ]);
   const EVRAK_DURUM = ["Veznede", "Vezneden teslim edildi", "Medikal muhasebede", "Vezneye iade edildi"];
   const evrakRows = () => (H.data.evrak = H.data.evrak || [
@@ -183,17 +183,17 @@
     rec.durum = z.every(x => x.durum === "Onaylandı") ? "Onaylandı" : "Onay bekliyor"; };
   const zincStr = (z) => (z || []).map(x => `${x.seviye}. ${x.birim || "onay"}: ${x.durum === "Onaylandı" ? "✓" : x.durum === "Reddedildi" ? "✕" : "⏳"}`).join("  ");
   const indirimRows = () => (H.data.indirimOnay = H.data.indirimOnay || [
-    { id:"io1", tarih:"22.10.2026 10:47", hasta:"Murat Can Aslan", isteyen:"Esli Daşdiyeva", islem:"Fibroblast deri/kozmetoloji tatbiqi", tutar:1250, oran:40, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq", zincir:zinc([["Misafir Hizmetleri", "Murat Can Aslan", "Onaylandı"], ["Üst Yönetim", "Ahmet Hakan"], ["Mali İşler", "Ülvi İsgenderov"]]) },
-    { id:"io2", tarih:"21.10.2026 12:26", hasta:"Nermin Süleymanova", isteyen:"Şöle Şıxeliyeva", islem:"Muayene paketi", tutar:41, oran:2.27, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", "Esli Daşdiyeva"], ["Mali İşler", "Ülvi İsgenderov"]]) },
-    { id:"io3", tarih:"21.10.2026 16:18", hasta:"Brilyand Memmedova", isteyen:"Esli Daşdiyeva", islem:"Radyoloji tetkik", tutar:400, oran:15, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq", zincir:zinc([["Bölüm Sorumlusu", "Dr. Elxan"], ["Üst Yönetim", "Ahmet Hakan"]]) },
-    { id:"io4", tarih:"19.10.2026 10:40", hasta:"Sure Babayeva", isteyen:"Esli Daşdiyeva", islem:"Laboratuvar paketi", tutar:530, oran:19.14, durum:"Onaylandı", grup:"Hastaya İskonto", zincir:zinc([["Vezne", "Esli Daşdiyeva", "Onaylandı"], ["Mali İşler", "Ülvi İsgenderov", "Onaylandı"]]) },
+    { id:"io1", tarih:"22.10.2026 10:47", hasta:"Kamal Səmədov", isteyen:"Esli Daşdiyeva", islem:"Fibroblast deri/kozmetoloji tatbiqi", tutar:1250, oran:40, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq", zincir:zinc([["Misafir Hizmetleri", "Kamal Səmədov", "Onaylandı"], ["Üst Yönetim", "Ahmet Hakan"], ["Mali İşler", "Ülvi İsgenderov"]]) },
+    { id:"io2", tarih:"21.10.2026 12:26", hasta:"Zərifə Həşimova", isteyen:"Şöle Şıxeliyeva", islem:"Muayene paketi", tutar:41, oran:2.27, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", "Esli Daşdiyeva"], ["Mali İşler", "Ülvi İsgenderov"]]) },
+    { id:"io3", tarih:"21.10.2026 16:18", hasta:"Tofiq Babaşov", isteyen:"Esli Daşdiyeva", islem:"Radyoloji tetkik", tutar:400, oran:15, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq", zincir:zinc([["Bölüm Sorumlusu", "Dr. Elxan"], ["Üst Yönetim", "Ahmet Hakan"]]) },
+    { id:"io4", tarih:"19.10.2026 10:40", hasta:"Leyli Nağıyeva", isteyen:"Esli Daşdiyeva", islem:"Laboratuvar paketi", tutar:530, oran:19.14, durum:"Onaylandı", grup:"Hastaya İskonto", zincir:zinc([["Vezne", "Esli Daşdiyeva", "Onaylandı"], ["Mali İşler", "Ülvi İsgenderov", "Onaylandı"]]) },
   ]);
   const IADE_DURUM = ["Onay bekliyor", "Onaylandı", "Reddedildi", "İade tamamlandı"];
   const iadeRows = () => (H.data.iadeTalep = H.data.iadeTalep || [
-    { id:"ia1", tip:"Avans İade", tarih:"21.10.2026 15:55", eden:"Sebine Bağırova", tutar:2.90, dep:"Genel İade", aciklama:"Doktor ilaca gerek görmedi", durum:"Onay bekliyor", proto:"50894485", zincir:zinc([["Misafir Hizmetleri", "Murat Can Aslan", "Onaylandı"], ["Üst Yönetim", "Ahmet Hakan"], ["Mali İşler", "Ülvi İsgenderov"]]) },
-    { id:"ia2", tip:"Avans İade", tarih:"21.10.2026 13:36", eden:"Şebnem Süleymanlı", tutar:607.02, dep:"Genel İade", aciklama:"Depozitten qalan məbləğ", durum:"Onay bekliyor", proto:"50880632", zincir:zinc([["Vezne", "Şebnem Süleymanlı"], ["Mali İşler", "Ülvi İsgenderov"]]) },
-    { id:"ia3", tip:"Fatura İade", tarih:"20.10.2026 17:15", eden:"Helime Ehmedova", tutar:30, dep:"Protokolden Protokola", aciklama:"Anadan yenidoğmuşa iade", durum:"Onaylandı", proto:"50892002", zincir:zinc([["Vezne", "Helime Ehmedova", "Onaylandı"]]) },
-    { id:"ia4", tip:"Avans İade", tarih:"20.10.2026 12:59", eden:"Aytac Rüstemli", tutar:100, dep:"Genel İade", aciklama:"Anestezi olmadığı üçün", durum:"Onay bekliyor", proto:"50893269", zincir:zinc([["Vezne", "Aytac Rüstemli"], ["Üst Yönetim", "Ahmet Hakan"]]) },
+    { id:"ia1", tip:"Avans İade", tarih:"21.10.2026 15:55", eden:"Fuad Orucov", tutar:2.90, dep:"Genel İade", aciklama:"Doktor ilaca gerek görmedi", durum:"Onay bekliyor", proto:"50894485", zincir:zinc([["Misafir Hizmetleri", "Kamal Səmədov", "Onaylandı"], ["Üst Yönetim", "Ahmet Hakan"], ["Mali İşler", "Ülvi İsgenderov"]]) },
+    { id:"ia2", tip:"Avans İade", tarih:"21.10.2026 13:36", eden:"Aysu Rəhimova", tutar:607.02, dep:"Genel İade", aciklama:"Depozitten qalan məbləğ", durum:"Onay bekliyor", proto:"50880632", zincir:zinc([["Vezne", "Aysu Rəhimova"], ["Mali İşler", "Ülvi İsgenderov"]]) },
+    { id:"ia3", tip:"Fatura İade", tarih:"20.10.2026 17:15", eden:"Elvin Hüseynov", tutar:30, dep:"Protokolden Protokola", aciklama:"Anadan yenidoğmuşa iade", durum:"Onaylandı", proto:"50892002", zincir:zinc([["Vezne", "Elvin Hüseynov", "Onaylandı"]]) },
+    { id:"ia4", tip:"Avans İade", tarih:"20.10.2026 12:59", eden:"Nərgiz Əliyeva", tutar:100, dep:"Genel İade", aciklama:"Anestezi olmadığı üçün", durum:"Onay bekliyor", proto:"50893269", zincir:zinc([["Vezne", "Nərgiz Əliyeva"], ["Üst Yönetim", "Ahmet Hakan"]]) },
   ]);
   const PTIP_ETKI = [["hastaFark", "Hastaya fark atılmaz (hasta payı 0)"], ["sgkKatilim", "SGK katılım payı oluşmaz"], ["avans", "Avans alınabilir"], ["otoKapanma", "Otomatik kapanmaz"], ["islemHavuz", "İşlem havuzuna düşer"], ["doktorsuz", "Doktorsuz protokol"], ["nobetsiz", "Nöbetsiz protokol"]];
   const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
@@ -235,20 +235,20 @@
   function railData(name) {
     if (name === "Son hastalar") { const L = (H.data.patients || []).slice(-8).reverse(); return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], pids:L.map(p => p.id), rows:L.map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", vzName(p.name), b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) }; }
     if (name === "Protokol listesi") return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, vzName(x.hasta), x.gelis, x.bolum, x.durum]) };
-    if (name === "Reçete listesi") return { cols:["Reçete no", "Hasta", "Tür", "Tarih"], rows:[["RX-50894308", "Nobatxanım Dadaşova", "Normal reçete", "21.10.2026"], ["RX-50893071", "Elvin Hüseynov", "İlaç reçetesi", "20.10.2026"], ["RX-50889384", "Günel Məmmədova", "Gözlük reçetesi", "14.10.2026"]] };
+    if (name === "Reçete listesi") return { cols:["Reçete no", "Hasta", "Tür", "Tarih"], rows:[["RX-50894308", "Nobatxanım Dadaşova", "Normal reçete", "21.10.2026"], ["RX-50893071", "Elvin Hüseynov", "İlaç reçetesi", "20.10.2026"], ["RX-50889384", "Elvin Hüseynov", "Gözlük reçetesi", "14.10.2026"]] };
     if (name === "Hasta arama") { const L = (H.data.patients || []); return { cols:["Hasta no", "Hasta", "Cinsiyet", "Yaş"], pids:L.map(p => p.id), rows:L.map(p => [p.hn || "—", vzName(p.name), p.sex === "E" ? "Erkek" : "Kadın", p.age || "—"]), note:"Satıra tıklayınca hasta bilgisi açılır · ara kutusu ad/no ile filtreler." }; }
     if (name === "Doktor iş listesi") { const g = {}; (H.data.patients || []).forEach(p => { const d = (H.data.users || []).find(u => u.u === p.attending); const n = d ? d.name : (p.attending || "—"); (g[n] = g[n] || []).push(p); });
       const rows = [], pids = []; Object.entries(g).forEach(([d, ps]) => ps.forEach(p => { rows.push([d, vzName(p.name), (H.ENC[H.encOf(p)] || {}).label || H.encOf(p), H.ozelOnay(p) ? "Ödeme OK" : "Ödeme bekliyor"]); pids.push(p.id); })); return { cols:["Doktor", "Hasta", "Geliş", "Özel onay"], pids, rows }; }
-    if (name === "Randevu arama") return { cols:["Tarih", "Hasta", "Bölüm", "Doktor", "Durum"], rows:[["22.10.2026 09:00", "Nobatxanım Dadaşova", "Oftalmologiya", "Dr. Əhməd Abdullayev", "Bekliyor"], ["22.10.2026 10:30", "Orxan Əliyev", "Daxili", "Dr. Kamran Rzayev", "Geldi"]], note:"Örnek randevular." };
+    if (name === "Randevu arama") return { cols:["Tarih", "Hasta", "Bölüm", "Doktor", "Durum"], rows:[["22.10.2026 09:00", "Nobatxanım Dadaşova", "Oftalmologiya", "Dr. Əhməd Abdullayev", "Bekliyor"], ["22.10.2026 10:30", "Nərgiz Əliyeva", "Daxili", "Dr. Kamran Rzayev", "Geldi"]], note:"Örnek randevular." };
     if (name === "Gizli / VIP hasta listesi") return { cols:["Hasta no", "Hasta", "Not"], rows:[["0260215", "VIP Hasta 1", "Gizli · yalnız yetkili görür"], ["0260233", "VIP Hasta 2", "Gizli"]], note:"Gizli/VIP hastalar maskeli; gerçekte özel yetki ile açılır." };
     if (name === "Kampanyalar") { const ks = (H.data.kampanyalar || []); return { cols:["Kampanya", "Uygulama", "Oran / tutar", "Durum"], rows:ks.length ? ks.map(k => [k.ad, k.uyg || "—", k.uyg === "Yüzde indirim" ? "%" + (k.oran || 0) : (k.tutar != null ? k.tutar + " ₼" : "—"), k.aktif ? "Aktif" : "Pasif"]) : [["Örnek kampanya", "Yüzde indirim", "%10", "Aktif"]], note:"Kampanyayı yetkili rol admin'de oluşturur; vezne fiyat verirken seçer." }; }
     if (name === "Dönem bilgileri") { const no = H.data.vezneDonemNo || 54038, acik = H.data.vezneDonemAcik !== false, bk = H.state.vezneBanko || "—"; return { cols:["Alan", "Değer"], rows:[["Dönem no", "#" + no], ["Durum", acik ? "Açık" : "Kapalı"], ["Banko / kasa", bk], ["Devir (açılış)", (H.data.vezneDevir || 0) + " ₼"]], note:"Dönem açma/kapama ve devir üstteki dönem çubuğundan yapılır." }; }
     if (name === "UHM hasta arama") return { cols:["FİN", "Ad Soyad", "Doğum", "Kaynak"], rows:[["5AB12CD", "Nümunə Vətəndaş", "11.09.1996", "UHM (dövlət reyestri)"]], note:"UHM (Unikal Həkim/Vətəndaş reyestri) sorgusu · gerçek bağlantıyı ayrı ekip kurar." };
-    if (name === "Onam formları") return { cols:["Form", "Hasta", "Tarih", "Durum"], rows:[["Aydınlatılmış onam", "Günel Məmmədova", "24.10.2026", "İmzalı"], ["Ameliyat onamı", "Elvin Hüseynov", "23.10.2026", "Bekliyor"]], note:"Onam formları hastaya bağlı tutulur; imzalı/bekleyen takip edilir." };
+    if (name === "Onam formları") return { cols:["Form", "Hasta", "Tarih", "Durum"], rows:[["Aydınlatılmış onam", "Elvin Hüseynov", "24.10.2026", "İmzalı"], ["Ameliyat onamı", "Elvin Hüseynov", "23.10.2026", "Bekliyor"]], note:"Onam formları hastaya bağlı tutulur; imzalı/bekleyen takip edilir." };
     if (name === "İade taleplerim") return { cols:["Tip", "Tarih", "Tutar", "Durum"], rows:iadeRows().filter(x => x.eden === ((H.state.user || {}).name)).map(x => [x.tip, x.tarih, x.tutar + " ₼", x.durum]), note:"Yalnız sizin açtığınız iade talepleri; onay zinciri 'İade onay' ekranında." };
     if (name === "Toplu fatura işlemleri") return { cols:["Protokol", "Hasta", "Kurum", "Tutar", "Durum"], rows:gfkRows().filter(x => x.durum !== "Fatura kesildi").slice(0, 10).map(x => [x.proto, vzName(x.hasta), "—", "—", x.durum]), note:"Fatura kesilmemiş protokoller toplu faturalanabilir (yetkiye bağlı)." };
-    if (name === "Randevulanacak hizmetler") return { cols:["Hizmet", "Hasta", "Bölüm", "Durum"], rows:[["MR çekimi", "Orxan Əliyev", "Radiologiya", "Randevu bekliyor"], ["Fizik tedavi", "Aytac Rüstemli", "FTR", "Randevu bekliyor"]], note:"Faturalanıp randevusu verilecek hizmetler." };
-    if (name === "Hasta danışman") return { cols:["Danışman", "Hasta", "Konu", "Durum"], rows:[["Hasta Danışmanı 1", "Günel Məmmədova", "Yurtdışı hasta karşılama", "Açık"]], note:"Hasta danışmanı/karşılama takibi." };
+    if (name === "Randevulanacak hizmetler") return { cols:["Hizmet", "Hasta", "Bölüm", "Durum"], rows:[["MR çekimi", "Nərgiz Əliyeva", "Radiologiya", "Randevu bekliyor"], ["Fizik tedavi", "Nərgiz Əliyeva", "FTR", "Randevu bekliyor"]], note:"Faturalanıp randevusu verilecek hizmetler." };
+    if (name === "Hasta danışman") return { cols:["Danışman", "Hasta", "Konu", "Durum"], rows:[["Hasta Danışmanı 1", "Elvin Hüseynov", "Yurtdışı hasta karşılama", "Açık"]], note:"Hasta danışmanı/karşılama takibi." };
     if (name === "Kurum değişiklik onay") return { cols:["Protokol", "Hasta", "Eski kurum", "Yeni kurum", "Durum"], rows:[["50894026", "Nurgül Süleymanova", "Özel ödeme", "SAMHI", "Onay bekliyor"]], note:"Protokol kurum/sigorta değişikliği yetkili rol onayıyla yapılır." };
     return null;
   }
@@ -447,7 +447,7 @@
         { no:"KF-2026-0012", kurum:"Paşa Sığorta", tarih:"20.10.2026", durum:"Açık", donem:"Ekim 2026",
           kalemler:[["Tam kan sayımı (hemogram)", "L107020", 3, 18], ["Kardiyoloji muayenesi", "20.18331", 2, 60], ["EKG", "530020", 2, 25], ["Ekokardiyografi", "803840", 1, 120]],
           islemler:[["18.10.2026", "Kardiyoloji muayenesi", "Kardiologiya", "Dr. Kamran Rzayev", "Tamam"], ["18.10.2026", "EKG", "Kardiologiya", "Dr. Kamran Rzayev", "Tamam"], ["19.10.2026", "Ekokardiyografi", "Kardiologiya", "Dr. Kamran Rzayev", "Bekliyor"]],
-          protokoller:[["2026-104501", "Günel Məmmədova", "18.10.2026", "Kardiologiya"], ["2026-104533", "Orxan Əliyev", "19.10.2026", "Kardiologiya"]],
+          protokoller:[["2026-104501", "Elvin Hüseynov", "18.10.2026", "Kardiologiya"], ["2026-104533", "Nərgiz Əliyeva", "19.10.2026", "Kardiologiya"]],
           vezne:[["18.10.2026", "Avans (kurum)", 200, "Yatan Kasası"], ["19.10.2026", "Fatura tahakkuku", 436, "Yatan Kasası"]],
           evrak:[["Fatura ön yazısı", "Veznede", "20.10.2026"], ["Hizmet dökümü", "Veznede", "20.10.2026"], ["Provizyon formu", "Teslim edildi", "19.10.2026"]],
           notlar:[["19.10.2026", "Ozan Sunkur", "Kurumla aylık icmal 25'inde kesilecek."]],
@@ -543,7 +543,9 @@
       const tmz = root.querySelector("[data-vstemizle]"); if (tmz) tmz.onclick = () => { inputs.forEach(i => i.value = ""); uygula(); };
       const dt = root.querySelector("[data-vsdetay]"), dtm = root.querySelector("[data-vsdetaym]"); if (dt && dtm) dt.onclick = () => dtm.classList.toggle("hidden");
       if (body) body.oncontextmenu = (ev) => { const tr = ev.target.closest("[data-h3open]"); if (!tr) return; ev.preventDefault(); const pp = H.pt(tr.dataset.h3open); if (!pp) return;
-        const kabul = (k, l) => ["Hasta kabul: " + l, () => { pp.encounter = k === "yogun" ? "yogun" : (k === "kontrol" || k === "donor" ? "ayaktan" : k); H.log("Hasta kabul", vzName(pp.name) + " · " + l); H.toast("Kabul: " + l); H.go("vezne", params); }];
+        const kabul = (k, l) => ["Hasta kabul: " + l, () => { pp.encounter = k === "yogun" ? "yogun" : (k === "kontrol" || k === "donor" ? "ayaktan" : k);
+          if (H.proto) { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId), att = H.userBy(pp.attending); H.proto.create(pp.id, { bolum:(uu && uu.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:l, ptip:"Genel muayene" }); }
+          H.log("Hasta kabul", vzName(pp.name) + " · " + l); H.toast("Kabul: " + l + " · protokol açıldı"); H.go("vezne", params); }];
         vzMenu(ev, [
           ["Hasta dosyası aç", () => H.go("hasta360", { pid:pp.id })],
           ["Birleştir (eşleştir)", () => H.go("admission", { tab:"eslesme" })],
@@ -715,7 +717,7 @@
       return { cols:["Durum", "Adet", "Tutar ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen tahakkuk", bk.length, bk.reduce((a, x) => a + x.katilim, 0)]] }; }
     if (name === "Provizyon Takip Analizi") { const g = {}; gfkRows().forEach(x => { g[x.durum] = (g[x.durum] || 0) + 1; });
       return { cols:["Provizyon / fatura durumu", "Protokol sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"GFK takipteki protokollerin provizyon/fatura durumu." }; }
-    if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Şebnem Süleymanlı", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Aytac Rüstemli", 100, "Kısmi iade"]], note:"Örnek veri." };
+    if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Aysu Rəhimova", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Nərgiz Əliyeva", 100, "Kısmi iade"]], note:"Örnek veri." };
     if (name === "Tahsilat Analizi") { const f = faturalar(), od = f.filter(x => x.durum === "Ödendi");
       return { cols:["Durum", "Adet", "Katılım ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen", f.length - od.length, f.filter(x => x.durum !== "Ödendi").reduce((a, x) => a + x.katilim, 0)]], note:"Vezne faturalarından türetilmiştir." }; }
     if (name === "Ciro") { const f = faturalar(), top = f.reduce((a, x) => a + x.toplam, 0), kat = f.reduce((a, x) => a + x.katilim, 0);
@@ -1033,7 +1035,9 @@
       const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
       const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
-      const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1]); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; const kl = (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1];
+        if (H.proto) { const att = H.userBy(p.attending); H.proto.create(p.id, { bolum:(u && u.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:kl, ptip:"Genel muayene" }); }
+        H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + kl + " · protokol açıldı"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
       const di = e.target.closest("[data-diger]"); if (di) { const ad = di.dataset.diger; root.querySelector("[data-h3digerm]").classList.add("hidden");
         H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(ad)} — ${H.esc(vzName(p.name))}</p><div class="icd-form"><div class="fr"><label>Açıklama / not</label><input placeholder="${H.esc(ad)} bilgisi"></div></div><p class="adm-sub" style="margin-top:8px">Bu ek bilgi hastaya bağlı olarak tutulur ve ilgili modüllerde görünür.</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-x>Kaydet</button>` }); return; }

@@ -482,6 +482,7 @@
           meta:{ temp:true, encounter:enc, source:"ayaktan", proto:nextG(), fin:g("fin").toUpperCase(), bolum, gelis, protokol:body.querySelector('[data-f="protokol"]').value,
             erisim:body.querySelector('[data-f="erisim"]').value, tercih:body.querySelector('[data-f="tercih"]').value, kurum:body.querySelector('[data-f="kurum"]').value,
             phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:enc, admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
+        if (H.proto) H.proto.create(p.id, { no:p.proto, bolum, doktor:doktor || "—", gelisTipi:gelis, ptip:body.querySelector('[data-f="protokol"]').value || "Genel muayene" });   // kabulde protokol otomatik açılır
         const tanim = (H.data.hizmetTanim || []).find(t => norm(t.bolum) === norm(bolum));
         if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi", protokolNo:(H.proto ? H.proto.activeNo(p.id) : undefined) }); H.saveData && H.saveData(); }
         H.log("Ayaktan kayıt açıldı", name + " · " + bolum + (tanim ? " · " + tanim.hizmetAd : ""));
@@ -505,6 +506,7 @@
         meta:{ temp:true, proto, source:"elle", fin:f.fin.trim().toUpperCase(), dob:f.dob, father:f.father.trim(), nationality:f.nat, idDoc:f.idDoc.trim(), phone:f.phone ? "+994 " + f.phone.trim() : "",
           kin:f.kin ? { name:f.kin.trim(), rel:f.kinRel, phone:f.kinPhone ? "+994 " + f.kinPhone.trim() : "" } : null, companion:f.comp === "var" ? "Kalacak" : "Yok", admitType:f.type,
           consent:f.kvkk ? "alındı" : "sonra alınacak", sms:!!f.sms, kurum:f.kurum || KURUM[0] } }, f.bed);
+      if (H.proto) H.proto.create(p.id, { no:p.proto || proto, bolum:(H.unit((H.bed(p.bed) || {}).unitId) || {}).tr || "—", doktor:(H.userBy(f.attending) || {}).name || "—", gelisTipi:"Yatarak", ptip:f.type || "Yatış" });
       H.log("Geçici kayıt açıldı", `${proto} · ${p.name} → ${bedLabel(p.bed)}`);
       A.form = newForm(); A.tab = "eslesme"; draw(); numbersModal(p);
     }
