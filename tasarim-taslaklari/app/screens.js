@@ -2187,12 +2187,18 @@
   /* ================= ECZANE ================= */
   H.register("pharmacy", { title:() => H.t("m_pharmacy"), perm:"pharmacy", render(root) {
     const ab = H.myPatients().filter(p => p.antibioticDay), crit = H.myPatients().filter(p => p.risk === "crit");
+    const ilacOrd = (H.data.orders || []).filter(o => /İlaç|ilac|Reçete|ilaç/.test(o.cat || "") && !/Karşıland|İptal|Redded/.test(o.durum || ""));
     root.innerHTML = `<div class="ph"><div><h2>Eczane</h2><p>Order'lar hastane kaydından gelir. Bu ekran izleme içindir, doz önerisi yapmaz.</p></div></div>
       <div class="att"><div class="ac"><div class="i">${I("pill")}</div><b>${ab.length}</b><span>antibiyotik kullanan hasta</span></div><div class="ac ${ab.some(p => p.antibioticDay >= 3) ? "" : "ok"}"><div class="i">${I("clock")}</div><b>${ab.filter(p => p.antibioticDay >= 3).length}</b><span>3. günü geçen, gözden geçirme zamanı</span></div><div class="ac crit"><div class="i">${I("alert")}</div><b>${crit.length}</b><span>yüksek riskli ilaç (vazopressör) alan</span></div><div class="ac"><div class="i">${I("shield")}</div><b>${H.myPatients().filter(p => p.allergies.length).length}</b><span>kayıtlı alerjisi olan hasta</span></div></div>
       <div class="sec">Antibiyotik kullananlar</div><div class="tw"><table class="t"><tr><th>Yatak</th><th>Hasta</th><th>Tedavi günü</th><th>Alerji</th><th>Son kültür</th><th></th></tr>
         ${ab.map(p => `<tr class="row" data-pid="${p.id}"><td class="n">${H.bed(p.bed).no}</td><td><b>${H.esc(p.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(p.dx)}</div></td><td><b>${p.antibioticDay}. gün</b>${p.antibioticDay >= 3 ? ' <span class="tag w">gözden geçir</span>' : ""}</td><td>${p.allergies.length ? `<span class="tag c">${p.allergies.join(", ")}</span>` : "—"}</td><td class="mute">Kan kültürü · bekleniyor</td><td>${I("chevR")}</td></tr>`).join("")}</table></div>
-      <div class="note i" style="margin-top:12px">İlaç etkileşim sorgusu hastanenin ilaç veri tabanına bağlanınca bu ekranda görünecek. Bugün kodda yok.</div>`;
-    root.addEventListener("click", e => { const r = e.target.closest("[data-pid]"); if (r) H.go("patient", { pid:r.dataset.pid, tab:"ilac" }); });
+      <div class="sec">İlaç istemleri — karşılanacak <span class="adm-sub">(${ilacOrd.length})</span></div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:120px">Tarih</th><th>Hasta</th><th>İlaç</th><th>Doz / yol</th><th>Protokol</th><th style="width:120px">Durum</th><th style="width:110px"></th></tr></thead><tbody>
+        ${ilacOrd.length ? ilacOrd.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc((H.pt(o.pid) || {}).name || "—")}</b></td><td>${H.esc(o.ad || "")}</td><td class="adm-sub">${H.esc(o.detay || "")}</td><td class="adm-sub">${H.esc(o.protokolNo || "—")}</td><td><span class="tag ${/Karşıland/.test(o.durum || "") ? "ok" : "w"}">${H.esc(o.durum || "İstendi")}</span></td><td><button class="btn p sm" data-eczkarsila="${o.id}">${I("pill") || ""} Karşıla</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Karşılanacak ilaç istemi yok. Doktor İstem'den ilaç isteyince burada görünür.</td></tr>`}
+      </tbody></table></div>
+      <div class="note i" style="margin-top:12px">İlaç etkileşim sorgusu (Vademecum/DDI) ve muadil seçimi ileri fazda bu ekrana gelecek.</div>`;
+    root.addEventListener("click", e => { const ek = e.target.closest("[data-eczkarsila]"); if (ek) { const o = (H.data.orders || []).find(x => x.id === ek.dataset.eczkarsila); if (o) { o.durum = "Karşılandı"; H.saveData && H.saveData(); H.log("Eczane karşıladı", o.ad || ""); H.toast("İlaç karşılandı: " + (o.ad || "")); H.go("pharmacy"); } return; }
+      const r = e.target.closest("[data-pid]"); if (r) H.go("patient", { pid:r.dataset.pid, tab:"ilac" }); });
   } });
 
   /* CİHAZLAR → devices.js (24.09: biyomedikal modülü; hasta adı göstermez) */
