@@ -26,6 +26,11 @@ _RECOGNITION_KINDS = {"sepsis", "septic_shock"}
 ANCHOR_RESTORE_S = 900
 
 
+def _level(alert: Alert) -> tuple[Severity, Urgency]:
+    """How loud an alert is — the order a held NEWS2 may step down in, never up (G2-A2, X9d)."""
+    return Severity[alert.severity.upper()], Urgency[alert.urgency.upper()]
+
+
 class Engine:
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
@@ -130,7 +135,7 @@ class Engine:
         alerts = [to_alert(f, obs.patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
         # Staleness may withhold a new NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
-        held = self._held_news2(obs.patient_id, bool(news2_findings), state, now)
+        held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, now)
         if held is not None:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
@@ -144,40 +149,56 @@ class Engine:
         return alerts
 
     def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
-                    now: datetime) -> Alert | None:
+                    profile: PatientProfile | None, now: datetime) -> Alert | None:
         """The running NEWS2 alert, held, when this evaluation's NEWS2 (`fired`) produced none while
-        a vital is stale at `now` (G2-A2, X9, X9b, X9c); None when it fired, none was running, no
-        vital is stale — a complete fresh evaluation is below the band — or even the stale values,
-        counted at their last reading, no longer reach a band: then the alert ends.
+        a vital is stale at `now` (G2-A2, X9, X9b, X9c, X9d). None — the alert ends — when it
+        fired, when none was running, when no vital is stale (the score at `now` is below the band
+        with nothing stale; a vital never measured still leaves it partial, as it always did), or
+        when even the stale values, counted at their last reading, no longer reach a band.
 
         The bridge posts a vitals set one reading at a time, every reading stamped with the set's
         time. Judged at each, the first readings of a set taken more than a window after the last
         saw the rest stale, fell below the band and ended the alert, and the next reading raised it
         again as a new episode: a new nurse notification, the acknowledgement gone. So a running
         alert (the bucket, before this evaluation replaces it) is held while a vital is stale. It is
-        kept as it was last scored — total, severity, urgency, downgrade — and only says what it is
-        held on (X9b): re-scored on the stale readings (X9) it could climb a band, to "immediate" and
-        a nurse notification, on a value hours old. That ageless score only ends a hold (X9c): a
-        pulse back to normal beside a stale pressure scoring 1 is an improvement even on the stale
-        values, and nothing is left to hold. A fresh score that reaches a band is the alert again, a
-        lower one included. A stale input still never raises a new alert (D6), a charted
-        oxygen or ACVPU past its shift holds nothing (it is assumed, D8), and a feed that stops
-        entirely keeps the held alert, as before G2-A2.
+        kept as it was last scored — total, severity, urgency, downgrade — and says what it is held
+        on (X9b): re-scored on the stale readings (X9) it could climb a band, to "immediate" and a
+        nurse notification, on a value hours old. The score on the stale values at their last
+        reading — "ageless" — ends a hold when it is below the band (X9c: a pulse back to normal
+        beside a stale pressure scoring 1 is an improvement even on the stale values), and is a
+        floor the held alert never sits above (X9d): when its band, after the patient-relative
+        layer, is lower than the kept alert's, that ageless alert is kept from then on. It steps
+        down, never up, and within one band keeps its number, so a set arriving reading by reading
+        does not move it. A fresh score that reaches a band is the alert again, a lower one
+        included. A stale input still never raises a new alert (D6), a charted oxygen or ACVPU past
+        its shift holds nothing (it is assumed, D8), and a feed that stops entirely keeps the held
+        alert, as before G2-A2.
+
+        A profile charted during a hold reaches the held alert only through that floor: a baseline
+        that now downgrades it steps it down, but one withdrawn mid-hold, which would raise it,
+        reaches it only when the hold ends.
         """
         kept = self._held_news2_alert.pop(patient_id, None)    # spent unless the hold goes on
         running = self._alerts.get(patient_id, {}).get("news2")
         if fired or running is None:
             return None
         at_now = news2.score(state, now)
-        if not at_now.stale or not news2.evaluate(state):     # ageless: an end condition, never shown
+        ageless = news2.evaluate(state)
+        if not at_now.stale or not ageless:
             return None
         kept = running if kept is None else kept
+        # Judged as the kept alert was — after the patient-relative layer — on the ageless score.
+        [floor] = [to_alert(f, patient_id) for f in patient_relative.apply(ageless, state, profile)
+                   if f.kind == "news2"]
+        if _level(floor) < _level(kept):
+            kept = floor
         self._held_news2_alert[patient_id] = kept
         stale = [news2.INPUT_LABEL[name]                  # longest stale first, as the recency note
                  for name in sorted(at_now.stale, key=lambda name: at_now.measured_at[name])]
         note = (f" Held while inputs are stale: {', '.join(stale)} older than the expected refresh "
-                f"window. This alert was already firing and is kept as last scored, not re-scored; "
-                f"it ends when the readings, stale ones at their last value, are below the band.")
+                f"window. The alert was already firing, so it is not raised on a stale value: it "
+                f"keeps its last score, or the lower band its stale values still reach at their "
+                f"last reading, and ends when those readings are below the band.")
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
     def _new_anchor(self, patient_id: str, now: datetime) -> datetime:

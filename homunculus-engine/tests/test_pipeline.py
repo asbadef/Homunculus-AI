@@ -420,6 +420,7 @@ def test_a_vitals_set_posted_one_reading_at_a_time_neither_ends_nor_re_scores_th
     assert {(a.severity, a.urgency) for a in seen} == {("moderate", "soon")}
     for alert, held_on in zip(seen[:held], _HELD_ON):
         assert "Held while inputs are stale: " + held_on in alert.clinical_reasoning
+        assert alert.clinical_reasoning.count("Held while inputs are stale") == 1
         assert alert.clinical_reasoning.startswith(before.clinical_reasoning)
         assert replace(alert, clinical_reasoning=before.clinical_reasoning,
                        stale_inputs=before.stale_inputs) == before, "kept as it was last scored"
@@ -498,6 +499,76 @@ def test_a_held_alert_ends_on_the_later_reading_that_takes_even_its_stale_values
     assert seen[0].summary == before.summary
     assert "Held while inputs are stale: resp rate, SpO2, systolic BP " in seen[0].clinical_reasoning
     assert seen[1:] == [None, None, None, None]
+
+
+def test_a_held_alert_steps_down_to_the_band_its_stale_values_reach_and_never_back_up():
+    # X9d. Kept as last scored, this "NEWS2 8, immediate" stayed — escalating — for as long as
+    # nobody measured the pressure again, though on the pressure's last reading the score was 6,
+    # then 3. A held alert is never above the band its stale values reach: it steps down to it.
+    # Within one band it keeps its number (X9b: no dip inside a set).
+    eng = Engine()
+    for o in [_obs(SignalCode.RESP_RATE, 25), _obs(SignalCode.HEART_RATE, 120),
+              _obs(SignalCode.SBP, 88)]:                                       # 3 + 2 + 3 = 8
+        eng.ingest(o, now=o.timestamp)
+    assert (_news2(eng).severity, _news2(eng).urgency) == ("high", "immediate")
+    seen = []
+    for code, value in [(SignalCode.HEART_RATE, 70), (SignalCode.RESP_RATE, 16),
+                        (SignalCode.SPO2, 98), (SignalCode.TEMPERATURE, 37.0)]:   # no pressure
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)
+        seen.append(_news2(eng))
+    # The pulse: on the stale resp rate and pressure the score is 6, a band below — it steps down.
+    # The resp rate: 3, the pressure a single parameter at 3 — the same band, so it stays at 6.
+    assert [(a.summary.split()[1], a.severity, a.urgency) for a in seen] == [("6", "moderate", "soon")] * 4
+    assert "Held while inputs are stale: resp rate, systolic BP " in seen[0].clinical_reasoning
+    assert "Held while inputs are stale: systolic BP " in seen[-1].clinical_reasoning
+    assert all(a.clinical_reasoning.count("Held while inputs are stale") == 1 for a in seen)
+
+
+def test_a_held_alert_steps_down_to_the_downgrade_its_stale_values_earn():
+    # The band is judged after the patient-relative layer, on the stale values at their last
+    # reading: the resp rate is normal again and the stale pressure is inside its charted range.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.SBP: BaselineRange(85, 95)}))
+    for o in [_obs(SignalCode.RESP_RATE, 22), _obs(SignalCode.SBP, 88)]:      # 2 + 3, RR acute
+        eng.ingest(o, now=o.timestamp)
+    assert (_news2(eng).severity, _news2(eng).downgraded) == ("moderate", False)
+    o = _obs(SignalCode.RESP_RATE, 16, minute=75)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert (held.summary.split()[1], held.severity, held.urgency, held.downgraded) == \
+        ("3", "low", "routine", True)
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+
+
+def test_a_hold_after_a_fresh_alert_freezes_the_fresh_one():
+    # A hold, then a fresh score that reaches the band (the alert again), then a hold again: the
+    # second hold keeps the fresh alert, not the one the first hold kept.
+    eng = Engine()
+    for code, value in _SPOT_CHECK:
+        o = _obs(code, value)
+        eng.ingest(o, now=o.timestamp)                                   # NEWS2 6
+    for code, value in _SPOT_CHECK[:3]:
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)       # held 6, held 6, then the fresh partial 5
+    fresh = _news2(eng)
+    assert fresh.summary.startswith("NEWS2 5 ") and "Held" not in fresh.clinical_reasoning
+    o = _obs(SignalCode.HEART_RATE, 105, minute=140)                   # everything else stale
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held.summary == fresh.summary and "Held while inputs are stale" in held.clinical_reasoning
+
+
+def test_the_held_note_lists_the_longest_stale_vital_first():
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22, minute=30)]:   # 3, then 5
+        eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.HEART_RATE, 70, minute=100)      # the pressure 100 min old, the RR 70
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert "Held while inputs are stale: systolic BP, resp rate " in held.clinical_reasoning
+    assert held.stale_inputs == ["systolic BP", "resp rate"]
 
 
 def test_a_held_alert_is_still_downgraded_by_the_baseline_that_explains_it():
