@@ -117,27 +117,56 @@
     randevuDoktorSeed();
     const all = randevular(), f = params.durum || "hepsi", GECMIS = ["Tamamlandı", "Gelmedi", "İptal"];
     const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" ? " geçmişi" : ""}</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi</p></div><div class="r"><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
-      <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    const view = params.view || "liste", gun = params.gun || new Date().toISOString().slice(0, 10);
+    const listeHtml = () => `<div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
       ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
       </tbody></table></div>`;
-    root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.log("Randevu durumu", r.hasta + " · " + st.value); } } };
+    const takvimHtml = () => { const drs = randevuDoktorlari(), pad = (n) => String(n).padStart(2, "0"), SAAT = [];
+      for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
+      const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
+      const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
+      const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center"><button class="btn sm" data-rndgun="-1">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndgun="1">${I("right") || "›"}</button><span class="adm-sub">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
+      if (!drs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
+      const cellOf = (saat, dr) => dayAppts.find(r => (r.tarih || "").slice(11, 16) === saat && r.doktor === dr);
+      return bar + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => { const a = cellOf(s, d); return a ? `<td data-rndopen="${a.id}" style="cursor:pointer;background:color-mix(in srgb,${SEVC[a.durum] || "var(--mid)"} 20%,transparent);border-left:3px solid ${SEVC[a.durum] || "var(--mid)"}"><b>${H.esc(a.hasta)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(a.tur || a.bolum || "")} · ${H.esc(a.durum)}</div></td>` : `<td data-rndcell="${gun}T${s}|${H.esc(d)}" style="cursor:pointer" title="Boş · randevu ver"></td>`; }).join("")}</tr>`).join("")}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Doluysa tıkla (randevu detayı) · boşsa tıkla (o saate/doktora randevu ver). Renk = durum.</p>`; };
+    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" && view === "liste" ? " geçmişi" : ""}</h2><p>${view === "takvim" ? "Gün takvimi · " + gun : list.length + " randevu"} · poliklinik / bölüm</p></div><div class="r"><button class="btn ${view === "liste" ? "p" : ""}" data-rndview="liste">Liste</button><button class="btn ${view === "takvim" ? "p" : ""}" data-rndview="takvim">Takvim</button><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
+      ${view === "takvim" ? takvimHtml() : listeHtml()}`;
+    root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + st.value); } return; }
+      const gs = e.target.closest("[data-rndgunset]"); if (gs) return H.go("randevu", { view:"takvim", gun:gs.value }); };
     root.onclick = (e) => {
+      const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f });
+      const rg = e.target.closest("[data-rndgun]"); if (rg) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rg.dataset.rndgun)); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
+      const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
+      const ro = e.target.closest("[data-rndopen]"); if (ro) { const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
       const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
       const del = e.target.closest("[data-rnddel]"); if (del) { const i = all.findIndex(x => x.id === del.dataset.rnddel); if (i >= 0 && confirm("Bu randevu silinsin mi?")) { all.splice(i, 1); H.toast("Randevu silindi", "w"); H.go("randevu", params); } return; }
       if (e.target.closest("[data-rndexp]") || e.target.closest("[data-rndyaz]")) { const cols = ["Saat", "Hasta", "Bölüm", "Doktor", "Not", "Durum"], rows = list.map(r => [(r.tarih || "").replace("T", " "), r.hasta, r.bolum, r.doktor, r.not || "", r.durum]);
         if (e.target.closest("[data-rndexp]")) { H.exportCsv ? (H.exportCsv("Randevular", cols, rows), H.toast("Excel indirildi")) : H.toast("yok", "w"); } else { H.printTable ? H.printTable("Randevular", cols, rows) : H.toast("yok", "w"); } return; }
       if (e.target.closest("[data-rndnew]")) return rndForm();
     };
-    function rndForm() {
+    function rndDetay(r) {
+      H.modal({ title:"Randevu · " + H.esc(r.hasta), body:`<div class="icd-form">
+          <div class="fr"><label>Hasta</label><input value="${H.esc(r.hasta)}" readonly></div>
+          <div class="fr"><label>Tarih / saat</label><input value="${H.esc((r.tarih || "").replace("T", " "))}" readonly></div>
+          <div class="fr"><label>Bölüm</label><input value="${H.esc(r.bolum || "")}" readonly></div>
+          <div class="fr"><label>Doktor</label><input value="${H.esc(r.doktor || "")}" readonly></div>
+          <div class="fr"><label>Durum</label><select data-f="durum">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></div>
+          <div class="fr"><label>Not</label><input value="${H.esc(r.not || "")}" readonly></div></div>`,
+        actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); };
+          m.querySelector("[data-rddel]").onclick = () => { if (!confirm("Bu randevu silinsin mi?")) return; const i = all.findIndex(x => x.id === r.id); if (i >= 0) all.splice(i, 1); H.saveData && H.saveData(); H.closeModal(); H.toast("Randevu silindi", "w"); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); }; } });
+    }
+    function rndForm(pre) {
       const drs = randevuDoktorlari(), bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
-      const now = new Date().toISOString().slice(0, 16);
+      const now = (pre && pre.tarih) ? pre.tarih : new Date().toISOString().slice(0, 16);
       H.modal({ title:"Yeni randevu", body:`<div class="icd-form">
         <div class="fr"><label>Hasta</label><input data-f="hasta" placeholder="Hasta adı"></div>
         <div class="fr"><label>Randevu türü</label><select data-f="tur">${RND_TUR.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
-        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
-        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
+        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
         <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"></div>
         <div class="fr"><label>Süre (dk)</label><input data-f="sure" type="number" min="5" step="5" value="15"></div>
         <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div>
@@ -147,7 +176,7 @@
           if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
           const sms = m.querySelector('[data-f="sms"]').checked;
           all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), tur:m.querySelector('[data-f="tur"]').value, bolum:g("bolum"), doktor:m.querySelector('[data-f="doktor"]').value, tarih:m.querySelector('[data-f="tarih"]').value, sure:+g("sure") || 15, durum:"Bekliyor", not:g("not"), sms });
-          H.log("Randevu oluşturuldu", g("hasta")); H.toast("Randevu eklendi" + (sms ? " · SMS hatırlatma açık" : "")); H.closeModal(); H.go("randevu", params); }; } });
+          H.saveData && H.saveData(); H.log("Randevu oluşturuldu", g("hasta")); H.toast("Randevu eklendi" + (sms ? " · SMS hatırlatma açık" : "")); H.closeModal(); H.go("randevu", params); }; } });
     }
   } });
 

@@ -12,10 +12,10 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 
 ## B. Yapmadığımız / eksik süreçler (öncelik sırası önerim)
 1. [x] **Hasta kabulde protokol otomatik açılır** — ayaktan/yatış/vezne/hasta360 kabulünde gerçek protokol oluşur (istemler ona bağlanır).
-2. [ ] **İade / avans → faturaya mahsup** — iade talebi/onayı var; onaylanınca faturaya/tahsilata mahsup etkisi kalan iş.
+2. [x] **İade → faturaya mahsup** — Fatura İade onaylanınca ilgili fatura tutarı düşülür, biterse "İade edildi". (Avans iade mahsup kalan iş.)
 3. [x] **Kısmi tahsilat** — tahsilat modalında tutar düzenlenebilir; kalan kadar ödenince "Ödendi", yoksa "Bekliyor" (kalan takip). Avans mahsup kalan iş.
-4. [ ] **Doktor muayene derinliği** — istem→sonuç girişi, konsültasyon ekranı, ameliyat planlama/notu, e-reçete.
-5. [ ] **Randevu takvim görünümü** — gün/hafta çizelgesi (grid), web randevu, slot kapatma.
+4. [~] **Doktor muayene derinliği** — [x] istem→sonuç girişi (lab/radyoloji sonuç → Tedavi'de görünür); kons/ameliyat/e-reçete kalan.
+5. [~] **Randevu takvim görünümü** — [x] gün ızgarası (saat×doktor, durum renkli, boş hücreden randevu, detay/sil); hafta/web randevu/slot kapatma kalan.
 6. [ ] **İK akışları** — izin / işgöremezlik, nöbet çizelgesi görünümü.
 7. [ ] **Çeviri turu** — yeni metinlerin AZ/RU/EN sözlüğü (varsayılan dil Azerice).
 8. [ ] **Ön büro ekranları** — Hasta Uyarı, Refakatçi, Sevk, Kara Liste, Müstehaklık (FORM-DURUM eksikleri).
