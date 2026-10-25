@@ -1918,7 +1918,7 @@
     }
   } });
 
-  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["summary", "lab_islem"], render(root, params = {}) {
+  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:"lab_islem", render(root, params = {}) {
     const cats = { lab:["Laboratuvar"], rad:["Radyoloji"], kan:["Kan ürünü"] };
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
