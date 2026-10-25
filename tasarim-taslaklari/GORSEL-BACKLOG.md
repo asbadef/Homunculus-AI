@@ -34,8 +34,9 @@
 ## FAZ T — TEDAVİ / DOKTOR (2026-10-25 · çekirdek tamamlandı)
 - [x] **Tedavi sekmesi** (hasta360): Klinik Dokümanlar (muayene/epikriz/izlem editörü — docs.js) / Laboratuvar / Radyoloji / Patoloji / **Tanılar (ICD ara-ekle)** / Reçete-ilaç; Arşiv sekmesi aktarım tablosu
 - [x] Doktor iş listesi → istem (İş Havuzu · İstek) → epikriz (docs muayene notu, şablona göre) akışı yüzeye çıktı
-- [~] Doktor girdiği hizmet/tarih düzenleme — yetki (`protokol_duzenle`) tanımlı; derin düzenleme UI'si ileride
-- [ ] Diş tedavi planları · branşa özel detaylı muayene formları (şimdilik Göz formu hazır) — ileride
+- [x] **Doktor hizmet/tarih düzenleme UI** (yetki `protokol_duzenle`): Tedavi'deki Lab/Radyoloji/Patoloji/Reçete tablolarında "Düzenle" → tarih/doktor/durum değiştir, denetim kaydına yazılır
+- [x] **Branşa özel detaylı muayene formları**: Göz (özel) + Kardioloji / Dahiliye / KBB / Ortopedi / Nöroloji / Kadın-doğum / Genel sistemik (muayene dökümanı "Detaylı bulgular")
+- [x] **Diş tedavi planı**: Tedavi sekmesinde "Diş planı" — FDI odontogram (durum renk kodlu) + tedavi planı tablosu (işlem/ücret)
 
 ## YENİ (2026-10-25, 2. büyük tur — #239-296 + yetki.xls)
 - [x] **Tek hasta kartı → çok protokol** modeli: Hasta Dosyası'nda sol tarih-gruplu protokol listesi (İki hafta önce/Son ay/Daha eski) + "TÜMÜ"; Gelişler/Faturalar/Ödemeler/İndirimler/Dosyalar/Notlar seçili protokole göre

@@ -2,6 +2,18 @@
  * Tarayıcıyla ekranlardan toplandı (her rol × sayfa × sekme), çeviri ajanlarıyla dolduruldu. Elle düzeltme buraya. */
 window.HMC_SOZLUK = {
 /* 2026-10-25 · yeni ekranlar (Kurumsal Faturalama, Hizmet Kartı sekmeleri, Güvenlik seçimi, Tedavi sekmesi) */
+"Diş planı": { "AZ":"Diş planı", "EN":"Dental plan", "RU":"Стоматологический план" },
+"Diş şeması (FDI)": { "AZ":"Diş sxemi (FDI)", "EN":"Dental chart (FDI)", "RU":"Зубная схема (FDI)" },
+"Tedavi planı": { "AZ":"Müalicə planı", "EN":"Treatment plan", "RU":"План лечения" },
+"Branş formu aç": { "AZ":"İxtisas formunu aç", "EN":"Open specialty form", "RU":"Открыть форму специальности" },
+"İstem düzenle": { "AZ":"İstəyi redaktə et", "EN":"Edit order", "RU":"Редактировать назначение" },
+"Kardioloji": { "AZ":"Kardiologiya", "EN":"Cardiology", "RU":"Кардиология" },
+"Dahiliye / İç hastalıkları": { "AZ":"Daxili xəstəliklər", "EN":"Internal medicine", "RU":"Терапия / внутренние болезни" },
+"Kulak-Burun-Boğaz": { "AZ":"Qulaq-Burun-Boğaz", "EN":"ENT", "RU":"Оториноларингология (ЛОР)" },
+"Ortopedi-Travmatoloji": { "AZ":"Travmatologiya-Ortopediya", "EN":"Orthopedics-traumatology", "RU":"Ортопедия-травматология" },
+"Nöroloji": { "AZ":"Nevrologiya", "EN":"Neurology", "RU":"Неврология" },
+"Kadın hastalıkları ve doğum": { "AZ":"Mamalıq-Ginekologiya", "EN":"Obstetrics & gynecology", "RU":"Акушерство и гинекология" },
+"Genel sistemik muayene": { "AZ":"Ümumi sistemik müayinə", "EN":"General systemic exam", "RU":"Общий системный осмотр" },
 "Kurumsal faturalama": { "AZ":"Korporativ fakturalaşdırma", "EN":"Corporate billing", "RU":"Корпоративное выставление счетов" },
 "Kalemler": { "AZ":"Maddələr", "EN":"Line items", "RU":"Позиции" },
 "Protokoller": { "AZ":"Protokollar", "EN":"Protocols", "RU":"Протоколы" },

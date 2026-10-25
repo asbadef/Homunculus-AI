@@ -802,14 +802,47 @@
       }
       if (ana === "tedavi") {
         const tt = params.ttab || "dokuman", ords = (H.data.orders || []).filter(o => o.pid === p.id);
-        const TT = [["dokuman", "Klinik dokümanlar"], ["laboratuvar", "Laboratuvar"], ["radyoloji", "Radyoloji / görüntüleme"], ["patoloji", "Patoloji"], ["tanilar", "Tanılar (ICD)"], ["recete", "Reçete / ilaç"]];
+        const TT = [["dokuman", "Klinik dokümanlar"], ["laboratuvar", "Laboratuvar"], ["radyoloji", "Radyoloji / görüntüleme"], ["patoloji", "Patoloji"], ["tanilar", "Tanılar (ICD)"], ["dis", "Diş planı"], ["recete", "Reçete / ilaç"]];
         const seg = `<div class="seg" style="margin:4px 0 12px;flex-wrap:wrap">${TT.map(([k, l]) => `<button data-ttab="${k}" class="${tt === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
         const T = (cols, rows, empty) => `<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`;
+        // Doktor istem düzenleme (yetki: protokol_duzenle) — tarih/doktor değiştirilebilir; genel istem tablosu
+        const canProt = H.can("protokol_duzenle");
+        const ordTable = (re, cols, empty, sonuc) => { const rows = (H.data.orders || []).map((o, gi) => [o, gi]).filter(([o]) => o.pid === p.id && re.test(o.cat || ""));
+          const head = [...cols, ...(canProt ? ["Düzenle"] : [])];
+          return `<div class="tw"><table class="t"><thead><tr>${head.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(([o, gi]) => { const cells = sonuc ? [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"] : [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi"];
+            return `<tr>${cells.map((c, i) => `<td${i > 1 ? ' class="n"' : ""}>${H.esc(String(c))}</td>`).join("")}${canProt ? `<td><button class="btn g sm" data-ordi="${gi}">${I("edit") || "Düzenle"}</button></td>` : ""}</tr>`; }).join("") : `<tr><td colspan="${head.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`; };
         if (tt === "dokuman") { body.innerHTML = seg + `<div data-docswrap>${H.docs ? H.docs.html(p) : `<div class="empty">Klinik döküman modülü yok.</div>`}</div>`; if (H.docs && H.docs.after) try { H.docs.after(body.querySelector("[data-docswrap]"), p); } catch (e) {} return; }
-        if (tt === "laboratuvar") { const r = ords.filter(o => /Laboratuvar|Lab/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Laboratuvar istemi yok. Doktor istem yapınca burada görünür."); return; }
-        if (tt === "radyoloji") { const r = ords.filter(o => /Radyoloji|Görüntüleme/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Radyoloji / görüntüleme istemi yok."); return; }
-        if (tt === "patoloji") { const r = ords.filter(o => /Patoloji/i.test(o.cat || "")); body.innerHTML = seg + T(["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"]), "Patoloji istemi yok."); return; }
-        if (tt === "recete") { const r = ords.filter(o => /İlaç|Reçete|ilac/i.test(o.cat || "")); body.innerHTML = seg + T(["İlaç", "Kod", "Tarih", "Durum"], r.map(o => [o.ad, o.kod || "—", o.at || "—", o.durum || "İstendi"]), "Reçete / ilaç istemi yok."); return; }
+        if (tt === "laboratuvar") { body.innerHTML = seg + ordTable(/Laboratuvar|Lab/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Laboratuvar istemi yok. Doktor istem yapınca burada görünür.", true); return; }
+        if (tt === "radyoloji") { body.innerHTML = seg + ordTable(/Radyoloji|Görüntüleme/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Radyoloji / görüntüleme istemi yok.", true); return; }
+        if (tt === "patoloji") { body.innerHTML = seg + ordTable(/Patoloji/i, ["Tetkik", "Kod", "Tarih", "Durum", "Sonuç"], "Patoloji istemi yok.", true); return; }
+        if (tt === "recete") { body.innerHTML = seg + ordTable(/İlaç|Reçete|ilac/i, ["İlaç", "Kod", "Tarih", "Durum"], "Reçete / ilaç istemi yok.", false); return; }
+        if (tt === "dis") {
+          p._dis = p._dis || { durum:{}, plan:[] };
+          const DIS_DURUM = { "Sağlam":"var(--ok)", "Çürük":"#e5484d", "Dolgu":"#4f7cff", "Kanal tedavisi":"#f0a020", "Kron":"#12a594", "Köprü":"#8e6fd6", "İmplant":"#a148d6", "Çekilmiş":"var(--mute)", "Eksik":"var(--mute)" };
+          const UP = [[18, 17, 16, 15, 14, 13, 12, 11], [21, 22, 23, 24, 25, 26, 27, 28]], LO = [[48, 47, 46, 45, 44, 43, 42, 41], [31, 32, 33, 34, 35, 36, 37, 38]];
+          const tStyle = "width:34px;height:30px;border:2px solid var(--line);border-radius:5px;background:transparent;font:600 11px 'JetBrains Mono',monospace;color:inherit;cursor:pointer";
+          const tooth = (n) => { const dr = p._dis.durum[n], c = dr ? DIS_DURUM[dr] : "var(--line)"; return `<button data-dis="${n}" title="${n}${dr ? " · " + dr : ""}" style="${tStyle};border-color:${c};${dr ? `background:color-mix(in srgb,${c} 22%,transparent)` : ""}">${n}</button>`; };
+          const quad = (q) => `<div style="display:flex;gap:3px">${q.map(tooth).join("")}</div>`;
+          body.innerHTML = seg + `<div class="box"><div class="ist-sec ist-hd" style="margin:0 0 10px"><h5>Diş şeması (FDI)</h5><span class="adm-sub">Bir dişe tıkla · durum ve işlem ata</span></div>
+            <div style="display:flex;flex-direction:column;gap:10px;align-items:center"><div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center">${quad(UP[0])}${quad(UP[1])}</div><div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center">${quad(LO[0])}${quad(LO[1])}</div></div>
+            <div class="r" style="flex-wrap:wrap;gap:10px;margin-top:10px">${Object.entries(DIS_DURUM).map(([k, c]) => `<span class="adm-sub" style="display:inline-flex;align-items:center;gap:4px"><i style="width:11px;height:11px;border-radius:3px;background:${c};display:inline-block"></i>${H.esc(k)}</span>`).join("")}</div></div>
+            <div class="ist-sec ist-hd" style="margin-top:14px"><h5>Tedavi planı</h5></div>
+            <div class="tw"><table class="t"><thead><tr><th style="width:70px">Diş</th><th>İşlem</th><th style="width:130px">Durum</th><th style="width:100px">Ücret ₼</th><th style="width:44px"></th></tr></thead><tbody>
+            ${p._dis.plan.length ? p._dis.plan.map((r, i) => `<tr><td class="mono"><b>${H.esc(String(r.dis))}</b></td><td>${H.esc(r.islem)}</td><td class="adm-sub">${H.esc(r.durum || "—")}</td><td class="n">${r.ucret ? r.ucret + " ₼" : "—"}</td><td><button class="btn g sm" data-disdel="${i}">${I("x") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Plan boş. Dişe tıklayıp işlem ekleyin.</td></tr>`}</tbody></table></div>
+            <p class="adm-sub" style="margin-top:8px">Diş durumu ve tedavi planı; plan kalemleri fiyatlandırma için vezneye, işlemler istem havuzuna düşer.</p>`;
+          body.querySelectorAll("[data-dis]").forEach(btn => btn.onclick = () => { const n = btn.dataset.dis, cur = p._dis.durum[n] || "";
+            H.modal({ title:"Diş " + n, body:`<div class="icd-form"><div class="fr"><label>Durum</label><select data-f="durum"><option value="">— seç —</option>${Object.keys(DIS_DURUM).map(k => `<option${cur === k ? " selected" : ""}>${k}</option>`).join("")}</select></div>
+                <div class="fr"><label>İşlem (plana ekle)</label><input data-f="islem" placeholder="ör. Kanal tedavisi, dolgu"></div>
+                <div class="fr"><label>Ücret (₼)</label><input data-f="ucret" type="number" placeholder="0"></div></div>`,
+              actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+              onMount(m) { m.querySelector("[data-ok]").onclick = () => { const dur = m.querySelector('[data-f="durum"]').value, isl = (m.querySelector('[data-f="islem"]').value || "").trim(), uc = +m.querySelector('[data-f="ucret"]').value || 0;
+                if (dur) p._dis.durum[n] = dur; else delete p._dis.durum[n];
+                if (isl) p._dis.plan.push({ dis:n, islem:isl, durum:dur, ucret:uc });
+                H.log("Diş planı", vzName(p.name) + " · diş " + n + (dur ? " · " + dur : "") + (isl ? " · " + isl : "")); H.closeModal(); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"dis" }); }; } });
+          });
+          body.querySelector("tbody").addEventListener("click", (ev) => { const d = ev.target.closest("[data-disdel]"); if (d) { p._dis.plan.splice(+d.dataset.disdel, 1); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"dis" }); } });
+          return;
+        }
         // tanilar (ICD) — hastanın tanı listesi; ICD katalogundan ara-ekle
         p._tanilar = p._tanilar || (p.dx ? [{ kod:"", ad:p.dx, tip:"Ön tanı" }] : []);
         const TAN_TIP = ["Ön tanı", "Kesin tanı", "Ayırıcı tanı"];
@@ -882,6 +915,19 @@
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
       const ihb = e.target.closest("[data-ih]"); if (ihb) return H.go("hasta360", { pid:p.id, atab:"ishavuzu", ihtab:ihb.dataset.ih });
       const ttb = e.target.closest("[data-ttab]"); if (ttb) return H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:ttb.dataset.ttab });
+      const ordi = e.target.closest("[data-ordi]"); if (ordi) { if (!H.can("protokol_duzenle")) { H.toast("Protokol/istem düzenleme yetkiniz yok.", "e"); return; }
+        const o = (H.data.orders || [])[+ordi.dataset.ordi]; if (!o) return; const docs = (H.data.users || []).filter(u => u.role === "hekim");
+        H.modal({ title:"İstem düzenle · " + H.esc(o.ad || ""), body:`<div class="icd-form">
+            <div class="fr"><label>İşlem</label><input value="${H.esc(o.ad || "")}" readonly></div>
+            <div class="fr"><label>Tarih</label><input data-f="at" value="${H.esc(o.at || "")}" placeholder="GG.AA.YYYY SS:DD"></div>
+            <div class="fr"><label>İsteyen doktor</label><select data-f="by"><option value="">—</option>${docs.map(u => `<option${(o.by === u.name) ? " selected" : ""}>${H.esc(u.name)}</option>`).join("")}</select></div>
+            <div class="fr"><label>Durum</label><select data-f="durum">${["İstendi", "Bekliyor", "İşlemde", "Tamam", "İptal"].map(s => `<option${(o.durum === s) ? " selected" : ""}>${s}</option>`).join("")}</select></div></div>
+          <p class="adm-sub" style="margin-top:6px">Değişiklik denetim kaydına yazılır (yetki: protokol/istem düzenle).</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const at = m.querySelector('[data-f="at"]').value.trim(), by = m.querySelector('[data-f="by"]').value, durum = m.querySelector('[data-f="durum"]').value;
+            const ch = []; if (at !== (o.at || "")) ch.push("tarih"); if (by !== (o.by || "")) ch.push("doktor"); if (durum !== (o.durum || "")) ch.push("durum");
+            o.at = at; o.by = by; o.durum = durum; H.log("İstem düzenlendi", (o.ad || "") + (ch.length ? " · " + ch.join(", ") : "")); H.closeModal(); H.toast("İstem güncellendi"); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:params.ttab || "laboratuvar" }); }; } });
+        return; }
       if (e.target.closest("[data-ihrand]")) { H.toast("Randevu ekranı açılıyor"); return H.go("randevu"); }
       if (e.target.closest("[data-ihhazir]")) { H.toast("Hazırlık açıklaması · tasarım", "w"); return; }
       if (e.target.closest("[data-ihonam]")) { H.toast("Onam formu ekle · tasarım", "w"); return; }

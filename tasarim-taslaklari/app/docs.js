@@ -602,6 +602,30 @@
       } });
   }
 
+  // Branşa özel detaylı muayene formları (Göz ayrı/özel; bunlar genel alan-tabanlı çerçeve). Değer d.detay[key]'de.
+  const BRANS_FORM = {
+    kardiyoloji:["Kardioloji", ["Nabız (/dk)", "Kan basıncı (mmHg)", "Kalp sesleri", "Üfürüm", "Ödem", "Periferik nabızlar", "Juguler venöz dolgunluk", "EKG ritmi"]],
+    dahiliye:["Dahiliye / İç hastalıkları", ["Genel durum", "Baş-boyun", "Solunum sistemi", "Kardiyovasküler sistem", "Batın (abdomen)", "Ekstremiteler", "Nörolojik muayene"]],
+    kbb:["Kulak-Burun-Boğaz", ["Kulak (otoskopi)", "Burun / septum", "Boğaz / orofarenks", "Boyun / lenf nodları", "İşitme (kaba test)", "Denge / Romberg"]],
+    ortopedi:["Ortopedi-Travmatoloji", ["İnspeksiyon", "Palpasyon", "Eklem hareket açıklığı (ROM)", "Nörovasküler muayene", "Özel testler", "Deformite"]],
+    noroloji:["Nöroloji", ["Bilinç / GKS", "Kraniyal sinirler", "Motor sistem / kas gücü", "Duyu muayenesi", "Derin tendon refleksleri", "Serebellar testler", "Yürüyüş"]],
+    kadindogum:["Kadın hastalıkları ve doğum", ["Gebelik haftası", "Fundus yüksekliği", "Fetal kalp sesi", "Vajinal muayene", "Spekulum bulgusu", "Son adet tarihi (SAT)"]],
+    genel:["Genel sistemik muayene", ["Genel görünüm", "Baş-boyun", "Göğüs / solunum", "Kalp / dolaşım", "Karın", "Ekstremiteler", "Cilt", "Nörolojik"]],
+  };
+  const bHas = (o) => !!(o && (o.not || Object.keys(o).some(k => k !== "not" && o[k])));
+  const brsLine = (o) => { if (!o) return ""; const n = Object.keys(o).filter(k => k !== "not" && o[k]).length; return [n ? n + " alan dolu" : "", o.not ? "notlu" : ""].filter(Boolean).join(" · ") || "kaydedildi"; };
+  function openDetayBrans(p, d, root, rerender, key) {
+    const cfg = BRANS_FORM[key] || BRANS_FORM.genel; d.detay = d.detay || {}; const O = d.detay[key] = d.detay[key] || {};
+    const body = `<div class="icd-form">${cfg[1].map((l, i) => `<div class="fr"><label>${esc(l)}</label><input data-bf="${i}" value="${esc(O[i] || "")}"></div>`).join("")}</div>
+      <div class="fr" style="margin-top:8px"><label>Ek bulgu / not</label><textarea data-bf="not" rows="3" style="width:100%">${esc(O.not || "")}</textarea></div>`;
+    H.modal({ title:"Detaylı muayene · " + esc(cfg[0]), wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-brok>Kaydet</button>`,
+      onMount(m) {
+        m.oninput = (e) => { const T = e.target; if (T.matches("[data-bf]")) O[T.dataset.bf] = T.value; };
+        m.querySelector("[data-brok]").onclick = () => { markDirty(root, d); H.closeModal(); H.toast(cfg[0] + " muayene bulguları kaydedildi"); rerender(); };
+      } });
+  }
+
   function editorHtml(p, d) {
     if (!d) return `<div class="dc-ed"><div class="dc-empty">Soldan bir belge seçin ya da yeni not başlatın.</div></div>`;
     const T = TYPES[d.type], edit = canEdit(d), epi = d.type === "epikriz", sys = isSys(d), U = ui(p.id);
@@ -652,7 +676,13 @@
       <div class="dc-sec dc-mua"><div class="dc-sh"><b>Taburculuk önerileri</b></div>
         <div class="dc-segrow"><span class="dc-ml">Taburcu tipi</span><div class="dc-segs">${seg("taburcu", ["Şifa ile", "Sevk", "Kendi isteğiyle", "Kontrole gelecek"])}</div></div>
         <input class="dc-min" data-dc-muain="taburcuNot" placeholder="Taburculuk notu" value="${esc(M.taburcuNot || "")}" style="margin-top:8px;width:100%"></div>` : "";
-    const detayW = (edit && d.type === "muayene") ? `<div class="dc-sec"><div class="dc-sh"><b>Detaylı muayene bulguları</b><span class="r"><button class="btn g sm" data-dc-detay="goz">${H.icon("eye")}Göz muayenesi</button></span></div>${(d.detay && gozHas(d.detay.goz)) ? `<div class="dc-ro">${esc(gozSummary(d.detay.goz))}</div>` : `<span class="mute" style="font-size:12px">Branşa göre ayrıntılı bulgu. Şimdilik Göz formu hazır; diğer branşlar sırayla eklenecek.</span>`}</div>` : "";
+    const bransRows = (edit && d.type === "muayene" && d.detay) ? Object.entries(BRANS_FORM).filter(([k]) => bHas(d.detay[k])).map(([k, c]) => `<div class="dc-ro">${esc(c[0])}: ${esc(brsLine(d.detay[k]))}</div>`).join("") : "";
+    const detayW = (edit && d.type === "muayene") ? `<div class="dc-sec"><div class="dc-sh"><b>Detaylı muayene bulguları</b><span class="r">
+        <button class="btn g sm" data-dc-detay="goz">${H.icon("eye")}Göz</button>
+        <select class="dc-min sm" data-dc-bransel style="max-width:190px">${Object.entries(BRANS_FORM).map(([k, c]) => `<option value="${k}">${esc(c[0])}</option>`).join("")}</select>
+        <button class="btn g sm" data-dc-detaybr>${H.icon("plus")}Branş formu aç</button></span></div>
+      ${(d.detay && gozHas(d.detay.goz)) ? `<div class="dc-ro">${esc(gozSummary(d.detay.goz))}</div>` : ""}${bransRows}
+      ${!(d.detay && (gozHas(d.detay.goz) || bransRows)) ? `<span class="mute" style="font-size:12px">Branşa göre ayrıntılı bulgu: Göz, Kardioloji, Dahiliye, KBB, Ortopedi, Nöroloji, Kadın-doğum, Genel sistemik.</span>` : ""}</div>` : "";
     let foot = "";
     if (d.status === "muhur") {
       foot = `<div class="dc-seal">${H.icon("lock")}Mühürlendi · ${esc(short(d.sealedBy))} · ${esc(d.sealedAt)} <span>· değiştirilemez, yalnız ek not eklenir</span></div>
@@ -826,6 +856,7 @@
       const ozgfl = T.closest("[data-dc-ozgflag]"); if (ozgfl) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; const r = d.ozg.rows[ozgfl.dataset.dcOzgflag] = d.ozg.rows[ozgfl.dataset.dcOzgflag] || {}; r.onemli = !r.onemli; markDirty(root, d); rerender(); return; }
       const soyg = T.closest("[data-dc-soyg]"); if (soyg) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.rel = d.soyg.rel || {}; const rel = d.soyg.rel[soyg.dataset.dcSoyg] = d.soyg.rel[soyg.dataset.dcSoyg] || {}; rel[soyg.dataset.cond] = soyg.checked; markDirty(root, d); return; }
       const soygak = T.closest("[data-dc-soygak]"); if (soygak) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.akraba = soygak.checked; markDirty(root, d); return; }
+      const detaybr = T.closest("[data-dc-detaybr]"); if (detaybr) { if (!canEdit(d)) return; const sel = root.querySelector("[data-dc-bransel]"); openDetayBrans(p, d, root, rerender, sel ? sel.value : "genel"); return; }
       const detay = T.closest("[data-dc-detay]"); if (detay) { if (!canEdit(d)) return; openDetay(p, d, root, rerender); return; }
       if (T.closest("[data-dc-page]")) { ui(p.id).page = !ui(p.id).page; rerender(); return; }
       if (T.closest("[data-dc-send]")) { if (!canSend(d)) return; d.sentAt = H.nowFull();
