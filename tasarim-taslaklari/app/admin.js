@@ -751,7 +751,7 @@
       const grps = AGRP.map(g => [g, tabs.filter(t => g[3].includes(t[0]))]).filter(x => x[1].length), cur = grpOf(AD.tab), two = grps.length > 1;
       const inG = two ? (grps.find(x => x[0] === cur) || grps[0])[1] : tabs; AD.gLast[cur[0]] = AD.tab;
       const badge = (g) => g[0] === "watch" && H.healthWarn && H.healthWarn() ? `<em title="Uyarı">${H.healthWarn()}</em>` : "";
-      el.innerHTML = `<div class="ph"><div><h2>${tabs.length === 1 && tabs[0][0] === "audit" ? "Denetim kaydı" : "Yönetim"}</h2><p>${esc(H.data.hospital.name)} · her değişiklik denetim kaydına yazılır</p></div></div>
+      el.innerHTML = `<div class="ph"><div><h2>${tabs.length === 1 && tabs[0][0] === "audit" ? "Denetim kaydı" : "Yönetim"}</h2><p>${esc(H.data.hospital.name)} · her değişiklik denetim kaydına yazılır</p></div><div class="r"><button class="btn" data-admexp title="Ekrandaki tabloyu Excel'e aktar">${I("save") || ""} Excel</button><button class="btn" data-admyaz title="Ekrandaki tabloyu yazdır">${I("print") || ""} Yazdır</button></div></div>
         ${two ? `<div class="adm-grp" role="tablist">${grps.map(([g]) => `<button type="button" data-grp="${g[0]}" class="${g === cur ? "on" : ""}">${I(g[2])}<span>${g[1]}</span>${badge(g)}</button>`).join("")}</div>` : ""}
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
@@ -761,6 +761,16 @@
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
+      const xp = e.target.closest("[data-admexp],[data-admyaz]");
+      if (xp && el.contains(xp)) { const tbl = (el.querySelector("[data-body]") || el).querySelector("table.t");
+        if (!tbl || !tbl.tHead) { H.toast("Bu ekranda aktarılacak tablo yok.", "w"); return; }
+        const cols = [...tbl.tHead.rows[0].cells].map(c => c.textContent.replace(/\s+/g, " ").trim());
+        while (cols.length && cols[cols.length - 1] === "") cols.pop();
+        const rows = [...(tbl.tBodies[0] ? tbl.tBodies[0].rows : [])].filter(r => !r.cells[0] || !r.cells[0].hasAttribute("colspan")).map(r => [...r.cells].slice(0, cols.length).map(c => c.textContent.replace(/\s+/g, " ").trim()));
+        const label = (ATABS.find(t => t[0] === AD.tab) || [, "Liste"])[1];
+        if (e.target.closest("[data-admexp]")) { H.exportCsv ? (H.exportCsv("Yonetim_" + AD.tab, cols, rows), H.toast("Excel (CSV) indirildi")) : H.toast("Dışa aktarma yok", "w"); }
+        else { H.printTable ? H.printTable(label, cols, rows) : H.toast("Yazdırma yok", "w"); }
+        return; }
       const g = e.target.closest("[data-grp]");
       if (g && el.contains(g)) { const G = AGRP.find(x => x[0] === g.dataset.grp), mine = tabs.filter(t => G[3].includes(t[0])), last = AD.gLast[G[0]];
         AD.tab = mine.some(t => t[0] === last) ? last : mine[0][0]; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); return; }
