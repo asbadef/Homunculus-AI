@@ -12135,3 +12135,19 @@ Object.assign(window.HMC_SOZLUK, {
   "Uyarılar": { AZ: "Xəbərdarlıqlar", RU: "Предупреждения", EN: "Alerts" },
   "Set / bölüm ara…": { AZ: "Set / bölmə axtar…", RU: "Поиск набора / отделения…", EN: "Search set / unit…" }
 });
+
+/* === Sterilizasyon v2: ömür/kayıp/etiket/izlenebilirlik/acil · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Etiket": { AZ: "Etiket", RU: "Этикетка", EN: "Label" },
+  "İzlenebilirlik": { AZ: "İzlənəbilirlik", RU: "Прослеживаемость", EN: "Traceability" },
+  "İzlenebilirlik raporu": { AZ: "İzlənəbilirlik hesabatı", RU: "Отчёт прослеживаемости", EN: "Traceability report" },
+  "Kayıp": { AZ: "İtkin", RU: "Утерян", EN: "Lost" },
+  "Bulundu": { AZ: "Tapıldı", RU: "Найден", EN: "Found" },
+  "Acil işaretle": { AZ: "Təcili işarələ", RU: "Отметить срочным", EN: "Mark urgent" },
+  "Kullanım döngüsü": { AZ: "İstifadə dövrü", RU: "Циклы использования", EN: "Usage cycles" },
+  "Şablon": { AZ: "Şablon", RU: "Шаблон", EN: "Template" },
+  "acil (STAT)": { AZ: "təcili (STAT)", RU: "срочные (STAT)", EN: "urgent (STAT)" },
+  "toplam set": { AZ: "ümumi set", RU: "всего наборов", EN: "total sets" },
+  "teslime hazır (depoda)": { AZ: "təhvilə hazır (anbarda)", RU: "готово к выдаче (склад)", EN: "ready to deliver (store)" },
+  "sorunlu set": { AZ: "problemli set", RU: "наборы с проблемой", EN: "problem sets" }
+});
