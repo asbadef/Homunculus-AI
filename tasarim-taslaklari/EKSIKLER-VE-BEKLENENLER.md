@@ -21,7 +21,7 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 3. [x] **Kısmi tahsilat** — tahsilat modalında tutar düzenlenebilir; kalan kadar ödenince "Ödendi", yoksa "Bekliyor" (kalan takip). Avans mahsup kalan iş.
 4. [~] **Doktor muayene derinliği** — [x] istem→sonuç girişi (lab/radyoloji sonuç → Tedavi'de görünür); kons/ameliyat/e-reçete kalan.
 5. [x] **Randevu takvim görünümü** — gün ızgarası (saat×doktor) + **hafta görünümü** (doktor × 7 gün) + **slot kapatma** (boşa sağ tık = kapat, kapalıya tık = aç; kalıcı). Durum renkli, boş hücreden randevu, detay/sil.
-6. [~] **İK akışları** — [x] **nöbet çizelgesi görünümü** (tüm personelin nöbet/mesai/izinleri tek listede, tarihe göre, Excel/Yazdır); izin/işgöremezlik onay akışı kalan.
+6. [x] **İK akışları** — [x] **nöbet çizelgesi görünümü** (tüm personelin nöbet/mesai/izinleri tek listede, tarihe göre, Excel/Yazdır); [x] **izin / işgöremezlik onay akışı** (talep → yetkili onay/red → onaylıysa personel kartı izin tablosuna + nöbet çizelgesine düşer; kalıcı).
 7. [ ] **Çeviri turu** — yeni metinlerin AZ/RU/EN sözlüğü (varsayılan dil Azerice).
 8. [~] **Ön büro ekranları** — [x] Hasta Uyarı (kalıcı, kartta kırmızı banner) + Diğer menü bilgileri kaydediliyor; Refakatçi/Sevk/Kara Liste/Müstehaklık kalan.
 9. [ ] **Mobil / PWA** ve **grafik panolar** — ileri faz.

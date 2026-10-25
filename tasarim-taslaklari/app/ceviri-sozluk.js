@@ -12071,3 +12071,19 @@ Object.assign(window.HMC_SOZLUK, {
   "Hasta / istem / isteyen ara…": { AZ: "Xəstə / sifariş / sifarişçi axtar…", RU: "Пациент / назначение / врач…", EN: "Search patient / order / requester…" },
   "Personel ara…": { AZ: "Personal axtar…", RU: "Искать персонал…", EN: "Search staff…" }
 });
+
+/* === İzin / işgöremezlik onay akışı · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "İzin talepleri": { AZ: "Məzuniyyət müraciətləri", RU: "Заявки на отпуск", EN: "Leave requests" },
+  "İzin / işgöremezlik talepleri": { AZ: "Məzuniyyət / əmək qabiliyyətsizliyi müraciətləri", RU: "Заявки на отпуск / нетрудоспособность", EN: "Leave / incapacity requests" },
+  "Yeni izin talebi": { AZ: "Yeni məzuniyyət müraciəti", RU: "Новая заявка на отпуск", EN: "New leave request" },
+  "Talep oluştur": { AZ: "Müraciət yarat", RU: "Создать заявку", EN: "Create request" },
+  "İzin tipi": { AZ: "Məzuniyyət növü", RU: "Тип отпуска", EN: "Leave type" },
+  "Personel adı": { AZ: "Personal adı", RU: "Имя сотрудника", EN: "Staff name" },
+  "Yıllık izin": { AZ: "İllik məzuniyyət", RU: "Ежегодный отпуск", EN: "Annual leave" },
+  "Hastalık (işgöremezlik)": { AZ: "Xəstəlik (əmək qabiliyyətsizliyi)", RU: "Болезнь (нетрудоспособность)", EN: "Sick (incapacity)" },
+  "Ücretsiz izin": { AZ: "Ödənişsiz məzuniyyət", RU: "Отпуск без содержания", EN: "Unpaid leave" },
+  "Mazeret izni": { AZ: "Üzrlü məzuniyyət", RU: "Отпуск по уважительной причине", EN: "Excused leave" },
+  "Doğum izni": { AZ: "Doğuş məzuniyyəti", RU: "Отпуск по беременности и родам", EN: "Maternity leave" },
+  "İdari izin": { AZ: "İnzibati məzuniyyət", RU: "Административный отпуск", EN: "Administrative leave" }
+});

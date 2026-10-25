@@ -1288,7 +1288,7 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r">${H.filterBox("Personel ara…")}<button class="btn" data-nobetciz>${I("calendar") || ""} Nöbet çizelgesi</button><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r">${H.filterBox("Personel ara…")}<button class="btn" data-izinler>${I("clock") || ""} İzin talepleri</button><button class="btn" data-nobetciz>${I("calendar") || ""} Nöbet çizelgesi</button><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
@@ -1297,6 +1297,7 @@
       if (e.target.closest("[data-persexp]")) { H.exportCsv("Personel_listesi", ["Ad", "Kullanıcı/Kimlik", "Ünvan", "Rol/tip", "Birimler", "Durum"], staff.map(u => [u.name, u.u, u.title, u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", "), u.active ? "Aktif" : "Pasif"])); H.toast("Excel (CSV) indirildi"); return; }
       if (e.target.closest("[data-persyaz]")) { if (H.printTable) H.printTable("Personel listesi", ["Ad", "Unvan", "Rol / tip", "Birimler", "Durum"], staff.map(u => [u.name, u.title || "—", u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—", u.active ? "Aktif" : "Pasif"])); return; }
       if (e.target.closest("[data-nobetciz]")) return nobetCiz();
+      if (e.target.closest("[data-izinler]")) return izinAkis();
       if (e.target.closest("[data-persnew]")) return persForm(null);
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
       const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
@@ -1329,6 +1330,51 @@
         actions:`<button class="btn" data-x>Kapat</button>`,
         onMount(m) { m.querySelector("[data-ncexp]").onclick = () => { H.exportCsv && H.exportCsv("Nobet_cizelgesi", cols, rows); H.toast("Excel indirildi"); };
           m.querySelector("[data-ncyaz]").onclick = () => H.printTable && H.printTable("Nöbet / mesai / izin çizelgesi", cols, rows); } });
+    }
+    function izinAkis() {
+      // İzin / işgöremezlik onay akışı: talep → yetkili onay/red → onaylıysa personel kartı izinler tablosuna + nöbet çizelgesine yansır.
+      const IZIN_TIP = ["Yıllık izin", "Hastalık (işgöremezlik)", "Ücretsiz izin", "Mazeret izni", "Doğum izni", "İdari izin"];
+      const names = persAll().map(u => u.name).filter(Boolean);
+      const canApp = H.can("admin_users");
+      const me = (H.state.user || {}).name || "—";
+      const store = () => (H.data.izinTalep = H.data.izinTalep || [
+        { id:"izn1", personel:names[0] || "—", tip:"Yıllık izin", bas:"2026-11-03", bit:"2026-11-07", gun:5, aciklama:"", durum:"Bekliyor", eden:names[0] || "—" },
+        { id:"izn2", personel:names[1] || "—", tip:"Hastalık (işgöremezlik)", bas:"2026-10-20", bit:"2026-10-22", gun:3, aciklama:"Rapor ekli", durum:"Onaylandı", eden:names[1] || "—" },
+      ]);
+      const gunHesap = (bas, bit) => { const a = new Date(bas), b = new Date(bit); return (a && b && !isNaN(a) && !isNaN(b)) ? Math.max(1, Math.round((b - a) / 86400000) + 1) : 1; };
+      const DUR = { "Bekliyor":"", "Onaylandı":"ok", "Reddedildi":"crit" };
+      const draw = (m) => { const list = store();
+        m.querySelector("[data-izbody]").innerHTML = list.length ? list.map(x => `<tr><td><b>${H.esc(x.personel)}</b></td><td>${H.esc(x.tip)}</td><td class="mono adm-sub">${H.esc(x.bas)}</td><td class="mono adm-sub">${H.esc(x.bit)}</td><td class="n">${x.gun}</td><td><span class="tag ${DUR[x.durum] || ""}">${H.esc(x.durum)}</span></td><td>${x.durum === "Bekliyor" && canApp ? `<button class="btn p sm" data-izok="${x.id}">Onayla</button> <button class="btn g sm" data-izred="${x.id}">Reddet</button>` : x.durum === "Bekliyor" ? `<span class="adm-sub">onay bekliyor</span>` : "—"}</td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">İzin talebi yok. "+ Yeni talep" ile açın.</td></tr>`;
+      };
+      H.modal({ title:"İzin / işgöremezlik talepleri", wide:true,
+        body:`<div class="r" style="gap:8px;margin-bottom:8px"><button class="btn p sm" data-iznew>${I("plus") || "+"} Yeni talep</button><span class="adm-sub" style="align-self:center">${canApp ? "Yetkili: bekleyen talepleri onaylayabilir/reddedebilirsiniz." : "Yalnız görüntüleme · onay yetkisi İK yöneticisinde."}</span></div>
+          <div class="tw"><table class="t"><thead><tr><th>Personel</th><th>Tip</th><th>Başlangıç</th><th>Bitiş</th><th style="width:50px">Gün</th><th style="width:110px">Durum</th><th style="width:170px"></th></tr></thead><tbody data-izbody></tbody></table></div>
+          <p class="adm-sub" style="margin-top:8px">Onaylanan izin, personelin kartındaki İzin tablosuna ve Nöbet çizelgesine düşer.</p>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { draw(m);
+          m.querySelector("[data-iznew]").onclick = () => izinForm();
+          m.querySelector("[data-izbody]").onclick = (e) => { const ok = e.target.closest("[data-izok]"), red = e.target.closest("[data-izred]"); if (!ok && !red) return;
+            if (!canApp) { H.toast("Onay yetkiniz yok.", "e"); return; }
+            const id = (ok || red).dataset.izok || (ok || red).dataset.izred, x = store().find(y => y.id === id); if (!x) return;
+            if (ok) { x.durum = "Onaylandı";
+              const p = (H.data.personel || []).find(z => ((z.ad || "") + " " + (z.soyad || "")).trim() === x.personel);   // personel kartı varsa izin tablosuna yaz
+              if (p) { p.izinler = p.izinler || []; p.izinler.push([x.bas, x.bit, x.tip + (x.aciklama ? " · " + x.aciklama : "")]); }
+              H.log("İzin onaylandı", x.personel + " · " + x.tip); H.toast("İzin onaylandı" + (p ? " · çizelgeye işlendi" : ""), "ok");
+            } else { x.durum = "Reddedildi"; H.log("İzin reddedildi", x.personel + " · " + x.tip); H.toast("İzin reddedildi", "w"); }
+            H.saveData && H.saveData(); draw(m); }; } });
+      function izinForm() {
+        H.modal({ title:"Yeni izin talebi", onClose:izinAkis, body:`<div class="icd-form">
+          <div class="fr"><label>Personel</label><input data-f="personel" list="iz-pers" value="${H.esc(me)}" placeholder="Personel adı"><datalist id="iz-pers">${names.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
+          <div class="fr"><label>İzin tipi</label><select data-f="tip">${IZIN_TIP.map(t => `<option>${H.esc(t)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Başlangıç</label><input type="date" data-f="bas"></div>
+          <div class="fr"><label>Bitiş</label><input type="date" data-f="bit"></div>
+          <div class="fr"><label>Açıklama</label><input data-f="aciklama" placeholder="ör. rapor no / neden"></div></div>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Talep oluştur</button>`,
+          onMount(mm) { mm.querySelector("[data-ok]").onclick = () => { const g = s => (mm.querySelector(`[data-f="${s}"]`).value || "").trim();
+            if (!g("personel") || !g("bas") || !g("bit")) { H.toast("Personel, başlangıç ve bitiş gerekli.", "w"); return; }
+            store().unshift({ id:"izn" + Date.now(), personel:g("personel"), tip:mm.querySelector('[data-f="tip"]').value, bas:g("bas"), bit:g("bit"), gun:gunHesap(g("bas"), g("bit")), aciklama:g("aciklama"), durum:"Bekliyor", eden:me });
+            H.saveData && H.saveData(); H.log("İzin talebi açıldı", g("personel")); H.toast("İzin talebi oluşturuldu · onay bekliyor"); izinAkis(); }; } });
+      }
     }
     function persForm(existing, seed) {
       const p = existing || (seed ? { ad:(seed.name || "").trim().split(/\s+/)[0] || "", soyad:(seed.name || "").trim().split(/\s+/).slice(1).join(" "), kimlik:seed.u || "", unvan:seed.title || "", tip:(H.data.roles[seed.role] || { name:seed.role }).name || "", bolum:(seed.units && seed.units !== "*" && seed.units[0] && (H.unit(seed.units[0]) || {}).tr) || "" } : {}), bols = H.data.bolumler || [];
