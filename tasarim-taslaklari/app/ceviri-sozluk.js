@@ -2,6 +2,11 @@
  * Tarayıcıyla ekranlardan toplandı (her rol × sayfa × sekme), çeviri ajanlarıyla dolduruldu. Elle düzeltme buraya. */
 window.HMC_SOZLUK = {
 /* 2026-10-25 · veri zinciri / vezne yeni etiketler */
+"Takvim": { "AZ":"Təqvim", "EN":"Calendar", "RU":"Календарь" },
+"Sonuç gir": { "AZ":"Nəticə daxil et", "EN":"Enter result", "RU":"Ввести результат" },
+"İade talebi oluştur": { "AZ":"Geri qaytarma tələbi yarat", "EN":"Create refund request", "RU":"Создать запрос на возврат" },
+"Fatura iptal": { "AZ":"Fakturanı ləğv et", "EN":"Cancel invoice", "RU":"Отменить счёт" },
+"Ödeme (tahsil et)": { "AZ":"Ödəniş (tahsil et)", "EN":"Payment (collect)", "RU":"Оплата (принять)" },
 "Yeni protokol": { "AZ":"Yeni protokol", "EN":"New protocol", "RU":"Новый протокол" },
 "Fatura kes": { "AZ":"Faktura kəs", "EN":"Issue invoice", "RU":"Выставить счёт" },
 "Parçalı fatura": { "AZ":"Hissəli faktura", "EN":"Partial invoice", "RU":"Частичный счёт" },

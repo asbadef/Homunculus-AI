@@ -1300,7 +1300,8 @@
         actions:`${existing ? `<button class="btn g" data-persdel>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-perssave>Kaydet</button>`,
         onMount(m) {
           m.querySelector("[data-pt]").onclick = (e) => { const b = e.target.closest("[data-ptab]"); if (!b) return; m.querySelectorAll("[data-ptab]").forEach(x => x.classList.toggle("on", x === b)); m.querySelectorAll("[data-panel]").forEach(x => x.hidden = x.dataset.panel !== b.dataset.ptab); };
-          m.querySelectorAll("[data-ptadd]").forEach(b => b.onclick = () => H.toast(b.dataset.ptadd + " · satır ekle", "w"));
+          const PTMAP = { "Nöbet":["nobetler", ["Başlangıç tarihi", "Bitiş tarihi", "Açıklama"]], "Mesai":["mesailer", ["Başlangıç tarihi", "Bitiş tarihi", "Bölüm", "Açıklama"]], "İzin":["izinler", ["Başlangıç tarihi", "Bitiş tarihi", "Açıklama"]], "Randevu slot kapatma (diğer)":["slotKapatma", ["Başlangıç", "Bitiş", "Şube", "Kapatma sebebi"]], "Okul / eğitim":["egitimler", ["Eğitim derecesi", "Okul adı", "Bölüm", "Portalda görünsün"]], "Kurs / sertifika":["sertifikalar", ["Ad", "Kurum", "Tarih"]], "Yabancı dil":["diller", ["Dil", "Seviye"]], "Personel yakınları":["yakinlar", ["Yakınlığı", "Adı", "Soyadı", "T.C / Pasaport", "Cinsiyet", "Doğum tarihi"]], "Zimmet bilgileri":["zimmetler", ["Demirbaş / cihaz", "Seri no", "Zimmet tarihi", "Durum"]] };
+          m.querySelectorAll("[data-ptadd]").forEach(b => b.onclick = () => { const map = PTMAP[b.dataset.ptadd]; if (!map) { H.toast("Eklenemedi.", "w"); return; } const [field, cols] = map; const vals = cols.map(c => prompt(c + ":") || ""); if (vals.every(v => !v)) return; p[field] = p[field] || []; p[field].push(vals); H.toast(b.dataset.ptadd + " · satır eklendi"); H.closeModal(); persForm(p, seed); });
           m.querySelector("[data-perssave]").onclick = () => {
             const g = s => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
             const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
@@ -1310,6 +1311,7 @@
             rec.digerYetki = [...m.querySelectorAll("[data-dy]:checked")].map(x => x.dataset.dy);
             ["videoWall", "randevuTeyid", "canliMesaj"].forEach(k => rec[k] = !!m.querySelector(`[data-do="${k}"]:checked`));
             rec.haftalik = {}; m.querySelectorAll("[data-wd]").forEach(cb => { const gn = cb.dataset.wd; rec.haftalik[gn] = { calisiyor:cb.checked, bas:(m.querySelector(`[data-ws="${gn}"]`) || {}).value || "", bit:(m.querySelector(`[data-we="${gn}"]`) || {}).value || "" }; });
+            ["nobetler", "mesailer", "izinler", "slotKapatma", "egitimler", "sertifikalar", "diller", "yakinlar", "zimmetler"].forEach(k => rec[k] = p[k] || []);   // tablo satırları korunur
             H.data.personel = H.data.personel || [];
             if (existing) Object.assign(p, rec); else { const np = Object.assign({ id:"per" + Date.now() }, rec); H.data.personel.unshift(np); if (seed) seed._persId = np.id; }
             H.log(existing ? "Personel güncellendi" : "Personel eklendi", ad + " " + rec.soyad); H.closeModal(); H.toast("Kaydedildi: " + ad); H.go("ik");
