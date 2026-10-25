@@ -232,11 +232,14 @@
   const ODEME_TIP = ["Kart", "Nakit", "Havale"];
   const GFK_DURUM = ["Hasta faturası kesilmiş", "Kurum faturası kesilmiş", "Provizyonu alınmamış", "Hasta faturası kesilmemiş"];
   const gfkRows = () => (H.data.gfk = H.data.gfk || [
-    { proto:"50873355", hasta:"Elvin Hüseynov", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Kardiologiya", durum:"Hasta faturası kesilmiş" },
-    { proto:"50874258", hasta:"Nərgiz Əliyeva", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Daxili Xəstəliklər", durum:"Provizyonu alınmamış" },
-    { proto:"50875215", hasta:"Rəşad Məmmədov", gelis:"Günübirlik", ptip:"Check-up", bolum:"Check Up", durum:"Kurum faturası kesilmiş" },
-    { proto:"50876568", hasta:"Səbinə Vəliyeva", gelis:"Ayaktan", ptip:"Kontrol", bolum:"Dermatologiya", durum:"Hasta faturası kesilmemiş" },
+    { proto:"50873355", hasta:"Elvin Hüseynov", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Kardiologiya", kurum:"İcbari Tibbi Sığorta (SAMHI)", provizyon:"Alınmadı", durum:"Hasta faturası kesilmiş" },
+    { proto:"50874258", hasta:"Nərgiz Əliyeva", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Daxili Xəstəliklər", kurum:"Paşa Sığorta", provizyon:"Alınmadı", durum:"Provizyonu alınmamış" },
+    { proto:"50875215", hasta:"Rəşad Məmmədov", gelis:"Günübirlik", ptip:"Check-up", bolum:"Check Up", kurum:"Özel ödeme", provizyon:"Gerekmez", durum:"Kurum faturası kesilmiş" },
+    { proto:"50876568", hasta:"Səbinə Vəliyeva", gelis:"Ayaktan", ptip:"Kontrol", bolum:"Dermatologiya", kurum:"İcbari Tibbi Sığorta (SAMHI)", provizyon:"Alınmadı", durum:"Hasta faturası kesilmemiş" },
   ]);
+  // Fatura öncesi kurum onayı (video 16): SAMHI'de müstehaklık/takip, özel sigortada provizyon.
+  const samhiKurum = (k) => /SAMHI|İcbari|Icbari/i.test(k || "");
+  const ozelSigorta = (k) => !!k && !samhiKurum(k) && !/Özel ödeme|Ozel odeme|ödeme/i.test(k);
   const EVRAK_DURUM = ["Veznede", "Vezneden teslim edildi", "Medikal muhasebede", "Vezneye iade edildi"];
   const evrakRows = () => (H.data.evrak = H.data.evrak || [
     { no:"1167530", matbu:"508944877", kurum:"Qalf Drilling Services", durum:"Veznede" },
@@ -569,9 +572,10 @@
         <p class="adm-sub" style="margin-top:8px">SAMHI'de hasta/kurum payı örnek %30/%70 bölünür. Kampanyayı yetkili rol admin'de oluşturur, vezne burada seçer. Teklif çıktısı alınabilir.</p>`; };
     const panGfk = () => { const g = params.gfk || "hepsi", all = gfkRows(), list = g === "hepsi" ? all : all.filter(x => x.durum === g);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ...GFK_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-gf="${k}" class="${g === k ? "on" : ""}">${l}</button>`).join("")}</div>
-        <div class="tw"><table class="t"><thead><tr><th>Protokol</th><th>Hasta</th><th>Geliş</th><th>Protokol tipi</th><th>Bölüm</th><th style="width:200px">Fatura durumu</th></tr></thead><tbody>
-        ${list.map((x, i) => `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td>${H.esc(x.gelis)}</td><td class="adm-sub">${H.esc(x.ptip)}</td><td class="adm-sub">${H.esc(x.bolum)}</td><td><select data-gfkst="${all.indexOf(x)}">${GFK_DURUM.map(d => `<option${x.durum === d ? " selected" : ""}>${d}</option>`).join("")}</select></td></tr>`).join("") || `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
-        <p class="adm-sub" style="margin-top:8px">GFK takip: protokollerin fatura kesildi/kesilmedi ve provizyon durumu. Fatura kesilmeyen protokoller takip edilir.</p>`; };
+        <div class="tw"><table class="t"><thead><tr><th>Protokol</th><th>Hasta</th><th>Kurum / sigorta</th><th>Bölüm</th><th style="width:150px">Provizyon</th><th style="width:180px">Fatura durumu</th><th style="width:130px"></th></tr></thead><tbody>
+        ${list.map((x) => { const pv = x.provizyon || (samhiKurum(x.kurum) || ozelSigorta(x.kurum) ? "Alınmadı" : "Gerekmez"), al = pv === "Alınmadı";
+          return `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.kurum || "—")}</td><td class="adm-sub">${H.esc(x.bolum)}</td><td><span class="tag ${/alındı|OK/i.test(pv) ? "ok" : al ? "w" : ""}">${H.esc(pv)}</span></td><td><select data-gfkst="${all.indexOf(x)}">${GFK_DURUM.map(d => `<option${x.durum === d ? " selected" : ""}>${d}</option>`).join("")}</select></td><td>${al ? `<button class="btn p sm" data-gfkprov="${all.indexOf(x)}">${samhiKurum(x.kurum) ? "Müstehaklık / takip" : "Provizyon al"}</button>` : `<span class="adm-sub">—</span>`}</td></tr>`; }).join("") || `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">GFK takip: fatura öncesi kurum onayı. SAMHI'de müstehaklık sorgulanıp takip alınır, özel sigortada provizyon alınır; özel ödemede gerekmez.</p>`; };
     const panEvrak = () => { const e = params.ev || "hepsi", all = evrakRows(), list = e === "hepsi" ? all : all.filter(x => x.durum === e);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ...EVRAK_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-ef="${k}" class="${e === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="tw"><table class="t"><thead><tr><th>Fatura no</th><th>Matbu fatura no</th><th>Kurum</th><th style="width:190px">Evrak durumu</th><th style="width:110px"></th></tr></thead><tbody>
@@ -848,6 +852,27 @@
           m.querySelector("[data-kkaydet]").onclick = () => { cur.kapanis = read(m); H.saveData && H.saveData(); H.toast("Sayım kaydedildi"); };
           m.querySelector("[data-kkapat]").onclick = () => { cur.kapanis = read(m); cur.acik = false; H.log("Vezne dönem kapatıldı", "#" + cur.no + " · " + banko + " · sayım nakit " + cur.kapanis.sayim.nakit + " ₼"); H.saveData && H.saveData(); H.toast(banko + " dönemi kapatıldı", "w"); H.closeModal(); H.go("vezne", params); }; } });
     }
+    // Provizyon / müstehaklık (fatura öncesi kurum onayı)
+    function provizyonModal(x) {
+      const samhi = samhiKurum(x.kurum);
+      H.modal({ title:(samhi ? "SAMHI müstehaklık / takip" : "Provizyon al") + " · " + H.esc(x.proto),
+        body: samhi
+          ? `<div class="icd-form"><div class="fr"><label>Kurum</label><input value="${H.esc(x.kurum)}" readonly></div>
+             <div class="fr"><label>Tedavi türü</label><select data-f="tedavi"><option>Ayakta tedavi</option><option>Yatan tedavi</option><option>Günübirlik</option></select></div>
+             <div class="fr" style="grid-column:1/-1"><label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-f="biyo" checked> Biyometrik kimlik doğrulama ile takip al</label></div></div>
+             <p class="adm-sub" style="margin-top:8px">Müstehaklık (hak sahipliği) sorgulanıp takip numarası alınır. SAMHI entegrasyonunu ayrı ekip bağlar.</p>`
+          : `<div class="icd-form"><div class="fr"><label>Kurum / sigorta</label><input value="${H.esc(x.kurum)}" readonly></div>
+             <div class="fr"><label>Provizyon tipi</label><select data-f="ptip"><option>Telefon</option><option>Online</option><option>Faks</option></select></div>
+             <div class="fr"><label>Poliçe oranı (%)</label><input type="number" data-f="oran" value="80"></div>
+             <div class="fr"><label>Poliçe limiti (₼)</label><input type="number" data-f="limit" placeholder="ops."></div></div>
+             <p class="adm-sub" style="margin-top:8px">Sigorta provizyonu alınır; poliçe oranıyla hasta/kurum payı dağıtılır.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>${samhi ? "Takip al" : "Provizyon al"}</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+          if (samhi) { x.provizyon = "Takip alındı #TKP-" + Math.floor(100000 + Math.random() * 900000); }
+          else { const oran = +(m.querySelector('[data-f="oran"]').value) || 0; x.provizyon = "Provizyon alındı %" + oran; }
+          if (x.durum === "Provizyonu alınmamış") x.durum = "Hasta faturası kesilmemiş";
+          H.saveData && H.saveData(); H.log("Provizyon/müstehaklık", x.proto + " · " + x.provizyon); H.toast(x.provizyon); H.closeModal(); H.go("vezne", params); }; } });
+    }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); const d = donemler[vb.value]; H.toast("Banko: " + vb.value + (d && d.acik ? " · dönem açık #" + d.no : " · dönem kapalı")); return H.go("vezne", params); }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp, fptip:params.fptip });
@@ -860,6 +885,7 @@
       const fnr = e.target.closest("[data-finara]"); if (fnr) { vzFinAra(root); return; }
       const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
+      const gp = e.target.closest("[data-gfkprov]"); if (gp) { if (!donemAcik) { H.toast("Dönem kapalı · işlem yapılamaz.", "e"); return; } const x = gfkRows()[+gp.dataset.gfkprov]; if (x) provizyonModal(x); return; }
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; }
         if (cur.acik) return donemKapatModal();
         return donemAcModal(); }
