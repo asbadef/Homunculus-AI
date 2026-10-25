@@ -377,7 +377,9 @@ def test_the_patient_relative_layer_judges_the_same_instant():
 # episode — a new nurse notification, the acknowledgement gone. A running alert the score at `now`
 # no longer reaches is now held while a vital is stale, and says what it is held on. It is kept
 # exactly as last scored (X9b): re-scored on the stale readings it climbed a band on a value hours
-# old. It ends when no vital is stale and the score is below the band. Synthetic values throughout.
+# old. It ends when no vital is stale and the score is below the band, or when even the stale
+# values, counted at their last reading, no longer reach the band (X9c: that score only ends a
+# hold, it is never shown). Synthetic values throughout.
 
 _SPOT_CHECK = [(SignalCode.HEART_RATE, 105), (SignalCode.RESP_RATE, 22), (SignalCode.SPO2, 95),
                (SignalCode.SBP, 105), (SignalCode.TEMPERATURE, 38.5)]     # NEWS2 1+2+1+1+1 = 6
@@ -464,37 +466,38 @@ def test_a_running_news2_alert_is_held_on_a_stale_pressure_until_a_fresh_one_sco
     assert _news2(eng) is None, "a fresh pressure scoring nothing ends it"
 
 
-def test_a_held_alert_stays_as_last_scored_while_a_vital_is_stale_though_its_driver_is_normal():
-    # X9b's price: not re-scored, the hold cannot see that the pulse which raised the alert is
-    # normal again. It is kept, saying the pressure is stale, until the pressure is read again.
+def test_a_held_alert_ends_when_its_driver_is_normal_though_another_vital_is_stale():
+    # X9c: the pulse that raised the alert is normal again and the pressure is stale. Counting the
+    # pressure at its last reading (1 point) the score is 1, below the band: the patient has
+    # improved even on the stale values, so there is nothing left to hold.
     eng = Engine()
     for o in [_obs(SignalCode.HEART_RATE, 140), _obs(SignalCode.SBP, 105)]:   # 3 + 1: a red pulse
         eng.ingest(o, now=o.timestamp)
+    assert _news2(eng).summary.startswith("NEWS2 4 ")
     o = _obs(SignalCode.HEART_RATE, 80, minute=75)    # the pressure is stale by now
-    eng.ingest(o, now=o.timestamp)
-    held = _news2(eng)
-    assert held.summary.startswith("NEWS2 4 ")
-    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
-    o = _obs(SignalCode.SBP, 105, minute=76)
     assert eng.ingest(o, now=o.timestamp) == []
-    assert _news2(eng) is None, "no vital is stale and the score (pressure 1) is below the band"
+    assert _news2(eng) is None
 
 
-def test_a_held_alert_ends_on_the_reading_that_leaves_no_vital_stale_below_the_band():
+def test_a_held_alert_ends_on_the_later_reading_that_takes_even_its_stale_values_below_the_band():
     eng = Engine()
     for code, value in _SPOT_CHECK:
         o = _obs(code, value)
         eng.ingest(o, now=o.timestamp)
-    present = []
+    before = _news2(eng)
+    seen = []
     for code, value in [(SignalCode.HEART_RATE, 70), (SignalCode.RESP_RATE, 16),
                         (SignalCode.SPO2, 98), (SignalCode.SBP, 120),
                         (SignalCode.TEMPERATURE, 37.0)]:   # a normal set, 75 minutes later
         o = _obs(code, value, minute=75)
         eng.ingest(o, now=o.timestamp)
-        present.append(_news2(eng) is not None)
-    # Held while the SpO2 or the pressure is stale; with the pressure read nothing is (the first
-    # set's temperature is inside its 2 h) and the score, 1, is below the band: it ends there.
-    assert present == [True, True, True, False, False]
+        seen.append(_news2(eng))
+    # The pulse alone: counting the stale resp rate, SpO2 and pressure at their last reading the
+    # score is 5, still a band — held, as last scored (6, not 5). The resp rate too: 3, below the
+    # band — it ends there, though the SpO2 and the pressure are still stale.
+    assert seen[0].summary == before.summary
+    assert "Held while inputs are stale: resp rate, SpO2, systolic BP " in seen[0].clinical_reasoning
+    assert seen[1:] == [None, None, None, None]
 
 
 def test_a_held_alert_is_still_downgraded_by_the_baseline_that_explains_it():

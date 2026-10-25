@@ -135,8 +135,9 @@ class Engine:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
         # reading. A kind they did not produce has stopped firing and is gone — no quiet time, no
-        # hysteresis — except a NEWS2 held while a vital is stale (G2-A2, X9b), which goes with the
-        # first evaluation that has none stale and is below the band. What the API keeps of one (a
+        # hysteresis — except a NEWS2 held while a vital is stale (G2-A2, X9b, X9c), which goes with
+        # the first evaluation that has none stale and is below the band, or whose stale values at
+        # their last reading are below it too. What the API keeps of one (a
         # critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not the
         # engine's.
         self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
@@ -145,8 +146,9 @@ class Engine:
     def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
                     now: datetime) -> Alert | None:
         """The running NEWS2 alert, held, when this evaluation's NEWS2 (`fired`) produced none while
-        a vital is stale at `now` (G2-A2, X9, X9b); None when it fired, none was running, or no
-        vital is stale — then a complete fresh evaluation is below the band and the alert ends.
+        a vital is stale at `now` (G2-A2, X9, X9b, X9c); None when it fired, none was running, no
+        vital is stale — a complete fresh evaluation is below the band — or even the stale values,
+        counted at their last reading, no longer reach a band: then the alert ends.
 
         The bridge posts a vitals set one reading at a time, every reading stamped with the set's
         time. Judged at each, the first readings of a set taken more than a window after the last
@@ -155,8 +157,10 @@ class Engine:
         alert (the bucket, before this evaluation replaces it) is held while a vital is stale. It is
         kept as it was last scored — total, severity, urgency, downgrade — and only says what it is
         held on (X9b): re-scored on the stale readings (X9) it could climb a band, to "immediate" and
-        a nurse notification, on a value hours old. A fresh score that reaches a band is the alert
-        again, a lower one included. A stale input still never raises a new alert (D6), a charted
+        a nurse notification, on a value hours old. That ageless score only ends a hold (X9c): a
+        pulse back to normal beside a stale pressure scoring 1 is an improvement even on the stale
+        values, and nothing is left to hold. A fresh score that reaches a band is the alert again, a
+        lower one included. A stale input still never raises a new alert (D6), a charted
         oxygen or ACVPU past its shift holds nothing (it is assumed, D8), and a feed that stops
         entirely keeps the held alert, as before G2-A2.
         """
@@ -165,7 +169,7 @@ class Engine:
         if fired or running is None:
             return None
         at_now = news2.score(state, now)
-        if not at_now.stale:
+        if not at_now.stale or not news2.evaluate(state):     # ageless: an end condition, never shown
             return None
         kept = running if kept is None else kept
         self._held_news2_alert[patient_id] = kept
@@ -173,7 +177,7 @@ class Engine:
                  for name in sorted(at_now.stale, key=lambda name: at_now.measured_at[name])]
         note = (f" Held while inputs are stale: {', '.join(stale)} older than the expected refresh "
                 f"window. This alert was already firing and is kept as last scored, not re-scored; "
-                f"it ends when no vital is stale and the score is below the band.")
+                f"it ends when the readings, stale ones at their last value, are below the band.")
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
     def _new_anchor(self, patient_id: str, now: datetime) -> datetime:
