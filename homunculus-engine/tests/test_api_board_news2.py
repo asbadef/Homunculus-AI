@@ -149,6 +149,26 @@ def test_air_and_alert_are_assumed_on_the_board_and_the_breakdown_still_sums():
     assert sum(news2["breakdown"].values()) == news2["total"] == 14
 
 
+def test_the_board_names_what_each_charted_input_last_read_whatever_its_age():
+    """X11: an expired chart is assumed again, and the card says what it last read — "room air
+    (last charted: on oxygen, 9 h ago)". Oxygen as charted, 0 or 1; consciousness as its letter."""
+    charted = {**DETERIORATING, SignalCode.SUPPLEMENTAL_OXYGEN: (1.0, ""),
+               SignalCode.ACVPU: (4.0, "")}
+    news2 = _board(_engine(charted), now=WHEN + timedelta(hours=9))["latest"]["news2"]
+    assert news2["assumed"] == ["air_or_oxygen", "consciousness"]
+    assert news2["last_charted"] == {"air_or_oxygen": 1, "consciousness": "U"}
+    never = _board(_engine(DETERIORATING))["latest"]["news2"]
+    assert never["last_charted"] == {"air_or_oxygen": None, "consciousness": None}
+
+
+@pytest.mark.parametrize("ordinal,letter", [(0.0, "A"), (1.0, "C"), (2.0, "V"), (3.0, "P"),
+                                            (4.0, "U")])
+def test_a_charted_acvpu_is_named_by_its_letter(ordinal, letter):
+    engine = _engine({SignalCode.ACVPU: (ordinal, ""), SignalCode.SUPPLEMENTAL_OXYGEN: (0.0, "")})
+    assert _board(engine)["latest"]["news2"]["last_charted"] == \
+        {"air_or_oxygen": 0, "consciousness": letter}
+
+
 def test_a_board_built_without_now_judges_at_the_wall_clock(monkeypatch):
     """D3: `obs.timestamp` is the rule's own time at ingest; a board judged at it never ages."""
     import homunculus.api.board as board_module

@@ -60,6 +60,26 @@ def _iso(at: datetime | None) -> str | None:
     return None if at is None else at.isoformat()
 
 
+#: ACVPU's letters, by the ordinal the engine records (canonical.py: 0 = Alert … 4 = Unresponsive).
+_ACVPU_LETTERS = "ACVPU"
+
+
+def _last_charted(state) -> dict:
+    """What the two charted NEWS2 inputs last read, whatever its age; None if never charted
+    (G2-A2, X11). An expired chart is scored as air or Alert and named in `assumed`; the card then
+    says what it last read, so «assumed: room air» does not hide that the patient was charted on
+    oxygen. Oxygen as charted — 1 on oxygen, 0 room air, as the score reads it; consciousness as
+    its ACVPU letter (an ordinal that is not a whole 0–4, which the door allows, as its number)."""
+    oxygen = state.latest(SignalCode.SUPPLEMENTAL_OXYGEN)
+    acvpu = state.latest(SignalCode.ACVPU)
+    letter = None
+    if acvpu is not None:
+        v = acvpu.value
+        letter = _ACVPU_LETTERS[int(v)] if v.is_integer() and 0 <= v <= 4 else f"{v:g}"
+    return {"air_or_oxygen": None if oxygen is None else int(oxygen.value >= 1.0),
+            "consciousness": letter}
+
+
 def _news2(state, now: datetime) -> dict:
     """The engine's NEWS2, in the shape the board carries it.
 
@@ -71,7 +91,8 @@ def _news2(state, now: datetime) -> dict:
     (D7). `measured_at` and `fresh_until` carry each of the seven inputs' last reading and the end
     of its window, ISO-8601 or None (D4). The API sends the stamp, never an age — an age baked into
     a payload is wrong a minute after it was published — and "too old" is `stale`, never a
-    comparison the screen makes with `fresh_until`.
+    comparison the screen makes with `fresh_until`. `last_charted` is what the two charted inputs
+    last read (X11), for the card to name beside an expired chart.
     """
     result = news2_score(state, now)
     return {
@@ -84,6 +105,7 @@ def _news2(state, now: datetime) -> dict:
         "assumed": list(result.assumed),
         "measured_at": {name: _iso(at) for name, at in result.measured_at.items()},
         "fresh_until": {name: _iso(at) for name, at in result.fresh_until.items()},
+        "last_charted": _last_charted(state),
     }
 
 

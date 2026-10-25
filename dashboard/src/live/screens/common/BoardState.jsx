@@ -157,7 +157,8 @@ export function nameOf(patient, t) {
  *  is charted (`assumed` — not partial, so not drawn as a warning). Each stale input is printed
  *  with its age: the server's stamp (`measured_at`) against `nowMs`, the clock the screen read with
  *  `useBoardNow`. The age is the screen's to state; "too old" is the engine's (freshness.js), and
- *  `fresh_until` is never compared with a clock here. */
+ *  `fresh_until` is never compared with a clock here. An expired chart also names what it last read
+ *  (`last_charted`, X11): «assumed: room air (last charted: on oxygen, 9 h ago)». */
 export function News2({ news2, nowMs, className = "" }) {
   const { t } = useI18n();
   const missing = Array.isArray(news2?.missing) ? news2.missing : [];
@@ -175,6 +176,15 @@ export function News2({ news2, nowMs, className = "" }) {
   const assumed = Array.isArray(news2.assumed) ? news2.assumed : [];
   const at = news2.measured_at && typeof news2.measured_at === "object" ? news2.measured_at : {};
   const ageOfInput = (name) => ageText(t, at[name], nowMs);
+  // G2-A2 X11: what an expired chart last read — oxygen 1/0 in the reader's words, the ACVPU
+  // letter as the engine sent it. Null when the payload does not say: then only its age is shown.
+  const last = news2.last_charted && typeof news2.last_charted === "object" ? news2.last_charted : {};
+  const lastValue = (name) => {
+    const v = last[name];
+    if (name !== "air_or_oxygen") return typeof v === "string" && v ? v : null;
+    if (v !== 0 && v !== 1) return null;
+    return t(`news2.chartedOxygen.${v === 1 ? "oxygen" : "air"}`);
+  };
   return (
     <span className={`inline-flex flex-wrap items-center gap-1.5 text-11.5 font-semibold ${className}`}>
       <span className="text-mute">{t("board.news2")}:</span>
@@ -194,17 +204,19 @@ export function News2({ news2, nowMs, className = "" }) {
           <span className="sr-only">{` · ${t("news2.staleHint")}`}</span>
         </span>
       ) : null}
-      {/* G2-A2 (D10): what was scored as room air and Alert; an expired chart says when it was made. */}
+      {/* G2-A2 (D10): what was scored as room air and Alert; an expired chart says when it was made
+          and (X11) what it last read. */}
       {assumed.length > 0 ? (
         <StatusPill tone="neutral" icon="edit" className="!whitespace-normal">
           {`${t("news2.assumedMark")}: `}
           {assumed.map((name, i) => {
             const age = at[name] ? ageOfInput(name) : null;
+            const value = age ? lastValue(name) : null;
             return (
               <React.Fragment key={name}>
                 {i > 0 ? ", " : null}
                 {t(`news2.assumed.${name}`)}
-                {age ? ` (${t("news2.assumedLast", { age })})` : null}
+                {age ? ` (${value ? t("news2.assumedLastValue", { value, age }) : t("news2.assumedLast", { age })})` : null}
                 {at[name] ? null : <span className="sr-only">{` (${t("news2.assumedNever")})`}</span>}
               </React.Fragment>
             );

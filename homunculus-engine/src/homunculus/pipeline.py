@@ -4,7 +4,7 @@ Holds per-patient recognition time to anchor the antibiotic clock."""
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homunculus.canonical import Observation, SignalCode
 from homunculus.reco.engine import Alert, to_alert
@@ -144,15 +144,16 @@ class Engine:
 
         alerts = [to_alert(f, obs.patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
-        # Staleness may withhold a new NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
+        # Staleness — a vital past its window, a chart past its shift (X11) — may withhold a new
+        # NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
         held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, judge_at)
         if held is not None:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
         # reading. A kind they did not produce has stopped firing and is gone — no quiet time, no
-        # hysteresis — except a NEWS2 held while a vital is stale (G2-A2, X9b, X9c), which goes with
-        # the first evaluation that has none stale and is below the band, or whose stale values at
-        # their last reading are below it too. What the API keeps of one (a
+        # hysteresis — except a NEWS2 held while an input is stale (G2-A2, X9b, X9c, X11), which
+        # goes with the first evaluation that has none stale and is below the band, or whose stale
+        # values at their last reading are below it too. What the API keeps of one (a
         # critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not the
         # engine's.
         self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
@@ -161,10 +162,11 @@ class Engine:
     def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
                     profile: PatientProfile | None, now: datetime) -> Alert | None:
         """The running NEWS2 alert, held, when this evaluation's NEWS2 (`fired`) produced none while
-        a vital is stale at `now` (G2-A2, X9, X9b, X9c, X9d). None — the alert ends — when it
-        fired, when none was running, when no vital is stale (the score at `now` is below the band
-        with nothing stale; a vital never measured still leaves it partial, as it always did), or
-        when even the stale values, counted at their last reading, no longer reach a band.
+        a vital is stale or a chart expired at `now` (G2-A2, X9, X9b, X9c, X9d, X11). None — the
+        alert ends — when it fired, when none was running, when nothing is stale or expired (the
+        score at `now` is below the band on current inputs; a vital never measured still leaves it
+        partial, as it always did), or when even the stale values, counted at their last reading,
+        no longer reach a band.
 
         The bridge posts a vitals set one reading at a time, every reading stamped with the set's
         time. Judged at each, the first readings of a set taken more than a window after the last
@@ -180,9 +182,15 @@ class Engine:
         layer, is lower than the kept alert's, that ageless alert is kept from then on. It steps
         down, never up, and within one band keeps its number, so a set arriving reading by reading
         does not move it. A fresh score that reaches a band is the alert again, a lower one
-        included. A stale input still never raises a new alert (D6), a charted oxygen or ACVPU past
-        its shift holds nothing (it is assumed, D8), and a feed that stops entirely keeps the held
-        alert, as before G2-A2.
+        included. A stale input still never raises a new alert (D6), and a feed that stops entirely
+        keeps the held alert, as before G2-A2.
+
+        A charted oxygen or ACVPU past its shift is scored as air and Alert at `now` (D8) and held
+        on like a stale vital (X11). Before, its expiry ended the alert an "on oxygen" or a U had
+        raised, though nobody had charted the patient off oxygen or awake. The ageless score counts
+        the chart at its last value, as it does a stale reading, and the held note names it with
+        the shift it outlived. Charted again it is current, and room air or Alert below the band
+        ends the alert.
 
         A profile charted during a hold reaches the held alert only through that floor: a baseline
         that now downgrades it steps it down, but one withdrawn mid-hold, which would raise it,
@@ -193,8 +201,10 @@ class Engine:
         if fired or running is None:
             return None
         at_now = news2.score(state, now)
+        # X11: a chart past its shift, assumed again though it was charted, holds as a stale vital.
+        expired = [name for name in at_now.assumed if at_now.measured_at[name] is not None]
         ageless = news2.evaluate(state)
-        if not at_now.stale or not ageless:
+        if not (at_now.stale or expired) or not ageless:
             return None
         kept = running if kept is None else kept
         # Judged as the kept alert was — after the patient-relative layer — on the ageless score.
@@ -203,12 +213,23 @@ class Engine:
         if _level(floor) < _level(kept):
             kept = floor
         self._held_news2_alert[patient_id] = kept
-        stale = [news2.INPUT_LABEL[name]                  # longest stale first, as the recency note
-                 for name in sorted(at_now.stale, key=lambda name: at_now.measured_at[name])]
-        note = (f" Held while inputs are stale: {', '.join(stale)} older than the expected refresh "
-                f"window. The alert was already firing, so it is not raised on a stale value: it "
-                f"keeps its last score, or the lower band its stale values still reach at their "
-                f"last reading, and ends when those readings are below the band.")
+
+        def oldest_first(names: list[str]) -> list[str]:    # longest stale first, as the recency note
+            return sorted(names, key=lambda name: at_now.measured_at[name])
+
+        vitals = [news2.INPUT_LABEL[name] for name in oldest_first(at_now.stale)]
+        on = [f"{', '.join(vitals)} older than the expected refresh window"] if vitals else []
+        charts: dict[str, list[str]] = {}       # X11: the expired charts, by the shift outlived
+        for name in oldest_first(expired):
+            shift = (at_now.fresh_until[name] - at_now.measured_at[name]) / timedelta(hours=1)
+            charts.setdefault(f"{shift:g}", []).append(news2.INPUT_LABEL[name])
+        on += [f"{', '.join(labels)} charted more than {shift} h ago"
+               for shift, labels in charts.items()]
+        note = (f" Held while inputs are stale: {'; '.join(on)}. The alert was already firing, "
+                f"so it is not raised on a stale value: it keeps its last score, or the lower band "
+                f"its stale values still reach at their last reading, and ends when those readings "
+                f"are below the band.")
+        stale = vitals + [label for labels in charts.values() for label in labels]
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
     def _new_anchor(self, patient_id: str, now: datetime) -> datetime:

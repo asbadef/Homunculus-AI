@@ -196,6 +196,17 @@ describe("live UI dictionaries", () => {
     expect(DICTIONARIES.ru["news2.noEngine"]).toMatch(/^Система /);
   });
 
+  // G2-A2 X11: an expired chart's pill names what it last read — «varsayıldı: oda havası (son kayıt:
+  // oksijende, 9 sa önce)». The owner's Turkish, and the value and the age in every language.
+  it("the assumed pill can name an expired chart's last value and its age, in every language", () => {
+    expect(DICTIONARIES.tr["news2.assumedLastValue"]).toBe("son kayıt: {value}, {age}");
+    expect(DICTIONARIES.tr["news2.chartedOxygen.oxygen"]).toBe("oksijende");
+    expect(DICTIONARIES.tr["news2.chartedOxygen.air"]).toBe("oda havası");
+    for (const lang of LANG_CODES) {
+      expect(placeholders(DICTIONARIES[lang]["news2.assumedLastValue"]), lang).toEqual(["age", "value"]);
+    }
+  });
+
   it("names keys <namespace>.<key>, nested keys joined with dots", () => {
     expect(DICTIONARIES.az["common.close"]).toBe("Bağla");
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");

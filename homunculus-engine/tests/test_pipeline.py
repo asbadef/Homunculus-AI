@@ -636,19 +636,84 @@ def test_a_held_alert_driven_by_a_stale_pressure_outside_its_baseline_is_not_dow
     assert [a.kind for a in alerts].count("acute_change") == 1, "the hold adds no second one"
 
 
-def test_a_charted_oxygen_past_its_shift_does_not_hold_the_alert_once_the_vitals_are_fresh():
-    # The hold is on stale vitals (X9b). A charted oxygen past its 8 h is assumed air (D8), and the
-    # alert says so; with every vital fresh the evaluation is complete, and below the band it ends.
+def test_an_expired_oxygen_chart_holds_the_running_alert_as_a_stale_vital_does():
+    # X11. A charted oxygen past its 8 h is assumed air (D8). Counted only as a stale vital was, the
+    # expiry ended this alert once the vitals were fresh — nobody had re-charted the oxygen, and the
+    # alert it raised was gone. An expired chart now holds the running alert like a stale vital.
     eng = Engine()
     for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.RESP_RATE, 22),
               _obs(SignalCode.HEART_RATE, 105)]:                                # 2 + 2 + 1 = 5
         eng.ingest(o, now=o.timestamp)
-    assert _news2(eng).summary.startswith("NEWS2 5 ")
+    before = _news2(eng)
+    assert before.summary.startswith("NEWS2 5 ")
     o = _obs(SignalCode.RESP_RATE, 22, minute=485)
     eng.ingest(o, now=o.timestamp)
     held = _news2(eng)
-    assert "Held while inputs are stale: pulse " in held.clinical_reasoning, "the pulse is stale"
-    assert held.summary.startswith("NEWS2 5 ")
-    o = _obs(SignalCode.HEART_RATE, 105, minute=486)
-    assert eng.ingest(o, now=o.timestamp) == [], "resp rate 2 + pulse 1, oxygen assumed air: 3"
+    assert ("Held while inputs are stale: pulse older than the expected refresh window; "
+            "supplemental oxygen charted more than 8 h ago. ") in held.clinical_reasoning
+    assert held.summary == before.summary
+    assert held.stale_inputs == ["pulse", "supplemental oxygen"]
+    o = _obs(SignalCode.HEART_RATE, 105, minute=486)   # every vital fresh; the oxygen not charted
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held is not None, "resp rate 2 + pulse 1, the oxygen assumed air, is 3: held, not ended"
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+    assert ("Held while inputs are stale: supplemental oxygen charted more than 8 h ago. "
+            in held.clinical_reasoning)
+    assert held.stale_inputs == ["supplemental oxygen"]
+    o = _obs(SignalCode.SUPPLEMENTAL_OXYGEN, 0.0, minute=487)    # charted again: room air
+    assert eng.ingest(o, now=o.timestamp) == []
+    assert _news2(eng) is None, "a fresh chart that scores below the band ends it"
+
+
+def test_an_expired_oxygen_and_acvpu_hold_a_news2_7_and_it_steps_down_as_each_is_charted_again():
+    # X11 with X9d. Oxygen and V charted at one assessment raise NEWS2 7, immediate. At 8 h both
+    # expire together: the score at `now` is the resp rate's 2, below the band, and the alert ended.
+    # Held now — at the 7 its charts still reach — and stepped down, never up, as each is charted.
+    eng = Engine()
+    for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.ACVPU, 2.0),
+              _obs(SignalCode.RESP_RATE, 22)]:                                  # 2 + 3 + 2 = 7
+        eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.RESP_RATE, 22, minute=480)     # the charts exactly 8 h old: still current
+    eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert (before.summary.split()[1], before.severity, before.urgency) == \
+        ("7", "high", "immediate")
+    o = _obs(SignalCode.RESP_RATE, 22, minute=481)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held is not None, "the expiry does not end it"
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "high", "immediate")
+    assert ("Held while inputs are stale: supplemental oxygen, consciousness charted more than "
+            "8 h ago. ") in held.clinical_reasoning
+    assert held.stale_inputs == ["supplemental oxygen", "consciousness"]
+    o = _obs(SignalCode.SUPPLEMENTAL_OXYGEN, 0.0, minute=482)    # room air; the V still expired
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert (held.summary.split()[1], held.severity, held.urgency) == ("5", "moderate", "soon"), \
+        "on the V's last reading the score is 2 + 3 = 5: a band lower"
+    assert "Held while inputs are stale: consciousness charted more than 8 h ago. " in \
+        held.clinical_reasoning
+    o = _obs(SignalCode.ACVPU, 0.0, minute=483)                  # Alert
+    assert eng.ingest(o, now=o.timestamp) == []
     assert _news2(eng) is None
+
+
+def test_an_expired_u_holds_the_red_parameter_alert_it_raised():
+    # X11. A U is a single parameter scoring 3. Expired, it was assumed Alert and the fresh, normal
+    # vitals ended the alert — though nobody had charted the patient awake.
+    eng = Engine()
+    for o in [_obs(SignalCode.ACVPU, 4.0), _obs(SignalCode.RESP_RATE, 16, minute=450),
+              _obs(SignalCode.HEART_RATE, 70, minute=450)]:
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert (before.summary.split()[1], before.severity, before.urgency) == ("3", "moderate", "soon")
+    for code, value in [(SignalCode.RESP_RATE, 16), (SignalCode.HEART_RATE, 70)]:
+        o = _obs(code, value, minute=481)
+        eng.ingest(o, now=o.timestamp)
+        held = _news2(eng)
+        assert held is not None, f"ended on the {code.name} reading"
+        assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+        assert "Held while inputs are stale: consciousness charted more than 8 h ago. " in \
+            held.clinical_reasoning
+        assert held.stale_inputs == ["consciousness"]

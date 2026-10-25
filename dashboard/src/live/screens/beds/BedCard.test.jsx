@@ -175,17 +175,19 @@ describe("the bed card — what it says, and what it refuses to", () => {
       expect(screen.getByText(/Pəncərəsini keçmiş ölçmə bala daxil edilmir/)).toBeInTheDocument();
     });
 
-    it("marks the assumed inputs, and says when an expired chart was last made", () => {
+    it("marks the assumed inputs, and names an expired chart's last value and when it was made", () => {
+      // X11: «assumed: room air» alone hid that the patient was last charted on oxygen.
       card(entry("S-001", [], {
         at: measured(30),
-        score: news2({ assumed: ["air_or_oxygen", "consciousness"], measured_at: { air_or_oxygen: ago(9 * 3600) } }),
+        score: news2({ assumed: ["air_or_oxygen", "consciousness"], measured_at: { air_or_oxygen: ago(9 * 3600) },
+          last_charted: { air_or_oxygen: 1, consciousness: null } }),
       }));
-      const pill = screen.getByText("fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq");
+      const pill = screen.getByText("fərz edildi: otaq havası (son qeyd: oksigendə, 9 saat əvvəl), oyaq");
       expect(screen.getByText("(heç qeyd edilməyib)")).toBeInTheDocument();   // consciousness, read out
       // The whole sentence as a reader gets it: the assumed values, the screen-reader-only «never
       // charted», and the hint that says why this is not a warning.
       expect(pill).toHaveTextContent(
-        "fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq (heç qeyd edilməyib) · "
+        "fərz edildi: otaq havası (son qeyd: oksigendə, 9 saat əvvəl), oyaq (heç qeyd edilməyib) · "
         + "Cari qeyd yoxdur; bal bu girişi standart dəyərlə hesabladı və bunu qismən saymır.",
       );
       expect(pill).toHaveAttribute("data-tone", "neutral");
@@ -193,6 +195,32 @@ describe("the bed card — what it says, and what it refuses to", () => {
       // unwrapped pill cuts off the assumed consciousness, the very mark D10 asks for.
       expect(pill).toHaveClass("!whitespace-normal");
       expect(screen.queryByText("qismən")).toBeNull();                         // an assumption is not partial
+    });
+
+    it("names an expired ACVPU by its letter — in Turkish, the owner's wording", () => {
+      localStorage.setItem("hmc.lang", "tr");
+      try {
+        card(entry("S-001", [], {
+          at: measured(30),
+          score: news2({ assumed: ["air_or_oxygen", "consciousness"],
+            measured_at: { air_or_oxygen: ago(9 * 3600), consciousness: ago(9 * 3600) },
+            last_charted: { air_or_oxygen: 1, consciousness: "U" } }),
+        }));
+        expect(screen.getByText(
+          "varsayıldı: oda havası (son kayıt: oksijende, 9 sa önce), uyanık (son kayıt: U, 9 sa önce)",
+        )).toBeInTheDocument();
+      } finally {
+        localStorage.removeItem("hmc.lang");
+      }
+    });
+
+    it("an expired chart whose last value the payload lacks still says when it was made", () => {
+      card(entry("S-001", [], {
+        at: measured(30),
+        score: news2({ assumed: ["air_or_oxygen"], measured_at: { air_or_oxygen: ago(9 * 3600) },
+          last_charted: undefined }),
+      }));
+      expect(screen.getByText("fərz edildi: otaq havası (son qeyd 9 saat əvvəl)")).toBeInTheDocument();
     });
 
     it("says nothing more when nothing is stale or assumed", () => {

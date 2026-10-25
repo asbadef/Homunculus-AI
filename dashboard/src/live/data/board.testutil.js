@@ -118,7 +118,8 @@ export function riskOf(alarms) {
  *  that is about them states them. */
 export const news2 = (over = {}) => ({
   total: 6, partial: false, missing: [], red_param: false, breakdown: {},
-  stale: [], assumed: [], measured_at: {}, fresh_until: {}, ...over,
+  stale: [], assumed: [], measured_at: {}, fresh_until: {},
+  last_charted: { air_or_oxygen: null, consciousness: null }, ...over,
 });
 
 /** One board card. By default: measured by nothing, named by nobody, no alarm, risk "none" — the
