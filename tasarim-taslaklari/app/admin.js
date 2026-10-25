@@ -751,7 +751,7 @@
       const grps = AGRP.map(g => [g, tabs.filter(t => g[3].includes(t[0]))]).filter(x => x[1].length), cur = grpOf(AD.tab), two = grps.length > 1;
       const inG = two ? (grps.find(x => x[0] === cur) || grps[0])[1] : tabs; AD.gLast[cur[0]] = AD.tab;
       const badge = (g) => g[0] === "watch" && H.healthWarn && H.healthWarn() ? `<em title="Uyarı">${H.healthWarn()}</em>` : "";
-      el.innerHTML = `<div class="ph"><div><h2>${tabs.length === 1 && tabs[0][0] === "audit" ? "Denetim kaydı" : "Yönetim"}</h2><p>${esc(H.data.hospital.name)} · her değişiklik denetim kaydına yazılır</p></div><div class="r"><button class="btn" data-admexp title="Ekrandaki tabloyu Excel'e aktar">${I("save") || ""} Excel</button><button class="btn" data-admyaz title="Ekrandaki tabloyu yazdır">${I("print") || ""} Yazdır</button></div></div>
+      el.innerHTML = `<div class="ph"><div><h2>${tabs.length === 1 && tabs[0][0] === "audit" ? "Denetim kaydı" : "Yönetim"}</h2><p>${esc(H.data.hospital.name)} · her değişiklik denetim kaydına yazılır</p></div><div class="r"><button class="btn" data-admexp title="Ekrandaki tabloyu Excel'e aktar">${I("save") || ""} Excel</button><button class="btn" data-admyaz title="Ekrandaki tabloyu yazdır">${I("print") || ""} Yazdır</button>${H.can("admin_system") ? `<button class="btn g" data-admreset title="Kayıtlı demo verisini silip baştan başlat">${I("trash") || ""} Demo sıfırla</button>` : ""}</div></div>
         ${two ? `<div class="adm-grp" role="tablist">${grps.map(([g]) => `<button type="button" data-grp="${g[0]}" class="${g === cur ? "on" : ""}">${I(g[2])}<span>${g[1]}</span>${badge(g)}</button>`).join("")}</div>` : ""}
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
@@ -761,6 +761,7 @@
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
+      if (e.target.closest("[data-admreset]")) { if (confirm("Kayıtlı tüm değişiklikler (fatura, protokol, tanımlar, personel vb.) silinip demo baştan başlatılsın mı? Roller korunur.")) { H.log("Demo verisi sıfırlandı"); H.resetData ? H.resetData() : location.reload(); } return; }
       const xp = e.target.closest("[data-admexp],[data-admyaz]");
       if (xp && el.contains(xp)) { const tbl = (el.querySelector("[data-body]") || el).querySelector("table.t");
         if (!tbl || !tbl.tHead) { H.toast("Bu ekranda aktarılacak tablo yok.", "w"); return; }
