@@ -273,18 +273,24 @@ def create_app(
             audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
                                     item.payload(at)))
 
-    # G2-A2 (D5): the previous escalation cycle's `now`; None until a cycle has run.
-    freshness_since: list[datetime | None] = [None]
+    # G2-A2 (D5): each hospital's previous escalation-cycle `now`, advanced after that hospital's
+    # republish, so a tenant failing in its own does not hold the others' back (Task 2 review).
+    # A hospital no cycle has reached yet counts from the app's start, seeded by the lifespan: the
+    # first cycle covers [start, first cycle), at worst one frame a fresh `/patients` already had.
+    # Lane B's retention sweep right after the republish may send a second frame per cycle for a
+    # patient (A2's O14).
+    freshness_since: dict[str, datetime] = {}
+    freshness_started: list[datetime | None] = [None]
 
     async def _republish_turned(hospital: str, engine: Engine, store: AckStore, now: datetime,
                                 published: set[str]) -> None:
         """G2-A2 (D5): republish, judged at `now`, each measured patient one of whose NEWS2 inputs
-        stopped counting since the previous cycle (`board.freshness_turned`). A reading's window
-        closes with no frame to say so — a feed that stops is exactly when no further frame
-        arrives — and without this the card would read fresh until a reload. The first cycle after
-        a start has nothing to compare with and republishes nothing: `/patients` on (re)connect is
-        judged at its own moment. `published` are the patients this cycle has already sent."""
-        since = freshness_since[0]
+        stopped counting since this hospital's previous cycle (`board.freshness_turned`). A
+        reading's window closes with no frame to say so — a feed that stops is exactly when no
+        further frame arrives — and without this the card would read fresh until a reload. Its
+        first cycle counts from the app's start; without a lifespan there is nothing to count from
+        and it republishes nothing. `published` are the patients this cycle has already sent."""
+        since = freshness_since.get(hospital, freshness_started[0])
         if since is None:
             return
         for pid in engine.patient_ids():
@@ -329,7 +335,7 @@ def create_app(
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
             await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
-        freshness_since[0] = now                                             # G2-A2 (D5)
+            freshness_since[hospital] = now                                  # G2-A2 (D5)
 
         # Retention: a card discharged more than DISCHARGED_TTL ago leaves the board (or keeps its
         # readings and loses its name). Every tenant this app serves is swept, engine or not — the
@@ -356,6 +362,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        freshness_started[0] = datetime.now(timezone.utc)   # G2-A2 (D5): the first cycle's `since`
         if on_startup_check is not None:
             try:
                 await on_startup_check()
@@ -634,17 +641,19 @@ def create_app(
 
         engine = _engine(hospital)
         store = _store(hospital)
+        # One wall-clock instant per request, as in /ingest: each entry is judged at its charted
+        # time but never past the wall clock (G2-A2, X10) — a `recorded_at` in the future would
+        # age every other input to it. The audit row keeps the stamp; the replay judges at it.
+        now = datetime.now(timezone.utc)
         alerts: list = []
         for item in charted:
             obs = item.observation
-            alerts = engine.ingest(obs, now=obs.timestamp)
+            alerts = engine.ingest(obs, now=min(obs.timestamp, now))
             # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
             # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
             # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
             # Right after the evaluation and before any audit write, as in /ingest: if the audit
-            # fails from here on, an unacknowledged critical is still on the board. `charted` is
-            # never empty (build_entries refuses that), so `now` is set for the stamps below.
-            now = datetime.now(timezone.utc)
+            # fails from here on, an unacknowledged critical is still on the board.
             cleared = sync_alerts(engine, store, obs.patient_id, now)
             # Re-arm the nurse's dedup after EACH entry, not only after the last: `[norepinephrine 0,
             # dopamine 5]` ends an acknowledged shock and starts a new one inside this loop, and the
@@ -752,14 +761,17 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc))
         engine = _engine(hospital)
         store = _store(hospital)
-        alerts = engine.ingest(obs, now=obs.timestamp)
+        # One wall-clock instant per request. The rules judge at the reading's own time but never
+        # past the wall clock (G2-A2, X10): judged at a stamp in the future, every other input
+        # would be aged to it. The audit row keeps the stamp; the replay judges at it (rehydrate).
+        wall_now = datetime.now(timezone.utc)
+        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
         # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
         # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
         # if the audit fails from here on, an unacknowledged critical is still on the board.
         # Before the stamps too: a kind that came back after clearing has had its old stamp pruned,
         # so it is stamped anew, a new episode (D5).
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
-        wall_now = datetime.now(timezone.utc)
         cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
         audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
                                 {"value": obs.value, "unit": obs.unit,

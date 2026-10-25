@@ -172,3 +172,14 @@ def test_the_snapshot_judges_every_card_at_one_instant():
     from homunculus.api.board import board_snapshot
     [card] = board_snapshot(_engine(DETERIORATING), AckStore(), now=WHEN + timedelta(minutes=61))
     assert card["latest"]["news2"]["stale"] == STALE_AT_61_MIN
+
+
+def test_the_meds_box_reads_the_antibiotic_clock_at_the_cards_instant():
+    """X2: one instant for the whole card — the antibiotic clock as well as NEWS2, never the wall
+    clock when the caller names a moment (Task 2 review)."""
+    # Platelets 80 is SOFA 2 on its own; charting suspected infection then recognises sepsis.
+    engine = _engine({SignalCode.PLATELETS: (80.0, "10^3/uL"),
+                      SignalCode.SUSPECTED_INFECTION: (1.0, "")})
+    assert engine.recognized_at("bed-1") == WHEN
+    clock = _board(engine, now=WHEN + timedelta(minutes=25))["meds"]["antibiotic_clock"]
+    assert (clock["elapsed_sec"], clock["remaining_sec"]) == (25 * 60, 35 * 60)

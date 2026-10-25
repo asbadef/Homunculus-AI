@@ -88,11 +88,15 @@ def _news2(state, now: datetime) -> dict:
 
 
 def freshness_turned(state, since: datetime, until: datetime) -> bool:
-    """Whether one of this patient's NEWS2 inputs stopped counting in (since, until] — a reading's
-    window closed, or a charted value expired (G2-A2, D5). Pure: the escalation cycle asks it of
-    every measured patient and republishes the board when the answer is yes, because nothing else
-    would — a feed that stops is exactly when no further frame arrives."""
-    return any(at is not None and since < at <= until
+    """Whether one of this patient's NEWS2 inputs stopped counting in [since, until) — fresh at
+    `since`, stale at `until`: a reading's window closed, or a charted value expired (G2-A2, D5).
+    The rule counts an age equal to the window as fresh, so a window ending at `at` is stale only
+    after `at`; the spec's "(since, now]" had that end wrong (Task 2 review). Consecutive cycles'
+    intervals [t0, t1), [t1, t2) leave no gap and no overlap: each window end is pushed once.
+    Pure: the escalation cycle asks it of every measured patient and republishes the board when
+    the answer is yes, because nothing else would — a feed that stops is exactly when no further
+    frame arrives."""
+    return any(at is not None and since <= at < until
                for at in news2_score(state).fresh_until.values())
 
 
