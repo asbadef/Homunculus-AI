@@ -65,7 +65,7 @@
     const filt = enc === "hepsi" ? pts : pts.filter(p => H.encOf(p) === enc);
     const ordCount = (pid, cat) => (H.data.orders || []).filter(o => o.pid === pid && o.cat === cat).length;
     const encTabs = [["hepsi", "Hepsi"], ["ayaktan", "Ayaktan"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatan"], ["yogun", "Yoğun bakım"]];
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_gelisler")}</h2><p>${filt.length} hasta · birimlerinizdeki tüm başvurular</p></div><div class="r"><button class="btn" data-gelexp>${I("save") || ""} Excel</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_gelisler")}</h2><p>${filt.length} hasta · birimlerinizdeki tüm başvurular</p></div><div class="r">${H.filterBox("Hasta / tanı / birim ara…")}<button class="btn" data-gelexp>${I("save") || ""} Excel</button></div></div>
       <div class="seg" style="margin-bottom:12px" data-enctabs>${encTabs.map(([k, l]) => `<button data-enc="${k}" class="${enc === k ? "on" : ""}">${l}${k !== "hepsi" ? ` (${pts.filter(p => H.encOf(p) === k).length})` : ""}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th style="width:110px">Başvuru</th><th>Tanı / amaç</th><th style="width:60px">Lab</th><th style="width:60px">Rad</th><th>Birim</th><th>Hekim</th><th style="width:110px"></th></tr></thead><tbody>
       ${filt.length ? filt.map(p => { const b = H.bed(p.bed), e = H.encOf(p), ei = H.ENC[e] || {}, u = b && H.unit(b.unitId), att = H.userBy(p.attending);
@@ -83,6 +83,7 @@
       const g = e.target.closest("[data-goto]"); if (g) return H.can("patient") ? H.go("patient", { pid:g.dataset.goto, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
       const pc = e.target.closest("[data-pid]"); if (pc) return H.can("patient") ? H.go("patient", { pid:pc.dataset.pid, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
     };
+    H.wireFilter(root);
   } });
 
   /* ================= RANDEVU ================= */
@@ -707,13 +708,14 @@
       ["İndirim / iade onayları", "Yetkili onayı bekleyen indirim ve iadeler", "vezne", { tab:"indirim" }]];
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_medmuhasebe")}</h2><p>Kurumsal faturalama, evrak ve alacak takibi · vezne ile bağlantılı</p></div></div>
       <div class="g2" style="align-items:start">${cards.map(([t, d, pg, pr]) => `<button class="card" style="text-align:left;cursor:pointer" data-mmgo="${pg}" data-mmp='${H.esc(JSON.stringify(pr))}'><b style="font:700 15px 'Space Grotesk'">${H.esc(t)}</b><div class="adm-sub" style="margin-top:4px">${H.esc(d)}</div></button>`).join("")}</div>
-      <div class="ist-sec ist-hd" style="margin-top:16px"><h5>Kurum bazlı açık alacak</h5><div class="r" style="gap:6px"><button class="btn sm" data-mmexp>${I("save") || ""} Excel</button><button class="btn sm" data-mmyaz>${I("print") || ""} Yazdır</button></div></div>
+      <div class="ist-sec ist-hd" style="margin-top:16px"><h5>Kurum bazlı açık alacak</h5><div class="r" style="gap:6px">${H.filterBox("Kurum ara…")}<button class="btn sm" data-mmexp>${I("save") || ""} Excel</button><button class="btn sm" data-mmyaz>${I("print") || ""} Yazdır</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Kurum / sigorta</th><th style="width:120px">Fatura</th><th style="width:150px">Açık alacak ₼</th></tr></thead><tbody>
       ${Object.keys(alacak).length ? Object.entries(alacak).sort((a, b) => b[1].t - a[1].t).map(([k, v]) => `<tr><td><b>${H.esc(k)}</b></td><td class="n">${v.a}</td><td class="n">${v.t} ₼</td></tr>`).join("") : `<tr><td colspan="3" class="mute" style="padding:16px;text-align:center">Açık alacak yok.</td></tr>`}</tbody></table></div>
       <p class="adm-sub" style="margin-top:10px">Medikal muhasebe, kurumlara kesilen faturaların ve tahsilatının takip edildiği yerdir. Detay kurgu (hakediş, kurum mutabakatı, SAMHI dönem icmali) referans görsellerle oturtulacak.</p>`;
     root.onclick = (e) => { const g = e.target.closest("[data-mmgo]"); if (g) { let pr = {}; try { pr = JSON.parse(g.dataset.mmp); } catch {} return H.go(g.dataset.mmgo, pr); }
       if (e.target.closest("[data-mmexp]")) { H.exportCsv("Kurum_acik_alacak", ["Kurum", "Fatura", "Açık alacak ₼"], Object.entries(alacak).map(([k, v]) => [k, v.a, v.t])); H.toast("Excel (CSV) indirildi"); return; }
       if (e.target.closest("[data-mmyaz]")) { if (H.printTable) H.printTable("Kurum bazlı açık alacak", ["Kurum / sigorta", "Fatura", "Açık alacak ₼"], Object.entries(alacak).sort((a, b) => b[1].t - a[1].t).map(([k, v]) => [k, v.a, v.t + " ₼"])); } };
+    H.wireFilter(root);
   } });
 
   /* ================= YÖNETİM RAPORLARI (başlık kataloğu · içerik yapım aşamasında) ================= */
@@ -730,10 +732,13 @@
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
     const role = (H.state.user || {}).role, allow = H.data.rolRapor && H.data.rolRapor[role];
     const groups = RAPOR_GRUP.filter(([g]) => !allow || allow[g]);
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""}</p></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · rol yetkisine göre${allow ? " (kısıtlı)" : ""}</p></div><div class="r">${H.filterBox("Rapor adı ara…")}</div></div>
       ${(groups.length ? groups : [["", ["— Bu rol için tanımlı rapor yok (admin → Rapor Yetkileri) —"]]]).map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak.</p>`;
+    const rq = root.querySelector("[data-tfilter]"); if (rq) rq.oninput = () => { const v = rq.value.trim().toLocaleLowerCase("tr");
+      root.querySelectorAll(".rp-card").forEach(c => c.style.display = (!v || c.textContent.toLocaleLowerCase("tr").includes(v)) ? "" : "none");
+      root.querySelectorAll(".ist-sec").forEach(s => s.style.display = [...s.querySelectorAll(".rp-card")].some(c => c.style.display !== "none") ? "" : "none"); };
     root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);
       if (!d) { H.toast(name + " · yapım aşamasında", "w"); return; }
       const bols = (H.klinikBolumler ? H.klinikBolumler() : []), docs = (H.data.users || []).filter(u => u.role === "hekim");
@@ -757,6 +762,13 @@
     } catch (err) { H.toast("Dışa aktarma bu tarayıcıda çalışmadı.", "e"); }
   }
   H.exportCsv = csvExport;   // diğer modüller (admin listeleri vb.) de kullanır
+  // Ortak liste filtresi: ekranda bir [data-tfilter] kutusu varsa, görünür .t tablolarının satırlarını metne göre gizler/gösterir.
+  H.filterBox = (ph) => `<input data-tfilter class="tfilter" placeholder="${H.esc(ph || "Listede ara…")}" style="min-width:200px">`;
+  H.wireFilter = (root) => { const q = root && root.querySelector("[data-tfilter]"); if (!q) return;
+    q.oninput = () => { const v = q.value.trim().toLocaleLowerCase("tr");
+      root.querySelectorAll("table.t").forEach(tb => { if (tb.offsetParent === null) return;   // gizli sekmedeki tabloya dokunma
+        const body = tb.tBodies[0]; if (!body) return;
+        [...body.rows].forEach(r => { if (r.querySelector("td[colspan]")) return; r.style.display = (!v || r.textContent.toLocaleLowerCase("tr").includes(v)) ? "" : "none"; }); }); }; };
   // Öncelikli raporların örnek/özet verisi (gerçek veriden türetilir)
   function reportData(name) {
     const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };
@@ -1185,7 +1197,7 @@
     const me = (H.state.user || {}).u;
     let list = all.filter(t => mine ? t.acan === me : true);
     list = f === "hepsi" ? list : f === "aktif" ? list.filter(t => t.durum === "Açık" || t.durum === "İşlemde") : list.filter(t => t.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · talep yönetimi" : "Sorununuzu iletin, Bilgi Sistemleri çözsün · yalnız kendi talepleriniz"}</p></div><div class="r"><button class="btn" data-talexp>${I("save") || ""} Excel</button><button class="btn" data-talprint>${I("print") || ""} Yazdır</button><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · talep yönetimi" : "Sorununuzu iletin, Bilgi Sistemleri çözsün · yalnız kendi talepleriniz"}</p></div><div class="r">${H.filterBox("Konu / açan / no ara…")}<button class="btn" data-talexp>${I("save") || ""} Excel</button><button class="btn" data-talprint>${I("print") || ""} Yazdır</button><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
       ${yonet ? `<div class="seg" style="margin-bottom:8px"><button data-talkap="tum" class="${!mine ? "on" : ""}">Tüm talepler</button><button data-talkap="benim" class="${mine ? "on" : ""}">Benim taleplerim</button></div>` : ""}
       <div class="seg" style="margin-bottom:12px">${[["aktif", "Aktif"], ["hepsi", "Hepsi"], ...TALEP_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-talf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:90px">No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th style="width:80px">Öncelik</th><th style="width:150px">Tarih</th><th style="width:110px">Durum</th></tr></thead><tbody>
@@ -1200,6 +1212,7 @@
       if (e.target.closest("[data-talprint]")) { talepPrint(list); return; }
       const op = e.target.closest("[data-talopen]"); if (op) { const t = all.find(x => x.id === op.dataset.talopen); if (t) { if (t.acan === me) t.cozumGoruldu = true; talepDetay(t); } }
     };
+    H.wireFilter(root);
     function talepPrint(lst) {
       const w = window.open("", "_blank"); if (!w) { H.toast("Yazdırma penceresi engellendi (pop-up izni gerekli).", "e"); return; }
       w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Destek talepleri</title><style>body{font:13px system-ui,Arial;padding:24px;color:#111}h2{font-size:17px;margin:0 0 12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px}th{background:#f3f4f6}</style></head><body><h2>Destek / İş Takip — ${lst.length} talep</h2><table><thead><tr><th>No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th>Öncelik</th><th>Tarih</th><th>Durum</th></tr></thead><tbody>${lst.map(t => `<tr><td>${H.esc(t.no)}</td><td>${H.esc(t.konu)}</td><td>${H.esc(t.kategori)}</td><td>${H.esc(t.acanAd)}</td><td>${H.esc(t.oncelik)}</td><td>${H.esc(t.tarih)}</td><td>${H.esc(t.durum)}</td></tr>`).join("")}</tbody></table></body></html>`);
@@ -1250,7 +1263,7 @@
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
     const pn = (pid) => { const p = H.pt(pid), b = p && H.bed(p.bed); return p ? (H.showNames() ? p.name : (b ? b.no : pid)) : pid; };
-    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma</p></div><div class="r"><button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma</p></div><div class="r">${H.filterBox("Hasta / istem / isteyen ara…")}<button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
       <div class="seg" style="margin-bottom:12px">${[["lab", "Laboratuvar"], ["rad", "Radyoloji"], ["kan", "Kan ürünü"]].map(([k, l]) => `<button data-lt="${k}" class="${tur === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th><th>Sonuç</th><th style="width:90px"></th></tr></thead><tbody>
       ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td class="adm-sub">${H.esc(o.sonuc || "—")}</td><td><button class="btn g sm" data-labres="${o.id}">${I("edit") || "Sonuç"} Sonuç</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
@@ -1262,6 +1275,7 @@
       const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return; const v = prompt("Sonuç / rapor:", o.sonuc || ""); if (v != null) { o.sonuc = v.trim(); if (o.sonuc && (o.durum === "İstendi" || o.durum === "Numune alındı" || o.durum === "Çalışılıyor")) o.durum = "Sonuç onaylandı"; H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", (o.ad || "")); H.toast("Sonuç kaydedildi."); H.go("labislem", { tur }); } return; }
       if (e.target.closest("[data-lbexp]")) { const d = lbData(); H.exportCsv ? (H.exportCsv("Lab_Rad_" + tur, d.cols, d.rows), H.toast("Excel indirildi")) : H.toast("yok", "w"); return; }
       if (e.target.closest("[data-lbyaz]")) { const d = lbData(); H.printTable ? H.printTable("Laboratuvar / Radyoloji", d.cols, d.rows) : H.toast("yok", "w"); return; } };
+    H.wireFilter(root);
   } });
 
   /* ================= İNSAN KAYNAKLARI (İK) ================= */
@@ -1274,7 +1288,7 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r"><button class="btn" data-nobetciz>${I("calendar") || ""} Nöbet çizelgesi</button><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim</p></div><div class="r">${H.filterBox("Personel ara…")}<button class="btn" data-nobetciz>${I("calendar") || ""} Nöbet çizelgesi</button><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn" data-persyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
@@ -1287,6 +1301,7 @@
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
       const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
     };
+    H.wireFilter(root);
     function userDetay(user) {
       const rol = (H.data.roles[user.role] || { name:user.role }), units = user.units === "*" ? "Tüm birimler" : (user.units || []).map(id => (H.unit(id) || { tr:id }).tr).join(", ") || "—";
       const kv = (k, v) => `<div class="kv"><span>${H.esc(k)}</span><span>${H.esc(v || "—")}</span></div>`;

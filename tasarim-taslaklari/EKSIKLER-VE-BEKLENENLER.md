@@ -10,6 +10,10 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 - [ ] **Kurumsal Faturalama iki yerde** (Vezne sekmesi + Medikal Muhasebe hub). Ev kararı: ikisi de kalsın (biri kısayol) mı, tek yer mi?
 - [ ] Rapor: listeden çıkarılan raporların `reportData()` yardımcıları duruyor (ölü kod, zararsız). İstenirse temizlenir.
 
+## A2. Tarama turu bulguları (25.10.2026)
+- [x] **Liste filtresi eksikti** — Gelişler, Raporlar, İş Takip, Laboratuvar/Radyoloji, Medikal Muhasebe ve İK ekranlarında arama/filtre kutusu yoktu (sahibin "çoğu ekranda filtreleme yok" şikâyeti). Ortak `H.filterBox`/`H.wireFilter` eklendi; kutuya yazınca tablo satırları (raporlarda kartlar) anında süzülür. Vezne'de zaten vardı.
+- [x] İstem modülü tarandı: tüm istem düğmelerinin (lab/rad/hizmet/kons/diyet/bakım/ilaç/reçete/kan/ameliyat) gerçek karşılığı var; "yakında eklenecek" metni ulaşılamayan ölü daldı (zararsız, bırakıldı).
+
 ## B. Yapmadığımız / eksik süreçler (öncelik sırası önerim)
 1. [x] **Hasta kabulde protokol otomatik açılır** — ayaktan/yatış/vezne/hasta360 kabulünde gerçek protokol oluşur (istemler ona bağlanır).
 2. [x] **İade → faturaya mahsup** — Fatura İade onaylanınca ilgili fatura tutarı düşülür, biterse "İade edildi". (Avans iade mahsup kalan iş.)
