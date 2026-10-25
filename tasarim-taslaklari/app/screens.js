@@ -1540,7 +1540,7 @@
       }
       if (ana === "tedavi") {
         const tt = params.ttab || "muayene", ords = (H.data.orders || []).filter(o => o.pid === p.id);
-        const TT = [["muayene", "Muayene Kartı"], ["dokuman", "Klinik dokümanlar"], ["laboratuvar", "Laboratuvar"], ["radyoloji", "Radyoloji / görüntüleme"], ["patoloji", "Patoloji"], ["tanilar", "Tanılar (ICD)"], ["recete", "Reçete / ilaç"]];
+        const TT = [["muayene", "Muayene / belgeler"], ["laboratuvar", "Laboratuvar"], ["radyoloji", "Radyoloji / görüntüleme"], ["patoloji", "Patoloji"], ["tanilar", "Tanılar (ICD)"], ["recete", "Reçete / ilaç"]];
         const seg = `<div class="seg" style="margin:4px 0 12px;flex-wrap:wrap">${TT.map(([k, l]) => `<button data-ttab="${k}" class="${tt === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
         const T = (cols, rows, empty) => `<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`;
         // Doktor istem düzenleme (yetki: protokol_duzenle) — tarih/doktor değiştirilebilir; genel istem tablosu
@@ -1550,65 +1550,12 @@
           return `<div class="tw"><table class="t"><thead><tr>${head.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(([o, gi]) => { const cells = sonuc ? [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"] : [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi"];
             return `<tr>${cells.map((c, i) => `<td${i > 1 ? ' class="n"' : ""}>${H.esc(String(c))}</td>`).join("")}${canProt ? `<td><button class="btn g sm" data-ordi="${gi}">${I("edit") || "Düzenle"}</button></td>` : ""}</tr>`; }).join("") : `<tr><td colspan="${head.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`; };
         if (tt === "muayene") {
-          const pno = (params.proto && params.proto !== "tumu") ? params.proto : (H.proto ? H.proto.activeNo(p.id) : null);
-          const rec = (pno && H.proto) ? H.proto.get(p.id, pno) : null;
-          if (!rec) { body.innerHTML = seg + `<div class="empty">Açık protokol yok. Önce "Hasta kabul" ile bir protokol açın; muayene ona bağlanır.</div>`; return; }
-          const mk = rec.muayene = rec.muayene || {};
-          const klinik = H.can("results") || H.can("orders") || H.can("beds");
-          const KARAR = ["Ayaktan takip ve tedavi", "Yatarak takip ve tedavi", "Ayaktan cerrahi girişim", "Yatarak cerrahi girişim", "Rehabilitasyon", "Palyatif tedavi"];
-          const v = mk.vital || {}, pv = p.v || {};
-          p._tanilar = p._tanilar || (p.dx ? [{ kod:"", ad:p.dx, tip:"Ön tanı" }] : []);
-          const tanRows = () => p._tanilar.length ? p._tanilar.map((t, i) => `<tr><td class="mono adm-sub">${H.esc(t.kod || "—")}</td><td><b>${H.esc(t.ad)}</b></td><td class="adm-sub">${H.esc(t.tip || "")}</td><td>${(!mk.imzali && klinik) ? `<button class="btn g sm" data-mktandel="${i}">${I("x") || "×"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="4" class="mute" style="padding:12px;text-align:center">Tanı yok.</td></tr>`;
-          const tansiyon = ((v.sys || pv.sbp) && (v.dia || pv.dbp)) ? `${v.sys || pv.sbp}/${v.dia || pv.dbp}` : "—";
-          const row = (lbl, val) => `<div class="kv"><span>${H.esc(lbl)}</span><span>${H.esc(val || "—")}</span></div>`;
-          const ozetHtml = `<div class="box"><h5>Anamnez</h5>${row("Şikayet", mk.sikayet)}${row("Hikaye", mk.hikaye)}</div>
-            <div class="box" style="margin-top:8px"><h5>Fizik muayene</h5><div class="h360-meta"><div><span>Boy</span><b>${H.esc(v.boy || "—")}</b></div><div><span>Kilo</span><b>${H.esc(v.kilo || "—")}</b></div><div><span>VKİ</span><b>${H.esc(v.vki || "—")}</b></div><div><span>Ateş</span><b>${H.esc(v.ates || "—")}</b></div><div><span>Nabız</span><b>${H.esc(v.nabiz || "—")}</b></div><div><span>SPO2</span><b>${H.esc(v.spo2 || "—")}</b></div><div><span>Tansiyon</span><b>${H.esc(tansiyon)}</b></div></div><p style="margin:6px 0 0">${H.esc(mk.fizik || "—")}</p></div>
-            <div class="box" style="margin-top:8px"><h5>Tanı (ICD-10)</h5><div class="tw"><table class="t"><tbody>${tanRows()}</tbody></table></div></div>
-            <div class="box" style="margin-top:8px"><h5>İzlem ve plan</h5>${row("Karar", mk.karar)}${row("Tedavi notu", mk.tedaviNot)}${row("Kontrol", (mk.kontrolTarih || "") + (mk.kontrolNot ? " · " + mk.kontrolNot : ""))}</div>`;
-          if (mk.imzali || !klinik) {
-            body.innerHTML = seg + `<div class="r" style="justify-content:space-between;align-items:center;margin-bottom:8px"><h4 style="margin:0">Muayene Kartı · ${H.esc(pno)} ${mk.imzali ? `<span class="tag ok">İmzalı</span>` : `<span class="tag w">Taslak</span>`}</h4><div class="r" style="gap:6px">${klinik ? `<button class="btn sm" data-mkistem>${I("flask") || ""} İstem yap</button>` : ""}${mk.imzali ? `<button class="btn sm" data-mkyaz>${I("print") || ""} Yazdır</button>` : ""}${(mk.imzali && H.canAct("protokol_duzenle")) ? `<button class="btn g sm" data-mkunlock>İmzayı kaldır</button>` : ""}</div></div>
-              ${mk.imzali ? `<p class="adm-sub" style="margin-top:0">İmzalayan: ${H.esc(mk.imzalayan || "—")} · ${H.esc(mk.tarih || "—")}</p>` : (!klinik ? `<p class="adm-sub">Bu kartı yalnız klinik personel (hekim/hemşire) doldurabilir.</p>` : "")}
-              ${ozetHtml}`;
-            const yz = body.querySelector("[data-mkyaz]"); if (yz) yz.onclick = () => { const w = window.open("", "_blank"); if (!w) { H.toast("Yazdırma engellendi (pop-up izni).", "e"); return; } w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Muayene · ${H.esc(pno)}</title><style>body{font:13px system-ui,Arial;padding:24px;color:#111}h3{margin:0 0 8px}h5{margin:12px 0 2px}p{margin:2px 0}</style></head><body><h3>Muayene Kartı · ${H.esc(vzName(p.name))} · ${H.esc(pno)}</h3><p>İmzalayan: ${H.esc(mk.imzalayan || "")} · ${H.esc(mk.tarih || "")}</p><h5>Şikayet</h5><p>${H.esc(mk.sikayet || "-")}</p><h5>Hikaye</h5><p>${H.esc(mk.hikaye || "-")}</p><h5>Fizik muayene</h5><p>Boy ${H.esc(v.boy || "-")} · Kilo ${H.esc(v.kilo || "-")} · VKİ ${H.esc(v.vki || "-")} · Ateş ${H.esc(v.ates || "-")} · Nabız ${H.esc(v.nabiz || "-")} · SPO2 ${H.esc(v.spo2 || "-")} · TA ${H.esc(tansiyon)}</p><p>${H.esc(mk.fizik || "-")}</p><h5>Tanı</h5><p>${H.esc(p._tanilar.map(t => (t.kod ? t.kod + " " : "") + t.ad + " (" + (t.tip || "") + ")").join("; ") || "-")}</p><h5>İzlem / Plan</h5><p>${H.esc(mk.karar || "-")}</p><p>${H.esc(mk.tedaviNot || "-")}</p></body></html>`); w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (x) {} }, 300); };
-            const ul = body.querySelector("[data-mkunlock]"); if (ul) ul.onclick = () => { mk.imzali = false; H.saveData && H.saveData(); H.log("Muayene imzası kaldırıldı", vzName(p.name) + " · " + pno); H.toast("İmza kaldırıldı, düzenlenebilir."); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
-            const im0 = body.querySelector("[data-mkistem]"); if (im0) im0.onclick = () => istemModal(p);
-            return;
-          }
-          body.innerHTML = seg + `<h4 style="margin:0 0 8px">Muayene Kartı · ${H.esc(pno)} <span class="tag w">Taslak</span></h4>
-            <div class="box"><h5>Anamnez</h5><div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Şikayet / Anamnez</label><textarea data-mk="sikayet" rows="2">${H.esc(mk.sikayet || "")}</textarea></div><div class="fr" style="grid-column:1/-1"><label>Hikaye (anamnesis morbi)</label><textarea data-mk="hikaye" rows="2">${H.esc(mk.hikaye || "")}</textarea></div></div></div>
-            <div class="box" style="margin-top:8px"><h5>Fizik muayene</h5><div class="icd-form">
-              <div class="fr"><label>Boy (cm)</label><input data-mk="boy" type="number" value="${H.esc(v.boy != null ? v.boy : (p.height || ""))}"></div>
-              <div class="fr"><label>Kilo (kg)</label><input data-mk="kilo" type="number" value="${H.esc(v.kilo != null ? v.kilo : (p.weight || ""))}"></div>
-              <div class="fr"><label>VKİ</label><input data-mk="vki" readonly value="${H.esc(v.vki || "")}"></div>
-              <div class="fr"><label>Ateş (°C)</label><input data-mk="ates" type="number" step="0.1" value="${H.esc(v.ates != null ? v.ates : (pv.temp || ""))}"></div>
-              <div class="fr"><label>Nabız</label><input data-mk="nabiz" type="number" value="${H.esc(v.nabiz != null ? v.nabiz : (pv.hr || ""))}"></div>
-              <div class="fr"><label>SPO2 (%)</label><input data-mk="spo2" type="number" value="${H.esc(v.spo2 != null ? v.spo2 : (pv.spo2 || ""))}"></div>
-              <div class="fr"><label>Tansiyon</label><div class="r" style="gap:4px;align-items:center"><input data-mk="sys" type="number" placeholder="sis" value="${H.esc(v.sys != null ? v.sys : (pv.sbp || ""))}" style="max-width:68px"><span>/</span><input data-mk="dia" type="number" placeholder="dia" value="${H.esc(v.dia != null ? v.dia : (pv.dbp || ""))}" style="max-width:68px"></div></div></div>
-              <div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Muayene notu</label><textarea data-mk="fizik" rows="2">${H.esc(mk.fizik || "")}</textarea></div></div></div>
-            <div class="box" style="margin-top:8px"><h5>Tanı (ICD-10)</h5>
-              <div class="rc-add" style="margin-bottom:8px;gap:6px;flex-wrap:wrap"><div class="amel-cb" style="flex:1;min-width:220px"><input data-mktanq placeholder="Tanı ara (ICD kod / ad)" autocomplete="off"><div class="amel-dd hidden" data-mktandd></div></div><select data-mktantip>${["Ön tanı", "Kesin tanı", "Ayırıcı tanı"].map(x => `<option>${x}</option>`).join("")}</select><button class="btn sm" data-mktanekle>Ekle</button></div>
-              <div class="tw"><table class="t"><thead><tr><th style="width:80px">Kod</th><th>Tanı</th><th style="width:110px">Tip</th><th style="width:40px"></th></tr></thead><tbody data-mktanbody>${tanRows()}</tbody></table></div></div>
-            <div class="box" style="margin-top:8px"><h5>İzlem ve plan</h5><div class="icd-form">
-              <div class="fr" style="grid-column:1/-1"><label>Karar</label><select data-mk="karar"><option value="">— seç —</option>${KARAR.map(x => `<option value="${H.esc(x)}"${mk.karar === x ? " selected" : ""}>${x}</option>`).join("")}</select></div>
-              <div class="fr" style="grid-column:1/-1"><label>Tedavi notu</label><textarea data-mk="tedaviNot" rows="2">${H.esc(mk.tedaviNot || "")}</textarea></div>
-              <div class="fr"><label>Kontrol önerildi</label><input data-mk="kontrolTarih" type="date" value="${H.esc(mk.kontrolTarih || "")}"></div>
-              <div class="fr" style="grid-column:2/-1"><label>Kontrol notu</label><input data-mk="kontrolNot" value="${H.esc(mk.kontrolNot || "")}"></div></div></div>
-            <div class="r" style="gap:8px;margin-top:12px"><button class="btn p" data-mksave>${I("save") || ""} Kaydet</button><button class="btn" data-mksign>İmzala ve kapat</button><button class="btn" data-mkistem>${I("flask") || ""} İstem yap</button></div>
-            <p class="adm-sub" style="margin-top:6px">Kaydet: taslak saklanır, sonra düzeltilir. İmzala: muayene kilitlenir.</p>`;
-          const g = k => { const el = body.querySelector(`[data-mk="${k}"]`); return el ? el.value.trim() : ""; };
-          const collect = () => { ["sikayet", "hikaye", "fizik", "karar", "tedaviNot", "kontrolTarih", "kontrolNot"].forEach(k => mk[k] = g(k)); mk.vital = { boy:g("boy"), kilo:g("kilo"), vki:g("vki"), ates:g("ates"), nabiz:g("nabiz"), spo2:g("spo2"), sys:g("sys"), dia:g("dia") }; rec.muayene = mk; };
-          const calcVki = () => { const bo = +g("boy"), ki = +g("kilo"), el = body.querySelector('[data-mk="vki"]'); if (el) el.value = (bo > 0 && ki > 0) ? (ki / Math.pow(bo / 100, 2)).toFixed(1) : ""; };
-          body.querySelector('[data-mk="boy"]').oninput = calcVki; body.querySelector('[data-mk="kilo"]').oninput = calcVki; calcVki();
-          const mtq = body.querySelector("[data-mktanq]"), mtdd = body.querySelector("[data-mktandd]");
-          const showMT = () => { const q = (mtq.value || "").trim().toLocaleLowerCase("tr"); const hits = (H.ICD || []).filter(r => !q || (r[0] + " " + r[1]).toLocaleLowerCase("tr").includes(q)).slice(0, 40); mtdd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-ic="${H.esc(r[0])}" data-ia="${H.esc(r[1])}"><b>${H.esc(r[1])}</b> <span class="mono adm-sub">${H.esc(r[0])}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen tanı yok</div>`; mtdd.classList.remove("hidden"); };
-          mtq.oninput = showMT; mtq.onfocus = showMT;
-          mtdd.onclick = (ev) => { const o = ev.target.closest("[data-ic]"); if (!o) return; mtq.value = o.dataset.ia; mtq.dataset.kod = o.dataset.ic; mtdd.classList.add("hidden"); };
-          document.addEventListener("click", (ev) => { const cb = body.querySelector("[data-mktanq]") && body.querySelector(".amel-cb"); if (cb && !cb.contains(ev.target)) mtdd.classList.add("hidden"); });
-          body.querySelector("[data-mktanekle]").onclick = () => { const ad = (mtq.value || "").trim(); if (!ad) { H.toast("Tanı seçin ya da yazın.", "w"); return; } collect(); p._tanilar.push({ kod:mtq.dataset.kod || "", ad, tip:body.querySelector("[data-mktantip]").value }); if (!p.dx) p.dx = ad; H.saveData && H.saveData(); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
-          body.querySelector("[data-mktanbody]").addEventListener("click", (ev) => { const d = ev.target.closest("[data-mktandel]"); if (d) { collect(); p._tanilar.splice(+d.dataset.mktandel, 1); H.saveData && H.saveData(); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); } });
-          body.querySelector("[data-mksave]").onclick = () => { collect(); H.saveData && H.saveData(); H.log("Muayene kaydedildi", vzName(p.name) + " · " + pno); H.toast("Muayene kaydedildi (taslak)."); };
-          body.querySelector("[data-mkistem]").onclick = () => { collect(); H.saveData && H.saveData(); istemModal(p); };
-          body.querySelector("[data-mksign]").onclick = () => { collect(); mk.imzali = true; mk.imzalayan = (H.state.user || {}).name || "Hekim"; mk.tarih = H.nowFull ? H.nowFull() : (H.now ? H.now() : new Date().toLocaleString("az-AZ")); H.saveData && H.saveData(); H.log("Muayene imzalandı", vzName(p.name) + " · " + pno); H.toast("Muayene imzalandı."); H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene", proto:pno }); };
+          // Muayene = var olan zengin "Muayene notu" editoru (docs.js): Yakinma/Oyku/Ozgecmis/Soygecmis/fizik + detayli goz muayenesi/izlem-plan.
+          // Imzalaninca Dokumanlar'a "Muayene belgesi" olarak duser. Istem icin kisayol ustte.
+          const canOrd0 = H.can("orders") || H.can("results");
+          body.innerHTML = seg + (canOrd0 ? `<div class="r" style="margin-bottom:8px"><button class="btn sm" data-mkistem>${I("flask") || ""} İstem yap</button></div>` : "") + `<div data-docswrap>${H.docs ? H.docs.html(p) : `<div class="empty">Klinik doküman modülü yüklenmedi.</div>`}</div>`;
+          const ib0 = body.querySelector("[data-mkistem]"); if (ib0) ib0.onclick = () => istemModal(p);
+          if (H.docs && H.docs.after) try { H.docs.after(body.querySelector("[data-docswrap]"), p); } catch (e) {}
           return;
         }
         if (tt === "dokuman") { body.innerHTML = seg + `<div data-docswrap>${H.docs ? H.docs.html(p) : `<div class="empty">Klinik döküman modülü yok.</div>`}</div>`; if (H.docs && H.docs.after) try { H.docs.after(body.querySelector("[data-docswrap]"), p); } catch (e) {} return; }
