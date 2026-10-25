@@ -545,6 +545,38 @@
         m.querySelector(".seg").onclick = (e) => { const b = e.target.closest("[data-onseg]"); if (b) { f = b.dataset.onseg; draw(m); } };
         m.querySelector("[data-onbody]").onclick = (e) => { const b = e.target.closest("[data-onyukle]"); if (!b) return; const x = onamStore().find(y => y.id === b.dataset.onyukle); if (x) { x.durum = "Tamamlandı"; x.yukleyen = (H.state.user || {}).name || "Vezne"; H.saveData && H.saveData(); H.log("Onam/dosya tamamlandı", x.ad + " · " + x.hasta); H.toast(x.ad + " yüklendi · tamamlandı"); draw(m); } }; } });
   }
+  // Toplu fatura işlemleri: fatura kesilmemiş protokolleri seçip toplu faturala.
+  function topluFaturaModal() {
+    const draw = (m) => { const list = gfkRows().filter(x => x.durum !== "Fatura kesildi");
+      m.querySelector("[data-tfbody]").innerHTML = list.length ? list.map(x => `<tr><td><input type="checkbox" data-tfc="${H.esc(x.proto)}"></td><td class="mono">${H.esc(x.proto)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.kurum || "—")}</td><td class="adm-sub">${H.esc(x.ptip)}</td><td><span class="tag w">${H.esc(x.durum)}</span></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Faturalanacak protokol yok.</td></tr>`;
+      const c = m.querySelector("[data-tfcount]"); if (c) c.textContent = list.length + " protokol"; };
+    H.modal({ title:"Toplu fatura işlemleri", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 8px">Fatura kesilmemiş protokoller; seçip toplu faturalayın.</p>
+        <div class="adm-bar"><label class="r" style="gap:6px;align-items:center"><input type="checkbox" data-tfall> Tümünü seç</label><span class="spacer"></span><span class="adm-sub" data-tfcount></span></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:34px"></th><th style="width:110px">Protokol</th><th>Hasta</th><th>Kurum</th><th>Protokol tipi</th><th style="width:160px">Durum</th></tr></thead><tbody data-tfbody></tbody></table></div>`,
+      actions:`<button class="btn p" data-tffat>Seçilenleri faturala</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
+      onMount(m) { draw(m);
+        const all = m.querySelector("[data-tfall]"); if (all) all.onchange = () => m.querySelectorAll("[data-tfc]").forEach(c => { c.checked = all.checked; });
+        m.querySelector("[data-tffat]").onclick = () => { if (!H.canAct("toplu_fatura") && !H.can("summary")) { H.toast("Toplu fatura yetkiniz yok.", "e"); return; } const ids = [...m.querySelectorAll("[data-tfc]:checked")].map(c => c.dataset.tfc); if (!ids.length) { H.toast("Protokol seçin.", "w"); return; }
+          gfkRows().forEach(x => { if (ids.includes(x.proto)) x.durum = "Fatura kesildi"; }); H.saveData && H.saveData(); H.log("Toplu fatura", ids.length + " protokol"); H.toast(ids.length + " protokol faturalandı"); draw(m); const a = m.querySelector("[data-tfall]"); if (a) a.checked = false; }; } });
+  }
+  // Randevulanacak hizmetler: faturalanıp randevusu verilecek hizmetler; "Randevu ver" → randevu ekranı.
+  function randevuHizmetStore() { return H.data.randevuHizmet = H.data.randevuHizmet || [
+    { id:"rh1", hizmet:"MR çekimi", hasta:"Nərgiz Əliyeva", bolum:"Radiologiya", durum:"Randevu bekliyor" },
+    { id:"rh2", hizmet:"Fizik tedavi", hasta:"Nərgiz Əliyeva", bolum:"FTR", durum:"Randevu bekliyor" },
+    { id:"rh3", hizmet:"Ekokardiyografi", hasta:"Elvin Hüseynov", bolum:"Kardiologiya", durum:"Randevu bekliyor" },
+  ]; }
+  function randevulanacakModal() {
+    const draw = (m) => { const list = randevuHizmetStore();
+      m.querySelector("[data-rhbody]").innerHTML = list.length ? list.map(x => `<tr><td><b>${H.esc(x.hizmet)}</b></td><td>${H.esc(vzName(x.hasta))}</td><td class="adm-sub">${H.esc(x.bolum)}</td><td><span class="tag ${x.durum === "Randevu verildi" ? "ok" : "w"}">${H.esc(x.durum)}</span></td><td>${x.durum === "Randevu bekliyor" ? `<button class="btn p sm" data-rhver="${x.id}">Randevu ver</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Randevu bekleyen hizmet yok.</td></tr>`;
+    };
+    H.modal({ title:"Randevulanacak hizmetler", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 8px">Faturalanıp randevusu verilecek hizmetler. "Randevu ver" randevu ekranını açar; verilince listeden düşer.</p>
+        <div class="tw"><table class="t"><thead><tr><th>Hizmet</th><th>Hasta</th><th>Bölüm</th><th style="width:150px">Durum</th><th style="width:130px"></th></tr></thead><tbody data-rhbody></tbody></table></div>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) { draw(m);
+        m.querySelector("[data-rhbody]").onclick = (e) => { const b = e.target.closest("[data-rhver]"); if (!b) return; const x = randevuHizmetStore().find(y => y.id === b.dataset.rhver); if (x) { x.durum = "Randevu verildi"; H.saveData && H.saveData(); H.log("Randevulanacak hizmet", x.hizmet + " · " + x.hasta); H.closeModal(); H.toast(x.hizmet + " için randevu ekranı açılıyor"); H.go("randevu", { view:"liste" }); } }; } });
+  }
   // Onay bekleyen protokoller (video 17): faturalanmamış protokole süreli onay (Gün → Max. onaylı tarih).
   function onayProtokolModal() {
     const fmt = (d) => d.toLocaleDateString("az");
@@ -743,7 +775,7 @@
       ["Fiyat & kampanya", "file", [["Fiyat verme", "fiyat", "file"], ["Kampanyalar", "", "star"], ["Fiyat teklifleri", "fiyat", "file"]]],
       ["İstek & tahsilat", "file", [["İstek havuzu", "", "clock"], ["Ödeme takip", "fatura", "file"], ["Evrak takip", "evrak", "clip"], ["GFK takip", "gfk", "list"], ["Dönem bilgileri", "", "clock"]]],
       ["Onaylar", "shield", [["Onay bekleyen indirimler", "indirim", "edit"], ["Onay bekleyen iadeler", "iade", "refresh"], ["İade taleplerim", "", "list"], ["Onay bekleyen protokoller", "", "clip"], ["Kurum değişiklik onay", "", "edit"]]],
-      ["Listeler & diğer", "list", [["Protokol listesi", "", "list"], ["Reçete listesi", "", "file"], ["Doktor iş listesi", "", "users"], ["Hasta danışman", "", "user"], ["Randevulanacak hizmetler", "", "clock"], ["Onam formları", "", "clip"]]],
+      ["Listeler & diğer", "list", [["Protokol listesi", "", "list"], ["Reçete listesi", "", "file"], ["Doktor iş listesi", "", "users"], ["Hasta danışman", "", "user"], ["Randevulanacak hizmetler", "", "clock"], ["Toplu fatura işlemleri", "", "file"], ["Onam formları", "", "clip"]]],
     ];
     const rail = `<div class="vz-rail">${RAIL.map(([g, gi, items]) => `<div class="vz-rg"><h6>${I(gi) || ""}${H.esc(g)}</h6>${items.map(([l, t, ic]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t || ""}" data-raill="${H.esc(l)}">${I(ic) || ""}<span>${l}</span></button>`).join("")}</div>`).join("")}</div>`;
     const kabulBar = `<div class="rc-add" style="margin-bottom:10px"><b style="align-self:center;font-size:13px">Hasta kabul:</b><input data-fin placeholder="FİN / Hasta no ile ara (hasta gelince kimliği girilir)" style="flex:1;min-width:240px"><button class="btn p sm" data-finara>${I("search") || ""} Ara / Kabul</button></div>`;
@@ -1026,6 +1058,8 @@
         if (lbl === "Randevu arama") return H.go("randevu", {});
         if (lbl === "Onay bekleyen protokoller") return onayProtokolModal();
         if (lbl === "Onam formları") return onamModal();
+        if (lbl === "Toplu fatura işlemleri") return topluFaturaModal();
+        if (lbl === "Randevulanacak hizmetler") return randevulanacakModal();
         const rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında", "w"); return; }
         railModal(lbl, rd); return; }
