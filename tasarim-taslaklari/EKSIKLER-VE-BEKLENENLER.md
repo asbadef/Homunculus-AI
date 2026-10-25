@@ -52,3 +52,14 @@ Sterisys.com.tr incelenerek benzeri, demo veriyle uçtan uca çalışan bir mod�
 
 ## Nasıl ilerliyoruz
 Sen kararları/görselleri verdikçe B listesinden öncelik sırasıyla yapıyoruz. Önerim: düşük riskli **çeviri turu** (7) ile devam edip, sen vezne görsellerini gönderince vezne derinliğine (1–3) geçmek.
+
+## D. Yeni alanlar (2026-10-25 · video + sahibin yeni istekleri)
+Bugün yapıldı: hasta kayıt kalıcılığı (userPatients), ara→bulunamazsa ayaktan kabul, Ön/Kesin kayıt, İstek havuzu→İşleme Al, dönem devir al, dönem kapatma sayım+bekleyen iş, randevu→kabul, GFK provizyon/müstehaklık (SAMHI), **iki aşamalı dönem kapanış + Mali İşler (mali_isler) rolü & Dönem Onay ekranı**. Ayrıca 17 vezne videosunun analizi: `VEZNE-SUREC-ANALIZ.md`.
+
+Bekleyen / planlanacak:
+- [ ] **Mali İşler modül derinliği** — Kasa Teslim özeti (vezne bazlı tahsilat + KK/POS detay), Açık/Kapalı/Onaylanmış/Tüm Dönemler sekmeleri, Ana Kasa Kontrol/Kapama, Onay Bekleyen İade/Virman, açılan hastalar görünümü (Pusula "Vezne Dönem Kapama Ve Onay" + "Kasa Teslim" ekranları).
+- [ ] **Hakediş modülü** — doktor-hastane anlaşması; doktor adına açılan kayıt/hizmetlerden otomatik hakediş; doktor kendi protokol/hizmet bazlı ödemelerini görür (admin anlaşma tanımlar).
+- [ ] **Hastane kurulum sihirbazı (deployment)** — yeni hastaneye satışta admin'in aktivasyon adımları: hastane/şube, bina-kat-birim, banko/kasa, kullanıcı-rol, hizmet+fiyat, kurum/sigorta, kampanya, protokol/doküman tipleri. Her hastane farklı → veri odaklı, adım adım kontrol listesi.
+- [ ] **Durum renk sistemi** — açık/kapalı, onay bekliyor/onaylı/red, fark 0/var, fatura bekleyen/ödendi gibi durumlar tutarlı renklerle (tag ok/w/crit) okunur; belgelenir.
+- [ ] **Doktor + hemşire video analizi** — Homunculus `Doktor Eğitimleri` (35) + `Hemşirelik Eğitimleri` (23) videoları; klinik modül eksiklerini çıkarmak için.
+- Referans listeler nereye oturuyor: `yetki.xls` → ince yetki kataloğu (detayYetki/927), `formlar.xls` (3188) → form envanteri/FORM-DURUM, `hizmet listesi.xlsx` → hizmet kartı+fiyat (H.HIZMET), `tanı listesi.xlsx` → ICD/tanı. Admin tanımlarına içe aktarma planlanacak.
