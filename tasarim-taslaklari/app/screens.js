@@ -1864,6 +1864,60 @@
 
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
+  /* ================= NUMUNE (örnek) AKIŞI ================= */
+  H.numune = {
+    store() { return H.data.numuneler = H.data.numuneler || []; },
+    nextNo() { H.data.numuneSeq = (H.data.numuneSeq || 16707667000) + 1; return String(H.data.numuneSeq); },
+    byOrder(oid) { return this.store().find(n => n.orderId === oid); },
+    create(order, o) { const n = { no:this.nextNo(), orderId:order.id, pid:order.pid, test:order.ad, grup:order.grup || order.cat || "—", tup:o.tup, lab:o.lab, durum:"Bekliyor", by:(H.state.user || {}).name || "—", at:H.nowFull ? H.nowFull() : H.now() }; this.store().unshift(n); order.numuneNo = n.no; H.saveData && H.saveData(); return n; },
+    setDurum(no, durum, extra) { const n = this.store().find(x => x.no === no); if (n) { n.durum = durum; Object.assign(n, extra || {}); H.log("Numune " + durum.toLowerCase(), no + " · " + (n.test || "")); H.saveData && H.saveData(); } return n; },
+  };
+  H.register("numune", { title:() => H.t("m_numune"), perm:["numune_islem", "lab_islem", "tasks", "results"], render(root, params = {}) {
+    const TUP = (H.data.secenekler && H.data.secenekler.tupTipi) || ["Mor Kapak (EDTA)", "Sarı Kapak (Jelli)", "Kırmızı Kapak", "Heparinli Tüp", "Kan Gazı Enjektörü", "Gaita Kabı", "İdrar Kabı", "Özel Sürüntü"];
+    const LABS = (H.data.secenekler && H.data.secenekler.laboratuvar) || ["Biyokimya", "Hematoloji", "Mikrobiyoloji", "Hormon", "İmmünoloji", "Qan Bankı", "Patoloji", "Dış Laboratuvar"];
+    const canCollect = H.canAct("numune_islem") || H.can("tasks") || H.can("lab_islem");
+    const canAccept = H.can("lab_islem") || H.canAct("numune_islem");
+    const nums = H.numune.store();
+    const labOrders = (H.data.orders || []).filter(o => /Laboratuvar|Patoloji/i.test(o.cat || ""));
+    const bekleyenTest = labOrders.filter(o => !H.numune.byOrder(o.id));
+    const tab = params.tab || "testler";
+    const byD = (d) => nums.filter(n => n.durum === d);
+    const pname = (pid) => { const p = H.pt(pid); return p ? vzName(p.name) : "—"; };
+    const SEG = [["testler", "Testler", bekleyenTest.length], ["Bekliyor", "Numune bekliyor", byD("Bekliyor").length], ["Alındı", "Alındı", byD("Alındı").length], ["Kabul", "Kabul", byD("Kabul").length], ["Red", "Red", byD("Red").length], ["Tekrar", "Tekrar", byD("Tekrar").length]];
+    const seg = `<div class="seg" style="flex-wrap:wrap">${SEG.map(([k, l, n]) => `<button data-ntab="${k}" class="${tab === k ? "on" : ""}">${l}${n ? ` <em>${n}</em>` : ""}</button>`).join("")}</div>`;
+    let body = "";
+    if (tab === "testler") {
+      body = `<div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Test</th><th>Kod</th><th>Protokol</th><th>Tarih</th><th style="width:150px"></th></tr></thead><tbody>
+        ${bekleyenTest.length ? bekleyenTest.map(o => `<tr><td><b>${H.esc(pname(o.pid))}</b></td><td>${H.esc(o.ad || "")}</td><td class="mono adm-sub">${H.esc(o.kod || "—")}</td><td class="adm-sub">${H.esc(o.protokolNo || "—")}</td><td class="adm-sub">${H.esc(o.at || "—")}</td><td>${canCollect ? `<button class="btn p sm" data-numolustur="${o.id}">Numune oluştur</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Numune bekleyen test yok. Doktor lab/patoloji istemi yapınca burada görünür.</td></tr>`}
+        </tbody></table></div>`;
+    } else {
+      const list = byD(tab);
+      const act = (n) => { if (tab === "Bekliyor" && canCollect) return `<button class="btn p sm" data-numal="${n.no}">Numune al</button>`;
+        if (tab === "Alındı" && canAccept) return `<button class="btn p sm" data-numkabul="${n.no}">Kabul</button> <button class="btn g sm" data-numred="${n.no}">Red</button> <button class="btn sm" data-numtekrar="${n.no}">Tekrar</button>`;
+        return n.redNeden ? `<span class="adm-sub">${H.esc(n.redNeden)}</span>` : ""; };
+      body = `<div class="tw"><table class="t"><thead><tr><th style="width:140px">Numune no</th><th>Hasta</th><th>Test</th><th>Tüp</th><th>Laboratuvar</th><th>Tarih</th><th style="width:230px"></th></tr></thead><tbody>
+        ${list.length ? list.map(n => `<tr><td class="mono adm-sub">${H.esc(n.no)}</td><td><b>${H.esc(pname(n.pid))}</b></td><td>${H.esc(n.test || "")}</td><td class="adm-sub">${H.esc(n.tup || "—")}</td><td class="adm-sub">${H.esc(n.lab || "—")}</td><td class="adm-sub">${H.esc(n.at || "—")}</td><td>${act(n)}</td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}
+        </tbody></table></div>`;
+    }
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_numune")}</h2><p>Order → numune oluştur → al → laboratuvar kabul/red. Numune no otomatik üretilir.</p></div></div>${seg}<div style="margin-top:10px">${body}</div>`;
+    root.onclick = (e) => {
+      const nt = e.target.closest("[data-ntab]"); if (nt) return H.go("numune", { tab:nt.dataset.ntab });
+      const no = e.target.closest("[data-numolustur]"); if (no) { const o = (H.data.orders || []).find(x => x.id === no.dataset.numolustur); if (o) numOlusturModal(o); return; }
+      const al = e.target.closest("[data-numal]"); if (al) { H.numune.setDurum(al.dataset.numal, "Alındı"); H.toast("Numune alındı."); return H.go("numune", { tab:"Alındı" }); }
+      const kb = e.target.closest("[data-numkabul]"); if (kb) { H.numune.setDurum(kb.dataset.numkabul, "Kabul"); const n = H.numune.store().find(x => x.no === kb.dataset.numkabul); const o = n && (H.data.orders || []).find(x => x.id === n.orderId); if (o) { o.durum = "İşlemde"; H.saveData && H.saveData(); } H.toast("Numune kabul edildi · test işleme alındı."); return H.go("numune", { tab:"Kabul" }); }
+      const rd = e.target.closest("[data-numred]"); if (rd) { const nn = rd.dataset.numred; H.modal({ title:"Numune red", body:`<div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Red nedeni</label><select data-f="neden">${["Hemoliz", "Pıhtılı numune", "Yetersiz numune", "Yanlış tüp", "Etiketsiz / yanlış etiket", "Cihazın 0, >> veya << okuması", "Diğer"].map(x => `<option>${x}</option>`).join("")}</select></div></div>`, actions:`<button class="btn" data-x>Vazgeç</button><button class="btn g" data-ok>Reddet</button>`, onMount(m) { m.querySelector("[data-ok]").onclick = () => { H.numune.setDurum(nn, "Red", { redNeden:m.querySelector('[data-f="neden"]').value }); H.closeModal(); H.toast("Numune reddedildi."); H.go("numune", { tab:"Red" }); }; } }); return; }
+      const tk = e.target.closest("[data-numtekrar]"); if (tk) { H.numune.setDurum(tk.dataset.numtekrar, "Tekrar"); H.toast("Tekrar numune istendi."); return H.go("numune", { tab:"Tekrar" }); }
+    };
+    function numOlusturModal(o) {
+      H.modal({ title:"Numune oluştur · " + H.esc(o.ad || ""), body:`<div class="icd-form">
+          <div class="fr"><label>Tüp tipi</label><select data-f="tup">${TUP.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Laboratuvar</label><select data-f="lab">${LABS.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div></div>
+          <p class="adm-sub" style="margin-top:6px">Numune no otomatik üretilir; numune "Bekliyor"a düşer, hemşire alır, laboratuvar kabul/red eder.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Oluştur</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const n = H.numune.create(o, { tup:m.querySelector('[data-f="tup"]').value, lab:m.querySelector('[data-f="lab"]').value }); H.closeModal(); H.toast("Numune oluşturuldu: " + n.no); H.go("numune", { tab:"Bekliyor" }); }; } });
+    }
+  } });
+
   H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary", "lab_islem"], render(root, params = {}) {
     const cats = { lab:["Laboratuvar"], rad:["Radyoloji"], kan:["Kan ürünü"] };
     const tur = params.tur || "lab";
