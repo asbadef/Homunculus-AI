@@ -338,9 +338,11 @@
       body:`<div class="adm-bar"><input data-rq placeholder="Ara (ad, no, ...)" style="flex:1"></div>
         <div class="tw"><table class="t"><thead>${head}</thead><tbody data-rbody>${rd.rows.length ? rd.rows.map(rowHtml).join("") : `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
         ${rd.note ? `<p class="adm-sub" style="margin-top:8px">${H.esc(rd.note)}</p>` : ""}`,
-      actions:`<button class="btn" data-x>Kapat</button>`,
+      actions:`<button class="btn" data-rexp>${I("save") || ""} Excel</button><button class="btn" data-ryaz>${I("print") || ""} Yazdır</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
       onMount(m) {
         const body = m.querySelector("[data-rbody]"), q = m.querySelector("[data-rq]");
+        m.querySelector("[data-rexp]").onclick = () => { H.exportCsv ? (H.exportCsv(lbl.replace(/[^\wÇĞİÖŞÜçğıöşü ]+/g, "").trim() || "Liste", rd.cols, rd.rows), H.toast("Excel (CSV) indirildi")) : H.toast("Dışa aktarma yok", "w"); };
+        m.querySelector("[data-ryaz]").onclick = () => { H.printTable ? H.printTable(lbl, rd.cols, rd.rows) : H.toast("Yazdırma yok", "w"); };
         if (q) q.addEventListener("input", () => { const t = q.value.trim().toLocaleLowerCase("tr");
           body.innerHTML = (t ? rd.rows.map((r, i) => [r, i]).filter(([r]) => r.join(" ").toLocaleLowerCase("tr").includes(t)) : rd.rows.map((r, i) => [r, i]))
             .map(([r, i]) => rowHtml(r, i)).join("") || `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Eşleşme yok.</td></tr>`; });
@@ -806,7 +808,7 @@
       pos:["Dekont", "İade", "İptal", "Fatura eşleştir"],
       anlasma:["Detay", "Kullanım geçmişi"],
     };
-    const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}</div>`;
+    const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}<span class="spacer"></span><button class="btn sm" data-h3tblexp>${I("save") || ""} Excel</button><button class="btn sm" data-h3tblyaz>${I("print") || ""} Yazdır</button></div>`;
     const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
     const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
     const selProto = params.proto || "tumu";
@@ -945,6 +947,13 @@
     root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
       e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · tasarım", "w")])); };
     root.onclick = (e) => {
+      const tex = e.target.closest("[data-h3tblexp],[data-h3tblyaz]"); if (tex) { const tw = tex.closest(".r") && tex.closest(".r").nextElementSibling, tbl = tw && tw.querySelector("table.t");
+        if (!tbl || !tbl.tHead) { H.toast("Bu sekmede aktarılacak tablo yok.", "w"); return; }
+        const cols = [...tbl.tHead.rows[0].cells].map(c => c.textContent.replace(/\s+/g, " ").trim()); while (cols.length && cols[cols.length - 1] === "") cols.pop();
+        const rows = [...(tbl.tBodies[0] ? tbl.tBodies[0].rows : [])].filter(r => !r.cells[0] || !r.cells[0].hasAttribute("colspan")).map(r => [...r.cells].slice(0, cols.length).map(c => c.textContent.replace(/\s+/g, " ").trim()));
+        const ttl = ((H360_ALT.find(x => x[0] === alt) || [, "Liste"])[1]) + " · " + vzName(p.name);
+        if (e.target.closest("[data-h3tblexp]")) { H.exportCsv && H.exportCsv("Hasta_" + alt, cols, rows); H.toast("Excel (CSV) indirildi"); } else { H.printTable && H.printTable(ttl, cols, rows); }
+        return; }
       const an = e.target.closest("[data-h3ana]"); if (an) return H.go("hasta360", { pid:p.id, atab:an.dataset.h3ana, stab:"kart" });
       const al = e.target.closest("[data-h3alt]"); if (al) return H.go("hasta360", { pid:p.id, atab:"360", stab:al.dataset.h3alt });
       const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
