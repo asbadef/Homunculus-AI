@@ -288,7 +288,7 @@
         m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } cutInvoice(s, "Parçalı fatura"); };
         m.querySelector("[data-hpaket]").onclick = () => H.toast("Panel paket için paket tanımı gerekir (admin → Hizmet Kartı · Paketler).", "w");
         body.oncontextmenu = (e) => { const tr = e.target.closest("[data-hrow]"); if (!tr) return; e.preventDefault(); const o = (H.data.orders || []).find(x => x.id === tr.dataset.hrow); if (!o) return;
-          const needP = (perm, fn) => () => { if (!H.can(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; } fn(); };
+          const needP = (perm, fn) => () => { if (!H.canAct(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; } fn(); };
           vzMenu(e, [
             ["Doktor değiştir", needP("protokol_duzenle", () => { const n = prompt("İsteyen doktor:", o.by || ""); if (n != null) { o.by = n.trim(); H.log("İstem doktoru değişti", o.ad || ""); draw(); } })],
             ["Tarih değiştir", needP("protokol_duzenle", () => { const n = prompt("Tarih (GG.AA.YYYY SS:DD):", o.at || ""); if (n != null) { o.at = n.trim(); H.log("İstem tarihi değişti", o.ad || ""); draw(); } })],
@@ -415,7 +415,7 @@
         <div class="tw"><table class="t"><thead><tr><th>Fatura no</th><th>Matbu fatura no</th><th>Kurum</th><th style="width:190px">Evrak durumu</th><th style="width:110px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="mono">${H.esc(x.no)}</td><td class="mono adm-sub">${H.esc(x.matbu || "—")}</td><td>${H.esc(x.kurum)}</td><td><span class="tag ${x.durum === "Vezneden teslim edildi" ? "ok" : ""}">${H.esc(x.durum)}</span></td><td>${x.durum === "Veznede" ? `<button class="btn p sm" data-evteslim="${x.no}">Teslim et</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Evrak yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Fatura evrak teslim takibi (veznede → teslim edildi → medikal muhasebede → iade).</p>`; };
-    const panIndirim = () => { const d = params.io || "Onay bekliyor", all = indirimRows(), list = d === "hepsi" ? all : all.filter(x => x.durum === d), can = H.can("indirim_onay");
+    const panIndirim = () => { const d = params.io || "Onay bekliyor", all = indirimRows(), list = d === "hepsi" ? all : all.filter(x => x.durum === d), can = H.canAct("indirim_onay");
       return `<div class="seg" style="margin-bottom:10px">${[["Onay bekliyor", "Onay bekleyen"], ["hepsi", "Hepsi"], ["Onaylandı", "Onaylanan"], ["Reddedildi", "Reddedilen"]].map(([k, l]) => `<button data-io="${k}" class="${d === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="tw"><table class="t"><thead><tr><th>Tarih</th><th>Hasta</th><th>İsteyen</th><th>İşlem</th><th style="width:80px">Tutar</th><th style="width:70px">Oran</th><th>Onay grubu</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.isteyen)}</td><td class="adm-sub">${H.esc(x.islem)}</td><td class="n">${x.tutar} ₼</td><td class="n">%${x.oran}</td><td class="adm-sub">${H.esc(x.grup)}<div class="adm-sub" style="font-size:11px">${H.esc(zincStr(x.zincir))}</div></td><td><span class="tag ${x.durum === "Onaylandı" ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-ioap="${x.id}">Onayla</button> <button class="btn g sm" data-iored="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
@@ -603,7 +603,7 @@
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
       const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
       const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });
-      const iap = e.target.closest("[data-ioap],[data-iored]"); if (iap) { if (!H.can("indirim_onay")) { H.toast("İndirim onay yetkiniz yok.", "e"); return; } const id = iap.dataset.ioap || iap.dataset.iored, ok = !!iap.dataset.ioap, x = indirimRows().find(y => y.id === id); if (x) { onayIlerlet(x, ok); H.log("İndirim onay kademesi " + (ok ? "ilerledi" : "reddedildi"), x.hasta + " · %" + x.oran + " · " + x.durum); H.toast(ok ? (x.durum === "Onaylandı" ? "İndirim tamamen onaylandı" : "Bir kademe onaylandı · sonraki onay bekliyor") : "İndirim reddedildi", ok && x.durum !== "Onay bekliyor" ? "ok" : "w"); H.go("vezne", params); } return; }
+      const iap = e.target.closest("[data-ioap],[data-iored]"); if (iap) { if (!H.canAct("indirim_onay")) { H.toast("İndirim onay yetkiniz yok.", "e"); return; } const id = iap.dataset.ioap || iap.dataset.iored, ok = !!iap.dataset.ioap, x = indirimRows().find(y => y.id === id); if (x) { onayIlerlet(x, ok); H.log("İndirim onay kademesi " + (ok ? "ilerledi" : "reddedildi"), x.hasta + " · %" + x.oran + " · " + x.durum); H.toast(ok ? (x.durum === "Onaylandı" ? "İndirim tamamen onaylandı" : "Bir kademe onaylandı · sonraki onay bekliyor") : "İndirim reddedildi", ok && x.durum !== "Onay bekliyor" ? "ok" : "w"); H.go("vezne", params); } return; }
       const iae = e.target.closest("[data-iaap],[data-iared]"); if (iae) { if (!H.can("iade_onay")) { H.toast("İade onay yetkiniz yok.", "e"); return; } const id = iae.dataset.iaap || iae.dataset.iared, ok = !!iae.dataset.iaap, x = iadeRows().find(y => y.id === id); if (x) { onayIlerlet(x, ok); if (ok && x.durum === "Onaylandı") x.durum = "İade tamamlandı"; H.log("İade onay kademesi " + (ok ? "ilerledi" : "reddedildi"), x.eden + " · " + x.tutar + " ₼ · " + x.durum); H.toast(ok ? (x.durum === "İade tamamlandı" ? "İade tamamen onaylandı" : "Bir kademe onaylandı · sonraki onay bekliyor") : "İade reddedildi", ok && x.durum !== "Onay bekliyor" ? "ok" : "w"); H.go("vezne", params); } return; }
       const fa = e.target.closest("[data-fadd]"); if (fa) { const el = root.querySelector("[data-fhiz]"), ad = (el.value || "").trim(), kod = el.dataset.kod || "", fy = +root.querySelector("[data-ffiyat]").value || (kod ? H.fiyatOf(kod, params.kurum || "Özel ödeme") : 0); if (!ad) { H.toast("Katalogdan hizmet seçin.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, kod, fiyat:fy }); H.go("vezne", params); return; }
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
@@ -847,7 +847,8 @@
     const protoList = () => { const ps = (H.proto ? H.proto.list(p.id) : (p._protokoller || [])), buckets = {};
       ps.forEach(x => { const b = x.bucket || "Daha eski"; (buckets[b] = buckets[b] || []).push(x); });
       const order = [...PROTO_BUCKETS, ...Object.keys(buckets).filter(b => !PROTO_BUCKETS.includes(b))];
-      const row = (x) => `<div class="h360-prow${selProto === x.no ? " on" : ""}" data-proto="${H.esc(x.no)}"><span class="pr-lock ${x.kapali ? "bad" : "ok"}" data-protolock="${H.esc(x.no)}" title="${x.kapali ? "Kapalı · açmak için tıkla" : "Açık · kapatmak için tıkla"}">${x.kapali ? (I("lock") || "") : (I("ok") || "")}</span><div><b class="mono">${H.esc(x.no)}</b><div class="adm-sub" style="font-size:11px">${H.esc(x.tarih)} · ${H.esc(x.bolum)}</div></div></div>`;
+      const fatRozet = (x) => x.fatura && x.fatura.durum ? ` <span class="tag ${x.fatura.durum === "Ödendi" ? "ok" : ""}" style="font-size:10px">${H.esc(x.fatura.durum)}</span>` : "";
+      const row = (x) => `<div class="h360-prow${selProto === x.no ? " on" : ""}" data-proto="${H.esc(x.no)}"><span class="pr-lock ${x.kapali ? "bad" : "ok"}" data-protolock="${H.esc(x.no)}" title="${x.kapali ? "Kapalı · açmak için tıkla" : "Açık · kapatmak için tıkla"}">${x.kapali ? (I("lock") || "") : (I("ok") || "")}</span><div><b class="mono">${H.esc(x.no)}</b>${fatRozet(x)}<div class="adm-sub" style="font-size:11px">${H.esc(x.tarih)} · ${H.esc(x.bolum)}</div></div></div>`;
       const newBtn = H.can("admission") ? `<button class="btn p sm" data-protonew title="Yeni protokol aç">${I("plus") || "+"}</button>` : "";
       return `<div class="h360-plist"><div class="h360-pbar">${I("refresh") || ""} Protokoller (${ps.length})<span class="spacer"></span>${newBtn}</div><div class="h360-prow${selProto === "tumu" ? " on" : ""}" data-proto="tumu"><b>TÜMÜ</b></div>${order.filter(b => buckets[b]).map(b => `<div class="h360-pgrp">${H.esc(b)}</div>${buckets[b].map(row).join("")}`).join("")}</div>`; };
     const split = (right) => `<div class="h360-2col">${protoList()}<div class="h360-pdetail">${right}</div></div>`;
@@ -870,8 +871,11 @@
     const tabloHtml = (k, cols, rows, btns) => `${tbar(btns)}<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
       ${rows.length ? rows.map(r => `<tr data-ctx="${k}" style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
       </tbody></table></div>${sagtikNote(k)}`;
+    // Zincir faturaları (İşlem Havuzu'nda kesilen) + demo faturalar birlikte; seçili protokole göre.
+    const zincirFatura = () => (H.data.faturalar || []).filter(f => f.hasta === p.name && f.protokolNo && (selProto === "tumu" || f.protokolNo === selProto))
+      .map(f => ({ tarih:f.tarih || (new Date().toLocaleDateString("az")), tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:f.no || f.id, durum:f.durum, pb:"₼", tutar:f.toplam, kdv:0, proto:f.protokolNo }));
     const faturaHtml = () => tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"],
-      byProto(p._fatura).map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]]);
+      [...zincirFatura(), ...byProto(p._fatura)].map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]]);
     const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
       byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
@@ -915,7 +919,7 @@
         const seg = `<div class="seg" style="margin:4px 0 12px;flex-wrap:wrap">${TT.map(([k, l]) => `<button data-ttab="${k}" class="${tt === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
         const T = (cols, rows, empty) => `<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`;
         // Doktor istem düzenleme (yetki: protokol_duzenle) — tarih/doktor değiştirilebilir; genel istem tablosu
-        const canProt = H.can("protokol_duzenle");
+        const canProt = H.canAct("protokol_duzenle");
         const ordTable = (re, cols, empty, sonuc) => { const rows = (H.data.orders || []).map((o, gi) => [o, gi]).filter(([o]) => o.pid === p.id && re.test(o.cat || ""));
           const head = [cols[0], cols[1], "Protokol", ...cols.slice(2), ...(canProt ? ["Düzenle"] : [])];
           return `<div class="tw"><table class="t"><thead><tr>${head.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(([o, gi]) => { const cells = sonuc ? [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi", o.sonuc || "—"] : [o.ad, o.kod || "—", o.protokolNo || "—", o.at || "—", o.durum || "İstendi"];
@@ -1009,7 +1013,7 @@
       if (e.target.closest("[data-protonew]")) { if (!H.can("admission")) { H.toast("Protokol açma yetkiniz yok.", "e"); return; } protoNewModal(); return; }
       const pl = e.target.closest("[data-protolock]"); if (pl) { const no = pl.dataset.protolock, r = H.proto && H.proto.get(p.id, no); if (!r) return;
         const acarak = r.kapali, perm = acarak ? "protokol_duzenle" : "admission";
-        if (!H.can(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; }
+        if (!H.canAct(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; }
         H.proto.setOpen(p.id, no, acarak); H.log(acarak ? "Protokol yeniden açıldı" : "Protokol kapatıldı", vzName(p.name) + " · " + no); H.toast(acarak ? "Protokol açıldı: " + no : "Protokol kapatıldı: " + no, acarak ? "" : "w");
         return H.go("hasta360", { pid:p.id, atab:params.atab || "360", stab:params.stab || alt, proto:params.proto || "tumu" }); }
       const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
@@ -1026,7 +1030,7 @@
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
       const ihb = e.target.closest("[data-ih]"); if (ihb) return H.go("hasta360", { pid:p.id, atab:"ishavuzu", ihtab:ihb.dataset.ih });
       const ttb = e.target.closest("[data-ttab]"); if (ttb) return H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:ttb.dataset.ttab });
-      const ordi = e.target.closest("[data-ordi]"); if (ordi) { if (!H.can("protokol_duzenle")) { H.toast("Protokol/istem düzenleme yetkiniz yok.", "e"); return; }
+      const ordi = e.target.closest("[data-ordi]"); if (ordi) { if (!H.canAct("protokol_duzenle")) { H.toast("Protokol/istem düzenleme yetkiniz yok.", "e"); return; }
         const o = (H.data.orders || [])[+ordi.dataset.ordi]; if (!o) return; const docs = (H.data.users || []).filter(u => u.role === "hekim");
         H.modal({ title:"İstem düzenle · " + H.esc(o.ad || ""), body:`<div class="icd-form">
             <div class="fr"><label>İşlem</label><input value="${H.esc(o.ad || "")}" readonly></div>

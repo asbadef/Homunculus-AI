@@ -386,6 +386,21 @@
     (u.extras || []).forEach(k => (H.EXTRA[k] ? H.EXTRA[k].perms : []).forEach(p => s.add(p)));
     (u.grant || []).forEach(p => s.add(p)); (u.deny || []).forEach(p => s.delete(p)); return [...s]; };
   H.can = (perm) => !!H.state.user && H.perms().includes(perm);
+  /* İnce yetki (927 katalog) bağı · Ozan kararı: katalog gerçek kaynak, ekranlar ilgili yetkiyi kontrol eder.
+   * Toplanabilir model: basit matris çalışır; Güvenlik Tanımları'nda ilgili katalog yetkisi işaretlenince aksiyon da açılır.
+   * H.FINE_MAP: matris anahtarı → eşdeğer katalog yetki adları. */
+  H.FINE_MAP = {
+    protokol_duzenle:["Kapalı Protokolü Açık Duruma Getirebilir", "Kurum Faturası Kesilen Kapalı Protokolü Açık Duruma Getirebilir", "Hizmet Kayıt ve Faturalanmış Kapalı Protokolü Açık Duruma Getirebilir", "Protokol Süreçlerinde Hizmet Malzeme ve İlaç Girişi Yapabilsin"],
+    kapali_protokol_ekle:["Kapalı Protokolde Hizmet Ekleyebilir(Fiyatlar 0 olarak oluşur)", "Kapalı Protokollere Kontrol Muyane Hizmeti Ekleyebilir"],
+    kapali_protokol_sil:["Kapalı Protokolde Hizmet Silebilir"],
+    tahsilat_degistir:["Tahsilat Tarihini Değiştirebilir", "Tahsilat Carisini Değiştirebilir", "Onaylanmış Dönem Tahsilat bilgilerini değiştirebilir", "Kapanmis Dönem Tahsilat bilgilerini değiştirebilir", "Havale Ödeme Tipindeki Tahsilat bilgilerini değiştirebilir", "Dövizli Tahsilat Tarihini Değiştirebilir"],
+    fatura_iptal:["GIB'e bildirilmiş faturayı iptal edebilir", "GIB'e bildirilmiş E-Faturay'ı iptal edebilir", "GIB'e bildirilmiş kurum faturasını iptal edebilir (Vezne 360)", "Oracle Aktarımı Yapılmış E-Faturayı Iptal Edebilir", "GIB'e bildirilmiş E-Arşiv faturayı iptal edebilir"],
+    indirim_onay:["Indirim Onaylayan Personel Yetkileri", "Onaylayabilecegi Indirim Onay Grupları"],
+  };
+  H.hasFine = (name) => { const u = H.state && H.state.user; if (!u) return false; if (u.role === "sistem") return true; const set = (H.data.detayYetki && H.data.detayYetki[u.role]) || []; return set.includes(name); };
+  // Zincir/vezne aksiyon yetkisi: basit matris VEYA katalogda eşdeğer ince yetki işaretli.
+  H.canAct = (key) => H.can(key) || (H.FINE_MAP[key] || []).some(n => H.hasFine(n));
+  H.fineBound = () => { const s = new Set(); Object.values(H.FINE_MAP).forEach(a => a.forEach(n => s.add(n))); return s; };   // ekrana bağlı katalog yetkileri
   H.canEdit = (perm) => { const u = H.state.user; if (!H.can(perm)) return false; if ((u.grant || []).includes(perm)) return true;
     const r = H.data.roles[u.role]; const fromExtra = (u.extras || []).some(k => H.EXTRA[k] && H.EXTRA[k].perms.includes(perm));
     return fromExtra || !(r.ro || []).includes(perm); };

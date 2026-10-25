@@ -1925,11 +1925,11 @@
     const kat = H.YETKI_KATALOG || [], SUBS = [["yetki", "Yetkiler"], ["form", "Formlar"], ["rol", "Roller"], ["deger", "Değerler"]];
     let pane = "";
     if (sub === "yetki") {
-      const toplam = kat.reduce((a, g) => a + g[1].length, 0), gq = norm(AD.gvq || "");
+      const toplam = kat.reduce((a, g) => a + g[1].length, 0), gq = norm(AD.gvq || ""), bound = H.fineBound ? H.fineBound() : new Set();
       const kf = gq ? kat.map((g, gi) => [gi, g[0], g[1].map((p, pi) => [pi, p]).filter(([, p]) => norm(p).includes(gq))]).filter(x => x[2].length || norm(x[1]).includes(gq)) : kat.map((g, gi) => [gi, g[0], g[1].map((p, pi) => [pi, p])]);
       pane = `<p class="adm-sub" style="margin:0 0 8px">İnce-taneli yetkiler (${toplam} yetki, ${kat.length} grup) · referans HBYS'den. Grubu açıp işaretleyin ya da "Ağaçtan seç" ile toplu seçin; <b>${esc(H.data.roles[role].name)}</b> rolüne uygulanır. Seçili: <b>${dSet.length}</b>.</p>
         ${kf.map(([gi, gad, perms]) => { const on = kat[gi][1].filter(p => dSet.includes(p)).length; return `<details class="gv-grp"${on || gq ? " open" : ""}><summary><b>${esc(gad)}</b> <span class="adm-sub">(${on}/${kat[gi][1].length})</span></summary>
-          <div class="gv-perms">${perms.map(([pi, p]) => `<label class="dc-chk"><input type="checkbox" data-gvp="${gi}:${pi}"${dSet.includes(p) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(p)}</label>`).join("")}</div></details>`; }).join("") || `<div class="empty">Eşleşen yetki yok.</div>`}`;
+          <div class="gv-perms">${perms.map(([pi, p]) => `<label class="dc-chk"><input type="checkbox" data-gvp="${gi}:${pi}"${dSet.includes(p) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(p)}${bound.has(p) ? ` <span class="tag ok" style="font-size:9.5px" title="Bu yetki ekran aksiyonuna bağlıdır; işaretlenince ilgili işlem bu rolde açılır">✓ ekranda etkili</span>` : ""}</label>`).join("")}</div></details>`; }).join("") || `<div class="empty">Eşleşen yetki yok.</div>`}`;
     } else if (sub === "form") {
       pane = `<p class="adm-sub" style="margin:0 0 8px">Modül (form) erişimi · <b>${esc(H.data.roles[role].name)}</b> hangi ekranları açabilir.</p>
         <div class="icd-oz">${GV_MODULLER.map(m => `<label class="dc-chk"><input type="checkbox" data-gvf="${esc(m)}"${fSet.includes(m) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(m)}</label>`).join("")}</div>`;
