@@ -386,8 +386,18 @@ plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
 - `shadow_check.py` prints one more line, `nbp: N cihazda ölçüm saati ≤ ile gösteriliyor (en eski
   M dk önce), W cihazda ölçüm bekleniyor, O cihazda gizli (eski)` — counts and an age, never a
   pressure.
-- Deploy record: the blocks are `C:\tmp\infinity-a-releases\NBP-bloklari.txt`; not yet on the VM
-  when this was written.
+- Deploy record (2026-10-25, blocks `C:\tmp\infinity-a-releases\NBP-bloklari.txt`): C-2 built api
+  and web at `f72dafa` (containers started 07:57:26 UTC; images `b49b062c…` / `426cebc0…`). A first
+  C-2 had been pasted at 07:47 UTC before C-1 and rebuilt `0ea1d05` unchanged (new image ids, same
+  content) — C-3's content checks (the NBP constants in the api container, `nbpWaiting` in the served
+  chunks) caught it; C-1 and C-2 were rerun. D-1 installed R4 and `94-nbp.conf` and restarted the
+  hub at 08:00:42 UTC (journal: forwarder `starting -> ok`). D-2: transport_check KABUL (hub 8.1 %
+  of a core), shadow_check 300 s six KABUL with 60 v2 bodies accepted, `nbp: 2 cihazda ölçüm saati
+  ≤ ile gösteriliyor (en eski 3 dk önce), 5 cihazda ölçüm bekleniyor, 0 cihazda gizli (eski)`,
+  PANO_OZET equal to P-önce. Walk: accepted by the user as a whole ("okey"); E-3 bekliyor (no bed
+  past 2 h at hand); E-4 and E-5 verified by the agent. A-3 (O30) before B: every NBP bed shows a
+  regular 3.00–3.01 s gap between complete valid triples about every 45 s and none longer; the user
+  chose to deploy as is and to widen `NBP_CONTINUITY_S` with a day's evidence (O38).
 
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 
