@@ -5,15 +5,15 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 ## A. Temizlik / düzeltme ("burada olmasın")
 - [x] Ekran altyazılarındaki "(tasarım)" etiketleri kaldırıldı (randevu, vezne, raporlar, iş takip, labislem, İK).
 - [x] Kalan "· tasarım" yer tutucu toastları dürüstleştirildi/bağlandı (yeni doğan, onam ekle→dosya, hazırlık açıklaması, sağ-tık menüleri, yazdır çıktıları→gerçek yazdırma).
-- [ ] **Hasta Dosyası alt-tab sağ-tık menüleri** (Faturalar: Ödeme/İptal/İade/Faturaya çevir…) hâlâ yönlendirme toastı veriyor. Karar: bunları gerçek yapalım mı, yoksa kaldırıp vezne İşlem Havuzu'na mı bırakalım? (Gerçek aksiyonlar zaten vezne'de.)
-- [ ] **Vezne demo seed'leri** (faturalar/gfk/evrak'taki Günel Məmmədova vb.) klinik hasta listesindeki adlarla eşleşmiyor → fatura satırına tıklayınca "kart yüklü değil". Seed adlarını klinik hastalarla hizalayalım ya da demo seed'i azaltıp zincire bırakalım.
+- [x] **Hasta Dosyası Faturalar sağ-tık gerçek:** Ödeme (tahsil et) / Fatura iptal (yetkili) / İade talebi oluştur / Yazdır — o satıra etki eder, kalıcı. (Diğer alt-tab sağ-tıkları hâlâ vezne'ye yönlendirme mesajı; istenirse genişletilir.)
+- [x] **Vezne demo seed'leri klinik hastalarla hizalandı** (Elvin Hüseynov, Nərgiz Əliyeva vb.) → fatura/GFK satırına tıklayınca kart açılır. Kalıcılık v2.
 - [ ] **Kurumsal Faturalama iki yerde** (Vezne sekmesi + Medikal Muhasebe hub). Ev kararı: ikisi de kalsın (biri kısayol) mı, tek yer mi?
 - [ ] Rapor: listeden çıkarılan raporların `reportData()` yardımcıları duruyor (ölü kod, zararsız). İstenirse temizlenir.
 
 ## B. Yapmadığımız / eksik süreçler (öncelik sırası önerim)
-1. [ ] **Hasta kabulde protokol otomatik açılsın** — şu an protokoller hasta dosyası açılınca örnekten geliyor; kabulde gerçek protokol açılması daha doğru.
-2. [ ] **İade / avans → faturaya mahsup** — iade onayı var ama faturaya/tahsilata etkisi zincire bağlı değil.
-3. [ ] **Tahsilat derinliği** — parçalı/kısmi ödeme, avans mahsup, para üstü.
+1. [x] **Hasta kabulde protokol otomatik açılır** — ayaktan/yatış/vezne/hasta360 kabulünde gerçek protokol oluşur (istemler ona bağlanır).
+2. [ ] **İade / avans → faturaya mahsup** — iade talebi/onayı var; onaylanınca faturaya/tahsilata mahsup etkisi kalan iş.
+3. [x] **Kısmi tahsilat** — tahsilat modalında tutar düzenlenebilir; kalan kadar ödenince "Ödendi", yoksa "Bekliyor" (kalan takip). Avans mahsup kalan iş.
 4. [ ] **Doktor muayene derinliği** — istem→sonuç girişi, konsültasyon ekranı, ameliyat planlama/notu, e-reçete.
 5. [ ] **Randevu takvim görünümü** — gün/hafta çizelgesi (grid), web randevu, slot kapatma.
 6. [ ] **İK akışları** — izin / işgöremezlik, nöbet çizelgesi görünümü.

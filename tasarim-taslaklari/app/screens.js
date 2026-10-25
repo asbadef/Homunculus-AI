@@ -625,12 +625,19 @@
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
       const et = e.target.closest("[data-evteslim]"); if (et) { const x = evrakRows().find(y => y.no === et.dataset.evteslim); if (x) { x.durum = "Vezneden teslim edildi"; H.log("Evrak teslim", x.no); H.toast("Evrak teslim edildi"); H.go("vezne", params); } return; }
       const th = e.target.closest("[data-tahsil]"); if (th) { const x = faturalar().find(y => y.id === th.dataset.tahsil); if (!x) return;
-        H.modal({ title:"Tahsilat · " + H.esc(vzName(x.hasta)), body:`<div class="icd-form"><div class="fr"><label>Tutar</label><input value="${x.katilim} ₼" readonly></div>
+        const kalan = x.katilim - (x.odenen || 0);
+        H.modal({ title:"Tahsilat · " + H.esc(vzName(x.hasta)), body:`<div class="icd-form"><div class="fr"><label>Fatura tutarı</label><input value="${x.katilim} ₼" readonly></div>
+          <div class="fr"><label>Kalan</label><input value="${kalan} ₼" readonly></div>
+          <div class="fr"><label>Tahsil edilecek</label><input type="number" data-f="tutar" value="${kalan}" min="0" max="${kalan}"></div>
           <div class="fr"><label>Ödeme tipi</label><select data-f="odeme">${ODEME_TIP.map(o => `<option>${o}</option>`).join("")}</select></div>
-          <div class="fr"><label>Banko</label><input value="${H.esc(banko)}" readonly></div></div>`,
+          <div class="fr"><label>Banko</label><input value="${H.esc(banko)}" readonly></div></div>
+          <p class="adm-sub" style="margin-top:6px">Kısmi tutar girilebilir; kalan kadar ödenince fatura "Ödendi" olur.</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Tahsil et</button>`,
-          onMount(m) { m.querySelector("[data-ok]").onclick = () => { x.durum = "Ödendi"; x.odemeTipi = m.querySelector('[data-f="odeme"]').value; x.banko = banko; x.donem = donemNo;
-            H.log("Tahsilat", x.hasta + " · " + x.katilim + " ₼ · " + x.odemeTipi + " · " + banko); H.closeModal(); H.toast("Tahsil edildi: " + x.katilim + " ₼ (" + x.odemeTipi + ")"); H.go("vezne", params); }; } });
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { let t = +m.querySelector('[data-f="tutar"]').value || 0; if (t <= 0) { H.toast("Tutar girin.", "w"); return; } if (t > kalan) t = kalan;
+            x.odenen = (x.odenen || 0) + t; x.odemeTipi = m.querySelector('[data-f="odeme"]').value; x.banko = banko; x.donem = donemNo;
+            const bitti = x.odenen >= x.katilim; x.durum = bitti ? "Ödendi" : "Bekliyor";
+            H.saveData && H.saveData(); H.log("Tahsilat" + (bitti ? "" : " (kısmi)"), x.hasta + " · " + t + " ₼ · " + x.odemeTipi + " · " + banko); H.closeModal();
+            H.toast(bitti ? "Tam tahsil edildi: " + t + " ₼" : "Kısmi tahsilat: " + t + " ₼ · kalan " + (x.katilim - x.odenen) + " ₼", bitti ? "" : "w"); H.go("vezne", params); }; } });
       }
     };
   } });
@@ -884,14 +891,16 @@
       <div class="box"><h5>Yatış</h5><div class="icd-form">${fld("kat", "Kat", "", b ? b.kat : "")}${fld("yatakNo", "Yatak", "", b ? b.no : "")}${fld("taburcuKodu", "Taburcu kodu")}${fld("kabulT", "Kabul tarihi")}${fld("taburcuT", "Taburcu tarihi")}${fld("yatisGun", "Yatış gün", "", p.admitDays)}</div></div>
     </div>${tbar([["Durum", "edit"], ["Yatış", "bed"], ["Yazdır", "print"], ["Tüm gelişler", "link"]])}
     <div style="margin-top:4px"><button class="btn sm" data-h3git-gelis>${I("link") || ""} Tüm Gelişler ekranını aç</button></div>`;
-    const tabloHtml = (k, cols, rows, btns) => `${tbar(btns)}<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
-      ${rows.length ? rows.map(r => `<tr data-ctx="${k}" style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
+    const tabloHtml = (k, cols, rows, btns, ids) => `${tbar(btns)}<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
+      ${rows.length ? rows.map((r, i) => `<tr data-ctx="${k}"${ids && ids[i] ? ` data-rid="${H.esc(ids[i])}"` : ""} style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
       </tbody></table></div>${sagtikNote(k)}`;
     // Zincir faturaları (İşlem Havuzu'nda kesilen) + demo faturalar birlikte; seçili protokole göre.
     const zincirFatura = () => (H.data.faturalar || []).filter(f => f.hasta === p.name && f.protokolNo && (selProto === "tumu" || f.protokolNo === selProto))
       .map(f => ({ tarih:f.tarih || (new Date().toLocaleDateString("az")), tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:f.no || f.id, durum:f.durum, pb:"₼", tutar:f.toplam, kdv:0, proto:f.protokolNo }));
-    const faturaHtml = () => tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"],
-      [...zincirFatura(), ...byProto(p._fatura)].map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]]);
+    const faturaHtml = () => { const zf = zincirFatura(), df = byProto(p._fatura);
+      const rows = [...zf, ...df].map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]);
+      const ids = [...zf.map(x => "chain|" + x.no), ...df.map(x => "demo|" + x.no)];
+      return tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"], rows, [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]], ids); };
     const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
       byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
@@ -1014,8 +1023,22 @@
           const kal = m.querySelector("[data-okaldir]"); if (kal) kal.onclick = () => { if (kvkk) p.kvkk = false; else p.etk = false; H.toast(ad + ": kaldırıldı", "w"); H.closeModal(); H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); };
         } });
     }
+    // Faturalar sağ-tık: gerçek aksiyonlar (Ödeme / İptal / İade / Yazdır) o satıra etki eder (Ozan kararı: gerçek yap).
+    function faturaMenu(e, rid) {
+      const [src, no] = rid.split("|"); const f = src === "chain" ? (H.data.faturalar || []).find(y => y.no === no) : (p._fatura || []).find(y => y.no === no);
+      if (!f) { H.toast("Fatura bulunamadı.", "e"); return; }
+      const tutar = f.tutar != null ? f.tutar : (f.katilim || 0), reDraw = () => H.go("hasta360", { pid:p.id, atab:ana, stab:"faturalar", proto:params.proto });
+      vzMenu(e, [
+        ["Ödeme (tahsil et)", () => { if (f.durum === "Ödendi") { H.toast("Zaten ödendi.", "w"); return; } f.durum = "Ödendi"; f.odenen = tutar; H.saveData && H.saveData(); H.log("Tahsilat (hasta dosyası)", p.name + " · " + no); H.toast("Ödendi: " + no); reDraw(); }],
+        ["Fatura iptal", () => { if (!H.canAct("fatura_iptal")) { H.toast("Yetkiniz yok (fatura_iptal).", "e"); return; } f.durum = "İptal"; H.saveData && H.saveData(); H.log("Fatura iptal", p.name + " · " + no); H.toast("Fatura iptal: " + no, "w"); reDraw(); }],
+        ["İade talebi oluştur", () => { (H.data.iadeTalep = iadeRows()).unshift({ id:"ia" + Date.now(), tip:"Fatura İade", tarih:H.nowFull ? H.nowFull() : H.now(), eden:p.name, tutar, dep:"Protokolden", aciklama:"Fatura iadesi · " + no, durum:"Onay bekliyor", proto:f.proto || f.protokolNo || p.proto, zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) }); H.saveData && H.saveData(); H.log("İade talebi", p.name + " · " + no); H.toast("İade talebi oluşturuldu (onay bekliyor)."); }],
+        ["Yazdır", () => H.printTable ? H.printTable("Fatura · " + no, ["Alan", "Değer"], [["Fatura no", no], ["Tarih", f.tarih || ""], ["Durum", f.durum || ""], ["Tutar", tutar + " ₼"]]) : H.toast("Yazdırma yok", "w")],
+      ]);
+    }
     root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
-      e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
+      e.preventDefault();
+      if (tr.dataset.ctx === "faturalar" && tr.dataset.rid) return faturaMenu(e, tr.dataset.rid);
+      vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · bu işlem Vezne ekranından yapılır", "w")])); };
     root.onclick = (e) => {
       const tex = e.target.closest("[data-h3tblexp],[data-h3tblyaz]"); if (tex) { const tw = tex.closest(".r") && tex.closest(".r").nextElementSibling, tbl = tw && tw.querySelector("table.t");
         if (!tbl || !tbl.tHead) { H.toast("Bu sekmede aktarılacak tablo yok.", "w"); return; }
