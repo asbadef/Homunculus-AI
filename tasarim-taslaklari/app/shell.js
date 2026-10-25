@@ -259,8 +259,8 @@
     ["beds", "grid", "m_beds", "beds"], ["drislem", "activity", "m_drislem", "results"], ["gelisler", "list", "m_gelisler", "beds"], ["wall", "activity", "m_wall", "beds"], ["unitdash", "chart", "m_unitdash", "beds"], ["tasks", "list", "m_tasks", "tasks"], ["bedside", "tablet", "m_bedside", "bedside"],
     ["alarms", "bell", "m_alarms", "alarms", () => H.openAlarms().length],
     ["hand", "clip", "m_hand", "hand", () => H.data.handovers.filter(h => h.state === "waiting" && H.inScope(h.pid)).length, "y"],
-    ["randevu", "clock", "m_randevu", ["admission", "beds"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
-    ["rrt", "zap", "m_rrt", "rrt"], ["pharmacy", "pill", "m_pharmacy", "pharmacy"], ["labislem", "flask", "m_labislem", ["beds", "summary", "lab_islem"]], ["numune", "flask", "m_numune", ["numune_islem", "lab_islem", "tasks", "results"]],
+    ["randevu", "clock", "m_randevu", ["admission", "admission_view"]], ["occupancy", "bed", "m_occupancy", "occupancy"], ["camera", "tv", "m_camera", "camera"],
+    ["rrt", "zap", "m_rrt", "rrt"], ["pharmacy", "pill", "m_pharmacy", "pharmacy"], ["labislem", "flask", "m_labislem", ["summary", "lab_islem"]], ["numune", "flask", "m_numune", ["numune_islem", "lab_islem", "tasks"]],
     ["sterilizasyon", "box", "m_steril", "steril", null, null, [["pano", "Akış panosu", "steril"], ["depo", "Steril depo", "steril"], ["tanim", "Set tanımları", "steril"], ["komuta", "Komuta merkezi", "steril"]]],
     ["devices", "cpu", "m_devices", "devices", null, null, [["ozet", "Özet", "devices"], ["envanter", "Envanter", "devices"], ["takvim", "Bakım takvimi", "maintenance"], ["ariza", "Arıza kayıtları", "devices"], ["odalar", "Yataklar ve odalar", "devices"]]],
     ["workload", "users", "m_workload", ["staff_view", "occupancy"]], ["infection", "shield", "m_infection", ["quality", "beds"]],
@@ -481,7 +481,7 @@
       if (k === "notif") return openMenu(mn, notifHtml(), "ncenter");
       if (k === "yeni") return openMenu(mn, `<div class="who"><b>Yeni</b><small>Yetkinize göre işlemler</small></div><hr>
         ${H.can("admission") ? `<a data-nav="vezne">${I("file")}Hasta kabul / ara (Ön Büro)</a><a data-nav="admission" data-tab="ayaktan">${I("user")}Ayaktan başvuru</a><a data-nav="admission" data-tab="elle">${I("userPlus")}Hasta kabul (yatış)</a>` : ""}
-        ${H.pages["randevu"] && (H.can("admission") || H.can("beds")) ? `<a data-nav="randevu">${I("clock")}Randevu</a>` : ""}
+        ${H.pages["randevu"] && (H.can("admission") || H.can("admission_view")) ? `<a data-nav="randevu">${I("clock")}Randevu</a>` : ""}
         ${H.pages["ik"] && H.can("admin_users") ? `<a data-nav="ik">${I("users")}Personel</a>` : ""}
         ${H.pages["istakip"] && H.can("destek_ac") ? `<a data-nav="istakip">${I("clip")}Destek talebi</a>` : ""}`, "ymenu");
       if (k === "preview") return openMenu(mn, `<div class="who"><b>${H.t("view_as")}</b><small>Her rolün menüsü ve ekranları, o rolün yetkisiyle. Her geçiş denetim kaydına yazılır.</small></div><hr>

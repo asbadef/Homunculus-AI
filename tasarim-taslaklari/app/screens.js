@@ -165,7 +165,7 @@
      mk("Rauf", "Abbasov", "Ümumi Cərrahiyyə", false, ["Poliklinik randevusu verilebilir"])  // takvim YOK → randevu listesinde çıkmaz
     ].forEach(p => { if (!names.has((p.ad + " " + p.soyad).trim())) H.data.personel.push(p); });
   }
-  H.register("randevu", { title:() => "Randevu", perm:["admission", "beds"], render(root, params = {}) {
+  H.register("randevu", { title:() => "Randevu", perm:["admission", "admission_view"], render(root, params = {}) {
     randevuDoktorSeed();
     const all = randevular(), f = params.durum || "hepsi", GECMIS = ["Tamamlandı", "Gelmedi", "İptal"];
     const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
@@ -1918,7 +1918,7 @@
     }
   } });
 
-  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary", "lab_islem"], render(root, params = {}) {
+  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["summary", "lab_islem"], render(root, params = {}) {
     const cats = { lab:["Laboratuvar"], rad:["Radyoloji"], kan:["Kan ürünü"] };
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
