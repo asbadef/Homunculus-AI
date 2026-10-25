@@ -290,23 +290,49 @@ def test_three_nbp_readings_are_one_entry_with_the_time_their_value_changed():
                          "evidence": "screen_match", "partial": False}
 
 
-def test_nbp_is_withheld_once_its_value_last_changed_more_than_two_hours_ago():
+# A browser keeps drawing a "value" answer, ageing it, until its packet is the board's
+# `display_max_age_s` old (dashboard monitor.js cellOf, maxAgeOf): DISPLAY_MAX_AGE_S, between polls
+# and across failed ones. The API withholds NBP that much before its two hours, so no screen draws it
+# past them (final review M-3).
+NBP_SHOWN_LIMIT_S = NBP_MAX_MEASURED_AGE_S - DISPLAY_MAX_AGE_S
+
+
+def test_nbp_is_withheld_once_its_value_changed_more_than_two_hours_less_the_browsers_window_ago():
+    assert NBP_SHOWN_LIMIT_S == 7185.0
     store = ShadowStore(Clock())
-    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=T0 - 7199.5))))
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=T0 - 7184.5))))
     shown = _params(store, now=T0)[NBP]
-    assert (shown["state"], shown["systolic"], shown["measured_age_s"]) == ("value", 118, 7199.5)
+    assert (shown["state"], shown["systolic"], shown["measured_age_s"]) == ("value", 118, 7184.5)
     withheld = _params(store, now=T0 + 1.0)[NBP]          # the packet is 1.5 s old: only the change is too old
-    assert withheld == {**_waiting(), "age_s": 7200.5, "last_at": _iso(T0 - 7199.5),
-                        "changed_at": _iso(T0 - 7199.5), "measured_age_s": 7200.5}
+    assert withheld == {**_waiting(), "age_s": 7185.5, "last_at": _iso(T0 - 7184.5),
+                        "changed_at": _iso(T0 - 7184.5), "measured_age_s": 7185.5}
 
 
 def test_a_change_exactly_the_limit_old_is_shown_and_one_microsecond_older_is_withheld():
     for extra, state in ((0.0, "value"), (1e-6, "old")):
         store = ShadowStore(Clock())
         store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5,
-                                                    changed_at=T0 - NBP_MAX_MEASURED_AGE_S - extra))))
+                                                    changed_at=T0 - NBP_SHOWN_LIMIT_S - extra))))
         shown = _params(store, now=T0)[NBP]
         assert (shown["state"], shown["systolic"] is None) == (state, state == "old"), extra
+
+
+def test_no_nbp_value_answer_can_be_drawn_past_two_hours_by_a_browser_ageing_it():
+    # The browser draws a "value" answer until age_s + the time since it arrived passes
+    # DISPLAY_MAX_AGE_S, ageing the change with it: the oldest change it can draw is
+    # measured_age_s + DISPLAY_MAX_AGE_S - age_s. A packet 0 s old with a change at the limit is the
+    # worst case, and it is exactly two hours.
+    drawn = []
+    for change in (600.0, NBP_SHOWN_LIMIT_S - 1.0, NBP_SHOWN_LIMIT_S - 0.05, NBP_SHOWN_LIMIT_S,
+                   NBP_SHOWN_LIMIT_S + 1e-6, NBP_SHOWN_LIMIT_S + 1.0, NBP_MAX_MEASURED_AGE_S - 0.5,
+                   NBP_MAX_MEASURED_AGE_S):
+        store = ShadowStore(Clock())
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0, changed_at=T0 - change))))
+        for packet in (0.0, 0.04, 0.5, 5.0, 14.9):
+            entry = _params(store, now=T0 + packet)[NBP]
+            if entry["state"] == "value":
+                drawn.append(entry["measured_age_s"] + DISPLAY_MAX_AGE_S - entry["age_s"])
+    assert max(drawn) == NBP_MAX_MEASURED_AGE_S
 
 
 def test_nbp_keeps_showing_while_every_post_repeats_the_same_change():

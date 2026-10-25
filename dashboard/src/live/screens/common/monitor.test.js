@@ -5,8 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge, feedSentenceKey,
-  lastSeenMs, linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
+  DISPLAY_MAX_AGE_S, EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge,
+  feedSentenceKey, lastSeenMs, linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
 } from "./monitor.js";
 import { NBP_CHANGED_AT, param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
 import { createTranslator } from "../../i18n/translate.js";
@@ -164,6 +164,17 @@ describe("the display limit", () => {
     expect(maxAgeOf({ display_max_age_s: 60 })).toBe(15);
     expect(maxAgeOf({})).toBe(15);
     expect(maxAgeOf({ display_max_age_s: "x" })).toBe(15);
+  });
+
+  it("is the API's own DISPLAY_MAX_AGE_S, the window the API withholds NBP by before its two hours", () => {
+    // A "value" answer is drawn until its packet is this old, so the API withholds NBP this long before
+    // its two hours (api/infinity_shadow.py _nbp_view, final review M-3). A copy here longer than the
+    // API's would draw NBP past them: the two are held equal.
+    const py = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+      "../../../../../homunculus-engine/src/homunculus/api/infinity_shadow.py"), "utf8");
+    const [, names, values] = /^((?:\w+, )*DISPLAY_MAX_AGE_S(?:, \w+)*) = (.+)$/m.exec(py);
+    const api = Object.fromEntries(names.split(", ").map((name, i) => [name, Number(values.split(", ")[i])]));
+    expect(DISPLAY_MAX_AGE_S).toBe(api.DISPLAY_MAX_AGE_S);
   });
 });
 

@@ -99,8 +99,9 @@ PARAMETERS = {
 }
 # NBP: the monitor repeats its last NBP in every packet, so the packet's time says nothing about the
 # cuff. The hub sends the time the triple last CHANGED (`changed_at`, an upper bound of the
-# measurement); the board shows the three as ONE entry, `nbp`, and withholds it once that time is
-# more than NBP_MAX_MEASURED_AGE_S old. A tuple, for the same reason as SCHEMAS.
+# measurement); the board shows the three as ONE entry, `nbp`, and withholds it early enough that no
+# screen draws it once that time is more than NBP_MAX_MEASURED_AGE_S old (`_nbp_view`: a browser
+# keeps drawing a "value" answer for up to DISPLAY_MAX_AGE_S). A tuple, for the same reason as SCHEMAS.
 NBP = "nbp"
 NBP_PARTS = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
 NBP_MAX_MEASURED_AGE_S = 7200.0
@@ -401,9 +402,10 @@ class ShadowStore:
     @staticmethod
     def _nbp_view(readings: Mapping[str, _Held], now: float) -> dict:
         """NBP's three held readings as ONE entry. A number only when all three are held, came with
-        one change time, are fresh and valid, and that change is at most NBP_MAX_MEASURED_AGE_S old.
-        `age_s`/`last_at` are the packet's while it is shown and the change's once it is withheld;
-        with no complete triple of one change there is no time at all: "awaiting a measurement"."""
+        one change time, are fresh and valid, and that change is at most NBP_MAX_MEASURED_AGE_S
+        less DISPLAY_MAX_AGE_S old (below). `age_s`/`last_at` are the packet's while it is shown and
+        the change's once it is withheld; with no complete triple of one change there is no time at
+        all: "awaiting a measurement"."""
         entry = {"parameter": NBP, "state": "old", "systolic": None, "diastolic": None, "mean": None,
                  "unit": PARAMETERS[NBP_PARTS[0]][0], "age_s": None, "last_at": None, "changed_at": None,
                  "measured_age_s": None, "evidence": EVIDENCE[NBP], "partial": NBP in PARTIAL}
@@ -414,7 +416,11 @@ class ShadowStore:
         captured = min(part.captured_at for part in parts)
         age, measured = now - captured, now - changed
         entry.update(changed_at=_iso(changed), measured_age_s=round(max(0.0, measured), 1))
-        if not (0 <= age <= DISPLAY_MAX_AGE_S and 0 <= measured <= NBP_MAX_MEASURED_AGE_S):
+        # A browser draws a "value" answer until its packet is the board's `display_max_age_s` old
+        # (DISPLAY_MAX_AGE_S; the dashboard's monitor.js cellOf/maxAgeOf, whose own copy is never
+        # longer and is held equal by monitor.test.js), between polls and across failed ones, and it
+        # ages the change with it. Withheld that much before the two hours, NBP is never drawn past them.
+        if not (0 <= age <= DISPLAY_MAX_AGE_S and 0 <= measured <= NBP_MAX_MEASURED_AGE_S - DISPLAY_MAX_AGE_S):
             entry.update(age_s=round(max(0.0, measured), 1), last_at=_iso(changed))
         elif not all(part.valid for part in parts):
             entry.update(state="invalid", age_s=round(age, 1), last_at=_iso(captured))      # the monitor shows ***
