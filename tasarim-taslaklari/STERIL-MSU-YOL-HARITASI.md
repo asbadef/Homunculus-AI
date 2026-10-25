@@ -20,6 +20,8 @@ Kullanım yeri ön temizlik → Dekontaminasyon (yıkama/WD) → Muayene & test 
 
 - [x] **v6 — kalanların hepsi:** **Hasta dosyasında "kullanılan setler"** (hasta kartı → Diğer ▾ → o hastaya teslim edilen setlerin listesi); **Parametrik serbest bırakma** anahtarı (komuta merkezinde; kapalıysa "Gözlənilir" BI'lı yük karantinada, "Yükler → BI sonucu" ile serbest/geri çağrı); **Tekil alet takibi** ("Tekil aletler" sekmesi: seri no, bağlı set, kullanım döngüsü, durum Aktif/Tamirde/Kayıp/Emekli, arama = "alet nerede?").
 
+- [x] **v7 — referans ekranlardan (Pusula BAK) eklenenler:** **Sterilizasyon şekli** (Buhar/EO/Plazma/Kuru ısı — set şablonunda ve yükte; izlenebilirlik/etikette). **İade / malzeme kabulü** türü (referansın "Fire Ürün / Kullanılmamış / Kirli Kabul" ayrımı): set vakadan dönünce Kirli / Kullanılmamış / Fire + iade sebebi; **Fire** = hurda, dolaşım dışı (badge/uyarı). **ReUse Malzeme Talep Karşılama** sekmesi: bölüm steril set/malzeme talep eder → MSÜ onaylar → steril depodan karşılar (miktar/onaylı/karşılanan/kalan/mevcut; durum Bekliyor/Onaylandı/Kısmi/Karşılandı/Reddedildi). Hasta/doktor/protokol bağı teslimde zaten var (referansın "Protokol Bilgileri" grubuyla uyumlu).
+
 ## Kalan — tamamlandı ✅
 Yol haritasındaki tüm maddeler yapıldı. (İleri faz, donanım gerektiren: gerçek barkod/RFID okuyucu, otoklav döngü entegrasyonu, gerçek BI inkübatör okuması — bunlar ayrı ekip / donanım işidir.)
 

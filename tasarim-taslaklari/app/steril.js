@@ -16,6 +16,8 @@
   const ASAMALAR = ["Kirli Kabul", "Yıkama", "Paketleme", "Sterilizasyon", "Steril Depo", "Teslim"];
   const ASAMA_IC = { "Kirli Kabul":"trash", "Yıkama":"refresh", "Paketleme":"box", "Sterilizasyon":"flask", "Steril Depo":"grid", "Teslim":"check" };
   const OTOKLAVLAR = ["Buxar Otoklavı-1", "Buxar Otoklavı-2", "Plazma Sterilizatoru-1"];   // demo otoklav listesi
+  const STER_SEKIL = ["Buxar (nəm)", "Etilen oksid (EO)", "Plazma (H₂O₂)", "Quru istilik"];   // sterilizasyon şekli
+  const IADE_TUR = ["Kirli (yenidən istifadə)", "Kullanılmamış (açılmamış iadə)", "Fire (zədəli / istifadə olunmaz)"];   // malzeme kabul türleri (referans)
   const RAF_OMUR = 180;   // steril depoda varsayılan raf ömrü (gün)
 
   /* ---------------- veri (kalıcı; PERSIST_KEYS: sterSetKart, sterSet, sterSeq) -------------- */
@@ -43,6 +45,11 @@
     }
     if (!H.data.sterLoadSeq) H.data.sterLoadSeq = 7014;
     if (!H.data.sterCartSeq) H.data.sterCartSeq = 3010;
+    if (!H.data.sterTalepSeq) H.data.sterTalepSeq = 4020;
+    if (!H.data.sterTalep) H.data.sterTalep = [   // ReUse (yeniden kullanılabilir) malzeme talepleri — bölüm → MSÜ
+      { id:"tl1", no:"TLP-" + (++H.data.sterTalepSeq), bolum:"Ümumi Cərrahiyyə", kat:"2", depo:"Əməliyyat anbarı", tarih:now(), malzeme:"Laparoskopiya Seti", miktar:2, onaylanan:0, karsilanan:0, aciklama:"Səhər proqramı üçün", durum:"Bekliyor" },
+      { id:"tl2", no:"TLP-" + (++H.data.sterTalepSeq), bolum:"Doğuş", kat:"3", depo:"Doğuş anbarı", tarih:now(), malzeme:"Sezaryen Seti", miktar:1, onaylanan:1, karsilanan:0, aciklama:"", durum:"Onaylandı" },
+    ];
     if (!H.data.sterAletSeq) H.data.sterAletSeq = 5080;
     if (!H.data.sterAlet) {   // tekil izlenen (pahalı/kritik) aletler
       const first = (H.data.sterSet || [])[0], lap = (H.data.sterSet || []).find(s => s.kartId === "sk2");
@@ -90,8 +97,8 @@
     if (s.asama === "Sterilizasyon") return loadBuilder(s.id, afterGo);
     // Steril Depo: ameliyathaneye teslim
     if (s.asama === "Steril Depo") return teslimModal(s, afterGo);
-    // Teslim: yeniden kullanım için kirli kabule döner
-    if (s.asama === "Teslim") { s.otoklav = null; s.raf = ""; s.sonKullanim = ""; s.vaka = ""; s.teslimAlan = ""; s.eksik = []; push(s, "Kirli Kabul"); H.toast("Set yeniden kullanıma alındı · Kirli Kabul", "w"); afterGo && afterGo(); return; }
+    // Teslim: set MSÜ'ye geri döner → iade/kabul türü (Kirli / Kullanılmamış / Fire) seçilir
+    if (s.asama === "Teslim") return iadeModal(s, afterGo);
     // Kirli Kabul→Yıkama, Yıkama→Paketleme: düz ilerleme
     push(s, ASAMALAR[i + 1]); H.toast(s.no + " → " + ASAMALAR[i + 1]); afterGo && afterGo();
   }
@@ -121,6 +128,7 @@
     if (!bekle.length) { H.toast("Sterilizasyon aşamasında set yok.", "w"); return; }
     H.modal({ title:"Yük oluştur (sterilizasyon döngüsü)", wide:true,
       body:`<div class="icd-form">
+        <div class="fr"><label>Sterilizasyon şekli</label><select data-f="sekil">${STER_SEKIL.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Otoklav / cihaz</label><select data-f="otoklav">${OTOKLAVLAR.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
         <div class="fr"><label>Döngü no</label><input data-f="no" placeholder="ör. D-2042"></div>
         <div class="fr"><label>Sıcaklık (°C)</label><input data-f="sic" value="134"></div>
@@ -137,11 +145,12 @@
         const bowie = m.querySelector('[data-f="bowie"]').value, biyo = m.querySelector('[data-f="biyo"]').value, fail = (bowie === "Keçmədi" || biyo === "Keçmədi");
         const parametrik = H.data.sterParametrik !== false;   // açık (varsayılan): fiziksel+kimyasal uygunsa BI beklemeden serbest
         const biHold = (biyo === "Gözlənilir" && !parametrik);  // parametrik kapalıysa BI çıkana dek karantina
-        const load = { id:"ld" + Date.now(), no:"YÜK-" + (++H.data.sterLoadSeq), otoklav:m.querySelector('[data-f="otoklav"]').value, no2:g("no"), sic:g("sic"), sure:g("sure"), bowie, biyo, tarih:now(), setIds:ids.slice(),
+        const sekil = m.querySelector('[data-f="sekil"]').value;
+        const load = { id:"ld" + Date.now(), no:"YÜK-" + (++H.data.sterLoadSeq), sekil, otoklav:m.querySelector('[data-f="otoklav"]').value, no2:g("no"), sic:g("sic"), sure:g("sure"), bowie, biyo, tarih:now(), setIds:ids.slice(),
           durum:fail ? "Test başarısız" : biyo === "Gözlənilir" ? "BI bekliyor" : "Serbest" };
         (H.data.sterLoad = H.data.sterLoad || []).unshift(load);
         ids.forEach(id => { const s = sets().find(x => x.id === id); if (!s) return;
-          s.otoklav = { otoklav:load.otoklav, no:load.no2, sic:load.sic, sure:load.sure, bowie, biyo, tarih:load.tarih, yuk:load.no }; s.loadId = load.id;
+          s.otoklav = { otoklav:load.otoklav, no:load.no2, sic:load.sic, sure:load.sure, sekil, bowie, biyo, tarih:load.tarih, yuk:load.no }; s.loadId = load.id;
           if (fail) { s.durum = "Test başarısız"; }
           else if (biHold) { s.durum = "Karantina (BI bekliyor)"; }   // sterilizasyonda bekler, depoya alınmaz
           else { s.durum = ""; s.dongu = (s.dongu || 0) + 1; s.raf = ""; s.sonKullanim = addDays(today(), RAF_OMUR); push(s, "Steril Depo"); } });
@@ -204,6 +213,20 @@
         H.closeModal(); H.toast("Set təhvil verildi · " + vaka); afterGo && afterGo(); }; } });
   }
 
+  // İade / malzeme kabulü: set vakadan döndüğünde türü (Kirli / Kullanılmamış / Fire) ve sebebi kaydedilir (referans: Malzeme Kabul).
+  function iadeModal(s, afterGo) {
+    H.modal({ title:"İade / malzeme kabulü · " + esc(s.no),
+      body:`<p class="adm-sub" style="margin:0 0 10px">${esc(s.ad)}${s.vaka ? " · vaka: " + esc(s.vaka) : ""} MSÜ'ye geri dönüyor. Türünü seçin — bu kayıt (hangi hastada kullanıldı) izlenebilirlikte kalır.</p>
+        <div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>İade / kabul türü</label><select data-f="tur">${IADE_TUR.map(t => `<option>${esc(t)}</option>`).join("")}</select></div>
+        <div class="fr" style="grid-column:1/-1"><label>İade sebebi (ops.)</label><input data-f="sebep" placeholder="ör. kontaminasyon, zədə, açılmadı"></div></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İadeyi kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const tur = m.querySelector('[data-f="tur"]').value, sebep = (m.querySelector('[data-f="sebep"]').value || "").trim();
+        s.iadeTuru = tur; s.iadeSebep = sebep; s.sonHasta = s.vaka || s.sonHasta || "";
+        if (tur.indexOf("Fire") === 0) { s.fire = true; s.durum = "Fire"; s.gecmis.push({ asama:"Fire (hurda) · " + s.asama + (sebep ? " · " + sebep : ""), kim:me(), zaman:now() }); H.saveData && H.saveData(); H.log("Set fire/hurda", s.no + (sebep ? " · " + sebep : "")); H.toast("Set FIRE olarak işaretlendi · dolaşım dışı", "e"); }
+        else { s.otoklav = null; s.raf = ""; s.sonKullanim = ""; s.vaka = ""; s.pid = null; s.teslimAlan = ""; s.eksik = []; s.durum = ""; s.gecmis.push({ asama:"İade: " + tur + (sebep ? " · " + sebep : ""), kim:me(), zaman:now() }); push(s, "Kirli Kabul"); H.toast("Set kabul edildi · yeniden işleme (" + tur.split(" ")[0] + ")", "w"); }
+        H.closeModal(); afterGo && afterGo(); }; } });
+  }
+
   /* ---------------- vaka arabası (case cart) — gerçek hastaya bağlı ---------------- */
   function cartForm(prefillIdx, afterGo) {
     const prog = amelProgram(), uygun = depoUygun();
@@ -241,6 +264,42 @@
     (cart.setIds || []).forEach(id => { const s = sets().find(x => x.id === id); if (s && s.cartId === cart.id) s.cartId = null; });
     cart.durum = "İptal"; H.saveData && H.saveData(); H.log("Vaka arabası iptal", cart.no); H.toast("Araba iptal edildi", "w"); afterGo && afterGo();
   }
+
+  /* ---------------- ReUse malzeme talep karşılama (bölüm → MSÜ) ---------------- */
+  const talepler = () => H.data.sterTalep || [];
+  const talepOf = (id) => talepler().find(t => t.id === id);
+  const talepKalan = (t) => Math.max(0, (t.onaylanan || t.miktar || 0) - (t.karsilanan || 0));
+  const mevcutStok = (ad) => sets().filter(s => s.asama === "Steril Depo" && !s.cartId && !s.kayip && !s.bakim && !s.fire && s.ad === ad).length;
+  function talepForm(afterGo) {
+    const kartlar = H.data.sterSetKart || [], bols = (H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || [])).map(b => b.ad || b).filter(Boolean);
+    H.modal({ title:"Yeni ReUse malzeme talebi", wide:true, body:`<div class="icd-form">
+      <div class="fr"><label>Bölüm</label><input data-f="bolum" list="tl-bol" placeholder="Talep eden bölüm"><datalist id="tl-bol">${bols.map(b => `<option>${esc(b)}</option>`).join("")}</datalist></div>
+      <div class="fr"><label>Kat</label><input data-f="kat" placeholder="ör. 2"></div>
+      <div class="fr"><label>Depo</label><input data-f="depo" placeholder="ör. Əməliyyat anbarı"></div>
+      <div class="fr"><label>Malzeme / set</label><input data-f="malzeme" list="tl-mlz" placeholder="Set / malzeme adı"><datalist id="tl-mlz">${kartlar.map(k => `<option>${esc(k.ad)}</option>`).join("")}</datalist></div>
+      <div class="fr"><label>Miktar</label><input data-f="miktar" type="number" min="1" value="1"></div>
+      <div class="fr" style="grid-column:1/-1"><label>Açıklama</label><input data-f="aciklama" placeholder="ops."></div></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Talep oluştur</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+        if (!g("bolum") || !g("malzeme")) { H.toast("Bölüm ve malzeme gerekli.", "w"); return; }
+        talepler().unshift({ id:"tl" + Date.now(), no:"TLP-" + (++H.data.sterTalepSeq), bolum:g("bolum"), kat:g("kat"), depo:g("depo"), tarih:now(), malzeme:g("malzeme"), miktar:parseInt(g("miktar"), 10) || 1, onaylanan:0, karsilanan:0, aciklama:g("aciklama"), durum:"Bekliyor" });
+        H.saveData && H.saveData(); H.log("ReUse talep açıldı", g("bolum") + " · " + g("malzeme")); H.toast("Talep oluşturuldu"); H.closeModal(); afterGo && afterGo(); }; } });
+  }
+  function talepOnayla(t, afterGo) {
+    const v = prompt("Onaylanan miktar (talep: " + t.miktar + "):", String(t.onaylanan || t.miktar));
+    if (v == null) return; const n = parseInt(v, 10); if (isNaN(n) || n < 0) { H.toast("Geçersiz miktar.", "w"); return; }
+    t.onaylanan = Math.min(n, t.miktar); t.durum = t.onaylanan > 0 ? "Onaylandı" : "Reddedildi"; H.saveData && H.saveData(); H.log("ReUse talep onay", t.no + " · " + t.onaylanan); H.toast("Onaylandı: " + t.onaylanan); afterGo && afterGo();
+  }
+  function talepKarsila(t, afterGo) {
+    const kalan = talepKalan(t); if (kalan <= 0) { H.toast("Karşılanacak kalan yok.", "w"); return; }
+    const mev = mevcutStok(t.malzeme);
+    const v = prompt("Karşılanan miktar (kalan: " + kalan + " · depoda mevcut: " + mev + "):", String(Math.min(kalan, mev) || kalan));
+    if (v == null) return; const n = parseInt(v, 10); if (isNaN(n) || n <= 0) { H.toast("Geçersiz miktar.", "w"); return; }
+    t.karsilanan = (t.karsilanan || 0) + Math.min(n, kalan);
+    t.durum = talepKalan(t) <= 0 ? "Karşılandı" : "Kısmi";
+    H.saveData && H.saveData(); H.log("ReUse talep karşılandı", t.no + " · " + t.karsilanan + "/" + (t.onaylanan || t.miktar)); H.toast(t.durum === "Karşılandı" ? "Talep tam karşılandı" : "Kısmi karşılandı (" + t.karsilanan + ")", "ok"); afterGo && afterGo();
+  }
+  function talepReddet(t, afterGo) { if (!confirm(t.no + " reddedilsin mi?")) return; t.durum = "Reddedildi"; H.saveData && H.saveData(); H.log("ReUse talep reddedildi", t.no); H.toast("Talep reddedildi", "w"); afterGo && afterGo(); }
 
   /* ---------------- tekil alet (instrument-level) ---------------- */
   const ALET_DURUM = ["Aktif", "Tamirde", "Kayıp", "Emekli"];
@@ -304,15 +363,16 @@
     if (s.kayip) uyari += ban("crit", "KAYIP set · son görülen aşama: " + esc(s.asama) + ". Bulununca 'Bulundu' ile aktif edin.");
     if (s.eksik && s.eksik.length) uyari += ban("crit", "Eksik parça (" + s.eksik.length + "): " + esc(s.eksik.join(", ")));
     if (s.durum === "Test başarısız") uyari += ban("crit", "Sterilizasyon testi keçmədi · set serbest bırakılamaz.");
+    if (s.fire) uyari += ban("crit", "FIRE / HURDA · set dolaşım dışı (zədəli/istifadə olunmaz)" + (s.iadeSebep ? " · " + esc(s.iadeSebep) : "") + ".");
     if (s.bakim) uyari += ban("high", "BAKIMDA / TAMİRDE · set dolaşım dışı. Dönünce 'Bakımdan dön' ile aktif edin.");
     if (s.loaner) uyari += ban("mid", "LOANER / firma seti" + (s.firma ? " · " + esc(s.firma) : "") + " · kullanımdan önce tüm akıştan geçmelidir.");
     if (omurDoldu(s)) uyari += ban("crit", "Kullanım ömrü doldu (" + (s.dongu || 0) + "/" + maxDongu(s) + ") · bakıma/yenilemeye gönderin.");
     else if (omurUyari(s)) uyari += ban("high", "Kullanım ömrü yaklaşıyor (" + (s.dongu || 0) + "/" + maxDongu(s) + ").");
-    const otk = s.otoklav ? `<div class="box" style="margin-top:8px"><h5>Son otoklav döngüsü</h5><div class="vz-hk">${kv("Otoklav", s.otoklav.otoklav)}${kv("Döngü no", s.otoklav.no)}${kv("Sıcaklık", s.otoklav.sic + " °C")}${kv("Süre", s.otoklav.sure + " dk")}${kv("Bowie-Dick", s.otoklav.bowie)}${kv("Biyolojik", s.otoklav.biyo)}</div></div>` : "";
+    const otk = s.otoklav ? `<div class="box" style="margin-top:8px"><h5>Son otoklav döngüsü</h5><div class="vz-hk">${kv("Sterilizasyon şekli", s.otoklav.sekil)}${kv("Otoklav", s.otoklav.otoklav)}${kv("Döngü no", s.otoklav.no)}${kv("Sıcaklık", s.otoklav.sic + " °C")}${kv("Süre", s.otoklav.sure + " dk")}${kv("Bowie-Dick", s.otoklav.bowie)}${kv("Biyolojik", s.otoklav.biyo)}</div></div>` : "";
     H.modal({ title:"Set · " + esc(s.no), wide:true,
       body:`${uyari}<div class="g2" style="align-items:start"><div class="box"><h5>${esc(s.ad)}</h5><div class="vz-hk">${kv("Set no", s.no)}${kv("Şablon", k.ad + " · " + (k.versiyon || ""))}${kv("Bölüm", s.bolum)}${kv("Aşama", s.kayip ? s.asama + " (KAYIP)" : s.asama)}${kv("Parça sayısı", (k.parcalar || []).length)}${kv("Kullanım döngüsü", (s.dongu || 0) + (maxDongu(s) ? " / " + maxDongu(s) : ""))}${kv("Raf / konum", s.raf)}${kv("Son kullanım", s.sonKullanim)}${kv("Vaka / ameliyat", s.vaka)}${kv("Teslim alan", s.teslimAlan)}</div>${otk}</div>
         <div class="box"><h5>Aşama geçmişi (kim · ne zaman)</h5><div class="tw"><table class="t"><thead><tr><th>Aşama</th><th>Kullanıcı</th><th>Zaman</th></tr></thead><tbody>${hist || `<tr><td colspan="3" class="mute">—</td></tr>`}</tbody></table></div></div></div>`,
-      actions:`<button class="btn ${s.stat ? "p" : ""}" data-stat>${s.stat ? "Acil ✓" : I("clock") + " Acil"}</button><button class="btn" data-bakim>${s.bakim ? I("refresh") + " Bakımdan dön" : I("cpu") + " Bakıma al"}</button><button class="btn g" data-kayip>${s.kayip ? I("refresh") + " Bulundu" : I("alert") + " Kayıp"}</button><button class="btn" data-etiket>${I("print")} Etiket</button><button class="btn" data-izlen>${I("print")} İzlenebilirlik</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>${(s.kayip || s.bakim) ? "" : `<button class="btn p" data-ilerlet>${son ? "Sonraki aşamaya al → " + ASAMALAR[i + 1] : "Yeniden kullanıma al (Kirli Kabul)"}</button>`}`,
+      actions:`<button class="btn ${s.stat ? "p" : ""}" data-stat>${s.stat ? "Acil ✓" : I("clock") + " Acil"}</button><button class="btn" data-bakim>${s.bakim ? I("refresh") + " Bakımdan dön" : I("cpu") + " Bakıma al"}</button><button class="btn g" data-kayip>${s.kayip ? I("refresh") + " Bulundu" : I("alert") + " Kayıp"}</button><button class="btn" data-etiket>${I("print")} Etiket</button><button class="btn" data-izlen>${I("print")} İzlenebilirlik</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>${(s.kayip || s.bakim || s.fire) ? "" : `<button class="btn p" data-ilerlet>${son ? "Sonraki aşamaya al → " + ASAMALAR[i + 1] : "İade / kabul (geri dönüş)"}</button>`}`,
       onMount(m) { const il = m.querySelector("[data-ilerlet]"); if (il) il.onclick = () => { if (son) H.closeModal(); ilerlet(s, afterGo); };
         m.querySelector("[data-stat]").onclick = () => { s.stat = !s.stat; H.saveData && H.saveData(); H.log(s.stat ? "Set ACİL işaretlendi" : "Set normal önceliğe alındı", s.no); H.toast(s.stat ? "ACİL · set tüm kuyruklarda üste çıkar" : "Normal öncelik"); H.closeModal(); afterGo && afterGo(); };
         m.querySelector("[data-bakim]").onclick = () => { s.bakim = !s.bakim; s.gecmis.push({ asama:(s.bakim ? "Bakıma alındı" : "Bakımdan döndü") + " · " + s.asama, kim:me(), zaman:now() }); H.saveData && H.saveData(); H.log(s.bakim ? "Set bakıma alındı" : "Set bakımdan döndü", s.no); H.toast(s.bakim ? "Set bakıma/tamire alındı · dolaşım dışı" : "Set bakımdan döndü · aktif", s.bakim ? "w" : "ok"); H.closeModal(); afterGo && afterGo(); };
@@ -350,6 +410,7 @@
       <div class="fr"><label>Bölüm</label><input data-f="bolum" list="sk-bol" value="${esc(k.bolum || "")}" placeholder="Bölüm seç ya da yaz"><datalist id="sk-bol">${bols.map(b => `<option>${esc(b)}</option>`).join("")}</datalist></div>
       <div class="fr"><label>Versiyon</label><input data-f="versiyon" value="${esc(k.versiyon || "v1")}"></div>
       <div class="fr"><label>Maks. kullanım döngüsü (ömür)</label><input data-f="maxDongu" type="number" min="0" value="${esc(k.maxDongu || "")}" placeholder="ör. 300"></div>
+      <div class="fr"><label>Sterilizasyon şekli</label><select data-f="sterSekil">${STER_SEKIL.map(x => `<option${(k.sterSekil || STER_SEKIL[0]) === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
       <div class="fr"><label>Not</label><input data-f="not" value="${esc(k.not || "")}" placeholder="ops."></div>
       <div class="fr" style="grid-column:1/-1"><label>Parça listesi <span class="adm-sub" data-pcount></span></label>
         <div data-plist>${((k.parcalar || []).length ? k.parcalar : [""]).map(p => `<div class="ster-pline" style="display:flex;gap:6px;margin-bottom:5px;align-items:center"><input data-pline value="${esc(p)}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1;min-width:0"><button type="button" class="btn g sm" data-prm style="flex:none" title="Satırı sil">${I("trash") || "×"}</button></div>`).join("")}</div>
@@ -366,9 +427,9 @@
         if (!g("ad")) { H.toast("Set adı gerekli.", "w"); return; }
         const parts = [...m.querySelectorAll("[data-pline]")].map(i => i.value.trim()).filter(Boolean);
         if (!parts.length) { H.toast("En az bir parça ekleyin.", "w"); return; }
-        const maxD = parseInt(g("maxDongu"), 10) || 0;
-        if (existing) { Object.assign(existing, { ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon"), maxDongu:maxD, not:g("not"), parcalar:parts }); }
-        else { (H.data.sterSetKart = H.data.sterSetKart || []).push({ id:"sk" + Date.now(), ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon") || "v1", maxDongu:maxD, not:g("not"), parcalar:parts }); }
+        const maxD = parseInt(g("maxDongu"), 10) || 0, sekil = m.querySelector('[data-f="sterSekil"]').value;
+        if (existing) { Object.assign(existing, { ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon"), maxDongu:maxD, sterSekil:sekil, not:g("not"), parcalar:parts }); }
+        else { (H.data.sterSetKart = H.data.sterSetKart || []).push({ id:"sk" + Date.now(), ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon") || "v1", maxDongu:maxD, sterSekil:sekil, not:g("not"), parcalar:parts }); }
         H.saveData && H.saveData(); H.log("Set şablonu " + (existing ? "güncellendi" : "eklendi"), g("ad")); H.toast("Set şablonu kaydedildi"); H.closeModal(); afterGo && afterGo(); };
         const d = m.querySelector("[data-del]"); if (d) d.onclick = () => { if (!confirm("Bu set şablonu silinsin mi?")) return; H.data.sterSetKart = (H.data.sterSetKart || []).filter(x => x.id !== existing.id); H.saveData && H.saveData(); H.closeModal(); H.toast("Şablon silindi", "w"); afterGo && afterGo(); }; } });
   }
@@ -377,13 +438,13 @@
   H.register("sterilizasyon", { title:() => H.t("m_steril"), perm:"steril", render(root, params = {}) {
     seed();
     const tab = params.tab || "pano";
-    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["yukler", "Yükler"], ["arabalar", "Vaka arabaları"], ["tanim", "Set tanımları"], ["aletler", "Tekil aletler"], ["komuta", "Komuta merkezi"]];
+    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["yukler", "Yükler"], ["arabalar", "Vaka arabaları"], ["talepler", "ReUse talepler"], ["tanim", "Set tanımları"], ["aletler", "Tekil aletler"], ["komuta", "Komuta merkezi"]];
     const go = () => H.go("sterilizasyon", { tab });
     const rerender = () => H.go("sterilizasyon", params);
 
     const SEVC = { "Kirli Kabul":"var(--crit)", "Yıkama":"var(--mid)", "Paketleme":"var(--low)", "Sterilizasyon":"var(--high)", "Steril Depo":"var(--ok)", "Teslim":"var(--line)" };
     const kart = (s) => { const warn = s.kayip || s.bakim || (s.eksik && s.eksik.length) || s.durum === "Test başarısız" || omurDoldu(s) || (s.asama === "Steril Depo" && yakinSonKul(s));
-      const badges = [s.stat ? `<span class="tag c" style="margin-top:4px">ACİL</span>` : "", s.kayip ? `<span class="tag c" style="margin-top:4px">KAYIP</span>` : "",
+      const badges = [s.stat ? `<span class="tag c" style="margin-top:4px">ACİL</span>` : "", s.fire ? `<span class="tag c" style="margin-top:4px">FIRE</span>` : "", s.kayip ? `<span class="tag c" style="margin-top:4px">KAYIP</span>` : "",
         s.bakim ? `<span class="tag w" style="margin-top:4px">Bakımda</span>` : "", s.loaner ? `<span class="tag" style="margin-top:4px">Loaner</span>` : "", s.cartId ? `<span class="tag" style="margin-top:4px">Arabada</span>` : "",
         s.eksik && s.eksik.length ? `<span class="tag c" style="margin-top:4px">Eksik ${s.eksik.length}</span>` : "", s.durum === "Test başarısız" ? `<span class="tag c" style="margin-top:4px">Test ✗</span>` : "",
         omurDoldu(s) ? `<span class="tag c" style="margin-top:4px">Ömür doldu</span>` : omurUyari(s) ? `<span class="tag w" style="margin-top:4px">Ömür yakın</span>` : ""].join("");
@@ -413,11 +474,11 @@
       const say = (a) => all.filter(s => s.asama === a).length;
       const dongBugun = all.filter(s => s.otoklav && String(s.otoklav.tarih || "").includes(new Date().toLocaleDateString("az-AZ"))).length;
       const eksikler = all.filter(s => s.eksik && s.eksik.length), testFail = all.filter(s => s.durum === "Test başarısız"), yakin = all.filter(s => s.asama === "Steril Depo" && yakinSonKul(s)), teslimBek = all.filter(s => s.asama === "Steril Depo");
-      const kayipSet = all.filter(s => s.kayip), omurSet = all.filter(s => omurDoldu(s)), acilSet = all.filter(s => s.stat), bakimSet = all.filter(s => s.bakim), loanerSet = all.filter(s => s.loaner);
-      const sorunlu = eksikler.length + testFail.length + kayipSet.length + omurSet.length + bakimSet.length;
+      const kayipSet = all.filter(s => s.kayip), omurSet = all.filter(s => omurDoldu(s)), acilSet = all.filter(s => s.stat), bakimSet = all.filter(s => s.bakim), loanerSet = all.filter(s => s.loaner), fireSet = all.filter(s => s.fire);
+      const sorunlu = eksikler.length + testFail.length + kayipSet.length + omurSet.length + bakimSet.length + fireSet.length;
       const teslimli = all.filter(s => s.asama === "Teslim").length, aktifAraba = carts().filter(c => c.durum === "Hazırlanıyor").length;
       const stat = (b, l, c) => `<div class="ac${c ? " " + c : ""}"><div class="i">${I("box")}</div><b>${b}</b><span>${esc(l)}</span></div>`;
-      const uyarilar = [...acilSet.map(s => ["crit", s.no + " · ACİL · " + s.asama]), ...testFail.map(s => ["crit", s.no + " · sterilizasyon testi keçmədi"]), ...kayipSet.map(s => ["crit", s.no + " · KAYIP (son: " + s.asama + ")"]), ...eksikler.map(s => ["crit", s.no + " · " + s.eksik.length + " eksik parça"]), ...bakimSet.map(s => ["w", s.no + " · bakımda/tamirde"]), ...omurSet.map(s => ["w", s.no + " · kullanım ömrü doldu (" + (s.dongu || 0) + "/" + maxDongu(s) + ")"]), ...yakin.map(s => ["w", s.no + " · son kullanım yaklaşıyor (" + s.sonKullanim + ")"])];
+      const uyarilar = [...acilSet.map(s => ["crit", s.no + " · ACİL · " + s.asama]), ...testFail.map(s => ["crit", s.no + " · sterilizasyon testi keçmədi"]), ...kayipSet.map(s => ["crit", s.no + " · KAYIP (son: " + s.asama + ")"]), ...eksikler.map(s => ["crit", s.no + " · " + s.eksik.length + " eksik parça"]), ...fireSet.map(s => ["crit", s.no + " · FIRE/hurda" + (s.iadeSebep ? " · " + s.iadeSebep : "")]), ...bakimSet.map(s => ["w", s.no + " · bakımda/tamirde"]), ...omurSet.map(s => ["w", s.no + " · kullanım ömrü doldu (" + (s.dongu || 0) + "/" + maxDongu(s) + ")"]), ...yakin.map(s => ["w", s.no + " · son kullanım yaklaşıyor (" + s.sonKullanim + ")"])];
       return `<div class="att">${stat(all.length, "toplam set", "")}${stat(acilSet.length, "acil (STAT)", acilSet.length ? "crit" : "")}${stat(teslimBek.length, "teslime hazır (depoda)", "")}${stat(sorunlu, "sorunlu set", sorunlu ? "crit" : "ok")}</div>
         <div class="g2" style="margin-top:14px;align-items:start"><div class="box"><h5>Aşamalardaki set sayısı</h5>${ASAMALAR.map(a => `<div style="display:flex;justify-content:space-between;font-size:13px;margin:6px 0"><span>${esc(a)}</span><b class="mono">${say(a)}</b></div>`).join("")}<div class="adm-sub" style="margin-top:8px;line-height:1.7">Bugünkü otoklav döngüsü: <b>${dongBugun}</b> · Toplam yük: <b>${loads().length}</b><br>Teslim edilen set: <b>${teslimli}</b> · Aktif araba: <b>${aktifAraba}</b> · Bakımda: <b>${bakimSet.length}</b> · Loaner: <b>${loanerSet.length}</b></div></div>
           <div class="box"><h5>Uyarılar (${uyarilar.length})</h5>${uyarilar.length ? uyarilar.map(([c, t]) => `<div class="note" style="margin:6px 0;padding:7px 9px;border-radius:8px;background:color-mix(in srgb,var(--${c === "crit" ? "crit" : "mid"}) 10%,transparent);font-size:12.5px">${I(c === "crit" ? "alert" : "clock")} ${esc(t)}</div>`).join("") : `<p class="adm-sub">Açık uyarı yok.</p>`}</div></div>
@@ -441,16 +502,23 @@
         <div class="tw"><table class="t"><thead><tr><th>Araba</th><th>Hasta / ameliyat</th><th>Setler</th><th style="width:110px">Durum</th><th style="width:230px"></th></tr></thead><tbody>${cRows}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Programdaki vaka için steril depodan setler toplanır; "gönder" deyince setler o <b>hastaya</b> teslim edilir (izlenebilirlik hastaya iner).</p>`; };
 
+    const TDUR = { "Bekliyor":"w", "Onaylandı":"", "Kısmi":"w", "Karşılandı":"ok", "Reddedildi":"c" };
+    const talepHtml = () => { const T = talepler();
+      return `<div class="tw"><table class="t"><thead><tr><th>Talep no</th><th>Bölüm</th><th>Kat</th><th>Depo</th><th>Malzeme / set</th><th style="width:60px">Miktar</th><th style="width:70px">Onaylı</th><th style="width:75px">Karşılanan</th><th style="width:55px">Kalan</th><th style="width:65px">Mevcut</th><th style="width:110px">Durum</th><th style="width:230px"></th></tr></thead><tbody>
+        ${T.length ? T.map(t => { const kalan = talepKalan(t), aktif = t.durum !== "Reddedildi" && t.durum !== "Karşılandı"; return `<tr data-talep="${t.id}"><td><b>${esc(t.no)}</b><div class="adm-sub" style="font-size:11px">${esc(t.tarih)}</div></td><td>${esc(t.bolum)}</td><td class="adm-sub">${esc(t.kat || "—")}</td><td class="adm-sub">${esc(t.depo || "—")}</td><td>${esc(t.malzeme)}${t.aciklama ? `<div class="adm-sub" style="font-size:11px">${esc(t.aciklama)}</div>` : ""}</td><td class="n">${t.miktar}</td><td class="n">${t.onaylanan || 0}</td><td class="n">${t.karsilanan || 0}</td><td class="n">${kalan}</td><td class="n">${mevcutStok(t.malzeme)}</td><td><span class="tag ${TDUR[t.durum] || ""}">${esc(t.durum)}</span></td><td>${t.durum === "Bekliyor" ? `<button class="btn p sm" data-talep-onay="${t.id}">Onayla</button> <button class="btn g sm" data-talep-red="${t.id}">Reddet</button>` : aktif ? `<button class="btn p sm" data-talep-kars="${t.id}">Karşıla</button> <button class="btn g sm" data-talep-red="${t.id}">Reddet</button>` : "—"}</td></tr>`; }).join("") : `<tr><td colspan="12" class="mute" style="padding:18px;text-align:center">ReUse malzeme talebi yok. "Yeni talep" ile bölüm adına talep açın.</td></tr>`}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bölümler steril (yeniden kullanılabilir) set/malzeme talep eder; MSÜ onaylar ve steril depodan karşılar. "Mevcut" = depodaki hazır sayı.</p>`; };
+
     const ADUR = { "Aktif":"ok", "Tamirde":"w", "Kayıp":"c", "Emekli":"" };
     const aletHtml = () => { const A = H.data.sterAlet || [];
       return `<div class="tw"><table class="t"><thead><tr><th>Seri no</th><th>Alet</th><th>Bölüm</th><th>Bağlı set</th><th style="width:80px">Döngü</th><th style="width:110px">Durum</th></tr></thead><tbody>
         ${A.length ? A.map(a => { const s = sets().find(x => x.id === a.setId); return `<tr class="row" data-alet="${a.id}" style="cursor:pointer"><td class="mono"><b>${esc(a.seri)}</b></td><td>${esc(a.ad)}</td><td class="adm-sub">${esc(a.bolum || "—")}</td><td class="adm-sub">${s ? esc(s.no) : (a.kartId ? esc((kartOf(a.kartId).ad)) : "—")}</td><td class="n">${a.dongu || 0}</td><td><span class="tag ${ADUR[a.durum] || ""}">${esc(a.durum)}</span></td></tr>`; }).join("") : `<tr><td colspan="6" class="mute" style="padding:18px;text-align:center">Tekil izlenen alet yok. "Yeni alet" ile ekleyin.</td></tr>`}
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Pahalı/kritik aletler seri no ile tek tek izlenir. Aramak için üstteki kutuya seri no / alet adı yazın ("alet nerede?").</p>`; };
 
-    const body = { pano:panoHtml, depo:depoHtml, yukler:yukHtml, arabalar:arabaHtml, tanim:tanimHtml, aletler:aletHtml, komuta:komutaHtml }[tab]();
+    const body = { pano:panoHtml, depo:depoHtml, yukler:yukHtml, arabalar:arabaHtml, talepler:talepHtml, tanim:tanimHtml, aletler:aletHtml, komuta:komutaHtml }[tab]();
     const yeniBtn = tab === "tanim" ? `<button class="btn p" data-kartnew>${I("plus")} Yeni şablon</button>`
       : tab === "yukler" ? `<button class="btn p" data-yukyeni2>${I("flask") || ""} Yük oluştur</button>`
       : tab === "arabalar" ? `<button class="btn p" data-cartnew>${I("plus")} Yeni araba</button>`
+      : tab === "talepler" ? `<button class="btn p" data-talepnew>${I("plus")} Yeni talep</button>`
       : tab === "aletler" ? `<button class="btn p" data-aletnew>${I("plus")} Yeni alet</button>`
       : `<button class="btn p" data-yeniset title="Kirli kabule yeni set al">${I("plus")} Yeni set</button>`;
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p>Merkezi Sterilizasyon (MSÜ) · set izleme · ${sets().length} aktif set</p></div><div class="r">${yeniBtn}</div></div>
@@ -466,6 +534,10 @@
       if (e.target.closest("[data-cartnew]")) return cartForm(null, rerender);
       if (e.target.closest("[data-aletnew]")) return aletForm(null, rerender);
       const al = e.target.closest("[data-alet]"); if (al) { const a = (H.data.sterAlet || []).find(x => x.id === al.dataset.alet); if (a) aletForm(a, rerender); return; }
+      if (e.target.closest("[data-talepnew]")) return talepForm(rerender);
+      const to = e.target.closest("[data-talep-onay]"); if (to) { const t = talepOf(to.dataset.talepOnay); if (t) talepOnayla(t, rerender); return; }
+      const tk = e.target.closest("[data-talep-kars]"); if (tk) { const t = talepOf(tk.dataset.talepKars); if (t) talepKarsila(t, rerender); return; }
+      const tr = e.target.closest("[data-talep-red]"); if (tr) { const t = talepOf(tr.dataset.talepRed); if (t) talepReddet(t, rerender); return; }
       const cp = e.target.closest("[data-cartprep]"); if (cp) return cartForm(+cp.dataset.cartprep, rerender);
       const cg = e.target.closest("[data-cartgonder]"); if (cg) { const c = cartOf(cg.dataset.cartgonder); if (c) cartGonder(c, rerender); return; }
       const ci = e.target.closest("[data-cartiptal]"); if (ci) { const c = cartOf(ci.dataset.cartiptal); if (c) cartIptal(c, rerender); return; }

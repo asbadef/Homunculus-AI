@@ -12227,3 +12227,27 @@ Object.assign(window.HMC_SOZLUK, {
   "Tamirde": { AZ: "Təmirdə", RU: "В ремонте", EN: "In repair" },
   "Emekli": { AZ: "Təqaüddə", RU: "Списан", EN: "Retired" }
 });
+
+/* === Sterilizasyon v7: sterilizasyon şekli + iade/fire + ReUse talep · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Sterilizasyon şekli": { AZ: "Sterilizasiya üsulu", RU: "Способ стерилизации", EN: "Sterilization method" },
+  "İade / malzeme kabulü": { AZ: "Qaytarma / material qəbulu", RU: "Возврат / приём материала", EN: "Return / material receipt" },
+  "İade / kabul türü": { AZ: "Qaytarma / qəbul növü", RU: "Тип возврата / приёма", EN: "Return / receipt type" },
+  "İade sebebi (ops.)": { AZ: "Qaytarma səbəbi (ops.)", RU: "Причина возврата (опц.)", EN: "Return reason (opt.)" },
+  "İadeyi kaydet": { AZ: "Qaytarmanı yadda saxla", RU: "Сохранить возврат", EN: "Save return" },
+  "ReUse talepler": { AZ: "ReUse tələblər", RU: "ReUse заявки", EN: "ReUse requests" },
+  "Yeni ReUse malzeme talebi": { AZ: "Yeni ReUse material tələbi", RU: "Новая ReUse заявка", EN: "New ReUse request" },
+  "Yeni talep": { AZ: "Yeni tələb", RU: "Новая заявка", EN: "New request" },
+  "Talep oluştur": { AZ: "Tələb yarat", RU: "Создать заявку", EN: "Create request" },
+  "Karşıla": { AZ: "Qarşıla", RU: "Выполнить", EN: "Fulfill" },
+  "Talep no": { AZ: "Tələb nömrəsi", RU: "№ заявки", EN: "Request no" },
+  "Malzeme / set": { AZ: "Material / set", RU: "Материал / набор", EN: "Material / set" },
+  "Onaylı": { AZ: "Təsdiqli", RU: "Утверждено", EN: "Approved" },
+  "Karşılanan": { AZ: "Qarşılanan", RU: "Выполнено", EN: "Fulfilled" },
+  "Kalan": { AZ: "Qalan", RU: "Остаток", EN: "Remaining" },
+  "Mevcut": { AZ: "Mövcud", RU: "В наличии", EN: "Available" },
+  "Kat": { AZ: "Mərtəbə", RU: "Этаж", EN: "Floor" },
+  "Depo": { AZ: "Anbar", RU: "Склад", EN: "Warehouse" },
+  "Kısmi": { AZ: "Qismən", RU: "Частично", EN: "Partial" },
+  "Karşılandı": { AZ: "Qarşılandı", RU: "Выполнено", EN: "Fulfilled" }
+});
