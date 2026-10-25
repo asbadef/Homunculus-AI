@@ -19,7 +19,7 @@ class AckStore:
     first_seen: dict[tuple[str, str], datetime] = field(default_factory=dict)
     escalated: set[tuple[str, str]] = field(default_factory=set)
     # G2-A1, D3: a critical alert whose rule stopped firing while nobody had acknowledged it, kept
-    # until someone does — {"alert": the alert as it last fired (asdict), "resolved_at": when}.
+    # until someone does — {"alert": as last fired (asdict), "resolved_at": when, "first_seen": stamp|None}.
     resolved: dict[tuple[str, str], dict] = field(default_factory=dict)
     # G2-A1, X2: what the lifecycle hook last saw firing. The engine's bucket is already replaced
     # when the hook runs, so this is how it knows which kinds an evaluation dropped, and what a

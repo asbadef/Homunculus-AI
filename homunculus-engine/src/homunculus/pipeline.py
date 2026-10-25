@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime
 
-from homunculus.canonical import Observation
+from homunculus.canonical import Observation, SignalCode
 from homunculus.reco.engine import Alert, to_alert
 from homunculus.rules import antibiotic_clock, news2, patient_relative, septic_shock
 from homunculus.rules.finding import Citation, Finding, Severity, Urgency
@@ -61,18 +61,28 @@ class Engine:
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
         findings = patient_relative.apply(findings, state, profile)
 
-        # Anchor the antibiotic clock the first time sepsis/shock is recognized in an episode, and
-        # drop the anchor once no recognition kind fires (G2-A1, D9): a later episode is a second
-        # recognition with its own hour. Both kinds count, as for the anchor (X1) — a baseline SOFA
-        # charted during shock can take `sepsis` away while `septic_shock` still holds, and
-        # restarting an overdue antibiotic's hour then would hide that it is overdue.
-        if any(f.kind in _RECOGNITION_KINDS for f in findings):
+        # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
+        # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
+        # holds, and restarting an overdue antibiotic's hour then would hide that it is overdue.
+        #  - The anchor is set the first time a recognition kind fires in an episode.
+        #  - It is dropped only when suspected infection is charted absent (none, or < 1) while no
+        #    recognition kind fires — the episode is over and a later one is a second recognition
+        #    with its own hour. Sepsis merely stopping is not that: SOFA reads the latest MAP, so a
+        #    single reading over 70 stops `sepsis` for one evaluation, and an anchor dropped then
+        #    would let an untreated sepsis never go overdue, or give a treated one a false overdue
+        #    when it came back.
+        #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
+        #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
+        #    counting underneath, and a sepsis that fires again shows the true elapsed time.
+        recognizing = any(f.kind in _RECOGNITION_KINDS for f in findings)
+        infection = state.latest(SignalCode.SUSPECTED_INFECTION)
+        if recognizing:
             self._recognized_at.setdefault(obs.patient_id, now)
-        else:
+        elif infection is None or infection.value < 1.0:
             self._recognized_at.pop(obs.patient_id, None)
 
         findings += antibiotic_clock.evaluate(
-            state, self._recognized_at.get(obs.patient_id), now
+            state, self._recognized_at.get(obs.patient_id) if recognizing else None, now
         )
 
         # Optional ML seam: an additive early-warning signal that NEVER overrides the rules.

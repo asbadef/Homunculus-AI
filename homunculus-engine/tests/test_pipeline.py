@@ -148,19 +148,93 @@ def _sepsis_charted(eng, infection, minute):
         eng.ingest(o, now=o.timestamp)
 
 
-def test_when_sepsis_stops_its_antibiotic_clock_stops_and_a_later_episode_starts_its_own():
+def test_when_sepsis_stops_the_antibiotic_alerts_leave_the_board_but_the_clock_keeps_counting():
+    # X9 (Task 1 review): the antibiotic findings are emitted only while a recognition kind fires,
+    # so they leave the board with the sepsis alert (D9) — but the anchor is NOT dropped, because
+    # suspected infection is still charted. Sepsis that comes back finds the true elapsed time.
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    assert _kinds(eng) == {"sepsis", "antibiotic_due"}
+    assert eng.recognized_at("bed-3") == T0
+    for code, value in [(SignalCode.PLATELETS, 200), (SignalCode.CREATININE, 0.8)]:   # SOFA back to 0
+        o = _obs(code, value, minute=20)
+        eng.ingest(o, now=o.timestamp)
+    assert _kinds(eng) == set(), "sepsis has stopped: it and its antibiotic clock are off the board"
+    assert eng.recognized_at("bed-3") == T0, "infection is still charted: the clock keeps counting underneath"
+    o = _obs(SignalCode.PLATELETS, 80, minute=90)
+    eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.CREATININE, 3.5, minute=90)
+    eng.ingest(o, now=o.timestamp)
+    assert {"sepsis", "antibiotic_overdue"} <= _kinds(eng)
+    overdue = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_overdue")
+    assert overdue.summary == "Antibiotic OVERDUE by 30 min",         "sepsis back at +90: the hour that ran from +0 closed at +60, not an hour restarted at +90"
+    assert eng.recognized_at("bed-3") == T0
+
+
+def test_charting_infection_absent_ends_the_episode_and_its_clock():
     eng = Engine()
     _sepsis_charted(eng, 1.0, minute=0)
     assert _kinds(eng) == {"sepsis", "antibiotic_due"}
     assert eng.recognized_at("bed-3") == T0
     _sepsis_charted(eng, 0.0, minute=20)          # the physician charts: no infection after all
     assert _kinds(eng) == set(), "no recognition kind fires: sepsis and its antibiotic clock are gone"
-    assert eng.recognized_at("bed-3") is None
+    assert eng.recognized_at("bed-3") is None, "infection charted absent: the episode and its anchor end"
     _sepsis_charted(eng, 1.0, minute=90)          # a second episode, seventy minutes later
     assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=90)
     due = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_due")
-    assert due.summary == "Antibiotic window: 60 min remaining", \
-        "the second recognition has its own hour, not the first episode's overdue clock"
+    assert due.summary == "Antibiotic window: 60 min remaining",         "the second recognition has its own hour, not the first episode's overdue clock"
+
+
+def _flapping_map(eng, minute, value):
+    o = _obs(SignalCode.MAP, value, minute=minute)
+    eng.ingest(o, now=o.timestamp)
+
+
+def test_a_map_flap_does_not_reset_the_antibiotic_clock():
+    # SOFA reads the latest MAP: platelets 140 (1 point) plus MAP 69 (1 point) is a rise of 2, MAP 71
+    # is not. One reading in ten at 71 stops sepsis for one evaluation each time; the untreated
+    # patient's hour must run on regardless (X9). Before it, each flap dropped the anchor and
+    # `antibiotic_overdue` never fired.
+    eng = Engine()
+    for code, value in [(SignalCode.SUSPECTED_INFECTION, 1.0), (SignalCode.PLATELETS, 140)]:
+        o = _obs(code, value)
+        eng.ingest(o, now=o.timestamp)
+    first_overdue = None
+    anchors = []                       # the engine's anchor after every reading from the first recognition on
+    for minute in range(0, 121):
+        _flapping_map(eng, minute, 69 if minute % 10 else 71)
+        if minute == 0:
+            assert "sepsis" not in _kinds(eng), "MAP 71 and platelets 140 are SOFA 1: no rise of 2"
+        else:
+            anchors.append(eng.recognized_at("bed-3"))
+        if minute % 10 == 0:
+            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"},                 f"sepsis is not firing at +{minute} min: the antibiotic alerts are off the board"
+        if first_overdue is None and "antibiotic_overdue" in _kinds(eng):
+            first_overdue = minute
+    assert first_overdue == 61, f"overdue one hour after the first recognition (+1 min), saw {first_overdue}"
+    assert set(anchors) == {T0 + timedelta(minutes=1)}, "the anchor stayed at the first recognition throughout"
+    assert _kinds(eng) == set(), "+120 min is a MAP-71 reading: sepsis and its overdue are off the board"
+    _flapping_map(eng, 121, 69)
+    overdue = next(a for a in eng.active_alerts("bed-3") if a.kind == "antibiotic_overdue")
+    assert overdue.summary == "Antibiotic OVERDUE by 60 min", "sepsis back at +121: the true elapsed time"
+
+
+def test_a_treated_patient_does_not_get_a_false_overdue_after_a_map_flap():
+    eng = Engine()
+    for o in [
+        _obs(SignalCode.SUSPECTED_INFECTION, 1.0),
+        _obs(SignalCode.PLATELETS, 140),
+        _obs(SignalCode.MAP, 69),
+        _obs(SignalCode.ANTIBIOTIC_ADMINISTERED, 1.0, minute=20),
+        _obs(SignalCode.MAP, 71, minute=90),          # one off-reading: sepsis stops for an evaluation
+        _obs(SignalCode.MAP, 69, minute=91),          # sepsis is back
+        _obs(SignalCode.MAP, 69, minute=152),
+    ]:
+        eng.ingest(o, now=o.timestamp)
+        if o.timestamp >= T0 + timedelta(minutes=20):
+            assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"},                 f"the antibiotic was given at +20 min: no clock finding at +{(o.timestamp - T0).seconds // 60}"
+    assert "sepsis" in _kinds(eng)
+    assert eng.recognized_at("bed-3") == T0, "the first recognition's anchor, not a restart at +91"
 
 
 def test_the_antibiotic_clock_keeps_its_anchor_while_septic_shock_fires_without_the_sepsis_criterion():
