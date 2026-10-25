@@ -12169,3 +12169,25 @@ Object.assign(window.HMC_SOZLUK, {
   "Otoklav · döngü": { AZ: "Avtoklav · dövr", RU: "Автоклав · цикл", EN: "Autoclave · cycle" },
   "Test (Bowie / BI)": { AZ: "Test (Bowie / BI)", RU: "Тест (Боуи / БИ)", EN: "Test (Bowie / BI)" }
 });
+
+/* === Sterilizasyon v4: vaka arabası (case cart) + hasta bağı · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Vaka arabaları": { AZ: "Hadisə arabaları", RU: "Операционные тележки", EN: "Case carts" },
+  "Vaka arabası hazırla": { AZ: "Hadisə arabası hazırla", RU: "Собрать тележку", EN: "Prepare case cart" },
+  "Araba hazırla": { AZ: "Araba hazırla", RU: "Собрать тележку", EN: "Prepare cart" },
+  "Yeni araba": { AZ: "Yeni araba", RU: "Новая тележка", EN: "New cart" },
+  "Arabayı oluştur": { AZ: "Arabanı yarat", RU: "Создать тележку", EN: "Create cart" },
+  "Ameliyathaneye gönder": { AZ: "Əməliyyat otağına göndər", RU: "Отправить в операционную", EN: "Send to OR" },
+  "Ameliyat programı": { AZ: "Əməliyyat proqramı", RU: "Расписание операций", EN: "OR schedule" },
+  "Steril depodan set seç": { AZ: "Steril anbardan set seç", RU: "Выбрать наборы со склада", EN: "Pick sets from store" },
+  "Hazırlanıyor": { AZ: "Hazırlanır", RU: "Готовится", EN: "Preparing" },
+  "Gönderildi": { AZ: "Göndərildi", RU: "Отправлено", EN: "Sent" },
+  "Setler": { AZ: "Setlər", RU: "Наборы", EN: "Sets" },
+  "Araba": { AZ: "Araba", RU: "Тележка", EN: "Cart" },
+  "Hasta / ameliyat": { AZ: "Xəstə / əməliyyat", RU: "Пациент / операция", EN: "Patient / surgery" },
+  "Ameliyat": { AZ: "Əməliyyat", RU: "Операция", EN: "Surgery" },
+  "Zaman": { AZ: "Vaxt", RU: "Время", EN: "Time" },
+  "Maks. kullanım döngüsü (ömür)": { AZ: "Maks. istifadə dövrü (ömür)", RU: "Макс. циклов (ресурс)", EN: "Max cycles (lifespan)" },
+  "Parça ekle": { AZ: "Hissə əlavə et", RU: "Добавить деталь", EN: "Add part" },
+  "Set no / ad / bölüm ara…": { AZ: "Set nömrəsi / ad / bölmə axtar…", RU: "Поиск набора / отделения…", EN: "Search set no / name / unit…" }
+});

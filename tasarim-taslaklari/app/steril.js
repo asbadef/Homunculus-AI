@@ -42,6 +42,7 @@
       ];
     }
     if (!H.data.sterLoadSeq) H.data.sterLoadSeq = 7014;
+    if (!H.data.sterCartSeq) H.data.sterCartSeq = 3010;
     if (!H.data.sterLoad) {   // demo yük: iki steril depo seti tek döngüden geldi, biyolojik indikatör "Gözlənilir" (recall denemesi için)
       const depo = (H.data.sterSet || []).filter(s => s.asama === "Steril Depo");
       const ld = { id:"ld_demo", no:"YÜK-" + (++H.data.sterLoadSeq), otoklav:"Buxar Otoklavı-2", no2:"D-2039", sic:"134", sure:"7", bowie:"Keçdi", biyo:"Gözlənilir", tarih:now(), setIds:depo.map(s => s.id), durum:"BI bekliyor" };
@@ -51,6 +52,11 @@
   }
   const loads = () => H.data.sterLoad || [];
   const loadOf = (id) => loads().find(l => l.id === id);
+  const carts = () => H.data.sterCart || [];
+  const cartOf = (id) => carts().find(c => c.id === id);
+  // Ameliyat programı: HBYS'deki ameliyat istemlerinden türetilir (vaka → hasta).
+  const amelProgram = () => (H.data.orders || []).filter(o => o.cat === "Ameliyat").map(o => ({ pid:o.pid, ad:(o.ad || "").split(" · ")[0], at:o.at || "", hasta:(H.pt && H.pt(o.pid)) ? H.pt(o.pid).name : "" }));
+  const depoUygun = () => sets().filter(s => s.asama === "Steril Depo" && !s.cartId && !s.kayip);
   const kartOf = (id) => (H.data.sterSetKart || []).find(k => k.id === id) || { ad:"—", bolum:"—", parcalar:[], versiyon:"" };
   const sets = () => H.data.sterSet || [];
   const nextNo = () => "SET-" + (++H.data.sterSeq);
@@ -148,19 +154,63 @@
   }
 
   function teslimModal(s, afterGo) {
-    const vak = amelVakalar();
+    const prog = amelProgram();
     H.modal({ title:"Ameliyathaneye teslim · " + esc(s.no),
       body:`<div class="icd-form">
         <div class="fr"><label>Raf / konum</label><input data-f="raf" value="${esc(s.raf || "")}" placeholder="ör. A-03"></div>
         <div class="fr"><label>Son kullanım</label><input type="date" data-f="sk" value="${esc(s.sonKullanim || "")}"></div>
-        <div class="fr"><label>Vaka / ameliyat</label><input data-f="vaka" list="ster-vaka" placeholder="Ameliyat seç ya da yaz"><datalist id="ster-vaka">${vak.map(v => `<option>${esc(v)}</option>`).join("")}</datalist></div>
+        <div class="fr" style="grid-column:1/-1"><label>Hasta / ameliyat (HBYS programından)</label><select data-f="prog"><option value="">— Hastanedeki ameliyat programından seç —</option>${prog.map((x, i) => `<option value="${i}">${esc(x.hasta || "Hasta")} · ${esc(x.ad)}${x.at ? " · " + esc(x.at) : ""}</option>`).join("")}<option value="serbest">(Listede yok · elle yaz)</option></select></div>
+        <div class="fr" style="grid-column:1/-1" data-serbestwrap hidden><label>Vaka / ameliyat (serbest)</label><input data-f="vaka" placeholder="Ameliyat adı"></div>
         <div class="fr"><label>Teslim alan</label><input data-f="alan" placeholder="Ameliyathane personeli"></div></div>
-        <p class="adm-sub" style="margin-top:8px">Teslim onayı (donanımda QR imza) burada ekranda onaylanır; kim-ne zaman kaydedilir.</p>`,
+        <p class="adm-sub" style="margin-top:8px">Set gerçek hastaya/ameliyata bağlanır → izlenebilirlik ve geri çağırma hastaya kadar iner. (Donanımda QR imza; burada ekranda onaylanır.)</p>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Teslimi onayla</button>`,
-      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = k => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
-        if (!g("vaka")) { H.toast("Vaka / ameliyat gerekli.", "w"); return; }
-        s.raf = g("raf"); s.sonKullanim = g("sk") || s.sonKullanim; s.vaka = g("vaka"); s.teslimAlan = g("alan"); push(s, "Teslim");
-        H.closeModal(); H.toast("Set təhvil verildi · " + g("vaka")); afterGo && afterGo(); }; } });
+      onMount(m) { const sel = m.querySelector('[data-f="prog"]'), sw = m.querySelector("[data-serbestwrap]");
+        sel.onchange = () => { sw.hidden = sel.value !== "serbest"; };
+        m.querySelector("[data-ok]").onclick = () => { const g = k => { const el = m.querySelector(`[data-f="${k}"]`); return el ? (el.value || "").trim() : ""; };
+        let vaka = "", pid = null;
+        if (sel.value === "serbest") { vaka = g("vaka"); }
+        else if (sel.value !== "") { const x = prog[+sel.value]; if (x) { vaka = (x.hasta || "Hasta") + " · " + x.ad; pid = x.pid; } }
+        if (!vaka) { H.toast("Hasta/ameliyat seçin ya da yazın.", "w"); return; }
+        s.raf = g("raf"); s.sonKullanim = g("sk") || s.sonKullanim; s.vaka = vaka; s.pid = pid || null; s.teslimAlan = g("alan"); push(s, "Teslim");
+        H.closeModal(); H.toast("Set təhvil verildi · " + vaka); afterGo && afterGo(); }; } });
+  }
+
+  /* ---------------- vaka arabası (case cart) — gerçek hastaya bağlı ---------------- */
+  function cartForm(prefillIdx, afterGo) {
+    const prog = amelProgram(), uygun = depoUygun();
+    H.modal({ title:"Vaka arabası hazırla", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr" style="grid-column:1/-1"><label>Hasta / ameliyat (HBYS programı)</label><select data-f="prog"><option value="">— Ameliyat programından seç —</option>${prog.map((x, i) => `<option value="${i}"${i === prefillIdx ? " selected" : ""}>${esc(x.hasta || "Hasta")} · ${esc(x.ad)}${x.at ? " · " + esc(x.at) : ""}</option>`).join("")}<option value="serbest">(Listede yok · elle yaz)</option></select></div>
+        <div class="fr" style="grid-column:1/-1" data-sw hidden><label>Vaka / ameliyat (serbest)</label><input data-f="vaka" placeholder="Ameliyat adı"></div></div>
+        <div class="ist-sec ist-hd" style="margin:10px 0 4px"><h5>Steril depodan set seç</h5><span class="adm-sub">${uygun.length} uygun set</span></div>
+        <div class="icd-oz" style="max-height:34vh;overflow:auto">${uygun.length ? uygun.map(s => `<label><input type="checkbox" data-cs="${s.id}"> ${esc(s.no)} · ${esc(s.ad)} <span class="adm-sub">(${esc(s.bolum)} · raf ${esc(s.raf || "—")}${yakinSonKul(s) ? " · süre yakın" : ""})</span></label>`).join("") : `<p class="adm-sub">Steril depoda uygun (henüz bir arabaya ayrılmamış) set yok.</p>`}</div>
+        <p class="adm-sub" style="margin-top:8px">Araba, ameliyat için gereken setleri toplar; "Ameliyathaneye gönder" deyince setler o hastaya teslim edilir.</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Arabayı oluştur</button>`,
+      onMount(m) { const sel = m.querySelector('[data-f="prog"]'), sw = m.querySelector("[data-sw]");
+        sel.onchange = () => { sw.hidden = sel.value !== "serbest"; };
+        m.querySelector("[data-ok]").onclick = () => {
+          const ids = [...m.querySelectorAll("[data-cs]:checked")].map(c => c.dataset.cs);
+          let vaka = "", pid = null, hasta = "";
+          if (sel.value === "serbest") { vaka = (m.querySelector('[data-f="vaka"]').value || "").trim(); }
+          else if (sel.value !== "") { const x = prog[+sel.value]; if (x) { hasta = x.hasta || "Hasta"; vaka = hasta + " · " + x.ad; pid = x.pid; } }
+          if (!vaka) { H.toast("Hasta/ameliyat seçin ya da yazın.", "w"); return; }
+          if (!ids.length) { H.toast("En az bir set seçin.", "w"); return; }
+          const cart = { id:"ct" + Date.now(), no:"ARB-" + (++H.data.sterCartSeq), vaka, pid, hasta, tarih:now(), setIds:ids.slice(), durum:"Hazırlanıyor" };
+          (H.data.sterCart = H.data.sterCart || []).unshift(cart);
+          ids.forEach(id => { const s = sets().find(x => x.id === id); if (s) s.cartId = cart.id; });
+          H.saveData && H.saveData(); H.log("Vaka arabası hazırlandı", cart.no + " · " + vaka + " · " + ids.length + " set");
+          H.toast("Araba hazırlandı: " + cart.no + " · " + ids.length + " set"); H.closeModal(); afterGo && afterGo(); }; } });
+  }
+  function cartGonder(cart, afterGo) {
+    const ls = (cart.setIds || []).map(id => sets().find(x => x.id === id)).filter(Boolean);
+    ls.forEach(s => { if (s.asama === "Steril Depo") { s.vaka = cart.vaka; s.pid = cart.pid || null; s.teslimAlan = "Vaka arabası " + cart.no; push(s, "Teslim"); } });
+    cart.durum = "Gönderildi"; H.saveData && H.saveData(); H.log("Vaka arabası gönderildi", cart.no + " · " + cart.vaka);
+    H.toast(cart.no + " ameliyathaneye gönderildi · " + ls.length + " set teslim", "ok"); afterGo && afterGo();
+  }
+  function cartIptal(cart, afterGo) {
+    if (!confirm(cart.no + " arabası iptal edilsin mi? Setlerin rezervasyonu kalkar.")) return;
+    (cart.setIds || []).forEach(id => { const s = sets().find(x => x.id === id); if (s && s.cartId === cart.id) s.cartId = null; });
+    cart.durum = "İptal"; H.saveData && H.saveData(); H.log("Vaka arabası iptal", cart.no); H.toast("Araba iptal edildi", "w"); afterGo && afterGo();
   }
 
   /* ---------------- etiket + izlenebilirlik ---------------- */
@@ -232,18 +282,33 @@
   /* ---------------- set şablonu (tanım) formu ---------------- */
   function kartForm(existing, afterGo) {
     const k = existing || { parcalar:[] };
+    const bols = (H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || [])).map(b => b.ad || b).filter(Boolean);
+    const draw = (m) => { const parts = [...m.querySelectorAll("[data-pline]")].map(i => i.value.trim()).filter(Boolean);
+      m.querySelector("[data-pcount]").textContent = parts.length + " parça"; };
     H.modal({ title:existing ? "Set şablonu düzenle" : "Yeni set şablonu", wide:true, body:`<div class="icd-form">
-      <div class="fr"><label>Set adı</label><input data-f="ad" value="${esc(k.ad || "")}" placeholder="ör. Ümumi Cərrahiyyə Əsas Set"></div>
-      <div class="fr"><label>Bölüm</label><input data-f="bolum" value="${esc(k.bolum || "")}" placeholder="ör. Ümumi Cərrahiyyə"></div>
+      <div class="fr" style="grid-column:1/-1"><label>Set adı</label><input data-f="ad" value="${esc(k.ad || "")}" placeholder="ör. Ümumi Cərrahiyyə Əsas Set"></div>
+      <div class="fr"><label>Bölüm</label><input data-f="bolum" list="sk-bol" value="${esc(k.bolum || "")}" placeholder="Bölüm seç ya da yaz"><datalist id="sk-bol">${bols.map(b => `<option>${esc(b)}</option>`).join("")}</datalist></div>
       <div class="fr"><label>Versiyon</label><input data-f="versiyon" value="${esc(k.versiyon || "v1")}"></div>
-      <div class="fr"><label>Not</label><input data-f="not" value="${esc(k.not || "")}"></div>
-      <div class="fr" style="grid-column:1/-1"><label>Parça listesi (her satıra bir parça)</label><textarea data-f="parts" rows="8" placeholder="Bistuvar sapı&#10;Portequ&#10;Pensa ×6">${esc((k.parcalar || []).join("\n"))}</textarea></div></div>`,
+      <div class="fr"><label>Maks. kullanım döngüsü (ömür)</label><input data-f="maxDongu" type="number" min="0" value="${esc(k.maxDongu || "")}" placeholder="ör. 300"></div>
+      <div class="fr"><label>Not</label><input data-f="not" value="${esc(k.not || "")}" placeholder="ops."></div>
+      <div class="fr" style="grid-column:1/-1"><label>Parça listesi <span class="adm-sub" data-pcount></span></label>
+        <div data-plist>${((k.parcalar || []).length ? k.parcalar : [""]).map(p => `<div class="r" style="gap:6px;margin-bottom:5px"><input data-pline value="${esc(p)}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1"><button type="button" class="btn g sm" data-prm>${I("trash") || "×"}</button></div>`).join("")}</div>
+        <button type="button" class="btn sm" data-padd style="margin-top:2px">${I("plus") || "+"} Parça ekle</button>
+        <p class="adm-sub" style="margin-top:6px">Bu liste, paketleme aşamasında teknikerin tek tek işaretleyeceği kontrol föyüdür.</p></div></div>`,
       actions:`${existing ? `<button class="btn g" data-del>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-      onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+      onMount(m) { draw(m);
+        const plist = m.querySelector("[data-plist]");
+        const addRow = (val) => { const d = document.createElement("div"); d.className = "r"; d.style = "gap:6px;margin-bottom:5px"; d.innerHTML = `<input data-pline value="${esc(val || "")}" placeholder="Parça adı (ör. Pensa ×6)" style="flex:1"><button type="button" class="btn g sm" data-prm>${I("trash") || "×"}</button>`; plist.appendChild(d); d.querySelector("[data-pline]").focus(); draw(m); };
+        m.querySelector("[data-padd]").onclick = () => addRow("");
+        plist.addEventListener("click", (e) => { const rm = e.target.closest("[data-prm]"); if (rm) { rm.closest(".r").remove(); draw(m); } });
+        plist.addEventListener("input", () => draw(m));
+        m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
         if (!g("ad")) { H.toast("Set adı gerekli.", "w"); return; }
-        const parts = (m.querySelector('[data-f="parts"]').value || "").split("\n").map(x => x.trim()).filter(Boolean);
-        if (existing) { Object.assign(existing, { ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon"), not:g("not"), parcalar:parts }); }
-        else { (H.data.sterSetKart = H.data.sterSetKart || []).push({ id:"sk" + Date.now(), ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon") || "v1", not:g("not"), parcalar:parts }); }
+        const parts = [...m.querySelectorAll("[data-pline]")].map(i => i.value.trim()).filter(Boolean);
+        if (!parts.length) { H.toast("En az bir parça ekleyin.", "w"); return; }
+        const maxD = parseInt(g("maxDongu"), 10) || 0;
+        if (existing) { Object.assign(existing, { ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon"), maxDongu:maxD, not:g("not"), parcalar:parts }); }
+        else { (H.data.sterSetKart = H.data.sterSetKart || []).push({ id:"sk" + Date.now(), ad:g("ad"), bolum:g("bolum"), versiyon:g("versiyon") || "v1", maxDongu:maxD, not:g("not"), parcalar:parts }); }
         H.saveData && H.saveData(); H.log("Set şablonu " + (existing ? "güncellendi" : "eklendi"), g("ad")); H.toast("Set şablonu kaydedildi"); H.closeModal(); afterGo && afterGo(); };
         const d = m.querySelector("[data-del]"); if (d) d.onclick = () => { if (!confirm("Bu set şablonu silinsin mi?")) return; H.data.sterSetKart = (H.data.sterSetKart || []).filter(x => x.id !== existing.id); H.saveData && H.saveData(); H.closeModal(); H.toast("Şablon silindi", "w"); afterGo && afterGo(); }; } });
   }
@@ -252,7 +317,7 @@
   H.register("sterilizasyon", { title:() => H.t("m_steril"), perm:"steril", render(root, params = {}) {
     seed();
     const tab = params.tab || "pano";
-    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["yukler", "Yükler"], ["tanim", "Set tanımları"], ["komuta", "Komuta merkezi"]];
+    const TABS = [["pano", "Akış panosu"], ["depo", "Steril depo"], ["yukler", "Yükler"], ["arabalar", "Vaka arabaları"], ["tanim", "Set tanımları"], ["komuta", "Komuta merkezi"]];
     const go = () => H.go("sterilizasyon", { tab });
     const rerender = () => H.go("sterilizasyon", params);
 
@@ -302,21 +367,46 @@
         ${L.length ? L.map(l => `<tr class="row" data-load="${l.id}" style="cursor:pointer"><td><b>${esc(l.no)}</b></td><td class="adm-sub">${esc(l.otoklav)} · ${esc(l.no2 || "—")}</td><td class="mono adm-sub">${esc(l.tarih)}</td><td class="n">${(l.setIds || []).length}</td><td class="adm-sub">${esc(l.bowie)} / ${esc(l.biyo)}</td><td><span class="tag ${LDUR[l.durum] || ""}">${esc(l.durum)}</span></td><td><button class="btn g sm" data-recall="${l.id}">${I("alert") || ""} Geri çağır</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:18px;text-align:center">Henüz yük yok. Sterilizasyon sütununda "Yük" ile oluşturun.</td></tr>`}
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Her sterilizasyon döngüsü bir "yük"tür. Biyolojik indikatör pozitif/şüpheli çıkarsa yükü <b>geri çağır</b> → içindeki tüm setler ve ulaştıkları vakalar listelenir, setler yeniden işleme alınır.</p>`; };
 
-    const body = { pano:panoHtml, depo:depoHtml, yukler:yukHtml, tanim:tanimHtml, komuta:komutaHtml }[tab]();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p>Merkezi Sterilizasyon (MSÜ) · set izleme · ${sets().length} aktif set</p></div><div class="r">${H.filterBox ? H.filterBox("Set / bölüm ara…") : ""}${tab === "tanim" ? `<button class="btn p" data-kartnew>${I("plus")} Yeni şablon</button>` : `<button class="btn p" data-yeniset>${I("plus")} Yeni set (kirli kabul)</button>`}</div></div>
-      <div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-stab="${k}" class="${tab === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
+    const setAd = (id) => { const s = sets().find(x => x.id === id); return s ? s.no : "—"; };
+    const CDUR = { "Hazırlanıyor":"w", "Gönderildi":"ok", "İptal":"" };
+    const arabaHtml = () => { const prog = amelProgram(), cs = carts().filter(c => c.durum !== "İptal");
+      const prgRows = prog.length ? prog.map((x, i) => `<tr><td><b>${esc(x.hasta || "Hasta")}</b></td><td>${esc(x.ad)}</td><td class="mono adm-sub">${esc(x.at || "—")}</td><td><button class="btn p sm" data-cartprep="${i}">${I("plus") || ""} Araba hazırla</button></td></tr>`).join("") : `<tr><td colspan="4" class="mute" style="padding:14px;text-align:center">Ameliyat programı boş (HBYS'de ameliyat istemi girilince burada listelenir).</td></tr>`;
+      const cRows = cs.length ? cs.map(c => `<tr><td><b>${esc(c.no)}</b></td><td>${esc(c.vaka)}</td><td class="adm-sub">${(c.setIds || []).map(setAd).join(", ")}</td><td><span class="tag ${CDUR[c.durum] || ""}">${esc(c.durum)}</span></td><td>${c.durum === "Hazırlanıyor" ? `<button class="btn p sm" data-cartgonder="${c.id}">Ameliyathaneye gönder</button> <button class="btn g sm" data-cartiptal="${c.id}">İptal</button>` : "—"}</td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:14px;text-align:center">Araba yok.</td></tr>`;
+      return `<div class="ist-sec ist-hd" style="margin:0 0 6px"><h5>Ameliyat programı</h5><span class="adm-sub">${prog.length} vaka</span></div>
+        <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Ameliyat</th><th>Zaman</th><th style="width:150px"></th></tr></thead><tbody>${prgRows}</tbody></table></div>
+        <div class="ist-sec ist-hd" style="margin:14px 0 6px"><h5>Vaka arabaları</h5><span class="adm-sub">${cs.length} araba</span></div>
+        <div class="tw"><table class="t"><thead><tr><th>Araba</th><th>Hasta / ameliyat</th><th>Setler</th><th style="width:110px">Durum</th><th style="width:230px"></th></tr></thead><tbody>${cRows}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Programdaki vaka için steril depodan setler toplanır; "gönder" deyince setler o <b>hastaya</b> teslim edilir (izlenebilirlik hastaya iner).</p>`; };
+
+    const body = { pano:panoHtml, depo:depoHtml, yukler:yukHtml, arabalar:arabaHtml, tanim:tanimHtml, komuta:komutaHtml }[tab]();
+    const yeniBtn = tab === "tanim" ? `<button class="btn p" data-kartnew>${I("plus")} Yeni şablon</button>`
+      : tab === "yukler" ? `<button class="btn p" data-yukyeni2>${I("flask") || ""} Yük oluştur</button>`
+      : tab === "arabalar" ? `<button class="btn p" data-cartnew>${I("plus")} Yeni araba</button>`
+      : `<button class="btn p" data-yeniset title="Kirli kabule yeni set al">${I("plus")} Yeni set</button>`;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p>Merkezi Sterilizasyon (MSÜ) · set izleme · ${sets().length} aktif set</p></div><div class="r">${yeniBtn}</div></div>
+      <div class="seg" style="margin-bottom:10px">${TABS.map(([k, l]) => `<button data-stab="${k}" class="${tab === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
+      <div class="adm-bar" style="margin-bottom:10px">${H.filterBox ? H.filterBox("Set no / ad / bölüm ara…") : ""}</div>
       ${body}`;
 
     root.onclick = (e) => {
       const st = e.target.closest("[data-stab]"); if (st) return H.go("sterilizasyon", { tab:st.dataset.stab });
       if (e.target.closest("[data-yeniset]")) return yeniSet(rerender);
       if (e.target.closest("[data-kartnew]")) return kartForm(null, rerender);
-      if (e.target.closest("[data-yukyeni]")) return loadBuilder(null, rerender);
+      if (e.target.closest("[data-yukyeni]") || e.target.closest("[data-yukyeni2]")) return loadBuilder(null, rerender);
+      if (e.target.closest("[data-cartnew]")) return cartForm(null, rerender);
+      const cp = e.target.closest("[data-cartprep]"); if (cp) return cartForm(+cp.dataset.cartprep, rerender);
+      const cg = e.target.closest("[data-cartgonder]"); if (cg) { const c = cartOf(cg.dataset.cartgonder); if (c) cartGonder(c, rerender); return; }
+      const ci = e.target.closest("[data-cartiptal]"); if (ci) { const c = cartOf(ci.dataset.cartiptal); if (c) cartIptal(c, rerender); return; }
       const ld = e.target.closest("[data-load]"); if (ld) { const l = loadOf(ld.dataset.load); if (l) recallLoad(l, rerender); return; }
       const tz = e.target.closest("[data-teslim]"); if (tz) { const s = sets().find(x => x.id === tz.dataset.teslim); if (s) teslimModal(s, rerender); return; }
       const kt = e.target.closest("[data-kart]"); if (kt) { const k = (H.data.sterSetKart || []).find(x => x.id === kt.dataset.kart); if (k) kartForm(k, rerender); return; }
       const se = e.target.closest("[data-set]"); if (se) { const s = sets().find(x => x.id === se.dataset.set); if (s) setDetay(s, rerender); return; }
     };
-    H.wireFilter && H.wireFilter(root);
+    // Ortak filtre + pano kartlarını da süz (pano tablo değil, kart olduğu için H.wireFilter tek başına yetmez)
+    const fq = root.querySelector("[data-tfilter]");
+    if (fq) fq.oninput = () => { const v = fq.value.trim().toLocaleLowerCase("tr");
+      root.querySelectorAll(".ster-card").forEach(c => c.style.display = (!v || c.textContent.toLocaleLowerCase("tr").includes(v)) ? "" : "none");
+      root.querySelectorAll("table.t").forEach(tb => { if (tb.offsetParent === null) return; const b = tb.tBodies[0]; if (!b) return;
+        [...b.rows].forEach(r => { if (r.querySelector("td[colspan]")) return; r.style.display = (!v || r.textContent.toLocaleLowerCase("tr").includes(v)) ? "" : "none"; }); }); };
   } });
 })();
