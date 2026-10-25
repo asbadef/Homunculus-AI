@@ -12251,3 +12251,13 @@ Object.assign(window.HMC_SOZLUK, {
   "Kısmi": { AZ: "Qismən", RU: "Частично", EN: "Partial" },
   "Karşılandı": { AZ: "Qarşılandı", RU: "Выполнено", EN: "Fulfilled" }
 });
+
+/* === Sterilizasyon v8: QA görsel incelemeden çeviri boşlukları · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Bekliyor": { AZ: "Gözləyir", RU: "Ожидает", EN: "Pending" },
+  "Merkezi Sterilizasyon (MSÜ) · set izleme": { AZ: "Mərkəzi Sterilizasiya (MSŞ) · set izləmə", RU: "Центральная стерилизация (ЦСО) · отслеживание наборов", EN: "Central Sterilization (CSSD) · set tracking" },
+  "FIFO: son kullanımı yakın olan üstte. 30 günden az kalanlar uyarılı.": { AZ: "FIFO: son istifadəsi yaxın olan yuxarıda. 30 gündən az qalanlar xəbərdarlıqlı.", RU: "FIFO: с ближайшим сроком — сверху. Менее 30 дней — с предупреждением.", EN: "FIFO: nearest expiry on top. Under 30 days flagged." },
+  "Set şablonu = paketlemede beklenen parça listesi. Satıra tıkla düzenle.": { AZ: "Set şablonu = paketləmədə gözlənilən hissə siyahısı. Sətrə klikləyib redaktə et.", RU: "Шаблон набора = ожидаемый список деталей при упаковке. Нажмите на строку для изменения.", EN: "Set template = expected part list at packaging. Click a row to edit." },
+  "Bölümler steril (yeniden kullanılabilir) set/malzeme talep eder; MSÜ onaylar ve steril depodan karşılar. \"Mevcut\" = depodaki hazır sayı.": { AZ: "Bölmələr steril (təkrar istifadə) set/material tələb edir; MSŞ təsdiqləyir və steril anbardan qarşılayır. \"Mövcud\" = anbardakı hazır say.", RU: "Отделения запрашивают стерильные (многоразовые) наборы; ЦСО утверждает и выдаёт со склада. \"В наличии\" = готовое кол-во на складе.", EN: "Departments request sterile (reusable) sets; CSSD approves and fulfills from the store. \"Available\" = ready count in store." },
+  "Komuta merkezi: tüm MSÜ akışının özeti. Donanım bağlandığında otoklav doluluğu ve canlı döngüler buraya gerçek veriyle akar.": { AZ: "İdarəetmə mərkəzi: bütün MSŞ axınının xülasəsi. Avadanlıq qoşulduqda avtoklav doluluğu və canlı dövrlər bura real məlumatla axır.", RU: "Командный центр: сводка всего потока ЦСО. При подключении оборудования загрузка автоклава и циклы поступают сюда с реальными данными.", EN: "Command center: summary of the whole CSSD flow. With hardware, autoclave load and live cycles stream here with real data." }
+});

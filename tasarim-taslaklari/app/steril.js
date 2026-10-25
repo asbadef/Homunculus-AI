@@ -521,7 +521,7 @@
       : tab === "talepler" ? `<button class="btn p" data-talepnew>${I("plus")} Yeni talep</button>`
       : tab === "aletler" ? `<button class="btn p" data-aletnew>${I("plus")} Yeni alet</button>`
       : `<button class="btn p" data-yeniset title="Kirli kabule yeni set al">${I("plus")} Yeni set</button>`;
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p>Merkezi Sterilizasyon (MSÜ) · set izleme · ${sets().length} aktif set</p></div><div class="r">${yeniBtn}</div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_steril")}</h2><p><span>Merkezi Sterilizasyon (MSÜ) · set izleme</span> · ${sets().length} aktif set</p></div><div class="r">${yeniBtn}</div></div>
       <div class="seg" style="margin-bottom:10px">${TABS.map(([k, l]) => `<button data-stab="${k}" class="${tab === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
       <div class="adm-bar" style="margin-bottom:10px">${H.filterBox ? H.filterBox("Set no / ad / bölüm ara…") : ""}</div>
       ${body}`;

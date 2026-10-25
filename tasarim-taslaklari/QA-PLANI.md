@@ -29,8 +29,8 @@ Dev sunucu açıkken (`localhost:5180`):
 `python qa/smoke.py` (çökme taraması) · `python qa/nav.py` (rol menüleri) · `python qa/interact.py` (buton testi).
 
 ## Durum
-- [x] Faz 1 — açılış taraması (0 hata)
-- [ ] Faz 2 — buton/etkileşim testi
-- [ ] Faz 3 — görsel inceleme
-- [ ] Faz 4 — çeviri tamlığı
-- [ ] Faz 5 — düzeltme + regresyon
+- [x] Faz 1 — açılış taraması: 10 rol × 36 ekran = 360 kombinasyon, **0 hata**.
+- [x] Faz 2 — buton/etkileşim: steril(8 sekme)+vezne(8)+İK+randevu(3)+medmuhasebe+raporlar+hasta360+lab(3)+istakip+admin(5)+patient butonları/satırları tek tek tıklandı, **0 hata**.
+- [x] Faz 3 — görsel: sterilizasyon 8 sekme + şablon/detay modalleri incelendi; tasarım/renk/hizalama **temiz** (parça formu düzeltmesi doğrulandı).
+- [~] Faz 4 — çeviri: steril modülündeki kısa etiketler + ana açıklama cümleleri AZ'ye çevrildi. **Kalan:** sayı içeren birleşik metinler (KPI satırı, parametrik anahtar açıklaması, "Sonraki aşamaya al → X" butonu) ve `<b>` içeren cümleler — bunlar tüm uygulamada aynı desen (genel çeviri turu).
+- [ ] Faz 5 — diğer modüllerin görsel/çeviri turu (vezne, İK, randevu, admin…) + regresyon.
