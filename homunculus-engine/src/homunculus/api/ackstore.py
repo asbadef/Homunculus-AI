@@ -10,7 +10,9 @@ Since X13 it keeps the escalation chain: consecutive episodes of one (patient, k
 the clear to the next first sight — is at most the escalation delay share one escalation clock
 (`clock_from`) and one page to the doctor (`paged`). A return is still a new episode (D5): its own
 first-seen (the board's ▲), no inherited acknowledgement, a nurse told again. Without the chain an
-alert flapping faster than the delay — NEWS2 7 / 4 every two minutes — never reached the doctor."""
+alert flapping faster than the delay — NEWS2 7 / 4 every two minutes — never reached the doctor.
+An answer ends the chain (X13 review): only an episode that ended unanswered leaves one, so a return
+after an acknowledgement starts a new clock and can page the doctor anew."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -49,8 +51,8 @@ class AckStore:
     # X13: when each live key's escalation clock started — its chain's first sight, at or before its
     # episode's `first_seen`. What `escalate()` measures; the board shows `first_seen`.
     clock_from: dict[tuple[str, str], datetime] = field(default_factory=dict)
-    # X13: the chains of episodes that left the board, kept for the escalation delay. Written by the
-    # prune and by `acknowledge_latched`; read, and spent, by the next stamp of the key.
+    # X13: the chains of episodes that left the board unanswered, kept for the escalation delay.
+    # Written by the prune; read, and spent, by the next stamp of the key.
     recent: dict[tuple[str, str], Chain] = field(default_factory=dict)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
@@ -59,9 +61,9 @@ class AckStore:
         (so the caller can audit it exactly once for restart persistence).
 
         A new stamp also sets the escalation clock (X13). If the key's last episode left the board
-        at most `chain_gap` (the escalation delay) ago, this one continues its chain: the chain's
-        clock, and its page if the doctor was paged. Otherwise — or with no `chain_gap` — the clock
-        starts now. Chains older than the gap are forgotten here."""
+        unanswered at most `chain_gap` (the escalation delay) ago, this one continues its chain: the
+        chain's clock, and its page if the doctor was paged. Otherwise — or with no `chain_gap` —
+        the clock starts now. Chains older than the gap are forgotten here."""
         key = (patient_id, kind)
         if key in self.first_seen:
             return False
@@ -78,12 +80,10 @@ class AckStore:
                 del self.recent[old]
         return True
 
-    def remember_chain(self, key: tuple[str, str], cleared_at: datetime,
-                       first_seen: datetime | None = None) -> None:
-        """Keep the chain of an episode that is leaving the board at `cleared_at` (X13), before its
-        state is dropped. `first_seen` stands in for a key with no stamp of its own left (a latch
-        carries its episode's). A key never stamped has no clock, and nothing is kept."""
-        clock = self.clock_from.get(key, self.first_seen.get(key, first_seen))
+    def remember_chain(self, key: tuple[str, str], cleared_at: datetime) -> None:
+        """Keep the chain of an episode that is leaving the board unanswered at `cleared_at` (X13),
+        before its state is dropped. A key never stamped has no clock, and nothing is kept."""
+        clock = self.clock_from.get(key, self.first_seen.get(key))
         if clock is not None:
             self.recent[key] = Chain(clock, cleared_at, key in self.paged)
 
@@ -100,9 +100,10 @@ class AckStore:
         that fires again is no longer latched — its episode goes on (X2). The page record goes
         with the episode's first-seen: it is kept for every live key, firing or latched, and so is
         the escalation clock. With `now`, when the prune runs, each episode that leaves the board
-        is remembered as its chain first (X13)."""
+        unanswered is remembered as its chain first (X13). An acknowledged one is not: an answer
+        ends the chain (X13 review), and its answered minutes are no return's unanswered ones."""
         if now is not None:
-            for key in [k for k in self.first_seen if k not in live_keys]:
+            for key in [k for k in self.first_seen if k not in live_keys and k not in self.acks]:
                 self.remember_chain(key, now)
         for mapping in (self.acks, self.first_seen, self.clock_from):
             for key in [k for k in mapping if k not in live_keys]:

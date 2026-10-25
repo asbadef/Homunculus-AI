@@ -86,6 +86,19 @@ def test_a_cleared_episode_is_remembered_as_its_chain_and_its_state_is_pruned():
     assert s.recent[NEWS2] == Chain(clock_from=T0, cleared_at=_minutes(2), paged=True)
 
 
+def test_an_acknowledged_episode_that_leaves_the_board_leaves_no_chain():
+    # X13 review: an answer ends the chain. Only an episode that ended unanswered is remembered.
+    s = AckStore()
+    s.stamp_first_seen("bed-3", "news2", T0, chain_gap=GAP)
+    s.paged.add(NEWS2)
+    s.acknowledge("bed-3", "news2", "nurse", _minutes(1))
+    s.prune(live_keys=set(), firing_keys=set(), now=_minutes(2))
+    assert s.recent == {}
+    assert NEWS2 not in s.acks and NEWS2 not in s.clock_from and NEWS2 not in s.paged
+    s.stamp_first_seen("bed-3", "news2", _minutes(3), chain_gap=GAP)
+    assert s.clock_from[NEWS2] == _minutes(3) and NEWS2 not in s.paged
+
+
 def test_a_live_key_keeps_its_chain_clock_and_is_not_remembered():
     s = AckStore()
     s.stamp_first_seen("bed-3", "news2", T0, chain_gap=GAP)

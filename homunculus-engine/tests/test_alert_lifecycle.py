@@ -258,35 +258,43 @@ def test_a_return_within_the_delay_is_a_new_episode_on_its_chains_escalation_clo
     engine, store = Engine(), AckStore()
     _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=0)
     _stamp_chained(engine, store, minute=0)
-    store.acknowledge("bed-3", "news2", "ayse", WALL)
-    _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=1)
+    _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=1)                 # cleared, unanswered
     _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=3)
     _stamp_chained(engine, store, minute=3)
     assert store.first_seen[NEWS2_KEY] == WALL + timedelta(minutes=3), "a new episode (D5)"
-    assert NEWS2_KEY not in store.acks, "the old answer belongs to the old episode"
     assert store.clock_from[NEWS2_KEY] == WALL, "two minutes off the board: the chain's clock goes on"
 
 
-def test_an_acknowledged_latch_leaves_its_chain_behind_from_the_acknowledgement():
+def test_an_acknowledged_episode_that_clears_leaves_no_chain_and_its_return_starts_a_new_clock():
+    """An answer ends the chain (X13 review): only an episode that ended unanswered leaves one. Its
+    answered minutes are not a return's unanswered ones, and a return's page is its own."""
+    engine, store = Engine(), AckStore()
+    _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=0)
+    _stamp_chained(engine, store, minute=0)
+    store.paged.add(NEWS2_KEY)
+    store.acknowledge("bed-3", "news2", "ayse", WALL + timedelta(minutes=1))
+    _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=2)                 # cleared, answered
+    assert store.recent == {}, "an answered episode leaves no chain"
+    _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=3)
+    _stamp_chained(engine, store, minute=3)
+    assert store.first_seen[NEWS2_KEY] == store.clock_from[NEWS2_KEY] == WALL + timedelta(minutes=3)
+    assert NEWS2_KEY not in store.acks, "the old answer belongs to the old episode"
+    assert NEWS2_KEY not in store.paged, "a new chain: the doctor can be paged for it"
+
+
+def test_an_acknowledged_latch_leaves_no_chain_and_its_return_starts_a_new_clock():
+    """The acknowledgement that removes a latch ends its episode, and — an answer — its chain too. The
+    replay's call (api/rehydrate.py) is the same one: a restart rebuilds no chain."""
     engine, store = _shock()
     store.paged.add(SHOCK_KEY)
     _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)                   # latched
     assert SHOCK_KEY not in store.recent, "still on the board: the chain is live"
     assert store.clock_from[SHOCK_KEY] == WALL
-    acknowledge_latched(store, "bed-3", "septic_shock", WALL + timedelta(minutes=2))
-    assert store.recent[SHOCK_KEY] == Chain(clock_from=WALL, cleared_at=WALL + timedelta(minutes=2),
-                                            paged=True)
+    acknowledge_latched(store, "bed-3", "septic_shock")
+    assert store.recent == {}, "answered: no chain is left behind"
     assert SHOCK_KEY not in store.clock_from and SHOCK_KEY not in store.paged
     _evaluate(engine, store, SignalCode.LACTATE, 3.4, minute=4)
     _stamp_chained(engine, store, minute=4)
     assert store.first_seen[SHOCK_KEY] == WALL + timedelta(minutes=4), "a new episode"
-    assert store.clock_from[SHOCK_KEY] == WALL and SHOCK_KEY in store.paged, \
-        "two minutes after the acknowledgement: the same chain, its clock and its page"
-
-
-def test_acknowledging_a_latch_without_a_time_remembers_no_chain():
-    """The replay's call (api/rehydrate.py): a restart does not rebuild chains."""
-    engine, store = _shock()
-    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)
-    acknowledge_latched(store, "bed-3", "septic_shock")
-    assert store.recent == {} and SHOCK_KEY not in store.clock_from
+    assert store.clock_from[SHOCK_KEY] == WALL + timedelta(minutes=4) and SHOCK_KEY not in store.paged, \
+        "two minutes after the acknowledgement, and a new chain: its own clock, its own page"

@@ -269,8 +269,9 @@ def create_app(
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
-            # The chain's clock, not the episode's first sight (X13): an alert that clears and
-            # returns within `escalate_after` is still unanswered on the clock it started.
+            # The chain's clock, not the episode's first sight (X13): an alert that clears
+            # unanswered and returns within `escalate_after` is still unanswered on the clock it
+            # started.
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
             if newly != store.escalated:
                 added = newly - store.escalated
@@ -734,7 +735,8 @@ def create_app(
                                     {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
                                      "source": a.source, "evidence": a.supporting_evidence}))
         _audit_cleared(hospital, cleared, wall_now)
-        # A return within `escalate_after` of its clear continues its escalation chain (X13).
+        # A return within `escalate_after` of an unanswered clear continues its escalation chain
+        # (X13); a return after an acknowledgement starts a new one.
         for a in engine.active_alerts(obs.patient_id):
             if store.stamp_first_seen(obs.patient_id, a.kind, wall_now, chain_gap=escalate_after):
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
@@ -767,7 +769,7 @@ def create_app(
         now = datetime.now(timezone.utc)
         # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
         # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
-        latched = acknowledge_latched(store, patient_id, kind, now)
+        latched = acknowledge_latched(store, patient_id, kind)
         if latched is None:
             if (patient_id, kind) not in live_keys(engine, store):
                 raise HTTPException(status_code=404, detail="no such active alert")

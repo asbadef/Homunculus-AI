@@ -13,16 +13,17 @@ some later reading:
 * A kind that stopped firing ends its episode. Its ack, first-seen stamp, escalation clock and flag
   and record of the doctor's page are pruned (the door prunes the notifier's dedup with
   `live_keys`), so if it fires again it is a NEW episode: a new first-seen, a new nurse
-  notification (D5). Its escalation chain is remembered first (X13): a return within the
-  escalation delay of the end continues the chain — its clock, and no second page to the doctor —
-  and a later one starts a new chain, with a new clock and a new page.
+  notification (D5). If it ended unanswered, its escalation chain is remembered first (X13): a
+  return within the escalation delay of the end continues the chain — its clock, and no second page
+  to the doctor — and a later one starts a new chain, with a new clock and a new page. An answer
+  ends the chain (X13 review): after an acknowledgement any return starts a new one.
 * Except a critical one nobody acknowledged: it latches (D2). It stays on the board as resolved,
   unacknowledged — its first-seen kept (and carried in the latch), its escalation flag dropped, for
   only a firing alert escalates (D8) — until a clinician acknowledges it, which removes it
   (`acknowledge_latched`). A
   transient critical event must not vanish before anyone saw it. HIGH, MODERATE and LOW never
   latch, and an acknowledged critical leaves with its rule. The acknowledgement that removes a
-  latch is its episode's end, and leaves its chain behind as a clear does.
+  latch is its episode's end and, an answer, its chain's: nothing is left behind.
 * A latched kind that fires again is active again: the latch is replaced and its episode goes on —
   no `alert_cleared` row, and the first-seen stamp it kept is still its own. Nor is the doctor
   paged for it again if the episode had been (`AckStore.paged`).
@@ -100,23 +101,21 @@ def sync_alerts(engine: Engine, store: AckStore, patient_id: str, now: datetime)
     return cleared
 
 
-def acknowledge_latched(store: AckStore, patient_id: str, kind: str,
-                        now: datetime | None = None) -> Cleared | None:
+def acknowledge_latched(store: AckStore, patient_id: str, kind: str) -> Cleared | None:
     """A clinician acknowledged a latched alert: it is removed, and its episode ends (D8). None
     when (patient, kind) is not latched — a firing alert is acknowledged the ordinary way.
 
-    `now` is the acknowledgement's time: the episode leaves the board then, and its escalation
-    chain is remembered from it (X13). The replay passes none — a restart rebuilds no chain."""
+    An acknowledgement is an answer, and an answer ends the escalation chain as well as the
+    episode (X13 review): no chain is remembered, so a return — however soon — starts a new
+    clock and can page the doctor anew."""
     key = (patient_id, kind)
     entry = store.resolved.pop(key, None)
     if entry is None:
         return None
-    if now is not None:
-        store.remember_chain(key, now, entry.get("first_seen"))
     seen = store.first_seen.pop(key, None)
     store.clock_from.pop(key, None)
     if seen is None:
         seen = entry.get("first_seen")
     store.escalated.discard(key)
-    store.paged.discard(key)       # the episode is over: the next one can page the doctor again
+    store.paged.discard(key)       # the episode and its chain are over: the next one pages anew
     return Cleared(patient_id, kind, entry["alert"]["severity"], seen, ACKED_AFTER_RESOLVE)

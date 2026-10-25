@@ -334,9 +334,10 @@ async def test_a_return_after_a_gap_longer_than_the_escalation_delay_starts_the_
 
 
 @pytest.mark.anyio
-async def test_an_acknowledged_alert_that_returns_within_the_delay_is_unanswered_on_its_chains_clock(wall):
-    """The acknowledgement belongs to the episode it answered (D5): the return is unacknowledged. Its
-    escalation clock is the chain's — the return came two minutes after the clear."""
+async def test_an_acknowledged_alert_that_returns_within_the_delay_starts_a_new_clock(wall):
+    """The acknowledgement belongs to the episode it answered (D5): the return is unacknowledged. And
+    an answer ends the chain (X13 review): only an episode that ended unanswered leaves one, so the
+    return's clock starts at its own first sight, though it came two minutes after the clear."""
     app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
     client = TestClient(app)
     _news2_base(client)
@@ -351,6 +352,87 @@ async def test_an_acknowledged_alert_that_returns_within_the_delay_is_unanswered
     news2 = _on_board(client, "news2")
     assert news2["acknowledged"] is False, "the old answer belongs to the old episode"
     assert news2["first_seen_at"] == (WALL0 + timedelta(minutes=4)).isoformat()
+    assert store.clock_from[NEWS2] == WALL0 + timedelta(minutes=4), "answered: no chain to continue"
     await app.state.escalation_cycle(WALL0 + timedelta(minutes=5))
-    assert NEWS2 in store.escalated and _pages(client, "news2") == (1, 1), \
-        "unanswered, on a clock that started five minutes ago"
+    assert NEWS2 not in store.escalated and _pages(client, "news2") == (0, 0), \
+        "the answered episode's minutes are not the return's: its clock started a minute ago"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=9))
+    assert NEWS2 in store.escalated and _pages(client, "news2") == (1, 1)
+
+
+# --- G2-A1, X13 review: an answer ends the chain --------------------------------------------------
+#
+# The ward minute by minute on the injected wall clock: each minute's readings and acknowledgements,
+# then the escalation cycle, as the loop runs it. What is measured is the minute the doctor is paged.
+
+
+def _answered(client, kind="septic_shock"):
+    assert _ack(client, kind).status_code == 200
+
+
+async def _page_minutes(app, client, wall, script, last, kind):
+    """Run minutes 0..`last` of `script` ({minute: [step, ...]}), and say in which minutes the doctor
+    was paged about `kind` — each page an `escalation` row and its doctor notification."""
+    minutes, seen = [], (0, 0)
+    for minute in range(last + 1):
+        wall.at = WALL0 + timedelta(minutes=minute)
+        for step in script.get(minute, ()):
+            step()
+        await app.state.escalation_cycle(wall.at)
+        pages = _pages(client, kind)
+        assert pages[0] == pages[1], "every escalation row has its doctor notification"
+        if pages != seen:
+            minutes.append(minute)
+            seen = pages
+    return minutes
+
+
+@pytest.mark.anyio
+async def test_an_acknowledged_high_alert_that_returns_unanswered_within_the_delay_pages_the_doctor_anew(wall):
+    """The reviewer's case: NEWS2 7 at 0, the doctor paged at 5, the nurse acknowledges at 6, it clears
+    at 7 and is back at 9, and this time nobody answers. Before the review the acknowledged episode
+    left its chain — its clock and its page — and the return two minutes later continued it: escalated
+    on the board, but never paged. Five minutes unanswered after the return, the doctor is paged."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _news2_base(client)
+    store = app.state.ack_stores["HOSP1"]
+    script = {0: [lambda: _reading(client, "resp_rate", 26, minute=0)],
+              6: [lambda: _answered(client, "news2")],
+              7: [lambda: _reading(client, "resp_rate", 16, minute=7)],      # cleared, answered
+              9: [lambda: _reading(client, "resp_rate", 26, minute=9)]}      # back, unanswered
+    assert await _page_minutes(app, client, wall, script, 20, "news2") == [5, 14], \
+        "paged five minutes after the first sight, and again five minutes after the return"
+    assert store.clock_from[NEWS2] == store.first_seen[NEWS2] == WALL0 + timedelta(minutes=9)
+
+
+@pytest.mark.anyio
+async def test_an_acknowledged_latch_whose_critical_returns_unanswered_within_the_delay_pages_the_doctor_anew(wall):
+    """A septic shock paged at 5 latches at 6 and is acknowledged at 8, which removes it; it is back at
+    10, unanswered. The acknowledgement ended the episode and its chain, so the return pages anew."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _drive_shock(client)                                             # first seen at WALL0
+    store = app.state.ack_stores["HOSP1"]
+    script = {6: [lambda: _reading(client, "lactate", 1.5, minute=61)],     # latched
+              8: [lambda: _answered(client)],                               # the latch removed
+              10: [lambda: _reading(client, "lactate", 3.4, minute=62)]}    # back, unanswered
+    assert await _page_minutes(app, client, wall, script, 20, "septic_shock") == [5, 15]
+    assert store.first_seen[SHOCK] == store.clock_from[SHOCK] == WALL0 + timedelta(minutes=10)
+
+
+@pytest.mark.anyio
+async def test_an_unanswered_high_alert_that_returns_within_the_delay_keeps_its_chain_and_its_one_page(wall):
+    """X13, pinned beside the review's rule: nobody answered, so the clear at 3 leaves the chain behind,
+    the return at 5 continues it, and the doctor is paged at 5 — five minutes after the first sight —
+    and once."""
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False)
+    client = TestClient(app)
+    _news2_base(client)
+    store = app.state.ack_stores["HOSP1"]
+    script = {0: [lambda: _reading(client, "resp_rate", 26, minute=0)],
+              3: [lambda: _reading(client, "resp_rate", 16, minute=3)],      # cleared, unanswered
+              5: [lambda: _reading(client, "resp_rate", 26, minute=5)]}      # back two minutes later
+    assert await _page_minutes(app, client, wall, script, 20, "news2") == [5]
+    assert store.first_seen[NEWS2] == WALL0 + timedelta(minutes=5), "a new episode (D5)"
+    assert store.clock_from[NEWS2] == WALL0, "on its chain's clock"
