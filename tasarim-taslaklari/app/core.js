@@ -368,6 +368,8 @@
                 perms:["steril"], home:"sterilizasyon" },
     laborant: { group:"Destek", name:"Laboratuvar / Görüntüleme teknisyeni", az:"Laboratoriya / Görüntüləmə texniki", names:true, engine:"— (motorda yok)",
                 perms:["lab_islem"], home:"labislem" },
+    muhasebe: { group:"Yönetim", name:"Medikal Muhasebe / Kurumsal Faturalama", az:"Tibbi Mühasibat / Korporativ Fakturalaşdırma", names:true, engine:"— (motorda yok)",
+                perms:["muhasebe", "audit"], home:"medmuhasebe" },
   };
   // Destek / İş takip: her kullanıcı talep açabilir; yönetimi (çözme/kapatma) ayrı yetki (destek_yonet).
   Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
@@ -433,6 +435,7 @@
     { u:"kalite.tural", pw:"Demo123!", name:"Tural Mikayılov",       role:"kalite",   units:"*", title:"Keyfiyyət şöbəsi" },
     { u:"msu.aygun",   pw:"Demo123!", name:"Aygün Hüseynova",        role:"msu",      units:"*", title:"Sterilizasiya (MSŞ) texniki" },
     { u:"lab.elnur",   pw:"Demo123!", name:"Elnur Qədirov",          role:"laborant", units:"*", title:"Laboratoriya texniki" },
+    { u:"muh.leyla",   pw:"Demo123!", name:"Leyla Nağıyeva",         role:"muhasebe", units:"*", title:"Tibbi mühasib" },
     { u:"yeni.hekim",  pw:"Gecici1!", name:"Dr. Aynur Cəfərli",      role:"hekim",    units:["dax"], mustChange:true, title:"Yeni hesab · ilk giriş" },
   ].map(x => Object.assign({ active:true, fails:0, lockedUntil:0, lastLogin:"—", extras:[] }, x, x.units === "*" ? { units:H.units().map(u => u.id) } : {}));
   H.MFA_CODE = "123456"; H.RESET_CODE = "482913";
@@ -657,8 +660,8 @@
    * Yalnız kullanıcı-düzenlenebilir DÜZ listeler saklanır; klinik graf (hasta/yatak/alarm/görev/teslim) demo kalır,
    * böylece her açılışta tazelenir ve kırılmaz. Hasta kimlikleri sabit üretildiği için istem/fatura bağları korunur.
    * Şema değişince PERSIST_VER artırılır → eski kayıt yok sayılır. Roller ayrı (hmc.roles) saklanır. */
-  const PERSIST_VER = "v2";   // v2: demo fatura/gfk/iade adları klinik hastalarla hizalandı (eski kayıt sıfırlanır)
-  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "iptaller", "vezneDonemNo", "vezneDonemAcik", "vezneDevir", "rndDoktorSeeded"];
+  const PERSIST_VER = "v3";   // v3: vezne dönemi per-banko (vezneDonemler); eski tek-dönem kaydı sıfırlanır
+  const PERSIST_KEYS = ["orders", "faturalar", "gfk", "evrak", "indirimOnay", "iadeTalep", "kurumFatura", "vFiyat", "randevular", "personel", "bolumler", "hizmetKartlari", "hizmetTanim", "fiyatlar", "secenekler", "mesajKalip", "parametreler", "kampanyalar", "detayYetki", "formYetki", "veriYetki", "epikrizSablon", "cihazlar", "protokolTipleri", "protokolKayit", "protoSeq", "hastaBilgi", "slotKapali", "izinTalep", "sterSetKart", "sterSet", "sterSeq", "sterLoad", "sterLoadSeq", "sterCart", "sterCartSeq", "sterParametrik", "sterAlet", "sterAletSeq", "sterTalep", "sterTalepSeq", "iptaller", "vezneDonemler", "vezneDonemSeq", "rndDoktorSeeded"];
   try { const raw = localStorage.getItem("hmc.data." + PERSIST_VER); if (raw) { const o = JSON.parse(raw); PERSIST_KEYS.forEach(k => { if (o[k] !== undefined) H.data[k] = o[k]; }); } }
   catch (e) { try { localStorage.removeItem("hmc.data." + PERSIST_VER); } catch {} }
   H.saveData = () => { try { const o = {}; PERSIST_KEYS.forEach(k => { if (H.data[k] !== undefined) o[k] = H.data[k]; }); localStorage.setItem("hmc.data." + PERSIST_VER, JSON.stringify(o)); } catch (e) {} };

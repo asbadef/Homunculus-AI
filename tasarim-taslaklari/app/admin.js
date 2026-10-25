@@ -1696,7 +1696,7 @@
   /* ---------- Kullanıcılar ---------- */
   const isLocked = (x) => x.lockedUntil && x.lockedUntil > Date.now();
   const unitNames = (ids) => { const all = H.units(); if (all.every(u => ids.includes(u.id))) return "Tüm birimler"; return ids.map(i => (H.unit(i) || { tr:i }).tr).join(", ") || "—"; };
-  const USER_PFX = { hekim:"dr.", hemsire:"hs.", kabul:"kabul.", eczaci:"ecz.", biyomed:"bio.", yonetici:"mudur.", kalite:"kalite.", sistem:"it.", msu:"msu.", laborant:"lab." };
+  const USER_PFX = { hekim:"dr.", hemsire:"hs.", kabul:"kabul.", eczaci:"ecz.", biyomed:"bio.", yonetici:"mudur.", kalite:"kalite.", sistem:"it.", msu:"msu.", laborant:"lab.", muhasebe:"muh." };
 
   function tabUsers(body, draw) {
     const roles = Object.entries(H.data.roles);
@@ -1867,7 +1867,9 @@
   // Her zaman açık olması gereken temel yetkiler, kayıtlı roller geri yüklendikten sonra da garanti edilir (ör. destek talebi herkeste).
   Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
   // Sterilizasyon (MSÜ) modülü: klinik + yönetim rollerine açık (yükleme sonrası garanti).
-  ["hekim", "hemsire", "kabul", "yonetici", "kalite", "sistem"].forEach(k => { const r = H.data.roles[k]; if (r && !r.perms.includes("steril")) r.perms.push("steril"); });
+  ["hemsire", "yonetici", "kalite", "sistem"].forEach(k => { const r = H.data.roles[k]; if (r && !r.perms.includes("steril")) r.perms.push("steril"); });
+  // kabul (hasta kabul/ön büro) MSÜ görmesin — eski sürümde verildiyse geri al.
+  { const r = H.data.roles.kabul; if (r) r.perms = r.perms.filter(p => p !== "steril"); }
   H.saveRoles = () => { try { localStorage.setItem("hmc.roles", JSON.stringify(Object.fromEntries(Object.entries(H.data.roles).map(([k, r]) => [k, { perms:r.perms }])))); } catch {} };
   const protectedPerm = (r, p) => p.startsWith("admin_") && (r === me().role || (r === "sistem" && (p === "admin_roles" || p === "admin_users")));
   const permLabel = (p) => (PERMS.flatMap(g => g[1]).find(x => x[0] === p) || [p, p])[1];
