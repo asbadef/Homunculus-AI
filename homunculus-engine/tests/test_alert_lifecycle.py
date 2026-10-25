@@ -125,6 +125,14 @@ def test_a_latched_kind_that_fires_again_replaces_the_latch_without_a_cleared_ro
     assert store.first_seen[SHOCK_KEY] == WALL, "the episode goes on: its first-seen is still its own"
 
 
+def test_an_acknowledged_latch_does_not_come_back_on_the_next_normal_reading():
+    engine, store = _shock()
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)
+    acknowledge_latched(store, "bed-3", "septic_shock")
+    assert _evaluate(engine, store, SignalCode.LACTATE, 1.4, minute=2) == []
+    assert store.resolved == {}
+
+
 def test_the_hook_leaves_another_patient_alone():
     engine, store = Engine(), AckStore()
     _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=0, patient="bed-4")
@@ -133,6 +141,16 @@ def test_the_hook_leaves_another_patient_alone():
     _evaluate(engine, store, SignalCode.HEART_RATE, 140, minute=1)
     _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=2)
     assert ("bed-4", "news2") in store.acks and ("bed-4", "news2") in store.first_seen
+
+
+def test_another_patients_reading_neither_clears_nor_unlatches_a_critical():
+    engine, store = Engine(), AckStore()
+    for code, value in SHOCK:
+        _evaluate(engine, store, code, value, minute=0, patient="bed-4")
+    _stamp(engine, store, patient="bed-4")
+    assert _evaluate(engine, store, SignalCode.HEART_RATE, 80, minute=1) == []
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=2, patient="bed-4")
+    assert ("bed-4", "septic_shock") in store.resolved
 
 
 def test_the_notifier_pruned_with_the_live_keys_tells_a_nurse_again_only_for_a_new_episode():

@@ -78,7 +78,10 @@ def sync_alerts(engine: Engine, store: AckStore, patient_id: str, now: datetime)
             store.resolved[key] = {"alert": asdict(alert), "resolved_at": now}
     for kind, alert in firing_now.items():
         store.firing[(patient_id, kind)] = alert
-    store.prune(live_keys(engine, store), firing_keys(engine))
+    # If an evaluation is ever not followed by its hook, another patient's sync must not prune the
+    # skipped patient's ack and first-seen before their drop is processed; with every hook run this
+    # changes nothing.
+    store.prune(live_keys(engine, store) | set(store.firing), firing_keys(engine))
     return cleared
 
 
