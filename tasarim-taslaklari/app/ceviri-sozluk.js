@@ -1,6 +1,24 @@
 /* Homunculus · çeviri sözlüğü (ceviri.js ile) · 25.09.2026 · Türkçe kaynak kalıbı → AZ/RU/EN. {#} = sayı.
  * Tarayıcıyla ekranlardan toplandı (her rol × sayfa × sekme), çeviri ajanlarıyla dolduruldu. Elle düzeltme buraya. */
 window.HMC_SOZLUK = {
+/* 2026-10-25 · veri zinciri / vezne yeni etiketler */
+"Yeni protokol": { "AZ":"Yeni protokol", "EN":"New protocol", "RU":"Новый протокол" },
+"Fatura kes": { "AZ":"Faktura kəs", "EN":"Issue invoice", "RU":"Выставить счёт" },
+"Parçalı fatura": { "AZ":"Hissəli faktura", "EN":"Partial invoice", "RU":"Частичный счёт" },
+"İndirime gönder": { "AZ":"Endirimə göndər", "EN":"Send to discount", "RU":"Отправить на скидку" },
+"Provizyon iste": { "AZ":"Provizyon istə", "EN":"Request provision", "RU":"Запросить провизию" },
+"Panel paket": { "AZ":"Panel paket", "EN":"Panel package", "RU":"Панельный пакет" },
+"Bekleyene at": { "AZ":"Gözləyənə at", "EN":"Move to pending", "RU":"В ожидание" },
+"Fatura bekleyen": { "AZ":"Faktura gözləyən", "EN":"Awaiting invoice", "RU":"Ожидают счёта" },
+"Seçili toplam": { "AZ":"Seçilmiş cəmi", "EN":"Selected total", "RU":"Выбранный итог" },
+"İşlem havuzu": { "AZ":"Əməliyyat hovuzu", "EN":"Procedure pool", "RU":"Пул операций" },
+"Tetkik / radyoloji iste": { "AZ":"Müayinə / radiologiya istə", "EN":"Request test / radiology", "RU":"Запрос анализа / радиологии" },
+"Devir al": { "AZ":"Dövr al", "EN":"Take over", "RU":"Принять передачу" },
+"Dönem özeti": { "AZ":"Dövr xülasəsi", "EN":"Period summary", "RU":"Сводка периода" },
+"Demo sıfırla": { "AZ":"Demonu sıfırla", "EN":"Reset demo", "RU":"Сбросить демо" },
+"Tüm protokoller": { "AZ":"Bütün protokollar", "EN":"All protocols", "RU":"Все протоколы" },
+"Protokol açma yetkiniz yok.": { "AZ":"Protokol açma səlahiyyətiniz yoxdur.", "EN":"No permission to open a protocol.", "RU":"Нет прав на открытие протокола." },
+"İşlem seçin.": { "AZ":"Əməliyyat seçin.", "EN":"Select a procedure.", "RU":"Выберите операцию." },
 /* 2026-10-25 · yeni ekranlar (Kurumsal Faturalama, Hizmet Kartı sekmeleri, Güvenlik seçimi, Tedavi sekmesi) */
 "Kurum bazlı açık alacak": { "AZ":"Qurum əsaslı açıq alacaq", "EN":"Open receivables by institution", "RU":"Открытая дебиторка по учреждениям" },
 "Fatura durumu (GFK)": { "AZ":"Faktura vəziyyəti (GFK)", "EN":"Invoice status (GFK)", "RU":"Статус счёта (GFK)" },
