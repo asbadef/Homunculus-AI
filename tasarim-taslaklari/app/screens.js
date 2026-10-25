@@ -1866,6 +1866,28 @@
 
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
+  // Yaygın lab referans aralıkları (yetişkin) — anormal vurgu için. Admin ileride düzenleyebilir.
+  H.LABREF = {
+    "WBC":[4,10,"10⁹/L"], "Lökosit":[4,10,"10⁹/L"], "Hemoglobin":[12,16,"g/dL"], "Hgb":[12,16,"g/dL"], "Hematokrit":[36,48,"%"], "Trombosit":[150,400,"10⁹/L"], "Plt":[150,400,"10⁹/L"],
+    "Glukoz":[70,100,"mg/dL"], "CRP":[0,5,"mg/L"], "Sodyum":[135,145,"mmol/L"], "Na":[135,145,"mmol/L"], "Potasyum":[3.5,5.1,"mmol/L"], "K":[3.5,5.1,"mmol/L"],
+    "Kreatinin":[0.6,1.2,"mg/dL"], "Üre":[17,43,"mg/dL"], "ALT":[0,41,"U/L"], "AST":[0,40,"U/L"], "Total bilirubin":[0.3,1.2,"mg/dL"], "Albumin":[3.5,5.2,"g/dL"], "INR":[0.8,1.2,""],
+    "Laktat":[0.5,2.2,"mmol/L"], "Troponin":[0,0.04,"ng/mL"], "D-dimer":[0,0.5,"mg/L"], "Prokalsitonin":[0,0.5,"ng/mL"], "HbA1c":[4,5.7,"%"], "TSH":[0.4,4,"mIU/L"], "Ferritin":[30,400,"ng/mL"]
+  };
+  H.labFlag = (ad, deger) => { const n = parseFloat(String(deger).replace(",", ".")); if (isNaN(n)) return { ref:"", birim:"", dir:"norm", sym:"" };
+    const low = String(ad).trim().toLocaleLowerCase("tr");
+    const key = Object.keys(H.LABREF).find(k => k.toLocaleLowerCase("tr") === low) || Object.keys(H.LABREF).find(k => low.includes(k.toLocaleLowerCase("tr")));
+    if (!key) return { ref:"", birim:"", dir:"norm", sym:"" };
+    const r = H.LABREF[key], dir = n < r[0] ? "dus" : n > r[1] ? "yuk" : "norm"; return { ref:r[0] + "–" + r[1], birim:r[2], dir, sym:dir === "yuk" ? "↑" : dir === "dus" ? "↓" : "" };
+  };
+  // Serbest metin ("WBC: 12.5\nCRP: 8") -> yapısal sonuç + anormal işaretli özet.
+  H.parseLabResult = (text) => { const sonuclar = [], parts = [];
+    String(text || "").split(/\n|;/).map(s => s.trim()).filter(Boolean).forEach(ln => { const m = ln.match(/^(.+?)[:=]\s*([-\d.,]+)\s*(.*)$/);
+      if (m) { const ad = m[1].trim(), deger = m[2].trim(), f = H.labFlag(ad, deger); sonuclar.push({ ad, deger, birim:f.birim || m[3].trim(), ref:f.ref, dir:f.dir }); parts.push(ad + " " + deger + (f.sym ? " " + f.sym : "")); }
+      else { parts.push(ln); sonuclar.push({ ad:ln, deger:"", ref:"", dir:"norm" }); } });
+    return { sonuclar, ozet:parts.join(" · ") };
+  };
+  // Sonucu renkli (anormal vurgulu) HTML olarak göster.
+  H.labResultHtml = (o) => (o.sonuclar && o.sonuclar.length) ? o.sonuclar.map(x => { const c = x.dir === "yuk" ? "var(--crit)" : x.dir === "dus" ? "var(--low)" : "var(--mute)"; return `<span class="mono" style="color:${c};font-size:12px"${x.ref ? ` title="Ref: ${H.esc(x.ref)} ${H.esc(x.birim || "")}"` : ""}>${H.esc(x.ad)}${x.deger ? " " + H.esc(x.deger) : ""}${x.dir === "yuk" ? " ↑" : x.dir === "dus" ? " ↓" : ""}</span>`; }).join(" · ") : (o.sonuc ? H.esc(o.sonuc) : "—");
   /* ================= NUMUNE (örnek) AKIŞI ================= */
   H.numune = {
     store() { return H.data.numuneler = H.data.numuneler || []; },
@@ -1929,13 +1951,21 @@
       <div class="seg" style="margin-bottom:8px">${[["lab", "Laboratuvar"], ["rad", "Radyoloji"], ["kan", "Kan ürünü"]].map(([k, l]) => `<button data-lt="${k}" class="${tur === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="adm-bar" style="margin-bottom:10px">${H.filterBox("Hasta / istem / isteyen ara…")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th><th>Sonuç</th><th style="width:90px"></th></tr></thead><tbody>
-      ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td class="adm-sub">${H.esc(o.sonuc || "—")}</td><td><button class="btn g sm" data-labres="${o.id}">${I("edit") || "Sonuç"} Sonuç</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
+      ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td>${H.labResultHtml(o)}</td><td><button class="btn g sm" data-labres="${o.id}">${I("edit") || "Sonuç"} Sonuç</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
       </tbody></table></div>
       <p class="adm-sub" style="margin-top:8px">"Sonuç gir" ile sonuç yazılır; "Serbest bırakıldı" olunca hekime/hastaya (Hasta Dosyası → Tedavi) görünür.</p>`;
     root.onchange = (e) => { const st = e.target.closest("[data-labst]"); if (st) { const o = (H.data.orders || []).find(x => x.id === st.dataset.labst); if (o) { o.durum = st.value; H.saveData && H.saveData(); H.log("Lab/Rad durumu", (o.ad || "") + " · " + st.value); H.toast("Durum: " + st.value); } } };
     const lbData = () => ({ cols:["Saat", "Hasta", "İstem", "İsteyen", "Durum"], rows:ord.map(o => [o.at || "", pn(o.pid), o.ad || "", o.by || "", o.durum || "İstendi"]) });
     root.onclick = (e) => { const lt = e.target.closest("[data-lt]"); if (lt) return H.go("labislem", { tur:lt.dataset.lt });
-      const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return; const v = prompt("Sonuç / rapor:", o.sonuc || ""); if (v != null) { o.sonuc = v.trim(); if (o.sonuc && (o.durum === "İstendi" || o.durum === "Numune alındı" || o.durum === "Çalışılıyor")) o.durum = "Sonuç onaylandı"; H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", (o.ad || "")); H.toast("Sonuç kaydedildi."); H.go("labislem", { tur }); } return; }
+      const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return;
+        H.modal({ title:"Sonuç gir · " + H.esc(o.ad || ""), wide:true,
+          body:`<div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Sonuçlar — her satır: <b>Analit: değer</b></label><textarea data-f="s" rows="6" placeholder="WBC: 12.5&#10;CRP: 8&#10;Sodyum: 134&#10;(radyoloji/patoloji için serbest rapor da yazılabilir)">${H.esc((o.sonuclar || []).map(x => x.ad + (x.deger ? ": " + x.deger : "")).join("\n") || o.sonuc || "")}</textarea></div></div>
+            <p class="adm-sub" style="margin-top:4px">Analit referans listesinde tanınırsa anormal <b style="color:var(--crit)">↑ yüksek</b> / <b style="color:var(--low)">↓ düşük</b> otomatik işaretlenir.</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const r = H.parseLabResult(m.querySelector('[data-f="s"]').value);
+            o.sonuclar = r.sonuclar; o.sonuc = r.ozet; if (o.sonuc && /İstendi|İşlemde|Numune alındı|Çalışılıyor/.test(o.durum || "")) o.durum = "Sonuç onaylandı";
+            H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", o.ad || ""); H.closeModal(); H.toast("Sonuç kaydedildi."); H.go("labislem", { tur }); }; } });
+        return; }
       if (e.target.closest("[data-lbexp]")) { const d = lbData(); H.exportCsv ? (H.exportCsv("Lab_Rad_" + tur, d.cols, d.rows), H.toast("Excel indirildi")) : H.toast("yok", "w"); return; }
       if (e.target.closest("[data-lbyaz]")) { const d = lbData(); H.printTable ? H.printTable("Laboratuvar / Radyoloji", d.cols, d.rows) : H.toast("yok", "w"); return; } };
     H.wireFilter(root);
