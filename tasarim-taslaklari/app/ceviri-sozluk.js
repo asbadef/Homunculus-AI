@@ -12060,3 +12060,14 @@ Object.assign(window.HMC_SOZLUK, {
   "Başlangıç": { AZ: "Başlanğıc", RU: "Начало", EN: "Start" },
   "Bitiş": { AZ: "Bitmə", RU: "Окончание", EN: "End" }
 });
+
+/* === Liste filtresi ipuçları (tarama turu) · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Listede ara…": { AZ: "Siyahıda axtar…", RU: "Искать в списке…", EN: "Search list…" },
+  "Hasta / tanı / birim ara…": { AZ: "Xəstə / diaqnoz / bölmə axtar…", RU: "Пациент / диагноз / отделение…", EN: "Search patient / dx / unit…" },
+  "Kurum ara…": { AZ: "Qurum axtar…", RU: "Искать организацию…", EN: "Search institution…" },
+  "Rapor adı ara…": { AZ: "Hesabat adı axtar…", RU: "Искать отчёт…", EN: "Search report…" },
+  "Konu / açan / no ara…": { AZ: "Mövzu / açan / nömrə axtar…", RU: "Тема / автор / № …", EN: "Search subject / opener / no…" },
+  "Hasta / istem / isteyen ara…": { AZ: "Xəstə / sifariş / sifarişçi axtar…", RU: "Пациент / назначение / врач…", EN: "Search patient / order / requester…" },
+  "Personel ara…": { AZ: "Personal axtar…", RU: "Искать персонал…", EN: "Search staff…" }
+});
