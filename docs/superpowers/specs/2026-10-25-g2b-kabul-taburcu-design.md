@@ -88,7 +88,10 @@ attending). Audit `admission.sign_off`. No physician picker is needed in this sl
    exitus + reporting physician — the caller by default, free text allowed), discharge time
    (default now, not in the future), note (≤ 2000). The server refuses with `critical_alarm_open`
    when the board shows the patient an alert of severity `critical` that nobody has acknowledged —
-   the same alerts and acknowledgements the clinician sees (§4.4). Admission →
+   the same alerts and acknowledgements the clinician sees (§4.4). With Lane A's A1 (O17) a
+   critical alert that has stopped firing stays on the board "resolved, unacknowledged" until it is
+   acknowledged; it blocks discharge too, so a critical event is always seen before the patient
+   leaves. Admission →
    PENDING_DISCHARGE, bed → PENDING_DISCHARGE. Audit `admission.discharge_start`.
 2. **Confirm** (`admissions.discharge.confirm` — charge nurse): "Hasta çıktı · onayla". Admission →
    DISCHARGED, bed → HOUSEKEEPING, care-team rows closed (existing), board identity → discharged →
