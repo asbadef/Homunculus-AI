@@ -26,11 +26,11 @@
 Her rol sol menüde yalnız kendi işini görüyor (NAV taraması tüm roller için yapıldı, 2 leak kapatıldı). Kalan denetim: **ekran-içi buton/aksiyon yetkisi** (bir ekranı görüp bazı butonları görmemesi gereken rol) — numune/ilaç/eczanede test edildi; tam tarama "kapsama turunda".
 
 ## Eksik / kopuk — SIRADA (kaybolmasın)
-1. **İlaç/hizmet → fatura fiyat zinciri**: istem/karşılama tutarı faturaya/vezneye otomatik yansısın (şu an ayrı). *Veri-rapor tutarlılığı*.
-2. **Eczane derinliği**: muadil seçimi, Vademecum/DDI etkileşim sorgusu, Onayla/Transfer/Reddet, hasta stok, miadı geçen, iade/zayi, ITS (referans pharmacy-extended).
-3. **Lab/Rad sonuç**: tarih trendli tablo + anormal vurgu + rad rapor (şu an düz + prompt).
-4. **Yatan/servis**: yatış istemi + Yatan Hasta Listesi + servis (yatak değişikliği) + taburcu akışı tam.
-5. **Buton-seviyesi yetki kapsama turu** (tüm ekranlar) + admin'den yönetilebilirlik doğrulaması.
+1. [x] **İlaç/hizmet → fatura fiyat zinciri (1. halka)** (v0219): İstem order'ı `kod` taşır → `fiyatOf` fiyatlar → İş Havuzu'nda tutar/toplam. *Kalan: faturaya otomatik satır postalama.*
+2. [x] **Eczane derinliği** (v0220): Bekliyor/Karşılandı/Reddedildi/Transfer + Onayla/Reddet/Transfer/Muadil/Etkileşim. *Kalan: stok/miadı/iade/ITS + tam DDI motoru.*
+3. [x] **Lab/Rad anormal vurgu** (v0221): H.LABREF referans aralıkları + yapısal sonuç + ↑/↓ renkli işaret. *Kalan: zaman-içi trend + admin referans düzenleme + rad PACS.*
+4. [ ] **Yatan/servis**: yatış istemi + Yatan Hasta Listesi + servis (yatak değişikliği) + taburcu akışı tam. *(sıradaki modül)*
+5. [ ] **Buton-seviyesi yetki kapsama turu** (tüm ekranlar) + admin'den yönetilebilirlik doğrulaması.
 6. **Lab/Radyoloji tekniker süreci** (sahip anlatacak): numune Kabul→çalışma→sonuç onay→rapor zinciri derinliği.
 7. Cila: "Yönetim" sidebar etiketi audit-only rollerde "Denetim kaydı" görünsün; İş Listesi sayaç tıklanır filtre; üst bar sadeleştirme.
 8. Diğer içe aktarma: hizmet/tanı/form/yetki .xls.
