@@ -26,7 +26,7 @@ import { CONNECTION } from "../../../liveConnection.js";
 import { Alert, Note, Pill, StatusPill } from "../../ui/index.js";
 import { hhmm } from "../../i18n/dates.js";
 import { neverMeasured, oldestMeasurement } from "./freshness.js";
-import { ageText } from "../patient/ageText.js";
+import { ageText } from "../patient/ageText.js";   // G2-A2
 import { wardFeedHealth } from "./feedHealth.js";
 import { useNow } from "./useNow.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
@@ -196,7 +196,7 @@ export function News2({ news2, nowMs, className = "" }) {
       ) : null}
       {/* G2-A2 (D10): what was scored as room air and Alert; an expired chart says when it was made. */}
       {assumed.length > 0 ? (
-        <StatusPill tone="neutral" icon="edit">
+        <StatusPill tone="neutral" icon="edit" className="!whitespace-normal">
           {`${t("news2.assumedMark")}: `}
           {assumed.map((name, i) => {
             const age = at[name] ? ageOfInput(name) : null;

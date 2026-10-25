@@ -180,8 +180,18 @@ describe("the bed card — what it says, and what it refuses to", () => {
         at: measured(30),
         score: news2({ assumed: ["air_or_oxygen", "consciousness"], measured_at: { air_or_oxygen: ago(9 * 3600) } }),
       }));
-      expect(screen.getByText("fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq")).toBeInTheDocument();
+      const pill = screen.getByText("fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq");
       expect(screen.getByText("(heç qeyd edilməyib)")).toBeInTheDocument();   // consciousness, read out
+      // The whole sentence as a reader gets it: the assumed values, the screen-reader-only «never
+      // charted», and the hint that says why this is not a warning.
+      expect(pill).toHaveTextContent(
+        "fərz edildi: otaq havası (son qeyd 9 saat əvvəl), oyaq (heç qeyd edilməyib) · "
+        + "Cari qeyd yoxdur; bal bu girişi standart dəyərlə hesabladı və bunu qismən saymır.",
+      );
+      expect(pill).toHaveAttribute("data-tone", "neutral");
+      // StatusPill is nowrap + uppercase and the bed card clips its overflow: on a 290 px card an
+      // unwrapped pill cuts off the assumed consciousness, the very mark D10 asks for.
+      expect(pill).toHaveClass("!whitespace-normal");
       expect(screen.queryByText("qismən")).toBeNull();                         // an assumption is not partial
     });
 
