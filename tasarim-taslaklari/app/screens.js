@@ -830,7 +830,7 @@
   const H360_ANA = [["360", "Genel"], ["ishavuzu", "İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];
   const H360_ALT = [["kart", "Hasta Kartı"], ["gelisler", "Gelişler"], ["faturalar", "Faturalar"], ["odeme", "Ödemeler / Avanslar"], ["indirim", "İndirimler"], ["dosya", "Dosyalar / Resimler"], ["notlar", "Notlar"], ["teklif", "Teklifler"], ["online", "Online Ödemeler"], ["pos", "POS İşlem Ödeme"], ["anlasma", "Anlaşmalarım"]];
   const H360_KABUL = [["ayaktan", "Poliklinik"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatış"], ["yogun", "Yoğun bakım"], ["kontrol", "Kontrol"], ["donor", "Donör"]];
-  const H360_DIGER = ["Hasta uyarısı", "Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
+  const H360_DIGER = ["Hasta uyarısı", "Kullanılan steril setler", "Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
   const secArr = (k, def) => { const s = H.data.secenekler; return (s && s[k] && s[k].length) ? s[k] : def; };
   H.register("hasta360", { title:() => "Hasta Dosyası", perm:["admission", "summary", "patient"], render(root, params = {}) {
     const p = H.pt(params.pid); if (!p) { root.innerHTML = `<div class="ph"><div><h2>Hasta Dosyası</h2><p>Hasta seçilmedi.</p></div></div><div class="empty">Vezne panelinden bir hasta seçin.</div>`; return; }
@@ -1145,6 +1145,14 @@
         if (H.proto) { const att = H.userBy(p.attending); H.proto.create(p.id, { bolum:(u && u.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:kl, ptip:"Genel muayene" }); }
         H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + kl + " · protokol açıldı"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
       const di = e.target.closest("[data-diger]"); if (di) { const ad = di.dataset.diger; root.querySelector("[data-h3digerm]").classList.add("hidden");
+        if (ad === "Kullanılan steril setler") { const list = H.sterSetsOfPatient ? H.sterSetsOfPatient(p.id) : [];
+          H.modal({ title:"Kullanılan steril setler · " + H.esc(vzName(p.name)), wide:true,
+            body:`<p class="adm-sub" style="margin:0 0 8px">Bu hastaya teslim edilen / kullanılan steril setler (Sterilizasyon modülünden gelir).</p>
+              <div class="tw"><table class="t"><thead><tr><th>Set no</th><th>Set</th><th>Aşama</th><th>Vaka</th><th>Döngü no</th><th>Teslim alan</th></tr></thead><tbody>
+              ${list.length ? list.map(s => `<tr><td class="mono"><b>${H.esc(s.no)}</b></td><td>${H.esc(s.ad)}</td><td>${H.esc(s.asama)}</td><td class="adm-sub">${H.esc(s.vaka || "—")}</td><td class="adm-sub">${H.esc((s.otoklav && s.otoklav.no) || "—")}</td><td class="adm-sub">${H.esc(s.teslimAlan || "—")}</td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Bu hastaya kayıtlı steril set yok. (Sterilizasyon → vaka arabası / teslim ile hastaya bağlanır.)</td></tr>`}
+              </tbody></table></div>`,
+            actions:`<button class="btn" data-x>Kapat</button>${list.length ? `<button class="btn" data-sgit>Sterilizasyon modülü</button>` : ""}`,
+            onMount(m) { const g = m.querySelector("[data-sgit]"); if (g) g.onclick = () => { H.closeModal(); H.go("sterilizasyon", { tab:"pano" }); }; } }); return; }
         const hb = (H.data.hastaBilgi = H.data.hastaBilgi || {}), cur = (hb[p.id] = hb[p.id] || {}), val = ad === "Hasta uyarısı" ? (cur.uyari || "") : ((cur.diger || {})[ad] || "");
         H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(ad)} — ${H.esc(vzName(p.name))}</p><div class="icd-form"><div class="fr"><label>Açıklama / not</label><input data-diginp value="${H.esc(val)}" placeholder="${H.esc(ad)} bilgisi"></div></div><p class="adm-sub" style="margin-top:8px">${ad === "Hasta uyarısı" ? "Uyarı, hasta kartının üstünde kırmızı şeritte görünür." : "Bu ek bilgi hastaya bağlı olarak tutulur."}</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-digsave>Kaydet</button>`,

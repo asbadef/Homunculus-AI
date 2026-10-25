@@ -12205,3 +12205,25 @@ Object.assign(window.HMC_SOZLUK, {
   "Aktif araba": { AZ: "Aktiv araba", RU: "Активные тележки", EN: "Active carts" },
   "Toplam yük": { AZ: "Ümumi yük", RU: "Всего загрузок", EN: "Total loads" }
 });
+
+/* === Sterilizasyon v6: hasta seti görünümü + parametrik + tekil alet · 25.10.2026 === */
+(function (A) { if (!window.HMC_SOZLUK) window.HMC_SOZLUK = {}; for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({
+  "Kullanılan steril setler": { AZ: "İstifadə olunan steril setlər", RU: "Использованные стерильные наборы", EN: "Sterile sets used" },
+  "Sterilizasyon modülü": { AZ: "Sterilizasiya modulu", RU: "Модуль стерилизации", EN: "Sterilization module" },
+  "BI sonucu": { AZ: "BI nəticəsi", RU: "Результат БИ", EN: "BI result" },
+  "Biyolojik indikatör sonucu": { AZ: "Bioloji indikator nəticəsi", RU: "Результат биоиндикатора", EN: "Biological indicator result" },
+  "Sonucu uygula": { AZ: "Nəticəni tətbiq et", RU: "Применить результат", EN: "Apply result" },
+  "Serbest bırakma politikası": { AZ: "Sərbəst buraxma siyasəti", RU: "Политика выпуска", EN: "Release policy" },
+  "Tekil aletler": { AZ: "Fərdi alətlər", RU: "Отдельные инструменты", EN: "Individual instruments" },
+  "Yeni tekil alet": { AZ: "Yeni fərdi alət", RU: "Новый инструмент", EN: "New instrument" },
+  "Yeni alet": { AZ: "Yeni alət", RU: "Новый инструмент", EN: "New instrument" },
+  "Seri / tekil no": { AZ: "Seriya / fərdi nömrə", RU: "Серийный / уникальный №", EN: "Serial / unique no" },
+  "Seri no": { AZ: "Seriya nömrəsi", RU: "Серийный №", EN: "Serial no" },
+  "Alet adı": { AZ: "Alət adı", RU: "Название инструмента", EN: "Instrument name" },
+  "Alet": { AZ: "Alət", RU: "Инструмент", EN: "Instrument" },
+  "Ait olduğu set şablonu": { AZ: "Aid olduğu set şablonu", RU: "Шаблон набора", EN: "Belongs to set template" },
+  "Bağlı set (örnek)": { AZ: "Bağlı set (nümunə)", RU: "Привязанный набор", EN: "Linked set (instance)" },
+  "Bağlı set": { AZ: "Bağlı set", RU: "Привязанный набор", EN: "Linked set" },
+  "Tamirde": { AZ: "Təmirdə", RU: "В ремонте", EN: "In repair" },
+  "Emekli": { AZ: "Təqaüddə", RU: "Списан", EN: "Retired" }
+});

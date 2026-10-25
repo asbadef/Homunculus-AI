@@ -18,7 +18,12 @@ Kullanım yeri ön temizlik → Dekontaminasyon (yıkama/WD) → Muayene & test 
 
 - [x] **v5:** **Tamir/bakım statüsü** (set "Bakıma al" → dolaşım dışı, badge/uyarı, geri al); **Loaner/konsinye set** (yeni sette işaret + firma adı, badge, "önce tüm akıştan geçmeli" uyarısı); **KPI** (komuta merkezinde teslim edilen set, toplam yük, aktif araba, bakımda/loaner sayıları); **araba/teslim kilidi** (arabaya ayrılan set depoda tekil teslim edilemez, "arabada" rozeti).
 
-## Kalan (araştırma önceliğiyle) — öneri sırası
+- [x] **v6 — kalanların hepsi:** **Hasta dosyasında "kullanılan setler"** (hasta kartı → Diğer ▾ → o hastaya teslim edilen setlerin listesi); **Parametrik serbest bırakma** anahtarı (komuta merkezinde; kapalıysa "Gözlənilir" BI'lı yük karantinada, "Yükler → BI sonucu" ile serbest/geri çağrı); **Tekil alet takibi** ("Tekil aletler" sekmesi: seri no, bağlı set, kullanım döngüsü, durum Aktif/Tamirde/Kayıp/Emekli, arama = "alet nerede?").
+
+## Kalan — tamamlandı ✅
+Yol haritasındaki tüm maddeler yapıldı. (İleri faz, donanım gerektiren: gerçek barkod/RFID okuyucu, otoklav döngü entegrasyonu, gerçek BI inkübatör okuması — bunlar ayrı ekip / donanım işidir.)
+
+## Eski kalan liste (arşiv) — öneri sırası
 Zorluk: K=kolay, O=orta.
 2. [ ] **Vaka arabası (case cart) + OR programı** — O. Ameliyat programından gerekli setlerin toplama listesi; arabayı hazırla, eksik seti işaretle. MSÜ'yü ameliyathaneye bağlar.
 3. [ ] **Tamir/bakım statüsü** — O. Bozuk alet/seti "tamirde" işaretle, dolaşımdan çıkar, dönünce geri al.
