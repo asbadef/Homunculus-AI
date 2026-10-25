@@ -33,6 +33,8 @@ class Engine:
         # X12: an anchor dropped by infection charted absent -> (anchor, when it was dropped).
         self._dropped_anchor: dict[str, tuple[datetime, datetime]] = {}
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
+        # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
+        self._held_news2_alert: dict[str, Alert] = {}
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
 
@@ -73,9 +75,6 @@ class Engine:
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation. At the same
         # `now` NEWS2 was judged at (G2-A2, D6).
         findings = patient_relative.apply(findings, state, profile, now)
-        if not news2_findings:
-            # Staleness may withhold a new NEWS2 alert but cannot end a running one (G2-A2, X9).
-            findings += self._held_news2(obs.patient_id, state, profile, now)
 
         # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
@@ -130,58 +129,52 @@ class Engine:
 
         alerts = [to_alert(f, obs.patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
+        # Staleness may withhold a new NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
+        held = self._held_news2(obs.patient_id, bool(news2_findings), state, now)
+        if held is not None:
+            alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
         # reading. A kind they did not produce has stopped firing and is gone — no quiet time, no
-        # hysteresis. (A held NEWS2, G2-A2 X9, is produced by this evaluation, from the readings it
-        # holds, and goes with the first evaluation those do not reach a band.) What the API keeps of
-        # one (a critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not
-        # the engine's.
+        # hysteresis — except a NEWS2 held while a vital is stale (G2-A2, X9b), which goes with the
+        # first evaluation that has none stale and is below the band. What the API keeps of one (a
+        # critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not the
+        # engine's.
         self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
         return alerts
 
-    def _held_news2(self, patient_id: str, state: PatientState, profile: PatientProfile | None,
-                    now: datetime) -> list[Finding]:
-        """The running NEWS2 alert, held, for an evaluation whose score at `now` does not reach a
-        band (G2-A2, X9); empty when no NEWS2 alert is running or its last readings do not reach one.
+    def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
+                    now: datetime) -> Alert | None:
+        """The running NEWS2 alert, held, when this evaluation's NEWS2 (`fired`) produced none while
+        a vital is stale at `now` (G2-A2, X9, X9b); None when it fired, none was running, or no
+        vital is stale — then a complete fresh evaluation is below the band and the alert ends.
 
         The bridge posts a vitals set one reading at a time, every reading stamped with the set's
         time. Judged at each, the first readings of a set taken more than a window after the last
         saw the rest stale, fell below the band and ended the alert, and the next reading raised it
-        again as a new episode: a new nurse notification, the acknowledgement gone. So while a NEWS2
-        alert is running (the bucket, before this evaluation replaces it), NEWS2 is scored again
-        ageless — every input at its last reading, the score before G2-A2 — and if that reaches a
-        band the alert is held and says what it is held on: the vitals past their window, and a
-        charted oxygen or ACVPU past its shift (D8). It ends when those readings no longer reach the
-        band — a complete fresh set below it, or a fresh reading that resolves it while another
-        input is still stale. A stale input still never raises a new alert (D6).
-
-        The patient-relative layer judges the held finding on the score it reports, ageless. Judged
-        at `now` a stale input would be no contributor: a stale pressure inside its charted baseline
-        would no longer explain a chronic alert, which would start alarming, and one outside it
-        would no longer count against the downgrade, which would silence an acute one.
+        again as a new episode: a new nurse notification, the acknowledgement gone. So a running
+        alert (the bucket, before this evaluation replaces it) is held while a vital is stale. It is
+        kept as it was last scored — total, severity, urgency, downgrade — and only says what it is
+        held on (X9b): re-scored on the stale readings (X9) it could climb a band, to "immediate" and
+        a nurse notification, on a value hours old. A fresh score that reaches a band is the alert
+        again, a lower one included. A stale input still never raises a new alert (D6), a charted
+        oxygen or ACVPU past its shift holds nothing (it is assumed, D8), and a feed that stops
+        entirely keeps the held alert, as before G2-A2.
         """
-        if "news2" not in self._alerts.get(patient_id, {}):
-            return []
-        held = news2.evaluate(state)
-        if not held:
-            return []
-        # The acute-change findings the layer appends again here are already in this evaluation.
-        [finding] = [f for f in patient_relative.apply(held, state, profile) if f.kind == "news2"]
-        # The two scores differ only by inputs aged out at `now`, so a held alert has at least one.
+        kept = self._held_news2_alert.pop(patient_id, None)    # spent unless the hold goes on
+        running = self._alerts.get(patient_id, {}).get("news2")
+        if fired or running is None:
+            return None
         at_now = news2.score(state, now)
-        aged_out = sorted(
-            (name for name in at_now.breakdown if name in at_now.stale
-             or (name in at_now.assumed and at_now.measured_at[name] is not None)),
-            key=lambda name: at_now.measured_at[name])      # longest stale first, as the recency note
-        note = (f" Held while inputs are stale: "
-                f"{', '.join(news2.INPUT_LABEL[name] for name in aged_out)} older than the expected "
-                f"refresh window. The alert was already firing, so a stale input is counted at its "
-                f"last reading rather than left out; it ends when the readings no longer reach the "
-                f"band.")
-        # `stale_inputs` keeps its vocabulary, the vital labels the clients translate.
-        return [replace(finding, reasoning=finding.reasoning + note,
-                        stale_inputs=[news2.INPUT_LABEL[name] for name in aged_out
-                                      if name in at_now.stale])]
+        if not at_now.stale:
+            return None
+        kept = running if kept is None else kept
+        self._held_news2_alert[patient_id] = kept
+        stale = [news2.INPUT_LABEL[name]                  # longest stale first, as the recency note
+                 for name in sorted(at_now.stale, key=lambda name: at_now.measured_at[name])]
+        note = (f" Held while inputs are stale: {', '.join(stale)} older than the expected refresh "
+                f"window. This alert was already firing and is kept as last scored, not re-scored; "
+                f"it ends when no vital is stale and the score is below the band.")
+        return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
     def _new_anchor(self, patient_id: str, now: datetime) -> datetime:
         """The anchor of a recognition with none running (X12): the anchor dropped at most
