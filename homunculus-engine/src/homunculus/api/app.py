@@ -78,7 +78,7 @@ BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE 
 SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
-# PATIENT_ID_MAX is the gateway's since G2-A2 (D14): a body's id and an ingested one are capped alike.
+# PATIENT_ID_MAX is the gateway's since G2-A2 (D14): a body's id and an ingested one are capped alike (bodies are not stripped).
 
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
@@ -916,7 +916,7 @@ def create_app(
 
         The scope is resolved once, here, and handed to `_require_patient`: the chart polls every
         minute, and a second look-up would double that work and give a blip between the two a way
-        to answer 404 for a patient who is in scope.
+        to turn a scope that was readable into a 503.
         """
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)

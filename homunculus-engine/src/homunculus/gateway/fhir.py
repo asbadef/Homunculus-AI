@@ -74,7 +74,7 @@ def parse_fhir_observation(resource: dict) -> Observation:
     # feed's error (400), not an AttributeError (500); the id itself is `patient_id_from`'s.
     subject = resource.get("subject")
     if subject is not None and not isinstance(subject, dict):
-        raise GatewayError(f"malformed subject: {subject!r}")
+        raise GatewayError(f"malformed subject: expected an object, got {type(subject).__name__}")
     reference = (subject or {}).get("reference", "")
     if not isinstance(reference, str) or not reference.startswith("Patient/"):
         raise GatewayError(f"missing or malformed subject.reference: {reference!r}")
