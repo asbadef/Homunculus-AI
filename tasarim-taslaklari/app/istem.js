@@ -146,7 +146,7 @@
         cartEl.onchange = (e) => { const a = e.target.closest("[data-acil]"); if (a) cart[+a.dataset.acil].acil = a.checked; };
         m.querySelector("[data-ok]").onclick = () => {
           if (!cart.length) { H.toast("Önce hizmet seçin.", "w"); return; }
-          cart.forEach(c => addOrder(p, { cat:cfg.cat, ad:hzName(c.row), detay:[c.acil ? "Acil" : "", "Kod " + c.row[0], c.aciklama].filter(Boolean).join(" · ") }));
+          cart.forEach(c => addOrder(p, { cat:cfg.cat, ad:hzName(c.row), kod:c.row[0], detay:[c.acil ? "Acil" : "", c.aciklama].filter(Boolean).join(" · ") }));
           H.toast(cart.length + " istem eklendi"); H.closeModal(); rerender();
         };
       },
