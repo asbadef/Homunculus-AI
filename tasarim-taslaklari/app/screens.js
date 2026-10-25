@@ -797,7 +797,7 @@
   const H360_ANA = [["360", "Genel"], ["ishavuzu", "İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];
   const H360_ALT = [["kart", "Hasta Kartı"], ["gelisler", "Gelişler"], ["faturalar", "Faturalar"], ["odeme", "Ödemeler / Avanslar"], ["indirim", "İndirimler"], ["dosya", "Dosyalar / Resimler"], ["notlar", "Notlar"], ["teklif", "Teklifler"], ["online", "Online Ödemeler"], ["pos", "POS İşlem Ödeme"], ["anlasma", "Anlaşmalarım"]];
   const H360_KABUL = [["ayaktan", "Poliklinik"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatış"], ["yogun", "Yoğun bakım"], ["kontrol", "Kontrol"], ["donor", "Donör"]];
-  const H360_DIGER = ["Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
+  const H360_DIGER = ["Hasta uyarısı", "Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
   const secArr = (k, def) => { const s = H.data.secenekler; return (s && s[k] && s[k].length) ? s[k] : def; };
   H.register("hasta360", { title:() => "Hasta Dosyası", perm:["admission", "summary", "patient"], render(root, params = {}) {
     const p = H.pt(params.pid); if (!p) { root.innerHTML = `<div class="ph"><div><h2>Hasta Dosyası</h2><p>Hasta seçilmedi.</p></div></div><div class="empty">Vezne panelinden bir hasta seçin.</div>`; return; }
@@ -818,7 +818,9 @@
       <button class="btn sm ${p.kvkk ? "" : "g"}" data-h3kvkk>KVKK onay</button>
       <button class="btn sm ${p.etk ? "" : "g"}" data-h3etk>ETK onay</button></div>`;
     const altTabs = ana === "360" ? `<div class="seg h360-alt">${H360_ALT.map(([k, l]) => `<button data-h3alt="${k}" class="${alt === k ? "on" : ""}">${l}</button>`).join("")}</div>` : "";
-    root.innerHTML = `${hdr}${anaTabs}${toolbar}${altTabs}<div class="h360-body" data-h3body></div>`;
+    const uyari = ((H.data.hastaBilgi || {})[p.id] || {}).uyari;
+    const uyariBar = uyari ? `<div class="note" style="background:color-mix(in srgb,var(--crit) 14%,transparent);border:1px solid var(--crit);color:var(--crit);display:flex;align-items:center;gap:8px;margin-bottom:10px">${I("alert") || "⚠"} <b>Hasta uyarısı:</b> ${H.esc(uyari)}</div>` : "";
+    root.innerHTML = `${hdr}${uyariBar}${anaTabs}${toolbar}${altTabs}<div class="h360-body" data-h3body></div>`;
     const body = root.querySelector("[data-h3body]");
     const fld = (k, lbl, ph, val) => `<div class="fr"><label>${H.esc(lbl)}</label><input data-hf="${k}" value="${H.esc(val != null ? val : (p[k] != null ? p[k] : ""))}" placeholder="${ph || ""}"></div>`;
     const selF = (k, lbl, list, val) => `<div class="fr"><label>${H.esc(lbl)}</label><select data-hf="${k}">${["", ...list].map(x => `<option${(val || p[k] || "") === x ? " selected" : ""}>${H.esc(x || "— seç —")}</option>`).join("")}</select></div>`;
@@ -1110,8 +1112,10 @@
         if (H.proto) { const att = H.userBy(p.attending); H.proto.create(p.id, { bolum:(u && u.tr) || "—", doktor:(att && att.name) || "—", gelisTipi:kl, ptip:"Genel muayene" }); }
         H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + kl + " · protokol açıldı"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
       const di = e.target.closest("[data-diger]"); if (di) { const ad = di.dataset.diger; root.querySelector("[data-h3digerm]").classList.add("hidden");
-        H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(ad)} — ${H.esc(vzName(p.name))}</p><div class="icd-form"><div class="fr"><label>Açıklama / not</label><input placeholder="${H.esc(ad)} bilgisi"></div></div><p class="adm-sub" style="margin-top:8px">Bu ek bilgi hastaya bağlı olarak tutulur ve ilgili modüllerde görünür.</p>`,
-          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-x>Kaydet</button>` }); return; }
+        const hb = (H.data.hastaBilgi = H.data.hastaBilgi || {}), cur = (hb[p.id] = hb[p.id] || {}), val = ad === "Hasta uyarısı" ? (cur.uyari || "") : ((cur.diger || {})[ad] || "");
+        H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(ad)} — ${H.esc(vzName(p.name))}</p><div class="icd-form"><div class="fr"><label>Açıklama / not</label><input data-diginp value="${H.esc(val)}" placeholder="${H.esc(ad)} bilgisi"></div></div><p class="adm-sub" style="margin-top:8px">${ad === "Hasta uyarısı" ? "Uyarı, hasta kartının üstünde kırmızı şeritte görünür." : "Bu ek bilgi hastaya bağlı olarak tutulur."}</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-digsave>Kaydet</button>`,
+          onMount(m) { m.querySelector("[data-digsave]").onclick = () => { const v = (m.querySelector("[data-diginp]").value || "").trim(); if (ad === "Hasta uyarısı") cur.uyari = v; else { cur.diger = cur.diger || {}; cur.diger[ad] = v; } H.saveData && H.saveData(); H.log(ad + " kaydedildi", vzName(p.name)); H.closeModal(); H.toast(ad + " kaydedildi"); H.go("hasta360", { pid:p.id, atab:ana, stab:alt, proto:params.proto }); }; } }); return; }
       if (e.target.closest("[data-h3kvkk]")) { onayModal("kvkk"); return; }
       if (e.target.closest("[data-h3etk]")) { onayModal("etk"); return; }
       if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi"); return; }

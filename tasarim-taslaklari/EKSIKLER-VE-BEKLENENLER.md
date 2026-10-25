@@ -5,7 +5,7 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 ## A. Temizlik / düzeltme ("burada olmasın")
 - [x] Ekran altyazılarındaki "(tasarım)" etiketleri kaldırıldı (randevu, vezne, raporlar, iş takip, labislem, İK).
 - [x] Kalan "· tasarım" yer tutucu toastları dürüstleştirildi/bağlandı (yeni doğan, onam ekle→dosya, hazırlık açıklaması, sağ-tık menüleri, yazdır çıktıları→gerçek yazdırma).
-- [x] **Hasta Dosyası Faturalar sağ-tık gerçek:** Ödeme (tahsil et) / Fatura iptal (yetkili) / İade talebi oluştur / Yazdır — o satıra etki eder, kalıcı. (Diğer alt-tab sağ-tıkları hâlâ vezne'ye yönlendirme mesajı; istenirse genişletilir.)
+- [x] **Hasta Dosyası sağ-tık gerçek (tüm para sekmeleri):** Faturalar (Ödeme/İptal/İade/Yazdır) + Ödeme/İndirim/Not/Online/POS (İptal/Sil/İade/Dekont) — o satıra etki eder, kalıcı.
 - [x] **Vezne demo seed'leri klinik hastalarla hizalandı** (Elvin Hüseynov, Nərgiz Əliyeva vb.) → fatura/GFK satırına tıklayınca kart açılır. Kalıcılık v2.
 - [ ] **Kurumsal Faturalama iki yerde** (Vezne sekmesi + Medikal Muhasebe hub). Ev kararı: ikisi de kalsın (biri kısayol) mı, tek yer mi?
 - [ ] Rapor: listeden çıkarılan raporların `reportData()` yardımcıları duruyor (ölü kod, zararsız). İstenirse temizlenir.
@@ -18,7 +18,7 @@ Veri zinciri (Adım 1–6) bitti. Bu belge: yapmadığımız/eksik süreçler, "
 5. [~] **Randevu takvim görünümü** — [x] gün ızgarası (saat×doktor, durum renkli, boş hücreden randevu, detay/sil); hafta/web randevu/slot kapatma kalan.
 6. [ ] **İK akışları** — izin / işgöremezlik, nöbet çizelgesi görünümü.
 7. [ ] **Çeviri turu** — yeni metinlerin AZ/RU/EN sözlüğü (varsayılan dil Azerice).
-8. [ ] **Ön büro ekranları** — Hasta Uyarı, Refakatçi, Sevk, Kara Liste, Müstehaklık (FORM-DURUM eksikleri).
+8. [~] **Ön büro ekranları** — [x] Hasta Uyarı (kalıcı, kartta kırmızı banner) + Diğer menü bilgileri kaydediliyor; Refakatçi/Sevk/Kara Liste/Müstehaklık kalan.
 9. [ ] **Mobil / PWA** ve **grafik panolar** — ileri faz.
 
 ## C. Senden (sahip) beklenenler
