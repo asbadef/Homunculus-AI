@@ -19,9 +19,11 @@ _RECOGNITION_KINDS = {"sepsis", "septic_shock"}
 #: How long after its drop an antibiotic-clock anchor can still be restored (G2-A1, X12). Charting
 #: suspected infection absent and then present again inside this is a correction of the toggle —
 #: the same episode, whose hour is still running or already overdue; restarting it turned an
-#: antibiotic 10 min overdue into "60 min remaining". One hour because that is the clock's own
-#: horizon: past it the old hour has closed anyway, and a new recognition is a second episode (D9).
-ANCHOR_RESTORE_S = 3600
+#: antibiotic 10 min overdue into "60 min remaining". The window runs from the drop, not from the
+#: anchor, and is a correction's size: a mis-click is put right within minutes. A recognition after
+#: it is a second episode with its own hour (D9) — a new infection after a rule-out must not
+#: inherit the old anchor, and with it the doses given since (X12 review).
+ANCHOR_RESTORE_S = 900
 
 
 class Engine:
@@ -82,9 +84,10 @@ class Engine:
         #    `sepsis` for one evaluation, and an anchor dropped then would let an untreated sepsis
         #    never go overdue, or give a treated one a false overdue when it came back.
         #  - A dropped anchor is remembered with the time of its drop (X12). A recognition within
-        #    ANCHOR_RESTORE_S of it restores the old anchor: infection charted absent and present
-        #    again is a corrected toggle, the same episode, and an antibiotic charted in the gap
-        #    counts against the restored hour. A later recognition gets its own anchor, `now`.
+        #    ANCHOR_RESTORE_S (15 min) of the drop restores the old anchor: infection charted absent
+        #    and present again is a corrected toggle, the same episode, and an antibiotic charted in
+        #    the gap counts against the restored hour. A later recognition gets its own anchor,
+        #    `now`.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.

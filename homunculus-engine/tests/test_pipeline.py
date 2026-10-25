@@ -215,17 +215,35 @@ def test_a_corrected_infection_toggle_keeps_the_antibiotic_hour():
         "the hour that ran from +0 is still the one that is overdue"
 
 
-def test_a_recognition_more_than_an_hour_after_infection_was_charted_absent_has_its_own_hour():
+def test_a_recognition_more_than_15_minutes_after_infection_was_charted_absent_has_its_own_hour():
     eng = Engine()
     _sepsis_charted(eng, 1.0, minute=0)
     _chart(eng, SignalCode.PLATELETS, 80, minute=70)
     assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 10 min"
     _chart(eng, SignalCode.SUSPECTED_INFECTION, 0.0, minute=71)
-    _chart(eng, SignalCode.HEART_RATE, 80, minute=100)            # an evaluation in the gap
-    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=140)  # 69 min after the drop
-    assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=140), "past the restore horizon: a new anchor"
+    _chart(eng, SignalCode.HEART_RATE, 80, minute=80)             # an evaluation in the gap
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=90)   # 19 min after the drop
+    assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=90), "past the restore window: a new anchor"
     assert "antibiotic_overdue" not in _kinds(eng)
     assert _summary(eng, "antibiotic_due") == "Antibiotic window: 60 min remaining"
+
+
+def test_a_new_infection_recognised_within_the_hour_of_a_rule_out_does_not_inherit_its_doses():
+    # X12 review: sepsis at +0, the antibiotic given at +20, infection ruled out at +40 and a new one
+    # recognised at +90. With an hour's restore window the +90 recognition inherited the anchor of +0
+    # and the dose of +20 with it: no antibiotic alert at all for the new infection. Fifty minutes is
+    # no corrected toggle; the new episode has its own hour, and the old dose does not count.
+    eng = Engine()
+    _sepsis_charted(eng, 1.0, minute=0)
+    _chart(eng, SignalCode.ANTIBIOTIC_ADMINISTERED, 1.0, minute=20)
+    assert not _kinds(eng) & {"antibiotic_due", "antibiotic_overdue"}, "the first episode is treated"
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 0.0, minute=40)   # ruled out
+    assert eng.recognized_at("bed-3") is None
+    _chart(eng, SignalCode.SUSPECTED_INFECTION, 1.0, minute=90)   # a new infection, 50 min later
+    assert "sepsis" in _kinds(eng)
+    assert eng.recognized_at("bed-3") == T0 + timedelta(minutes=90), "its own anchor"
+    assert _summary(eng, "antibiotic_due") == "Antibiotic window: 60 min remaining", \
+        "the dose of +20 was for the ruled-out episode"
 
 
 def test_an_antibiotic_charted_while_infection_was_charted_absent_counts_against_the_restored_hour():
