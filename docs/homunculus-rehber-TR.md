@@ -1104,6 +1104,20 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     19.10'da proje sahibince merkezi monitörün yatak listesinden onaylandı; değişiklik yeni bir
     sürüm olarak aynı yolla onaylanır. Ayrıntı ve kabul ölçümleri: `deploy/infinity/README.md`,
     "Aşama A" bölümü.
+  - **Şeritte NBP (NBP dilimi):** cihaz NBP'nin ne zaman ölçüldüğünü pakette söylemiyor (son
+    değeri her pakette yineliyor), bu yüzden şerit NBP'yi **değerinin son değiştiği saatle**
+    gösterir: "NBP 118/79 (92) mmHg · ölçüm ≤ 10:42 (12 dk)". "≤" bir **üst sınırdır**: manşon en
+    geç o saatte ölçmüştür, daha önce ölçmüş olabilir. Değişiklik ancak bir önceki tam ve geçerli
+    NBP üçlüsü en çok 3 saniye önce geldiyse saat alır (`***` ya da eksik paketler sayılmaz);
+    saat, hub saatine göre, gerçeğinden en çok 3 saniye yeni olur (işçi ile API arasındaki en çok
+    2 sn'lik saat kayması şeritteki her yaş için aynıdır). Hub yeniden başladıktan sonra, ya da
+    değer bir kesinti ya da tam üçlüler arasında 3 saniyeden uzun bir boşluk sırasında değiştiyse,
+    NBP değeri değiştiren bir sonraki ölçüme kadar "— ölçüm bekleniyor" yazar (aynı değer geri
+    gelirse eski saatiyle hemen görünür). Değeri 2 saatten uzun süredir değişmemiş NBP gösterilmez
+    ("— eski · 3 sa"; API 2 saatten 15 sn önce keser ki hiçbir ekranda 2 saati geçmesin). Aynı
+    değerle yinelenen ölçüm fark edilmez (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4,
+    drop-in 94; geri alma: önce 94 silinir (hub R3'e, NBP'siz şeride döner), API/web ancak ondan
+    sonra. Dağıtımda sıra tersidir: önce API ve web, sonra hub.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
