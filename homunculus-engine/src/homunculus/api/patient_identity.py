@@ -47,6 +47,17 @@ _ENCOUNTER_STATUS = {"in-progress": _ADMITTED, "finished": _DISCHARGED, "unknown
 _SOURCE = re.compile(r"^[a-z0-9_-]{1,32}$")
 #: G2-B1a — the source of a record an admission here wrote (admission/boardlink.py).
 KABUL = "kabul"
+
+
+def is_tombstone(record: IdentityRecord | None) -> bool:
+    """A discharged `kabul` record (G2-B1a; G2-A11, D4): the patient left, the record stays (never
+    pruned) so that a reading still arriving for the number never brings the patient back. A HIS
+    discharge is not one: its card keeps its 24-hour retention, and its readings are still
+    evaluated. The one predicate — the board, BoardLink, the alert lifecycle and the doors read
+    this (A-25, Lane A's O1)."""
+    return record is not None and record.source == KABUL and record.state == _DISCHARGED
+
+
 _key_warned = False
 
 

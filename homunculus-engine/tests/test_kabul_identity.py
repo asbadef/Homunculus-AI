@@ -16,10 +16,11 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.board import board_snapshot, identity_only_board, patient_board
 from homunculus.api.patient_identity import (
-    KABUL, PROTOCOL_SYSTEM, IdentityRecord, InMemoryIdentityStore, SqliteIdentityStore,
-    parse_fhir_encounter, parse_fhir_patient,
+    DISCHARGED_TTL, KABUL, PROTOCOL_SYSTEM, IdentityRecord, InMemoryIdentityStore,
+    SqliteIdentityStore, parse_fhir_encounter, parse_fhir_patient,
 )
 from homunculus.canonical import Observation, SignalCode
 from homunculus.crypto import encrypt_phi
@@ -164,31 +165,122 @@ def test_the_board_of_an_unmeasured_tombstone_creates_no_engine_state():
     assert engine.patient_ids() == []
 
 
-def test_a_reading_for_a_discharged_number_through_ingest_publishes_its_removal():
-    """X54 on the real app: the reading reaches the engine, the frame pushed to the screens is
-    the card's removal (last bed and unit, no name), and the board stays empty."""
-    identities = InMemoryIdentityStore()
+HEAD = {"Authorization": "Bearer tok-1"}
+
+
+def reading(code: str = "spo2", value: float = 97.0, at: datetime = T0 + timedelta(hours=2),
+            pid: str = "H2600001") -> dict:
+    """A device reading as the bridge posts it to `/ingest` (synthetic)."""
+    return {"resourceType": "Observation", "status": "final",
+            "code": {"coding": [{"system": "http://homunculus.local/obs", "code": code}]},
+            "subject": {"reference": f"Patient/{pid}"}, "effectiveDateTime": at.isoformat(),
+            "valueQuantity": {"value": value, "unit": "u"}, "device": {"display": "nce"}}
+
+
+def dropped_rows(audit: InMemoryAuditLog) -> list:
+    return audit.records(tenant="h1", event_type="reading_dropped_discharged", limit=100)
+
+
+def test_a_reading_for_a_discharged_number_through_ingest_is_dropped_before_the_engine():
+    """A-11 (the user, 2026-10-26) through Lane A's `/ingest` (G2-A11, D3): a reading for a
+    tombstone never reaches the engine. One audit row tells the ward a monitor still carries the
+    number; no frame is pushed (the discharge's one removal is the retirement's, A-11d), and the
+    board stays empty. Rewritten at the merge from `…_publishes_its_removal` (X54), whose reading
+    still reached the engine."""
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
     identities.apply("h1", admitted())
     identities.apply("h1", discharged())
-    app = create_app({"tok-1": "h1"}, run_escalation_loop=False, identities=identities)
-    reading = {
-        "resourceType": "Observation", "status": "final",
-        "code": {"coding": [{"system": "http://homunculus.local/obs", "code": "spo2"}]},
-        "subject": {"reference": "Patient/H2600001"},
-        "effectiveDateTime": (T0 + timedelta(hours=2)).isoformat(),
-        "valueQuantity": {"value": 97.0, "unit": "%"},
-        "device": {"display": "nce"},
-    }
-    head = {"Authorization": "Bearer tok-1"}
+    app = create_app({"tok-1": "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
     with TestClient(app) as client:
         queue = app.state.broadcaster.subscribe("h1")
-        assert client.post("/ingest", json=reading, headers=head).status_code == 200
-        frame = queue.get_nowait()
-        assert (frame["patient_id"], frame["removed"]) == ("H2600001", True)
+        response = client.post("/ingest", json=reading(), headers=HEAD)
+        assert response.status_code == 200
+        assert response.json() == {"patient_id": "H2600001", "dropped": "discharged"}
+        assert queue.empty()
+        (row,) = dropped_rows(audit)
+        assert (row.patient_id, row.subject, row.payload) == \
+            ("H2600001", "spo2", {"patient_id": "H2600001", "code": "spo2"})
+        assert client.get("/patients", headers=HEAD).json()["patients"] == []
+
+
+def test_a_tombstone_outlives_the_retention_sweep_and_its_readings_are_still_dropped():
+    """A-25 (Lane A's condition 4): the real escalation cycle a day past the discharge runs the
+    24 h retention sweep. A `kabul` tombstone is exempt (`_is_expired`), so it is still there and a
+    reading for its number is still dropped — while a HIS discharge of the same age, the control,
+    is swept off the board and out of the store."""
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    identities.apply("h1", admitted())
+    identities.apply("h1", discharged())                              # at T0 + 1 h
+    identities.apply("h1", IdentityRecord(patient_id="20239121", given="HIS HASTA", bed="2",
+                                          state="admitted", source="comed", updated_at=T0))
+    identities.apply("h1", IdentityRecord(patient_id="20239121", state="discharged",
+                                          source="comed", updated_at=T0 + timedelta(hours=1)))
+    app = create_app({"tok-1": "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
+    later = timedelta(hours=25)
+    assert later > DISCHARGED_TTL
+    with TestClient(app) as client:
+        queue = app.state.broadcaster.subscribe("h1")
+        client.portal.call(app.state.escalation_cycle, T0 + timedelta(hours=1) + later)
+
+        assert identities.get("h1", "20239121") is None              # the control was swept
+        frames = []
+        while not queue.empty():
+            frames.append(queue.get_nowait())
+        assert [(f["patient_id"], f["removed"]) for f in frames] == [("20239121", True)]
+        tomb = identities.get("h1", "H2600001")
+        assert (tomb.state, tomb.source, tomb.bed_id, tomb.unit_id) == ("discharged", KABUL, BED, UNIT)
+
+        response = client.post("/ingest", json=reading(at=T0 + timedelta(hours=26)), headers=HEAD)
+        assert response.status_code == 200
+        assert response.json() == {"patient_id": "H2600001", "dropped": "discharged"}
+        assert len(dropped_rows(audit)) == 1
+        assert queue.empty()
+        assert client.get("/patients", headers=HEAD).json()["patients"] == []
+
+
+def test_the_escalation_cycle_retiring_an_alerting_tombstone_tells_its_units_screens():
+    """G2-A11 D6 with A-25: a discharge whose retire call never came is retired by the escalation
+    cycle, and the one removal it publishes is the tombstone's board (`_tombstone_board`, from the
+    record the guard already read) — the last bed and unit, no name — so the screen scoped to that
+    unit is told too, and no other. Before the merge it was the bare removal, `identity: null`,
+    which no scoped screen ever receives."""
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    identities.apply("h1", admitted())
+    app = create_app({"tok-1": "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
+    with TestClient(app) as client:
+        assert client.post("/ingest", json=reading("heart_rate", 140), headers=HEAD).status_code == 200
+        assert client.get("/alerts/H2600001", headers=HEAD).json()["alerts"]          # one fires
+        identities.apply("h1", discharged())                          # the retire call never came
+        queue = app.state.broadcaster.subscribe("h1")
+        client.portal.call(app.state.escalation_cycle, T0 + timedelta(hours=2))
+
+        frames = []
+        while not queue.empty():
+            frames.append(queue.get_nowait())
+        (frame,) = [f for f in frames if f.get("removed")]
+        assert frame["patient_id"] == "H2600001"
         assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
         assert "Sentetik" not in repr(frame)
-        assert queue.empty()
-        assert client.get("/patients", headers=head).json()["patients"] == []
+        assert sees_patient(frame, build_scope("MEMBER", unit_ids=[UNIT]))
+        assert not sees_patient(frame, build_scope("MEMBER", unit_ids=["another-unit"]))
+        assert [r.payload["reason"] for r in audit.records(
+            tenant="h1", event_type="alert_cleared", patient_id="H2600001", limit=100)] == ["discharged"]
+        assert client.get("/alerts/H2600001", headers=HEAD).json()["alerts"] == []
+
+
+def test_one_tombstone_predicate_lives_beside_kabul():
+    """A-25 (Lane A's O1/O4): what a tombstone is, is said once — `patient_identity.is_tombstone`,
+    next to `KABUL` — and the alert lifecycle and the board read that one."""
+    from homunculus.api import alert_lifecycle, board, patient_identity
+
+    assert alert_lifecycle.is_tombstone is patient_identity.is_tombstone
+    assert not hasattr(alert_lifecycle, "KABUL_SOURCE")
+    assert not hasattr(board, "_is_tombstone")
+    assert patient_identity.is_tombstone(discharged())
+    assert not patient_identity.is_tombstone(admitted())
+    assert not patient_identity.is_tombstone(IdentityRecord("20239121", state="discharged",
+                                                            source="comed"))
+    assert not patient_identity.is_tombstone(None)
 
 
 # ---------------------------------------------------------------- the stores (Task 5 review)

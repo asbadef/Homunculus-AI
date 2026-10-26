@@ -34,9 +34,10 @@ There is no fallback for a door the app did not wire: `chart_weight` and `retire
 `RuntimeError`, and every refusal raises, so the admission routes can say which part failed and
 never report one `ok` that did not happen.
 
-The app builds it from its own stores and doors and places it on `app.state.board_link` — the
-wiring is Task 6b's, after Lane A's A-11 is merged (A-20, A-23); a router reaches it through the
-request (`board_link_of`). An app built without it (a test that mounts the routers alone) has none,
+`api/app.py` builds it from its own stores and doors — Lane A's `chart_observations`,
+`retire_and_publish` and the broadcaster's publish, by reference (Task 6b; A-20, A-23, A-25) —
+and places it on `app.state.board_link`; a router reaches it through the request
+(`board_link_of`). An app built without it (a test that mounts the routers alone) has none,
 and the admission routes answer `skipped` for its parts.
 
 PHI: the identity carries the name, as an ADT record does (encrypted at rest by the store). The
@@ -51,12 +52,10 @@ from fastapi import Request
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditEvent, AuditLog
-from homunculus.api.board import (
-    _is_tombstone, _tombstone_board, identity_only_board, patient_board,
-)
+from homunculus.api.board import _tombstone_board, identity_only_board, patient_board
 from homunculus.api.clinical import build_entries, profile_from_payload, profile_to_payload
 from homunculus.api.notify import Notifier
-from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore
+from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore, is_tombstone
 from homunculus.pipeline import Engine
 from homunculus.tenant.bedmap import BedMap
 
@@ -126,7 +125,7 @@ class BoardLink:
         has no board."""
         engine = self._engine(tenant)
         identity = identity if identity is not None else self._identities.get(tenant, patient_number)
-        if _is_tombstone(identity):
+        if is_tombstone(identity):
             return _tombstone_board(identity)
         if patient_number in set(engine.patient_ids()):
             return patient_board(engine, patient_number, self._store(tenant), identity=identity,
@@ -195,7 +194,7 @@ class BoardLink:
     def is_discharged(self, tenant: str, patient_number: str) -> bool:
         """True when the number is a `kabul` tombstone — a patient discharged here. A HIS-fed
         discharge is not one: its card keeps its 24 hours on the board."""
-        return _is_tombstone(self._identities.get(tenant, patient_number))
+        return is_tombstone(self._identities.get(tenant, patient_number))
 
     def _refuse_discharged(self, tenant: str, patient_number: str) -> None:
         """A-11: nothing reaches the engine for a discharged number, and no row a restart would
@@ -218,7 +217,7 @@ class BoardLink:
         if stored is not None:
             return stored
         current = self._identities.get(tenant, patient_number)
-        if _is_tombstone(current):
+        if is_tombstone(current):
             return current
         raise RuntimeError(f"the discharge of {patient_number} was refused: the identity store "
                            "holds a newer record that is not a discharge")
@@ -231,7 +230,7 @@ class BoardLink:
         `record` must be this number's `kabul` tombstone (`discharge_identity`'s answer): a frame
         built from another record would take another patient's card, or an admitted one, off the
         screens. Anything else is a `ValueError`, before the door is called."""
-        if record is None or record.patient_id != patient_number or not _is_tombstone(record):
+        if record is None or record.patient_id != patient_number or not is_tombstone(record):
             raise ValueError(f"retire takes the kabul tombstone of {patient_number}")
         if self._retire is None:
             raise RuntimeError("retire_patient not wired")

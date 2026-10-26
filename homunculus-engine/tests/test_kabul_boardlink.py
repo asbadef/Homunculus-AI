@@ -8,7 +8,9 @@ or latched; a discharge writes the tombstone (a second one returns it, a refused
 publishes nothing; the retirement is the door the app injects, handed the tombstone's removal frame
 and refusing any other record. A tombstone's board is its removal, never its card; a number with
 neither an identity nor a reading sends nothing. The link is built here from real stores, as
-`api/app.py` builds it in Task 6b (A-23). No database. Synthetic patients only."""
+`api/app.py` builds it; the last section takes the one the app itself builds (Task 6b, A-23,
+A-25): wired with the app's own doors, its weight replayed after a restart, the retention sweep's
+removal and the monitor strip's link. No database. Synthetic patients only."""
 from __future__ import annotations
 
 import asyncio
@@ -18,14 +20,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
 import homunculus.scenarios
 from homunculus.admission.boardlink import BoardLink, board_link_of, kabul_record
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
+from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog, iter_records
 from homunculus.api.board import board_snapshot
-from homunculus.api.clinical import ClinicalEntryError
+from homunculus.api.clinical import ClinicalEntryError, chart_observations
 from homunculus.api.notify import Notifier
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
 from homunculus.api.rehydrate import rehydrate
@@ -33,6 +37,9 @@ from homunculus.gateway.fhir import parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scenarios.loader import load_scenario
 from homunculus.scope import build_scope, sees_patient
+from tests.test_infinity_shadow_api import HOSPITAL as SHADOW_HOSPITAL
+from tests.test_infinity_shadow_api import _app as shadow_app, _board as shadow_board
+from tests.test_infinity_shadow_api import _post as shadow_post
 
 HOSPITAL = "HOSP1"
 BED = "5f0c6a1e-0000-4000-8000-0000000000b1"
@@ -443,3 +450,83 @@ def test_a_retirement_with_no_door_wired_raises():
     with pytest.raises(RuntimeError, match="retire_patient not wired"):
         asyncio.run(world.link.retire(HOSPITAL, "H2600001", tomb))
     assert world.published == []
+
+
+# ---------------------------------------------------------------- the link as the app wires it
+# Task 6b (A-23, A-25): `api/app.py` builds the link from its own stores and hands it Lane A's
+# doors by reference — `chart_observations`, `retire_and_publish`, the broadcaster's publish.
+TOKEN = "t"
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def app_with(audit=None, identities=None):
+    return create_app({TOKEN: HOSPITAL}, run_escalation_loop=False,
+                      audit=audit if audit is not None else InMemoryAuditLog(),
+                      identities=identities)
+
+
+def test_the_app_builds_its_board_link_with_its_own_doors_never_copies():
+    """Lane A's condition 5: the link is handed the app's doors themselves, so charting and
+    retirement can never drift from what `/clinical` and the escalation cycle run."""
+    identities = InMemoryIdentityStore()
+    app = app_with(identities=identities)
+    link = app.state.board_link
+    assert isinstance(link, BoardLink)
+    assert link._chart is chart_observations
+    assert link._retire is app.state.retire_patient
+    assert link._publish == app.state.broadcaster.publish       # a bound method: equal, not `is`
+    assert link._notifier is app.state.notifier and link._audit is app.state.audit
+    assert link._identities is identities
+    assert link._escalate_after == timedelta(minutes=5)          # create_app's own default
+
+
+def test_a_weight_charted_through_the_apps_own_door_is_replayed_after_a_restart():
+    """A-23: the weight goes through the REAL `chart_observations` the app wires, so its `chart`
+    row is the one the replay reads — the restarted app's card carries it."""
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    link = app_with(audit, identities).state.board_link
+    asyncio.run(link.put_identity(HOSPITAL, record()))
+    asyncio.run(link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+    (chart,) = audit.records(tenant=HOSPITAL, event_type="chart", patient_id="H2600001", limit=10)
+    assert (chart.subject, chart.payload["value"], chart.payload["charted_by"]) == \
+        ("weight_kg", 72.5, "hemsire")
+    assert "Sentetik" not in repr([r.payload for r in audit.records(tenant=HOSPITAL, limit=100)])
+
+    restarted = app_with(audit, identities)                      # the engine rebuilt from the audit
+    with TestClient(restarted) as client:
+        (card,) = client.get("/patients", headers=AUTH).json()["patients"]
+    assert card["patient_id"] == "H2600001"
+    assert card["meds"]["weight_kg"] == 72.5
+    assert card["identity"]["bed_id"] == BED
+
+
+def test_the_retention_sweep_sends_a_removal_with_the_last_bed_and_unit():
+    """api/app.py's 24-hour sweep (a record that is not a `kabul` tombstone, but had its own bed):
+    the removal used to carry no identity at all, so no scoped screen ever received it (X55)."""
+    identities = InMemoryIdentityStore()
+    identities.apply(HOSPITAL, IdentityRecord(patient_id="M-1", given="Sentetik", bed="1A",
+                                              state="admitted", source="manuel", updated_at=T0,
+                                              bed_id=BED, unit_id=UNIT))
+    identities.apply(HOSPITAL, IdentityRecord(patient_id="M-1", state="discharged",
+                                              source="manuel", updated_at=T0))
+    app = app_with(identities=identities)
+    queue = app.state.broadcaster.subscribe(HOSPITAL)
+    asyncio.run(app.state.escalation_cycle(T0 + timedelta(days=2)))
+    frame = queue.get_nowait()
+    assert (frame["patient_id"], frame["removed"]) == ("M-1", True)
+    assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
+    assert "Sentetik" not in repr(frame)
+    assert sees_patient(frame, build_scope("MEMBER", unit_ids=[UNIT]))
+    assert queue.empty()
+
+
+def test_the_monitor_strip_links_a_device_to_the_kabul_patient_on_its_bed(tmp_path):
+    """Aşama A's `_occupants`: the device table row's bed_id is the tenant bed UUID from now on; a
+    `kabul` identity names that bed itself, with no HIS location for the bed map to resolve."""
+    identities = InMemoryIdentityStore()
+    identities.apply(SHADOW_HOSPITAL, record(bed_id="bed-b2", unit_id="unit-2"))
+    client, clock, _ = shadow_app(tmp_path, identities=identities)
+    shadow_post(client, clock)
+    beds = {b["bed_label"]: b for b in shadow_board(client)["beds"]}
+    assert (beds["B-2"]["link"], beds["B-2"]["patient_id"]) == ("one", "H2600001")
+    assert (beds["B-1"]["link"], beds["B-1"]["patient_id"]) == ("none", None)

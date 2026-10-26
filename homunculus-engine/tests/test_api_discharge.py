@@ -88,7 +88,7 @@ class TestAReadingForADischargedNumber:
         assert queue.empty(), "nothing is published for a dropped reading"
         assert client.get("/alerts/H-1", headers=HEAD).json()["alerts"] == []
         cards = client.get("/patients", headers=HEAD).json()["patients"]
-        assert all(c["latest"]["heart_rate"] is None for c in cards if c["patient_id"] == "H-1")
+        assert "H-1" not in [c["patient_id"] for c in cards]
 
     def test_is_dropped_at_clinical_too_one_row_per_entry(self, app, client):
         _kabul(app.state.test_identities, "H-1", state="discharged")
@@ -116,7 +116,7 @@ class TestAReadingForADischargedNumber:
         assert queue.empty(), "nothing is published for a dropped profile"
         assert client.get("/alerts/H-1", headers=HEAD).json()["alerts"] == []
         cards = client.get("/patients", headers=HEAD).json()["patients"]
-        assert all(c["latest"]["heart_rate"] is None for c in cards if c["patient_id"] == "H-1")
+        assert "H-1" not in [c["patient_id"] for c in cards]
 
     def test_a_malformed_profile_for_a_discharged_number_is_still_400(self, app, client):
         _kabul(app.state.test_identities, "H-1", state="discharged")
@@ -167,8 +167,7 @@ class TestTheDischargeRetiresThePatient:
         assert frame["patient_id"] == "H-2" and frame["removed"] is True
         assert queue.empty(), "exactly one frame"
         assert client.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
-        assert all(c["latest"]["heart_rate"] is None
-                   for c in client.get("/patients", headers=HEAD).json()["patients"] if c["patient_id"] == "H-2")
+        assert "H-2" not in [c["patient_id"] for c in client.get("/patients", headers=HEAD).json()["patients"]]
 
     def test_retire_still_publishes_the_removal_when_the_audit_write_fails(self):
         """The in-memory end has happened whatever the audit did (final review): the ward is told
@@ -242,6 +241,5 @@ class TestTheDischargeRetiresThePatient:
         second = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
         with TestClient(second) as c:
             assert c.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
-            assert all(card["latest"]["heart_rate"] is None
-                       for card in c.get("/patients", headers=HEAD).json()["patients"] if card["patient_id"] == "H-2")
+            assert "H-2" not in [card["patient_id"] for card in c.get("/patients", headers=HEAD).json()["patients"]]
             assert audit.records(tenant="h1", event_type="alert_cleared", limit=100) == [], "the replay writes nothing"

@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore
+from homunculus.api.patient_identity import IdentityRecord, IdentityStore, is_tombstone
 from homunculus.canonical import SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
@@ -283,17 +283,11 @@ def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dic
 def _own_bed(record: IdentityRecord) -> dict:
     """The bed an admission made HERE placed the patient in: the record's own ids — no bed map,
     nothing to match. A discharged record's ids are its last place, not its bed: it sits on no
-    bed (and a `kabul` one is not on the board at all, `_is_tombstone`)."""
+    bed (and a `kabul` one is not on the board at all, `patient_identity.is_tombstone`)."""
     if record.state != "admitted":
         return {"bed_id": None, "unit_id": None, "bed_matched": False, "bed_key": None}
     return {"bed_id": record.bed_id, "unit_id": record.unit_id or None, "bed_matched": True,
             "bed_key": None}
-
-
-def _is_tombstone(record: IdentityRecord | None) -> bool:
-    """A discharged `kabul` record: the patient left, the record stays (no 24 h prune) so that
-    readings still arriving for the number never bring a nameless card back."""
-    return record is not None and record.source == KABUL and record.state == "discharged"
 
 
 def _tombstone_board(record: IdentityRecord) -> dict:
@@ -323,7 +317,7 @@ def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) ->
 def patient_board(engine: Engine, patient_id: str, store: AckStore,
                   identity: IdentityRecord | None = None,
                   bedmap: BedMap | None = None, now: datetime | None = None) -> dict:
-    if _is_tombstone(identity):                   # G2-B1a: the patient left; a removal
+    if is_tombstone(identity):                    # G2-B1a: the patient left; a removal
         return _tombstone_board(identity)
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
@@ -380,6 +374,6 @@ def board_snapshot(engine: Engine, store: AckStore,
         for pid in identities.patient_ids(hospital):
             if pid not in seen:
                 record = identities.get(hospital, pid)
-                if record is not None and not _is_tombstone(record):     # G2-B1a
+                if record is not None and not is_tombstone(record):      # G2-B1a
                     boards.append(identity_only_board(record, bedmap))
     return boards
