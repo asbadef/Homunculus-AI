@@ -60,9 +60,12 @@ async def _fixture_env(db, *, max_beds_per_nurse=2, n_beds=2):
     return tenant, unit, beds, attending, nurse
 
 
+_NUMBERS = iter(range(1, 100_000))   # patient numbers are unique per tenant (migration 0012)
+
+
 async def _new_patient(db, tenant):
     p = Patient(tenant_id=tenant.id, display_name="Synthetic Patient",
-                date_of_birth="1980-01-01", sex="male")
+                date_of_birth="1980-01-01", sex="male", patient_number=f"H26{next(_NUMBERS):05d}")
     db.add(p)
     await db.flush()
     return p
@@ -136,8 +139,9 @@ async def test_sign_off_requires_attending(db_session):
     p = await _new_patient(db_session, tenant)
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending=None))
-    with pytest.raises(WorkflowError, match="attending_physician_id"):
+    with pytest.raises(WorkflowError, match="attending_physician_id") as refused:
         await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+    assert refused.value.code == "missing_attending"      # G2-B1a: the code a screen maps
 
 
 # ---------------------------------------------------------------------------

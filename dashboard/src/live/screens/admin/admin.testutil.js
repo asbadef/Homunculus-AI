@@ -105,6 +105,9 @@ export const PERMISSION_TEXTS = Object.freeze({
   "devices.manage": "Devices: the device screen and the research window — live per-device values decoded from bedside-monitor traffic, UNVALIDATED. Aşama A shows them to clinicians as a strip labelled unvalidated; they are never an observation and no rule, score, alert, notification or audit row is made from them. Shows no patient. Held by default by biomedical and by platform_support, the vendor's support group",
   "clinical.chart": "Chart clinician-observed inputs (infection suspicion, pressor, fluids, GCS…) and the patient's own baseline",
   "scores.sign": "Sign a severity-score form (SOFA) with corrections",
+
+  // G2-B1a
+  "beds.release": "Mark a cleaned bed free again (housekeeping → available), in one's own units",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 

@@ -43,6 +43,9 @@ export default {
     devices: { manage: "Cihaz ekranını ve araştırma penceresini açar: başucu monitörlerinin trafiğinden çözülen, cihaz başına canlı değerler — DOĞRULANMAMIŞ. Aşama A bunları klinisyenlere «doğrulanmamış» etiketli bir şerit olarak gösterir; hiçbir zaman gözlem değildir ve bunlardan kural, skor, alarm, bildirim ya da denetim kaydı üretilmez. Hasta göstermez. Varsayılan olarak biyomedikal grubunda ve üreticinin destek grubunda vardır" },
     clinical: { chart: "Klinisyenin gözlemlediği girdileri (enfeksiyon şüphesi, vazopresör, sıvı, GKS…) ve hastanın kendi bazalını kaydeder" },
     scores: { sign: "Ağırlık skoru formunu (SOFA) düzeltmelerle imzalar" },
+
+    // G2-B1a
+    beds: { release: "Temizliği biten yatağı yeniden boş olarak işaretler (temizlik → boş), kendi birimlerinde" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -72,6 +75,9 @@ export default {
     devices: { manage: "Cihaz ekranını və tədqiqat pəncərəsini açır: çarpayı yanındakı monitorların trafikindən deşifrə olunan, hər cihaz üzrə canlı dəyərlər — TƏSDİQLƏNMƏMİŞ. Mərhələ A onları klinik heyətə «təsdiqlənməmiş» işarəli zolaq kimi göstərir; heç vaxt müşahidə deyil və onlardan qayda, bal, siqnal, bildiriş və ya audit qeydi yaradılmır. Xəstə göstərmir. Standart olaraq biotibbi texniklər qrupunda və istehsalçının dəstək qrupunda var" },
     clinical: { chart: "Klinisistin müşahidə etdiyi məlumatları (infeksiya şübhəsi, vazopressor, maye, QKŞ…) və xəstənin öz bazal dəyərlərini qeyd edir" },
     scores: { sign: "Ağırlıq balı formasını (SOFA) düzəlişlərlə imzalayır" },
+
+    // G2-B1a
+    beds: { release: "Təmizlənmiş çarpayını yenidən boş kimi qeyd edir (təmizlik → boş), öz şöbələrində" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -101,6 +107,9 @@ export default {
     devices: { manage: "Открывает экран устройств и окно исследования: значения по каждому устройству в реальном времени, декодированные из трафика прикроватных мониторов, — НЕ ВАЛИДИРОВАНЫ. На этапе A они показываются клиницистам как блок с пометкой «не валидировано»; это никогда не наблюдение, и из них не создаются ни правила, ни шкалы, ни тревоги, ни уведомления, ни записи аудита. Пациентов не показывает. По умолчанию это право есть у группы биомедицинских техников и у группы поддержки производителя" },
     clinical: { chart: "Вносит наблюдения клинициста (подозрение на инфекцию, вазопрессор, инфузии, ШКГ…) и собственную базовую линию пациента" },
     scores: { sign: "Подписывает форму оценки тяжести (SOFA) с исправлениями" },
+
+    // G2-B1a
+    beds: { release: "Отмечает убранную койку снова свободной (уборка → свободна) в своих отделениях" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -130,5 +139,8 @@ export default {
     devices: { manage: "Open the device screen and the research window: live per-device values decoded from bedside-monitor traffic — UNVALIDATED. Stage A shows them to clinicians as a strip labelled unvalidated; they are never an observation, and no rule, score, alert, notification or audit row is made from them. Shows no patient. By default the biomedical group and the vendor's support group hold it" },
     clinical: { chart: "Chart clinician-observed inputs (suspected infection, pressor, fluids, GCS…) and the patient's own baseline" },
     scores: { sign: "Sign a severity-score form (SOFA) with corrections" },
+
+    // G2-B1a
+    beds: { release: "Mark a cleaned bed free again (housekeeping → available), in their own units" },
   },
 };

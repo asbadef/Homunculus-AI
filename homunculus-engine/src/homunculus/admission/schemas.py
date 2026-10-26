@@ -11,10 +11,13 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from homunculus.admission.models import (
-    AdmissionState, CareTeamRole, HandoverStatus, Sex, SourceOfAdmission,
+    AdmissionState, AdmissionType, BloodGroup, CareTeamRole, Consent, DischargeDisposition,
+    HandoverStatus, Sex, SourceOfAdmission,
 )
 
 
@@ -25,7 +28,21 @@ class PatientIdentity(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=200)   # #2
     date_of_birth: date                                            # #3
     sex: Sex                                                        # #4
-    his_patient_reference: str | None = None                       # #28
+    his_patient_reference: str | None = Field(default=None, max_length=64)   # #28
+    # Group 2 · B1a — the prototype's form (spec §5.2). Encrypted at rest; the lengths keep the
+    # ciphertext inside its 512-character column (admission/models.py). The rules a value must
+    # keep beyond its type are in admission/form.py.
+    father_name: str | None = Field(default=None, max_length=100)
+    nationality: str | None = Field(default=None, max_length=64)
+    national_id: str | None = Field(default=None, max_length=16)       # FİN: 7 letters or digits
+    passport_no: str | None = Field(default=None, max_length=32)
+    phone: str | None = Field(default=None, max_length=32)
+    relative_name: str | None = Field(default=None, max_length=100)
+    relative_relation: str | None = Field(default=None, max_length=64)
+    relative_phone: str | None = Field(default=None, max_length=32)
+    companion_name: str | None = Field(default=None, max_length=100)
+    consent: Consent | None = None                                  # required by admission/form.py
+    sms_permitted: bool = False
 
 
 class PatientResponse(BaseModel):
@@ -64,6 +81,13 @@ class AdmissionNoteFields(BaseModel):
     cardiac_surgery_name: str | None = None                       # #24
     admission_note_narrative: str | None = Field(default=None, max_length=2000)  # #25
     source_of_admission: SourceOfAdmission | None = None          # #26
+    # Group 2 · B1a (spec §5.2); admission/form.py says which are required and how they combine.
+    admission_type: AdmissionType | None = None
+    blood_group: BloodGroup | None = None
+    allergies_text: str | None = Field(default=None, max_length=500)
+    no_known_allergy: bool = False
+    comorbidity_codes: list[str] | None = Field(default=None, max_length=10)
+    comorbidities_text: str | None = Field(default=None, max_length=500)
 
 
 class AdmissionCreate(BaseModel):
@@ -104,8 +128,53 @@ class AdmissionResponse(BaseModel):
     source_admission_id: uuid.UUID | None
     transfer_confirm_deadline: datetime | None
     created_at: datetime
+    # Group 2 · B1a
+    admission_type: AdmissionType | None = None
+    blood_group: BloodGroup | None = None
+    allergies_text: str | None = None
+    no_known_allergy: bool = False
+    comorbidity_codes: list | None = None
+    comorbidities_text: str | None = None
+    discharge_disposition: DischargeDisposition | None = None
+    discharge_institution: str | None = None
+    discharge_reported_by: str | None = None
+    discharge_at: datetime | None = None
+    discharge_note: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# What did not reach the engine after an admission or a discharge was written (spec §3.1 step 3):
+# the record stands either way, and the screen says which part to enter by hand.
+EngineWrite = Literal["ok", "failed", "skipped"]
+
+
+class EngineWrites(BaseModel):
+    weight: EngineWrite
+    profile: EngineWrite
+    board: EngineWrite
+
+
+class AdmitResponse(AdmissionResponse):
+    """POST /admissions: the admission, the patient number the nurse enters on the device, and
+    which of the engine writes landed."""
+    patient_number: str
+    engine: EngineWrites
+
+
+class AdmissionRow(AdmissionResponse):
+    """GET /admissions: one row of the Taburcu and Yataklar lists, with the names a screen shows
+    (never a UUID). `display_name` is PHI, as on the board, for holders of admissions.view."""
+    patient_number: str
+    display_name: str
+    bed_label: str
+    room_name: str
+    unit_name: str
+
+
+class DischargeConfirmResponse(AdmissionResponse):
+    """POST …/discharge/confirm: the admission, and whether its card left the board."""
+    board: EngineWrite
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +247,18 @@ class DischargeInitiate(BaseModel):
     # Signals the caller acknowledges the confirmation dialog (S-28) — required
     # when a UNIT_PHYSICIAN (not the attending) performs the discharge.
     confirmed: bool = False
+
+
+class DischargeStart(BaseModel):
+    """The physician's decision (Group 2 · B1a, spec D7 and §3.3): where the patient goes, when,
+    and a note. `institution` is required for OTHER_INSTITUTION; `reported_by` is the caller for
+    EXITUS unless another name is written; `discharge_at` defaults to now and is never in the
+    future (admission/form.py)."""
+    disposition: DischargeDisposition
+    institution: str | None = Field(default=None, max_length=200)
+    reported_by: str | None = Field(default=None, max_length=200)
+    discharge_at: datetime | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
 
 # ---------------------------------------------------------------------------
