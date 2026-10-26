@@ -829,10 +829,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** The caller's units, rooms and beds with names, states and `is_active`
      *  ({tenant_id, sites: [{id, name, units: [{id, name, rooms: [{id, name, beds: [...]}]}]}]}). */
     structure() { return authed("/tenant/structure"); },
-    /** Admission rows of the caller's units, newest first; `states` narrows them. */
+    /** Admission rows of the caller's units, newest first; `states` narrows them — a list, one
+     *  state as a string, or null/undefined for every state. */
     admissions(states = []) {
       const query = new URLSearchParams();
-      for (const state of states) query.append("state", state);
+      for (const state of [].concat(states ?? [])) query.append("state", state);
       const suffix = query.toString();
       return authed(`/admissions${suffix ? `?${suffix}` : ""}`);
     },

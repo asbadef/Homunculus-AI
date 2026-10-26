@@ -1440,6 +1440,15 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 2).url).toBe("/admissions");
   });
 
+  it("takes one state as a string, and null as no state at all (A-9)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.admissions("DRAFT");
+    await api.admissions(null);
+    expect(sent(fetchMock, 0).url).toBe("/admissions?state=DRAFT");
+    expect(sent(fetchMock, 1).url).toBe("/admissions");
+  });
+
   it("admits, signs, starts and confirms a discharge, and releases a bed, each by its own route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     const api = signedIn(fetchMock);
@@ -1471,6 +1480,11 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
       ["POST", "/tenant/tenants/t-1/sites"], ["POST", "/tenant/sites/s-1/units"],
       ["POST", "/tenant/units/u-1/rooms"], ["POST", "/tenant/rooms/r-1/beds"],
       ["PATCH", "/tenant/units/u-1"], ["PATCH", "/tenant/rooms/r-1"], ["PATCH", "/tenant/beds/b-1"],
+    ]);
+    // Each write carries its own body, as given (A-9).
+    expect(fetchMock.mock.calls.map((_, at) => sent(fetchMock, at).body)).toEqual([
+      { name: "Ana bina" }, { name: "Reanimasiya", unit_type: "ADULT_ICU" }, { name: "Otaq 1" }, { label: "1" },
+      { name: "Rea" }, { is_active: false }, { is_active: true },
     ]);
   });
 });
