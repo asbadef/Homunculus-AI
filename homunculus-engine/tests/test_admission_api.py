@@ -210,10 +210,12 @@ async def test_the_list_carries_names_filters_by_state_and_keeps_to_the_callers_
 
 
 async def test_the_list_holds_open_admissions_unless_asked_and_stops_at_its_cap(
-        ward, db_session, monkeypatch):
+        ward, db_session, monkeypatch, caplog):
     """Without `state` the list holds the open admissions only (DRAFT, ACTIVE and the two
     pending states); a closed one is listed when its state is asked for. Never more than
-    `ADMISSION_LIST_CAP` rows, the newest first."""
+    `ADMISSION_LIST_CAP` rows, the newest first — and a list cut there says so (Task 8
+    re-review): the header `X-Result-Truncated: 1` for the screen, a WARNING for the log. A list
+    that holds exactly the cap is whole, and says nothing."""
     w, client, _ = ward
     gone = (await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])).json()
     here = (await client.post("/admissions", json=form(w, "2"), headers=w.auth["nurse"])).json()
@@ -221,16 +223,29 @@ async def test_the_list_holds_open_admissions_unless_asked_and_stops_at_its_cap(
                              .values(state=AdmissionState.DISCHARGED))
     await db_session.commit()
 
-    open_rows = (await client.get("/admissions", headers=w.auth["nurse"])).json()
-    assert [r["id"] for r in open_rows] == [here["id"]]
+    open_rows = await client.get("/admissions", headers=w.auth["nurse"])
+    assert [r["id"] for r in open_rows.json()] == [here["id"]]
+    assert "x-result-truncated" not in open_rows.headers
     closed = (await client.get("/admissions", params={"state": "DISCHARGED"},
                                headers=w.auth["nurse"])).json()
     assert [r["id"] for r in closed] == [gone["id"]]
 
     monkeypatch.setattr(admission_router, "ADMISSION_LIST_CAP", 1)
-    capped = (await client.get("/admissions", params={"state": ["DRAFT", "DISCHARGED"]},
-                               headers=w.auth["nurse"])).json()
-    assert [r["id"] for r in capped] == [here["id"]]
+    caplog.set_level(logging.WARNING, logger="homunculus.admission.router")
+    whole = await client.get("/admissions", headers=w.auth["nurse"])      # one row, the cap: whole
+    assert [r["id"] for r in whole.json()] == [here["id"]]
+    def warnings() -> list[str]:
+        return [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING
+                and rec.name == "homunculus.admission.router"]
+
+    assert "x-result-truncated" not in whole.headers and warnings() == []
+    capped = await client.get("/admissions", params={"state": ["DRAFT", "DISCHARGED"]},
+                              headers=w.auth["nurse"])
+    assert [r["id"] for r in capped.json()] == [here["id"]]
+    assert capped.headers.get("x-result-truncated") == "1", capped.headers
+    (warned,) = warnings()
+    assert "cap (1)" in warned and "nurse@kabul.example.com" in warned, warned
+    assert "Sentetik" not in warned
 
 
 async def test_a_bed_grant_lists_that_beds_admission_beside_its_units(ward, db_session):
@@ -458,6 +473,72 @@ async def test_a_resend_after_a_lost_answer_gives_the_same_number_and_puts_the_c
     assert third.content == again.content
     profiles = app.state.audit.records(tenant=SLUG, event_type="profile", limit=50)
     assert [r.patient_id for r in profiles] == [number]               # written once, by the resend
+
+
+async def _lose_the_first_answer(client, monkeypatch, w, body) -> None:
+    """The first send of `body` commits its admission and dies before its board writes: no card,
+    no recorded report — what a resend then finds."""
+    async def lost(*args, **kwargs):
+        raise RuntimeError("the answer is lost on the way")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(admission_router, "_to_board", lost)
+        with pytest.raises(RuntimeError, match="lost on the way"):
+            await client.post("/admissions", json=body, headers=w.auth["nurse"])
+
+
+async def test_a_resend_after_the_patient_was_discharged_puts_no_card_up(ward, db_session,
+                                                                         monkeypatch):
+    """The resend's retry writes the board again only for an admission still open (Task 8
+    re-review): one discharged since the lost answer keeps the board it has — no card — and every
+    part the form asked for is answered `failed`, nothing being known to have landed."""
+    w, client, _ = ward
+    body = form(w, request_id=uuid.uuid4())
+    await _lose_the_first_answer(client, monkeypatch, w, body)
+    await db_session.execute(update(Admission).values(state=AdmissionState.DISCHARGED))
+    await db_session.commit()
+
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.status_code == 200, again.text
+    assert again.json()["engine"] == {"weight": "failed", "profile": "failed", "board": "failed"}
+    assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
+
+
+async def test_a_discharge_landing_while_a_resend_writes_the_card_again_keeps_the_card_off(
+        ward, db_session, monkeypatch):
+    """Task 8 re-review, A-29: the resend's retry has read the admission open and ended its
+    transaction; before it writes the card again, the discharge commits and writes its tombstone.
+    The card, stamped after the tombstone, would be taken by the identity store and the patient
+    would lie on a bed in cleaning for good. BoardLink refuses it (`put_identity`); the resend
+    answers the card `failed`, and no card is on the board."""
+    w, client, app = ward
+    body = form(w, request_id=uuid.uuid4())
+    await _lose_the_first_answer(client, monkeypatch, w, body)
+    (number,) = (await db_session.execute(select(Patient.patient_number))).scalars()
+
+    reached, gate = asyncio.Event(), asyncio.Event()
+    attempt = admission_router._attempt
+
+    async def held(number_, what, write):
+        if what == "identity (again)":        # past the "still open" read, the card not yet built
+            reached.set()
+            await gate.wait()
+        return await attempt(number_, what, write)
+
+    monkeypatch.setattr(admission_router, "_attempt", held)
+    resend = asyncio.create_task(client.post("/admissions", json=body, headers=w.auth["nurse"]))
+    try:
+        await asyncio.wait_for(reached.wait(), timeout=10)
+        await db_session.execute(update(Admission).values(state=AdmissionState.DISCHARGED))
+        await db_session.commit()
+        await app.state.board_link.discharge_identity(SLUG, number)
+    finally:
+        gate.set()
+    again = await resend
+    assert again.status_code == 200, again.text
+    assert again.json()["engine"]["board"] == "failed"
+    assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
+    assert app.state.board_link.is_discharged(SLUG, number)
 
 
 async def test_two_sends_of_one_form_at_once_admit_once_and_answer_alike(ward, db_session):

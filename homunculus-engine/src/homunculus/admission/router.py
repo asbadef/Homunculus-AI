@@ -500,10 +500,14 @@ async def create_admission(
 #: The most rows `GET /admissions` answers (newest first). One ward's open admissions are a few
 #: dozen; the cap keeps a closed-state query from reading a hospital's history in one answer.
 ADMISSION_LIST_CAP = 500
+#: The header a list cut at `ADMISSION_LIST_CAP` carries, so a screen can say the list is not whole
+#: (Task 8 re-review). A browser on another origin reads it only once the app's CORS exposes it.
+TRUNCATED_HEADER = "X-Result-Truncated"
 
 
 @router.get("", response_model=list[AdmissionRow])
 async def list_admissions(
+    response: Response,
     unit_id: uuid.UUID | None = None,
     state: list[AdmissionState] | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
@@ -513,10 +517,12 @@ async def list_admissions(
     """Newest first, each row with the names a screen shows (G2-B1a, X61: the Taburcu and Yataklar
     lists, the sign-off badge). `state` narrows to those states (repeatable); without it, the open
     ones (`OPEN_ADMISSION_STATES`: DRAFT, ACTIVE, PENDING_DISCHARGE, PENDING_TRANSFER). At most
-    `ADMISSION_LIST_CAP` rows. The rows are limited to the caller's units in the query
-    (`unitscope.reach_clause`), the unit being the bed's room's, never the admission's
-    `admitting_unit_id` (A-12). Of the patient, the query reads the number and the name, the two
-    the row shows — no other encrypted column is read or decrypted."""
+    `ADMISSION_LIST_CAP` rows: one more is read to know whether the list goes on, and a list cut
+    there answers `X-Result-Truncated: 1` and logs a WARNING (the cap, the caller and the tenant;
+    never a patient). A list of exactly the cap is whole. The rows are limited to the caller's
+    units in the query (`unitscope.reach_clause`), the unit being the bed's room's, never the
+    admission's `admitting_unit_id` (A-12). Of the patient, the query reads the number and the
+    name, the two the row shows — no other encrypted column is read or decrypted."""
     reach = await unitscope.caller_scope(db, user.id, caller_tenant)
     stmt = (select(Admission, Patient.patient_number, Patient.display_name, Bed.label, Room.name,
                    Unit.name)
@@ -531,8 +537,13 @@ async def list_admissions(
         stmt = stmt.where(within)
     if unit_id is not None:
         stmt = stmt.where(Admission.admitting_unit_id == unit_id)
-    rows = (await db.execute(stmt.order_by(Admission.created_at.desc())
-                             .limit(ADMISSION_LIST_CAP))).all()
+    cap = ADMISSION_LIST_CAP
+    rows = (await db.execute(stmt.order_by(Admission.created_at.desc()).limit(cap + 1))).all()
+    if len(rows) > cap:
+        rows = rows[:cap]
+        response.headers[TRUNCATED_HEADER] = "1"
+        log.warning("GET /admissions: the list was cut at its cap (%d) for %s in tenant %s; older "
+                    "rows were left out", cap, user.username, caller_tenant)
     return [AdmissionRow(**AdmissionResponse.model_validate(a).model_dump(),
                          patient_number=number, display_name=name, bed_label=label,
                          room_name=room, unit_name=unit)

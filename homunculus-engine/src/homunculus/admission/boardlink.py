@@ -26,10 +26,15 @@ writes from the first into the second, and nothing else in `admission/` does:
                        number's tombstone's removal frame — the last bed and unit, no name — which
                        that door publishes once, after the alerts are ended (A-11d, A-20).
 
-The discharge's removal is never BoardLink's to send. `chart_weight` and `apply_profile` refuse a
-discharged number before they build, chart or write anything (A-11). The board republished after
-a write is, for a tombstone, its removal, never its card (a late identity write the store refuses
-after the discharge sends that); for a number with neither an identity nor a reading, nothing.
+The discharge's removal is never BoardLink's to send. `put_identity`, `chart_weight` and
+`apply_profile` refuse a discharged number before they build, chart or write anything (A-11; for
+the card, the Task 8 re-review and A-29): a card written again after the discharge — a resend's
+retry that read the admission open just before it — would otherwise be taken by the identity store
+when stamped after the tombstone, and the patient would lie on a bed in cleaning for good. Each
+refusal is one synchronous step with the write it guards, so in the one process that holds the
+board no other request runs between them; a number is never issued twice, so no admission is
+refused by it. The board republished after a write is, for a tombstone, its removal, never its
+card; for a number with neither an identity nor a reading, nothing.
 There is no fallback for a door the app did not wire: `chart_weight` and `retire` raise
 `RuntimeError`, and every refusal raises, so the admission routes can say which part failed and
 never report one `ok` that did not happen.
@@ -37,8 +42,9 @@ never report one `ok` that did not happen.
 `api/app.py` builds it from its own stores and doors — Lane A's `chart_observations`,
 `retire_and_publish` and the broadcaster's publish, by reference (Task 6b; A-20, A-23, A-25) —
 and places it on `app.state.board_link`; a router reaches it through the request
-(`board_link_of`). An app built without it (a test that mounts the routers alone) has none,
-and the admission routes answer `skipped` for its parts.
+(`board_link_of`). An app built without it (a test that mounts the routers alone) has none, and
+the admission routes answer every part they asked of it `failed`, logged at ERROR (X53: `skipped`
+means "not asked", never "not done").
 
 PHI: the identity carries the name, as an ADT record does (encrypted at rest by the store). The
 audit rows carry the number and the actor — never a name.
@@ -141,6 +147,10 @@ class BoardLink:
             await self._publish(tenant, board)
 
     async def put_identity(self, tenant: str, record: IdentityRecord) -> None:
+        """The admission's card on its bed, then the card republished. A discharged number is
+        refused first (`_refuse_discharged`), whatever the record's stamp: see the module's
+        docstring."""
+        self._refuse_discharged(tenant, record.patient_id)
         stored = self._identities.apply(tenant, record)
         await self._send(tenant, record.patient_id, stored)
 
@@ -197,9 +207,10 @@ class BoardLink:
         return is_tombstone(self._identities.get(tenant, patient_number))
 
     def _refuse_discharged(self, tenant: str, patient_number: str) -> None:
-        """A-11: nothing reaches the engine for a discharged number, and no row a restart would
-        replay is written for it. Lane A's `chart_observations` leaves that drop to its caller, so
-        the writes here refuse before they build, chart or write anything."""
+        """A-11: nothing reaches the engine for a discharged number, no row a restart would replay
+        is written for it, and its card never comes back (A-29). Lane A's `chart_observations`
+        leaves that drop to its caller, so the writes here refuse before they build, chart or
+        write anything."""
         if self.is_discharged(tenant, patient_number):
             raise RuntimeError(f"{patient_number} is discharged")
 

@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from homunculus.admission.errors import Refusal
 from homunculus.admission.models import Admission, CareTeamMember, CareTeamRole, Patient
@@ -294,3 +295,75 @@ async def test_an_oncall_physician_owns_the_patient_number_only_inside_the_windo
     assert await own(start) == [FIXTURE_NUMBERS[0]]
     assert await own(end) == [FIXTURE_NUMBERS[0]]
     assert await own(end + timedelta(seconds=1)) == []
+
+
+# ---------------------------------------------------------------- `reach_clause` run in the database
+async def _two_hospitals(db):
+    """Here: Reanimasiya (Otaq 1: beds A1, A2) and Neonatal (N-1: bed B1). Elsewhere, another
+    tenant: one unit, one bed X1. Returns the tenant here, the units by name and each bed's unit."""
+    here, elsewhere = (Tenant(name="Sentetik Hastane", slug="sentetik", country_code="AZ"),
+                       Tenant(name="Sentetik Başqa", slug="sentetik-basqa", country_code="AZ"))
+    db.add_all([here, elsewhere])
+    await db.flush()
+    sites = [Site(tenant_id=here.id, name="Kampüs"), Site(tenant_id=elsewhere.id, name="Kampüs")]
+    db.add_all(sites)
+    await db.flush()
+    units = {"rea": Unit(site_id=sites[0].id, name="Reanimasiya", unit_type=UnitType.ADULT_ICU),
+             "neo": Unit(site_id=sites[0].id, name="Neonatal", unit_type=UnitType.NICU),
+             "other": Unit(site_id=sites[1].id, name="Reanimasiya", unit_type=UnitType.ADULT_ICU)}
+    db.add_all(units.values())
+    await db.flush()
+    rooms = {name: Room(unit_id=unit.id, name="Otaq 1") for name, unit in units.items()}
+    db.add_all(rooms.values())
+    await db.flush()
+    beds = {"A1": Bed(room_id=rooms["rea"].id, label="1"), "A2": Bed(room_id=rooms["rea"].id, label="2"),
+            "B1": Bed(room_id=rooms["neo"].id, label="1"), "X1": Bed(room_id=rooms["other"].id, label="1")}
+    db.add_all(beds.values())
+    await db.commit()
+    unit_of = {"A1": units["rea"], "A2": units["rea"], "B1": units["neo"], "X1": units["other"]}
+    return here, units, beds, unit_of
+
+
+@requires_db
+async def test_the_sql_reach_selects_in_the_database_exactly_the_beds_reaches_reaches(db_session):
+    """Task 8 re-review: `reach_clause` is run against real rows, for a matrix of grants, and each
+    answer compared with `reaches` for the same bed — and with what the grants mean, so the two
+    cannot drift together. The clause compares ids alone: another tenant's bed named by a grant is
+    reached by it, and kept out of a list by the list's own tenant filter, which is checked too."""
+    here, units, beds, unit_of = await _two_hospitals(db_session)
+    rea, neo, other = (str(units[name].id) for name in ("rea", "neo", "other"))
+    a1, b1, x1 = (beds[name].id for name in ("A1", "B1", "X1"))
+    member = lambda **grants: build_scope("MEMBER", enforce_unassigned=True, **grants)  # noqa: E731
+    matrix = {
+        "a unit": (member(unit_ids=[rea]), {"A1", "A2"}),
+        "a bed": (member(bed_ids=[str(b1)]), {"B1"}),
+        "a unit and a bed of another unit": (member(unit_ids=[neo], bed_ids=[str(a1)]), {"A1", "B1"}),
+        "upper case": (member(unit_ids=[rea.upper()], bed_ids=[str(b1).upper()]), {"A1", "A2", "B1"}),
+        "padded with spaces": (member(unit_ids=[f"  {rea} "]), {"A1", "A2"}),
+        "free text": (member(unit_ids=["Reanimasiya"], bed_ids=["1"]), set()),
+        "the text none": (member(unit_ids=["none"], bed_ids=["None"]), set()),
+        "a UUID without its hyphens": (member(unit_ids=[units["rea"].id.hex], bed_ids=[b1.hex]),
+                                       set()),
+        "empty": (member(unit_ids=[""], bed_ids=["  "]), set()),
+        "no grant at all": (member(), set()),
+        "unrestricted": (build_scope("HOSPITAL_ADMIN"), {"A1", "A2", "B1", "X1"}),
+        "another tenant's unit and bed": (member(unit_ids=[other], bed_ids=[str(x1)]), {"X1"}),
+    }
+    by_id = {bed.id: name for name, bed in beds.items()}
+
+    async def selected(scope, *, here_only: bool) -> set[str]:
+        stmt = (select(Bed.id).join(Room, Room.id == Bed.room_id)
+                .join(Unit, Unit.id == Room.unit_id).join(Site, Site.id == Unit.site_id))
+        if here_only:
+            stmt = stmt.where(Site.tenant_id == here.id)
+        clause = reach_clause(scope, unit_id=Room.unit_id, bed_id=Bed.id)
+        if clause is not None:
+            stmt = stmt.where(clause)
+        return {by_id[bed_id] for bed_id in (await db_session.execute(stmt)).scalars()}
+
+    for name, (scope, meant) in matrix.items():
+        decided = {bed for bed in beds
+                   if reaches(scope, unit_id=unit_of[bed].id, bed_id=beds[bed].id)}
+        assert decided == meant, name
+        assert await selected(scope, here_only=False) == decided, name
+        assert await selected(scope, here_only=True) == decided - {"X1"}, name

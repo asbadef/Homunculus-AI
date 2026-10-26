@@ -6,8 +6,8 @@ only when that door, the notifier and the escalation delay are all wired; the co
 the engine through the audit a restart replays; the open-critical count is the board's own, firing
 or latched; a discharge writes the tombstone (a second one returns it, a refused one raises) and
 publishes nothing; the retirement is the door the app injects, handed the tombstone's removal frame
-and refusing any other record. A tombstone's board is its removal, never its card; a number with
-neither an identity nor a reading sends nothing. The link is built here from real stores, as
+and refusing any other record. A card written after the discharge is refused, whatever its stamp
+(Task 8 re-review, A-29); a number with neither an identity nor a reading sends nothing. The link is built here from real stores, as
 `api/app.py` builds it; the last section takes the one the app itself builds (Task 6b, A-23,
 A-25): wired with the app's own doors, its weight replayed after a restart, the retention sweep's
 removal and the monitor strip's link. No database. Synthetic patients only."""
@@ -154,23 +154,27 @@ def test_a_number_with_neither_an_identity_nor_a_reading_sends_nothing_and_creat
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
-def test_a_tombstones_board_is_its_removal_never_its_card():
-    """A-16 keeps the name on the tombstone: built as an identity-only card, a discharged patient
-    would come back on every screen, named and bedless. An admission's identity write the store
-    refuses after the discharge (a late retry) republishes the board — which is the removal."""
+@pytest.mark.parametrize("stamp", [T0, T0 + timedelta(hours=2)],
+                         ids=["stamped before the discharge", "stamped after it"])
+def test_a_card_written_after_the_discharge_is_refused_whatever_its_stamp(stamp):
+    """Task 8 re-review, A-29: an admission's card written again after the patient left — a
+    resend's retry that read the admission open just before the discharge — is refused before the
+    store sees it. Stamped after the tombstone, the store itself would take it (`_merge` lets a
+    newer `kabul` write decide) and the discharged patient would lie on a bed in cleaning for good,
+    a tombstone never being pruned. The check and the write are one synchronous step, so no other
+    request runs between them; a number is never issued twice, so no admission is refused by it.
+    Nothing is written, nothing published; the caller reports the card `failed`."""
     world = World()
     asyncio.run(world.link.put_identity(HOSPITAL, record()))
     world.now = T0 + timedelta(hours=1)
-    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    tomb = asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
     world.published.clear()
 
-    asyncio.run(world.link.put_identity(HOSPITAL, record()))        # stamped T0: refused
+    with pytest.raises(RuntimeError, match="H2600001 is discharged"):
+        asyncio.run(world.link.put_identity(HOSPITAL, record(at=stamp)))
 
-    ((_hospital, frame),) = world.published
-    assert (frame["patient_id"], frame["removed"]) == ("H2600001", True)
-    assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
-    assert "Sentetik" not in repr(frame)
-    assert world.link.is_discharged(HOSPITAL, "H2600001") and world.board() == []
+    assert world.identities.get(HOSPITAL, "H2600001") == tomb
+    assert world.published == [] and world.board() == []
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
