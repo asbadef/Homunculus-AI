@@ -18,6 +18,7 @@ import { ThemeProvider } from "../../theme/ThemeProvider.jsx";
 import { Shell } from "../../shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { AdmitTab } from "./AdmitTab.jsx";
+import { admitDraftOf } from "./admitDraft.js";
 import { KabulScreen } from "./KabulScreen.jsx";
 import { BED, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, row, settle, structure, toasts } from "./kabul.testutil.js";
 
@@ -590,6 +591,68 @@ describe("AdmitTab", () => {
       expect(missingNow()).toEqual(["Çarpayı"]);                             // the taken bed is no longer the form's
       pickBed5();
       expect(admitButton().getAttribute("aria-disabled")).toBeNull();
+    });
+  });
+
+  // A-19: every send of one filled form carries its request id; the server answers a second send of
+  // the same form with the first's admission (200, the same body), and refuses another form under
+  // the same id `request_conflict` — naming the earlier admission's number when its bed is hers.
+  describe("the request id (A-19)", () => {
+    const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    const CONFLICT = "Bu forma ilə artıq qəbul yazılıb (xəstə nömrəsi H2600042); forma yenidən göndərilmədi. "
+      + "«Evə yazılma › Yatan xəstələr» siyahısına baxın.";
+    const conflict = () => refusal(409, "This request id came before with another admission form.",
+      { apiCode: "request_conflict", patientNumber: "H2600042" });
+
+    it("sends a resend after a timeout under the same id, and takes the server's replayed answer as the admission", async () => {
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted()),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      await press();                                                         // the server answers the first's admission
+      const [first, second] = api.admit.mock.calls.map(([body]) => body.request_id);
+      expect(first).toMatch(UUID4);
+      expect(second).toBe(first);
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Qəbul edildi" }));
+      expect(document.body.innerHTML).not.toContain(first);
+    });
+
+    it("stops at a request_conflict: says an admission exists under this form with its number, holds «Qəbul et», sends nothing more — and «Yeni qəbul» starts afresh", async () => {
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockRejectedValueOnce(conflict()),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      fireEvent.change(screen.getByLabelText(/^Qəbul diaqnozu/), { target: { value: "Sentetik tanı, düzəldilmiş" } });
+      await press();                                                         // the first had landed: another form, the same id
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      const spent = api.admit.mock.calls[0][0].request_id;
+      expect(api.admit.mock.calls[1][0].request_id).toBe(spent);
+
+      expect(toasts().getAllByText(`${BED1}: ${CONFLICT}`).length).toBeGreaterThan(0);
+      const reason = panel().getByText(CONFLICT);
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+      expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
+      expect(panel().queryByRole("button", { name: GO_ON })).toBeNull();    // nothing to go on to: it exists
+      expect(admitDraftOf(store).get().unanswered).toEqual([]);              // its outcome is known now
+      expect(document.body.textContent).not.toMatch(/request id|another admission form/);
+
+      admitButton().focus();
+      await press();                                                         // never sent again
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(document.activeElement).toBe(reason);
+
+      await act(async () => { fireEvent.click(panel().getByRole("button", { name: "Yeni qəbul" })); });
+      expect(nameField().value).toBe("");
+      expect(document.activeElement).toBe(nameField());
+      expect(panel().queryByText(CONFLICT)).toBeNull();
+      expect(admitDraftOf(store).get().requestId).toMatch(UUID4);
+      expect(admitDraftOf(store).get().requestId).not.toBe(spent);
+      expect(document.body.innerHTML).not.toContain(spent);
     });
   });
 

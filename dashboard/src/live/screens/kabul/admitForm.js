@@ -121,9 +121,12 @@ export function missing(form, today) {
 
 const text = (value) => (blank(value) ? null : String(value).trim());
 
-/** The body POST /admissions takes (admission/schemas.py AdmissionCreate). */
-export function toBody(form) {
+/** The body POST /admissions takes (admission/schemas.py AdmissionCreate). `requestId` is the
+ *  form's id (admitDraft.js, A-19): the same on every send of one filled form, so the server takes
+ *  two sends of it for one admission. None given, none sent. */
+export function toBody(form, requestId) {
   return {
+    ...(typeof requestId === "string" && requestId ? { request_id: requestId } : null),
     patient: {
       display_name: form.name.trim(), date_of_birth: form.dob, sex: form.sex,
       father_name: text(form.father), nationality: text(form.nationality),

@@ -29,8 +29,8 @@
 // ANOTHER patient — the server would answer the new patient's send with the old one's admission —
 // so the moment the form's name moves away from the name of an unanswered send that carries the
 // form's id, the form takes a new one (`ownId`, on every write). The old send keeps its own. Typed
-// back to a patient with a send still unanswered, the form takes that send's id again. The id is
-// not sent yet (Task 19b) and never shown.
+// back to a patient with a send still unanswered, the form takes that send's id again. Every send
+// carries it as the body's `request_id` (Task 19b, AdmitTab.jsx); it is never shown.
 import { useSyncExternalStore } from "react";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { emptyForm } from "./admitForm.js";
@@ -57,14 +57,16 @@ export function freshForm() {
   return {
     form: emptyForm(),
     tried: false,
-    // A-19/A-21/A-24: one per filled form, kept across resends, new after an admission, «Yeni qəbul» or a turn to another patient (`ownId`); NOT sent until Task 19b.
+    // A-19/A-21/A-24: one per filled form, kept across resends, new after an admission, «Yeni qəbul» or a turn to another patient (`ownId`); sent as `request_id`.
     requestId: newRequestId(),
   };
 }
 
 /** What a session's draft holds. `unanswered`: every send with no answer whose DRAFT is not found
- *  yet, `{bedId, bed, name, checked, requestId}`; `held`: `{bed}` while a send waits on one of them;
- *  `done`: the box open in place of the form, `{number, bed, engine, recovered?, earlier?}`. */
+ *  yet, `{bedId, bed, name, checked, requestId}`; `held`: `{bed}` while a send waits on one of them,
+ *  or `{bed, conflict: {key, vars}}` once the server said an admission exists under the form's id
+ *  (`request_conflict`, until «Yeni qəbul»); `done`: the box open in place of the form,
+ *  `{number, bed, engine, recovered?, earlier?}`. */
 const fresh = () => ({ ...freshForm(), sending: false, held: null, unanswered: [], done: null });
 
 /** `state`, its form under the id that is its patient's:

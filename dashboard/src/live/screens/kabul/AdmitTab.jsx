@@ -38,7 +38,17 @@
 // live in the session's admission draft (admitDraft.js): a tab change or another screen loses none
 // of them, a send answering meanwhile writes there, and the session's end wipes them. Only the
 // focus is this component's.
+//
+// EVERY SEND CARRIES THE FORM'S REQUEST ID (A-19, Task 19b) — a retry of a send that got no answer
+// (its bed, its patient) that send's own id — and the server keeps one id to one admission: a second
+// send of the same form is answered with the first's admission (a 200 with its body: a success like
+// any other), another form under the same id is refused `request_conflict`. That refusal means an
+// admission EXISTS under this form: nothing more is sent under it — «Kabul et» is held with the
+// words, which name the earlier admission's number when the server gives it and send the nurse to
+// the list — and every send that went under the id is known now, so none is looked for any more.
+// Only «Yeni qəbul» leaves the hold: a new form, under a new id.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
@@ -145,7 +155,8 @@ export function AdmitTab() {
   const canAdmit = user?.perms?.includes("admissions.admit") ?? false;
   // The session's (admitDraft.js): `sending` is read from the draft at once, so a second press in
   // the same tick — or in a tab mounted while the first is on its way — sees it; `held` ({bed}): a
-  // send got no answer, and nothing is sent until she has looked; `unanswered`: every send with no
+  // send got no answer, and nothing is sent until she has looked — or ({bed, conflict}) an admission
+  // exists under the form's id, and nothing is sent until «Yeni qəbul»; `unanswered`: every send with no
   // answer whose DRAFT is not found yet ({bedId, bed, name, checked, requestId}); `done`: the box.
   const [draftState, draft] = useAdmitDraft();
   const { form, tried, sending: busy, held, done } = draftState;
@@ -194,14 +205,15 @@ export function AdmitTab() {
   }, [held, heldId]);
 
   if (!canAdmit) return <Note tone="info" icon="eye">{t("kabul.readOnly")}</Note>;
+  // «Yeni qəbul» empties the draft for the next patient: the form, the box, the hold, and a new
+  // request id. A send whose outcome is still not known stays looked for (R2).
+  const startAfresh = () => {
+    draft.update({ ...freshForm(), done: null, held: null });
+    setFocusTo({ field: "name" });
+  };
   if (done) {
-    // «Yeni qəbul» empties the draft for the next patient: the form, the box, the hold, and a new
-    // request id. A send whose outcome is still not known stays looked for (R2). «Formaya qayıt»
-    // (an earlier patient's box) keeps the form for its own send.
-    const onNext = () => {
-      draft.update(done.earlier ? { done: null } : { ...freshForm(), done: null, held: null });
-      setFocusTo({ field: "name" });
-    };
+    // «Formaya qayıt» (an earlier patient's box) keeps the form for its own send.
+    const onNext = done.earlier ? () => { draft.update({ done: null }); setFocusTo({ field: "name" }); } : startAfresh;
     return <NumberBox done={done} onNext={onNext} />;
   }
 
@@ -283,6 +295,17 @@ export function AdmitTab() {
   // Every step after an `await` first asks whether the draft is still live: a send of a session
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
   async function failed(err, sent) {
+    if (err?.apiCode === "request_conflict") {
+      // An admission exists under this form's id (A-19): held, with the words that say so, until
+      // «Yeni qəbul»; the sends that went under the id are known now, and not looked for again.
+      draft.update((s) => ({
+        unanswered: s.unanswered.filter((x) => x.requestId !== sent.requestId),
+        held: { bed: sent.bed, conflict: apiErrorKey(err) },
+      }));
+      toast(refusedFor(t, sent.bed, err), "error");
+      await reload();
+      return;
+    }
     if (mayHaveLanded(err)) {
       draft.update((s) => ({ unanswered: [...s.unanswered.filter((x) => !sameSend(x, sent)), sent] }));
       const tree = await reload();
@@ -319,9 +342,11 @@ export function AdmitTab() {
       setFocusTo({ field: gaps[0].field });
       return;
     }
-    // The send keeps the request id it goes with (A-24 I-1), whatever becomes of the form after.
-    const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false, requestId: now.requestId };
-    const body = toBody(form);
+    // The send keeps the request id it goes with (A-24 I-1), whatever becomes of the form after: a
+    // retry of a send that got no answer — its bed, its patient — that send's own; else the form's.
+    const again = now.unanswered.find((s) => sameSend(s, { bedId: form.bedId, name: form.name }));
+    const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false, requestId: again?.requestId ?? now.requestId };
+    const body = toBody(form, sent.requestId);
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -496,13 +521,18 @@ export function AdmitTab() {
         {held ? (
           <div className="mt-2 grid justify-items-start gap-2">
             <p id={heldId} tabIndex={-1} className={`m-0 text-12.5 font-semibold text-crit-ink ${FOCUS_RING}`}>
-              {t("kabul.heldNoAnswer", { bed: held.bed, where })}
+              {held.conflict ? t(held.conflict.key, held.conflict.vars) : t("kabul.heldNoAnswer", { bed: held.bed, where })}
             </p>
-            {/* She has looked: the hold goes, the search does not — every send still looks first (R2). */}
-            <Button size="sm" onClick={() => draft.update((s) => ({
-              unanswered: s.unanswered.map((x) => ({ ...x, checked: true })),
-              held: null,
-            }))}>{t("kabul.heldGoOn")}</Button>
+            {held.conflict ? (
+              // An admission exists under this form: there is nothing to go on to, only a new form.
+              <Button size="sm" onClick={startAfresh}>{t("kabul.next")}</Button>
+            ) : (
+              // She has looked: the hold goes, the search does not — every send still looks first (R2).
+              <Button size="sm" onClick={() => draft.update((s) => ({
+                unanswered: s.unanswered.map((x) => ({ ...x, checked: true })),
+                held: null,
+              }))}>{t("kabul.heldGoOn")}</Button>
+            )}
           </div>
         ) : null}
         {form.bedId ? <p className="m-0 mt-2"><Tag icon="bed">{bedText}</Tag></p> : null}

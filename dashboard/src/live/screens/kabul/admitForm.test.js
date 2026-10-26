@@ -105,6 +105,12 @@ describe("the body POST /admissions takes", () => {
     });
   });
 
+  it("carries the form's request id, so two sends of one form are one admission (A-19) — and none when none is given", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(toBody(complete(), id).request_id).toBe(id);
+    expect(Object.keys(toBody(complete()))).toEqual(["patient", "note"]);
+  });
+
   it("sends no nationality until one is chosen", () => {
     expect(emptyForm().nationality).toBe("");
     expect(toBody(complete()).patient.nationality).toBeNull();
