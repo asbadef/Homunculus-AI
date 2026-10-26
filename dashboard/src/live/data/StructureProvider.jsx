@@ -7,12 +7,14 @@
 // `phase`: "unasked" (this session holds none of the rights `GET /tenant/structure` opens to, so
 // it is not called), "loading", "known", "stale" (a reload failed; the last answer stands), or
 // "failed" (none has answered). Every call goes through the session's `track`, as the board's do.
-// Outside a provider (a screen mounted alone in a test) the context is empty: every name falls
-// back as `unitLabel` says, and nothing is called.
+// Outside a provider (a screen mounted alone in a test) the context is empty: nothing is called,
+// and `useUnitNames` / `useBedNames` name every unit and bed by a placeholder.
 //
-// `known`: the provider holds a tree — "known" or "stale". Only then may a screen call a unit or a
-// bed «unknown»: before that the index is empty because nothing was read, not because the ward has
-// no such unit, and `useUnitNames` / `useBedNames` give a numbered placeholder instead.
+// `known`: the provider holds a tree — "known" or "stale" — whose names may be shown. «Unknown» is
+// a stronger claim: it is made only in phase "known" (the last read succeeded), and for a unit the
+// scope lists only once the read made for that very unit has landed (`rereading` holds the ids that
+// read is for). In every other case the index is empty or out of date, which is not the ward
+// lacking the unit, and `useUnitNames` / `useBedNames` give a numbered placeholder instead.
 //
 // A read that fails is tried again, waiting 2, 4, 8 … s up to 30 s, for as long as the shell is
 // open and the session may read it (the ward's network drops for a minute; the names must come
@@ -21,9 +23,9 @@
 // is mended. A scope that lists a unit the tree lacks — one added since it was read — makes the
 // structure be read once more, once for each such gap, not in a loop.
 //
-// `ordinalOf(kind, id)`: the placeholder number of a unit or bed whose name cannot be shown (the
-// structure is not known). One registry for as long as the shell is open, so a number stays with
-// its unit on every screen and is never reused (structure.js `ordinalRegistry`).
+// `ordinalOf(kind, id)`: the number of a unit or bed that is shown as a placeholder or as
+// «unknown». One registry for as long as the shell is open, so a number stays with its unit on
+// every screen and is never reused (structure.js `ordinalRegistry`).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
@@ -48,7 +50,8 @@ function refused(error) {
 }
 
 const NONE = Object.freeze({
-  structure: null, index: EMPTY_INDEX, phase: "unasked", known: false, error: null, reload: async () => {}, ordinalOf: null,
+  structure: null, index: EMPTY_INDEX, phase: "unasked", known: false, error: null, reload: async () => {},
+  ordinalOf: null, rereading: Object.freeze(new Set()),
 });
 const StructureContext = createContext(NONE);
 
@@ -61,7 +64,8 @@ export function StructureProvider({ children }) {
   const mounted = useRef(false);
   const retryTimer = useRef(0);
   const failures = useRef(0);
-  const reread = useRef("");
+  const triggered = useRef("");
+  const [settledGap, setSettledGap] = useState("");
   const ordinals = useRef(null);
   if (ordinals.current === null) ordinals.current = ordinalRegistry();
   useEffect(() => {
@@ -109,23 +113,32 @@ export function StructureProvider({ children }) {
   const known = state.phase === "known" || state.phase === "stale";
 
   // A unit the shell's scope lists and the tree lacks was added since the tree was read: read it
-  // once more. Once per such gap — a unit the new read still lacks is simply unknown.
+  // once more. Once per such gap — a unit the new read still lacks is simply unknown. Until that
+  // read has landed the tree is no answer about those units: `rereading` names them, and no screen
+  // calls them «unknown» meanwhile. The gap is worked out while rendering, so there is no
+  // render in between in which a unit the effect has yet to read for is already called unknown.
+  const gap = useMemo(
+    () => (known ? units.filter((id) => !index.units.has(normId(id))).map(normId).sort() : []),
+    [known, units, index],
+  );
+  const gapKey = gap.join("|");
   useEffect(() => {
-    if (!known) return;
-    const missing = units.filter((id) => !index.units.has(normId(id))).map(normId).sort().join("|");
-    if (missing === "") {
-      reread.current = "";
+    if (gapKey === "") {
+      triggered.current = "";
+      setSettledGap("");
       return;
     }
-    if (reread.current === missing) return;
-    reread.current = missing;
-    reload();
-  }, [known, units, index, reload]);
+    if (triggered.current === gapKey) return;
+    triggered.current = gapKey;
+    reload().then(() => { if (mounted.current) setSettledGap(gapKey); });
+  }, [gapKey, reload]);
+  const awaiting = gapKey !== "" && settledGap !== gapKey;
+  const rereading = useMemo(() => new Set(awaiting ? gap : []), [awaiting, gapKey]);   // `gap` is gapKey's array
 
   const value = useMemo(() => ({
     structure: state.structure, index, phase: state.phase, known, error: state.error, reload,
-    ordinalOf: ordinals.current.ordinalOf,
-  }), [state, index, known, reload]);
+    ordinalOf: ordinals.current.ordinalOf, rereading,
+  }), [state, index, known, reload, rereading]);
   return <StructureContext.Provider value={value}>{children}</StructureContext.Provider>;
 }
 
@@ -143,13 +156,16 @@ function useOrdinalOf() {
   return own.current;
 }
 
-/** The units of `ids` as a screen names them (structure.js `unitNamer`): `{ nameOf(id), sorted }`.
- *  Keep `ids` the same array between renders (a memo, a context's list). */
+/** The units of `ids` as a screen names them (structure.js `unitNamer`): `{ nameOf(id), sorted,
+ *  placeholders }`. Keep `ids` the same array between renders (a memo, a context's list). */
 export function useUnitNames(ids) {
-  const { index, phase } = useStructure();
+  const { index, phase, rereading } = useStructure();
   const { t, lang } = useI18n();
   const ordinalOf = useOrdinalOf();
-  return useMemo(() => unitNamer(t, { index, phase, ordinalOf }, ids, lang), [t, index, phase, ordinalOf, ids, lang]);
+  return useMemo(
+    () => unitNamer(t, { index, phase, ordinalOf, rereading }, ids, lang),
+    [t, index, phase, ordinalOf, rereading, ids, lang],
+  );
 }
 
 /** The beds of `ids` as a screen names them (structure.js `bedNamer`). */

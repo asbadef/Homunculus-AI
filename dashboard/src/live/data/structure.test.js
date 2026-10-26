@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { createTranslator } from "../i18n/translate.js";
 import {
-  EMPTY_INDEX, admissible, bedLabel, bedNamer, indexStructure, isUuid, ordinalRegistry, unavailableKey, unitLabel,
+  EMPTY_INDEX, admissible, bedLabel, bedNamer, indexStructure, isUuid, normId, ordinalRegistry, unavailableKey,
   unitNamer,
 } from "./structure.js";
 import { BED, NEO, REA, structure } from "../screens/kabul/kabul.testutil.js";
@@ -27,10 +27,11 @@ describe("the structure's index", () => {
     const bedWritten = "FEDCBA98-7654-4321-8FED-CBA987654321";
     const tree = indexStructure({ sites: [{ name: "S", units: [{ id: written, name: "Yoğun bakım", rooms: [
       { id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", name: "Otaq", beds: [{ id: bedWritten, label: "7", state: "AVAILABLE" }] }] }] }] });
-    expect(unitLabel(az, tree, written.toLowerCase())).toBe("Yoğun bakım");
-    expect(unitLabel(az, tree, ` ${written} `)).toBe("Yoğun bakım");
+    const view = viewOf("known", tree);
+    expect(unitNamer(az, view, [written.toLowerCase()], "az").nameOf(written.toLowerCase())).toBe("Yoğun bakım");
+    expect(unitNamer(az, view, [` ${written} `], "az").nameOf(written)).toBe("Yoğun bakım");
     expect(bedLabel(tree, bedWritten.toLowerCase())).toBe("7 · Yoğun bakım");
-    expect(unitLabel(az, index, REA.toUpperCase())).toBe("Reanimasiya");
+    expect(unitNamer(az, known(), [REA.toUpperCase()], "az").nameOf(REA)).toBe("Reanimasiya");
   });
 
   it("calls a bed open only when it, its room and its unit are open", () => {
@@ -41,24 +42,6 @@ describe("the structure's index", () => {
 
   it("is empty for an answer that is not a tree", () => {
     for (const answer of [null, undefined, {}, { sites: "x" }]) expect(indexStructure(answer).beds.size).toBe(0);
-  });
-});
-
-describe("a unit's name", () => {
-  const index = indexStructure(structure());
-
-  it("is the structure's name", () => {
-    expect(unitLabel(az, index, NEO)).toBe("Neonatal");
-  });
-
-  it("is never a UUID: an id the tree does not hold reads «unknown unit»", () => {
-    const label = unitLabel(az, index, "99999999-9999-4999-8999-999999999999");
-    expect(label).toBe(az("kabul.unitUnknown"));
-    expect(isUuid(label)).toBe(false);
-  });
-
-  it("keeps a key someone wrote by hand (an old free-text grant): it is no UUID", () => {
-    expect(unitLabel(az, index, "unit-adult")).toBe("unit-adult");
   });
 });
 
@@ -114,8 +97,12 @@ describe("the units of a list, named", () => {
     for (const id of [REA, NEO]) expect(names.nameOf(id)).not.toBe(az("kabul.unitUnknown"));
   });
 
-  it("says «unknown unit» only when the last read succeeded and the tree lacks the id", () => {
-    expect(unitNamer(az, known(), [REA, GHOST], "az").nameOf(GHOST)).toBe(az("kabul.unitUnknown"));
+  // «Unknown» is a claim about a unit, so it is numbered like every other nameless unit: with the
+  // number the registry gave it, the one it had as a placeholder, not by its place in a list.
+  it("says «unknown unit» only when the last read succeeded and the tree lacks the id — with its own number", () => {
+    const names = unitNamer(az, known(), [REA, GHOST], "az");
+    expect(names.nameOf(GHOST)).toBe(`${az("kabul.unitUnknown")} 1`);
+    expect(isUuid(names.nameOf(GHOST))).toBe(false);
     expect(unitNamer(az, pending(), [REA, GHOST], "az").nameOf(GHOST)).toBe("Şöbə 2");
   });
 
@@ -127,10 +114,22 @@ describe("the units of a list, named", () => {
     expect(names.nameOf(GHOST)).toBe("Şöbə 1");
   });
 
+  // The scope lists a unit the tree lacks: the structure is read again for it, and until that read
+  // lands the tree is not yet an answer about that unit.
+  it("does not call an id «unknown» while the read made for it is out, and does once that read has landed", () => {
+    const view = { ...known(), rereading: new Set([normId(GHOST)]) };
+    const names = unitNamer(az, view, [REA, GHOST, GHOST_2], "az");
+    expect(names.nameOf(GHOST)).toBe("Şöbə 1");
+    expect(names.nameOf(GHOST_2)).toBe(`${az("kabul.unitUnknown")} 2`);   // not asked for in that read
+    expect(unitNamer(az, { ...view, rereading: new Set() }, [GHOST], "az").nameOf(GHOST))
+      .toBe(`${az("kabul.unitUnknown")} 1`);
+  });
+
   it("keeps a key someone typed by hand, as typed, and gives it no number", () => {
     const names = unitNamer(az, pending(), [REA, "unit-adult", NEO], "az");
     expect(names.nameOf("unit-adult")).toBe("unit-adult");
     expect([names.nameOf(REA), names.nameOf(NEO)]).toEqual(["Şöbə 1", "Şöbə 2"]);
+    expect(unitNamer(az, known(), ["unit-adult"], "az").nameOf("unit-adult")).toBe("unit-adult");
   });
 
   it("numbers colliding names, in the list's order, so two units never read alike", () => {
@@ -139,9 +138,25 @@ describe("the units of a list, named", () => {
     const names = unitNamer(az, viewOf("known", indexStructure(twins)), [NEO, REA], "az");
     expect(names.nameOf(NEO)).toBe("Reanimasiya (1)");
     expect(names.nameOf(REA)).toBe("Reanimasiya (2)");
-    const ghosts = unitNamer(az, known(), [GHOST, GHOST_2], "az");
-    expect(ghosts.nameOf(GHOST)).toBe(`${az("kabul.unitUnknown")} (1)`);
-    expect(ghosts.nameOf(GHOST_2)).toBe(`${az("kabul.unitUnknown")} (2)`);
+  });
+
+  it("numbers the units it calls «unknown» from the registry, not by position — two of them are 1 and 2", () => {
+    const view = known();
+    const ghosts = unitNamer(az, view, [GHOST, GHOST_2], "az");
+    expect(ghosts.nameOf(GHOST)).toBe(`${az("kabul.unitUnknown")} 1`);
+    expect(ghosts.nameOf(GHOST_2)).toBe(`${az("kabul.unitUnknown")} 2`);
+    const later = unitNamer(az, view, [GHOST_2], "az");                       // the list shrinks: no renumbering
+    expect(later.nameOf(GHOST_2)).toBe(`${az("kabul.unitUnknown")} 2`);
+  });
+
+  // The scope editor says "these names are placeholders" when any listed key is one — in every
+  // phase that can make one, a partly named list included.
+  it("counts the placeholders of a list, so a screen can say so", () => {
+    expect(unitNamer(az, pending(), [REA, NEO, "unit-adult"], "az").placeholders).toBe(2);
+    expect(unitNamer(az, viewOf("stale", indexStructure(structure())), [REA, GHOST], "az").placeholders).toBe(1);
+    expect(unitNamer(az, { ...known(), rereading: new Set([normId(GHOST)]) }, [REA, GHOST], "az").placeholders).toBe(1);
+    expect(unitNamer(az, known(), [REA, NEO, GHOST, "unit-adult"], "az").placeholders).toBe(0);   // «unknown» is a claim, not a placeholder
+    expect(unitNamer(az, pending(), [], "az").placeholders).toBe(0);
   });
 
   it("never gives two units one name: a suffix already taken by a unit of that name is skipped", () => {
@@ -209,7 +224,7 @@ describe("the beds of a list, named", () => {
   it("by label and unit once known; «unknown bed» for an id the tree lacks", () => {
     const names = bedNamer(az, known(), [BED(5), BED(1), GHOST], "az");
     expect(names.nameOf(BED(5))).toBe("5 · Reanimasiya");
-    expect(names.nameOf(GHOST)).toBe(az("kabul.bedUnknown"));
+    expect(names.nameOf(GHOST)).toBe(`${az("kabul.bedUnknown")} 1`);
     expect(names.sorted).toEqual([BED(1), BED(5), GHOST]);
   });
 
@@ -224,5 +239,11 @@ describe("the beds of a list, named", () => {
     const names = bedNamer(az, viewOf("stale", indexStructure(structure())), [BED(5), GHOST], "az");
     expect(names.nameOf(BED(5))).toBe("5 · Reanimasiya");
     expect(names.nameOf(GHOST)).toBe("Çarpayı 1");
+  });
+
+  it("counts its placeholders: the unnamed beds of a stale or unread tree, not a bed called «unknown»", () => {
+    expect(bedNamer(az, viewOf("stale", indexStructure(structure())), [BED(5), GHOST], "az").placeholders).toBe(1);
+    expect(bedNamer(az, pending(), [BED(5), GHOST, "bed-7"], "az").placeholders).toBe(2);
+    expect(bedNamer(az, known(), [BED(5), GHOST], "az").placeholders).toBe(0);
   });
 });

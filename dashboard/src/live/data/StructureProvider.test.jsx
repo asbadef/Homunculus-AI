@@ -9,11 +9,12 @@ import { refusal } from "../session/mount.testutil.jsx";
 import { token } from "../session/testTokens.testutil.js";
 
 function Probe() {
-  const { phase, known, index, reload } = useStructure();
+  const { phase, known, index, reload, rereading } = useStructure();
   return (
     <div>
       <p>{`phase: ${phase}`}</p>
       <p>{`known: ${known}`}</p>
+      <p>{`rereading: ${rereading.size}`}</p>
       <p>{`units: ${[...index.units.values()].map((u) => u.name).join(", ")}`}</p>
       <button type="button" onClick={reload}>reload</button>
     </div>
@@ -229,6 +230,24 @@ describe("a unit the shell's scope holds and the tree lacks", () => {
     });
     expect(api.structure).toHaveBeenCalledTimes(2);
     expect(screen.getByText("units: Reanimasiya, Neonatal, Yeni şöbə")).toBeTruthy();
+  });
+
+  // Until the read made for a unit has landed, the tree is not yet an answer about that unit: the
+  // provider says which ids are being read for (`rereading`), and the screens do not call them
+  // «unknown» meanwhile.
+  it("says which units the read in flight is for, and none once it has landed", async () => {
+    let land;
+    const { api } = await mountKabul(<Probe />, {
+      perms: ["admissions.view"], shell: { units: [REA, NEW] },
+      setup: (a) => a.structure.mockResolvedValueOnce(structure())
+        .mockReturnValueOnce(new Promise((resolve) => { land = resolve; })),
+    });
+    expect(api.structure).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("phase: known")).toBeTruthy();
+    expect(screen.getByText("rereading: 1")).toBeTruthy();
+    await act(async () => { land(structure()); });                 // it still lacks the unit
+    expect(screen.getByText("rereading: 0")).toBeTruthy();
+    expect(api.structure).toHaveBeenCalledTimes(2);                // and the gap is not asked about again
   });
 
   it("only once: a unit the second read still lacks does not start a loop", async () => {

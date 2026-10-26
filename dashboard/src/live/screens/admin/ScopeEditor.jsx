@@ -4,16 +4,19 @@
 // THERE IS STILL NO ENDPOINT THAT LISTS THE KEYS A SCOPE MAY NAME — but since G2-B1a there is one
 // that NAMES them: `GET /tenant/structure`, which `users.manage` opens for exactly this (X52). The
 // shell's StructureProvider (data/StructureProvider.jsx) reads it when the session opens, reads it
-// again when the scope lists a unit the tree lacks, and keeps asking, with a growing wait, while a
-// read fails. Since B1a a scope's keys are the tenant's database UUIDs (spec D9) and no screen
-// shows one: every key is shown by its unit's or bed's name from that tree, in the order of the
-// names. The structure may not be known yet (still being read, or unreadable): the keys are then
-// numbered placeholders ("Şöbə 1") under a warning that says so — never «unknown», which would
-// read as a grant to nothing. A placeholder's number is the shell's own count (it is the one the
-// top bar shows, it never moves to another key when a grant is removed or one is typed, and it is
-// never reused), so an administrator can act on "Şöbə 2" and mean the same unit as a moment ago.
-// A key the tree does not hold, once the last read has succeeded, is «unknown unit» / «unknown
-// bed» (a caller without `structure.manage` is sent only her own units, so the others read so).
+// again when the scope lists a unit the tree lacks, and keeps asking while a read fails (every 2 to
+// 30 s, doubling; every 5 minutes after the server refuses it). Since B1a a scope's keys are the
+// tenant's database UUIDs (spec D9) and no screen shows one: every key is shown by its unit's or
+// bed's name from that tree, in the order of the names. The tree may not name a key yet — it is
+// still being read, or the last read failed (a unit may have been added since), or the read made
+// for that key has not landed: the key is then a numbered placeholder ("Şöbə 1"), never
+// «unknown», which would read as a grant to nothing, and the editor says so whenever it lists one
+// (`placeholders`, of every phase, a partly named list included). A placeholder's number is the
+// shell's own count (the one the top bar shows; it never moves to another key when a grant is
+// removed or one is typed, and is never reused), so an administrator can act on "Şöbə 2" and mean
+// the same unit as a moment ago. A key the tree does not hold, once the last read has succeeded,
+// is «unknown unit 3» / «unknown bed 3» (a caller without `structure.manage` is sent only her own
+// units, so the others read so).
 // A key typed by hand — an old free-text grant from the site's `bed-mapping.json`
 // (`BED_MAPPING_PATH`, `tenant/bedmap.py` `BedRef.unit_id` / `bed_id`) — survives as typed and is
 // shown as typed. The keys themselves still come from three sources, and the editor says in one
@@ -78,7 +81,7 @@ import { boardKnown } from "../common/BoardState.jsx";
 import { FIELD_MAX } from "./limits.js";
 import { mayHaveLanded } from "./refusal.js";
 import { scopeKind } from "./rules.js";
-import { useBedNames, useStructure, useUnitNames } from "../../data/StructureProvider.jsx"; // G2-B1a
+import { useBedNames, useUnitNames } from "../../data/StructureProvider.jsx"; // G2-B1a
 
 /** What an UNASSIGNED account sees until this editor is used — asked only of a scope `scopeKind`
  *  has already called "unassigned". With enforcement off (the pilot) the engine shows her every
@@ -150,12 +153,12 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
   const keys = useMemo(() => offeredKeys(board.patients, grants), [board.patients, grants]);
   // G2-B1a: a key by its name from the structure — since B1a the keys are the tenant's UUIDs, and
   // no screen shows one (spec D9). A key someone typed by hand is no UUID and is shown as typed.
-  // Until the structure is known a key is a numbered placeholder under a warning, never «unknown».
-  const { known: namesKnown } = useStructure();
+  // A key the structure cannot name yet is a numbered placeholder under a warning, never «unknown».
   const unitNames = useUnitNames(keys.units);
   const bedNames = useBedNames(keys.beds);
   const unitName = unitNames.nameOf;
   const bedName = bedNames.nameOf;
+  const namesPending = unitNames.placeholders + bedNames.placeholders > 0;
   const offered = useMemo(() => ({ units: unitNames.sorted, beds: bedNames.sorted }), [unitNames, bedNames]);
   const has = (grant) => grants.some((g) => sameGrant(g, grant));
   const known = boardKnown(board.connection);
@@ -274,8 +277,8 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
           cannot find an empty unit in a list that looks complete concludes it does not exist. */}
       <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeFromBoard")}</p>
       {known ? null : <Note tone="warn" icon="plug">{t("admin.scopeBoardUnknown")}</Note>}
-      {/* G2-B1a: until the structure is read the names below are numbers — say so, once. */}
-      {namesKnown ? null : <Note tone="warn" icon="plug">{t("kabul.namesPending")}</Note>}
+      {/* G2-B1a: say so, once, whenever a name below is a number the structure could not replace. */}
+      {namesPending ? <Note tone="warn" icon="plug">{t("kabul.namesPending")}</Note> : null}
 
       {offered.units.length === 0 && offered.beds.length === 0
         ? <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeNoKeys")}</p>

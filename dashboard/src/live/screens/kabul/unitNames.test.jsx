@@ -7,7 +7,7 @@
 // be made until the structure has been read (Task 12 review, I-1).
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { createTranslator } from "../../i18n/translate.js";
 import { TopBar } from "../../shell/TopBar.jsx";
@@ -96,6 +96,24 @@ describe("the top bar's unit chooser", () => {
     expect(document.body.textContent).not.toMatch(/Naməlum/);
     expectNoUuid();
   });
+
+  // The scope lists a unit the tree lacks and the structure is being read again for it: until that
+  // read lands the tree is no answer about that unit — a placeholder; after it, the claim.
+  it("does not call a unit «unknown» while the read made for it is out, and does once that read has landed", async () => {
+    let land;
+    await mountKabul(<TopBar title="Yataklar" />, {
+      perms: PERMS, shell: { units: [REA, GHOST] },
+      setup: (api) => api.structure.mockResolvedValueOnce(structure())
+        .mockReturnValueOnce(new Promise((resolve) => { land = resolve; })),
+    });
+    expect(menuItems()).toEqual(["Bütün bölmələrim", "Reanimasiya", "Şöbə 2"]);
+    expect(document.body.textContent).not.toMatch(/Naməlum/);
+    fireEvent.click(chip());                                    // shut the menu
+    expect(screen.queryByRole("menu")).toBeNull();
+    await act(async () => { land(structure()); });              // the read lands, still without the unit
+    expect(menuItems()).toEqual(["Bütün bölmələrim", "Naməlum şöbə 2", "Reanimasiya"]);
+    expectNoUuid();
+  });
 });
 
 describe("the bed board's own unit selector", () => {
@@ -110,7 +128,7 @@ describe("the bed board's own unit selector", () => {
 
   it("reads «unknown unit» for an id the structure, once known, does not hold — still never the UUID", async () => {
     await mountKabul(<BedsScreen />, { perms: PERMS, shell: { units: [REA, GHOST] } });
-    expect(optionsOf(screen.getByRole("combobox"))).toEqual(["Hamısı", "Naməlum şöbə", "Reanimasiya"]);
+    expect(optionsOf(screen.getByRole("combobox"))).toEqual(["Hamısı", "Naməlum şöbə 2", "Reanimasiya"]);
     expectNoUuid();
   });
 
@@ -139,7 +157,7 @@ describe("the administrator's scope editor", () => {
     const table = within(screen.getByRole("table"));
     expect(table.getByRole("rowheader", { name: "Reanimasiya" })).toBeTruthy();
     expect(table.getByText("5 · Reanimasiya")).toBeTruthy();
-    expect(table.getByText("Naməlum çarpayı")).toBeTruthy();
+    expect(table.getByText("Naməlum çarpayı 2")).toBeTruthy();          // numbered as it was a placeholder: 1 is bed 5
     expect(table.getByRole("rowheader", { name: "unit-adult" })).toBeTruthy();   // a key typed by hand
     expect(choicesOf(az("admin.scopeUnits"))).toEqual(["Neonatal", "Reanimasiya", "unit-adult"]);
     expect(screen.queryByText(az("kabul.namesPending"))).toBeNull();
@@ -150,6 +168,20 @@ describe("the administrator's scope editor", () => {
     await open();
     expect(screen.getByRole("button", { name: `${az("admin.remove")}: Reanimasiya` })).toBeTruthy();
     expect(screen.getByRole("button", { name: `${az("admin.remove")}: 5 · Reanimasiya` })).toBeTruthy();
+    expectNoUuid();
+  });
+
+  // The probe of the re-review: a stale tree names Reanimasiya, not the unit added since — and the
+  // list read "Reanimasiya, Şöbə 2" with nothing saying the second was a placeholder.
+  it("says so when only some of its names are placeholders: a stale tree names what it holds", async () => {
+    await mountKabul(editorFor([REA, GHOST].map((id) => ({ unit_id: id, bed_id: "" }))), {
+      perms: ["users.manage"], shell: { units: [REA, GHOST] },
+      setup: (api) => api.structure.mockResolvedValueOnce(structure())
+        .mockRejectedValue(refusal(503, "Sunucuya şu an ulaşılamıyor")),
+    });
+    expect(rowHeaders()).toEqual(["Reanimasiya", "Şöbə 2"]);
+    expect(screen.getByText(az("kabul.namesPending"))).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Naməlum/);
     expectNoUuid();
   });
 
