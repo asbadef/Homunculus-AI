@@ -152,37 +152,72 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["bed_in_use", "kabul.err.bedInUse"],
   ["has_open_beds", "kabul.err.hasOpenBeds"],
   ["name_taken", "kabul.err.nameTaken"],
-  // Amendment A-5/A-6: a bed label is unique within its unit. errors.py gains the code in Task 7;
-  // the dashboard maps it ahead (apiErrors.test.js's DASHBOARD_ONLY allow-list).
-  ["bed_label_taken", "kabul.err.bedLabelTaken"],
+  ["bed_label_taken", "kabul.err.bedLabelTaken"],      // A-5: a bed label is unique within its unit
+  // A-19: the form's request id came before with another form — an admission exists under it. The
+  // text sends the nurse to the list; with the earlier admission's number when the detail carries
+  // it (`err.patientNumber`, its bed in her units), `kabul.err.requestConflictNumber`.
+  ["request_conflict", "kabul.err.requestConflict"],
 ]);
+const REQUEST_CONFLICT = "request_conflict";
+
+/** The fields no screen sends today (admission/schemas.py AdmissionNoteFields): one sentence says a
+ *  field the screen does not send was refused. apiErrors.test.js checks the form's body indeed holds
+ *  none of them — a screen that starts sending one gives it its own sentence. */
+const NOT_ON_SCREEN = "kabul.invalid.notOnScreen";
 
 /** `field_invalid:<field>` -> the sentence naming that field. A field not listed reads the
- *  generic sentence: the refusal is still said, only less exactly. */
+ *  generic sentence: the refusal is still said, only less exactly. A field is refused by
+ *  admission/form.py's rules (by its literal, or in a loop over names), by the request model while
+ *  the body is read (a control character in a text, a JSON list it cannot keep — A-10, A-16), or by
+ *  a router; apiErrors.test.js reads all four. */
 export const INVALID_FIELD_KEYS = new Map([
   ["display_name", "kabul.invalid.displayName"],
+  ["father_name", "kabul.invalid.father"],
   ["date_of_birth", "kabul.invalid.dateOfBirth"],
+  ["nationality", "kabul.invalid.nationality"],
   ["national_id", "kabul.invalid.nationalId"],
+  ["passport_no", "kabul.invalid.passport"],
   ["phone", "kabul.invalid.phone"],
+  ["his_patient_reference", "kabul.invalid.his"],
+  ["relative_name", "kabul.invalid.relativeName"],
+  ["relative_relation", "kabul.invalid.relativeRelation"],
   ["relative_phone", "kabul.invalid.relativePhone"],
+  ["companion_name", "kabul.invalid.companion"],
+  ["admission_datetime", "kabul.invalid.admissionDatetime"],
   ["admission_type", "kabul.invalid.admissionType"],
   ["admission_diagnosis_free_text", "kabul.invalid.diagnosis"],
   ["weight_kg", "kabul.invalid.weight"],
   ["height_cm", "kabul.invalid.height"],
   ["allergies_text", "kabul.invalid.allergy"],
   ["comorbidity_codes", "kabul.invalid.comorbidities"],
+  ["comorbidities_text", "kabul.invalid.comorbiditiesText"],
   ["consent", "kabul.invalid.consent"],
   ["admitting_unit_id", "kabul.invalid.unit"],
   ["institution", "kabul.invalid.institution"],
+  ["reported_by", "kabul.invalid.reportedBy"],
   ["discharge_at", "kabul.invalid.dischargeAt"],
+  ["note", "kabul.invalid.note"],
   ["name", "kabul.invalid.name"],
   ["label", "kabul.invalid.label"],
+  ["icd10_codes", NOT_ON_SCREEN],
+  ["active_comorbidities", NOT_ON_SCREEN],
+  ["active_medications_on_admission", NOT_ON_SCREEN],
+  ["known_allergies", NOT_ON_SCREEN],
+  ["baseline_spo2_range", NOT_ON_SCREEN],
+  ["baseline_heart_rate_range", NOT_ON_SCREEN],
+  ["baseline_blood_pressure_range", NOT_ON_SCREEN],
+  ["baseline_respiratory_rate_range", NOT_ON_SCREEN],
+  ["baseline_temperature_range", NOT_ON_SCREEN],
+  ["cardiac_surgery_name", NOT_ON_SCREEN],
+  ["admission_note_narrative", NOT_ON_SCREEN],
 ]);
 const FIELD_INVALID = "field_invalid:";
 
 /** A coded refusal as {key, vars}, or null when it carries no code this map knows. */
 function admissionCodeKey(err) {
   const code = typeof err?.apiCode === "string" ? err.apiCode : "";
+  const number = typeof err?.patientNumber === "string" ? err.patientNumber.trim() : "";
+  if (code === REQUEST_CONFLICT && number) return { key: "kabul.err.requestConflictNumber", vars: { number } };
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };
@@ -254,8 +289,18 @@ function fieldErrorKey(item) {
     const max = lengthOf(item, "max_length");
     return max === null ? null : { key: "errors.listTooLong", vars: { max } };
   }
+  // G2-B1a (A-10, A-16): the admission and discharge models refuse a field they do not have — a
+  // screen and a server of two releases — and a number that is not one (`strict=True`). The weight
+  // and the height say which; any other field that a number is expected.
+  if (item.type === "extra_forbidden") return { key: "kabul.invalid.extraField", vars: {} };
+  if (item.type === "float_type" || item.type === "int_type") {
+    const field = String(item.field ?? "").split(".").at(-1);
+    return { key: NUMBER_FIELDS[field] ?? "kabul.invalid.number", vars: {} };
+  }
   return null;
 }
+/** The two number fields the admission form draws, by the sentence its own panel says for them. */
+const NUMBER_FIELDS = Object.freeze({ weight_kg: "kabul.miss.weight", height_cm: "kabul.miss.height" });
 
 /** One 422 item's own message, looked up as a message in its own right.
  *

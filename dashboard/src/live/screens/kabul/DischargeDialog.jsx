@@ -37,6 +37,18 @@ export const fromLocalInput = (value) => {
   return at.getFullYear() === y && at.getMonth() === mo - 1 && at.getDate() === d ? at.getTime() : NaN;
 };
 
+/** The body POST …/discharge/initiate takes (admission/schemas.py DischargeStart): the institution
+ *  only for another institution, the reporter only for an exitus and only when written. */
+export function dischargeBody({ disposition, institution, reportedBy, atMs, note }) {
+  return {
+    disposition,
+    institution: disposition === "OTHER_INSTITUTION" ? String(institution ?? "").trim() : null,
+    reported_by: disposition === "EXITUS" && String(reportedBy ?? "").trim() ? String(reportedBy).trim() : null,
+    discharge_at: new Date(atMs).toISOString(),
+    note: String(note ?? "").trim() || null,
+  };
+}
+
 export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
   const { t } = useI18n();
   const { store } = useSession();
@@ -64,13 +76,9 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
     }
     setBusy(true);
     try {
-      await store.track(() => store.api.startDischarge(row.id, {
-        disposition,
-        institution: disposition === "OTHER_INSTITUTION" ? institution.trim() : null,
-        reported_by: disposition === "EXITUS" && reportedBy.trim() ? reportedBy.trim() : null,
-        discharge_at: new Date(atMs).toISOString(),
-        note: note.trim() || null,
-      }));
+      await store.track(() => store.api.startDischarge(row.id, dischargeBody({
+        disposition, institution, reportedBy, atMs, note,
+      })));
       toast(doneFor(t, subject, t("kabul.dischargeStarted")));
       await onDone();                               // held until the tab has read its list again (A-17)
     } catch (err) {

@@ -293,6 +293,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     let detail = fallback;
     let fieldErrors;
     let apiCode;
+    let patientNumber;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -308,6 +309,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // Group 2 · B1a): the words are the message, the code is what a screen maps.
         detail = body.detail.message;
         apiCode = body.detail.code;
+        // `request_conflict` names the earlier admission's number (admission/errors.py `Refusal.extra`):
+        // the one extra a screen shows. Nothing else of the detail is kept — never a name.
+        if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -317,6 +321,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     const err = new Error(detail);
     err.status = res.status;
     if (apiCode) err.apiCode = apiCode;
+    if (patientNumber !== undefined) err.patientNumber = patientNumber;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.

@@ -1422,6 +1422,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     });
   });
 
+  // A-19, A-29: the earlier admission's number travels beside the code — and nothing else the
+  // detail might hold: a name is never carried onto the error.
+  it("a request_conflict carries the earlier admission's number, and only that, beside its code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "request_conflict", message: "This request id came before with another admission form.",
+      patient_number: "H2600042", display_name: "Sentetik Hasta",
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).admit({ patient: {}, note: {} }).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "request_conflict", patientNumber: "H2600042" });
+    expect(JSON.stringify(Object.entries(err))).not.toContain("Sentetik");
+    // a number that is not a string is not one
+    const odd = vi.fn().mockResolvedValue(jsonResponse({ detail: { code: "request_conflict", message: "x", patient_number: 42 } },
+      { ok: false, status: 409 }));
+    expect((await signedIn(odd).admit({}).catch((e) => e)).patientNumber).toBeUndefined();
+  });
+
   it("a refusal without a code has none, as before", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: "Admission not found." }, { ok: false, status: 404 }));
     const err = await signedIn(fetchMock).signOffAdmission("a-1").catch((e) => e);
