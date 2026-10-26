@@ -141,8 +141,9 @@ _CHARTED_CODES = (SignalCode.NOREPINEPHRINE_RATE, SignalCode.EPINEPHRINE_RATE,
 def _charted_history(state) -> list[dict]:
     """The last MEDS_HISTORY observations of the chartable medication inputs, newest first, in the
     door's units (G2-A3, D5). Read from the state, not the audit: the box must not need `audit.view`
-    to show a nurse what she charted ten minutes ago. Equal stamps keep their charting order."""
-    rows = [obs for code in _CHARTED_CODES for obs in state.history(code)]
+    to show a nurse what she charted ten minutes ago. Equal stamps: of one code, the later-charted
+    first — the one `latest()` and the rule read; across codes, the table's order."""
+    rows = [obs for code in _CHARTED_CODES for obs in reversed(state.history(code))]
     rows.sort(key=lambda obs: obs.timestamp, reverse=True)
     return [{"code": obs.code.value, "value": obs.value, "unit": obs.unit,
              "ts": obs.timestamp.isoformat()} for obs in rows[:MEDS_HISTORY]]

@@ -148,6 +148,15 @@ class TestChartedHistory:
         charted = _bed(client, "bed-1")["meds"]["charted"]
         assert len(charted) == 10 and charted[0]["value"] == 111 and charted[-1]["value"] == 102
 
+    def test_a_same_time_correction_heads_the_history_as_latest_reads_it(self, client):
+        # Final review I1: a wrong rate corrected at the same minute — the rule reads the
+        # correction (latest()), so the history must not list the wrong value above it.
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.5}], T0)
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.05}], T0)
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["pressors"]["norepinephrine"] == 0.05
+        assert meds["charted"][0]["value"] == 0.05 and meds["charted"][1]["value"] == 0.5
+
     def test_nothing_charted_means_an_empty_history_and_no_times(self, client):
         _chart(client, "bed-1", [{"code": "lactate", "value": 1.2}])
         meds = _bed(client, "bed-1")["meds"]
