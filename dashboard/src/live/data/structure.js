@@ -46,19 +46,117 @@ export function indexStructure(structure) {
 
 export const EMPTY_INDEX = Object.freeze(indexStructure(null));
 
-/** A unit as a screen names it: its name; else, for an id the tree does not hold, the id itself
- *  when it is a key someone wrote (an old free-text grant), and `t("kabul.unitUnknown")` when it
- *  is a UUID — never the UUID. */
-export function unitLabel(t, index, id) {
-  const unit = index.units.get(normId(id));
-  if (unit) return unit.name;
-  return isUuid(id) ? t("kabul.unitUnknown") : String(id ?? "");
-}
-
 /** A bed as a screen names it: "label · unit"; `null` when the tree does not hold it. */
 export function bedLabel(index, id) {
   const bed = index.beds.get(normId(id));
   return bed ? `${bed.label} · ${bed.unitName}` : null;
+}
+
+/** The placeholder numbers of one shell: a unit or a bed that cannot yet be called by its name is
+ *  "Şöbə 3" — and that 3 must stay with it. A number is taken the first time an id needs one, from
+ *  a count that only grows: never given to another id, never taken back when the id leaves a list
+ *  (a grant removed, a patient gone), the same on every screen that names it, and distinct for
+ *  every id. A position in a list would move as soon as the list changed, and an administrator who
+ *  removed "Şöbə 1" would find "Şöbə 1" now meant another unit. StructureProvider keeps one of
+ *  these for as long as the shell is open. `kind`: "unit" or "bed"; an id whatever its case. */
+export function ordinalRegistry() {
+  const taken = { unit: new Map(), bed: new Map() };
+  return {
+    ordinalOf(kind, id) {
+      const numbers = taken[kind];
+      const key = normId(id);
+      if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
+      return numbers.get(key);
+    },
+  };
+}
+
+/** Names for a LIST of ids, as one screen shows them — the one way a unit or a bed is named, since
+ *  a name depends on the whole list and on how far the structure has been read:
+ *
+ *   1. Only a successful read makes an id «unknown». `view` is `{ index, phase, ordinalOf,
+ *      rereading }` (StructureProvider's own words and registry). The index names what it holds. An
+ *      id it does not hold is «unknown unit 3» only in phase "known" — the last read succeeded —
+ *      and when no read is out for that very id (`rereading`: the scope listed a unit the tree
+ *      lacked, and the structure is being read again for it). In any other case (still being
+ *      read, unreadable, "stale": the last read failed and a unit may have been added since) it is
+ *      a placeholder, "Şöbə 3". Both carry the number `ordinalRegistry` gave the id, so the number
+ *      is the same before and after the claim.
+ *   2. Names that collide are numbered, in the list's order: "Reanimasiya (1)", "Reanimasiya (2)"
+ *      — skipping a suffix some other unit already bears, so no two entries ever read alike.
+ *   3. `sorted` is the ids in the order of the names a reader sees — numbers by value, case
+ *      ignored — never in the order of their UUIDs.
+ *   4. `placeholders` counts the listed ids shown as placeholders, so a screen can say, whenever
+ *      there is one, that a numbered name is not a name.
+ *
+ *  A key someone typed by hand (an old free-text grant) is no UUID and is shown as typed, with no
+ *  number. `labelFor(id)` answers `{ label, placeholder }` for one id. `nameOf` also answers for
+ *  an id outside the list (its number is the registry's, the same each time). */
+function namer(ids, locale, labelFor) {
+  const distinct = [];
+  const seen = new Set();
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const key = normId(id);
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      distinct.push(id);
+    }
+  }
+  const named = distinct.map((id) => labelFor(id));
+  const base = named.map((one) => one.label);
+  const total = new Map();
+  for (const label of base) total.set(label, (total.get(label) ?? 0) + 1);
+  const used = new Set(base);
+  const run = new Map();
+  const labels = new Map();
+  distinct.forEach((id, at) => {
+    let label = base[at];
+    if (total.get(label) > 1) {
+      let n = run.get(label) ?? 0;
+      let numbered;
+      do {
+        n += 1;
+        numbered = `${label} (${n})`;
+      } while (used.has(numbered));
+      run.set(label, n);
+      used.add(numbered);
+      label = numbered;
+    }
+    labels.set(normId(id), label);
+  });
+  const order = (a, b) => labels.get(normId(a)).localeCompare(labels.get(normId(b)), locale, { numeric: true, sensitivity: "base" })
+    || normId(a).localeCompare(normId(b));
+  return {
+    nameOf: (id) => labels.get(normId(id)) ?? labelFor(id).label,
+    sorted: [...distinct].sort(order),
+    placeholders: named.filter((one) => one.placeholder).length,
+  };
+}
+
+/** The units of `ids` named — see `namer`. `t` is the translator, `locale` the language's code. */
+export function unitNamer(t, view, ids, locale) {
+  return namer(ids, locale, (id) => {
+    const unit = view.index.units.get(normId(id));
+    if (unit) return { label: unit.name, placeholder: false };
+    if (!isUuid(id)) return { label: String(id ?? ""), placeholder: false };
+    const n = view.ordinalOf("unit", id);
+    if (view.phase === "known" && !view.rereading?.has(normId(id))) {
+      return { label: `${t("kabul.unitUnknown")} ${n}`, placeholder: false };
+    }
+    return { label: t("kabul.unitOrdinal", { n }), placeholder: true };
+  });
+}
+
+/** The beds of `ids` named — see `namer`. A bed reads "label · unit" once the structure holds it. */
+export function bedNamer(t, view, ids, locale) {
+  return namer(ids, locale, (id) => {
+    const held = bedLabel(view.index, id);
+    if (held) return { label: held, placeholder: false };
+    if (!isUuid(id)) return { label: String(id ?? ""), placeholder: false };
+    const n = view.ordinalOf("bed", id);
+    if (view.phase === "known") return { label: `${t("kabul.bedUnknown")} ${n}`, placeholder: false };
+    return { label: t("kabul.bedOrdinal", { n }), placeholder: true };
+  });
 }
 
 /** Can an admission take this bed? Open, and AVAILABLE. */

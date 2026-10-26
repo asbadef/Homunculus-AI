@@ -3,9 +3,11 @@
 // the shell's StructureProvider on a session holding the given rights. UUIDs are made up and must
 // never appear on a screen (`UUID_TEXT`). Synthetic patients only.
 import React from "react";
+import { expect, vi } from "vitest";
 import { act, screen, within } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
+import { ShellProvider } from "../../shell/ShellContext.jsx";
 import { StructureProvider } from "../../data/StructureProvider.jsx";
 
 export const T = "11111111-1111-4111-8111-111111111111";
@@ -18,6 +20,17 @@ export const ROOMN = "44444444-4444-4444-8444-444444444403";
 export const BED = (n) => `55555555-5555-4555-8555-5555555555${String(n).padStart(2, "0")}`;
 /** Any UUID at all: no screen may print one. */
 export const UUID_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** No UUID anywhere a reader or a screen reader meets one: the page's text, and the attributes
+ *  that become an accessible name (aria-label, title, alt, placeholder). */
+export function expectNoUuid(root = document.body) {
+  expect(root.textContent).not.toMatch(UUID_TEXT);
+  for (const el of root.querySelectorAll("[aria-label],[title],[alt],[placeholder]")) {
+    for (const attr of ["aria-label", "title", "alt", "placeholder"]) {
+      expect(el.getAttribute(attr) ?? "", `${el.tagName.toLowerCase()} ${attr}`).not.toMatch(UUID_TEXT);
+    }
+  }
+}
 
 const bed = (n, label, state = "AVAILABLE", is_active = true) => ({ id: BED(n), label, state, is_active });
 
@@ -52,11 +65,21 @@ export function row(over = {}) {
   };
 }
 
-export const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+/** Let what is pending settle: a macrotask — or, under fake timers, the clock's own zero tick. */
+export const settle = () => act(async () => {
+  if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+  else await new Promise((resolve) => setTimeout(resolve, 0));
+});
 
-/** Mount `ui` in the providers the shell gives a screen, the structure's included. */
-export async function mountKabul(ui, { perms, setup } = {}) {
-  const mounted = await mount(React.createElement(StructureProvider, null, ui), {
+/** Mount `ui` in the providers the shell gives a screen, the structure's included. `shell`
+ *  ({ units, scope }) puts the shell's own ShellProvider around the structure's, as Shell.jsx
+ *  nests them — what the top bar, the bed board and the provider's own re-read read. */
+export async function mountKabul(ui, { perms, setup, shell } = {}) {
+  const inner = React.createElement(StructureProvider, null, ui);
+  const framed = shell
+    ? React.createElement(ShellProvider, { units: shell.units, scope: shell.scope ?? "known" }, inner)
+    : inner;
+  const mounted = await mount(framed, {
     access: token({ perms }), me: profile({ perms }),
     setup: (api) => {
       api.structure.mockResolvedValue(structure());

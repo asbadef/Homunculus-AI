@@ -69,6 +69,11 @@ export default {
     pickUnitFirst: "Önce birimi seçin.", pickHint: "Yalnız boş ve açık yataklar seçilebilir.",
     bedChosen: "Seçilen: {bed}", bedClosed: "Kapalı", bedOther: "Başka bir durumda",
     unitUnknown: "Bilinmeyen birim", bedUnknown: "Bilinmeyen yatak",
+    // While the structure cannot name a unit or bed (still read, unreadable, or out of date for it)
+    // nothing is "unknown": it is a numbered placeholder, and the scope editor says so — also when
+    // only some of its names are placeholders.
+    unitOrdinal: "Birim {n}", bedOrdinal: "Yatak {n}",
+    namesPending: "Bazı birim ve yatak adları henüz gösterilemiyor; yapı yeniden okunuyor. Numaralı olanlar yalnız yer tutucudur.",
     state: { AVAILABLE: "Boş", OCCUPIED: "Dolu", PENDING_DISCHARGE: "Taburcu bekliyor",
       PENDING_TRANSFER_OUT: "Transfer bekliyor", HOUSEKEEPING: "Temizlikte", MAINTENANCE: "Bakımda", BLOCKED: "Kapatılmış" },
     pendingTitle: "Taburcusu başlatılan", pendingNone: "Onay bekleyen taburcu yok.",
@@ -191,6 +196,8 @@ export default {
     pickUnitFirst: "Əvvəlcə şöbəni seçin.", pickHint: "Yalnız boş və açıq çarpayılar seçilə bilər.",
     bedChosen: "Seçilən: {bed}", bedClosed: "Bağlıdır", bedOther: "Başqa vəziyyətdədir",
     unitUnknown: "Naməlum şöbə", bedUnknown: "Naməlum çarpayı",
+    unitOrdinal: "Şöbə {n}", bedOrdinal: "Çarpayı {n}",
+    namesPending: "Bəzi şöbə və çarpayı adları hələ göstərilə bilmir; struktur yenidən oxunur. Nömrələnmiş olanlar yalnız yer tutucudur.",
     state: { AVAILABLE: "Boş", OCCUPIED: "Dolu", PENDING_DISCHARGE: "Evə yazılma gözləyir",
       PENDING_TRANSFER_OUT: "Köçürmə gözləyir", HOUSEKEEPING: "Təmizlikdədir", MAINTENANCE: "Təmirdədir", BLOCKED: "Bağlanıb" },
     pendingTitle: "Evə yazılması başladılanlar", pendingNone: "Təsdiq gözləyən evə yazılma yoxdur.",
@@ -314,6 +321,8 @@ export default {
     pickUnitFirst: "Сначала выберите отделение.", pickHint: "Выбрать можно только свободную открытую койку.",
     bedChosen: "Выбрано: {bed}", bedClosed: "Закрыта", bedOther: "В другом состоянии",
     unitUnknown: "Неизвестное отделение", bedUnknown: "Неизвестная койка",
+    unitOrdinal: "Отделение {n}", bedOrdinal: "Койка {n}",
+    namesPending: "Некоторые названия отделений и коек пока не удаётся показать; структура читается заново. Отделения и койки с номерами обозначены условно.",
     state: { AVAILABLE: "Свободна", OCCUPIED: "Занята", PENDING_DISCHARGE: "Ожидает выписки",
       PENDING_TRANSFER_OUT: "Ожидает перевода", HOUSEKEEPING: "На уборке", MAINTENANCE: "На обслуживании", BLOCKED: "Заблокирована" },
     pendingTitle: "Начатые выписки", pendingNone: "Нет выписок, ожидающих подтверждения.",
@@ -437,6 +446,8 @@ export default {
     pickUnitFirst: "Choose the unit first.", pickHint: "Only a free, open bed can be chosen.",
     bedChosen: "Chosen: {bed}", bedClosed: "Closed", bedOther: "In another state",
     unitUnknown: "Unknown unit", bedUnknown: "Unknown bed",
+    unitOrdinal: "Unit {n}", bedOrdinal: "Bed {n}",
+    namesPending: "Some unit and bed names cannot be shown yet; the structure is being read again. The numbered ones are placeholders only.",
     state: { AVAILABLE: "Free", OCCUPIED: "Occupied", PENDING_DISCHARGE: "Awaiting discharge",
       PENDING_TRANSFER_OUT: "Awaiting transfer", HOUSEKEEPING: "Being cleaned", MAINTENANCE: "In maintenance", BLOCKED: "Blocked" },
     pendingTitle: "Discharges started", pendingNone: "No discharge is waiting for confirmation.",
