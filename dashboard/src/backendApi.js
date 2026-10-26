@@ -388,8 +388,14 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     return a !== null && a === subOf(stored);
   }
 
-  async function authedOnce(doFetch, path, { method = "GET", body, credential = false } = {}) {
+  async function authedOnce(doFetch, path, { method = "GET", body, credential = false, read } = {}) {
     const gen = generation;
+    // The answer's body — and, for a call that needs more of the response than its body (a header),
+    // whatever its own `read(body, res)` makes of the two.
+    const answered = async (res) => {
+      const data = res.status === 204 ? null : await res.json();     // DELETE answers with no body
+      return read ? read(data, res) : data;
+    };
     let sentAccess = null;
     const send = () => {
       sentAccess = accessToken();
@@ -436,7 +442,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         forget();
         res = await send();
         if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-        return res.status === 204 ? null : res.json();
+        return answered(res);
       }
       if (refreshed.status >= 500) {
         throw await failure(refreshed,
@@ -458,8 +464,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       res = await send();
     }
     if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-    if (res.status === 204) return null;     // DELETE answers with no body
-    return res.json();
+    return answered(res);
   }
 
   /** A path segment from an id: an id can name a record, never another route. */
@@ -835,12 +840,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  ({tenant_id, sites: [{id, name, units: [{id, name, rooms: [{id, name, beds: [...]}]}]}]}). */
     structure() { return authed("/tenant/structure"); },
     /** Admission rows of the caller's units, newest first; `states` narrows them — a list, one
-     *  state as a string, or null/undefined for every state. */
+     *  state as a string, or null/undefined for every state. A list the server cut at its cap is
+     *  marked `rows.truncated === true` (`X-Result-Truncated: 1`, A-30); a whole one is not marked. */
     admissions(states = []) {
       const query = new URLSearchParams();
       for (const state of [].concat(states ?? [])) query.append("state", state);
       const suffix = query.toString();
-      return authed(`/admissions${suffix ? `?${suffix}` : ""}`);
+      return authed(`/admissions${suffix ? `?${suffix}` : ""}`, { read: markTruncated });
     },
     /** One admission ({patient, note}): {…admission, patient_number, engine: {weight, profile, board}}. */
     admit(body) { return authed("/admissions", { method: "POST", body }); },
@@ -866,6 +872,22 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };
+}
+
+/** The header a list cut at its cap carries (homunculus-engine admission/router.py TRUNCATED_HEADER). */
+const TRUNCATED_HEADER = "X-Result-Truncated";
+
+/** `rows`, marked `truncated` when the response says the server cut them at its cap. Read
+ *  defensively: same-origin on the ward's VM the header is readable, but a response with no headers
+ *  to read, or another origin whose CORS does not expose it, leaves the rows unmarked — as a whole
+ *  list, which is what the screen showed before it could tell. */
+function markTruncated(rows, res) {
+  let cut = false;
+  try {
+    cut = res?.headers?.get?.(TRUNCATED_HEADER) === "1";
+  } catch { /* an unreadable header is an absent one */ }
+  if (cut && Array.isArray(rows)) rows.truncated = true;
+  return rows;
 }
 
 /** The items of a FastAPI validation error as {field, type, message[, ctx]}: the field is the `loc`

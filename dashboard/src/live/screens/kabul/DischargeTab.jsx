@@ -133,7 +133,7 @@ export function DischargeTab() {
   const board = useBoard();
   const { reload: reloadStructure } = useStructure();
   const toast = useToast();
-  const { rows, phase, error, reload } = useAdmissions(STATES, { every: EVERY_MS });
+  const { rows, phase, error, truncated, reload } = useAdmissions(STATES, { every: EVERY_MS });
   const [starting, setStarting] = useState(null);
   const [leaving, setLeaving] = useState(null);       // the started discharge being confirmed
   const [confirming, setConfirming] = useState(false);
@@ -226,6 +226,8 @@ export function DischargeTab() {
   return (
     <div className="grid gap-3">
       {error ? <Alert tone="crit">{t(phase === "stale" ? "kabul.listStale" : "kabul.listFailed", { reason: readErrorText(t, error) })}</Alert> : null}
+      {/* A-30: the server cut the list at its cap — the two lists below are not the whole of it. */}
+      {truncated ? <Note icon="alert">{t("kabul.listTruncated")}</Note> : null}
       {undone.map((n) => <UndoneNote key={n.id} undone={n} retrying={retrying} heldBy={retryHeld} onRetry={confirms ? retry : null} />)}
       {retried ? <span id={retryHeld} className="sr-only">{retryingText}</span> : null}
       <Announce text={retryingText} />

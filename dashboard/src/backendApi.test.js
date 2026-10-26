@@ -1456,6 +1456,27 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 2).url).toBe("/admissions");
   });
 
+  // A-30: GET /admissions cut at its cap answers `X-Result-Truncated: 1`. Same-origin on the ward's
+  // VM, so the header is readable; read defensively all the same — absent, or a response with no
+  // headers to read, the rows are simply not marked.
+  it("marks the admissions cut at the server's cap, from X-Result-Truncated — and none when the header is absent or unreadable", async () => {
+    const answer = (headers) => ({ ...jsonResponse([{ id: "a-1" }]), ...(headers ? { headers } : null) });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(answer(new Headers({ "X-Result-Truncated": "1" })))
+      .mockResolvedValueOnce(answer(new Headers()))
+      .mockResolvedValueOnce(answer(new Headers({ "X-Result-Truncated": "0" })))
+      .mockResolvedValueOnce(answer(null));
+    const api = signedIn(fetchMock);
+    const cut = await api.admissions();
+    expect(cut.truncated).toBe(true);
+    expect([...cut]).toEqual([{ id: "a-1" }]);
+    for (let at = 0; at < 3; at += 1) {
+      const whole = await api.admissions();
+      expect(whole.truncated, String(at)).toBeUndefined();
+      expect(whole, String(at)).toEqual([{ id: "a-1" }]);
+    }
+  });
+
   it("takes one state as a string, and null as no state at all (A-9)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
     const api = signedIn(fetchMock);

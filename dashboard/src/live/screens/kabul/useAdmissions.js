@@ -5,7 +5,8 @@
 //   const { rows, phase, error, reload } = useAdmissions(["DRAFT", "ACTIVE"]);
 //
 // `phase` as the structure's: "unasked" (no `admissions.view` — not called), "loading", "known",
-// "stale" (a reload failed, the last rows stand), "failed". `every` (ms) reads again on a timer
+// "stale" (a reload failed, the last rows stand), "failed". `truncated`: the rows on screen are a
+// list the server cut at its cap (backendApi `admissions`, A-30). `every` (ms) reads again on a timer
 // while mounted; a read answered after a newer one began is dropped. Through the session's `track`.
 //
 // `reload()` resolves once the list on screen is AT LEAST AS NEW as the read it began — not merely
@@ -20,7 +21,7 @@ export function useAdmissions(states, { every = 0 } = {}) {
   const { user, store } = useSession();
   const may = user?.perms?.includes("admissions.view") ?? false;
   const wanted = states.join(",");
-  const [state, setState] = useState(() => ({ rows: null, phase: may ? "loading" : "unasked", error: null }));
+  const [state, setState] = useState(() => ({ rows: null, phase: may ? "loading" : "unasked", error: null, truncated: false }));
   const seq = useRef(0);
   const latest = useRef(null);                       // the newest read begun: what an overtaken one waits for
   const mounted = useRef(false);
@@ -37,11 +38,12 @@ export function useAdmissions(states, { every = 0 } = {}) {
       try {
         const rows = await store.track(() => store.api.admissions(wanted ? wanted.split(",") : []));
         if (mounted.current && seq.current === mine) {
-          setState({ rows: Array.isArray(rows) ? rows : [], phase: "known", error: null });
+          setState({ rows: Array.isArray(rows) ? rows : [], phase: "known", error: null, truncated: rows?.truncated === true });
         }
       } catch (error) {
         if (mounted.current && seq.current === mine) {
-          setState((prev) => ({ rows: prev.rows, phase: prev.rows ? "stale" : "failed", error }));
+          // The rows that stand are the last read's, and so is what it said of their cut.
+          setState((prev) => ({ ...prev, phase: prev.rows ? "stale" : "failed", error }));
         }
       }
     })();

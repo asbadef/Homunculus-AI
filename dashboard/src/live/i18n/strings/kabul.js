@@ -15,6 +15,7 @@ export default {
     loading: "Yükleniyor…",
     noView: "Kabul kayıtlarını okuma yetkiniz yok.",
     listFailed: "Liste okunamadı: {reason}", listStale: "Liste yeniden okunamadı; son okunan gösteriliyor: {reason}",
+    listTruncated: "Liste kesildi: yalnız en yeni kabuller gösteriliyor, daha eskileri listede yok. Listeyi birime göre daraltın ya da sistem yöneticisine bildirin.",
     readOnly: "Görüntüleme yetkisiyle açtınız. Kabulü hemşire ve sorumlu hemşire yapar; hekim kabulü hasta ekranından imzalar.",
     groupIdentity: "Kimlik", groupAdmission: "Kabul", groupContact: "İletişim ve onam", groupBed: "Yatak",
     f: {
@@ -165,6 +166,7 @@ export default {
     loading: "Yüklənir…",
     noView: "Qəbul qeydlərini oxumaq səlahiyyətiniz yoxdur.",
     listFailed: "Siyahı oxunmadı: {reason}", listStale: "Siyahı yenidən oxunmadı; son oxunan göstərilir: {reason}",
+    listTruncated: "Siyahı kəsilib: yalnız ən yeni qəbullar göstərilir, daha köhnələri siyahıda yoxdur. Siyahını şöbəyə görə daraldın və ya sistem administratoruna bildirin.",
     readOnly: "Baxış səlahiyyəti ilə açmısınız. Qəbulu tibb bacısı və baş tibb bacısı edir; həkim qəbulu xəstə ekranından imzalayır.",
     groupIdentity: "Şəxsiyyət", groupAdmission: "Qəbul", groupContact: "Əlaqə və razılıq", groupBed: "Çarpayı",
     f: {
@@ -311,6 +313,7 @@ export default {
     loading: "Загрузка…",
     noView: "У вас нет права читать записи о приёме.",
     listFailed: "Список не прочитан: {reason}", listStale: "Список не перечитан; показан последний прочитанный: {reason}",
+    listTruncated: "Список обрезан: показаны только последние приёмы, более ранних в нём нет. Сузьте список по отделению или сообщите администратору системы.",
     readOnly: "Вы открыли экран с правом просмотра. Приём оформляют медсёстры и старшая медсестра; врач подписывает приём на экране пациента.",
     groupIdentity: "Личные данные", groupAdmission: "Приём", groupContact: "Контакты и согласие", groupBed: "Койка",
     f: {
@@ -457,6 +460,7 @@ export default {
     loading: "Loading…",
     noView: "You have no right to read admissions.",
     listFailed: "The list could not be read: {reason}", listStale: "The list could not be read again; the last one read is shown: {reason}",
+    listTruncated: "The list was cut: only the newest admissions are shown, older ones are not in it. Narrow it by unit, or tell the system administrator.",
     readOnly: "You opened this with the right to view. Nurses and charge nurses admit; a physician signs the admission on the patient screen.",
     groupIdentity: "Identity", groupAdmission: "Admission", groupContact: "Contact and consent", groupBed: "Bed",
     f: {

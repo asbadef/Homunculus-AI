@@ -235,6 +235,16 @@ describe("DischargeTab", () => {
     }
   });
 
+  // A-30: a list the server cut at its cap is not the whole of the units' admissions.
+  it("says the list was cut at the server's cap, and to narrow it by unit — and nothing of it when the list is whole", async () => {
+    const CUT = /^Siyahı kəsilib: yalnız ən yeni qəbullar göstərilir/;
+    const { api } = await open(CHARGE, (a) => a.admissions.mockResolvedValue(Object.assign([...ROWS], { truncated: true })));
+    expect(screen.getByText(CUT).textContent).toMatch(/şöbəyə görə daraldın/);
+    api.admissions.mockResolvedValue([...ROWS]);
+    await confirmLeft();                                                    // any write reads the list again
+    expect(screen.queryByText(CUT)).toBeNull();
+  });
+
   it("says a failed first read, and does not go on saying it is loading", async () => {
     await open(DOCTOR, (a) => a.admissions.mockRejectedValue(refusal(503, "Service Unavailable")));
     expect(screen.getByText(/Siyahı oxunmadı/)).toBeTruthy();
