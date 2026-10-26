@@ -26,9 +26,10 @@ writes from the first into the second, and nothing else in `admission/` does:
                        number's tombstone's removal frame — the last bed and unit, no name — which
                        that door publishes once, after the alerts are ended (A-11d, A-20). What
                        the door itself raises comes out as `RetireIncomplete` (A-25);
-* `take_off`           the two above as the discharge's one board step, never raising, held while
-                       a critical alarm is unacknowledged, and answering `board`/`alerts` — for
-                       the confirmation, its retry and the bed release (review I-1, I-2).
+* `take_off`           the two above as the discharge's one board step, never raising and
+                       answering `board`/`alerts` — after the confirmation, at its retry and at
+                       the bed release (review I-2). It does not look at alerts: the critical-alarm
+                       hold is the confirmation's own (review I-1).
 
 The discharge's removal is never BoardLink's to send. `put_identity`, `chart_weight` and
 `apply_profile` refuse a discharged number before they build, chart or write anything (A-11; for
@@ -278,22 +279,17 @@ class BoardLink:
         it answers:
 
         * `ok`, `ok`: the tombstone written, the retirement done;
-        * `failed`, `failed`: a critical alarm on the patient's board nobody acknowledged (the
-          retirement would end it unseen — I-1; one that fired after a confirmation's own check
-          is caught here, and nothing in this process runs between this read, the tombstone and
-          the retirement's ending of the alerts), the tombstone refused, or the retirement
-          refused before its door. Nothing was sent; when the tombstone stands, reads leave the
-          card off all the same;
+        * `failed`, `failed`: the tombstone refused, or the retirement refused before its door.
+          Nothing was sent; when the tombstone stands, reads leave the card off all the same;
         * `ok`, `incomplete`: the door raised after the tombstone was written (`RetireIncomplete`)
           — a removal frame may or may not have gone out; reads leave the card off.
 
-        Logged at ERROR with the number, never a name."""
-        held = self.open_critical(tenant, patient_number)
-        if held:
-            log.error("discharge %s: %d critical alarm(s) unacknowledged; the card stays on the "
-                      "board until they are acknowledged and the discharge is confirmed again",
-                      patient_number, held)
-            return "failed", "failed"
+        It does not look at the patient's alerts. The hold on an unacknowledged critical alarm
+        (review I-1) is the confirmation's own, under its locks, before the patient is DISCHARGED;
+        this step runs for a patient already confirmed gone, and a card left standing must never
+        be held on the board by its own alerts, or it could not be taken off (the dashboard
+        review's ordering). The retirement ends them. Logged at ERROR with the number, never a
+        name."""
         try:
             record = await self.discharge_identity(tenant, patient_number)
             await self.retire(tenant, patient_number, record)

@@ -57,7 +57,7 @@ from homunculus.admission.schemas import (
     TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, CRITICAL_ALARM_OPEN, INVALID_TRANSITION, REQUEST_CONFLICT, Refusal, field_invalid,
+    BED_CLOSED, INVALID_TRANSITION, REQUEST_CONFLICT, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.service import WorkflowError
@@ -890,19 +890,18 @@ async def discharge_confirm(
     A confirmation of an admission already DISCHARGED is the nurse's retry of the board step
     (review I-2): when the first one answered `board: failed`, the card still stands and its
     alerts still run. It runs `_off_the_board` again (idempotent) and answers its outcome, with
-    the same permission, unit scope and critical-alarm hold, writing nothing in the database and
-    no second `admission.discharge_confirm` row — its own `admission.discharge_board_retry`."""
+    the same permission and unit scope, writing nothing in the database and no second
+    `admission.discharge_confirm` row — its own `admission.discharge_board_retry`. It is decided
+    BEFORE the critical-alarm read and is not held by it (the dashboard review's ordering): that
+    hold belongs to the real PENDING_DISCHARGE → DISCHARGED confirmation, which this patient has
+    passed, and a card left standing could carry an alert that would otherwise keep it on the
+    board for good. The retirement ends that alert with the card."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     admission = await _locked(db, admission)
     number = await _number_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
-    critical = _open_critical(request, hospital, number)
     if admission.state == AdmissionState.DISCHARGED:
-        if critical:
-            raise Refusal(409, CRITICAL_ALARM_OPEN,
-                          f"{critical} unacknowledged CRITICAL alert(s) must be acknowledged "
-                          "before the patient is taken off the board.").http()
         written, actor = AdmissionResponse.model_validate(admission), user.username
         await db.rollback()                   # nothing is written; the locks go before the step
         board, alerts = await _off_the_board(request, hospital, number)
@@ -911,7 +910,9 @@ async def discharge_confirm(
                               "via": "discharge.confirm", "actor": actor})
         return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
     try:
-        await service.confirm_discharge(db, admission, unacknowledged_critical_count=critical)
+        await service.confirm_discharge(
+            db, admission,
+            unacknowledged_critical_count=_open_critical(request, hospital, number))
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:

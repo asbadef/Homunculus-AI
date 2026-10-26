@@ -535,7 +535,7 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     discharge whose board step failed leaves that patient's card standing as admitted on this
     bed, and a bed freed under it would take a second card. When the identity of the bed's
     latest DISCHARGED admission is not a tombstone, the step runs again (`BoardLink.take_off`:
-    idempotent, held while a critical alarm is unacknowledged), audited
+    idempotent; it ends the patient's alerts, which no longer hold it), audited
     `admission.discharge_board_retry`; when it still fails, the release is refused
     `board_not_cleared` with that patient's number (the caller's units hold this bed). Called
     under the bed's lock. An app without its BoardLink has no board, so no card can stand."""
@@ -556,9 +556,8 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
                           "board": board, "alerts": alerts, "via": "bed.release",
                           "actor": actor})
     if board != "ok":
-        raise Refusal(409, BOARD_NOT_CLEARED, "The last patient of this bed is still on the board "
-                      "(an unacknowledged critical alarm, or the board refused the discharge).",
-                      extra={"patient_number": number})
+        raise Refusal(409, BOARD_NOT_CLEARED, "The last patient of this bed is still on the board: "
+                      "the board refused the discharge.", extra={"patient_number": number})
 
 
 @router.post("/beds/{bed_id}/release", response_model=BedResponse,

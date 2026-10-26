@@ -618,8 +618,10 @@ async def test_a_confirmation_whose_card_did_not_leave_is_retried_by_confirming_
     """Review I-2 (a): the tombstone refused once, the card still stands as admitted, its alerts
     still fire. The nurse confirms again: a confirmation of a DISCHARGED admission runs the board
     step again (tombstone, then retirement) and answers its outcome, writing nothing else — no
-    second `admission.discharge_confirm`, one `admission.discharge_board_retry`. It holds, as the
-    first one does, while a critical alarm on the standing card is unacknowledged."""
+    second `admission.discharge_confirm`, one `admission.discharge_board_retry`. It is not held
+    by a critical alarm on the card left standing (the dashboard review's ordering): the hold is
+    the real confirmation's, which this patient passed; a retry held by it could never take the
+    card off. The retirement ends the alarm with the card."""
     w, client, app = ward
     bed_id = w.beds["1"].id
     admission = await started(w, client)
@@ -640,14 +642,12 @@ async def test_a_confirmation_whose_card_did_not_leave_is_retried_by_confirming_
     assert card["patient_id"] == number
 
     await septic_shock(client, number)                      # on the card still standing
-    r = await client.post(url, headers=w.auth["charge"])
-    assert (r.status_code, r.json()["detail"]["code"]) == (409, "critical_alarm_open")
-    await acknowledged(client, number)
 
     r = await client.post(url, headers=w.auth["charge"])
     assert r.status_code == 200, r.text
     assert (r.json()["state"], r.json()["board"], r.json()["alerts"]) == ("DISCHARGED", "ok", "ok")
     assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
+    assert number not in app.state.board_link._engine(SLUG).patient_ids()     # its alarm ended
     assert len(audited(app, "admission.discharge_confirm")) == 1
     (retry,) = audited(app, "admission.discharge_board_retry")
     assert (retry.patient_id, retry.payload) == (number, {

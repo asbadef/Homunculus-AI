@@ -503,24 +503,21 @@ def test_take_off_writes_the_tombstone_then_retires_through_the_door_and_may_run
     assert [(number, frame["removed"]) for number, frame in calls] == [("H2600001", True)] * 2
 
 
-def test_take_off_holds_while_a_critical_alarm_is_open_and_writes_nothing():
-    """Review I-1/I-2: the retirement ends every alert with the reason "discharged", so the step
-    is not taken while the board shows a critical alarm nobody acknowledged — not even in the
-    moment between a confirmation's commit and its step. Nothing written, the door not called:
-    `failed`, and the card with its alarm stays for a clinician to see. Acknowledged, it goes."""
+def test_take_off_does_not_look_at_alerts_the_confirmation_is_the_one_hold():
+    """Review I-1 and the dashboard review's ordering: the hold on an unacknowledged critical
+    alarm is the confirmation's own (PENDING_DISCHARGE → DISCHARGED, under its locks). The step
+    runs for a patient already confirmed gone — after that confirmation, at its retry, at the bed
+    release — and must not be held by an alert on a card left standing, or such a card could never
+    be taken off. So it takes the patient off with the alarm open: the retirement ends it."""
     calls: list = []
     world = World(retire=_counting_door(calls))
     asyncio.run(world.link.put_identity(HOSPITAL, record()))
     for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
         world.ingest(fhir)
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 1
 
-    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("failed", "failed")
-    assert not world.link.is_discharged(HOSPITAL, "H2600001") and calls == []
-    assert world.alert("septic_shock") is not None
-
-    world.ack("septic_shock")
     assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
-    assert len(calls) == 1
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and len(calls) == 1
 
 
 @pytest.mark.parametrize(("failure", "answer"), [
