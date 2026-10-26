@@ -140,6 +140,14 @@ const AZ_SAME_AS_TR = new Set([
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
   "monitor.p.nbp", //        NBP — the monitor's label, not a word
 
+  // G2-A3 (patient · meds) · az = tr
+  "patient.medsBolusUnit", //          mL — a unit symbol, not a word
+  "patient.medsWeightUnit", //         kg — a unit symbol, not a word (the rate unit is µg/kg/dəq in AZ, so it is not here)
+  "patient.medsDrugNorepinephrine", // noradrenalin — the drug's name, written the same in Azerbaijani
+  "patient.medsDrugEpinephrine", //    adrenalin — the same
+  "patient.medsDrugDopamine", //       dopamin — the same
+  "patient.medsDrugDobutamine", //     dobutamin — the same
+
 ]);
 
 describe("live UI dictionaries", () => {
