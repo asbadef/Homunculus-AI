@@ -420,7 +420,7 @@ def test_every_other_refusal_has_a_stable_code():
     assert CODES == {"bed_not_available", "bed_closed", "out_of_scope", "critical_alarm_open",
                      "patient_number_exhausted", "invalid_transition", "missing_attending",
                      "open_admission", "bed_in_use", "has_open_beds", "name_taken",
-                     "bed_label_taken", "request_conflict"}
+                     "bed_label_taken", "request_conflict", "board_not_cleared"}
 
 
 def test_a_workflow_refusal_answers_its_code_beside_its_words():

@@ -34,6 +34,8 @@ from tests.conftest import requires_db
 from tests.kabul_world import BOARD, SLUG, build_ward, ward_client
 
 pytestmark = [requires_db]
+#: Where the discharge's board step logs (`BoardLink.take_off`).
+LINK_LOG = "homunculus.admission.boardlink"
 
 
 @pytest_asyncio.fixture
@@ -409,13 +411,15 @@ async def test_only_the_charge_nurse_confirms_and_only_a_started_discharge(ward)
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "invalid_transition")
 
 
-async def test_two_confirmations_at_once_discharge_once_and_send_one_removal(ward, db_session,
-                                                                             monkeypatch):
-    """A-10: the second confirmation waits for the first under the locks, reads the admission
-    DISCHARGED and is refused `invalid_transition` — never a 500 from the bed's own state machine,
-    never a second audit row or a second removal frame."""
+async def test_two_confirmations_at_once_discharge_once(ward, db_session, monkeypatch):
+    """A-10: the second confirmation waits for the first under the locks and reads the admission
+    DISCHARGED — never a 500 from the bed's own state machine, never a second discharge or a
+    second `admission.discharge_confirm` row. Since review I-2 a confirmation of a discharged
+    admission is the nurse's retry of the board step: it answers 200 with that step's outcome and
+    writes nothing in the database; the step is idempotent, so its removal frame may come twice."""
     w, client, app = ward
     admission = await started(w, client)
+    number = admission["patient_number"]
     queue = app.state.broadcaster.subscribe(SLUG)
     drain(queue)
     url = f"/admissions/{admission['id']}/discharge/confirm"
@@ -423,11 +427,15 @@ async def test_two_confirmations_at_once_discharge_once_and_send_one_removal(war
         db_session, monkeypatch, "confirm_discharge",
         lambda: client.post(url, headers=w.auth["charge"]),
         lambda: client.post(url, headers=w.auth["admin"]))
-    assert (first.status_code, second.status_code) == (200, 409), (first.text, second.text)
-    assert second.json()["detail"]["code"] == "invalid_transition"
-    assert (first.json()["board"], first.json()["alerts"]) == ("ok", "ok")
+    assert (first.status_code, second.status_code) == (200, 200), (first.text, second.text)
+    for answer in (first, second):
+        assert (answer.json()["state"], answer.json()["board"], answer.json()["alerts"]) == \
+            ("DISCHARGED", "ok", "ok")
     assert len(audited(app, "admission.discharge_confirm")) == 1
-    assert [f["removed"] for f in drain(queue)] == [True]
+    assert [row.payload["via"] for row in audited(app, "admission.discharge_board_retry")] == \
+        ["discharge.confirm"]
+    frames = drain(queue)
+    assert frames and {(f["patient_id"], f["removed"]) for f in frames} == {(number, True)}
 
 
 async def test_a_bed_moved_under_a_started_discharge_is_a_409_and_nothing_is_written(ward,
@@ -465,7 +473,7 @@ async def test_a_tombstone_the_store_refuses_reports_the_board_failed(ward, db_s
 
     monkeypatch.setattr(BoardLink, "discharge_identity", refused)
     queue = app.state.broadcaster.subscribe(SLUG)
-    caplog.set_level(logging.ERROR, logger="homunculus.admission.router")
+    caplog.set_level(logging.ERROR, logger=LINK_LOG)
     r = await client.post(f"/admissions/{admission['id']}/discharge/confirm",
                           headers=w.auth["charge"])
     assert r.status_code == 200, r.text
@@ -474,7 +482,7 @@ async def test_a_tombstone_the_store_refuses_reports_the_board_failed(ward, db_s
     assert drain(queue) == []
     assert [c["patient_id"] for c in (await client.get("/patients", headers=BOARD)).json()[
         "patients"]] == [number]
-    assert any(number in m for m in errors_of(caplog, "homunculus.admission.router"))
+    assert any(number in m for m in errors_of(caplog, LINK_LOG))
     db_session.expire_all()
     assert (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one() \
         == BedState.HOUSEKEEPING
@@ -500,13 +508,13 @@ async def test_a_retirement_refused_before_its_door_reports_the_board_failed(war
 
         monkeypatch.setattr(BoardLink, "discharge_identity", not_a_tombstone)
     queue = app.state.broadcaster.subscribe(SLUG)
-    caplog.set_level(logging.ERROR, logger="homunculus.admission.router")
+    caplog.set_level(logging.ERROR, logger=LINK_LOG)
     r = await client.post(f"/admissions/{admission['id']}/discharge/confirm",
                           headers=w.auth["charge"])
     assert r.status_code == 200, r.text
     assert (r.json()["board"], r.json()["alerts"]) == ("failed", "failed")
     assert drain(queue) == []
-    assert any(number in m for m in errors_of(caplog, "homunculus.admission.router"))
+    assert any(number in m for m in errors_of(caplog, LINK_LOG))
 
 
 async def test_a_retirement_failing_inside_its_door_is_a_discharge_with_its_alerts_incomplete(
@@ -534,7 +542,7 @@ async def test_a_retirement_failing_inside_its_door_is_a_discharge_with_its_aler
 
     monkeypatch.setattr(store, "append", cleared_rows_fail)
     queue = app.state.broadcaster.subscribe(SLUG)
-    caplog.set_level(logging.ERROR, logger="homunculus.admission.router")
+    caplog.set_level(logging.ERROR, logger=LINK_LOG)
     r = await client.post(f"/admissions/{admission['id']}/discharge/confirm",
                           headers=w.auth["charge"])
     assert r.status_code == 200, r.text
@@ -543,8 +551,99 @@ async def test_a_retirement_failing_inside_its_door_is_a_discharge_with_its_aler
     assert [(f["patient_id"], f["removed"]) for f in drain(queue)] == [(number, True)]
     assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
     assert number not in app.state.board_link._engine(SLUG).patient_ids()
-    logged = errors_of(caplog, "homunculus.admission.router")
+    logged = errors_of(caplog, LINK_LOG)
     assert any(number in m for m in logged) and not any("Sentetik" in m for m in logged)
+
+
+async def test_a_confirmation_whose_card_did_not_leave_is_retried_by_confirming_again(
+        ward, db_session, monkeypatch):
+    """Review I-2 (a): the tombstone refused once, the card still stands as admitted, its alerts
+    still fire. The nurse confirms again: a confirmation of a DISCHARGED admission runs the board
+    step again (tombstone, then retirement) and answers its outcome, writing nothing else — no
+    second `admission.discharge_confirm`, one `admission.discharge_board_retry`. It holds, as the
+    first one does, while a critical alarm on the standing card is unacknowledged."""
+    w, client, app = ward
+    bed_id = w.beds["1"].id
+    admission = await started(w, client)
+    number = admission["patient_number"]
+    real, refusals = BoardLink.discharge_identity, []
+
+    async def refused_once(self, tenant, patient_number):
+        if not refusals:
+            refusals.append(patient_number)
+            raise RuntimeError(f"the discharge of {patient_number} was refused")
+        return await real(self, tenant, patient_number)
+
+    monkeypatch.setattr(BoardLink, "discharge_identity", refused_once)
+    url = f"/admissions/{admission['id']}/discharge/confirm"
+    r = await client.post(url, headers=w.auth["charge"])
+    assert (r.status_code, r.json()["board"], r.json()["alerts"]) == (200, "failed", "failed")
+    (card,) = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    assert card["patient_id"] == number
+
+    await septic_shock(client, number)                      # on the card still standing
+    r = await client.post(url, headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "critical_alarm_open")
+    await acknowledged(client, number)
+
+    r = await client.post(url, headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert (r.json()["state"], r.json()["board"], r.json()["alerts"]) == ("DISCHARGED", "ok", "ok")
+    assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
+    assert len(audited(app, "admission.discharge_confirm")) == 1
+    (retry,) = audited(app, "admission.discharge_board_retry")
+    assert (retry.patient_id, retry.payload) == (number, {
+        "admission_id": admission["id"], "board": "ok", "alerts": "ok", "via": "discharge.confirm",
+        "actor": "charge@kabul.example.com"})
+    db_session.expire_all()
+    assert (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one() \
+        == BedState.HOUSEKEEPING
+
+
+async def test_a_release_heals_a_card_left_standing_or_refuses_and_no_bed_holds_two_cards(
+        ward, db_session, monkeypatch):
+    """Review I-2 (b): a bed is never freed while its last discharged patient's card stands. The
+    release runs the board step for that patient first; when it still fails, the release is
+    refused `board_not_cleared` with that patient's number, the bed stays in cleaning, and no
+    admission can take it — so one bed never shows two cards. Once the step lands, the release
+    goes through and the bed takes its next patient, alone on it."""
+    w, client, app = ward
+    bed_id, next_form = w.beds["1"].id, form(w)
+    admission = await started(w, client)
+    number = admission["patient_number"]
+    release = f"/tenant/beds/{bed_id}/release"
+
+    async def on_bed_one() -> list[str]:
+        cards = (await client.get("/patients", headers=BOARD)).json()["patients"]
+        return [c["patient_id"] for c in cards if c["identity"]["bed_id"] == str(bed_id)]
+
+    with monkeypatch.context() as patched:
+        async def refused(self, tenant, patient_number):
+            raise RuntimeError(f"the discharge of {patient_number} was refused")
+
+        patched.setattr(BoardLink, "discharge_identity", refused)
+        r = await client.post(f"/admissions/{admission['id']}/discharge/confirm",
+                              headers=w.auth["charge"])
+        assert (r.status_code, r.json()["board"]) == (200, "failed")
+        r = await client.post(release, headers=w.auth["nurse"])
+        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) \
+            == (409, "board_not_cleared", number)
+        r = await client.post("/admissions", json=next_form, headers=w.auth["nurse"])
+        assert (r.status_code, r.json()["detail"]["code"]) == (409, "bed_not_available")
+        assert await on_bed_one() == [number]
+    db_session.expire_all()
+    assert (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one() \
+        == BedState.HOUSEKEEPING
+
+    r = await client.post(release, headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await on_bed_one() == []
+    assert [(row.payload["via"], row.payload["board"])
+            for row in audited(app, "admission.discharge_board_retry")] == [("bed.release", "failed"),
+                                                                             ("bed.release", "ok")]
+    nxt = await client.post("/admissions", json=next_form, headers=w.auth["nurse"])
+    assert nxt.status_code == 201, nxt.text
+    assert await on_bed_one() == [nxt.json()["patient_number"]]
 
 
 async def test_without_a_board_link_the_card_and_the_alerts_are_failed_never_skipped(
@@ -709,6 +808,7 @@ async def test_the_whole_flow_from_admission_to_a_free_bed(ward, db_session):
         == BedState.HOUSEKEEPING
     r = await client.post(f"/tenant/beds/{bed_id}/release", headers=w.auth["nurse"])
     assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert audited(app, "admission.discharge_board_retry") == []        # nothing left to heal
     assert [e.event_type for e in app.state.audit.records(tenant=SLUG, patient_id=number, limit=50)
             if e.event_type.startswith("admission.")] == [
         "admission.admit", "admission.sign_off", "admission.discharge_start",

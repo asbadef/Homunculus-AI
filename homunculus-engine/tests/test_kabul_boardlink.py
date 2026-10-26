@@ -480,6 +480,65 @@ def test_a_door_that_raises_is_a_retirement_left_incomplete_not_a_refusal():
     assert [frame["removed"] for frame in calls] == [True]           # the door was entered, once
 
 
+# ---------------------------------------------------------------- take_off: the step, never raising
+def _counting_door(calls: list, error: Exception | None = None):
+    async def retire(tenant, patient_number, *, frame):
+        calls.append((patient_number, frame))
+        if error is not None:
+            raise error
+        return []
+    return retire
+
+
+def test_take_off_writes_the_tombstone_then_retires_through_the_door_and_may_run_again():
+    """Review I-2: the discharge's board step is one method, for the confirmation, its retry and
+    the bed release: the tombstone, then the retirement. Both parts are idempotent, so a second
+    run — the nurse's retry — answers `ok` again."""
+    calls: list = []
+    world = World(retire=_counting_door(calls))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and world.board() == []
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert [(number, frame["removed"]) for number, frame in calls] == [("H2600001", True)] * 2
+
+
+def test_take_off_holds_while_a_critical_alarm_is_open_and_writes_nothing():
+    """Review I-1/I-2: the retirement ends every alert with the reason "discharged", so the step
+    is not taken while the board shows a critical alarm nobody acknowledged — not even in the
+    moment between a confirmation's commit and its step. Nothing written, the door not called:
+    `failed`, and the card with its alarm stays for a clinician to see. Acknowledged, it goes."""
+    calls: list = []
+    world = World(retire=_counting_door(calls))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        world.ingest(fhir)
+
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("failed", "failed")
+    assert not world.link.is_discharged(HOSPITAL, "H2600001") and calls == []
+    assert world.alert("septic_shock") is not None
+
+    world.ack("septic_shock")
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(("failure", "answer"), [
+    ("the store refuses the tombstone", ("failed", "failed")),
+    ("no door wired", ("failed", "failed")),
+    ("the door raises", ("ok", "incomplete")),
+])
+def test_take_off_reports_each_failure_and_never_raises(failure, answer):
+    calls: list = []
+    door = None if failure == "no door wired" else _counting_door(
+        calls, RuntimeError("audit store down") if failure == "the door raises" else None)
+    world = World(retire=door)
+    stamp = T0 + timedelta(hours=1) if failure == "the store refuses the tombstone" else T0
+    asyncio.run(world.link.put_identity(HOSPITAL, record(at=stamp)))
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == answer
+    assert len(calls) == (1 if failure == "the door raises" else 0)
+
+
 # ---------------------------------------------------------------- the link as the app wires it
 # Task 6b (A-23, A-25): `api/app.py` builds the link from its own stores and hands it Lane A's
 # doors by reference — `chart_observations`, `retire_and_publish`, the broadcaster's publish.
