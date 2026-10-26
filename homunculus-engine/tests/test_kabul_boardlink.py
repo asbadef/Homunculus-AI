@@ -1,12 +1,14 @@
 # homunculus-engine/tests/test_kabul_boardlink.py
 """BoardLink — the one way admission code touches the board world (Group 2 · B1a, spec §4.3, as
-amended by A-3, A-11 and A-11d): the card appears on its bed for the board and the stream; the
-weight is charted through the charting door the app injects (Lane A's `chart_observations`); the
-comorbidities reach the engine through the audit a restart replays; the open-critical count is the
-board's own, firing or latched; a discharge writes the tombstone and publishes nothing; the
-retirement is the door the app injects, handed the tombstone's removal frame. The link is built
-here from real stores, as `api/app.py` will build it once Lane A's A-11 is merged. No database.
-Synthetic patients only."""
+amended by A-11d, A-20 and A-23): the card appears on its bed for the board and the stream; the
+weight is charted through the charting door the app injects (Lane A's `chart_observations`), and
+only when that door, the notifier and the escalation delay are all wired; the comorbidities reach
+the engine through the audit a restart replays; the open-critical count is the board's own, firing
+or latched; a discharge writes the tombstone (a second one returns it, a refused one raises) and
+publishes nothing; the retirement is the door the app injects, handed the tombstone's removal frame
+and refusing any other record. A tombstone's board is its removal, never its card; a number with
+neither an identity nor a reading sends nothing. The link is built here from real stores, as
+`api/app.py` builds it in Task 6b (A-23). No database. Synthetic patients only."""
 from __future__ import annotations
 
 import asyncio
@@ -56,19 +58,21 @@ def record(number: str = "H2600001", bed_id: str = BED, unit_id: str = UNIT,
 class World:
     """One app's board world as `api/app.py` holds it — an engine and an ack store per hospital,
     the identity store, the audit, the notifier — with a BoardLink over it. `published` is every
-    frame the link sent to the stream."""
+    frame the link sent to the stream; `now` is the link's clock. `wiring` overrides the app's
+    notifier and escalation delay (`notifier=None`: an app that forgot to wire it)."""
 
-    def __init__(self, *, chart=None, retire=None) -> None:
+    def __init__(self, *, chart=None, retire=None, **wiring) -> None:
         self.engines: dict[str, Engine] = {}
         self.stores: dict[str, AckStore] = {}
         self.identities = InMemoryIdentityStore()
         self.audit = InMemoryAuditLog()
         self.notifier = Notifier()
         self.published: list[tuple[str, dict]] = []
+        self.now = T0
+        wiring = {"notifier": self.notifier, "escalate_after": ESCALATE_AFTER, **wiring}
         self.link = BoardLink(identities=self.identities, engine=self.engine, store=self.store,
-                              audit=self.audit, publish=self.publish, notifier=self.notifier,
-                              escalate_after=ESCALATE_AFTER, chart=chart, retire_patient=retire,
-                              clock=lambda: T0)
+                              audit=self.audit, publish=self.publish, chart=chart,
+                              retire_patient=retire, clock=lambda: self.now, **wiring)
 
     def engine(self, hospital: str) -> Engine:
         return self.engines.setdefault(hospital, Engine())
@@ -126,6 +130,77 @@ def test_the_app_reaches_its_board_link_through_the_request():
     assert board_link_of(request) is link
 
 
+def test_an_identity_is_never_stamped_with_a_clock_that_names_no_zone():
+    """A-15, as `admission/numbers.py` refuses it: a naive datetime is read in the server's own
+    zone, so the identity store's ordering would depend on where the process runs."""
+    with pytest.raises(ValueError, match="time zone"):
+        record(at=datetime(2026, 10, 25, 8, 0))
+
+
+def test_a_number_with_neither_an_identity_nor_a_reading_sends_nothing_and_creates_nothing():
+    """`patient_board` reads `engine.state()`, which creates the patient: a card for a number
+    nobody admitted and nothing measured would put it on every board in the hospital."""
+    world = World(chart=lambda **kwargs: [])
+    asyncio.run(world.link.apply_profile(HOSPITAL, "H2600099", ["copd"], actor="hemsire"))
+    asyncio.run(world.link.chart_weight(HOSPITAL, "H2600099", 72.5, actor="hemsire"))
+    assert world.published == []
+    assert world.engine(HOSPITAL).patient_ids() == []
+
+
+def test_a_tombstones_board_is_its_removal_never_its_card():
+    """A-16 keeps the name on the tombstone: built as an identity-only card, a discharged patient
+    would come back on every screen, named and bedless. An admission's identity write the store
+    refuses after the discharge (a late retry) republishes the board — which is the removal."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.now = T0 + timedelta(hours=1)
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    world.published.clear()
+
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))        # stamped T0: refused
+
+    ((_hospital, frame),) = world.published
+    assert (frame["patient_id"], frame["removed"]) == ("H2600001", True)
+    assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
+    assert "Sentetik" not in repr(frame)
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and world.board() == []
+    assert world.engine(HOSPITAL).patient_ids() == []
+
+
+def _ingesting_door(calls: list):
+    """A charting door that really puts the entries into the engine, as Lane A's
+    `chart_observations` does — so a charting that should not have happened can be seen."""
+    def chart(*, engine, charted, now, **_rest):
+        calls.append(charted)
+        for item in charted:
+            engine.ingest(item.observation, now=now)
+        return []
+    return chart
+
+
+@pytest.mark.parametrize("write", ["chart_weight", "apply_profile"])
+def test_a_discharged_number_takes_no_weight_and_no_profile(write):
+    """A-11: nothing reaches the engine for a discharged number, and no row a restart would
+    replay is written. Lane A's `chart_observations` leaves that drop to its caller, so BoardLink
+    refuses before it builds, charts or writes anything; the admission route reports it failed."""
+    calls: list = []
+    world = World(chart=_ingesting_door(calls))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    world.published.clear()
+
+    with pytest.raises(RuntimeError, match="H2600001 is discharged"):
+        if write == "chart_weight":
+            asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+        else:
+            asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
+
+    assert calls == [] and world.published == []
+    assert world.engine(HOSPITAL).patient_ids() == []
+    assert world.engine(HOSPITAL).profile("H2600001") is None
+    assert world.audit.records(tenant=HOSPITAL) == []
+
+
 # ---------------------------------------------------------------- the weight and the profile
 def test_the_weight_is_charted_through_the_injected_door_with_the_entries_built_from_it():
     calls: list[dict] = []
@@ -157,11 +232,18 @@ def test_a_weight_outside_the_engines_bound_is_refused_before_the_door():
     assert calls == [] and world.published == []
 
 
-def test_charting_with_no_door_wired_raises_and_writes_nothing():
-    world = World()
-    with pytest.raises(RuntimeError, match="chart_observations not wired"):
+@pytest.mark.parametrize(("missing", "named"), [("chart", "chart_observations"),
+                                                ("notifier", "notifier"),
+                                                ("escalate_after", "escalate_after")])
+def test_charting_with_any_part_of_the_door_unwired_raises_before_anything_is_charted(missing, named):
+    """Lane A's `chart_observations` prunes the notifier before it writes the `chart` row: run
+    with no notifier, it would leave the weight in the engine with no row for a restart to
+    replay. The door here charts into the engine, so "nothing charted" is observable."""
+    calls: list = []
+    world = World(**{"chart": _ingesting_door(calls), missing: None})
+    with pytest.raises(RuntimeError, match=f"{named} not wired"):
         asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
-    assert world.published == [] and world.audit.records(tenant=HOSPITAL) == []
+    assert calls == [] and world.published == [] and world.audit.records(tenant=HOSPITAL) == []
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
@@ -224,6 +306,12 @@ def test_open_critical_on_a_patient_never_measured_is_nought_and_creates_nothing
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
+def test_open_critical_on_a_number_with_no_identity_is_nought_and_creates_nothing():
+    world = World()
+    assert world.link.open_critical(HOSPITAL, "H2600099") == 0
+    assert world.engine(HOSPITAL).patient_ids() == []
+
+
 # ---------------------------------------------------------------- discharge and retirement
 def test_a_discharge_writes_the_tombstone_keeps_the_last_place_and_publishes_nothing():
     """A-11d: the one removal frame is published by the app's retirement, after the alerts are
@@ -244,17 +332,39 @@ def test_a_discharge_writes_the_tombstone_keeps_the_last_place_and_publishes_not
 
     assert world.published == [] and retired == []
     assert (tomb.state, tomb.source, tomb.bed_id, tomb.unit_id) == ("discharged", KABUL, BED, UNIT)
+    assert tomb.display_name == "Sentetik Hasta"         # A-16: the tombstone keeps the identity
     assert world.identities.get(HOSPITAL, "H2600001") == tomb
     assert [c["patient_id"] for c in world.board()] == ["H2600002"]
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
-def test_a_discharge_older_than_the_record_is_refused_and_says_so():
+def test_a_discharge_the_store_refuses_raises_and_the_card_stays():
+    """A newer record decides (the identity store's ordering): the discharge did not happen. A
+    None here let the caller report the board `ok` and hand `retire` nothing (A-23, I-1)."""
     world = World()
     asyncio.run(world.link.put_identity(HOSPITAL, record(at=T0 + timedelta(hours=1))))
-    assert asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001")) is None
+    world.published.clear()
+    with pytest.raises(RuntimeError, match="refused"):
+        asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
     assert world.identities.get(HOSPITAL, "H2600001").state == "admitted"
     assert not world.link.is_discharged(HOSPITAL, "H2600001")
+    assert [c["patient_id"] for c in world.board()] == ["H2600001"] and world.published == []
+
+
+def test_a_second_discharge_returns_the_tombstone_even_when_the_store_refuses_its_stamp():
+    """A repeated confirm is the same success, not an error: the patient has left."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.published.clear()
+    world.now = T0 + timedelta(hours=2)
+    first = asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    again = asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    world.now = T0 + timedelta(hours=1)                  # stamped before the stored tombstone
+    late = asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    for tomb in (first, again, late):
+        assert (tomb.state, tomb.source, tomb.bed_id, tomb.unit_id) == ("discharged", KABUL, BED, UNIT)
+        assert tomb.display_name == "Sentetik Hasta"
+    assert world.published == []
 
 
 def test_is_discharged_holds_for_a_kabul_tombstone_only():
@@ -296,6 +406,33 @@ def test_the_retirement_is_the_injected_door_handed_the_tombstones_removal():
     assert sees_patient(frame, build_scope("MEMBER", unit_ids=[UNIT]))
     assert not sees_patient(frame, build_scope("MEMBER", unit_ids=["other-unit"]))
     assert world.published == []                 # BoardLink never publishes the removal itself
+
+
+@pytest.mark.parametrize("given", ["another number's tombstone", "an admitted record",
+                                   "a HIS discharge", "no record"])
+def test_a_retirement_refuses_anything_but_this_numbers_kabul_tombstone(given):
+    """A removal frame built from the wrong record would take another patient's card off the
+    screens, or an admitted one's: refused before the door is called."""
+    calls: list = []
+
+    async def retire(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    world = World(retire=retire)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.put_identity(HOSPITAL, record("H2600002", bed_id="other-bed",
+                                                         unit_id="other-unit")))
+    records = {
+        "another number's tombstone": asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600002")),
+        "an admitted record": world.identities.get(HOSPITAL, "H2600001"),
+        "a HIS discharge": IdentityRecord(patient_id="H2600001", state="discharged", source="adt",
+                                          updated_at=T0, bed_id=BED, unit_id=UNIT),
+        "no record": None,
+    }
+    world.published.clear()
+    with pytest.raises(ValueError):
+        asyncio.run(world.link.retire(HOSPITAL, "H2600001", records[given]))
+    assert calls == [] and world.published == []
 
 
 def test_a_retirement_with_no_door_wired_raises():
