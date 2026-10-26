@@ -124,7 +124,7 @@ describe("BedsTab", () => {
     expect(api.releaseBed).toHaveBeenCalledTimes(1);
   });
 
-  it("says a release is under way, and holds the other beds' buttons with that reason", async () => {
+  it("says a release is under way, and holds the other beds' buttons with that reason, naming the bed (A-17)", async () => {
     const release = deferred();
     await mountKabul(<BedsTab />, { perms: NURSE, setup: (a) => {
       a.structure.mockResolvedValue(twoCleaning());
@@ -137,13 +137,38 @@ describe("BedsTab", () => {
     expect(screen.getByRole("button", { name: RELEASE_3 }).getAttribute("aria-busy")).toBe("true");
     expect(other().getAttribute("aria-disabled")).toBe("true");
     expect(other().getAttribute("aria-busy")).toBeNull();
-    expect(document.getElementById(other().getAttribute("aria-describedby")).textContent).toBe("Çarpayı boşaldılır…");
+    // Which bed: the held button is another bed's, and "a bed is being released" alone does not say
+    // that its own press waits on bed 3.
+    const RELEASING_3 = "3 · Otaq 1 · Reanimasiya · çarpayı boşaldılır…";
+    expect(document.getElementById(other().getAttribute("aria-describedby")).textContent).toBe(RELEASING_3);
     await wait(ANNOUNCE_DELAY_MS + 50);
-    expect(screen.getAllByRole("status").some((region) => region.textContent === "Çarpayı boşaldılır…")).toBe(true);
+    expect(screen.getAllByRole("status").some((region) => region.textContent === RELEASING_3)).toBe(true);
 
     await act(async () => { release.resolve({ id: BED(3), state: "AVAILABLE" }); await new Promise((r) => setTimeout(r, 0)); });
     expect(other().getAttribute("aria-disabled")).toBeNull();
     expect(other().getAttribute("aria-describedby")).toBeNull();
+  });
+
+  it("takes the focus its button had to the bed it freed, which now says so — not to <body> (A-22, §5.7)", async () => {
+    const { api } = await mountKabul(<BedsTab />, { perms: NURSE,
+      setup: (a) => a.releaseBed.mockResolvedValue({ id: BED(3), state: "AVAILABLE" }) });
+    api.structure.mockResolvedValue(ward((s) => { rea(s).rooms[0].beds[2].state = "AVAILABLE"; }));
+    screen.getByRole("button", { name: RELEASE_3 }).focus();               // a keyboard user's press
+    await press(RELEASE_3);
+    await settle();
+    expect(releaseButtons()).toHaveLength(0);
+    const bed3 = within(screen.getByRole("region", { name: "Reanimasiya · Otaq 1" })).getByText("3").closest("li");
+    expect(document.activeElement).toBe(bed3);
+    expect(bed3).toHaveTextContent("Boş");
+  });
+
+  it("leaves the focus on the button when the release was refused and the bed is still in cleaning", async () => {
+    await mountKabul(<BedsTab />, { perms: NURSE,
+      setup: (a) => a.releaseBed.mockRejectedValue(refusal(403, "This bed is not in one of your units.", { apiCode: "out_of_scope" })) });
+    screen.getByRole("button", { name: RELEASE_3 }).focus();
+    await press(RELEASE_3);
+    await settle();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: RELEASE_3 }));
   });
 
   it("puts a refusal on the toast by its code, and reads the beds again", async () => {

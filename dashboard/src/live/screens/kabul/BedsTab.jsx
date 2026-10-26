@@ -2,12 +2,18 @@
 // beds by unit and room with their state, and "Temizlik bitti · boş" on a bed in cleaning for a
 // holder of `beds.release` — the ward turns its beds over without an administrator (D8). A small
 // precursor of B3's occupancy screen.
-import React, { useEffect, useId, useState } from "react";
+//
+// One release is out at a time; while it is, every other bed's button is held, and the reason it
+// points at names the bed being released (A-17). A release that lands takes its button away with
+// the re-read (the bed is free now): the focus that button had goes to the bed's own entry, which
+// says so — never left on <body> (spec §5.7, A-22).
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, Tag, useToast } from "../../ui/index.js";
+import { FOCUS_RING } from "../../ui/focus.js";
 import { BED_STATE_KEYS } from "../../data/structure.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 
@@ -21,15 +27,23 @@ export function BedsTab() {
   const { structure, phase, error, reload } = useStructure();
   const toast = useToast();
   const uid = useId();
-  const [releasing, setReleasing] = useState(null);
+  const [releasing, setReleasing] = useState(null);  // {id, subject} of the release that is out
+  const [refocus, setRefocus] = useState(null);      // the bed whose release just ended
+  const entries = useRef(new Map());                 // bed id -> its <li>
   const canRelease = user?.perms?.includes("beds.release") ?? false;
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (refocus === null) return;
+    setRefocus(null);
+    const active = document.activeElement;
+    if (!active || active === document.body) entries.current.get(refocus)?.focus();
+  }, [refocus]);
 
   const heldId = `${uid}-held`;
 
   async function release(bed, subject) {
     if (releasing) return;
-    setReleasing(bed.id);
+    setReleasing({ id: bed.id, subject });
     try {
       await store.track(() => store.api.releaseBed(bed.id));
       toast(doneFor(t, subject, t("kabul.released")));
@@ -40,8 +54,10 @@ export function BedsTab() {
       // and a press in that gap would repeat a release the server has already done.
       await reload();
       setReleasing(null);
+      setRefocus(bed.id);
     }
   }
+  const saying = releasing ? t("kabul.releasing", { bed: releasing.subject }) : "";
 
   const units = (structure?.sites ?? []).flatMap((site) => site.units ?? []);
   return (
@@ -74,9 +90,11 @@ export function BedsTab() {
                       const subject = `${bed.label} · ${room.name} · ${unit.name}`;
                       // A bed, its room and its unit must all be open for the ward to free the bed.
                       const open = bed.is_active !== false && room.is_active !== false && unit.is_active !== false;
-                      const held = releasing !== null && releasing !== bed.id;
+                      const held = releasing !== null && releasing.id !== bed.id;
                       return (
-                        <li key={bed.id} className="flex items-center justify-between gap-2 rounded-ctl border border-line bg-card px-2.5 py-2">
+                        <li key={bed.id} tabIndex={-1}
+                          ref={(el) => { if (el) entries.current.set(bed.id, el); else entries.current.delete(bed.id); }}
+                          className={`flex items-center justify-between gap-2 rounded-ctl border border-line bg-card px-2.5 py-2 ${FOCUS_RING}`}>
                           <span className="grid">
                             <b className="font-data text-15">{bed.label}</b>
                             <span>
@@ -86,7 +104,7 @@ export function BedsTab() {
                             </span>
                           </span>
                           {canRelease && open && bed.state === "HOUSEKEEPING" ? (
-                            <Button size="sm" icon="ok" busy={releasing === bed.id} aria-label={`${t("kabul.release")}: ${subject}`}
+                            <Button size="sm" icon="ok" busy={releasing?.id === bed.id} aria-label={`${t("kabul.release")}: ${subject}`}
                               aria-disabled={held ? "true" : undefined} aria-describedby={held ? heldId : undefined}
                               onClick={() => release(bed, subject)}>
                               {t("kabul.release")}
@@ -102,8 +120,8 @@ export function BedsTab() {
           })}
         </Box>
       ))}
-      {releasing !== null ? <span id={heldId} className="sr-only">{t("kabul.releasing")}</span> : null}
-      <Announce text={releasing !== null ? t("kabul.releasing") : ""} />
+      {releasing !== null ? <span id={heldId} className="sr-only">{saying}</span> : null}
+      <Announce text={saying} />
     </div>
   );
 }
