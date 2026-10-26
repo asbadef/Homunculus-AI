@@ -781,13 +781,71 @@ After `_audit_cleared`:
 - Full no-DB gate; `tests/test_api_persistence.py` and the Postgres suites are untouched (no DB schema change).
 - Plan fold: departures table (X…), open items (O…), counts; push `feat/g2a-a11`; tell Lane B the sha; the merge waits for the user's word.
 
+## Done on the branch (fold, 2026-10-26)
+
+The plan is the branch `feat/g2a-a11` at `083b25e`, off `main` `1bc5b34`.
+
+| Task | Commit | What it pinned |
+|---|---|---|
+| 1 | `2393762` | `Engine.forget`, `PatientRepository.remove`; 3 tests (`test_engine_forget.py`) |
+| 2 | `a8d17da` | `AckStore.forget_patient`, `is_tombstone`, `retire_state`, `retire_patient`; 5 tests |
+| 3 | `65b8994` | the replay's `discharged` branch; 2 tests |
+| 4 | `10b2bbf` | `chart_observations` (X62); the `/clinical` suites unchanged (98 → 98) |
+| 5 | `44b52c9` | the two door drops, the `/ingest` kabul refusals; 7 tests (`test_api_discharge.py`) |
+| 6 | `cfcb4c9` | `retire_and_publish` / `app.state.retire_patient`, the D6 cycle guard, the D7b sweep; 4 tests |
+| 7 | `308c5fe`, `6b0e8c8` | the Turkish guide (clinician sentences + the developer point 4), the roadmap row; the engine README is a 14-line stub and was left alone |
+| review | `1f90415`, `083b25e` | the final review's fixes (X3–X5 below) |
+
+**Final review (opus, at `cfcb4c9`): APPROVE after one test fix.** Code correct on every clinical-safety scenario probed
+(a reading dropped that should not be, an alert surviving a discharge, a page for a discharged patient, a restart
+disagreeing with the live state): none found. Findings and what was done: (1) the D6 test did not prove "instead of
+paging" (a `soon` alert never escalates; a fixed cycle instant in the past) → rewritten with an immediate NEWS2 (HR 140,
+RR 30, SpO2 88, SBP 85, T 39.5) on a control patient that IS escalated in the same cycle, at `now + 30 min`;
+(2) an audit failure inside `retire_patient` skipped the prune and the removal frame → X5; (3) the D6 guard's minimal
+frame has no bed/unit, so a unit-scoped screen never gets it → O4; (4) an identity-store failure inside `_ensure`
+leaves the tenant uninstalled and every request replays until it recovers — accepted, not fixed open: fail-open would
+bring back main's lost-page bug (an exception after `store.escalated = newly` loses the doctor's page for good) → O6;
+(5) the sweep path writes no `alert_cleared` rows, so those episodes stay open in `/alarm-quality` → O5 (user's call);
+(6) a tombstone with only latched alerts is not healed by D6 (cannot page) → noted; (7) the profile door created engine
+state for a tombstone → X3; (8) a scoped caller gets a `scope_denied` row rather than `dropped` at `/clinical` for a
+tombstone (no bed/unit on main's discharged record) — resolved by Lane B's record, which keeps the last bed/unit;
+(9) test gaps → closed (forget's six maps, `firing` in the store test, exactly one frame); (10) `_escalation_loop`
+swallowed errors without a log line → X4.
+
+**Counts.** At `1bc5b34`: engine 2390 passed / 654 skipped. At `083b25e`: **2413 passed / 655 skipped / 0 failed**
+(23 new tests; the one extra skip is `test_infinity_transport.py::test_dashboard_renders_hundred_devices_and_clears_on_logout`,
+"Node and dashboard jsdom required" — this worktree has no `dashboard/node_modules`, `main`'s has; not this slice's).
+Postgres suites: untouched (no schema change). Dashboard: untouched.
+
 ## Departures
 
 | # | Where | What | Why |
 |---|---|---|---|
-| X1 | Task 4 | `chart_observations` takes `patient_id` explicitly (the spec's D8 signature lacked it; spec amended) | the first-seen loop stamps the route's patient, which an empty `charted` list cannot name |
-| X2 | Task 6 tests | `/alerts/{id}` after a retire answers an empty list, not 404 (the spec §6 said 404) | the handler never 404s for a patient the engine does not know; the board has no card with readings, which is the observable fact |
+| X1 | Task 4 | `chart_observations` takes `patient_id` explicitly (spec D8 amended) | the first-seen loop stamps the route's patient, which an empty `charted` list cannot name |
+| X2 | Task 6 tests | `/alerts/{id}` after a retire answers an empty list, not 404 (spec §6 said 404) | the handler never 404s for a patient the engine does not know; the board has no card with readings, which is the observable fact |
+| X3 | `1f90415`, `083b25e` | `PUT /clinical/{id}/profile` drops a tombstone too: 200 `{"patient_id", "dropped": "discharged"}`, no audit row (a profile is not a reading), after the payload validation so a malformed body is still 400 | the route set the profile, wrote its row, created engine state through `patient_board` and published the tombstone's card (review finding 7); D3 named only the two observation doors |
+| X4 | `1f90415` | `_escalation_loop` logs a failed cycle (`log.exception`) instead of `pass` | a failing retire or identity read in the cycle vanished without a line (review finding 10) |
+| X5 | `1f90415` | `retire_and_publish` runs `notifier.prune` and the publish in a `finally` around `retire_patient`; the error still goes up | the in-memory end has happened whatever the audit did; without this an audit failure left live screens with a card whose alerts were gone (review finding 2); pinned by `test_retire_still_publishes_the_removal_when_the_audit_write_fails` |
 
 ## Open items
 
-- O1–O3: see the spec §8.
+- **O1** At the merge with B1a (Lane A does it, Lane B reviews): one tombstone definition — `patient_identity.KABUL` + a
+  single public `is_tombstone` (moving it into `patient_identity` creates no cycle) replacing `alert_lifecycle.KABUL_SOURCE`
+  /`is_tombstone` and `board._is_tombstone`; rewrite Lane B's `tests/test_kabul_identity.py::test_a_reading_for_a_discharged_number_through_ingest_publishes_its_removal`
+  as `..._is_dropped_before_the_engine` (200 dropped, empty queue, one `reading_dropped_discharged` row, `/patients == []`);
+  tighten `test_api_discharge.py`'s `/patients` assertions to "the number is absent" once the board omits tombstones;
+  wire `BoardLink` in `create_app` (`chart=chart_observations`, `retire_patient=retire_and_publish`, `publish`, `notifier`,
+  `escalate_after`, `audit`, `identities`, `bedmap`) — Lane B said the wiring lands with this merge; add a merge test that
+  a tombstone older than `DISCHARGED_TTL` survives the retention prune (Lane B's `_is_expired` exemption) and its reading is still dropped.
+- **O2** `/alarm-quality` could count dropped readings per bed ("monitor still on a discharged number"); not asked for.
+- **O3** The dropped-reading audit row carries no `obs_ts`; add it if the ward ever needs to know how long a monitor kept sending.
+- **O4** The D6 guard publishes the minimal removal (`identity: null`), which a unit-scoped screen does not receive; at the merge
+  pass `_tombstone_board(record)` (the guard already holds the record) — harmless today, nothing narrows.
+- **O5** A discharge whose retire reaches a tenant not yet installed after a restart, and the D7b crash path, end the episodes
+  without `alert_cleared` rows (the sweep writes nothing by design): those episodes stay open in `/alarm-quality`. The sweep
+  could use the audited `retire_patient` (it is live code, not the replay); that changes D7b's wording and the restart test — user's call.
+- **O6** Pre-existing on `main`, outside this slice, clinically relevant: in `_escalation_cycle` any exception between
+  `store.escalated = newly` and the paging loop loses that page permanently (after recovery `newly == store.escalated`); the
+  branch's guard happens to protect the identity-outage path only. Fix in a later slice: assign `store.escalated` after the
+  page, or page from `added` computed before the assignment.
+- **O7** `/scores/sofa/{id}` for a tombstone still answers an empty form from the identity (`_score_state`); Lane B's scope hides it.
