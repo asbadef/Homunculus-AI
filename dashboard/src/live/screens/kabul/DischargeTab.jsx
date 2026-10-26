@@ -14,8 +14,9 @@
 // cleaning — so it asks once more, naming the bed and the patient number. The confirmation is held
 // the same way as the start, and refused by the server the same way (the user's decision, A-32: an
 // exitus too): a critical alarm nobody acknowledged must be acknowledged first, and the words say
-// that — not that a discharge cannot START. The list is read again every minute while the tab is
-// open, and after every write, landed or refused.
+// that — not that a discharge cannot START. The hold is on the row's button AND on the question's
+// own, read live while the question is open: an alarm that fires after it opened holds it too. The
+// list is read again every minute while the tab is open, and after every write, landed or refused.
 //
 // WHAT A CONFIRMATION LEFT UNDONE (A-30, A-32). The discharge stands whatever its answer says beyond
 // it, on the toast and in a note that stays: the card did not leave the board (`board: failed`;
@@ -144,6 +145,7 @@ export function DischargeTab() {
   const pendingTitle = useId();                       // each section is named by its Box's own heading
   const lyingTitle = useId();
   const retryHeld = useId();                          // why the other notes' retry waits
+  const leavingHeld = useId();                        // why the question's own confirmation waits
   useEffect(() => {
     if (!refocus) return;
     const active = document.activeElement;
@@ -219,6 +221,9 @@ export function DischargeTab() {
   if (phase === "unasked") return <Note tone="info" icon="eye">{t("kabul.noView")}</Note>;
   const retried = undone.find((n) => n.id === retrying);
   const retryingText = retried ? t("kabul.retryingBoard", { bed: retried.subject }) : "";
+  // The question's own «Hasta çıktı · onayla» is held as the row's is — read again on every render,
+  // so an alarm that fires (or a board that is lost) while the question is open holds it (review I-2).
+  const leavingHold = leaving ? holdOf(leaving.patient_number, "confirm") : null;
   const pending = (rows ?? []).filter((r) => r.state === "PENDING_DISCHARGE");
   const lying = (rows ?? []).filter((r) => r.state === "DRAFT" || r.state === "ACTIVE");
   // "Loading" only while the first read is on its way: after a failed one the Alert says why.
@@ -288,10 +293,19 @@ export function DischargeTab() {
           actions={(
             <>
               <Button onClick={() => setLeaving(null)} busy={confirming}>{t("common.cancel")}</Button>
-              <Button variant="primary" icon="ok" busy={confirming} onClick={() => confirm(leaving)}>{t("kabul.confirmLeft")}</Button>
+              <Button variant="primary" icon="ok" busy={confirming} aria-disabled={leavingHold ? "true" : undefined}
+                aria-describedby={leavingHold ? leavingHeld : undefined}
+                onClick={() => { if (!leavingHold) confirm(leaving); }}>
+                {t("kabul.confirmLeft")}
+              </Button>
             </>
           )}>
           <p className="m-0 text-14">{t("kabul.confirmLeftBody", { bed: bedOf(leaving), number: leaving.patient_number })}</p>
+          {leavingHold ? (
+            <p id={leavingHeld} className={`m-0 mt-2 text-13 font-semibold ${CRITICAL_HOLDS.has(leavingHold) ? "text-crit-ink" : "text-mute"}`}>
+              {t(leavingHold)}
+            </p>
+          ) : null}
         </Modal>
       ) : null}
     </div>

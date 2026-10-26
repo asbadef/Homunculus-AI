@@ -421,6 +421,31 @@ describe("the confirmation (A-30, A-32)", () => {
     expectConfirmHeld(api, CRITICAL);
   });
 
+  // Review I-2: the row's button is not the last door — the question it opens has its own
+  // «Hasta çıktı · onayla», which a critical alarm firing while it is open must hold too.
+  it("holds the question's own «Hasta çıktı · onayla» the moment a critical alarm fires while it is open, saying why, and sends nothing", async () => {
+    const { api, stream } = await open(CHARGE);
+    fireEvent.click(screen.getByRole("button", { name: LEFT }));
+    const dialog = () => within(screen.getByRole("dialog", { name: "Xəstənin çıxışını təsdiqləyin" }));
+    const yes = () => dialog().getByRole("button", { name: LEFT });
+    expect(yes().getAttribute("aria-disabled")).toBeNull();
+
+    act(() => { stream.frame(entry("H2600003", [alarm("septic_shock", "critical")])); });
+    await settle();
+    expect(yes().getAttribute("aria-disabled")).toBe("true");
+    expect(yes().getAttribute("aria-describedby").split(" ")).toContain(dialog().getByText(CRITICAL).id);
+    await act(async () => { fireEvent.click(yes()); });
+    await settle();
+    expect(api.confirmDischarge).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();                       // still asking
+
+    // acknowledged meanwhile: the hold lifts, the question still open
+    act(() => { stream.frame(entry("H2600003", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "hemsire" })])); });
+    await settle();
+    expect(yes().getAttribute("aria-disabled")).toBeNull();
+    expect(dialog().queryByText(CRITICAL)).toBeNull();
+  });
+
   it("does not hold it for an acknowledged critical alarm, nor for one on another patient", async () => {
     await open(CHARGE, (a) => a.boardPatients.mockResolvedValue(board([
       entry("H2600003", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "hemsire" })]),
@@ -437,7 +462,9 @@ describe("the confirmation (A-30, A-32)", () => {
   it("a charge nurse without the board's right gets a note, not a hold that would never lift", async () => {
     await open(CHARGE.filter((p) => p !== "board.view"), undefined, { start: false });
     expect(screen.getByRole("button", { name: LEFT }).getAttribute("aria-disabled")).toBeNull();
-    expect(section("Evə yazılması başladılanlar").getByText(/çıxış təsdiqlənəndə mühərrik açıq kritik siqnalı özü yoxlayır/)).toBeTruthy();
+    // What the engine does (A-32's confirm re-check): it refuses the confirmation, and says so.
+    expect(section("Evə yazılması başladılanlar")
+      .getByText(/Təsdiqlənməmiş kritik siqnal varkən mühərrik çıxışın təsdiqini rədd edir və bunu bildirir\./)).toBeTruthy();
   });
 
   it("says the server's critical_alarm_open at the confirm as the confirm's: acknowledge the alarm first — never that the discharge cannot start", async () => {
@@ -542,12 +569,16 @@ describe("the confirmation (A-30, A-32)", () => {
 // admission's time when this browser's clock is behind it.
 describe("the discharge time's default (A-30)", () => {
   const at = (h, m, s = 0) => new Date(2026, 9, 25, h, m, s).getTime();
-  /** Open the dialog for an admission made at `admittedMs`, the clock at `nowMs`. */
-  async function dialogAt(nowMs, admittedMs) {
+  /** An instant as the server writes it: with microseconds, which Date.parse drops (review I-1). */
+  const micro = (ms) => new Date(ms).toISOString().replace(/Z$/, "456Z");
+  /** Open the dialog for an admission made at `admitted` (ms, or the server's own string), the
+   *  clock at `nowMs`. */
+  async function dialogAt(nowMs, admitted) {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(nowMs);
+    const written = typeof admitted === "string" ? admitted : new Date(admitted).toISOString();
     const mounted = await open(DOCTOR, (a) => {
-      a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: new Date(admittedMs).toISOString() }, ROWS[1], ROWS[2]]);
+      a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: written }, ROWS[1], ROWS[2]]);
       a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" });
     });
     fireEvent.click(screen.getByRole("button", { name: START }));
@@ -593,6 +624,35 @@ describe("the discharge time's default (A-30)", () => {
       fireEvent.change(field, { target: { value: "2026-10-25T10:00" } });
       await send(dialog);
       expect(sentAt(api)).toBe(at(10, 0, 30));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Review I-1: the server writes `…:40.123456Z`; read back to the millisecond and sent as
+  // `…:40.123Z`, the admission's own time is before the stored one, and form.py refuses it. Whenever
+  // the time sent is the admission's to the millisecond, it goes out as the server wrote it.
+  it.each([
+    ["this browser's clock is behind it", () => at(10, 0, 10), null],
+    ["a minute is chosen within its own", () => at(10, 30), "2026-10-25T10:00"],
+    ["the dialog opened in its very millisecond", () => at(10, 0, 40) + 123, null],
+  ])("sends the admission's time exactly as the server wrote it, microseconds and all, when %s", async (_case, now, pick) => {
+    const exact = micro(at(10, 0, 40) + 123);
+    try {
+      const { api, dialog } = await dialogAt(now(), exact);
+      if (pick) fireEvent.change(dialog.getByLabelText(/^Çıxış vaxtı/), { target: { value: pick } });
+      await send(dialog);
+      expect(api.startDischarge.mock.calls[0][1].discharge_at).toBe(exact);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends a later time to the millisecond, never the admission's string", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 0, 41), micro(at(10, 0, 40) + 123));
+      await send(dialog);
+      expect(api.startDischarge.mock.calls[0][1].discharge_at).toBe(new Date(at(10, 0, 41)).toISOString());
     } finally {
       vi.useRealTimers();
     }

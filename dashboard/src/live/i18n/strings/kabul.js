@@ -91,7 +91,9 @@ export default {
     // The confirmation's own holds (A-32): it checks for an open critical alarm too.
     criticalOpenConfirm: "Onaylanmamış kritik alarm var: çıkışı onaylamadan önce alarm onaylanmalı.",
     alarmStateUnknownConfirm: "Alarm durumu henüz okunmadı — çıkışı onaylamak için bekleyin.",
-    alarmStateNoBoardConfirm: "Panoyu görme yetkiniz yok, alarm durumu burada gösterilmez; çıkış onaylandığında motor açık kritik alarmı kendisi denetler.",
+    // What the engine does at the confirm: true with the backend's confirm re-check (A-32), which
+    // reads the critical alarms again under its locks and refuses `critical_alarm_open`.
+    alarmStateNoBoardConfirm: "Panoyu görme yetkiniz yok, alarm durumu burada gösterilmez. Onaylanmamış kritik alarm varken motor çıkış onayını reddeder ve bunu söyler.",
     confirmLeftTitle: "Hastanın çıkışını onaylayın",
     confirmLeftBody: "Yatak: {bed} · Hasta no: {number}. Hastanın servisten çıktığını onaylıyorsunuz: kart tüm ekranlardan kalkar ve yatak temizliğe alınır. Bu işlem geri alınamaz.",
     disp: { home: "Eve taburcu", other: "Başka kuruma sevk", exitus: "Vefat (exitus)" },
@@ -240,7 +242,7 @@ export default {
     alarmStateNoBoard: "Paneli görmək səlahiyyətiniz yoxdur, siqnal vəziyyəti burada göstərilmir; evə yazılma göndəriləndə mühərrik açıq kritik siqnalı özü yoxlayır.",
     criticalOpenConfirm: "Təsdiqlənməmiş kritik siqnal var: çıxışı təsdiqləməzdən əvvəl siqnal təsdiqlənməlidir.",
     alarmStateUnknownConfirm: "Alarm vəziyyəti hələ oxunmayıb — çıxışı təsdiqləmək üçün gözləyin.",
-    alarmStateNoBoardConfirm: "Paneli görmək səlahiyyətiniz yoxdur, siqnal vəziyyəti burada göstərilmir; çıxış təsdiqlənəndə mühərrik açıq kritik siqnalı özü yoxlayır.",
+    alarmStateNoBoardConfirm: "Paneli görmək səlahiyyətiniz yoxdur, siqnal vəziyyəti burada göstərilmir. Təsdiqlənməmiş kritik siqnal varkən mühərrik çıxışın təsdiqini rədd edir və bunu bildirir.",
     confirmLeftTitle: "Xəstənin çıxışını təsdiqləyin",
     confirmLeftBody: "Çarpayı: {bed} · Xəstə nömrəsi: {number}. Xəstənin şöbədən çıxdığını təsdiqləyirsiniz: kart bütün ekranlardan götürülür və çarpayı təmizliyə verilir. Bu əməliyyat geri qaytarıla bilməz.",
     disp: { home: "Evə yazılma", other: "Başqa müəssisəyə göndəriş", exitus: "Vəfat (exitus)" },
@@ -388,7 +390,7 @@ export default {
     alarmStateNoBoard: "У вас нет права видеть панель, состояние тревог здесь не показано; при отправке выписки система сама проверит открытые критические тревоги.",
     criticalOpenConfirm: "Есть неподтверждённая критическая тревога: прежде чем подтвердить выбытие, тревогу нужно подтвердить.",
     alarmStateUnknownConfirm: "Состояние тревог ещё не прочитано — подождите, прежде чем подтверждать выбытие.",
-    alarmStateNoBoardConfirm: "У вас нет права видеть панель, состояние тревог здесь не показано; при подтверждении выбытия система сама проверит открытые критические тревоги.",
+    alarmStateNoBoardConfirm: "У вас нет права видеть панель, состояние тревог здесь не показано. Пока открыта неподтверждённая критическая тревога, система отклоняет подтверждение выбытия и сообщает об этом.",
     confirmLeftTitle: "Подтвердите выбытие пациента",
     confirmLeftBody: "Койка: {bed} · Номер пациента: {number}. Вы подтверждаете, что пациент выбыл из отделения: карточка снимается со всех экранов, койка отправляется на уборку. Это действие нельзя отменить.",
     disp: { home: "Выписан домой", other: "Переведён в другое учреждение", exitus: "Летальный исход (exitus)" },
@@ -536,7 +538,7 @@ export default {
     alarmStateNoBoard: "You have no right to see the board, so the alarm state is not shown here; the engine checks for an open critical alarm itself when the discharge is sent.",
     criticalOpenConfirm: "A critical alarm nobody acknowledged: it must be acknowledged before the departure is confirmed.",
     alarmStateUnknownConfirm: "The alarm state has not been read yet — wait before confirming the departure.",
-    alarmStateNoBoardConfirm: "You have no right to see the board, so the alarm state is not shown here; the engine checks for an open critical alarm itself when the departure is confirmed.",
+    alarmStateNoBoardConfirm: "You have no right to see the board, so the alarm state is not shown here. While a critical alarm nobody acknowledged is open, the engine refuses the confirmation and says so.",
     confirmLeftTitle: "Confirm the patient has left",
     confirmLeftBody: "Bed: {bed} · Patient number: {number}. You are confirming that the patient has left the unit: the card leaves every screen and the bed goes to cleaning. This cannot be undone.",
     disp: { home: "Discharged home", other: "Transferred to another institution", exitus: "Death (exitus)" },

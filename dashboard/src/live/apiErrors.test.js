@@ -18,7 +18,7 @@ import { dischargeBody } from "./screens/kabul/DischargeDialog.jsx";
 
 /** What the discharge dialog sends (every key, whichever the disposition). */
 const DISCHARGE_FIELDS = Object.keys(dischargeBody({
-  disposition: "EXITUS", institution: "Sentetik", reportedBy: "Sentetik", atMs: 0, note: "Sentetik",
+  disposition: "EXITUS", institution: "Sentetik", reportedBy: "Sentetik", dischargeAt: "2026-10-25T08:00:00Z", note: "Sentetik",
 }));
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

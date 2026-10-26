@@ -11,6 +11,10 @@
 // moment the dialog opened or the admission's, whichever is later — kept to the millisecond and
 // sent as it is while the field shows its minute; a minute chosen within the admission's own sends
 // the admission's time; and a minute before it is refused here, with the server's own sentence.
+// The admission's time goes out AS THE SERVER WROTE IT (review I-1): the server keeps microseconds
+// (`…:40.123456Z`) and Date.parse milliseconds, so the same instant rebuilt here (`…:40.123Z`) is
+// before the stored one and refused. Any time equal to the admission's to the millisecond is sent as
+// `row.admission_datetime`, exactly; every later one is later than it however the server rounds.
 import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -45,15 +49,23 @@ export const fromLocalInput = (value) => {
 };
 
 /** The body POST …/discharge/initiate takes (admission/schemas.py DischargeStart): the institution
- *  only for another institution, the reporter only for an exitus and only when written. */
-export function dischargeBody({ disposition, institution, reportedBy, atMs, note }) {
+ *  only for another institution, the reporter only for an exitus and only when written.
+ *  `dischargeAt` is the time as sent, already a string (`dischargeAtOf`). */
+export function dischargeBody({ disposition, institution, reportedBy, dischargeAt, note }) {
   return {
     disposition,
     institution: disposition === "OTHER_INSTITUTION" ? String(institution ?? "").trim() : null,
     reported_by: disposition === "EXITUS" && String(reportedBy ?? "").trim() ? String(reportedBy).trim() : null,
-    discharge_at: new Date(atMs).toISOString(),
+    discharge_at: dischargeAt,
     note: String(note ?? "").trim() || null,
   };
+}
+
+/** The discharge time as sent: the admission's own string when `atMs` is the admission's instant to
+ *  the millisecond (its microseconds kept, review I-1), else `atMs` in ISO form. */
+export function dischargeAtOf(atMs, admissionDatetime) {
+  const admittedMs = Date.parse(admissionDatetime ?? "");
+  return Number.isFinite(admittedMs) && atMs === admittedMs ? admissionDatetime : new Date(atMs).toISOString();
 }
 
 export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
@@ -93,7 +105,7 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
     setBusy(true);
     try {
       await store.track(() => store.api.startDischarge(row.id, dischargeBody({
-        disposition, institution, reportedBy, atMs, note,
+        disposition, institution, reportedBy, dischargeAt: dischargeAtOf(atMs, row.admission_datetime), note,
       })));
       toast(doneFor(t, subject, t("kabul.dischargeStarted")));
       await onDone();                               // held until the tab has read its list again (A-17)
