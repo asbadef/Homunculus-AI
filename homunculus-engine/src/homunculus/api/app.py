@@ -27,7 +27,10 @@ from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
-from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
+from homunculus.api.alert_lifecycle import (
+    Cleared, DISCHARGED, KABUL_SOURCE, READING_DROPPED, acknowledge_latched, is_tombstone,
+    live_keys, sync_alerts,
+)
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
     board_snapshot, freshness_turned, identity_only_board, patient_board,
@@ -660,6 +663,15 @@ def create_app(
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
+        # G2-A11 (D3): as at /ingest — a discharged admission's number takes no chart either.
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            for item in charted:
+                code = item.observation.code.value
+                audit.append(AuditEvent(hospital, READING_DROPPED, patient_id, code,
+                                        {"patient_id": patient_id, "code": code}))
+            return {"patient_id": patient_id, "dropped": DISCHARGED}
+
         engine = _engine(hospital)
         store = _store(hospital)
         # One wall-clock instant per request, as in /ingest (G2-A2, X10); the loop itself is
@@ -670,8 +682,7 @@ def create_app(
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
         notifier.prune(hospital, live_keys(engine, store))
 
-        board = patient_board(engine, patient_id, store,
-                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        board = patient_board(engine, patient_id, store, identity=record, bedmap=bedmap)
         await broadcaster.publish(hospital, board)
         return {"patient_id": patient_id, "charted": len(charted),
                 "alerts": [a.kind for a in alerts]}
@@ -727,6 +738,16 @@ def create_app(
                 raise HTTPException(status_code=400, detail=str(exc)) from None
             except (TypeError, AttributeError, KeyError, IndexError):
                 raise HTTPException(status_code=400, detail="malformed identity resource") from None
+            # G2-A11 (D5): only the admission writes a `kabul` record. A feed naming that source
+            # is refused outright; a feed writing onto a `kabul` record is refused before `apply`,
+            # so `_merge`'s None keeps meaning "older" here, and the card below is never built
+            # for a discharged admission.
+            if incoming.source == KABUL_SOURCE:
+                raise HTTPException(status_code=400,
+                                    detail="identity source 'kabul' is reserved for the admission")
+            existing = identities.get(hospital, incoming.patient_id)
+            if existing is not None and existing.source == KABUL_SOURCE:
+                return {"patient_id": incoming.patient_id, "identity": "refused", "reason": "kabul"}
             record = identities.apply(hospital, incoming)
             if record is None:
                 return {"patient_id": incoming.patient_id, "identity": "stale"}
@@ -745,6 +766,17 @@ def create_app(
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # G2-A11 (D3): a reading for a number whose admission here was discharged is dropped
+        # before the engine — one audit row, no evaluation, no hook, no stamp, no frame, no
+        # notification. The owner's decision (2026-10-26): no alert and no page may come of it.
+        # 200, not 4xx: the input is well-formed and the server chose not to apply it, and a
+        # per-reading 4xx on a monitor that keeps the old number would read as rejections in the
+        # hub's counters. The one identity read a reading costs is reused for the frame below.
+        record = identities.get(hospital, obs.patient_id)
+        if is_tombstone(record):
+            audit.append(AuditEvent(hospital, READING_DROPPED, obs.patient_id, obs.code.value,
+                                    {"patient_id": obs.patient_id, "code": obs.code.value}))
+            return {"patient_id": obs.patient_id, "dropped": DISCHARGED}
         engine = _engine(hospital)
         store = _store(hospital)
         # One wall-clock instant per request. The rules judge at the reading's own time but never
@@ -775,8 +807,7 @@ def create_app(
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
         await broadcaster.publish(hospital, patient_board(
-            engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id),
-            bedmap=bedmap))
+            engine, obs.patient_id, store, identity=record, bedmap=bedmap))
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)
