@@ -29,7 +29,7 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
 from homunculus.api.alert_lifecycle import (
     Cleared, DISCHARGED, KABUL_SOURCE, READING_DROPPED, acknowledge_latched, is_tombstone,
-    live_keys, sync_alerts,
+    live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
@@ -264,6 +264,13 @@ def create_app(
         store = AckStore()
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
         rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
+        # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
+        # was discharged is retired, whether or not the discharge's rows were written (a crash
+        # between the tombstone write and the retire call; an audit that failed after the
+        # in-memory retire). The replay writes nothing, so neither does this.
+        for pid in engine.patient_ids():
+            if is_tombstone(identities.get(hospital, pid)):
+                retire_state(engine, store, pid)
         engines[hospital] = engine
         stores[hospital] = store
         rehydrated.add(hospital)
@@ -282,6 +289,23 @@ def create_app(
         for item in cleared:
             audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
                                     item.payload(at)))
+
+    async def retire_and_publish(hospital: str, patient_id: str, frame: dict | None = None,
+                                 now: datetime | None = None) -> list[Cleared]:
+        """G2-A11 (D1, D2): a discharge made here retires the patient from the alert world — every
+        episode ended with an `alert_cleared` row (reason `discharged`), the store and the engine
+        forget the patient, the nurse's dedup is re-armed — and the ward is told once, with
+        `frame` (Lane B's tombstone board) or the minimal removal the retention sweep sends.
+        Lane B's discharge path calls it through `app.state.retire_patient`, after the identity
+        store's tombstone write; the escalation cycle calls it for a tombstone whose call never
+        came (D6)."""
+        engine, store = _engine(hospital), _store(hospital)
+        cleared = retire_patient(engine, store, audit, hospital, patient_id,
+                                 now or datetime.now(timezone.utc))
+        notifier.prune(hospital, live_keys(engine, store))
+        await broadcaster.publish(hospital, frame if frame is not None else
+                                  {"patient_id": patient_id, "removed": True, "identity": None})
+        return cleared
 
     # G2-A2 (D5): each hospital's previous escalation-cycle `now`, advanced after that hospital's
     # republish, so a tenant failing in its own does not hold the others' back (Task 2 review).
@@ -315,6 +339,14 @@ def create_app(
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
+            # G2-A11 (D6): an alerting patient whose admission here was discharged is retired,
+            # not escalated — the guard for a discharge whose retire call never came. Read only
+            # for patients with a firing alert: one identity read per alerting patient, not per bed.
+            gone = {pid for pid in {p for p, _a in alerts}
+                    if is_tombstone(identities.get(hospital, pid))}
+            for pid in sorted(gone):
+                await retire_and_publish(hospital, pid, now=now)
+            alerts = [(pid, a) for pid, a in alerts if pid not in gone]
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
@@ -440,6 +472,7 @@ def create_app(
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
     app.state.escalation_cycle = _escalation_cycle
+    app.state.retire_patient = retire_and_publish   # G2-A11 (D1, D2): Lane B's discharge path calls it
     app.state.notifier = notifier
     app.state.notification_hub = hub
     app.state.audit = audit

@@ -113,3 +113,58 @@ class TestIdentityResourcesAndKabul:
         assert r.json() == {"patient_id": "H-2", "identity": "refused", "reason": "kabul"}
         assert app.state.test_identities.get("h1", "H-2") == before
         assert _rows(app, "identity") == []
+
+
+class TestTheDischargeRetiresThePatient:
+    def test_retire_ends_the_alerts_audits_them_and_publishes_one_removal(self, app, client):
+        _kabul(app.state.test_identities, "H-2")
+        client.post("/ingest", json=_obs("heart_rate", 140, "H-2"), headers=HEAD)     # news2 fires
+        queue = app.state.broadcaster.subscribe("h1")
+        _kabul(app.state.test_identities, "H-2", state="discharged")                   # Lane B's tombstone write
+        cleared = client.portal.call(app.state.retire_patient, "h1", "H-2")
+        assert [(c.kind, c.reason) for c in cleared] == [("news2", "discharged")]
+        [row] = _rows(app, "alert_cleared", "H-2")
+        assert row.subject == "news2" and row.payload["reason"] == "discharged"
+        frame = queue.get_nowait()
+        assert frame["patient_id"] == "H-2" and frame["removed"] is True
+        assert queue.empty(), "exactly one frame"
+        assert client.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
+        assert all(c["latest"]["heart_rate"] is None
+                   for c in client.get("/patients", headers=HEAD).json()["patients"] if c["patient_id"] == "H-2")
+
+    def test_retire_publishes_the_frame_it_is_given(self, app, client):
+        _kabul(app.state.test_identities, "H-2")
+        queue = app.state.broadcaster.subscribe("h1")
+        client.portal.call(app.state.retire_patient, "h1", "H-2", {"patient_id": "H-2", "removed": True, "identity": {"unit_id": "u-1"}})
+        assert queue.get_nowait()["identity"] == {"unit_id": "u-1"}
+
+    def test_the_escalation_cycle_retires_an_alerting_tombstone_instead_of_paging(self, app, client):
+        _kabul(app.state.test_identities, "H-2")
+        client.post("/ingest", json=_obs("heart_rate", 140, "H-2"), headers=HEAD)
+        _kabul(app.state.test_identities, "H-2", state="discharged")      # the retire call never came
+        queue = app.state.broadcaster.subscribe("h1")
+        client.portal.call(app.state.escalation_cycle, WHEN + timedelta(minutes=30))
+        assert _rows(app, "escalation", "H-2") == [] and _rows(app, "notification", "H-2") == []
+        [row] = _rows(app, "alert_cleared", "H-2")
+        assert row.payload["reason"] == "discharged"
+        assert queue.get_nowait()["removed"] is True
+        assert client.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
+        # a second cycle finds nothing to retire and writes nothing
+        client.portal.call(app.state.escalation_cycle, WHEN + timedelta(minutes=31))
+        assert len(_rows(app, "alert_cleared", "H-2")) == 1
+
+    def test_a_restart_retires_an_engine_patient_whose_identity_is_a_tombstone(self):
+        """G2-A11 (D7b): the audit rows of a discharge were never written (a crash between the
+        tombstone write and the retire call); the restart still agrees with the identity store."""
+        audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+        first = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
+        with TestClient(first) as c:
+            _kabul(identities, "H-2")
+            c.post("/ingest", json=_obs("heart_rate", 140, "H-2"), headers=HEAD)
+            _kabul(identities, "H-2", state="discharged")
+        second = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit, identities=identities)
+        with TestClient(second) as c:
+            assert c.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
+            assert all(card["latest"]["heart_rate"] is None
+                       for card in c.get("/patients", headers=HEAD).json()["patients"] if card["patient_id"] == "H-2")
+            assert audit.records(tenant="h1", event_type="alert_cleared", limit=100) == [], "the replay writes nothing"
