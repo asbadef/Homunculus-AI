@@ -380,7 +380,7 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} />
             </div>
           </header>
-          <SignOffStrip patientId={id} />{/* G2-B1a (screens/kabul) */}
+          <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>

@@ -7,6 +7,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
+import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { patientFromBoard } from "../../../liveAdapters.js";
 import { board, entry, identity, measured } from "../../data/board.testutil.js";
 import { answering } from "../patient/trends/trends.testutil.js";
@@ -21,6 +22,13 @@ const BED_2 = "2 · Otaq 1 · Reanimasiya";
 const SIGN = `Qəbulu imzala: ${BED_2}`;
 const WAITS = /^Həkim imzası gözlənilir —/;
 const BADGE = "Həkim imzası gözlənilir";
+const SIGNING = "Qəbul imzalanır…";
+
+/** What the polite live regions hold once `Announce` has had its delay. */
+async function said() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS + 30)); });
+  return screen.queryAllByRole("status").map((node) => node.textContent);
+}
 
 /** A `kabul` card as the board sends it: placed by its own bed, named, measured. */
 const kabulCard = (id, label) => entry(id, [], {
@@ -96,6 +104,44 @@ describe("SignOffStrip", () => {
     expect(screen.queryByText(WAITS)).toBeNull();
   });
 
+  it("says it is signing while the button is held: a busy button alone reads only «unavailable»", async () => {
+    let answer;
+    await mountKabul(<SignOffStrip patientId="H2600007" />, {
+      perms: DOCTOR,
+      setup: (a) => {
+        a.admissions.mockResolvedValue(DRAFT);
+        a.signOffAdmission.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+      },
+    });
+    expect(await said()).not.toContain(SIGNING);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+    expect(screen.getByRole("button", { name: SIGN })).toHaveAttribute("aria-busy", "true");
+    expect(await said()).toContain(SIGNING);
+    await act(async () => { answer({ id: "a-7", state: "ACTIVE" }); });
+    await settle();
+    expect(screen.getByRole("button", { name: SIGN })).not.toHaveAttribute("aria-busy");
+    expect(await said()).not.toContain(SIGNING);
+  });
+
+  it("someone signed first: the refusal goes on the toast by its code, and the strip goes with the re-read", async () => {
+    // admission/service.py sign_off_admission: a non-DRAFT is a 409 `invalid_transition`.
+    const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
+      perms: DOCTOR,
+      setup: (a) => {
+        a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
+        a.signOffAdmission.mockRejectedValue(refusal(409, "Only a DRAFT admission can be signed off (current: ACTIVE).",
+          { apiCode: "invalid_transition" }));
+      },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+    await settle();
+    expect(api.signOffAdmission).toHaveBeenCalledWith("a-7");
+    expect(toasts().getAllByText(`${BED_2}: Qeyd bu əməliyyat üçün uyğun vəziyyətdə deyil; siyahı yeniləndi.`).length)
+      .toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/Only a DRAFT/);
+    expect(screen.queryByText(WAITS)).toBeNull();
+  });
+
   it("puts a refusal on the toast by its code, never in the server's English, and reads the list again", async () => {
     const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
       perms: DOCTOR,
@@ -159,6 +205,47 @@ describe("the patient screen's strip", () => {
     expect(screen.getByText(WAITS)).toBeTruthy();
     expect(screen.getByRole("button", { name: SIGN })).toBeTruthy();
     expectNoUuid();
+  });
+
+  it("starts free on the next patient while the last one's signature is still out", async () => {
+    // The shell renders a screen with no `key` (shell/Shell.jsx): moving from one patient to the
+    // next keeps PatientScreen mounted and only changes `params.id`, as `move` does here.
+    const SIGN_5 = "Qəbulu imzala: 5 · Otaq 2 · Reanimasiya";
+    let move;
+    let answer;
+    function Moving() {
+      const [id, setId] = React.useState("H2600007");
+      move = setId;
+      return <PatientScreen params={{ id }} />;
+    }
+    const mounted = await mountKabul(<Moving />, {
+      perms: DOCTOR,
+      setup: (api) => {
+        api.boardPatients.mockResolvedValue(board([kabulCard("H2600007", "2"), kabulCard("H2600009", "5")]));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        api.view.mockResolvedValue({ ok: true });
+        api.patientTrends.mockImplementation(answering());
+        api.admissions.mockResolvedValue([...DRAFT,
+          row({ id: "a-9", patient_number: "H2600009", bed_label: "5", room_name: "Otaq 2", state: "DRAFT" })]);
+        api.signOffAdmission.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+      },
+    });
+    await act(async () => { await mounted.board.start(); mounted.stream.open(); });
+    await settle();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+    expect(screen.getByRole("button", { name: SIGN })).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => { move("H2600009"); });
+    await settle();
+    expect(screen.getByRole("button", { name: SIGN_5 })).not.toHaveAttribute("aria-busy");
+    expect(await said()).not.toContain(SIGNING);
+
+    // The first answer lands later: its toast names its own bed, and the next patient's strip is untouched.
+    await act(async () => { answer({ id: "a-7", state: "ACTIVE" }); });
+    await settle();
+    expect(toasts().getAllByText(`${BED_2} · qəbul imzalandı`).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: SIGN_5 })).not.toHaveAttribute("aria-busy");
+    expect(mounted.api.signOffAdmission).toHaveBeenCalledTimes(1);
   });
 });
 
