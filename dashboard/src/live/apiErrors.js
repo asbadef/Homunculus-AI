@@ -80,6 +80,7 @@ export const API_MESSAGE_KEYS = new Map([
   ["kapsam şu anda okunamıyor", "scopeUnreadable"],
   ["ingest requires a device token", "deviceTokenOnly"],
   ["malformed identity resource", "badIdentityResource"],
+  ["identity source 'kabul' is reserved for the admission", "kabulSourceReserved"],
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],

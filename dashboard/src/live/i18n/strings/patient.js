@@ -292,7 +292,7 @@ export default {
     medsBolusUnit: "mL",
     medsBolusHint: "Verilmiş tək bolus. Səhv daxil edilmiş bolus bu versiyada geri alına bilməz; qayda 3 saatlıq cəmi sayır.",
     medsWeight: "Çəki",
-    medsWeightUnit: "kg",
+    medsWeightUnit: "kq",
     medsWeightHint: "30 mL/kg hədəfi üçün lazımdır.",
     medsAntibiotic: "Antibiotik verilib",
     medsAntibioticHint: "İşarələsəniz, qeyd saatında verildiyi yazılır.",
