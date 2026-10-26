@@ -9,16 +9,11 @@ import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, Tag, useToast } from "../../ui/index.js";
 import { BED_STATE_KEYS } from "../../data/structure.js";
-import { doneFor, refusedFor } from "../admin/refusal.js";
+import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 
 // Red is for alarms: an occupied bed is the ward's ordinary state, so it stays neutral. Only a bed
 // waiting for something (cleaning, a discharge) is warned.
 const TONE = { HOUSEKEEPING: "warn", PENDING_DISCHARGE: "warn" };
-
-/** What the toast says of a refused release. An uncoded 404 ("Bed not found.") has no code to map
- *  and English words, so it is said by its status, in the reader's language (amendments A-9).
- *  Everything else is `refusedFor`'s, by its code. */
-const reasonOf = (t, err) => (err?.status === 404 && !err.apiCode ? t("errors.requestFailed", { status: 404 }) : err);
 
 export function BedsTab() {
   const { t } = useI18n();

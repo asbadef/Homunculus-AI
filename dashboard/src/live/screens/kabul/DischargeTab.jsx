@@ -23,8 +23,8 @@ import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Empty, Modal, Note, Tag, useToast } from "../../ui/index.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
-import { doneFor } from "../admin/refusal.js";
-import { DISPOSITIONS, DischargeDialog, refusedDischarge } from "./DischargeDialog.jsx";
+import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
+import { DISPOSITIONS, DischargeDialog } from "./DischargeDialog.jsx";
 import { useAdmissions } from "./useAdmissions.js";
 
 const STATES = ["DRAFT", "ACTIVE", "PENDING_DISCHARGE"];
@@ -91,7 +91,7 @@ export function DischargeTab() {
       toast(doneFor(t, subjectOf(row), t(failed ? "kabul.dischargedBoardFailed" : "kabul.discharged")), failed ? "warn" : "ok");
       if (failed) setNotLeft((prev) => [...prev.filter((n) => n.id !== row.id), { id: row.id, subject: subjectOf(row) }]);
     } catch (err) {
-      toast(refusedDischarge(t, subjectOf(row), err), "error");
+      toast(refusedFor(t, subjectOf(row), reasonOf(t, err)), "error");
     } finally {
       setConfirming(false);
       setLeaving(null);

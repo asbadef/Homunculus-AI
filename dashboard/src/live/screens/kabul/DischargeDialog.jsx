@@ -9,19 +9,13 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Button, Field, Input, Modal, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
-import { doneFor, refusedFor } from "../admin/refusal.js";
+import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 
 export const DISPOSITIONS = Object.freeze([
   Object.freeze({ value: "HOME", key: "kabul.disp.home" }),
   Object.freeze({ value: "OTHER_INSTITUTION", key: "kabul.disp.other" }),
   Object.freeze({ value: "EXITUS", key: "kabul.disp.exitus" }),
 ]);
-
-/** A refused discharge write on the toast, as `refusedFor` says it — except an uncoded 404
- *  ("Admission not found."), which is said by its status in the reader's words, never in the
- *  server's English (amendment A-9). The Taburcu tab's confirmation says it the same way. */
-export const refusedDischarge = (t, subject, err) => refusedFor(t, subject,
-  err && typeof err === "object" && err.status === 404 && !err.apiCode ? t("errors.requestFailed", { status: 404 }) : err);
 
 const pad = (n) => String(n).padStart(2, "0");
 /** An instant as a datetime-local value, in this browser's time. */
@@ -80,7 +74,8 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
       toast(doneFor(t, subject, t("kabul.dischargeStarted")));
       onDone();
     } catch (err) {
-      toast(refusedDischarge(t, subject, err), "error");
+      // An uncoded 404 ("Admission not found.") is said by its status (refusal.js `reasonOf`).
+      toast(refusedFor(t, subject, reasonOf(t, err)), "error");
       onRefused?.();
     } finally {
       setBusy(false);

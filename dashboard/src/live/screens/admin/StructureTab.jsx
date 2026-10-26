@@ -25,10 +25,10 @@ import React, { useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
-import { apiErrorKey, readErrorText } from "../../apiErrors.js";
+import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Input, Select, Tag, useToast } from "../../ui/index.js";
 import { BED_STATE_KEYS, isUuid } from "../../data/structure.js";
-import { doneFor, refusedFor } from "./refusal.js";
+import { doneFor, reasonOf, refusedFor } from "./refusal.js";
 
 const UNIT_TYPES = Object.freeze([
   { value: "ADULT_ICU", key: "kabul.unitType.adultIcu" }, { value: "NICU", key: "kabul.unitType.nicu" },
@@ -40,14 +40,6 @@ const UNIT_TYPE_KEYS = Object.freeze(Object.fromEntries(UNIT_TYPES.map((o) => [o
 /** What each box takes: the columns of tenant/models.py (a site's and a unit's name 200, a room's
  *  100, a bed's label 50, a room's number 20). */
 const MAX = Object.freeze({ site: 200, unit: 200, room: 100, bed: 50, roomNumber: 20 });
-
-/** A refused write's reason, for `refusedFor`. A 404 the server did not code and whose words no map
- *  knows ("Room not found", tenant/router.py — a place gone from under the screen) is said by its
- *  status in the reader's language, never in the server's English (amendment A-9); every other
- *  failure as refusal.js says it. */
-function reasonOf(t, err) {
-  return err?.status === 404 && !apiErrorKey(err) ? t("errors.requestFailed", { status: 404 }) : err;
-}
 
 /** One text box and its button: add a child, or rename this node. The button's name is
  *  "<button>: <subject>". It is held — `aria-disabled`, pointing at why — while another write is

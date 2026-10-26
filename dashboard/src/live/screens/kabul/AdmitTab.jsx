@@ -45,7 +45,7 @@ import { useStructure } from "../../data/StructureProvider.jsx";
 import { admissible, indexStructure, normId } from "../../data/structure.js";
 import { Announce, Box, Button, Field, Icon, Input, Note, Select, Tag, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
-import { doneFor, mayHaveLanded, refusedFor } from "../admin/refusal.js";
+import { doneFor, mayHaveLanded, reasonOf, refusedFor } from "../admin/refusal.js";
 import {
   ADMISSION_TYPES, BLOOD_GROUPS, COMORBIDITIES, CONSENTS, EARLIEST_BIRTH, ENGINE_FAILED, NATIONALITIES,
   RELATIONS, SEXES, SOURCES, ageOf, missing, toBody,
@@ -57,12 +57,6 @@ const localToday = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-
-/** What the toast says of a failed admission. An uncoded 404 ("Unit not found.", "Bed not found.":
- *  the unit or bed named is not the caller's hospital's) has no code to map and English words, so
- *  it is said by its status, in the reader's language (amendments A-9). Everything else is
- *  `refusedFor`'s: a timeout's own sentence says the admission may have gone through. */
-const reasonOf = (t, err) => (err?.status === 404 && !err.apiCode ? t("errors.requestFailed", { status: 404 }) : err);
 
 /** Two names as a nurse reads them alike: spaces collapsed, case folded. */
 const sameName = (a, b) => {

@@ -54,6 +54,20 @@ export function mayHaveLanded(err) {
 }
 
 /**
+ * A refused write's reason, ready for `refusedFor`. A 404 that neither a code nor a known message
+ * names ("Bed not found.", "Admission not found.", "Room not found" — a place gone from under the
+ * screen) has only English words to show, so it is said by its STATUS, in the reader's language
+ * (amendments A-9, A-14). Anything a map knows — a code, a translated message — says more than the
+ * status, and goes on as it is; so does every other failure, and words already in the reader's
+ * language. ONE copy: the Hasta Kabul screens and the structure tab each had their own.
+ */
+export function reasonOf(t, err) {
+  return err && typeof err === "object" && err.status === 404 && !apiErrorKey(err)
+    ? t("errors.requestFailed", { status: 404 })
+    : err;
+}
+
+/**
  * The one line a refused write puts on the toast: `<subject>: <reason>`. A write that got no
  * answer (`mayHaveLanded`) also says it may have gone through, so an administrator checks before
  * she repeats it — except a timeout, whose own sentence already says so.

@@ -18,16 +18,13 @@ import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Announce, Button, Icon, useToast } from "../../ui/index.js";
-import { doneFor, refusedFor } from "../admin/refusal.js";
+import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { useAdmissions } from "./useAdmissions.js";
 
 const DRAFT = ["DRAFT"];
 const EVERY_MS = 60_000;
 /** The bed as the slice names it (DischargeTab's `bedOf`, BedsTab's subject). */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
-/** An uncoded 404 ("Admission not found.") has no code to map and English words, so it is said by
- *  its status, in the reader's language (amendments A-9); everything else is `refusedFor`'s. */
-const reasonOf = (t, err) => (err?.status === 404 && !err.apiCode ? t("errors.requestFailed", { status: 404 }) : err);
 
 /** `patientId`: the board's key — for a `kabul` patient, the patient number. */
 export function SignOffStrip({ patientId }) {
