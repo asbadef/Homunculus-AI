@@ -18,6 +18,7 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.board import board_snapshot, identity_only_board, patient_board
+from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, KABUL, PROTOCOL_SYSTEM, IdentityRecord, InMemoryIdentityStore,
     SqliteIdentityStore, parse_fhir_encounter, parse_fhir_patient,
@@ -25,7 +26,7 @@ from homunculus.api.patient_identity import (
 from homunculus.canonical import Observation, SignalCode
 from homunculus.crypto import encrypt_phi
 from homunculus.pipeline import Engine
-from homunculus.scope import build_scope, sees_patient
+from homunculus.scope import Scope, ScopeReason, build_scope, sees_patient
 from homunculus.tenant.bedmap import BedMap, BedRef
 
 T0 = datetime(2026, 10, 25, 8, 0, tzinfo=timezone.utc)
@@ -266,6 +267,61 @@ def test_the_escalation_cycle_retiring_an_alerting_tombstone_tells_its_units_scr
         assert [r.payload["reason"] for r in audit.records(
             tenant="h1", event_type="alert_cleared", patient_id="H2600001", limit=100)] == ["discharged"]
         assert client.get("/alerts/H2600001", headers=HEAD).json()["alerts"] == []
+
+
+UNIT_NURSE = Caller(hospital="h1", actor="hemsire1", groups=("nurse",),
+                    perms=frozenset({"board.view", "clinical.chart"}))
+NURSE_HEAD = {"Authorization": "Bearer nurse-jwt"}
+LACTATE_CHART = {"entries": [{"code": "lactate", "value": 1.2}]}
+
+
+def unit_scoped_app(unit_id: str):
+    """The app with a tombstone and one nurse whose scope is one unit — a JWT and a scope
+    resolver, as production wires them, without the database."""
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    identities.apply("h1", admitted())
+    identities.apply("h1", discharged())
+
+    async def resolve_jwt(token):
+        return UNIT_NURSE if token == "nurse-jwt" else None
+
+    async def resolve_scope(token):
+        return Scope(False, ScopeReason.ASSIGNED, unit_ids=frozenset({unit_id}))
+
+    app = create_app({"tok-1": "h1"}, run_escalation_loop=False, audit=audit,
+                     identities=identities, resolve_jwt=resolve_jwt, resolve_scope=resolve_scope)
+    return app, audit
+
+
+def rows(audit: InMemoryAuditLog, event_type: str) -> list:
+    return audit.records(tenant="h1", event_type=event_type, limit=100)
+
+
+def test_a_nurse_of_the_tombstones_last_unit_charting_it_is_told_dropped_not_not_found():
+    """A-25 (Lane A's note 5): a tombstone sits on no bed, so the scope check of a single-patient
+    route reads it at its last bed and unit (`tombstone_board`). The unit's own nurse reaches
+    `/clinical`, whose drop answers — and no `scope_denied` row records a look outside her scope
+    that never happened. Nothing reaches the engine."""
+    app, audit = unit_scoped_app(UNIT)
+    with TestClient(app) as client:
+        response = client.post("/clinical/H2600001", json=LACTATE_CHART, headers=NURSE_HEAD)
+    assert response.status_code == 200
+    assert response.json() == {"patient_id": "H2600001", "dropped": "discharged"}
+    (row,) = rows(audit, "reading_dropped_discharged")
+    assert (row.patient_id, row.subject) == ("H2600001", "lactate")
+    assert rows(audit, "scope_denied") == [] and rows(audit, "chart") == []
+    assert app.state.board_link._engine("h1").patient_ids() == []
+
+
+def test_a_nurse_of_another_unit_charting_a_tombstone_is_still_not_found():
+    app, audit = unit_scoped_app("another-unit")
+    with TestClient(app) as client:
+        response = client.post("/clinical/H2600001", json=LACTATE_CHART, headers=NURSE_HEAD)
+    assert response.status_code == 404
+    (denied,) = rows(audit, "scope_denied")
+    assert denied.patient_id == "H2600001"
+    assert rows(audit, "reading_dropped_discharged") == [] and rows(audit, "chart") == []
+    assert app.state.board_link._engine("h1").patient_ids() == []
 
 
 def test_one_tombstone_predicate_lives_beside_kabul():

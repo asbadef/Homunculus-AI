@@ -647,9 +647,15 @@ def create_app(
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
-        card = {"patient_id": patient_id,
-                "identity": (identity_only_board(record, bedmap)["identity"]
-                             if record is not None else None)}
+        if is_tombstone(record):
+            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
+            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
+            # the route, whose discharged-number drop answers; another unit's still get the 404.
+            identity = tombstone_board(record)["identity"]
+        else:
+            identity = (identity_only_board(record, bedmap)["identity"]
+                        if record is not None else None)
+        card = {"patient_id": patient_id, "identity": identity}
         if sees_patient(card, scope):
             return
         audit.append(AuditEvent(hospital, "scope_denied", patient_id, scope.reason,
