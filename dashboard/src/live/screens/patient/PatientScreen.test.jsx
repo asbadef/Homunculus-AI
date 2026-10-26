@@ -55,14 +55,15 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the two things it writes", async () => {
+  it("names the bed and the patient, and says the three things it writes", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi və xəstənin norması/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/üç şey yazır/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması və dərman \/ maye qeydi/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -320,6 +321,26 @@ describe("the patient screen", () => {
     it("says so when the engine sent no medication block at all", async () => {
       await open({ payload: board([entry("S-001", [], { ...FULL, meds: null })]) });
       expect(screen.getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
+    });
+
+    // G2-A3 (D4): the charting form is offered on the Meds box to a clinical.chart holder, and to nobody
+    // else — absent, not disabled — and what it saves is written for THIS patient.
+    it("the Meds box offers «Qeyd əlavə et» only with clinical.chart, and charts for this patient", async () => {
+      const offer = () => screen.queryByRole("button", { name: "Qeyd əlavə et" });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(offer()).toBeNull();
+      cleanup();
+      resetScreens();
+      const { api } = await open({
+        payload: board([entry("S-001", [], FULL)]), perms: ["board.view", "alerts.ack", "clinical.chart"],
+        setup: (a) => a.chart.mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] }),
+      });
+      fireEvent.click(offer());
+      const dialog = screen.getByRole("dialog", { name: "Dərman / maye qeydi · REA-01 · 2" });
+      fireEvent.change(within(dialog).getByLabelText(/Çəki/), { target: { value: "80" } });
+      await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+      expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "weight_kg", value: 80 }], new Date(NOW).toISOString());
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
   });
 

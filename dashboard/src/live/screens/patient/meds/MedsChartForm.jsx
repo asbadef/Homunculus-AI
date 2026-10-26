@@ -57,8 +57,10 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
 
   const now = Date.now();
   const { errors, entries, empty, recordedAt } = checkDraft(draft, now);
-  // Said beside Save once a submit has been tried on a form with nothing in it (Save, or Enter).
-  const say = tried && empty ? t("patient.medsEmpty") : "";
+  // Said beside Save whenever the form has nothing in it — muted from the start, so Save's `aria-disabled`
+  // has a stated reason before anything is pressed (BaselineForm's rule), and in the attention colour once a
+  // submit has been tried on it (Save, or Enter).
+  const say = empty ? t("patient.medsEmpty") : "";
   const errorOf = (field) => (tried && errors[field] ? t(errors[field].key, errors[field].params) : undefined);
   const edit = (field) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
@@ -117,7 +119,7 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
         <div className="flex w-full flex-wrap items-center justify-end gap-2">
           {say ? (
             <div id={noteId} className="mr-auto min-w-0 flex-[1_1_14rem]">
-              <p className="m-0 text-12 font-semibold text-att-ink">{say}</p>
+              <p className={`m-0 text-12 font-semibold ${tried ? "text-att-ink" : "text-mute"}`}>{say}</p>
             </div>
           ) : null}
           {/* The two buttons are one flex item: on a phone the pair wraps as a pair, under the sentence. */}
@@ -172,8 +174,9 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
         </div>
       </form>
       {/* Said once: "saving" while the write is in flight, and the reason nothing was sent once a submit has
-          been tried on an empty form (a screen reader hears nothing from an Enter that did nothing otherwise). */}
-      <Announce text={busy ? t("patient.medsSaving") : say} />
+          been tried on an empty form (a screen reader hears nothing from an Enter that did nothing otherwise).
+          Not before: the muted sentence is on the screen from the start, and is not news until it is pressed. */}
+      <Announce text={busy ? t("patient.medsSaving") : tried ? say : ""} />
     </Modal>
   );
 }

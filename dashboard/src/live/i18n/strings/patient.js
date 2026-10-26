@@ -11,7 +11,7 @@
 export default {
   tr: {
     back: "Yataklara dön",
-    onlyWrite: "Bu ekran hasta kaydına iki şey yazar, ikisi de yalnız clinical.chart yetkisiyle: şüpheli enfeksiyon işareti ve hastanın normali; başka hiçbir şey buradan yazılmaz.",
+    onlyWrite: "Bu ekran hasta kaydına üç şey yazar, üçü de yalnız clinical.chart yetkisiyle: şüpheli enfeksiyon işareti, hastanın normali ve ilaç / sıvı kaydı; başka hiçbir şey buradan yazılmaz.",
     notFound: "Bu hasta gösterilemiyor",
     notFoundHelp: "Panonuzda bu kimlikle bir kart yok: ya böyle bir kayıt yok ya da kapsamınız dışında. İkisini ayırt edemiyoruz — sunucu ikisine de aynı yanıtı verir.",
     notFoundUnknown: "Pano okunamadığı için bu hastanın panonuzda olup olmadığını söyleyemiyoruz.",
@@ -168,7 +168,7 @@ export default {
   },
   az: {
     back: "Çarpayılara qayıt",
-    onlyWrite: "Bu ekran xəstə qeydinə iki şey yazır, hər ikisi yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi və xəstənin norması; buradan başqa heç nə yazılmır.",
+    onlyWrite: "Bu ekran xəstə qeydinə üç şey yazır, hər üçü yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi, xəstənin norması və dərman / maye qeydi; buradan başqa heç nə yazılmır.",
     notFound: "Bu xəstə göstərilə bilmir",
     notFoundHelp: "Panelinizdə bu identifikatorla kart yoxdur: ya belə bir qeyd yoxdur, ya da əhatənizdən kənardır. İkisini ayırd edə bilmirik — server ikisinə də eyni cavabı verir.",
     notFoundUnknown: "Panel oxunmadığı üçün bu xəstənin panelinizdə olub-olmadığını deyə bilmirik.",
@@ -323,7 +323,7 @@ export default {
   },
   ru: {
     back: "К койкам",
-    onlyWrite: "Этот экран записывает в карту пациента две вещи, обе только с правом clinical.chart: отметку о подозрении на инфекцию и норму пациента; больше отсюда ничего не записывается.",
+    onlyWrite: "Этот экран записывает в карту пациента три вещи, все только с правом clinical.chart: отметку о подозрении на инфекцию, норму пациента и запись о препарате / жидкости; больше отсюда ничего не записывается.",
     notFound: "Этого пациента показать нельзя",
     notFoundHelp: "На вашей панели нет карточки с этим идентификатором: либо такой записи нет, либо она вне вашей области доступа. Различить мы не можем — сервер отвечает одинаково.",
     notFoundUnknown: "Панель не прочитана, поэтому мы не можем сказать, есть ли этот пациент на вашей панели.",
@@ -478,7 +478,7 @@ export default {
   },
   en: {
     back: "Back to the beds",
-    onlyWrite: "This screen writes two things to the patient's record, both only with clinical.chart: the suspected-infection charting and the patient's normal; nothing else is written from here.",
+    onlyWrite: "This screen writes three things to the patient's record, all only with clinical.chart: the suspected-infection charting, the patient's normal and the medication / fluid entry; nothing else is written from here.",
     notFound: "This patient cannot be shown",
     notFoundHelp: "Your board holds no card with this identifier: either there is no such record, or it is outside your scope. We cannot tell which — the server answers both the same way.",
     notFoundUnknown: "The board could not be read, so we cannot say whether this patient is on it.",

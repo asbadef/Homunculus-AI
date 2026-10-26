@@ -65,8 +65,14 @@ describe("the form", () => {
   });
   it("an empty form sends nothing and says so; a held field keeps the draft and gets the focus", async () => {
     const { api } = await open();
+    // Said from the start, muted, so Save's aria-disabled has its reason before anything is pressed.
+    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).toHaveAccessibleDescription("Ən azı bir sahə doldurulmalıdır.");
+    expect(within(dialog()).getByText("Ən azı bir sahə doldurulmalıdır.")).toHaveClass("text-mute");
     await save();
     expect(api.chart).not.toHaveBeenCalled();
+    expect(within(dialog()).getByText("Ən azı bir sahə doldurulmalıdır.")).toHaveClass("text-att-ink");
     fireEvent.change(within(dialog()).getByLabelText(/Sürət/), { target: { value: "0.1" } });
     await save();
     expect(api.chart).not.toHaveBeenCalled();
