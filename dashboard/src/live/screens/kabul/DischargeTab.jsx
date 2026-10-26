@@ -11,9 +11,18 @@
 // board the clinician sees; the server refuses anyway (BoardLink.open_critical), on the toast.
 //
 // "Hasta çıktı · onayla" cannot be undone — the card leaves every screen, the bed goes to
-// cleaning — so it asks once more, naming the bed and the patient number. A confirmation whose
-// card did not leave the board says so on the toast and in a note that stays. The list is read
-// again every minute while the tab is open, and after every write, landed or refused.
+// cleaning — so it asks once more, naming the bed and the patient number. The confirmation is held
+// the same way as the start, and refused by the server the same way (the user's decision, A-32: an
+// exitus too): a critical alarm nobody acknowledged must be acknowledged first, and the words say
+// that — not that a discharge cannot START. The list is read again every minute while the tab is
+// open, and after every write, landed or refused.
+//
+// WHAT A CONFIRMATION LEFT UNDONE (A-30, A-32). The discharge stands whatever its answer says beyond
+// it, on the toast and in a note that stays: the card did not leave the board (`board: failed`;
+// `alerts: failed` happens only with it, and reads the same), or the alarms' close-out record is
+// incomplete (`alerts: incomplete` — the system administrator's). A card still on the board can be
+// taken off it again from its note: the same confirmation for that admission, which the server runs
+// again on a DISCHARGED one; one retry is out at a time, and the note goes when it lands.
 //
 // A write's dialog stays open and held until that re-read is in (A-17): until then the list still
 // shows the admission as it was, and a press in the gap would send the same write twice. The bed is
@@ -28,7 +37,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
-import { Alert, Box, Button, Empty, Modal, Note, Tag, useToast } from "../../ui/index.js";
+import { Alert, Announce, Box, Button, Empty, Modal, Note, Tag, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
@@ -39,6 +48,17 @@ const STATES = ["DRAFT", "ACTIVE", "PENDING_DISCHARGE"];
 const EVERY_MS = 60_000;
 /** The bed as the slice names it — the subject of every toast, dialog and note here. */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
+/** Why a step's button is held, by what the board shows: not loaded, or a critical alarm open. */
+const HOLDS = {
+  start: { unknown: "kabul.alarmStateUnknown", critical: "kabul.criticalOpen" },
+  confirm: { unknown: "kabul.alarmStateUnknownConfirm", critical: "kabul.criticalOpenConfirm" },
+};
+const CRITICAL_HOLDS = new Set([HOLDS.start.critical, HOLDS.confirm.critical]);
+/** What a confirmation's answer says beyond "discharged": `board` (the card did not leave it; the
+ *  alarms' retirement fails only with it), `alerts` (their close-out record is incomplete), or `ok`. */
+const outcomeOf = (answer) => (answer?.board === "failed" || answer?.alerts === "failed" ? "board"
+  : answer?.alerts === "incomplete" ? "alerts" : "ok");
+const OUTCOME_TEXT = { ok: "kabul.discharged", board: "kabul.dischargedBoardFailed", alerts: "kabul.dischargedAlertsIncomplete" };
 const dispositionKey = (value) => DISPOSITIONS.find((d) => d.value === value)?.key ?? null;
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 /** When a discharge was decided: its time, and its date as well unless that is today. */
@@ -65,6 +85,48 @@ function Row({ row, children }) {
   );
 }
 
+/** A row's action, held while `hold` names a reason: aria-disabled, never disabled — it keeps its
+ *  focus — and described by the row's bed line and the reason under it; a press then does nothing. */
+function RowAction({ line, hold, onPress, children, ...button }) {
+  const { t } = useI18n();
+  return (
+    <div className="grid justify-items-end gap-1">
+      <Button {...button} aria-disabled={hold ? "true" : undefined}
+        aria-describedby={hold ? `${line} ${line}-hold` : line}
+        onClick={() => { if (!hold) onPress(); }}>
+        {children}
+      </Button>
+      {hold ? (
+        <p id={`${line}-hold`} className={`m-0 text-12 font-semibold ${CRITICAL_HOLDS.has(hold) ? "text-crit-ink" : "text-mute"}`}>
+          {t(hold)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** What a confirmation left undone, kept until it is done; a card still on the board offers the
+ *  retry (`onRetry`, for a holder of the confirmation's right), described by the note's own words —
+ *  and, while another note's retry is out, held, described by `heldBy` too (the one being retried). */
+function UndoneNote({ undone, retrying, heldBy, onRetry }) {
+  const { t } = useI18n();
+  const said = useId();
+  const held = retrying !== null && retrying !== undone.id;
+  return (
+    <Note icon="alert">
+      <span id={said}>{doneFor(t, undone.subject, t(OUTCOME_TEXT[undone.kind]))}</span>
+      {undone.kind === "board" && onRetry ? (
+        <span className="mt-1.5 block">
+          <Button size="sm" aria-describedby={held ? `${said} ${heldBy}` : said} busy={retrying === undone.id}
+            aria-disabled={held ? "true" : undefined} onClick={() => onRetry(undone)}>
+            {t("kabul.retryBoard")}
+          </Button>
+        </span>
+      ) : null}
+    </Note>
+  );
+}
+
 export function DischargeTab() {
   const { t } = useI18n();
   const { user, store } = useSession();
@@ -75,11 +137,13 @@ export function DischargeTab() {
   const [starting, setStarting] = useState(null);
   const [leaving, setLeaving] = useState(null);       // the started discharge being confirmed
   const [confirming, setConfirming] = useState(false);
-  const [notLeft, setNotLeft] = useState([]);         // confirmed, whose card did not leave the board
+  const [undone, setUndone] = useState([]);           // confirmed, with something left undone: {id, subject, kind}
+  const [retrying, setRetrying] = useState(null);     // the admission whose card is being taken off the board again
   const [refocus, setRefocus] = useState(0);          // a write's dialog closed: where did its focus go?
   const pendingRef = useRef(null);
   const pendingTitle = useId();                       // each section is named by its Box's own heading
   const lyingTitle = useId();
+  const retryHeld = useId();                          // why the other notes' retry waits
   useEffect(() => {
     if (!refocus) return;
     const active = document.activeElement;
@@ -87,34 +151,60 @@ export function DischargeTab() {
   }, [refocus]);
   const can = (key) => user?.perms?.includes(key) ?? false;
   const starts = can("admissions.move.initiate");
+  const confirms = can("admissions.discharge.confirm");
   const seesBoard = can("board.view");
   // A board that never loaded, or whose load failed, is empty and rules no alarm out.
   const known = board.loaded === true && board.connection !== CONNECTION.UNAVAILABLE;
   const criticalOpen = (number) => board.alerts.some((a) => a.patientId === number
     && a.severity === "critical" && a.status !== "ACKNOWLEDGED");
-  /** Why this patient's "Taburcuyu başlat" is held, as a key — or null. */
-  const holdOf = (number) => {
+  /** Why this patient's "Taburcuyu başlat" (`start`) or "Hasta çıktı · onayla" (`confirm`) is held,
+   *  as a key — or null. */
+  const holdOf = (number, step) => {
     if (!seesBoard) return null;
-    if (!known) return "kabul.alarmStateUnknown";
-    return criticalOpen(number) ? "kabul.criticalOpen" : null;
+    if (!known) return HOLDS[step].unknown;
+    return criticalOpen(number) ? HOLDS[step].critical : null;
   };
+  /** A refused confirmation's reason: an open critical alarm is said as the confirmation's own. */
+  const confirmReason = (err) => (err?.apiCode === "critical_alarm_open"
+    ? t("kabul.err.criticalAlarmOpenAtConfirm") : reasonOf(t, err));
+  /** Say what a confirmation's answer left undone, and keep it in a note until it is done. */
+  function noteOutcome(id, subject, kind) {
+    setUndone((prev) => [...prev.filter((n) => n.id !== id), ...(kind === "ok" ? [] : [{ id, subject, kind }])]);
+  }
 
   async function confirm(row) {
     if (confirming) return;
     setConfirming(true);
     try {
-      const answer = await store.track(() => store.api.confirmDischarge(row.id));
-      const failed = answer?.board === "failed";
-      toast(doneFor(t, bedOf(row), t(failed ? "kabul.dischargedBoardFailed" : "kabul.discharged")), failed ? "warn" : "ok");
-      if (failed) setNotLeft((prev) => [...prev.filter((n) => n.id !== row.id), { id: row.id, subject: bedOf(row) }]);
+      const outcome = outcomeOf(await store.track(() => store.api.confirmDischarge(row.id)));
+      toast(doneFor(t, bedOf(row), t(OUTCOME_TEXT[outcome])), outcome === "ok" ? "ok" : "warn");
+      noteOutcome(row.id, bedOf(row), outcome);
     } catch (err) {
-      toast(refusedFor(t, bedOf(row), reasonOf(t, err)), "error");
+      toast(refusedFor(t, bedOf(row), confirmReason(err)), "error");
     } finally {
       reloadStructure();
       await reload();                                 // held until the list says what the write did
       setConfirming(false);
       setLeaving(null);
       setRefocus((n) => n + 1);
+    }
+  }
+
+  /** A card that did not leave the board, taken off it again: the same confirmation, which the server
+   *  runs again on a DISCHARGED admission (A-32). Its note goes when the card has gone. */
+  async function retry(n) {
+    if (retrying !== null) return;
+    setRetrying(n.id);
+    try {
+      const outcome = outcomeOf(await store.track(() => store.api.confirmDischarge(n.id)));
+      toast(doneFor(t, n.subject, t(outcome === "ok" ? "kabul.boardCleared" : OUTCOME_TEXT[outcome])), outcome === "ok" ? "ok" : "warn");
+      noteOutcome(n.id, n.subject, outcome);
+    } catch (err) {
+      toast(refusedFor(t, n.subject, confirmReason(err)), "error");
+    } finally {
+      await reload();                                 // a refusal says the list was read again: it is
+      setRetrying(null);
+      setRefocus((k) => k + 1);
     }
   }
 
@@ -127,6 +217,8 @@ export function DischargeTab() {
   }
 
   if (phase === "unasked") return <Note tone="info" icon="eye">{t("kabul.noView")}</Note>;
+  const retried = undone.find((n) => n.id === retrying);
+  const retryingText = retried ? t("kabul.retryingBoard", { bed: retried.subject }) : "";
   const pending = (rows ?? []).filter((r) => r.state === "PENDING_DISCHARGE");
   const lying = (rows ?? []).filter((r) => r.state === "DRAFT" || r.state === "ACTIVE");
   // "Loading" only while the first read is on its way: after a failed one the Alert says why.
@@ -134,10 +226,13 @@ export function DischargeTab() {
   return (
     <div className="grid gap-3">
       {error ? <Alert tone="crit">{t(phase === "stale" ? "kabul.listStale" : "kabul.listFailed", { reason: readErrorText(t, error) })}</Alert> : null}
-      {notLeft.map((n) => <Note key={n.id} icon="alert">{doneFor(t, n.subject, t("kabul.dischargedBoardFailed"))}</Note>)}
+      {undone.map((n) => <UndoneNote key={n.id} undone={n} retrying={retrying} heldBy={retryHeld} onRetry={confirms ? retry : null} />)}
+      {retried ? <span id={retryHeld} className="sr-only">{retryingText}</span> : null}
+      <Announce text={retryingText} />
       {/* Where the focus lands after a write (refocus): it shows the ring, as the strip's line does. */}
       <section ref={pendingRef} tabIndex={-1} aria-labelledby={pendingTitle} className={`rounded-box ${FOCUS_RING}`}>
       <Box title={<span id={pendingTitle}>{t("kabul.pendingTitle")}</span>} icon="out" level={2}>
+        {confirms && !seesBoard ? <Note tone="info" icon="eye" className="mb-2">{t("kabul.alarmStateNoBoardConfirm")}</Note> : null}
         {rows === null ? loading : pending.length === 0 ? <Empty icon="out">{t("kabul.pendingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {pending.map((row) => (
@@ -149,11 +244,11 @@ export function DischargeTab() {
                       {row.discharge_institution ? ` · ${row.discharge_institution}` : ""}
                       {row.discharge_at ? ` · ${whenOf(Date.parse(row.discharge_at))}` : ""}
                     </p>
-                    {can("admissions.discharge.confirm") ? (
-                      <Button variant="primary" icon="ok" aria-describedby={line} busy={confirming && leaving?.id === row.id}
-                        onClick={() => setLeaving(row)}>
+                    {confirms ? (
+                      <RowAction line={line} hold={holdOf(row.patient_number, "confirm")} variant="primary" icon="ok"
+                        busy={confirming && leaving?.id === row.id} onPress={() => setLeaving(row)}>
                         {t("kabul.confirmLeft")}
-                      </Button>
+                      </RowAction>
                     ) : null}
                   </>
                 )}
@@ -168,28 +263,16 @@ export function DischargeTab() {
         {starts && !seesBoard ? <Note tone="info" icon="eye" className="mb-2">{t("kabul.alarmStateNoBoard")}</Note> : null}
         {rows === null ? loading : lying.length === 0 ? <Empty icon="bed">{t("kabul.lyingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
-            {lying.map((row) => {
-              const hold = holdOf(row.patient_number);
-              return (
-                <Row key={row.id} row={row}>
-                  {(line) => (row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
-                    : starts ? (
-                      <div className="grid justify-items-end gap-1">
-                        <Button icon="out" aria-disabled={hold ? "true" : undefined}
-                          aria-describedby={hold ? `${line} ${line}-hold` : line}
-                          onClick={() => { if (!hold) setStarting(row); }}>
-                          {t("kabul.startDischarge")}
-                        </Button>
-                        {hold ? (
-                          <p id={`${line}-hold`} className={`m-0 text-12 font-semibold ${hold === "kabul.criticalOpen" ? "text-crit-ink" : "text-mute"}`}>
-                            {t(hold)}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null)}
-                </Row>
-              );
-            })}
+            {lying.map((row) => (
+              <Row key={row.id} row={row}>
+                {(line) => (row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
+                  : starts ? (
+                    <RowAction line={line} hold={holdOf(row.patient_number, "start")} icon="out" onPress={() => setStarting(row)}>
+                      {t("kabul.startDischarge")}
+                    </RowAction>
+                  ) : null)}
+              </Row>
+            ))}
           </ul>
         )}
       </Box>

@@ -849,7 +849,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     startDischarge(id, body) {
       return authed(`/admissions/${seg(id)}/discharge/initiate`, { method: "POST", body });
     },
-    /** {…admission, board: ok|failed|skipped} — whether the card left the board. */
+    /** {…admission, board: ok|failed, alerts: ok|incomplete|failed} — whether the card left the board,
+     *  and how the patient's alarms were retired. Sent again for a DISCHARGED admission, it takes a
+     *  card that did not leave the board off it again (A-32). */
     confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
     releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
     // The administrator's structure tab: add under a parent, rename / close / reopen.

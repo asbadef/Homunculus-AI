@@ -377,6 +377,228 @@ describe("DischargeTab", () => {
   });
 });
 
+// A-30, A-32: the confirmation answers how the alarms' retirement went (`alerts`), refuses while a
+// critical alarm is open (the user's decision: the confirm checks too, an exitus included), and a
+// card that did not leave the board can be taken off it again by the same confirmation.
+describe("the confirmation (A-30, A-32)", () => {
+  const SUBJECT = "1 · Otaq 1 · Reanimasiya";
+  const CRITICAL = "Təsdiqlənməmiş kritik siqnal var: çıxışı təsdiqləməzdən əvvəl siqnal təsdiqlənməlidir.";
+  const UNKNOWN_HERE = "Alarm vəziyyəti hələ oxunmayıb — çıxışı təsdiqləmək üçün gözləyin.";
+  const REFUSED = `${SUBJECT}: Təsdiqlənməmiş kritik siqnal var; çıxış təsdiqlənə bilməz. Əvvəlcə siqnal təsdiqlənməlidir.`;
+  const BOARD_FAILED = "evə yazılma təsdiqləndi; kart paneldən götürülmədi — paneli yoxlayın";
+  const INCOMPLETE = "evə yazılma təsdiqləndi; siqnalların bağlanma qeydi natamamdır — sistem administratoruna bildirin";
+  const RETRY = "Paneldən yenidən götür";
+  const region = () => screen.getByRole("region", { name: "Bildirişlər" });
+  /** The notes the tab keeps (the toasts' are the region's). */
+  const kept = () => screen.queryAllByRole("note").filter((n) => !region().contains(n));
+
+  function expectConfirmHeld(api, reason) {
+    const left = screen.getByRole("button", { name: LEFT });
+    expect(left.getAttribute("aria-disabled")).toBe("true");
+    expect(left.getAttribute("aria-describedby").split(" ")).toContain(screen.getByText(reason).id);
+    fireEvent.click(left);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.confirmDischarge).not.toHaveBeenCalled();
+  }
+
+  it.each([
+    ["firing", {}],
+    ["latched — resolved, nobody acknowledged it (G2-A1)", { resolved_at: "2026-10-25T09:00:00Z" }],
+  ])("holds «Hasta çıktı · onayla», saying the alarm must be acknowledged first, while a critical alarm is %s", async (_shape, over) => {
+    const { api } = await open(CHARGE, (a) => {
+      a.boardPatients.mockResolvedValue(board([entry("H2600003", [alarm("septic_shock", "critical", over)])]));
+    });
+    expectConfirmHeld(api, CRITICAL);
+  });
+
+  it("does not hold it for an acknowledged critical alarm, nor for one on another patient", async () => {
+    await open(CHARGE, (a) => a.boardPatients.mockResolvedValue(board([
+      entry("H2600003", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "hemsire" })]),
+      entry("H2600001", [alarm("septic_shock", "critical")]),
+    ])));
+    expect(screen.getByRole("button", { name: LEFT }).getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("holds it while the board has not loaded: nothing loaded yet rules no alarm out", async () => {
+    const { api } = await open(CHARGE, undefined, { start: false });
+    expectConfirmHeld(api, UNKNOWN_HERE);
+  });
+
+  it("a charge nurse without the board's right gets a note, not a hold that would never lift", async () => {
+    await open(CHARGE.filter((p) => p !== "board.view"), undefined, { start: false });
+    expect(screen.getByRole("button", { name: LEFT }).getAttribute("aria-disabled")).toBeNull();
+    expect(section("Evə yazılması başladılanlar").getByText(/çıxış təsdiqlənəndə mühərrik açıq kritik siqnalı özü yoxlayır/)).toBeTruthy();
+  });
+
+  it("says the server's critical_alarm_open at the confirm as the confirm's: acknowledge the alarm first — never that the discharge cannot start", async () => {
+    await open(CHARGE, (a) => a.confirmDischarge.mockRejectedValue(
+      refusal(409, "Discharge blocked: 1 unacknowledged CRITICAL alert(s)…", { apiCode: "critical_alarm_open" })));
+    await confirmLeft();
+    expect(toasts().getAllByText(REFUSED).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/başladıla bilməz|Discharge blocked/);
+  });
+
+  it.each([
+    ["the alarms' close-out record is incomplete", { board: "ok", alerts: "incomplete" }, INCOMPLETE, false],
+    ["the card did not leave the board", { board: "failed", alerts: "failed" }, BOARD_FAILED, true],
+    ["the alarms were not retired", { board: "ok", alerts: "failed" }, BOARD_FAILED, true],
+  ])("says when %s, on the toast and in a note that stays — offering the retry only for the board", async (_what, answer, text, retry) => {
+    await open(CHARGE, (a) => a.confirmDischarge.mockResolvedValue({ id: "a-3", state: "DISCHARGED", ...answer }));
+    await confirmLeft();
+    const told = toasts().getAllByText(`${SUBJECT} · ${text}`);
+    expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(kept().map((n) => n.textContent)).toEqual([expect.stringContaining(`${SUBJECT} · ${text}`)]);
+    expect(Boolean(screen.queryByRole("button", { name: RETRY }))).toBe(retry);
+    if (text !== INCOMPLETE) expect(document.body.textContent).not.toContain(INCOMPLETE);
+  });
+
+  it("takes a card that did not leave the board off it again: the same confirmation for that admission, and the note goes", async () => {
+    const { api } = await open(CHARGE, (a) => a.confirmDischarge
+      .mockResolvedValueOnce({ id: "a-3", state: "DISCHARGED", board: "failed", alerts: "failed" })
+      .mockResolvedValueOnce({ id: "a-3", state: "DISCHARGED", board: "ok", alerts: "ok" }));
+    api.admissions.mockResolvedValue([ROWS[0], ROWS[1]]);                  // the discharged admission has left the list
+    await confirmLeft();
+    const retry = screen.getByRole("button", { name: RETRY });
+    expect(retry.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent))
+      .toContain(`${SUBJECT} · ${BOARD_FAILED}`);
+    retry.focus();
+    await act(async () => { fireEvent.click(retry); });
+    await settle();
+
+    expect(api.confirmDischarge.mock.calls).toEqual([["a-3"], ["a-3"]]);
+    expect(toasts().getAllByText(`${SUBJECT} · kart paneldən götürüldü`).length).toBeGreaterThan(0);
+    expect(kept()).toEqual([]);
+    expect(screen.queryByRole("button", { name: RETRY })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
+  });
+
+  it("keeps the note, and says why, when the retry fails again or is refused — and sends one retry however often it is pressed", async () => {
+    let answer;
+    const { api } = await open(CHARGE, (a) => a.confirmDischarge
+      .mockResolvedValueOnce({ id: "a-3", state: "DISCHARGED", board: "failed", alerts: "failed" })
+      .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }))
+      .mockRejectedValueOnce(refusal(409, "Only a PENDING_DISCHARGE admission can be confirmed.", { apiCode: "invalid_transition" })));
+    await confirmLeft();
+    const retry = () => screen.getByRole("button", { name: RETRY });
+    await act(async () => { fireEvent.click(retry()); });
+    await act(async () => { fireEvent.click(retry()); });                   // on its way: nothing more is sent
+    expect(api.confirmDischarge).toHaveBeenCalledTimes(2);
+    expect(retry()).toHaveAttribute("aria-busy", "true");
+    await act(async () => { answer({ id: "a-3", state: "DISCHARGED", board: "failed", alerts: "failed" }); });
+    await settle();
+    expect(kept()).toHaveLength(1);
+    expect(toasts().getAllByText(`${SUBJECT} · ${BOARD_FAILED}`).length).toBeGreaterThan(1);
+
+    await act(async () => { fireEvent.click(retry()); });
+    await settle();
+    expect(api.confirmDischarge).toHaveBeenCalledTimes(3);
+    expect(toasts().getAllByText(`${SUBJECT}: Qeyd bu əməliyyat üçün uyğun vəziyyətdə deyil; siyahı yeniləndi.`).length).toBeGreaterThan(0);
+    expect(kept()).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/PENDING_DISCHARGE admission/);
+  });
+
+  it("holds every other note's retry, saying so, while one is out", async () => {
+    let answer;
+    const second = row({ id: "a-4", patient_number: "H2600004", bed_label: "5", room_name: "Otaq 2", state: "PENDING_DISCHARGE",
+      discharge_disposition: "HOME", discharge_at: "2026-10-25T09:40:00Z" });
+    const { api } = await open(CHARGE, (a) => {
+      a.admissions.mockResolvedValue([...ROWS, second]);
+      a.confirmDischarge.mockResolvedValueOnce({ id: "a-3", state: "DISCHARGED", board: "failed", alerts: "failed" })
+        .mockResolvedValueOnce({ id: "a-4", state: "DISCHARGED", board: "failed", alerts: "failed" })
+        .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    });
+    for (const at of [0, 1]) {                                              // a-3, then a-4: neither card left
+      fireEvent.click(screen.getAllByRole("button", { name: LEFT })[at]);
+      await act(async () => { fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: LEFT })); });
+      await settle();
+    }
+    const [first, other] = screen.getAllByRole("button", { name: RETRY });
+    await act(async () => { fireEvent.click(first); });
+    expect(other.getAttribute("aria-disabled")).toBe("true");
+    expect(other.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent))
+      .toContain(`${SUBJECT} · kart paneldən yenidən götürülür…`);
+    await act(async () => { fireEvent.click(other); });
+    expect(api.confirmDischarge).toHaveBeenCalledTimes(3);                 // two confirmations, one retry
+    await act(async () => { answer({ id: "a-3", state: "DISCHARGED", board: "ok", alerts: "ok" }); });
+    await settle();
+    expect(screen.getAllByRole("button", { name: RETRY })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: RETRY }).getAttribute("aria-disabled")).toBeNull();
+  });
+});
+
+// A-30: the default discharge time is never before the admission. A datetime-local holds minutes;
+// read back, its value is the minute's start — before an admission made within that minute, which
+// the server refused (`field_invalid:discharge_at`). The default keeps its seconds, and is the
+// admission's time when this browser's clock is behind it.
+describe("the discharge time's default (A-30)", () => {
+  const at = (h, m, s = 0) => new Date(2026, 9, 25, h, m, s).getTime();
+  /** Open the dialog for an admission made at `admittedMs`, the clock at `nowMs`. */
+  async function dialogAt(nowMs, admittedMs) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(nowMs);
+    const mounted = await open(DOCTOR, (a) => {
+      a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: new Date(admittedMs).toISOString() }, ROWS[1], ROWS[2]]);
+      a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: START }));
+    return { ...mounted, dialog: within(screen.getByRole("dialog")) };
+  }
+  const send = async (dialog) => {
+    await act(async () => { fireEvent.click(dialog.getByRole("button", { name: START })); });
+    await settle();
+  };
+  const sentAt = (api) => Date.parse(api.startDischarge.mock.calls[0][1].discharge_at);
+
+  it("is now, its seconds kept, for a discharge within the admission's own minute", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 0, 45), at(10, 0, 30));
+      expect(dialog.getByLabelText(/^Çıxış vaxtı/).value).toBe("2026-10-25T10:00");
+      await send(dialog);
+      expect(sentAt(api)).toBe(at(10, 0, 45));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is the admission's time when this browser's clock is behind it — shown, sent, and not called the future", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 0, 10), at(10, 0, 40));
+      await send(dialog);
+      expect(api.startDischarge).toHaveBeenCalledTimes(1);
+      expect(sentAt(api)).toBe(at(10, 0, 40));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends the admission's time for a minute chosen within the admission's own, and refuses one before it", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 30), at(10, 0, 30));
+      const field = dialog.getByLabelText(/^Çıxış vaxtı/);
+      expect(field.getAttribute("min")).toBe("2026-10-25T10:00");
+      fireEvent.change(field, { target: { value: "2026-10-25T09:59" } });
+      await send(dialog);
+      expect(api.startDischarge).not.toHaveBeenCalled();
+      expect(dialog.getByText("Çıxış vaxtı düzgün deyil (gələcəkdə və ya qəbuldan əvvəl ola bilməz).")).toBeTruthy();
+      fireEvent.change(field, { target: { value: "2026-10-25T10:00" } });
+      await send(dialog);
+      expect(sentAt(api)).toBe(at(10, 0, 30));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is still now when the admission was long before", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 30, 20), at(8, 0));
+      await send(dialog);
+      expect(sentAt(api)).toBe(at(10, 30, 20));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("DischargeDialog's local time", () => {
   it("reads a datetime-local value from its parts, in this browser's time, and nothing that is not one", () => {
     const ms = new Date(2026, 9, 25, 13, 30).getTime();

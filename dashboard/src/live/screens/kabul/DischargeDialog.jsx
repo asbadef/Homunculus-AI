@@ -4,6 +4,13 @@
 // never in the future) and a note. The server decides and checks again (admission/form.py); a
 // critical alarm nobody acknowledged refuses it there, said on the toast — and a refusal is news
 // about the list (someone else may have started it), so the tab reads it again (`onRefused`).
+//
+// THE DEFAULT TIME IS NEVER BEFORE THE ADMISSION (A-30). A datetime-local holds minutes, and read
+// back its value is the minute's start: a discharge within the admission's own minute went out
+// before the admission and was refused (`field_invalid:discharge_at`). So the default is the
+// moment the dialog opened or the admission's, whichever is later — kept to the millisecond and
+// sent as it is while the field shows its minute; a minute chosen within the admission's own sends
+// the admission's time; and a minute before it is refused here, with the server's own sentence.
 import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -56,14 +63,23 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
   const [disposition, setDisposition] = useState("HOME");
   const [institution, setInstitution] = useState("");
   const [reportedBy, setReportedBy] = useState("");
-  const [at, setAt] = useState(() => localInput(Date.now()));
+  const admittedMs = Date.parse(row.admission_datetime ?? "");
+  // When the dialog opened, or the admission when that is later (this browser's clock behind it).
+  const [opened] = useState(() => Math.max(Date.now(), Number.isFinite(admittedMs) ? admittedMs : -Infinity));
+  const [at, setAt] = useState(() => localInput(opened));
   const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
-  const atMs = fromLocalInput(at);
+  const asOpened = at === localInput(opened);
+  const chosen = asOpened ? opened : fromLocalInput(at);
+  // A minute chosen within the admission's own is the admission's time, not the minute's start.
+  const sameMinute = Number.isFinite(admittedMs) && chosen < admittedMs && chosen + 60_000 > admittedMs;
+  const atMs = sameMinute ? admittedMs : chosen;
   const errors = {
     institution: disposition === "OTHER_INSTITUTION" && !institution.trim() ? t("kabul.invalid.institution") : null,
-    at: !Number.isFinite(atMs) || atMs > Date.now() + 60_000 ? t("kabul.invalid.dischargeAt") : null,
+    // The default is no future, whatever this browser's clock says: it is now or the admission's.
+    at: !Number.isFinite(atMs) || (!asOpened && atMs > Date.now() + 60_000)
+      || (Number.isFinite(admittedMs) && atMs < admittedMs) ? t("kabul.invalid.dischargeAt") : null,
   };
   const wrong = Object.values(errors).some(Boolean);
 
@@ -122,7 +138,8 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
           </Field>
         ) : null}
         <Field label={t("kabul.f.dischargeAt")} required error={tried ? errors.at ?? undefined : undefined}>
-          <Input type="datetime-local" value={at} max={localInput(Date.now())} readOnly={busy}
+          <Input type="datetime-local" value={at} max={localInput(Math.max(Date.now(), opened))} readOnly={busy}
+            min={Number.isFinite(admittedMs) ? localInput(admittedMs) : undefined}
             onChange={(e) => setAt(e.target.value)} />
         </Field>
         <Field label={t("kabul.f.note")}>
