@@ -43,8 +43,7 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
-import { useStructure } from "../../data/StructureProvider.jsx";   // G2-B1a
-import { unitLabel } from "../../data/structure.js";
+import { useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { linkSentenceKey, maxAgeOf, reasonKey } from "../common/monitor.js";
@@ -213,9 +212,10 @@ export function BedsScreen() {
   // screen's clinical path (the waiting line, the feed chip and the cards' order are the board's).
   const shadow = useShadow();
   const { unit, setUnit, units, stale: unitsStale } = useShell();
-  // G2-B1a: a unit by its name, never its UUID (data/structure.js).
-  const { index } = useStructure();
-  const unitName = (id) => unitLabel(t, index, id);
+  // G2-B1a: a unit by its name, never its UUID (data/structure.js), the names in order; a numbered
+  // placeholder while the structure is not known — never «unknown».
+  const names = useUnitNames(units);
+  const unitName = names.nameOf;
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
   const [order, setOrder] = useState(() => readPref("bedOrder", ORDERS, "yatak"));
@@ -323,10 +323,10 @@ export function BedsScreen() {
               <select
                 value={unit ?? ""}
                 onChange={(e) => setUnit(e.target.value || null)}
-                className={`rounded-ctl border border-line2 bg-card2 px-2 py-1.5 font-data text-12.5 text-ink ${FOCUS_RING}`}
+                className={`rounded-ctl border border-line2 bg-card2 px-2 py-1.5 text-12.5 text-ink ${FOCUS_RING}`}
               >
                 <option value="">{t("beds.unitAll")}</option>
-                {units.map((u) => <option key={u} value={u}>{unitName(u)}</option>)}
+                {names.sorted.map((u) => <option key={u} value={u}>{unitName(u)}</option>)}
               </select>
             </label>
           ) : null}

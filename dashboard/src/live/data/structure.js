@@ -61,6 +61,69 @@ export function bedLabel(index, id) {
   return bed ? `${bed.label} · ${bed.unitName}` : null;
 }
 
+/** Names for a LIST of ids, as one screen shows them. Three rules the lone `unitLabel` and
+ *  `bedLabel` cannot keep, because they see one id at a time:
+ *
+ *   1. Not known is not unknown. `view` is `{ index, known }` (StructureProvider's own words):
+ *      until the structure has been read — still out, or unreadable — no id can be called absent
+ *      from it, so a UUID is a numbered placeholder ("Şöbə 1", in the list's order), never
+ *      «unknown». «Unknown» is said only of a known structure that lacks the id.
+ *   2. Names that collide are numbered, in the list's order: "Reanimasiya (1)", "Reanimasiya (2)".
+ *   3. `sorted` is the ids in the order of the names a reader sees — numbers by value, case
+ *      ignored — never in the order of their UUIDs.
+ *
+ *  A key someone typed by hand (an old free-text grant) is no UUID and is shown as typed, with no
+ *  placeholder number. `labelFor(id, next)` names one id; `next()` takes the next placeholder
+ *  number. `nameOf` is for an id of the list; any other gets a fresh number and is not remembered. */
+function namer(ids, locale, labelFor) {
+  const distinct = [];
+  const seen = new Set();
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const key = normId(id);
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      distinct.push(id);
+    }
+  }
+  let placeholders = 0;
+  const base = distinct.map((id) => labelFor(id, () => { placeholders += 1; return placeholders; }));
+  const total = new Map();
+  for (const label of base) total.set(label, (total.get(label) ?? 0) + 1);
+  const run = new Map();
+  const labels = new Map();
+  distinct.forEach((id, at) => {
+    let label = base[at];
+    if (total.get(label) > 1) {
+      const n = (run.get(label) ?? 0) + 1;
+      run.set(label, n);
+      label = `${label} (${n})`;
+    }
+    labels.set(normId(id), label);
+  });
+  const order = (a, b) => labels.get(normId(a)).localeCompare(labels.get(normId(b)), locale, { numeric: true, sensitivity: "base" })
+    || normId(a).localeCompare(normId(b));
+  return {
+    nameOf: (id) => labels.get(normId(id)) ?? labelFor(id, () => placeholders + 1),
+    sorted: [...distinct].sort(order),
+  };
+}
+
+/** The units of `ids` named — see `namer`. `t` is the translator, `locale` the language's code. */
+export function unitNamer(t, view, ids, locale) {
+  return namer(ids, locale, (id, next) => {
+    if (view.known) return unitLabel(t, view.index, id);
+    return isUuid(id) ? t("kabul.unitOrdinal", { n: next() }) : String(id ?? "");
+  });
+}
+
+/** The beds of `ids` named — see `namer`. A bed reads "label · unit" once the structure is known. */
+export function bedNamer(t, view, ids, locale) {
+  return namer(ids, locale, (id, next) => {
+    if (view.known) return bedLabel(view.index, id) ?? (isUuid(id) ? t("kabul.bedUnknown") : String(id ?? ""));
+    return isUuid(id) ? t("kabul.bedOrdinal", { n: next() }) : String(id ?? "");
+  });
+}
+
 /** Can an admission take this bed? Open, and AVAILABLE. */
 export const admissible = (bed) => Boolean(bed?.open) && bed.state === "AVAILABLE";
 
