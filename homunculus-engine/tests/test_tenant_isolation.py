@@ -275,6 +275,12 @@ BY_ID: dict[str, ById] = {
     "bed transition": ById(
         "POST", lambda s: f"/tenant/beds/{s.free_bed}/transition",
         lambda a: {"new_state": "OCCUPIED"}),
+    # G2-B1a (Hasta Kabul): rename / close / reopen, and the release of a cleaned bed (the free
+    # bed is AVAILABLE, so the caller's own is refused by the domain: 409 invalid_transition).
+    "unit patch": ById("PATCH", lambda s: f"/tenant/units/{s.unit}", lambda a: {"name": "Yeni"}),
+    "room patch": ById("PATCH", lambda s: f"/tenant/rooms/{s.room}", lambda a: {"name": "Oda 9"}),
+    "bed patch": ById("PATCH", lambda s: f"/tenant/beds/{s.free_bed}", lambda a: {"label": "9Z"}),
+    "bed release": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/release", control=409),
 }
 
 
@@ -490,6 +496,19 @@ async def test_the_admission_list_holds_only_the_callers_tenant(world):
     r = await world.client.get("/admissions", params={"unit_id": str(world.b.unit)},
                                headers=world.auth)
     assert r.status_code == 200 and r.json() == []
+
+
+@requires_db
+async def test_the_structure_holds_only_the_callers_tenant(world):
+    """G2-B1a: GET /tenant/structure, which every screen reads its unit and bed names from."""
+    r = await _call(world, "GET", "/tenant/structure")
+    assert r.status_code == 200, r.text
+    units = {u["id"] for s in r.json()["sites"] for u in s["units"]}
+    beds = {b["id"] for s in r.json()["sites"] for u in s["units"] for room in u["rooms"]
+            for b in room["beds"]}
+    assert r.json()["tenant_id"] == str(world.a.tenant)
+    assert units == {str(world.a.unit)}
+    assert beds == {str(world.a.bed), str(world.a.free_bed)}
 
 
 @requires_db

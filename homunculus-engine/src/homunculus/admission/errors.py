@@ -23,13 +23,15 @@ MISSING_ATTENDING = "missing_attending"          # a DRAFT cannot become ACTIVE 
 OPEN_ADMISSION = "open_admission"                # the patient already has an open admission
 BED_IN_USE = "bed_in_use"                        # a bed holding a patient cannot be closed
 HAS_OPEN_BEDS = "has_open_beds"                  # a unit or room with an open bed cannot be closed
-NAME_TAKEN = "name_taken"                        # another room / bed of the parent has that name
+NAME_TAKEN = "name_taken"                        # another room of the unit has that name
+BED_LABEL_TAKEN = "bed_label_taken"              # another bed of the UNIT (any room) has that label
 FIELD_INVALID = "field_invalid"                  # + ":<field>"
 
 #: Every code but FIELD_INVALID, which travels with its field.
 CODES = frozenset({
     BED_NOT_AVAILABLE, BED_CLOSED, OUT_OF_SCOPE, CRITICAL_ALARM_OPEN, PATIENT_NUMBER_EXHAUSTED,
     INVALID_TRANSITION, MISSING_ATTENDING, OPEN_ADMISSION, BED_IN_USE, HAS_OPEN_BEDS, NAME_TAKEN,
+    BED_LABEL_TAKEN,
 })
 
 

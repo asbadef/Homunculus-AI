@@ -419,7 +419,8 @@ def test_every_other_refusal_has_a_stable_code():
     """Exactly these: a code added to errors.py is added here, and to the dashboard's map."""
     assert CODES == {"bed_not_available", "bed_closed", "out_of_scope", "critical_alarm_open",
                      "patient_number_exhausted", "invalid_transition", "missing_attending",
-                     "open_admission", "bed_in_use", "has_open_beds", "name_taken"}
+                     "open_admission", "bed_in_use", "has_open_beds", "name_taken",
+                     "bed_label_taken"}
 
 
 def test_a_workflow_refusal_answers_its_code_beside_its_words():
