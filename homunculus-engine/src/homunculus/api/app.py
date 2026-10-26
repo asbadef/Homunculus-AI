@@ -38,7 +38,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    ClinicalEntryError, build_entries, profile_from_payload, profile_to_payload,
+    ClinicalEntryError, build_entries, chart_observations, profile_from_payload, profile_to_payload,
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -662,47 +662,11 @@ def create_app(
 
         engine = _engine(hospital)
         store = _store(hospital)
-        # One wall-clock instant per request, as in /ingest: each entry is judged at its charted
-        # time but never past the wall clock (G2-A2, X10) — a `recorded_at` in the future would
-        # age every other input to it. The audit row keeps the stamp; the replay judges at
-        # min(the stamp, the row's write time) (rehydrate, X10b).
+        # One wall-clock instant per request, as in /ingest (G2-A2, X10); the loop itself is
+        # `chart_observations` (G2-A11, D8 — X62), shared with the admission form.
         now = datetime.now(timezone.utc)
-        alerts: list = []
-        for item in charted:
-            obs = item.observation
-            alerts = engine.ingest(obs, now=min(obs.timestamp, now))
-            # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
-            # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
-            # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
-            # Right after the evaluation and before any audit write, as in /ingest: if the audit
-            # fails from here on, an unacknowledged critical is still on the board.
-            cleared = sync_alerts(engine, store, obs.patient_id, now)
-            # Re-arm the nurse's dedup after EACH entry, not only after the last: `[norepinephrine 0,
-            # dopamine 5]` ends an acknowledged shock and starts a new one inside this loop, and the
-            # end-of-request prune would find it live again and keep the old episode's dedup (D5).
-            notifier.prune(hospital, live_keys(engine, store))
-            audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
-                                    {"value": obs.value, "unit": obs.unit,
-                                     "obs_ts": obs.timestamp.isoformat(),
-                                     "charted_by": item.charted_by}))
-            _audit_cleared(hospital, cleared, now)
-        for a in alerts:
-            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
-                                    {"severity": a.severity, "urgency": a.urgency,
-                                     "summary": a.summary, "source": a.source,
-                                     "evidence": a.supporting_evidence}))
-        # First-seen uses WALL-CLOCK time, and is AUDITED — the /ingest path already does both and
-        # this one only did the first half. Two things were quietly lost by that: an alert raised
-        # from a clinician's charting was invisible to the alarm-quality report (no episode to
-        # count), and, worse, `rehydrate` had no row to replay, so a restart handed such an alert a
-        # fresh escalation clock. An alarm that had gone unanswered for four minutes started its
-        # five-minute grace over again after a deploy, and nothing looked broken.
-        # This patient's FIRING alerts only (G2-A1): a latched one keeps its episode's stamp, and
-        # stamping it now would open an episode after its end.
-        for a in engine.active_alerts(patient_id):
-            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
-                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind,
-                                        {"at": now.isoformat()}))
+        alerts = chart_observations(engine, store, audit, notifier, hospital, patient_id, charted,
+                                    now, escalate_after)
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
         notifier.prune(hospital, live_keys(engine, store))
 
