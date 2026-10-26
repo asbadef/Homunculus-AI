@@ -283,9 +283,19 @@ class AdmissionRow(AdmissionResponse):
     unit_name: str
 
 
+#: The patient's retirement from the alert world at a discharge (A-11d, A-25): `ok`; `incomplete`
+#: when the app's door was entered and raised — its alerts ended in memory and its removal sent,
+#: but something after (an `alert_cleared` row) not done; `failed` when it was never reached.
+AlertRetire = Literal["ok", "incomplete", "failed"]
+
+
 class DischargeConfirmResponse(AdmissionResponse):
-    """POST …/discharge/confirm: the admission, and whether its card left the board."""
+    """POST …/discharge/confirm: the admission; whether its card left the board — `ok`, or
+    `failed` when the tombstone was refused, the retirement refused before its door, or the app
+    has no BoardLink (the card then stays on screens until they read the board again); and how
+    the patient's retirement from the alert world went (`alerts`)."""
     board: EngineWrite
+    alerts: AlertRetire
 
 
 # ---------------------------------------------------------------------------
@@ -353,13 +363,6 @@ class TransferInitiate(BaseModel):
     target_unit_id: uuid.UUID
 
 
-class DischargeInitiate(BaseModel):
-    discharge_summary: str = Field(..., max_length=2000)
-    # Signals the caller acknowledges the confirmation dialog (S-28) — required
-    # when a UNIT_PHYSICIAN (not the attending) performs the discharge.
-    confirmed: bool = False
-
-
 class DischargeStart(BaseModel):
     """The physician's decision (Group 2 · B1a, spec D7 and §3.3): where the patient goes, when,
     and a note. `institution` is required for OTHER_INSTITUTION and refused for any other;
@@ -374,6 +377,8 @@ class DischargeStart(BaseModel):
     reported_by: OptionalFormText = Field(default=None, max_length=200)
     discharge_at: datetime | None = None
     note: OptionalFormText = Field(default=None, max_length=2000)
+    # The old body (`discharge_summary`, `confirmed`) is gone (X58): no client ever sent it (G1 had
+    # no admission screen), and a summary once pasted into the admission narrative is now `note`.
 
     @field_validator("institution", "reported_by")
     @classmethod

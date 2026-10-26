@@ -13,7 +13,7 @@ import pytest_asyncio
 
 from homunculus.admission import service
 from homunculus.admission.models import (
-    Admission, AdmissionState, CareTeamRole, HandoverStatus, Patient,
+    Admission, AdmissionState, CareTeamRole, DischargeDisposition, HandoverStatus, Patient,
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.auth.models import User
@@ -293,7 +293,8 @@ async def test_discharge_blocked_by_unacked_critical(db_session):
     await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
     with pytest.raises(WorkflowError, match="CRITICAL") as refused:
         await service.initiate_discharge(
-            db_session, adm, discharge_summary="Taburcu özeti", unacknowledged_critical_count=1)
+            db_session, adm, disposition=DischargeDisposition.HOME, note="Taburcu özeti",
+            unacknowledged_critical_count=1)
     assert refused.value.code == "critical_alarm_open"
 
 
@@ -303,9 +304,14 @@ async def test_discharge_happy_path(db_session):
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
     await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    await service.initiate_discharge(db_session, adm, discharge_summary="Taburcu özeti")
+    await service.initiate_discharge(
+        db_session, adm, disposition=DischargeDisposition.OTHER_INSTITUTION,
+        institution="Sentetik Klinika", note="Taburcu özeti")
     assert adm.state == AdmissionState.PENDING_DISCHARGE
     assert beds[0].state == BedState.PENDING_DISCHARGE
+    assert (adm.discharge_disposition, adm.discharge_institution, adm.discharge_note) == \
+        (DischargeDisposition.OTHER_INSTITUTION, "Sentetik Klinika", "Taburcu özeti")
+    assert adm.discharge_at is not None
     await service.confirm_discharge(db_session, adm)
     assert adm.state == AdmissionState.DISCHARGED
     assert beds[0].state == BedState.HOUSEKEEPING

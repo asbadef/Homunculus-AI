@@ -44,17 +44,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus import crypto
 from homunculus.admission import form, service, trail, unitscope
-from homunculus.admission.boardlink import board_link_of, kabul_record
+from homunculus.admission.boardlink import RetireIncomplete, board_link_of, kabul_record
 from homunculus.admission.models import (
-    OPEN_ADMISSION_STATES, Admission, AdmissionState, CareTeamMember, Handover, Patient,
+    OPEN_ADMISSION_STATES, Admission, AdmissionState, CareTeamMember, DischargeDisposition,
+    Handover, Patient,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionNoteFields, AdmissionResponse, AdmissionRow, AdmitResponse,
-    CareTeamAdd, CareTeamMemberResponse, DischargeInitiate, EngineWrite, EngineWrites,
-    HandoverOpen, HandoverResponse, HandoverSign, NurseBedAssignmentResponse, PatientResponse,
-    ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
+    AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
+    EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign,
+    NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
+    TransferInitiate,
 )
-from homunculus.admission.errors import BED_CLOSED, REQUEST_CONFLICT, Refusal, field_invalid
+from homunculus.admission.errors import (
+    BED_CLOSED, INVALID_TRANSITION, REQUEST_CONFLICT, Refusal, field_invalid,
+)
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
@@ -573,23 +577,90 @@ async def get_admission_patient(
 
 
 # ---------------------------------------------------------------------------
+# Sign-off and discharge: what the three routes share (Group 2 · B1a, spec §3.2, §3.3)
+# ---------------------------------------------------------------------------
+async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: uuid.UUID,
+                           admission: Admission) -> None:
+    """403 `out_of_scope` unless the admission's bed is in the caller's units (spec §4.5). The
+    unit is the bed's room's, read here — never the row's `admitting_unit_id`, which a transfer
+    sets from its request body (A-12). The admission is the caller's tenant's already
+    (`_get_admission_or_404`), and so is its bed."""
+    unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
+                                .where(Bed.id == admission.bed_id))).scalar_one()
+    try:
+        unitscope.require_reach(await unitscope.caller_scope(db, user_id, caller_tenant),
+                                unit_id=unit_id, bed_id=admission.bed_id)
+    except Refusal as exc:
+        raise exc.http() from None
+
+
+async def _locked(db: AsyncSession, admission: Admission) -> Admission:
+    """The admission's bed row and then its own, locked for the rest of the transaction and read
+    afresh (A-10, A-26): two sign-offs, starts or confirmations of one admission at once run one
+    after the other, and the second reads what the first committed — refused by the state machine
+    as `invalid_transition` — instead of both passing a check made on a stale read.
+
+    Both locks are FOR NO KEY UPDATE, the strength of every unit and bed lock (tenant/router.py
+    `_lock_bed`): an insert of a row pointing at the bed, or at the admission (a care-team
+    member), still goes through. The bed first, then the admission row that points at it: a row
+    pointing at a bed is written only under that bed's lock, as the admission route writes its
+    own (A-26), so a relabel holding the bed is waited for here, holding nothing.
+    `populate_existing`: the rows this session read before the locks would otherwise come back as
+    they were then. An admission's bed never changes (a transfer makes a new admission), so the
+    bed read before the lock is the bed."""
+    await db.execute(select(Bed).where(Bed.id == admission.bed_id)
+                     .with_for_update(key_share=True)
+                     .execution_options(populate_existing=True))
+    return (await db.execute(select(Admission).where(Admission.id == admission.id)
+                             .with_for_update(key_share=True)
+                             .execution_options(populate_existing=True))).scalar_one()
+
+
+def _not_now(exc: ValueError) -> HTTPException:
+    """A state machine's own refusal (`Admission`/`Bed.transition_to`) — a bed moved by hand
+    under a discharge — as the 409 `invalid_transition` it is, never a 500 (A-10)."""
+    return Refusal(409, INVALID_TRANSITION, str(exc)).http()
+
+
+async def _number_of(db: AsyncSession, admission: Admission) -> str:
+    """The admission's patient number: its board key, and the audit row's patient."""
+    return (await db.execute(select(Patient.patient_number)
+                             .where(Patient.id == admission.patient_id))).scalar_one()
+
+
+# ---------------------------------------------------------------------------
 # Sign-off DRAFT → ACTIVE (§4.1 steps 4–5)
 # ---------------------------------------------------------------------------
 @router.post("/{admission_id}/sign-off", response_model=AdmissionResponse)
 async def sign_off(
     admission_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.sign_off")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """G2-B1a (spec §3.2): the physician who signs a DRAFT with no attending becomes its
+    attending — no physician picker in this slice (and no care-team row: O45). The bed must be in
+    her units. The answer is made before the commit from what was written; after it, only the
+    audit row `admission.sign_off`, which never raises (A-26)."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    admission = await _locked(db, admission)
+    if admission.state == AdmissionState.DRAFT and admission.attending_physician_id is None:
+        admission.attending_physician_id = user.id
     try:
         await service.sign_off_admission(db, admission, signing_user_id=user.id)
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
+    number = await _number_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    await db.refresh(admission)
-    return admission
+    trail.record(request, hospital, "admission.sign_off", patient_id=number,
+                 payload={"admission_id": str(written.id), "actor": actor})
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -702,42 +773,122 @@ async def transfer_confirm(
 @router.post("/{admission_id}/discharge/initiate", response_model=AdmissionResponse)
 async def discharge_initiate(
     admission_id: uuid.UUID,
-    payload: DischargeInitiate,
+    payload: DischargeStart,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.move.initiate")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """G2-B1a (spec D7, §3.3 step 1): the physician's decision, checked (admission/form.py) for a
+    bed in her units. Refused `critical_alarm_open` while the board shows this patient a critical
+    alert nobody acknowledged — firing or latched, the alerts the clinician sees
+    (`BoardLink.open_critical`), not the escalation tables, which nothing on the ward writes. An
+    exitus is reported by the caller (her full name, else her user name) unless another name is
+    written. Audited `admission.discharge_start` (the disposition; never the note)."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
-    unacked = await escalation_service.count_unacknowledged_critical(
-        db, admission_id=admission.id
-    )
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    try:
+        form.check_discharge(payload, now=datetime.now(timezone.utc),
+                             admitted_at=admission.admission_datetime)
+    except Refusal as exc:
+        raise exc.http() from None
+    admission = await _locked(db, admission)
+    number = await _number_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    link = board_link_of(request)
+    if link is None:
+        # Only an app assembled without its board (a test mounting the routers alone) has none;
+        # it has no engine either, so no alert to hold the discharge with.
+        log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
+                  number)
+    reported_by = _strip(payload.reported_by)
+    if payload.disposition == DischargeDisposition.EXITUS and reported_by is None:
+        reported_by = user.full_name or user.username
     try:
         await service.initiate_discharge(
-            db, admission, discharge_summary=payload.discharge_summary,
-            unacknowledged_critical_count=unacked,  # wired to alert engine (PR #3)
+            db, admission, disposition=payload.disposition,
+            institution=_strip(payload.institution), reported_by=reported_by,
+            discharge_at=payload.discharge_at, note=_strip(payload.note),
+            unacknowledged_critical_count=(link.open_critical(hospital, number)
+                                           if link is not None else 0),
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
+    written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    await db.refresh(admission)
-    return admission
+    trail.record(request, hospital, "admission.discharge_start", patient_id=number,
+                 payload={"admission_id": str(written.id),
+                          "disposition": payload.disposition.value, "actor": actor})
+    return written
 
 
-@router.post("/{admission_id}/discharge/confirm", response_model=AdmissionResponse)
+async def _off_the_board(request: Request, hospital: str, number: str) -> tuple[EngineWrite,
+                                                                                 AlertRetire]:
+    """After the discharge has committed (A-11d, A-23, A-25): the tombstone written
+    (`discharge_identity`), then the patient retired from the alert world through the app's door
+    (`retire`), which sends the one removal frame. What it answers:
+
+    * both done: the card left every screen, the alerts ended — `ok`, `ok`;
+    * the tombstone refused, or the retirement refused before its door (a `ValueError`, a door
+      not wired), or no BoardLink at all: no removal was sent and no alert ended — `failed`,
+      `failed`, logged at ERROR with the number;
+    * the door entered and raised (`RetireIncomplete`): its alerts were ended in memory and its
+      removal sent in its `finally`, so this is no failed discharge — `ok`, `incomplete`, logged.
+
+    Never raises: the discharge stands either way. Logged with the patient number, never a name."""
+    link = board_link_of(request)
+    if link is None:
+        log.error("discharge %s: this app has no BoardLink; the card did not leave the board and "
+                  "the patient's alerts were not ended", number)
+        return "failed", "failed"
+    try:
+        record = await link.discharge_identity(hospital, number)
+        await link.retire(hospital, number, record)
+    except RetireIncomplete:
+        log.exception("discharge %s: the card left the board, but the patient's retirement from "
+                      "the alert world did not finish", number)
+        return "ok", "incomplete"
+    except Exception:
+        log.exception("discharge %s: the card did not leave the board and the patient's alerts "
+                      "were not ended", number)
+        return "failed", "failed"
+    return "ok", "ok"
+
+
+@router.post("/{admission_id}/discharge/confirm", response_model=DischargeConfirmResponse)
 async def discharge_confirm(
     admission_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.discharge.confirm")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """G2-B1a (§3.3 step 2): the charge nurse confirms the patient has left, for a bed in her
+    units. The admission is DISCHARGED, the bed goes to cleaning and the care team is closed, in
+    one transaction. After the commit, the audit row `admission.discharge_confirm` (it never
+    raises), then the card leaves every screen and the patient the alert world
+    (`_off_the_board`); `board` and `alerts` say how that went. The answer is made before the
+    commit from what was written."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    admission = await _locked(db, admission)
     try:
         await service.confirm_discharge(db, admission)
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
+    number = await _number_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    await db.refresh(admission)
-    return admission
+    trail.record(request, hospital, "admission.discharge_confirm", patient_id=number,
+                 payload={"admission_id": str(written.id), "bed_id": str(written.bed_id),
+                          "actor": actor})
+    board, alerts = await _off_the_board(request, hospital, number)
+    return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
 
 
 # ---------------------------------------------------------------------------

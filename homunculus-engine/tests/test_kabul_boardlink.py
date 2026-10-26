@@ -6,8 +6,9 @@ only when that door, the notifier and the escalation delay are all wired; the co
 the engine through the audit a restart replays; the open-critical count is the board's own, firing
 or latched; a discharge writes the tombstone (a second one returns it, a refused one raises) and
 publishes nothing; the retirement is the door the app injects, handed the tombstone's removal frame
-and refusing any other record. A card written after the discharge is refused, whatever its stamp
-(Task 8 re-review, A-29); a number with neither an identity nor a reading sends nothing. The link is built here from real stores, as
+and refusing any other record, and what its door raises is a retirement left incomplete (A-25). A
+card written after the discharge is refused, whatever its stamp (Task 8 re-review, A-29); a number
+with neither an identity nor a reading sends nothing. The link is built here from real stores, as
 `api/app.py` builds it; the last section takes the one the app itself builds (Task 6b, A-23,
 A-25): wired with the app's own doors, its weight replayed after a restart, the retention sweep's
 removal and the monitor strip's link. No database. Synthetic patients only."""
@@ -23,7 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import homunculus.scenarios
-from homunculus.admission.boardlink import BoardLink, board_link_of, kabul_record
+from homunculus.admission.boardlink import BoardLink, RetireIncomplete, board_link_of, kabul_record
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
 from homunculus.api.app import create_app
@@ -454,6 +455,28 @@ def test_a_retirement_with_no_door_wired_raises():
     with pytest.raises(RuntimeError, match="retire_patient not wired"):
         asyncio.run(world.link.retire(HOSPITAL, "H2600001", tomb))
     assert world.published == []
+
+
+def test_a_door_that_raises_is_a_retirement_left_incomplete_not_a_refusal():
+    """A-25: what the door raises — its alerts already ended in memory, its removal sent in its
+    `finally`, an `alert_cleared` row not written — comes out as `RetireIncomplete`, the door's
+    error as its cause, so the discharge route can tell it from a refusal before the door (a
+    `ValueError`, or a `RuntimeError` for a door not wired), which is a failed discharge."""
+    audit_down = RuntimeError("audit store down")
+    calls: list = []
+
+    async def retire(*args, **kwargs):
+        calls.append(kwargs["frame"])
+        raise audit_down
+
+    world = World(retire=retire)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    tomb = asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    with pytest.raises(RetireIncomplete, match="H2600001") as caught:
+        asyncio.run(world.link.retire(HOSPITAL, "H2600001", tomb))
+    assert caught.value.__cause__ is audit_down
+    assert not isinstance(caught.value, (ValueError, RuntimeError))
+    assert [frame["removed"] for frame in calls] == [True]           # the door was entered, once
 
 
 # ---------------------------------------------------------------- the link as the app wires it

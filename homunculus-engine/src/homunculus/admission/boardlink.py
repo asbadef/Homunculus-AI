@@ -24,7 +24,8 @@ writes from the first into the second, and nothing else in `admission/` does:
 * `retire`             the patient retired from the alert world through the app's own door
                        (`retire_patient`, injected: Lane A's `retire_and_publish`), handed this
                        number's tombstone's removal frame — the last bed and unit, no name — which
-                       that door publishes once, after the alerts are ended (A-11d, A-20).
+                       that door publishes once, after the alerts are ended (A-11d, A-20). What
+                       the door itself raises comes out as `RetireIncomplete` (A-25).
 
 The discharge's removal is never BoardLink's to send. `put_identity`, `chart_weight` and
 `apply_profile` refuse a discharged number before they build, chart or write anything (A-11; for
@@ -77,6 +78,15 @@ def count_open_critical(alerts: list[dict]) -> int:
     return sum(1 for alert in alerts
                if isinstance(alert, dict) and alert.get("severity") == CRITICAL
                and not alert.get("acknowledged"))
+
+
+class RetireIncomplete(Exception):
+    """The app's retirement door was entered and raised (A-25): the door ends the patient's
+    alerts in memory and sends the removal frame in its own `finally`, so what failed came after —
+    an `alert_cleared` row not written, typically. The discharge is not failed by it; the route
+    reports the retirement `incomplete`. The door's own error is `__cause__`. Deliberately neither
+    a `ValueError` nor a `RuntimeError`: those are `retire`'s refusals BEFORE the door, a
+    discharge whose card has not left the screens."""
 
 
 def kabul_record(*, patient_number: str, display_name: str, birth_date: date, sex: str,
@@ -240,12 +250,16 @@ class BoardLink:
 
         `record` must be this number's `kabul` tombstone (`discharge_identity`'s answer): a frame
         built from another record would take another patient's card, or an admitted one, off the
-        screens. Anything else is a `ValueError`, before the door is called."""
+        screens. Anything else is a `ValueError`, and a door not wired a `RuntimeError`, both
+        before the door is called. Whatever the door raises is `RetireIncomplete`, from it."""
         if record is None or record.patient_id != patient_number or not is_tombstone(record):
             raise ValueError(f"retire takes the kabul tombstone of {patient_number}")
         if self._retire is None:
             raise RuntimeError("retire_patient not wired")
-        return await self._retire(tenant, patient_number, frame=tombstone_board(record))
+        try:
+            return await self._retire(tenant, patient_number, frame=tombstone_board(record))
+        except Exception as exc:
+            raise RetireIncomplete(f"the retirement of {patient_number} did not finish") from exc
 
 
 def board_link_of(request: Request) -> BoardLink | None:

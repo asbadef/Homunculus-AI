@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import errors
 from homunculus.admission.models import (
-    Admission, AdmissionState, CareTeamMember, CareTeamRole, Handover,
+    Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
     HandoverStatus, NurseBedAssignment, OPEN_ADMISSION_STATES, Patient,
 )
 from homunculus.tenant.models import Bed, BedState, Unit
@@ -388,8 +388,15 @@ async def confirm_transfer_arrival(
 # ---------------------------------------------------------------------------
 async def initiate_discharge(
     db: AsyncSession, admission: Admission, *,
-    discharge_summary: str, unacknowledged_critical_count: int = 0,
+    disposition: DischargeDisposition, institution: str | None = None,
+    reported_by: str | None = None, discharge_at: datetime | None = None,
+    note: str | None = None, unacknowledged_critical_count: int = 0,
 ) -> Admission:
+    """§4.7 steps 1–2 as Group 2 · B1a decides them (spec D7): the physician's disposition — home,
+    another institution (named), or exitus (reported by) — its time (now unless given) and a note,
+    recorded on the admission; the narrative is no longer appended to (X58).
+    `unacknowledged_critical_count` is the board's own (admission/boardlink.py `open_critical`);
+    any one blocks the start."""
     if admission.state != AdmissionState.ACTIVE:
         raise WorkflowError("Only an ACTIVE admission can be discharged.")
     # §4.7 step 2 — block on unacknowledged CRITICAL alerts.
@@ -400,9 +407,11 @@ async def initiate_discharge(
             errors.CRITICAL_ALARM_OPEN,
         )
     admission.transition_to(AdmissionState.PENDING_DISCHARGE)
-    admission.admission_note_narrative = (
-        (admission.admission_note_narrative or "") + f"\n[DISCHARGE] {discharge_summary}"
-    )
+    admission.discharge_disposition = disposition
+    admission.discharge_institution = institution
+    admission.discharge_reported_by = reported_by
+    admission.discharge_at = discharge_at or _now()
+    admission.discharge_note = note
     bed = await db.get(Bed, admission.bed_id)
     if bed is not None:
         bed.transition_to(BedState.PENDING_DISCHARGE)

@@ -244,7 +244,7 @@ BY_ID: dict[str, ById] = {
         lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
     "discharge initiate": ById(
         "POST", lambda s: f"/admissions/{s.admission}/discharge/initiate",
-        lambda a: {"discharge_summary": "Sentetik taburcu özeti"}),
+        lambda a: {"disposition": "HOME", "note": "Sentetik taburcu notu"}),
     "discharge confirm": ById(
         "POST", lambda s: f"/admissions/{s.admission}/discharge/confirm", control=409),
     "alert acknowledge": ById("POST", lambda s: f"/alerts/{s.alert}/acknowledge", lambda a: {}),
