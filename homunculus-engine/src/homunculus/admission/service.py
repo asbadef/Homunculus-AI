@@ -81,11 +81,16 @@ async def create_draft_admission(
     tenant_id: uuid.UUID,
     patient: Patient,
     note_fields: dict,
+    request_id: uuid.UUID | None = None,
+    request_digest: str | None = None,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
 
     Enforces the hard constraint: a patient may not have another open admission.
+    `request_id` and `request_digest` are the form's id and its body's digest (amendment A-19,
+    admission/router.py); the row's unique `(tenant_id, request_id)` refuses a second admission
+    under one id with an IntegrityError at the flush below.
     """
     existing = await get_open_admission_for_patient(db, patient.id)
     if existing is not None:
@@ -95,7 +100,15 @@ async def create_draft_admission(
             errors.OPEN_ADMISSION,
         )
 
-    bed = await db.get(Bed, note_fields["bed_id"])
+    # The bed row is LOCKED until the transaction ends (G2-B1a, spec §3.1): two admissions into one
+    # bed at once wait for each other here, and the second finds it OCCUPIED. FOR NO KEY UPDATE, as
+    # every bed lock (tenant/router.py `_lock_bed`, amendment A-26): it lets an insert of a row
+    # pointing at the bed through. A caller that already holds the lock takes nothing more here.
+    # Read afresh under the lock: a bed loaded before it would come back as it was then.
+    bed = (await db.execute(
+        select(Bed).where(Bed.id == note_fields["bed_id"]).with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
     if bed is None:
         raise WorkflowError("Target bed not found.")
     if bed.state != BedState.AVAILABLE:
@@ -109,6 +122,8 @@ async def create_draft_admission(
         patient_id=patient.id,
         tenant_id=tenant_id,
         state=AdmissionState.DRAFT,
+        request_id=request_id,
+        request_digest=request_digest,
         **note_fields,
     )
     if admission.admission_datetime is None:

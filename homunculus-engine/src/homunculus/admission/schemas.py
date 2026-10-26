@@ -194,11 +194,17 @@ class AdmissionNoteFields(BaseModel):
 
 
 class AdmissionCreate(BaseModel):
-    """Create a DRAFT admission (§4.1 steps 2–3)."""
+    """Create a DRAFT admission (§4.1 steps 2–3).
+
+    `request_id` (Group 2 · B1a, amendment A-19) is the client's id for one filled form, the same
+    on every send of that form. Optional: a send without one is admitted as before. With one, a
+    second send of the same form is answered with the admission the first made, and a different
+    form under the same id is refused `request_conflict` (admission/router.py)."""
     model_config = ConfigDict(extra="forbid")
 
     patient: PatientIdentity
     note: AdmissionNoteFields
+    request_id: uuid.UUID | None = None
 
 
 class AdmissionResponse(BaseModel):

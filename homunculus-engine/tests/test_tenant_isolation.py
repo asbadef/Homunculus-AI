@@ -200,8 +200,10 @@ def _admission_body(unit: uuid.UUID, bed: uuid.UUID, attending: uuid.UUID | None
                             "admission_diagnosis_free_text": "Sentetik tanı"}
     if attending is not None:
         note["attending_physician_id"] = attending
+    # G2-B1a: the admission form's required fields (admission/form.py).
+    note.update(admission_type="ICU", no_known_allergy=True)
     return {"patient": {"display_name": "Sentetik Yeni Hasta", "date_of_birth": "1990-02-02",
-                        "sex": "male"},
+                        "sex": "male", "consent": "KVKK_SIGNED"},
             "note": note}
 
 
