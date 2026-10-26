@@ -26,7 +26,9 @@ from sqlalchemy import select, text, update
 from homunculus.admission import router as admission_router
 from homunculus.admission import service
 from homunculus.admission.boardlink import BoardLink
-from homunculus.admission.models import Admission, AdmissionState, DischargeDisposition
+from homunculus.admission.models import (
+    OPEN_ADMISSION_STATES, Admission, AdmissionState, DischargeDisposition,
+)
 from homunculus.api.app import sse_board_frames
 from homunculus.scope import build_scope, sees_patient
 from homunculus.tenant.models import Bed, BedState
@@ -455,6 +457,62 @@ async def test_a_bed_moved_under_a_started_discharge_is_a_409_and_nothing_is_wri
     db_session.expire_all()
     state = (await db_session.execute(select(Admission.state))).scalar_one()
     assert state == AdmissionState.PENDING_DISCHARGE
+
+
+# ---------------------------------------------------------------- transfers (review M-1)
+async def test_a_transfer_and_a_discharge_start_at_once_one_wins(ward, db_session, monkeypatch):
+    """The transfer routes lock the bed and then the admission, as the discharge routes do: a
+    transfer started while a discharge start is writing waits, reads the admission
+    PENDING_DISCHARGE and is refused `invalid_transition` — never a 500 from the bed's state
+    machine, never both."""
+    w, client, _ = ward
+    beds = {name: w.beds[name].id for name in ("1", "2")}
+    target = {"target_bed_id": str(beds["2"]), "target_unit_id": str(w.units["rea"].id)}
+    admission = await signed(w, client)
+    base = f"/admissions/{admission['id']}"
+    first, second = await at_once(
+        db_session, monkeypatch, "initiate_discharge",
+        lambda: client.post(base + "/discharge/initiate", json={"disposition": "HOME"},
+                            headers=w.auth["doctor"]),
+        lambda: client.post(base + "/transfer/initiate", json=target, headers=w.auth["admin"]))
+    assert (first.status_code, second.status_code) == (200, 409), (first.text, second.text)
+    assert second.json()["detail"]["code"] == "invalid_transition"
+    db_session.expire_all()
+    assert (await db_session.execute(select(Admission.state))).scalar_one() == \
+        AdmissionState.PENDING_DISCHARGE
+    states = dict((await db_session.execute(select(Bed.id, Bed.state)
+                                            .where(Bed.id.in_(beds.values())))).all())
+    assert (states[beds["1"]], states[beds["2"]]) == (BedState.PENDING_DISCHARGE,
+                                                      BedState.AVAILABLE)
+
+
+async def test_a_transfer_arrival_and_an_admission_into_its_target_bed_at_once_admit_one(
+        ward, db_session, monkeypatch):
+    """The arrival locks its target bed (both beds, in the order of their ids, then the
+    admission) before it checks the bed AVAILABLE: an admission into that bed writing at the same
+    moment is waited for, and the arrival is refused `bed_not_available` — one patient on the
+    bed, never two."""
+    w, client, _ = ward
+    bed_two = w.beds["2"].id
+    target = {"target_bed_id": str(bed_two), "target_unit_id": str(w.units["rea"].id)}
+    other = form(w, "2")
+    admission = await signed(w, client)
+    base = f"/admissions/{admission['id']}"
+    r = await client.post(base + "/transfer/initiate", json=target, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    first, second = await at_once(
+        db_session, monkeypatch, "create_draft_admission",
+        lambda: client.post("/admissions", json=other, headers=w.auth["nurse"]),
+        lambda: client.post(base + "/transfer/confirm", json=target, headers=w.auth["charge"]))
+    assert (first.status_code, second.status_code) == (201, 409), (first.text, second.text)
+    assert second.json()["detail"]["code"] == "bed_not_available"
+    db_session.expire_all()
+    on_two = (await db_session.execute(select(Admission.id).where(
+        Admission.bed_id == bed_two, Admission.state.in_(list(OPEN_ADMISSION_STATES))))).all()
+    assert len(on_two) == 1
+    assert (await db_session.execute(select(Admission.state).where(
+        Admission.id == uuid.UUID(admission["id"])))).scalar_one() == \
+        AdmissionState.PENDING_TRANSFER
 
 
 # ---------------------------------------------------------------- the confirm's board parts (A-25)

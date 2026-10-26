@@ -594,11 +594,17 @@ async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: 
         raise exc.http() from None
 
 
-async def _locked(db: AsyncSession, admission: Admission) -> Admission:
+async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> Admission:
     """The admission's bed row and then its own, locked for the rest of the transaction and read
-    afresh (A-10, A-26): two sign-offs, starts or confirmations of one admission at once run one
-    after the other, and the second reads what the first committed — refused by the state machine
-    as `invalid_transition` — instead of both passing a check made on a stale read.
+    afresh (A-10, A-26): two sign-offs, starts, confirmations or transfers of one admission at
+    once run one after the other, and the second reads what the first committed — refused by the
+    state machine as `invalid_transition` — instead of both passing a check made on a stale read.
+
+    `also`: other beds the transaction writes or must find free — a transfer's target (review
+    M-1), checked AVAILABLE only once it is locked, so an admission into it at the same moment is
+    waited for. Every bed is locked in the order of its id, then the admission: two transactions
+    that both need two beds take them in the same order and cannot wait on each other in a
+    circle.
 
     Both locks are FOR NO KEY UPDATE, the strength of every unit and bed lock (tenant/router.py
     `_lock_bed`): an insert of a row pointing at the bed, or at the admission (a care-team
@@ -608,9 +614,10 @@ async def _locked(db: AsyncSession, admission: Admission) -> Admission:
     `populate_existing`: the rows this session read before the locks would otherwise come back as
     they were then. An admission's bed never changes (a transfer makes a new admission), so the
     bed read before the lock is the bed."""
-    await db.execute(select(Bed).where(Bed.id == admission.bed_id)
-                     .with_for_update(key_share=True)
-                     .execution_options(populate_existing=True))
+    for bed_id in sorted({admission.bed_id, *also}):
+        await db.execute(select(Bed).where(Bed.id == bed_id)
+                         .with_for_update(key_share=True)
+                         .execution_options(populate_existing=True))
     return (await db.execute(select(Admission).where(Admission.id == admission.id)
                              .with_for_update(key_share=True)
                              .execution_options(populate_existing=True))).scalar_one()
@@ -744,8 +751,12 @@ async def transfer_initiate(
     user: User = Depends(require_permission("admissions.move.initiate")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """Under the admission's bed and row locks, as the sign-off and discharge routes (G2-B1a,
+    review M-1): a transfer started while a discharge is started waits for it and is refused
+    `invalid_transition`; a state machine's ValueError is that 409, never a 500."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
+    admission = await _locked(db, admission)
     try:
         await service.initiate_transfer(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -753,6 +764,8 @@ async def transfer_initiate(
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
     await db.commit()
     await db.refresh(admission)
     return admission
@@ -766,8 +779,13 @@ async def transfer_confirm(
     user: User = Depends(require_permission("admissions.transfer.confirm")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """Both beds — the source and the TARGET, in the order of their ids — and then the admission,
+    locked before the target is checked AVAILABLE (G2-B1a, review M-1): an admission into the
+    target at the same moment is waited for and the arrival refused `bed_not_available`, never
+    two patients on one bed. A state machine's ValueError is a 409 `invalid_transition`."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
+    admission = await _locked(db, admission, payload.target_bed_id)
     try:
         new_admission = await service.confirm_transfer_arrival(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -775,6 +793,8 @@ async def transfer_confirm(
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
     await db.commit()
     await db.refresh(new_admission)
     return new_admission
