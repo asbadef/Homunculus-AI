@@ -46,10 +46,11 @@ export function indexStructure(structure) {
 
 export const EMPTY_INDEX = Object.freeze(indexStructure(null));
 
-/** A bed as a screen names it: "label · unit"; `null` when the tree does not hold it. */
+/** A bed as every screen of the slice names it: "label · room · unit" — the Kabul tabs, the
+ *  sign-off strip and Yapı say it so (A-17); `null` when the tree does not hold it. */
 export function bedLabel(index, id) {
   const bed = index.beds.get(normId(id));
-  return bed ? `${bed.label} · ${bed.unitName}` : null;
+  return bed ? `${bed.label} · ${bed.roomName} · ${bed.unitName}` : null;
 }
 
 /** The placeholder numbers of one shell: a unit or a bed that cannot yet be called by its name is
@@ -147,7 +148,7 @@ export function unitNamer(t, view, ids, locale) {
   });
 }
 
-/** The beds of `ids` named — see `namer`. A bed reads "label · unit" once the structure holds it. */
+/** The beds of `ids` named — see `namer`. A bed reads "label · room · unit" once the structure holds it. */
 export function bedNamer(t, view, ids, locale) {
   return namer(ids, locale, (id) => {
     const held = bedLabel(view.index, id);

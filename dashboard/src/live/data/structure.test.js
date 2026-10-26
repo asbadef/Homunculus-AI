@@ -30,7 +30,7 @@ describe("the structure's index", () => {
     const view = viewOf("known", tree);
     expect(unitNamer(az, view, [written.toLowerCase()], "az").nameOf(written.toLowerCase())).toBe("Yoğun bakım");
     expect(unitNamer(az, view, [` ${written} `], "az").nameOf(written)).toBe("Yoğun bakım");
-    expect(bedLabel(tree, bedWritten.toLowerCase())).toBe("7 · Yoğun bakım");
+    expect(bedLabel(tree, bedWritten.toLowerCase())).toBe("7 · Otaq · Yoğun bakım");
     expect(unitNamer(az, known(), [REA.toUpperCase()], "az").nameOf(REA)).toBe("Reanimasiya");
   });
 
@@ -61,8 +61,9 @@ describe("which bed an admission may take", () => {
     expect(unavailableKey(index.beds.get(BED(6)))).toBe("kabul.bedClosed");
   });
 
-  it("names a bed by its label and its unit", () => {
-    expect(bedLabel(index, BED(5))).toBe("5 · Reanimasiya");
+  // One bed wording on every screen of the slice (A-17): the Kabul tabs, the strip, Yapı.
+  it("names a bed by its label, its room and its unit", () => {
+    expect(bedLabel(index, BED(5))).toBe("5 · Otaq 2 · Reanimasiya");
     expect(bedLabel(index, "nope")).toBeNull();
   });
 });
@@ -221,9 +222,9 @@ describe("a placeholder's number", () => {
 });
 
 describe("the beds of a list, named", () => {
-  it("by label and unit once known; «unknown bed» for an id the tree lacks", () => {
+  it("by label, room and unit once known; «unknown bed» for an id the tree lacks", () => {
     const names = bedNamer(az, known(), [BED(5), BED(1), GHOST], "az");
-    expect(names.nameOf(BED(5))).toBe("5 · Reanimasiya");
+    expect(names.nameOf(BED(5))).toBe("5 · Otaq 2 · Reanimasiya");
     expect(names.nameOf(GHOST)).toBe(`${az("kabul.bedUnknown")} 1`);
     expect(names.sorted).toEqual([BED(1), BED(5), GHOST]);
   });
@@ -237,7 +238,7 @@ describe("the beds of a list, named", () => {
 
   it("keeps the labels a stale tree holds, and numbers a bed it lacks", () => {
     const names = bedNamer(az, viewOf("stale", indexStructure(structure())), [BED(5), GHOST], "az");
-    expect(names.nameOf(BED(5))).toBe("5 · Reanimasiya");
+    expect(names.nameOf(BED(5))).toBe("5 · Otaq 2 · Reanimasiya");
     expect(names.nameOf(GHOST)).toBe("Çarpayı 1");
   });
 

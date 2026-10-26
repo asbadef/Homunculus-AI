@@ -156,7 +156,7 @@ describe("the administrator's scope editor", () => {
     await open();
     const table = within(screen.getByRole("table"));
     expect(table.getByRole("rowheader", { name: "Reanimasiya" })).toBeTruthy();
-    expect(table.getByText("5 · Reanimasiya")).toBeTruthy();
+    expect(table.getByText("5 · Otaq 2 · Reanimasiya")).toBeTruthy();       // one bed wording (A-17)
     expect(table.getByText("Naməlum çarpayı 2")).toBeTruthy();          // numbered as it was a placeholder: 1 is bed 5
     expect(table.getByRole("rowheader", { name: "unit-adult" })).toBeTruthy();   // a key typed by hand
     expect(choicesOf(az("admin.scopeUnits"))).toEqual(["Neonatal", "Reanimasiya", "unit-adult"]);
@@ -167,7 +167,7 @@ describe("the administrator's scope editor", () => {
   it("gives its icon-only Remove button the unit's name, not its key", async () => {
     await open();
     expect(screen.getByRole("button", { name: `${az("admin.remove")}: Reanimasiya` })).toBeTruthy();
-    expect(screen.getByRole("button", { name: `${az("admin.remove")}: 5 · Reanimasiya` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `${az("admin.remove")}: 5 · Otaq 2 · Reanimasiya` })).toBeTruthy();
     expectNoUuid();
   });
 
