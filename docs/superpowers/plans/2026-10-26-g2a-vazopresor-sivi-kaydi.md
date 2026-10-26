@@ -436,12 +436,42 @@ it("the antibiotic line is unchanged: unknown / given at / pending / overdue", �
 - Final whole-branch review (opus): spec D1–D9, Decision 1 (no arithmetic in the browser), a11y, four languages, CRLF, no PHI; engine + dashboard gates; `vite build`.
 - Plan fold; push `feat/g2a-a3`; the merge waits for the user's word; VM deploy with the next deploy.
 
+## Done on the branch (fold, 2026-10-26)
+
+The plan is the branch `feat/g2a-a3` at `9138977`, off `main` `411d89c`.
+
+| Task | Commit | What it pinned |
+|---|---|---|
+| 1 | `326c6f0` | `_meds.pressors_at`, `charted`, `MEDS_HISTORY = 10`; 5 tests |
+| 2 | `ad3b98d`, `3b2a950` | `store.chart(patientId, entries, recordedAt)`; the sepsis box's two assertions take the third argument |
+| 3 | `ca71fa0` | 40 `patient.meds*` keys in four languages; six reviewed az = tr entries (units, drug names) |
+| 4 | `40f97b8` | `medsFields.js` (`checkDraft`, `toLocalInput`/`fromLocalInput`), `MedsChartForm.jsx` (Modal, X1); 8 tests |
+| 5 | `9a469da` | `MedsBox.jsx` (pressor lines with time, "stopped", history, the button, the form keyed by patient), `PatientScreen` wiring, `onlyWrite` → three things; 4 + 1 tests |
+| 6 | `d355255` | the Turkish guide's «Vazopressör / sıvı kaydı» bullet, the roadmap row |
+| fix | `efbb169` | `apiErrors` mapping for A-11's `kabul` detail (the dashboard suite was red on `main` since `411d89c`), az `medsWeightUnit` = kq |
+| review | `76ef7c5`, `9138977` | the final review's fixes (X2–X8 below) |
+
+**Final review (opus, at `efbb169`): FIX FIRST → fixed.** Held: a form cannot follow the clinician to another patient (the form is keyed by patient, an in-flight save keeps its patient); units are the door's; a `dropped` answer is never a save; a refusal is never a save and a save never a refusal; a may-have-landed answer closes and discards the draft, so a bolus is not re-sent. Found and fixed: (I1) a same-minute correction showed below the wrong value in the card's history while `latest()` read the correction → X2; (I2) the record time was fixed at the form's opening → X3; (I3) weak tests (title matched instead of the toast, draft "kept" by the harness, focus not asserted; 403, may-have-landed, double press, patient switch untested) → tests added; (M1) times without a date mislead with 24-h back-dating → X4; (M3) a bad time said "not a number" → X5; (M4/M5) az units mixed kq/kg, ru "час антибиотика", tr informal register, "İlaçlar kutusu" vs the box's title → wording fixed; (M7/M8) dead `step` constants and a stale `patient` prop → removed; (M9) the may-have-landed sentence promised a re-read nothing does → reworded; (M2) a correction dated earlier than the wrong entry never becomes current — by design, said in the guide; (M6) a `null` answer (board restarted mid-write) counts as saved, as the sepsis box does → X6.
+
+**Counts.** At `411d89c`: engine 2413/655, dashboard 89 files / 2441. At `9138977`: engine **2420 passed / 654 skipped / 0 failed** (a first run showed one failure that a rerun did not reproduce — a flake, test not identified; noted as O8), dashboard **91 files / 2466 tests / 0 failed**, `vite build` ok; the tests pass under UTC, Europe/London, America/New_York, Asia/Kolkata and Pacific/Chatham (no zone dependence). CRLF on every touched file; no PHI.
+
 ## Departures
 
 | # | Where | What | Why |
 |---|---|---|---|
-| X1 | Task 4 | The form is a `Modal` opened from the Meds box, not an inline form inside the box (spec D4 said "inside the box") | the house pattern (`BaselineForm`): focus management, phone layout, Escape to close, one live region — all already solved there |
+| X1 | Task 4 | The form is a `Modal` opened from the Meds box, not an inline form inside the box (spec D4) | the house pattern (`BaselineForm`): focus, phone layout, Escape, one live region |
+| X2 | `76ef7c5` | `_charted_history` builds each code's rows newest-charted-first before the stable sort: equal stamps of one code list the later-charted first (what `latest()` and the rule read); across codes, the table's order | review I1: the correction flow (D3) often reuses the same minute |
+| X3 | `9138977` | The record time follows the clock until the clinician touches the field (`useNow(60_000)`), and an untouched field is stamped at the moment Save is pressed | review I2: a form opened at 14:00 and saved at 15:30 charted at 14:00 — a rate could land older than another desk's entry, a bolus left the 3-h window early |
+| X4 | `9138977` | Card times carry `dd.MM` when the stamp's local date is not today (`ddmm` + `hhmm`); `MedsBox` takes `nowMs` from the screen | review M1: with 24-h back-dating, "· 09:30" could be yesterday's |
+| X5 | `9138977` | `patient.medsAtInvalid` (four languages) for a time that does not parse; spec §6 named no key | review M3 |
+| X6 | Task 4 | The form treats any answer that is not `dropped` — including `null` from a board restart mid-write — as saved; the store is unchanged (spec §5 put the `dropped` detection in the store) | the door answers only the two shapes; the sepsis box does the same with `null`; the write did land |
+| X7 | Task 4 | `dropped`, 403 and may-have-landed close the form (spec §4 said the form keeps its values); the server's refusal appears on the toast only (D8 said "in text as well") | the house rule (`refusal.js`): a refusal is named after the bed on the toast, never also inline; only a 400 keeps the draft |
+| X8 | Task 1 | Seven codes in the history, not six: `antibiotic_administered` is listed (as a sentence when 1) | the antibiotic is charted from the same form and belongs in the same round's list |
 
 ## Open items
 
 - O1–O4: see the spec §8.
+- **O5** `charted_by` is not on the card (O3) and the history prints the engine's code for an unknown code or an antibiotic 0 — fine until a second feed charts these codes.
+- **O6** A native Azerbaijani reader reviews the new az strings (units "mkq/kq/dəq", the formal register) with the rest of the pilot's az texts.
+- **O7** The az/tr/ru values print with a decimal point ("0.12") while the form accepts a comma — as elsewhere in the dashboard; one rule for the whole dashboard later.
+- **O8** One engine test failed once in the full no-DB gate at `9138977` and passed on the rerun (2420/654); the id was not captured — run the gate with `-rf` next time and pin the flake.
