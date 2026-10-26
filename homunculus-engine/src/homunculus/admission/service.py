@@ -141,7 +141,7 @@ async def sign_off_admission(
     # Re-check single-ACTIVE constraint at the moment of activation.
     active = await get_active_admission_for_patient(db, admission.patient_id)
     if active is not None and active.id != admission.id:
-        raise WorkflowError("Patient already has an ACTIVE admission.")
+        raise WorkflowError("Patient already has an ACTIVE admission.", errors.OPEN_ADMISSION)
 
     admission.transition_to(AdmissionState.ACTIVE)
     admission.signed_by = signing_user_id
@@ -277,7 +277,8 @@ async def initiate_transfer(
         raise WorkflowError("Target bed not found.")
     if target_bed.state != BedState.AVAILABLE:
         raise WorkflowError(
-            f"Target bed is not AVAILABLE (state: {target_bed.state.value})."
+            f"Target bed is not AVAILABLE (state: {target_bed.state.value}).",
+            errors.BED_NOT_AVAILABLE,
         )
 
     admission.transition_to(AdmissionState.PENDING_TRANSFER)
@@ -303,7 +304,7 @@ async def confirm_transfer_arrival(
 
     target_bed = await db.get(Bed, target_bed_id)
     if target_bed is None or target_bed.state != BedState.AVAILABLE:
-        raise WorkflowError("Target bed is no longer AVAILABLE.")
+        raise WorkflowError("Target bed is no longer AVAILABLE.", errors.BED_NOT_AVAILABLE)
 
     # Close source.
     admission.transition_to(AdmissionState.TRANSFERRED)
@@ -464,7 +465,8 @@ async def sign_handover_outgoing(
     if unacknowledged_critical_count > 0:
         raise WorkflowError(
             f"Handover blocked: {unacknowledged_critical_count} unacknowledged "
-            f"CRITICAL alert(s). Acknowledge (with reason) or escalate first (S-07)."
+            f"CRITICAL alert(s). Acknowledge (with reason) or escalate first (S-07).",
+            errors.CRITICAL_ALARM_OPEN,
         )
     handover.outgoing_signed_at = _now()
     if narrative_note is not None:

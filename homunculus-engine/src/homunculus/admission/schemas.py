@@ -5,16 +5,23 @@ PHI fields (patient identity) are accepted on input but never echoed back in a
 list/board context. They are returned only by the patient-detail endpoint
 (`GET /admissions/{id}/patient`), to holders of `admissions.view` in the patient's
 own tenant; reads of it are not audited yet.
+
+The admission form's and the discharge decision's request models (Group 2 · B1a) refuse a field
+they do not have (`extra="forbid"`: a misspelt field is an error, not a value quietly dropped),
+bound every text by the column it lands in, and hold their texts as `FormText`.
 """
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from datetime import date, datetime
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from fastapi import HTTPException
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo
 
+from homunculus.admission.errors import field_invalid
 from homunculus.admission.models import (
     AdmissionState, AdmissionType, BloodGroup, CareTeamRole, Consent, DischargeDisposition,
     HandoverStatus, Sex, SourceOfAdmission,
@@ -22,25 +29,88 @@ from homunculus.admission.models import (
 
 
 # ---------------------------------------------------------------------------
+# Text a form may send (Group 2 · B1a)
+# ---------------------------------------------------------------------------
+#: The control characters a text may hold: tab, line feed and carriage return — a note has lines.
+_KEPT_CONTROLS = frozenset("\t\n\r")
+
+
+def _has_control(text: str) -> bool:
+    """A control character (Unicode category Cc: NUL, ESC, DEL, the C1 block …) other than tab
+    and the line breaks. PostgreSQL refuses NUL in text and in JSONB — a 500 — and the others
+    have no business in a name or a note: they forge or hide what a screen or an export shows."""
+    return any(unicodedata.category(ch) == "Cc" and ch not in _KEPT_CONTROLS for ch in text)
+
+
+def _refusal(info: ValidationInfo) -> HTTPException:
+    """The coded 422 every form refusal answers, naming the field (admission/errors.py).
+
+    An HTTPException, not a ValueError, on purpose: pydantic passes any exception but ValueError
+    and AssertionError straight through, so this one leaves the reading of the body as it is and
+    FastAPI answers it as `{"detail": {"code": "field_invalid:<field>", …}}` — the shape of every
+    other form refusal, which the dashboard maps by its code — rather than a 422 list whose words
+    it cannot translate. The value is never repeated in the answer."""
+    return field_invalid(info.field_name or "text",
+                         "A control character (other than tab or a line break) is not text.").http()
+
+
+def _form_text(value: str | None, info: ValidationInfo) -> str | None:
+    if value is not None and _has_control(value):
+        raise _refusal(info)
+    return value
+
+
+def _holds_control(item: Any) -> bool:
+    if isinstance(item, str):
+        return _has_control(item)
+    if isinstance(item, dict):
+        return any(_holds_control(key) or _holds_control(value) for key, value in item.items())
+    if isinstance(item, list):
+        return any(_holds_control(value) for value in item)
+    return False
+
+
+def _form_json(value: list[dict] | None, info: ValidationInfo) -> list[dict] | None:
+    if value is not None and _holds_control(value):
+        raise _refusal(info)
+    return value
+
+
+#: Every text field of the admission form and the discharge decision, in the clear or encrypted —
+#: a name never stores a control character either. A required text is `FormText`; an optional one
+#: is `OptionalFormText`, never `FormText | None`: pydantic cannot reach through that union to the
+#: string, so a `Field(max_length=…)` on it is checked by its generic length check (`too_long`,
+#: which the dashboard reads as a list's) instead of the string's (`string_too_long`).
+FormText = Annotated[str, AfterValidator(_form_text)]
+OptionalFormText = Annotated[str | None, AfterValidator(_form_text)]
+#: The note's free-form JSON lists (§5.2 fields 11–13): no control character in a key or a value.
+FormJson = Annotated[list[dict] | None, AfterValidator(_form_json)]
+
+
+# ---------------------------------------------------------------------------
 # Patient identity (PHI) — §5.2 fields 1–4, 28
 # ---------------------------------------------------------------------------
 class PatientIdentity(BaseModel):
-    display_name: str = Field(..., min_length=1, max_length=200)   # #2
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: FormText = Field(..., min_length=1, max_length=200)   # #2
     date_of_birth: date                                            # #3
     sex: Sex                                                        # #4
-    his_patient_reference: str | None = Field(default=None, max_length=64)   # #28
-    # Group 2 · B1a — the prototype's form (spec §5.2). Encrypted at rest; the lengths keep the
-    # ciphertext inside its 512-character column (admission/models.py). The rules a value must
-    # keep beyond its type are in admission/form.py.
-    father_name: str | None = Field(default=None, max_length=100)
-    nationality: str | None = Field(default=None, max_length=64)
-    national_id: str | None = Field(default=None, max_length=16)       # FİN: 7 letters or digits
-    passport_no: str | None = Field(default=None, max_length=32)
-    phone: str | None = Field(default=None, max_length=32)
-    relative_name: str | None = Field(default=None, max_length=100)
-    relative_relation: str | None = Field(default=None, max_length=64)
-    relative_phone: str | None = Field(default=None, max_length=32)
-    companion_name: str | None = Field(default=None, max_length=100)
+    his_patient_reference: OptionalFormText = Field(default=None, max_length=64)   # #28
+    # Group 2 · B1a — the prototype's form (spec §5.2). Encrypted at rest. `max_length` counts
+    # characters, and a character is up to four bytes of UTF-8: every encrypted column is wide
+    # enough for the ciphertext of the longest bound here in four-byte characters
+    # (admission/models.py PHI_COLUMN_LENGTH; tests/test_admission_form.py checks each bound
+    # against its column). The rules a value must keep beyond its type are in admission/form.py.
+    father_name: OptionalFormText = Field(default=None, max_length=100)
+    nationality: OptionalFormText = Field(default=None, max_length=64)
+    national_id: OptionalFormText = Field(default=None, max_length=16)   # FİN: 7 letters or digits
+    passport_no: OptionalFormText = Field(default=None, max_length=32)
+    phone: OptionalFormText = Field(default=None, max_length=32)
+    relative_name: OptionalFormText = Field(default=None, max_length=100)
+    relative_relation: OptionalFormText = Field(default=None, max_length=64)
+    relative_phone: OptionalFormText = Field(default=None, max_length=32)
+    companion_name: OptionalFormText = Field(default=None, max_length=100)
     consent: Consent | None = None                                  # required by admission/form.py
     sms_permitted: bool = False
 
@@ -59,39 +129,45 @@ class PatientResponse(BaseModel):
 # Short Admission Note — §5.2 fields 5–27
 # ---------------------------------------------------------------------------
 class AdmissionNoteFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     admission_datetime: datetime | None = None                     # #5 (defaults to now)
     admitting_unit_id: uuid.UUID                                   # #6
     bed_id: uuid.UUID                                              # #7
     attending_physician_id: uuid.UUID | None = None               # #8
-    admission_diagnosis_free_text: str = Field(..., max_length=500)  # #9
-    icd10_codes: list[str] | None = None                          # #10
-    active_comorbidities: list[dict] | None = None                # #11
-    active_medications_on_admission: list[dict] | None = None     # #12
-    known_allergies: list[dict] | None = None                     # #13
-    baseline_spo2_range: str | None = None                        # #14
-    baseline_heart_rate_range: str | None = None                  # #15
-    baseline_blood_pressure_range: str | None = None              # #16
-    baseline_respiratory_rate_range: str | None = None            # #17
-    baseline_temperature_range: str | None = None                 # #18
-    weight_kg: float | None = None                                # #19
-    height_cm: float | None = None                                # #20
+    admission_diagnosis_free_text: FormText = Field(..., max_length=500)  # #9
+    icd10_codes: list[FormText] | None = None                     # #10
+    active_comorbidities: FormJson = None                         # #11
+    active_medications_on_admission: FormJson = None              # #12
+    known_allergies: FormJson = None                              # #13
+    # The bounds are the columns' (admission/models.py): longer is a 422 here, not a 500 there.
+    baseline_spo2_range: OptionalFormText = Field(default=None, max_length=64)              # #14
+    baseline_heart_rate_range: OptionalFormText = Field(default=None, max_length=64)        # #15
+    baseline_blood_pressure_range: OptionalFormText = Field(default=None, max_length=64)    # #16
+    baseline_respiratory_rate_range: OptionalFormText = Field(default=None, max_length=64)  # #17
+    baseline_temperature_range: OptionalFormText = Field(default=None, max_length=64)       # #18
+    # Strict: JSON `true` is not 1 kg and "72" is not a number (an integer is).
+    weight_kg: float | None = Field(default=None, strict=True)    # #19
+    height_cm: float | None = Field(default=None, strict=True)    # #20
     gestational_age_weeks: float | None = None                    # #21
     postnatal_day: int | None = None                              # #22
     transplant_day_zero: date | None = None                       # #23
-    cardiac_surgery_name: str | None = None                       # #24
-    admission_note_narrative: str | None = Field(default=None, max_length=2000)  # #25
+    cardiac_surgery_name: OptionalFormText = Field(default=None, max_length=200)  # #24
+    admission_note_narrative: OptionalFormText = Field(default=None, max_length=2000)  # #25
     source_of_admission: SourceOfAdmission | None = None          # #26
     # Group 2 · B1a (spec §5.2); admission/form.py says which are required and how they combine.
     admission_type: AdmissionType | None = None
     blood_group: BloodGroup | None = None
-    allergies_text: str | None = Field(default=None, max_length=500)
+    allergies_text: OptionalFormText = Field(default=None, max_length=500)
     no_known_allergy: bool = False
-    comorbidity_codes: list[str] | None = Field(default=None, max_length=10)
-    comorbidities_text: str | None = Field(default=None, max_length=500)
+    comorbidity_codes: list[FormText] | None = Field(default=None, max_length=10)
+    comorbidities_text: OptionalFormText = Field(default=None, max_length=500)
 
 
 class AdmissionCreate(BaseModel):
     """Create a DRAFT admission (§4.1 steps 2–3)."""
+    model_config = ConfigDict(extra="forbid")
+
     patient: PatientIdentity
     note: AdmissionNoteFields
 
@@ -251,14 +327,16 @@ class DischargeInitiate(BaseModel):
 
 class DischargeStart(BaseModel):
     """The physician's decision (Group 2 · B1a, spec D7 and §3.3): where the patient goes, when,
-    and a note. `institution` is required for OTHER_INSTITUTION; `reported_by` is the caller for
-    EXITUS unless another name is written; `discharge_at` defaults to now and is never in the
-    future (admission/form.py)."""
+    and a note. `institution` is required for OTHER_INSTITUTION and refused for any other;
+    `reported_by` is written for EXITUS only (the caller unless another name is written);
+    `discharge_at` defaults to now and is never in the future (admission/form.py)."""
+    model_config = ConfigDict(extra="forbid")
+
     disposition: DischargeDisposition
-    institution: str | None = Field(default=None, max_length=200)
-    reported_by: str | None = Field(default=None, max_length=200)
+    institution: OptionalFormText = Field(default=None, max_length=200)
+    reported_by: OptionalFormText = Field(default=None, max_length=200)
     discharge_at: datetime | None = None
-    note: str | None = Field(default=None, max_length=2000)
+    note: OptionalFormText = Field(default=None, max_length=2000)
 
 
 # ---------------------------------------------------------------------------

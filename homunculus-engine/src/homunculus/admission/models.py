@@ -137,6 +137,15 @@ class CareTeamRole(str, enum.Enum):
     ONCALL_PHYSICIAN = "ONCALL_PHYSICIAN"
 
 
+#: The width of every encrypted column of `patients`. The request's `max_length` counts characters,
+#: and a character is up to four bytes of UTF-8; Fernet adds 57 bytes and pads to 16, base64 grows
+#: that by a third, and `enc::v1::` adds 9. The longest bound (`display_name`, 200 characters) in
+#: four-byte characters is 1173 characters of ciphertext — measured, and checked for every bound
+#: by tests/test_admission_form.py — so 1536 leaves a third to spare. (512, 0002's width, held 200
+#: Latin letters but not 200 Azerbaijani ones: 641.) Migration 0012 sets it.
+PHI_COLUMN_LENGTH = 1536
+
+
 class HandoverStatus(str, enum.Enum):
     OPEN = "OPEN"                     # bridge active, no signatures yet
     OUTGOING_SIGNED = "OUTGOING_SIGNED"
@@ -161,10 +170,11 @@ class Patient(Base):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # PHI — encrypted at rest (§5.2 fields 2, 3, 4, 28)
-    display_name: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)          # #2
-    date_of_birth: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)          # #3 (ISO-8601 date str)
-    sex: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)                     # #4
-    his_patient_reference: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)  # #28
+    display_name: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)  # #2
+    date_of_birth: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)  # #3 (ISO-8601 date str)
+    sex: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)          # #4
+    his_patient_reference: Mapped[str | None] = mapped_column(
+        EncryptedString(PHI_COLUMN_LENGTH), nullable=True)                                        # #28
 
     # Group 2 · B1a. The Homunculus patient number (`H` + two-digit year + five digits, spec §4.2):
     # the board's key for a patient admitted here, and what the nurse enters on the bedside device.
@@ -172,15 +182,15 @@ class Patient(Base):
     # unique per tenant. `admission/numbers.py` issues it.
     patient_number: Mapped[str] = mapped_column(String(16), nullable=False)
     # The admission form's identity and contact fields: PHI, encrypted at rest like the name.
-    father_name: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    nationality: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    national_id: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)   # FİN
-    passport_no: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    phone: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    relative_name: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    relative_relation: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    relative_phone: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
-    companion_name: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
+    father_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    nationality: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    national_id: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)  # FİN
+    passport_no: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    phone: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_relation: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_phone: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    companion_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
     consent: Mapped[Consent | None] = mapped_column(Enum(Consent), nullable=True)
     sms_permitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

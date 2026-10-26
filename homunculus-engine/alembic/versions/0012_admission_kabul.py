@@ -6,9 +6,14 @@ Revision 0012, follows 0011.
 
 * `patients`: `patient_number` (varchar 16, unique per tenant, NOT NULL — every existing row gets
   one here, `H` + the two-digit year it was created in (UTC) + its place in that tenant's year,
-  oldest first), nine encrypted identity and contact columns (varchar 512: Fernet ciphertext, as
-  the name and birth date), `consent` (enum `consent`, nullable) and `sms_permitted` (NOT NULL,
-  false).
+  oldest first), nine encrypted identity and contact columns, `consent` (enum `consent`, nullable)
+  and `sms_permitted` (NOT NULL, false).
+* Every encrypted column of `patients` is varchar 1536 — the nine above, and 0002's
+  `display_name`, `date_of_birth`, `sex` and `his_patient_reference`, widened from 512 (a metadata
+  change in PostgreSQL: no rewrite, no lock beyond the ALTER's own). The request bounds count
+  characters, a character is up to four bytes, and the longest (a 200-character name) of four-byte
+  characters is 1173 characters of Fernet ciphertext; 512 did not hold 200 Azerbaijani letters
+  (641). `admission/models.py` `PHI_COLUMN_LENGTH` says how the figure is reached.
 * `patient_number_counters` (tenant_id, year, last): the number source. Seeded from the numbers
   given above, so the next admission continues after them.
 * `admissions`: `admission_type`, `blood_group` (enums), `allergies_text`, `no_known_allergy`
@@ -25,7 +30,10 @@ Revision 0012, follows 0011.
 ONE STATEMENT PER op.execute (asyncpg prepares each one; see 0004 and 0010).
 
 Downgrade drops all of it: the patient numbers, the form's extra fields, the dispositions and the
-`beds.release` rows (any group's) are lost. Back the database up first (runbook: pg_dump).
+`beds.release` rows (any group's) are lost. Back the database up first (runbook: pg_dump). It
+narrows 0002's four columns back to 512, and STOPS — the whole downgrade rolled back, one
+transaction — if a value written since no longer fits: a ciphertext cut to fit is a name nobody
+can read again. Such a row is the operator's to deal with before downgrading.
 
 Revision ID: 0012
 Revises: 0011
@@ -58,6 +66,13 @@ disposition_enum = postgresql.ENUM("HOME", "OTHER_INSTITUTION", "EXITUS",
 
 _ENCRYPTED = ("father_name", "nationality", "national_id", "passport_no", "phone",
               "relative_name", "relative_relation", "relative_phone", "companion_name")
+#: Every encrypted column's width (admission/models.py PHI_COLUMN_LENGTH; a migration does not
+#: import the models it predates, so the figure is written out).
+_PHI = 1536
+#: 0002's encrypted columns (name, nullable) and the width 0002 gave them.
+_WIDENED = (("display_name", False), ("date_of_birth", False), ("sex", False),
+            ("his_patient_reference", True))
+_PHI_0002 = 512
 
 # The year a row was created in, in UTC: the number's two digits and its counter's year.
 _YEAR = "EXTRACT(YEAR FROM created_at AT TIME ZONE 'UTC')::int"
@@ -78,7 +93,10 @@ def upgrade() -> None:
     # ---- patients ----
     op.add_column("patients", sa.Column("patient_number", sa.String(16), nullable=True))
     for name in _ENCRYPTED:
-        op.add_column("patients", sa.Column(name, sa.String(512), nullable=True))
+        op.add_column("patients", sa.Column(name, sa.String(_PHI), nullable=True))
+    for name, nullable in _WIDENED:
+        op.alter_column("patients", name, type_=sa.String(_PHI),
+                        existing_type=sa.String(_PHI_0002), existing_nullable=nullable)
     op.add_column("patients", sa.Column("consent", consent_enum, nullable=True))
     op.add_column("patients", sa.Column("sms_permitted", sa.Boolean(), nullable=False,
                                         server_default=sa.false()))
@@ -151,6 +169,10 @@ def downgrade() -> None:
     op.drop_constraint("uq_patients_tenant_number", "patients", type_="unique")
     for name in ("sms_permitted", "consent", *_ENCRYPTED, "patient_number"):
         op.drop_column("patients", name)
+    # An assignment cast: a value that does not fit is an error, never cut (see the docstring).
+    for name, nullable in _WIDENED:
+        op.alter_column("patients", name, type_=sa.String(_PHI_0002),
+                        existing_type=sa.String(_PHI), existing_nullable=nullable)
     bind = op.get_bind()
     for enum in (disposition_enum, blood_group_enum, admission_type_enum, consent_enum):
         enum.drop(bind, checkfirst=True)
