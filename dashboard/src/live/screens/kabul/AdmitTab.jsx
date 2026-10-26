@@ -177,10 +177,19 @@ export function AdmitTab() {
   // A hold is the draft's, and so is the news of it (m-2): the instance of this tab mounted when a
   // send's continuation reaches one takes the focus to its reason — not the instance that began the
   // send, which a tab change may have unmounted. A hold already standing when the tab mounts (she
-  // came back to it) is not news, and takes nothing.
+  // came back to it) is not news, and takes nothing. Nor is a focus she has moved on taken from
+  // her — typing in another field, her keystrokes would go nowhere: the focus moves only from where
+  // a press or a return leaves it, <body>, «Qəbul et» or a tab; the toast has said the hold anyway
+  // (re-review M-2).
   const heldSeen = useRef(held);
+  const submitRef = useRef(null);
   useEffect(() => {
-    if (held && held !== heldSeen.current) document.getElementById(heldId)?.focus();
+    if (held && held !== heldSeen.current) {
+      const active = document.activeElement;
+      const idle = !active || active === document.body || active === submitRef.current
+        || active.getAttribute("role") === "tab";
+      if (idle) document.getElementById(heldId)?.focus();
+    }
     heldSeen.current = held;
   }, [held, heldId]);
 
@@ -479,7 +488,7 @@ export function AdmitTab() {
             </ul>
           )}
         </div>
-        <Button type="submit" variant="primary" icon="ok" busy={busy} className="mt-3 w-full justify-center"
+        <Button ref={submitRef} type="submit" variant="primary" icon="ok" busy={busy} className="mt-3 w-full justify-center"
           aria-disabled={gaps.length > 0 || held ? "true" : undefined}
           aria-describedby={held ? `${heldId} ${panelId}` : panelId}>
           {t("kabul.admit")}

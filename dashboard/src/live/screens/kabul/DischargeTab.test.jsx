@@ -7,6 +7,7 @@ import React from "react";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { refusal } from "../../session/mount.testutil.jsx";
+import { FOCUS_RING } from "../../ui/focus.js";
 import { alarm, board, entry } from "../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { DischargeTab } from "./DischargeTab.jsx";
@@ -334,6 +335,23 @@ describe("DischargeTab", () => {
     await send();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
+  });
+
+  // Re-review M-3: the place the focus lands shows it, as the strip's line and a freed bed do, and
+  // is named by its own heading rather than by a copy of its words.
+  it("draws the focus ring on the started discharges' list, which its own heading names", async () => {
+    await open(CHARGE);
+    for (const name of ["Evə yazılması başladılanlar", "Yatan xəstələr"]) {
+      const region = screen.getByRole("region", { name });
+      expect(region.hasAttribute("aria-label"), name).toBe(false);
+      const heading = document.getElementById(region.getAttribute("aria-labelledby")).closest("h2");
+      expect(heading, name).toHaveTextContent(name);
+      expect(region.contains(heading), name).toBe(true);
+    }
+    const pending = screen.getByRole("region", { name: "Evə yazılması başladılanlar" });
+    expect(pending.getAttribute("tabindex")).toBe("-1");
+    expect(pending).toHaveClass(...FOCUS_RING.split(" "));
+    expect(pending).not.toHaveClass("outline-none");
   });
 
   it("leaves the focus on the button when the write was refused and the row stays", async () => {

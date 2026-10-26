@@ -654,7 +654,10 @@ describe("AdmitTab", () => {
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
       await openTab("Evə yazılma");
-      await openTab("Qəbul");                                                // another instance of the tab
+      const tab = screen.getByRole("tab", { name: "Qəbul" });
+      tab.focus();                                                           // by the keyboard, onto the tab
+      await act(async () => { fireEvent.click(tab); });                      // another instance of the tab
+      await settle();
       expect(panel().queryByText(HELD)).toBeNull();
       await act(async () => { looked([]); });                                // not found: held (R1)
       await settle();
@@ -663,6 +666,40 @@ describe("AdmitTab", () => {
       expect(document.activeElement).toBe(panel().getByText(HELD));         // on the tab she is on
       const told = toasts().getAllByText(HELD);                              // and said, wherever she is
       expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    });
+
+    it("leaves the focus in the field she moved on to when the hold arrives: the toast says it (re-review M-2)", async () => {
+      let looked;
+      const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      api.admissions.mockImplementation(() => new Promise((resolve) => { looked = resolve; }));
+      await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
+      const phone = screen.getByLabelText(/^Telefon$/);
+      phone.focus();                                                         // she types on meanwhile
+      await act(async () => { looked([]); });                                // not found: held (R1)
+      await settle();
+      expect(panel().getByText(HELD)).toBeTruthy();
+      expect(document.activeElement).toBe(phone);                           // her keystrokes stay hers
+      expect(toasts().getAllByText(HELD).length).toBeGreaterThan(0);
+      expect(api.admit).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes the focus to the hold's reason from «Qəbul et» itself, where her press left it (re-review M-2)", async () => {
+      let looked;
+      const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      api.admissions.mockImplementation(() => new Promise((resolve) => { looked = resolve; }));
+      admitButton().focus();
+      await act(async () => { fireEvent.click(admitButton()); });
+      await act(async () => { looked([]); });
+      await settle();
+      expect(document.activeElement).toBe(panel().getByText(HELD));
     });
 
     it("says a hold reached while she is on another tab, and takes no focus when she comes back to it (m-2)", async () => {

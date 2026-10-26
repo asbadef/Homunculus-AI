@@ -28,8 +28,9 @@
 // keeps the id it went with. The form must never go out under the id of an unanswered send of
 // ANOTHER patient — the server would answer the new patient's send with the old one's admission —
 // so the moment the form's name moves away from the name of an unanswered send that carries the
-// form's id, the form takes a new one (`ownId`, on every write). The old send keeps its own. The id
-// is not sent yet (Task 19b) and never shown.
+// form's id, the form takes a new one (`ownId`, on every write). The old send keeps its own. Typed
+// back to a patient with a send still unanswered, the form takes that send's id again. The id is
+// not sent yet (Task 19b) and never shown.
 import { useSyncExternalStore } from "react";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { emptyForm } from "./admitForm.js";
@@ -66,11 +67,22 @@ export function freshForm() {
  *  `done`: the box open in place of the form, `{number, bed, engine, recovered?, earlier?}`. */
 const fresh = () => ({ ...freshForm(), sending: false, held: null, unanswered: [], done: null });
 
-/** `state`, its form under an id of its own: a new one when an unanswered send of another
- *  patient — another name — carries the form's id. */
+/** `state`, its form under the id that is its patient's:
+ *   - an unanswered send of the form's patient carries the form's id: kept, for a resend;
+ *   - else, when unanswered sends of the form's patient — her name — carry another id, the
+ *     newest one's: a detour through another name (typed Y, then back to X) must not leave X under
+ *     a fresh id, or a send of X to another bed would be a second admission when the first lands,
+ *     where under X's own id the server answers it `request_conflict` (re-review M-1);
+ *   - else, when an unanswered send of ANOTHER patient carries the form's id: a new one;
+ *   - else the form's own, as it is. */
 function ownId(state) {
-  const theirs = state.unanswered.some((s) => s.requestId === state.requestId && !sameName(s.name, state.form.name));
-  return theirs ? { ...state, requestId: newRequestId() } : state;
+  const { unanswered, requestId, form } = state;
+  const carriers = unanswered.filter((s) => s.requestId === requestId);
+  const another = carriers.some((s) => !sameName(s.name, form.name));
+  if (carriers.length > 0 && !another) return state;
+  const hers = unanswered.filter((s) => s.requestId && sameName(s.name, form.name)).at(-1);
+  if (hers) return { ...state, requestId: hers.requestId };
+  return another ? { ...state, requestId: newRequestId() } : state;
 }
 
 /** A draft that keeps nothing: an ended session's, or the one handed out while nobody is signed in. */

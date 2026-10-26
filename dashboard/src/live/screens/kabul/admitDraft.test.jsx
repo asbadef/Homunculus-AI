@@ -244,6 +244,33 @@ describe("the admission form's draft", () => {
     neverShownNorSent(api, first);
   });
 
+  // Re-review M-1: a detour through another name must not cost the patient her id. Typed back, the
+  // form is that patient's again and takes the newest unanswered send of hers id — so a send to
+  // another bed goes under it, and the server answers it `request_conflict` should the first land.
+  it("gives the form back the id of its patient's unanswered send when her name is typed back after a detour (M-1)", async () => {
+    const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+    const draft = admitDraftOf(store);
+    act(() => { draft.update({ form: filled() }); });
+    const r0 = draft.get().requestId;
+    await press();                                                           // X to bed 1 under R0: no answer
+    fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } }); // Y …
+    const r1 = draft.get().requestId;
+    expect(r1).not.toBe(r0);
+    fireEvent.change(nameField(), { target: { value: NAME } });              // … and back to X
+    expect(draft.get().requestId).toBe(r0);
+    act(() => { draft.update((s) => ({ form: { ...s.form, bedId: BED(5), bedLabel: "5 · Otaq 2 · Reanimasiya" } })); });
+    await press();                                                           // another bed: held (R1)
+    expect(draft.get().held).not.toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yoxladım, qəbul yoxdur — davam et" })); });
+    await press();                                                           // X to bed 5: no answer either
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    // The final send went under R0, as the first did.
+    expect(draft.get().unanswered.map((s) => [s.bed, s.requestId])).toEqual([
+      ["1 · Otaq 1 · Reanimasiya", r0], ["5 · Otaq 2 · Reanimasiya", r0],
+    ]);
+    neverShownNorSent(api, r0, r1);
+  });
+
   it("keeps the form's own id when an earlier patient's admission is found under another id (I-1)", async () => {
     const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
     const draft = admitDraftOf(store);

@@ -29,6 +29,7 @@ import { useBoard } from "../../data/BoardProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Empty, Modal, Note, Tag, useToast } from "../../ui/index.js";
+import { FOCUS_RING } from "../../ui/focus.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { DISPOSITIONS, DischargeDialog } from "./DischargeDialog.jsx";
@@ -77,6 +78,8 @@ export function DischargeTab() {
   const [notLeft, setNotLeft] = useState([]);         // confirmed, whose card did not leave the board
   const [refocus, setRefocus] = useState(0);          // a write's dialog closed: where did its focus go?
   const pendingRef = useRef(null);
+  const pendingTitle = useId();                       // each section is named by its Box's own heading
+  const lyingTitle = useId();
   useEffect(() => {
     if (!refocus) return;
     const active = document.activeElement;
@@ -132,8 +135,9 @@ export function DischargeTab() {
     <div className="grid gap-3">
       {error ? <Alert tone="crit">{t(phase === "stale" ? "kabul.listStale" : "kabul.listFailed", { reason: readErrorText(t, error) })}</Alert> : null}
       {notLeft.map((n) => <Note key={n.id} icon="alert">{doneFor(t, n.subject, t("kabul.dischargedBoardFailed"))}</Note>)}
-      <section ref={pendingRef} tabIndex={-1} aria-label={t("kabul.pendingTitle")} className="outline-none">
-      <Box title={t("kabul.pendingTitle")} icon="out" level={2}>
+      {/* Where the focus lands after a write (refocus): it shows the ring, as the strip's line does. */}
+      <section ref={pendingRef} tabIndex={-1} aria-labelledby={pendingTitle} className={`rounded-box ${FOCUS_RING}`}>
+      <Box title={<span id={pendingTitle}>{t("kabul.pendingTitle")}</span>} icon="out" level={2}>
         {rows === null ? loading : pending.length === 0 ? <Empty icon="out">{t("kabul.pendingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {pending.map((row) => (
@@ -159,8 +163,8 @@ export function DischargeTab() {
         )}
       </Box>
       </section>
-      <section aria-label={t("kabul.lyingTitle")}>
-      <Box title={t("kabul.lyingTitle")} icon="bed" level={2}>
+      <section aria-labelledby={lyingTitle}>
+      <Box title={<span id={lyingTitle}>{t("kabul.lyingTitle")}</span>} icon="bed" level={2}>
         {starts && !seesBoard ? <Note tone="info" icon="eye" className="mb-2">{t("kabul.alarmStateNoBoard")}</Note> : null}
         {rows === null ? loading : lying.length === 0 ? <Empty icon="bed">{t("kabul.lyingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
