@@ -45,8 +45,9 @@
 // any other), another form under the same id is refused `request_conflict`. That refusal means an
 // admission EXISTS under this form: nothing more is sent under it — «Kabul et» is held with the
 // words, which name the earlier admission's number when the server gives it and send the nurse to
-// the list — and every send that went under the id is known now, so none is looked for any more.
-// Only «Yeni qəbul» leaves the hold: a new form, under a new id.
+// the list. Only «Yeni qəbul» leaves the hold: a new form, under a new id. The sends that went under
+// the id stay remembered — not where it landed is known, only that it did — and are looked at again,
+// so a send of another bed or name is held until her look finds it or she has looked once more (R1, R2).
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -296,13 +297,19 @@ export function AdmitTab() {
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
   async function failed(err, sent) {
     if (err?.apiCode === "request_conflict") {
-      // An admission exists under this form's id (A-19): held, with the words that say so, until
-      // «Yeni qəbul»; the sends that went under the id are known now, and not looked for again.
+      // An admission exists under this form's id (A-19) — not known where, and its DRAFT not found.
+      // Held, with the words that say so, until «Yeni qəbul». The sends that went under the id are
+      // KEPT, and looked at again: «go on» said none had landed, and one had (R2, review I-3). Dropped,
+      // the same patient typed again after «Yeni qəbul» would go out to another bed as a second one.
+      const carriers = draft.get().unanswered.filter((x) => x.requestId === sent.requestId);
+      // The admission is one of those sends': named after its bed when they share one — never the
+      // form's own bed by default, which may not be it.
+      const earlier = new Set(carriers.map((x) => normId(x.bedId))).size === 1 ? carriers[0].bed : null;
       draft.update((s) => ({
-        unanswered: s.unanswered.filter((x) => x.requestId !== sent.requestId),
-        held: { bed: sent.bed, conflict: apiErrorKey(err) },
+        unanswered: s.unanswered.map((x) => (x.requestId === sent.requestId ? { ...x, checked: false } : x)),
+        held: { bed: earlier, conflict: apiErrorKey(err) },
       }));
-      toast(refusedFor(t, sent.bed, err), "error");
+      toast(refusedFor(t, earlier ?? "", err), "error");
       await reload();
       return;
     }

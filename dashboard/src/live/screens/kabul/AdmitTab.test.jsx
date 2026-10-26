@@ -638,7 +638,10 @@ describe("AdmitTab", () => {
       expect(admitButton().getAttribute("aria-disabled")).toBe("true");
       expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
       expect(panel().queryByRole("button", { name: GO_ON })).toBeNull();    // nothing to go on to: it exists
-      expect(admitDraftOf(store).get().unanswered).toEqual([]);              // its outcome is known now
+      // The send that got no answer is kept under its id, and looked for until its admission is
+      // found (R2, review I-3): an admission exists under the id, not known where.
+      const kept = () => admitDraftOf(store).get().unanswered.map((s) => [s.bed, s.requestId, s.checked]);
+      expect(kept()).toEqual([[BED1, spent, false]]);
       expect(document.body.textContent).not.toMatch(/request id|another admission form/);
 
       admitButton().focus();
@@ -652,7 +655,55 @@ describe("AdmitTab", () => {
       expect(panel().queryByText(CONFLICT)).toBeNull();
       expect(admitDraftOf(store).get().requestId).toMatch(UUID4);
       expect(admitDraftOf(store).get().requestId).not.toBe(spent);
+      expect(kept()).toEqual([[BED1, spent, false]]);                        // «Yeni qəbul» keeps it too (R2)
       expect(document.body.innerHTML).not.toContain(spent);
+    });
+
+    // Review I-3: X to bed A under id1 gets no answer but lands; she looked and found nothing, goes
+    // on to bed B under id1 — refused `request_conflict`. Had the conflict dropped the bed A send,
+    // «Yeni qəbul» and X typed again to bed B would admit X a second time.
+    it("keeps the unanswered send through a request_conflict, so the same patient sent again after «Yeni qəbul» is held, never sent (R1, review I-3)", async () => {
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockRejectedValueOnce(conflict()),
+      });
+      fillRequired();                                                        // X to bed 1, under id1
+      api.structure.mockResolvedValue(withBed(1, { state: "OCCUPIED" }));     // it landed: the bed is taken …
+      api.admissions.mockResolvedValue([]);                                  // … and no DRAFT of it shows
+      await press();
+      expect(panel().getByText(HELD)).toBeTruthy();
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
+      pickBed5();
+      await press();                                                         // X to bed 5, under id1: refused
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      const id1 = api.admit.mock.calls[0][0].request_id;
+      expect(api.admit.mock.calls[1][0].request_id).toBe(id1);
+      // The admission under id1 is the bed 1 send's: the toast names that bed, never bed 5 (minor).
+      expect(toasts().getAllByText(`${BED1}: ${CONFLICT}`).length).toBeGreaterThan(0);
+      expect(toasts().queryByText(`5 · Otaq 2 · Reanimasiya: ${CONFLICT}`)).toBeNull();
+      // Kept under its id, and no longer "looked at, nothing": an admission exists under it.
+      expect(admitDraftOf(store).get().unanswered.map((s) => [s.bed, s.requestId, s.checked])).toEqual([[BED1, id1, false]]);
+
+      await act(async () => { fireEvent.click(panel().getByRole("button", { name: "Yeni qəbul" })); });
+      fillRequired(["bed"]);                                                 // X typed again …
+      fireEvent.click(screen.getByRole("button", { name: /^Reanimasiya/ })); // (a new form: its unit first)
+      pickBed5();                                                            // … to bed 5
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(2);                            // never sent
+      expect(panel().getByText(HELD)).toBeTruthy();                          // held, naming bed 1 (R1)
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    });
+
+    it("names no bed on a request_conflict whose earlier send it does not hold — never the form's own", async () => {
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE, setup: (a) => a.admit.mockRejectedValueOnce(conflict()),
+      });
+      fillRequired();
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(toasts().getAllByText(CONFLICT).length).toBeGreaterThan(0);
+      expect(toasts().queryByText(`${BED1}: ${CONFLICT}`)).toBeNull();
+      expect(admitDraftOf(store).get().held).toMatchObject({ conflict: { key: "kabul.err.requestConflictNumber" } });
     });
   });
 
