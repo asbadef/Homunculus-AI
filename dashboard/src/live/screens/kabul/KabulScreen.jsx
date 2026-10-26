@@ -6,6 +6,10 @@
 //
 // The tab is held in state, not in the address, as the administration screen holds its own
 // (AdminScreen.jsx): nothing in the product links to a tab.
+//
+// Only the open tab is mounted, so a tab keeps nothing that must outlive it: the admission form,
+// its sends with no answer and its hold are the signed-in session's (admitDraft.js, A-21) — the
+// nurse sent to «Evə yazılma › Yatan xəstələr» by a hold comes back to the form as she left it.
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";

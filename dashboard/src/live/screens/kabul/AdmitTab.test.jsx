@@ -2,17 +2,23 @@
 // "Kabul et" is held until it is empty; one request admits; the patient number is shown large with
 // what to do with it, and any engine part that did not land; a refusal goes on the toast, named
 // after the bed, and the bed picker is read again. A send that got no answer never invites a
-// second admission of the same patient: what it may have left is looked for first.
-import { describe, it, expect } from "vitest";
+// second admission of the same patient: what it may have left is looked for first. And none of
+// that is the tab's to lose: the form, the hold and the sends with no answer are the session's
+// (A-21) — another tab, another screen and a send answering meanwhile leave them where they were.
+import { describe, it, expect, afterEach } from "vitest";
 import React from "react";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, fireEvent, screen, within } from "@testing-library/react";
-import { refusal } from "../../session/mount.testutil.jsx";
+import { mount, refusal } from "../../session/mount.testutil.jsx";
+import { profile, token } from "../../session/testTokens.testutil.js";
 import { useStructure } from "../../data/StructureProvider.jsx";
+import { ThemeProvider } from "../../theme/ThemeProvider.jsx";
+import { Shell } from "../../shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { AdmitTab } from "./AdmitTab.jsx";
+import { KabulScreen } from "./KabulScreen.jsx";
 import { BED, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, row, settle, structure, toasts } from "./kabul.testutil.js";
 
 const panel = () => within(screen.getByRole("complementary", { name: "Çatışmayan sahələr" }));
@@ -42,8 +48,36 @@ const BOARD_FAILED = "Kart paneldə görünmürsə, sistem administratoruna bild
 const RECORDED = "Serverin cavabı gəlmədi, amma qəbul yazılıb. Kartın panelə, çəki və müşayiət edən xəstəliklərin mühərrikə çatıb-çatmadığı bilinmir; kart paneldə görünmürsə, sistem administratoruna bildirin.";
 const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
-const EARLIER = "Bu, cavabı gəlməyən əvvəlki göndərişdir (Sentetik Hasta). Formadakı qəbul hələ göndərilməyib.";
+const EARLIER = `Bu nömrə formadakı xəstəyə aid deyil: Sentetik Hasta (${BED1}) üçün əvvəl göndərilən, cavabı gəlməyən qəbul yazılıb. Formadakı qəbul hələ göndərilməyib.`;
+const EARLIER_TITLE = "Başqa xəstənin qəbulu yazılıb";
 const BACK = "Formaya qayıt";
+const TAKEN = `${BED1}: Bu çarpayı artıq boş deyil; başqa çarpayı seçin.`;
+const bedTaken = () => refusal(409, "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit.", { apiCode: "bed_not_available" });
+const nameField = () => screen.getByLabelText(/^Ad soyad/);
+
+/** Another tab of the Hasta Kabul screen, and what it reads on opening. */
+async function openTab(name) {
+  await act(async () => { fireEvent.click(screen.getByRole("tab", { name })); });
+  await settle();
+}
+
+/** The shell's router moved — by the menu, a link, Back — and what the new screen reads. */
+async function go(hash) {
+  await act(async () => {
+    window.location.hash = hash;
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  await settle();
+}
+
+/** Another nurse signs in at the same browser — the session store's own sign-in, as the form does it. */
+async function signInAs(api, store, id) {
+  const access = token({ sub: id, perms: NURSE });
+  api.login.mockImplementation(async () => { api.store(access); return { access_token: access, refresh_token: "r" }; });
+  api.me.mockResolvedValue(profile({ id, username: id, full_name: "Leyla Sentetik", perms: NURSE }));
+  await act(async () => { await store.signIn(id, "Gizli-Sifre-1"); });
+  await settle();
+}
 
 /** Fill every required field — bed 1 of Otaq 1 in Reanimasiya — except those named. */
 function fillRequired(except = []) {
@@ -386,6 +420,7 @@ describe("AdmitTab", () => {
       pickBed5();
       expect(missingNow()).toEqual([]);
       expect(admitButton().getAttribute("aria-disabled")).toBe("true");       // held all the same
+      admitButton().focus();                                                 // where a keyboard press comes from
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);
       expect(document.activeElement).toBe(screen.getByText(HELD));           // a held press is told why (M-4)
@@ -479,6 +514,16 @@ describe("AdmitTab", () => {
       expect(screen.getByText(EARLIER)).toBeTruthy();
       expect(screen.getByText(RECORDED)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Yeni qəbul" })).toBeNull();
+      // Whose number it is, before the number: the heading says another patient's, and the note
+      // names her and her bed above the number — never "Qəbul edildi" as if for the form (M-c).
+      const heading = screen.getByRole("heading", { level: 2, name: EARLIER_TITLE });
+      expect(document.activeElement).toBe(heading);
+      expect(screen.queryByRole("heading", { name: "Qəbul edildi" })).toBeNull();
+      const whose = screen.getByText(EARLIER);
+      const number = screen.getByText("H2600042");
+      expect(heading.compareDocumentPosition(whose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(whose.compareDocumentPosition(number) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(await said()).toContain(`${EARLIER} ${RECORDED}`);
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
       expect(screen.getByLabelText(/^Ad soyad/).value).toBe("Sentetik Başqası");
@@ -507,6 +552,146 @@ describe("AdmitTab", () => {
       expect(api.admissions).toHaveBeenCalledTimes(2);
       expect(screen.getByText("H2600042")).toBeTruthy();
       expect(screen.getByText(RECORDED)).toBeTruthy();
+    });
+
+    it("holds nothing after a definite refusal when the earlier send's DRAFT is found and no outcome is left unknown (M-b)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockRejectedValueOnce(bedTaken()),
+      });
+      fillRequired();
+      await press();                                                         // Sentetik Hasta: no answer; bed 1 still free
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      await press();                                                         // another name, the same bed: held (R1)
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
+      api.structure.mockResolvedValue(withBed(1, { state: "OCCUPIED" }));
+      api.admissions.mockResolvedValueOnce([])                               // looked for before the send: not there yet
+        .mockResolvedValueOnce([firstDraft()]);                              // looked for after the refusal: there
+      await press();                                                         // refused: the first took the bed meanwhile
+
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("heading", { level: 2, name: EARLIER_TITLE })).toBeTruthy();
+      expect(screen.getByText(EARLIER)).toBeTruthy();
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(toasts().getAllByText(TAKEN).length).toBeGreaterThan(0);        // the form's own refusal, by its code
+      expect(document.body.textContent).not.toMatch(/current state/);
+
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
+      expect(nameField().value).toBe("Sentetik Başqası");
+      expect(screen.queryByText(HELD)).toBeNull();                           // nothing is unknown: nothing to wait for
+      expect(missingNow()).toEqual(["Çarpayı"]);                             // the taken bed is no longer the form's
+      pickBed5();
+      expect(admitButton().getAttribute("aria-disabled")).toBeNull();
+    });
+  });
+
+  describe("the form's memory — the session's, not the tab's (A-21)", () => {
+    afterEach(() => {
+      window.location.hash = "";
+      localStorage.clear();
+    });
+
+    it("lands a send's answer while another tab is open: back on Qəbul the number box is there, and nothing more was sent", async () => {
+      let answer;
+      const { api } = await mountKabul(<KabulScreen />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockReturnValue(new Promise((resolve) => { answer = resolve; })),
+      });
+      fillRequired();
+      await act(async () => { fireEvent.click(admitButton()); });           // on its way
+      await openTab("Evə yazılma");                                          // where the hold's text sends her
+      await openTab("Qəbul");                                                // back while it is still on its way
+      expect(nameField().value).toBe("Sentetik Hasta");
+      expect(admitButton().getAttribute("aria-busy")).toBe("true");
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);                            // a press meanwhile sends nothing
+
+      await openTab("Evə yazılma");
+      await act(async () => { answer(admitted()); });                        // the answer lands with the tab closed
+      await settle();
+      await openTab("Qəbul");
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(screen.getByRole("heading", { level: 2, name: "Qəbul edildi" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Qəbul et" })).toBeNull(); // no second admission from here
+      expect(api.admit).toHaveBeenCalledTimes(1);
+    });
+
+    it("still holds a send to another bed under another name after a tab change, while the first is unanswered (R1)", async () => {
+      const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free: no hold
+      expect(screen.queryByText(HELD)).toBeNull();
+      await openTab("Evə yazılma");
+      await openTab("Qəbul");
+      expect(nameField().value).toBe("Sentetik Hasta");                      // the form is where she left it
+      expect(screen.getByText(`Seçilən: ${BED1}`)).toBeTruthy();
+
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);                            // the first may still land: nothing sent
+      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByText(HELD));
+    });
+
+    it("keeps the form and its unanswered send when the nurse leaves the screen by the menu and comes back", async () => {
+      window.location.hash = "#/kabul";
+      const { api } = await mount(<ThemeProvider><Shell resume="/kabul" /></ThemeProvider>, {
+        access: token({ perms: NURSE }), me: profile({ perms: NURSE }),
+        setup: (a) => {
+          a.structure.mockResolvedValue(structure());
+          a.admissions.mockResolvedValue([]);
+          a.admit.mockRejectedValue(timedOut());
+        },
+      });
+      await settle();
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      await go("#/settings");
+      expect(screen.queryByRole("tab", { name: "Qəbul" })).toBeNull();       // the screen is gone
+      await go("#/kabul");
+      expect(nameField().value).toBe("Sentetik Hasta");
+      expect(screen.getByText(`Seçilən: ${BED1}`)).toBeTruthy();
+      expect(missingNow()).toEqual([]);
+
+      pickBed5();
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);                            // the send with no answer is still minded (R1)
+      expect(screen.getByText(HELD)).toBeTruthy();
+    });
+
+    it("forgets the form and its sends when the session ends — a send answering afterwards included — and the next nurse starts empty", async () => {
+      let answer;
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut())
+          .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }))
+          .mockResolvedValue(admitted(undefined, "H2600060")),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      await act(async () => { fireEvent.click(admitButton()); });           // sent again, still on its way
+      expect(api.admit).toHaveBeenCalledTimes(2);
+
+      await act(async () => { store.signOut(); });
+      await act(async () => { answer(admitted()); });                        // her send answers after she has gone
+      await settle();
+      await signInAs(api, store, "u-leyla");
+
+      expect(nameField().value).toBe("");
+      expect(missingNow()).toEqual(EVERY_MISSING);
+      expect(screen.queryByText(HELD)).toBeNull();
+      expect(document.body.textContent).not.toMatch(/Sentetik Hasta|H2600042/);
+
+      // Nothing of the first nurse's sends is looked for or held on: they went with her session.
+      const lookups = api.admissions.mock.calls.length;
+      fillRequired();
+      fireEvent.change(nameField(), { target: { value: "Sentetik Yeni" } });
+      pickBed5();
+      await press();
+      expect(api.admissions.mock.calls.length).toBe(lookups);
+      expect(api.admit).toHaveBeenCalledTimes(3);
+      expect(screen.getByText("H2600060")).toBeTruthy();
     });
   });
 });
