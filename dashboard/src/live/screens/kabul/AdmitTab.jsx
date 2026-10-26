@@ -17,13 +17,20 @@
 // is read again (and waited for: "Kabul et" stays busy until then):
 //   * the bed is still free — nothing landed yet; she may send again, to the same bed, and the
 //     server takes one of the two;
-//   * the bed is taken — the DRAFT admissions are read: one on that bed under the name she sent is
-//     the send that landed, and its number box is shown (never another patient's number: that is
-//     the number she would enter on the device); none, and "Kabul et" is held, with the bed and
-//     the list to look in ("Evə yazılma › Yatan xəstələr"), until she says she has looked.
-// Every send of this form that got no answer is remembered until an answer comes: before the next
-// send its DRAFT is looked for, and a later send refused because that same bed is taken is read
-// the same way — the first may have landed while the second was on its way.
+//   * the bed is taken, or its state could not be read — the DRAFT admissions are read: one on
+//     that bed under the name she sent is the send that landed, and its number box is shown; none,
+//     and "Kabul et" is held, with the bed and the list to look in ("Evə yazılma › Yatan
+//     xəstələr"), until she says she has looked. The hold says only that the outcome is not known.
+// Every send that got no answer is remembered until its DRAFT is found (A-19):
+//   * before EVERY later send its DRAFT is looked for — also after «go on», which only marks the
+//     send as looked at (R2);
+//   * while one is unanswered and not looked at, a send to ANOTHER bed or under ANOTHER name is
+//     held, naming the unanswered send's bed (R1): only the same bed lets the server take one of two;
+//   * a DRAFT found is the form's admission only under the form's own name (R3). Another name's is
+//     an earlier patient's: its number box says so, and the form is kept for its own send — never is
+//     another patient's number shown as the form's, the number the nurse enters on the device;
+//   * a later send refused because that same bed is taken is read the same way — the first may
+//     have landed while the second was on its way.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -55,6 +62,9 @@ const sameName = (a, b) => {
   return plain(a) === plain(b);
 };
 
+/** Two sends for the same bed under the same name — the one pair the server's bed lock keeps to one admission. */
+const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.name, b.name);
+
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
 
@@ -84,13 +94,16 @@ function Choice({ id, name, legend, options, value, onChange, error }) {
 }
 
 /** The admission written: its number, what to do with it, and what did not land. Its heading takes
- *  the focus (the form it replaces is gone), and what did not land is said aloud once. */
+ *  the focus (the form it replaces is out of sight), and what did not land is said aloud once.
+ *  `done.earlier` (a name): the admission is an EARLIER send's, of another patient than the form's
+ *  — the box says so, and its button goes back to the form, which is kept. */
 function NumberBox({ done, onNext }) {
   const { t } = useI18n();
   const heading = useRef(null);
   useEffect(() => { heading.current?.focus(); }, []);
   const failed = PARTS.filter((part) => done.engine?.[part] === "failed");
   const notes = [
+    ...(done.earlier ? [t("kabul.earlierSend", { name: done.earlier })] : []),
     ...(done.recovered ? [t("kabul.recordedNoAnswer")] : []),
     ...failed.map((part) => t(ENGINE_FAILED[part])),
   ];
@@ -115,7 +128,7 @@ function NumberBox({ done, onNext }) {
             {t("kabul.seeOnBoard")}
           </a>
         )}
-        <Button onClick={onNext}>{t("kabul.next")}</Button>
+        <Button onClick={onNext}>{done.earlier ? t("kabul.backToForm") : t("kabul.next")}</Button>
       </div>
       <Announce text={notes.join(" ")} />
     </Box>
@@ -132,10 +145,10 @@ export function AdmitTab() {
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
-  const [held, setHeld] = useState(null);           // {bed}: a send got no answer and its bed is taken
+  const [held, setHeld] = useState(null);           // {bed}: a send got no answer; nothing is sent until she has looked
   const [focusTo, setFocusTo] = useState(null);     // {field}: focused once the render it asks for is drawn
   const sending = useRef(false);                    // a send in flight — a ref, so a second press in the same tick sees it
-  const unanswered = useRef([]);                    // every send of this form that got no answer: {bedId, bed, name}
+  const unanswered = useRef([]);                    // every send with no answer whose DRAFT is not found yet: {bedId, bed, name, checked}
   const uid = useId();
   const idOf = (field) => `${uid}-${field}`;
   const panelId = `${uid}-panel`;
@@ -167,9 +180,10 @@ export function AdmitTab() {
 
   const bedText = form.bedLabel ?? "";
 
-  /** An admission written — by this send's answer, or found after one that got none. */
-  function admitted(next) {
-    unanswered.current = [];
+  /** The form's patient admitted — by this send's answer, or found after one that got none. Every
+   *  send under that name is done with, and the form is emptied for the next patient. */
+  function admitted(next, name) {
+    unanswered.current = unanswered.current.filter((s) => !sameName(s.name, name));
     setHeld(null);
     setDone(next);
     setForm(emptyForm());
@@ -177,37 +191,58 @@ export function AdmitTab() {
     toast(doneFor(t, next.bed, t("kabul.admitted", { number: next.number })));
   }
 
-  /** The DRAFT a send with no answer left after all — on its bed, under the name it sent — with
-   *  that send; null when none shows, undefined when the list could not be read. */
-  async function findLanded() {
+  /** "Kabul et" waits — the reason names the unanswered send's bed and takes the focus. */
+  function hold(bed) {
+    setHeld({ bed });
+    setFocusTo({ field: "held" });
+  }
+
+  /** The DRAFTs sends with no answer left after all — on their bed, under the name they sent —
+   *  the one under `name` (the form's) first; null when none shows, undefined when the list could
+   *  not be read. */
+  async function findLanded(name) {
     let rows;
     try {
       rows = await store.track(() => store.api.admissions(["DRAFT"]));
     } catch {
       return undefined;
     }
+    const found = [];
     for (const row of Array.isArray(rows) ? rows : []) {
       const send = unanswered.current.find((s) => normId(s.bedId) === normId(row.bed_id) && sameName(s.name, row.display_name));
-      if (send) return { row, send };
+      if (send) found.push({ row, send });
     }
-    return null;
+    return found.find((f) => sameName(f.send.name, name)) ?? found[0] ?? null;
   }
 
-  /** The bed of a send with no answer is taken: its DRAFT is the admission, else "Kabul et" waits
-   *  until the nurse has looked. */
-  async function bedTaken(err, sent) {
-    const landed = await findLanded();
-    if (landed) {
-      admitted({ number: landed.row.patient_number, bed: landed.send.bed, engine: null, recovered: true });
-      return;
+  /** A send's DRAFT found. Under the form's name (`name`) it is the form's admission; under
+   *  another it is an earlier patient's (R3): shown as that patient's, and the form is kept. Answers
+   *  whether it was the form's. */
+  function landedFound({ row, send }, name) {
+    unanswered.current = unanswered.current.filter((s) => s !== send);
+    const next = { number: row.patient_number, bed: send.bed, engine: null, recovered: true };
+    if (sameName(send.name, name)) {
+      admitted(next, name);
+      return true;
     }
-    setHeld({ bed: sent.bed });
+    setDone({ ...next, earlier: String(send.name).trim() });
+    toast(doneFor(t, send.bed, t("kabul.admitted", { number: row.patient_number })));
+    return false;
+  }
+
+  /** The bed of a send with no answer is taken, or its state is not known: its DRAFT is the
+   *  admission, else "Kabul et" waits until the nurse has looked. */
+  async function bedTaken(err, sent) {
+    const landed = await findLanded(sent.name);
+    if (landed && landedFound(landed, sent.name)) return;
+    // Nothing found — or only an earlier patient's: this send's own outcome is still not known.
+    hold(sent.bed);
     toast(refusedFor(t, sent.bed, reasonOf(t, err)), "error");
   }
 
   async function failed(err, sent) {
     if (mayHaveLanded(err)) {
-      unanswered.current = [...unanswered.current, sent];
+      unanswered.current = [...unanswered.current.filter((s) => !sameSend(s, sent)), sent];
       const tree = await reload();
       if (admissible(indexStructure(tree).beds.get(normId(sent.bedId)))) {
         // Nothing landed yet. Sent again to this bed, the server gives it to one of the two.
@@ -229,7 +264,11 @@ export function AdmitTab() {
 
   async function submit(event) {
     event.preventDefault();
-    if (sending.current || held) return;
+    if (sending.current) return;
+    if (held) {
+      setFocusTo({ field: "held" });                // pressed while held: the reason is read (M-4)
+      return;
+    }
     if (gaps.length > 0) {
       setTried(true);
       setFocusTo({ field: gaps[0].field });
@@ -237,19 +276,26 @@ export function AdmitTab() {
     }
     sending.current = true;
     setBusy(true);
-    const sent = { bedId: form.bedId, bed: bedText, name: form.name };
+    const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false };
     try {
       if (unanswered.current.length > 0) {
-        // An earlier send got no answer: if it landed after all, it is the admission.
-        const landed = await findLanded();
+        // A send got no answer: looked for before every send until it is found, «go on» or not (R2).
+        const landed = await findLanded(sent.name);
         if (landed) {
-          admitted({ number: landed.row.patient_number, bed: landed.send.bed, engine: null, recovered: true });
+          landedFound(landed, sent.name);
           reload();
+          return;
+        }
+        // Not found yet: only the same bed under the same name may go — the server takes one of the
+        // two. Another bed or name would be a second admission if the first lands later (R1).
+        const other = unanswered.current.find((s) => !s.checked && !sameSend(s, sent));
+        if (other) {
+          hold(other.bed);
           return;
         }
       }
       const answer = await store.track(() => store.api.admit(toBody(form)));
-      admitted({ number: answer.patient_number, bed: sent.bed, engine: answer.engine });
+      admitted({ number: answer.patient_number, bed: sent.bed, engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
       await failed(err, sent);
@@ -402,8 +448,14 @@ export function AdmitTab() {
         </Button>
         {held ? (
           <div className="mt-2 grid justify-items-start gap-2">
-            <p id={heldId} className="m-0 text-12.5 font-semibold text-crit-ink">{t("kabul.heldNoAnswer", { bed: held.bed, where })}</p>
-            <Button size="sm" onClick={() => { unanswered.current = []; setHeld(null); }}>{t("kabul.heldGoOn")}</Button>
+            <p id={heldId} tabIndex={-1} className={`m-0 text-12.5 font-semibold text-crit-ink ${FOCUS_RING}`}>
+              {t("kabul.heldNoAnswer", { bed: held.bed, where })}
+            </p>
+            {/* She has looked: the hold goes, the search does not — every send still looks first (R2). */}
+            <Button size="sm" onClick={() => {
+              unanswered.current = unanswered.current.map((s) => ({ ...s, checked: true }));
+              setHeld(null);
+            }}>{t("kabul.heldGoOn")}</Button>
           </div>
         ) : null}
         {form.bedId ? <p className="m-0 mt-2"><Tag icon="bed">{bedText}</Tag></p> : null}

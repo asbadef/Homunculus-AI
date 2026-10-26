@@ -23,9 +23,12 @@ const press = async () => {
   await settle();
 };
 const timedOut = () => Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" });
-const admitted = (engine = { weight: "ok", profile: "ok", board: "ok" }) => ({
-  id: "a-1", patient_number: "H2600042", state: "DRAFT", engine,
+const admitted = (engine = { weight: "ok", profile: "ok", board: "ok" }, number = "H2600042") => ({
+  id: "a-1", patient_number: number, state: "DRAFT", engine,
 });
+const pickBed5 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5" }));
+/** The DRAFT the first send left on bed 1, under the name it sent. */
+const firstDraft = () => row({ state: "DRAFT", bed_id: BED(1), patient_number: "H2600042" });
 
 // The words the tab says, as dashboard/src/live/i18n/strings/kabul.js (az) has them (A-7).
 const BED1 = "1 · Otaq 1 · Reanimasiya";
@@ -36,9 +39,11 @@ const TIMEOUT = "Server cavab vermədi. Əməliyyat yerinə yetirilmiş ola bil�
 const WEIGHT_FAILED = "Çəki mühərrikə çatmadı — qəbul yazılıb; sistem administratoruna bildirin.";
 const PROFILE_FAILED = "Müşayiət edən xəstəliklər mühərrikə çatmadı — qəbul yazılıb; sistem administratoruna bildirin.";
 const BOARD_FAILED = "Kart paneldə görünmürsə, sistem administratoruna bildirin — qəbul yazılıb.";
-const RECORDED = "Serverin cavabı gəlmədi, amma qəbul yazılıb. Kart paneldə görünmürsə, sistem administratoruna bildirin.";
-const HELD = `${BED1} artıq boş deyil və qəbulun yazılıb-yazılmadığı bilinmir. Təkrarlamadan əvvəl «Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
+const RECORDED = "Serverin cavabı gəlmədi, amma qəbul yazılıb. Kartın panelə, çəki və müşayiət edən xəstəliklərin mühərrikə çatıb-çatmadığı bilinmir; kart paneldə görünmürsə, sistem administratoruna bildirin.";
+const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
+const EARLIER = "Bu, cavabı gəlməyən əvvəlki göndərişdir (Sentetik Hasta). Formadakı qəbul hələ göndərilməyib.";
+const BACK = "Formaya qayıt";
 
 /** Fill every required field — bed 1 of Otaq 1 in Reanimasiya — except those named. */
 function fillRequired(except = []) {
@@ -378,15 +383,111 @@ describe("AdmitTab", () => {
       expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
       expect(missingNow()).toEqual(["Çarpayı"]);                              // the taken bed is no longer the form's
 
-      fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5" }));
+      pickBed5();
       expect(missingNow()).toEqual([]);
       expect(admitButton().getAttribute("aria-disabled")).toBe("true");       // held all the same
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(screen.getByText(HELD));           // a held press is told why (M-4)
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
       expect(screen.queryByText(HELD)).toBeNull();
       expect(admitButton().getAttribute("aria-disabled")).toBeNull();
+    });
+
+    it("says only that the outcome is not known — never that the bed is taken — when the re-read fails (M-1)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      api.structure.mockRejectedValue(refusal(503, "Service Unavailable"));
+      api.admissions.mockRejectedValue(refusal(503, "Service Unavailable"));
+      await press();
+      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(document.body.textContent).not.toMatch(/artıq boş deyil/);
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    });
+
+    it("holds a send to another bed while the first is unanswered, naming the first's bed — and keeps looking after «go on» (R1, R2)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted(undefined, "H2600050")),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      pickBed5();                                                            // the same patient, another bed
+      await press();                                                         // the first has not landed yet
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(api.admissions).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByText(HELD));
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
+      await press();                                                         // looked for again, still nothing: sent
+      expect(api.admissions).toHaveBeenCalledTimes(2);
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(api.admit.mock.calls[1][0].note.bed_id).toBe(BED(5));
+      expect(screen.getByText("H2600050")).toBeTruthy();
+    });
+
+    it("holds a send under another name to the same bed while the first is unanswered (R1)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();
+      fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(HELD)).toBeTruthy();
+    });
+
+    it("finds the first send after «go on» when its DRAFT shows only then, and sends nothing more (R2)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted(undefined, "H2600050")),
+      });
+      fillRequired();
+      api.structure.mockResolvedValue(withBed(1, { state: "OCCUPIED" }));
+      api.admissions.mockRejectedValueOnce(refusal(503, "Service Unavailable"));
+      await press();                                                         // bed taken, the list unreadable: held
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
+      pickBed5();
+      const lookups = api.admissions.mock.calls.length;
+      api.admissions.mockResolvedValue([firstDraft()]);
+      await press();
+
+      expect(api.admissions.mock.calls.length - lookups).toBe(1);
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(screen.getByText(`Çarpayı: ${BED1}`)).toBeTruthy();
+      expect(screen.queryByText("H2600050")).toBeNull();
+    });
+
+    it("shows an earlier patient's admission as that patient's — never as the form's — and keeps the form (R3)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted(undefined, "H2600099")),
+      });
+      fillRequired();
+      await press();                                                         // no answer for Sentetik Hasta, bed 1
+      fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      api.admissions.mockResolvedValue([firstDraft()]);
+      await press();
+
+      expect(api.admit).toHaveBeenCalledTimes(1);                            // the form's patient is not sent
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(screen.getByText(`Çarpayı: ${BED1}`)).toBeTruthy();
+      expect(screen.getByText(EARLIER)).toBeTruthy();
+      expect(screen.getByText(RECORDED)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Yeni qəbul" })).toBeNull();
+
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
+      expect(screen.getByLabelText(/^Ad soyad/).value).toBe("Sentetik Başqası");
+      expect(screen.getByText("Seçilən: 5 · Otaq 2 · Reanimasiya")).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByLabelText(/^Ad soyad/));
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(api.admit.mock.calls[1][0].patient.display_name).toBe("Sentetik Başqası");
+      expect(screen.getByText("H2600099")).toBeTruthy();
     });
 
     it("finds the first send's DRAFT when a second send to its bed is refused as taken", async () => {
