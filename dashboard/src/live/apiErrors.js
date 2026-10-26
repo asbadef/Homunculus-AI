@@ -134,6 +134,61 @@ export const API_CODE_KEYS = new Map([
   ["SESSION_SUPERSEDED", "sessionSuperseded"],
 ]);
 
+// G2-B1a — Hasta Kabul. The admission and structure routes answer a stable CODE beside English
+// words (homunculus-engine admission/errors.py; backendApi.js puts it on `err.apiCode`). The code
+// is mapped, never the words. apiErrors.test.js reads errors.py and the three files that name a
+// field, and fails when a code or a field below is missing. Full keys: their texts live in the
+// `kabul` namespace with the rest of the slice.
+export const ADMISSION_CODE_KEYS = new Map([
+  ["bed_not_available", "kabul.err.bedNotAvailable"],
+  ["bed_closed", "kabul.err.bedClosed"],
+  ["out_of_scope", "kabul.err.outOfScope"],
+  ["critical_alarm_open", "kabul.err.criticalAlarmOpen"],
+  ["patient_number_exhausted", "kabul.err.numberExhausted"],
+  ["invalid_transition", "kabul.err.invalidTransition"],
+  ["missing_attending", "kabul.err.missingAttending"],
+  ["open_admission", "kabul.err.openAdmission"],
+  ["bed_in_use", "kabul.err.bedInUse"],
+  ["has_open_beds", "kabul.err.hasOpenBeds"],
+  ["name_taken", "kabul.err.nameTaken"],
+  // Amendment A-5/A-6: a bed label is unique within its unit. errors.py gains the code in Task 7;
+  // the dashboard maps it ahead (apiErrors.test.js's DASHBOARD_ONLY allow-list).
+  ["bed_label_taken", "kabul.err.bedLabelTaken"],
+]);
+
+/** `field_invalid:<field>` -> the sentence naming that field. A field not listed reads the
+ *  generic sentence: the refusal is still said, only less exactly. */
+export const INVALID_FIELD_KEYS = new Map([
+  ["display_name", "kabul.invalid.displayName"],
+  ["date_of_birth", "kabul.invalid.dateOfBirth"],
+  ["national_id", "kabul.invalid.nationalId"],
+  ["phone", "kabul.invalid.phone"],
+  ["relative_phone", "kabul.invalid.relativePhone"],
+  ["admission_type", "kabul.invalid.admissionType"],
+  ["admission_diagnosis_free_text", "kabul.invalid.diagnosis"],
+  ["weight_kg", "kabul.invalid.weight"],
+  ["height_cm", "kabul.invalid.height"],
+  ["allergies_text", "kabul.invalid.allergy"],
+  ["comorbidity_codes", "kabul.invalid.comorbidities"],
+  ["consent", "kabul.invalid.consent"],
+  ["admitting_unit_id", "kabul.invalid.unit"],
+  ["institution", "kabul.invalid.institution"],
+  ["discharge_at", "kabul.invalid.dischargeAt"],
+  ["name", "kabul.invalid.name"],
+  ["label", "kabul.invalid.label"],
+]);
+const FIELD_INVALID = "field_invalid:";
+
+/** A coded refusal as {key, vars}, or null when it carries no code this map knows. */
+function admissionCodeKey(err) {
+  const code = typeof err?.apiCode === "string" ? err.apiCode : "";
+  if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
+  if (code.startsWith(FIELD_INVALID)) {
+    return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };
+  }
+  return null;
+}
+
 /** What a 5xx may say that is more exact than "the server cannot be reached". `scopeUnreadable` is
  *  the 503 of POST /stream-ticket and GET /patients/{id}/trends: the server answered, only the
  *  look-up of what the caller may see failed. NOTE: the `scopeUnreadable` text currently names the
@@ -252,6 +307,8 @@ export function apiErrorKey(err) {
   if (err && typeof err === "object" && API_CODE_KEYS.has(err.code)) {
     return { key: `errors.${API_CODE_KEYS.get(err.code)}`, vars: {} };
   }
+  const coded = admissionCodeKey(err);       // G2-B1a: a coded refusal is mapped by its code
+  if (coded) return coded;
   if (err && Array.isArray(err.fieldErrors)) {
     const hit = err.fieldErrors.map(fieldErrorKey).find(Boolean)
       || err.fieldErrors.map(fieldMessageKey).find(Boolean);
