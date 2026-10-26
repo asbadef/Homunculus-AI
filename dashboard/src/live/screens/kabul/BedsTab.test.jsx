@@ -181,6 +181,40 @@ describe("BedsTab", () => {
     expect(api.structure.mock.calls.length).toBeGreaterThan(reads);
   });
 
+  // A-32: a bed whose last patient's card is still on the board is not freed — the server tries to
+  // take the card off first and refuses `board_not_cleared` when it cannot. Said by its code, named
+  // after the bed; the bed stays in cleaning, and its button with it, to try again.
+  it("says a release refused because the last patient's card is still on the board, and keeps the button to try again", async () => {
+    const { api } = await mountKabul(<BedsTab />, { perms: NURSE,
+      setup: (a) => a.releaseBed.mockRejectedValue(refusal(409, "The bed's last patient is still on the board.", { apiCode: "board_not_cleared" })) });
+    screen.getByRole("button", { name: RELEASE_3 }).focus();
+    await press(RELEASE_3);
+    await settle();
+    expect(api.releaseBed).toHaveBeenCalledWith(BED(3));
+    expect(toasts().getAllByText("3 · Otaq 1 · Reanimasiya: Bu çarpayının son xəstəsinin kartı hələ paneldədir; çarpayı boşaldılmadı. "
+      + "Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/still on the board/);
+    const again = screen.getByRole("button", { name: RELEASE_3 });
+    expect(again.getAttribute("aria-disabled")).toBeNull();
+    expect(document.activeElement).toBe(again);
+  });
+
+  // The server names the patient whose card still stands (`patient_number`, A-32): the toast says it,
+  // so the nurse knows which patient's card to look for on the board.
+  it("names the number of the patient whose card is still on the board when the server gives it", async () => {
+    const { api } = await mountKabul(<BedsTab />, { perms: NURSE,
+      setup: (a) => a.releaseBed.mockRejectedValue(refusal(409, "The last patient of this bed is still on the board: "
+        + "the board refused the discharge.", { apiCode: "board_not_cleared", patientNumber: "H2600042" })) });
+    await press(RELEASE_3);
+    await settle();
+    expect(api.releaseBed).toHaveBeenCalledWith(BED(3));
+    expect(toasts().getAllByText("3 · Otaq 1 · Reanimasiya: Bu çarpayının son xəstəsinin kartı (xəstə nömrəsi H2600042) hələ "
+      + "paneldədir; çarpayı boşaldılmadı. Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.").length)
+      .toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/still on the board/);
+    expect(screen.getByRole("button", { name: RELEASE_3 }).getAttribute("aria-disabled")).toBeNull();
+  });
+
   it("says an uncoded 404 by its status in the reader's words, never the server's English (A-9)", async () => {
     const { api } = await mountKabul(<BedsTab />, { perms: NURSE,
       setup: (a) => a.releaseBed.mockRejectedValue(refusal(404, "Bed not found.")) });

@@ -157,8 +157,16 @@ export const ADMISSION_CODE_KEYS = new Map([
   // text sends the nurse to the list; with the earlier admission's number when the detail carries
   // it (`err.patientNumber`, its bed in her units), `kabul.err.requestConflictNumber`.
   ["request_conflict", "kabul.err.requestConflict"],
+  // A-32: a bed's release while its last patient's card is still on the board; with that patient's
+  // number when the detail carries it (`err.patientNumber`), `kabul.err.boardNotClearedNumber`.
+  ["board_not_cleared", "kabul.err.boardNotCleared"],
 ]);
-const REQUEST_CONFLICT = "request_conflict";
+/** The coded refusals whose detail names a patient's number, each with the sentence that says it.
+ *  A number beside any other code is not shown. */
+const WITH_NUMBER = new Map([
+  ["request_conflict", "kabul.err.requestConflictNumber"],
+  ["board_not_cleared", "kabul.err.boardNotClearedNumber"],
+]);
 
 /** The fields no screen sends today (admission/schemas.py AdmissionNoteFields): one sentence says a
  *  field the screen does not send was refused. apiErrors.test.js checks the form's body indeed holds
@@ -217,7 +225,7 @@ const FIELD_INVALID = "field_invalid:";
 function admissionCodeKey(err) {
   const code = typeof err?.apiCode === "string" ? err.apiCode : "";
   const number = typeof err?.patientNumber === "string" ? err.patientNumber.trim() : "";
-  if (code === REQUEST_CONFLICT && number) return { key: "kabul.err.requestConflictNumber", vars: { number } };
+  if (number && WITH_NUMBER.has(code)) return { key: WITH_NUMBER.get(code), vars: { number } };
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };

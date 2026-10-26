@@ -484,8 +484,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
 
   it("the readers found the codes and the fields the engine raises", () => {
     expect(CODES).toEqual(expect.arrayContaining(["bed_not_available", "critical_alarm_open", "out_of_scope"]));
-    // The eleven of Task 2, `bed_label_taken` (A-5, Task 7) and `request_conflict` (A-19, Task 8).
-    expect(CODES).toHaveLength(13);
+    // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8) and
+    // `board_not_cleared` (A-32, Task 9's review).
+    expect(CODES).toHaveLength(14);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -548,6 +549,25 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
       expect(apiErrorText(t, withNumber), lang).toContain(list);
       expect(apiErrorText(t, coded("request_conflict")), lang).toContain(list);
       expect(apiErrorText(t, coded("request_conflict")), lang).not.toMatch(/\{number\}|English words/);
+    }
+  });
+
+  // A-32: a bed's release refused while its last patient's card is still on the board. The server
+  // names that patient's number (tenant/router.py `_last_card_off`; the caller's units hold the bed),
+  // so the nurse knows whose card stands; without one, the sentence without it. A number on a code
+  // that has no such sentence is not shown.
+  it("board_not_cleared names the patient whose card still stands when the server gives the number", () => {
+    const withNumber = Object.assign(coded("board_not_cleared"), { patientNumber: "H2600042" });
+    expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.boardNotClearedNumber", vars: { number: "H2600042" } });
+    expect(apiErrorKey(coded("board_not_cleared"))).toEqual({ key: "kabul.err.boardNotCleared", vars: {} });
+    expect(apiErrorKey(Object.assign(coded("board_not_cleared"), { patientNumber: "  " })).key).toBe("kabul.err.boardNotCleared");
+    expect(apiErrorKey(Object.assign(coded("bed_not_available"), { patientNumber: "H2600042" })))
+      .toEqual({ key: "kabul.err.bedNotAvailable", vars: {} });
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
+      expect(apiErrorText(t, withNumber), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("board_not_cleared")), lang).not.toMatch(/\{number\}|English words/);
     }
   });
 

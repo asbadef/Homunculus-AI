@@ -309,8 +309,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // Group 2 · B1a): the words are the message, the code is what a screen maps.
         detail = body.detail.message;
         apiCode = body.detail.code;
-        // `request_conflict` names the earlier admission's number (admission/errors.py `Refusal.extra`):
-        // the one extra a screen shows. Nothing else of the detail is kept — never a name.
+        // `request_conflict` names the earlier admission's number, `board_not_cleared` the bed's last
+        // patient's (admission/errors.py `Refusal.extra`): the one extra a screen shows. Nothing else
+        // of the detail is kept — never a name.
         if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
