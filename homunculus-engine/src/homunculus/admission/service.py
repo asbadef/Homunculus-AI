@@ -419,10 +419,22 @@ async def initiate_discharge(
     return admission
 
 
-async def confirm_discharge(db: AsyncSession, admission: Admission) -> Admission:
-    """§4.7 steps 5–7: charge nurse confirms the patient has left the bed."""
+async def confirm_discharge(
+    db: AsyncSession, admission: Admission, *, unacknowledged_critical_count: int = 0,
+) -> Admission:
+    """§4.7 steps 5–7: charge nurse confirms the patient has left the bed.
+
+    `unacknowledged_critical_count` is the board's own, read again at the confirmation (Group 2 ·
+    B1a, the user's decision of 2026-10-26): the discharge ends every alert of the patient, so a
+    critical one that fired after the start is acknowledged first. An exitus is not exempt."""
     if admission.state != AdmissionState.PENDING_DISCHARGE:
         raise WorkflowError("Admission is not pending discharge.")
+    if unacknowledged_critical_count > 0:
+        raise WorkflowError(
+            f"Discharge blocked: {unacknowledged_critical_count} unacknowledged CRITICAL "
+            f"alert(s) must be acknowledged before the discharge is confirmed.",
+            errors.CRITICAL_ALARM_OPEN,
+        )
     admission.transition_to(AdmissionState.DISCHARGED)
     bed = await db.get(Bed, admission.bed_id)
     if bed is not None:

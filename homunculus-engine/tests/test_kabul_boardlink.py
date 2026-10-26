@@ -458,10 +458,11 @@ def test_a_retirement_with_no_door_wired_raises():
 
 
 def test_a_door_that_raises_is_a_retirement_left_incomplete_not_a_refusal():
-    """A-25: what the door raises — its alerts already ended in memory, its removal sent in its
-    `finally`, an `alert_cleared` row not written — comes out as `RetireIncomplete`, the door's
-    error as its cause, so the discharge route can tell it from a refusal before the door (a
-    `ValueError`, or a `RuntimeError` for a door not wired), which is a failed discharge."""
+    """A-25: whatever the door raises — after the tombstone was written, so a read of the board
+    leaves the card off; whether its removal frame went out depends on where in the door it
+    failed — comes out as `RetireIncomplete`, the door's error as its cause, so the discharge
+    route can tell it from a refusal before the door (a `ValueError`, or a `RuntimeError` for a
+    door not wired), which sent nothing and is a failed discharge."""
     audit_down = RuntimeError("audit store down")
     calls: list = []
 

@@ -628,6 +628,19 @@ async def _number_of(db: AsyncSession, admission: Admission) -> str:
                              .where(Patient.id == admission.patient_id))).scalar_one()
 
 
+def _open_critical(request: Request, hospital: str, number: str) -> int:
+    """The critical alerts on this patient's board nobody acknowledged (`BoardLink.open_critical`:
+    firing or latched, the alerts the clinician sees), which hold a discharge's start and its
+    confirmation. Only an app assembled without its board (a test mounting the routers alone)
+    has no BoardLink; it has no engine either, so no alert — logged at ERROR, and none counted."""
+    link = board_link_of(request)
+    if link is None:
+        log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
+                  number)
+        return 0
+    return link.open_critical(hospital, number)
+
+
 # ---------------------------------------------------------------------------
 # Sign-off DRAFT → ACTIVE (§4.1 steps 4–5)
 # ---------------------------------------------------------------------------
@@ -795,12 +808,6 @@ async def discharge_initiate(
     admission = await _locked(db, admission)
     number = await _number_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
-    link = board_link_of(request)
-    if link is None:
-        # Only an app assembled without its board (a test mounting the routers alone) has none;
-        # it has no engine either, so no alert to hold the discharge with.
-        log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
-                  number)
     reported_by = _strip(payload.reported_by)
     if payload.disposition == DischargeDisposition.EXITUS and reported_by is None:
         reported_by = user.full_name or user.username
@@ -809,8 +816,7 @@ async def discharge_initiate(
             db, admission, disposition=payload.disposition,
             institution=_strip(payload.institution), reported_by=reported_by,
             discharge_at=payload.discharge_at, note=_strip(payload.note),
-            unacknowledged_critical_count=(link.open_critical(hospital, number)
-                                           if link is not None else 0),
+            unacknowledged_critical_count=_open_critical(request, hospital, number),
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -834,8 +840,9 @@ async def _off_the_board(request: Request, hospital: str, number: str) -> tuple[
     * the tombstone refused, or the retirement refused before its door (a `ValueError`, a door
       not wired), or no BoardLink at all: no removal was sent and no alert ended — `failed`,
       `failed`, logged at ERROR with the number;
-    * the door entered and raised (`RetireIncomplete`): its alerts were ended in memory and its
-      removal sent in its `finally`, so this is no failed discharge — `ok`, `incomplete`, logged.
+    * the door entered and raised (`RetireIncomplete`), after the tombstone was written: a
+      removal frame may or may not have gone out, but every read of the board leaves the card
+      off, so this is no failed discharge — `ok`, `incomplete`, logged.
 
     Never raises: the discharge stands either way. Logged with the patient number, never a name."""
     link = board_link_of(request)
@@ -870,18 +877,27 @@ async def discharge_confirm(
     one transaction. After the commit, the audit row `admission.discharge_confirm` (it never
     raises), then the card leaves every screen and the patient the alert world
     (`_off_the_board`); `board` and `alerts` say how that went. The answer is made before the
-    commit from what was written."""
+    commit from what was written.
+
+    Refused `critical_alarm_open`, writing nothing, while the board shows the patient a critical
+    alert nobody acknowledged — read again here, under the locks, as the start reads it (the
+    user's decision, 2026-10-26): the retirement ends every alert of the patient with the reason
+    "discharged", so one that fired after the start is seen and acknowledged first. An exitus is
+    not exempt: after a death, someone acknowledges the monitor's last critical alarms before the
+    confirmation."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     admission = await _locked(db, admission)
+    number = await _number_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
     try:
-        await service.confirm_discharge(db, admission)
+        await service.confirm_discharge(
+            db, admission,
+            unacknowledged_critical_count=_open_critical(request, hospital, number))
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
-    number = await _number_of(db, admission)
-    hospital = await trail.hospital_of(db, caller_tenant)
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
     trail.record(request, hospital, "admission.discharge_confirm", patient_id=number,

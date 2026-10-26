@@ -81,12 +81,14 @@ def count_open_critical(alerts: list[dict]) -> int:
 
 
 class RetireIncomplete(Exception):
-    """The app's retirement door was entered and raised (A-25): the door ends the patient's
-    alerts in memory and sends the removal frame in its own `finally`, so what failed came after —
-    an `alert_cleared` row not written, typically. The discharge is not failed by it; the route
-    reports the retirement `incomplete`. The door's own error is `__cause__`. Deliberately neither
-    a `ValueError` nor a `RuntimeError`: those are `retire`'s refusals BEFORE the door, a
-    discharge whose card has not left the screens."""
+    """The app's retirement door was entered and raised (A-25), after the tombstone was written.
+    What went wrong is not known from here: typically an `alert_cleared` row not written after
+    the alerts were ended in memory, but the door's own `finally` — which re-arms the notifier and
+    sends the removal frame — may have failed too, so a removal frame may or may not have gone
+    out. Every read of the board (`/patients`, a screen reloading) leaves the card off either way:
+    the tombstone is written. The discharge is not failed by it; the route reports the retirement
+    `incomplete`. The door's own error is `__cause__`. Deliberately neither a `ValueError` nor a
+    `RuntimeError`: those are `retire`'s refusals BEFORE the door, which sent nothing."""
 
 
 def kabul_record(*, patient_number: str, display_name: str, birth_date: date, sex: str,

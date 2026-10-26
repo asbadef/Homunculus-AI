@@ -327,6 +327,79 @@ async def test_two_starts_at_once_start_once(ward, db_session, monkeypatch):
 
 
 # ---------------------------------------------------------------- discharge confirm
+async def test_a_critical_alarm_after_the_start_holds_the_confirmation_until_acknowledged(
+        ward, db_session):
+    """Review I-1 (the user's decision, 2026-10-26): the confirmation ends every alert of the
+    patient (`retire`, reason "discharged"), so a critical alarm that fired after the start would
+    be cleared unseen. The confirmation asks the board again, under its locks: refused
+    `critical_alarm_open`, the start's own code, and nothing written — the admission and the bed
+    as they were, no audit row, the card and its alarm still on the board, no frame sent. Once
+    the alarm is acknowledged, the confirmation goes through."""
+    w, client, app = ward
+    bed_id = w.beds["1"].id
+    admission = await started(w, client)
+    number = admission["patient_number"]
+    await septic_shock(client, number)
+    queue = app.state.broadcaster.subscribe(SLUG)
+    url = f"/admissions/{admission['id']}/discharge/confirm"
+
+    r = await client.post(url, headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "critical_alarm_open")
+    db_session.expire_all()
+    assert (await db_session.execute(select(Admission.state))).scalar_one() == \
+        AdmissionState.PENDING_DISCHARGE
+    assert (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one() \
+        == BedState.PENDING_DISCHARGE
+    assert audited(app, "admission.discharge_confirm") == []
+    (card,) = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    assert card["patient_id"] == number
+    assert "septic_shock" in [a["kind"] for a in card["alerts"]]
+    assert drain(queue) == []
+
+    await acknowledged(client, number)
+    r = await client.post(url, headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert (r.json()["board"], r.json()["alerts"]) == ("ok", "ok")
+
+
+async def test_an_alarm_firing_while_an_exitus_is_started_is_caught_at_the_confirmation(
+        ward, monkeypatch):
+    """Review I-1: the start reads the board before it commits; a critical alarm that fires in
+    between is the confirmation's to catch. An exitus is not exempt: after a death, someone
+    acknowledges the monitor's last critical alarms before the charge nurse confirms."""
+    w, client, _ = ward
+    admission = await signed(w, client)
+    number = admission["patient_number"]
+    reached, gate = asyncio.Event(), asyncio.Event()
+    real = service.initiate_discharge
+
+    async def held(*args, **kwargs):
+        done = await real(*args, **kwargs)      # written, the board already read, not committed
+        reached.set()
+        await gate.wait()
+        return done
+
+    monkeypatch.setattr(service, "initiate_discharge", held)
+    start = asyncio.create_task(client.post(f"/admissions/{admission['id']}/discharge/initiate",
+                                            json={"disposition": "EXITUS"},
+                                            headers=w.auth["doctor"]))
+    try:
+        await asyncio.wait_for(reached.wait(), timeout=10)
+        await septic_shock(client, number)
+    finally:
+        gate.set()
+    r = await start
+    assert r.status_code == 200, r.text
+
+    url = f"/admissions/{admission['id']}/discharge/confirm"
+    r = await client.post(url, headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "critical_alarm_open")
+    await acknowledged(client, number)
+    r = await client.post(url, headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert (r.json()["discharge_disposition"], r.json()["board"]) == ("EXITUS", "ok")
+
+
 async def test_only_the_charge_nurse_confirms_and_only_a_started_discharge(ward):
     w, client, _ = ward
     admission = await signed(w, client)
@@ -438,10 +511,11 @@ async def test_a_retirement_refused_before_its_door_reports_the_board_failed(war
 
 async def test_a_retirement_failing_inside_its_door_is_a_discharge_with_its_alerts_incomplete(
         ward, monkeypatch, caplog):
-    """A-25: the door (Lane A's `retire_and_publish`) ends the alerts in memory and sends the
-    removal in its `finally`; an `alert_cleared` row that does not get written raises from inside
-    it. The discharge is not failed: the board is `ok`, the alert retirement `incomplete`, logged
-    with the number — and the one removal frame was sent."""
+    """A-25: the door (Lane A's `retire_and_publish`) raises from inside, after the tombstone was
+    written — here an `alert_cleared` row that does not get written, after the alerts were ended
+    in memory. The discharge is not failed: the board is `ok` (every read leaves the card off),
+    the alert retirement `incomplete`, logged with the number. In this failure the door's
+    `finally` still sent the one removal frame; a door failing in its `finally` would not have."""
     w, client, app = ward
     admission = await signed(w, client)
     number = admission["patient_number"]

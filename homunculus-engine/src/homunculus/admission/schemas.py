@@ -284,16 +284,17 @@ class AdmissionRow(AdmissionResponse):
 
 
 #: The patient's retirement from the alert world at a discharge (A-11d, A-25): `ok`; `incomplete`
-#: when the app's door was entered and raised — its alerts ended in memory and its removal sent,
-#: but something after (an `alert_cleared` row) not done; `failed` when it was never reached.
+#: when the app's door was entered and raised after the tombstone was written — a removal frame
+#: may or may not have gone out, and a read of the board leaves the card off either way; `failed`
+#: when the door was never reached.
 AlertRetire = Literal["ok", "incomplete", "failed"]
 
 
 class DischargeConfirmResponse(AdmissionResponse):
-    """POST …/discharge/confirm: the admission; whether its card left the board — `ok`, or
-    `failed` when the tombstone was refused, the retirement refused before its door, or the app
-    has no BoardLink (the card then stays on screens until they read the board again); and how
-    the patient's retirement from the alert world went (`alerts`)."""
+    """POST …/discharge/confirm: the admission; whether its card left the board — `ok` once the
+    tombstone is written (every read of the board leaves the card off), or `failed` when the
+    tombstone was refused, the retirement refused before its door, or the app has no BoardLink;
+    and how the patient's retirement from the alert world went (`alerts`)."""
     board: EngineWrite
     alerts: AlertRetire
 
