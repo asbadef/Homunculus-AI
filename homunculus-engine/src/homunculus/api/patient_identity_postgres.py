@@ -76,7 +76,10 @@ class PostgresIdentityStore:
         return _decode(row)
 
     def _ids(self, hospital: str, admitted: bool = False) -> list[str]:
-        clause = " AND state='admitted'" if admitted else ""
+        # G2-B1a: the inventory never lists a `kabul` tombstone (kept for good). NULL-safe: the
+        # row `apply` locks on has no state and no source until its first write lands.
+        clause = (" AND state='admitted'" if admitted else
+                  " AND NOT (COALESCE(state, '')='discharged' AND COALESCE(source, '')='kabul')")
         with self._engine.connect() as conn:
             return list(conn.execute(text(
                 "SELECT patient_id FROM patient_identity WHERE tenant=:tenant" + clause +

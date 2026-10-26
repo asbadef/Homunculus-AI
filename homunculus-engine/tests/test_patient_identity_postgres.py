@@ -102,3 +102,49 @@ def test_a_kabul_record_keeps_its_bed_and_its_tombstone_is_never_pruned():
         with store._engine.begin() as conn:
             conn.execute(text("DELETE FROM patient_identity WHERE tenant=:tenant"), {"tenant": hospital})
         store.close()
+
+
+@requires_db
+def test_a_kabul_tombstone_is_off_the_inventory_and_no_other_feed_rewrites_a_kabul_record():
+    """G2-B1a (Task 5 review): `patient_ids` never lists a tombstone, a discharged HIS record it
+    still does; a manual write, a HIS revival and a manual encounter — all newer than the record —
+    are each refused for a `kabul` record, admitted or discharged, and change nothing."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from homunculus.api.patient_identity import IdentityRecord
+
+    hospital = f"identity-test-{uuid.uuid4()}"
+    store = _provisioned()
+    t0 = datetime(2026, 10, 25, 8, 0, tzinfo=timezone.utc)
+    newer = {"lastUpdated": (t0 + timedelta(hours=2)).isoformat()}
+    try:
+        store.apply(hospital, IdentityRecord(patient_id="H2600001", given="Sentetik", bed="1A",
+                                             state="admitted", source="kabul", updated_at=t0,
+                                             bed_id="bed-uuid", unit_id="unit-uuid"))
+        store.apply(hospital, IdentityRecord(patient_id="H2600001", state="discharged",
+                                             source="kabul", updated_at=t0 + timedelta(hours=1)))
+        store.apply(hospital, IdentityRecord(patient_id="H2600002", given="Sentetik", bed="1B",
+                                             state="admitted", source="kabul", updated_at=t0,
+                                             bed_id="bed-uuid-2", unit_id="unit-uuid"))
+        store.apply(hospital, IdentityRecord(patient_id="20239121", given="HIS", bed="2",
+                                             state="discharged", source="comed", updated_at=t0))
+        assert store.patient_ids(hospital) == ["20239121", "H2600002"]
+        assert store.admitted_ids(hospital) == ["H2600002"]
+        for pid in ("H2600001", "H2600002"):
+            before = store.get(hospital, pid)
+            ident = [{"system": "http://homunculus.local/protocol-no", "value": pid}]
+            for incoming in (
+                parse_fhir_patient({**PATIENT, "identifier": ident,
+                                    "meta": {**newer, "source": "manuel"}}),
+                parse_fhir_patient({**PATIENT, "identifier": ident, "active": True,
+                                    "meta": {**newer, "source": "comed"}}),
+                parse_fhir_encounter({**ENCOUNTER, "subject": {"reference": f"Patient/{pid}"},
+                                      "meta": {**newer, "source": "manuel"}}),
+            ):
+                assert store.apply(hospital, incoming) is None
+            assert store.get(hospital, pid) == before
+    finally:
+        with store._engine.begin() as conn:
+            conn.execute(text("DELETE FROM patient_identity WHERE tenant=:tenant"), {"tenant": hospital})
+        store.close()

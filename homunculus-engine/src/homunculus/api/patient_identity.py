@@ -241,7 +241,9 @@ def parse_fhir_encounter(resource: dict) -> IdentityRecord:
 
 
 def _merge(existing: IdentityRecord | None, incoming: IdentityRecord) -> IdentityRecord | None:
-    """Fold `incoming` into `existing`. None means "refused: this message is older".
+    """Fold `incoming` into `existing`. None means "refused": this message is older, or it is
+    another feed's write to a record an admission here wrote (G2-B1a) — a manual or HIS message
+    can never flip a `kabul` tombstone back to admitted nor move a `kabul` card off its own bed.
 
     What a message does not say, it does not change. An empty name is "not told", never
     "cleared" — a thin transfer must not blank the name the nurse checks the bed against. The
@@ -251,6 +253,8 @@ def _merge(existing: IdentityRecord | None, incoming: IdentityRecord) -> Identit
     frees the bed but keeps the name for the 24 hours the card stays on the board: a readmission
     into the same bed must not show two cards with one label.
     """
+    if existing is not None and existing.source == KABUL and incoming.source != KABUL:
+        return None                               # G2-B1a: only the admission writes it
     stamp = to_utc(incoming.updated_at or datetime.now(timezone.utc))
     if existing is not None and existing.updated_at and stamp < existing.updated_at:
         return None
@@ -315,7 +319,9 @@ class InMemoryIdentityStore:
                       if h == hospital and r.state == _ADMITTED)
 
     def patient_ids(self, hospital: str) -> list[str]:
-        return sorted(pid for h, pid in self._rows if h == hospital)
+        # G2-B1a: a `kabul` tombstone is kept for good, so it is not in the board's inventory.
+        return sorted(pid for (h, pid), r in self._rows.items() if h == hospital
+                      and not (r.state == _DISCHARGED and r.source == KABUL))
 
     def expired(self, hospital: str, now: datetime,
                 ttl: timedelta = DISCHARGED_TTL) -> list[IdentityRecord]:
@@ -370,18 +376,15 @@ class SqliteIdentityStore:
             " state TEXT NOT NULL, source TEXT, updated_at TEXT, diagnoses TEXT,"
             " PRIMARY KEY (tenant, patient_id))"
         )
-        # A store created before diagnoses existed keeps its rows; adding the column is the
-        # whole migration. Wrapped because SQLite has no ADD COLUMN IF NOT EXISTS and a second
-        # start must not fail on the column it added the first time.
-        try:
-            self._conn.execute("ALTER TABLE identity ADD COLUMN diagnoses TEXT")
-        except sqlite3.OperationalError:
-            pass
-        for column in ("bed_id", "unit_id"):          # G2-B1a, the same way
-            try:
+        # A store created before diagnoses (or G2-B1a's bed_id/unit_id) existed keeps its rows;
+        # adding the column is the whole migration. SQLite has no ADD COLUMN IF NOT EXISTS, so
+        # only the columns the file lacks are added — a second start adds nothing — and any
+        # other failure (a read-only or locked file) is raised, never swallowed into a store
+        # whose every read would then fail on a missing column.
+        present = {row[1] for row in self._conn.execute("PRAGMA table_info(identity)")}
+        for column in ("diagnoses", "bed_id", "unit_id"):
+            if column not in present:
                 self._conn.execute(f"ALTER TABLE identity ADD COLUMN {column} TEXT")
-            except sqlite3.OperationalError:
-                pass
         self._conn.commit()
 
     def apply(self, hospital: str, incoming: IdentityRecord) -> IdentityRecord | None:
@@ -444,8 +447,11 @@ class SqliteIdentityStore:
         return [r[0] for r in rows]
 
     def patient_ids(self, hospital: str) -> list[str]:
+        # G2-B1a: never a `kabul` tombstone (kept for good; NULL-safe for a sourceless row).
         return [r[0] for r in self._conn.execute(
-            "SELECT patient_id FROM identity WHERE tenant = ? ORDER BY patient_id", (hospital,))]
+            "SELECT patient_id FROM identity WHERE tenant = ?"
+            " AND NOT (COALESCE(state, '') = ? AND COALESCE(source, '') = ?)"
+            " ORDER BY patient_id", (hospital, _DISCHARGED, KABUL))]
 
     def expired(self, hospital: str, now: datetime,
                 ttl: timedelta = DISCHARGED_TTL) -> list[IdentityRecord]:
