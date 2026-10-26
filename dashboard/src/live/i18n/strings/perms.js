@@ -10,7 +10,7 @@
 // the roles arm's test holds this file to the catalogue so that fallback is never silently the
 // rule.
 //
-// Twenty-one short, static sentences keyed by a stable identifier are ordinary dashboard strings,
+// Twenty-two short, static sentences keyed by a stable identifier are ordinary dashboard strings,
 // not product copy: the same mechanism every other string uses. The keys are NOT translated —
 // `alerts.ack` is printed beside each description, because it is what a support call quotes.
 // AZ/RU/EN await a native speaker's review before the pilot.
