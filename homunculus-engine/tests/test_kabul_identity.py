@@ -240,7 +240,7 @@ def test_a_tombstone_outlives_the_retention_sweep_and_its_readings_are_still_dro
 
 def test_the_escalation_cycle_retiring_an_alerting_tombstone_tells_its_units_screens():
     """G2-A11 D6 with A-25: a discharge whose retire call never came is retired by the escalation
-    cycle, and the one removal it publishes is the tombstone's board (`_tombstone_board`, from the
+    cycle, and the one removal it publishes is the tombstone's board (`tombstone_board`, from the
     record the guard already read) — the last bed and unit, no name — so the screen scoped to that
     unit is told too, and no other. Before the merge it was the bare removal, `identity: null`,
     which no scoped screen ever receives."""

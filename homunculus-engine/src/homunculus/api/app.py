@@ -33,7 +33,7 @@ from homunculus.api.alert_lifecycle import (
 )
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
-    _tombstone_board, board_snapshot, freshness_turned, identity_only_board, patient_board,
+    board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
 )
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, KABUL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
@@ -353,7 +353,7 @@ def create_app(
             for pid in sorted(gone):
                 # G2-B1a (A-25): the removal is the tombstone's board, built from the record read
                 # above — its last bed and unit, so a screen scoped to that unit is told too.
-                await retire_and_publish(hospital, pid, frame=_tombstone_board(gone[pid]), now=now)
+                await retire_and_publish(hospital, pid, frame=tombstone_board(gone[pid]), now=now)
             alerts = [(pid, a) for pid, a in alerts if pid not in gone]
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it

@@ -290,7 +290,7 @@ def _own_bed(record: IdentityRecord) -> dict:
             "bed_key": None}
 
 
-def _tombstone_board(record: IdentityRecord) -> dict:
+def tombstone_board(record: IdentityRecord) -> dict:
     """What a tombstone's patient is on the board: a removal. It carries the last bed and unit
     and no name, so a scoped screen of that unit is told too (`scope.sees_patient` reads them)."""
     return {**identity_only_board(record), "removed": True,
@@ -318,7 +318,7 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
                   identity: IdentityRecord | None = None,
                   bedmap: BedMap | None = None, now: datetime | None = None) -> dict:
     if is_tombstone(identity):                    # G2-B1a: the patient left; a removal
-        return _tombstone_board(identity)
+        return tombstone_board(identity)
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
     # One instant for the whole card (G2-A2, D3, X2): NEWS2's freshness and the antibiotic clock

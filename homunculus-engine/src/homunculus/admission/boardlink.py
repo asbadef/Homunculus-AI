@@ -52,7 +52,7 @@ from fastapi import Request
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditEvent, AuditLog
-from homunculus.api.board import _tombstone_board, identity_only_board, patient_board
+from homunculus.api.board import identity_only_board, patient_board, tombstone_board
 from homunculus.api.clinical import build_entries, profile_from_payload, profile_to_payload
 from homunculus.api.notify import Notifier
 from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore, is_tombstone
@@ -119,14 +119,14 @@ class BoardLink:
                identity: IdentityRecord | None = None) -> dict | None:
         """The patient's board as /patients would carry it, or None when there is none to send —
         built without creating the patient in the engine (`patient_board` reads `engine.state()`,
-        which would). A tombstone's board is its removal (`_tombstone_board`), never an
+        which would). A tombstone's board is its removal (`tombstone_board`), never an
         identity-only card: the tombstone keeps the name (A-16), and such a card would bring the
         discharged patient back on every screen. A number with neither an identity nor a reading
         has no board."""
         engine = self._engine(tenant)
         identity = identity if identity is not None else self._identities.get(tenant, patient_number)
         if is_tombstone(identity):
-            return _tombstone_board(identity)
+            return tombstone_board(identity)
         if patient_number in set(engine.patient_ids()):
             return patient_board(engine, patient_number, self._store(tenant), identity=identity,
                                  bedmap=self._bedmap)
@@ -234,7 +234,7 @@ class BoardLink:
             raise ValueError(f"retire takes the kabul tombstone of {patient_number}")
         if self._retire is None:
             raise RuntimeError("retire_patient not wired")
-        return await self._retire(tenant, patient_number, frame=_tombstone_board(record))
+        return await self._retire(tenant, patient_number, frame=tombstone_board(record))
 
 
 def board_link_of(request: Request) -> BoardLink | None:
