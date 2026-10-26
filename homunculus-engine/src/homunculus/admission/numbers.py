@@ -40,8 +40,15 @@ def format_patient_number(year: int, sequence: int) -> str:
 async def next_patient_number(db: AsyncSession, tenant_id: uuid.UUID, *,
                               now: datetime | None = None) -> str:
     """The next number of this tenant's year. Call it inside the transaction that writes the
-    patient: the counter row stays locked until that transaction commits or rolls back."""
-    year = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).year
+    patient: the counter row stays locked until that transaction commits or rolls back.
+
+    `now` is the server's clock, never the request's, and must carry its time zone: Python reads a
+    naive datetime in the machine's local zone, so the year of a number — and with it which
+    counter is taken — would depend on where the process runs. A naive one is a ValueError."""
+    now = datetime.now(timezone.utc) if now is None else now
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("`now` must carry its time zone (an aware datetime, e.g. UTC).")
+    year = now.astimezone(timezone.utc).year
     # A tenant's first admission of a year makes the row; two first admissions at once both
     # reach the UPDATE below, one after the other, and get 1 and 2.
     await db.execute(insert(PatientNumberCounter)

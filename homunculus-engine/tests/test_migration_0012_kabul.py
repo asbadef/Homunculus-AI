@@ -12,15 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import contextmanager
 
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from annotated_types import MaxLen
-from sqlalchemy import inspect, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import homunculus.admission.models  # noqa: F401  (register every table on Base.metadata)
 import homunculus.auth.models  # noqa: F401
@@ -45,6 +47,11 @@ ENCRYPTED_0002 = {"display_name", "date_of_birth", "sex", "his_patient_reference
 PHI_WIDTH = 1536
 FOUR_BYTES = "\U0001D400"                     # MATHEMATICAL BOLD CAPITAL A: four bytes in UTF-8
 AZERBAIJANI = "əşçğıöüƏŞÇĞİÖÜ"               # two bytes each
+#: 0012's four enums: the type's name in PostgreSQL → the table and column of the model that uses it.
+ENUMS_0012 = {"consent": ("patients", "consent"),
+              "admissiontype": ("admissions", "admission_type"),
+              "bloodgroup": ("admissions", "blood_group"),
+              "dischargedisposition": ("admissions", "discharge_disposition")}
 ADMISSION_COLUMNS = {"admission_type", "blood_group", "allergies_text", "no_known_allergy",
                      "comorbidity_codes", "comorbidities_text", "discharge_disposition",
                      "discharge_institution", "discharge_reported_by", "discharge_at",
@@ -118,10 +125,39 @@ def _before_0012(cfg, engine) -> dict:
     return {"a": a, "b": b, "patients": rows, "groups": groups, "bed": bed}
 
 
+@contextmanager
+def _database_timezone(engine, zone: str):
+    """The test database's own time zone, for every session opened while this runs (`ALTER
+    DATABASE … SET timezone`), RESET afterwards whatever happens. Alembic opens its own connections,
+    so this is the way to run a migration under another session time zone; the database is the
+    shared test one (conftest.py serialises the runs), which had no setting of its own before."""
+    with engine.connect() as conn:
+        name = engine.dialect.identifier_preparer.quote(
+            conn.execute(text("SELECT current_database()")).scalar_one())
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER DATABASE {name} SET timezone TO '{zone}'"))
+        # A connection opened now, not one from the pool: the setting must really apply.
+        fresh = create_engine(engine.url, poolclass=NullPool)
+        try:
+            with fresh.connect() as conn:
+                assert conn.execute(text("SHOW timezone")).scalar_one() == zone
+        finally:
+            fresh.dispose()
+        yield
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER DATABASE {name} RESET timezone"))
+
+
 def test_every_existing_patient_gets_a_number_in_its_tenants_utc_year(clean_db):
+    """Run under Baku's session time zone (UTC+4), where 02:00 on 1 January is 2026 on the wall
+    and 2025 in UTC: a migration that took the year from the session's wall clock, not from UTC,
+    would give `a25_eve` H2600001 (a 2026 number) instead of H2500003, and `a26` the next."""
     engine, cfg = clean_db
     world = _before_0012(cfg, engine)
-    command.upgrade(cfg, "0012")
+    with _database_timezone(engine, "Asia/Baku"):
+        command.upgrade(cfg, "0012")
 
     with engine.begin() as conn:
         numbers = dict(conn.execute(text("SELECT id, patient_number FROM patients")).all())
@@ -194,7 +230,7 @@ async def _store_and_read(tenant: uuid.UUID, values: dict[str, str]) -> dict[str
     try:
         maker = async_sessionmaker(engine, expire_on_commit=False)
         async with maker() as session:
-            patient = Patient(tenant_id=tenant, patient_number="H2600001",
+            patient = Patient(tenant_id=tenant, patient_number="H9900001",   # a fixture's, not live
                               date_of_birth="1970-01-01", sex="female", **values)
             session.add(patient)
             await session.commit()
@@ -288,3 +324,18 @@ def test_the_model_and_the_migration_agree_on_what_0012_owns(clean_db):
             "compare_type": True, "compare_server_default": False,
             "include_object": only_0012})
         assert compare_metadata(ctx, Base.metadata) == []
+
+        # `compare_metadata` compares an enum column's type by its name, never by its labels: a
+        # label the migration lacks is a 500 on the first admission that uses it, and one the model
+        # lacks is a value the application cannot read.
+        in_database = {name: list(conn.execute(text(
+            "SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid "
+            "WHERE t.typname = :n ORDER BY e.enumsortorder"), {"n": name}).scalars())
+            for name in ENUMS_0012}
+    in_model = {}
+    for name, (table, column) in ENUMS_0012.items():
+        kind = Base.metadata.tables[table].c[column].type
+        assert kind.name == name, f"{table}.{column} is the type {kind.name!r}, not {name!r}"
+        in_model[name] = list(kind.enums)
+    assert all(in_database.values()), in_database
+    assert in_database == in_model

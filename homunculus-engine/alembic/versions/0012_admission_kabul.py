@@ -30,10 +30,17 @@ Revision 0012, follows 0011.
 ONE STATEMENT PER op.execute (asyncpg prepares each one; see 0004 and 0010).
 
 Downgrade drops all of it: the patient numbers, the form's extra fields, the dispositions and the
-`beds.release` rows (any group's) are lost. Back the database up first (runbook: pg_dump). It
-narrows 0002's four columns back to 512, and STOPS — the whole downgrade rolled back, one
-transaction — if a value written since no longer fits: a ciphertext cut to fit is a name nobody
-can read again. Such a row is the operator's to deal with before downgrading.
+`beds.release` rows (any group's) are lost, and every closed bed REOPENS (`beds.is_active` goes, so
+a bed an administrator closed is offered to admissions again). Back the database up first
+(runbook: pg_dump). It narrows 0002's four columns back to 512, and STOPS — the whole downgrade
+rolled back, one transaction — if a value written since no longer fits: a ciphertext cut to fit is
+a name nobody can read again. Such a row is the operator's to deal with before downgrading.
+
+Rolling back across 0012 after real admissions means RESTORING THE pg_dump, not downgrade then
+upgrade. That round trip runs, and the upgrade numbers every patient again — oldest first, by the
+year it was created in — which need not be the number the patient was given at admission and was
+typed into the bedside device, the board's key for that patient. A patient number is not
+reproducible from the data; only the dump holds the numbers that were issued.
 
 Revision ID: 0012
 Revises: 0011

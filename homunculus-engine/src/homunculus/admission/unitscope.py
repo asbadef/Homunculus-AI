@@ -13,6 +13,14 @@ is about a bed, and a bed belongs to a unit.
 Since B1a the grants name tenant UUIDs (spec D9): the unit and bed ids of our own structure, as
 `GET /tenant/structure` gives them to the scope editor. Compared case-insensitively, as the board
 compares them (`scope.normalise_id`).
+
+What these functions compare is ids; nothing here looks a bed up. The caller must already have
+PROVEN the bed to be in the caller's own tenant, from the database, and passes that bed's room's
+unit (`Bed → Room.unit_id`) — never a unit id read from the request body. A grant is only text, so
+an id that was not first tied to this tenant proves nothing.
+
+A missing id (`None`: a bed whose unit could not be resolved) matches no grant. It is never turned
+into the text "none", a name a grant may well hold, and so never reaches by accident.
 """
 from __future__ import annotations
 
@@ -37,15 +45,25 @@ async def caller_scope(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUI
                        enforce_unassigned=enforce_unassigned_default())
 
 
-def reaches(scope: Scope, *, unit_id: uuid.UUID | str, bed_id: uuid.UUID | str) -> bool:
-    """Whether this scope reaches this bed: unrestricted, its unit granted, or the bed itself."""
+def _key(value: uuid.UUID | str | None) -> str | None:
+    """An id as the scope holds it, or None for a missing one: never `str(None)`."""
+    return None if value is None else normalise_id(str(value))
+
+
+def reaches(scope: Scope, *, unit_id: uuid.UUID | str | None,
+            bed_id: uuid.UUID | str | None) -> bool:
+    """Whether this scope reaches this bed: unrestricted, its unit granted, or the bed itself.
+    The ids must already be proven this tenant's (see the module's docstring); a missing one
+    matches nothing."""
     if scope.unrestricted:
         return True
-    return (normalise_id(str(bed_id)) in scope.bed_ids
-            or normalise_id(str(unit_id)) in scope.unit_ids)
+    bed, unit = _key(bed_id), _key(unit_id)
+    return ((bed is not None and bed in scope.bed_ids)
+            or (unit is not None and unit in scope.unit_ids))
 
 
-def require_reach(scope: Scope, *, unit_id: uuid.UUID | str, bed_id: uuid.UUID | str) -> None:
+def require_reach(scope: Scope, *, unit_id: uuid.UUID | str | None,
+                  bed_id: uuid.UUID | str | None) -> None:
     """403 `out_of_scope` unless the scope reaches the bed. Not a 404: the caller picked the bed
     from a structure already narrowed to her units, so she knows it exists."""
     if not reaches(scope, unit_id=unit_id, bed_id=bed_id):

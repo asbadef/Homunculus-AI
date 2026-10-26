@@ -12,6 +12,7 @@ bound every text by the column it lands in, and hold their texts as `FormText`.
 """
 from __future__ import annotations
 
+import math
 import unicodedata
 import uuid
 from datetime import date, datetime
@@ -19,7 +20,9 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo
+from pydantic import (
+    AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator,
+)
 
 from homunculus.admission.errors import field_invalid
 from homunculus.admission.models import (
@@ -42,16 +45,25 @@ def _has_control(text: str) -> bool:
     return any(unicodedata.category(ch) == "Cc" and ch not in _KEPT_CONTROLS for ch in text)
 
 
-def _refusal(info: ValidationInfo) -> HTTPException:
+_CONTROL_MESSAGE = "A control character (other than tab or a line break) is not text."
+#: How many containers a JSON list of the note may nest, the list itself the first: an allergy or a
+#: medication is a record of a few fields, not a tree.
+JSON_MAX_DEPTH = 8
+
+
+def _refusal(info: ValidationInfo, message: str = _CONTROL_MESSAGE) -> HTTPException:
     """The coded 422 every form refusal answers, naming the field (admission/errors.py).
 
     An HTTPException, not a ValueError, on purpose: pydantic passes any exception but ValueError
     and AssertionError straight through, so this one leaves the reading of the body as it is and
     FastAPI answers it as `{"detail": {"code": "field_invalid:<field>", …}}` — the shape of every
     other form refusal, which the dashboard maps by its code — rather than a 422 list whose words
-    it cannot translate. The value is never repeated in the answer."""
-    return field_invalid(info.field_name or "text",
-                         "A control character (other than tab or a line break) is not text.").http()
+    it cannot translate. The value is never repeated in the answer.
+
+    A coded refusal stops at the first bad character it meets, and with it the reading of the
+    body: the answer names that one field, and anything else wrong in the body — a second bad
+    text, a wrong type — is answered once this one is fixed, not beside it."""
+    return field_invalid(info.field_name or "text", message).http()
 
 
 def _form_text(value: str | None, info: ValidationInfo) -> str | None:
@@ -60,19 +72,34 @@ def _form_text(value: str | None, info: ValidationInfo) -> str | None:
     return value
 
 
-def _holds_control(item: Any) -> bool:
-    if isinstance(item, str):
-        return _has_control(item)
-    if isinstance(item, dict):
-        return any(_holds_control(key) or _holds_control(value) for key, value in item.items())
-    if isinstance(item, list):
-        return any(_holds_control(value) for value in item)
-    return False
+def _json_fault(root: Any) -> str | None:
+    """Why a free-form JSON value cannot be kept, in words — or None when it can: a control
+    character in a key or a string, a number that is not finite (Python's json reads NaN and
+    ±Infinity, JSONB cannot hold them: a 500 at the database), or more than `JSON_MAX_DEPTH`
+    containers nested. It walks with a stack of its own and not by recursion, so a body nested a
+    thousand deep is refused here rather than ending in a RecursionError (a 500), and it goes no
+    deeper than the first container past the limit."""
+    stack = [(root, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, str):
+            if _has_control(item):
+                return _CONTROL_MESSAGE
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                return "A number that is not finite (NaN or Infinity) cannot be kept."
+        elif isinstance(item, (dict, list)):
+            if depth > JSON_MAX_DEPTH:
+                return f"A list nests at most {JSON_MAX_DEPTH} levels deep."
+            children = [*item, *item.values()] if isinstance(item, dict) else item
+            stack.extend((child, depth + 1) for child in children)
+    return None
 
 
 def _form_json(value: list[dict] | None, info: ValidationInfo) -> list[dict] | None:
-    if value is not None and _holds_control(value):
-        raise _refusal(info)
+    fault = None if value is None else _json_fault(value)
+    if fault is not None:
+        raise _refusal(info, fault)
     return value
 
 
@@ -83,7 +110,8 @@ def _form_json(value: list[dict] | None, info: ValidationInfo) -> list[dict] | N
 #: which the dashboard reads as a list's) instead of the string's (`string_too_long`).
 FormText = Annotated[str, AfterValidator(_form_text)]
 OptionalFormText = Annotated[str | None, AfterValidator(_form_text)]
-#: The note's free-form JSON lists (§5.2 fields 11–13): no control character in a key or a value.
+#: The note's free-form JSON lists (§5.2 fields 11–13): no control character in a key or a value,
+#: no number that is not finite, and no nesting past `JSON_MAX_DEPTH`.
 FormJson = Annotated[list[dict] | None, AfterValidator(_form_json)]
 
 
@@ -149,8 +177,9 @@ class AdmissionNoteFields(BaseModel):
     # Strict: JSON `true` is not 1 kg and "72" is not a number (an integer is).
     weight_kg: float | None = Field(default=None, strict=True)    # #19
     height_cm: float | None = Field(default=None, strict=True)    # #20
-    gestational_age_weeks: float | None = None                    # #21
-    postnatal_day: int | None = None                              # #22
+    # Strict, as weight and height are: `true` is not one week and "7" is not a day.
+    gestational_age_weeks: float | None = Field(default=None, strict=True)    # #21
+    postnatal_day: int | None = Field(default=None, strict=True)              # #22
     transplant_day_zero: date | None = None                       # #23
     cardiac_surgery_name: OptionalFormText = Field(default=None, max_length=200)  # #24
     admission_note_narrative: OptionalFormText = Field(default=None, max_length=2000)  # #25
@@ -329,7 +358,9 @@ class DischargeStart(BaseModel):
     """The physician's decision (Group 2 · B1a, spec D7 and §3.3): where the patient goes, when,
     and a note. `institution` is required for OTHER_INSTITUTION and refused for any other;
     `reported_by` is written for EXITUS only (the caller unless another name is written);
-    `discharge_at` defaults to now and is never in the future (admission/form.py)."""
+    `discharge_at` defaults to now and is never in the future (admission/form.py). A blank
+    `institution` or `reported_by` (empty, or only white space) is a box left empty: it is read as
+    not written, and is None here and in the column."""
     model_config = ConfigDict(extra="forbid")
 
     disposition: DischargeDisposition
@@ -337,6 +368,12 @@ class DischargeStart(BaseModel):
     reported_by: OptionalFormText = Field(default=None, max_length=200)
     discharge_at: datetime | None = None
     note: OptionalFormText = Field(default=None, max_length=2000)
+
+    @field_validator("institution", "reported_by")
+    @classmethod
+    def _blank_is_not_written(cls, value: str | None) -> str | None:
+        # The same question as admission/form.py `_blank`, which this module cannot import.
+        return None if value is None or not value.strip() else value
 
 
 # ---------------------------------------------------------------------------

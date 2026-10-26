@@ -6,6 +6,7 @@ No database: the rules are pure. Synthetic values only."""
 from __future__ import annotations
 
 import enum
+import json
 import math
 from datetime import date, datetime, timedelta, timezone
 
@@ -20,7 +21,7 @@ from homunculus.admission.errors import CODES, Refusal
 from homunculus.admission.form import (
     CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_discharge,
 )
-from homunculus.admission.models import Admission, Patient
+from homunculus.admission.models import Admission, DischargeDisposition, Patient
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionNoteFields, DischargeStart, PatientIdentity,
 )
@@ -137,6 +138,26 @@ def test_a_weight_or_height_is_a_number_never_a_boolean_or_a_string(field, value
         body(note={field: value})
     assert [(e["loc"][-1], e["type"]) for e in caught.value.errors()] == [(field, "float_type")]
     assert body(note={field: 72}).note.model_dump()[field] == 72.0
+
+
+@pytest.mark.parametrize("value", [True, False, "30"])
+def test_a_gestational_age_is_a_number_never_a_boolean_or_a_string(value):
+    """The same strictness as weight and height: `true` is not one week."""
+    with pytest.raises(ValidationError) as caught:
+        body(note={"gestational_age_weeks": value})
+    assert [(e["loc"][-1], e["type"]) for e in caught.value.errors()] \
+        == [("gestational_age_weeks", "float_type")]
+    assert body(note={"gestational_age_weeks": 30}).note.gestational_age_weeks == 30.0
+    assert body(note={"gestational_age_weeks": 29.5}).note.gestational_age_weeks == 29.5
+
+
+@pytest.mark.parametrize("value", [True, False, "7", 7.5, 7.0])
+def test_a_postnatal_day_is_a_whole_number_never_a_boolean_a_string_or_a_fraction(value):
+    with pytest.raises(ValidationError) as caught:
+        body(note={"postnatal_day": value})
+    assert [(e["loc"][-1], e["type"]) for e in caught.value.errors()] \
+        == [("postnatal_day", "int_type")]
+    assert body(note={"postnatal_day": 7}).note.postnatal_day == 7
 
 
 def test_a_newborn_is_admitted_when_the_caller_passed_the_utc_date():
@@ -285,6 +306,87 @@ def test_tab_and_line_breaks_stay_in_a_note():
     assert discharge(note=text).note == text
 
 
+def test_a_coded_refusal_stops_the_reading_at_the_first_text_that_earns_it():
+    """The answer names that field alone; another fault in the body (here a sex that is not one)
+    is answered once the text is fixed, not beside it. `schemas._refusal` says so."""
+    data = body().model_dump(mode="json")
+    data["patient"].update(sex="bogus", father_name="Sentetik\u0000", phone="+994\u000050")
+    assert refused_on_reading(AdmissionCreate, data) == "field_invalid:father_name"
+    data["patient"]["father_name"] = "Sentetik"
+    assert refused_on_reading(AdmissionCreate, data) == "field_invalid:phone"
+    data["patient"]["phone"] = "+994 50 123 45 67"
+    with pytest.raises(ValidationError) as caught:
+        AdmissionCreate.model_validate(data)
+    assert [e["loc"][-1] for e in caught.value.errors()] == ["sex"]
+
+
+# ---------------------------------------------------------------- the note's free-form JSON lists
+JSON_LISTS = ["active_comorbidities", "active_medications_on_admission", "known_allergies"]
+
+
+def nested(depth: int) -> list:
+    """A list of `depth` containers, alternately list and dict, the outer list the first level:
+    `[{"a": [{"a": …}]}]`. Built from the inside out, so building it recurses nowhere."""
+    node: object = "leaf"
+    for level in range(depth, 0, -1):
+        node = [node] if level % 2 else {"a": node}
+    return node
+
+
+@pytest.mark.parametrize("field", JSON_LISTS)
+def test_a_json_list_nests_eight_containers_deep_and_no_deeper(field):
+    """An allergy or a medication is a record of a few fields, not a tree."""
+    data = body().model_dump(mode="json")
+    data["note"][field] = nested(8)
+    AdmissionCreate.model_validate(data)
+    data["note"][field] = nested(9)
+    assert refused_on_reading(AdmissionCreate, data) == f"field_invalid:{field}"
+
+
+def test_a_json_list_nested_past_the_recursion_limit_is_refused_not_a_500():
+    """A walk that recurses ends in a RecursionError (a 500) long before the body is too big."""
+    data = body().model_dump(mode="json")
+    data["note"]["known_allergies"] = nested(5_000)
+    assert refused_on_reading(AdmissionCreate, data) == "field_invalid:known_allergies"
+
+
+@pytest.mark.parametrize("shape", [
+    lambda x: [{"dose": x}], lambda x: [{"dose": [1, x]}], lambda x: [{"dose": {"deep": x}}],
+], ids=["in a field", "in a list", "in a record"])
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+@pytest.mark.parametrize("field", JSON_LISTS)
+def test_a_json_list_holds_no_number_that_is_not_finite(field, value, shape):
+    """Python's json reads NaN and ±Infinity; JSONB cannot store them (a 500 at the database)."""
+    data = body().model_dump(mode="json")
+    data["note"][field] = shape(value)
+    assert refused_on_reading(AdmissionCreate, data) == f"field_invalid:{field}"
+
+
+def test_a_json_list_keeps_every_other_scalar():
+    kept = [{"agent": "Penisilin", "dose": 1.5, "units": 2, "zero": 0.0, "given": True,
+             "note": None, "tags": ["a", 3, 4.25, False, None]}]
+    data = body().model_dump(mode="json")
+    data["note"]["known_allergies"] = kept
+    assert AdmissionCreate.model_validate(data).note.known_allergies == kept
+
+
+async def test_a_nan_over_http_is_the_coded_422_not_a_500():
+    app = FastAPI()
+
+    @app.post("/admit")
+    async def admit(payload: AdmissionCreate) -> dict:
+        return {"ok": True}
+
+    data = body().model_dump(mode="json")
+    data["note"]["known_allergies"] = [{"dose": "__nan__"}]
+    raw = json.dumps(data).replace('"__nan__"', "NaN")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://kabul") as client:
+        answer = await client.post("/admit", content=raw,
+                                   headers={"content-type": "application/json"})
+    assert answer.status_code == 422
+    assert answer.json()["detail"]["code"] == "field_invalid:known_allergies"
+
+
 async def test_a_nul_over_http_is_the_coded_422_not_a_500():
     """PostgreSQL refuses NUL in text and in JSONB; the body never reaches it with one."""
     app = FastAPI()
@@ -362,6 +464,41 @@ def test_a_discharge_decision_is_refused_where_it_is_incomplete_or_impossible(ov
     with pytest.raises(Refusal) as caught:
         check_discharge(discharge(**over), now=NOW, admitted_at=NOW - timedelta(days=2))
     assert caught.value.code == f"field_invalid:{field}"
+
+
+@pytest.mark.parametrize(("over", "field"), [
+    ({"disposition": "HOME", "institution": ""}, "institution"),
+    ({"disposition": "HOME", "institution": "   "}, "institution"),
+    ({"disposition": "EXITUS", "institution": " \t "}, "institution"),
+    ({"disposition": "HOME", "reported_by": "   "}, "reported_by"),
+    ({"disposition": "OTHER_INSTITUTION", "institution": "Sentetik Klinika", "reported_by": ""},
+     "reported_by"),
+    ({"disposition": "EXITUS", "reported_by": "  "}, "reported_by"),
+])
+def test_a_blank_institution_or_reporter_is_not_written_and_is_stored_as_none(over, field):
+    """A box left with a space in it is a box left empty: no refusal for a field that belongs to
+    another disposition, and nothing blank for the column."""
+    decision = discharge(**over)
+    assert getattr(decision, field) is None
+    check_discharge(decision, now=NOW, admitted_at=NOW - timedelta(days=2))
+
+
+def test_a_written_institution_and_reporter_are_kept_as_written():
+    assert discharge(disposition="OTHER_INSTITUTION", institution=" Sentetik Klinika ") \
+        .institution == " Sentetik Klinika "
+    assert discharge(disposition="EXITUS", reported_by="Dr. Sentetik").reported_by == "Dr. Sentetik"
+
+
+def test_the_rule_reads_a_blank_as_not_written_even_from_a_payload_the_schema_did_not_shape():
+    """`check_discharge` asks the same question (`_blank`) as the schema, so a decision built
+    around the schema's validators is not refused for a box left blank either."""
+    blank = DischargeStart.model_construct(disposition=DischargeDisposition.HOME, institution="  ",
+                                           reported_by=" ", discharge_at=None, note=None)
+    check_discharge(blank, now=NOW, admitted_at=None)
+    exitus = DischargeStart.model_construct(disposition=DischargeDisposition.EXITUS,
+                                            institution="", reported_by="  ", discharge_at=None,
+                                            note=None)
+    check_discharge(exitus, now=NOW, admitted_at=None)
 
 
 def test_a_discharge_a_minute_ahead_of_the_server_is_a_clock_not_the_future():

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timezone, tzinfo
 
 import pytest
 from sqlalchemy import select
@@ -32,6 +33,33 @@ def test_the_number_holds_no_path_pid_or_hl7_separator():
     """`/` would be a path segment, `_` is where the NCE device splits a PID, `|^~\\&` are HL7's."""
     for year, seq in ((2026, 1), (2026, 99_999), (2099, 12_345), (2100, 7)):
         assert re.fullmatch(r"H\d{7}", format_patient_number(year, seq))
+
+
+class _NoDatabase:
+    """A session that must never be reached."""
+
+    async def execute(self, *_args, **_kwargs):
+        raise AssertionError("the clock was accepted: the database was reached")
+
+
+async def test_a_clock_without_its_time_zone_is_refused_before_the_database_is_touched():
+    """`astimezone` on a naive datetime reads it in the SERVER's local zone: the year of a number
+    would depend on where the process happens to run. `now` is the server's, never the request's."""
+    with pytest.raises(ValueError, match="time zone"):
+        await next_patient_number(_NoDatabase(), uuid.uuid4(), now=datetime(2026, 12, 31, 23, 30))
+
+
+async def test_a_clock_whose_zone_has_no_offset_is_refused_too():
+    class NoOffset(tzinfo):
+        def utcoffset(self, moment):
+            return None
+
+        def dst(self, moment):
+            return None
+
+    with pytest.raises(ValueError, match="time zone"):
+        await next_patient_number(_NoDatabase(), uuid.uuid4(),
+                                  now=datetime(2026, 6, 1, 12, 0, tzinfo=NoOffset()))
 
 
 async def _tenant(db, slug: str) -> Tenant:
@@ -93,18 +121,15 @@ async def test_a_rolled_back_admission_gives_its_number_back(db_session):
     assert await next_patient_number(db_session, tenant_id, now=MID_2026) == "H2600001"
 
 
-@requires_db
-async def test_two_admissions_at_once_never_share_a_number(db_session):
+async def _two_at_once(db_session, tenant_id) -> list[str]:
     """Two sessions, two connections, both taking a number inside their own transaction: the
     second waits on the counter row until the first commits, then takes the next number."""
-    a = await _tenant(db_session, "hastane-a")
-    await db_session.commit()
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
     first_has_one = asyncio.Event()
 
     async def first():
         async with maker() as db:
-            number = await next_patient_number(db, a.id, now=MID_2026)
+            number = await next_patient_number(db, tenant_id, now=MID_2026)
             first_has_one.set()
             await asyncio.sleep(0.3)        # hold the row lock while the second one asks
             await db.commit()
@@ -113,9 +138,29 @@ async def test_two_admissions_at_once_never_share_a_number(db_session):
     async def second():
         await first_has_one.wait()
         async with maker() as db:
-            number = await next_patient_number(db, a.id, now=MID_2026)
+            number = await next_patient_number(db, tenant_id, now=MID_2026)
             await db.commit()
             return number
 
-    got = await asyncio.gather(first(), second())
-    assert sorted(got) == ["H2600001", "H2600002"]
+    return sorted(await asyncio.gather(first(), second()))
+
+
+@requires_db
+async def test_two_admissions_at_once_never_share_a_number(db_session):
+    """No counter row yet: both reach the insert, one makes the row, both then update it."""
+    a = await _tenant(db_session, "hastane-a")
+    await db_session.commit()
+    assert await _two_at_once(db_session, a.id) == ["H2600001", "H2600002"]
+
+
+@requires_db
+async def test_two_admissions_in_a_running_year_take_the_next_two_numbers(db_session):
+    """The common case: the row exists and the year's 41st patient is behind us. Two at once get
+    42 and 43 — an insert that reset the row, or two reads of 41, would show here and not above."""
+    a = await _tenant(db_session, "hastane-a")
+    db_session.add(PatientNumberCounter(tenant_id=a.id, year=2026, last=41))
+    await db_session.commit()
+
+    assert await _two_at_once(db_session, a.id) == ["H2600042", "H2600043"]
+    last = (await db_session.execute(select(PatientNumberCounter.last))).scalar_one()
+    assert last == 43

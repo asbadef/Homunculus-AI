@@ -193,7 +193,7 @@ async def test_break_glass_is_the_reason_and_both_say_so(db_session, world, clie
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
     patient = Patient(tenant_id=world["tenant"].id, display_name="Ayşe Sentetik",
                       date_of_birth="1980-01-01", sex="F", his_patient_reference="S-001",
-                      patient_number="H2600001")
+                      patient_number="H9900001")
     db_session.add(patient)
     await db_session.flush()
     db_session.add(BreakGlassSession(
@@ -215,7 +215,7 @@ async def test_a_closed_break_glass_session_grants_nothing_here_either(
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
     patient = Patient(tenant_id=world["tenant"].id, display_name="Kamran Sintetik",
                       date_of_birth="1975-05-05", sex="M", his_patient_reference="S-002",
-                      patient_number="H2600002")
+                      patient_number="H9900002")
     db_session.add(patient)
     await db_session.flush()
     db_session.add(BreakGlassSession(

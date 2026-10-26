@@ -134,16 +134,19 @@ def check_admission(payload: AdmissionCreate, *, today: date, now: datetime | No
 def check_discharge(payload: DischargeStart, *, now: datetime,
                     admitted_at: datetime | None) -> None:
     """Refuse a discharge decision that is incomplete, impossible, or carries a field that belongs
-    to another disposition. `now` and `admitted_at` are the server's and carry their time zone."""
+    to another disposition (a blank `institution` or `reported_by` is not written, so carries
+    nothing). `now` and `admitted_at` are the server's and carry their time zone."""
     _server_clock("now", now)
     _server_clock("admitted_at", admitted_at)
     elsewhere = payload.disposition == DischargeDisposition.OTHER_INSTITUTION
     if elsewhere and (_blank(payload.institution) or not _readable(payload.institution)):
         raise field_invalid("institution", "Name the institution the patient goes to.")
-    if not elsewhere and payload.institution is not None:
+    # A blank box is a box left empty (the schema stores it as None; `_blank` asks the same of a
+    # payload that was not shaped by it): refused only when something is written in it.
+    if not elsewhere and not _blank(payload.institution):
         raise field_invalid("institution",
                             "An institution is named only for a discharge to another institution.")
-    if payload.reported_by is not None:
+    if not _blank(payload.reported_by):
         if payload.disposition != DischargeDisposition.EXITUS:
             raise field_invalid("reported_by", "Who reported it is written only for an exitus.")
         if not _readable(payload.reported_by):
