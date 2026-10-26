@@ -10,7 +10,13 @@ Postgres implementation in patient_identity_postgres.py. Identity is NOT rehydra
 audit log — the audit deliberately carries no name, so the record's durability has to live here.
 
 PHI: name, date of birth and sex are encrypted at rest. The protocol number is the key and stays
-in the clear. Discharged records are dropped 24 hours later.
+in the clear. Discharged records are dropped 24 hours later — except a `kabul` record's.
+
+G2-B1a (Hasta Kabul): an admission made here writes a record too, with source `kabul`, keyed by the
+Homunculus patient number (admission/numbers.py: `H…`, never a HIS protocol number) and carrying
+its own `bed_id` and `unit_id` — the tenant's UUIDs, so the board places the card without the bed
+map. A discharged `kabul` record is kept as a tombstone, never pruned: readings that still arrive
+for its number must not bring the patient back as a nameless card (api/board.py omits it).
 """
 from __future__ import annotations
 
@@ -39,6 +45,8 @@ _ENCOUNTER_STATUS = {"in-progress": _ADMITTED, "finished": _DISCHARGED, "unknown
 # is written into the append-only audit and rendered on cards; free text here would be a channel
 # for exactly the content those two places must never carry.
 _SOURCE = re.compile(r"^[a-z0-9_-]{1,32}$")
+#: G2-B1a — the source of a record an admission here wrote (admission/boardlink.py).
+KABUL = "kabul"
 _key_warned = False
 
 
@@ -83,6 +91,11 @@ class IdentityRecord:
     # carried none", never "this patient has none": a transfer says nothing about diagnosis and
     # must not blank what an admission established.
     diagnoses: tuple[dict, ...] = ()
+    # G2-B1a — the bed and unit an admission here placed the patient in: the tenant's UUIDs, as
+    # text. Empty for a HIS-fed record (the board resolves those through the bed map). Kept on
+    # discharge as the record's last place, so a removal can still reach that unit's screens.
+    bed_id: str = ""
+    unit_id: str = ""
 
     @property
     def display_name(self) -> str:
@@ -111,6 +124,10 @@ class IdentityRecord:
             # rest; the board is authenticated and already carries the name.
             "birth_date": self.birth_date,
             "sex": self.sex,
+            # G2-B1a. The board's bed resolution writes its own `bed_id`/`unit_id` over these
+            # (api/board.py `_bed_resolution`), which for a `kabul` record are these same ids.
+            "bed_id": self.bed_id,
+            "unit_id": self.unit_id,
         }
 
 
@@ -245,12 +262,15 @@ def _merge(existing: IdentityRecord | None, incoming: IdentityRecord) -> Identit
         changed["birth_date"] = incoming.birth_date
     if incoming.sex not in ("", "unknown"):
         changed["sex"] = incoming.sex
-    if incoming.unit or incoming.room or incoming.bed:
-        changed.update(unit=incoming.unit, room=incoming.room, bed=incoming.bed)
+    if incoming.unit or incoming.room or incoming.bed or incoming.bed_id:
+        changed.update(unit=incoming.unit, room=incoming.room, bed=incoming.bed,
+                       bed_id=incoming.bed_id, unit_id=incoming.unit_id)
     if incoming.diagnoses:
         changed["diagnoses"] = incoming.diagnoses
     state = incoming.state if incoming.state is not None else (base.state or _ADMITTED)
     if state == _DISCHARGED:
+        # The bed is freed; `bed_id`/`unit_id` stay as the last place (the board ignores them on
+        # a discharged record, a removal frame carries them).
         changed.update(unit="", room="", bed="")
     return replace(base, state=state, source=incoming.source or base.source,
                    updated_at=stamp, **changed)
@@ -268,8 +288,9 @@ class IdentityStore(Protocol):
 
 
 def _is_expired(record: IdentityRecord, cutoff: datetime) -> bool:
+    # A discharged `kabul` record never expires: it is the tombstone that keeps the card away.
     return (record.state == _DISCHARGED and record.updated_at is not None
-            and record.updated_at < cutoff)
+            and record.updated_at < cutoff and record.source != KABUL)
 
 
 class InMemoryIdentityStore:
@@ -314,7 +335,9 @@ class InMemoryIdentityStore:
 
 
 _SELECT = ("SELECT patient_id, family, given, birth_date, sex, unit, room, bed, state, source,"
-           " updated_at, diagnoses FROM identity")
+           " updated_at, diagnoses, bed_id, unit_id FROM identity")
+# G2-B1a: what the 24-hour sweep may take — never a `kabul` tombstone.
+_PRUNABLE = " AND (source IS NULL OR source <> 'kabul')"
 
 
 def _decode_diagnoses(stored: str | None) -> tuple[dict, ...]:
@@ -354,6 +377,11 @@ class SqliteIdentityStore:
             self._conn.execute("ALTER TABLE identity ADD COLUMN diagnoses TEXT")
         except sqlite3.OperationalError:
             pass
+        for column in ("bed_id", "unit_id"):          # G2-B1a, the same way
+            try:
+                self._conn.execute(f"ALTER TABLE identity ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass
         self._conn.commit()
 
     def apply(self, hospital: str, incoming: IdentityRecord) -> IdentityRecord | None:
@@ -372,19 +400,20 @@ class SqliteIdentityStore:
             return None
         self._conn.execute(
             "INSERT INTO identity (tenant, patient_id, family, given, birth_date, sex,"
-            " unit, room, bed, state, source, updated_at, diagnoses)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " unit, room, bed, state, source, updated_at, diagnoses, bed_id, unit_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(tenant, patient_id) DO UPDATE SET family=excluded.family,"
             " given=excluded.given, birth_date=excluded.birth_date, sex=excluded.sex,"
             " unit=excluded.unit, room=excluded.room, bed=excluded.bed, state=excluded.state,"
             " source=excluded.source, updated_at=excluded.updated_at,"
-            " diagnoses=excluded.diagnoses",
+            " diagnoses=excluded.diagnoses, bed_id=excluded.bed_id, unit_id=excluded.unit_id",
             (hospital, merged.patient_id, encrypt_phi(merged.family), encrypt_phi(merged.given),
              encrypt_phi(merged.birth_date), encrypt_phi(merged.sex),
              merged.unit, merged.room, merged.bed, merged.state, merged.source,
              merged.updated_at.isoformat() if merged.updated_at else None,
              # A diagnosis is health data, so it is encrypted at rest like the name is.
-             encrypt_phi(json.dumps([dict(d) for d in merged.diagnoses]))),
+             encrypt_phi(json.dumps([dict(d) for d in merged.diagnoses])),
+             merged.bed_id, merged.unit_id),
         )
         self._conn.commit()
         return merged
@@ -399,6 +428,8 @@ class SqliteIdentityStore:
             state=row[8], source=row[9] or "",
             updated_at=datetime.fromisoformat(row[10]) if row[10] else None,
             diagnoses=_decode_diagnoses(row[11] if len(row) > 11 else None),
+            bed_id=(row[12] if len(row) > 12 else None) or "",
+            unit_id=(row[13] if len(row) > 13 else None) or "",
         )
 
     def get(self, hospital: str, patient_id: str) -> IdentityRecord | None:
@@ -421,14 +452,15 @@ class SqliteIdentityStore:
         cutoff = (to_utc(now) - ttl).isoformat()
         rows = self._conn.execute(
             _SELECT + " WHERE tenant = ? AND state = ? AND updated_at IS NOT NULL"
-            " AND updated_at < ? ORDER BY patient_id", (hospital, _DISCHARGED, cutoff)).fetchall()
+            " AND updated_at < ?" + _PRUNABLE + " ORDER BY patient_id",
+            (hospital, _DISCHARGED, cutoff)).fetchall()
         return [self._record(r) for r in rows]
 
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         cutoff = (to_utc(now) - ttl).isoformat()
         cur = self._conn.execute(
-            "DELETE FROM identity WHERE state = ? AND updated_at IS NOT NULL AND updated_at < ?",
-            (_DISCHARGED, cutoff))
+            "DELETE FROM identity WHERE state = ? AND updated_at IS NOT NULL AND updated_at < ?"
+            + _PRUNABLE, (_DISCHARGED, cutoff))
         self._conn.commit()
         return cur.rowcount
 
