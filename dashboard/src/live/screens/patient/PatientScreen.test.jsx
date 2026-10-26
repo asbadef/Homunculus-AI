@@ -697,7 +697,7 @@ describe("charting a suspected infection", () => {
       await settle();
     });
     expect(api.chart).toHaveBeenCalledTimes(1);
-    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }]);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }], null);
   });
 
   it("a chart the server took shows the confirmation and nothing that reads as a refusal", async () => {
@@ -731,7 +731,7 @@ describe("charting a suspected infection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Yoxdur kimi işarələ" }));
       await settle();
     });
-    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 0 }]);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 0 }], null);
   });
 
   it("reloads the board afterwards: the engine may now have a finding it did not have", async () => {
