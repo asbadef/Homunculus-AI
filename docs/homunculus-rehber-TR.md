@@ -575,8 +575,9 @@ Dalga 3'te geldi: 3.6.
   onaylanmadı» olarak yanıt beklemeye devam eder ama çalmaz, yeni bildirim de getirmez (G2-A1).
   Homunculus'un kendi kabul ekranından taburcu edilen hasta bütün panellerden bir anda çıkar; açık
   alarmları «taburcu» nedeniyle kapanır (G2-A11). O numara için bir monitör ölçüm göndermeyi
-  sürdürse bile hiçbir alarm, çağrı ya da kart doğmaz. Düşürülen her ölçüm denetim kaydında «taburcu
-  sonrası düşürülen ölçüm» satırı olarak görünür; ölçümün değeri o satıra yazılmaz.
+  sürdürse bile hiçbir alarm, çağrı ya da kart doğmaz. Düşürülen her ölçüm denetim kaydında ayrı bir satır olarak görünür
+  (olay türü `reading_dropped_discharged`; ekranda henüz Türkçe bir etiketi yok); ölçümün değeri o
+  satıra yazılmaz.
   Ekran **kilitliyken de çalar**; oturum kapanınca durur, o an çalmakta olan vuruşlar da kesilir.
   Pano ilk yüklemesini aldıysa, sunucuyla akış daha açılmadan da çalar; akış koparsa panonun son
   bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcı sesi askıya alıp geri
