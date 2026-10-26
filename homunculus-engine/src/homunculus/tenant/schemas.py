@@ -13,6 +13,14 @@ from homunculus.tenant.models import BedState, UnitType
 _Name200 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 _Name100 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 _Label50 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+# A room number is trimmed and measured the same way; a blank one is "no number" (None).
+_Number20 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)]
+# A PATCH's new name (amendment A-26, m-1): trimmed, then measured against its column. No
+# minimum here: an empty name, typed or all blanks, reaches the route, which answers the coded
+# `field_invalid:<name>` — the same refusal either way.
+_Rename200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+_Rename100 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+_Relabel50 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)]
 
 
 class TenantCreate(BaseModel):
@@ -67,7 +75,7 @@ class UnitResponse(BaseModel):
 
 class RoomCreate(BaseModel):
     name: _Name100
-    room_number: str | None = Field(default=None, max_length=20)
+    room_number: _Number20 | None = None
     is_isolation: bool = False
 
 
@@ -106,18 +114,18 @@ class BedStateTransitionRequest(BaseModel):
 # ---------------------------------------------------------------- G2-B1a (Hasta Kabul)
 class UnitPatch(BaseModel):
     """Rename, close (`is_active: false`) or reopen a unit. Nothing is ever deleted."""
-    name: str | None = Field(default=None, min_length=1, max_length=200)
+    name: _Rename200 | None = None
     is_active: bool | None = None
 
 
 class RoomPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=100)
-    room_number: str | None = Field(default=None, max_length=20)
+    name: _Rename100 | None = None
+    room_number: _Number20 | None = None
     is_active: bool | None = None
 
 
 class BedPatch(BaseModel):
-    label: str | None = Field(default=None, min_length=1, max_length=50)
+    label: _Relabel50 | None = None
     is_active: bool | None = None
 
 
