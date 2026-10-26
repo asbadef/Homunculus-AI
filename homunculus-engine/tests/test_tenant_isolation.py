@@ -41,6 +41,7 @@ from homunculus.admission import service as adm_service
 from homunculus.admission.models import (
     Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
+from homunculus.admission.numbers import next_patient_number
 from homunculus.auth.dependencies import caller_tenant_id
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import create_access_token, decode_token
@@ -120,7 +121,8 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     bed, free_bed = Bed(room_id=room.id, label="1A"), Bed(room_id=room.id, label="1B")
     db.add_all([bed, free_bed])
     patient = Patient(tenant_id=tenant.id, display_name=f"Sentetik Hasta {slug}",
-                      date_of_birth="1980-01-01", sex="female")
+                      date_of_birth="1980-01-01", sex="female",
+                      patient_number=await next_patient_number(db, tenant.id))
     db.add(patient)
     await db.flush()
 
@@ -458,7 +460,8 @@ async def test_a_pending_transfer_is_confirmed_into_the_callers_own_bed(world):
 @requires_db
 async def test_a_draft_admission_is_signed_off_by_the_callers_own_attending(world):
     patient = Patient(tenant_id=world.a.tenant, display_name="Sentetik Taslak Hasta",
-                      date_of_birth="1970-03-03", sex="male")
+                      date_of_birth="1970-03-03", sex="male",
+                      patient_number=await next_patient_number(world.db, world.a.tenant))
     world.db.add(patient)
     await world.db.flush()
     draft = await adm_service.create_draft_admission(

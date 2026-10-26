@@ -60,9 +60,12 @@ async def _fixture_env(db, *, max_beds_per_nurse=2, n_beds=2):
     return tenant, unit, beds, attending, nurse
 
 
+_NUMBERS = iter(range(1, 100_000))   # patient numbers are unique per tenant (migration 0012)
+
+
 async def _new_patient(db, tenant):
     p = Patient(tenant_id=tenant.id, display_name="Synthetic Patient",
-                date_of_birth="1980-01-01", sex="male")
+                date_of_birth="1980-01-01", sex="male", patient_number=f"H26{next(_NUMBERS):05d}")
     db.add(p)
     await db.flush()
     return p

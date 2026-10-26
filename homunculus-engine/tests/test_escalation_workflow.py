@@ -25,6 +25,9 @@ from tests.conftest import requires_db
 pytestmark = [pytest.mark.asyncio, requires_db]
 
 T0 = datetime(2026, 7, 29, 8, 0, 0, tzinfo=timezone.utc)
+# `_env`'s patient is H2600001; every admission's own patient takes the next (migration 0012:
+# unique per tenant).
+_NUMBERS = iter(range(2, 100_000))
 
 
 async def _env(db):
@@ -49,7 +52,7 @@ async def _env(db):
     db.add(user)
     await db.flush()
     patient = Patient(tenant_id=tenant.id, display_name="Synthetic Patient",
-                      date_of_birth="1980-01-01", sex="male")
+                      date_of_birth="1980-01-01", sex="male", patient_number="H2600001")
     db.add(patient)
     await db.flush()
     return tenant, unit, bed, user, patient
@@ -64,7 +67,8 @@ async def _admission(db, tenant, unit, bed, attending):
         "admission_diagnosis_free_text": "Septik şok kriterleri değerlendirilecek",
     }
     patient = Patient(tenant_id=tenant.id, display_name="Synthetic P2",
-                      date_of_birth="1975-05-05", sex="female")
+                      date_of_birth="1975-05-05", sex="female",
+                      patient_number=f"H26{next(_NUMBERS):05d}")
     db.add(patient)
     await db.flush()
     adm = await adm_service.create_draft_admission(

@@ -40,6 +40,8 @@ from homunculus.admission.schemas import (
     NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate,
     ShiftScheduleResponse, TransferInitiate,
 )
+from homunculus.admission.errors import Refusal
+from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
 from homunculus.auth.dependencies import caller_tenant_id, require_permission
@@ -105,8 +107,13 @@ async def create_admission(
                                caller_tenant)
     await scope.ensure_members(db, caller_tenant, [payload.note.attending_physician_id])
 
+    try:
+        number = await next_patient_number(db, caller_tenant)
+    except Refusal as exc:
+        raise exc.http() from None
     patient = Patient(
         tenant_id=caller_tenant,
+        patient_number=number,
         display_name=payload.patient.display_name,
         date_of_birth=payload.patient.date_of_birth.isoformat(),
         sex=payload.patient.sex.value,
