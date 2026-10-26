@@ -27,6 +27,10 @@ some later reading:
 * A latched kind that fires again is active again: the latch is replaced and its episode goes on —
   no `alert_cleared` row, and the first-seen stamp it kept is still its own. Nor is the doctor
   paged for it again if the episode had been (`AckStore.paged`).
+* A discharge made here ends every episode of the patient at once (G2-A11, D1): each firing and
+  each latched alert is cleared with the reason `discharged`, the store and the engine forget the
+  patient, and the ward is told once with a removal frame (app.py). Readings that still arrive
+  for the number are dropped at the doors (D3), so nothing else would ever end these alerts.
 
 The hook writes no audit row: it returns what it cleared, the door audits it (`alert_cleared`,
 D6), and the replay, which must write nothing, ignores it (D7).
@@ -37,6 +41,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.pipeline import Engine
 
 #: The one severity that latches (D2, the user's decision of 2026-10-25).
@@ -45,6 +50,15 @@ LATCHING_SEVERITY = "critical"
 #: Why an `alert_cleared` row was written (D6).
 RESOLVED = "resolved"                         # the rule stopped firing (also as a critical latches)
 ACKED_AFTER_RESOLVE = "acked_after_resolve"   # a latched alert was acknowledged, and so removed
+DISCHARGED = "discharged"                     # the patient was discharged here (G2-A11, D1)
+
+#: The audit row a reading for a discharged number leaves (G2-A11, D3): subject = the signal code,
+#: payload {patient_id, code}, no value. How the ward learns a monitor still carries the number.
+READING_DROPPED = "reading_dropped_discharged"
+
+#: The identity source of an admission made in Homunculus (Lane B's B1a, `patient_identity.KABUL`
+#: on its branch). Here until the merge unifies the two (spec O1).
+KABUL_SOURCE = "kabul"
 
 Key = tuple[str, str]
 
@@ -61,6 +75,13 @@ class Cleared:
     def payload(self, at: datetime) -> dict:
         return {"first_seen": self.first_seen.isoformat() if self.first_seen is not None else None,
                 "at": at.isoformat(), "reason": self.reason, "severity": self.severity}
+
+
+def is_tombstone(record) -> bool:
+    """A discharged `kabul` record (G2-A11, D4): the patient left, the record stays so that a
+    reading still arriving for the number never brings the patient back. A HIS discharge is not
+    one: its card keeps today's 24-hour retention, and its readings are still evaluated."""
+    return record is not None and record.state == "discharged" and record.source == KABUL_SOURCE
 
 
 def firing_keys(engine: Engine) -> set[Key]:
@@ -119,3 +140,33 @@ def acknowledge_latched(store: AckStore, patient_id: str, kind: str) -> Cleared 
     store.escalated.discard(key)
     store.paged.discard(key)       # the episode and its chain are over: the next one pages anew
     return Cleared(patient_id, kind, entry["alert"]["severity"], seen, ACKED_AFTER_RESOLVE)
+
+
+def retire_state(engine: Engine, store: AckStore, patient_id: str) -> list[Cleared]:
+    """End every episode of a discharged patient and forget the patient (G2-A11, D1): one
+    `Cleared` per firing alert and per latched one, each with its episode's first-seen, reason
+    `discharged`; then the store and the engine drop the patient. Writes no audit row — the replay
+    and the start-up sweep run it as it is; `retire_patient` is the audited door."""
+    cleared: list[Cleared] = []
+    for alert in engine.active_alerts(patient_id):
+        key = (patient_id, alert.kind)
+        cleared.append(Cleared(patient_id, alert.kind, alert.severity, store.first_seen.get(key),
+                               DISCHARGED))
+    for key, entry in [(k, e) for k, e in store.resolved.items() if k[0] == patient_id]:
+        seen = store.first_seen.get(key, entry.get("first_seen"))
+        cleared.append(Cleared(patient_id, key[1], entry["alert"]["severity"], seen, DISCHARGED))
+    store.forget_patient(patient_id)
+    engine.forget(patient_id)
+    return cleared
+
+
+def retire_patient(engine: Engine, store: AckStore, audit: AuditLog, hospital: str,
+                   patient_id: str, now: datetime) -> list[Cleared]:
+    """`retire_state`, audited: an `alert_cleared` row per ended episode, written after the
+    in-memory end as the doors write theirs (an audit that fails must not leave the alerts on the
+    board). Lane B's discharge path reaches it through `app.state.retire_patient`."""
+    cleared = retire_state(engine, store, patient_id)
+    for item in cleared:
+        audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
+                                item.payload(now)))
+    return cleared

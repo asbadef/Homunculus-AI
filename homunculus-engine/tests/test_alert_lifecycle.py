@@ -8,9 +8,12 @@ from datetime import datetime, timedelta, timezone
 
 from homunculus.api.ackstore import AckStore, Chain
 from homunculus.api.alert_lifecycle import (
-    ACKED_AFTER_RESOLVE, RESOLVED, Cleared, acknowledge_latched, live_keys, sync_alerts,
+    ACKED_AFTER_RESOLVE, DISCHARGED, RESOLVED, Cleared, acknowledge_latched, is_tombstone,
+    live_keys, retire_patient, retire_state, sync_alerts,
 )
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.notify import Notifier
+from homunculus.api.patient_identity import IdentityRecord
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
@@ -298,3 +301,57 @@ def test_an_acknowledged_latch_leaves_no_chain_and_its_return_starts_a_new_clock
     assert store.first_seen[SHOCK_KEY] == WALL + timedelta(minutes=4), "a new episode"
     assert store.clock_from[SHOCK_KEY] == WALL + timedelta(minutes=4) and SHOCK_KEY not in store.paged, \
         "two minutes after the acknowledgement, and a new chain: its own clock, its own page"
+
+
+# ---------------------------------------------------------------- G2-A11: a discharge retires the patient
+def test_the_store_forgets_one_patient_and_keeps_the_others():
+    store = AckStore()
+    for pid in ("bed-3", "bed-4"):
+        store.acks[(pid, "news2")] = {"by": "ayse", "at": WALL}
+        store.first_seen[(pid, "news2")] = WALL
+        store.clock_from[(pid, "news2")] = WALL
+        store.escalated.add((pid, "news2"))
+        store.paged.add((pid, "news2"))
+        store.resolved[(pid, "septic_shock")] = {"alert": {"severity": "critical"}, "resolved_at": WALL, "first_seen": WALL}
+        store.recent[(pid, "sepsis")] = Chain(WALL, WALL, True)
+    store.forget_patient("bed-3")
+    for mapping in (store.acks, store.first_seen, store.clock_from, store.resolved, store.firing, store.recent):
+        assert all(k[0] == "bed-4" for k in mapping), mapping
+    assert store.escalated == {("bed-4", "news2")} and store.paged == {("bed-4", "news2")}
+
+
+def test_retire_ends_firing_and_latched_alerts_with_the_discharged_reason():
+    engine, store = _shock()
+    _evaluate(engine, store, SignalCode.LACTATE, 1.5, minute=1)         # the critical latches
+    assert SHOCK_KEY in store.resolved
+    cleared = retire_state(engine, store, "bed-3")
+    assert {(c.kind, c.severity, c.reason) for c in cleared} == {
+        ("septic_shock", "critical", DISCHARGED), ("sepsis", "high", DISCHARGED),
+        ("antibiotic_due", "high", DISCHARGED)}
+    assert all(c.first_seen == WALL for c in cleared), "each end carries its episode's first-seen"
+    assert "bed-3" not in engine.patient_ids() and engine.active_alerts("bed-3") == []
+    assert store.resolved == {} and store.first_seen == {} and store.firing == {}
+    assert live_keys(engine, store) == set()
+
+
+def test_retire_on_a_patient_the_engine_does_not_know_clears_nothing():
+    engine, store = Engine(), AckStore()
+    assert retire_state(engine, store, "bed-9") == []
+
+
+def test_retire_patient_writes_one_alert_cleared_row_per_alert():
+    engine, store = _shock()
+    audit = InMemoryAuditLog()
+    at = WALL + timedelta(minutes=5)
+    cleared = retire_patient(engine, store, audit, "h1", "bed-3", at)
+    rows = audit.records(tenant="h1", event_type="alert_cleared")
+    assert {r.subject for r in rows} == {c.kind for c in cleared} == {"septic_shock", "sepsis", "antibiotic_due"}
+    assert all(r.payload["reason"] == DISCHARGED and r.payload["at"] == at.isoformat() for r in rows)
+    assert all(r.patient_id == "bed-3" for r in rows)
+
+
+def test_is_tombstone_is_a_discharged_kabul_record_and_nothing_else():
+    assert is_tombstone(IdentityRecord("H-1", state="discharged", source="kabul"))
+    assert not is_tombstone(IdentityRecord("H-1", state="admitted", source="kabul"))
+    assert not is_tombstone(IdentityRecord("20239121", state="discharged", source="comed"))
+    assert not is_tombstone(None)
