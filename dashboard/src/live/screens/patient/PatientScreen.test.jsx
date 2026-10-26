@@ -518,8 +518,8 @@ describe("the patient screen", () => {
     // The screen mounted the way the shell mounts it: the same element with NO `key`, so /patients/S-001 ->
     // /patients/S-002 keeps this screen, the box and its state mounted and only the props change (browser Back,
     // Alt+← or a mouse's back button move the address under the inert page while a form is open). `leave` takes
-    // the whole screen away, as a move to another screen does.
-    async function mover() {
+    // the whole screen away, as a move to another screen does. `patients` is the board it reads.
+    async function mover({ patients = [entry("S-001", [], FULL), entry("S-002", [], FULL)] } = {}) {
       onlyScreens({ beds: () => null }, { keep: [] });
       let go;
       let away;
@@ -533,11 +533,12 @@ describe("the patient screen", () => {
       const mounted = await mount(<Harness />, {
         access: token({ perms: CHART }), me: profile({ perms: CHART }),
         setup: (api) => {
-          api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
+          api.boardPatients.mockResolvedValue(board(patients));
           api.streamTicket.mockResolvedValue({ ticket: "t-1" });
           api.view.mockResolvedValue({ ok: true });
           api.patientTrends.mockImplementation(answering(withNormal));
           api.putPatientProfile.mockResolvedValue({ patient_id: "x" });
+          api.chart.mockResolvedValue({ patient_id: "x", charted: 1, alerts: [] });
         },
       });
       await act(async () => { await mounted.board.start(); });
@@ -613,6 +614,46 @@ describe("the patient screen", () => {
       await answer();
       expect(api.patientTrends.mock.calls.length).toBe(reads);
       expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    });
+
+    // The Meds form (G2-A3, final review I3) under the same rule, on a board where S-002 has a bed of its
+    // own — so a title or a toast naming the wrong patient's bed would show.
+    const S002 = () => entry("S-002", [], {
+      ...FULL,
+      identity: identity({ patient_id: "S-002", display_name: "Leyla Sentetik", bed_label: "REA-01 · 3", bed_id: "REA-01-3", bed_key: "REA^01^3" }),
+    });
+    const medsMover = () => mover({ patients: [entry("S-001", [], FULL), S002()] });
+    const medsOffer = () => screen.getByRole("button", { name: "Qeyd əlavə et" });
+    const MEDS_FORM = (bedLabel) => `Dərman / maye qeydi · ${bedLabel}`;
+
+    it("the Meds form left open on one patient is gone on the next, and opens again for the next one", async () => {
+      const { api, move } = await medsMover();
+      await press(medsOffer());
+      expect(screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 2") })).toBeInTheDocument();
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await press(medsOffer());
+      expect(screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 3") })).toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: MEDS_FORM("REA-01 · 2") })).toBeNull();
+      expect(api.chart).not.toHaveBeenCalled();
+    });
+
+    it("a Meds save in flight across a move stays the first patient's: written for S-001, said for S-001's bed", async () => {
+      const { api, move } = await medsMover();
+      let release;
+      api.chart.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      await press(medsOffer());
+      const form = screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 2") });
+      fireEvent.change(within(form).getByLabelText(/Çəki/), { target: { value: "80" } });
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));       // S-001's save, unanswered
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+      expect(api.chart).toHaveBeenCalledTimes(1);
+      expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "weight_kg", value: 80 }], new Date(NOW).toISOString());
+      expect(toasts().getAllByText("Yadda saxlanıldı: REA-01 · 2. Mühərrik bu xəstəni yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().queryAllByText(/REA-01 · 3/)).toHaveLength(0);
+      expect(screen.queryByRole("dialog")).toBeNull();                               // nothing opened on S-002
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {

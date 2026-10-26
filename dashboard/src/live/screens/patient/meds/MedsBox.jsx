@@ -2,7 +2,7 @@
 // engine publishes, and since G2-A3 the one place a `clinical.chart` holder charts it from.
 //
 // WHERE (D4). The charting sits on the box that shows what it charts, not on a screen of its own: the
-// nurse who reads "noradrenalin 0.12 µg/kg/dəq · 04:50" and knows the pump now says 0.2 is already
+// nurse who reads "noradrenalin 0.12 mkq/kq/dəq · 04:50" and knows the pump now says 0.2 is already
 // looking at the button that corrects it. It is offered only to a `clinical.chart` holder and is
 // ABSENT for anyone else — never a disabled button, which would offer a control to someone who can do
 // nothing with it.
@@ -11,8 +11,11 @@
 // (`pressors_at`) — a rate without its time cannot say whether the infusion is still the current one — a
 // 0 as "stopped", and the last charted entries newest first (`charted`, the order the engine sends). The
 // browser does no clinical arithmetic (Decision 1): no sum of boluses, no mL/kg, no "running for" — the
-// numbers are the engine's and the times are `hhmm` of the engine's stamps. A server older than G2-A3
-// sends a rate with no stamp; that rate is printed as it always was (`patient.pressors`), not given a time.
+// numbers are the engine's and the times are the engine's stamps in the reader's clock: `hhmm` for one
+// of today, and `dd.MM hh:mm` for any other day — an entry may be charted up to 24 h back, and "23:40"
+// read the next morning is a time from last night that looks like one from an hour ago (final review
+// M1). A server older than G2-A3 sends a rate with no stamp; that rate is printed as it always was
+// (`patient.pressors`), not given a time.
 //
 // THE FORM IS A DIALOG (X1, MedsChartForm.jsx). The shell keeps this screen mounted across a move to
 // another patient (no `key`), so the box remembers WHOSE form it opened: a form opened on one patient
@@ -21,19 +24,23 @@
 // keyboard user.
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { hhmm } from "../../../i18n/dates.js";
+import { ddmm, ddmmyyyy, hhmm } from "../../../i18n/dates.js";
 import { Box, Button } from "../../../ui/index.js";
 import { MedsChartForm } from "./MedsChartForm.jsx";
 import { ANTIBIOTIC, BOLUS, PRESSORS, WEIGHT } from "./medsFields.js";
 
-/** An engine stamp as the reader's clock time, or a dash for one that does not parse. */
-const timeOf = (ts) => {
+/** An instant (ms) as the reader's clock time — with its day and month when its LOCAL date is not
+ *  `nowMs`'s — formatted, never computed (Decision 1): the two dates are compared as written. */
+const stampOf = (ms, nowMs) => (ddmmyyyy(ms) === ddmmyyyy(nowMs) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`);
+
+/** An engine stamp as `stampOf` writes it, or a dash for one that does not parse. */
+const timeOf = (ts, nowMs) => {
   const ms = ts ? Date.parse(ts) : Number.NaN;
-  return Number.isFinite(ms) ? hhmm(ms) : "—";
+  return Number.isFinite(ms) ? stampOf(ms, nowMs) : "—";
 };
 
 /** One history row's name and value, by the engine's code. The value is printed as the engine sent it,
- *  with the unit the form charts it in — a 0 rate is "0 µg/kg/dəq", literally, because the list is the
+ *  with the unit the form charts it in — a 0 rate is "0 mkq/kq/dəq", literally, because the list is the
  *  record and not a reading of it. "Antibiotic given" is a sentence and has no value: the door records
  *  it as 1, and only a 1 is said to be a dose; any other value (another client may chart a 0) and a
  *  code this box does not know are printed as the engine's own code and value, never as a guess. */
@@ -48,7 +55,7 @@ function historyOf(t, row) {
 
 /** The pressor lines: one sentence per drug the engine has a number for, with its charted time, a 0 said
  *  as stopped. Rates that came with no stamp (an older server) keep today's single list line. */
-function pressorLines(t, meds) {
+function pressorLines(t, meds, nowMs) {
   const lines = [];
   const unstamped = [];
   for (const p of PRESSORS) {
@@ -60,7 +67,7 @@ function pressorLines(t, meds) {
       unstamped.push(`${p.key} ${rate}`);
       continue;
     }
-    lines.push(t(rate === 0 ? "patient.medsStopped" : "patient.medsRunning", { drug: t(p.labelKey), rate, time: hhmm(ms) }));
+    lines.push(t(rate === 0 ? "patient.medsStopped" : "patient.medsRunning", { drug: t(p.labelKey), rate, time: stampOf(ms, nowMs) }));
   }
   if (unstamped.length) lines.push(t("patient.pressors", { list: unstamped.join(", ") }));
   return lines;
@@ -68,10 +75,11 @@ function pressorLines(t, meds) {
 
 /** The medication picture the engine publishes, with its three-valued antibiotic. `null` means
  *  nobody charted it either way; rendering that as "not given" would accuse a ward of missing a
- *  deadline it may well have met and simply not recorded here (api/board.py `_meds`). */
-function Meds({ meds }) {
+ *  deadline it may well have met and simply not recorded here (api/board.py `_meds`). `nowMs` is the
+ *  screen's clock, which says which stamps are today's. */
+function Meds({ meds, nowMs }) {
   const { t } = useI18n();
-  const pressors = pressorLines(t, meds);
+  const pressors = pressorLines(t, meds, nowMs);
   const charted = Array.isArray(meds.charted) ? meds.charted : [];
   const clock = meds.antibiotic_clock ?? null;
   const givenAt = meds.antibiotic_at ? Date.parse(meds.antibiotic_at) : NaN;
@@ -110,7 +118,7 @@ function Meds({ meds }) {
               const { name, value } = historyOf(t, row);
               return (
                 <li key={`${row.ts}-${row.code}-${i}`}>
-                  <span className="font-data text-mute">{timeOf(row.ts)}</span>
+                  <span className="font-data text-mute">{timeOf(row.ts, nowMs)}</span>
                   {" · "}{name}
                   {value !== null ? <>{" · "}<span className="font-data">{value}</span></> : null}
                 </li>
@@ -131,9 +139,10 @@ function Meds({ meds }) {
  *
  *  `onChart(entries, recordedAt)` is the write, already bound to this patient by the screen; it
  *  resolves to the store's answer, which the form reads (`dropped`). `patientId` is whose form is open.
+ *  `nowMs` is the screen's clock (the reader's "today"; this instant when the screen passes none).
  *  The form is the box's LAST child whatever the picture holds, so the reload that lands while it is
  *  still open (a first entry turns "no medication information" into a picture) does not remount it. */
-export function MedsBox({ meds, bed, canChart, onChart, patientId }) {
+export function MedsBox({ meds, bed, canChart, onChart, patientId, nowMs = Date.now() }) {
   const { t } = useI18n();
   // `{ id, opening }`: the patient the form was opened FOR and which opening this is, or null.
   const [editing, setEditing] = useState(null);
@@ -148,13 +157,13 @@ export function MedsBox({ meds, bed, canChart, onChart, patientId }) {
   ) : null;
   return (
     <Box title={t("patient.meds")} icon="syringe" level={2} right={right}>
-      {meds ? <Meds meds={meds} /> : <p className="m-0 text-13 text-mute">{t("patient.noMeds")}</p>}
+      {meds ? <Meds meds={meds} nowMs={nowMs} /> : <p className="m-0 text-13 text-mute">{t("patient.noMeds")}</p>}
       {/* No `onSaved` work of its own: a write the engine answered is followed by the store's own reload
           (`board.store.chart`), and one that landed without its answer reaching here is published on the
           board's stream by the engine (api/app.py `POST /clinical`), so the box re-renders from the board. */}
       {editing && editing.id === patientId ? (
         <MedsChartForm
-          key={editing.opening} patient={{ patient_id: patientId }} bed={bed} onChart={onChart}
+          key={editing.opening} bed={bed} onChart={onChart}
           onClose={() => setEditing((current) => (current?.opening === editing.opening ? null : current))}
           onSaved={() => {}}
         />

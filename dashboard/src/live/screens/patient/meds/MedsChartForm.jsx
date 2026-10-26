@@ -10,10 +10,14 @@
 //
 // THE TIME IS THE CLINICIAN'S (D3): up to 24 h back, never ahead — a minute of skew between this
 // browser's clock and the server's is not "ahead". It travels as a UTC instant, which carries a zone
-// (the door refuses a stamp without one).
+// (the door refuses a stamp without one). It starts as NOW, and until she edits it, it stays now: the
+// field follows the clock (the house `useNow`, once a minute) and the press reads the clock again, so a
+// form opened at 14:00 and saved at 15:30 charts 15:30, not a 14:00 nobody chose (final review I2). A
+// time she has typed is hers, and nothing moves it.
 //
 // THE FORM IS A MODAL (D4, X1) whose title names the bed, so a form that outlives a glance still says
-// whose record this is. Nothing is prefilled, so there is no snapshot here to go stale (BaselineForm's).
+// whose record this is. Nothing is prefilled from the board, so there is no snapshot of the patient here
+// to go stale (BaselineForm's); the one prefilled field, the time, is the clock's, as above.
 //
 // THE SERVER IS AUTHORITATIVE (D1, D6). The browser computes no clinical value: it mirrors the door's
 // plausibility bounds and holds back only what the engine would refuse — a rate without a drug, a drug
@@ -22,25 +26,32 @@
 // Anything it lets through is the engine's to refuse, and the engine's own sentence is what she reads:
 // on the toast, named after the bed, never also inline. A discharged admission answers 200 with nothing
 // charted (`dropped`), which is not a save and is not said as one. A write that got no answer may have
-// landed (`mayHaveLanded`, the one rule): the box is told to look again, and so is she. `busy` holds
-// Save (never `disabled`); `sending` ignores a second press that beats the re-render.
+// landed (`mayHaveLanded`, the one rule): `onSaved` is called as for a save, and she is told it may have
+// gone through and to check the box in a moment — nothing here promises a re-read. `busy` holds Save
+// (never `disabled`); `sending` ignores a second press that beats the re-render.
 import React, { useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { apiErrorText } from "../../../apiErrors.js";
 import { Announce, Button, Field, Input, Modal, Note, Select, useToast } from "../../../ui/index.js";
 import { mayHaveLanded } from "../../admin/refusal.js";
+import { useNow } from "../../common/useNow.js";
 import { BACKDATE_MS, PRESSORS, checkDraft, toLocalInput } from "./medsFields.js";
 
 /** The fields in the order the form lists them: a held submit takes the focus to the first one wrong. */
 const ORDER = ["weight", "pressor", "rate", "bolus", "antibiotic", "at"];
 
-/** `patient` is what the box opened it on; the write itself is `onChart(entries, recordedAt)`, already
- *  bound to that patient by the box, which resolves to the API's answer. */
+/** How often an untouched record time is moved on to the clock: the field shows minutes. */
+const CLOCK_MS = 60_000;
+
+/** `bed` names the patient in the title and on the toast; the write itself is `onChart(entries,
+ *  recordedAt)`, already bound to that patient by the box, which resolves to the API's answer. */
 export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
   const { t } = useI18n();
   const toast = useToast();
   const [draft, setDraft] = useState(() => ({ pressor: "", rate: "", bolus: "", weight: "", antibiotic: false, at: toLocalInput(Date.now()) }));
+  // False until she edits the time: until then the time is the clock's, not a value of the draft.
+  const [atTouched, setAtTouched] = useState(false);
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const inputs = useRef({});
@@ -55,8 +66,13 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
     return () => { mounted.current = false; };
   }, []);
 
+  // Re-rendered on the clock while the form is open, so an untouched time moves on with it (I2).
+  useNow(CLOCK_MS);
   const now = Date.now();
-  const { errors, entries, empty, recordedAt } = checkDraft(draft, now);
+  // The draft as of the instant `at` (ms): an untouched time is that instant's, a typed one is hers.
+  const asOf = (at) => (atTouched ? draft : { ...draft, at: toLocalInput(at) });
+  const shown = asOf(now);
+  const { errors, empty } = checkDraft(shown, now);
   // Said beside Save whenever the form has nothing in it — muted from the start, so Save's `aria-disabled`
   // has a stated reason before anything is pressed (BaselineForm's rule), and in the attention colour once a
   // submit has been tried on it (Save, or Enter).
@@ -64,6 +80,7 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
   const errorOf = (field) => (tried && errors[field] ? t(errors[field].key, errors[field].params) : undefined);
   const edit = (field) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+    if (field === "at") setAtTouched(true);
     setDraft((current) => ({ ...current, [field]: value }));
   };
   const keep = (field) => (el) => { inputs.current[field] = el; };
@@ -71,7 +88,10 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
 
   async function save() {
     if (sending.current || busy) return;
-    const first = ORDER.find((field) => errors[field]);
+    // Checked again at the press, not as of the last render: an untouched time is the moment of saving.
+    const at = Date.now();
+    const pressed = checkDraft(asOf(at), at);
+    const first = ORDER.find((field) => pressed.errors[field]);
     if (first) {
       // The error is under its field, and the field is where she is taken (flushSync: it must be in
       // the DOM, and linked to the field, when the focus arrives).
@@ -80,12 +100,12 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
       return;
     }
     setTried(true);
-    if (empty) return;
+    if (pressed.empty) return;
     sending.current = true;
     setBusy(true);
     let done;   // what is said and done once the write is settled and Save is released
     try {
-      const answer = await onChart(entries, recordedAt);
+      const answer = await onChart(pressed.entries, pressed.recordedAt);
       done = answer?.dropped
         ? { say: [t("patient.medsDropped", { subject: bed }), "warn"], reread: false, close: true }
         : { say: [t("patient.medsSaved", { subject: bed })], reread: true, close: true };
@@ -168,7 +188,7 @@ export function MedsChartForm({ bed, onChart, onClose, onSaved }) {
           <Field label={t("patient.medsAt")} hint={t("patient.medsAtHint")} layout="col" error={errorOf("at")}>
             <Input
               ref={keep("at")} type="datetime-local" min={toLocalInput(now - BACKDATE_MS)} max={toLocalInput(now)}
-              value={draft.at} onChange={edit("at")} readOnly={busy}
+              value={shown.at} onChange={edit("at")} readOnly={busy}
             />
           </Field>
         </div>

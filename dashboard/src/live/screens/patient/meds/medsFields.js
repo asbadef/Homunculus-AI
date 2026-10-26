@@ -1,15 +1,15 @@
 // src/live/screens/patient/meds/medsFields.js — the inputs the Meds box charts (G2-A3, D1, D6):
-// the engine's codes, the door's bounds (api/clinical.py PLAUSIBLE, mirrored here only as input
-// min/max/step — the server stays authoritative) and the strings each reads.
+// the engine's codes, the door's bounds (api/clinical.py PLAUSIBLE, mirrored here only to hold a
+// slipped decimal back — the server stays authoritative, and the precision is the engine's) and the
+// strings each reads.
 export const PRESSORS = Object.freeze([
   { key: "norepinephrine", code: "norepinephrine_rate", labelKey: "patient.medsDrugNorepinephrine", min: 0, max: 20 },
   { key: "epinephrine", code: "epinephrine_rate", labelKey: "patient.medsDrugEpinephrine", min: 0, max: 20 },
   { key: "dopamine", code: "dopamine_rate", labelKey: "patient.medsDrugDopamine", min: 0, max: 100 },
   { key: "dobutamine", code: "dobutamine_rate", labelKey: "patient.medsDrugDobutamine", min: 0, max: 100 },
 ]);
-export const RATE_STEP = 0.01;
-export const BOLUS = Object.freeze({ code: "crystalloid_bolus_ml", min: 0, max: 10000, step: 1 });
-export const WEIGHT = Object.freeze({ code: "weight_kg", min: 0.3, max: 400, step: 0.1 });
+export const BOLUS = Object.freeze({ code: "crystalloid_bolus_ml", min: 0, max: 10000 });
+export const WEIGHT = Object.freeze({ code: "weight_kg", min: 0.3, max: 400 });
 export const ANTIBIOTIC = Object.freeze({ code: "antibiotic_administered" });
 export const BACKDATE_MS = 24 * 60 * 60 * 1000;
 
@@ -45,7 +45,7 @@ export function checkDraft(draft, now) {
   }
   if (draft.antibiotic) entries.push({ code: ANTIBIOTIC.code, value: 1 });
   const at = fromLocalInput(draft.at);
-  if (!Number.isFinite(at)) errors.at = { key: "patient.medsNotNumber" };
+  if (!Number.isFinite(at)) errors.at = { key: "patient.medsAtInvalid" };
   else if (at > now + 60_000) errors.at = { key: "patient.medsAtFuture" };       // a minute of skew is not "the future"
   else if (at < now - BACKDATE_MS) errors.at = { key: "patient.medsAtTooOld" };
   const empty = entries.length === 0 && Object.keys(errors).length === 0;

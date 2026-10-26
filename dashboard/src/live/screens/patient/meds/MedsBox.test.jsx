@@ -6,7 +6,7 @@ import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
-import { hhmm } from "../../../i18n/dates.js";
+import { ddmm, hhmm } from "../../../i18n/dates.js";
 import { MedsBox } from "./MedsBox.jsx";
 
 const NOW = Date.parse("2026-10-26T09:00:00+04:00");
@@ -43,7 +43,7 @@ describe("the Meds box", () => {
   it("lists each running pressor with its time and says a 0 is stopped", async () => {
     await open();
     const text = box().textContent;
-    expect(text).toContain(`noradrenalin 0.12 µg/kg/dəq · ${at(MEDS.pressors_at.norepinephrine)}`);
+    expect(text).toContain(`noradrenalin 0.12 mkq/kq/dəq · ${at(MEDS.pressors_at.norepinephrine)}`);
     expect(text).toContain(`dopamin dayandırıldı · ${at(MEDS.pressors_at.dopamine)}`);
     // "adrenalin" is inside "noradrenalin": the two null drugs are looked for outside it.
     expect(text.replace(/noradrenalin/g, "")).not.toMatch(/adrenalin/);
@@ -69,6 +69,29 @@ describe("the Meds box", () => {
     await open({ meds: null, canChart: true });
     expect(within(box()).getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
     expect(offer()).not.toBeNull();
+  });
+
+  it("a stamp from another day carries its day and month; today's is the time alone (final review M1)", async () => {
+    // Charted up to 24 h back: "09:00" from yesterday must not read as this morning's.
+    const yesterday = new Date(NOW - 24 * 3600_000).toISOString();
+    const today = new Date(NOW).toISOString();
+    const dated = `${ddmm(Date.parse(yesterday))} ${hhmm(Date.parse(yesterday))}`;
+    await open({ meds: {
+      ...MEDS,
+      pressors: { ...MEDS.pressors, norepinephrine: 0.12, dopamine: 5 },
+      pressors_at: { ...MEDS.pressors_at, norepinephrine: yesterday, dopamine: today },
+      charted: [
+        { code: "dopamine_rate", value: 5, unit: "ug/kg/min", ts: today },
+        { code: "norepinephrine_rate", value: 0.12, unit: "ug/kg/min", ts: yesterday },
+      ],
+    } });
+    const text = box().textContent;
+    expect(text).toContain(`noradrenalin 0.12 mkq/kq/dəq · ${dated}`);
+    expect(text).toContain(`dopamin 5 mkq/kq/dəq · ${hhmm(NOW)}`);
+    expect(text).not.toContain(`dopamin 5 mkq/kq/dəq · ${ddmm(NOW)}`);
+    const items = within(within(box()).getByRole("list")).getAllByRole("listitem");
+    expect(items[0].textContent.startsWith(`${hhmm(NOW)} · `)).toBe(true);
+    expect(items[1].textContent.startsWith(`${dated} · `)).toBe(true);
   });
 
   it("offers «Qeyd əlavə et» only with clinical.chart, and the dialog opens on it", async () => {

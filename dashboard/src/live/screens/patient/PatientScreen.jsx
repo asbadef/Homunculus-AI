@@ -378,7 +378,7 @@ export function PatientScreen({ params }) {
 
           <div className="grid gap-2 min-[861px]:grid-cols-2">
             <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
-            <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id}
+            <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
               onChart={(entries, at) => board.store.chart(id, entries, at)} />
           </div>
           {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
