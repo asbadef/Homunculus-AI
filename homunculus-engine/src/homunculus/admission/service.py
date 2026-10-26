@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.admission import errors
 from homunculus.admission.models import (
     Admission, AdmissionState, CareTeamMember, CareTeamRole, Handover,
     HandoverStatus, NurseBedAssignment, OPEN_ADMISSION_STATES, Patient,
@@ -38,7 +39,12 @@ def _now() -> datetime:
 
 
 class WorkflowError(Exception):
-    """Raised for business-rule violations; mapped to HTTP 4xx by the router."""
+    """Raised for business-rule violations; mapped to HTTP 409 by the router, with `code` beside
+    the words (admission/errors.py) — the dashboard reads the code, never the words."""
+
+    def __init__(self, message: str, code: str = errors.INVALID_TRANSITION) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +91,8 @@ async def create_draft_admission(
     if existing is not None:
         raise WorkflowError(
             f"Patient already has an open admission ({existing.state.value}); "
-            f"a patient may have only one active admission at a time."
+            f"a patient may have only one active admission at a time.",
+            errors.OPEN_ADMISSION,
         )
 
     bed = await db.get(Bed, note_fields["bed_id"])
@@ -94,7 +101,8 @@ async def create_draft_admission(
     if bed.state != BedState.AVAILABLE:
         raise WorkflowError(
             f"Bed is not AVAILABLE (current state: {bed.state.value}); "
-            f"cannot admit."
+            f"cannot admit.",
+            errors.BED_NOT_AVAILABLE,
         )
 
     admission = Admission(
@@ -127,7 +135,8 @@ async def sign_off_admission(
     if admission.attending_physician_id is None:
         raise WorkflowError(
             "attending_physician_id must be resolved before a DRAFT can become ACTIVE "
-            "(§5.2 field 8)."
+            "(§5.2 field 8).",
+            errors.MISSING_ATTENDING,
         )
     # Re-check single-ACTIVE constraint at the moment of activation.
     active = await get_active_admission_for_patient(db, admission.patient_id)
@@ -371,7 +380,8 @@ async def initiate_discharge(
     if unacknowledged_critical_count > 0:
         raise WorkflowError(
             f"Discharge blocked: {unacknowledged_critical_count} unacknowledged "
-            f"CRITICAL alert(s) must be acknowledged with a reason first (§4.7)."
+            f"CRITICAL alert(s) must be acknowledged with a reason first (§4.7).",
+            errors.CRITICAL_ALARM_OPEN,
         )
     admission.transition_to(AdmissionState.PENDING_DISCHARGE)
     admission.admission_note_narrative = (

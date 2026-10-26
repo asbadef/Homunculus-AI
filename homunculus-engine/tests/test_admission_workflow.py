@@ -139,8 +139,9 @@ async def test_sign_off_requires_attending(db_session):
     p = await _new_patient(db_session, tenant)
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending=None))
-    with pytest.raises(WorkflowError, match="attending_physician_id"):
+    with pytest.raises(WorkflowError, match="attending_physician_id") as refused:
         await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+    assert refused.value.code == "missing_attending"      # G2-B1a: the code a screen maps
 
 
 # ---------------------------------------------------------------------------

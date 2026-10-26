@@ -65,7 +65,9 @@ HANDOVER_NOT_FOUND = "Handover not found."
 # Helpers
 # ---------------------------------------------------------------------------
 def _wf(exc: WorkflowError) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    """A business-rule refusal: 409, its stable code beside its words (admission/errors.py)."""
+    return HTTPException(status_code=status.HTTP_409_CONFLICT,
+                         detail={"code": exc.code, "message": str(exc)})
 
 
 async def _get_admission_or_404(
