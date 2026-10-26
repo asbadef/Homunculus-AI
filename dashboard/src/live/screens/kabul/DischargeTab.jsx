@@ -14,7 +14,14 @@
 // cleaning — so it asks once more, naming the bed and the patient number. A confirmation whose
 // card did not leave the board says so on the toast and in a note that stays. The list is read
 // again every minute while the tab is open, and after every write, landed or refused.
-import React, { useId, useState } from "react";
+//
+// A write's dialog stays open and held until that re-read is in (A-17): until then the list still
+// shows the admission as it was, and a press in the gap would send the same write twice. The bed is
+// named as the slice names it, "label · room · unit" (A-17, A-22), on the dialog, the toast and the
+// note. And when the re-read takes away the button the write was sent from — a started discharge
+// moves up, a confirmed one goes — the focus that fell with it goes to the started discharges'
+// list, never left on <body> (spec §5.7).
+import React, { useEffect, useId, useRef, useState } from "react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -29,7 +36,7 @@ import { useAdmissions } from "./useAdmissions.js";
 
 const STATES = ["DRAFT", "ACTIVE", "PENDING_DISCHARGE"];
 const EVERY_MS = 60_000;
-const subjectOf = (row) => `${row.bed_label} · ${row.unit_name}`;
+/** The bed as the slice names it — the subject of every toast, dialog and note here. */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
 const dispositionKey = (value) => DISPOSITIONS.find((d) => d.value === value)?.key ?? null;
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -68,6 +75,13 @@ export function DischargeTab() {
   const [leaving, setLeaving] = useState(null);       // the started discharge being confirmed
   const [confirming, setConfirming] = useState(false);
   const [notLeft, setNotLeft] = useState([]);         // confirmed, whose card did not leave the board
+  const [refocus, setRefocus] = useState(0);          // a write's dialog closed: where did its focus go?
+  const pendingRef = useRef(null);
+  useEffect(() => {
+    if (!refocus) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) pendingRef.current?.focus();
+  }, [refocus]);
   const can = (key) => user?.perms?.includes(key) ?? false;
   const starts = can("admissions.move.initiate");
   const seesBoard = can("board.view");
@@ -88,16 +102,25 @@ export function DischargeTab() {
     try {
       const answer = await store.track(() => store.api.confirmDischarge(row.id));
       const failed = answer?.board === "failed";
-      toast(doneFor(t, subjectOf(row), t(failed ? "kabul.dischargedBoardFailed" : "kabul.discharged")), failed ? "warn" : "ok");
-      if (failed) setNotLeft((prev) => [...prev.filter((n) => n.id !== row.id), { id: row.id, subject: subjectOf(row) }]);
+      toast(doneFor(t, bedOf(row), t(failed ? "kabul.dischargedBoardFailed" : "kabul.discharged")), failed ? "warn" : "ok");
+      if (failed) setNotLeft((prev) => [...prev.filter((n) => n.id !== row.id), { id: row.id, subject: bedOf(row) }]);
     } catch (err) {
-      toast(refusedFor(t, subjectOf(row), reasonOf(t, err)), "error");
+      toast(refusedFor(t, bedOf(row), reasonOf(t, err)), "error");
     } finally {
+      reloadStructure();
+      await reload();                                 // held until the list says what the write did
       setConfirming(false);
       setLeaving(null);
-      reload();
-      reloadStructure();
+      setRefocus((n) => n + 1);
     }
+  }
+
+  /** A discharge started from the dialog: the dialog stays held until the list is read again. */
+  async function started() {
+    reloadStructure();
+    await reload();
+    setStarting(null);
+    setRefocus((n) => n + 1);
   }
 
   if (phase === "unasked") return <Note tone="info" icon="eye">{t("kabul.noView")}</Note>;
@@ -109,7 +132,7 @@ export function DischargeTab() {
     <div className="grid gap-3">
       {error ? <Alert tone="crit">{t(phase === "stale" ? "kabul.listStale" : "kabul.listFailed", { reason: readErrorText(t, error) })}</Alert> : null}
       {notLeft.map((n) => <Note key={n.id} icon="alert">{doneFor(t, n.subject, t("kabul.dischargedBoardFailed"))}</Note>)}
-      <section aria-label={t("kabul.pendingTitle")}>
+      <section ref={pendingRef} tabIndex={-1} aria-label={t("kabul.pendingTitle")} className="outline-none">
       <Box title={t("kabul.pendingTitle")} icon="out" level={2}>
         {rows === null ? loading : pending.length === 0 ? <Empty icon="out">{t("kabul.pendingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
@@ -168,8 +191,8 @@ export function DischargeTab() {
       </Box>
       </section>
       {starting ? (
-        <DischargeDialog row={starting} subject={subjectOf(starting)} onClose={() => setStarting(null)}
-          onDone={() => { setStarting(null); reload(); reloadStructure(); }} onRefused={() => reload()} />
+        <DischargeDialog row={starting} subject={bedOf(starting)} onClose={() => setStarting(null)}
+          onDone={started} onRefused={() => reload()} />
       ) : null}
       {leaving ? (
         <Modal open title={t("kabul.confirmLeftTitle")} onClose={() => setLeaving(null)} busy={confirming}

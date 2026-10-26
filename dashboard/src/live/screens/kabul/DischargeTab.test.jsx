@@ -158,7 +158,7 @@ describe("DischargeTab", () => {
     const { api } = await open(DOCTOR, (a) => a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" }));
     const before = Date.now();
     fireEvent.click(screen.getByRole("button", { name: START }));
-    const dialog = within(screen.getByRole("dialog", { name: "Evə yazılma · 2 · Reanimasiya" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Evə yazılma · 2 · Otaq 1 · Reanimasiya" }));
     fireEvent.change(dialog.getByLabelText("Qeyd"), { target: { value: "Sentetik qeyd" } });
     await act(async () => { fireEvent.click(dialog.getByRole("button", { name: START })); });
     await settle();
@@ -169,7 +169,7 @@ describe("DischargeTab", () => {
     expect(body.discharge_at).toMatch(/Z$/);
     expect(Date.parse(body.discharge_at)).toBeGreaterThan(before - 60_000);
     expect(Date.parse(body.discharge_at)).toBeLessThanOrEqual(Date.now());
-    expect(toasts().getAllByText(/2 · Reanimasiya · evə yazılma başladıldı/).length).toBeGreaterThan(0);
+    expect(toasts().getAllByText(/^2 · Otaq 1 · Reanimasiya · evə yazılma başladıldı/).length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -213,7 +213,7 @@ describe("DischargeTab", () => {
       refusal(409, "Discharge blocked: 1 unacknowledged CRITICAL alert(s)…", { apiCode: "critical_alarm_open" })));
     const reads = api.admissions.mock.calls.length;
     await sendStart();
-    expect(toasts().getAllByText(/2 · Reanimasiya: Təsdiqlənməmiş kritik siqnal var; evə yazılma başladıla bilməz/).length).toBeGreaterThan(0);
+    expect(toasts().getAllByText(/^2 · Otaq 1 · Reanimasiya: Təsdiqlənməmiş kritik siqnal var; evə yazılma başladıla bilməz/).length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toMatch(/Discharge blocked/);
     expect(api.admissions.mock.calls.length).toBeGreaterThan(reads);
   });
@@ -283,7 +283,7 @@ describe("DischargeTab", () => {
     const beds = api.structure.mock.calls.length;
     await confirmLeft();
     expect(api.confirmDischarge).toHaveBeenCalledWith("a-3");
-    expect(toasts().getAllByText("1 · Reanimasiya · evə yazılma təsdiqləndi; çarpayı təmizliyə verildi").length).toBeGreaterThan(0);
+    expect(toasts().getAllByText("1 · Otaq 1 · Reanimasiya · evə yazılma təsdiqləndi; çarpayı təmizliyə verildi").length).toBeGreaterThan(0);
     expect(api.admissions.mock.calls.length).toBeGreaterThan(reads);
     expect(api.structure.mock.calls.length).toBeGreaterThan(beds);
   });
@@ -295,14 +295,62 @@ describe("DischargeTab", () => {
     const region = screen.getByRole("region", { name: "Bildirişlər" });
     const notes = screen.getAllByRole("note").filter((n) => !region.contains(n) && /kart paneldən götürülmədi/.test(n.textContent));
     expect(notes).toHaveLength(1);
-    expect(notes[0].textContent).toContain("1 · Reanimasiya");
+    expect(notes[0].textContent).toContain("1 · Otaq 1 · Reanimasiya");
+  });
+
+  // A-17: a write's buttons are held until the list is read again — until then it still shows the
+  // admission as it was, and a press in that gap would send the same write twice.
+  it.each([
+    ["the discharge dialog", DOCTOR, "startDischarge", START, { id: "a-1", state: "PENDING_DISCHARGE" }],
+    ["the confirmation", CHARGE, "confirmDischarge", LEFT, { id: "a-3", state: "DISCHARGED", board: "ok" }],
+  ])("keeps %s held until the list is read again, so a second press sends nothing", async (_what, perms, call, name, answer) => {
+    let reread;
+    const { api } = await open(perms, (a) => a[call].mockResolvedValue(answer));
+    api.admissions.mockImplementationOnce(() => new Promise((resolve) => { reread = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name }));
+    const send = () => within(screen.getByRole("dialog")).getByRole("button", { name });
+    await act(async () => { fireEvent.click(send()); });
+    await settle();
+    expect(api[call]).toHaveBeenCalledTimes(1);
+    expect(send()).toHaveAttribute("aria-busy", "true");                    // landed, the list not read yet
+    await act(async () => { fireEvent.click(send()); });
+    expect(api[call]).toHaveBeenCalledTimes(1);
+    await act(async () => { reread(ROWS); });
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api[call]).toHaveBeenCalledTimes(1);
+  });
+
+  // A-22, spec §5.7: the button a write was sent from leaves the list with the re-read (a started
+  // discharge moves up, a confirmed one goes) — its focus must not fall to <body>.
+  it.each([
+    ["a started discharge", DOCTOR, sendStart, START, "startDischarge", { id: "a-1", state: "PENDING_DISCHARGE" },
+      [{ ...ROWS[0], state: "PENDING_DISCHARGE", discharge_disposition: "HOME", discharge_at: "2026-10-25T09:30:00Z" }, ROWS[1], ROWS[2]]],
+    ["a confirmation", CHARGE, confirmLeft, LEFT, "confirmDischarge", { id: "a-3", state: "DISCHARGED", board: "ok" }, [ROWS[0], ROWS[1]]],
+  ])("after %s the focus goes to the started discharges, not to <body>", async (_what, perms, send, name, call, answer, after) => {
+    const { api } = await open(perms, (a) => a[call].mockResolvedValue(answer));
+    api.admissions.mockResolvedValue(after);
+    screen.getByRole("button", { name }).focus();                           // a keyboard user's press
+    await send();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
+  });
+
+  it("leaves the focus on the button when the write was refused and the row stays", async () => {
+    await open(CHARGE, (a) => a.confirmDischarge.mockRejectedValue(
+      refusal(409, "Only a PENDING_DISCHARGE admission can be confirmed.", { apiCode: "invalid_transition" })));
+    const left = screen.getByRole("button", { name: LEFT });
+    left.focus();
+    await confirmLeft();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: LEFT }));
   });
 
   // Amendment A-9: an uncoded 404 ("Admission not found.") is said by its status, in the reader's
   // words — never the server's English.
   it.each([
-    ["a started discharge", DOCTOR, "startDischarge", sendStart, "2 · Reanimasiya: Sorğu uğursuz oldu (404)."],
-    ["a confirmation", CHARGE, "confirmDischarge", confirmLeft, "1 · Reanimasiya: Sorğu uğursuz oldu (404)."],
+    ["a started discharge", DOCTOR, "startDischarge", sendStart, "2 · Otaq 1 · Reanimasiya: Sorğu uğursuz oldu (404)."],
+    ["a confirmation", CHARGE, "confirmDischarge", confirmLeft, "1 · Otaq 1 · Reanimasiya: Sorğu uğursuz oldu (404)."],
   ])("says an admission the server no longer finds by its status on %s, never in the server's English", async (_write, perms, call, press, said) => {
     await open(perms, (a) => a[call].mockRejectedValue(refusal(404, "Admission not found.")));
     await press();

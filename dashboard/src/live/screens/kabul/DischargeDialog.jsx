@@ -72,7 +72,7 @@ export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
         note: note.trim() || null,
       }));
       toast(doneFor(t, subject, t("kabul.dischargeStarted")));
-      onDone();
+      await onDone();                               // held until the tab has read its list again (A-17)
     } catch (err) {
       // An uncoded 404 ("Admission not found.") is said by its status (refusal.js `reasonOf`).
       toast(refusedFor(t, subject, reasonOf(t, err)), "error");
