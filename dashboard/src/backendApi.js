@@ -292,6 +292,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason.
     let detail = fallback;
     let fieldErrors;
+    let apiCode;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -302,6 +303,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
           .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
           .filter(Boolean).join("; ");
         if (text) detail = text;
+      } else if (typeof body?.detail?.code === "string" && typeof body.detail.message === "string") {
+        // A refusal with a stable code beside its words (homunculus-engine admission/errors.py,
+        // Group 2 · B1a): the words are the message, the code is what a screen maps.
+        detail = body.detail.message;
+        apiCode = body.detail.code;
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -310,6 +316,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // that could not answer (5xx) without parsing text. A network failure has no status at all.
     const err = new Error(detail);
     err.status = res.status;
+    if (apiCode) err.apiCode = apiCode;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
@@ -814,6 +821,40 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     putPatientProfile(patientId, body) {
       return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
     },
+
+    // ---- G2-B1a: Hasta Kabul (homunculus-engine admission/router.py, tenant/router.py) ----
+    // Their refusals carry `err.apiCode` (admission/errors.py): `bed_not_available`,
+    // `out_of_scope`, `critical_alarm_open`, `field_invalid:<field>` … — screens map the code.
+
+    /** The caller's units, rooms and beds with names, states and `is_active`
+     *  ({tenant_id, sites: [{id, name, units: [{id, name, rooms: [{id, name, beds: [...]}]}]}]}). */
+    structure() { return authed("/tenant/structure"); },
+    /** Admission rows of the caller's units, newest first; `states` narrows them — a list, one
+     *  state as a string, or null/undefined for every state. */
+    admissions(states = []) {
+      const query = new URLSearchParams();
+      for (const state of [].concat(states ?? [])) query.append("state", state);
+      const suffix = query.toString();
+      return authed(`/admissions${suffix ? `?${suffix}` : ""}`);
+    },
+    /** One admission ({patient, note}): {…admission, patient_number, engine: {weight, profile, board}}. */
+    admit(body) { return authed("/admissions", { method: "POST", body }); },
+    signOffAdmission(id) { return authed(`/admissions/${seg(id)}/sign-off`, { method: "POST" }); },
+    /** {disposition, institution?, reported_by?, discharge_at?, note?} */
+    startDischarge(id, body) {
+      return authed(`/admissions/${seg(id)}/discharge/initiate`, { method: "POST", body });
+    },
+    /** {…admission, board: ok|failed|skipped} — whether the card left the board. */
+    confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
+    releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // The administrator's structure tab: add under a parent, rename / close / reopen.
+    createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },
+    createUnit(siteId, body) { return authed(`/tenant/sites/${seg(siteId)}/units`, { method: "POST", body }); },
+    createRoom(unitId, body) { return authed(`/tenant/units/${seg(unitId)}/rooms`, { method: "POST", body }); },
+    createBed(roomId, body) { return authed(`/tenant/rooms/${seg(roomId)}/beds`, { method: "POST", body }); },
+    patchUnit(id, body) { return authed(`/tenant/units/${seg(id)}`, { method: "PATCH", body }); },
+    patchRoom(id, body) { return authed(`/tenant/rooms/${seg(id)}`, { method: "PATCH", body }); },
+    patchBed(id, body) { return authed(`/tenant/beds/${seg(id)}`, { method: "PATCH", body }); },
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,

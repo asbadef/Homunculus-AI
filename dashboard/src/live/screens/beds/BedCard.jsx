@@ -26,7 +26,7 @@
 //     and word.
 import React from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { Icon, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
+import { Icon, RiskPill, StatusPill, Tag, riskStyle } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
@@ -91,8 +91,12 @@ function Vitals({ patient }) {
  *   patient's bed to one monitor (`link: "one"`), as `{entry, nowMs, fetchedAtMs, maxAgeS, feedOk}`.
  *   Drawn after the card's link, outside it: a monitor value is never part of what opening the
  *   patient reads out, and nothing on the card above it (risk, alarms, NEWS2) reads it.
+ * `draft` (G2-B1a, X61): the admission behind this card waits for the physician's signature — a
+ *   badge under the name, and the same words in the link's accessible name, after the bed it
+ *   names: the link's `aria-label` replaces what is inside it, so a badge only drawn would be
+ *   silent to a screen reader.
  */
-export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -107,7 +111,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
       <span aria-hidden="true" data-rail={style.tone} className={`absolute inset-y-0 left-0 w-1 ${railOf(style.tone)}`} />
       <a
         href={`#/patients/${encodeURIComponent(patient?.patient_id ?? "")}`}
-        aria-label={t("beds.openPatient", { bed })}
+        aria-label={draft ? `${t("beds.openPatient", { bed })} · ${t("kabul.badgeDraft")}` : t("beds.openPatient", { bed })}
         className={`block pb-3 pl-[18px] pr-3.5 pt-3 ${FOCUS_RING}`}
       >
         <div className="flex items-start gap-2.5">
@@ -116,6 +120,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
             <span className={`block truncate font-display text-14.5 font-bold ${patient?.display_name ? "text-ink" : "italic text-mute"}`}>
               {nameOf(patient, t)}
             </span>
+            {draft ? <Tag tone="warn" icon="edit" className="mt-1">{t("kabul.badgeDraft")}</Tag> : null}
           </div>
           <RiskPill risk={patient?.risk} measured={measured} />
         </div>

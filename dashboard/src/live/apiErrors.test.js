@@ -7,7 +7,9 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText } from "./apiErrors.js";
+import {
+  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText,
+} from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
 import { createTranslator } from "./i18n/translate.js";
@@ -448,5 +450,73 @@ describe("readErrorText", () => {
     for (const err of [new Error("Parola hatalı"), Object.assign(new Error("x"), { status: 503 }), new Error("Beklenmeyen")]) {
       expect(readErrorText(en, err)).toBe(apiErrorText(en, err));
     }
+  });
+});
+
+// G2-B1a — the admission and structure routes' coded refusals, read from the engine's sources.
+describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words", () => {
+  const ERRORS_PY = py("admission/errors.py");
+  /** The codes: every `NAME = "code"` constant of errors.py but FIELD_INVALID's prefix. */
+  const CODES = [...ERRORS_PY.matchAll(/^([A-Z_]+) = "([a-z_]+)"/gm)]
+    .filter(([, name]) => name !== "FIELD_INVALID").map(([, , code]) => code);
+  /** Codes the dashboard maps before the server raises them (amendment A-6): the one explicit
+   *  allow-list. An entry stays valid after errors.py gains the code; nothing else may be mapped
+   *  that errors.py does not hold. */
+  const DASHBOARD_ONLY = [
+    "bed_label_taken",   // added by A-5, server code arrives in Task 7
+  ];
+  const MAPPED = [...new Set([...CODES, ...DASHBOARD_ONLY])];
+  /** Fields form.py refuses in a loop (`for name in ("phone", "relative_phone"): … field_invalid(name, …)`),
+   *  which the reader below cannot see by their literal: listed by hand (A-9). */
+  const LOOPED = ["phone", "relative_phone"];
+  /** Every field a `field_invalid("<field>", …)` names, in the three files that raise one. */
+  const FIELDS = [...new Set([...["admission/form.py", "admission/router.py", "tenant/router.py"]
+    .flatMap((file) => [...py(file).matchAll(/field_invalid\(\s*"(\w+)"/g)].map((m) => m[1])), ...LOOPED])];
+  const coded = (apiCode) => Object.assign(new Error("English words a screen must not show"), { status: 409, apiCode });
+
+  it("the readers found the codes and the fields the engine raises", () => {
+    expect(CODES).toEqual(expect.arrayContaining(["bed_not_available", "critical_alarm_open", "out_of_scope"]));
+    // the eleven of Task 2, and each allow-listed code once errors.py holds it
+    expect(CODES.length).toBe(11 + DASHBOARD_ONLY.filter((code) => CODES.includes(code)).length);
+    // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
+    expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution"]));
+    // The hand-listed ones are still form.py's to raise.
+    for (const field of LOOPED) expect(py("admission/form.py"), field).toContain(`"${field}"`);
+  });
+
+  it("every text either map points at, and the generic field sentence, exists in the four languages (A-9)", () => {
+    const keys = [...ADMISSION_CODE_KEYS.values(), ...INVALID_FIELD_KEYS.values(), "kabul.invalid.other"];
+    expect(keys.length).toBe(ADMISSION_CODE_KEYS.size + INVALID_FIELD_KEYS.size + 1);
+    for (const key of keys) {
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+    }
+  });
+
+  it("the map holds every code errors.py raises, and besides them only the allow-listed ones", () => {
+    expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...MAPPED].sort());
+  });
+
+  it.each(MAPPED)("%s has a text in the four languages", (code) => {
+    const hit = apiErrorKey(coded(code));
+    expect(hit.key).toMatch(/^kabul\.err\./);
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  it.each(FIELDS)("field_invalid:%s names its field in the four languages", (field) => {
+    const hit = apiErrorKey(coded(`field_invalid:${field}`));
+    expect(hit.key).not.toBe("kabul.invalid.other");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {
+    const en = createTranslator("en", DICTIONARIES);
+    expect(apiErrorKey(coded("field_invalid:something_new")).key).toBe("kabul.invalid.other");
+    expect(apiErrorText(en, coded("bed_not_available"))).not.toMatch(/English words/);
+    expect(apiErrorText(en, coded("bed_not_available"))).toBe(en("kabul.err.bedNotAvailable"));
+  });
+
+  it("a code wins over a message that happens to be mapped", () => {
+    const both = Object.assign(new Error("hasta bulunamadı"), { status: 403, apiCode: "out_of_scope" });
+    expect(apiErrorKey(both).key).toBe("kabul.err.outOfScope");
   });
 });

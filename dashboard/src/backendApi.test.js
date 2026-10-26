@@ -1399,3 +1399,92 @@ describe("backendApi — the trend charts and the patient's own normal (Group 2 
     }
   });
 });
+
+// G2-B1a
+describe("backendApi — Hasta Kabul: admission, discharge, the structure and the bed release", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+  const sent = (fetchMock, at = 0) => {
+    const [url, init] = fetchMock.mock.calls[at];
+    return { url, method: init.method, body: init.body === undefined ? undefined : JSON.parse(init.body) };
+  };
+
+  it("a refusal with a code carries the code beside the server's words", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(
+      { detail: { code: "bed_not_available", message: "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit." } },
+      { ok: false, status: 409 }));
+    await expect(signedIn(fetchMock).admit({ patient: {}, note: {} })).rejects.toMatchObject({
+      status: 409, apiCode: "bed_not_available",
+      message: "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit.",
+    });
+  });
+
+  it("a refusal without a code has none, as before", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: "Admission not found." }, { ok: false, status: 404 }));
+    const err = await signedIn(fetchMock).signOffAdmission("a-1").catch((e) => e);
+    expect(err.message).toBe("Admission not found.");
+    expect(err.apiCode).toBeUndefined();
+  });
+
+  it("reads the structure and the admissions of the named states", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.structure();
+    await api.admissions(["DRAFT", "ACTIVE"]);
+    await api.admissions();
+    expect(sent(fetchMock, 0)).toEqual({ url: "/tenant/structure", method: "GET", body: undefined });
+    expect(sent(fetchMock, 1).url).toBe("/admissions?state=DRAFT&state=ACTIVE");
+    expect(sent(fetchMock, 2).url).toBe("/admissions");
+  });
+
+  it("takes one state as a string, and null as no state at all (A-9)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.admissions("DRAFT");
+    await api.admissions(null);
+    expect(sent(fetchMock, 0).url).toBe("/admissions?state=DRAFT");
+    expect(sent(fetchMock, 1).url).toBe("/admissions");
+  });
+
+  it("admits, signs, starts and confirms a discharge, and releases a bed, each by its own route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.admit({ patient: { display_name: "Sentetik" }, note: {} });
+    await api.signOffAdmission("a 1");
+    await api.startDischarge("a-1", { disposition: "HOME" });
+    await api.confirmDischarge("a-1");
+    await api.releaseBed("b/1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["POST", "/admissions"], ["POST", "/admissions/a%201/sign-off"],
+      ["POST", "/admissions/a-1/discharge/initiate"], ["POST", "/admissions/a-1/discharge/confirm"],
+      ["POST", "/tenant/beds/b%2F1/release"],
+    ]);
+    expect(sent(fetchMock, 0).body).toEqual({ patient: { display_name: "Sentetik" }, note: {} });
+    expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
+  });
+
+  it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.createSite("t-1", { name: "Ana bina" });
+    await api.createUnit("s-1", { name: "Reanimasiya", unit_type: "ADULT_ICU" });
+    await api.createRoom("u-1", { name: "Otaq 1" });
+    await api.createBed("r-1", { label: "1" });
+    await api.patchUnit("u-1", { name: "Rea" });
+    await api.patchRoom("r-1", { is_active: false });
+    await api.patchBed("b-1", { is_active: true });
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["POST", "/tenant/tenants/t-1/sites"], ["POST", "/tenant/sites/s-1/units"],
+      ["POST", "/tenant/units/u-1/rooms"], ["POST", "/tenant/rooms/r-1/beds"],
+      ["PATCH", "/tenant/units/u-1"], ["PATCH", "/tenant/rooms/r-1"], ["PATCH", "/tenant/beds/b-1"],
+    ]);
+    // Each write carries its own body, as given (A-9).
+    expect(fetchMock.mock.calls.map((_, at) => sent(fetchMock, at).body)).toEqual([
+      { name: "Ana bina" }, { name: "Reanimasiya", unit_type: "ADULT_ICU" }, { name: "Otaq 1" }, { label: "1" },
+      { name: "Rea" }, { is_active: false }, { is_active: true },
+    ]);
+  });
+});
