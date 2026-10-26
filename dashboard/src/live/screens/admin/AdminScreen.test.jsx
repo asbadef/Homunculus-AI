@@ -60,9 +60,10 @@ async function open({ perms = ["users.manage", "groups.manage"], setup, built = 
 }
 
 describe("which tabs a session sees", () => {
-  it("names the three tabs, each with the right that opens it", () => {
+  it("names the four tabs, each with the right that opens it", () => {
     expect(TABS.map((x) => [x.id, x.perm])).toEqual([
       ["users", "users.manage"], ["roles", "groups.manage"], ["source", "users.manage"],
+      ["structure", "structure.manage"], // G2-B1a
     ]);
   });
 

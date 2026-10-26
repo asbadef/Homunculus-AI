@@ -34,6 +34,8 @@ import { RolesTab } from "./RolesTab.jsx";
 
 import { SourceTab } from "./SourceTab.jsx";
 
+import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+
 const TAB_ID = "admin";
 
 /** Each read's name, for the Alert that says which one failed. Written out, never built from the
@@ -52,6 +54,9 @@ export const TABS = Object.freeze([
   Object.freeze({ id: "users", perm: "users.manage", labelKey: "admin.tabUsers" }),
   Object.freeze({ id: "roles", perm: "groups.manage", labelKey: "admin.tabRoles" }),
   Object.freeze({ id: "source", perm: "users.manage", labelKey: "admin.tabSource" }),
+
+  // G2-B1a — Yönetim › Yapı: the ward's sites, units, rooms and beds
+  Object.freeze({ id: "structure", perm: "structure.manage", labelKey: "kabul.structureTab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -67,6 +72,8 @@ const TAB_SCREENS = Object.freeze({
   roles: RolesTab, //    G1-13
 
   source: SourceTab, //   G1-14
+
+  structure: StructureTab, // G2-B1a
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */
