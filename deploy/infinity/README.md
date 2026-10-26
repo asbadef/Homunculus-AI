@@ -446,7 +446,7 @@ none clinical):
 
 | K | Measured |
 |---|---|
-| K1 live values on assigned beds | 13 devices: 7 streaming, 6 standby; every streaming bed carried ≥ 1 fresh value. BED08 showed its three parameters as device-flagged *invalid* for some minutes with a patient present, then five fresh values — recorded, nothing changed. Bedside eye comparison on 3 beds (same/different only): **pending**. |
+| K1 live values on assigned beds | 13 devices: 7 streaming, 6 standby; every streaming bed carried ≥ 1 fresh value. BED08 showed its three parameters as device-flagged *invalid* for some minutes with a patient present, then five fresh values — recorded, nothing changed. Bedside eye comparison (same/different only): **taken by the project owner, confirmed 2026-10-26 — same** on the streaming beds named (BED05, BED06, BED25); the owner also reports the 13 ICU monitors' streaming values as correct (user message, 2026-10-26 ≈14:45 local). No values recorded. |
 | K2 unassigned devices | none expected, none seen |
 | K3 lag | 2347 readings in 300 s, mean 820 ms, 100 % within 3000 ms; 60 posts in 300 s (≥ 54 required) |
 | K4 engine output unchanged | `PANO_OZET` sha256 `26a1c3af…` (6 cards, 0 alerts) identical before the forwarder (P0), right after it (P1), 90 min later and **at +24 h** (2026-10-20 09:00–09:05 UTC): P0 = P1 = P90 = P24. |
