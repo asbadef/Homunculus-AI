@@ -149,22 +149,56 @@ def test_a_number_with_neither_an_identity_nor_a_reading_sends_nothing_and_creat
 
 def test_a_tombstones_board_is_its_removal_never_its_card():
     """A-16 keeps the name on the tombstone: built as an identity-only card, a discharged patient
-    would come back on every screen, named and bedless. A later write to the number (the
-    admission flow makes none) sends what the board sends for any tombstone: its removal."""
-    world = World(chart=lambda **kwargs: [])
+    would come back on every screen, named and bedless. An admission's identity write the store
+    refuses after the discharge (a late retry) republishes the board — which is the removal."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.now = T0 + timedelta(hours=1)
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    world.published.clear()
+
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))        # stamped T0: refused
+
+    ((_hospital, frame),) = world.published
+    assert (frame["patient_id"], frame["removed"]) == ("H2600001", True)
+    assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
+    assert "Sentetik" not in repr(frame)
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and world.board() == []
+    assert world.engine(HOSPITAL).patient_ids() == []
+
+
+def _ingesting_door(calls: list):
+    """A charting door that really puts the entries into the engine, as Lane A's
+    `chart_observations` does — so a charting that should not have happened can be seen."""
+    def chart(*, engine, charted, now, **_rest):
+        calls.append(charted)
+        for item in charted:
+            engine.ingest(item.observation, now=now)
+        return []
+    return chart
+
+
+@pytest.mark.parametrize("write", ["chart_weight", "apply_profile"])
+def test_a_discharged_number_takes_no_weight_and_no_profile(write):
+    """A-11: nothing reaches the engine for a discharged number, and no row a restart would
+    replay is written. Lane A's `chart_observations` leaves that drop to its caller, so BoardLink
+    refuses before it builds, charts or writes anything; the admission route reports it failed."""
+    calls: list = []
+    world = World(chart=_ingesting_door(calls))
     asyncio.run(world.link.put_identity(HOSPITAL, record()))
     asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
     world.published.clear()
 
-    asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
-    asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+    with pytest.raises(RuntimeError, match="H2600001 is discharged"):
+        if write == "chart_weight":
+            asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+        else:
+            asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
 
-    assert len(world.published) == 2
-    for _hospital, frame in world.published:
-        assert (frame["patient_id"], frame["removed"]) == ("H2600001", True)
-        assert frame["identity"] == {"bed_id": BED, "unit_id": UNIT}
-        assert "Sentetik" not in repr(frame)
+    assert calls == [] and world.published == []
     assert world.engine(HOSPITAL).patient_ids() == []
+    assert world.engine(HOSPITAL).profile("H2600001") is None
+    assert world.audit.records(tenant=HOSPITAL) == []
 
 
 # ---------------------------------------------------------------- the weight and the profile
@@ -206,14 +240,7 @@ def test_charting_with_any_part_of_the_door_unwired_raises_before_anything_is_ch
     with no notifier, it would leave the weight in the engine with no row for a restart to
     replay. The door here charts into the engine, so "nothing charted" is observable."""
     calls: list = []
-
-    def chart(*, engine, charted, now, **_rest):
-        calls.append(charted)
-        for item in charted:
-            engine.ingest(item.observation, now=now)
-        return []
-
-    world = World(**{"chart": chart, missing: None})
+    world = World(**{"chart": _ingesting_door(calls), missing: None})
     with pytest.raises(RuntimeError, match=f"{named} not wired"):
         asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
     assert calls == [] and world.published == [] and world.audit.records(tenant=HOSPITAL) == []

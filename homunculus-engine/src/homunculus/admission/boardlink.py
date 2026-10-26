@@ -26,11 +26,13 @@ writes from the first into the second, and nothing else in `admission/` does:
                        number's tombstone's removal frame — the last bed and unit, no name — which
                        that door publishes once, after the alerts are ended (A-11d, A-20).
 
-The discharge's removal is never BoardLink's to send. Its other writes republish the patient's
-board: for a tombstone that is its removal, as everywhere the board is published, never its card;
-for a number with neither an identity nor a reading, nothing. There is no fallback for a door the
-app did not wire: `chart_weight` and `retire` raise `RuntimeError`, and every refusal raises, so
-the admission routes can say which part failed and never report one `ok` that did not happen.
+The discharge's removal is never BoardLink's to send. `chart_weight` and `apply_profile` refuse a
+discharged number before they build, chart or write anything (A-11). The board republished after
+a write is, for a tombstone, its removal, never its card (a late identity write the store refuses
+after the discharge sends that); for a number with neither an identity nor a reading, nothing.
+There is no fallback for a door the app did not wire: `chart_weight` and `retire` raise
+`RuntimeError`, and every refusal raises, so the admission routes can say which part failed and
+never report one `ok` that did not happen.
 
 The app builds it from its own stores and doors and places it on `app.state.board_link` — the
 wiring is Task 6b's, after Lane A's A-11 is merged (A-20, A-23); a router reaches it through the
@@ -152,8 +154,9 @@ class BoardLink:
         The door, the notifier and the escalation delay must all be wired, or nothing is built or
         charted: Lane A's `chart_observations` prunes the notifier before it writes the `chart`
         row, so a missing notifier would leave the weight in the engine with no row for a restart
-        to replay. It is called for a number the admission has just issued; it is not a door for
-        charting."""
+        to replay. A discharged number is refused first (`_refuse_discharged`). It is called for a
+        number the admission has just issued; it is not a door for charting."""
+        self._refuse_discharged(tenant, patient_number)
         missing = [name for name, part in (("chart_observations", self._chart),
                                            ("notifier", self._notifier),
                                            ("escalate_after", self._escalate_after))
@@ -170,6 +173,10 @@ class BoardLink:
 
     async def apply_profile(self, tenant: str, patient_number: str, codes: list[str], *,
                             actor: str) -> None:
+        """The comorbidities merged into the engine's profile, audited as `PUT
+        /clinical/{id}/profile` audits them, then the card republished. A discharged number is
+        refused first (`_refuse_discharged`)."""
+        self._refuse_discharged(tenant, patient_number)
         engine = self._engine(tenant)
         profile = profile_from_payload(patient_number, {"comorbidities": list(codes)},
                                        engine.profile(patient_number))
@@ -190,6 +197,13 @@ class BoardLink:
         discharge is not one: its card keeps its 24 hours on the board."""
         return _is_tombstone(self._identities.get(tenant, patient_number))
 
+    def _refuse_discharged(self, tenant: str, patient_number: str) -> None:
+        """A-11: nothing reaches the engine for a discharged number, and no row a restart would
+        replay is written for it. Lane A's `chart_observations` leaves that drop to its caller, so
+        the writes here refuse before they build, chart or write anything."""
+        if self.is_discharged(tenant, patient_number):
+            raise RuntimeError(f"{patient_number} is discharged")
+
     async def discharge_identity(self, tenant: str, patient_number: str) -> IdentityRecord:
         """Write the tombstone: the patient left, the record stays with its name (A-16) and its
         last bed and unit (`_merge` keeps the location group when the incoming record names none).
@@ -209,7 +223,8 @@ class BoardLink:
         raise RuntimeError(f"the discharge of {patient_number} was refused: the identity store "
                            "holds a newer record that is not a discharge")
 
-    async def retire(self, tenant: str, patient_number: str, record: IdentityRecord) -> list:
+    async def retire(self, tenant: str, patient_number: str,
+                     record: IdentityRecord | None) -> list:
         """Retire the patient from the alert world through the app's door, handing it the
         tombstone's removal frame to publish once its alerts are ended. Returns what it cleared.
 
