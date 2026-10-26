@@ -10,9 +10,11 @@
 // — and frees the buttons only once that read has answered, so none is pressed on the tree from
 // before the write.
 //
-// EVERY CONTROL NAMES WHAT IT ACTS ON: "<action>: <subject>" — a unit or a room by its name, a bed
-// as the header's rule names it, "label · room · unit" — and the toast names the same subject. A
-// tab of forty buttons that all read "Close" tells a screen-reader user nothing.
+// EVERY CONTROL NAMES WHAT IT ACTS ON, AND NO TWO ALIKE: "<action>: <subject>" — a unit by its name
+// (and its site's, once there is more than one site), a room as "room · unit" (room names are
+// unique only within a unit), a bed as the header's rule names it, "label · room · unit" — and the
+// toast names the same subject. A tab of forty buttons that all read "Close" tells a screen-reader
+// user nothing; two that both read "Close: Otaq 1" tell her something false.
 //
 // NOTHING HELD IS A SILENT NO-OP. One write is out at a time (a second submit in the same tick
 // included): while it is, every other write is `aria-disabled` and points at the sentence naming
@@ -50,7 +52,7 @@ function reasonOf(t, err) {
 /** One text box and its button: add a child, or rename this node. The button's name is
  *  "<button>: <subject>". It is held — `aria-disabled`, pointing at why — while another write is
  *  out (`held`: the id of the sentence that says so) and while the box is blank (`blankKey`). */
-function Line({ label, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
+function Line({ id, label, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
   const { t } = useI18n();
   const [value, setValue] = useState(initial);
   const [tried, setTried] = useState(false);
@@ -58,7 +60,7 @@ function Line({ label, initial = "", subject, submitKey, blankKey, maxLength, on
   const blank = !value.trim();
   const reason = busy ? undefined : held ?? (blank ? blankId : undefined);
   return (
-    <form className="flex flex-wrap items-center gap-2" onSubmit={async (event) => {
+    <form id={id} className="flex flex-wrap items-center gap-2" onSubmit={async (event) => {
       event.preventDefault();
       if (busy || held) return;
       if (blank) {
@@ -97,13 +99,15 @@ function UnitAdd({ site, busy, held, onAdd }) {
   );
 }
 
-/** "Add a room" under a unit: its name, its number when it has one, and whether it isolates. */
-function RoomAdd({ unit, busy, held, onAdd }) {
+/** "Add a room" under a unit (`unit`: the unit's subject): its name, its number when it has one,
+ *  and whether it isolates. While its own add is out the boxes are held too, the checkbox pointing
+ *  at the sentence naming what is being saved (`savingId`). */
+function RoomAdd({ unit, busy, held, savingId, onAdd }) {
   const { t } = useI18n();
   const [number, setNumber] = useState("");
   const [isolation, setIsolation] = useState(false);
   return (
-    <Line label={t("kabul.newRoom", { unit: unit.name })} subject={unit.name} submitKey="kabul.addRoom"
+    <Line label={t("kabul.newRoom", { unit })} subject={unit} submitKey="kabul.addRoom"
       blankKey="kabul.invalid.name" maxLength={MAX.room} busy={busy} held={held}
       onSubmit={async (name) => {
         const ok = await onAdd({ name, room_number: number.trim() || null, is_isolation: isolation });
@@ -113,12 +117,16 @@ function RoomAdd({ unit, busy, held, onAdd }) {
         }
         return ok;
       }}>
-      <Input aria-label={t("kabul.newRoomNumber", { unit: unit.name })} placeholder={t("kabul.roomNumber")}
+      <Input aria-label={t("kabul.newRoomNumber", { unit })} placeholder={t("kabul.roomNumber")}
         value={number} readOnly={busy} maxLength={MAX.roomNumber} onChange={(e) => setNumber(e.target.value)}
         className="!w-[120px]" />
       <label className="inline-flex items-center gap-1.5 text-13">
-        <input type="checkbox" checked={isolation} aria-label={t("kabul.newRoomIsolation", { unit: unit.name })}
-          onChange={(e) => setIsolation(e.target.checked)} />
+        {/* Held, not `disabled`: reachable, and saying why. A no-op onChange keeps it as it was —
+            React puts the prop back after the event (RolesTab's cells, the same way). */}
+        <input type="checkbox" checked={isolation} aria-label={t("kabul.newRoomIsolation", { unit })}
+          aria-disabled={busy ? "true" : undefined} aria-describedby={busy ? savingId : undefined}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+          onChange={busy ? () => {} : (e) => setIsolation(e.target.checked)} />
         {t("kabul.isolation")}
       </label>
     </Line>
@@ -131,6 +139,7 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
   const { t } = useI18n();
   const [renaming, setRenaming] = useState(false);
   const toggleRef = useRef(null);
+  const editorId = useId();
   const closed = item.is_active === false;
   const toggleKey = closed ? "kabul.reopen" : "kabul.close";
   const closeEditor = () => {
@@ -145,6 +154,7 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
         {tags}
         <span className="ml-auto flex flex-wrap gap-1.5">
           <Button ref={toggleRef} size="sm" variant="ghost" icon="edit" aria-expanded={renaming ? "true" : "false"}
+            aria-controls={renaming ? editorId : undefined}
             aria-label={`${t("kabul.rename")}: ${subject}`} onClick={() => setRenaming((on) => !on)}>{t("kabul.rename")}</Button>
           <Button size="sm" busy={busy} aria-label={`${t(toggleKey)}: ${subject}`}
             aria-disabled={held ? "true" : undefined} aria-describedby={held}
@@ -152,7 +162,7 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
         </span>
       </div>
       {renaming ? (
-        <Line label={t("kabul.renameOf", { name: subject })} initial={name} subject={subject} submitKey="common.save"
+        <Line id={editorId} label={t("kabul.renameOf", { name: subject })} initial={name} subject={subject} submitKey="common.save"
           blankKey={kind === "bed" ? "kabul.invalid.label" : "kabul.invalid.name"} maxLength={maxLength}
           busy={busy} held={held} autoFocus
           onSubmit={async (value) => {
@@ -177,6 +187,7 @@ export function StructureTab() {
   const toast = useToast();
   const [busy, setBusy] = useState(null);          // {id, subject} of the write that is out
   const flight = useRef(null);                     // the same, read synchronously: two submits in one tick
+  const [retrying, setRetrying] = useState(false);
   const heldId = useId();
   const api = store.api;
   // The add-site button's subject: the hospital, by name — never an id.
@@ -208,10 +219,28 @@ export function StructureTab() {
   const holdFor = (id) => (busy && busy.id !== id ? heldId : undefined);
   const saying = busy ? t("admin.savingFor", { subject: busy.subject }) : "";
 
-  if (structure === null) {
-    return error ? <Alert tone="crit">{t("kabul.listFailed", { reason: readErrorText(t, error) })}</Alert>
-      : <p className="m-0 text-13 text-mute">{t(phase === "unasked" ? "kabul.noView" : "kabul.loading")}</p>;
+  /** The first read failed: read again, the button busy while it runs. */
+  async function retry() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await reload();
+    } finally {
+      setRetrying(false);
+    }
   }
+
+  if (structure === null) {
+    return error ? (
+      <Alert tone="crit">
+        <p className="m-0">{t("kabul.listFailed", { reason: readErrorText(t, error) })}</p>
+        <Button size="sm" busy={retrying} onClick={retry}>{t("admin.retry")}</Button>
+      </Alert>
+    ) : <p role="status" className="m-0 text-13 text-mute">{t(phase === "unasked" ? "kabul.noView" : "kabul.loading")}</p>;
+  }
+  // A unit by its name, and its site's once there is more than one site: two sites may each have a
+  // "Reanimasiya". A room and a bed carry their unit's subject after their own name.
+  const manySites = (structure.sites ?? []).length > 1;
   return (
     <div className="grid gap-3">
       {error ? <Alert tone="crit">{t("kabul.listStale", { reason: readErrorText(t, error) })}</Alert> : null}
@@ -224,50 +253,56 @@ export function StructureTab() {
       {(structure.sites ?? []).map((site) => (
         <Box key={site.id} title={site.name} icon="building" level={2}>
           <UnitAdd site={site} busy={isBusy(site.id)} held={holdFor(site.id)}
-            onAdd={(body) => write(site.id, body.name, () => api.createUnit(site.id, body), "kabul.added")} />
+            onAdd={(body) => write(site.id, manySites ? `${body.name} · ${site.name}` : body.name,
+              () => api.createUnit(site.id, body), "kabul.added")} />
           <ul className="m-0 mt-2 grid list-none gap-2 p-0">
-            {(site.units ?? []).map((unit) => (
-              <Node key={unit.id} kind="unit" item={unit} name={unit.name} subject={unit.name} maxLength={MAX.unit}
-                tags={UNIT_TYPE_KEYS[unit.unit_type] ? <Tag>{t(UNIT_TYPE_KEYS[unit.unit_type])}</Tag> : null}
-                busy={isBusy(unit.id)} held={holdFor(unit.id)}
-                onRename={(name) => write(unit.id, unit.name, () => api.patchUnit(unit.id, { name }), "kabul.renamed")}
-                onToggle={() => toggle(unit, api.patchUnit, unit.name)}>
-                <RoomAdd unit={unit} busy={isBusy(`${unit.id}+`)} held={holdFor(`${unit.id}+`)}
-                  onAdd={(body) => write(`${unit.id}+`, body.name, () => api.createRoom(unit.id, body), "kabul.added")} />
-                <ul className="m-0 grid list-none gap-2 p-0 ps-4">
-                  {(unit.rooms ?? []).map((room) => {
-                    // A bed as the header's rule names it, on the toast and on every control.
-                    const bedName = (label) => `${label} · ${room.name} · ${unit.name}`;
-                    return (
-                      <Node key={room.id} kind="room" item={room} name={room.name} subject={room.name} maxLength={MAX.room}
-                        tags={(
-                          <>
-                            {room.room_number ? <Tag>{t("kabul.roomNumberIs", { number: room.room_number })}</Tag> : null}
-                            {room.is_isolation ? <Tag>{t("kabul.isolation")}</Tag> : null}
-                          </>
-                        )}
-                        busy={isBusy(room.id)} held={holdFor(room.id)}
-                        onRename={(name) => write(room.id, room.name, () => api.patchRoom(room.id, { name }), "kabul.renamed")}
-                        onToggle={() => toggle(room, api.patchRoom, room.name)}>
-                        <Line label={t("kabul.newBed", { room: room.name })} subject={room.name} submitKey="kabul.addBed"
-                          blankKey="kabul.invalid.label" maxLength={MAX.bed}
-                          busy={isBusy(`${room.id}+`)} held={holdFor(`${room.id}+`)}
-                          onSubmit={(label) => write(`${room.id}+`, bedName(label), () => api.createBed(room.id, { label }), "kabul.added")} />
-                        <ul className="m-0 grid list-none gap-1.5 p-0 ps-4">
-                          {(room.beds ?? []).map((bed) => (
-                            <Node key={bed.id} kind="bed" item={bed} name={bed.label} subject={bedName(bed.label)} maxLength={MAX.bed}
-                              tags={bed.state ? <Tag>{t(BED_STATE_KEYS[bed.state] ?? "kabul.bedOther")}</Tag> : null}
-                              busy={isBusy(bed.id)} held={holdFor(bed.id)}
-                              onRename={(label) => write(bed.id, bedName(bed.label), () => api.patchBed(bed.id, { label }), "kabul.renamed")}
-                              onToggle={() => toggle(bed, api.patchBed, bedName(bed.label))} />
-                          ))}
-                        </ul>
-                      </Node>
-                    );
-                  })}
-                </ul>
-              </Node>
-            ))}
+            {(site.units ?? []).map((unit) => {
+              const unitName = manySites ? `${unit.name} · ${site.name}` : unit.name;
+              return (
+                <Node key={unit.id} kind="unit" item={unit} name={unit.name} subject={unitName} maxLength={MAX.unit}
+                  tags={UNIT_TYPE_KEYS[unit.unit_type] ? <Tag>{t(UNIT_TYPE_KEYS[unit.unit_type])}</Tag> : null}
+                  busy={isBusy(unit.id)} held={holdFor(unit.id)}
+                  onRename={(name) => write(unit.id, unitName, () => api.patchUnit(unit.id, { name }), "kabul.renamed")}
+                  onToggle={() => toggle(unit, api.patchUnit, unitName)}>
+                  <RoomAdd unit={unitName} busy={isBusy(`${unit.id}+`)} held={holdFor(`${unit.id}+`)} savingId={heldId}
+                    onAdd={(body) => write(`${unit.id}+`, `${body.name} · ${unitName}`, () => api.createRoom(unit.id, body), "kabul.added")} />
+                  <ul className="m-0 grid list-none gap-2 p-0 ps-4">
+                    {(unit.rooms ?? []).map((room) => {
+                      // A room with its unit, a bed as the header's rule names it — on the toast and
+                      // on every control.
+                      const roomName = `${room.name} · ${unitName}`;
+                      const bedName = (label) => `${label} · ${roomName}`;
+                      return (
+                        <Node key={room.id} kind="room" item={room} name={room.name} subject={roomName} maxLength={MAX.room}
+                          tags={(
+                            <>
+                              {room.room_number ? <Tag>{t("kabul.roomNumberIs", { number: room.room_number })}</Tag> : null}
+                              {room.is_isolation ? <Tag>{t("kabul.isolation")}</Tag> : null}
+                            </>
+                          )}
+                          busy={isBusy(room.id)} held={holdFor(room.id)}
+                          onRename={(name) => write(room.id, roomName, () => api.patchRoom(room.id, { name }), "kabul.renamed")}
+                          onToggle={() => toggle(room, api.patchRoom, roomName)}>
+                          <Line label={t("kabul.newBed", { room: roomName })} subject={roomName} submitKey="kabul.addBed"
+                            blankKey="kabul.invalid.label" maxLength={MAX.bed}
+                            busy={isBusy(`${room.id}+`)} held={holdFor(`${room.id}+`)}
+                            onSubmit={(label) => write(`${room.id}+`, bedName(label), () => api.createBed(room.id, { label }), "kabul.added")} />
+                          <ul className="m-0 grid list-none gap-1.5 p-0 ps-4">
+                            {(room.beds ?? []).map((bed) => (
+                              <Node key={bed.id} kind="bed" item={bed} name={bed.label} subject={bedName(bed.label)} maxLength={MAX.bed}
+                                tags={bed.state ? <Tag>{t(BED_STATE_KEYS[bed.state] ?? "kabul.bedOther")}</Tag> : null}
+                                busy={isBusy(bed.id)} held={holdFor(bed.id)}
+                                onRename={(label) => write(bed.id, bedName(bed.label), () => api.patchBed(bed.id, { label }), "kabul.renamed")}
+                                onToggle={() => toggle(bed, api.patchBed, bedName(bed.label))} />
+                            ))}
+                          </ul>
+                        </Node>
+                      );
+                    })}
+                  </ul>
+                </Node>
+              );
+            })}
           </ul>
         </Box>
       ))}
