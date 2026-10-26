@@ -937,7 +937,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     düzeltilirse (enfeksiyon yeniden "var" işaretlenirse) eski pencere geri gelir — düzeltme aynı
     olaydır; 15 dakikadan sonrası yeni bir pencere başlatır (yeni bir enfeksiyon eski pencereyi ve
     o sırada verilmiş dozları devralmaz).
-- *Şüpheli enfeksiyon — ekranın yazdığı iki şeyden biri* (öteki hastanın normali, 3.7): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+- *Şüpheli enfeksiyon — ekranın yazdığı üç şeyden biri* (ötekiler hastanın normali, 3.7, ve aşağıdaki vazopressör/sıvı kaydı): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
   sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
@@ -947,6 +947,20 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
   ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
   doldurup imzalamak sonraki grupta.
+- *Vazopressör / sıvı kaydı — ekranın yazdığı üçüncü şey* (G2-A3): `clinical.chart` yetkisi olan klinisyen İlaçlar
+  kutusunda «Kayıt ekle»ye basar; açılan pencerede kilo (kg), vazopressör/inotrop (noradrenalin, adrenalin, dopamin,
+  dobutamin) ile hızı (µg/kg/dk), kristaloid bolus (mL), «Antibiyotik verildi» ve «Kayıt saati» vardır; her alan
+  isteğe bağlıdır, en az biri dolu olmalıdır. **Hız infüzyonun şu anki hızıdır:** değişince yeni bir kayıt girilir,
+  **0 «durduruldu» demektir.** Ekran mL/saat ↔ µg/kg/dk çevirmez; hızı µg/kg/dk yazın. Her bolus ayrı bir kayıttır
+  (kural son 3 saatin toplamını kendisi sayar). Kayıt saati varsayılan olarak şimdidir; en çok 24 saat geriye
+  gidilir, ileri saat kabul edilmez. Kayıttan sonra motor hastayı hemen yeniden değerlendirir; septik şok alarmı da
+  hemen çıkabilir. **Düzeltme yeni kayıttır:** yanlış hız ya da kilo doğrusu yeniden girilerek düzelir (kart en son
+  değeri gösterir, denetim kaydı hepsini saklar). **Yanlış bolus bu sürümde geri alınamaz:** doğrusunu girin, ama
+  kuralın 3 saatlik sıvı toplamı pencere geçene kadar gerçeğinden yüksek okuyabilir. İlaçlar kutusu artık her
+  vazopressörü son hızı ve saatiyle («noradrenalin 0.12 µg/kg/dk · 14:05», 0 girildiyse «durduruldu · 14:30»),
+  kiloyu, antibiyotik satırını ve «Son kayıtlar» altında son on girişi (en yenisi üstte) gösterir. Servis duyurusu
+  (G1-15) septik şokun vazopressör bilgisi alamadığını söylüyordu; kaydı yapılan vazopressör artık kurala girer —
+  kayıt yoksa kural yine bilmez («kimse kaydetmedi» ile «verilmedi» aynı şey değildir).
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
   numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
   kaydından çizilir (3.7).
