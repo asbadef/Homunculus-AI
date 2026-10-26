@@ -17,13 +17,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import event, func, select, text, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homunculus.admission import router as admission_router
 from homunculus.admission import service
 from homunculus.admission.boardlink import BoardLink
-from homunculus.admission.models import Admission, NurseBedAssignment, Patient
+from homunculus.admission.models import Admission, AdmissionState, NurseBedAssignment, Patient
+from homunculus.scope.models import StaffScope
 from homunculus.tenant.models import Bed, BedState
 from tests.conftest import requires_db
 from tests.kabul_world import BOARD, SLUG, build_ward, ward_client
@@ -208,6 +209,71 @@ async def test_the_list_carries_names_filters_by_state_and_keeps_to_the_callers_
     assert none == []
 
 
+async def test_the_list_holds_open_admissions_unless_asked_and_stops_at_its_cap(
+        ward, db_session, monkeypatch):
+    """Without `state` the list holds the open admissions only (DRAFT, ACTIVE and the two
+    pending states); a closed one is listed when its state is asked for. Never more than
+    `ADMISSION_LIST_CAP` rows, the newest first."""
+    w, client, _ = ward
+    gone = (await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])).json()
+    here = (await client.post("/admissions", json=form(w, "2"), headers=w.auth["nurse"])).json()
+    await db_session.execute(update(Admission).where(Admission.id == uuid.UUID(gone["id"]))
+                             .values(state=AdmissionState.DISCHARGED))
+    await db_session.commit()
+
+    open_rows = (await client.get("/admissions", headers=w.auth["nurse"])).json()
+    assert [r["id"] for r in open_rows] == [here["id"]]
+    closed = (await client.get("/admissions", params={"state": "DISCHARGED"},
+                               headers=w.auth["nurse"])).json()
+    assert [r["id"] for r in closed] == [gone["id"]]
+
+    monkeypatch.setattr(admission_router, "ADMISSION_LIST_CAP", 1)
+    capped = (await client.get("/admissions", params={"state": ["DRAFT", "DISCHARGED"]},
+                               headers=w.auth["nurse"])).json()
+    assert [r["id"] for r in capped] == [here["id"]]
+
+
+async def test_a_bed_grant_lists_that_beds_admission_beside_its_units(ward, db_session):
+    """The caller's units and beds are filtered in the query: a Neonatal nurse granted bed 2 of
+    Reanimasiya too sees the Neonatal admission and bed 2's, and not bed 1's."""
+    w, client, _ = ward
+    one = (await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])).json()
+    two = (await client.post("/admissions", json=form(w, "2"), headers=w.auth["nurse"])).json()
+    neo = (await client.post("/admissions", json=form(w, "N1", "neo"),
+                             headers=w.auth["nurse_b"])).json()
+    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=w.users["nurse_b"].id,
+                              bed_id=str(w.beds["2"].id)))
+    await db_session.commit()
+
+    rows = (await client.get("/admissions", headers=w.auth["nurse_b"])).json()
+    assert {r["id"] for r in rows} == {two["id"], neo["id"]}
+    assert one["id"] not in {r["id"] for r in rows}
+
+
+async def test_the_list_reads_no_encrypted_field_it_does_not_show(ward, db_session):
+    """A row shows the patient's number and name: the query reads those two of the patient's
+    columns and none of the other encrypted ones (the FİN, the phone …)."""
+    w, client, _ = ward
+    assert (await client.post("/admissions", json=form(w), headers=w.auth["nurse"])).status_code == 201
+    seen: list[str] = []
+
+    def spy(conn, cursor, statement, parameters, context, executemany):
+        if "FROM admissions" in statement and "patients" in statement:
+            seen.append(statement)
+
+    engine = db_session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        rows = (await client.get("/admissions", headers=w.auth["nurse"])).json()
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    assert [r["display_name"] for r in rows] == ["Sentetik Hasta"]
+    (statement,) = seen
+    assert "patients.patient_number" in statement and "patients.display_name" in statement
+    for column in ("national_id", "phone", "father_name", "date_of_birth", "passport_no"):
+        assert f"patients.{column}" not in statement, column
+
+
 async def test_an_audit_store_failing_after_the_commit_still_admits_and_logs(ward, db_session,
                                                                             monkeypatch, caplog):
     """Amendment A-26: the admission has committed before its row is written, so a failing audit
@@ -230,6 +296,51 @@ async def test_an_audit_store_failing_after_the_commit_still_admits_and_logs(war
     assert "admission.admit" in message and r.json()["id"] in message, message
     assert r.json()["patient_number"] in message and "nurse@kabul.example.com" in message, message
     assert "Sentetik" not in message, message
+
+
+async def test_a_read_back_that_fails_after_the_commit_still_audits_and_admits(
+        ward, db_session, monkeypatch, caplog):
+    """The admission's audit row is written right after the commit, before anything that can
+    still fail: a database that drops away when the admission is read back loses neither the
+    admission nor its row. The answer is made from what was written, and the failure logged."""
+    w, client, app = ward
+
+    async def gone(self, *args, **kwargs):
+        raise RuntimeError("the database went away")
+
+    monkeypatch.setattr(AsyncSession, "refresh", gone)
+    caplog.set_level(logging.ERROR, logger="homunculus.admission.router")
+    r = await client.post("/admissions", json=form(w), headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    assert r.json()["engine"] == {"weight": "ok", "profile": "ok", "board": "ok"}
+
+    (row,) = [rec for rec in app.state.audit.records(tenant=SLUG, limit=50)
+              if rec.event_type == "admission.admit"]
+    assert (row.patient_id, row.payload["admission_id"]) == (r.json()["patient_number"], r.json()["id"])
+    stored = await db_session.get(Admission, uuid.UUID(r.json()["id"]))
+    assert stored is not None and stored.state.value == r.json()["state"] == "DRAFT"
+    assert any(r.json()["patient_number"] in rec.getMessage() for rec in caplog.records
+               if rec.levelno == logging.ERROR and rec.name == "homunculus.admission.router")
+
+
+async def test_without_a_board_link_the_asked_parts_are_failed_never_skipped(
+        ward, monkeypatch, caplog):
+    """An app built without its BoardLink reached nothing: every part the form asked for is
+    `failed` (X53: `skipped` means "not asked"), and it is logged at ERROR. A part not asked for
+    stays `skipped`; the card is always asked for."""
+    w, client, app = ward
+    monkeypatch.setattr(app.state, "board_link", None)
+    caplog.set_level(logging.ERROR, logger="homunculus.admission.router")
+    r = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    assert r.json()["engine"] == {"weight": "failed", "profile": "failed", "board": "failed"}
+    r = await client.post("/admissions", json=form(w, "2", note={"weight_kg": None,
+                                                                 "comorbidity_codes": []}),
+                          headers=w.auth["nurse"])
+    assert r.json()["engine"] == {"weight": "skipped", "profile": "skipped", "board": "failed"}
+    errors = [rec.getMessage() for rec in caplog.records
+              if rec.levelno == logging.ERROR and rec.name == "homunculus.admission.router"]
+    assert len(errors) == 2 and r.json()["patient_number"] in errors[1], errors
 
 
 # ---------------------------------------------------------------- A-26: the bed lock's strength
@@ -308,11 +419,14 @@ async def test_a_form_sent_again_under_its_request_id_is_answered_with_its_admis
     assert int(nxt.json()["patient_number"][3:]) == int(first.json()["patient_number"][3:]) + 1
 
 
-async def test_a_resend_after_a_lost_answer_gives_the_same_number(ward, db_session, monkeypatch):
-    """The first send commits and its answer never comes back (here the server fails after the
-    commit, before it answers). The resend finds the admission and answers with its number. What
-    reached the engine was never recorded, so no part asked for is claimed to have landed."""
-    w, client, _ = ward
+async def test_a_resend_after_a_lost_answer_gives_the_same_number_and_puts_the_card_up(
+        ward, db_session, monkeypatch):
+    """The first send commits and dies before its board writes (here the server fails after the
+    commit, before `_to_board`): no card, no report. The resend finds the admission, answers with
+    its number and writes the idempotent parts again — the card on its bed, the comorbidities —
+    but not the weight, which it answers `failed` so the nurse checks it (charting it again could
+    chart it twice). The outcome is recorded: a third send answers from it and writes nothing."""
+    w, client, app = ward
     body = form(w, request_id=uuid.uuid4())
 
     async def lost(*args, **kwargs):
@@ -324,12 +438,26 @@ async def test_a_resend_after_a_lost_answer_gives_the_same_number(ward, db_sessi
         await client.post("/admissions", json=body, headers=w.auth["nurse"])
     monkeypatch.setattr(admission_router, "_to_board", to_board)
     (number,) = (await db_session.execute(select(Patient.patient_number))).scalars()
+    assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
 
     again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
     assert again.status_code == 200, again.text
     assert again.json()["patient_number"] == number
-    assert again.json()["engine"] == {"weight": "failed", "profile": "failed", "board": "failed"}
+    assert again.json()["engine"] == {"weight": "failed", "profile": "ok", "board": "ok"}
     assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
+
+    (card,) = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    assert (card["patient_id"], card["identity"]["bed_id"]) == (number, str(w.beds["1"].id))
+    assert (card.get("meds") or {}).get("weight_kg") is None        # never charted twice
+    assert app.state.board_link._engine(SLUG).profile(number).comorbidities == frozenset({"copd"})
+    db_session.expire_all()
+    assert (await db_session.execute(select(Admission.engine_writes))).scalar_one() == \
+        again.json()["engine"]
+
+    third = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert third.content == again.content
+    profiles = app.state.audit.records(tenant=SLUG, event_type="profile", limit=50)
+    assert [r.patient_id for r in profiles] == [number]               # written once, by the resend
 
 
 async def test_two_sends_of_one_form_at_once_admit_once_and_answer_alike(ward, db_session):
@@ -346,6 +474,93 @@ async def test_two_sends_of_one_form_at_once_admit_once_and_answer_alike(ward, d
     assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
 
 
+class _Looked(dict):
+    """`_ANSWERING` that says when a send found an admission still being answered."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found = asyncio.Event()
+
+    def get(self, key, default=None):
+        value = super().get(key, default)
+        if value is not None:
+            self.found.set()
+        return value
+
+
+def _hold_the_card(monkeypatch) -> tuple[asyncio.Event, asyncio.Event]:
+    """The first send's card write held until `gate` is set; `reached` once it is held."""
+    reached, gate = asyncio.Event(), asyncio.Event()
+    real = BoardLink.put_identity
+
+    async def held(self, tenant, record):
+        reached.set()
+        await gate.wait()
+        await real(self, tenant, record)
+
+    monkeypatch.setattr(BoardLink, "put_identity", held)
+    return reached, gate
+
+
+async def test_a_resend_while_the_first_send_writes_to_the_board_waits_for_its_answer(
+        ward, db_session, monkeypatch):
+    """The first send has committed and is still writing to the board (its card write held). A
+    resend of the form finds it in flight, waits — holding no database connection meanwhile —
+    and answers with the first answer, byte for byte, once that is made."""
+    w, client, _ = ward
+    looked = _Looked()
+    monkeypatch.setattr(admission_router, "_ANSWERING", looked)
+    reached, gate = _hold_the_card(monkeypatch)
+    body = form(w, request_id=uuid.uuid4())
+
+    first = asyncio.create_task(client.post("/admissions", json=body, headers=w.auth["nurse"]))
+    try:
+        await asyncio.wait_for(reached.wait(), timeout=10)
+        again = asyncio.create_task(client.post("/admissions", json=body, headers=w.auth["nurse"]))
+        await asyncio.wait_for(looked.found.wait(), timeout=10)
+        await db_session.commit()                       # the test's own session lets go of its own
+        await asyncio.sleep(0.2)
+        assert not again.done()
+        assert db_session.bind.pool.checkedout() == 0   # neither send holds a connection
+    finally:
+        gate.set()
+    first, again = await first, await again
+    assert (first.status_code, again.status_code) == (201, 200), (first.text, again.text)
+    assert again.content == first.content
+    assert first.json()["engine"] == {"weight": "ok", "profile": "ok", "board": "ok"}
+
+
+async def test_a_resend_that_waits_too_long_answers_the_asked_parts_failed_and_says_so(
+        ward, db_session, monkeypatch, caplog):
+    """The first send stays at its board writes past `ANSWER_WAIT_S`: the resend stops waiting,
+    answers every part the form asked for `failed` (nothing is known to have landed), writes
+    nothing again — the first send is still at it — and logs a warning with the number."""
+    w, client, _ = ward
+    monkeypatch.setattr(admission_router, "ANSWER_WAIT_S", 0.2)
+    reached, gate = _hold_the_card(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="homunculus.admission.router")
+    body = form(w, request_id=uuid.uuid4())
+
+    first = asyncio.create_task(client.post("/admissions", json=body, headers=w.auth["nurse"]))
+    try:
+        await asyncio.wait_for(reached.wait(), timeout=10)
+        again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    finally:
+        gate.set()
+    first = await first
+    assert (first.status_code, again.status_code) == (201, 200), (first.text, again.text)
+    assert again.json()["patient_number"] == first.json()["patient_number"]
+    assert again.json()["engine"] == {"weight": "failed", "profile": "failed", "board": "failed"}
+    assert first.json()["engine"] == {"weight": "ok", "profile": "ok", "board": "ok"}
+    db_session.expire_all()
+    assert (await db_session.execute(select(Admission.engine_writes))).scalar_one() == \
+        first.json()["engine"]                          # the resend recorded nothing over it
+    warned = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING
+              and rec.name == "homunculus.admission.router"]
+    assert any(first.json()["patient_number"] in m for m in warned), warned
+    assert not any("Sentetik" in m for m in warned), warned
+
+
 @pytest.mark.parametrize(("bed", "patient"), [("2", {}), ("1", {"display_name": "Sentetik Başka"})],
                          ids=["another bed", "another name, same bed"])
 async def test_one_request_id_with_another_form_is_refused(ward, db_session, bed, patient):
@@ -357,6 +572,9 @@ async def test_one_request_id_with_another_form_is_refused(ward, db_session, bed
     r = await client.post("/admissions", json=form(w, bed, patient=patient, request_id=request_id),
                           headers=w.auth["nurse"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "request_conflict")
+    # The earlier admission's number, so the screen can name it (Task 19b) — never a name.
+    assert r.json()["detail"]["patient_number"] == first.json()["patient_number"]
+    assert "Sentetik" not in r.text
     assert await _count(db_session, Patient) == 1
     db_session.expire_all()
     assert (await db_session.execute(select(Bed.state).where(Bed.id == other_bed))).scalar_one() \
@@ -372,9 +590,26 @@ async def test_one_request_id_sent_at_once_with_two_forms_admits_one(ward, db_se
         client.post("/admissions", json=form(w, "1", request_id=request_id), headers=w.auth["nurse"]),
         client.post("/admissions", json=form(w, "2", request_id=request_id), headers=w.auth["nurse"]))
     assert sorted(r.status_code for r in answers) == [201, 409], [r.text for r in answers]
-    refused = next(r for r in answers if r.status_code == 409)
+    admitted, refused = sorted(answers, key=lambda r: r.status_code)
     assert refused.json()["detail"]["code"] == "request_conflict"
+    assert refused.json()["detail"]["patient_number"] == admitted.json()["patient_number"]
     assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
+
+
+async def test_a_request_conflict_names_no_admission_outside_the_callers_units(ward):
+    """The earlier admission's number travels with the conflict only to a caller whose units
+    hold its bed: a Neonatal nurse who sends a form under a Reanimasiya admission's id learns that
+    the id is taken, and not whose number it carries."""
+    w, client, _ = ward
+    request_id = uuid.uuid4()
+    first = await client.post("/admissions", json=form(w, request_id=request_id),
+                              headers=w.auth["nurse"])
+    assert first.status_code == 201, first.text
+    r = await client.post("/admissions", json=form(w, "N1", "neo", request_id=request_id),
+                          headers=w.auth["nurse_b"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "request_conflict")
+    assert "patient_number" not in r.json()["detail"]
+    assert first.json()["patient_number"] not in r.text
 
 
 async def test_forms_without_a_request_id_or_each_with_its_own_all_admit(ward, db_session):

@@ -37,17 +37,20 @@ CODES = frozenset({
 
 
 class Refusal(Exception):
-    """A refusal with its HTTP status, its code and its words."""
+    """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen
+    names something from, `extra` keys beside them in the detail (never a name: an id or a
+    number; `request_conflict` carries the earlier admission's `patient_number`)."""
 
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(self, status: int, code: str, message: str, extra: dict | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
+        self.extra = dict(extra or {})
 
     def http(self) -> HTTPException:
         return HTTPException(status_code=self.status,
-                             detail={"code": self.code, "message": self.message})
+                             detail={**self.extra, "code": self.code, "message": self.message})
 
 
 def field_invalid(field: str, message: str) -> Refusal:

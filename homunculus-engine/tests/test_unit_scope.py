@@ -13,7 +13,7 @@ import pytest
 
 from homunculus.admission.errors import Refusal
 from homunculus.admission.models import Admission, CareTeamMember, CareTeamRole, Patient
-from homunculus.admission.unitscope import caller_scope, reaches, require_reach
+from homunculus.admission.unitscope import caller_scope, reach_clause, reaches, require_reach
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import TenantMembership
 from homunculus.scope import Scope, build_scope
@@ -29,6 +29,26 @@ BED_A1, BED_B1 = uuid.uuid4(), uuid.uuid4()
 #: (`H` + year + a sequence that counts up from 1), so a fixture never takes a number the
 #: generator will give.
 FIXTURE_NUMBERS = ["H9900001", "H9900002"]
+
+
+def _sql(clause) -> str:
+    return str(clause.compile(compile_kwargs={"literal_binds": True}))
+
+
+def test_the_sql_reach_names_the_granted_units_and_beds_and_nothing_else():
+    """`reach_clause` is `reaches` in the list's query (Task 8 review): no filter for an
+    unrestricted scope; the unit or the bed granted otherwise. A grant typed in another case
+    still reaches its row; an old free-text key names no row, as in `reaches`; no grant at all
+    matches nothing."""
+    assert reach_clause(build_scope("HOSPITAL_ADMIN"), unit_id=Unit.id, bed_id=Bed.id) is None
+    scope = build_scope("MEMBER", unit_ids=[str(UNIT_A).upper(), "Reanimasiya"],
+                        bed_ids=[str(BED_B1)], enforce_unassigned=True)
+    text = _sql(reach_clause(scope, unit_id=Unit.id, bed_id=Bed.id))
+    assert UNIT_A.hex in text.replace("-", "") and BED_B1.hex in text.replace("-", "")
+    assert "Reanimasiya" not in text and UNIT_B.hex not in text.replace("-", "")
+    nothing = build_scope("MEMBER", unit_ids=["Reanimasiya"], enforce_unassigned=True)
+    assert _sql(reach_clause(nothing, unit_id=Unit.id, bed_id=Bed.id)) == \
+        "units.id IN (NULL) AND (1 != 1) OR beds.id IN (NULL) AND (1 != 1)"     # never true
 
 
 def test_an_unrestricted_scope_reaches_every_bed():

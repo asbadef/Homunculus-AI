@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import ColumnElement, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission.errors import OUT_OF_SCOPE, Refusal
@@ -60,6 +61,32 @@ def reaches(scope: Scope, *, unit_id: uuid.UUID | str | None,
     bed, unit = _key(bed_id), _key(unit_id)
     return ((bed is not None and bed in scope.bed_ids)
             or (unit is not None and unit in scope.unit_ids))
+
+
+def _grant_uuids(keys: frozenset[str]) -> list[uuid.UUID]:
+    """The grants that name a row of ours: a key equal to a UUID's own text (the scope holds keys
+    trimmed and case-folded). Any other key — an old free-text one — names no unit or bed here,
+    exactly as it matches none in `reaches`."""
+    found = []
+    for key in keys:
+        try:
+            value = uuid.UUID(key)
+        except ValueError:
+            continue
+        if str(value) == key:
+            found.append(value)
+    return found
+
+
+def reach_clause(scope: Scope, *, unit_id: ColumnElement,
+                 bed_id: ColumnElement) -> ColumnElement | None:
+    """`reaches` as SQL over a query's unit and bed id columns, so a list is filtered by the
+    database rather than after it: None when the scope is unrestricted (no filter), else "the
+    unit granted, or the bed itself" — false for a scope that grants neither. The columns must be
+    the bed's own id and its room's unit (see the module's docstring)."""
+    if scope.unrestricted:
+        return None
+    return or_(unit_id.in_(_grant_uuids(scope.unit_ids)), bed_id.in_(_grant_uuids(scope.bed_ids)))
 
 
 def require_reach(scope: Scope, *, unit_id: uuid.UUID | str | None,

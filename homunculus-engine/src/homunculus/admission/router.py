@@ -46,12 +46,12 @@ from homunculus import crypto
 from homunculus.admission import form, service, trail, unitscope
 from homunculus.admission.boardlink import board_link_of, kabul_record
 from homunculus.admission.models import (
-    Admission, AdmissionState, CareTeamMember, Handover, Patient,
+    OPEN_ADMISSION_STATES, Admission, AdmissionState, CareTeamMember, Handover, Patient,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionNoteFields, AdmissionResponse, AdmissionRow, AdmitResponse,
-    CareTeamAdd, CareTeamMemberResponse, DischargeInitiate, EngineWrites, HandoverOpen,
-    HandoverResponse, HandoverSign, NurseBedAssignmentResponse, PatientResponse,
+    CareTeamAdd, CareTeamMemberResponse, DischargeInitiate, EngineWrite, EngineWrites,
+    HandoverOpen, HandoverResponse, HandoverSign, NurseBedAssignmentResponse, PatientResponse,
     ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.errors import BED_CLOSED, REQUEST_CONFLICT, Refusal, field_invalid
@@ -61,6 +61,8 @@ from homunculus.escalation import service as escalation_service
 from homunculus.auth.dependencies import caller_tenant_id, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
+from homunculus.api.patient_identity import IdentityRecord
+from homunculus.scope import Scope
 from homunculus.tenant import scope
 from homunculus.tenant.models import Bed, Room, Tenant, Unit
 
@@ -152,7 +154,8 @@ def _request_digest(payload: AdmissionCreate) -> str:
     (`crypto.phi_digest`: the body holds PHI) of the body as the server read it — every field,
     defaults written out, `request_id` left out — as one canonical JSON. A body that reads the
     same (keys in another order, a default sent or left out) is the same form; any field changed
-    makes it another."""
+    makes it another. So does the server: a resend that straddles a deploy changing the schema's
+    defaults, or a rotation of the PHI key, reads as another form — a 409 `request_conflict`."""
     body = payload.model_dump(mode="json", exclude={"request_id"})
     return crypto.phi_digest(json.dumps(body, sort_keys=True, separators=(",", ":"),
                                         ensure_ascii=False))
@@ -178,40 +181,59 @@ async def _bed_of(db: AsyncSession, bed_id: uuid.UUID) -> tuple[Bed, Room, Unit]
     return bed, room, await db.get(Unit, room.unit_id)
 
 
-async def _to_board(request: Request, hospital: str, *, patient: Patient, bed: Bed, unit: Unit,
-                    note: AdmissionNoteFields, actor: str) -> EngineWrites:
+def _not_reached(*, weight_asked: bool, profile_asked: bool) -> EngineWrites:
+    """Nothing is known to have reached the engine: every part the form asked for is `failed` —
+    which sends the nurse to look — and a part it did not ask for is `skipped` (X53: `skipped`
+    means "not asked", never "not done"). The card is always asked for."""
+    return EngineWrites(weight="failed" if weight_asked else "skipped",
+                        profile="failed" if profile_asked else "skipped", board="failed")
+
+
+async def _attempt(number: str, what: str, write) -> EngineWrite:
+    """One engine write, on its own: `ok`, or `failed` and logged with the number, never a name."""
+    try:
+        await write()
+        return "ok"
+    except Exception:
+        log.exception("admission %s: the %s did not reach the engine", number, what)
+        return "failed"
+
+
+def _card(*, number: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
+          bed_id: uuid.UUID, unit_id: uuid.UUID) -> IdentityRecord:
+    """The admission's board identity: the card on its bed (`kabul_record`)."""
+    return kabul_record(patient_number=number, display_name=display_name,
+                        birth_date=date.fromisoformat(date_of_birth), sex=sex,
+                        bed_label=bed_label, bed_id=str(bed_id), unit_id=str(unit_id),
+                        at=datetime.now(timezone.utc))
+
+
+async def _to_board(request: Request, hospital: str, *, card: dict, note: AdmissionNoteFields,
+                    actor: str) -> EngineWrites:
     """After the admission is committed (spec §3.1 step 3): the card, the weight, the profile —
     each on its own. One that does not land leaves the admission standing and is reported, so the
     screen can say which part to enter by hand (X53). `chart_weight` and `apply_profile` raise on
-    any failure, an unwired door included (A-20, A-23, A-25). Logged with the patient number, never
-    a name."""
+    any failure, an unwired door included (A-20, A-23, A-25). An app built without its BoardLink
+    reached nothing: the parts asked for are `failed`, logged at ERROR. Logged with the patient
+    number, never a name.
+
+    `card` is `_card`'s keywords as plain values, taken before the commit: nothing here reads the
+    session, which a failure after the commit may have rolled back (and so expired)."""
+    number = card["number"]
     link = board_link_of(request)
     if link is None:
-        return EngineWrites(weight="skipped", profile="skipped", board="skipped")
-
-    async def attempt(what: str, write) -> str:
-        try:
-            await write()
-            return "ok"
-        except Exception:
-            log.exception("admission %s: the %s did not reach the engine",
-                          patient.patient_number, what)
-            return "failed"
-
-    async def put_card() -> None:
-        await link.put_identity(hospital, kabul_record(
-            patient_number=patient.patient_number, display_name=patient.display_name,
-            birth_date=date.fromisoformat(patient.date_of_birth), sex=patient.sex,
-            bed_label=bed.label, bed_id=str(bed.id), unit_id=str(unit.id),
-            at=datetime.now(timezone.utc)))
-
-    board = await attempt("identity", put_card)
-    weight = ("skipped" if note.weight_kg is None else await attempt(
-        "weight", lambda: link.chart_weight(hospital, patient.patient_number, note.weight_kg,
-                                            actor=actor)))
-    profile = ("skipped" if not note.comorbidity_codes else await attempt(
-        "profile", lambda: link.apply_profile(hospital, patient.patient_number,
-                                              note.comorbidity_codes, actor=actor)))
+        log.error("admission %s: this app has no BoardLink; the card, the weight and the "
+                  "comorbidities did not reach the engine", number)
+        return _not_reached(weight_asked=note.weight_kg is not None,
+                            profile_asked=bool(note.comorbidity_codes))
+    board = await _attempt(number, "identity",
+                           lambda: link.put_identity(hospital, _card(**card)))
+    weight = ("skipped" if note.weight_kg is None else await _attempt(
+        number, "weight", lambda: link.chart_weight(hospital, number, note.weight_kg,
+                                                    actor=actor)))
+    profile = ("skipped" if not note.comorbidity_codes else await _attempt(
+        number, "profile", lambda: link.apply_profile(hospital, number, note.comorbidity_codes,
+                                                      actor=actor)))
     return EngineWrites(weight=weight, profile=profile, board=board)
 
 
@@ -237,41 +259,115 @@ async def _earlier(db: AsyncSession, tenant_id: uuid.UUID,
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one_or_none()
 
 
-def _unrecorded(admission: Admission) -> EngineWrites:
-    """The engine report of an admission with none recorded: its writes after the commit did not
-    finish (the answer failed on its way, the process stopped) or their report was not kept. No
-    part the form asked for is claimed to have landed — `failed`, which sends the nurse to look —
-    and a part it did not ask for stays `skipped`."""
-    return EngineWrites(weight="skipped" if admission.weight_kg is None else "failed",
-                        profile="skipped" if not admission.comorbidity_codes else "failed",
-                        board="failed")
+async def _board_again(db: AsyncSession, request: Request, hospital: str, admission_id: uuid.UUID,
+                       *, weight_asked: bool, actor: str) -> EngineWrites:
+    """The board writes of an admission whose first send died between its commit and its board
+    writes — no report recorded and no send writing now (the coordinator's decision on Task 8's
+    review). The two that are idempotent are written again: the card on its bed and the
+    comorbidities. The weight is not: charting it again could chart it twice, so it is answered
+    `failed` and the nurse checks it. Only for an admission still open — a discharged or
+    transferred one keeps the board it has. The transaction is ended before the writes."""
+    row = (await db.execute(
+        select(Admission.state, Admission.comorbidity_codes, Patient.patient_number,
+               Patient.display_name, Patient.date_of_birth, Patient.sex, Bed.id, Bed.label,
+               Room.unit_id)
+        .join(Patient, Patient.id == Admission.patient_id)
+        .join(Bed, Bed.id == Admission.bed_id)
+        .join(Room, Room.id == Bed.room_id)
+        .where(Admission.id == admission_id))).one()
+    await db.commit()
+    state, codes, number, display_name, date_of_birth, sex, bed_id, bed_label, unit_id = row
+    link = board_link_of(request)
+    if state not in OPEN_ADMISSION_STATES or link is None:
+        log.error("admission %s (%s): its board writes are not known and are not written again "
+                  "(%s)", number, state.value, "no BoardLink" if link is None else "not open")
+        return _not_reached(weight_asked=weight_asked, profile_asked=bool(codes))
+    log.warning("admission %s: its first send stopped before the board; the card and the "
+                "comorbidities are written again, the weight is not", number)
+    board = await _attempt(number, "identity (again)", lambda: link.put_identity(hospital, _card(
+        number=number, display_name=display_name, date_of_birth=date_of_birth, sex=sex,
+        bed_label=bed_label, bed_id=bed_id, unit_id=unit_id)))
+    profile = ("skipped" if not codes else await _attempt(
+        number, "profile (again)", lambda: link.apply_profile(hospital, number, codes,
+                                                              actor=actor)))
+    return EngineWrites(weight="failed" if weight_asked else "skipped", profile=profile,
+                        board=board)
 
 
-async def _answer_again(db: AsyncSession, response: Response, tenant_id: uuid.UUID,
-                        request_id: uuid.UUID, digest: str) -> AdmitResponse:
+#: How many times a resend looks again when another send of the form took up the board writes
+#: while it read (`_engine_of`), before it answers what is not known as not reached.
+_ROUNDS = 3
+
+
+async def _engine_of(db: AsyncSession, request: Request, hospital: str, admission_id: uuid.UUID,
+                     number: str, *, weight_asked: bool, profile_asked: bool,
+                     actor: str) -> EngineWrites:
+    """What reached the engine for an admission a resend found (A-19), once nobody is writing it.
+
+    A send still writing to the board (`_ANSWERING`) is waited for, up to `ANSWER_WAIT_S`, with
+    no transaction open. If it is still at it then, nothing is known yet: the parts asked for are
+    `failed`, nothing is written again (that send may land them), and a WARNING says so. Then the
+    recorded report is the answer. With none recorded and nobody writing, this send writes the
+    idempotent parts again (`_board_again`) under its own `_ANSWERING` entry — so another resend
+    waits for it — and records what it did."""
+    for _ in range(_ROUNDS):
+        answering = _ANSWERING.get(admission_id)
+        if answering is not None:
+            try:
+                await asyncio.wait_for(answering.wait(), ANSWER_WAIT_S)
+            except TimeoutError:
+                log.warning("admission %s: a resend of its form waited %ss for the first send's "
+                            "board writes and answers the parts asked for as failed", number,
+                            ANSWER_WAIT_S)
+                return _not_reached(weight_asked=weight_asked, profile_asked=profile_asked)
+        report = (await db.execute(select(Admission.engine_writes)
+                                   .where(Admission.id == admission_id))).scalar_one()
+        await db.commit()
+        if report:
+            return EngineWrites.model_validate(report)
+        if admission_id not in _ANSWERING:     # nobody took the writes up while this one read
+            break
+    else:
+        return _not_reached(weight_asked=weight_asked, profile_asked=profile_asked)
+    retrying = _ANSWERING[admission_id] = asyncio.Event()
+    try:
+        engine = await _board_again(db, request, hospital, admission_id,
+                                    weight_asked=weight_asked, actor=actor)
+        await _keep_report(db, admission_id, engine)
+    finally:
+        retrying.set()
+        _ANSWERING.pop(admission_id, None)
+    return engine
+
+
+async def _answer_again(db: AsyncSession, request: Request, response: Response, *,
+                        hospital: str, tenant_id: uuid.UUID, request_id: uuid.UUID, digest: str,
+                        reach: Scope, actor: str) -> AdmitResponse:
     """A send of a form already admitted (amendment A-19). The same form — the same digest — is
-    answered with that admission's answer: 200, the first answer's body, once the first send has
-    finished writing to the board if it is still at it. Another form under the same id is refused
-    `request_conflict`. The caller has rolled this send's transaction back: it keeps no lock and
-    gives back any number it took."""
+    answered with that admission's answer: 200, the first answer's body, its engine report as
+    `_engine_of` finds it. Another form under the same id is refused `request_conflict`, the
+    earlier admission's number beside the code when the caller's units hold its bed (so the screen
+    can name it; never a name). The caller has rolled this send's transaction back: it keeps no
+    lock and gives back any number it took; this one ends its reads before it waits."""
     earlier = (await db.execute(select(Admission).where(
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one()
-    if earlier.request_digest != digest:
-        raise Refusal(409, REQUEST_CONFLICT,
-                      "This request id came before with another admission form.").http()
-    answering = _ANSWERING.get(earlier.id)
-    if answering is not None:
-        with suppress(TimeoutError):
-            await asyncio.wait_for(answering.wait(), ANSWER_WAIT_S)
-    report = (await db.execute(select(Admission.engine_writes)
-                               .where(Admission.id == earlier.id))).scalar_one()
     number = (await db.execute(select(Patient.patient_number)
                                .where(Patient.id == earlier.patient_id))).scalar_one()
+    if earlier.request_digest != digest:
+        unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
+                                    .where(Bed.id == earlier.bed_id))).scalar_one()
+        known = unitscope.reaches(reach, unit_id=unit_id, bed_id=earlier.bed_id)
+        raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
+                      "form.", extra={"patient_number": number} if known else None).http()
+    first = AdmissionResponse.model_validate(earlier)
+    admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
+    profile_asked = bool(earlier.comorbidity_codes)
+    await db.commit()                  # no transaction, and no pooled connection, while it waits
+    engine = await _engine_of(db, request, hospital, admission_id, number,
+                              weight_asked=weight_asked, profile_asked=profile_asked, actor=actor)
     log.info("admission %s: the same form sent again, answered with its admission", number)
     response.status_code = status.HTTP_200_OK
-    engine = EngineWrites.model_validate(report) if report else _unrecorded(earlier)
-    return AdmitResponse(**AdmissionResponse.model_validate(earlier).model_dump(),
-                         patient_number=number, engine=engine)
+    return AdmitResponse(**first.model_dump(), patient_number=number, engine=engine)
 
 
 @router.post("", response_model=AdmitResponse, status_code=201,
@@ -306,17 +402,26 @@ async def create_admission(
                                        .where(Tenant.id == caller_tenant))).one()
     now = _now()
     digest = None if payload.request_id is None else _request_digest(payload)
+    # The caller as plain values: a rollback below expires every object of this session, the
+    # caller's own `User` (loaded by the permission check) included.
+    actor, user_id = user.username, user.id
+
+    async def answer_again() -> AdmitResponse:
+        return await _answer_again(db, request, response, hospital=hospital,
+                                   tenant_id=caller_tenant, request_id=payload.request_id,
+                                   digest=digest, reach=reach, actor=actor)
+
     try:
         form.check_admission(payload, today=hospital_today(zone, now), now=now)
         bed, room, unit = await _bed_of(db, payload.note.bed_id)
         if unit.id != payload.note.admitting_unit_id:
             raise field_invalid("admitting_unit_id", "The bed is not in that unit.")
-        unitscope.require_reach(await unitscope.caller_scope(db, user.id, caller_tenant),
-                                unit_id=unit.id, bed_id=bed.id)
+        reach = await unitscope.caller_scope(db, user_id, caller_tenant)
+        unitscope.require_reach(reach, unit_id=unit.id, bed_id=bed.id)
         if payload.request_id is not None and \
                 await _earlier(db, caller_tenant, payload.request_id) is not None:
             await db.rollback()
-            return await _answer_again(db, response, caller_tenant, payload.request_id, digest)
+            return await answer_again()
         if not (bed.is_active and room.is_active and unit.is_active):
             raise Refusal(409, BED_CLOSED, "The bed, its room or its unit is closed.")
         number = await next_patient_number(db, caller_tenant, now=now)
@@ -355,30 +460,48 @@ async def create_admission(
         if payload.request_id is None or \
                 await _earlier(db, caller_tenant, payload.request_id) is None:
             raise
-        return await _answer_again(db, response, caller_tenant, payload.request_id, digest)
+        return await answer_again()
 
+    # Everything the answer, the audit row and the card need is taken before the commit, as plain
+    # values: what can still fail after it (reading the row back, the board) loses none of them.
+    admission_id, written = admission.id, AdmissionResponse.model_validate(admission)
+    card = {"number": number, "display_name": patient.display_name,
+            "date_of_birth": patient.date_of_birth, "sex": patient.sex, "bed_label": bed.label,
+            "bed_id": bed.id, "unit_id": unit.id}
     # Registered before the commit, so a send of the same form that sees this admission sees it.
-    answered = _ANSWERING[admission.id] = asyncio.Event()
+    answered = _ANSWERING[admission_id] = asyncio.Event()
     try:
         await db.commit()
-        await db.refresh(admission)
         trail.record(request, hospital, "admission.admit", patient_id=number,
-                     payload={"admission_id": str(admission.id), "bed_id": str(bed.id),
-                              "unit_id": str(unit.id), "actor": user.username})
-        engine = await _to_board(request, hospital, patient=patient, bed=bed, unit=unit,
-                                 note=payload.note, actor=user.username)
-        answer = AdmitResponse(**AdmissionResponse.model_validate(admission).model_dump(),
-                               patient_number=number, engine=engine)
-        await _keep_report(db, admission.id, engine)
+                     payload={"admission_id": str(admission_id), "bed_id": str(card["bed_id"]),
+                              "unit_id": str(card["unit_id"]), "actor": actor})
+        try:
+            # Read back, so this answer and a resend's (read from the row) are the same body.
+            await db.refresh(admission)
+            written = AdmissionResponse.model_validate(admission)
+            await db.commit()        # no transaction held across the board writes
+        except Exception:  # noqa: BLE001 — the admission and its audit row are written already
+            log.exception("admission %s: committed, but not read back; answered as written",
+                          number)
+            with suppress(Exception):
+                await db.rollback()
+        engine = await _to_board(request, hospital, card=card, note=payload.note, actor=actor)
+        answer = AdmitResponse(**written.model_dump(), patient_number=number, engine=engine)
+        await _keep_report(db, admission_id, engine)
     finally:
         answered.set()
-        _ANSWERING.pop(admission.id, None)
+        _ANSWERING.pop(admission_id, None)
     return answer
 
 
 # ---------------------------------------------------------------------------
 # List / detail
 # ---------------------------------------------------------------------------
+#: The most rows `GET /admissions` answers (newest first). One ward's open admissions are a few
+#: dozen; the cap keeps a closed-state query from reading a hospital's history in one answer.
+ADMISSION_LIST_CAP = 500
+
+
 @router.get("", response_model=list[AdmissionRow])
 async def list_admissions(
     unit_id: uuid.UUID | None = None,
@@ -387,26 +510,33 @@ async def list_admissions(
     caller_tenant: uuid.UUID = _tenant,
     user: User = Depends(require_permission("admissions.view")),
 ):
-    """Newest first, each row with the names a screen shows (G2-B1a: the Taburcu and Yataklar
-    lists, the sign-off badge). `state` narrows to those states (repeatable); the rows are limited
-    to the caller's units, as the structure is (admission/unitscope.py) — the unit being the bed's
-    room's, read here, never the admission's `admitting_unit_id` (A-12)."""
-    stmt = (select(Admission, Patient, Bed, Room, Unit)
+    """Newest first, each row with the names a screen shows (G2-B1a, X61: the Taburcu and Yataklar
+    lists, the sign-off badge). `state` narrows to those states (repeatable); without it, the open
+    ones (`OPEN_ADMISSION_STATES`: DRAFT, ACTIVE, PENDING_DISCHARGE, PENDING_TRANSFER). At most
+    `ADMISSION_LIST_CAP` rows. The rows are limited to the caller's units in the query
+    (`unitscope.reach_clause`), the unit being the bed's room's, never the admission's
+    `admitting_unit_id` (A-12). Of the patient, the query reads the number and the name, the two
+    the row shows — no other encrypted column is read or decrypted."""
+    reach = await unitscope.caller_scope(db, user.id, caller_tenant)
+    stmt = (select(Admission, Patient.patient_number, Patient.display_name, Bed.label, Room.name,
+                   Unit.name)
             .join(Patient, Patient.id == Admission.patient_id)
             .join(Bed, Bed.id == Admission.bed_id)
             .join(Room, Room.id == Bed.room_id)
             .join(Unit, Unit.id == Room.unit_id)
-            .where(Admission.tenant_id == caller_tenant))
+            .where(Admission.tenant_id == caller_tenant,
+                   Admission.state.in_(list(state or OPEN_ADMISSION_STATES))))
+    within = unitscope.reach_clause(reach, unit_id=Unit.id, bed_id=Bed.id)
+    if within is not None:
+        stmt = stmt.where(within)
     if unit_id is not None:
         stmt = stmt.where(Admission.admitting_unit_id == unit_id)
-    if state:
-        stmt = stmt.where(Admission.state.in_(state))
-    reach = await unitscope.caller_scope(db, user.id, caller_tenant)
-    rows = (await db.execute(stmt.order_by(Admission.created_at.desc()))).all()
+    rows = (await db.execute(stmt.order_by(Admission.created_at.desc())
+                             .limit(ADMISSION_LIST_CAP))).all()
     return [AdmissionRow(**AdmissionResponse.model_validate(a).model_dump(),
-                         patient_number=p.patient_number, display_name=p.display_name,
-                         bed_label=b.label, room_name=r.name, unit_name=u.name)
-            for a, p, b, r, u in rows if unitscope.reaches(reach, unit_id=u.id, bed_id=b.id)]
+                         patient_number=number, display_name=name, bed_label=label,
+                         room_name=room, unit_name=unit)
+            for a, number, name, label, room, unit in rows]
 
 
 @router.get("/{admission_id}", response_model=AdmissionResponse,
