@@ -100,6 +100,8 @@ export default {
     unitType: { adultIcu: "Erişkin YBÜ", nicu: "Yenidoğan YBÜ", picu: "Çocuk YBÜ", cvicu: "Kalp-damar YBÜ", bmtIcu: "Kemik iliği nakli YBÜ" },
     rename: "Adını değiştir", renameOf: "{name} için yeni ad", close: "Kapat", reopen: "Yeniden aç",
     closed: "Kapalı", added: "eklendi", renamed: "adı değişti", closedDone: "kapatıldı", reopened: "yeniden açıldı",
+    roomNumber: "Oda no", roomNumberIs: "Oda no: {number}", newRoomNumber: "{unit} içinde yeni odanın numarası (zorunlu değil)",
+    isolation: "İzolasyon odası", newRoomIsolation: "{unit} içinde yeni oda izolasyon odasıdır",
     err: {
       bedNotAvailable: "Bu yatak artık boş değil; başka bir yatak seçin.",
       bedClosed: "Bu yatak, odası ya da birimi kapalı.",
@@ -221,6 +223,8 @@ export default {
       cvicu: "Kardiovaskulyar reanimasiya", bmtIcu: "Sümük iliyi transplantasiyası reanimasiyası" },
     rename: "Adını dəyiş", renameOf: "{name} üçün yeni ad", close: "Bağla", reopen: "Yenidən aç",
     closed: "Bağlıdır", added: "əlavə edildi", renamed: "adı dəyişdi", closedDone: "bağlandı", reopened: "yenidən açıldı",
+    roomNumber: "Otaq nömrəsi", roomNumberIs: "Otaq nömrəsi: {number}", newRoomNumber: "{unit} daxilində yeni otağın nömrəsi (məcburi deyil)",
+    isolation: "İzolyasiya otağı", newRoomIsolation: "{unit} daxilində yeni otaq izolyasiya otağıdır",
     err: {
       bedNotAvailable: "Bu çarpayı artıq boş deyil; başqa çarpayı seçin.",
       bedClosed: "Bu çarpayı, onun otağı və ya şöbəsi bağlıdır.",
@@ -342,6 +346,8 @@ export default {
       cvicu: "Кардиореанимация", bmtIcu: "Реанимация трансплантации костного мозга" },
     rename: "Переименовать", renameOf: "Новое название для «{name}»", close: "Закрыть", reopen: "Открыть снова",
     closed: "Закрыто", added: "добавлено", renamed: "переименовано", closedDone: "закрыто", reopened: "открыто снова",
+    roomNumber: "Номер палаты", roomNumberIs: "Номер палаты: {number}", newRoomNumber: "Номер новой палаты в «{unit}» (необязательно)",
+    isolation: "Изолятор", newRoomIsolation: "Новая палата в «{unit}» — изолятор",
     err: {
       bedNotAvailable: "Эта койка уже не свободна; выберите другую.",
       bedClosed: "Эта койка, её палата или отделение закрыты.",
@@ -462,6 +468,8 @@ export default {
     unitType: { adultIcu: "Adult ICU", nicu: "Neonatal ICU", picu: "Paediatric ICU", cvicu: "Cardiovascular ICU", bmtIcu: "Bone-marrow transplant ICU" },
     rename: "Rename", renameOf: "New name for {name}", close: "Close", reopen: "Reopen",
     closed: "Closed", added: "added", renamed: "renamed", closedDone: "closed", reopened: "reopened",
+    roomNumber: "Room number", roomNumberIs: "Room number: {number}", newRoomNumber: "Number of the new room in {unit} (optional)",
+    isolation: "Isolation room", newRoomIsolation: "The new room in {unit} is an isolation room",
     err: {
       bedNotAvailable: "This bed is no longer free; choose another.",
       bedClosed: "This bed, its room or its unit is closed.",
