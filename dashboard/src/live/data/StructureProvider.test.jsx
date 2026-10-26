@@ -40,6 +40,24 @@ describe("StructureProvider", () => {
     expect(screen.getByText("units: Reanimasiya, Neonatal")).toBeTruthy();
   });
 
+  it("resolves a reload to the tree it read, and to null when that read failed", async () => {
+    function Answer() {
+      const { reload } = useStructure();
+      const [got, setGot] = React.useState("none");
+      const ask = async () => {
+        const tree = await reload();
+        setGot(tree === null ? "null" : `sites: ${tree.sites.length}`);
+      };
+      return <button type="button" onClick={ask}>{got}</button>;
+    }
+    const { api } = await mountKabul(<Answer />, { perms: ["admissions.admit"] });
+    await act(async () => { screen.getByText("none").click(); });
+    expect(screen.getByText("sites: 1")).toBeTruthy();
+    api.structure.mockRejectedValueOnce(refusal(503, "Sunucuya şu an ulaşılamıyor"));
+    await act(async () => { screen.getByText("sites: 1").click(); });
+    expect(screen.getByText("null")).toBeTruthy();
+  });
+
   it("reads an answer that is not a tree as an empty one", async () => {
     await mountKabul(<Probe />, { perms: ["structure.manage"], setup: (api) => api.structure.mockResolvedValue("x") });
     expect(screen.getByText("phase: known")).toBeTruthy();

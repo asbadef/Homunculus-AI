@@ -38,9 +38,10 @@ export const ENGINE_FAILED = Object.freeze({
   board: "kabul.engineFailed.board", weight: "kabul.engineFailed.weight", profile: "kabul.engineFailed.profile",
 });
 
+/** No nationality is chosen for the nurse: a default is a value nobody chose that looks like one. */
 export function emptyForm() {
   return {
-    name: "", father: "", sex: "", dob: "", nationality: "az", fin: "", passport: "", phone: "",
+    name: "", father: "", sex: "", dob: "", nationality: "", fin: "", passport: "", phone: "",
     type: "", source: "", diagnosis: "", weight: "", height: "", blood: "UNKNOWN",
     allergy: "", noAllergy: false, comorbidities: [], comorbiditiesText: "", his: "",
     relativeName: "", relativeRelation: "", relativePhone: "", companion: "",
@@ -57,10 +58,27 @@ export function positive(value) {
   return n > 0 ? n : null;
 }
 const FIN = /^[A-Za-z0-9]{7}$/;
+/** The earliest date of birth the server takes (admission/form.py EARLIEST_BIRTH): an earlier one
+ *  is a slipped digit — "0050-01-01" read as an age of 1976 years. */
+export const EARLIEST_BIRTH = "1900-01-01";
+
+const DAY_MS = 86_400_000;
+/** The day `months` whole months after year/month0/day — the day clamped to that month's length:
+ *  a month after 31 January is the last day of February. */
+function monthsAfter(year, month0, day, months) {
+  const total = month0 + months;
+  const y = year + Math.floor(total / 12);
+  const m = total % 12;
+  return Date.UTC(y, m, Math.min(day, new Date(Date.UTC(y, m + 1, 0)).getUTCDate()));
+}
 
 /** Whole years, months and days from a date of birth (YYYY-MM-DD) to `today` (the same shape),
- *  or null for no date, a date that is not one, or one after today. Shown beside the date, never
- *  edited (spec §5.2). */
+ *  or null for no date, a date that is not one, one after today or one before 1900. Shown beside
+ *  the date, never edited (spec §5.2).
+ *
+ *  Counted from the birth date itself: the most whole months whose anniversary (its day clamped to
+ *  the month's length) is not after today, then the days from that anniversary to today — never
+ *  negative. 31 January to 1 March is one month (to the last day of February) and one day. */
 export function ageOf(dob, today) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dob ?? ""));
   const n = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(today ?? ""));
@@ -69,19 +87,15 @@ export function ageOf(dob, today) {
   const [ty, tmo, td] = n.slice(1).map(Number);
   const born = new Date(Date.UTC(y, mo - 1, d));
   if (born.getUTCMonth() !== mo - 1 || born.getUTCDate() !== d) return null;   // 2026-02-30
-  if (dob > today) return null;
-  let years = ty - y;
-  let months = tmo - mo;
-  let days = td - d;
-  if (days < 0) {
+  if (dob < EARLIEST_BIRTH || dob > today) return null;
+  const now = Date.UTC(ty, tmo - 1, td);
+  let months = (ty - y) * 12 + (tmo - mo);
+  let anniversary = monthsAfter(y, mo - 1, d, months);
+  if (anniversary > now) {
     months -= 1;
-    days += new Date(Date.UTC(ty, tmo - 1, 0)).getUTCDate();
+    anniversary = monthsAfter(y, mo - 1, d, months);
   }
-  if (months < 0) {
-    years -= 1;
-    months += 12;
-  }
-  return { years, months, days };
+  return { years: Math.floor(months / 12), months: months % 12, days: Math.round((now - anniversary) / DAY_MS) };
 }
 
 /** Each field the form still lacks or holds wrong, in the form's order: [{field, key}] — `key` is
@@ -92,12 +106,13 @@ export function missing(form, today) {
   if (blank(form.name)) add("name", "kabul.miss.name");
   if (!form.sex) add("sex", "kabul.miss.sex");
   if (blank(form.dob)) add("dob", "kabul.miss.dob");
-  else if (!ageOf(form.dob, today)) add("dob", "kabul.miss.dobWrong");
+  else if (!ageOf(form.dob, today)) add("dob", "kabul.miss.dobWrong");     // not a date, future, before 1900
   if (!blank(form.fin) && !FIN.test(form.fin.trim())) add("fin", "kabul.miss.fin");
   if (!form.type) add("type", "kabul.miss.type");
   if (blank(form.diagnosis)) add("diagnosis", "kabul.miss.diagnosis");
   if (!blank(form.weight) && positive(form.weight) === null) add("weight", "kabul.miss.weight");
   if (!blank(form.height) && positive(form.height) === null) add("height", "kabul.miss.height");
+  // Both or neither: ticking «none known» never erases a typed allergy — the nurse removes one.
   if (blank(form.allergy) === !form.noAllergy) add("allergy", "kabul.miss.allergy");
   if (!form.consent) add("consent", "kabul.miss.consent");
   if (!form.bedId) add("bed", "kabul.miss.bed");

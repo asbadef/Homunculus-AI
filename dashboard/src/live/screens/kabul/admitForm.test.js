@@ -36,6 +36,12 @@ describe("what the form still lacks", () => {
     expect(fields({ ...complete(), weight: "yetmiş" })).toEqual(["weight"]);
     expect(fields({ ...complete(), weight: "72,5", height: "171" })).toEqual([]);
   });
+
+  it("refuses a date of birth before 1900, as the server does (admission/form.py EARLIEST_BIRTH)", () => {
+    expect(missing({ ...complete(), dob: "0050-01-01" }, TODAY)).toEqual([{ field: "dob", key: "kabul.miss.dobWrong" }]);
+    expect(fields({ ...complete(), dob: "1899-12-31" })).toEqual(["dob"]);
+    expect(fields({ ...complete(), dob: "1900-01-01" })).toEqual([]);
+  });
 });
 
 describe("the age shown beside the date of birth", () => {
@@ -45,8 +51,44 @@ describe("the age shown beside the date of birth", () => {
     expect(ageOf("2025-10-26", TODAY)).toEqual({ years: 0, months: 11, days: 29 });
   });
 
-  it("is nothing for a date that is not one or is in the future", () => {
-    for (const dob of ["", "2026-02-30", "26-10-2026", "2026-10-26"]) expect(ageOf(dob, TODAY), dob).toBeNull();
+  it("counts a month from a day the next month does not have to that month's last day", () => {
+    expect(ageOf("2026-01-31", "2026-03-01")).toEqual({ years: 0, months: 1, days: 1 });
+    expect(ageOf("2026-03-31", "2026-05-01")).toEqual({ years: 0, months: 1, days: 1 });
+    expect(ageOf("2024-02-29", "2025-02-28")).toEqual({ years: 1, months: 0, days: 0 });
+    expect(ageOf("2024-02-29", "2025-03-01")).toEqual({ years: 1, months: 0, days: 1 });
+  });
+
+  it("is never negative, and the birth date plus the age is today, for every birth over two years", () => {
+    const DAY = 86_400_000;
+    const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const plusMonths = (ms, months) => {
+      const born = new Date(ms);
+      const total = born.getUTCMonth() + months;
+      const year = born.getUTCFullYear() + Math.floor(total / 12);
+      const month = total % 12;
+      const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      return Date.UTC(year, month, Math.min(born.getUTCDate(), last));
+    };
+    let checked = 0;
+    const wrong = [];
+    for (let born = Date.UTC(2024, 0, 1); born <= Date.UTC(2025, 11, 31); born += DAY) {
+      for (let on = born; on <= born + 400 * DAY; on += DAY) {
+        const age = ageOf(iso(born), iso(on));
+        checked += 1;
+        if (!age || age.years < 0 || age.months < 0 || age.months > 11 || age.days < 0 || age.days > 30
+          || plusMonths(born, age.years * 12 + age.months) + age.days * DAY !== on) {
+          if (wrong.length < 5) wrong.push(`${iso(born)} → ${iso(on)}: ${JSON.stringify(age)}`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+    expect(checked).toBe(731 * 401);
+  });
+
+  it("is nothing for a date that is not one, is in the future, or is before 1900", () => {
+    for (const dob of ["", "2026-02-30", "26-10-2026", "2026-10-26", "0050-01-01", "1899-12-31"]) {
+      expect(ageOf(dob, TODAY), dob).toBeNull();
+    }
   });
 });
 
@@ -61,6 +103,12 @@ describe("the body POST /admissions takes", () => {
       admission_diagnosis_free_text: "Sentetik tanı", weight_kg: 72.5, height_cm: 171, blood_group: "A_POS",
       allergies_text: null, no_known_allergy: true, comorbidity_codes: ["copd"], comorbidities_text: null,
     });
+  });
+
+  it("sends no nationality until one is chosen", () => {
+    expect(emptyForm().nationality).toBe("");
+    expect(toBody(complete()).patient.nationality).toBeNull();
+    expect(toBody({ ...complete(), nationality: "az" }).patient.nationality).toBe("az");
   });
 
   it("reads a decimal comma as a point, and nothing else as a number", () => {
