@@ -115,10 +115,12 @@ export function patientFromBoard(entry) {
   };
 }
 
-/** The whole /patients response -> patient records. */
+/** The whole /patients response -> patient records. An entry marked `removed` is a card that has
+ *  LEFT (a discharged `kabul` patient's board is its removal, G2-B1a): the server omits it, and
+ *  one that arrives all the same is no patient — as a removed stream frame is not (boardStore.js). */
 export function patientsFromBoard(payload) {
   const list = Array.isArray(payload?.patients) ? payload.patients : [];
-  return list.map(patientFromBoard);
+  return list.filter((entry) => entry?.removed !== true).map(patientFromBoard);
 }
 
 // -----------------------------------------------------------------------------------------------
