@@ -44,6 +44,7 @@ import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
 import { useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
+import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { linkSentenceKey, maxAgeOf, reasonKey } from "../common/monitor.js";
@@ -95,6 +96,12 @@ function MonitorSection({ beds, devices, view }) {
 /** How often the ages on this screen are re-read. A bed card shows a measurement's clock time and
  *  a channel's overdue count, neither of which changes faster than this. */
 const TICK_MS = 30_000;
+
+/** G2-B1a (X61): the admissions still waiting for the physician's signature, for the cards' badge
+ *  — the board payload carries no admission state. Read every minute while the board is open, and
+ *  not at all by a session without `admissions.view` (useAdmissions). */
+const DRAFT = ["DRAFT"];
+const DRAFT_EVERY_MS = 60_000;
 
 /** The alarms screen, when this build has it and this session may open it. Until G1-10 merges, the
  *  attention line states the count without linking anywhere — never a dead link. */
@@ -216,6 +223,8 @@ export function BedsScreen() {
   // placeholder while the structure is not known — never «unknown».
   const names = useUnitNames(units);
   const unitName = names.nameOf;
+  const drafts = useAdmissions(DRAFT, { every: DRAFT_EVERY_MS });   // G2-B1a: the badge
+  const draftNumbers = useMemo(() => new Set((drafts.rows ?? []).map((r) => r.patient_number)), [drafts.rows]);
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
   const [order, setOrder] = useState(() => readPref("bedOrder", ORDERS, "yatak"));
@@ -357,7 +366,8 @@ export function BedsScreen() {
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
           {shown.map((p) => (
             <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
-              monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined} />
+              monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
+              draft={draftNumbers.has(p.patient_id)} />
           ))}
         </ul>
       )}

@@ -55,6 +55,7 @@ import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
+import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 
 const TICK_MS = 30_000;
 
@@ -379,6 +380,7 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} />
             </div>
           </header>
+          <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>
