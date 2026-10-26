@@ -67,6 +67,8 @@ import { boardKnown } from "../common/BoardState.jsx";
 import { FIELD_MAX } from "./limits.js";
 import { mayHaveLanded } from "./refusal.js";
 import { scopeKind } from "./rules.js";
+import { useStructure } from "../../data/StructureProvider.jsx"; // G2-B1a
+import { bedLabel, isUuid, unitLabel } from "../../data/structure.js";
 
 /** What an UNASSIGNED account sees until this editor is used — asked only of a scope `scopeKind`
  *  has already called "unassigned". With enforcement off (the pilot) the engine shows her every
@@ -134,6 +136,11 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     return () => { mounted.current = false; };
   }, []);
   const kind = scopeKind(base);
+  // G2-B1a: a key by its name from the structure — since B1a the keys are the tenant's UUIDs, and
+  // no screen shows one (spec D9). A key someone typed by hand is no UUID and is shown as typed.
+  const { index } = useStructure();
+  const unitName = (key) => unitLabel(t, index, key);
+  const bedName = (key) => bedLabel(index, key) ?? (isUuid(key) ? t("kabul.bedUnknown") : key);
 
   const offered = useMemo(() => offeredKeys(board.patients, grants), [board.patients, grants]);
   const has = (grant) => grants.some((g) => sameGrant(g, grant));
@@ -215,7 +222,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     );
   }
 
-  const choices = (label, items, make) => (
+  const choices = (label, items, make, nameOf) => (
     <fieldset className="mb-3 border-0 p-0">
       <legend className="mb-1 font-text text-13.5 font-semibold text-mute">{label}</legend>
       {items.length === 0 ? null : items.map((key) => {
@@ -223,7 +230,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
         return (
           <label key={key} className="flex items-center gap-2 py-0.5 font-text text-13.5">
             <input type="checkbox" checked={has(grant)} disabled={busy} onChange={(e) => toggle(grant, e.target.checked)} />
-            <span className="font-data">{key}</span>
+            <span className="font-data">{nameOf(key)}</span>
           </label>
         );
       })}
@@ -258,8 +265,8 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
         ? <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeNoKeys")}</p>
         : (
           <>
-            {choices(t("admin.scopeUnits"), offered.units, (key) => asGrant(key, ""))}
-            {choices(t("admin.scopeBeds"), offered.beds, (key) => asGrant("", key))}
+            {choices(t("admin.scopeUnits"), offered.units, (key) => asGrant(key, ""), unitName)}
+            {choices(t("admin.scopeBeds"), offered.beds, (key) => asGrant("", key), bedName)}
           </>
         )}
 
@@ -291,15 +298,15 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
             <tr><td colSpan={3}>{t("admin.scopeEmpty")}</td></tr>
           ) : grants.map((grant) => (
             <tr key={keyOf(grant)}>
-              <th scope="row" className="font-data">{grant.unitId || "—"}</th>
-              <td className="font-data">{grant.bedId || "—"}</td>
+              <th scope="row" className="font-data">{grant.unitId ? unitName(grant.unitId) : "—"}</th>
+              <td className="font-data">{grant.bedId ? bedName(grant.bedId) : "—"}</td>
               <td>
                 <Button
                   size="sm"
                   variant="ghost"
                   icon="trash"
                   busy={busy}
-                  label={`${t("admin.remove")}: ${grant.unitId || grant.bedId}`}
+                  label={`${t("admin.remove")}: ${grant.unitId ? unitName(grant.unitId) : bedName(grant.bedId)}`}
                   onClick={() => toggle(grant, false)}
                 />
               </td>

@@ -18,6 +18,8 @@ import { useShell } from "./ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "./routes.js";
 import { ddmm, hhmm, weekdayKey } from "../i18n/dates.js";
 import { pillRisk, summaryOf } from "../screens/common/BoardState.jsx";
+import { useStructure } from "../data/StructureProvider.jsx";   // G2-B1a
+import { unitLabel } from "../data/structure.js";
 
 export const BELL_LIST_MAX = 8;
 /** The build this page came from (vite.config.js define; "" when the image was built without git). */
@@ -58,6 +60,9 @@ function Clock() {
 function UnitChip() {
   const { t } = useI18n();
   const { unit, setUnit, units, stale } = useShell();
+  // G2-B1a: a unit by its name from the structure, never its UUID (data/structure.js).
+  const { index } = useStructure();
+  const nameOf = (id) => unitLabel(t, index, id);
   if (units.length < 2) return null;
   return (
     <MenuButton
@@ -66,7 +71,7 @@ function UnitChip() {
       button={(
         <>
           <Icon name="building" size={16} />
-          <span className="max-w-[160px] truncate">{unit ?? t("shell.units", { count: units.length })}</span>
+          <span className="max-w-[160px] truncate">{unit ? nameOf(unit) : t("shell.units", { count: units.length })}</span>
           <Icon name="chevD" size={14} className="text-mute" />
           {stale ? (
             <span aria-hidden="true" data-unit="stale" className="absolute inset-0 rounded-ctl ring-2 ring-inset ring-mid" />
@@ -76,7 +81,7 @@ function UnitChip() {
       items={[
         { key: "", label: t("shell.allUnits"), checked: unit === null, onSelect: () => setUnit(null) },
         "separator",
-        ...units.map((u) => ({ key: u, label: <span className="font-data">{u}</span>, checked: unit === u, onSelect: () => setUnit(u) })),
+        ...units.map((u) => ({ key: u, label: <span>{nameOf(u)}</span>, checked: unit === u, onSelect: () => setUnit(u) })),
       ]}
     />
   );
