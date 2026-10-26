@@ -125,6 +125,32 @@ class TestTheSepsisBranchRevives:
         assert "antibiotic_due" not in given.json()["alerts"]
 
 
+class TestTheEvaluationInstant:
+    """G2-A2 (X10): this door evaluates at min(recorded_at, wall clock), as /ingest does — a chart
+    stamped in the future cannot age the readings beside it. The audit row keeps the stamp."""
+
+    def test_a_chart_stamped_in_the_future_does_not_age_the_vitals(self, client):
+        wall = datetime.now(timezone.utc)
+        taken = (wall - timedelta(minutes=45)).isoformat()
+        for code, value in (("resp_rate", 26), ("spo2", 91), ("sbp", 88)):     # NEWS2 9: high
+            fhir = {"resourceType": "Observation",
+                    "code": {"coding": [{"system": "x", "code": code}]},
+                    "subject": {"reference": "Patient/bed-3"}, "effectiveDateTime": taken,
+                    "valueQuantity": {"value": value, "unit": ""}}
+            assert client.post("/ingest", json=fhir, headers=AUTH).status_code == 200
+        ahead = wall + timedelta(minutes=30)
+        r = _chart(client, "bed-3", [{"code": "weight_kg", "value": 78}], at=ahead)
+        assert r.status_code == 200
+        (board,) = client.get("/patients", headers=AUTH).json()["patients"]
+        assert board["latest"]["news2"]["stale"] == []
+        news2 = next(a for a in board["alerts"] if a["kind"] == "news2")
+        assert (news2["severity"], news2["stale_inputs"]) == ("high", [])
+        assert "Held while inputs are stale" not in news2["clinical_reasoning"]
+        (row,) = [r for r in client.get("/audit", headers=AUTH).json()["records"]
+                  if r["event_type"] == "chart"]
+        assert row["payload"]["obs_ts"] == ahead.isoformat()
+
+
 class TestWhatMayNotBeCharted:
     def test_a_device_channel_cannot_be_typed_in_by_hand(self, client):
         """A hand-typed heart rate would be indistinguishable from a monitored one."""

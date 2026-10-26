@@ -28,8 +28,10 @@ from fastapi.responses import StreamingResponse
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
 from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
-from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, verify_chain
-from homunculus.api.board import board_snapshot, identity_only_board, patient_board
+from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
+from homunculus.api.board import (
+    board_snapshot, freshness_turned, identity_only_board, patient_board,
+)
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
     parse_fhir_patient,
@@ -50,7 +52,7 @@ from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.auth.permissions import validate_permissions
-from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
+from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
@@ -76,11 +78,18 @@ BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE 
 SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
-PATIENT_ID_MAX = 128
+# PATIENT_ID_MAX is the gateway's since G2-A2 (D14): a body's id and an ingested one are capped alike (bodies are not stripped).
 
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
 TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
+
+#: G2-A2 (D12): the most rows one `/audit` answer carries — the newest; the most `/alarm-quality`
+#: reads for its window (it says `truncated` when the window held more); and the rows a restart
+#: replays per read — every row is replayed, a page at a time.
+AUDIT_LIMIT_MAX = 1000
+ALARM_QUALITY_LIMIT_MAX = 20000
+REHYDRATE_PAGE = 5000
 
 
 def _device_role(value: object) -> str:
@@ -240,13 +249,21 @@ def create_app(
     rehydrated: set[str] = set()
 
     def _ensure(hospital: str) -> None:
-        """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing)."""
+        """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing).
+
+        The replay runs into an engine and a store nothing else can see yet, and they are installed
+        — the tenant marked rehydrated — only when every page has been read (G2-A2, Task 4 review).
+        A page read that fails midway installs nothing and the error goes up; the next request
+        replays again, instead of serving the half-replayed board of a replay that never finished."""
         if hospital in rehydrated:
             return
+        engine = Engine()
+        store = AckStore()
+        # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
+        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
+        engines[hospital] = engine
+        stores[hospital] = store
         rehydrated.add(hospital)
-        engine = engines.setdefault(hospital, Engine())
-        store = stores.setdefault(hospital, AckStore())
-        rehydrate(engine, store, audit.records(tenant=hospital, limit=1_000_000))
 
     def _engine(hospital: str) -> Engine:
         _ensure(hospital)
@@ -263,6 +280,32 @@ def create_app(
             audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
                                     item.payload(at)))
 
+    # G2-A2 (D5): each hospital's previous escalation-cycle `now`, advanced after that hospital's
+    # republish, so a tenant failing in its own does not hold the others' back (Task 2 review).
+    # A hospital no cycle has reached yet counts from the app's start, seeded by the lifespan: the
+    # first cycle covers [start, first cycle), at worst one frame a fresh `/patients` already had.
+    # Lane B's retention sweep right after the republish may send a second frame per cycle for a
+    # patient (A2's O14).
+    freshness_since: dict[str, datetime] = {}
+    freshness_started: list[datetime | None] = [None]
+
+    async def _republish_turned(hospital: str, engine: Engine, store: AckStore, now: datetime,
+                                published: set[str]) -> None:
+        """G2-A2 (D5): republish, judged at `now`, each measured patient one of whose NEWS2 inputs
+        stopped counting since this hospital's previous cycle (`board.freshness_turned`). A
+        reading's window closes with no frame to say so — a feed that stops is exactly when no
+        further frame arrives — and without this the card would read fresh until a reload. Its
+        first cycle counts from the app's start; without a lifespan there is nothing to count from
+        and it republishes nothing. `published` are the patients this cycle has already sent."""
+        since = freshness_since.get(hospital, freshness_started[0])
+        if since is None:
+            return
+        for pid in engine.patient_ids():
+            if pid not in published and freshness_turned(engine.state(pid), since, now):
+                await broadcaster.publish(hospital, patient_board(
+                    engine, pid, store, identity=identities.get(hospital, pid), bedmap=bedmap,
+                    now=now))
+
     async def _escalation_cycle(now: datetime) -> None:
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
@@ -273,14 +316,16 @@ def create_app(
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
+            changed: set[str] = set()
             if newly != store.escalated:
                 added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
+                    # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, patient_board(
                         engine, pid, store, identity=identities.get(hospital, pid),
-                        bedmap=bedmap))
+                        bedmap=bedmap, now=now))
                 # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
                 # critical that latches and returns, or an alert that clears and returns within the
                 # delay, is "added" again — but the doctor was told about this chain already. A new
@@ -296,6 +341,8 @@ def create_app(
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+            await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
+            freshness_since[hospital] = now                                  # G2-A2 (D5)
 
         # Retention: a card discharged more than DISCHARGED_TTL ago leaves the board (or keeps its
         # readings and loses its name). Every tenant this app serves is swept, engine or not — the
@@ -322,6 +369,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        freshness_started[0] = datetime.now(timezone.utc)   # G2-A2 (D5): the first cycle's `since`
         if on_startup_check is not None:
             try:
                 await on_startup_check()
@@ -494,6 +542,17 @@ def create_app(
             return _UNSCOPED
         return await resolve_scope(credential)
 
+    def _readable(scope: Scope) -> Scope:   # G2-A2 (D13)
+        """Refuse a scope that could not be read, before anything takes it for an answer: 503, the
+        stream ticket's own answer (G2-A2, D13). A look-up that failed — a database blip, no
+        membership the resolver could find — is not "out of scope": a 404 would tell a ward its
+        patient is gone, a `scope_denied` row would record an access violation nobody committed,
+        and an empty board would read as a quiet ward. The dashboard maps the detail
+        (`apiErrors.js`), and a failed `/patients` load already shows UNAVAILABLE."""
+        if scope.reason == UNKNOWN_SCOPE.reason:
+            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
+        return scope
+
     async def _require_patient(caller: Caller, authorization: str | None,
                                patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
@@ -513,10 +572,13 @@ def create_app(
         It runs after the route's permission check: a permission says what a caller may do, the
         scope says to whom, and both must hold.
 
-        `scope` is the caller's scope when the route has already resolved it (the trends route
-        needs it first, to answer 503 for one that cannot be read). Passing it spares a second
-        look-up, and a second chance for a blip to turn a readable scope into "not found". Every
-        other route leaves it out and the scope is resolved here.
+        A scope that cannot be read is 503 here, right after it is resolved and before the check
+        and the audit row (`_readable`, G2-A2, D13): "we could not find out" is not "not yours".
+
+        `scope` is the caller's scope when the route has already resolved it (the trends route,
+        which polls every minute). Passing it spares a second look-up, and a second chance for a
+        blip to turn a readable scope into an unreadable one. Every other route leaves it out and
+        the scope is resolved here.
 
         The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
         the board publishes for that patient (same identity, same bed map). It is NOT built with
@@ -524,7 +586,7 @@ def create_app(
         probe for a made-up id would put that id on every board in the hospital.
         """
         hospital = caller.hospital
-        scope = scope if scope is not None else await _scope(authorization)
+        scope = _readable(scope if scope is not None else await _scope(authorization))
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
@@ -600,17 +662,20 @@ def create_app(
 
         engine = _engine(hospital)
         store = _store(hospital)
+        # One wall-clock instant per request, as in /ingest: each entry is judged at its charted
+        # time but never past the wall clock (G2-A2, X10) — a `recorded_at` in the future would
+        # age every other input to it. The audit row keeps the stamp; the replay judges at
+        # min(the stamp, the row's write time) (rehydrate, X10b).
+        now = datetime.now(timezone.utc)
         alerts: list = []
         for item in charted:
             obs = item.observation
-            alerts = engine.ingest(obs, now=obs.timestamp)
+            alerts = engine.ingest(obs, now=min(obs.timestamp, now))
             # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
             # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
             # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
             # Right after the evaluation and before any audit write, as in /ingest: if the audit
-            # fails from here on, an unacknowledged critical is still on the board. `charted` is
-            # never empty (build_entries refuses that), so `now` is set for the stamps below.
-            now = datetime.now(timezone.utc)
+            # fails from here on, an unacknowledged critical is still on the board.
             cleared = sync_alerts(engine, store, obs.patient_id, now)
             # Re-arm the nurse's dedup after EACH entry, not only after the last: `[norepinephrine 0,
             # dopamine 5]` ends an acknowledged shock and starts a new one inside this loop, and the
@@ -718,14 +783,18 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc))
         engine = _engine(hospital)
         store = _store(hospital)
-        alerts = engine.ingest(obs, now=obs.timestamp)
+        # One wall-clock instant per request. The rules judge at the reading's own time but never
+        # past the wall clock (G2-A2, X10): judged at a stamp in the future, every other input
+        # would be aged to it. The audit row keeps the stamp; the replay judges at min(the stamp,
+        # the row's write time) (rehydrate, X10b).
+        wall_now = datetime.now(timezone.utc)
+        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
         # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
         # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
         # if the audit fails from here on, an unacknowledged critical is still on the board.
         # Before the stamps too: a kind that came back after clearing has had its old stamp pruned,
         # so it is stamped anew, a new episode (D5).
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
-        wall_now = datetime.now(timezone.utc)
         cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
         audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
                                 {"value": obs.value, "unit": obs.unit,
@@ -817,7 +886,8 @@ def create_app(
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)
         hospital = caller.hospital
-        scope = await _scope(authorization)
+        # 503 before the board is narrowed (G2-A2, D13): an unreadable scope is not an empty one.
+        scope = _readable(await _scope(authorization))
         result = apply_scope(
             board_snapshot(_engine(hospital), _store(hospital), identities=identities,
                            hospital=hospital, bedmap=bedmap),
@@ -843,20 +913,18 @@ def create_app(
 
         `hours` is read as text so that anything but 6, 24 or 72 is this route's 400, in the
         reader's words, rather than FastAPI's 422. A scope that cannot be read is 503, as the stream
-        ticket answers it: `_require_patient` would call it "not found", which tells a screen the
-        patient is gone when only the look-up failed. Out of scope and unknown stay one 404.
+        ticket answers it — `_require_patient` answers so for every single-patient route since
+        G2-A2 (D13). Out of scope and unknown stay one 404.
 
         The scope is resolved once, here, and handed to `_require_patient`: the chart polls every
         minute, and a second look-up would double that work and give a blip between the two a way
-        to answer 404 for a patient who is in scope.
+        to turn a scope that was readable into a 503.
         """
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)
         if hours not in TREND_WINDOWS_TEXT:
             raise HTTPException(status_code=400, detail="geçersiz hours: 6, 24 veya 72 olmalı")
         scope = await _scope(authorization)
-        if scope.reason == UNKNOWN_SCOPE.reason:
-            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
         await _require_patient(caller, authorization, patient_id, scope=scope)
         _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
@@ -1037,14 +1105,16 @@ def create_app(
             # carries no PHI, but it does carry who was alerted about whom and when, which is
             # the same question the board answers and must get the same answer.
             await _require_patient(caller, authorization, patient_id)
-        elif not (await _scope(authorization)).unrestricted:
+        elif not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The unfiltered trail spans every bed in the hospital. It is an administrator's and
             # an auditor's view, and narrowing it per bed would produce a partial record that
             # reads like a whole one — worse than refusing.
             raise HTTPException(status_code=403,
                                 detail="denetim kaydının tamamı kapsam dışı; bir patient_id verin")
-        recs = audit.records(tenant=hospital, patient_id=patient_id,
-                             event_type=event_type, limit=limit)
+        # The NEWEST rows, oldest first, at most AUDIT_LIMIT_MAX (G2-A2, D12): an auditor asking
+        # about recent activity gets recent rows, not the first ones ever written.
+        recs = audit.records(tenant=hospital, patient_id=patient_id, event_type=event_type,
+                             limit=max(1, min(limit, AUDIT_LIMIT_MAX)), newest=True)
         return {"records": [asdict(r) for r in recs]}
 
     @app.get("/scores/sofa/{patient_id}")
@@ -1149,7 +1219,7 @@ def create_app(
         """
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
-        if not (await _scope(authorization)).unrestricted:
+        if not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The report spans every bed in the hospital — its noisiest beds are patient ids —
             # so it follows the whole-trail rule of /audit rather than leaking past a scope.
             raise HTTPException(status_code=403,
@@ -1157,10 +1227,14 @@ def create_app(
         hospital = caller.hospital
         now = datetime.now(timezone.utc)
         since = now - timedelta(days=max(1, days))
-        recs = [r for r in audit.records(tenant=hospital, limit=limit)
-                if (r.ts or "") >= since.isoformat()]
-        report = alarm_quality(recs, now)
-        return {**report.as_dict(), "days": days}
+        # The window is the backend's to read (G2-A2, D12): its newest rows, at most `cap`, and one
+        # more to know whether it held more — then the report says `truncated` rather than reading
+        # as the whole window (the trends pattern, api/trends.py `_markers`).
+        cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
+        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True)
+        truncated = len(recs) > cap
+        report = alarm_quality(recs[1:] if truncated else recs, now)
+        return {**report.as_dict(), "days": days, "truncated": truncated}
 
     @app.get("/audit/verify")
     async def verify_audit(limit: int = 10000, authorization: str | None = Header(default=None)):

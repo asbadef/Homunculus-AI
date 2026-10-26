@@ -412,3 +412,68 @@ class TestIAMalformedBodyIsTheCallersError:
         _app, client = adult_nurse
         assert client.post("/view", headers=TOKEN,
                            json={"patient_id": "p" * 128}).status_code == 200
+
+
+class TestJAnUnreadableScopeIsUnavailableNotNotFound:
+    """G2-A2 (D13, D13b). A scope the resolver could not read — a database blip, no membership it
+    could find — answered 404 «hasta bulunamadı» on every single-patient route and wrote a
+    `scope_denied` row nobody committed; the whole-trail routes called it «kapsam dışı». It is 503
+    now, the stream ticket's own answer, with no row; the device token, which is unscoped, still
+    gets its answer."""
+
+    PERMS = NURSE_PERMS | {"audit.view", "scores.sign"}
+    ROUTES = [
+        ("POST", "/clinical/p-a1", {"entries": [{"code": "suspected_infection", "value": 1}]}, 200),
+        ("PUT", "/clinical/p-a1/profile", {"comorbidities": ["copd"]}, 200),
+        ("POST", "/ack", {"patient_id": "p-a1", "kind": "news2"}, 200),
+        ("POST", "/view", {"patient_id": "p-a1"}, 200),
+        ("GET", "/alerts/p-a1", None, 200),
+        ("GET", "/audit?patient_id=p-a1", None, 200),
+        ("GET", "/scores/sofa/p-a1", None, 200),
+        ("POST", "/scores/sofa/p-a1", {}, 403),          # a device never signs: its own refusal
+        ("GET", "/audit", None, 200),                    # D13b: the whole trail
+        ("GET", "/alarm-quality", None, 200),            # D13b
+    ]
+
+    @pytest.mark.parametrize("method,path,body,device", ROUTES,
+                             ids=[f"{m} {p}" for m, p, _b, _d in ROUTES])
+    def test_an_unreadable_scope_is_503_and_writes_no_denial(self, method, path, body, device):
+        from homunculus.scope.resolver import UNKNOWN
+        app = app_with(UNKNOWN, perms=self.PERMS)
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            _reading(client, "p-a1", spo2=85.0)          # a live NEWS2 alert, for the ack
+            r = client.request(method, path, headers=NURSE, json=body)
+            assert (r.status_code, r.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
+            assert not _rows(app, "scope_denied")
+            answered = client.request(method, path, headers=TOKEN, json=body)
+        assert answered.status_code == device, answered.text
+
+    def test_the_board_is_503_before_it_is_narrowed(self):
+        from homunculus.scope.resolver import UNKNOWN
+        app = app_with(UNKNOWN)
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            r = client.get("/patients", headers=NURSE)
+            device = client.get("/patients", headers=TOKEN)
+        assert (r.status_code, r.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
+        assert device.status_code == 200 and len(device.json()["patients"]) == 3
+
+    @pytest.mark.parametrize("path,detail", [
+        ("/audit", "denetim kaydının tamamı kapsam dışı; bir patient_id verin"),
+        ("/alarm-quality", "alarm kalitesi raporunun tamamı kapsam dışı"),
+    ])
+    def test_a_readable_restricted_scope_keeps_its_403_on_the_whole_trail(self, path, detail):
+        app = app_with(ADULT, perms=self.PERMS)
+        with TestClient(app) as client:
+            r = client.get(path, headers=NURSE)
+        assert (r.status_code, r.json()["detail"]) == (403, detail)
+
+    def test_a_missing_permission_and_a_malformed_body_still_come_first(self):
+        from homunculus.scope.resolver import UNKNOWN
+        with TestClient(app_with(UNKNOWN, perms=frozenset())) as client:
+            r = client.get("/alerts/p-a1", headers=NURSE)
+        assert (r.status_code, r.json()["detail"]) == (403, "permission required: board.view")
+        with TestClient(app_with(UNKNOWN)) as client:
+            r = client.post("/ack", headers=NURSE, json={"patient_id": {"x": 1}, "kind": "news2"})
+        assert (r.status_code, r.json()["detail"]) == (400, "geçersiz patient_id")

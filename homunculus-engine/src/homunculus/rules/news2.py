@@ -14,6 +14,7 @@ aggregate is never presented as a complete NEWS2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from homunculus.canonical import SignalCode
 from homunculus.rules.finding import Citation, Finding, Severity, Urgency
@@ -110,6 +111,15 @@ def consciousness_points(acvpu: float) -> int:
 # partial (it can only understate), and score() lists it in `missing`.
 _CORE_VITALS = ("respiration_rate", "spo2", "systolic_bp", "pulse", "temperature")
 
+# The seven inputs by the names score() puts in its breakdown, and the signal each reads (G2-A2):
+# the five vitals, then the two a clinician charts.
+_INPUT_SIGNAL: dict[str, SignalCode] = {
+    "respiration_rate": SignalCode.RESP_RATE, "spo2": SignalCode.SPO2,
+    "systolic_bp": SignalCode.SBP, "pulse": SignalCode.HEART_RATE,
+    "temperature": SignalCode.TEMPERATURE,
+    "air_or_oxygen": SignalCode.SUPPLEMENTAL_OXYGEN, "consciousness": SignalCode.ACVPU,
+}
+
 
 @dataclass(frozen=True)
 class News2Result:
@@ -117,50 +127,87 @@ class News2Result:
     breakdown: dict[str, int]      # parameter name -> points
     missing: list[str] = field(default_factory=list)   # core vitals with no observation
     red_param: bool = False        # any single parameter scored the maximum 3
+    # G2-A2 (D1, D4, D7). `stale`: core vitals whose last reading is older than its window at
+    # `now`, scored 0 like a missing one. `assumed`: air-or-oxygen and consciousness scored as air
+    # and Alert because nothing current is charted — not partial. `measured_at`: when each of the
+    # seven inputs was last read, None if never; `fresh_until`: that instant plus the input's
+    # window, None if never — in the past for a stale or expired input.
+    stale: list[str] = field(default_factory=list)
+    assumed: list[str] = field(default_factory=list)
+    measured_at: dict[str, datetime | None] = field(default_factory=dict)
+    fresh_until: dict[str, datetime | None] = field(default_factory=dict)
 
     @property
     def partial(self) -> bool:
-        return bool(self.missing)
+        # A stale vital is as absent from the total as a missing one (G2-A2, D1): either way the
+        # aggregate can only understate.
+        return bool(self.missing or self.stale)
 
 
-def _val(state: PatientState, code: SignalCode) -> float | None:
-    obs = state.latest(code)
-    return None if obs is None else obs.value
-
-
-def score(state: PatientState) -> News2Result:
+def score(state: PatientState, now: datetime | None = None) -> News2Result:
     """Aggregate NEWS2 (Scale 1) from current state.
 
     Air-or-oxygen defaults to air (0) and consciousness to Alert (0) when not
     recorded — the benign, overwhelmingly-common case, and neither is derivable
     from monitor telemetry. Only the five continuous vitals are treated as
     'missing' when absent, so a partial aggregate is never shown as complete.
+
+    G2-A2. With `now`, a reading speaks for the patient only inside its window (D1): a vital older
+    than its `_NEWS2_FRESHNESS` window scores 0 and is listed in `stale`, so the score is partial;
+    an air-or-oxygen or ACVPU value charted more than `_CHARTED_FRESHNESS` ago is assumed again
+    (D8). Every default is listed in `assumed` and does not make the score partial (D7). An age
+    equal to the window is still fresh, and a reading stamped after `now` never ages. Without
+    `now` nothing ages (D2): the trend charts read what each value scores, not its share of the
+    total. `measured_at` and `fresh_until` name all seven inputs either way (D4).
     """
     breakdown: dict[str, int] = {}
     missing: list[str] = []
+    stale: list[str] = []
+    assumed: list[str] = []
+    measured_at: dict[str, datetime | None] = {}
+    fresh_until: dict[str, datetime | None] = {}
 
-    def core(name: str, code: SignalCode, fn) -> None:
-        v = _val(state, code)
+    def latest(name: str, window: timedelta) -> tuple[float | None, bool]:
+        """The input's last value (None if never), and whether it is older than `window` at `now`."""
+        obs = state.latest(_INPUT_SIGNAL[name])
+        measured_at[name] = None if obs is None else obs.timestamp
+        fresh_until[name] = None if obs is None else obs.timestamp + window
+        if obs is None:
+            return None, False
+        return obs.value, now is not None and now - obs.timestamp > window
+
+    def core(name: str, fn) -> None:
+        v, aged = latest(name, _NEWS2_FRESHNESS[_INPUT_SIGNAL[name]])
         if v is None:
             breakdown[name] = 0
             missing.append(name)
+        elif aged:
+            breakdown[name] = 0
+            stale.append(name)
         else:
             breakdown[name] = fn(v)
 
-    core("respiration_rate", SignalCode.RESP_RATE, resp_rate_points)
-    core("spo2", SignalCode.SPO2, spo2_scale1_points)
-    core("systolic_bp", SignalCode.SBP, systolic_bp_points)
-    core("pulse", SignalCode.HEART_RATE, pulse_points)
-    core("temperature", SignalCode.TEMPERATURE, temperature_points)
+    def charted(name: str) -> float:
+        v, aged = latest(name, _CHARTED_FRESHNESS[_INPUT_SIGNAL[name]])
+        if v is None or aged:
+            assumed.append(name)
+            return 0.0
+        return v
 
-    breakdown["air_or_oxygen"] = air_or_oxygen_points(
-        on_oxygen=(_val(state, SignalCode.SUPPLEMENTAL_OXYGEN) or 0.0) >= 1.0
-    )
-    breakdown["consciousness"] = consciousness_points(_val(state, SignalCode.ACVPU) or 0.0)
+    core("respiration_rate", resp_rate_points)
+    core("spo2", spo2_scale1_points)
+    core("systolic_bp", systolic_bp_points)
+    core("pulse", pulse_points)
+    core("temperature", temperature_points)
+
+    breakdown["air_or_oxygen"] = air_or_oxygen_points(on_oxygen=charted("air_or_oxygen") >= 1.0)
+    breakdown["consciousness"] = consciousness_points(charted("consciousness"))
 
     total = sum(breakdown.values())
     red_param = any(p >= 3 for p in breakdown.values())
-    return News2Result(total=total, breakdown=breakdown, missing=missing, red_param=red_param)
+    return News2Result(total=total, breakdown=breakdown, missing=missing, red_param=red_param,
+                       stale=stale, assumed=assumed, measured_at=measured_at,
+                       fresh_until=fresh_until)
 
 
 def _band(result: News2Result) -> tuple[Severity, Urgency, str] | None:
@@ -176,17 +223,33 @@ def _band(result: News2Result) -> tuple[Severity, Urgency, str] | None:
 
 # NEWS2 inputs are all continuous vitals — they go stale in minutes, not hours. Operational
 # data-recency defaults (configurable), not clinical claims (mirrors the SOFA staleness approach).
-from datetime import datetime, timedelta  # noqa: E402
-
+# Since G2-A2 (D1) a vital older than its window leaves the total (`score(state, now)`).
 _NEWS2_FRESHNESS: dict[SignalCode, timedelta] = {
     SignalCode.RESP_RATE: timedelta(hours=1), SignalCode.SPO2: timedelta(hours=1),
     SignalCode.SBP: timedelta(hours=1), SignalCode.HEART_RATE: timedelta(hours=1),
     SignalCode.TEMPERATURE: timedelta(hours=2),
 }
+# The two inputs a clinician charts and no monitor sends (G2-A2, D8): a charted oxygen or ACVPU
+# speaks for one nursing shift, then the input is assumed again (air, Alert) and says so.
+# Operational defaults like the windows above, not clinical claims. The clock runs from the
+# observation's own time — the chart's `recorded_at`.
+_CHARTED_FRESHNESS: dict[SignalCode, timedelta] = {
+    SignalCode.SUPPLEMENTAL_OXYGEN: timedelta(hours=8), SignalCode.ACVPU: timedelta(hours=8),
+}
 _VITAL_LABEL: dict[SignalCode, str] = {
     SignalCode.RESP_RATE: "resp rate", SignalCode.SPO2: "SpO2", SignalCode.SBP: "systolic BP",
     SignalCode.HEART_RATE: "pulse", SignalCode.TEMPERATURE: "temperature",
 }
+#: How the reasoning names each of the seven inputs, keyed by the names `score()` puts in its
+#: breakdown: the vitals as the recency note (and `stale_inputs`) names them, the two charted inputs
+#: as the patient-relative notes do. One word per input in every note, a held alert's (pipeline,
+#: G2-A2 X9) included; a breakdown key is never shown.
+INPUT_LABEL: dict[str, str] = {
+    **{name: _VITAL_LABEL[_INPUT_SIGNAL[name]] for name in _CORE_VITALS},
+    "air_or_oxygen": "supplemental oxygen", "consciousness": "consciousness",
+}
+# What an assumed input was scored as, in the alert's reasoning (G2-A2, D7).
+_ASSUMED_AS: dict[str, str] = {"air_or_oxygen": "room air", "consciousness": "Alert"}
 
 
 def _stale_vital_labels(state: PatientState, now: datetime) -> list[str]:
@@ -200,30 +263,42 @@ def _stale_vital_labels(state: PatientState, now: datetime) -> list[str]:
 
 
 def evaluate(state: PatientState, now: datetime | None = None) -> list[Finding]:
-    result = score(state)
+    # The board's score, judged at the same instant (G2-A2, D6): a stale vital can no longer lift
+    # the alert into a band the card's total does not reach — one NEWS2, one number.
+    result = score(state, now)
     band = _band(result)
     if band is None:
         return []
     severity, urgency, response = band
 
     contributing = ", ".join(
-        f"{name} {pts}" for name, pts in result.breakdown.items() if pts > 0
+        f"{INPUT_LABEL[name]} {pts}" for name, pts in result.breakdown.items() if pts > 0
     )
     partial_note = ""
     if result.partial:
+        # Missing and stale alike, in breakdown order (G2-A2, X1): neither is in the total.
+        absent = [INPUT_LABEL[name] for name in result.breakdown
+                  if name in result.missing or name in result.stale]
         partial_note = (
-            f" This is a partial NEWS2: {', '.join(result.missing)} not recently recorded, "
+            f" This is a partial NEWS2: {', '.join(absent)} not recently recorded, "
             f"so the true aggregate can only be higher."
         )
     stale = _stale_vital_labels(state, now) if now is not None else []
     stale_note = ""
     if stale:
+        # Since G2-A2 (D1) a stale vital scores 0: the note says it is out, not to be borne in mind.
         stale_note = (f" Data recency: {', '.join(stale)} older than the expected refresh window; "
-                      f"interpret the score with that in mind.")
+                      f"not counted in the score.")
+    assumed_note = ""
+    if result.assumed:
+        # G2-A2 (D7): an assumption is said out loud, and is not counted as partial.
+        assumed_note = (" Assumed, nothing current charted: "
+                        + ", ".join(f"{INPUT_LABEL[name]} as {_ASSUMED_AS[name]}"
+                                    for name in result.assumed) + ".")
     reasoning = (
         f"NEWS2 {result.total} ({response}). Contributing: {contributing}. "
         f"Screen for deterioration, not a diagnosis; the response is review, not an order."
-        f"{partial_note}{stale_note}"
+        f"{partial_note}{stale_note}{assumed_note}"
     )
     return [Finding(
         kind="news2",

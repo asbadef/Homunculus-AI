@@ -114,9 +114,12 @@ export function riskOf(alarms) {
 
 /** The engine's NEWS2, in the shape the board carries it (`_news2`). `total` is always a number —
  *  NEWS2 scores a missing parameter as 0 — so `partial` and `missing` are what say whether that
- *  number is the whole story. */
+ *  number is the whole story. G2-A2: `stale`, `assumed` and the stamps default to empty — a test
+ *  that is about them states them. */
 export const news2 = (over = {}) => ({
-  total: 6, partial: false, missing: [], red_param: false, breakdown: {}, ...over,
+  total: 6, partial: false, missing: [], red_param: false, breakdown: {},
+  stale: [], assumed: [], measured_at: {}, fresh_until: {},
+  last_charted: { air_or_oxygen: null, consciousness: null }, ...over,
 });
 
 /** One board card. By default: measured by nothing, named by nobody, no alarm, risk "none" — the

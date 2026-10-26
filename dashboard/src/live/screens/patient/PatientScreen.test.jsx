@@ -209,6 +209,28 @@ describe("the patient screen", () => {
       expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument();
     });
 
+    // G2-A2 (D10): the heading's NEWS2 says what the card says, against the screen's clock.
+    it("names a stale NEWS2 input with its age and marks what the engine assumed", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL,
+        score: news2({ total: 6, partial: true, stale: ["systolic_bp"], assumed: ["consciousness"],
+          measured_at: { systolic_bp: ago(5400) } }),
+      })]) });
+      expect(screen.getByText("köhnə məlumat: sistolik AT · 90 dəq əvvəl")).toBeInTheDocument();
+      expect(screen.getByText("fərz edildi: oyaq")).toBeInTheDocument();
+    });
+
+    // G2-A2 X11: an expired chart says what it last read, as the card does.
+    it("names an expired chart's last value and its age", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL,
+        score: news2({ total: 3, red_param: false, assumed: ["consciousness"],
+          measured_at: { consciousness: ago(9 * 3600) },
+          last_charted: { air_or_oxygen: 0, consciousness: "U" } }),
+      })]) });
+      expect(screen.getByText("fərz edildi: oyaq (son qeyd: U, 9 saat əvvəl)")).toBeInTheDocument();
+    });
+
     it("says nobody has charted a suspected infection — the sepsis rule then never runs", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText(/heç kim işarələməyib/)).toBeInTheDocument();

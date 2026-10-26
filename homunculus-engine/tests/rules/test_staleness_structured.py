@@ -42,6 +42,10 @@ def test_news2_flags_stale_vital():
     n = next(f for f in findings if f.kind == "news2")
     assert any("systolic" in s.lower() for s in n.stale_inputs)
     assert "recency" in n.reasoning.lower()
+    # G2-A2 (D6): the four-hour-old pressure is out of the total — RR's 3 alone still fires it (a
+    # single parameter at the maximum) — and the score says it is partial for it.
+    assert n.summary.startswith("NEWS2 3 ")
+    assert "partial NEWS2: SpO2, systolic BP, pulse, temperature" in n.reasoning
 
 
 def test_news2_without_now_has_no_staleness():

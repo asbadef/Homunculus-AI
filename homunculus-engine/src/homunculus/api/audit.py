@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
@@ -139,13 +140,42 @@ def _matches(rec: AuditRecord, tenant, patient_id, event_type, since=None) -> bo
             and (since is None or datetime.fromisoformat(rec.ts) >= since))
 
 
+def _one_order(newest: bool, after_id: int | None) -> None:
+    """Refuse `newest` with `after_id` (G2-A2, D11): the newest N rows and the rows after an id are
+    different questions, and a read asked both would have to drop one of them silently."""
+    if newest and after_id is not None:
+        raise ValueError("newest and after_id are different reads: pass one")
+
+
 class AuditLog(Protocol):
     def append(self, event: AuditEvent) -> AuditRecord: ...
-    # `since` (zone-aware) keeps the rows written at or after it. Without it a read is the OLDEST
-    # `limit` rows — the right end for a replay, the wrong one for "what happened in this window".
+    # `since` (zone-aware) keeps the rows written at or after it. Without `newest` or `after_id` a
+    # read is the OLDEST `limit` rows. G2-A2 (D11): `newest=True` is the NEWEST `limit` matching
+    # rows, still in ascending id order — "what happened lately" (/audit, /alarm-quality, the heat
+    # map); `after_id=n` is the rows with `id > n`, oldest first — one page of "every row"
+    # (`iter_records`, the replay). Both at once is a ValueError. No other order is promised.
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
                 event_type: str | None = None, since: datetime | None = None,
-                limit: int = 200) -> list[AuditRecord]: ...
+                limit: int = 200, newest: bool = False,
+                after_id: int | None = None) -> list[AuditRecord]: ...
+
+
+def iter_records(log: AuditLog, *, tenant: str | None = None,
+                 page: int) -> Iterator[AuditRecord]:
+    """Every row, oldest first, read `page` rows at a time by id (G2-A2, D12) — the replay's read.
+
+    A replay needs every row: one read capped at N drops the rows past N, and on a large tenant
+    those are the newest — the current state. The next page is read when the last one has been
+    consumed; a page shorter than `page` is the end."""
+    if page < 1:
+        raise ValueError("page must be at least 1")
+    after: int | None = None
+    while True:
+        rows = log.records(tenant=tenant, limit=page, after_id=after)
+        yield from rows
+        if len(rows) < page:
+            return
+        after = rows[-1].id
 
 
 class InMemoryAuditLog:
@@ -169,10 +199,15 @@ class InMemoryAuditLog:
         self._head[event.tenant] = digest
         return rec
 
-    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200):
+    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200,
+                newest=False, after_id=None):
+        _one_order(newest, after_id)
         bound = since_utc(since)
-        hits = [r for r in self._rows if _matches(r, tenant, patient_id, event_type, bound)]
-        return hits[:limit]
+        hits = [r for r in self._rows if (after_id is None or r.id > after_id)
+                and _matches(r, tenant, patient_id, event_type, bound)]
+        # The newest `limit`, still oldest first (D11) — cut from the end by count: `hits[-0:]`
+        # would be every row.
+        return hits[max(len(hits) - limit, 0):] if newest else hits[:limit]
 
 
 class SqliteAuditLog:
@@ -263,7 +298,9 @@ class SqliteAuditLog:
                                prev_hash=prev, hash=digest)
         raise RuntimeError("denetim zinciri yazılamadı — eşzamanlı yazım çözülemedi")
 
-    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200):
+    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200,
+                newest=False, after_id=None):
+        _one_order(newest, after_id)
         clauses, params = [], []
         for col, val in (("tenant", tenant), ("patient_id", patient_id), ("event_type", event_type)):
             if val is not None:
@@ -277,11 +314,19 @@ class SqliteAuditLog:
             # sorts before ".", so it still comes before "…:00.000001+00:00" — as its instant does.
             clauses.append("ts >= ?")
             params.append(bound.isoformat())
+        if after_id is not None:
+            clauses.append("id > ?")
+            params.append(after_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
+        # The newest N are read from the id end and handed back oldest first (G2-A2, D11): the
+        # INTEGER PRIMARY KEY, walked backwards — no index of its own.
+        order = "DESC" if newest else "ASC"
         rows = self.connection.execute(
-            f"SELECT * FROM audit {where} ORDER BY id ASC LIMIT ?", params
+            f"SELECT * FROM audit {where} ORDER BY id {order} LIMIT ?", params
         ).fetchall()
+        if newest:
+            rows.reverse()
         return [AuditRecord(id=r["id"], ts=r["ts"], tenant=r["tenant"], event_type=r["event_type"],
                             patient_id=r["patient_id"], subject=r["subject"],
                             payload=json.loads(r["payload"]),

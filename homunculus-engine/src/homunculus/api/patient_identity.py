@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Protocol
 
 from homunculus.crypto import decrypt_phi, encrypt_phi
-from homunculus.gateway.fhir import GatewayError, to_utc
+from homunculus.gateway.fhir import GatewayError, patient_id_from, to_utc
 
 _log = logging.getLogger(__name__)
 
@@ -154,8 +154,8 @@ def parse_fhir_patient(resource: dict) -> IdentityRecord:
         if ident.get("system") == PROTOCOL_SYSTEM and isinstance(value, str) and value.strip():
             patient_id = value.strip()
             break
-    if not patient_id:
-        raise GatewayError(f"missing protocol number (identifier with system {PROTOCOL_SYSTEM})")
+    patient_id = patient_id_from(   # G2-A2 (D14): the one rule /ingest keys by
+        patient_id, what=f"protocol number (identifier with system {PROTOCOL_SYSTEM})")
 
     names = resource.get("name") or [{}]
     given_names = names[0].get("given") or []
@@ -220,8 +220,8 @@ def parse_fhir_encounter(resource: dict) -> IdentityRecord:
             f"expected resourceType 'Encounter', got {resource.get('resourceType')!r}")
     reference = (resource.get("subject") or {}).get("reference", "")
     patient_id = reference.removeprefix("Patient/").strip() if reference.startswith("Patient/") else ""
-    if not patient_id:
-        raise GatewayError("missing protocol number (subject.reference)")
+    patient_id = patient_id_from(   # G2-A2 (D14): the one rule /ingest keys by
+        patient_id, what="protocol number (subject.reference)")
     status = resource.get("status")
     if status not in _ENCOUNTER_STATUS:
         raise GatewayError("unsupported identity Encounter status")

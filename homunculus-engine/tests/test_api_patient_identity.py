@@ -108,6 +108,17 @@ def test_a_resource_without_a_protocol_number_is_refused_by_name():
         parse_fhir_encounter({**ENCOUNTER, "subject": {"reference": "Patient/"}})
 
 
+def test_a_protocol_number_past_the_cap_is_refused_by_name():
+    """G2-A2 (D14): readings and identity key alike — the Observation's cap is the identity's."""
+    long = [{"system": "http://homunculus.local/protocol-no", "value": "9" * 129}]
+    with pytest.raises(GatewayError, match=r"protocol number .* longer than 128"):
+        parse_fhir_patient({**PATIENT, "identifier": long})
+    with pytest.raises(GatewayError, match=r"protocol number .* longer than 128"):
+        parse_fhir_encounter({**ENCOUNTER, "subject": {"reference": "Patient/" + "9" * 129}})
+    longest = [{"system": "http://homunculus.local/protocol-no", "value": "9" * 128}]
+    assert parse_fhir_patient({**PATIENT, "identifier": longest}).patient_id == "9" * 128
+
+
 def test_a_resource_of_the_wrong_type_is_refused():
     with pytest.raises(GatewayError, match="Patient"):
         parse_fhir_patient(ENCOUNTER)

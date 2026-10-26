@@ -1,5 +1,9 @@
 # tests/test_pipeline.py
+from dataclasses import replace
 from datetime import datetime, timezone, timedelta
+
+import pytest
+
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
@@ -337,3 +341,466 @@ def test_the_antibiotic_clock_keeps_its_anchor_while_septic_shock_fires_without_
     assert "sepsis" not in _kinds(eng), "SOFA 4 over a charted baseline of 4 is no rise"
     assert {"septic_shock", "antibiotic_overdue"} <= _kinds(eng)
     assert eng.recognized_at("bed-3") == T0
+
+
+# --- G2-A2 (D6): the alert judges NEWS2 at the reading's own `now`, as the board does -------------
+
+def test_a_pressure_four_hours_old_does_not_raise_a_new_news2_alert():
+    # Kept by X9: staleness may withhold a NEW alert. The pressure is delivered four hours after it
+    # was measured, so it is stale at the only `now` it is judged at, and no alert was running for
+    # it to hold. (One that was running is held: the X9 tests below.)
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)                 # 3 points, a single red parameter — measured at T0
+    assert eng.ingest(o, now=T0 + timedelta(minutes=240)) == [], "out of the total at +4 h"
+    o = _obs(SignalCode.HEART_RATE, 72, minute=240)
+    assert eng.ingest(o, now=o.timestamp) == [], "a fresh normal pulse does not bring it in"
+
+
+def test_the_patient_relative_layer_judges_the_same_instant():
+    # RR 26 inside the patient's charted 24-28 is chronic; the four-hour-old SBP 88 is no
+    # contributor at `now`, so every point left is explained and the alert is downgraded. Judged
+    # without `now`, the old pressure read as an acute contributor and kept the alert alarming.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.RESP_RATE: BaselineRange(24, 28)}))
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 26, minute=240)]:
+        eng.ingest(o, now=o.timestamp)
+    [alert] = eng.active_alerts("bed-3")
+    assert (alert.kind, alert.severity, alert.downgraded) == ("news2", "low", True)
+
+
+# --- G2-A2 (X9, X9b): a stale input may withhold a NEWS2 alert but cannot end a running one -------
+#
+# The bridge posts a vitals set one reading at a time, every reading stamped with the set's time.
+# Judged at each reading, the first readings of a set taken more than an hour after the last saw the
+# rest stale, fell below the band and ended the alert, which the next reading raised again as a new
+# episode — a new nurse notification, the acknowledgement gone. A running alert the score at `now`
+# no longer reaches is now held while a vital is stale, and says what it is held on. It keeps its
+# last score (X9b) — re-scored on the stale readings it climbed a band on a value hours old — or
+# steps down, never up, to the lower band its stale values still reach at their last reading
+# (X9d); within one band it keeps its number. It ends when no vital is stale and the score is below
+# the band, or when even the stale values, counted at their last reading, no longer reach the band
+# (X9c). An expired chart holds like a stale vital (X11, the last tests here), and a hold has an
+# end (X12, the section below). Synthetic values throughout.
+
+_SPOT_CHECK = [(SignalCode.HEART_RATE, 105), (SignalCode.RESP_RATE, 22), (SignalCode.SPO2, 95),
+               (SignalCode.SBP, 105), (SignalCode.TEMPERATURE, 38.5)]     # NEWS2 1+2+1+1+1 = 6
+
+
+def _news2(eng, patient="bed-3"):
+    return {a.kind: a for a in eng.active_alerts(patient)}.get("news2")
+
+
+_HELD_ON = ["resp rate, SpO2, systolic BP ", "SpO2, systolic BP ", "systolic BP "]
+
+
+@pytest.mark.parametrize("second_set,numbers,held", [
+    # The same set again. From the SpO2 on the score at `now` reaches the band by itself — partial,
+    # the pressure still stale — and that live score is the alert.
+    (_SPOT_CHECK, ["6", "6", "5", "6", "6"], 2),
+    # A better pulse first (1 point to 0). Re-scored on the stale readings the alert dropped to 5 on
+    # the pulse alone; kept as last scored it reads 6 until the fresh score reaches the band, at 5.
+    ([(SignalCode.HEART_RATE, 85)] + _SPOT_CHECK[1:], ["6", "6", "6", "5", "5"], 3),
+], ids=["same-set", "better-pulse"])
+def test_a_vitals_set_posted_one_reading_at_a_time_neither_ends_nor_re_scores_the_running_alert(
+        second_set, numbers, held):
+    eng = Engine()
+    for code, value in _SPOT_CHECK:
+        o = _obs(code, value)
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert before.summary.startswith("NEWS2 6 ")
+    seen = []
+    for code, value in second_set:                    # the next set, 75 minutes later
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)
+        alert = _news2(eng)
+        assert alert is not None, f"news2 ended on the {code.name} reading of the second set"
+        seen.append(alert)
+    # The temperature's window is 2 h, so the first set's 38.5 still counts at +75 min.
+    assert [a.summary.split()[1] for a in seen] == numbers
+    assert {(a.severity, a.urgency) for a in seen} == {("moderate", "soon")}
+    for alert, held_on in zip(seen[:held], _HELD_ON):
+        assert "Held while inputs are stale: " + held_on in alert.clinical_reasoning
+        assert alert.clinical_reasoning.count("Held while inputs are stale") == 1
+        assert alert.clinical_reasoning.startswith(before.clinical_reasoning)
+        assert replace(alert, clinical_reasoning=before.clinical_reasoning,
+                       stale_inputs=before.stale_inputs) == before, "kept as it was last scored"
+    assert seen[0].stale_inputs == ["resp rate", "SpO2", "systolic BP"]
+    assert all("Held" not in a.clinical_reasoning for a in seen[held:])
+    last = seen[-1]
+    assert "partial" not in last.clinical_reasoning and last.stale_inputs == []
+
+
+def test_a_held_alert_does_not_climb_on_a_stale_value():
+    # Re-scored on each input's last reading (X9) this alert went to NEWS2 7, high risk, immediate —
+    # a nurse notification and an escalation clock — on the fresh temperature plus a pressure 70
+    # minutes old, while the score at `now` was 4. Kept as last scored (X9b), it does not move.
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                             # 3 + 2 + 1 = 6
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert (before.summary.split()[1], before.severity, before.urgency) == ("6", "moderate", "soon")
+    for code, value in [(SignalCode.RESP_RATE, 22), (SignalCode.HEART_RATE, 105),
+                        (SignalCode.TEMPERATURE, 38.5)]:                     # fresh, one at a time
+        o = _obs(code, value, minute=70)
+        eng.ingest(o, now=o.timestamp)
+        held = _news2(eng)
+        assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon"), \
+            f"on the {code.name} reading"
+        assert "Held while inputs are stale: systolic BP" in held.clinical_reasoning
+    assert held.stale_inputs == ["systolic BP"]
+
+
+def test_a_running_news2_alert_is_held_on_a_stale_pressure_until_a_fresh_one_scores_below_the_band():
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)                      # 3 points, a single red parameter, at T0
+    eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.HEART_RATE, 72, minute=240)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held is not None, "a four-hour-old pressure cannot end the alert it raised"
+    assert held.summary.startswith("NEWS2 3 "), "kept as last scored"
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+    assert held.stale_inputs == ["systolic BP"]
+    o = _obs(SignalCode.SBP, 120, minute=241)
+    assert eng.ingest(o, now=o.timestamp) == []
+    assert _news2(eng) is None, "a fresh pressure scoring nothing ends it"
+
+
+def test_a_held_alert_ends_when_its_driver_is_normal_though_another_vital_is_stale():
+    # X9c: the pulse that raised the alert is normal again and the pressure is stale. Counting the
+    # pressure at its last reading (1 point) the score is 1, below the band: the patient has
+    # improved even on the stale values, so there is nothing left to hold.
+    eng = Engine()
+    for o in [_obs(SignalCode.HEART_RATE, 140), _obs(SignalCode.SBP, 105)]:   # 3 + 1: a red pulse
+        eng.ingest(o, now=o.timestamp)
+    assert _news2(eng).summary.startswith("NEWS2 4 ")
+    o = _obs(SignalCode.HEART_RATE, 80, minute=75)    # the pressure is stale by now
+    assert eng.ingest(o, now=o.timestamp) == []
+    assert _news2(eng) is None
+
+
+def test_a_held_alert_ends_on_the_later_reading_that_takes_even_its_stale_values_below_the_band():
+    eng = Engine()
+    for code, value in _SPOT_CHECK:
+        o = _obs(code, value)
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    seen = []
+    for code, value in [(SignalCode.HEART_RATE, 70), (SignalCode.RESP_RATE, 16),
+                        (SignalCode.SPO2, 98), (SignalCode.SBP, 120),
+                        (SignalCode.TEMPERATURE, 37.0)]:   # a normal set, 75 minutes later
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)
+        seen.append(_news2(eng))
+    # The pulse alone: counting the stale resp rate, SpO2 and pressure at their last reading the
+    # score is 5, still a band — held, as last scored (6, not 5). The resp rate too: 3, below the
+    # band — it ends there, though the SpO2 and the pressure are still stale.
+    assert seen[0].summary == before.summary
+    assert "Held while inputs are stale: resp rate, SpO2, systolic BP " in seen[0].clinical_reasoning
+    assert seen[1:] == [None, None, None, None]
+
+
+def test_a_held_alert_steps_down_to_the_band_its_stale_values_reach_and_never_back_up():
+    # X9d. Kept as last scored, this "NEWS2 8, immediate" stayed — escalating — for as long as
+    # nobody measured the pressure again, though on the pressure's last reading the score was 6,
+    # then 3. A held alert is never above the band its stale values reach: it steps down to it.
+    # Within one band it keeps its number (X9b: no dip inside a set).
+    eng = Engine()
+    for o in [_obs(SignalCode.RESP_RATE, 25), _obs(SignalCode.HEART_RATE, 120),
+              _obs(SignalCode.SBP, 88)]:                                       # 3 + 2 + 3 = 8
+        eng.ingest(o, now=o.timestamp)
+    assert (_news2(eng).severity, _news2(eng).urgency) == ("high", "immediate")
+    seen = []
+    for code, value in [(SignalCode.HEART_RATE, 70), (SignalCode.RESP_RATE, 16),
+                        (SignalCode.SPO2, 98), (SignalCode.TEMPERATURE, 37.0)]:   # no pressure
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)
+        seen.append(_news2(eng))
+    # The pulse: on the stale resp rate and pressure the score is 6, a band below — it steps down.
+    # The resp rate: 3, the pressure a single parameter at 3 — the same band, so it stays at 6.
+    assert [(a.summary.split()[1], a.severity, a.urgency) for a in seen] == [("6", "moderate", "soon")] * 4
+    assert "Held while inputs are stale: resp rate, systolic BP " in seen[0].clinical_reasoning
+    assert "Held while inputs are stale: systolic BP " in seen[-1].clinical_reasoning
+    assert all(a.clinical_reasoning.count("Held while inputs are stale") == 1 for a in seen)
+
+
+def test_a_held_alert_steps_down_to_the_downgrade_its_stale_values_earn():
+    # The band is judged after the patient-relative layer, on the stale values at their last
+    # reading: the resp rate is normal again and the stale pressure is inside its charted range.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.SBP: BaselineRange(85, 95)}))
+    for o in [_obs(SignalCode.RESP_RATE, 22), _obs(SignalCode.SBP, 88)]:      # 2 + 3, RR acute
+        eng.ingest(o, now=o.timestamp)
+    assert (_news2(eng).severity, _news2(eng).downgraded) == ("moderate", False)
+    o = _obs(SignalCode.RESP_RATE, 16, minute=75)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert (held.summary.split()[1], held.severity, held.urgency, held.downgraded) == \
+        ("3", "low", "routine", True)
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+
+
+def test_a_hold_after_a_fresh_alert_freezes_the_fresh_one():
+    # A hold, then a fresh score that reaches the band (the alert again), then a hold again: the
+    # second hold keeps the fresh alert, not the one the first hold kept.
+    eng = Engine()
+    for code, value in _SPOT_CHECK:
+        o = _obs(code, value)
+        eng.ingest(o, now=o.timestamp)                                   # NEWS2 6
+    for code, value in _SPOT_CHECK[:3]:
+        o = _obs(code, value, minute=75)
+        eng.ingest(o, now=o.timestamp)       # held 6, held 6, then the fresh partial 5
+    fresh = _news2(eng)
+    assert fresh.summary.startswith("NEWS2 5 ") and "Held" not in fresh.clinical_reasoning
+    o = _obs(SignalCode.HEART_RATE, 105, minute=140)                   # everything else stale
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held.summary == fresh.summary and "Held while inputs are stale" in held.clinical_reasoning
+
+
+def test_the_held_note_lists_the_longest_stale_vital_first():
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22, minute=30)]:   # 3, then 5
+        eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.HEART_RATE, 70, minute=100)      # the pressure 100 min old, the RR 70
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert "Held while inputs are stale: systolic BP, resp rate " in held.clinical_reasoning
+    assert held.stale_inputs == ["systolic BP", "resp rate"]
+
+
+def test_a_back_dated_reading_cannot_undo_the_hold_or_raise_news2_on_a_stale_value():
+    # X9e. The doors judge a reading at its own time, never past the wall clock (X10). Stamped 25
+    # minutes in the past, a reading was judged at that past instant, where the later readings are
+    # fresh and the pressure, stale at the wall clock, was not yet: NEWS2 jumped to 7, immediate.
+    # NEWS2 is judged no earlier than this patient's last NEWS2 judgement.
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                               # 3 + 2 + 1 = 6
+        eng.ingest(o, now=o.timestamp)
+    for code, value in [(SignalCode.RESP_RATE, 22), (SignalCode.HEART_RATE, 105)]:
+        o = _obs(code, value, minute=70)
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in before.clinical_reasoning
+    late = _obs(SignalCode.TEMPERATURE, 38.5, minute=45)   # arrives at +70, stamped 25 min earlier
+    eng.ingest(late, now=late.timestamp)                   # the doors' clamp: min(stamp, wall)
+    held = _news2(eng)
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+    fresh = _obs(SignalCode.SBP, 88, minute=71)            # a pressure measured now
+    eng.ingest(fresh, now=fresh.timestamp)
+    alert = _news2(eng)
+    assert (alert.summary.split()[1], alert.severity, alert.urgency) == ("7", "high", "immediate"), \
+        "a fresh 7 is the alert, as before"
+    assert "Held" not in alert.clinical_reasoning
+
+
+def test_a_held_alert_is_still_downgraded_by_the_baseline_that_explains_it():
+    # Kept as last scored, the held alert keeps the downgrade it was scored with: the stale pressure
+    # inside its charted range still explains it. Judged again at `now` the pressure would be no
+    # contributor, nothing would be explained, and a chronic alert would start alarming because its
+    # one input went stale.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.SBP: BaselineRange(85, 95)}))
+    o = _obs(SignalCode.SBP, 88)
+    eng.ingest(o, now=o.timestamp)
+    assert (_news2(eng).severity, _news2(eng).downgraded) == ("low", True)
+    o = _obs(SignalCode.HEART_RATE, 72, minute=240)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+    assert (held.severity, held.urgency, held.downgraded) == ("low", "routine", True)
+    assert "systolic BP 88 within charted baseline 85-95" in held.chronic_context
+
+
+def test_a_held_alert_driven_by_a_stale_pressure_outside_its_baseline_is_not_downgraded():
+    # The other side of the same judgement. Judged again at `now` the stale pressure would be no
+    # contributor, the pulse inside its charted range would explain every point left, and the held
+    # alert would be downgraded on the strength of the one input that is as expected.
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    eng = Engine()
+    eng.set_profile(PatientProfile("bed-3", baselines={SignalCode.HEART_RATE: BaselineRange(100, 115),
+                                                       SignalCode.SBP: BaselineRange(110, 130)}))
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.HEART_RATE, 105)]:    # 3 + 1: a red pressure
+        eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.HEART_RATE, 105, minute=75)
+    alerts = eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in held.clinical_reasoning
+    assert (held.severity, held.urgency, held.downgraded) == ("moderate", "soon", False)
+    assert held.chronic_context.startswith("Acute contributor(s): ")
+    assert [a.kind for a in alerts].count("acute_change") == 1, "the hold adds no second one"
+
+
+def test_an_expired_oxygen_chart_holds_the_running_alert_as_a_stale_vital_does():
+    # X11. A charted oxygen past its 8 h is assumed air (D8). Counted only as a stale vital was, the
+    # expiry ended this alert once the vitals were fresh — nobody had re-charted the oxygen, and the
+    # alert it raised was gone. An expired chart now holds the running alert like a stale vital.
+    eng = Engine()
+    for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                                # 2 + 2 + 1 = 5
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert before.summary.startswith("NEWS2 5 ")
+    o = _obs(SignalCode.RESP_RATE, 22, minute=485)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert ("Held while inputs are stale: pulse older than the expected refresh window; "
+            "supplemental oxygen charted more than 8 h ago. ") in held.clinical_reasoning
+    assert held.summary == before.summary
+    assert held.stale_inputs == ["pulse", "supplemental oxygen"]
+    o = _obs(SignalCode.HEART_RATE, 105, minute=486)   # every vital fresh; the oxygen not charted
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held is not None, "resp rate 2 + pulse 1, the oxygen assumed air, is 3: held, not ended"
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+    assert ("Held while inputs are stale: supplemental oxygen charted more than 8 h ago. "
+            in held.clinical_reasoning)
+    assert held.stale_inputs == ["supplemental oxygen"]
+    o = _obs(SignalCode.SUPPLEMENTAL_OXYGEN, 0.0, minute=487)    # charted again: room air
+    assert eng.ingest(o, now=o.timestamp) == []
+    assert _news2(eng) is None, "a fresh chart that scores below the band ends it"
+
+
+def test_an_expired_oxygen_and_acvpu_hold_a_news2_7_and_it_steps_down_as_each_is_charted_again():
+    # X11 with X9d. Oxygen and V charted at one assessment raise NEWS2 7, immediate. At 8 h both
+    # expire together: the score at `now` is the resp rate's 2, below the band, and the alert ended.
+    # Held now — at the 7 its charts still reach — and stepped down, never up, as each is charted.
+    eng = Engine()
+    for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.ACVPU, 2.0),
+              _obs(SignalCode.RESP_RATE, 22)]:                                  # 2 + 3 + 2 = 7
+        eng.ingest(o, now=o.timestamp)
+    o = _obs(SignalCode.RESP_RATE, 22, minute=480)     # the charts exactly 8 h old: still current
+    eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert (before.summary.split()[1], before.severity, before.urgency) == \
+        ("7", "high", "immediate")
+    o = _obs(SignalCode.RESP_RATE, 22, minute=481)
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert held is not None, "the expiry does not end it"
+    assert (held.summary, held.severity, held.urgency) == (before.summary, "high", "immediate")
+    assert ("Held while inputs are stale: supplemental oxygen, consciousness charted more than "
+            "8 h ago. ") in held.clinical_reasoning
+    assert held.stale_inputs == ["supplemental oxygen", "consciousness"]
+    o = _obs(SignalCode.SUPPLEMENTAL_OXYGEN, 0.0, minute=482)    # room air; the V still expired
+    eng.ingest(o, now=o.timestamp)
+    held = _news2(eng)
+    assert (held.summary.split()[1], held.severity, held.urgency) == ("5", "moderate", "soon"), \
+        "on the V's last reading the score is 2 + 3 = 5: a band lower"
+    assert "Held while inputs are stale: consciousness charted more than 8 h ago. " in \
+        held.clinical_reasoning
+    o = _obs(SignalCode.ACVPU, 0.0, minute=483)                  # Alert
+    assert eng.ingest(o, now=o.timestamp) == []
+    assert _news2(eng) is None
+
+
+def test_an_expired_u_holds_the_red_parameter_alert_it_raised():
+    # X11. A U is a single parameter scoring 3. Expired, it was assumed Alert and the fresh, normal
+    # vitals ended the alert — though nobody had charted the patient awake.
+    eng = Engine()
+    for o in [_obs(SignalCode.ACVPU, 4.0), _obs(SignalCode.RESP_RATE, 16, minute=450),
+              _obs(SignalCode.HEART_RATE, 70, minute=450)]:
+        eng.ingest(o, now=o.timestamp)
+    before = _news2(eng)
+    assert (before.summary.split()[1], before.severity, before.urgency) == ("3", "moderate", "soon")
+    for code, value in [(SignalCode.RESP_RATE, 16), (SignalCode.HEART_RATE, 70)]:
+        o = _obs(code, value, minute=481)
+        eng.ingest(o, now=o.timestamp)
+        held = _news2(eng)
+        assert held is not None, f"ended on the {code.name} reading"
+        assert (held.summary, held.severity, held.urgency) == (before.summary, "moderate", "soon")
+        assert "Held while inputs are stale: consciousness charted more than 8 h ago. " in \
+            held.clinical_reasoning
+        assert held.stale_inputs == ["consciousness"]
+
+
+# --- G2-A2 (X12): a hold has an end ---------------------------------------------------------------
+#
+# One pressure of 88, then two days of normal, fresh vitals and no new pressure: "NEWS2 3, held" for
+# ever beside a card that read 0. A stale input keeps the hold for at most HOLD_MAX_S, 8 h (one
+# shift) past its window; the alert ends at the first evaluation after that.
+
+_BOUND = "or when they have not been re-measured within 8 h of going stale."
+
+
+def _normal_vitals(eng, start, stop, every=30):
+    """A normal resp rate and pulse every `every` minutes in [start, stop]; the NEWS2 alert after
+    each evaluation, by the minute it was judged at."""
+    seen = {}
+    for minute in range(start, stop + 1, every):
+        for code, value in [(SignalCode.RESP_RATE, 16), (SignalCode.HEART_RATE, 72)]:
+            o = _obs(code, value, minute=minute)
+            eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    return seen
+
+
+def test_a_held_alert_ends_after_its_stale_input_has_gone_8_h_without_a_new_reading():
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)                      # 3 points, a single red parameter, at T0
+    eng.ingest(o, now=o.timestamp)
+    assert _news2(eng).summary.startswith("NEWS2 3 ")
+    seen = _normal_vitals(eng, 30, 48 * 60)
+    # The pressure is stale after 1 h; at +9 h it has been stale for exactly 8 h: still held.
+    assert all(seen[m] is not None for m in range(30, 541, 30)), "held through its first 8 h stale"
+    assert all(seen[m] is None for m in range(570, 48 * 60 + 1, 30)), \
+        "ended at the first evaluation after 8 h stale, and not raised again on the old value"
+    assert "Held while inputs are stale: systolic BP " in seen[540].clinical_reasoning
+    assert seen[540].clinical_reasoning.endswith(_BOUND)
+
+
+def test_a_pressure_re_measured_within_8_h_keeps_the_hold_going_from_its_new_reading():
+    # Inside the bound the X9 behaviour is unchanged: a new reading of 88 at +5 h is the alert
+    # again, stale from +6 h, and held until 8 h after that.
+    eng = Engine()
+    o = _obs(SignalCode.SBP, 88)
+    eng.ingest(o, now=o.timestamp)
+    seen = _normal_vitals(eng, 30, 270)
+    o = _obs(SignalCode.SBP, 88, minute=300)
+    eng.ingest(o, now=o.timestamp)
+    seen[300] = _news2(eng)
+    assert "Held" not in seen[300].clinical_reasoning, "a fresh 88 is the alert, not a hold"
+    seen.update(_normal_vitals(eng, 330, 960))
+    assert all(seen[m] is not None for m in range(30, 841, 30)), "held to 8 h past +6 h"
+    assert "Held while inputs are stale: systolic BP " in seen[840].clinical_reasoning
+    assert all(seen[m] is None for m in range(870, 961, 30)), "ended 8 h after it went stale"
+
+
+def test_the_bound_is_on_the_input_that_keeps_the_hold_not_on_any_stale_input():
+    # The pressure keeps this hold. A pulse of 95 (1 point) went stale at +8 h, but on its own it
+    # does not reach the band: once the pressure is past its 8 h the hold ends, the pulse's own
+    # staleness notwithstanding.
+    eng = Engine()
+    for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.HEART_RATE, 95, minute=420)]:   # 3, then 4
+        eng.ingest(o, now=o.timestamp)
+    seen = {}
+    for minute in (480, 540, 570):
+        o = _obs(SignalCode.RESP_RATE, 16, minute=minute)
+        eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    assert "Held while inputs are stale: systolic BP " in seen[480].clinical_reasoning
+    assert "systolic BP, pulse " in seen[540].clinical_reasoning, "both stale, the pressure 8 h"
+    assert seen[570] is None, "the pressure is past its 8 h; the stale pulse scores 1"
+
+
+def test_an_expired_chart_holds_for_8_h_past_its_shift():
+    eng = Engine()
+    for o in [_obs(SignalCode.SUPPLEMENTAL_OXYGEN, 1.0), _obs(SignalCode.RESP_RATE, 22),
+              _obs(SignalCode.HEART_RATE, 105)]:                                # 2 + 2 + 1 = 5
+        eng.ingest(o, now=o.timestamp)
+    seen = {}
+    for minute in range(30, 1021, 30):
+        for code, value in [(SignalCode.RESP_RATE, 22), (SignalCode.HEART_RATE, 105)]:
+            o = _obs(code, value, minute=minute)
+            eng.ingest(o, now=o.timestamp)
+        seen[minute] = _news2(eng)
+    assert all(seen[m] is None for m in range(990, 1021, 30)), "16 h after the chart: ended"
+    assert "supplemental oxygen charted more than 8 h ago" in seen[960].clinical_reasoning
+    assert seen[960].clinical_reasoning.endswith(_BOUND)

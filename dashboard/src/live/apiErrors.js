@@ -136,9 +136,10 @@ export const API_CODE_KEYS = new Map([
 
 /** What a 5xx may say that is more exact than "the server cannot be reached". `scopeUnreadable` is
  *  the 503 of POST /stream-ticket and GET /patients/{id}/trends: the server answered, only the
- *  look-up of what the caller may see failed. NOTE: the `scopeUnreadable` text currently names the
- *  live stream ("…so the live stream did not start"); the server sends the one sentence for both
- *  routes, and no screen prints it for the trends route today. */
+ *  look-up of what the caller may see failed. The server also sends it for the acknowledge,
+ *  clinical and profile writes, so the `scopeUnreadable` text is route-neutral (it names no live
+ *  stream). Besides the live stream it is printed by the alarms acknowledge toast, the patient
+ *  chart and the baseline profile form. */
 const SERVER_ANSWERS = new Set(["errors.directoryUnreachable", "errors.directoryNotConfigured", "errors.sessionUnreachable", "errors.scopeUnreadable"]);
 const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/; // backendApi.js
 // Two messages the server BUILDS rather than writes out, so they are matched by shape and their

@@ -833,6 +833,25 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   - **NEWS2 motorun.** Tek NEWS2 vardır, motorunki. Motor göndermediyse "NEWS2: —"; eksik vitalle
     hesaplanmışsa yanında "kısmi" hapı (ekran okuyucu ölçülmeyen parametreleri de okur). "Bir
     parametre 3 puan aldı" hapı motorun bildirdiği bir olgudur ve düzeyi değiştirmez.
+    **Eski veri skora girmez** (G2-A2): penceresini aşmış bir ölçüm — solunum, SpO2, sistolik
+    basınç ve nabız için 1 saat, ateş için 2 saat — toplama girmez, skor "kısmi" olur ve kartta
+    hangi girdinin ne kadar eski olduğu yazar ("eski veri: SpO2 · 2 sa önce"; yaşı ekran söyler,
+    "eski"ye motor karar verir). Yeni ölçüm gelmese de kart güncellenir: pencere kapanınca pano en
+    geç ~20 saniye içinde yeniden gönderilir. Alarm da aynı skoru kullanır: eski bir ölçüm artık
+    NEWS2'yi alarm bandına çıkaramaz. Çalışan bir NEWS2 alarmını da eski girdi bitiremez: alarm
+    son puanlandığı gibi kalır, eski bir değerle yükselmez; eski değerlerin hâlâ ulaştığı daha
+    düşük banda iner, hiç yukarı çıkmaz; okumalar — eskiler son değerleriyle sayılarak — bandın
+    altına inince biter. Süresi dolan bir oksijen ya da bilinç kaydı da alarmı eski bir vital gibi
+    tutar; tutma sınırsız değildir: girdi eskidikten sonra 8 saat içinde yeniden ölçülmezse alarm
+    biter. Saati ileri giden bir cihazın ölçümü öbür okumaları eskitmez.
+    **Oksijen ve bilinç kaydedilmemişse varsayılır, söylenerek:**
+    oda havası ve uyanık sayılır, kartta «varsayıldı: oda havası, uyanık» hapı çıkar; skor bunun
+    için "kısmi" sayılmaz. Kaydedilmiş bir oksijen ya da ACVPU değeri 8 saat (bir vardiya) geçerlidir;
+    sonra yeniden varsayılır ve hap son kaydı değeriyle söyler («oda havası (son kayıt: oksijende,
+    9 sa önce)», «uyanık (son kayıt: U, 9 sa önce)») — süresi dolan "oksijen alıyor" toplamdan 2
+    puan, V/P/U 3 puan düşürür. Pencereler ve 8 saat işletme varsayılanıdır, klinik iddia değildir;
+    bir klinik değerlendirme değiştirene kadar böyledir. "Yeni konfüzyon" ayrıca modellenmez:
+    ACVPU'da uyanık dışındaki her değer 3 puandır.
   - **Motorun metinleri İngilizce.** Bulgu özetleri, gerekçe, öneriler ve kesinlik motorun yazdığı
     gibi, İngilizce gösterilir ve ekran bunu okuyanın dilinde söyler ("Motorun metinleri
     İngilizcedir; çevrilmemiştir."). Klinik bir cümleyi ekran kendisi çevirmez — çeviri de bir
@@ -929,8 +948,10 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
 - *Panoda olmayan bir hasta:* Adres panonuzda olmayan bir kimliği gösteriyorsa ekran tek bir şey
   söyler: ya böyle bir kayıt yok ya da kapsamınız dışında — ikisi ayırt edilemez, sunucu ikisine
   de bilerek aynı yanıtı veriyor (farklı bir yanıt hastanın orada yattığını ele verirdi). Pano
-  okunamadıysa bunu söyler. Açılan her hasta denetim kaydına bir "görüntüleme" satırı bırakır;
-  gösterilemeyen bir hasta için hiçbir şey yazılmaz.
+  okunamadıysa bunu söyler. Kapsamınız o an okunamıyorsa (veritabanı yanıt vermiyor) sunucu
+  "bulunamadı" demez, "kapsam şu anda okunamıyor" der ve denetim kaydına bir kapsam ihlali yazmaz
+  (G2-A2); pano da "Sunucuya bağlantı yok" şeridini gösterir. Açılan her hasta denetim kaydına bir
+  "görüntüleme" satırı bırakır; gösterilemeyen bir hasta için hiçbir şey yazılmaz.
 
 **Klinisyenin soracağı üç şey**
 1. **"Risk 'Düşük' yazıyor ama yanında 'Bir parametre 3 puan aldı' var — hangisi doğru?"** İkisi de

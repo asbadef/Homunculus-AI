@@ -1,4 +1,5 @@
 # tests/test_api_ingest.py
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -146,6 +147,32 @@ class _FailsOnce(InMemoryAuditLog):
             self.fail_on = None
             raise RuntimeError("audit down")
         return super().append(event)
+
+
+def test_a_reading_stamped_in_the_future_does_not_age_the_others():
+    """G2-A2 (X10): /ingest evaluates at min(observation time, wall clock). Judged at a heart rate
+    stamped 30 min ahead, vitals taken 45 min ago would be 75 min old — stale — and the running
+    NEWS2 alert held on them; at the wall clock they are fresh and it is scored as before. The
+    audit row still carries the reading's own stamp: only the evaluation instant changes."""
+    c = TestClient(create_app(TENANTS, run_escalation_loop=False))
+    wall = datetime.now(timezone.utc)
+    taken = (wall - timedelta(minutes=45)).isoformat()
+    for code, value in (("resp_rate", 26), ("spo2", 91), ("sbp", 88)):     # NEWS2 9: high
+        assert c.post("/ingest", json=_fhir(code, value, when=taken),
+                      headers=_hdr("tok-hosp1")).status_code == 200
+    ahead = wall + timedelta(minutes=30)
+    r = c.post("/ingest", json=_fhir("heart_rate", 80, "/min", when=ahead.isoformat()),
+               headers=_hdr("tok-hosp1"))
+    assert r.status_code == 200
+    (board,) = [b for b in c.get("/patients", headers=_hdr("tok-hosp1")).json()["patients"]
+                if b["patient_id"] == "bed-3"]
+    assert board["latest"]["news2"]["stale"] == []
+    news2 = next(a for a in board["alerts"] if a["kind"] == "news2")
+    assert (news2["severity"], news2["stale_inputs"]) == ("high", [])
+    assert "Held while inputs are stale" not in news2["clinical_reasoning"]
+    assert len(_rows(c, "news2", "first_seen")) == 1, "the running episode, not a new one"
+    (row,) = _rows(c, "heart_rate", "ingest")
+    assert row["payload"]["obs_ts"] == ahead.isoformat()
 
 
 def test_an_ingest_row_that_fails_to_audit_does_not_take_a_critical_off_the_board():
