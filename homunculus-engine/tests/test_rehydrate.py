@@ -345,3 +345,34 @@ def test_a_reading_stamped_in_the_future_is_replayed_at_the_instant_the_door_jud
     anchors = [datetime.fromisoformat(b["meds"]["antibiotic_clock"]["recognized_at"])
                for b in (before, after)]
     assert abs(anchors[1] - anchors[0]) < timedelta(seconds=1), "the row is written after the judgement"
+
+
+def _append_shock(audit, tenant, patient):
+    for slug, val in _SHOCK:
+        audit.append(AuditEvent(tenant, "ingest", patient, slug,
+                                {"value": val, "unit": "", "obs_ts": T0, "device": "mon"}))
+
+
+def test_an_alert_cleared_row_with_reason_discharged_retires_the_patient_on_replay():
+    """G2-A11 (D7a): the discharge ended the alerts live; the replay ends them at the same point."""
+    audit = _audit_with_shock(patient="bed-3")
+    _append_shock(audit, "HOSP1", "bed-4")
+    audit.append(AuditEvent("HOSP1", "alert_cleared", "bed-3", "septic_shock",
+                            {"first_seen": None, "at": "2026-07-14T11:00:00+00:00",
+                             "reason": "discharged", "severity": "critical"}))
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1", limit=1000))
+    assert "bed-3" not in engine.patient_ids() and engine.active_alerts("bed-3") == []
+    assert all(k[0] != "bed-3" for k in store.first_seen) and all(k[0] != "bed-3" for k in store.firing)
+    assert engine.active_alerts("bed-4"), "the other patient is untouched"
+
+
+def test_other_alert_cleared_rows_are_still_ignored_by_the_replay():
+    """G2-A11 (D7a): only `discharged` is applied; a `resolved` row follows from the readings."""
+    audit = _audit_with_shock()
+    audit.append(AuditEvent("HOSP1", "alert_cleared", "bed-3", "septic_shock",
+                            {"first_seen": None, "at": "2026-07-14T11:00:00+00:00",
+                             "reason": "resolved", "severity": "critical"}))
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1", limit=1000))
+    assert engine.active_alerts("bed-3"), "a `resolved` row follows from the readings and is not applied"
