@@ -20,7 +20,12 @@ and new name or `is_active`, the actor; never a patient) through admission/trail
 commit; a refused write writes none. A bed's label is unique in its whole unit (any room, closed
 beds included, trimmed and case-insensitive: `bed_label_taken`), and a room's name in its unit
 (`name_taken`). Writes inside one unit take a lock on its row first, so two at once cannot both
-pass a check.
+pass a check. The unit and bed locks are FOR NO KEY UPDATE, which lets an insert of a row
+pointing at the unit or bed (an admission) through (amendment A-26). A bed relabel does not keep
+it so: `label` is in the unique index `uq_bed_label_per_room`, so the relabel's UPDATE upgrades
+the bed's lock to FOR UPDATE until the commit. Code that writes a row pointing at a bed must
+therefore lock that bed first (see `_lock_bed`). An audit store that fails after the commit is
+logged, never a 500 for the committed change (trail.record, A-26).
 
 Tenant isolation (spec §5): every route acts on the caller's own tenant only (`caller_tenant_id`,
 the token's `tenant` claim). A tenant, site, unit, room or bed of another tenant named in the path
@@ -87,8 +92,31 @@ async def _lock_unit(db: AsyncSession, unit_id: uuid.UUID) -> None:
     """Take the unit's row lock for the rest of the transaction. Every structure write inside a
     unit takes it first, so two writes at once run one after the other and the second sees what
     the first committed: two beds cannot both take one label, a bed cannot be reopened under a
-    unit that is being closed (amendment A-5). Lock order: the unit, then its bed."""
-    await db.execute(select(Unit.id).where(Unit.id == unit_id).with_for_update())
+    unit that is being closed (amendment A-5). Lock order: the unit, then its bed.
+
+    FOR NO KEY UPDATE, not FOR UPDATE (amendment A-26, I-1): it still excludes every other
+    structure write, but not the FOR KEY SHARE that Postgres takes on the unit when a row
+    pointing at it is inserted. Under FOR UPDATE an admission holding its bed and inserting its
+    `admitting_unit_id` would wait here while a bed PATCH holding the unit waits for that bed: a
+    deadlock, and a 500. The lock stays NO KEY UPDATE through `patch_unit`'s UPDATE: a unit row
+    has no unique index but its primary key, which no route changes."""
+    await db.execute(select(Unit.id).where(Unit.id == unit_id).with_for_update(key_share=True))
+
+
+async def _lock_bed(db: AsyncSession, bed_id: uuid.UUID) -> Bed:
+    """The bed's row, locked for the rest of the transaction — FOR NO KEY UPDATE, as the unit
+    (see `_lock_unit`), so taking it does not hold an insert of a row pointing at the bed (an
+    admission, a nurse's bed assignment).
+
+    A relabel changes that. `label` is in the unique index `uq_bed_label_per_room`, and Postgres
+    counts a column of a unique index (one that is neither partial nor on an expression) as part
+    of the row's key for locking: `patch_bed`'s UPDATE of a new label upgrades this lock to FOR
+    UPDATE until the commit, and an insert pointing at the bed then waits. A state or
+    `is_active` change keeps NO KEY UPDATE. So any code that writes a row pointing at a bed takes
+    THIS lock on that bed first: it then waits for a relabel here, holding nothing a relabel
+    needs, instead of waiting inside its insert while holding other locks."""
+    return (await db.execute(
+        select(Bed).where(Bed.id == bed_id).with_for_update(key_share=True))).scalar_one()
 
 
 async def _unit_of_room(db: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
@@ -274,7 +302,7 @@ async def create_room(
     hospital = await trail.hospital_of(db, caller_tenant)
     room = Room(
         unit_id=unit_id, name=body.name,
-        room_number=body.room_number, is_isolation=body.is_isolation,
+        room_number=body.room_number or None, is_isolation=body.is_isolation,
     )
     db.add(room)
     await _commit_unless_taken(db, _ROOM_NAME_TAKEN)
@@ -414,8 +442,9 @@ async def patch_unit(
     db: AsyncSession = Depends(get_db), user: User = _admin, caller_tenant: uuid.UUID = _tenant,
 ) -> UnitResponse:
     scope.ensure_owned(await scope.tenant_of_unit(db, unit_id), caller_tenant, "Unit not found")
-    unit = (await db.execute(select(Unit).where(Unit.id == unit_id).with_for_update())).scalar_one()
-    name = unit.name if body.name is None else body.name.strip()
+    await _lock_unit(db, unit_id)
+    unit = await _get_or_404(db, Unit, unit_id, "Unit")
+    name = unit.name if body.name is None else body.name     # trimmed by UnitPatch
     if not name:
         raise field_invalid("name", "A unit needs a name.").http()
     is_active = unit.is_active if body.is_active is None else body.is_active
@@ -443,12 +472,12 @@ async def patch_room(
     unit_id = await _unit_of_room(db, room_id)
     await _lock_unit(db, unit_id)
     room = await _get_or_404(db, Room, room_id, "Room")
-    name = room.name if body.name is None else body.name.strip()
+    name = room.name if body.name is None else body.name     # trimmed by RoomPatch
     if not name:
         raise field_invalid("name", "A room needs a name.").http()
     if name != room.name and await _room_name_taken(db, unit_id, name, other_than=room.id):
         raise _ROOM_NAME_TAKEN.http()
-    number = room.room_number if body.room_number is None else (body.room_number.strip() or None)
+    number = room.room_number if body.room_number is None else (body.room_number or None)
     is_active = room.is_active if body.is_active is None else body.is_active
     if room.is_active and not is_active and await _has_open_bed(db, Bed.room_id == room_id):
         raise Refusal(409, HAS_OPEN_BEDS, "Close every bed of this room first.").http()
@@ -475,8 +504,8 @@ async def patch_bed(
     scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
     unit_id = await _unit_of_bed(db, bed_id)
     await _lock_unit(db, unit_id)
-    bed = (await db.execute(select(Bed).where(Bed.id == bed_id).with_for_update())).scalar_one()
-    label = bed.label if body.label is None else body.label.strip()
+    bed = await _lock_bed(db, bed_id)
+    label = bed.label if body.label is None else body.label     # trimmed by BedPatch
     if not label:
         raise field_invalid("label", "A bed needs a label.").http()
     if label != bed.label and await _bed_label_taken(db, unit_id, label, other_than=bed.id):
@@ -507,7 +536,7 @@ async def release_bed(
     own units only (the bed's room's unit, read here). Audited `bed.release` (who, which bed)
     after the commit."""
     scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
-    bed = (await db.execute(select(Bed).where(Bed.id == bed_id).with_for_update())).scalar_one()
+    bed = await _lock_bed(db, bed_id)
     unit_id = await _unit_of_bed(db, bed_id)
     try:
         unitscope.require_reach(await unitscope.caller_scope(db, user.id, caller_tenant),

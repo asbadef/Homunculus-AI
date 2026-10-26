@@ -4,17 +4,28 @@ unit and bed names from, limited to the caller's units; the administrator's rena
 reopen, with nothing deleted and no occupied bed closed; and a nurse's "cleaning done, bed free",
 in her own units, audited. Every structure write is audited too (`structure.create|rename|close|
 reopen`, amendment A-4), a bed's label is unique in its unit (A-5), and a new name is trimmed,
-bounded and never a 500 (A-13). Postgres (`db_session`). Synthetic ward: tests/kabul_world.py."""
+bounded and never a 500 (A-13). The unit and bed locks never block a row that merely points at
+the unit or bed, and an audit store that fails after the commit never turns the committed change
+into a 500 (A-26). Postgres (`db_session`). Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
 import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
 
+import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from homunculus.admission.models import NurseBedAssignment
+from homunculus.auth.models import Group, GroupPermission, UserGroup
+from homunculus.scope.models import StaffScope
+from homunculus.tenant import router as tenant_router
 from homunculus.tenant.models import Bed, BedState
 from tests.conftest import requires_db
 from tests.kabul_world import SLUG, build_ward, ward_client
+from tests.signed_in import bearer
 
 pytestmark = [requires_db]
 
@@ -71,15 +82,49 @@ async def test_the_administrator_and_the_unassigned_see_every_unit(ward, db_sess
         assert set(tree) == {"Reanimasiya", "Neonatal"}
 
 
-async def test_a_bed_grant_shows_that_bed_in_its_room_and_unit_alone(ward, db_session):
-    from homunculus.scope.models import StaffScope
+async def test_a_structure_manage_holder_sees_every_unit_whatever_her_grants(ward, db_session):
+    """The one who builds the structure sees all of it. A non-administrator (scope class MEMBER,
+    granted Reanimasiya only) who also holds `structure.manage` through a group of her own sees
+    both units; the administrator, unrestricted by role, does too with a unit grant of her own."""
+    w, client, _ = ward
+    nurse, admin = w.users["nurse"], w.users["admin"]
+    builders = Group(tenant_id=w.tenant.id, slug="sentetik-yapi", name="Sentetik Yapı",
+                     permissions=[GroupPermission(permission="structure.manage")])
+    db_session.add(builders)
+    await db_session.flush()
+    db_session.add(UserGroup(user_id=nurse.id, group_id=builders.id))
+    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=admin.id,
+                              unit_id=str(w.units["rea"].id)))
+    await db_session.commit()
+    builder = await bearer(db_session, nurse)
+    for auth in (builder, w.auth["admin"]):
+        tree = _tree((await client.get("/tenant/structure", headers=auth)).json())
+        assert set(tree) == {"Reanimasiya", "Neonatal"}
 
+
+async def test_a_bed_grant_shows_that_bed_in_its_room_and_unit_alone(ward, db_session):
     w, client, _ = ward
     nurse_b = w.users["nurse_b"]
-    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=nurse_b.id, bed_id=str(w.beds["3"].id)))
+    # Bed "2" shares Otaq 1 with beds "1" and "10": neither may come along with it.
+    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=nurse_b.id, bed_id=str(w.beds["2"].id)))
     await db_session.commit()
     tree = _tree((await client.get("/tenant/structure", headers=w.auth["nurse_b"])).json())
-    assert tree == {"Reanimasiya": {"Otaq 2": ["3"]}, "Neonatal": {"N-1": ["N1"]}}
+    assert tree == {"Reanimasiya": {"Otaq 1": ["2"]}, "Neonatal": {"N-1": ["N1"]}}
+
+
+async def test_a_name_with_a_digit_python_will_not_count_is_listed_not_a_500(ward):
+    """"²" is a digit to `str.isdigit` but not to `int()` nor to the `\\d` the sort splits on."""
+    w, client, _ = ward
+    admin = w.auth["admin"]
+    room = await client.post(f"/tenant/units/{w.units['rea'].id}/rooms", json={"name": "²"},
+                             headers=admin)
+    assert room.status_code == 201, room.text
+    bed = await client.post(f"/tenant/rooms/{room.json()['id']}/beds", json={"label": "²"},
+                            headers=admin)
+    assert bed.status_code == 201, bed.text
+    r = await client.get("/tenant/structure", headers=admin)
+    assert r.status_code == 200, r.text
+    assert _tree(r.json())["Reanimasiya"]["²"] == ["²"]
 
 
 async def test_a_caller_with_no_admission_right_is_refused(ward):
@@ -98,6 +143,43 @@ async def test_the_administrator_renames_a_unit_a_room_and_a_bed(ward):
                                headers=admin)).json()["name"] == "Otaq 2A"
     assert (await client.patch(f"/tenant/beds/{w.beds['10'].id}", json={"label": "4"},
                                headers=admin)).json()["label"] == "4"
+
+
+async def test_a_new_name_on_a_patch_is_trimmed_before_it_is_checked(ward):
+    """An empty name, typed or all blanks, is the coded field_invalid; a padded name of the
+    column's full length is accepted, as on create."""
+    w, client, _ = ward
+    admin = w.auth["admin"]
+    cases = [(f"/tenant/units/{w.units['rea'].id}", "name", 200),
+             (f"/tenant/rooms/{w.rooms['o2'].id}", "name", 100),
+             (f"/tenant/beds/{w.beds['10'].id}", "label", 50)]
+    for path, field, longest in cases:
+        for blank in ("", "   "):
+            r = await client.patch(path, json={field: blank}, headers=admin)
+            assert r.status_code == 422, (path, blank, r.text)
+            assert r.json()["detail"]["code"] == f"field_invalid:{field}", (path, blank, r.text)
+        r = await client.patch(path, json={field: " " + "y" * longest + " "}, headers=admin)
+        assert (r.status_code, r.json()[field]) == (200, "y" * longest), (path, r.text)
+        r = await client.patch(path, json={field: "z" * (longest + 1)}, headers=admin)
+        assert r.status_code == 422, (path, r.text)
+
+
+async def test_a_room_number_change_is_written_into_the_rooms_rename_row(ward):
+    w, client, app = ward
+    admin = w.auth["admin"]
+    o2, rea = str(w.rooms["o2"].id), str(w.units["rea"].id)
+    r = await client.patch(f"/tenant/rooms/{o2}", json={"room_number": " " + "1" * 20 + " "},
+                           headers=admin)
+    assert (r.status_code, r.json()["room_number"]) == (200, "1" * 20), r.text
+    r = await client.patch(f"/tenant/rooms/{o2}", json={"name": "Otaq 2A", "room_number": " "},
+                           headers=admin)
+    assert (r.status_code, r.json()["room_number"]) == (200, None), r.text
+    assert [row.payload for row in _rows(app, "structure.rename")] == [
+        {"kind": "room", "id": o2, "unit_id": rea, "old_room_number": None,
+         "new_room_number": "1" * 20, "actor": ADMIN},
+        {"kind": "room", "id": o2, "unit_id": rea, "old_name": "Otaq 2", "new_name": "Otaq 2A",
+         "old_room_number": "1" * 20, "new_room_number": None, "actor": ADMIN},
+    ]
 
 
 async def test_a_name_another_room_or_bed_of_the_same_parent_holds_is_refused(ward):
@@ -222,10 +304,31 @@ async def test_a_bed_may_be_renamed_to_its_own_label(ward):
     assert (r.status_code, r.json()["label"]) == (200, "n1"), r.text
 
 
-async def test_two_beds_of_one_label_created_at_once_in_two_rooms_of_a_unit_one_wins(ward):
-    """The check runs under a lock on the unit row: two requests cannot both pass it."""
+async def test_two_beds_of_one_label_created_at_once_in_two_rooms_of_a_unit_one_wins(
+        ward, monkeypatch):
+    """The check runs under a lock on the unit row: two requests cannot both pass it.
+
+    Made deterministic by a barrier right after the check: each request waits there (up to a
+    second) for the other to have checked too. Without the lock both reach it, both pass, both
+    insert — two 201s, every run. With it the second request is held at the unit row and never
+    reaches its check before the first has committed, so the first gives up waiting and goes on."""
     w, client, _ = ward
     admin = w.auth["admin"]
+    barrier = asyncio.Barrier(2)
+    real_check = tenant_router._bed_label_taken
+
+    async def check_then_wait_for_the_other(*args, **kwargs):
+        taken = await real_check(*args, **kwargs)
+        try:
+            async with asyncio.timeout(1.0):
+                await barrier.wait()
+        except TimeoutError:
+            await barrier.abort()          # the later request's wait returns at once
+        except asyncio.BrokenBarrierError:
+            pass
+        return taken
+
+    monkeypatch.setattr(tenant_router, "_bed_label_taken", check_then_wait_for_the_other)
     first, second = await asyncio.gather(
         client.post(f"/tenant/rooms/{w.rooms['o1'].id}/beds", json={"label": "7"}, headers=admin),
         client.post(f"/tenant/rooms/{w.rooms['o2'].id}/beds", json={"label": "7"}, headers=admin),
@@ -233,6 +336,34 @@ async def test_two_beds_of_one_label_created_at_once_in_two_rooms_of_a_unit_one_
     assert sorted([first.status_code, second.status_code]) == [201, 409], (first.text, second.text)
     loser = first if first.status_code == 409 else second
     assert loser.json()["detail"]["code"] == "bed_label_taken"
+
+
+@pytest.mark.parametrize("held", ["unit", "bed"])
+async def test_a_held_structure_lock_does_not_block_a_row_that_points_at_it(ward, db_session,
+                                                                              held):
+    """Amendment A-26, I-1. Inserting a row with a foreign key to a unit or a bed (an admission's
+    admitting unit and bed, a nurse's bed assignment) takes FOR KEY SHARE on the parent row. The
+    structure routes lock a unit or a bed FOR NO KEY UPDATE, which lets that through; FOR UPDATE
+    would hold it, and an admission that already holds its bed would deadlock against a bed PATCH
+    holding the unit. Two sessions on the test database: one holds the lock, the other inserts
+    under a one-second lock_timeout."""
+    w, _, _ = ward
+    unit_id, bed_id, nurse_id = w.units["rea"].id, w.beds["1"].id, w.users["nurse"].id
+    start = datetime.now(timezone.utc)
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as holder, maker() as writer:
+        try:
+            if held == "unit":
+                await tenant_router._lock_unit(holder, unit_id)
+            else:
+                await tenant_router._lock_bed(holder, bed_id)
+            await writer.execute(text("SET LOCAL lock_timeout = '1s'"))
+            writer.add(NurseBedAssignment(unit_id=unit_id, bed_id=bed_id, nurse_id=nurse_id,
+                                          shift_start=start, shift_end=start + timedelta(hours=8)))
+            await writer.flush()
+        finally:
+            await writer.rollback()
+            await holder.rollback()
 
 
 # ---------------------------------------------------------------- a new name (A-13)
@@ -393,6 +524,55 @@ async def test_a_refused_structure_write_writes_nothing(ward, db_session):
                            "Neonatal": {"N-1": ["N1"]}}
     assert all(x["is_active"] for s in tree["sites"] for u in s["units"]
                for x in [u, *u["rooms"], *(b for room in u["rooms"] for b in room["beds"])])
+
+
+# Every audited write: (method, path, body, caller, its success, the row it owes).
+_AUDITED_WRITES = {
+    "site create": ("POST", lambda w: f"/tenant/tenants/{w.tenant.id}/sites",
+                    {"name": "Sentetik Bina"}, "admin", 201, "structure.create"),
+    "unit create": ("POST", lambda w: f"/tenant/sites/{w.site.id}/units",
+                    {"name": "Sentetik Birim", "unit_type": "PICU"}, "admin", 201,
+                    "structure.create"),
+    "room create": ("POST", lambda w: f"/tenant/units/{w.units['rea'].id}/rooms",
+                    {"name": "Sentetik Otaq"}, "admin", 201, "structure.create"),
+    "bed create": ("POST", lambda w: f"/tenant/rooms/{w.rooms['o1'].id}/beds",
+                   {"label": "Sentetik 9"}, "admin", 201, "structure.create"),
+    "unit patch": ("PATCH", lambda w: f"/tenant/units/{w.units['rea'].id}",
+                   {"name": "Sentetik Rea"}, "admin", 200, "structure.rename"),
+    "room patch": ("PATCH", lambda w: f"/tenant/rooms/{w.rooms['o2'].id}",
+                   {"name": "Sentetik Otaq 2"}, "admin", 200, "structure.rename"),
+    "bed patch": ("PATCH", lambda w: f"/tenant/beds/{w.beds['3'].id}",
+                  {"is_active": False}, "admin", 200, "structure.close"),
+    "bed release": ("POST", lambda w: f"/tenant/beds/{w.beds['2'].id}/release",
+                    None, "nurse", 200, "bed.release"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_AUDITED_WRITES))
+async def test_an_audit_store_failing_after_the_commit_still_answers_success_and_logs(
+        ward, db_session, monkeypatch, caplog, name):
+    """Amendment A-26: the change is committed before its row is written, so a failing audit
+    store must not turn it into a 500. The route answers as usual; the failure is logged at
+    ERROR with the event type, the ids and the actor — no name, and not the store's own words."""
+    method, path, body, who, success, event_type = _AUDITED_WRITES[name]
+    w, client, app = ward
+    if name == "bed release":
+        await _set_state(db_session, w.beds["2"], BedState.HOUSEKEEPING)
+
+    def store_down(event):
+        raise RuntimeError("audit store down while writing Sentetik Hasta")
+
+    monkeypatch.setattr(app.state.audit, "append", store_down)
+    caplog.set_level(logging.ERROR, logger="homunculus.admission.trail")
+    r = await client.request(method, path(w), json=body, headers=w.auth[who])
+    assert r.status_code == success, r.text
+
+    (logged,) = [rec for rec in caplog.records
+                 if rec.name == "homunculus.admission.trail" and rec.levelno == logging.ERROR]
+    message = logged.getMessage()
+    assert event_type in message and r.json()["id"] in message, message
+    assert f"{who}@kabul.example.com" in message, message
+    assert "Sentetik" not in message, message
 
 
 # ---------------------------------------------------------------- POST /tenant/beds/{id}/release
