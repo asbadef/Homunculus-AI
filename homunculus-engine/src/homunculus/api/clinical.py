@@ -22,9 +22,15 @@ Two rules shape this module:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from homunculus.api.ackstore import AckStore
+from homunculus.api.alert_lifecycle import live_keys, sync_alerts
+from homunculus.api.audit import AuditEvent, AuditLog
+from homunculus.api.notify import Notifier
 from homunculus.canonical import Observation, SignalCode
+from homunculus.pipeline import Engine
+from homunculus.reco.engine import Alert
 from homunculus.rules.septic_shock import MAX_SOFA
 from homunculus.state.profile import BaselineRange, PatientProfile
 
@@ -185,6 +191,47 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
             charted_by=charted_by,
         ))
     return built
+
+
+def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifier: Notifier,
+                       hospital: str, patient_id: str, charted: list[ChartedEntry],
+                       now: datetime, escalate_after: timedelta) -> list[Alert]:
+    """Run charted entries through the engine as the `/clinical` door does, and return the last
+    evaluation's alerts (G2-A11, D8 — X62). One function so the admission form can chart through
+    it too; the door keeps parsing, the discharged-number drop, the final dedup prune, the frame
+    and the answer.
+
+    `now` is the request's one wall-clock instant: each entry is judged at its charted time but
+    never past it (G2-A2, X10). After every entry: the lifecycle hook (G2-A1, D4, D7 — charting is
+    often what ends an alert), the nurse's dedup re-armed (D5: `[norepinephrine 0, dopamine 5]`
+    ends an acknowledged shock and starts a new one inside this loop), the `chart` row and the
+    `alert_cleared` rows — the hook before any audit write, so an audit that fails leaves an
+    unacknowledged critical on the board. Then the `alert` rows, and a first-seen stamp with its
+    row for every firing kind (wall-clock time; audited so a restart keeps the escalation clock;
+    a latched kind keeps its episode's stamp and is not stamped anew)."""
+    alerts: list[Alert] = []
+    for item in charted:
+        obs = item.observation
+        alerts = engine.ingest(obs, now=min(obs.timestamp, now))
+        cleared = sync_alerts(engine, store, obs.patient_id, now)
+        notifier.prune(hospital, live_keys(engine, store))
+        audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
+                                {"value": obs.value, "unit": obs.unit,
+                                 "obs_ts": obs.timestamp.isoformat(),
+                                 "charted_by": item.charted_by}))
+        for ended in cleared:
+            audit.append(AuditEvent(hospital, "alert_cleared", ended.patient_id, ended.kind,
+                                    ended.payload(now)))
+    for a in alerts:
+        audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
+                                {"severity": a.severity, "urgency": a.urgency,
+                                 "summary": a.summary, "source": a.source,
+                                 "evidence": a.supporting_evidence}))
+    for a in engine.active_alerts(patient_id):
+        if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
+            audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind,
+                                    {"at": now.isoformat()}))
+    return alerts
 
 
 def profile_from_payload(patient_id: str, payload: dict,

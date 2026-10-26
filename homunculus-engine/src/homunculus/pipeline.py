@@ -271,3 +271,15 @@ class Engine:
 
     def state(self, patient_id: str) -> PatientState:
         return self._repo.get_or_create(patient_id)
+
+    def forget(self, patient_id: str) -> None:
+        """Drop everything the engine holds for one patient (G2-A11, D9): readings, the alerts
+        of the last evaluation, the antibiotic anchor and a dropped anchor's memory, a held NEWS2
+        alert, the NEWS2 judge-at and the charted profile. The API calls it when an admission made
+        here is discharged: the number is retired, and a reading that still arrives for it is
+        dropped at the door, so nothing would ever end these alerts otherwise. A profile is the
+        admission's — a readmission is a new number and a new profile. Idempotent."""
+        self._repo.remove(patient_id)
+        for mapping in (self._recognized_at, self._dropped_anchor, self._alerts,
+                        self._held_news2_alert, self._news2_judged_at, self._profiles):
+            mapping.pop(patient_id, None)

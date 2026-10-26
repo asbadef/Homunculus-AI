@@ -573,6 +573,11 @@ Dalga 3'te geldi: 3.6.
   bilgi sessizdir; önem derecesi bilinmeyen bir alarm kritik gibi çalar. Alarm onaylanınca susar;
   durumu geçince de susar — kimsenin onaylamadığı kritik bir alarm durumu geçince «geçti ·
   onaylanmadı» olarak yanıt beklemeye devam eder ama çalmaz, yeni bildirim de getirmez (G2-A1).
+  Homunculus'un kendi kabul ekranından taburcu edilen hasta bütün panellerden bir anda çıkar; açık
+  alarmları «taburcu» nedeniyle kapanır (G2-A11). O numara için bir monitör ölçüm göndermeyi
+  sürdürse bile hiçbir alarm, çağrı ya da kart doğmaz. Düşürülen her ölçüm denetim kaydında ayrı bir satır olarak görünür
+  (olay türü `reading_dropped_discharged`; ekranda henüz Türkçe bir etiketi yok); ölçümün değeri o
+  satıra yazılmaz.
   Ekran **kilitliyken de çalar**; oturum kapanınca durur, o an çalmakta olan vuruşlar da kesilir.
   Pano ilk yüklemesini aldıysa, sunucuyla akış daha açılmadan da çalar; akış koparsa panonun son
   bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcı sesi askıya alıp geri
@@ -953,7 +958,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   (G2-A2); pano da "Sunucuya bağlantı yok" şeridini gösterir. Açılan her hasta denetim kaydına bir
   "görüntüleme" satırı bırakır; gösterilemeyen bir hasta için hiçbir şey yazılmaz.
 
-**Klinisyenin soracağı üç şey**
+**Klinisyenin soracağı dört şey**
 1. **"Risk 'Düşük' yazıyor ama yanında 'Bir parametre 3 puan aldı' var — hangisi doğru?"** İkisi de
    motorun. Motor, puan alan her parametreyi hastanın kayıtlı kronik normali ya da kayıtlı bir eşlik
    eden hastalığı açıklıyorsa NEWS2 uyarısını düşürür (4. bölümdeki hastaya göreli katman). Ekran
@@ -982,6 +987,20 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
 3. **"Vital eğrileri nerede?"** Hasta ekranının altında, "Vital eğrileri" kutusunda (Grup 2 ·
    dilim 1, 3.7). Eğriler motorun kaydettiği ölçümlerdir; tarayıcı hiçbir değeri, bandı ya da
    puanı kendisi hesaplamaz.
+4. **"Taburcu edilen hastanın alarmları ve ölçümleri ne olur?"** Homunculus'un kendi kabul
+   ekranından taburcu edilen hasta (kimlik kaynağı `kabul`) alarm dünyasından çıkarılır (G2-A11):
+   taburcu yolu `app.state.retire_patient`'ı çağırır; her açık alarm, nedeni `discharged` olan bir
+   `alert_cleared` satırıyla kapanır, onay ve eskalasyon durumu ile motorun hasta durumu unutulur,
+   servise tek bir kaldırma çerçevesi gider. O numaranın sonraki ölçümleri `/ingest` ve `/clinical`
+   kapısında motordan önce düşer: HTTP 200 `{"patient_id", "dropped": "discharged"}`, ölçüm başına
+   bir `reading_dropped_discharged` denetim satırı (konu sinyal kodu, değer yok); alarm, çağrı ya da
+   çerçeve doğmaz. Eskalasyon döngüsü böyle bir hasta için çağrı yapmaz — retire çağrısı hiç
+   gelmediyse alarmı kendisi kapatır; yeniden başlatma da kimlik deposuyla uyuşur (tekrar oynatma
+   `discharged` nedenli satırı uygular, sonra motor bir kez kimlik deposuna karşı taranır). HIS
+   (Comed) taburcusu değişmez: kartı 24 saat kalır, ölçümleri değerlendirilmeye devam eder.
+   `/ingest` kimlik iletilerine iki yeni yanıt verir: `meta.source` değeri `kabul` olan bir kimlik
+   400 ile reddedilir; var olan bir `kabul` kaydı için gelen HIS ya da elle kimlik iletisi 200
+   `{"identity": "refused", "reason": "kabul"}` alır — `kabul` kaydını yalnız kabul ekranı yazar.
 
 ### 3.7 Vital eğrileri (hasta ekranı · Grup 2, dilim 1)
 

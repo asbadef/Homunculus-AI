@@ -27,7 +27,10 @@ from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import alarm_quality
-from homunculus.api.alert_lifecycle import Cleared, acknowledge_latched, live_keys, sync_alerts
+from homunculus.api.alert_lifecycle import (
+    Cleared, DISCHARGED, KABUL_SOURCE, READING_DROPPED, acknowledge_latched, is_tombstone,
+    live_keys, retire_patient, retire_state, sync_alerts,
+)
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
     board_snapshot, freshness_turned, identity_only_board, patient_board,
@@ -38,7 +41,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    ClinicalEntryError, build_entries, profile_from_payload, profile_to_payload,
+    ClinicalEntryError, build_entries, chart_observations, profile_from_payload, profile_to_payload,
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -261,6 +264,13 @@ def create_app(
         store = AckStore()
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
         rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
+        # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
+        # was discharged is retired, whether or not the discharge's rows were written (a crash
+        # between the tombstone write and the retire call; an audit that failed after the
+        # in-memory retire). The replay writes nothing, so neither does this.
+        for pid in engine.patient_ids():
+            if is_tombstone(identities.get(hospital, pid)):
+                retire_state(engine, store, pid)
         engines[hospital] = engine
         stores[hospital] = store
         rehydrated.add(hospital)
@@ -279,6 +289,28 @@ def create_app(
         for item in cleared:
             audit.append(AuditEvent(hospital, "alert_cleared", item.patient_id, item.kind,
                                     item.payload(at)))
+
+    async def retire_and_publish(hospital: str, patient_id: str, frame: dict | None = None,
+                                 now: datetime | None = None) -> list[Cleared]:
+        """G2-A11 (D1, D2): a discharge made here retires the patient from the alert world — every
+        episode ended with an `alert_cleared` row (reason `discharged`), the store and the engine
+        forget the patient, the nurse's dedup is re-armed — and the ward is told once, with
+        `frame` (Lane B's tombstone board) or the minimal removal the retention sweep sends.
+        Lane B's discharge path calls it through `app.state.retire_patient`, after the identity
+        store's tombstone write; the escalation cycle calls it for a tombstone whose call never
+        came (D6)."""
+        engine, store = _engine(hospital), _store(hospital)
+        try:
+            cleared = retire_patient(engine, store, audit, hospital, patient_id,
+                                     now or datetime.now(timezone.utc))
+        finally:
+            # The in-memory end has happened whatever the audit did (final review): the ward is
+            # told and the nurse's dedup re-armed even when a row write raises, and the error
+            # still goes up to the caller.
+            notifier.prune(hospital, live_keys(engine, store))
+            await broadcaster.publish(hospital, frame if frame is not None else
+                                      {"patient_id": patient_id, "removed": True, "identity": None})
+        return cleared
 
     # G2-A2 (D5): each hospital's previous escalation-cycle `now`, advanced after that hospital's
     # republish, so a tenant failing in its own does not hold the others' back (Task 2 review).
@@ -312,6 +344,14 @@ def create_app(
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
+            # G2-A11 (D6): an alerting patient whose admission here was discharged is retired,
+            # not escalated — the guard for a discharge whose retire call never came. Read only
+            # for patients with a firing alert: one identity read per alerting patient, not per bed.
+            gone = {pid for pid in {p for p, _a in alerts}
+                    if is_tombstone(identities.get(hospital, pid))}
+            for pid in sorted(gone):
+                await retire_and_publish(hospital, pid, now=now)
+            alerts = [(pid, a) for pid, a in alerts if pid not in gone]
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
@@ -365,7 +405,7 @@ def create_app(
             try:
                 await _escalation_cycle(datetime.now(timezone.utc))
             except Exception:  # a bad cycle must never kill the loop
-                pass
+                log.exception("escalation cycle failed; the next one runs in %ss", escalate_interval)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -437,6 +477,7 @@ def create_app(
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
     app.state.escalation_cycle = _escalation_cycle
+    app.state.retire_patient = retire_and_publish   # G2-A11 (D1, D2): Lane B's discharge path calls it
     app.state.notifier = notifier
     app.state.notification_hub = hub
     app.state.audit = audit
@@ -660,54 +701,26 @@ def create_app(
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
+        # G2-A11 (D3): as at /ingest — a discharged admission's number takes no chart either.
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            for item in charted:
+                code = item.observation.code.value
+                audit.append(AuditEvent(hospital, READING_DROPPED, patient_id, code,
+                                        {"patient_id": patient_id, "code": code}))
+            return {"patient_id": patient_id, "dropped": DISCHARGED}
+
         engine = _engine(hospital)
         store = _store(hospital)
-        # One wall-clock instant per request, as in /ingest: each entry is judged at its charted
-        # time but never past the wall clock (G2-A2, X10) — a `recorded_at` in the future would
-        # age every other input to it. The audit row keeps the stamp; the replay judges at
-        # min(the stamp, the row's write time) (rehydrate, X10b).
+        # One wall-clock instant per request, as in /ingest (G2-A2, X10); the loop itself is
+        # `chart_observations` (G2-A11, D8 — X62), shared with the admission form.
         now = datetime.now(timezone.utc)
-        alerts: list = []
-        for item in charted:
-            obs = item.observation
-            alerts = engine.ingest(obs, now=min(obs.timestamp, now))
-            # G2-A1: the lifecycle hook after every evaluation, as /ingest runs it and as the
-            # replay runs it after every `chart` row, so a restart rebuilds exactly this (D4, D7).
-            # Charting is often what ends an alert: the antibiotic given, the fluid that was due.
-            # Right after the evaluation and before any audit write, as in /ingest: if the audit
-            # fails from here on, an unacknowledged critical is still on the board.
-            cleared = sync_alerts(engine, store, obs.patient_id, now)
-            # Re-arm the nurse's dedup after EACH entry, not only after the last: `[norepinephrine 0,
-            # dopamine 5]` ends an acknowledged shock and starts a new one inside this loop, and the
-            # end-of-request prune would find it live again and keep the old episode's dedup (D5).
-            notifier.prune(hospital, live_keys(engine, store))
-            audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
-                                    {"value": obs.value, "unit": obs.unit,
-                                     "obs_ts": obs.timestamp.isoformat(),
-                                     "charted_by": item.charted_by}))
-            _audit_cleared(hospital, cleared, now)
-        for a in alerts:
-            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
-                                    {"severity": a.severity, "urgency": a.urgency,
-                                     "summary": a.summary, "source": a.source,
-                                     "evidence": a.supporting_evidence}))
-        # First-seen uses WALL-CLOCK time, and is AUDITED — the /ingest path already does both and
-        # this one only did the first half. Two things were quietly lost by that: an alert raised
-        # from a clinician's charting was invisible to the alarm-quality report (no episode to
-        # count), and, worse, `rehydrate` had no row to replay, so a restart handed such an alert a
-        # fresh escalation clock. An alarm that had gone unanswered for four minutes started its
-        # five-minute grace over again after a deploy, and nothing looked broken.
-        # This patient's FIRING alerts only (G2-A1): a latched one keeps its episode's stamp, and
-        # stamping it now would open an episode after its end.
-        for a in engine.active_alerts(patient_id):
-            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
-                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind,
-                                        {"at": now.isoformat()}))
+        alerts = chart_observations(engine, store, audit, notifier, hospital, patient_id, charted,
+                                    now, escalate_after)
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
         notifier.prune(hospital, live_keys(engine, store))
 
-        board = patient_board(engine, patient_id, store,
-                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        board = patient_board(engine, patient_id, store, identity=record, bedmap=bedmap)
         await broadcaster.publish(hospital, board)
         return {"patient_id": patient_id, "charted": len(charted),
                 "alerts": [a.kind for a in alerts]}
@@ -733,6 +746,13 @@ def create_app(
             profile = profile_from_payload(patient_id, body, engine.profile(patient_id))
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+        # G2-A11 (D3, final review): a discharged admission's number takes no profile either —
+        # without this the route set the profile, wrote its row, created engine state for the
+        # tombstone and published its card. After the validation, as at /clinical: a malformed
+        # body is 400 whatever the number's state. (`engine.profile` creates no state.)
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            return {"patient_id": patient_id, "dropped": DISCHARGED}
 
         engine.set_profile(profile)
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
@@ -742,7 +762,7 @@ def create_app(
                                  "charted_by": _charted_by(caller)}))
 
         board = patient_board(engine, patient_id, _store(hospital),
-                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+                              identity=record, bedmap=bedmap)
         await broadcaster.publish(hospital, board)
         return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
 
@@ -763,6 +783,16 @@ def create_app(
                 raise HTTPException(status_code=400, detail=str(exc)) from None
             except (TypeError, AttributeError, KeyError, IndexError):
                 raise HTTPException(status_code=400, detail="malformed identity resource") from None
+            # G2-A11 (D5): only the admission writes a `kabul` record. A feed naming that source
+            # is refused outright; a feed writing onto a `kabul` record is refused before `apply`,
+            # so `_merge`'s None keeps meaning "older" here, and the card below is never built
+            # for a discharged admission.
+            if incoming.source == KABUL_SOURCE:
+                raise HTTPException(status_code=400,
+                                    detail="identity source 'kabul' is reserved for the admission")
+            existing = identities.get(hospital, incoming.patient_id)
+            if existing is not None and existing.source == KABUL_SOURCE:
+                return {"patient_id": incoming.patient_id, "identity": "refused", "reason": "kabul"}
             record = identities.apply(hospital, incoming)
             if record is None:
                 return {"patient_id": incoming.patient_id, "identity": "stale"}
@@ -781,6 +811,17 @@ def create_app(
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # G2-A11 (D3): a reading for a number whose admission here was discharged is dropped
+        # before the engine — one audit row, no evaluation, no hook, no stamp, no frame, no
+        # notification. The owner's decision (2026-10-26): no alert and no page may come of it.
+        # 200, not 4xx: the input is well-formed and the server chose not to apply it, and a
+        # per-reading 4xx on a monitor that keeps the old number would read as rejections in the
+        # hub's counters. The one identity read a reading costs is reused for the frame below.
+        record = identities.get(hospital, obs.patient_id)
+        if is_tombstone(record):
+            audit.append(AuditEvent(hospital, READING_DROPPED, obs.patient_id, obs.code.value,
+                                    {"patient_id": obs.patient_id, "code": obs.code.value}))
+            return {"patient_id": obs.patient_id, "dropped": DISCHARGED}
         engine = _engine(hospital)
         store = _store(hospital)
         # One wall-clock instant per request. The rules judge at the reading's own time but never
@@ -811,8 +852,7 @@ def create_app(
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
         await broadcaster.publish(hospital, patient_board(
-            engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id),
-            bedmap=bedmap))
+            engine, obs.patient_id, store, identity=record, bedmap=bedmap))
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)

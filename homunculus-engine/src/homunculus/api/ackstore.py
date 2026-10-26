@@ -115,3 +115,15 @@ class AckStore:
         self.escalated &= firing_keys
         for key in [k for k in self.resolved if k in firing_keys]:
             del self.resolved[key]
+
+    def forget_patient(self, patient_id: str) -> None:
+        """Drop every entry of one patient — ack, first-seen, clock, escalation, page, latch, the
+        hook's last view and any remembered chain (G2-A11, D9). A discharge ends the patient's
+        every episode at once (`alert_lifecycle.retire_state`); nothing of them may answer a later
+        number, and nothing is left for the escalation cycle to page."""
+        for mapping in (self.acks, self.first_seen, self.clock_from, self.resolved, self.firing,
+                        self.recent):
+            for key in [k for k in mapping if k[0] == patient_id]:
+                del mapping[key]
+        self.escalated = {k for k in self.escalated if k[0] != patient_id}
+        self.paged = {k for k in self.paged if k[0] != patient_id}

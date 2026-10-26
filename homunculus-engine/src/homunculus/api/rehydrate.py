@@ -12,7 +12,8 @@ Since G2-A1 (O17, D7) every replayed `ingest` and `chart` runs through the lifec
 run (api/alert_lifecycle.py): a closed episode's stamp and ack are pruned as they were live — so
 the `first_seen` row of the next episode sets that episode's own stamp —, a critical nobody
 acknowledged latches again, and an `ack` row for a latched alert removes it. The `alert_cleared`
-rows follow from those and are not replayed.
+rows follow from those and are not replayed — except one whose reason is `discharged` (G2-A11,
+D7a), which retires the patient as the discharge did.
 
 The escalation chain (X13) is not in the log: a replayed episode's clock (`clock_from`) is its own
 `first_seen` row, and no chain of an episode that ended is remembered (`recent`). After a restart a
@@ -23,7 +24,9 @@ from collections.abc import Iterable
 from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.alert_lifecycle import acknowledge_latched, live_keys, sync_alerts
+from homunculus.api.alert_lifecycle import (
+    DISCHARGED, acknowledge_latched, live_keys, retire_state, sync_alerts,
+)
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import profile_from_payload
 from homunculus.api.identity import bounded_role
@@ -53,6 +56,11 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -
             key = (rec.patient_id, rec.subject)
             store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
             store.clock_from.setdefault(key, store.first_seen[key])
+        elif rec.event_type == "alert_cleared" and rec.payload.get("reason") == DISCHARGED:
+            # G2-A11 (D7a): a discharge retired the patient live, at this point of the log; the
+            # replay retires it here. Every other `alert_cleared` row follows from the rows the
+            # replay runs through the hook and stays ignored (D7 of A1).
+            retire_state(engine, store, rec.patient_id)
         # alert / escalation / notification are derived or transient — nothing to replay.
     # The hook's prunes remembered the chains of the episodes the replay saw end, but nothing replayed
     # continues one (the `first_seen` rows set their stamps directly). Carried past the restart, they

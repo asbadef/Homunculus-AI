@@ -11,6 +11,7 @@ from homunculus.state.timeline import PatientState
 class PatientRepository(Protocol):
     def get_or_create(self, patient_id: str) -> PatientState: ...
     def patient_ids(self) -> list[str]: ...
+    def remove(self, patient_id: str) -> None: ...
 
 
 class InMemoryPatientRepository:
@@ -24,3 +25,7 @@ class InMemoryPatientRepository:
 
     def patient_ids(self) -> list[str]:
         return list(self._states)
+
+    def remove(self, patient_id: str) -> None:
+        """Forget a patient's readings (G2-A11, D9). Nothing to forget is not an error."""
+        self._states.pop(patient_id, None)
