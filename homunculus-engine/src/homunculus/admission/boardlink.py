@@ -10,7 +10,7 @@ writes from the first into the second, and nothing else in `admission/` does:
                        number, with the bed and unit ids) — the card appears on its bed;
 * `chart_weight`       the admission weight, charted through the app's own charting door (`chart`,
                        injected: Lane A's `chart_observations`, the body `POST /clinical` runs —
-                       X62 as amended, A-3), so its audit rows are the ones a restart replays;
+                       X62 as amended by A-20), so its audit rows are the ones a restart replays;
 * `apply_profile`      the comorbidity codes ticked on the form, merged into the engine's profile
                        as `PUT /clinical/{id}/profile` merges them (the same audit row);
 * `open_critical`      how many critical alerts on this patient's board nobody has acknowledged —
@@ -19,19 +19,23 @@ writes from the first into the second, and nothing else in `admission/` does:
 * `is_discharged`      whether the number is a `kabul` tombstone (A-11: the app's doors drop a
                        reading for it before the engine);
 * `discharge_identity` the tombstone written: the card is off every board read from then on. It
-                       publishes NOTHING (A-11d);
+                       publishes NOTHING (A-11d, A-20), returns the tombstone (a second discharge
+                       returns it too) and raises when the store refuses it;
 * `retire`             the patient retired from the alert world through the app's own door
-                       (`retire_patient`, injected: Lane A's `retire_and_publish`), handed the
-                       tombstone's removal frame — the last bed and unit, no name — which that door
-                       publishes once, after the alerts are ended (A-11d).
+                       (`retire_patient`, injected: Lane A's `retire_and_publish`), handed this
+                       number's tombstone's removal frame — the last bed and unit, no name — which
+                       that door publishes once, after the alerts are ended (A-11d, A-20).
 
-BoardLink never publishes a removal itself, and has no fallback for a door the app did not wire:
-`chart_weight` and `retire` raise `RuntimeError`, so the admission routes can say which part failed.
+The discharge's removal is never BoardLink's to send. Its other writes republish the patient's
+board: for a tombstone that is its removal, as everywhere the board is published, never its card;
+for a number with neither an identity nor a reading, nothing. There is no fallback for a door the
+app did not wire: `chart_weight` and `retire` raise `RuntimeError`, and every refusal raises, so
+the admission routes can say which part failed and never report one `ok` that did not happen.
 
-The app builds it from its own stores and doors and places it on `app.state.board_link` (wired in
-`api/app.py` once Lane A's A-11 is merged); a router reaches it through the request
-(`board_link_of`). An app built without it (a test that mounts the routers alone) has none, and the
-admission routes answer `skipped` for its parts.
+The app builds it from its own stores and doors and places it on `app.state.board_link` — the
+wiring is Task 6b's, after Lane A's A-11 is merged (A-20, A-23); a router reaches it through the
+request (`board_link_of`). An app built without it (a test that mounts the routers alone) has none,
+and the admission routes answer `skipped` for its parts.
 
 PHI: the identity carries the name, as an ADT record does (encrypted at rest by the store). The
 audit rows carry the number and the actor — never a name.
@@ -71,7 +75,11 @@ def count_open_critical(alerts: list[dict]) -> int:
 def kabul_record(*, patient_number: str, display_name: str, birth_date: date, sex: str,
                  bed_label: str, bed_id: str, unit_id: str, at: datetime) -> IdentityRecord:
     """The board identity of an admission made here. The whole name goes in `given`: the form
-    asks for one "ad soyad" field, and `display_name` joins given and family anyway."""
+    asks for one "ad soyad" field, and `display_name` joins given and family anyway. `at` must be
+    aware, as `admission/numbers.py` requires (A-15): a naive one would be read in the server's
+    own zone, and the identity store orders its writes by it."""
+    if at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError("`at` must carry its time zone (an aware datetime, e.g. UTC).")
     return IdentityRecord(patient_id=patient_number, given=display_name.strip(),
                           birth_date=birth_date.isoformat(), sex=sex, bed=bed_label,
                           state="admitted", source=KABUL, updated_at=at,
@@ -83,8 +91,8 @@ class BoardLink:
     `chart` is the app's charting door, called by keyword as Lane A's
     `chart_observations(engine, store, audit, notifier, hospital, patient_id, charted, now,
     escalate_after)` — `notifier` and `escalate_after` are the app's own, held here only to hand
-    them on. `retire_patient` is the app's `retire_and_publish(hospital, patient_id, frame=None,
-    now=None)`."""
+    them on; the three are wired together or `chart_weight` refuses to run. `retire_patient` is the
+    app's `retire_and_publish(hospital, patient_id, frame=None, now=None)` (A-20)."""
 
     def __init__(self, *, identities: IdentityStore, engine: Callable[[str], Engine],
                  store: Callable[[str], AckStore], audit: AuditLog,
@@ -107,19 +115,33 @@ class BoardLink:
         self._clock = clock
 
     def _board(self, tenant: str, patient_number: str,
-               identity: IdentityRecord | None = None) -> dict:
-        """The patient's board as /patients would carry it — built without creating the patient
-        in the engine (`patient_board` reads `engine.state()`, which would)."""
+               identity: IdentityRecord | None = None) -> dict | None:
+        """The patient's board as /patients would carry it, or None when there is none to send —
+        built without creating the patient in the engine (`patient_board` reads `engine.state()`,
+        which would). A tombstone's board is its removal (`_tombstone_board`), never an
+        identity-only card: the tombstone keeps the name (A-16), and such a card would bring the
+        discharged patient back on every screen. A number with neither an identity nor a reading
+        has no board."""
         engine = self._engine(tenant)
         identity = identity if identity is not None else self._identities.get(tenant, patient_number)
-        if patient_number in set(engine.patient_ids()) or identity is None:
+        if _is_tombstone(identity):
+            return _tombstone_board(identity)
+        if patient_number in set(engine.patient_ids()):
             return patient_board(engine, patient_number, self._store(tenant), identity=identity,
                                  bedmap=self._bedmap)
+        if identity is None:
+            return None
         return identity_only_board(identity, self._bedmap)
+
+    async def _send(self, tenant: str, patient_number: str,
+                    identity: IdentityRecord | None = None) -> None:
+        board = self._board(tenant, patient_number, identity)
+        if board is not None:
+            await self._publish(tenant, board)
 
     async def put_identity(self, tenant: str, record: IdentityRecord) -> None:
         stored = self._identities.apply(tenant, record)
-        await self._publish(tenant, self._board(tenant, record.patient_id, stored))
+        await self._send(tenant, record.patient_id, stored)
 
     async def chart_weight(self, tenant: str, patient_number: str, kg: float, *,
                            actor: str) -> None:
@@ -127,16 +149,24 @@ class BoardLink:
         outside the engine's bound is its `ClinicalEntryError`, before the door) and charted
         through the app's door, judged at this one instant. Then the card is republished.
 
-        It is called for a number the admission has just issued; it is not a door for charting."""
-        if self._chart is None:
-            raise RuntimeError("chart_observations not wired")
+        The door, the notifier and the escalation delay must all be wired, or nothing is built or
+        charted: Lane A's `chart_observations` prunes the notifier before it writes the `chart`
+        row, so a missing notifier would leave the weight in the engine with no row for a restart
+        to replay. It is called for a number the admission has just issued; it is not a door for
+        charting."""
+        missing = [name for name, part in (("chart_observations", self._chart),
+                                           ("notifier", self._notifier),
+                                           ("escalate_after", self._escalate_after))
+                   if part is None]
+        if missing:
+            raise RuntimeError(f"{', '.join(missing)} not wired")
         now = self._clock()
         charted = build_entries(patient_number, [{"code": WEIGHT, "value": kg}],
                                 charted_by=actor, recorded_at=now)
         self._chart(engine=self._engine(tenant), store=self._store(tenant), audit=self._audit,
                     notifier=self._notifier, hospital=tenant, patient_id=patient_number,
                     charted=charted, now=now, escalate_after=self._escalate_after)
-        await self._publish(tenant, self._board(tenant, patient_number))
+        await self._send(tenant, patient_number)
 
     async def apply_profile(self, tenant: str, patient_number: str, codes: list[str], *,
                             actor: str) -> None:
@@ -146,31 +176,48 @@ class BoardLink:
         engine.set_profile(profile)
         self._audit.append(AuditEvent(tenant, "profile", profile.patient_id, "",
                                       {**profile_to_payload(profile), "charted_by": actor}))
-        await self._publish(tenant, self._board(tenant, patient_number))
+        await self._send(tenant, patient_number)
 
     def open_critical(self, tenant: str, patient_number: str) -> int:
         engine = self._engine(tenant)
         if patient_number not in set(engine.patient_ids()):
             return 0                     # never measured: no alert can be on its board
-        return count_open_critical(self._board(tenant, patient_number).get("alerts") or [])
+        board = self._board(tenant, patient_number) or {}
+        return count_open_critical(board.get("alerts") or [])
 
     def is_discharged(self, tenant: str, patient_number: str) -> bool:
         """True when the number is a `kabul` tombstone — a patient discharged here. A HIS-fed
         discharge is not one: its card keeps its 24 hours on the board."""
         return _is_tombstone(self._identities.get(tenant, patient_number))
 
-    async def discharge_identity(self, tenant: str, patient_number: str) -> IdentityRecord | None:
-        """Write the tombstone: the patient left, the record stays with its last bed and unit
-        (`_merge` keeps the location group when the incoming record names none). Returns the
-        stored tombstone — what `retire` is handed — or None when the store refused it (a newer
-        record exists, and it decides). Publishes nothing: the removal is the retirement's."""
-        return self._identities.apply(tenant, IdentityRecord(
+    async def discharge_identity(self, tenant: str, patient_number: str) -> IdentityRecord:
+        """Write the tombstone: the patient left, the record stays with its name (A-16) and its
+        last bed and unit (`_merge` keeps the location group when the incoming record names none).
+        Returns the tombstone — what `retire` is handed. A second discharge returns it too, even
+        when the store refuses the second stamp: the patient has left either way. Any other
+        refusal (a newer record that is not a tombstone decides) raises `RuntimeError`: the
+        discharge did not happen, and the caller must not report the board `ok`. Publishes
+        nothing: the removal is the retirement's."""
+        stored = self._identities.apply(tenant, IdentityRecord(
             patient_id=patient_number, state="discharged", source=KABUL,
             updated_at=self._clock()))
+        if stored is not None:
+            return stored
+        current = self._identities.get(tenant, patient_number)
+        if _is_tombstone(current):
+            return current
+        raise RuntimeError(f"the discharge of {patient_number} was refused: the identity store "
+                           "holds a newer record that is not a discharge")
 
     async def retire(self, tenant: str, patient_number: str, record: IdentityRecord) -> list:
         """Retire the patient from the alert world through the app's door, handing it the
-        tombstone's removal frame to publish once its alerts are ended. Returns what it cleared."""
+        tombstone's removal frame to publish once its alerts are ended. Returns what it cleared.
+
+        `record` must be this number's `kabul` tombstone (`discharge_identity`'s answer): a frame
+        built from another record would take another patient's card, or an admitted one, off the
+        screens. Anything else is a `ValueError`, before the door is called."""
+        if record is None or record.patient_id != patient_number or not _is_tombstone(record):
+            raise ValueError(f"retire takes the kabul tombstone of {patient_number}")
         if self._retire is None:
             raise RuntimeError("retire_patient not wired")
         return await self._retire(tenant, patient_number, frame=_tombstone_board(record))
