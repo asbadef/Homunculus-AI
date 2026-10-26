@@ -129,6 +129,25 @@ _PRESSORS = {
     "dobutamine": SignalCode.DOBUTAMINE_RATE,
 }
 
+#: The card's medication history: the newest charted entries of the inputs a clinician charts from
+#: the Meds box (G2-A3, D5). Ten is a round's worth; the audit keeps everything.
+MEDS_HISTORY = 10
+_CHARTED_CODES = (SignalCode.NOREPINEPHRINE_RATE, SignalCode.EPINEPHRINE_RATE,
+                  SignalCode.DOPAMINE_RATE, SignalCode.DOBUTAMINE_RATE,
+                  SignalCode.CRYSTALLOID_BOLUS_ML, SignalCode.WEIGHT_KG,
+                  SignalCode.ANTIBIOTIC_ADMINISTERED)
+
+
+def _charted_history(state) -> list[dict]:
+    """The last MEDS_HISTORY observations of the chartable medication inputs, newest first, in the
+    door's units (G2-A3, D5). Read from the state, not the audit: the box must not need `audit.view`
+    to show a nurse what she charted ten minutes ago. Equal stamps: of one code, the later-charted
+    first — the one `latest()` and the rule read; across codes, the table's order."""
+    rows = [obs for code in _CHARTED_CODES for obs in reversed(state.history(code))]
+    rows.sort(key=lambda obs: obs.timestamp, reverse=True)
+    return [{"code": obs.code.value, "value": obs.value, "unit": obs.unit,
+             "ts": obs.timestamp.isoformat()} for obs in rows[:MEDS_HISTORY]]
+
 
 def _meds(engine: Engine, state, patient_id: str, now: datetime | None = None) -> dict:
     """The medication picture, and the antibiotic clock behind it.
@@ -167,6 +186,12 @@ def _meds(engine: Engine, state, patient_id: str, now: datetime | None = None) -
     return {
         "pressors": {name: _latest(state, code) for name, code in _PRESSORS.items()},
         "on_pressor": any((_latest(state, code) or 0) > 0 for code in _PRESSORS.values()),
+        # G2-A3 (D5): when each pressor was last charted — a rate without its time cannot say
+        # whether the infusion is current — and the short history the Meds box lists.
+        "pressors_at": {name: (state.latest(code).timestamp.isoformat()
+                               if state.latest(code) is not None else None)
+                        for name, code in _PRESSORS.items()},
+        "charted": _charted_history(state),
         "antibiotic_given": (True if given_at is not None
                              else (False if charted_any else None)),
         "antibiotic_at": given_at.isoformat() if given_at is not None else None,

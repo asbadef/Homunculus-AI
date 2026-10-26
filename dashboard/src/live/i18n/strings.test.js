@@ -157,6 +157,13 @@ const AZ_SAME_AS_TR = new Set([
   "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg", // ABO and Rh: symbols
   "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
 
+  // G2-A3 (patient · meds) · az = tr
+  "patient.medsBolusUnit", //          mL — a unit symbol, not a word
+  "patient.medsDrugNorepinephrine", // noradrenalin — the drug's name, written the same in Azerbaijani
+  "patient.medsDrugEpinephrine", //    adrenalin — the same
+  "patient.medsDrugDopamine", //       dopamin — the same
+  "patient.medsDrugDobutamine", //     dobutamin — the same
+
 ]);
 
 describe("live UI dictionaries", () => {

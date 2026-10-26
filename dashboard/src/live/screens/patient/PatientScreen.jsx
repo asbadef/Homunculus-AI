@@ -1,7 +1,9 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes TWO things, and says so in as many words (`patient.onlyWrite`): whether an infection is
-// suspected (Task 15B, Decision 27), and — since Group 2 · slice 1, from the trends box, for a
-// `clinical.chart` holder — the patient's own normal ranges. Nothing else here reaches the record.
+// It writes THREE things, and says so in as many words (`patient.onlyWrite`), each only for a
+// `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since Group 2 ·
+// slice 1, from the trends box, the patient's own normal ranges; and since G2-A3, from the Meds box
+// (`meds/MedsBox.jsx`, D4), the medication and fluid entries — a pressor rate, a bolus, the weight,
+// "antibiotic given". Nothing else here reaches the record.
 //
 // Four things it shows, and one it refuses to:
 //
@@ -55,6 +57,7 @@ import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
+import { MedsBox } from "./meds/MedsBox.jsx";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 
 const TICK_MS = 30_000;
@@ -229,42 +232,6 @@ function Sepsis({ sepsis, canChart, onChart, pending }) {
   );
 }
 
-/** The medication picture the engine publishes, with its three-valued antibiotic. `null` means
- *  nobody charted it either way; rendering that as "not given" would accuse a ward of missing a
- *  deadline it may well have met and simply not recorded here (api/board.py `_meds`). */
-function Meds({ meds }) {
-  const { t } = useI18n();
-  if (!meds) return <Box title={t("patient.meds")} icon="syringe" level={2}><p className="m-0 text-13 text-mute">{t("patient.noMeds")}</p></Box>;
-  const pressors = Object.entries(meds.pressors ?? {}).filter(([, v]) => v !== null && v !== undefined);
-  const clock = meds.antibiotic_clock ?? null;
-  const givenAt = meds.antibiotic_at ? Date.parse(meds.antibiotic_at) : NaN;
-  const deadline = clock?.deadline ? Date.parse(clock.deadline) : NaN;
-  let antibiotic;
-  if (meds.antibiotic_given === null || meds.antibiotic_given === undefined) antibiotic = t("patient.antibioticUnknown");
-  else if (meds.antibiotic_given && Number.isFinite(givenAt)) antibiotic = t("patient.antibioticGiven", { time: hhmm(givenAt) });
-  else if (Number.isFinite(deadline)) {
-    antibiotic = t(clock.remaining_sec !== null && clock.remaining_sec < 0 ? "patient.antibioticOverdue" : "patient.antibioticPending", { time: hhmm(deadline) });
-  } else antibiotic = t("patient.antibioticUnknown");
-  return (
-    <Box title={t("patient.meds")} icon="syringe" level={2}>
-      <p className="m-0 text-13">{antibiotic}</p>
-      <p className="m-0 mt-1 text-13 text-mute">
-        {pressors.length ? t("patient.pressors", { list: pressors.map(([k, v]) => `${k} ${v}`).join(", ") }) : t("patient.noPressors")}
-      </p>
-      {/* Plain lines, like the two above them, and NOT <KV> rows. `patient.weight` and
-          `patient.creatinine` already carry their own number and unit inside one sentence, so as
-          KV rows they were a <dt> with an empty <dd> — a definition list whose terms define
-          nothing, which a screen reader reads as a label whose value is missing. */}
-      {meds.weight_kg !== null && meds.weight_kg !== undefined ? (
-        <p className="m-0 mt-1 text-13 text-mute">{t("patient.weight", { value: meds.weight_kg })}</p>
-      ) : null}
-      {meds.creatinine !== null && meds.creatinine !== undefined ? (
-        <p className="m-0 mt-1 text-13 text-mute">{t("patient.creatinine", { value: meds.creatinine })}</p>
-      ) : null}
-    </Box>
-  );
-}
-
 /** `params.id` comes from the address (shell/Shell.jsx). The patient is read from the board this
  *  session already has: there is no per-patient endpoint, and `/patients` is already filtered by
  *  the engine's scope — so a card this board does not hold is one this session may not see OR one
@@ -413,7 +380,8 @@ export function PatientScreen({ params }) {
 
           <div className="grid gap-2 min-[861px]:grid-cols-2">
             <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
-            <Meds meds={patient.meds} />
+            <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
+              onChart={(entries, at) => board.store.chart(id, entries, at)} />
           </div>
           {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
           <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>

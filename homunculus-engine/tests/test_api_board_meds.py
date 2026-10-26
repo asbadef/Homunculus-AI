@@ -108,3 +108,56 @@ class TestContextNotAdvice:
                                  {"code": "weight_kg", "value": 72}])
         meds = _bed(client, "bed-1")["meds"]
         assert meds["creatinine"] == 2.4 and meds["weight_kg"] == 72
+
+
+class TestChartedHistory:
+    """G2-A3 (D5): the card says WHEN each pressor was last charted, that 0 means stopped, and what the
+    last ten charted entries were — the Meds box reads these, no audit permission needed."""
+
+    def test_each_pressor_carries_the_time_of_its_latest_entry(self, client):
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.12}], T0)
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.2}], T0 + timedelta(minutes=30))
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["pressors"]["norepinephrine"] == 0.2
+        assert meds["pressors_at"]["norepinephrine"] == (T0 + timedelta(minutes=30)).isoformat()
+        assert meds["pressors_at"]["dopamine"] is None
+
+    def test_a_zero_rate_is_published_as_stopped_with_its_time(self, client):
+        _chart(client, "bed-1", [{"code": "dopamine_rate", "value": 5}], T0)
+        _chart(client, "bed-1", [{"code": "dopamine_rate", "value": 0}], T0 + timedelta(hours=1))
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["pressors"]["dopamine"] == 0 and meds["on_pressor"] is False
+        assert meds["pressors_at"]["dopamine"] == (T0 + timedelta(hours=1)).isoformat()
+
+    def test_the_history_is_newest_first_across_codes_with_the_doors_units(self, client):
+        _chart(client, "bed-1", [{"code": "weight_kg", "value": 80}], T0)
+        _chart(client, "bed-1", [{"code": "crystalloid_bolus_ml", "value": 500}], T0 + timedelta(minutes=10))
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.1},
+                                 {"code": "antibiotic_administered", "value": 1}], T0 + timedelta(minutes=20))
+        charted = _bed(client, "bed-1")["meds"]["charted"]
+        assert {c["code"] for c in charted[:2]} == {"antibiotic_administered", "norepinephrine_rate"}
+        assert [c["code"] for c in charted[2:]] == ["crystalloid_bolus_ml", "weight_kg"]
+        nor = next(c for c in charted if c["code"] == "norepinephrine_rate")
+        assert nor == {"code": "norepinephrine_rate", "value": 0.1, "unit": "ug/kg/min",
+                       "ts": (T0 + timedelta(minutes=20)).isoformat()}
+        assert charted[2]["unit"] == "mL" and charted[3]["unit"] == "kg"
+
+    def test_the_history_keeps_the_newest_ten(self, client):
+        for i in range(12):
+            _chart(client, "bed-1", [{"code": "crystalloid_bolus_ml", "value": 100 + i}], T0 + timedelta(minutes=i))
+        charted = _bed(client, "bed-1")["meds"]["charted"]
+        assert len(charted) == 10 and charted[0]["value"] == 111 and charted[-1]["value"] == 102
+
+    def test_a_same_time_correction_heads_the_history_as_latest_reads_it(self, client):
+        # Final review I1: a wrong rate corrected at the same minute — the rule reads the
+        # correction (latest()), so the history must not list the wrong value above it.
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.5}], T0)
+        _chart(client, "bed-1", [{"code": "norepinephrine_rate", "value": 0.05}], T0)
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["pressors"]["norepinephrine"] == 0.05
+        assert meds["charted"][0]["value"] == 0.05 and meds["charted"][1]["value"] == 0.5
+
+    def test_nothing_charted_means_an_empty_history_and_no_times(self, client):
+        _chart(client, "bed-1", [{"code": "lactate", "value": 1.2}])
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["charted"] == [] and all(v is None for v in meds["pressors_at"].values())

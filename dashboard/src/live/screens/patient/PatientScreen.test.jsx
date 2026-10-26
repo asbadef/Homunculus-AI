@@ -55,14 +55,15 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the two things it writes", async () => {
+  it("names the bed and the patient, and says the three things it writes", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi və xəstənin norması/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/üç şey yazır/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması və dərman \/ maye qeydi/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -321,6 +322,26 @@ describe("the patient screen", () => {
       await open({ payload: board([entry("S-001", [], { ...FULL, meds: null })]) });
       expect(screen.getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
     });
+
+    // G2-A3 (D4): the charting form is offered on the Meds box to a clinical.chart holder, and to nobody
+    // else — absent, not disabled — and what it saves is written for THIS patient.
+    it("the Meds box offers «Qeyd əlavə et» only with clinical.chart, and charts for this patient", async () => {
+      const offer = () => screen.queryByRole("button", { name: "Qeyd əlavə et" });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(offer()).toBeNull();
+      cleanup();
+      resetScreens();
+      const { api } = await open({
+        payload: board([entry("S-001", [], FULL)]), perms: ["board.view", "alerts.ack", "clinical.chart"],
+        setup: (a) => a.chart.mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] }),
+      });
+      fireEvent.click(offer());
+      const dialog = screen.getByRole("dialog", { name: "Dərman / maye qeydi · REA-01 · 2" });
+      fireEvent.change(within(dialog).getByLabelText(/Çəki/), { target: { value: "80" } });
+      await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+      expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "weight_kg", value: 80 }], new Date(NOW).toISOString());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
   });
 
   describe("the trend charts (Group 2 · slice 1)", () => {
@@ -497,8 +518,8 @@ describe("the patient screen", () => {
     // The screen mounted the way the shell mounts it: the same element with NO `key`, so /patients/S-001 ->
     // /patients/S-002 keeps this screen, the box and its state mounted and only the props change (browser Back,
     // Alt+← or a mouse's back button move the address under the inert page while a form is open). `leave` takes
-    // the whole screen away, as a move to another screen does.
-    async function mover() {
+    // the whole screen away, as a move to another screen does. `patients` is the board it reads.
+    async function mover({ patients = [entry("S-001", [], FULL), entry("S-002", [], FULL)] } = {}) {
       onlyScreens({ beds: () => null }, { keep: [] });
       let go;
       let away;
@@ -512,11 +533,12 @@ describe("the patient screen", () => {
       const mounted = await mount(<Harness />, {
         access: token({ perms: CHART }), me: profile({ perms: CHART }),
         setup: (api) => {
-          api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
+          api.boardPatients.mockResolvedValue(board(patients));
           api.streamTicket.mockResolvedValue({ ticket: "t-1" });
           api.view.mockResolvedValue({ ok: true });
           api.patientTrends.mockImplementation(answering(withNormal));
           api.putPatientProfile.mockResolvedValue({ patient_id: "x" });
+          api.chart.mockResolvedValue({ patient_id: "x", charted: 1, alerts: [] });
         },
       });
       await act(async () => { await mounted.board.start(); });
@@ -592,6 +614,46 @@ describe("the patient screen", () => {
       await answer();
       expect(api.patientTrends.mock.calls.length).toBe(reads);
       expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    });
+
+    // The Meds form (G2-A3, final review I3) under the same rule, on a board where S-002 has a bed of its
+    // own — so a title or a toast naming the wrong patient's bed would show.
+    const S002 = () => entry("S-002", [], {
+      ...FULL,
+      identity: identity({ patient_id: "S-002", display_name: "Leyla Sentetik", bed_label: "REA-01 · 3", bed_id: "REA-01-3", bed_key: "REA^01^3" }),
+    });
+    const medsMover = () => mover({ patients: [entry("S-001", [], FULL), S002()] });
+    const medsOffer = () => screen.getByRole("button", { name: "Qeyd əlavə et" });
+    const MEDS_FORM = (bedLabel) => `Dərman / maye qeydi · ${bedLabel}`;
+
+    it("the Meds form left open on one patient is gone on the next, and opens again for the next one", async () => {
+      const { api, move } = await medsMover();
+      await press(medsOffer());
+      expect(screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 2") })).toBeInTheDocument();
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await press(medsOffer());
+      expect(screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 3") })).toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: MEDS_FORM("REA-01 · 2") })).toBeNull();
+      expect(api.chart).not.toHaveBeenCalled();
+    });
+
+    it("a Meds save in flight across a move stays the first patient's: written for S-001, said for S-001's bed", async () => {
+      const { api, move } = await medsMover();
+      let release;
+      api.chart.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      await press(medsOffer());
+      const form = screen.getByRole("dialog", { name: MEDS_FORM("REA-01 · 2") });
+      fireEvent.change(within(form).getByLabelText(/Çəki/), { target: { value: "80" } });
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));       // S-001's save, unanswered
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+      expect(api.chart).toHaveBeenCalledTimes(1);
+      expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "weight_kg", value: 80 }], new Date(NOW).toISOString());
+      expect(toasts().getAllByText("Yadda saxlanıldı: REA-01 · 2. Mühərrik bu xəstəni yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().queryAllByText(/REA-01 · 3/)).toHaveLength(0);
+      expect(screen.queryByRole("dialog")).toBeNull();                               // nothing opened on S-002
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {
@@ -697,7 +759,7 @@ describe("charting a suspected infection", () => {
       await settle();
     });
     expect(api.chart).toHaveBeenCalledTimes(1);
-    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }]);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }], null);
   });
 
   it("a chart the server took shows the confirmation and nothing that reads as a refusal", async () => {
@@ -731,7 +793,7 @@ describe("charting a suspected infection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Yoxdur kimi işarələ" }));
       await settle();
     });
-    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 0 }]);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 0 }], null);
   });
 
   it("reloads the board afterwards: the engine may now have a finding it did not have", async () => {

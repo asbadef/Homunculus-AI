@@ -261,6 +261,17 @@ describe("the board store", () => {
     expect(state()).toMatchObject({ patients: [], alerts: [], scope: null, connection: CONNECTION.CONNECTING });
     expect(api.streamTicket).not.toHaveBeenCalled();
   });
+
+  // G2-A3 D3: the Meds form charts a vasopressor/fluid change with a time up to 24 h back. The
+  // store is the only door between the screen and `api.chart`, so it has to carry that time.
+  it("passes the charted time through to the API as recorded_at, and sends none when not given", async () => {
+    const { api, store } = setup();
+    api.chart = vi.fn().mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] });
+    await store.chart("S-001", [{ code: "weight_kg", value: 80 }], "2026-10-26T05:00:00.000Z");
+    expect(api.chart).toHaveBeenLastCalledWith("S-001", [{ code: "weight_kg", value: 80 }], "2026-10-26T05:00:00.000Z");
+    await store.chart("S-001", [{ code: "weight_kg", value: 81 }]);
+    expect(api.chart).toHaveBeenLastCalledWith("S-001", [{ code: "weight_kg", value: 81 }], null);
+  });
 });
 
 // The server's keep-alives are SSE comments, which EventSource never hands to the page: a

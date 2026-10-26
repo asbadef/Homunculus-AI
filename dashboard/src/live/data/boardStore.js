@@ -335,6 +335,9 @@ export function createBoardStore({
      * Chart what a clinician observed (`POST /clinical/{id}`, permission `clinical.chart`).
      * `entries` is `[{code, value}]` and the engine fixes the unit for each code, so a screen
      * cannot chart a value in the wrong scale (api/clinical.py `CHARTABLE`).
+     * `recordedAt`, an ISO-8601 instant with a zone, is the time the clinician says the
+     * observation was made (G2-A3, D3); the engine judges it no later than its own clock, and
+     * `null` means now.
      *
      * It reloads the board afterwards instead of applying what came back. Two reasons. The answer
      * is not a board entry — it is `{patient_id, charted, alerts}` — and more importantly the
@@ -359,9 +362,9 @@ export function createBoardStore({
      * retry is a change to Wave 2's connection policy and belongs with the screen that charts
      * (G1-11) rather than in the shared store, where no screen can yet verify it.
      */
-    async chart(patientId, entries) {
+    async chart(patientId, entries, recordedAt = null) {
       const mine = generation;
-      const answer = await track(() => api.chart(patientId, entries));
+      const answer = await track(() => api.chart(patientId, entries, recordedAt));
       if (mine !== generation) return null;
       await refresh();
       return answer;
