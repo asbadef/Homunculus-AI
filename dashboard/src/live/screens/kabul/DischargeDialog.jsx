@@ -2,7 +2,8 @@
 // spec D7, §3.3 step 1): where the patient goes — home, another institution (named), exitus
 // (reported by: the physician herself unless another name is written) — when (now by default,
 // never in the future) and a note. The server decides and checks again (admission/form.py); a
-// critical alarm nobody acknowledged refuses it there, said on the toast.
+// critical alarm nobody acknowledged refuses it there, said on the toast — and a refusal is news
+// about the list (someone else may have started it), so the tab reads it again (`onRefused`).
 import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -29,7 +30,20 @@ export const localInput = (ms) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-export function DischargeDialog({ row, subject, onClose, onDone }) {
+const LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+/** A datetime-local value as an instant, built from its parts in this browser's time — not
+ *  `Date.parse`, whose reading of a date-time with no offset browsers have not always agreed on.
+ *  NaN for anything that is not one, a day the month does not have (30 February) included. */
+export const fromLocalInput = (value) => {
+  const parts = LOCAL.exec(String(value ?? ""));
+  if (!parts) return NaN;
+  const [y, mo, d, h, mi] = parts.slice(1).map(Number);
+  if (mo < 1 || mo > 12 || h > 23 || mi > 59) return NaN;
+  const at = new Date(y, mo - 1, d, h, mi);
+  return at.getFullYear() === y && at.getMonth() === mo - 1 && at.getDate() === d ? at.getTime() : NaN;
+};
+
+export function DischargeDialog({ row, subject, onClose, onDone, onRefused }) {
   const { t } = useI18n();
   const { store } = useSession();
   const toast = useToast();
@@ -40,7 +54,7 @@ export function DischargeDialog({ row, subject, onClose, onDone }) {
   const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
-  const atMs = Date.parse(at);
+  const atMs = fromLocalInput(at);
   const errors = {
     institution: disposition === "OTHER_INSTITUTION" && !institution.trim() ? t("kabul.invalid.institution") : null,
     at: !Number.isFinite(atMs) || atMs > Date.now() + 60_000 ? t("kabul.invalid.dischargeAt") : null,
@@ -67,6 +81,7 @@ export function DischargeDialog({ row, subject, onClose, onDone }) {
       onDone();
     } catch (err) {
       toast(refusedDischarge(t, subject, err), "error");
+      onRefused?.();
     } finally {
       setBusy(false);
     }
