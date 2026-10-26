@@ -135,6 +135,9 @@ export default {
       bedLabelTaken: "Bu birimde aynı etiketli bir yatak zaten var.",
       requestConflict: "Bu formla daha önce bir kabul kaydedilmiş; form yeniden gönderilmedi. «Taburcu › Yatan hastalar» listesine bakın.",
       requestConflictNumber: "Bu formla daha önce bir kabul kaydedilmiş (hasta no {number}); form yeniden gönderilmedi. «Taburcu › Yatan hastalar» listesine bakın.",
+      // A-32: the release of a bed whose last patient's card is still on the board. Mapped in
+      // apiErrors.js (`board_not_cleared`) once admission/errors.py raises it.
+      boardNotCleared: "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı. Biraz sonra yeniden deneyin; sürerse sistem yöneticisine bildirin.",
     },
     invalid: {
       displayName: "Ad soyad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",
@@ -282,6 +285,7 @@ export default {
       bedLabelTaken: "Bu şöbədə eyni etiketli çarpayı artıq var.",
       requestConflict: "Bu forma ilə artıq qəbul yazılıb; forma yenidən göndərilmədi. «Evə yazılma › Yatan xəstələr» siyahısına baxın.",
       requestConflictNumber: "Bu forma ilə artıq qəbul yazılıb (xəstə nömrəsi {number}); forma yenidən göndərilmədi. «Evə yazılma › Yatan xəstələr» siyahısına baxın.",
+      boardNotCleared: "Bu çarpayının son xəstəsinin kartı hələ paneldədir; çarpayı boşaldılmadı. Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.",
     },
     invalid: {
       displayName: "Ad soyad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
@@ -429,6 +433,7 @@ export default {
       bedLabelTaken: "В этом отделении уже есть койка с такой меткой.",
       requestConflict: "По этой форме приём уже оформлен; форма повторно не отправлена. Проверьте список «Выписка › Госпитализированные пациенты».",
       requestConflictNumber: "По этой форме приём уже оформлен (номер пациента {number}); форма повторно не отправлена. Проверьте список «Выписка › Госпитализированные пациенты».",
+      boardNotCleared: "Карточка последнего пациента этой койки всё ещё на панели; койка не освобождена. Повторите чуть позже; если не поможет — сообщите администратору системы.",
     },
     invalid: {
       displayName: "Нужны имя и фамилия.", dateOfBirth: "Дата рождения неверна.",
@@ -575,6 +580,7 @@ export default {
       bedLabelTaken: "A bed with this label already exists in this unit.",
       requestConflict: "An admission was already recorded under this form; the form was not sent again. Check «Discharge › Inpatients».",
       requestConflictNumber: "An admission was already recorded under this form (patient number {number}); the form was not sent again. Check «Discharge › Inpatients».",
+      boardNotCleared: "This bed's last patient's card is still on the board; the bed was not freed. Try again shortly; if it persists, tell the system administrator.",
     },
     invalid: {
       displayName: "The full name is required.", dateOfBirth: "The date of birth is not valid.",
