@@ -104,6 +104,71 @@ describe("SignOffStrip", () => {
     expect(screen.queryByText(WAITS)).toBeNull();
   });
 
+  it("holds the button until the newest read is in, when the minute's read overtakes the one after the press (A-22)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const reads = [];
+      const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
+        perms: DOCTOR,
+        setup: (a) => {
+          a.admissions.mockResolvedValueOnce(DRAFT).mockImplementation(() => new Promise((resolve) => { reads.push(resolve); }));
+          a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
+        },
+      });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+      await settle();                                                        // signed; its re-read is out
+      await act(async () => { vi.advanceTimersByTime(60_000); });           // the minute's read overtakes it
+      expect(reads).toHaveLength(2);
+      await act(async () => { reads[0](DRAFT); });                           // the overtaken read answers: dropped
+      await settle();
+      // The list on screen is still the one from before the signature: a press now would sign twice.
+      expect(screen.getByRole("button", { name: SIGN })).toHaveAttribute("aria-busy", "true");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+      expect(api.signOffAdmission).toHaveBeenCalledTimes(1);
+      await act(async () => { reads[1]([]); });
+      await settle();
+      expect(screen.queryByText(WAITS)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the signature where the strip stood, and takes there the focus its button had — not <body> (A-22, §5.7)", async () => {
+    await mountKabul(<SignOffStrip patientId="H2600007" />, {
+      perms: DOCTOR,
+      setup: (a) => {
+        a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
+        a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
+      },
+    });
+    const button = screen.getByRole("button", { name: SIGN });
+    button.focus();
+    await act(async () => { fireEvent.click(button); });
+    await settle();
+    expect(screen.queryByText(WAITS)).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toHaveTextContent(`${BED_2} · qəbul imzalandı`);
+    expect(document.activeElement.closest("[role='region']")).toBeNull();     // the strip's place, not the toast
+    expectNoUuid();
+  });
+
+  it("leaves the focus where it is when the physician moved it elsewhere meanwhile", async () => {
+    await mountKabul(<><SignOffStrip patientId="H2600007" /><input aria-label="elsewhere" /></>, {
+      perms: DOCTOR,
+      setup: (a) => {
+        a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
+        a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
+      },
+    });
+    const elsewhere = screen.getByLabelText("elsewhere");
+    fireEvent.click(screen.getByRole("button", { name: SIGN }));
+    elsewhere.focus();
+    await settle();
+    expect(document.activeElement).toBe(elsewhere);
+    const region = screen.getByRole("region", { name: "Bildirişlər" });
+    expect(screen.getAllByText(`${BED_2} · qəbul imzalandı`).filter((el) => !region.contains(el))).toHaveLength(1);
+  });
+
   it("says it is signing while the button is held: a busy button alone reads only «unavailable»", async () => {
     let answer;
     await mountKabul(<SignOffStrip patientId="H2600007" />, {
