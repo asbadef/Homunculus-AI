@@ -25,7 +25,11 @@ writes from the first into the second, and nothing else in `admission/` does:
                        (`retire_patient`, injected: Lane A's `retire_and_publish`), handed this
                        number's tombstone's removal frame — the last bed and unit, no name — which
                        that door publishes once, after the alerts are ended (A-11d, A-20). What
-                       the door itself raises comes out as `RetireIncomplete` (A-25).
+                       the door itself raises comes out as `RetireIncomplete` (A-25);
+* `take_off`           the two above as the discharge's one board step, never raising and
+                       answering `board`/`alerts` — after the confirmation, at its retry and at
+                       the bed release (review I-2). It does not look at alerts: the critical-alarm
+                       hold is the confirmation's own (review I-1).
 
 The discharge's removal is never BoardLink's to send. `put_identity`, `chart_weight` and
 `apply_profile` refuse a discharged number before they build, chart or write anything (A-11; for
@@ -52,11 +56,13 @@ audit rows carry the number and the actor — never a name.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import Request
 
+from homunculus.admission.schemas import AlertRetire, EngineWrite
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.api.board import identity_only_board, patient_board, tombstone_board
@@ -65,6 +71,8 @@ from homunculus.api.notify import Notifier
 from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore, is_tombstone
 from homunculus.pipeline import Engine
 from homunculus.tenant.bedmap import BedMap
+
+log = logging.getLogger(__name__)
 
 CRITICAL = "critical"
 #: The chartable code the admission weight goes in under (`api/clinical.CHARTABLE`).
@@ -81,12 +89,14 @@ def count_open_critical(alerts: list[dict]) -> int:
 
 
 class RetireIncomplete(Exception):
-    """The app's retirement door was entered and raised (A-25): the door ends the patient's
-    alerts in memory and sends the removal frame in its own `finally`, so what failed came after —
-    an `alert_cleared` row not written, typically. The discharge is not failed by it; the route
-    reports the retirement `incomplete`. The door's own error is `__cause__`. Deliberately neither
-    a `ValueError` nor a `RuntimeError`: those are `retire`'s refusals BEFORE the door, a
-    discharge whose card has not left the screens."""
+    """The app's retirement door was entered and raised (A-25), after the tombstone was written.
+    What went wrong is not known from here: typically an `alert_cleared` row not written after
+    the alerts were ended in memory, but the door's own `finally` — which re-arms the notifier and
+    sends the removal frame — may have failed too, so a removal frame may or may not have gone
+    out. Every read of the board (`/patients`, a screen reloading) leaves the card off either way:
+    the tombstone is written. The discharge is not failed by it; the route reports the retirement
+    `incomplete`. The door's own error is `__cause__`. Deliberately neither a `ValueError` nor a
+    `RuntimeError`: those are `retire`'s refusals BEFORE the door, which sent nothing."""
 
 
 def kabul_record(*, patient_number: str, display_name: str, birth_date: date, sex: str,
@@ -260,6 +270,38 @@ class BoardLink:
             return await self._retire(tenant, patient_number, frame=tombstone_board(record))
         except Exception as exc:
             raise RetireIncomplete(f"the retirement of {patient_number} did not finish") from exc
+
+    async def take_off(self, tenant: str, patient_number: str) -> tuple[EngineWrite, AlertRetire]:
+        """A discharged patient taken off the board and out of the alert world — the step after
+        a discharge's commit, its nurse's retry (a confirmation of a DISCHARGED admission) and the
+        bed release's check (review I-2): the tombstone (`discharge_identity`), then the
+        retirement (`retire`). Both are idempotent, so the step may run again. Never raises; what
+        it answers:
+
+        * `ok`, `ok`: the tombstone written, the retirement done;
+        * `failed`, `failed`: the tombstone refused, or the retirement refused before its door.
+          Nothing was sent; when the tombstone stands, reads leave the card off all the same;
+        * `ok`, `incomplete`: the door raised after the tombstone was written (`RetireIncomplete`)
+          — a removal frame may or may not have gone out; reads leave the card off.
+
+        It does not look at the patient's alerts. The hold on an unacknowledged critical alarm
+        (review I-1) is the confirmation's own, under its locks, before the patient is DISCHARGED;
+        this step runs for a patient already confirmed gone, and a card left standing must never
+        be held on the board by its own alerts, or it could not be taken off (the dashboard
+        review's ordering). The retirement ends them. Logged at ERROR with the number, never a
+        name."""
+        try:
+            record = await self.discharge_identity(tenant, patient_number)
+            await self.retire(tenant, patient_number, record)
+        except RetireIncomplete:
+            log.exception("discharge %s: the card is off the board, but the patient's retirement "
+                          "from the alert world did not finish", patient_number)
+            return "ok", "incomplete"
+        except Exception:
+            log.exception("discharge %s: the card did not leave the board and the patient's "
+                          "alerts were not ended", patient_number)
+            return "failed", "failed"
+        return "ok", "ok"
 
 
 def board_link_of(request: Request) -> BoardLink | None:

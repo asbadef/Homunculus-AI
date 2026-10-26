@@ -458,10 +458,11 @@ def test_a_retirement_with_no_door_wired_raises():
 
 
 def test_a_door_that_raises_is_a_retirement_left_incomplete_not_a_refusal():
-    """A-25: what the door raises — its alerts already ended in memory, its removal sent in its
-    `finally`, an `alert_cleared` row not written — comes out as `RetireIncomplete`, the door's
-    error as its cause, so the discharge route can tell it from a refusal before the door (a
-    `ValueError`, or a `RuntimeError` for a door not wired), which is a failed discharge."""
+    """A-25: whatever the door raises — after the tombstone was written, so a read of the board
+    leaves the card off; whether its removal frame went out depends on where in the door it
+    failed — comes out as `RetireIncomplete`, the door's error as its cause, so the discharge
+    route can tell it from a refusal before the door (a `ValueError`, or a `RuntimeError` for a
+    door not wired), which sent nothing and is a failed discharge."""
     audit_down = RuntimeError("audit store down")
     calls: list = []
 
@@ -477,6 +478,62 @@ def test_a_door_that_raises_is_a_retirement_left_incomplete_not_a_refusal():
     assert caught.value.__cause__ is audit_down
     assert not isinstance(caught.value, (ValueError, RuntimeError))
     assert [frame["removed"] for frame in calls] == [True]           # the door was entered, once
+
+
+# ---------------------------------------------------------------- take_off: the step, never raising
+def _counting_door(calls: list, error: Exception | None = None):
+    async def retire(tenant, patient_number, *, frame):
+        calls.append((patient_number, frame))
+        if error is not None:
+            raise error
+        return []
+    return retire
+
+
+def test_take_off_writes_the_tombstone_then_retires_through_the_door_and_may_run_again():
+    """Review I-2: the discharge's board step is one method, for the confirmation, its retry and
+    the bed release: the tombstone, then the retirement. Both parts are idempotent, so a second
+    run — the nurse's retry — answers `ok` again."""
+    calls: list = []
+    world = World(retire=_counting_door(calls))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and world.board() == []
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert [(number, frame["removed"]) for number, frame in calls] == [("H2600001", True)] * 2
+
+
+def test_take_off_does_not_look_at_alerts_the_confirmation_is_the_one_hold():
+    """Review I-1 and the dashboard review's ordering: the hold on an unacknowledged critical
+    alarm is the confirmation's own (PENDING_DISCHARGE → DISCHARGED, under its locks). The step
+    runs for a patient already confirmed gone — after that confirmation, at its retry, at the bed
+    release — and must not be held by an alert on a card left standing, or such a card could never
+    be taken off. So it takes the patient off with the alarm open: the retirement ends it."""
+    calls: list = []
+    world = World(retire=_counting_door(calls))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        world.ingest(fhir)
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 1
+
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == ("ok", "ok")
+    assert world.link.is_discharged(HOSPITAL, "H2600001") and len(calls) == 1
+
+
+@pytest.mark.parametrize(("failure", "answer"), [
+    ("the store refuses the tombstone", ("failed", "failed")),
+    ("no door wired", ("failed", "failed")),
+    ("the door raises", ("ok", "incomplete")),
+])
+def test_take_off_reports_each_failure_and_never_raises(failure, answer):
+    calls: list = []
+    door = None if failure == "no door wired" else _counting_door(
+        calls, RuntimeError("audit store down") if failure == "the door raises" else None)
+    world = World(retire=door)
+    stamp = T0 + timedelta(hours=1) if failure == "the store refuses the tombstone" else T0
+    asyncio.run(world.link.put_identity(HOSPITAL, record(at=stamp)))
+    assert asyncio.run(world.link.take_off(HOSPITAL, "H2600001")) == answer
+    assert len(calls) == (1 if failure == "the door raises" else 0)
 
 
 # ---------------------------------------------------------------- the link as the app wires it

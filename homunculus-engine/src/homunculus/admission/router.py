@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus import crypto
 from homunculus.admission import form, service, trail, unitscope
-from homunculus.admission.boardlink import RetireIncomplete, board_link_of, kabul_record
+from homunculus.admission.boardlink import board_link_of, kabul_record
 from homunculus.admission.models import (
     OPEN_ADMISSION_STATES, Admission, AdmissionState, CareTeamMember, DischargeDisposition,
     Handover, Patient,
@@ -594,11 +594,17 @@ async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: 
         raise exc.http() from None
 
 
-async def _locked(db: AsyncSession, admission: Admission) -> Admission:
+async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> Admission:
     """The admission's bed row and then its own, locked for the rest of the transaction and read
-    afresh (A-10, A-26): two sign-offs, starts or confirmations of one admission at once run one
-    after the other, and the second reads what the first committed — refused by the state machine
-    as `invalid_transition` — instead of both passing a check made on a stale read.
+    afresh (A-10, A-26): two sign-offs, starts, confirmations or transfers of one admission at
+    once run one after the other, and the second reads what the first committed — refused by the
+    state machine as `invalid_transition` — instead of both passing a check made on a stale read.
+
+    `also`: other beds the transaction writes or must find free — a transfer's target (review
+    M-1), checked AVAILABLE only once it is locked, so an admission into it at the same moment is
+    waited for. Every bed is locked in the order of its id, then the admission: two transactions
+    that both need two beds take them in the same order and cannot wait on each other in a
+    circle.
 
     Both locks are FOR NO KEY UPDATE, the strength of every unit and bed lock (tenant/router.py
     `_lock_bed`): an insert of a row pointing at the bed, or at the admission (a care-team
@@ -608,9 +614,10 @@ async def _locked(db: AsyncSession, admission: Admission) -> Admission:
     `populate_existing`: the rows this session read before the locks would otherwise come back as
     they were then. An admission's bed never changes (a transfer makes a new admission), so the
     bed read before the lock is the bed."""
-    await db.execute(select(Bed).where(Bed.id == admission.bed_id)
-                     .with_for_update(key_share=True)
-                     .execution_options(populate_existing=True))
+    for bed_id in sorted({admission.bed_id, *also}):
+        await db.execute(select(Bed).where(Bed.id == bed_id)
+                         .with_for_update(key_share=True)
+                         .execution_options(populate_existing=True))
     return (await db.execute(select(Admission).where(Admission.id == admission.id)
                              .with_for_update(key_share=True)
                              .execution_options(populate_existing=True))).scalar_one()
@@ -626,6 +633,19 @@ async def _number_of(db: AsyncSession, admission: Admission) -> str:
     """The admission's patient number: its board key, and the audit row's patient."""
     return (await db.execute(select(Patient.patient_number)
                              .where(Patient.id == admission.patient_id))).scalar_one()
+
+
+def _open_critical(request: Request, hospital: str, number: str) -> int:
+    """The critical alerts on this patient's board nobody acknowledged (`BoardLink.open_critical`:
+    firing or latched, the alerts the clinician sees), which hold a discharge's start and its
+    confirmation. Only an app assembled without its board (a test mounting the routers alone)
+    has no BoardLink; it has no engine either, so no alert — logged at ERROR, and none counted."""
+    link = board_link_of(request)
+    if link is None:
+        log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
+                  number)
+        return 0
+    return link.open_critical(hospital, number)
 
 
 # ---------------------------------------------------------------------------
@@ -731,8 +751,12 @@ async def transfer_initiate(
     user: User = Depends(require_permission("admissions.move.initiate")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """Under the admission's bed and row locks, as the sign-off and discharge routes (G2-B1a,
+    review M-1): a transfer started while a discharge is started waits for it and is refused
+    `invalid_transition`; a state machine's ValueError is that 409, never a 500."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
+    admission = await _locked(db, admission)
     try:
         await service.initiate_transfer(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -740,6 +764,8 @@ async def transfer_initiate(
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
     await db.commit()
     await db.refresh(admission)
     return admission
@@ -753,8 +779,13 @@ async def transfer_confirm(
     user: User = Depends(require_permission("admissions.transfer.confirm")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """Both beds — the source and the TARGET, in the order of their ids — and then the admission,
+    locked before the target is checked AVAILABLE (G2-B1a, review M-1): an admission into the
+    target at the same moment is waited for and the arrival refused `bed_not_available`, never
+    two patients on one bed. A state machine's ValueError is a 409 `invalid_transition`."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
+    admission = await _locked(db, admission, payload.target_bed_id)
     try:
         new_admission = await service.confirm_transfer_arrival(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -762,6 +793,8 @@ async def transfer_confirm(
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
     await db.commit()
     await db.refresh(new_admission)
     return new_admission
@@ -795,12 +828,6 @@ async def discharge_initiate(
     admission = await _locked(db, admission)
     number = await _number_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
-    link = board_link_of(request)
-    if link is None:
-        # Only an app assembled without its board (a test mounting the routers alone) has none;
-        # it has no engine either, so no alert to hold the discharge with.
-        log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
-                  number)
     reported_by = _strip(payload.reported_by)
     if payload.disposition == DischargeDisposition.EXITUS and reported_by is None:
         reported_by = user.full_name or user.username
@@ -809,8 +836,7 @@ async def discharge_initiate(
             db, admission, disposition=payload.disposition,
             institution=_strip(payload.institution), reported_by=reported_by,
             discharge_at=payload.discharge_at, note=_strip(payload.note),
-            unacknowledged_critical_count=(link.open_critical(hospital, number)
-                                           if link is not None else 0),
+            unacknowledged_critical_count=_open_critical(request, hospital, number),
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -826,35 +852,17 @@ async def discharge_initiate(
 
 async def _off_the_board(request: Request, hospital: str, number: str) -> tuple[EngineWrite,
                                                                                  AlertRetire]:
-    """After the discharge has committed (A-11d, A-23, A-25): the tombstone written
-    (`discharge_identity`), then the patient retired from the alert world through the app's door
-    (`retire`), which sends the one removal frame. What it answers:
-
-    * both done: the card left every screen, the alerts ended — `ok`, `ok`;
-    * the tombstone refused, or the retirement refused before its door (a `ValueError`, a door
-      not wired), or no BoardLink at all: no removal was sent and no alert ended — `failed`,
-      `failed`, logged at ERROR with the number;
-    * the door entered and raised (`RetireIncomplete`): its alerts were ended in memory and its
-      removal sent in its `finally`, so this is no failed discharge — `ok`, `incomplete`, logged.
-
-    Never raises: the discharge stands either way. Logged with the patient number, never a name."""
+    """After the discharge has committed (A-11d, A-23, A-25), and at its retry: the patient taken
+    off the board and out of the alert world — `BoardLink.take_off`, which says what it answers
+    and never raises. An app without its BoardLink did neither: `failed`, `failed`, logged at
+    ERROR (X53). The discharge stands either way. Logged with the patient number, never a
+    name."""
     link = board_link_of(request)
     if link is None:
         log.error("discharge %s: this app has no BoardLink; the card did not leave the board and "
                   "the patient's alerts were not ended", number)
         return "failed", "failed"
-    try:
-        record = await link.discharge_identity(hospital, number)
-        await link.retire(hospital, number, record)
-    except RetireIncomplete:
-        log.exception("discharge %s: the card left the board, but the patient's retirement from "
-                      "the alert world did not finish", number)
-        return "ok", "incomplete"
-    except Exception:
-        log.exception("discharge %s: the card did not leave the board and the patient's alerts "
-                      "were not ended", number)
-        return "failed", "failed"
-    return "ok", "ok"
+    return await link.take_off(hospital, number)
 
 
 @router.post("/{admission_id}/discharge/confirm", response_model=DischargeConfirmResponse)
@@ -870,18 +878,45 @@ async def discharge_confirm(
     one transaction. After the commit, the audit row `admission.discharge_confirm` (it never
     raises), then the card leaves every screen and the patient the alert world
     (`_off_the_board`); `board` and `alerts` say how that went. The answer is made before the
-    commit from what was written."""
+    commit from what was written.
+
+    Refused `critical_alarm_open`, writing nothing, while the board shows the patient a critical
+    alert nobody acknowledged — read again here, under the locks, as the start reads it (the
+    user's decision, 2026-10-26): the retirement ends every alert of the patient with the reason
+    "discharged", so one that fired after the start is seen and acknowledged first. An exitus is
+    not exempt: after a death, someone acknowledges the monitor's last critical alarms before the
+    confirmation.
+
+    A confirmation of an admission already DISCHARGED is the nurse's retry of the board step
+    (review I-2): when the first one answered `board: failed`, the card still stands and its
+    alerts still run. It runs `_off_the_board` again (idempotent) and answers its outcome, with
+    the same permission and unit scope, writing nothing in the database and no second
+    `admission.discharge_confirm` row — its own `admission.discharge_board_retry`. It is decided
+    BEFORE the critical-alarm read and is not held by it (the dashboard review's ordering): that
+    hold belongs to the real PENDING_DISCHARGE → DISCHARGED confirmation, which this patient has
+    passed, and a card left standing could carry an alert that would otherwise keep it on the
+    board for good. The retirement ends that alert with the card."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     admission = await _locked(db, admission)
+    number = await _number_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    if admission.state == AdmissionState.DISCHARGED:
+        written, actor = AdmissionResponse.model_validate(admission), user.username
+        await db.rollback()                   # nothing is written; the locks go before the step
+        board, alerts = await _off_the_board(request, hospital, number)
+        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
+                     payload={"admission_id": str(written.id), "board": board, "alerts": alerts,
+                              "via": "discharge.confirm", "actor": actor})
+        return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
     try:
-        await service.confirm_discharge(db, admission)
+        await service.confirm_discharge(
+            db, admission,
+            unacknowledged_critical_count=_open_critical(request, hospital, number))
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
-    number = await _number_of(db, admission)
-    hospital = await trail.hospital_of(db, caller_tenant)
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
     trail.record(request, hospital, "admission.discharge_confirm", patient_id=number,
