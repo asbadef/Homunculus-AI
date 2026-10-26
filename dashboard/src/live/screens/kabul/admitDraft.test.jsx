@@ -12,7 +12,7 @@ import { fakeApi, profile, token } from "../../session/testTokens.testutil.js";
 import { AdmitTab } from "./AdmitTab.jsx";
 import { admitDraftOf } from "./admitDraft.js";
 import { emptyForm } from "./admitForm.js";
-import { BED, NURSE, REA, mountKabul, settle } from "./kabul.testutil.js";
+import { BED, NURSE, REA, mountKabul, row, settle } from "./kabul.testutil.js";
 
 const NAME = "Sentetik Hasta";
 const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -52,6 +52,13 @@ const press = async () => {
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qəbul et" })); });
   await settle();
 };
+const nameField = () => screen.getByLabelText(/^Ad soyad/);
+const ids = (draft) => draft.get().unanswered.map((s) => [s.name, s.requestId]);
+/** Nothing of a request id reaches the page or the wire yet (Task 19b sends it). */
+function neverShownNorSent(api, ...requestIds) {
+  for (const id of requestIds) expect(document.body.innerHTML).not.toContain(id);
+  for (const [body] of api.admit.mock.calls) expect(JSON.stringify(body)).not.toMatch(/request_id|requestId/);
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -193,5 +200,70 @@ describe("the admission form's draft", () => {
     // Not on the wire until the server takes it (Task 8; the Task 19 sweep sends it).
     for (const [body] of api.admit.mock.calls) expect(JSON.stringify(body)).not.toMatch(/request_id|requestId/);
     expect(document.body.textContent).not.toContain(first);
+  });
+
+  // A-24 I-1: the id is the PATIENT's send's, not the tab's. A send with no answer keeps the id it
+  // went with; the form, once it is another patient, must not go out under it — the server would
+  // take the new patient's send for a resend of the old one (Task 19b sends it).
+  it("keeps on each send with no answer the id it went with, and gives the form a new one once it is another patient (I-1)", async () => {
+    const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+    const draft = admitDraftOf(store);
+    const first = draft.get().requestId;
+    act(() => { draft.update({ form: filled() }); });
+    await press();                                                           // no answer; bed 1 still free
+    expect(ids(draft)).toEqual([[NAME, first]]);
+    expect(draft.get().requestId).toBe(first);                               // a resend of the same patient
+
+    fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } }); // another patient
+    const second = draft.get().requestId;
+    expect(second).toMatch(UUID4);
+    expect(second).not.toBe(first);
+    expect(ids(draft)).toEqual([[NAME, first]]);                             // the send keeps its own
+    fireEvent.change(nameField(), { target: { value: "Sentetik Başqası Yeni" } });
+    expect(draft.get().requestId).toBe(second);                              // renewed once, not per keystroke
+    neverShownNorSent(api, first, second);
+  });
+
+  it("gives the form a new id when its send goes unanswered after the form was turned to another patient meanwhile (I-1)", async () => {
+    let fail;
+    const { api, store } = await mountKabul(<AdmitTab />, {
+      perms: NURSE,
+      setup: (a) => a.admit.mockReturnValueOnce(new Promise((resolve, reject) => { fail = reject; })),
+    });
+    const draft = admitDraftOf(store);
+    const first = draft.get().requestId;
+    act(() => { draft.update({ form: filled() }); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qəbul et" })); });   // on its way
+    fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+    expect(draft.get().requestId).toBe(first);                               // nothing unanswered yet
+    await act(async () => { fail(timedOut()); });
+    await settle();
+    expect(ids(draft)).toEqual([[NAME, first]]);
+    expect(draft.get().requestId).not.toBe(first);
+    expect(draft.get().requestId).toMatch(UUID4);
+    neverShownNorSent(api, first);
+  });
+
+  it("keeps the form's own id when an earlier patient's admission is found under another id (I-1)", async () => {
+    const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+    const draft = admitDraftOf(store);
+    act(() => { draft.update({ form: filled() }); });
+    const first = draft.get().requestId;
+    await press();                                                           // Sentetik Hasta, bed 1: no answer
+    fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+    act(() => { draft.update((s) => ({ form: { ...s.form, bedId: BED(5), bedLabel: "5 · Otaq 2 · Reanimasiya" } })); });
+    const second = draft.get().requestId;
+    await press();                                                           // held: the first is not looked at (R1)
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yoxladım, qəbul yoxdur — davam et" })); });
+    await press();                                                           // Sentetik Başqası, bed 5: no answer either
+    expect(ids(draft)).toEqual([[NAME, first], ["Sentetik Başqası", second]]);
+
+    api.admissions.mockResolvedValue([row({ state: "DRAFT", bed_id: BED(1), patient_number: "H2600042" })]);
+    await press();                                                           // the first's DRAFT shows: an earlier patient's
+    expect(screen.getByText("H2600042")).toBeTruthy();
+    expect(ids(draft)).toEqual([["Sentetik Başqası", second]]);
+    // The form's own send is still unanswered, under the form's id: a resend must carry it again.
+    expect(draft.get().requestId).toBe(second);
+    neverShownNorSent(api, first, second);
   });
 });

@@ -22,9 +22,23 @@
 // unlock and a forced password change are the same session: the draft stays. With no one signed in
 // there is no draft that keeps anything. The drafts hang off the session store itself (a WeakMap),
 // so a page has one set, gone with its store.
+//
+// THE REQUEST ID IS THE PATIENT'S SEND'S (A-19, A-24 I-1). One per filled form, kept for a resend of
+// the same patient so the server can take two sends for one admission. Every send with no answer
+// keeps the id it went with. The form must never go out under the id of an unanswered send of
+// ANOTHER patient — the server would answer the new patient's send with the old one's admission —
+// so the moment the form's name moves away from the name of an unanswered send that carries the
+// form's id, the form takes a new one (`ownId`, on every write). The old send keeps its own. The id
+// is not sent yet (Task 19b) and never shown.
 import { useSyncExternalStore } from "react";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { emptyForm } from "./admitForm.js";
+
+/** Two names as a nurse reads them alike: spaces collapsed, case folded. */
+export function sameName(a, b) {
+  const plain = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return plain(a) === plain(b);
+}
 
 /** A version-4 UUID from `crypto.getRandomValues` — not `randomUUID`, which a page served over
  *  plain HTTP (the ward's VM) does not have: it is for secure contexts only. */
@@ -42,15 +56,22 @@ export function freshForm() {
   return {
     form: emptyForm(),
     tried: false,
-    // A-19/A-21: one per filled form, kept across resends, new after an admission or «Yeni qəbul»; NOT sent until the server takes it (Task 8 → Task 19).
+    // A-19/A-21/A-24: one per filled form, kept across resends, new after an admission, «Yeni qəbul» or a turn to another patient (`ownId`); NOT sent until Task 19b.
     requestId: newRequestId(),
   };
 }
 
 /** What a session's draft holds. `unanswered`: every send with no answer whose DRAFT is not found
- *  yet, `{bedId, bed, name, checked}`; `held`: `{bed}` while a send waits on one of them; `done`:
- *  the box open in place of the form, `{number, bed, engine, recovered?, earlier?}`. */
+ *  yet, `{bedId, bed, name, checked, requestId}`; `held`: `{bed}` while a send waits on one of them;
+ *  `done`: the box open in place of the form, `{number, bed, engine, recovered?, earlier?}`. */
 const fresh = () => ({ ...freshForm(), sending: false, held: null, unanswered: [], done: null });
+
+/** `state`, its form under an id of its own: a new one when an unanswered send of another
+ *  patient — another name — carries the form's id. */
+function ownId(state) {
+  const theirs = state.unanswered.some((s) => s.requestId === state.requestId && !sameName(s.name, state.form.name));
+  return theirs ? { ...state, requestId: newRequestId() } : state;
+}
 
 /** A draft that keeps nothing: an ended session's, or the one handed out while nobody is signed in. */
 const EMPTY = Object.freeze({
@@ -82,7 +103,7 @@ function createDraft() {
       if (!live) return;
       const next = typeof patch === "function" ? patch(state) : patch;
       if (!next) return;
-      state = { ...state, ...next };
+      state = ownId({ ...state, ...next });
       emit();
     },
     end() {

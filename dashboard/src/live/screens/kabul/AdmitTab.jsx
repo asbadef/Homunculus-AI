@@ -50,7 +50,7 @@ import {
   ADMISSION_TYPES, BLOOD_GROUPS, COMORBIDITIES, CONSENTS, EARLIEST_BIRTH, ENGINE_FAILED, NATIONALITIES,
   RELATIONS, SEXES, SOURCES, ageOf, missing, toBody,
 } from "./admitForm.js";
-import { freshForm, newRequestId, useAdmitDraft } from "./admitDraft.js";
+import { freshForm, newRequestId, sameName, useAdmitDraft } from "./admitDraft.js";
 import { BedPicker } from "./BedPicker.jsx";
 
 const localToday = () => {
@@ -58,11 +58,8 @@ const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** Two names as a nurse reads them alike: spaces collapsed, case folded. */
-const sameName = (a, b) => {
-  const plain = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
-  return plain(a) === plain(b);
-};
+/** Where an admission that may have landed is looked for: "Evə yazılma › Yatan xəstələr". */
+const whereOf = (t) => `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
 
 /** Two sends for the same bed under the same name — the one pair the server's bed lock keeps to one admission. */
 const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.name, b.name);
@@ -149,7 +146,7 @@ export function AdmitTab() {
   // The session's (admitDraft.js): `sending` is read from the draft at once, so a second press in
   // the same tick — or in a tab mounted while the first is on its way — sees it; `held` ({bed}): a
   // send got no answer, and nothing is sent until she has looked; `unanswered`: every send with no
-  // answer whose DRAFT is not found yet ({bedId, bed, name, checked}); `done`: the box.
+  // answer whose DRAFT is not found yet ({bedId, bed, name, checked, requestId}); `done`: the box.
   const [draftState, draft] = useAdmitDraft();
   const { form, tried, sending: busy, held, done } = draftState;
   const [focusTo, setFocusTo] = useState(null);     // {field}: focused once the render it asks for is drawn
@@ -177,6 +174,16 @@ export function AdmitTab() {
     if (focusTo) document.getElementById(`${uid}-${focusTo.field}`)?.focus();
   }, [focusTo, uid]);
 
+  // A hold is the draft's, and so is the news of it (m-2): the instance of this tab mounted when a
+  // send's continuation reaches one takes the focus to its reason — not the instance that began the
+  // send, which a tab change may have unmounted. A hold already standing when the tab mounts (she
+  // came back to it) is not news, and takes nothing.
+  const heldSeen = useRef(held);
+  useEffect(() => {
+    if (held && held !== heldSeen.current) document.getElementById(heldId)?.focus();
+    heldSeen.current = held;
+  }, [held, heldId]);
+
   if (!canAdmit) return <Note tone="info" icon="eye">{t("kabul.readOnly")}</Note>;
   if (done) {
     // «Yeni qəbul» empties the draft for the next patient: the form, the box, the hold, and a new
@@ -203,10 +210,12 @@ export function AdmitTab() {
     toast(doneFor(t, next.bed, t("kabul.admitted", { number: next.number })));
   }
 
-  /** "Kabul et" waits — the reason names the unanswered send's bed and takes the focus. */
+  /** "Kabul et" waits; the reason names the unanswered send's bed. A hold is reached after an await,
+   *  when she may be on another tab or screen: it is said on the toast, and the tab mounted then
+   *  takes the focus to the reason (the effect above, m-2). */
   function hold(bed) {
     draft.update({ held: { bed } });
-    setFocusTo({ field: "held" });
+    toast(t("kabul.heldNoAnswer", { bed, where: whereOf(t) }), "warn");
   }
 
   /** The DRAFTs sends with no answer left after all — on their bed, under the name they sent —
@@ -228,8 +237,10 @@ export function AdmitTab() {
   }
 
   /** A send's DRAFT found. Under the form's name (`name`) it is the form's admission; under
-   *  another it is an earlier patient's (R3): shown as that patient's, and the form is kept — under
-   *  a new request id, the found one being that patient's (A-19). Answers whether it was the form's. */
+   *  another it is an earlier patient's (R3): shown as that patient's, and the form is kept. The
+   *  found send's request id is that patient's: the form takes a new one only if it still carried
+   *  it, else it keeps its own, which a send of its own still unanswered may carry (A-24 I-1).
+   *  Answers whether it was the form's. */
   function landedFound({ row, send }, name) {
     const next = { number: row.patient_number, bed: send.bed, engine: null, recovered: true };
     if (sameName(send.name, name)) {
@@ -239,9 +250,10 @@ export function AdmitTab() {
     draft.update((s) => ({
       unanswered: s.unanswered.filter((x) => !sameSend(x, send)),
       done: { ...next, earlier: String(send.name).trim() },
-      requestId: newRequestId(),
+      ...(send.requestId === s.requestId ? { requestId: newRequestId() } : null),
     }));
-    toast(doneFor(t, send.bed, t("kabul.admitted", { number: row.patient_number })));
+    // Said as what it is: an earlier send's admission, a warning — not the form's own success (m-1).
+    toast(doneFor(t, send.bed, t("kabul.earlierAdmitted", { number: row.patient_number })), "warn");
     return false;
   }
 
@@ -255,8 +267,8 @@ export function AdmitTab() {
     // Nothing found — or only an earlier patient's, with this send's own outcome, or another's,
     // still not known: wait.
     const unknown = mayHaveLanded(err) || draft.get().unanswered.some((s) => !s.checked);
-    if (!landed || unknown) hold(sent.bed);
     toast(refusedFor(t, sent.bed, reasonOf(t, err)), "error");
+    if (!landed || unknown) hold(sent.bed);
   }
 
   // Every step after an `await` first asks whether the draft is still live: a send of a session
@@ -298,7 +310,8 @@ export function AdmitTab() {
       setFocusTo({ field: gaps[0].field });
       return;
     }
-    const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false };
+    // The send keeps the request id it goes with (A-24 I-1), whatever becomes of the form after.
+    const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false, requestId: now.requestId };
     const body = toBody(form);
     draft.update({ sending: true });
     try {
@@ -330,7 +343,7 @@ export function AdmitTab() {
     }
   }
 
-  const where = `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
+  const where = whereOf(t);
   return (
     <form noValidate autoComplete="off" onSubmit={submit} className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
       <div className="grid min-w-0 gap-3">

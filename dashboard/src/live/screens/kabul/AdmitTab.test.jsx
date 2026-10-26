@@ -21,6 +21,8 @@ import { AdmitTab } from "./AdmitTab.jsx";
 import { KabulScreen } from "./KabulScreen.jsx";
 import { BED, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, row, settle, structure, toasts } from "./kabul.testutil.js";
 
+/** The side panel: the missing fields, «Qəbul et», and the hold's reason under it — the form's own
+ *  reason, apart from the toast that says a hold too (m-2). */
 const panel = () => within(screen.getByRole("complementary", { name: "Çatışmayan sahələr" }));
 const missingNow = () => panel().queryAllByRole("listitem").map((li) => li.textContent);
 const admitButton = () => screen.getByRole("button", { name: "Qəbul et" });
@@ -50,6 +52,7 @@ const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-y
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
 const EARLIER = `Bu nömrə formadakı xəstəyə aid deyil: Sentetik Hasta (${BED1}) üçün əvvəl göndərilən, cavabı gəlməyən qəbul yazılıb. Formadakı qəbul hələ göndərilməyib.`;
 const EARLIER_TITLE = "Başqa xəstənin qəbulu yazılıb";
+const EARLIER_TOAST = `${BED1} · əvvəl göndərilən qəbul yazılıb, xəstə nömrəsi H2600042 — formadakı xəstənin deyil`;
 const BACK = "Formaya qayıt";
 const TAKEN = `${BED1}: Bu çarpayı artıq boş deyil; başqa çarpayı seçin.`;
 const bedTaken = () => refusal(409, "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit.", { apiCode: "bed_not_available" });
@@ -413,7 +416,7 @@ describe("AdmitTab", () => {
 
       expect(screen.queryByText("H2600077")).toBeNull();                      // another patient's number is never offered
       expect(toasts().getAllByText(`${BED1}: ${TIMEOUT}`).length).toBeGreaterThan(0);
-      const reason = screen.getByText(HELD);
+      const reason = panel().getByText(HELD);
       expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
       expect(missingNow()).toEqual(["Çarpayı"]);                              // the taken bed is no longer the form's
 
@@ -423,10 +426,10 @@ describe("AdmitTab", () => {
       admitButton().focus();                                                 // where a keyboard press comes from
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);
-      expect(document.activeElement).toBe(screen.getByText(HELD));           // a held press is told why (M-4)
+      expect(document.activeElement).toBe(panel().getByText(HELD));           // a held press is told why (M-4)
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
-      expect(screen.queryByText(HELD)).toBeNull();
+      expect(panel().queryByText(HELD)).toBeNull();
       expect(admitButton().getAttribute("aria-disabled")).toBeNull();
     });
 
@@ -436,7 +439,7 @@ describe("AdmitTab", () => {
       api.structure.mockRejectedValue(refusal(503, "Service Unavailable"));
       api.admissions.mockRejectedValue(refusal(503, "Service Unavailable"));
       await press();
-      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(panel().getByText(HELD)).toBeTruthy();
       expect(document.body.textContent).not.toMatch(/artıq boş deyil/);
       expect(admitButton().getAttribute("aria-disabled")).toBe("true");
     });
@@ -452,8 +455,8 @@ describe("AdmitTab", () => {
       await press();                                                         // the first has not landed yet
       expect(api.admit).toHaveBeenCalledTimes(1);
       expect(api.admissions).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(HELD)).toBeTruthy();
-      expect(document.activeElement).toBe(screen.getByText(HELD));
+      expect(panel().getByText(HELD)).toBeTruthy();
+      expect(document.activeElement).toBe(panel().getByText(HELD));
       expect(admitButton().getAttribute("aria-disabled")).toBe("true");
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: GO_ON })); });
@@ -471,7 +474,7 @@ describe("AdmitTab", () => {
       fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(panel().getByText(HELD)).toBeTruthy();
     });
 
     it("finds the first send after «go on» when its DRAFT shows only then, and sends nothing more (R2)", async () => {
@@ -524,6 +527,11 @@ describe("AdmitTab", () => {
       expect(heading.compareDocumentPosition(whose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(whose.compareDocumentPosition(number) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(await said()).toContain(`${EARLIER} ${RECORDED}`);
+      // The toast says the same: an earlier send's admission — a warning, never the form's own
+      // success under the form's bed (m-1).
+      const told = toasts().getAllByText(EARLIER_TOAST);
+      expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+      expect(toasts().queryByText(`${BED1} · qəbul edildi, xəstə nömrəsi H2600042`)).toBeNull();
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
       expect(screen.getByLabelText(/^Ad soyad/).value).toBe("Sentetik Başqası");
@@ -578,7 +586,7 @@ describe("AdmitTab", () => {
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
       expect(nameField().value).toBe("Sentetik Başqası");
-      expect(screen.queryByText(HELD)).toBeNull();                           // nothing is unknown: nothing to wait for
+      expect(panel().queryByText(HELD)).toBeNull();                           // nothing is unknown: nothing to wait for
       expect(missingNow()).toEqual(["Çarpayı"]);                             // the taken bed is no longer the form's
       pickBed5();
       expect(admitButton().getAttribute("aria-disabled")).toBeNull();
@@ -620,7 +628,7 @@ describe("AdmitTab", () => {
       const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
       fillRequired();
       await press();                                                         // no answer; bed 1 still free: no hold
-      expect(screen.queryByText(HELD)).toBeNull();
+      expect(panel().queryByText(HELD)).toBeNull();
       await openTab("Evə yazılma");
       await openTab("Qəbul");
       expect(nameField().value).toBe("Sentetik Hasta");                      // the form is where she left it
@@ -630,8 +638,55 @@ describe("AdmitTab", () => {
       pickBed5();
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);                            // the first may still land: nothing sent
-      expect(screen.getByText(HELD)).toBeTruthy();
-      expect(document.activeElement).toBe(screen.getByText(HELD));
+      expect(panel().getByText(HELD)).toBeTruthy();
+      expect(document.activeElement).toBe(panel().getByText(HELD));
+    });
+
+    it("says a hold its send's lookup reached on the toast, and takes the focus to its reason on the tab mounted now (m-2)", async () => {
+      let looked;
+      const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free: no hold
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      // The form's lookup (DRAFT only) is held in flight; Taburcu's own read answers at once.
+      api.admissions.mockImplementation((states) => (states.length === 1
+        ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
+      await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
+      await openTab("Evə yazılma");
+      await openTab("Qəbul");                                                // another instance of the tab
+      expect(panel().queryByText(HELD)).toBeNull();
+      await act(async () => { looked([]); });                                // not found: held (R1)
+      await settle();
+
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(panel().getByText(HELD));         // on the tab she is on
+      const told = toasts().getAllByText(HELD);                              // and said, wherever she is
+      expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    });
+
+    it("says a hold reached while she is on another tab, and takes no focus when she comes back to it (m-2)", async () => {
+      let looked;
+      const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      await press();
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
+      pickBed5();
+      api.admissions.mockImplementation((states) => (states.length === 1
+        ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
+      await act(async () => { fireEvent.click(admitButton()); });
+      await openTab("Evə yazılma");
+      await act(async () => { looked([]); });                                // held while no Qəbul tab is mounted
+      await settle();
+      expect(toasts().getAllByText(HELD).length).toBeGreaterThan(0);
+
+      const tab = screen.getByRole("tab", { name: "Qəbul" });
+      tab.focus();
+      await act(async () => { fireEvent.click(tab); });
+      await settle();
+      expect(panel().getByText(HELD)).toBeTruthy();                          // the hold is the session's
+      expect(document.activeElement).toBe(tab);                              // coming back is not news
+      expect(api.admit).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the form and its unanswered send when the nurse leaves the screen by the menu and comes back", async () => {
@@ -657,7 +712,7 @@ describe("AdmitTab", () => {
       pickBed5();
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);                            // the send with no answer is still minded (R1)
-      expect(screen.getByText(HELD)).toBeTruthy();
+      expect(panel().getByText(HELD)).toBeTruthy();
     });
 
     it("forgets the form and its sends when the session ends — a send answering afterwards included — and the next nurse starts empty", async () => {
@@ -680,7 +735,7 @@ describe("AdmitTab", () => {
 
       expect(nameField().value).toBe("");
       expect(missingNow()).toEqual(EVERY_MISSING);
-      expect(screen.queryByText(HELD)).toBeNull();
+      expect(panel().queryByText(HELD)).toBeNull();
       expect(document.body.textContent).not.toMatch(/Sentetik Hasta|H2600042/);
 
       // Nothing of the first nurse's sends is looked for or held on: they went with her session.
