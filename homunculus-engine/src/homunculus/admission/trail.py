@@ -36,11 +36,17 @@ async def hospital_of(db: AsyncSession, tenant_id: uuid.UUID) -> str:
     return (await db.execute(select(Tenant.slug).where(Tenant.id == tenant_id))).scalar_one()
 
 
+#: The payload keys a log line may carry: a structure row's kind and object id, and the ids of
+#: our own rows that the admission, bed and structure rows name. An ALLOW-list, not a pattern: a
+#: key merely ending in "_id" (a `national_id`, a HIS reference) identifies a person and stays
+#: out. A new row type whose ids should be logged adds them here.
+LOGGED_KEYS = ("kind", "id", "admission_id", "bed_id", "unit_id", "room_id", "site_id")
+
+
 def _ids(payload: dict) -> str:
-    """What of a payload a log line may carry: its kind, its ids. Never a name or a label (those
-    are the payload's other keys), never a value a clinician wrote."""
-    keep = sorted(k for k in payload if k == "kind" or k == "id" or k.endswith("_id"))
-    return " ".join(f"{k}={payload[k]}" for k in keep)
+    """What of a payload a log line may carry: the allow-listed keys it has. Never a name, a
+    label, a person's identifier or a value a clinician wrote."""
+    return " ".join(f"{k}={payload[k]}" for k in LOGGED_KEYS if k in payload)
 
 
 def record(request: Request, hospital: str, event_type: str, *, patient_id: str = "",

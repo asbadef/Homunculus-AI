@@ -20,9 +20,12 @@ and new name or `is_active`, the actor; never a patient) through admission/trail
 commit; a refused write writes none. A bed's label is unique in its whole unit (any room, closed
 beds included, trimmed and case-insensitive: `bed_label_taken`), and a room's name in its unit
 (`name_taken`). Writes inside one unit take a lock on its row first, so two at once cannot both
-pass a check; the unit and bed locks are FOR NO KEY UPDATE, so a row merely pointing at the unit
-or bed (an admission) is never held by them (amendment A-26). An audit store that fails after the
-commit is logged, never a 500 for the committed change (trail.record, A-26).
+pass a check. The unit and bed locks are FOR NO KEY UPDATE, which lets an insert of a row
+pointing at the unit or bed (an admission) through (amendment A-26). A bed relabel does not keep
+it so: `label` is in the unique index `uq_bed_label_per_room`, so the relabel's UPDATE upgrades
+the bed's lock to FOR UPDATE until the commit. Code that writes a row pointing at a bed must
+therefore lock that bed first (see `_lock_bed`). An audit store that fails after the commit is
+logged, never a 500 for the committed change (trail.record, A-26).
 
 Tenant isolation (spec §5): every route acts on the caller's own tenant only (`caller_tenant_id`,
 the token's `tenant` claim). A tenant, site, unit, room or bed of another tenant named in the path
@@ -95,14 +98,23 @@ async def _lock_unit(db: AsyncSession, unit_id: uuid.UUID) -> None:
     structure write, but not the FOR KEY SHARE that Postgres takes on the unit when a row
     pointing at it is inserted. Under FOR UPDATE an admission holding its bed and inserting its
     `admitting_unit_id` would wait here while a bed PATCH holding the unit waits for that bed: a
-    deadlock, and a 500. No route changes a unit's key."""
+    deadlock, and a 500. The lock stays NO KEY UPDATE through `patch_unit`'s UPDATE: a unit row
+    has no unique index but its primary key, which no route changes."""
     await db.execute(select(Unit.id).where(Unit.id == unit_id).with_for_update(key_share=True))
 
 
 async def _lock_bed(db: AsyncSession, bed_id: uuid.UUID) -> Bed:
     """The bed's row, locked for the rest of the transaction — FOR NO KEY UPDATE, as the unit
-    (see `_lock_unit`): no route changes a bed's key, and a row pointing at the bed (an
-    admission, a nurse's bed assignment) is not held by it."""
+    (see `_lock_unit`), so taking it does not hold an insert of a row pointing at the bed (an
+    admission, a nurse's bed assignment).
+
+    A relabel changes that. `label` is in the unique index `uq_bed_label_per_room`, and Postgres
+    counts a column of a unique index (one that is neither partial nor on an expression) as part
+    of the row's key for locking: `patch_bed`'s UPDATE of a new label upgrades this lock to FOR
+    UPDATE until the commit, and an insert pointing at the bed then waits. A state or
+    `is_active` change keeps NO KEY UPDATE. So any code that writes a row pointing at a bed takes
+    THIS lock on that bed first: it then waits for a relabel here, holding nothing a relabel
+    needs, instead of waiting inside its insert while holding other locks."""
     return (await db.execute(
         select(Bed).where(Bed.id == bed_id).with_for_update(key_share=True))).scalar_one()
 
