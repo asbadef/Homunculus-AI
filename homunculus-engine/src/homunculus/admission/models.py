@@ -296,6 +296,14 @@ class Admission(Base):
     discharge_reported_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
     discharge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discharge_note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # One filled form, sent once or again (amendment A-19, admission/router.py): the client's id for
+    # it (unique per tenant; NULL when none was sent — NULLs never collide), the keyed digest of the
+    # body it came with (`crypto.phi_digest`: the body holds PHI, so never a plain hash), and what
+    # of the admission reached the engine after the commit (`EngineWrites`), so a resend of the
+    # same form is answered with the same body.
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_writes: Mapped[dict | None] = mapped_column(JSON_COLUMN, nullable=True)
 
     # --- Workflow bookkeeping ---
     # S-26: reminder emitted once when a DRAFT is unreviewed for 2 hours.
@@ -319,6 +327,10 @@ class Admission(Base):
     patient: Mapped[Patient] = relationship("Patient", back_populates="admissions")
     care_team: Mapped[list[CareTeamMember]] = relationship(
         "CareTeamMember", back_populates="admission", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "request_id", name="uq_admissions_tenant_request"),
     )
 
     def transition_to(self, new_state: AdmissionState) -> None:

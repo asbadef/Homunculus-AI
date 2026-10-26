@@ -20,6 +20,10 @@ Revision 0012, follows 0011.
   (NOT NULL, false), `comorbidity_codes` (JSON), `comorbidities_text`, and the discharge's
   `discharge_disposition` (enum), `discharge_institution`, `discharge_reported_by`,
   `discharge_at`, `discharge_note`.
+* `admissions`: `request_id` (uuid, nullable; unique per tenant, `uq_admissions_tenant_request`),
+  `request_digest` (varchar 64) and `engine_writes` (JSON) — one admission form sent once or
+  again (amendment A-19): the client's id for it, the keyed digest of its body, and what reached
+  the engine after the commit. NULL on every row made without an id; NULLs never collide.
 * `beds.is_active` (NOT NULL, true): a closed bed is kept and offered to no admission.
 * `patient_identity.bed_id`, `.unit_id` (text, nullable): a `kabul` record's own bed and unit, the
   tenant UUIDs (spec D9).
@@ -145,6 +149,12 @@ def upgrade() -> None:
     op.add_column("admissions", sa.Column("discharge_at", sa.DateTime(timezone=True),
                                           nullable=True))
     op.add_column("admissions", sa.Column("discharge_note", sa.String(2000), nullable=True))
+    op.add_column("admissions", sa.Column("request_id", postgresql.UUID(as_uuid=True),
+                                          nullable=True))
+    op.add_column("admissions", sa.Column("request_digest", sa.String(64), nullable=True))
+    op.add_column("admissions", sa.Column("engine_writes", postgresql.JSONB(), nullable=True))
+    op.create_unique_constraint("uq_admissions_tenant_request", "admissions",
+                                ["tenant_id", "request_id"])
 
     # ---- beds ----
     op.add_column("beds", sa.Column("is_active", sa.Boolean(), nullable=False,
@@ -167,7 +177,9 @@ def downgrade() -> None:
     op.execute("ALTER TABLE patient_identity DROP COLUMN IF EXISTS unit_id")
     op.execute("ALTER TABLE patient_identity DROP COLUMN IF EXISTS bed_id")
     op.drop_column("beds", "is_active")
-    for name in ("discharge_note", "discharge_at", "discharge_reported_by",
+    op.drop_constraint("uq_admissions_tenant_request", "admissions", type_="unique")
+    for name in ("engine_writes", "request_digest", "request_id",
+                 "discharge_note", "discharge_at", "discharge_reported_by",
                  "discharge_institution", "discharge_disposition", "comorbidities_text",
                  "comorbidity_codes", "no_known_allergy", "allergies_text", "blood_group",
                  "admission_type"):

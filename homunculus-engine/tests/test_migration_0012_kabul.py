@@ -55,7 +55,10 @@ ENUMS_0012 = {"consent": ("patients", "consent"),
 ADMISSION_COLUMNS = {"admission_type", "blood_group", "allergies_text", "no_known_allergy",
                      "comorbidity_codes", "comorbidities_text", "discharge_disposition",
                      "discharge_institution", "discharge_reported_by", "discharge_at",
-                     "discharge_note"}
+                     "discharge_note", "request_id", "request_digest", "engine_writes"}
+#: 0012's unique constraints: the patient number, and the admission form's request id (A-19).
+UNIQUES_0012 = {"uq_patients_tenant_number": ("patients", ["tenant_id", "patient_number"]),
+                "uq_admissions_tenant_request": ("admissions", ["tenant_id", "request_id"])}
 
 
 def _columns(engine, table: str) -> set[str]:
@@ -176,8 +179,39 @@ def test_the_number_is_required_and_unique_within_a_tenant_only(clean_db):
 
     column = {c["name"]: c for c in inspect(engine).get_columns("patients")}["patient_number"]
     assert column["nullable"] is False
-    uniques = {u["name"]: u["column_names"] for u in inspect(engine).get_unique_constraints("patients")}
-    assert uniques["uq_patients_tenant_number"] == ["tenant_id", "patient_number"]
+    for name, (table, columns) in UNIQUES_0012.items():
+        uniques = {u["name"]: u["column_names"] for u in inspect(engine).get_unique_constraints(table)}
+        assert uniques[name] == columns
+
+
+def test_a_request_id_is_optional_and_unique_within_a_tenant_only(clean_db):
+    """A-19: an admission made without a `request_id` (every one before Task 19b, a transfer's)
+    leaves it NULL, and NULLs never collide; one id is taken once per tenant, and another tenant
+    may hold the same id."""
+    engine, cfg = clean_db
+    world = _before_0012(cfg, engine)
+    command.upgrade(cfg, "0012")
+    with engine.begin() as conn:
+        bed_b = _bed(conn, world["b"])
+    request = uuid.uuid4()
+
+    def admit(conn, tenant, bed, patient, request_id):
+        conn.execute(text(
+            "INSERT INTO admissions (id, patient_id, tenant_id, state, admission_datetime, "
+            "admitting_unit_id, bed_id, admission_diagnosis_free_text, request_id) "
+            "SELECT :id, :p, :t, 'DRAFT', now(), r.unit_id, b.id, 'Sentetik tanı', :rq "
+            "FROM beds b JOIN rooms r ON r.id = b.room_id WHERE b.id = :b"),
+            {"id": uuid.uuid4(), "p": patient, "t": tenant, "b": bed, "rq": request_id})
+
+    p = world["patients"]
+    with engine.begin() as conn:
+        admit(conn, world["a"], world["bed"], p["a25_first"], None)
+        admit(conn, world["a"], world["bed"], p["a25_second"], None)
+        admit(conn, world["a"], world["bed"], p["a26"], request)
+        admit(conn, world["b"], bed_b, p["b26"], request)
+    with pytest.raises(DBAPIError, match="uq_admissions_tenant_request"):
+        with engine.begin() as conn:
+            admit(conn, world["a"], world["bed"], p["a25_eve"], request)
 
 
 def test_beds_release_reaches_the_ward_nurses_of_every_tenant_and_nobody_else(clean_db):
@@ -284,6 +318,8 @@ def test_the_downgrade_takes_it_all_away_and_the_upgrade_gives_it_back(clean_db)
     assert not (PATIENT_COLUMNS & _columns(engine, "patients"))
     assert _widths(engine, ENCRYPTED_0002) == dict.fromkeys(ENCRYPTED_0002, 512)
     assert not (ADMISSION_COLUMNS & _columns(engine, "admissions"))
+    assert "uq_admissions_tenant_request" not in {
+        u["name"] for u in inspect(engine).get_unique_constraints("admissions")}
     assert "is_active" not in _columns(engine, "beds")
     assert not ({"bed_id", "unit_id"} & _columns(engine, "patient_identity"))
     assert "patient_number_counters" not in inspect(engine).get_table_names()
@@ -316,7 +352,7 @@ def test_the_model_and_the_migration_agree_on_what_0012_owns(clean_db):
             table = object_.table.name if object_ is not None else None
             return table == "patient_number_counters" or name in owned.get(table, set())
         if type_ == "unique_constraint":
-            return name == "uq_patients_tenant_number"
+            return name in UNIQUES_0012
         return False
 
     with engine.connect() as conn:
