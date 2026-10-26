@@ -61,20 +61,42 @@ export function bedLabel(index, id) {
   return bed ? `${bed.label} · ${bed.unitName}` : null;
 }
 
-/** Names for a LIST of ids, as one screen shows them. Three rules the lone `unitLabel` and
- *  `bedLabel` cannot keep, because they see one id at a time:
+/** The placeholder numbers of one shell: a unit or a bed that cannot yet be called by its name is
+ *  "Şöbə 3" — and that 3 must stay with it. A number is taken the first time an id needs one, from
+ *  a count that only grows: never given to another id, never taken back when the id leaves a list
+ *  (a grant removed, a patient gone), the same on every screen that names it, and distinct for
+ *  every id. A position in a list would move as soon as the list changed, and an administrator who
+ *  removed "Şöbə 1" would find "Şöbə 1" now meant another unit. StructureProvider keeps one of
+ *  these for as long as the shell is open. `kind`: "unit" or "bed"; an id whatever its case. */
+export function ordinalRegistry() {
+  const taken = { unit: new Map(), bed: new Map() };
+  return {
+    ordinalOf(kind, id) {
+      const numbers = taken[kind];
+      const key = normId(id);
+      if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
+      return numbers.get(key);
+    },
+  };
+}
+
+/** Names for a LIST of ids, as one screen shows them. Rules the lone `unitLabel` and `bedLabel`
+ *  cannot keep, because they see one id at a time:
  *
- *   1. Not known is not unknown. `view` is `{ index, known }` (StructureProvider's own words):
- *      until the structure has been read — still out, or unreadable — no id can be called absent
- *      from it, so a UUID is a numbered placeholder ("Şöbə 1", in the list's order), never
- *      «unknown». «Unknown» is said only of a known structure that lacks the id.
- *   2. Names that collide are numbered, in the list's order: "Reanimasiya (1)", "Reanimasiya (2)".
+ *   1. Only a successful read makes an id «unknown». `view` is `{ index, phase, ordinalOf }`
+ *      (StructureProvider's own words and registry). The index names what it holds; an id it does
+ *      not hold is «unknown unit» only in phase "known" — the last read succeeded and the tree
+ *      really lacks it. In any other phase (still being read, unreadable, or "stale": the last
+ *      read failed and a unit may have been added since) it is a placeholder, "Şöbə 3", numbered
+ *      by `ordinalRegistry`.
+ *   2. Names that collide are numbered, in the list's order: "Reanimasiya (1)", "Reanimasiya (2)"
+ *      — skipping a suffix some other unit already bears, so no two entries ever read alike.
  *   3. `sorted` is the ids in the order of the names a reader sees — numbers by value, case
  *      ignored — never in the order of their UUIDs.
  *
  *  A key someone typed by hand (an old free-text grant) is no UUID and is shown as typed, with no
- *  placeholder number. `labelFor(id, next)` names one id; `next()` takes the next placeholder
- *  number. `nameOf` is for an id of the list; any other gets a fresh number and is not remembered. */
+ *  placeholder number. `labelFor(id)` names one id. `nameOf` also answers for an id outside the
+ *  list (its placeholder number is the registry's, the same each time). */
 function namer(ids, locale, labelFor) {
   const distinct = [];
   const seen = new Set();
@@ -85,42 +107,52 @@ function namer(ids, locale, labelFor) {
       distinct.push(id);
     }
   }
-  let placeholders = 0;
-  const base = distinct.map((id) => labelFor(id, () => { placeholders += 1; return placeholders; }));
+  const base = distinct.map((id) => labelFor(id));
   const total = new Map();
   for (const label of base) total.set(label, (total.get(label) ?? 0) + 1);
+  const used = new Set(base);
   const run = new Map();
   const labels = new Map();
   distinct.forEach((id, at) => {
     let label = base[at];
     if (total.get(label) > 1) {
-      const n = (run.get(label) ?? 0) + 1;
+      let n = run.get(label) ?? 0;
+      let numbered;
+      do {
+        n += 1;
+        numbered = `${label} (${n})`;
+      } while (used.has(numbered));
       run.set(label, n);
-      label = `${label} (${n})`;
+      used.add(numbered);
+      label = numbered;
     }
     labels.set(normId(id), label);
   });
   const order = (a, b) => labels.get(normId(a)).localeCompare(labels.get(normId(b)), locale, { numeric: true, sensitivity: "base" })
     || normId(a).localeCompare(normId(b));
   return {
-    nameOf: (id) => labels.get(normId(id)) ?? labelFor(id, () => placeholders + 1),
+    nameOf: (id) => labels.get(normId(id)) ?? labelFor(id),
     sorted: [...distinct].sort(order),
   };
 }
 
 /** The units of `ids` named — see `namer`. `t` is the translator, `locale` the language's code. */
 export function unitNamer(t, view, ids, locale) {
-  return namer(ids, locale, (id, next) => {
-    if (view.known) return unitLabel(t, view.index, id);
-    return isUuid(id) ? t("kabul.unitOrdinal", { n: next() }) : String(id ?? "");
+  return namer(ids, locale, (id) => {
+    const unit = view.index.units.get(normId(id));
+    if (unit) return unit.name;
+    if (!isUuid(id)) return String(id ?? "");
+    return view.phase === "known" ? t("kabul.unitUnknown") : t("kabul.unitOrdinal", { n: view.ordinalOf("unit", id) });
   });
 }
 
-/** The beds of `ids` named — see `namer`. A bed reads "label · unit" once the structure is known. */
+/** The beds of `ids` named — see `namer`. A bed reads "label · unit" once the structure holds it. */
 export function bedNamer(t, view, ids, locale) {
-  return namer(ids, locale, (id, next) => {
-    if (view.known) return bedLabel(view.index, id) ?? (isUuid(id) ? t("kabul.bedUnknown") : String(id ?? ""));
-    return isUuid(id) ? t("kabul.bedOrdinal", { n: next() }) : String(id ?? "");
+  return namer(ids, locale, (id) => {
+    const held = bedLabel(view.index, id);
+    if (held) return held;
+    if (!isUuid(id)) return String(id ?? "");
+    return view.phase === "known" ? t("kabul.bedUnknown") : t("kabul.bedOrdinal", { n: view.ordinalOf("bed", id) });
   });
 }
 

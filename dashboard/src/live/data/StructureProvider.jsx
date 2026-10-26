@@ -16,13 +16,19 @@
 //
 // A read that fails is tried again, waiting 2, 4, 8 … s up to 30 s, for as long as the shell is
 // open and the session may read it (the ward's network drops for a minute; the names must come
-// back without a reload). A scope that lists a unit the tree lacks — one added since it was read —
-// makes the structure be read once more, once for each such gap, not in a loop.
+// back without a reload). A refusal — a 4xx other than 408 and 429: a 403, or a 404 from a server
+// not yet carrying the route — is no hiccup and is asked again only every 5 minutes, in case it
+// is mended. A scope that lists a unit the tree lacks — one added since it was read — makes the
+// structure be read once more, once for each such gap, not in a loop.
+//
+// `ordinalOf(kind, id)`: the placeholder number of a unit or bed whose name cannot be shown (the
+// structure is not known). One registry for as long as the shell is open, so a number stays with
+// its unit on every screen and is never reused (structure.js `ordinalRegistry`).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useShell } from "../shell/ShellContext.jsx";
-import { EMPTY_INDEX, bedNamer, indexStructure, normId, unitNamer } from "./structure.js";
+import { EMPTY_INDEX, bedNamer, indexStructure, normId, ordinalRegistry, unitNamer } from "./structure.js";
 
 /** The rights GET /tenant/structure opens to (tenant/router.py) — the scope editor's
  *  `users.manage` among them. */
@@ -31,8 +37,19 @@ export const STRUCTURE_PERMS = Object.freeze(["admissions.view", "admissions.adm
 /** The wait before the first retry of a failed read, doubled after each failure, and its ceiling. */
 export const RETRY_FIRST_MS = 2_000;
 export const RETRY_MAX_MS = 30_000;
+/** The wait before asking again after a refusal (a 4xx other than 408 and 429). */
+export const RETRY_REFUSED_MS = 300_000;
 
-const NONE = Object.freeze({ structure: null, index: EMPTY_INDEX, phase: "unasked", known: false, error: null, reload: async () => {} });
+/** A server's refusal — it answered, and said no — as against a time-out, throttling, a fault or
+ *  no answer at all, which are the hiccups the quick retries are for. */
+function refused(error) {
+  const status = error?.status;
+  return Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+const NONE = Object.freeze({
+  structure: null, index: EMPTY_INDEX, phase: "unasked", known: false, error: null, reload: async () => {}, ordinalOf: null,
+});
 const StructureContext = createContext(NONE);
 
 export function StructureProvider({ children }) {
@@ -45,6 +62,8 @@ export function StructureProvider({ children }) {
   const retryTimer = useRef(0);
   const failures = useRef(0);
   const reread = useRef("");
+  const ordinals = useRef(null);
+  if (ordinals.current === null) ordinals.current = ordinalRegistry();
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -77,7 +96,7 @@ export function StructureProvider({ children }) {
     } catch (error) {
       if (mounted.current && seq.current === mine) {
         setState((prev) => ({ structure: prev.structure, phase: prev.structure ? "stale" : "failed", error }));
-        const wait = Math.min(RETRY_FIRST_MS * 2 ** failures.current, RETRY_MAX_MS);
+        const wait = refused(error) ? RETRY_REFUSED_MS : Math.min(RETRY_FIRST_MS * 2 ** failures.current, RETRY_MAX_MS);
         failures.current += 1;
         retryTimer.current = setTimeout(() => { reload(); }, wait);
       }
@@ -105,6 +124,7 @@ export function StructureProvider({ children }) {
 
   const value = useMemo(() => ({
     structure: state.structure, index, phase: state.phase, known, error: state.error, reload,
+    ordinalOf: ordinals.current.ordinalOf,
   }), [state, index, known, reload]);
   return <StructureContext.Provider value={value}>{children}</StructureContext.Provider>;
 }
@@ -113,17 +133,29 @@ export function useStructure() {
   return useContext(StructureContext);
 }
 
+/** The registry the placeholder numbers come from: the shell's own, or — for a screen mounted
+ *  outside a provider — one of that screen's own. */
+function useOrdinalOf() {
+  const { ordinalOf } = useStructure();
+  const own = useRef(null);
+  if (ordinalOf) return ordinalOf;
+  if (own.current === null) own.current = ordinalRegistry().ordinalOf;
+  return own.current;
+}
+
 /** The units of `ids` as a screen names them (structure.js `unitNamer`): `{ nameOf(id), sorted }`.
  *  Keep `ids` the same array between renders (a memo, a context's list). */
 export function useUnitNames(ids) {
-  const { index, known } = useStructure();
+  const { index, phase } = useStructure();
   const { t, lang } = useI18n();
-  return useMemo(() => unitNamer(t, { index, known }, ids, lang), [t, index, known, ids, lang]);
+  const ordinalOf = useOrdinalOf();
+  return useMemo(() => unitNamer(t, { index, phase, ordinalOf }, ids, lang), [t, index, phase, ordinalOf, ids, lang]);
 }
 
 /** The beds of `ids` as a screen names them (structure.js `bedNamer`). */
 export function useBedNames(ids) {
-  const { index, known } = useStructure();
+  const { index, phase } = useStructure();
   const { t, lang } = useI18n();
-  return useMemo(() => bedNamer(t, { index, known }, ids, lang), [t, index, known, ids, lang]);
+  const ordinalOf = useOrdinalOf();
+  return useMemo(() => bedNamer(t, { index, phase, ordinalOf }, ids, lang), [t, index, phase, ordinalOf, ids, lang]);
 }

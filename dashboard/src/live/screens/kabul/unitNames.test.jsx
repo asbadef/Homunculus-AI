@@ -36,6 +36,14 @@ function menuItems() {
   return within(screen.getByRole("menu")).getAllByRole("menuitemradio").map((el) => el.textContent);
 }
 
+/** The scope editor for a user holding these grants (as GET /scope/{id} answers them). */
+const editorFor = (grants) => (
+  <ScopeEditor user={{ username: "ayse", fullName: "Ayşe Sentetik" }} mayAssign
+    scope={scopeFromApi({ user_id: "u-1", unrestricted: false, reason: "assigned", grants })}
+    save={vi.fn()} reread={vi.fn()} onSaved={vi.fn()} onRefused={vi.fn()} onClose={vi.fn()} />
+);
+const rowHeaders = () => within(screen.getByRole("table")).getAllByRole("rowheader").map((th) => th.textContent);
+
 describe("the top bar's unit chooser", () => {
   it("names each unit from the structure, in the order of the names", async () => {
     await mountKabul(<TopBar title="Yataklar" />, { perms: PERMS, shell: SHELL });
@@ -73,6 +81,21 @@ describe("the top bar's unit chooser", () => {
       expectNoUuid();
     });
   }
+
+  // The last read failed after one succeeded: the tree is the last answer, and a unit it lacks may
+  // be one added since (the re-read it prompted is what failed) — it is numbered, not «unknown».
+  it("keeps the names a stale tree holds and numbers a unit it lacks, never calling it «unknown»", async () => {
+    await mountKabul(<TopBar title="Yataklar" />, {
+      perms: PERMS, shell: { units: [REA, GHOST] },
+      setup: (api) => api.structure.mockResolvedValueOnce(structure())
+        .mockRejectedValue(refusal(503, "Sunucuya şu an ulaşılamıyor")),
+    });
+    // Its number is the one it had while the first read was out, when Reanimasiya was "Şöbə 1" and it
+    // was "Şöbə 2": a number stays with its unit even after the other has been named.
+    expect(menuItems()).toEqual(["Bütün bölmələrim", "Reanimasiya", "Şöbə 2"]);
+    expect(document.body.textContent).not.toMatch(/Naməlum/);
+    expectNoUuid();
+  });
 });
 
 describe("the bed board's own unit selector", () => {
@@ -107,11 +130,7 @@ describe("the bed board's own unit selector", () => {
 describe("the administrator's scope editor", () => {
   const GRANTS = [{ unit_id: REA, bed_id: "" }, { unit_id: NEO, bed_id: "" }, { unit_id: "", bed_id: BED(5) },
     { unit_id: "", bed_id: GHOST }, { unit_id: "unit-adult", bed_id: "" }];
-  const open = (options = {}) => mountKabul(
-    <ScopeEditor user={{ username: "ayse", fullName: "Ayşe Sentetik" }} mayAssign
-      scope={scopeFromApi({ user_id: "u-1", unrestricted: false, reason: "assigned", grants: GRANTS })}
-      save={vi.fn()} reread={vi.fn()} onSaved={vi.fn()} onRefused={vi.fn()} onClose={vi.fn()} />,
-    { perms: ["users.manage"], ...options });
+  const open = (options = {}) => mountKabul(editorFor(GRANTS), { perms: ["users.manage"], ...options });
   const choicesOf = (legend) => within(screen.getByRole("group", { name: legend })).getAllByRole("checkbox")
     .map((box) => box.closest("label").textContent);
 
@@ -140,6 +159,7 @@ describe("the administrator's scope editor", () => {
       expect(screen.getByText(az("kabul.namesPending"))).toBeTruthy();
       const table = within(screen.getByRole("table"));
       expect(table.getByRole("rowheader", { name: "Şöbə 1" })).toBeTruthy();   // the placeholder numbers the offered units
+      expect(table.getByRole("rowheader", { name: "Şöbə 2" })).toBeTruthy();   // ... each its own: Neonatal is not Reanimasiya
       expect(table.getByRole("rowheader", { name: "unit-adult" })).toBeTruthy();   // a key typed by hand stays
       expect(table.getByText("Çarpayı 1")).toBeTruthy();
       expect(table.getByText("Çarpayı 2")).toBeTruthy();
@@ -148,4 +168,50 @@ describe("the administrator's scope editor", () => {
       expectNoUuid();
     });
   }
+});
+
+// With the structure unreadable, a placeholder is the only thing that tells two units apart where
+// an administrator may remove one: "Şöbə 1" must never come to mean another unit than it did a
+// moment ago (Task 12 re-review, I-A) — whatever is removed, typed or shown elsewhere.
+describe("a placeholder number in the scope editor", () => {
+  const C = "33333333-3333-4333-8333-333333333303";
+  const THREE = [REA, NEO, C].map((id) => ({ unit_id: id, bed_id: "" }));
+  const down = NOT_KNOWN["unreadable (503)"];
+
+  it("stays with its unit when the grant before it is removed", async () => {
+    await mountKabul(editorFor(THREE), { perms: ["users.manage"], setup: down });
+    expect(rowHeaders()).toEqual(["Şöbə 1", "Şöbə 2", "Şöbə 3"]);
+    fireEvent.click(screen.getByRole("button", { name: `${az("admin.remove")}: Şöbə 1` }));
+    expect(rowHeaders()).toEqual(["Şöbə 2", "Şöbə 3"]);                     // not 1 and 2
+    const boxes = within(screen.getByRole("group", { name: az("admin.scopeUnits") })).getAllByRole("checkbox");
+    expect(boxes.map((box) => box.closest("label").textContent)).toEqual(["Şöbə 2", "Şöbə 3"]);
+  });
+
+  it("goes to the next number for a key typed by hand that sorts before all the others", async () => {
+    await mountKabul(editorFor(THREE), { perms: ["users.manage"], setup: down });
+    fireEvent.change(screen.getByLabelText(az("admin.scopeManual")), { target: { value: "00000000-0000-4000-8000-000000000001" } });
+    fireEvent.click(screen.getByRole("button", { name: az("admin.scopeAdd") }));
+    expect(rowHeaders()).toEqual(["Şöbə 1", "Şöbə 2", "Şöbə 3", "Şöbə 4"]);   // the new row last, numbered 4
+    expectNoUuid();
+  });
+
+  it("is the number the top bar gave the same unit — one count for the whole shell", async () => {
+    // The scope lists Neonatal first, so the top bar numbers it 1; the editor lists its keys in
+    // another order (Reanimasiya's key sorts first) and must still call Neonatal "Şöbə 1".
+    function Both() {
+      const [editing, setEditing] = React.useState(false);
+      return (
+        <>
+          <TopBar title="Yataklar" />
+          <button type="button" onClick={() => setEditing(true)}>düzənlə</button>
+          {editing ? editorFor([REA, NEO].map((id) => ({ unit_id: id, bed_id: "" }))) : null}
+        </>
+      );
+    }
+    await mountKabul(<Both />, { perms: ["board.view", "users.manage"], shell: { units: [NEO, REA] }, setup: down });
+    expect(menuItems()).toEqual(["Bütün bölmələrim", "Şöbə 1", "Şöbə 2"]);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Şöbə 1" }));       // the bar's first: Neonatal
+    fireEvent.click(screen.getByRole("button", { name: "düzənlə" }));
+    expect(rowHeaders()).toEqual(["Şöbə 2", "Şöbə 1"]);                           // the grants' order: Reanimasiya, Neonatal
+  });
 });

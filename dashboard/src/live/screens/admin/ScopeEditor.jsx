@@ -2,17 +2,22 @@
 // (G1-12; `PUT /scope/{user_id}`).
 //
 // THERE IS STILL NO ENDPOINT THAT LISTS THE KEYS A SCOPE MAY NAME — but since G2-B1a there is one
-// that NAMES them: `GET /tenant/structure`, which `users.manage` opens for exactly this (X52) and
-// the shell reads once (data/StructureProvider.jsx). Since B1a a scope's keys are the tenant's
-// database UUIDs (spec D9) and no screen shows one: every key is shown by its unit's or bed's name
-// from that tree, in the order of the names. The structure may not be known yet (still being read,
-// or unreadable, then retried): the keys are then numbered placeholders ("Şöbə 1") under a warning
-// that says so — never «unknown», which would read as a grant to nothing. A key the tree does not
-// hold, once it is known, is «unknown unit» / «unknown bed» (a caller without `structure.manage`
-// is sent only her own units, so the others read so); a key typed by hand — an old free-text grant from the
-// site's `bed-mapping.json` (`BED_MAPPING_PATH`, `tenant/bedmap.py` `BedRef.unit_id` / `bed_id`)
-// survives as typed and is shown as typed. The keys themselves still come from three sources, and
-// the editor says in one line which they are:
+// that NAMES them: `GET /tenant/structure`, which `users.manage` opens for exactly this (X52). The
+// shell's StructureProvider (data/StructureProvider.jsx) reads it when the session opens, reads it
+// again when the scope lists a unit the tree lacks, and keeps asking, with a growing wait, while a
+// read fails. Since B1a a scope's keys are the tenant's database UUIDs (spec D9) and no screen
+// shows one: every key is shown by its unit's or bed's name from that tree, in the order of the
+// names. The structure may not be known yet (still being read, or unreadable): the keys are then
+// numbered placeholders ("Şöbə 1") under a warning that says so — never «unknown», which would
+// read as a grant to nothing. A placeholder's number is the shell's own count (it is the one the
+// top bar shows, it never moves to another key when a grant is removed or one is typed, and it is
+// never reused), so an administrator can act on "Şöbə 2" and mean the same unit as a moment ago.
+// A key the tree does not hold, once the last read has succeeded, is «unknown unit» / «unknown
+// bed» (a caller without `structure.manage` is sent only her own units, so the others read so).
+// A key typed by hand — an old free-text grant from the site's `bed-mapping.json`
+// (`BED_MAPPING_PATH`, `tenant/bedmap.py` `BedRef.unit_id` / `bed_id`) — survives as typed and is
+// shown as typed. The keys themselves still come from three sources, and the editor says in one
+// line which they are:
 //
 //   1. the `identity.unit_id` / `identity.bed_id` of the cards on the board this session already
 //      has (an unrestricted administrator sees them all);
@@ -89,10 +94,9 @@ const keyOf = (g) => `${g.unitId}|${g.bedId}`;
 /** Grants as `PUT /scope/{id}` takes them (`ScopeGrantIn`): one key each, the other left out. */
 const asBody = (list) => list.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId }));
 
-/** The unit and bed keys this board can offer, plus the ones the user already holds. Sorted by key
- *  — a stable base order, the one a placeholder is numbered in while the structure is not known
- *  (data/structure.js) — with duplicates removed; a card the bed table did not place carries
- *  neither and contributes nothing. The editor SHOWS them in the order of their names. */
+/** The unit and bed keys this board can offer, plus the ones the user already holds. Sorted by key,
+ *  with duplicates removed; a card the bed table did not place carries neither and contributes
+ *  nothing. The editor SHOWS them in the order of their names, not of their keys. */
 export function offeredKeys(patients, grants) {
   const units = new Set();
   const beds = new Set();

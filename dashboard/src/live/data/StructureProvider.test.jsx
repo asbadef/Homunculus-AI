@@ -117,6 +117,41 @@ describe("a failed read is tried again", () => {
     expect(api.structure).toHaveBeenCalledTimes(2);
   });
 
+  // A refusal (403, 404 — a server not yet carrying the route) is not a hiccup: asking again every
+  // 2 seconds would only be noise, but it may be mended (a deploy, a grant), so it is still asked
+  // again — every 5 minutes. Time-outs and throttling (408, 429) are hiccups.
+  for (const status of [400, 403, 404]) {
+    it(`after 5 minutes, not 2 seconds, when the server refuses it (${status})`, async () => {
+      const { api } = await mountKabul(<Probe />, { perms: ["admissions.view"],
+        setup: (a) => a.structure.mockRejectedValue(refusal(status, "Reddedildi")) });
+      expect(api.structure).toHaveBeenCalledTimes(1);
+      await advance(299_999);
+      expect(api.structure).toHaveBeenCalledTimes(1);
+      await advance(1);
+      expect(api.structure).toHaveBeenCalledTimes(2);
+      await advance(299_999);
+      expect(api.structure).toHaveBeenCalledTimes(2);
+      await advance(1);
+      expect(api.structure).toHaveBeenCalledTimes(3);
+    });
+  }
+
+  for (const status of [408, 429, 500, 503]) {
+    it(`after 2 seconds when it is a time-out, throttling or a server fault (${status})`, async () => {
+      const { api } = await mountKabul(<Probe />, { perms: ["admissions.view"],
+        setup: (a) => a.structure.mockRejectedValue(refusal(status, "Geçici")) });
+      await advance(2_000);
+      expect(api.structure).toHaveBeenCalledTimes(2);
+    });
+  }
+
+  it("after 2 seconds when there was no answer at all (no status)", async () => {
+    const { api } = await mountKabul(<Probe />, { perms: ["admissions.view"],
+      setup: (a) => a.structure.mockRejectedValue(new Error("Failed to fetch")) });
+    await advance(2_000);
+    expect(api.structure).toHaveBeenCalledTimes(2);
+  });
+
   it("also when it is only a reload that failed: the stale tree is replaced when the server answers", async () => {
     const { api } = await mountKabul(<Probe />, { perms: ["beds.release"] });
     const renamed = structure();
