@@ -118,6 +118,12 @@ class TestAReadingForADischargedNumber:
         cards = client.get("/patients", headers=HEAD).json()["patients"]
         assert all(c["latest"]["heart_rate"] is None for c in cards if c["patient_id"] == "H-1")
 
+    def test_a_malformed_profile_for_a_discharged_number_is_still_400(self, app, client):
+        _kabul(app.state.test_identities, "H-1", state="discharged")
+        r = client.put("/clinical/H-1/profile", json={"baselines": {"lactate": {"low": 1, "high": 2}}}, headers=HEAD)
+        assert r.status_code == 400
+        assert _rows(app, "profile", "H-1") == []
+
     def test_a_his_discharged_patient_is_still_evaluated(self, app, client):
         client.post("/ingest", json=_his_patient("20239121", active=False), headers=HEAD)
         r = client.post("/ingest", json=_obs("heart_rate", 140, "20239121"), headers=HEAD)

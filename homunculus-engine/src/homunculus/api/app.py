@@ -739,11 +739,6 @@ def create_app(
         _require(caller, CLINICAL_CHART)
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
-        # G2-A11 (D3, final review): a discharged admission's number takes no profile either -
-        # without this the route created engine state for the tombstone and published its card.
-        record = identities.get(hospital, patient_id)
-        if is_tombstone(record):
-            return {"patient_id": patient_id, "dropped": DISCHARGED}
         engine = _engine(hospital)
         try:
             # Merged over what is already charted, not replacing it: the admission form and the
@@ -751,6 +746,13 @@ def create_app(
             profile = profile_from_payload(patient_id, body, engine.profile(patient_id))
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+        # G2-A11 (D3, final review): a discharged admission's number takes no profile either —
+        # without this the route set the profile, wrote its row, created engine state for the
+        # tombstone and published its card. After the validation, as at /clinical: a malformed
+        # body is 400 whatever the number's state. (`engine.profile` creates no state.)
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            return {"patient_id": patient_id, "dropped": DISCHARGED}
 
         engine.set_profile(profile)
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
