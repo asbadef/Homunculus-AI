@@ -193,7 +193,7 @@ git status --short
 git log --oneline -3
 ```
 
-Expected: `feat/g2a-a2`; no status line; the top commit is this plan (`docs(plan): G2-A2 — …`), then `f5b3a8b Merge branch 'main' into feat/g2a-a2`, then `312b1f9 merge: G2-A1 (alerts end with their rule; critical latch; escalation chain) into main, on top of the deployed NBP slice`. Anything else: stop and ask. (On `feat/g2a-a2` itself this plan's first version is `477b2fa` and the branch's own commits follow it; this version is the commit after `64271db`.)
+Expected: `feat/g2a-a2`; no status line; the top commit is this plan (`docs(plan): G2-A2 — …`), then `f5b3a8b Merge branch 'main' into feat/g2a-a2`, then `312b1f9 merge: G2-A1 (alerts end with their rule; critical latch; escalation chain) into main, on top of the deployed NBP slice`. Anything else: stop and ask. (On `feat/g2a-a2` itself this plan's first version is `477b2fa` and the branch's own commits follow it; this version is committed after `64271db`.)
 
 - [ ] **Step 2: The shared install, by junction (never reinstall)**
 
@@ -4343,10 +4343,10 @@ X14: doktor zincir başına bir kez çağrılır) ve O1–O15 (O15: saatlerce ya
 
 ```bash
 cd /c/tmp/g2a-a2
-git log --reverse --format=%h e1d23d8..HEAD -- homunculus-engine dashboard | sed -n '1p;$p'
+git log --reverse --format=%h f5b3a8b..HEAD -- homunculus-engine dashboard | sed -n '1p;$p'
 ```
 
-It prints two short hashes: Task 1's and the last commit that touched the code (Task 6's, when the tasks are committed as written). **Edit** the roadmap: replace `<range>` with `<first>..<last>`. On the branch the range is `8c726fd..64271db` (the last code commit is the final review's `64271db`, which also carries two comments of `api/app.py`). If a review changed the counts, write the counts Task 8 measures instead of the ones in the row.
+It prints two short hashes: Task 1's and the last commit that touched the code (Task 6's, when the tasks are committed as written). The range starts at `f5b3a8b`, the merge of main: from the spec's `e1d23d8` it would also list main's merged commits (the NBP slice, G2-A1), and the first hash would be `cbda9ff`, not Task 1's. **Edit** the roadmap: replace `<range>` with `<first>..<last>`. On the branch the range is `8c726fd..64271db` (the last code commit is the final review's `64271db`, which also carries two comments of `api/app.py`). If a review changed the counts, write the counts Task 8 measures instead of the ones in the row.
 
 - [ ] **Step 4: Line ends**
 
