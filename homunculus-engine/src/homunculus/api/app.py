@@ -300,11 +300,16 @@ def create_app(
         store's tombstone write; the escalation cycle calls it for a tombstone whose call never
         came (D6)."""
         engine, store = _engine(hospital), _store(hospital)
-        cleared = retire_patient(engine, store, audit, hospital, patient_id,
-                                 now or datetime.now(timezone.utc))
-        notifier.prune(hospital, live_keys(engine, store))
-        await broadcaster.publish(hospital, frame if frame is not None else
-                                  {"patient_id": patient_id, "removed": True, "identity": None})
+        try:
+            cleared = retire_patient(engine, store, audit, hospital, patient_id,
+                                     now or datetime.now(timezone.utc))
+        finally:
+            # The in-memory end has happened whatever the audit did (final review): the ward is
+            # told and the nurse's dedup re-armed even when a row write raises, and the error
+            # still goes up to the caller.
+            notifier.prune(hospital, live_keys(engine, store))
+            await broadcaster.publish(hospital, frame if frame is not None else
+                                      {"patient_id": patient_id, "removed": True, "identity": None})
         return cleared
 
     # G2-A2 (D5): each hospital's previous escalation-cycle `now`, advanced after that hospital's
@@ -400,7 +405,7 @@ def create_app(
             try:
                 await _escalation_cycle(datetime.now(timezone.utc))
             except Exception:  # a bad cycle must never kill the loop
-                pass
+                log.exception("escalation cycle failed; the next one runs in %ss", escalate_interval)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -734,6 +739,11 @@ def create_app(
         _require(caller, CLINICAL_CHART)
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
+        # G2-A11 (D3, final review): a discharged admission's number takes no profile either -
+        # without this the route created engine state for the tombstone and published its card.
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            return {"patient_id": patient_id, "dropped": DISCHARGED}
         engine = _engine(hospital)
         try:
             # Merged over what is already charted, not replacing it: the admission form and the
@@ -750,7 +760,7 @@ def create_app(
                                  "charted_by": _charted_by(caller)}))
 
         board = patient_board(engine, patient_id, _store(hospital),
-                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+                              identity=record, bedmap=bedmap)
         await broadcaster.publish(hospital, board)
         return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
 

@@ -32,6 +32,12 @@ def test_forget_drops_state_alerts_anchor_and_profile():
     _shock(engine)
     engine.set_profile(PatientProfile(patient_id="bed-3"))
     assert engine.recognized_at("bed-3") is not None
+    # The private maps are read on purpose: the test pins that forget clears every per-patient map
+    # (spec D9), not only the ones the public accessors reach.
+    maps = (engine._recognized_at, engine._dropped_anchor, engine._alerts,
+            engine._held_news2_alert, engine._news2_judged_at, engine._profiles)
+    assert all("bed-3" in m for m in (engine._news2_judged_at, engine._alerts,
+                                      engine._recognized_at, engine._profiles))
 
     engine.forget("bed-3")
 
@@ -39,6 +45,7 @@ def test_forget_drops_state_alerts_anchor_and_profile():
     assert engine.active_alerts("bed-3") == []
     assert engine.recognized_at("bed-3") is None
     assert engine.profile("bed-3") is None
+    assert all("bed-3" not in m for m in maps)
 
 
 def test_forget_is_idempotent_and_leaves_other_patients_alone():

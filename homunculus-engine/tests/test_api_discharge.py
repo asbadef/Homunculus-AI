@@ -14,6 +14,25 @@ TOKEN = "tok-1"
 HEAD = {"Authorization": f"Bearer {TOKEN}"}
 WHEN = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
 
+# Five readings that score NEWS2 12 (pulse 3, respiration 3, SpO2 3, systolic 3, temperature 2):
+# an `immediate` news2 alert, the only urgency `escalate()` ever pages (final review).
+IMMEDIATE = [("heart_rate", 140), ("resp_rate", 30), ("spo2", 88), ("sbp", 85), ("temperature", 39.5)]
+
+
+class _FailsOnce(InMemoryAuditLog):
+    """An audit log whose next append of `fail_on` raises once - the database going away
+    mid-request (as tests/test_api_clinical.py)."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on = None
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            self.fail_on = None
+            raise RuntimeError("audit down")
+        return super().append(event)
+
 
 def _obs(code, value, patient, when=WHEN):
     return {"resourceType": "Observation", "status": "final",
@@ -86,6 +105,19 @@ class TestAReadingForADischargedNumber:
         assert r.status_code == 400
         assert _rows(app, "reading_dropped_discharged") == []
 
+    def test_a_profile_for_a_discharged_number_is_dropped_too(self, app, client):
+        """G2-A11 (D3, final review): a profile is not a reading, so no audit row - but it must
+        not create engine state for the tombstone nor publish its card."""
+        _kabul(app.state.test_identities, "H-1", state="discharged")
+        queue = app.state.broadcaster.subscribe("h1")
+        r = client.put("/clinical/H-1/profile", json={"comorbidities": ["copd"]}, headers=HEAD)
+        assert r.status_code == 200 and r.json() == {"patient_id": "H-1", "dropped": "discharged"}
+        assert _rows(app, "profile", "H-1") == [] and _rows(app, "reading_dropped_discharged") == []
+        assert queue.empty(), "nothing is published for a dropped profile"
+        assert client.get("/alerts/H-1", headers=HEAD).json()["alerts"] == []
+        cards = client.get("/patients", headers=HEAD).json()["patients"]
+        assert all(c["latest"]["heart_rate"] is None for c in cards if c["patient_id"] == "H-1")
+
     def test_a_his_discharged_patient_is_still_evaluated(self, app, client):
         client.post("/ingest", json=_his_patient("20239121", active=False), headers=HEAD)
         r = client.post("/ingest", json=_obs("heart_rate", 140, "20239121"), headers=HEAD)
@@ -132,6 +164,27 @@ class TestTheDischargeRetiresThePatient:
         assert all(c["latest"]["heart_rate"] is None
                    for c in client.get("/patients", headers=HEAD).json()["patients"] if c["patient_id"] == "H-2")
 
+    def test_retire_still_publishes_the_removal_when_the_audit_write_fails(self):
+        """The in-memory end has happened whatever the audit did (final review): the ward is told
+        even when an `alert_cleared` row cannot be written, and the error still reaches the caller."""
+        audit, identities = _FailsOnce(), InMemoryIdentityStore()
+        application = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit,
+                                 identities=identities)
+        with TestClient(application) as c:
+            _kabul(identities, "H-2")
+            c.post("/ingest", json=_obs("heart_rate", 140, "H-2"), headers=HEAD)      # news2 fires
+            _kabul(identities, "H-2", state="discharged")
+            queue = application.state.broadcaster.subscribe("h1")
+            audit.fail_on = "alert_cleared"
+            with pytest.raises(RuntimeError):
+                c.portal.call(application.state.retire_patient, "h1", "H-2")
+            frame = queue.get_nowait()
+            assert frame["patient_id"] == "H-2" and frame["removed"] is True
+            assert queue.empty(), "exactly one frame"
+            assert c.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
+            assert audit.records(tenant="h1", event_type="alert_cleared", limit=100) == [], (
+                "the write failed, so there is no row")
+
     def test_retire_publishes_the_frame_it_is_given(self, app, client):
         _kabul(app.state.test_identities, "H-2")
         queue = app.state.broadcaster.subscribe("h1")
@@ -139,18 +192,36 @@ class TestTheDischargeRetiresThePatient:
         assert queue.get_nowait()["identity"] == {"unit_id": "u-1"}
 
     def test_the_escalation_cycle_retires_an_alerting_tombstone_instead_of_paging(self, app, client):
-        _kabul(app.state.test_identities, "H-2")
-        client.post("/ingest", json=_obs("heart_rate", 140, "H-2"), headers=HEAD)
+        """Final review: both beds carry an IMMEDIATE alert (the only urgency `escalate()` pages),
+        so the control proves the cycle would have paged; the tombstone must be retired instead.
+        The cycle's instant is wall-clock + 30 min: the first-seen stamp is wall-clock too."""
+        for patient in ("H-5", "H-2"):                                    # H-5 is the control
+            _kabul(app.state.test_identities, patient)
+            for code, value in IMMEDIATE:
+                client.post("/ingest", json=_obs(code, value, patient), headers=HEAD)
+        alerts = client.get("/alerts/H-2", headers=HEAD).json()["alerts"]
+        assert alerts[0]["kind"] == "news2" and alerts[0]["urgency"] == "immediate"
         _kabul(app.state.test_identities, "H-2", state="discharged")      # the retire call never came
         queue = app.state.broadcaster.subscribe("h1")
-        client.portal.call(app.state.escalation_cycle, WHEN + timedelta(minutes=30))
-        assert _rows(app, "escalation", "H-2") == [] and _rows(app, "notification", "H-2") == []
+        cycle_at = datetime.now(timezone.utc) + timedelta(minutes=30)     # past the 5-minute delay
+        client.portal.call(app.state.escalation_cycle, cycle_at)
+        assert len(_rows(app, "escalation", "H-5")) == 1, "the control is paged"
+        assert _rows(app, "escalation", "H-2") == []
+        # The nurse's "new" notification was written when the alert raised, before the cycle; what the
+        # cycle adds for a paged chain is the doctor's "escalation" one - the control's, not the tombstone's.
+        def triggers(patient):
+            return [r.payload["trigger"] for r in _rows(app, "notification", patient)]
+        assert "escalation" in triggers("H-5") and "escalation" not in triggers("H-2")
         [row] = _rows(app, "alert_cleared", "H-2")
         assert row.payload["reason"] == "discharged"
-        assert queue.get_nowait()["removed"] is True
+        frames = []
+        while not queue.empty():       # the control's escalation republishes its card as well
+            frames.append(queue.get_nowait())
+        removed = [f for f in frames if f.get("removed") is True]
+        assert len(removed) == 1 and removed[0]["patient_id"] == "H-2"
         assert client.get("/alerts/H-2", headers=HEAD).json()["alerts"] == []
         # a second cycle finds nothing to retire and writes nothing
-        client.portal.call(app.state.escalation_cycle, WHEN + timedelta(minutes=31))
+        client.portal.call(app.state.escalation_cycle, cycle_at + timedelta(minutes=1))
         assert len(_rows(app, "alert_cleared", "H-2")) == 1
 
     def test_a_restart_retires_an_engine_patient_whose_identity_is_a_tombstone(self):

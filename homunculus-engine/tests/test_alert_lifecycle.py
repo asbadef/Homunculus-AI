@@ -314,6 +314,7 @@ def test_the_store_forgets_one_patient_and_keeps_the_others():
         store.paged.add((pid, "news2"))
         store.resolved[(pid, "septic_shock")] = {"alert": {"severity": "critical"}, "resolved_at": WALL, "first_seen": WALL}
         store.recent[(pid, "sepsis")] = Chain(WALL, WALL, True)
+        store.firing[(pid, "news2")] = object()    # the store only keys by the tuple; so `firing` is checked
     store.forget_patient("bed-3")
     for mapping in (store.acks, store.first_seen, store.clock_from, store.resolved, store.firing, store.recent):
         assert all(k[0] == "bed-4" for k in mapping), mapping
