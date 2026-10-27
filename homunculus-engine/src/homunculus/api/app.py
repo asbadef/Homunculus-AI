@@ -46,10 +46,12 @@ from homunculus.api.clinical import (
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
 from homunculus.api.infinity_device_beds import TableFile
+from homunculus.api.infinity_rules import ShadowLane
 from homunculus.api.infinity_shadow import (
     MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
     TooSoon, board_view,
 )
+from homunculus.api.monitor_samples import RETENTION_DAYS, InMemorySamples, SampleStore, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
@@ -185,6 +187,7 @@ def create_app(
     shadow: ShadowSettings | None = None,
     shadow_clock: Callable[[], float] = time.time,
     shadow_monotonic: Callable[[], float] | None = None,
+    samples: SampleStore | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -206,7 +209,9 @@ def create_app(
     `shadow` is Aşama A's monitor strip (`api/infinity_shadow.py`); None is the stage `off`, so
     every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds) and
     `shadow_monotonic` its own spacing-and-silence clock (ShadowStore), both injected by the tests;
-    the engine never reads either."""
+    the engine never reads either. `samples` is Aşama B's monitor-sample table
+    (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
+    below `rules` ever needs (it writes none)."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -249,6 +254,36 @@ def create_app(
         log.info("Aşama A gölge şeridi açık (doğrulanmamış; klinik girdi değil): hastane %s", shadow.hospital)
         shadow_table.current()
 
+    # Aşama B — the shadow engine (api/infinity_rules.py). Below the stage `rules` the lane is
+    # disabled: `engines` stays empty and every method but `close_open` is a no-op, so Aşama A is
+    # unchanged. The lane is handed engines and observations, never the notifier, the hub, the ack
+    # store or the broadcaster: the frames its pictures go out in are published here.
+    samples = samples if samples is not None else InMemorySamples()
+    lane = ShadowLane(allowed=shadow.parameters, samples=samples, audit=audit, enabled=shadow.rules)
+    if shadow.rules:
+        log.info("Aşama B gölge motor açık (alarm kapalı): hastane %s, parametreler %s",
+                 shadow.hospital, ",".join(shadow.parameters))
+
+    def _lane_now() -> datetime:
+        """The lane's clock as a datetime: the instant `sample` is given, so a discharge's hold and
+        a restart's provisional links are measured on the clock the passes run on."""
+        return datetime.fromtimestamp(shadow_clock(), timezone.utc)
+
+    def _admitted(hospital: str) -> Callable[[str], bool]:
+        """`admitted(pid)` for the lane's install: the hospital's admitted numbers, read once per
+        pass rather than once per replayed sample (a database read in production), and again after
+        SHADOW_OCCUPANCY_CACHE_S — an install that failed is retried later, with this callable."""
+        ids: frozenset[str] = frozenset()
+        read_at: float | None = None
+
+        def admitted(patient_id: str) -> bool:
+            nonlocal ids, read_at
+            if read_at is None or time.monotonic() - read_at > SHADOW_OCCUPANCY_CACHE_S:
+                ids, read_at = frozenset(identities.admitted_ids(hospital)), time.monotonic()
+            return patient_id in ids
+
+        return admitted
+
     rehydrated: set[str] = set()
 
     def _ensure(hospital: str) -> None:
@@ -274,6 +309,16 @@ def create_app(
         engines[hospital] = engine
         stores[hospital] = store
         rehydrated.add(hospital)
+        # Aşama B (D9, D10), after the real engine is installed and never in its way (guarded):
+        # with the stage `rules`, the shadow engine is the real one's copy plus the last 24 h of
+        # samples — replayed here, on the loop, as `rehydrate` is (≈5 s for 13 beds at start-up); a
+        # failed install is retried by the lane on its next pass. Below `rules`, the findings a
+        # `rules` run left open are closed, once (nothing is written when there is none).
+        if shadow.rules and hospital == shadow.hospital:
+            lane.guard("install", lambda: lane.install(hospital, engine, now=_lane_now(),
+                                                       admitted=_admitted(hospital)))
+        else:
+            lane.guard("close_open", lambda: lane.close_open(hospital, now=_lane_now()))
 
     def _engine(hospital: str) -> Engine:
         _ensure(hospital)
@@ -282,6 +327,32 @@ def create_app(
     def _store(hospital: str) -> AckStore:
         _ensure(hospital)
         return stores.setdefault(hospital, AckStore())
+
+    # --- the cards: every board this app publishes or answers is built here (Aşama B, D6) ---------
+    _READ = object()     # `_card`'s default identity: read it from the store
+
+    def _shadow_for(hospital: str, patient_id: str, now: datetime | None = None) -> dict | None:
+        """The card's `shadow` key: the shadow engine's picture of a monitor-linked patient; None
+        for any other patient and below the stage `rules`. Reads the real engine, never creates a
+        patient in it."""
+        if not shadow.rules or hospital != shadow.hospital:
+            return None
+        return lane.guard("findings", lambda: lane.findings(hospital, patient_id, _engine(hospital),
+                                                            now=now or datetime.now(timezone.utc)))
+
+    def _card(hospital: str, patient_id: str, identity=_READ, now: datetime | None = None) -> dict:
+        """`patient_board` with the shadow key. `identity` is the record the caller already holds
+        (None: the card carries no identity); left out, it is read here."""
+        record = identities.get(hospital, patient_id) if identity is _READ else identity
+        return patient_board(_engine(hospital), patient_id, _store(hospital), identity=record,
+                             bedmap=bedmap, now=now, shadow=_shadow_for(hospital, patient_id, now))
+
+    def _identity_card(hospital: str, record, now: datetime | None = None) -> dict:
+        """The card of an admitted patient the real engine has never measured, with the shadow key:
+        built without creating the patient in the real engine — `patient_board` would, and its
+        `news2: null` would read as a NEWS2 0 nobody measured (D1)."""
+        return {**identity_only_board(record, bedmap),
+                "shadow": _shadow_for(hospital, record.patient_id, now)}
 
     def _audit_cleared(hospital: str, cleared: list[Cleared], at: datetime) -> None:
         """G2-A1, D6: an episode's end is audited as its start (`first_seen`) is — the alarm-quality
@@ -304,6 +375,12 @@ def create_app(
             cleared = retire_patient(engine, store, audit, hospital, patient_id,
                                      now or datetime.now(timezone.utc))
         finally:
+            # Aşama B (D1, A-11): the shadow engine forgets as the real one did — here, since the
+            # real engine's end has happened whatever the audit did — guarded, on the lane's clock;
+            # and the strip's occupants are re-read, so the retired number is no bed's occupant for
+            # the 10 s they are cached.
+            lane.guard("forget", lambda: lane.forget(hospital, patient_id, now=_lane_now()))
+            shadow_occupancy.pop(hospital, None)
             # The in-memory end has happened whatever the audit did (final review): the ward is
             # told and the nurse's dedup re-armed even when a row write raises, and the error
             # still goes up to the caller.
@@ -334,9 +411,7 @@ def create_app(
             return
         for pid in engine.patient_ids():
             if pid not in published and freshness_turned(engine.state(pid), since, now):
-                await broadcaster.publish(hospital, patient_board(
-                    engine, pid, store, identity=identities.get(hospital, pid), bedmap=bedmap,
-                    now=now))
+                await broadcaster.publish(hospital, _card(hospital, pid, now=now))
 
     async def _escalation_cycle(now: datetime) -> None:
         for hospital, engine in list(engines.items()):
@@ -363,9 +438,7 @@ def create_app(
                 store.escalated = newly
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
-                    await broadcaster.publish(hospital, patient_board(
-                        engine, pid, store, identity=identities.get(hospital, pid),
-                        bedmap=bedmap, now=now))
+                    await broadcaster.publish(hospital, _card(hospital, pid, now=now))
                 # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
                 # critical that latches and returns, or an alert that clears and returns within the
                 # delay, is "added" again — but the doctor was told about this chain already. A new
@@ -392,8 +465,7 @@ def create_app(
             for record in identities.expired(hospital, now):
                 engine = engines.get(hospital)
                 if engine is not None and record.patient_id in set(engine.patient_ids()):
-                    board = patient_board(engine, record.patient_id, _store(hospital),
-                                          bedmap=bedmap)
+                    board = _card(hospital, record.patient_id, identity=None)
                 else:
                     board = {**identity_only_board(record), "identity": None, "removed": True}
                 await broadcaster.publish(hospital, board)
@@ -406,6 +478,19 @@ def create_app(
                 await _escalation_cycle(datetime.now(timezone.utc))
             except Exception:  # a bad cycle must never kill the loop
                 log.exception("escalation cycle failed; the next one runs in %ss", escalate_interval)
+
+    async def _prune_loop() -> None:
+        """Aşama B (D8): the monitor samples older than RETENTION_DAYS go, at start-up and then
+        hourly, off the loop. Measured on the lane's clock, the one the rows are received on. A
+        failure is logged and the next hour tries again."""
+        while True:
+            try:
+                dropped = await asyncio.to_thread(samples.prune, before=retention_bound(_lane_now()))
+                if dropped:
+                    log.info("monitor_samples: %d satır silindi (%d gün)", dropped, RETENTION_DAYS)
+            except Exception:
+                log.exception("monitor_samples temizliği başarısız; bir saat sonra yeniden")
+            await asyncio.sleep(3600)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -421,11 +506,14 @@ def create_app(
                       if ldap is not None else None)
         app.state.ldap_startup_check = ldap_check
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
+        prune = asyncio.create_task(_prune_loop()) if shadow.rules else None   # Aşama B (D8)
         try:
             yield
         finally:
             if task is not None:
                 task.cancel()
+            if prune is not None:
+                prune.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
             if ldap is not None:
@@ -484,6 +572,12 @@ def create_app(
     app.state.tickets = tickets
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
+    app.state.shadow_lane = lane
+    # Aşama B (D1): every door that charts through `chart_observations` hands it this, so each
+    # charted entry reaches the shadow engine right after the real one — guarded (Lane B's
+    # admission form passes it too).
+    app.state.shadow_mirror = lambda hospital, obs, now: lane.guard(
+        "mirror", lambda: lane.mirror_observation(hospital, obs, now=now, real=_engine(hospital)))
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""
@@ -716,11 +810,12 @@ def create_app(
         # `chart_observations` (G2-A11, D8 — X62), shared with the admission form.
         now = datetime.now(timezone.utc)
         alerts = chart_observations(engine, store, audit, notifier, hospital, patient_id, charted,
-                                    now, escalate_after)
+                                    now, escalate_after,
+                                    mirror=lambda o: app.state.shadow_mirror(hospital, o, now))
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
         notifier.prune(hospital, live_keys(engine, store))
 
-        board = patient_board(engine, patient_id, store, identity=record, bedmap=bedmap)
+        board = _card(hospital, patient_id, record)
         await broadcaster.publish(hospital, board)
         return {"patient_id": patient_id, "charted": len(charted),
                 "alerts": [a.kind for a in alerts]}
@@ -755,14 +850,15 @@ def create_app(
             return {"patient_id": patient_id, "dropped": DISCHARGED}
 
         engine.set_profile(profile)
+        # Aşama B (D1): the shadow engine judges against the same profile — guarded.
+        lane.guard("mirror", lambda: lane.mirror_profile(hospital, profile))
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
         # alarms it was written to quieten, without anything looking broken.
         audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
                                 {**profile_to_payload(profile),
                                  "charted_by": _charted_by(caller)}))
 
-        board = patient_board(engine, patient_id, _store(hospital),
-                              identity=record, bedmap=bedmap)
+        board = _card(hospital, patient_id, record)
         await broadcaster.publish(hospital, board)
         return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
 
@@ -801,10 +897,9 @@ def create_app(
                                     {"source": record.source, "state": record.state,
                                      "resource": kind}))
             engine = _engine(hospital)
-            board = (patient_board(engine, record.patient_id, _store(hospital), identity=record,
-                                   bedmap=bedmap)
+            board = (_card(hospital, record.patient_id, record)
                      if record.patient_id in set(engine.patient_ids())
-                     else identity_only_board(record, bedmap))
+                     else _identity_card(hospital, record))
             await broadcaster.publish(hospital, board)
             return {"patient_id": record.patient_id, "identity": "ok"}
         try:
@@ -837,6 +932,9 @@ def create_app(
         # so it is stamped anew, a new episode (D5).
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
         cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
+        # Aşama B (D1): the same observation into the shadow engine, after the real evaluation and
+        # its lifecycle hook — guarded, so nothing the lane does can fail this request.
+        lane.guard("mirror", lambda: lane.mirror_observation(hospital, obs, now=wall_now, real=engine))
         audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
                                 {"value": obs.value, "unit": obs.unit,
                                  "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}))
@@ -851,8 +949,7 @@ def create_app(
             if store.stamp_first_seen(obs.patient_id, a.kind, wall_now, chain_gap=escalate_after):
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
-        await broadcaster.publish(hospital, patient_board(
-            engine, obs.patient_id, store, identity=record, bedmap=bedmap))
+        await broadcaster.publish(hospital, _card(hospital, obs.patient_id, record))
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)
@@ -888,8 +985,7 @@ def create_app(
         if latched is not None:
             _audit_cleared(hospital, [latched], now)
             notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
-        board = patient_board(engine, patient_id, store,
-                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        board = _card(hospital, patient_id)
         await broadcaster.publish(hospital, board)
         return board
 
@@ -928,11 +1024,16 @@ def create_app(
         hospital = caller.hospital
         # 503 before the board is narrowed (G2-A2, D13): an unreadable scope is not an empty one.
         scope = _readable(await _scope(authorization))
-        result = apply_scope(
-            board_snapshot(_engine(hospital), _store(hospital), identities=identities,
-                           hospital=hospital, bedmap=bedmap),
-            scope,
-        )
+        now = datetime.now(timezone.utc)          # every card, and its shadow, judged at one instant
+        cards = board_snapshot(_engine(hospital), _store(hospital), identities=identities,
+                               hospital=hospital, bedmap=bedmap, now=now,
+                               shadow_for=lambda pid: _shadow_for(hospital, pid, now))
+        # The identity-only cards (an admitted patient the real engine has never measured) carry
+        # the shadow key too, read without creating the patient in the real engine (D1, D6).
+        for card in cards:
+            if "shadow" not in card:
+                card["shadow"] = _shadow_for(hospital, card["patient_id"], now)
+        result = apply_scope(cards, scope)
         if result.blind:
             # Not a 403 and not an error: the caller is authenticated and the request is valid.
             # It goes in the log because an administrator hunting "the nurses see nothing" should
@@ -1020,11 +1121,52 @@ def create_app(
                 raise HTTPException(status_code=413, detail={"reason": "too_large"})
             raw.extend(chunk)
         try:
-            return shadow_store.ingest(json.loads(raw))
+            result = shadow_store.ingest(json.loads(raw))
         except TooSoon:
             raise HTTPException(status_code=429, detail={"reason": "too_soon"}) from None
         except (ShadowRejected, ValueError, RecursionError):
             raise HTTPException(status_code=400, detail={"reason": "rejected"}) from None
+        if shadow.rules:
+            await _sample_and_publish()
+        return result
+
+    async def _sample_and_publish() -> None:
+        """Aşama B (D4, D5): one sampling pass per accepted body, then a frame per patient whose
+        shadow picture changed. The bed cards come from `board_view` with the hospital's own
+        occupants — the link the strip shows — so a sample goes only where a card says `link: one`;
+        with no valid table the pass is skipped (`cards` None), never read as every link ending.
+        Guarded throughout: the body is already accepted, and nothing here may answer otherwise."""
+        hospital = shadow.hospital
+        now = shadow_clock()
+
+        def _pass() -> list[str]:
+            engine = _engine(hospital)
+            devices = shadow_store.devices(now)
+            table = shadow_table.current()
+            cards = None
+            if table.status == "ok":
+                cards = board_view(devices, shadow_store.feed(now), table, occupants=_occupants(hospital, now),
+                                   visible=lambda card: True, patient_visible=lambda card: True,
+                                   show_unassigned=False, now=now)["beds"]
+            return lane.sample(hospital, devices, cards, engine, now=now)
+
+        changed = lane.guard("sample", _pass) or []
+        if not changed:
+            return
+
+        def _frame(patient_id: str) -> dict | None:
+            # A measured patient's card as every door builds it; an admitted, never-measured one's
+            # identity-only card (D1: the real engine is not made to hold them); nothing for a
+            # number with neither.
+            if patient_id in set(_engine(hospital).patient_ids()):
+                return _card(hospital, patient_id)
+            record = identities.get(hospital, patient_id)
+            return _identity_card(hospital, record) if record is not None else None
+
+        for patient_id in changed:
+            frame = lane.guard("publish", lambda: _frame(patient_id))
+            if frame is not None:
+                await broadcaster.publish(hospital, frame)
 
     @app.get("/infinity-shadow/board")
     async def shadow_board(authorization: str | None = Header(default=None)):
@@ -1051,7 +1193,7 @@ def create_app(
             return sees_patient({"patient_id": patient_id,
                                  "identity": {"bed_id": card["bed_id"], "unit_id": card["unit_id"]}}, scope)
 
-        return board_view(
+        body = board_view(
             shadow_store.devices(now), shadow_store.feed(now), shadow_table.current(),
             occupants=_occupants(caller.hospital, now) if viewer else None,
             # A scoped clinician sees a bed's monitor when that bed or its unit is theirs; a row
@@ -1059,6 +1201,44 @@ def create_app(
             visible=lambda card: manager or _at(card, ""),
             patient_visible=lambda card: _at(card, "") and _at(card, card["patient_id"]),
             show_unassigned=scope.unrestricted or manager, now=now)
+        if shadow.rules:
+            # Aşama B: the running stage (`board_view` answers "shadow", the strip it builds), and
+            # the shadow engine's word for the device screen — «gölge motor: hata» while failing.
+            body["stage"] = "rules"
+            body["feed"]["rules_state"] = lane.state
+        return body
+
+    @app.get("/infinity-shadow/findings")
+    async def shadow_findings(days: int = 7, authorization: str | None = Header(default=None)):
+        """Aşama B's «uyarsaydı» list (D7): every shadow finding opened in the last `days` (1–7),
+        newest first, with when it cleared. For `board.view`, scoped like the board: a row is listed
+        when its patient's card would be (`sees_patient` on the identity's bed and unit, as
+        `/patients` and `_require_patient` read them). 409 below the stage `rules` and for another
+        hospital; 400 for `days` outside 1–7."""
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        if not shadow.rules or caller.hospital != shadow.hospital:
+            raise HTTPException(status_code=409, detail={"reason": "stage_not_rules"})
+        if not 1 <= days <= 7:
+            raise HTTPException(status_code=400, detail="geçersiz days: 1–7 olmalı")
+        scope = _readable(await _scope(authorization))
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        # Two backward walks of the audit's two shadow kinds: off the loop.
+        rows = await asyncio.to_thread(lane.recent_findings, caller.hospital, since=since)
+        if not scope.unrestricted:
+            seen: dict[str, bool] = {}          # one identity read per patient, not per row
+
+            def visible(patient_id: str) -> bool:
+                if patient_id not in seen:
+                    record = identities.get(caller.hospital, patient_id)
+                    seen[patient_id] = sees_patient(
+                        {"patient_id": patient_id,
+                         "identity": (identity_only_board(record, bedmap)["identity"]
+                                      if record is not None else None)}, scope)
+                return seen[patient_id]
+
+            rows = [row for row in rows if visible(row["patient_id"])]
+        return {"days": days, "findings": rows}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
@@ -1119,11 +1299,7 @@ def create_app(
             if scope.unrestricted:
                 return True
             pid = str(note.get("patient_id") or "")
-            return sees_patient(
-                patient_board(_engine(hospital), pid, _store(hospital),
-                              identity=identities.get(hospital, pid), bedmap=bedmap),
-                scope,
-            )
+            return sees_patient(_card(hospital, pid), scope)
 
         async def events():
             try:

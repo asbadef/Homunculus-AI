@@ -268,6 +268,8 @@ BOARD_EXPECTED = {
     ("GET", "/patients/{patient_id}/trends"): "board.view",
     ("POST", "/infinity-shadow/readings"): SHADOW_TOKEN,
     ("GET", "/infinity-shadow/board"): BOARD_OR_DEVICES,
+    # Aşama B's «uyarsaydı» list: the board's own right, checked before the stage (409 here).
+    ("GET", "/infinity-shadow/findings"): "board.view",
 }
 KINDS = {DEVICE_ONLY, TICKET, OPEN, SHADOW_TOKEN, BOARD_OR_DEVICES}
 PERMISSION_ROUTES = sorted(k for k, v in BOARD_EXPECTED.items() if v not in KINDS)

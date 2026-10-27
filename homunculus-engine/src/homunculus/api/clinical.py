@@ -21,6 +21,7 @@ Two rules shape this module:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -195,7 +196,8 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
 
 def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifier: Notifier,
                        hospital: str, patient_id: str, charted: list[ChartedEntry],
-                       now: datetime, escalate_after: timedelta) -> list[Alert]:
+                       now: datetime, escalate_after: timedelta,
+                       mirror: Callable[[Observation], None] | None = None) -> list[Alert]:
     """Run charted entries through the engine as the `/clinical` door does, and return the last
     evaluation's alerts (G2-A11, D8 — X62). One function so the admission form can chart through
     it too; the door keeps parsing, the discharged-number drop, the final dedup prune, the frame
@@ -208,12 +210,18 @@ def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifie
     `alert_cleared` rows — the hook before any audit write, so an audit that fails leaves an
     unacknowledged critical on the board. Then the `alert` rows, and a first-seen stamp with its
     row for every firing kind (wall-clock time; audited so a restart keeps the escalation clock;
-    a latched kind keeps its episode's stamp and is not stamped anew)."""
+    a latched kind keeps its episode's stamp and is not stamped anew).
+
+    `mirror(obs)`, when given, hands each entry on after the real evaluation and its lifecycle hook
+    — Aşama B's shadow engine (spec D1; the API passes `app.state.shadow_mirror`, which guards
+    itself and never raises)."""
     alerts: list[Alert] = []
     for item in charted:
         obs = item.observation
         alerts = engine.ingest(obs, now=min(obs.timestamp, now))
         cleared = sync_alerts(engine, store, obs.patient_id, now)
+        if mirror is not None:
+            mirror(obs)
         notifier.prune(hospital, live_keys(engine, store))
         audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
                                 {"value": obs.value, "unit": obs.unit,

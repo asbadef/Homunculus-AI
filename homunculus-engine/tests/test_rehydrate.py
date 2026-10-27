@@ -278,7 +278,8 @@ def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retrie
             self.failed = False
 
         def records(self, **kw):
-            self.after_ids.append(kw.get("after_id"))
+            if "after_id" in kw:            # the replay's reads (Aşama B's lane reads its own kinds too)
+                self.after_ids.append(kw["after_id"])
             if kw.get("after_id") == 5 and not self.failed:      # the second page, once
                 self.failed = True
                 raise RuntimeError("page read failed")

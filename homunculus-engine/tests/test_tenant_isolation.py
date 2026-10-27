@@ -752,6 +752,9 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | {
     # takes the forwarder's own token and writes only that hospital's in-memory strip.
     ("POST", "/infinity-shadow/readings"),
     ("GET", "/infinity-shadow/board"),
+    # Aşama B's «uyarsaydı» list: the Caller, board.view, 409 for any hospital but the lane's, and
+    # each row scoped like the board (`sees_patient`).
+    ("GET", "/infinity-shadow/findings"),
 }
 
 
