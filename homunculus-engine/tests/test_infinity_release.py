@@ -20,6 +20,7 @@ FILES = {
     "app/src/homunculus/edge/infinity_hub.py", "app/src/homunculus/edge/infinity_live.py",
     "app/src/homunculus/edge/infinity_records.py", "app/src/homunculus/edge/infinity_timing.py",
     "app/src/homunculus/edge/infinity_shadow.py",          # Aşama A's forwarder, off unless drop-in 93
+    "app/src/homunculus/edge/infinity_waves.py",           # Lane C (dalga): the wave blocks, display only
 }
 
 
@@ -60,7 +61,7 @@ def test_a_release_runs_on_its_own(tmp_path):
                              "import sys; sys.path.insert(0, sys.argv[1]); "
                              "import homunculus.edge.infinity_timing, homunculus.edge.infinity_hub, "
                              "homunculus.edge.infinity_collector, homunculus.edge.infinity_live, "
-                             "homunculus.edge.infinity_shadow",
+                             "homunculus.edge.infinity_shadow, homunculus.edge.infinity_waves",
                              str(app / "src")], capture_output=True, text=True, env=environment)
     assert result.returncode == 0, result.stderr
     result = subprocess.run([sys.executable, str(app / "run_infinity_transport.py"), "--help"],
