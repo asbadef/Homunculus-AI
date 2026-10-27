@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-27-infinity-dalga-formu-design.md` (approved 2026-10-27, W1–W6), **as corrected by the lead's BED08 note of 2026-10-27** (commit `302ac83` amends §2, §4, §9; see "Read this before Task 1"). **Protocol:** `docs/INFINITY-DALGA-FORMU.md`. **Phase 2 (§11, the wall) is not in this plan;** the hub route already takes several `device` parameters on one cursor (Task 4), which is what phase 2 needs.
 
-**Branch:** `feat/infinity-dalga` in the worktree `/c/tmp/inf-dalga` (base main `b985810` + docs `f45dcbf`, `c57bfdb`, `302ac83`). Work only there. Every code reference below was read at `302ac83`; every code block in this plan was run against that tree while the plan was written — Tasks 1–13 and 15 (the latter on the screens as they are before Aşama B), with the engine and dashboard suites green and the build green (Task 16 has the numbers); Task 14's doc anchors were checked to occur exactly once.
+**Branch:** `feat/infinity-dalga` in the worktree `/c/tmp/inf-dalga` (base main `b985810` + the lead's docs `f45dcbf`, `c57bfdb`, `302ac83`, `5b9047b` — the last only records why V1 stays open). Work only there. Every code reference below was read at `302ac83`; every code block in this plan was run against that tree while the plan was written — Tasks 1–13 and 15 (the latter on the screens as they are before Aşama B), with the engine and dashboard suites green and the build green (Task 16 has the numbers); Task 14's doc anchors were checked to occur exactly once.
 
 ---
 
@@ -104,7 +104,7 @@
 ```bash
 cd /c/tmp/inf-dalga && git status --short && git branch --show-current && git log --oneline -3
 ```
-Expected: no output from `status` (a clean tree; `dashboard/node_modules/` and `dashboard/dist/` are ignored), `feat/infinity-dalga`, the plan's own commit on top of `302ac83`.
+Expected: no output from `status` (a clean tree; `dashboard/node_modules/` and `dashboard/dist/` are ignored), `feat/infinity-dalga`, the plan's commits on top of the lead's `5b9047b` (or later docs commits of the lead).
 
 - [ ] **Step 2: The two toolchains.**
 
