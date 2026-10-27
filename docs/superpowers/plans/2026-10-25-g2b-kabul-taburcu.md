@@ -1,3 +1,5 @@
+> **Binding amendments:** [2026-10-25-g2b-kabul-taburcu-amendments.md](2026-10-25-g2b-kabul-taburcu-amendments.md) (A-1…A-43, decided after this plan was written) — where they differ from the text below, they win.
+
 # Group 2 · Lane B · B1a — Hasta Kabul (admission and discharge) — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
