@@ -126,6 +126,20 @@ class TestATheBoard:
         assert body["scope"]["blind"] is True
         assert "GELMEZ" in body["scope_note"]
 
+    def test_a_grant_with_no_card_is_sent_as_data_and_never_written_into_a_sentence(self):
+        """G2-B1a walk (I-1): a grant key is a UUID since B1a, and the Turkish sentence that listed
+        the keys printed one on a nurse's board. They travel as data, units apart from beds; the
+        screen names each from the structure, in its reader's language."""
+        app = app_with(build_scope("NURSE", unit_ids=["unit-adult", "unit-ghost"],
+                                   bed_ids=["bed-ghost"]))
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            body = client.get("/patients", headers=NURSE).json()
+        assert sorted(p["patient_id"] for p in body["patients"]) == ["p-a1", "p-a2"]
+        assert body["scope"]["unmatched_unit_ids"] == ["unit-ghost"]
+        assert body["scope"]["unmatched_bed_ids"] == ["bed-ghost"]
+        assert body["scope_note"] is None
+
 
 class TestBTheRoutesThatNameAPatient:
     """Filtering the list alone is theatre: the list is a list of ids, and a caller who has one

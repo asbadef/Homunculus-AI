@@ -156,13 +156,24 @@ def sees_patient(board: dict, scope: Scope) -> bool:
 
 @dataclass(frozen=True)
 class ScopeResult:
-    """A filtered board, and everything needed to say why it is that size."""
+    """A filtered board, and everything needed to say why it is that size.
+
+    G2-B1a (walk I-1): the grant keys no card matched are kept apart by kind —
+    `unmatched_unit_ids`, `unmatched_bed_ids` — and published as data. Since B1a every key is the
+    tenant's UUID (spec D9) and no screen prints one: the screen names each key from the structure,
+    in its reader's language. `unmatched_grants` is the two together, for the server's own log."""
 
     boards: list[dict]
     scope: Scope
     hidden: int
     unresolved_hidden: int
-    unmatched_grants: tuple[str, ...]
+    unmatched_unit_ids: tuple[str, ...] = ()
+    unmatched_bed_ids: tuple[str, ...] = ()
+
+    @property
+    def unmatched_grants(self) -> tuple[str, ...]:
+        """Every unmatched key, units and beds together, sorted — what the log line names."""
+        return tuple(sorted((*self.unmatched_unit_ids, *self.unmatched_bed_ids)))
 
     @property
     def blind(self) -> bool:
@@ -174,7 +185,8 @@ class ScopeResult:
             **self.scope.as_dict(),
             "hidden": self.hidden,
             "unresolved_hidden": self.unresolved_hidden,
-            "unmatched_grants": list(self.unmatched_grants),
+            "unmatched_unit_ids": list(self.unmatched_unit_ids),
+            "unmatched_bed_ids": list(self.unmatched_bed_ids),
             "blind": self.blind,
         }
 
@@ -182,7 +194,7 @@ class ScopeResult:
 def apply_scope(boards: list[dict], scope: Scope) -> ScopeResult:
     """Filter a board snapshot, and count what was taken out and why."""
     if scope.unrestricted:
-        return ScopeResult(list(boards), scope, 0, 0, ())
+        return ScopeResult(list(boards), scope, 0, 0)
 
     visible = [b for b in boards if sees_patient(b, scope)]
     hidden = len(boards) - len(visible)
@@ -192,10 +204,9 @@ def apply_scope(boards: list[dict], scope: Scope) -> ScopeResult:
 
     present_beds = {bed for bed, _unit in map(_card_ids, boards) if bed}
     present_units = {unit for _bed, unit in map(_card_ids, boards) if unit}
-    unmatched = sorted(
-        (scope.bed_ids - present_beds) | (scope.unit_ids - present_units)
-    )
-    return ScopeResult(visible, scope, hidden, unresolved_hidden, tuple(unmatched))
+    return ScopeResult(visible, scope, hidden, unresolved_hidden,
+                       unmatched_unit_ids=tuple(sorted(scope.unit_ids - present_units)),
+                       unmatched_bed_ids=tuple(sorted(scope.bed_ids - present_beds)))
 
 
 def scope_report(result: ScopeResult) -> str | None:
@@ -204,6 +215,11 @@ def scope_report(result: ScopeResult) -> str | None:
     Turkish, because whoever reads it is standing in a Turkish hospital. It goes to the log and
     to the API response; it is not a clinical statement, so it carries no "değerlendirilecek"
     register — it is a message about the system's own configuration.
+
+    Only the blind board is said here. Grant keys no card matched are NOT written into a sentence
+    (G2-B1a walk, I-1): since B1a they are UUIDs, and the sentence that listed them printed one on a
+    nurse's board. They are published as data (`ScopeResult.as_dict`), and the screen names each
+    from the structure in its reader's language.
     """
     if result.scope.unrestricted:
         return None
@@ -211,9 +227,4 @@ def scope_report(result: ScopeResult) -> str | None:
         return ("Kapsamınızda panoda karşılığı olan hiçbir yatak yok — pano boş görünmesi "
                 "koğuşun sakin olduğu anlamına GELMEZ. Yöneticinizin kapsam atamasını "
                 "kontrol etmesi gerekir.")
-    if result.unmatched_grants:
-        return ("Kapsamınızdaki şu anahtarların panoda karşılığı yok: "
-                + ", ".join(result.unmatched_grants)
-                + " — ünite gerçekten boş olabilir ya da anahtar yatak tablosuyla uyuşmuyor "
-                  "olabilir.")
     return None
