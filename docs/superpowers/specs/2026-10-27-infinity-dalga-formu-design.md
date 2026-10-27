@@ -18,9 +18,15 @@ On 2026-10-27 the owner decided to do it **now, inside Aşama B, by reverse engi
 | W2 | **Live scrolling** drawing (seconds behind the monitor), not a refreshed snapshot. |
 | W3 | **All four decoded waves**: the live ECG lead, ART (mmHg), pleth, respiration. |
 | W4 | The owner films the **ward screen-validation** capture (§9). |
+| W5 | (after spec approval) The prototype's **full-screen single-bed view** (`⤢`, black bedside look) comes back with real waves. |
+| W6 | (after spec approval) The prototype's **"Duvar monitörü"** page (every bed, nurse-station TV) comes back with real waves — phase 2 (§11). |
 
-W2 deliberately reverses the Aşama A "not a monitor" principle. The safety rules in §5 are the price
-of that reversal and are not optional.
+W2 deliberately reverses the Aşama A "not a monitor" principle, and W6 goes further: a screen of
+every bed is the shape of a central station. The safety rules in §5 are the price of that reversal
+and are not optional. The prototype's **pulse beep and alarm tones do not come back** (§5.8).
+
+The prototype labelled its synthetic traces "Numune / temsili dalga" (istekler #172 removed the
+label). These traces are real, so "temsili" would now be false; the stamp of §5.1 replaces it.
 
 ## 2. What the data is (summary of the protocol doc)
 
@@ -60,8 +66,11 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   worker outbox replay after an outage never appears as live). A monotonic `cursor` per hub process.
 - Hook 1: the `/v1/packets` handler hands accepted events to `WaveBuffer.consume` next to
   `research_view.consume` (research mode with payload capture only).
-- Hook 2: `GET /infinity-research/waves?device=<id>&since=<cursor>` (viewer token; 409 when research
-  mode is off; 404 for an unknown device). Returns at most **10 s** of blocks after `since`:
+- Hook 2: `GET /infinity-research/waves?device=<id>[&device=<id>…]&since=<cursor>` (viewer token;
+  409 when research mode is off; 404 when a named device is unknown; at most 16 devices). The cursor
+  is one counter for the whole hub, so a single `since` serves any set of devices (the wall, §11).
+  Returns at most **10 s** of blocks per device after `since`; with several devices the body is
+  `{"schema", "cursor", "hub_now", "devices": {"<id>": {"blocks": […]}}}`. For one device:
   ```json
   {"schema": "homunculus.infinity-waves.v1", "device_id": "…", "cursor": 1234,
    "hub_now": "…Z",
@@ -74,7 +83,8 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
 
 ### 3.2 API — `api/infinity_waves.py` (new) + one registration line in `app.py`
 
-- Route `GET /infinity-waves/{device_id}?since=<cursor>`.
+- Route `GET /infinity-waves/{device_id}?since=<cursor>`. Phase 2 adds `GET /infinity-waves?since=<cursor>`:
+  every device the caller may see on the strip board (same gates, at most 16), in one hub request.
 - **Gates — the same as `/infinity-shadow/board`:**
   - `board.view` or `devices.manage`;
   - the caller's hospital is the shadow hospital;
@@ -110,6 +120,10 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   - `PatientScreen`, under the MonitorStrip block (only when the strip shows one linked device,
     `link === "one"`).
   - Both are one-line insertions (Lane A is editing those files — §10).
+- **Full screen (W5):**
+  - A `⤢` button on the panel opens `WaveFullscreen`: the same rows, filling the screen on a black
+    ground, with the strip's numbers beside them as the prototype laid them out.
+  - Esc or `×` closes it. The stamp stays visible at full size.
 - `live/boundaries.test.js`: wave modules may not reach alarm, lock-screen or board-store code.
 - Words in all dashboard languages (new `i18n/strings/waves.js`).
 
@@ -149,6 +163,14 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
    the audit, logs, exports or screenshots made by the app. (The hub journal keeps encrypted raw
    payloads exactly as it does today; this design adds no reader for it.)
 7. **Feature flag off by default.** `INFINITY_WAVES=on` is an explicit deploy step.
+8. **No sound on any wave screen.** No pulse beep, no alarm tone, no audio of any kind. The
+   prototype's `H.sound` does not come back. A beep from a decoded R-wave would be a number derived
+   from the waves (rule 4) and turns the screen into an audible monitor imitation.
+9. **The wall says what it is not.** The wall page (§11) carries the stamp in its header:
+   "Duvar monitörü · doğrulanmamış — merkezi istasyonun yerine geçmez".
+   - Every tile shows its own age.
+   - No tile colour or border is driven by waves.
+   - Its numbers are the strip's, with the strip's age and evidence words.
 
 ## 6. Out of scope
 
@@ -156,6 +178,7 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   for Lane A (Aşama B device→bed table) and Aşama C, recorded in the protocol doc.
 - Relabelling numeric ids `0x0101` / `0x1905` (HR vs PLS suspicion): a separate verification (§9 V4).
 - Recording, printing, export, full disclosure, calipers, ECG gain calibration.
+- The prototype's pulse beep and alarm tones (§5.8).
 - The mobile app.
 - More than one ECG lead beyond §4.
 
@@ -242,7 +265,32 @@ Checks (results go to the protocol doc, never values):
 - Either order is safe: the API answers "dalga akışı yok" while the hub lacks the route.
 - Rollback: the flag off, or the previous drop-in / image tags.
 
-## 11. Docs that change with this slice
+## 11. Phase 2 — the wall monitor (W6)
+
+The prototype's "Duvar monitörü" (`tasarim-taslaklari/app/monitor.js`, part 3) was never carried into
+the live system (G2 left it out). Phase 2 builds it on phase 1's pieces, after phase 1 is accepted.
+
+- **Screen.**
+  - New live screen `live/screens/wall/WallScreen.jsx` with a nav entry for `board.view`, scope as
+    the board.
+  - One tile per bed that has a monitor on the strip board.
+  - Each tile shows the bed label, the patient's bed-level identity as the board shows it, the
+    strip's numbers with their age, and the live ECG row plus pleth (ART when present).
+  - A tile opens the patient (or the full-screen view of W5).
+- **Data.**
+  - One poll for the whole wall: `GET /infinity-waves?since=` every 750 ms.
+  - The strip numbers come from the existing `shadowStore`.
+- **Drawing budget.**
+  - One `requestAnimationFrame` loop for all tiles, capped at 30 fps on the wall.
+  - Tiles off screen are not drawn.
+- **Safety:** §5 in full, with §5.8 (silence) and §5.9 (the wall's header) binding.
+- **Acceptance (adds to §8).**
+  - With 13 beds on the VM, browser CPU on the ward PC stays reasonable (measured, recorded).
+  - API p95 < 150 ms at one poll per wall.
+  - Hub CPU within the ceiling.
+  - A stalled bed shows "akış durdu" on its own tile only.
+
+## 12. Docs that change with this slice
 
 `INFINITY-PARAMETER-RECORDS.md:171-173, 214-216` (and its "yatak adı yayında yok" line) ·
 `INFINITY-BED09-DECODER.md:24` · `INFINITY-CONTINUOUS-RESEARCH.md:27` · `INFINITY-RESEARCH-REPLAY.md:6` ·
