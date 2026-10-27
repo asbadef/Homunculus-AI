@@ -346,8 +346,14 @@ def test_the_committed_site_table_is_approved_and_puts_every_monitor_on_its_own_
     table = parse_table(raw)
     assert (table.version, table.approved_at) == (2, "2026-10-27")
     import uuid
-    for row in table.rows:
-        uuid.UUID(row.bed_id), uuid.UUID(row.unit_id)        # v2: tenant UUIDs, never labels
+    for row in table.rows:                                   # v2: tenant UUIDs, never labels
+        if row.bed_id is not None:
+            uuid.UUID(row.bed_id)
+        if row.unit_id is not None:
+            uuid.UUID(row.unit_id)
+    # One monitor sits on a label the ward structure does not hold yet (no tenant bed, so the
+    # strip shows it unlinked and the lane feeds nothing from it): pinned so a change is seen.
+    assert [r.bed_label for r in table.rows if r.bed_id is None] == ["BED01"]
     assert table.counts() == (13, 0)
     inventory = json.loads((ROOT / "deploy" / "infinity" / "inventory.icu2.json").read_text(encoding="utf-8-sig"))
     assert {(r.source, r.group, r.port) for r in table.rows} == {
