@@ -13,6 +13,7 @@ import { createTranslator } from "../../i18n/translate.js";
 import { TopBar } from "../../shell/TopBar.jsx";
 import { BedsScreen } from "../beds/BedsScreen.jsx";
 import { ScopeEditor } from "../admin/ScopeEditor.jsx";
+import { ScopeNote } from "../common/BoardState.jsx";
 import { scopeFromApi } from "../admin/rules.js";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { BED, NEO, REA, expectNoUuid, mountKabul, structure } from "./kabul.testutil.js";
@@ -143,6 +144,52 @@ describe("the bed board's own unit selector", () => {
       expectNoUuid();
     });
   }
+});
+
+// Walk I-1: the engine listed the grant keys no card matched inside a Turkish sentence, and since
+// B1a those keys are UUIDs — one was printed on a nurse's board. The engine now sends them as data,
+// units apart from beds, and the note says the sentence itself, in the reader's language.
+describe("the board's scope note", () => {
+  const UNMATCHED_AZ = "Əhatənizdəki bu şöbə və çarpayıların paneldə kartı yoxdur:";
+  const note = (scope) => (
+    <ScopeNote scope={{ unrestricted: false, reason: "assigned", hidden: 0, blind: false, ...scope }} scopeNote={null} />
+  );
+
+  it("names a granted unit and bed that have no card, in the reader's language, and never prints their UUIDs", async () => {
+    await mountKabul(note({ unmatched_unit_ids: [NEO], unmatched_bed_ids: [BED(5)] }), { perms: PERMS });
+    const box = screen.getByRole("note");
+    expect(box).toHaveTextContent(`${UNMATCHED_AZ} Neonatal, 5 · Otaq 2 · Reanimasiya`);
+    // The sentence is the screen's own now: no Turkish server prose, so no "the server wrote this".
+    expect(box.querySelector('[lang="tr"]')).toBeNull();
+    expect(box).not.toHaveTextContent(az("board.scopeNoteLang"));
+    expectNoUuid();
+  });
+
+  for (const [state, setup] of Object.entries(NOT_KNOWN)) {
+    it(`numbers a key while the structure is ${state}, and still never prints its UUID`, async () => {
+      await mountKabul(note({ unmatched_unit_ids: [NEO], unmatched_bed_ids: [BED(5)] }), { perms: PERMS, setup });
+      expect(screen.getByRole("note")).toHaveTextContent(`${UNMATCHED_AZ} Şöbə 1, Çarpayı 1`);
+      expectNoUuid();
+    });
+  }
+
+  it("leaves a blind board to the engine's own sentence", async () => {
+    // Nothing came through the scope at all: the engine says that (in Turkish, marked so), and the
+    // list of keys would only repeat it.
+    const blind = "Kapsamınızda panoda karşılığı olan hiçbir yatak yok — pano boş görünmesi koğuşun sakin olduğu anlamına GELMEZ.";
+    await mountKabul(
+      <ScopeNote scope={{ unrestricted: false, hidden: 0, blind: true, unmatched_unit_ids: [NEO] }} scopeNote={blind} />,
+      { perms: PERMS },
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(blind);
+    expect(screen.getByRole("note")).not.toHaveTextContent(UNMATCHED_AZ);
+    expectNoUuid();
+  });
+
+  it("says nothing of keys when every grant has a card", async () => {
+    await mountKabul(note({ unmatched_unit_ids: [], unmatched_bed_ids: [] }), { perms: PERMS });
+    expect(screen.queryByRole("note")).toBeNull();
+  });
 });
 
 describe("the administrator's scope editor", () => {
