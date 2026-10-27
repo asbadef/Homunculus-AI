@@ -79,6 +79,15 @@ const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.nam
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
 
+/** Is the focus where a press or a return leaves it — <body> (where it falls when the control that
+ *  held it goes), «Qəbul et» (`submit`), or a tab of the tab list? News — a hold, the number box —
+ *  takes the focus only from there: anywhere else she has moved on, and her keystrokes stay hers
+ *  (re-review M-2, final review M-2). */
+function focusIsIdle(submit) {
+  const active = document.activeElement;
+  return !active || active === document.body || active === submit || active.getAttribute("role") === "tab";
+}
+
 /** A required one-of choice: a radio group (role, required, invalid, its error by id), its words
  *  from `options[].key`. `id` goes on the first choice — what a "missing" press focuses. */
 function Choice({ id, name, legend, options, value, onChange, error }) {
@@ -104,16 +113,15 @@ function Choice({ id, name, legend, options, value, onChange, error }) {
   );
 }
 
-/** The admission written: its number, what to do with it, and what did not land. Its heading takes
- *  the focus (the form it replaces is out of sight), and what did not land is said aloud once.
+/** The admission written: its number, what to do with it, and what did not land. Its heading
+ *  (`headingRef`) takes the focus when the box is news (AdmitTab: the form it replaces is out of
+ *  sight), and what did not land is said aloud once.
  *  `done.earlier` (a name): the admission is an EARLIER send's, of another patient than the form's
  *  — the box says so, and its button goes back to the form, which is kept. Whose number it is
  *  comes BEFORE the number (M-c): the heading says another patient's, and the note under it names
  *  her and her bed, so the number cannot be read as the form's — it is entered on a device. */
-function NumberBox({ done, onNext }) {
+function NumberBox({ done, onNext, headingRef }) {
   const { t } = useI18n();
-  const heading = useRef(null);
-  useEffect(() => { heading.current?.focus(); }, []);
   const failed = PARTS.filter((part) => done.engine?.[part] === "failed");
   const whose = done.earlier ? t("kabul.earlierSend", { name: done.earlier, bed: done.bed }) : null;
   const notes = [
@@ -122,7 +130,7 @@ function NumberBox({ done, onNext }) {
   ];
   return (
     <Box>
-      <h2 ref={heading} tabIndex={-1}
+      <h2 ref={headingRef} tabIndex={-1}
         className={`m-0 mb-2.5 flex items-center gap-2 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute ${FOCUS_RING}`}>
         <Icon name={whose ? "alert" : "ok"} size={15} />
         {whose ? t("kabul.earlierTitle") : t("kabul.doneTitle")}
@@ -192,19 +200,24 @@ export function AdmitTab() {
   // send, which a tab change may have unmounted. A hold already standing when the tab mounts (she
   // came back to it) is not news, and takes nothing. Nor is a focus she has moved on taken from
   // her — typing in another field, her keystrokes would go nowhere: the focus moves only from where
-  // a press or a return leaves it, <body>, «Qəbul et» or a tab; the toast has said the hold anyway
-  // (re-review M-2).
+  // a press or a return leaves it (`focusIsIdle`); the toast has said the hold anyway (re-review M-2).
   const heldSeen = useRef(held);
   const submitRef = useRef(null);
   useEffect(() => {
-    if (held && held !== heldSeen.current) {
-      const active = document.activeElement;
-      const idle = !active || active === document.body || active === submitRef.current
-        || active.getAttribute("role") === "tab";
-      if (idle) document.getElementById(heldId)?.focus();
-    }
+    if (held && held !== heldSeen.current && focusIsIdle(submitRef.current)) document.getElementById(heldId)?.focus();
     heldSeen.current = held;
   }, [held, heldId]);
+
+  // The number box is news the same way (final review M-2): a send's answer, or its admission
+  // found, while this tab is mounted takes the focus to the box's heading — from where a press or
+  // a return leaves it. A box already standing when the tab mounts — she came back to it, by a click
+  // or arrowing along the tab list — is not news, and takes nothing: the focus stays on the tab.
+  const doneSeen = useRef(done);
+  const doneHeading = useRef(null);
+  useEffect(() => {
+    if (done && done !== doneSeen.current && focusIsIdle(submitRef.current)) doneHeading.current?.focus();
+    doneSeen.current = done;
+  }, [done]);
 
   if (!canAdmit) return <Note tone="info" icon="eye">{t("kabul.readOnly")}</Note>;
   // «Yeni qəbul» empties the draft for the next patient: the form, the box, the hold, and a new
@@ -216,7 +229,7 @@ export function AdmitTab() {
   if (done) {
     // «Formaya qayıt» (an earlier patient's box) keeps the form for its own send.
     const onNext = done.earlier ? () => { draft.update({ done: null }); setFocusTo({ field: "name" }); } : startAfresh;
-    return <NumberBox done={done} onNext={onNext} />;
+    return <NumberBox done={done} onNext={onNext} headingRef={doneHeading} />;
   }
 
   const bedText = form.bedLabel ?? "";

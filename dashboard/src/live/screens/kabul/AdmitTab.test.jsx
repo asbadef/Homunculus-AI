@@ -919,4 +919,60 @@ describe("AdmitTab", () => {
       expect(screen.getByText("H2600060")).toBeTruthy();
     });
   });
+
+  // Final review M-2: the number box is news as a hold is. It takes the focus when it comes while
+  // the tab is mounted, and only from where a press or a return leaves it — <body>, «Qəbul et», a
+  // tab. A box already standing when the tab mounts is not news.
+  describe("the number box's focus (M-2)", () => {
+    const doneHeading = () => screen.getByRole("heading", { level: 2, name: "Qəbul edildi" });
+
+    it("leaves the focus in the tab list when she arrows onto «Qəbul» while a box stands", async () => {
+      await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(admitted()) });
+      fillRequired();
+      await press();
+      expect(document.activeElement).toBe(doneHeading());                   // news: the box takes the focus
+      await openTab("Evə yazılma");
+      const away = screen.getByRole("tab", { name: "Evə yazılma" });
+      away.focus();
+      await act(async () => { fireEvent.keyDown(away, { key: "ArrowLeft" }); });
+      await settle();
+
+      const tab = screen.getByRole("tab", { name: "Qəbul" });
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+      expect(doneHeading()).toBeTruthy();                                    // the box is there …
+      expect(document.activeElement).toBe(tab);                              // … and the focus stays on the tab
+    });
+
+    it("leaves the focus where she moved it, outside the form, when the box comes", async () => {
+      let answer;
+      await mountKabul(<><AdmitTab /><button type="button">elsewhere</button></>, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockReturnValue(new Promise((resolve) => { answer = resolve; })),
+      });
+      fillRequired();
+      await act(async () => { fireEvent.click(admitButton()); });           // on its way
+      const elsewhere = screen.getByRole("button", { name: "elsewhere" });
+      elsewhere.focus();
+      await act(async () => { answer(admitted()); });
+      await settle();
+
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(document.activeElement).toBe(elsewhere);
+      expect(toasts().getAllByText(`${BED1} · qəbul edildi, xəstə nömrəsi H2600042`).length).toBeGreaterThan(0);
+    });
+
+    it("takes the focus to the box when the answer comes while the focus is on «Qəbul»'s own tab", async () => {
+      let answer;
+      await mountKabul(<KabulScreen />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockReturnValue(new Promise((resolve) => { answer = resolve; })),
+      });
+      fillRequired();
+      await act(async () => { fireEvent.click(admitButton()); });           // on its way
+      screen.getByRole("tab", { name: "Qəbul" }).focus();                    // she went back up to the tab list
+      await act(async () => { answer(admitted()); });
+      await settle();
+      expect(document.activeElement).toBe(doneHeading());
+    });
+  });
 });
