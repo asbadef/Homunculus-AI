@@ -135,17 +135,21 @@ def evaluate(before, after, *, window_s, table_version, table_sha, unassigned):
 
 
 def nbp_line(board):
-    """NBP on the strip, by device: shown (with the oldest change time among them), awaiting a change
-    since the hub started, or withheld — counts and an age, never a pressure."""
+    """NBP on the strip, by device: shown with its change time (and the oldest change among them),
+    shown with its measurement time unknown (NBP-2: `value_untimed`), awaiting a measurement (an entry
+    with no time at all), or withheld — counts and an age, never a pressure."""
     entries = [p for card in (board.get("beds") or []) + (board.get("unassigned") or [])
                for p in card.get("parameters") or [] if p.get("parameter") == "nbp"]
     shown = [p for p in entries if p.get("state") == "value"]
+    untimed = sum(1 for p in entries if p.get("state") == "value_untimed")
     ages = [p.get("measured_age_s") for p in shown if isinstance(p.get("measured_age_s"), (int, float))]
     oldest = f" (en eski {math.ceil(max(ages) / 60)} dk önce)" if ages else ""
-    waiting = sum(1 for p in entries if p.get("state") != "value" and p.get("changed_at") is None)
-    withheld = len(entries) - len(shown) - waiting
-    return (f"nbp: {len(shown)} cihazda ölçüm saati ≤ ile gösteriliyor{oldest}, {waiting} cihazda ölçüm bekleniyor, "
-            f"{withheld} cihazda gizli (eski)")
+    # An untimed value whose packet went old (or turned ***) keeps the packet's time: withheld, not awaiting.
+    waiting = sum(1 for p in entries if p.get("state") not in ("value", "value_untimed")
+                  and p.get("changed_at") is None and p.get("last_at") is None)
+    withheld = len(entries) - len(shown) - untimed - waiting
+    return (f"nbp: {len(shown)} cihazda ölçüm saati ≤ ile gösteriliyor{oldest}, {untimed} cihazda zamanı bilinmeyen "
+            f"değer, {waiting} cihazda ölçüm bekleniyor, {withheld} cihazda gizli (eski)")
 
 
 def details(board):

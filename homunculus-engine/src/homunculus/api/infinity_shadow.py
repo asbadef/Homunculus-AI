@@ -108,7 +108,7 @@ def shadow_settings_from_env(env: Mapping[str, str], tenants: Mapping[str, str])
 # --- the wire format and the store ---------------------------------------------------------------
 
 SCHEMA_V1 = "homunculus.infinity-shadow.v1"     # the R3 hub's: no NBP
-SCHEMA = "homunculus.infinity-shadow.v2"        # v1, and NBP's three readings with `changed_at`
+SCHEMA = "homunculus.infinity-shadow.v2"        # v1, and NBP's three readings with `changed_at` (or null)
 SCHEMAS = (SCHEMA_V1, SCHEMA)                   # a tuple: a fuzzed list or dict compares, never hashes
 # parameter -> (wire unit, integrity bounds). Integrity, NOT clinical: a value outside what the
 # record can mean is a decoding fault, rejected and counted; 0 is inside every bound.
@@ -123,7 +123,10 @@ PARAMETERS = {
 # cuff. The hub sends the time the triple last CHANGED (`changed_at`, an upper bound of the
 # measurement); the board shows the three as ONE entry, `nbp`, and withholds it early enough that no
 # screen draws it once that time is more than NBP_MAX_MEASURED_AGE_S old (`_nbp_view`: a browser
-# keeps drawing a "value" answer for up to DISPLAY_MAX_AGE_S). A tuple, for the same reason as SCHEMAS.
+# keeps drawing a "value" answer for up to DISPLAY_MAX_AGE_S). Before the hub has seen a change it
+# sends a complete valid triple with `changed_at` null (NBP-2): the board shows it as `value_untimed`,
+# aged by its packet alone, with no measurement time — and no rule feeds on it (`infinity_rules.pick`
+# takes only a `value` with a change time). A tuple, for the same reason as SCHEMAS.
 NBP = "nbp"
 NBP_PARTS = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
 NBP_MAX_MEASURED_AGE_S = 7200.0
@@ -183,7 +186,8 @@ class _Held:
     unit: str
     captured_at: float
     received_at: float
-    changed_at: float | None = None      # NBP only: when its value last changed, as the hub saw it
+    changed_at: float | None = None      # NBP only: when its value last changed, as the hub saw it;
+                                         # None also for an NBP the hub sent untimed (NBP-2)
 
 
 @dataclass
@@ -267,8 +271,11 @@ def _validate(body: Any) -> None:
             if (valid and not _number(reading["value"])) or (not valid and reading["value"] is not None):
                 raise ShadowRejected("value")
             # A change is seen in a packet, so it is never after that packet; with `_judge`'s clock
-            # rule on `captured_at` it is never more than 2 s ahead of the API either.
-            if nbp and not (_number(reading["changed_at"]) and 0 < reading["changed_at"] <= reading["captured_at"]):
+            # rule on `captured_at` it is never more than 2 s ahead of the API either. Null (NBP-2):
+            # the hub holds a complete valid triple but has seen no change, so the measurement's time
+            # is unknown. The key is there either way (`_NBP_READING`); any other value refuses the body.
+            changed = reading["changed_at"] if nbp else None
+            if changed is not None and not (_number(changed) and 0 < changed <= reading["captured_at"]):
                 raise ShadowRejected("changed_at")
             names.add(name)
 
@@ -388,7 +395,9 @@ class ShadowStore:
     @staticmethod
     def _judge(held: _Device, reading: dict, now: float) -> str | None:
         spec = PARAMETERS.get(reading["parameter"])
-        # A v1 body never carried NBP's change time, so its NBP stays unknown, as v1 always had it.
+        # A v1 body never carried NBP's change time, so its NBP stays unknown, as v1 always had it. A
+        # v2 NBP always has the key (`_validate`); null (NBP-2, untimed) is judged as any reading is
+        # and held with `_Held.changed_at` None.
         if spec is None or (reading["parameter"] in NBP_PARTS and "changed_at" not in reading):
             return "unknown_parameter"
         unit, low, high = spec
@@ -423,11 +432,17 @@ class ShadowStore:
 
     @staticmethod
     def _nbp_view(readings: Mapping[str, _Held], now: float) -> dict:
-        """NBP's three held readings as ONE entry. A number only when all three are held, came with
+        """NBP's three held readings as ONE entry. `value` only when all three are held, came with
         one change time, are fresh and valid, and that change is at most NBP_MAX_MEASURED_AGE_S
         less DISPLAY_MAX_AGE_S old (below). `age_s`/`last_at` are the packet's while it is shown and
-        the change's once it is withheld; with no complete triple of one change there is no time at
-        all: "awaiting a measurement"."""
+        the change's once it is withheld.
+
+        `value_untimed` (NBP-2) when all three are held with NO change time, fresh and valid: the
+        numbers, `age_s`/`last_at` the packet's, `changed_at`/`measured_age_s` None. The two hours
+        need a time and do not apply; the packet-age rule does, as for every parameter (`_view`), and
+        withheld (`old`) or flagged (`invalid`) its age stays the packet's. With fewer than three, or
+        three of different changes (some timed, some not), there is no time at all: "awaiting a
+        measurement"."""
         entry = {"parameter": NBP, "state": "old", "systolic": None, "diastolic": None, "mean": None,
                  "unit": PARAMETERS[NBP_PARTS[0]][0], "age_s": None, "last_at": None, "changed_at": None,
                  "measured_age_s": None, "evidence": EVIDENCE[NBP], "partial": NBP in PARTIAL}
@@ -436,7 +451,19 @@ class ShadowStore:
             return entry
         changed = parts[0].changed_at
         captured = min(part.captured_at for part in parts)
-        age, measured = now - captured, now - changed
+        age = now - captured
+        if changed is None:
+            # The value the monitor shows now, its measurement time unknown. Never an engine input:
+            # `infinity_rules.pick` feeds only a `value` with a change time (D5).
+            if not 0 <= age <= DISPLAY_MAX_AGE_S:
+                entry.update(age_s=round(max(0.0, age), 1), last_at=_iso(captured))         # as `_view`
+            elif not all(part.valid for part in parts):
+                entry.update(state="invalid", age_s=round(age, 1), last_at=_iso(captured))  # the monitor shows ***
+            else:
+                entry.update(state="value_untimed", systolic=parts[0].value, diastolic=parts[1].value,
+                             mean=parts[2].value, age_s=round(age, 1), last_at=_iso(captured))
+            return entry
+        measured = now - changed
         entry.update(changed_at=_iso(changed), measured_age_s=round(max(0.0, measured), 1))
         # A browser draws a "value" answer until its packet is the board's `display_max_age_s` old
         # (DISPLAY_MAX_AGE_S; the dashboard's monitor.js cellOf/maxAgeOf, whose own copy is never
@@ -493,8 +520,9 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
       and its id; two or more `"ambiguous"` and no id; none, or a row without `bed_id`, `"none"`.
       A link the caller's scope does not reach (`patient_visible`) is reported as hidden.
     - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
-    Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last, beds by label,
-    unassigned devices by address."""
+    Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last (its states:
+    `value`, `value_untimed`, `invalid`, `old` — `ShadowStore._nbp_view`), each copied as the store
+    built it; beds by label, unassigned devices by address."""
     beds: list[dict] = []
     unassigned: list[dict] = []
     # How many devices the table puts on each bed right now. parse_table refuses two at once; this

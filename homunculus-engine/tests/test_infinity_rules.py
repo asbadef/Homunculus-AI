@@ -123,6 +123,15 @@ def test_pick_art_feeds_sbp_and_map_and_nbp_only_without_art_and_within_an_hour(
     assert pick(_view(_nbp(state="invalid")), DEFAULT_PARAMETERS, now=T0) == []
 
 
+def test_pick_never_feeds_an_nbp_whose_measurement_time_is_unknown():
+    # NBP-2 (D5): `value_untimed` is the strip's alone. Its numbers are there, its change time is not,
+    # and neither SBP nor MAP is fed, ART absent; nor would they be if it were labelled a value.
+    untimed = {**_nbp(sys=110, mean=80), "state": "value_untimed", "changed_at": None, "measured_age_s": None}
+    assert (untimed["systolic"], untimed["mean"]) == (110, 80)
+    assert pick(_view(untimed), DEFAULT_PARAMETERS, now=T0) == []
+    assert pick(_view({**untimed, "state": "value"}), DEFAULT_PARAMETERS, now=T0) == []
+
+
 def test_pick_honours_the_allowlist_and_the_units():
     only_spo2 = pick(_view(_cell("hr"), _cell("spo2", value=97, unit="%")), ("spo2",), now=T0)
     assert [(c.code, c.value, c.unit, c.via) for c in only_spo2] == [(SignalCode.SPO2, 97.0, "%", "spo2")]

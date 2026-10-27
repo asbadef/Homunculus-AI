@@ -4,8 +4,9 @@ The wire format is `homunculus.infinity-shadow.v2` (the hub forwarder's body; v1
 still taken). A body that breaks the schema is refused whole; a reading that is well-formed but
 cannot be shown (too old, from the future, the wrong unit, outside the record's integrity bounds, an
 unknown or excluded parameter, not newer than the one held) is rejected and counted. NBP travels as
-three readings with the time their value last changed and is shown as one entry. Synthetic sources
-only (192.0.2.x).
+three readings with the time their value last changed — null before the hub has seen a change
+(NBP-2: shown as `value_untimed`, the packet's age and no measurement time) — and is shown as one
+entry. Synthetic sources only (192.0.2.x).
 """
 from __future__ import annotations
 
@@ -44,6 +45,11 @@ def nbp(systolic=118, diastolic=79, mean=92, *, captured_at=T0 - 0.5, changed_at
     """The forwarder's three NBP readings: one packet, one change time."""
     return [reading(name, value, "mmHg", captured_at=captured_at, changed_at=changed_at)
             for name, value in zip(NBP_PARTS, (systolic, diastolic, mean))]
+
+
+def untimed(systolic=118, diastolic=79, mean=92, *, captured_at=T0 - 0.5):
+    """The three NBP readings before the hub has seen a change (NBP-2): `changed_at` there, and null."""
+    return [{**part, "changed_at": None} for part in nbp(systolic, diastolic, mean, captured_at=captured_at)]
 
 
 def device(source="192.0.2.10", *readings, status="streaming", packet_age_ms=100.0, group=None):
@@ -196,7 +202,12 @@ SCHEMA_VIOLATIONS = {
     "changed_at zero": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=0)),
     "changed_at nan": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=float("nan"))),
     "changed_at text": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at="12:00")),
+    "changed_at true": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=True)),
+    "changed_at negative": lambda b: b["devices"][0]["readings"].extend(nbp(changed_at=-1.0)),
+    "changed_at null on hr": lambda b: b["devices"][0]["readings"][0].update(changed_at=None),
     "changed_at in a v1 body": lambda b: (b.update(schema=SCHEMA_V1), b["devices"][0]["readings"].extend(nbp())),
+    "changed_at null in a v1 body": lambda b: (b.update(schema=SCHEMA_V1),
+                                               b["devices"][0]["readings"].extend(untimed())),
     "101 devices": lambda b: b.update(devices=[device(f"192.0.2.{i + 1}") for i in range(101)]),
     "17 readings": lambda b: b["devices"][0].update(readings=[reading(captured_at=T0 - i / 100)
                                                                for i in range(17)]),
@@ -400,6 +411,109 @@ def test_an_nbp_the_device_flags_invalid_is_stars_and_no_number():
     entry = _params(store)[NBP]
     assert (entry["state"], entry["systolic"], entry["diastolic"], entry["changed_at"]) == (
         "invalid", None, None, _iso(T0 - 600.0))
+
+
+# --- NBP-2: a complete valid triple before any change was seen, shown with its time unknown -------
+
+def _untimed(systolic=118, diastolic=79, mean=92, *, age_s=0.5, captured_at=T0 - 0.5):
+    return {**_waiting(), "state": "value_untimed", "systolic": systolic, "diastolic": diastolic, "mean": mean,
+            "age_s": age_s, "last_at": _iso(captured_at)}
+
+
+def test_an_untimed_triple_is_one_entry_with_the_packets_age_and_no_measurement_time():
+    store = ShadowStore(Clock())
+    answer = store.ingest(body(device("192.0.2.10", reading(), *untimed(captured_at=T0 - 0.5))))
+    assert answer == {"accepted": 4, "rejected": {"too_old": 0, "clock": 0, "unit": 0, "range": 0,
+                                                  "unknown_parameter": 0, "duplicate": 0}}
+    params = store.devices(T0)["192.0.2.10"].parameters
+    assert [p["parameter"] for p in params] == ["hr", "nbp"]           # after every other parameter
+    assert params[1] == {"parameter": "nbp", "state": "value_untimed", "systolic": 118, "diastolic": 79,
+                         "mean": 92, "unit": "mmHg", "age_s": 0.5, "last_at": _iso(T0 - 0.5),
+                         "changed_at": None, "measured_age_s": None, "evidence": "screen_match", "partial": False}
+
+
+def test_an_untimed_nbp_is_judged_by_its_packet_like_any_reading_and_never_as_unknown():
+    clock = Clock()
+    store = ShadowStore(clock)
+    answer = store.ingest(body(device("192.0.2.10", *untimed(captured_at=T0 - 10.5))))
+    assert (answer["accepted"], answer["rejected"]["too_old"]) == (0, 3)
+    clock.t += 1.5
+    answer = store.ingest(body(device("192.0.2.10", *untimed(captured_at=clock.t + 2.5))))
+    assert (answer["accepted"], answer["rejected"]["clock"]) == (0, 3)
+    clock.t += 1.5
+    parts = untimed(401, 79, 92, captured_at=clock.t - 0.5)
+    parts[2]["unit"] = "kPa"
+    answer = store.ingest(body(device("192.0.2.10", *parts)))
+    assert (answer["accepted"], answer["rejected"]["range"], answer["rejected"]["unit"]) == (1, 1, 1)
+    clock.t += 1.5
+    assert store.ingest(body(device("192.0.2.10", *untimed(captured_at=clock.t - 0.5))))["accepted"] == 3
+    clock.t += 1.5
+    answer = store.ingest(body(device("192.0.2.10", *untimed(captured_at=clock.t - 2.0))))   # not newer
+    assert (answer["accepted"], answer["rejected"]["duplicate"], answer["rejected"]["unknown_parameter"]) == (0, 3, 0)
+    assert _params(store)[NBP] == _untimed(age_s=2.0, captured_at=clock.t - 2.0)   # held, with no change time
+
+
+def test_an_untimed_nbp_goes_old_with_its_packet_and_keeps_the_packets_age():
+    # The two hours need a measurement time, which an untimed value lacks; the packet-age rule holds
+    # as for every parameter (`_view`): withheld past DISPLAY_MAX_AGE_S, or from the future.
+    store = ShadowStore(Clock())
+    store.ingest(body(device("192.0.2.10", *untimed(captured_at=T0))))
+    assert _params(store, now=T0 + 14.9)[NBP] == _untimed(age_s=14.9, captured_at=T0)
+    assert _params(store, now=T0 + 15.1)[NBP] == {**_waiting(), "age_s": 15.1, "last_at": _iso(T0)}
+    ahead = ShadowStore(Clock())
+    ahead.ingest(body(device("192.0.2.10", *untimed(captured_at=T0 + 1.5))))        # taken: <= 2 s ahead
+    assert _params(ahead)[NBP] == {**_waiting(), "age_s": 0.0, "last_at": _iso(T0 + 1.5)}
+
+
+def test_an_untimed_nbp_is_forgotten_after_120_s_like_any_reading():
+    clock = Clock()
+    store = ShadowStore(clock)
+    store.ingest(body(device("192.0.2.10", *untimed(captured_at=T0)),
+                      device("192.0.2.11", reading(captured_at=T0), *untimed(captured_at=T0))))
+    assert _params(store, now=T0 + FORGET_AFTER_S)[NBP] == {**_waiting(), "age_s": 120.0, "last_at": _iso(T0)}
+    clock.t = T0 + FORGET_AFTER_S + 0.1                # the hub no longer sends NBP; .11 still sends its HR
+    store.ingest(body(device("192.0.2.10"), device("192.0.2.11", reading(captured_at=clock.t - 0.5))))
+    views = store.devices()
+    assert views["192.0.2.10"].parameters == ()                          # nothing held: no entry at all
+    assert _params(store, "192.0.2.11")[NBP] == _waiting()               # no time at all: awaiting
+
+
+def test_a_triple_part_timed_and_part_untimed_is_awaiting_a_measurement():
+    clock = Clock()
+    store = ShadowStore(clock)
+    store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5, changed_at=T0 - 600.0))))
+    clock.t += 5
+    store.ingest(body(device("192.0.2.10", *untimed(131, 85, 100, captured_at=clock.t - 0.5)[1:])))
+    assert _params(store)[NBP] == _waiting()                             # the systolic is the old change's
+    one_body = ShadowStore(Clock())
+    parts = untimed()
+    parts[0] = nbp()[0]
+    one_body.ingest(body(device("192.0.2.10", *parts)))
+    assert _params(one_body)[NBP] == _waiting()
+
+
+def test_an_untimed_triple_the_device_flags_is_stars_and_no_number():
+    store = ShadowStore(Clock())
+    parts = untimed()
+    parts[1] = {**reading("nbp_diastolic", None, "mmHg", valid=False), "changed_at": None}
+    store.ingest(body(device("192.0.2.10", *parts)))
+    assert _params(store)[NBP] == {**_waiting(), "state": "invalid", "age_s": 0.5, "last_at": _iso(T0 - 0.5)}
+
+
+def test_the_first_timed_triple_after_untimed_ones_is_shown_with_its_change_time_and_back_again():
+    clock = Clock()
+    store = ShadowStore(clock)
+    for _ in range(3):                                 # the hub repeats the triple; no change seen
+        store.ingest(body(device("192.0.2.10", *untimed(captured_at=clock.t - 0.5))))
+        assert _params(store, now=clock.t)[NBP] == _untimed(captured_at=clock.t - 0.5)
+        clock.t += 5.0
+    store.ingest(body(device("192.0.2.10", *nbp(131, 85, 100, captured_at=clock.t - 0.5, changed_at=clock.t - 1.5))))
+    assert _params(store, now=clock.t)[NBP] == {
+        **_waiting(), "state": "value", "systolic": 131, "diastolic": 85, "mean": 100, "age_s": 0.5,
+        "last_at": _iso(clock.t - 0.5), "changed_at": _iso(clock.t - 1.5), "measured_age_s": 1.5}
+    clock.t += 5.0                                     # the hub restarted: no change seen since
+    store.ingest(body(device("192.0.2.10", *untimed(131, 85, 100, captured_at=clock.t - 0.5))))
+    assert _params(store, now=clock.t)[NBP] == _untimed(131, 85, 100, captured_at=clock.t - 0.5)
 
 
 def test_a_parameter_is_forgotten_after_120_s():
