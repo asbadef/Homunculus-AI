@@ -3,7 +3,13 @@
 The equivalence test (`test_infinity_shadow_equivalence.py`) proves the outputs are identical;
 this file proves the mechanism: the lane's modules cannot reach the clinical side, a shadow POST
 and GET call none of the clinical writers, the lane's token opens no clinical route, a TENANTS
-token does not open the lane, and a stage that is not `shadow` keeps the lane closed and empty.
+token does not open the lane, and a stage that is neither `shadow` nor `rules` keeps the lane
+closed and empty.
+
+Aşama B (spec 2026-10-27, D11): `api/infinity_rules.py`, the bridge to the SHADOW engine, imports
+the engine on purpose — it drives a second instance of it — but nothing that rings: not the
+notifier, the ack store, the alert lifecycle, the alarm-quality counters, the app or the board.
+And it writes audit rows of its own two kinds only.
 """
 from __future__ import annotations
 
@@ -11,6 +17,7 @@ import ast
 import inspect
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -20,6 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
+from homunculus.api.infinity_rules import SHADOW_ALERT, SHADOW_CLEARED
 from homunculus.api.infinity_shadow import SCHEMA, ShadowSettings, shadow_settings_from_env
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
 from homunculus.pipeline import Engine
@@ -43,6 +51,12 @@ FORBIDDEN = ("homunculus.pipeline", "homunculus.rules", "homunculus.reco", "homu
              "homunculus.api.broadcast", "homunculus.api.notify", "homunculus.api.escalation",
              "homunculus.api.rehydrate", "homunculus.api.board")
 LANE = ("api/infinity_shadow.py", "api/infinity_device_beds.py", "edge/infinity_shadow.py")
+# Aşama B's bridge (api/infinity_rules.py) is held to its own set: it imports the engine to drive
+# the shadow one, and must reach nothing that notifies, acknowledges, ends an episode, counts an
+# alarm, or builds or publishes a card — the frames its pictures go out in are the app's.
+RULES_FORBIDDEN = ("homunculus.api.notify", "homunculus.api.ackstore", "homunculus.api.alert_lifecycle",
+                   "homunculus.api.alarm_quality", "homunculus.api.app", "homunculus.api.board")
+BRIDGE = PACKAGE / "api" / "infinity_rules.py"
 
 
 def _imports(path: Path) -> set[str]:
@@ -91,6 +105,24 @@ def test_the_trend_charts_import_nothing_of_the_lane():
     lane = ("homunculus.api.infinity_shadow", "homunculus.api.infinity_device_beds",
             "homunculus.edge")
     assert not sorted(n for n in imported if any(n == m or n.startswith(m + ".") for m in lane))
+
+
+def test_the_bridge_imports_nothing_that_rings():
+    imported = _imports(BRIDGE)
+    assert "homunculus.pipeline" in imported, "the scan went blind"
+    assert not sorted(n for n in imported if any(n == f or n.startswith(f + ".") for f in RULES_FORBIDDEN))
+
+
+def test_the_bridge_writes_only_the_two_shadow_audit_kinds():
+    """Every `AuditEvent(` in the bridge names its kind by SHADOW_ALERT or SHADOW_CLEARED, and those
+    are the two shadow kinds. Counted against the calls themselves: a call whose kind is a string
+    literal, or anything but a plain name, does not match the pattern and fails the count."""
+    text = BRIDGE.read_text(encoding="utf-8")
+    calls = re.findall(r"\bAuditEvent\(", text)
+    kinds = re.findall(r"\bAuditEvent\(\s*\w+\s*,\s*(\w+)\s*,", text)
+    assert calls and len(kinds) == len(calls), (len(calls), kinds)
+    assert set(kinds) == {"SHADOW_ALERT", "SHADOW_CLEARED"}, kinds
+    assert (SHADOW_ALERT, SHADOW_CLEARED) == ("shadow_alert", "shadow_alert_cleared")
 
 
 def test_importing_the_lane_loads_nothing_clinical_even_indirectly():
@@ -227,6 +259,10 @@ CLINICAL_ROUTES = [
     ("GET", "/patients/p1/trends", None),
     ("POST", "/stream-ticket", None),
     ("GET", "/audit", None),
+    # Aşama B's «uyarsaydı» list names patients: the lane's key does not read it either. (A device
+    # token passes every permission and reads it with the stage `rules`; below it, it is 409 —
+    # `test_below_rules_the_findings_route_is_409`.)
+    ("GET", "/infinity-shadow/findings", None),
 ]
 
 
@@ -257,14 +293,46 @@ def test_with_the_stage_off_a_post_is_409_and_the_store_stays_empty(tmp_path):
     assert client.get("/infinity-shadow/board", headers=_hdr(DEVICE)).json() == {"stage": "off"}
 
 
-@pytest.mark.parametrize("stage", ["rules", "alarms"])
-def test_rules_and_alarms_behave_as_off(tmp_path, stage):
-    settings = shadow_settings_from_env({"INFINITY_CLINICAL_STAGE": stage, "INFINITY_SHADOW_TOKEN": SHADOW,
-                                         "INFINITY_SHADOW_HOSPITAL": HOSPITAL,
-                                         "INFINITY_DEVICE_BEDS_PATH": str(tmp_path / "device-beds.json")},
-                                        {DEVICE: HOSPITAL})
-    client, clock = _app(tmp_path, settings=settings)
+def _stage(tmp_path, stage, **extra):
+    return shadow_settings_from_env({"INFINITY_CLINICAL_STAGE": stage, "INFINITY_SHADOW_TOKEN": SHADOW,
+                                     "INFINITY_SHADOW_HOSPITAL": HOSPITAL,
+                                     "INFINITY_DEVICE_BEDS_PATH": str(tmp_path / "device-beds.json"), **extra},
+                                    {DEVICE: HOSPITAL})
+
+
+@pytest.mark.parametrize("stage", ["alarms"])
+def test_alarms_behaves_as_off(tmp_path, stage):
+    client, clock = _app(tmp_path, settings=_stage(tmp_path, stage))
     assert client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW)).status_code == 409
     assert client.app.state.shadow_store.devices() == {}
     assert client.get("/infinity-shadow/board", headers=_hdr(DEVICE)).json() == {
         "stage": "off", "configured_stage": stage, "problem": "stage_not_implemented"}
+
+
+def test_rules_is_a_stage_and_its_lane_is_on(tmp_path):
+    settings = _stage(tmp_path, "rules")                  # no INFINITY_RULES_PARAMETERS: the default list
+    client, clock = _app(tmp_path, settings=settings)
+    assert client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW)).status_code == 200
+    board = client.get("/infinity-shadow/board", headers=_hdr(DEVICE)).json()
+    assert board["stage"] == "rules" and board["feed"]["rules_state"] == "ok"
+    assert board["beds"][0]["parameters"][0]["value"] == 180            # the strip runs within it
+
+
+def test_rules_with_an_unknown_parameter_behaves_as_off(tmp_path):
+    client, clock = _app(tmp_path, settings=_stage(tmp_path, "rules", INFINITY_RULES_PARAMETERS="hr,bogus"))
+    assert client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW)).status_code == 409
+    assert client.app.state.shadow_store.devices() == {}
+    assert client.app.state.shadow_lane.engines == {}
+    assert client.get("/infinity-shadow/board", headers=_hdr(DEVICE)).json() == {
+        "stage": "off", "configured_stage": "rules", "problem": "parameters_unknown"}
+
+
+@pytest.mark.parametrize("stage", ["off", "shadow"])
+def test_below_rules_the_findings_route_is_409(tmp_path, stage):
+    # The device token passes `board.view`, so it is not 401 here as the lane's token is: below the
+    # stage `rules` the route answers 409 and reads nothing.
+    settings = ShadowSettings() if stage == "off" else None
+    client, _ = _app(tmp_path, settings=settings)
+    response = client.get("/infinity-shadow/findings", headers=_hdr(DEVICE))
+    assert response.status_code == 409 and response.json()["detail"] == {"reason": "stage_not_rules"}
+    assert client.app.state.audit.records(tenant=HOSPITAL, limit=10) == []

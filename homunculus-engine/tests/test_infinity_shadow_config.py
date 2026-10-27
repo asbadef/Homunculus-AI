@@ -1,4 +1,7 @@
-"""Aşama A's stage switch: `INFINITY_CLINICAL_STAGE`, off by default, never a reason to refuse start.
+"""The stage switch: `INFINITY_CLINICAL_STAGE`, off by default, never a reason to refuse start.
+
+`shadow` is Aşama A (the strip), `rules` is Aşama B (the strip and the shadow engine it feeds, with
+the allowlist `INFINITY_RULES_PARAMETERS`); `alarms` is not in this build and runs as off.
 
 The shadow lane opens only with a dedicated token that is not a `TENANTS` device token: a device
 token passes every permission check and can write `/ingest`, so it must never be the key to the
@@ -10,6 +13,7 @@ import logging
 
 import pytest
 
+from homunculus.api.infinity_rules import DEFAULT_PARAMETERS
 from homunculus.api.infinity_shadow import DEFAULT_TABLE_PATH, ShadowSettings, shadow_settings_from_env
 
 DEVICE = "tok-device-00000000000000000000000000"
@@ -42,8 +46,8 @@ def test_off_and_shadow_are_read_case_and_space_insensitively():
     assert blank.stage == "off" and blank.problem is None
 
 
-@pytest.mark.parametrize("stage", ["rules", "alarms", "ALARMS"])
-def test_rules_and_alarms_are_not_in_this_build_and_run_as_off(stage, caplog):
+@pytest.mark.parametrize("stage", ["alarms", "ALARMS"])
+def test_alarms_is_not_in_this_build_and_runs_as_off(stage, caplog):
     with caplog.at_level(logging.ERROR, logger="homunculus.api.infinity_shadow"):
         settings = shadow_settings_from_env(_env(INFINITY_CLINICAL_STAGE=stage), TENANTS)
     assert settings.stage == "off" and not settings.on
@@ -55,6 +59,18 @@ def test_rules_and_alarms_are_not_in_this_build_and_run_as_off(stage, caplog):
     text = errors[0].getMessage()
     assert "stage_not_implemented" in text and stage.lower() in text
     assert STRONG not in text and VIEWER not in text
+
+
+@pytest.mark.parametrize("stage", ["rules", " Rules "])
+def test_rules_is_a_stage_with_the_default_allowlist(stage):
+    settings = shadow_settings_from_env(_env(INFINITY_CLINICAL_STAGE=stage), TENANTS)
+    assert (settings.stage, settings.configured, settings.problem) == ("rules", "rules", None)
+    assert settings.on and settings.rules
+    assert settings.parameters == DEFAULT_PARAMETERS
+    assert settings.token == STRONG and settings.hospital == "HOSP1"
+    # Below `rules` there is no allowlist, and `shadow` is not `rules`.
+    shadow = shadow_settings_from_env(_env(), TENANTS)
+    assert shadow.on and not shadow.rules and shadow.parameters == ()
 
 
 def test_an_unknown_value_runs_as_off():
@@ -88,10 +104,16 @@ def test_the_hospital_must_be_one_the_api_serves(hospital):
 def test_the_token_is_never_in_repr_or_logs(caplog):
     with caplog.at_level(logging.DEBUG, logger="homunculus.api.infinity_shadow"):
         on = shadow_settings_from_env(_env(), TENANTS)
-        for over in ({"INFINITY_CLINICAL_STAGE": "rules"}, {"INFINITY_SHADOW_TOKEN": "w" * 31},
+        rules = shadow_settings_from_env(_env(INFINITY_CLINICAL_STAGE="rules"), TENANTS)
+        # The refusals, each logged: a stage not in this build, a rules allowlist naming no
+        # parameter, a weak token, a TENANTS token, a hospital the API does not serve.
+        for over in ({"INFINITY_CLINICAL_STAGE": "alarms"},
+                     {"INFINITY_CLINICAL_STAGE": "rules", "INFINITY_RULES_PARAMETERS": "hr,bogus"},
+                     {"INFINITY_SHADOW_TOKEN": "w" * 31},
                      {"INFINITY_SHADOW_TOKEN": DEVICE}, {"INFINITY_SHADOW_HOSPITAL": "nope"}):
             shadow_settings_from_env(_env(**over), TENANTS)
     assert on.on and STRONG not in repr(on) and STRONG not in str(on)
+    assert rules.rules and STRONG not in repr(rules) and STRONG not in str(rules)
     logged = "\n".join(r.getMessage() for r in caplog.records)
     assert caplog.records, "the refusals above must have been logged"
     for secret in (STRONG, "w" * 31, DEVICE, VIEWER):
