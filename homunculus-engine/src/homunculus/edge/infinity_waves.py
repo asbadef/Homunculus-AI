@@ -128,7 +128,7 @@ class WaveBuffer:
     `since` serves any set of monitors (phase 2's wall). A packet received more than
     MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
-    A fresh block more than WINDOW_S older than the monitor's newest means the monitor's clock went
+    A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
     back (a restart, a clock set): what was held is dropped rather than left to hide the new data."""
 
     def __init__(self, inventory, *, clock=time.time):
@@ -173,7 +173,10 @@ class WaveBuffer:
         key = (block.t_ms, block.wave_id)
         if key in keys:
             return
-        if held and block.t_ms < held[-1][0] - WINDOW_S * 1000:
+        # `since` floors its answer at newest - ANSWER_S, so a fresh block older than that could never be
+        # served and the old newest would hide it until it aged out. Transport delay is at most
+        # MAX_TRANSPORT_DELAY, so only a monitor clock set back gets here.
+        if held and block.t_ms < held[-1][0] - ANSWER_S * 1000:
             held.clear()
             keys.clear()
         self.cursor += 1

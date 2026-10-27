@@ -225,6 +225,14 @@ def test_a_monitor_clock_set_back_drops_what_was_held():
     assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {100.04}
 
 
+def test_a_monitor_clock_set_back_by_fifteen_seconds_drops_what_was_held_too():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(5000, 40), 1000.0)])
+    waves.consume([event(tick(4985, 40), 1000.0)])             # 15 s back: inside the ring, outside the answer
+    assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4985.04}
+
+
 def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignored():
     now = [1000.0]
     waves = ring(now)

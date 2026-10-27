@@ -38,7 +38,7 @@
 | R2 | Hub blocks carry `seq` (the cursor value they were added under); the API strips it. | So one cached 10 s window serves every viewer's own cursor. |
 | R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost: ≈ 35–50 KB per hub request, ≤ 4/s per watched monitor. Phase 2 (one request for the wall) should revisit. |
 | R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
-| R5 | A fresh block more than 20 s older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | Otherwise a restarted monitor stalls for up to 20 s, and a silent monitor's last blocks would be served to a new viewer as a window. |
+| R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) |
 | R6 | Stall timing: a row freezes when the render time (head − 2 s) reaches the data's end, greys and says "akış durdu · N sn" **1.5 s later (≈ 3.5 s after the data stopped)**, N = whole seconds since the data's end; it is cleared **10 s after the data's end**. | Spec §5.3 read literally; the acceptance "within ~3 s" is ≈ 3.5–4 s with worker batching. |
 | R7 | Row choice per group: ECG ≤ 2, pressure ≤ 2, pleth 1, resp 1 — the group's **live** waves in id order; a group the monitor sends with **no** live wave still gets one row (its first id) that says "sinyal yok". | The correction's liveness rule, and §5.2: an absent ECG must read as "no signal", never as nothing. |
 | R8 | Catalogue `kind` ∈ `ecg | pressure | pleth | resp`; ECG `label` is null (the screen says "EKG"); `evidence` ∈ `structural` (yapısal) / `unverified` (doğrulanmadı) / `screen_scale` (pressure: "ölçek ekranla doğrulandı"). | The correction; spec §3.2's `art`/`ecg_other` kinds are superseded by it. |
@@ -403,7 +403,7 @@ cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_wa
 - Modify: `homunculus-engine/src/homunculus/edge/infinity_waves.py` (imports; append the ring)
 - Modify: `homunculus-engine/tests/test_infinity_waves.py` (imports; append the ring tests)
 
-- [ ] **Step 1: Write the failing ring tests.** In `tests/test_infinity_waves.py`, replace the two import lines
+- [ ] **Step 1: Write the failing ring tests.** In `tests/test_infinity_waves.py`, replace the two import lines (as of `4cf75f3` the first one also imports `ECG_OTHER` and the second `RATES`, which Task 1's review added: keep them and add the new names to the lists below)
 
 ```python
 from infinity_wave_packets import ECG, PLETH, PRESSURE_ART, PRESSURE_P1, RESP, block, no_signal, packet, tick
@@ -539,6 +539,14 @@ def test_a_monitor_clock_set_back_drops_what_was_held():
     assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {100.04}
 
 
+def test_a_monitor_clock_set_back_by_fifteen_seconds_drops_what_was_held_too():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(5000, 40), 1000.0)])
+    waves.consume([event(tick(4985, 40), 1000.0)])             # 15 s back: inside the ring, outside the answer
+    assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4985.04}
+
+
 def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignored():
     now = [1000.0]
     waves = ring(now)
@@ -597,7 +605,7 @@ class WaveBuffer:
     `since` serves any set of monitors (phase 2's wall). A packet received more than
     MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
-    A fresh block more than WINDOW_S older than the monitor's newest means the monitor's clock went
+    A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
     back (a restart, a clock set): what was held is dropped rather than left to hide the new data."""
 
     def __init__(self, inventory, *, clock=time.time):
@@ -642,7 +650,10 @@ class WaveBuffer:
         key = (block.t_ms, block.wave_id)
         if key in keys:
             return
-        if held and block.t_ms < held[-1][0] - WINDOW_S * 1000:
+        # `since` floors its answer at newest - ANSWER_S, so a fresh block older than that could never be
+        # served and the old newest would hide it until it aged out. Transport delay is at most
+        # MAX_TRANSPORT_DELAY, so only a monitor clock set back gets here.
+        if held and block.t_ms < held[-1][0] - ANSWER_S * 1000:
             held.clear()
             keys.clear()
         self.cursor += 1
@@ -687,7 +698,7 @@ class WaveBuffer:
 - [ ] **Step 4: Run the tests.**
 
 Run: the command of Step 2.
-Expected: `35 passed`.
+Expected: `43 passed` (the file now holds Task 1's 29 cases, after its review, plus the 14 ring cases; the first draft of this plan, before the review, said 35).
 
 - [ ] **Step 5: Commit.**
 
