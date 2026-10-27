@@ -36,7 +36,7 @@
 |---|---|---|
 | R1 | A monitor is named by its **source address** (the strip card's `source`) on both routes: hub `device=192.0.2.21`, API `/infinity-waves/192.0.2.21`; the JSON field stays `device_id`. | The API knows monitors only by address (the forwarder sends no inventory id; the table maps addresses). |
 | R2 | Hub blocks carry `seq` (the cursor value they were added under); the API strips it. | So one cached 10 s window serves every viewer's own cursor. |
-| R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost: ≈ 35–50 KB per hub request, ≤ 4/s per watched monitor. Phase 2 (one request for the wall) should revisit. |
+| R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost (measured, Task 4 review): ≈ 86–113 KB per device per 10 s window (BED08-shaped / all nine waves live), ≤ 4 hub requests/s per watched monitor. Phase 2's wall must use `since` as a real cursor: 16 devices × a full window (1.4–1.8 MB) would exceed the API's 1 MiB cap, and the hub's encode of it (≈ 300 ms) is why the hub route returns `JSONResponse` (encoded on the threadpool, not the loop). |
 | R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
 | R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) **Known limit, pinned by a test:** a set-back of 10 s or less is not detected; it stalls (phase kept) or overlaps the old stream (phase shifted) for at most that long and self-heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits). |
 | R5b | Ring cap: 1024 entries per monitor (`MAX_HELD`), oldest dropped. | A bound against a malformed or spoofing sender (the decoder accepts any wave id and a 64 KB packet carries ~1,200 blocks); never reached by a real bed (≈ 909 at the worst: 9 catalogue waves × 101 blocks in the inclusive 20 s window). |
@@ -841,11 +841,11 @@ cd /c/tmp/inf-dalga && git add deploy/infinity/build_transport_release.py homunc
 
 ### Task 4: The hub's two hooks, and the runner
 
-Hook 1: `/v1/packets` hands the acknowledged events to the `WaveBuffer` right after `research_view.consume`. Hook 2: `GET /infinity-research/waves?device=<addr>[&device=…]&since=<cursor>` — viewer token, 409 when there is no buffer, 400 out of bounds (0 or more than 16 devices, a repeated device, a cursor that is not 1–15 digits), 404 for an address the inventory does not list. One device → `{schema, device_id, cursor, hub_now, started, blocks}`; several → `{schema, cursor, hub_now, started, devices: {addr: {blocks}}}`. Both are timed under two new closed names. (R19) `started` is the hub process's start time (`iso_z` of the hub clock at `create_hub`): a reader that holds a cursor treats a changed `started` as a restarted hub. `GET /v1/status` gains `"waves": {cursor, refused, started}` when the hub has a buffer, and has no such key otherwise.
+Hook 1: `/v1/packets` hands the acknowledged events to the `WaveBuffer` right after `research_view.consume`. Hook 2: `GET /infinity-research/waves?device=<addr>[&device=…]&since=<cursor>` — viewer token, 409 when there is no buffer, 400 out of bounds (0 or more than 16 devices, a repeated device, a cursor that is not 1–15 digits), 404 for an address the inventory does not list. One device → `{schema, device_id, cursor, hub_now, started, blocks}`; several → `{schema, cursor, hub_now, started, devices: {addr: {blocks}}}`. Both are timed under two new closed names, and both are returned as a `JSONResponse` so that the encoding runs on the route's threadpool thread, not on the event loop (a plain dict is encoded on the loop; measured 230–310 ms for 16 devices). (R19) `started` is the hub process's start time (`iso_z` of the hub clock at `create_hub`): a reader that holds a cursor treats a changed `started` as a restarted hub. `GET /v1/status` gains `"waves": {cursor, refused, started}` when the hub has a buffer, and has no such key otherwise.
 
 **Files:**
 - Create: `homunculus-engine/tests/test_infinity_waves_hub.py`
-- Modify: `homunculus-engine/src/homunculus/edge/infinity_hub.py:4-15, 64-69, 159-162, 174, 235-236`
+- Modify: `homunculus-engine/src/homunculus/edge/infinity_hub.py:4-15, 57, 64-69, 159-162, 174, 235-236`
 - Modify: `homunculus-engine/src/homunculus/edge/infinity_timing.py:28-29`
 - Modify: `homunculus-engine/scripts/run_infinity_transport.py:60-65, 94-95`
 
@@ -860,15 +860,17 @@ import importlib.util
 import io
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from infinity_wave_packets import ECG, at, no_signal, packet, tick
 from homunculus.edge.infinity_hub import create_hub
-from homunculus.edge.infinity_journal import Journal
+from homunculus.edge.infinity_journal import CapacityError, Journal
 from homunculus.edge.infinity_live import LiveResearchView
 from homunculus.edge.infinity_stream import Inventory, packet_event
 from homunculus.edge.infinity_timing import HUB_NAMES, valid_snapshot
@@ -906,7 +908,8 @@ def post(client, events):
 
 
 def read(client, *devices, since="0", token=VIEWER):
-    params = [("device", d) for d in devices] + [("since", since)]
+    """`since=None` leaves the parameter out of the request."""
+    params = [("device", d) for d in devices] + ([] if since is None else [("since", since)])
     return client.get("/infinity-research/waves", params=params,
                       headers={"Authorization": "Bearer " + token} if token else {})
 
@@ -925,7 +928,9 @@ def test_only_the_viewer_token_reads_the_waves(hub):
 def test_an_acknowledged_packet_reaches_the_answer_in_the_schema(hub):
     client, _, _ = hub
     assert post(client, [event(tick(*at(0)), 999.8)]).status_code == 200
-    body = read(client, BED).json()
+    answer = read(client, BED)
+    assert answer.headers["content-type"] == "application/json"
+    body = answer.json()
     assert set(body) == {"schema", "device_id", "cursor", "hub_now", "started", "blocks"}
     assert body["schema"] == SCHEMA and body["device_id"] == BED and body["cursor"] == 4
     assert body["hub_now"] == "1970-01-01T00:16:40.000Z"
@@ -945,7 +950,9 @@ def test_a_no_signal_block_is_null_and_the_cursor_moves_on(hub):
 def test_several_monitors_in_one_request_share_one_cursor(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0, 0), event(tick(*at(0)), 1000.0, 1)])
-    body = read(client, BED, OTHER).json()
+    answer = read(client, BED, OTHER)
+    assert answer.headers["content-type"] == "application/json"
+    body = answer.json()
     assert set(body) == {"schema", "cursor", "hub_now", "started", "devices"}
     assert body["cursor"] == 8 and set(body["devices"]) == {BED, OTHER}
     assert all(len(entry["blocks"]) == 4 for entry in body["devices"].values())
@@ -975,6 +982,34 @@ def test_a_monitor_the_inventory_does_not_list_is_404(hub):
     assert read(client, BED, "192.0.2.99").status_code == 404
 
 
+def test_since_left_out_counts_as_zero_but_present_and_empty_is_400(hub):
+    client, _, _ = hub
+    post(client, [event(tick(*at(0)), 1000.0)])
+    body = read(client, BED, since=None).json()
+    assert body["cursor"] == 4 and len(body["blocks"]) == 4
+    assert read(client, BED, since="").status_code == 400
+
+
+def test_sixteen_devices_pass_the_bound_and_seventeen_do_not(hub):
+    client, _, _ = hub
+    sixteen = [f"192.0.2.{i}" for i in range(1, 17)]
+    assert read(client, *sixteen).status_code == 404            # past the 400 gate: only .1 and .2 are listed
+    assert read(client, *sixteen, "192.0.2.17").status_code == 400
+
+
+def test_a_wrong_token_is_401_before_any_other_check(hub, tmp_path):
+    client, _, _ = hub
+    seventeen = [f"192.0.2.{i}" for i in range(17)]
+    assert read(client, *seventeen, token=COLLECTOR).status_code == 401        # not 400
+    assert read(client, "192.0.2.99", token=None).status_code == 401           # not 404
+    journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
+    try:
+        with TestClient(create_hub(INV, journal, COLLECTOR, VIEWER)) as plain:
+            assert read(plain, BED, token=COLLECTOR).status_code == 401        # not 409
+    finally:
+        journal.close()
+
+
 def test_without_waves_the_route_is_409_and_waves_need_payload_acceptance(tmp_path):
     journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
     try:
@@ -993,6 +1028,18 @@ def test_a_refused_batch_feeds_the_waves_nothing(hub):
     assert waves.cursor == 0
 
 
+def test_a_batch_the_journal_cannot_hold_feeds_the_waves_nothing(hub, monkeypatch):
+    client, waves, _ = hub
+
+    def full(*args, **kwargs):
+        raise CapacityError("full")
+
+    monkeypatch.setattr(Journal, "append", full)
+    assert post(client, [event(tick(*at(0)), 1000.0)]).status_code == 507
+    assert waves.cursor == 0 and waves.refused == 0
+    assert "waves_ms" not in status(client)["timings"]
+
+
 def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0)])
@@ -1000,6 +1047,42 @@ def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     seen = status(client)["timings"]
     assert seen["waves_ms"][0] == 1 and seen["waves_read_ms"][0] == 1
     assert valid_snapshot(seen, HUB_NAMES)
+
+
+def test_only_a_read_that_answers_is_timed(hub):
+    client, _, _ = hub
+    assert read(client, "192.0.2.99").status_code == 404
+    assert read(client, BED, since="x").status_code == 400
+    assert read(client, BED, token=None).status_code == 401
+    assert "waves_read_ms" not in status(client)["timings"]
+    assert read(client).status_code == 400
+    assert read(client, BED).status_code == 200
+    assert status(client)["timings"]["waves_read_ms"][0] == 1
+
+
+def test_the_answer_is_encoded_on_a_threadpool_thread_not_on_the_event_loop(hub, monkeypatch):
+    # A bare dict would be encoded by FastAPI on the loop after the threadpool hop, where it holds up
+    # /v1/packets (a wall poll of 16 devices: ~300 ms). /v1/packets is the loop's own handler, so the
+    # thread that renders its answer is the loop thread; the waves answer must render on another.
+    client, _, _ = hub
+    rendered, original = [], JSONResponse.render
+
+    def render(self, content):
+        rendered.append(threading.get_ident())
+        return original(self, content)
+
+    monkeypatch.setattr(JSONResponse, "render", render)
+    post(client, [event(tick(*at(0)), 1000.0)])
+    loop_thread = rendered[-1]
+    assert read(client, BED).status_code == 200
+    assert read(client, BED, OTHER).status_code == 200
+    assert rendered[-2] != loop_thread and rendered[-1] != loop_thread
+
+
+def test_the_hub_page_shows_the_wave_counters(hub):
+    client, _, _ = hub
+    script = client.get("/app.js").text
+    assert "s.waves.cursor" in script and "s.waves.refused" in script
 
 
 def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
@@ -1055,7 +1138,7 @@ def _run(tmp_path, monkeypatch, *flags):
 
 def test_the_runner_decodes_waves_with_live_research_and_says_so(tmp_path, monkeypatch):
     code, out, served = _run(tmp_path, monkeypatch, "--capture-payload", "--unverified-live-research")
-    assert code == 0 and "Waveform blocks decoded for display only" in out
+    assert code == 0 and "Waveform blocks decoded for display only" in out and "the last 20 s in memory" in out
     with TestClient(served[0]) as client:
         assert read(client, BED).json()["blocks"] == []
 
@@ -1086,7 +1169,7 @@ HUB_NAMES = JOURNAL_NAMES | {"packets_ms", "body_ms", "validate_ms", "consume_ms
                              "batch_events", "status_ms", "waves_ms", "waves_read_ms"}
 ```
 
-- [ ] **Step 4: The hub.** Six Edits in `src/homunculus/edge/infinity_hub.py`.
+- [ ] **Step 4: The hub.** Eight Edits in `src/homunculus/edge/infinity_hub.py`.
 
 (a) Replace
 
@@ -1195,11 +1278,14 @@ with
         cursor, found = waves.since(names, int(since))
         now = iso_z(clock())
         timings.since("waves_read_ms", started)
+        # JSONResponse, not a bare dict: FastAPI would run its encoder on the event loop, where it
+        # blocks /v1/packets (a wall poll of 16 devices was measured at ~300 ms); this way
+        # json.dumps runs here, on the threadpool thread.
         if len(names) == 1:
-            return {"schema": WAVES_SCHEMA, "device_id": names[0], "cursor": cursor, "hub_now": now,
-                    "started": hub_started, "blocks": found[names[0]]}
-        return {"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now, "started": hub_started,
-                "devices": {name: {"blocks": found[name]} for name in names}}
+            return JSONResponse({"schema": WAVES_SCHEMA, "device_id": names[0], "cursor": cursor, "hub_now": now,
+                                 "started": hub_started, "blocks": found[names[0]]})
+        return JSONResponse({"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now, "started": hub_started,
+                             "devices": {name: {"blocks": found[name]} for name in names}})
 
     @app.post("/infinity-research/restart")
 ```
@@ -1226,6 +1312,31 @@ with
         return answer
 ```
 
+(g) Replace
+
+```python
+from fastapi.responses import HTMLResponse, Response
+```
+
+with
+
+```python
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+```
+
+(h) The hub's own page script reads `/v1/status`; show the buffer's counters on its overview line. In `JS`, replace
+
+```python
+  ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0);
+```
+
+with
+
+```python
+  ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0)+
+  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused:'');
+```
+
 - [ ] **Step 5: The runner.** Two Edits in `scripts/run_infinity_transport.py`.
 
 (a) Replace
@@ -1248,7 +1359,7 @@ with
             if args.role != "hub" or not args.capture_payload or args.replay:
                 raise ValueError("Live research requires a hub with explicit payload acceptance.")
             from homunculus.edge.infinity_live import LiveResearchView
-            from homunculus.edge.infinity_waves import WaveBuffer
+            from homunculus.edge.infinity_waves import WINDOW_S, WaveBuffer
             research_view = LiveResearchView(inventory)
             waves = WaveBuffer(inventory)
 ```
@@ -1266,18 +1377,19 @@ with
             app = create_hub(inventory, journal, token, viewer, accept_payload=args.capture_payload,
                              research_view=research_view, timings=timings, waves=waves)
             if waves is not None:
-                print("Waveform blocks decoded for display only (unvalidated; the last 20 s in memory).", flush=True)
+                print(f"Waveform blocks decoded for display only (unvalidated; the last {WINDOW_S:g} s in memory).",
+                      flush=True)
 ```
 
 - [ ] **Step 6: Run the hub's tests and its neighbours.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_hub.py tests/test_infinity_waves.py tests/test_infinity_release.py tests/test_infinity_timing.py tests/test_infinity_transport.py tests/test_infinity_live.py tests/test_infinity_shadow_forwarder.py`
-Expected: all pass (`19` new hub tests among them, 204 in these seven files in all; the release test passes only because Tasks 1–2 are committed — run it again after Step 7 if in doubt).
+Expected: all pass (`26` new hub tests among them, 211 in these seven files in all; the release test passes only because Tasks 1–2 are committed — run it again after Step 7 if in doubt).
 
 - [ ] **Step 7: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hub.py homunculus-engine/src/homunculus/edge/infinity_timing.py homunculus-engine/scripts/run_infinity_transport.py homunculus-engine/tests/test_infinity_waves_hub.py && git commit -m "feat(infinity): the hub decodes wave blocks of acknowledged packets and serves them to the viewer token" -m "Hook 1: /v1/packets hands the events it has journaled to the WaveBuffer, next to the live research view, timed as waves_ms. Hook 2: GET /infinity-research/waves takes 1 to 16 monitor addresses and one hub-wide cursor; the viewer token only (the collector's is refused), 409 without decoding, 400 out of bounds, 404 for an address the inventory does not list. One device answers with its blocks, several with a map — the shape phase 2's wall will poll in one request. Every answer carries `started`, the hub process's start time, so a reader that holds a cursor can tell a restarted hub (whose cursor counts from 0 again) exactly; /v1/status shows the buffer's cursor, its refused count and the same token, so a worker clock ahead of the hub's is visible instead of a silent blackout. The runner builds the buffer only with live research and payload capture, and says so in one line." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hub.py homunculus-engine/src/homunculus/edge/infinity_timing.py homunculus-engine/scripts/run_infinity_transport.py homunculus-engine/tests/test_infinity_waves_hub.py && git commit -m "feat(infinity): the hub decodes wave blocks of acknowledged packets and serves them to the viewer token" -m "Hook 1: /v1/packets hands the events it has journaled to the WaveBuffer, next to the live research view, timed as waves_ms. Hook 2: GET /infinity-research/waves takes 1 to 16 monitor addresses and one hub-wide cursor; the viewer token only (the collector's is refused), 409 without decoding, 400 out of bounds, 404 for an address the inventory does not list. One device answers with its blocks, several with a map — the shape phase 2's wall will poll in one request. Every answer carries `started`, the hub process's start time, so a reader that holds a cursor can tell a restarted hub (whose cursor counts from 0 again) exactly; /v1/status shows the buffer's cursor, its refused count and the same token, so a worker clock ahead of the hub's is visible instead of a silent blackout. The route returns JSONResponse, so the encoding of a (large) answer runs on the threadpool thread, not on the event loop that takes /v1/packets. The runner builds the buffer only with live research and payload capture, and says so in one line." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
