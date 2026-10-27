@@ -22,6 +22,12 @@ const ROWS = [
 ];
 const START = "Evə yazılmanı başlat";
 const LEFT = "Xəstə çıxdı · təsdiqlə";
+/** A row's button is named by its words, then its bed (M-4): ROWS' one admitted patient, and its
+ *  one started discharge. The dialogs' own buttons keep their words alone. */
+const START_ROW = `${START}: 2 · Otaq 1 · Reanimasiya`;
+const LEFT_ROW = `${LEFT}: 1 · Otaq 1 · Reanimasiya`;
+/** Any row's button of these words, whatever its bed — to count them, or to find none. */
+const anyRow = (words) => new RegExp(`^${words}: `);
 const UNKNOWN = "Alarm vəziyyəti hələ oxunmayıb — evə yazılmanı başlatmaq üçün gözləyin.";
 const section = (name) => within(screen.getByRole("region", { name }));
 
@@ -44,14 +50,14 @@ async function open(perms, setup, { start = true } = {}) {
 
 /** The physician's start, through its dialog, as it opens: home, now, no note. */
 async function sendStart() {
-  fireEvent.click(screen.getByRole("button", { name: START }));
+  fireEvent.click(screen.getByRole("button", { name: START_ROW }));
   await act(async () => { fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: START })); });
   await settle();
 }
 
 /** The charge nurse's confirmation, through the question it asks first. */
 async function confirmLeft() {
-  fireEvent.click(screen.getByRole("button", { name: LEFT }));
+  fireEvent.click(screen.getByRole("button", { name: LEFT_ROW }));
   await act(async () => { fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: LEFT })); });
   await settle();
 }
@@ -59,7 +65,7 @@ async function confirmLeft() {
 /** «Taburcuyu başlat» is held: aria-disabled, described by its reason in words, and a press opens
  *  nothing and sends nothing. */
 function expectHeld(api, reason) {
-  const start = screen.getByRole("button", { name: START });
+  const start = screen.getByRole("button", { name: START_ROW });
   expect(start.getAttribute("aria-disabled")).toBe("true");
   expect(start.getAttribute("aria-describedby").split(" ")).toContain(screen.getByText(reason).id);
   fireEvent.click(start);
@@ -67,7 +73,7 @@ function expectHeld(api, reason) {
   expect(api.startDischarge).not.toHaveBeenCalled();
 }
 
-const startAllowed = () => screen.getByRole("button", { name: START }).getAttribute("aria-disabled") === null;
+const startAllowed = () => screen.getByRole("button", { name: START_ROW }).getAttribute("aria-disabled") === null;
 
 describe("DischargeTab", () => {
   it("reads the three open states and lists them in two sections, by name and bed, never by UUID", async () => {
@@ -84,22 +90,27 @@ describe("DischargeTab", () => {
 
   it("gives a physician «Taburcuyu başlat» on an admitted patient only, and the charge nurse «Hasta çıktı · onayla»", async () => {
     await open(DOCTOR);
-    expect(screen.getAllByRole("button", { name: START })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: LEFT })).toBeNull();
+    expect(screen.getAllByRole("button", { name: anyRow(START) })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: anyRow(LEFT) })).toBeNull();
   });
 
   it("gives the charge nurse no «Taburcuyu başlat»: starting a discharge is the physician's", async () => {
     await open(CHARGE);
-    expect(screen.queryByRole("button", { name: START })).toBeNull();
-    expect(screen.getAllByRole("button", { name: LEFT })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: anyRow(START) })).toBeNull();
+    expect(screen.getAllByRole("button", { name: anyRow(LEFT) })).toHaveLength(1);
   });
 
-  it("describes each row's button by that row's bed line", async () => {
+  // Final review M-4: a row's button carries its bed in its name — the visible words first (WCAG
+  // 2.5.3: a voice user says what she sees), then the bed, as BedsTab, SignOffStrip and StructureTab
+  // name theirs. Its description is a hold's reason, and only that.
+  it("names each row's button by its words, then that row's bed, and describes it only by a hold's reason (M-4)", async () => {
     await open([...DOCTOR, "admissions.discharge.confirm"]);
-    const described = (name) => screen.getByRole("button", { name }).getAttribute("aria-describedby").split(" ")
-      .map((id) => document.getElementById(id)?.textContent);
-    expect(described(START)).toContain("2 · Otaq 1 · Reanimasiya");
-    expect(described(LEFT)).toContain("1 · Otaq 1 · Reanimasiya");
+    for (const [words, name] of [[START, START_ROW], [LEFT, LEFT_ROW]]) {
+      const button = screen.getByRole("button", { name });
+      expect(button.textContent).toBe(words);
+      expect(button.getAttribute("aria-label").startsWith(button.textContent)).toBe(true);
+      expect(button.getAttribute("aria-describedby")).toBeNull();          // nothing holds it
+    }
   });
 
   it.each([
@@ -158,7 +169,7 @@ describe("DischargeTab", () => {
   it("starts a discharge from the dialog: home, now, with the note", async () => {
     const { api } = await open(DOCTOR, (a) => a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" }));
     const before = Date.now();
-    fireEvent.click(screen.getByRole("button", { name: START }));
+    fireEvent.click(screen.getByRole("button", { name: START_ROW }));
     const dialog = within(screen.getByRole("dialog", { name: "Evə yazılma · 2 · Otaq 1 · Reanimasiya" }));
     fireEvent.change(dialog.getByLabelText("Qeyd"), { target: { value: "Sentetik qeyd" } });
     await act(async () => { fireEvent.click(dialog.getByRole("button", { name: START })); });
@@ -176,7 +187,7 @@ describe("DischargeTab", () => {
 
   it("asks for the institution before it sends a transfer to another one", async () => {
     const { api } = await open(DOCTOR);
-    fireEvent.click(screen.getByRole("button", { name: START }));
+    fireEvent.click(screen.getByRole("button", { name: START_ROW }));
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByLabelText("Başqa müəssisəyə göndəriş"));
     await act(async () => { fireEvent.click(dialog.getByRole("button", { name: START })); });
@@ -189,7 +200,7 @@ describe("DischargeTab", () => {
     ["a name written in", "Sentetik Həkim", "Sentetik Həkim"],
   ])("sends an exitus with the reporting physician %s", async (_case, typed, sent) => {
     const { api } = await open(DOCTOR, (a) => a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" }));
-    fireEvent.click(screen.getByRole("button", { name: START }));
+    fireEvent.click(screen.getByRole("button", { name: START_ROW }));
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByLabelText("Vəfat (exitus)"));
     if (typed) fireEvent.change(dialog.getByLabelText("Bildirən həkim"), { target: { value: typed } });
@@ -201,7 +212,7 @@ describe("DischargeTab", () => {
 
   it("refuses a discharge time in the future and sends nothing", async () => {
     const { api } = await open(DOCTOR);
-    fireEvent.click(screen.getByRole("button", { name: START }));
+    fireEvent.click(screen.getByRole("button", { name: START_ROW }));
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.change(dialog.getByLabelText(/^Çıxış vaxtı/), { target: { value: localInput(Date.now() + 2 * 3_600_000) } });
     await act(async () => { fireEvent.click(dialog.getByRole("button", { name: START })); });
@@ -267,7 +278,7 @@ describe("DischargeTab", () => {
 
   it("asks before it confirms that a patient left, naming the bed and the number; cancelling sends nothing", async () => {
     const { api } = await open(CHARGE);
-    fireEvent.click(screen.getByRole("button", { name: LEFT }));
+    fireEvent.click(screen.getByRole("button", { name: LEFT_ROW }));
     const dialog = within(screen.getByRole("dialog", { name: "Xəstənin çıxışını təsdiqləyin" }));
     expect(dialog.getByText(/Çarpayı: 1 · Otaq 1 · Reanimasiya · Xəstə nömrəsi: H2600003\./)).toBeTruthy();
     expect(dialog.getByText(/geri qaytarıla bilməz/)).toBeTruthy();
@@ -278,7 +289,7 @@ describe("DischargeTab", () => {
 
   it("sends a confirmation once, however often it is pressed", async () => {
     const { api } = await open(CHARGE, (a) => a.confirmDischarge.mockResolvedValue({ id: "a-3", state: "DISCHARGED", board: "ok" }));
-    fireEvent.click(screen.getByRole("button", { name: LEFT }));
+    fireEvent.click(screen.getByRole("button", { name: LEFT_ROW }));
     const yes = within(screen.getByRole("dialog")).getByRole("button", { name: LEFT });
     fireEvent.click(yes);
     fireEvent.click(yes);
@@ -312,13 +323,13 @@ describe("DischargeTab", () => {
   // A-17: a write's buttons are held until the list is read again — until then it still shows the
   // admission as it was, and a press in that gap would send the same write twice.
   it.each([
-    ["the discharge dialog", DOCTOR, "startDischarge", START, { id: "a-1", state: "PENDING_DISCHARGE" }],
-    ["the confirmation", CHARGE, "confirmDischarge", LEFT, { id: "a-3", state: "DISCHARGED", board: "ok" }],
-  ])("keeps %s held until the list is read again, so a second press sends nothing", async (_what, perms, call, name, answer) => {
+    ["the discharge dialog", DOCTOR, "startDischarge", START_ROW, START, { id: "a-1", state: "PENDING_DISCHARGE" }],
+    ["the confirmation", CHARGE, "confirmDischarge", LEFT_ROW, LEFT, { id: "a-3", state: "DISCHARGED", board: "ok" }],
+  ])("keeps %s held until the list is read again, so a second press sends nothing", async (_what, perms, call, opener, name, answer) => {
     let reread;
     const { api } = await open(perms, (a) => a[call].mockResolvedValue(answer));
     api.admissions.mockImplementationOnce(() => new Promise((resolve) => { reread = resolve; }));
-    fireEvent.click(screen.getByRole("button", { name }));
+    fireEvent.click(screen.getByRole("button", { name: opener }));
     const send = () => within(screen.getByRole("dialog")).getByRole("button", { name });
     await act(async () => { fireEvent.click(send()); });
     await settle();
@@ -335,9 +346,9 @@ describe("DischargeTab", () => {
   // A-22, spec §5.7: the button a write was sent from leaves the list with the re-read (a started
   // discharge moves up, a confirmed one goes) — its focus must not fall to <body>.
   it.each([
-    ["a started discharge", DOCTOR, sendStart, START, "startDischarge", { id: "a-1", state: "PENDING_DISCHARGE" },
+    ["a started discharge", DOCTOR, sendStart, START_ROW, "startDischarge", { id: "a-1", state: "PENDING_DISCHARGE" },
       [{ ...ROWS[0], state: "PENDING_DISCHARGE", discharge_disposition: "HOME", discharge_at: "2026-10-25T09:30:00Z" }, ROWS[1], ROWS[2]]],
-    ["a confirmation", CHARGE, confirmLeft, LEFT, "confirmDischarge", { id: "a-3", state: "DISCHARGED", board: "ok" }, [ROWS[0], ROWS[1]]],
+    ["a confirmation", CHARGE, confirmLeft, LEFT_ROW, "confirmDischarge", { id: "a-3", state: "DISCHARGED", board: "ok" }, [ROWS[0], ROWS[1]]],
   ])("after %s the focus goes to the started discharges, not to <body>", async (_what, perms, send, name, call, answer, after) => {
     const { api } = await open(perms, (a) => a[call].mockResolvedValue(answer));
     api.admissions.mockResolvedValue(after);
@@ -367,11 +378,11 @@ describe("DischargeTab", () => {
   it("leaves the focus on the button when the write was refused and the row stays", async () => {
     await open(CHARGE, (a) => a.confirmDischarge.mockRejectedValue(
       refusal(409, "Only a PENDING_DISCHARGE admission can be confirmed.", { apiCode: "invalid_transition" })));
-    const left = screen.getByRole("button", { name: LEFT });
+    const left = screen.getByRole("button", { name: LEFT_ROW });
     left.focus();
     await confirmLeft();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: LEFT }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: LEFT_ROW }));
   });
 
   // Amendment A-9: an uncoded 404 ("Admission not found.") is said by its status, in the reader's
@@ -398,12 +409,14 @@ describe("the confirmation (A-30, A-32)", () => {
   const BOARD_FAILED = "evə yazılma təsdiqləndi; kart paneldən götürülmədi — paneli yoxlayın";
   const INCOMPLETE = "evə yazılma təsdiqləndi; siqnalların bağlanma qeydi natamamdır — sistem administratoruna bildirin";
   const RETRY = "Paneldən yenidən götür";
+  /** A note's retry is named by its words, then its bed (M-4). */
+  const RETRY_ROW = `${RETRY}: ${SUBJECT}`;
   const region = () => screen.getByRole("region", { name: "Bildirişlər" });
   /** The notes the tab keeps (the toasts' are the region's). */
   const kept = () => screen.queryAllByRole("note").filter((n) => !region().contains(n));
 
   function expectConfirmHeld(api, reason) {
-    const left = screen.getByRole("button", { name: LEFT });
+    const left = screen.getByRole("button", { name: LEFT_ROW });
     expect(left.getAttribute("aria-disabled")).toBe("true");
     expect(left.getAttribute("aria-describedby").split(" ")).toContain(screen.getByText(reason).id);
     fireEvent.click(left);
@@ -425,7 +438,7 @@ describe("the confirmation (A-30, A-32)", () => {
   // «Hasta çıktı · onayla», which a critical alarm firing while it is open must hold too.
   it("holds the question's own «Hasta çıktı · onayla» the moment a critical alarm fires while it is open, saying why, and sends nothing", async () => {
     const { api, stream } = await open(CHARGE);
-    fireEvent.click(screen.getByRole("button", { name: LEFT }));
+    fireEvent.click(screen.getByRole("button", { name: LEFT_ROW }));
     const dialog = () => within(screen.getByRole("dialog", { name: "Xəstənin çıxışını təsdiqləyin" }));
     const yes = () => dialog().getByRole("button", { name: LEFT });
     expect(yes().getAttribute("aria-disabled")).toBeNull();
@@ -451,7 +464,7 @@ describe("the confirmation (A-30, A-32)", () => {
       entry("H2600003", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "hemsire" })]),
       entry("H2600001", [alarm("septic_shock", "critical")]),
     ])));
-    expect(screen.getByRole("button", { name: LEFT }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("button", { name: LEFT_ROW }).getAttribute("aria-disabled")).toBeNull();
   });
 
   it("holds it while the board has not loaded: nothing loaded yet rules no alarm out", async () => {
@@ -461,7 +474,7 @@ describe("the confirmation (A-30, A-32)", () => {
 
   it("a charge nurse without the board's right gets a note, not a hold that would never lift", async () => {
     await open(CHARGE.filter((p) => p !== "board.view"), undefined, { start: false });
-    expect(screen.getByRole("button", { name: LEFT }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("button", { name: LEFT_ROW }).getAttribute("aria-disabled")).toBeNull();
     // What the engine does (A-32's confirm re-check): it refuses the confirmation, and says so.
     expect(section("Evə yazılması başladılanlar")
       .getByText(/Təsdiqlənməmiş kritik siqnal varkən mühərrik çıxışın təsdiqini rədd edir və bunu bildirir\./)).toBeTruthy();
@@ -485,7 +498,7 @@ describe("the confirmation (A-30, A-32)", () => {
     const told = toasts().getAllByText(`${SUBJECT} · ${text}`);
     expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
     expect(kept().map((n) => n.textContent)).toEqual([expect.stringContaining(`${SUBJECT} · ${text}`)]);
-    expect(Boolean(screen.queryByRole("button", { name: RETRY }))).toBe(retry);
+    expect(Boolean(screen.queryByRole("button", { name: anyRow(RETRY) }))).toBe(retry);
     if (text !== INCOMPLETE) expect(document.body.textContent).not.toContain(INCOMPLETE);
   });
 
@@ -495,7 +508,8 @@ describe("the confirmation (A-30, A-32)", () => {
       .mockResolvedValueOnce({ id: "a-3", state: "DISCHARGED", board: "ok", alerts: "ok" }));
     api.admissions.mockResolvedValue([ROWS[0], ROWS[1]]);                  // the discharged admission has left the list
     await confirmLeft();
-    const retry = screen.getByRole("button", { name: RETRY });
+    const retry = screen.getByRole("button", { name: RETRY_ROW });
+    expect(retry.textContent).toBe(RETRY);                                 // its words first, then its bed (M-4)
     expect(retry.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent))
       .toContain(`${SUBJECT} · ${BOARD_FAILED}`);
     retry.focus();
@@ -505,7 +519,7 @@ describe("the confirmation (A-30, A-32)", () => {
     expect(api.confirmDischarge.mock.calls).toEqual([["a-3"], ["a-3"]]);
     expect(toasts().getAllByText(`${SUBJECT} · kart paneldən götürüldü`).length).toBeGreaterThan(0);
     expect(kept()).toEqual([]);
-    expect(screen.queryByRole("button", { name: RETRY })).toBeNull();
+    expect(screen.queryByRole("button", { name: anyRow(RETRY) })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
   });
 
@@ -516,7 +530,7 @@ describe("the confirmation (A-30, A-32)", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }))
       .mockRejectedValueOnce(refusal(409, "Only a PENDING_DISCHARGE admission can be confirmed.", { apiCode: "invalid_transition" })));
     await confirmLeft();
-    const retry = () => screen.getByRole("button", { name: RETRY });
+    const retry = () => screen.getByRole("button", { name: RETRY_ROW });
     await act(async () => { fireEvent.click(retry()); });
     await act(async () => { fireEvent.click(retry()); });                   // on its way: nothing more is sent
     expect(api.confirmDischarge).toHaveBeenCalledTimes(2);
@@ -545,11 +559,13 @@ describe("the confirmation (A-30, A-32)", () => {
         .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
     });
     for (const at of [0, 1]) {                                              // a-3, then a-4: neither card left
-      fireEvent.click(screen.getAllByRole("button", { name: LEFT })[at]);
+      fireEvent.click(screen.getAllByRole("button", { name: anyRow(LEFT) })[at]);
       await act(async () => { fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: LEFT })); });
       await settle();
     }
-    const [first, other] = screen.getAllByRole("button", { name: RETRY });
+    const [first, other] = screen.getAllByRole("button", { name: anyRow(RETRY) });
+    expect(first).toBe(screen.getByRole("button", { name: RETRY_ROW }));
+    expect(other).toBe(screen.getByRole("button", { name: `${RETRY}: 5 · Otaq 2 · Reanimasiya` }));
     await act(async () => { fireEvent.click(first); });
     expect(other.getAttribute("aria-disabled")).toBe("true");
     expect(other.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent))
@@ -558,8 +574,8 @@ describe("the confirmation (A-30, A-32)", () => {
     expect(api.confirmDischarge).toHaveBeenCalledTimes(3);                 // two confirmations, one retry
     await act(async () => { answer({ id: "a-3", state: "DISCHARGED", board: "ok", alerts: "ok" }); });
     await settle();
-    expect(screen.getAllByRole("button", { name: RETRY })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: RETRY }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getAllByRole("button", { name: anyRow(RETRY) })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: `${RETRY}: 5 · Otaq 2 · Reanimasiya` }).getAttribute("aria-disabled")).toBeNull();
   });
 });
 
@@ -581,7 +597,7 @@ describe("the discharge time's default (A-30)", () => {
       a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: written }, ROWS[1], ROWS[2]]);
       a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" });
     });
-    fireEvent.click(screen.getByRole("button", { name: START }));
+    fireEvent.click(screen.getByRole("button", { name: START_ROW }));
     return { ...mounted, dialog: within(screen.getByRole("dialog")) };
   }
   const send = async (dialog) => {

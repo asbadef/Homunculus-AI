@@ -314,7 +314,7 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("button", { name: /^Reanimasiya/ })).toBeInTheDocument();  // the picker, by name
     await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" })); await settle(); });
     expect(screen.getByText("Vəfat (exitus)", { exact: false })).toBeInTheDocument();  // kabul.disp.exitus
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Evə yazılmanı başlat" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Evə yazılmanı başlat: / })); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Çıxış forması");             // kabul.f.disposition
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);

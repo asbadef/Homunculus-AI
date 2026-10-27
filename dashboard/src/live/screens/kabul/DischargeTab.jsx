@@ -28,9 +28,10 @@
 // A write's dialog stays open and held until that re-read is in (A-17): until then the list still
 // shows the admission as it was, and a press in the gap would send the same write twice. The bed is
 // named as the slice names it, "label · room · unit" (A-17, A-22), on the dialog, the toast and the
-// note. And when the re-read takes away the button the write was sent from — a started discharge
-// moves up, a confirmed one goes — the focus that fell with it goes to the started discharges'
-// list, never left on <body> (spec §5.7).
+// note, and in the name of each row's button and each note's retry, after its words (M-4). And
+// when the re-read takes away the button the write was sent from — a started discharge moves up,
+// a confirmed one goes — the focus that fell with it goes to the started discharges' list, never
+// left on <body> (spec §5.7).
 import React, { useEffect, useId, useRef, useState } from "react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -65,15 +66,13 @@ const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateStrin
 /** When a discharge was decided: its time, and its date as well unless that is today. */
 const whenOf = (ms) => (sameDay(ms, Date.now()) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`);
 
-/** One admission, its bed line first. `children(line)` draws the row's actions; each is described
- *  by `line`, the bed line's id, so a button named "start discharge" also says whose. */
+/** One admission, its bed line first; `children` are the row's actions. */
 function Row({ row, children }) {
   const { t } = useI18n();
-  const line = useId();
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-ctl border border-line bg-card px-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <p id={line} className="m-0 text-14 font-semibold">
+        <p className="m-0 text-14 font-semibold">
           <span className="font-data">{row.bed_label}</span> · {row.room_name} · {row.unit_name}
         </p>
         <p className="m-0 text-13 text-mute">
@@ -81,24 +80,28 @@ function Row({ row, children }) {
           {row.state === "DRAFT" ? <> · <Tag tone="warn">{t("kabul.badgeDraft")}</Tag></> : null}
         </p>
       </div>
-      {children(line)}
+      {children}
     </li>
   );
 }
 
-/** A row's action, held while `hold` names a reason: aria-disabled, never disabled — it keeps its
- *  focus — and described by the row's bed line and the reason under it; a press then does nothing. */
-function RowAction({ line, hold, onPress, children, ...button }) {
+/** A row's action, its `words` on it. It is named by those words, then its bed (`subject`), so a
+ *  button that says "start discharge" also says whose — the visible words first (WCAG 2.5.3), as
+ *  BedsTab, SignOffStrip and StructureTab name theirs (final review M-4). Held while `hold` names a
+ *  reason: aria-disabled, never disabled — it keeps its focus — and described by the reason under
+ *  it; a press then does nothing. */
+function RowAction({ words, subject, hold, onPress, ...button }) {
   const { t } = useI18n();
+  const reason = useId();
   return (
     <div className="grid justify-items-end gap-1">
-      <Button {...button} aria-disabled={hold ? "true" : undefined}
-        aria-describedby={hold ? `${line} ${line}-hold` : line}
+      <Button {...button} aria-label={`${words}: ${subject}`} aria-disabled={hold ? "true" : undefined}
+        aria-describedby={hold ? reason : undefined}
         onClick={() => { if (!hold) onPress(); }}>
-        {children}
+        {words}
       </Button>
       {hold ? (
-        <p id={`${line}-hold`} className={`m-0 text-12 font-semibold ${CRITICAL_HOLDS.has(hold) ? "text-crit-ink" : "text-mute"}`}>
+        <p id={reason} className={`m-0 text-12 font-semibold ${CRITICAL_HOLDS.has(hold) ? "text-crit-ink" : "text-mute"}`}>
           {t(hold)}
         </p>
       ) : null}
@@ -107,8 +110,9 @@ function RowAction({ line, hold, onPress, children, ...button }) {
 }
 
 /** What a confirmation left undone, kept until it is done; a card still on the board offers the
- *  retry (`onRetry`, for a holder of the confirmation's right), described by the note's own words —
- *  and, while another note's retry is out, held, described by `heldBy` too (the one being retried). */
+ *  retry (`onRetry`, for a holder of the confirmation's right), named by its words and then the bed
+ *  as a row's action is (M-4), described by the note's own words — and, while another note's retry
+ *  is out, held, described by `heldBy` too (the one being retried). */
 function UndoneNote({ undone, retrying, heldBy, onRetry }) {
   const { t } = useI18n();
   const said = useId();
@@ -118,7 +122,8 @@ function UndoneNote({ undone, retrying, heldBy, onRetry }) {
       <span id={said}>{doneFor(t, undone.subject, t(OUTCOME_TEXT[undone.kind]))}</span>
       {undone.kind === "board" && onRetry ? (
         <span className="mt-1.5 block">
-          <Button size="sm" aria-describedby={held ? `${said} ${heldBy}` : said} busy={retrying === undone.id}
+          <Button size="sm" aria-label={`${t("kabul.retryBoard")}: ${undone.subject}`}
+            aria-describedby={held ? `${said} ${heldBy}` : said} busy={retrying === undone.id}
             aria-disabled={held ? "true" : undefined} onClick={() => onRetry(undone)}>
             {t("kabul.retryBoard")}
           </Button>
@@ -244,21 +249,15 @@ export function DischargeTab() {
           <ul className="m-0 grid list-none gap-2 p-0">
             {pending.map((row) => (
               <Row key={row.id} row={row}>
-                {(line) => (
-                  <>
-                    <p className="m-0 text-12.5 text-mute">
-                      {dispositionKey(row.discharge_disposition) ? t(dispositionKey(row.discharge_disposition)) : ""}
-                      {row.discharge_institution ? ` · ${row.discharge_institution}` : ""}
-                      {row.discharge_at ? ` · ${whenOf(Date.parse(row.discharge_at))}` : ""}
-                    </p>
-                    {confirms ? (
-                      <RowAction line={line} hold={holdOf(row.patient_number, "confirm")} variant="primary" icon="ok"
-                        busy={confirming && leaving?.id === row.id} onPress={() => setLeaving(row)}>
-                        {t("kabul.confirmLeft")}
-                      </RowAction>
-                    ) : null}
-                  </>
-                )}
+                <p className="m-0 text-12.5 text-mute">
+                  {dispositionKey(row.discharge_disposition) ? t(dispositionKey(row.discharge_disposition)) : ""}
+                  {row.discharge_institution ? ` · ${row.discharge_institution}` : ""}
+                  {row.discharge_at ? ` · ${whenOf(Date.parse(row.discharge_at))}` : ""}
+                </p>
+                {confirms ? (
+                  <RowAction words={t("kabul.confirmLeft")} subject={bedOf(row)} hold={holdOf(row.patient_number, "confirm")}
+                    variant="primary" icon="ok" busy={confirming && leaving?.id === row.id} onPress={() => setLeaving(row)} />
+                ) : null}
               </Row>
             ))}
           </ul>
@@ -272,12 +271,11 @@ export function DischargeTab() {
           <ul className="m-0 grid list-none gap-2 p-0">
             {lying.map((row) => (
               <Row key={row.id} row={row}>
-                {(line) => (row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
+                {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
                   : starts ? (
-                    <RowAction line={line} hold={holdOf(row.patient_number, "start")} icon="out" onPress={() => setStarting(row)}>
-                      {t("kabul.startDischarge")}
-                    </RowAction>
-                  ) : null)}
+                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(row.patient_number, "start")}
+                      icon="out" onPress={() => setStarting(row)} />
+                  ) : null}
               </Row>
             ))}
           </ul>
