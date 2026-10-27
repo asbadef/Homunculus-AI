@@ -507,7 +507,8 @@ else from NBP when it was measured at most an hour ago, stamped at its `changed_
 a minute per patient and signal, taken when a forwarder body arrives; there is no timer, so a silent
 forwarder stops the sampling by itself.
 
-**Migration 0013 (bu dalda B1a'dan sonra eklenir).** A new table, `monitor_samples` (hospital,
+**Migration 0013** (`homunculus-engine/alembic/versions/0013_monitor_samples.py`, after B1a's
+0012). A new table, `monitor_samples` (hospital,
 patient, bed, source, code, via, value, unit, captured and received times), kept 30 days: an hourly
 task deletes older rows — at every stage on a Postgres deployment, so after a rollback to `shadow` or
 `off` the rows a `rules` run wrote still expire; until the table exists that task logs one WARNING an
@@ -516,9 +517,12 @@ the samples stay in memory for 24 hours only, all a restart replays. Each sampli
 in one transaction. The deploy blocks run `alembic upgrade head` as they do for 0012, and the API
 image's start command (`Dockerfile.api`) runs it too, so the table exists once the API is recreated on
 an image that contains the migration. An image rolled back later leaves the table in place; the older
-images do not read it. The table lives in the VM's database only. The same migration should add an
-audit index on `(tenant, event_type, id)`: the lane reads its two kinds newest-first and
-`/alarm-quality` reads its five, and without it each read walks the tenant's rows by id.
+images do not read it. The table lives in the VM's database only. The same migration adds the audit
+index `ix_audit_tenant_event_id` on `(tenant, event_type, id)`: the lane reads its two kinds
+newest-first and `/alarm-quality` reads its five, and without it each read walks the tenant's rows
+by id. It is built inside the migration's transaction, so writes to the audit wait while it builds —
+at the API's start, before it serves. `alembic downgrade 0012` drops the table, its rows and the
+index.
 
 **What the ward sees** (only at `rules`, only for a patient whose bed is linked):
 
