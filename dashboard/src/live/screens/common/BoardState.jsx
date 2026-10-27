@@ -79,7 +79,12 @@ const idsOf = (list) => (Array.isArray(list) && list.length > 0 ? list : NO_IDS)
  *  and that sentence printed one on a nurse's board. The note says them itself, in the reader's
  *  language, each named from the structure (`useUnitNames`, `useBedNames`: a key the structure
  *  cannot name yet is its numbered placeholder, never the UUID). A blind board is the engine's own
- *  sentence to say; the keys would only repeat it. */
+ *  sentence to say; the keys would only repeat it.
+ *
+ *  A-43: whenever one of those names is a numbered placeholder — the structure is still being read,
+ *  its read failed, or this session holds no right that opens it (phase "unasked") — the note says
+ *  so in the scope editor's own words (`kabul.namesPending`): "Şöbə 1" is not a unit's name. A key
+ *  the structure, once read, does not hold is «Naməlum şöbə 1» — a claim, not a placeholder. */
 export function ScopeNote({ scope, scopeNote, className = "" }) {
   const { t } = useI18n();
   const hidden = Number.isFinite(scope?.hidden) ? scope.hidden : 0;
@@ -88,14 +93,19 @@ export function ScopeNote({ scope, scopeNote, className = "" }) {
   const bedIds = useMemo(() => idsOf(scope?.unmatched_bed_ids), [scope?.unmatched_bed_ids]);
   const unitNames = useUnitNames(unitIds);
   const bedNames = useBedNames(bedIds);
-  const unmatched = scope?.blind === true
+  const blind = scope?.blind === true;
+  const unmatched = blind
     ? []
     : [...unitNames.sorted.map(unitNames.nameOf), ...bedNames.sorted.map(bedNames.nameOf)];
+  const namesPending = !blind && unitNames.placeholders + bedNames.placeholders > 0;
   if (!scopeNote && hidden === 0 && unmatched.length === 0) return null;
   return (
     <Note tone="info" icon="shield" className={className}>
       {unmatched.length > 0 ? (
         <span className="block">{t("board.scopeUnmatched", { names: unmatched.join(", ") })}</span>
+      ) : null}
+      {namesPending ? (
+        <span className="mt-0.5 block text-11 font-normal text-mute">{t("kabul.namesPending")}</span>
       ) : null}
       {scopeNote ? (
         <>

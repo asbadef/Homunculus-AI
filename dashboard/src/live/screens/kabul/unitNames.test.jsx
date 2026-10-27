@@ -162,16 +162,37 @@ describe("the board's scope note", () => {
     // The sentence is the screen's own now: no Turkish server prose, so no "the server wrote this".
     expect(box.querySelector('[lang="tr"]')).toBeNull();
     expect(box).not.toHaveTextContent(az("board.scopeNoteLang"));
+    expect(box).not.toHaveTextContent(az("kabul.namesPending"));     // every name is a name
     expectNoUuid();
   });
 
+  // A-43: a numbered placeholder is not a name, and the note says so, as the scope editor does.
   for (const [state, setup] of Object.entries(NOT_KNOWN)) {
-    it(`numbers a key while the structure is ${state}, and still never prints its UUID`, async () => {
+    it(`numbers a key while the structure is ${state}, says the numbers are placeholders, and still never prints its UUID`, async () => {
       await mountKabul(note({ unmatched_unit_ids: [NEO], unmatched_bed_ids: [BED(5)] }), { perms: PERMS, setup });
       expect(screen.getByRole("note")).toHaveTextContent(`${UNMATCHED_AZ} Şöbə 1, Çarpayı 1`);
+      expect(screen.getByRole("note")).toHaveTextContent(az("kabul.namesPending"));
       expectNoUuid();
     });
   }
+
+  it("says the numbers are placeholders for a session the structure is not read for at all", async () => {
+    // board.view alone opens no structure read (phase "unasked"): every key stays a number.
+    await mountKabul(note({ unmatched_unit_ids: [NEO], unmatched_bed_ids: [BED(5)] }), { perms: ["board.view"] });
+    expect(screen.getByRole("note")).toHaveTextContent(`${UNMATCHED_AZ} Şöbə 1, Çarpayı 1`);
+    expect(screen.getByRole("note")).toHaveTextContent(az("kabul.namesPending"));
+    expectNoUuid();
+  });
+
+  // A-43: the structure has been read and does not hold the key — that is a claim, «unknown unit N»,
+  // not a placeholder, so nothing says a name is still to come.
+  it("calls a key the structure, once read, does not hold «unknown unit N» — never its UUID, never a placeholder", async () => {
+    await mountKabul(note({ unmatched_unit_ids: [GHOST], unmatched_bed_ids: [BED(5)] }), { perms: PERMS });
+    const box = screen.getByRole("note");
+    expect(box).toHaveTextContent(`${UNMATCHED_AZ} Naməlum şöbə 1, 5 · Otaq 2 · Reanimasiya`);
+    expect(box).not.toHaveTextContent(az("kabul.namesPending"));
+    expectNoUuid();
+  });
 
   it("leaves a blind board to the engine's own sentence", async () => {
     // Nothing came through the scope at all: the engine says that (in Turkish, marked so), and the
@@ -230,6 +251,34 @@ describe("the administrator's scope editor", () => {
     expect(rowHeaders()).toEqual(["Neonatal", "—"]);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: az("admin.scopeSave") })); });
     expect(save).toHaveBeenCalledWith([{ unit_id: NEO }, { bed_id: BED(5) }], []);
+    expectNoUuid();
+  });
+
+  // A-43 (after the walk-fix review): keys are compared as the engine compares them (`normId`:
+  // trimmed, case-folded). A grant the server holds in another case than the structure's id is the
+  // same place: it shows ticked, the place is offered once, and it can never be granted twice.
+  it("ticks a held grant whose key differs from the structure's only in case, and offers that place once", async () => {
+    const UNIT = "abcdef00-0000-4000-8000-0000000000a1";
+    const SPOT = "abcdef00-0000-4000-8000-0000000000b5";
+    const tree = structure();
+    tree.sites[0].units[0].id = UNIT;
+    tree.sites[0].units[0].rooms[1].beds[0].id = SPOT;
+    const save = vi.fn().mockResolvedValue({});
+    await mountKabul(editorFor([{ unit_id: UNIT.toUpperCase(), bed_id: "" }, { unit_id: "", bed_id: SPOT.toUpperCase() }], save), {
+      perms: ["users.manage"], setup: (api) => api.structure.mockResolvedValue(tree) });
+    expect(choicesOf(az("admin.scopeUnits"))).toEqual(["Neonatal", "Reanimasiya"]);
+    expect(choicesOf(az("admin.scopeBeds"))).toEqual([
+      "1 · Otaq 1 · Reanimasiya", "2 · Otaq 1 · Reanimasiya", "3 · Otaq 1 · Reanimasiya", "4 · Otaq 1 · Reanimasiya",
+      "5 · Otaq 2 · Reanimasiya", "N1 · N-1 · Neonatal",
+    ]);
+    expect(screen.getByRole("checkbox", { name: "Reanimasiya" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "5 · Otaq 2 · Reanimasiya" })).toBeChecked();
+    // Unticking it removes the grant the server holds, whatever its case: nothing is left to save twice.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Reanimasiya" }));
+    expect(rowHeaders()).toEqual(["—"]);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: az("admin.scopeSave") })); });
+    expect(save).toHaveBeenCalledWith([{ bed_id: SPOT.toUpperCase() }],
+      [{ unit_id: UNIT.toUpperCase() }, { bed_id: SPOT.toUpperCase() }]);
     expectNoUuid();
   });
 

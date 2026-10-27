@@ -29,11 +29,17 @@
 //   3. the grants this user already holds, which `GET /scope/{id}` reports.
 //
 // THERE IS NO BOX FOR TYPING A KEY ANY MORE (walk I-2). It existed for an empty unit, which had no
-// card to offer it; the structure offers it now, and since B1a a key is a UUID nobody types — its
-// hint («e.g. REA-01») named a format the keys no longer have. An old free-text grant is still
-// shown and can be removed; granting a new free-text key is no longer offered (spec D9: bed-mapping
-// values carry the tenant's UUIDs too). While the structure is not known (still read, or the read
-// failed) the editor says so: only what the board and the grants hold is offered then.
+// card to offer it; the structure offers it now, by name, and its hint («e.g. REA-01») named a
+// format the structure's keys (UUIDs) do not have. `bed-mapping.json` is STILL free text: spec D9
+// moves its values to the tenant's UUIDs only "later". So a free-text key is offered only when a
+// card on the board or a grant already carries it, and an old free-text grant is still shown and
+// can be removed; an EMPTY unit known only by a free-text key cannot be granted from here (A-43,
+// left to the scope slice). While the structure is not known (still read, or the read failed) the
+// editor says so: only what the board and the grants hold is offered then.
+//
+// A KEY IS COMPARED AS THE ENGINE COMPARES IT (`normId`: trimmed, case-folded; scope
+// `normalise_id`). A grant the server holds in another case than the structure's id is the same
+// place: it shows ticked, the place is offered once, and ticking can never grant it twice (A-43).
 // A grant whose key matches no card is not an error either: `/patients` reports it under
 // `scope.unmatched_unit_ids` / `unmatched_bed_ids`, and the clinician's own board names it.
 //
@@ -97,30 +103,36 @@ const unassignedNoteKey = (scope) => (scope.unrestricted === true
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });
-const sameGrant = (a, b) => a.unitId === b.unitId && a.bedId === b.bedId;
+/** The same place, its keys compared as the engine compares them (A-43). */
+const sameGrant = (a, b) => normId(a.unitId) === normId(b.unitId) && normId(a.bedId) === normId(b.bedId);
 const keyOf = (g) => `${g.unitId}|${g.bedId}`;
 /** Grants as `PUT /scope/{id}` takes them (`ScopeGrantIn`): one key each, the other left out. */
 const asBody = (list) => list.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId }));
 
 /** The unit and bed keys the editor can offer: every unit and bed of the structure's index
  *  (`data/structure.js` `indexStructure`, in the tree's order — the empty ones included), then the
- *  keys of the board's cards, then the ones the user already holds; duplicates removed. A card the
+ *  keys of the board's cards, then the ones the user already holds; duplicates removed by `normId`
+ *  (A-43), the first spelling kept — the structure's own. A card the
  *  bed table did not place carries neither and contributes nothing. The editor SHOWS units in the
  *  order of their names and beds in the tree's order, never in the order of their keys. */
 export function offeredKeys(index, patients, grants) {
-  const units = new Set();
-  const beds = new Set();
-  for (const unit of index?.units?.values() ?? []) units.add(unit.id);
-  for (const bed of index?.beds?.values() ?? []) beds.add(bed.id);
+  const units = new Map();
+  const beds = new Map();
+  const add = (into, id) => {
+    const key = normId(id);
+    if (key && !into.has(key)) into.set(key, id);
+  };
+  for (const unit of index?.units?.values() ?? []) add(units, unit.id);
+  for (const bed of index?.beds?.values() ?? []) add(beds, bed.id);
   for (const patient of Array.isArray(patients) ? patients : []) {
-    if (patient?.unitId) units.add(patient.unitId);
-    if (patient?.bedId) beds.add(patient.bedId);
+    if (patient?.unitId) add(units, patient.unitId);
+    if (patient?.bedId) add(beds, patient.bedId);
   }
   for (const grant of Array.isArray(grants) ? grants : []) {
-    if (grant.unitId) units.add(grant.unitId);
-    if (grant.bedId) beds.add(grant.bedId);
+    if (grant.unitId) add(units, grant.unitId);
+    if (grant.bedId) add(beds, grant.bedId);
   }
-  return { units: [...units], beds: [...beds] };
+  return { units: [...units.values()], beds: [...beds.values()] };
 }
 
 /** What the editor says about its last save, when it says anything: refused and put back, or no
@@ -180,7 +192,10 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
 
   const toggle = (grant, on) => {
     setOutcome(null);
-    setGrants((was) => (on ? [...was, grant] : was.filter((g) => !sameGrant(g, grant))));
+    setGrants((was) => {
+      if (!on) return was.filter((g) => !sameGrant(g, grant));
+      return was.some((g) => sameGrant(g, grant)) ? was : [...was, grant];   // never the same place twice
+    });
   };
 
   async function onSave() {
