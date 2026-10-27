@@ -73,6 +73,10 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   (`device_s + ms/1000`), de-duplicated on `(device time, wave_id)`. A packet whose
   `received_at` is more than **3 s** old is not added (the same rule `LiveResearchView` uses, so a
   worker outbox replay after an outage never appears as live). A monotonic `cursor` per hub process.
+  A fresh block more than **10 s** older than the monitor's newest clears that monitor's ring (its
+  clock was set back; anything older than the 10 s answer window could never be served and would
+  only stall the answer), and blocks received more than 20 s ago are forgotten (plan R5, amended
+  2026-10-27 after the Task 2 review).
 - Hook 1: the `/v1/packets` handler hands accepted events to `WaveBuffer.consume` next to
   `research_view.consume` (research mode with payload capture only).
 - Hook 2: `GET /infinity-research/waves?device=<id>[&device=<id>…]&since=<cursor>` (viewer token;
