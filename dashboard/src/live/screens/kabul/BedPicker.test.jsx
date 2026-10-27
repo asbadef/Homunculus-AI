@@ -23,11 +23,14 @@ function roomTwoClosed() {
 }
 
 describe("BedPicker", () => {
-  it("lists the units with their free beds, and a closed unit as closed", () => {
+  // Walk M-3: a unit button was named "Reanimasiya2 boş", run together, and a bed only "1": the
+  // name a screen reader says is now the unit and its free beds apart, and a bed as every screen of
+  // the slice names it, "label · room · unit" — with why it is held when it is.
+  it("lists the units with their free beds, and a closed unit as closed — each named with the two apart", () => {
     const { onUnit } = draw({ unitId: null });
     const units = within(screen.getByRole("group", { name: "Şöbə" }));
-    expect(units.getByRole("button", { name: /Reanimasiya\s*2 boş/ })).toBeTruthy();
-    expect(units.getByRole("button", { name: /Neonatal\s*bağlıdır/ })).toBeTruthy();
+    expect(units.getByRole("button", { name: "Reanimasiya · 2 boş" })).toBeTruthy();
+    expect(units.getByRole("button", { name: "Neonatal · bağlıdır" })).toBeTruthy();
     expect(screen.getByText("Əvvəlcə şöbəni seçin.")).toBeTruthy();
     fireEvent.click(units.getByRole("button", { name: /Reanimasiya/ }));
     expect(onUnit).toHaveBeenCalledWith(REA);
@@ -35,7 +38,17 @@ describe("BedPicker", () => {
 
   it("counts no bed of a closed room as free", () => {
     draw({ unitId: null, structure: roomTwoClosed() });
-    expect(within(screen.getByRole("group", { name: "Şöbə" })).getByRole("button", { name: /Reanimasiya\s*1 boş/ })).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Şöbə" })).getByRole("button", { name: "Reanimasiya · 1 boş" })).toBeTruthy();
+  });
+
+  it("names each bed as label · room · unit, and a held one with why", () => {
+    draw();
+    const names = screen.getAllByRole("button").map((el) => el.getAttribute("aria-label")).filter(Boolean);
+    expect(names).toEqual(expect.arrayContaining([
+      "1 · Otaq 1 · Reanimasiya", "2 · Otaq 1 · Reanimasiya · Dolu", "3 · Otaq 1 · Reanimasiya · Təmizlikdədir",
+      "4 · Otaq 1 · Reanimasiya · Bağlıdır", "5 · Otaq 2 · Reanimasiya",
+    ]));
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
   it("says the beds are being read, not that the scope holds none, before the first answer", () => {
@@ -55,7 +68,7 @@ describe("BedPicker", () => {
 
   it("puts `focusId` on the first bed that can be chosen in the chosen unit", () => {
     draw({ focusId: "bed-field" });
-    expect(document.getElementById("bed-field")).toBe(screen.getByRole("button", { name: "1" }));
+    expect(document.getElementById("bed-field")).toBe(screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" }));
   });
 
   it("puts `focusId` on the first unit while none is chosen", () => {
@@ -65,7 +78,7 @@ describe("BedPicker", () => {
 
   it("offers an open AVAILABLE bed, and names it bed · room · unit", () => {
     const { onBed } = draw();
-    fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5 · Otaq 2 · Reanimasiya" }));
     expect(onBed).toHaveBeenCalledWith({ id: BED(5), unitId: REA, label: "5 · Otaq 2 · Reanimasiya" });
   });
 
@@ -73,7 +86,7 @@ describe("BedPicker", () => {
     const { onBed } = draw();
     const room = within(screen.getByRole("group", { name: "Otaq 1" }));
     for (const [label, why] of [["2", "Dolu"], ["3", "Təmizlikdədir"], ["4", "Bağlıdır"]]) {
-      const bed = room.getByRole("button", { name: `${label} · ${why}` });
+      const bed = room.getByRole("button", { name: `${label} · Otaq 1 · Reanimasiya · ${why}` });
       expect(bed.getAttribute("aria-disabled")).toBe("true");
       fireEvent.click(bed);
     }
@@ -82,7 +95,7 @@ describe("BedPicker", () => {
 
   it("marks the chosen bed pressed and says which it is", () => {
     draw({ bedId: BED(1) });
-    expect(screen.getByRole("button", { name: "1" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Seçilən: 1 · Otaq 1 · Reanimasiya")).toBeTruthy();
   });
 

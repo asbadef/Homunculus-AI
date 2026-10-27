@@ -35,7 +35,7 @@ const timedOut = () => Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT"
 const admitted = (engine = { weight: "ok", profile: "ok", board: "ok" }, number = "H2600042") => ({
   id: "a-1", patient_number: number, state: "DRAFT", engine,
 });
-const pickBed5 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5" }));
+const pickBed5 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" })).getByRole("button", { name: "5 · Otaq 2 · Reanimasiya" }));
 /** The DRAFT the first send left on bed 1, under the name it sent. */
 const firstDraft = () => row({ state: "DRAFT", bed_id: BED(1), patient_number: "H2600042" });
 
@@ -95,7 +95,7 @@ function fillRequired(except = []) {
     consent: () => fireEvent.click(screen.getByLabelText("Fərdi məlumatlara razılıq imzalandı")),
     bed: () => {
       fireEvent.click(screen.getByRole("button", { name: /^Reanimasiya/ }));
-      fireEvent.click(screen.getByRole("button", { name: "1" }));
+      fireEvent.click(screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" }));
     },
   };
   for (const [field, step] of Object.entries(steps)) if (!except.includes(field)) step();
@@ -193,7 +193,7 @@ describe("AdmitTab", () => {
 
     fireEvent.click(unit);                                                   // the unit chosen, no bed yet
     await press();
-    const bed = screen.getByRole("button", { name: "1" });
+    const bed = screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" });
     expect(document.activeElement).toBe(bed);
     expect(described(bed)).toEqual(["Çarpayı"]);
     expect(described(unit)).toEqual([]);                                     // only the control the press focuses

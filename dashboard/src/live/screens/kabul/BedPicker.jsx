@@ -2,7 +2,9 @@
 // spec §5.2). Only an open, AVAILABLE bed can be chosen; every other bed is shown dimmed WITH its
 // reason (occupied, cleaning, closed…), so a nurse looking for a bed sees why one is not offered.
 // A choice is a pressed button (aria-pressed); the beds of a room are one group with the room's
-// name. Nothing here decides anything the server does not check again (admission/router.py).
+// name. A unit button is named "unit · its free beds", a bed button "label · room · unit" and, when
+// held, why (walk M-3). Nothing here decides anything the server does not check again
+// (admission/router.py).
 //
 // Before the first answer there is nothing to say about the scope: the picker says the beds are
 // being read, or that the read failed (with a retry) — "no unit in your scope" is a thing only an
@@ -56,15 +58,16 @@ export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onU
       <div role="group" aria-label={t("kabul.pickUnit")} className="flex flex-wrap gap-2">
         {units.map((u) => {
           const open = u.is_active !== false;
+          const free = open ? t("kabul.freeBeds", { count: freeBeds(u).length }) : t("kabul.unitClosed");
+          // Named with the two apart (walk M-3): the visible margin is no space, and a screen
+          // reader said "Reanimasiya2 boş".
           return (
             <button key={u.id} id={u.id === unitFocus ? focusId : undefined} type="button" aria-pressed={u.id === unitId}
-              aria-describedby={u.id === unitFocus ? describedBy : undefined}
+              aria-label={`${u.name} · ${free}`} aria-describedby={u.id === unitFocus ? describedBy : undefined}
               onClick={() => onUnit(u.id)}
               className={`rounded-ctl border px-3 py-1.5 text-13 font-semibold ${u.id === unitId ? "border-pri bg-pri-soft text-ink" : "border-line2 bg-card text-ink"} ${open ? "" : "opacity-60"} ${FOCUS_RING}`}>
               {u.name}
-              <span className="ml-1.5 text-11.5 font-normal text-mute">
-                {open ? t("kabul.freeBeds", { count: freeBeds(u).length }) : t("kabul.unitClosed")}
-              </span>
+              <span className="ml-1.5 text-11.5 font-normal text-mute">{free}</span>
             </button>
           );
         })}
@@ -80,12 +83,15 @@ export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onU
                 {(room.beds ?? []).map((b) => {
                   const why = unavailableKey(withOpen(unit, room, b));
                   const chosen = b.id === bedId;
+                  // The bed as every screen of the slice names it (A-17), not its bare label "1"
+                  // (walk M-3); a held bed says why after it. Chosen is `aria-pressed`.
+                  const label = `${b.label} · ${room.name} · ${unit.name}`;
                   return (
                     <button key={b.id} id={b.id === firstFree ? focusId : undefined} type="button" aria-pressed={chosen}
                       aria-disabled={why ? "true" : undefined} aria-describedby={b.id === firstFree ? describedBy : undefined}
-                      aria-label={why ? `${b.label} · ${t(why)}` : b.label}
+                      aria-label={why ? `${label} · ${t(why)}` : label}
                       onClick={() => {
-                        if (!why) onBed({ id: b.id, unitId: unit.id, label: `${b.label} · ${room.name} · ${unit.name}` });
+                        if (!why) onBed({ id: b.id, unitId: unit.id, label });
                       }}
                       className={`grid min-w-[72px] place-items-center rounded-ctl border px-2.5 py-2 text-13 ${chosen ? "border-pri bg-pri text-onpri" : "border-line2 bg-card text-ink"} ${why ? "cursor-not-allowed opacity-55" : ""} ${FOCUS_RING}`}>
                       <b className="font-data text-15">{b.label}</b>
