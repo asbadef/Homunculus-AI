@@ -340,10 +340,14 @@ ICU2 = ROOT / "deploy" / "infinity" / "device-beds.icu2.json"
 
 def test_the_committed_site_table_is_approved_and_puts_every_monitor_on_its_own_bed():
     # Task 13: approved on 19.10.2026, every monitor on a bed (the three left open before were read
-    # on the central station that day). parse_table refuses two monitors on one bed.
+    # on the central station that day). parse_table refuses two monitors on one bed. v2 (B1a,
+    # 27.10.2026): the same monitors on the same beds, the bed and unit ids now the tenant's UUIDs.
     raw = json.loads(ICU2.read_text(encoding="utf-8"))
     table = parse_table(raw)
-    assert (table.version, table.approved_at) == (1, "2026-10-19")
+    assert (table.version, table.approved_at) == (2, "2026-10-27")
+    import uuid
+    for row in table.rows:
+        uuid.UUID(row.bed_id), uuid.UUID(row.unit_id)        # v2: tenant UUIDs, never labels
     assert table.counts() == (13, 0)
     inventory = json.loads((ROOT / "deploy" / "infinity" / "inventory.icu2.json").read_text(encoding="utf-8-sig"))
     assert {(r.source, r.group, r.port) for r in table.rows} == {
