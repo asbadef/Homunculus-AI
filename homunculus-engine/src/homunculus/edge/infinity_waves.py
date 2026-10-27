@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 SCHEMA = "homunculus.infinity-waves.v1"
 HEADER = 64
 _BLOCK = struct.Struct(">HHHIHBB")            # rate, len, ms, device_s, wave_id, n, zero: 14 bytes
-RATES = frozenset({50, 100, 200, 250, 500})
+RATES = frozenset({50, 100, 200, 250, 500})   # the spec's set, wider than the 50/100/200 the ward has shown
 NO_SIGNAL = 0x0001
 
 
@@ -76,6 +76,8 @@ class WaveBlock:
 
 def parse_waves(payload) -> list[WaveBlock]:
     """The wave blocks of one payload, in order. Pure; never raises; [] for anything else."""
+    # Header byte 29 (the message type) and block byte 13 (always 0) are deliberately not checked: the
+    # type that carries the record section varies by device; the spec's four rules are the contract.
     if not isinstance(payload, (bytes, bytearray, memoryview)):
         return []
     data = bytes(payload)
@@ -91,7 +93,7 @@ def parse_waves(payload) -> list[WaveBlock]:
             blocks.append(WaveBlock(rate, ms, device_s, wave_id,
                                     None if all(s == NO_SIGNAL for s in samples) else samples))
             offset += size
-    except struct.error:
+    except struct.error:                      # the bounds check above already covers it: belt and braces
         return blocks
     return blocks
 
