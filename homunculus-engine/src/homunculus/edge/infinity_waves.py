@@ -115,7 +115,8 @@ ANSWER_S = 10.0            # the most one answer carries per monitor
 MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox replay is never live
 MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
 MAX_HELD = 1024            # entries per monitor, oldest dropped: a bound against a malformed sender
-                           # (a bed at its richest holds ~800: 20 s x 5 packets/s x 8 waves)
+                           # (a real bed's worst case is ~909: 9 catalogue waves x 101 blocks in the
+                           # inclusive 20 s window)
 
 
 def _order(entry):
@@ -132,8 +133,9 @@ class WaveBuffer:
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
     A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
     back (a restart, a clock set): what was held is dropped rather than left to hide the new data.
-    A set-back of ANSWER_S or less is not detected: it stalls the monitor for at most that long and
-    then heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits).
+    A set-back of ANSWER_S or less is not detected: it stalls (phase kept) or overlaps the old stream
+    (phase shifted) for at most that long, then heals (monitor clocks are not NTP-synced, so
+    set-backs come from restarts and manual edits).
     At most MAX_HELD entries are kept per monitor, the oldest dropped first."""
 
     def __init__(self, inventory, *, clock=time.time):

@@ -76,8 +76,8 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   A fresh block more than **10 s** older than the monitor's newest clears that monitor's ring (its
   clock was set back; anything older than the 10 s answer window could never be served and would
   only stall the answer), and blocks received more than 20 s ago are forgotten (plan R5, amended
-  2026-10-27 after the Task 2 review). Set-backs of 10 s or less are not detected; they stall for
-  at most that long and self-heal.
+  2026-10-27 after the Task 2 review). Set-backs of 10 s or less are not detected; they stall
+  (phase kept) or overlap the old stream (phase shifted) for at most that long and self-heal.
 - Hook 1: the `/v1/packets` handler hands accepted events to `WaveBuffer.consume` next to
   `research_view.consume` (research mode with payload capture only).
 - Hook 2: `GET /infinity-research/waves?device=<id>[&device=<id>…]&since=<cursor>` (viewer token;

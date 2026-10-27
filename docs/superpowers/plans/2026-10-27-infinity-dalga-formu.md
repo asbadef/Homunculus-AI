@@ -38,8 +38,8 @@
 | R2 | Hub blocks carry `seq` (the cursor value they were added under); the API strips it. | So one cached 10 s window serves every viewer's own cursor. |
 | R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost: ≈ 35–50 KB per hub request, ≤ 4/s per watched monitor. Phase 2 (one request for the wall) should revisit. |
 | R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
-| R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) **Known limit, pinned by a test:** a set-back of 10 s or less is not detected; it stalls the monitor for at most that long and self-heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits). |
-| R5b | Ring cap: 1024 entries per monitor (`MAX_HELD`), oldest dropped. | A bound against a malformed or spoofing sender (the decoder accepts any wave id and a 64 KB packet carries ~1,200 blocks); never reached by a real bed (≈ 800 at the richest: 20 s × 5 packets/s × 8 waves). |
+| R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) **Known limit, pinned by a test:** a set-back of 10 s or less is not detected; it stalls (phase kept) or overlaps the old stream (phase shifted) for at most that long and self-heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits). |
+| R5b | Ring cap: 1024 entries per monitor (`MAX_HELD`), oldest dropped. | A bound against a malformed or spoofing sender (the decoder accepts any wave id and a 64 KB packet carries ~1,200 blocks); never reached by a real bed (≈ 909 at the worst: 9 catalogue waves × 101 blocks in the inclusive 20 s window). |
 | R6 | Stall timing: a row freezes when the render time (head − 2 s) reaches the data's end, greys and says "akış durdu · N sn" **1.5 s later (≈ 3.5 s after the data stopped)**, N = whole seconds since the data's end; it is cleared **10 s after the data's end**. | Spec §5.3 read literally; the acceptance "within ~3 s" is ≈ 3.5–4 s with worker batching. |
 | R7 | Row choice per group: ECG ≤ 2, pressure ≤ 2, pleth 1, resp 1 — the group's **live** waves in id order; a group the monitor sends with **no** live wave still gets one row (its first id) that says "sinyal yok". | The correction's liveness rule, and §5.2: an absent ECG must read as "no signal", never as nothing. |
 | R8 | Catalogue `kind` ∈ `ecg | pressure | pleth | resp`; ECG `label` is null (the screen says "EKG"); `evidence` ∈ `structural` (yapısal) / `unverified` (doğrulanmadı) / `screen_scale` (pressure: "ölçek ekranla doğrulandı"). | The correction; spec §3.2's `art`/`ecg_other` kinds are superseded by it. |
@@ -648,7 +648,8 @@ ANSWER_S = 10.0            # the most one answer carries per monitor
 MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox replay is never live
 MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
 MAX_HELD = 1024            # entries per monitor, oldest dropped: a bound against a malformed sender
-                           # (a bed at its richest holds ~800: 20 s x 5 packets/s x 8 waves)
+                           # (a real bed's worst case is ~909: 9 catalogue waves x 101 blocks in the
+                           # inclusive 20 s window)
 
 
 def _order(entry):
@@ -665,8 +666,9 @@ class WaveBuffer:
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
     A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
     back (a restart, a clock set): what was held is dropped rather than left to hide the new data.
-    A set-back of ANSWER_S or less is not detected: it stalls the monitor for at most that long and
-    then heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits).
+    A set-back of ANSWER_S or less is not detected: it stalls (phase kept) or overlaps the old stream
+    (phase shifted) for at most that long, then heals (monitor clocks are not NTP-synced, so
+    set-backs come from restarts and manual edits).
     At most MAX_HELD entries are kept per monitor, the oldest dropped first."""
 
     def __init__(self, inventory, *, clock=time.time):
