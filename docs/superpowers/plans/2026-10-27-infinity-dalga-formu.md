@@ -38,7 +38,8 @@
 | R2 | Hub blocks carry `seq` (the cursor value they were added under); the API strips it. | So one cached 10 s window serves every viewer's own cursor. |
 | R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost: ≈ 35–50 KB per hub request, ≤ 4/s per watched monitor. Phase 2 (one request for the wall) should revisit. |
 | R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
-| R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) |
+| R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) **Known limit, pinned by a test:** a set-back of 10 s or less is not detected; it stalls the monitor for at most that long and self-heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits). |
+| R5b | Ring cap: 1024 entries per monitor (`MAX_HELD`), oldest dropped. | A bound against a malformed or spoofing sender (the decoder accepts any wave id and a 64 KB packet carries ~1,200 blocks); never reached by a real bed (≈ 800 at the richest: 20 s × 5 packets/s × 8 waves). |
 | R6 | Stall timing: a row freezes when the render time (head − 2 s) reaches the data's end, greys and says "akış durdu · N sn" **1.5 s later (≈ 3.5 s after the data stopped)**, N = whole seconds since the data's end; it is cleared **10 s after the data's end**. | Spec §5.3 read literally; the acceptance "within ~3 s" is ≈ 3.5–4 s with worker batching. |
 | R7 | Row choice per group: ECG ≤ 2, pressure ≤ 2, pleth 1, resp 1 — the group's **live** waves in id order; a group the monitor sends with **no** live wave still gets one row (its first id) that says "sinyal yok". | The correction's liveness rule, and §5.2: an absent ECG must read as "no signal", never as nothing. |
 | R8 | Catalogue `kind` ∈ `ecg | pressure | pleth | resp`; ECG `label` is null (the screen says "EKG"); `evidence` ∈ `structural` (yapısal) / `unverified` (doğrulanmadı) / `screen_scale` (pressure: "ölçek ekranla doğrulandı"). | The correction; spec §3.2's `art`/`ecg_other` kinds are superseded by it. |
@@ -416,9 +417,10 @@ with
 from infinity_wave_packets import (
     ECG, PLETH, PRESSURE_ART, PRESSURE_P1, RESP, at, block, no_signal, packet, tick,
 )
+from homunculus.edge.infinity_live import MAX_TRANSPORT_DELAY as LIVE_MAX_TRANSPORT_DELAY
 from homunculus.edge.infinity_stream import Inventory, packet_event
 from homunculus.edge.infinity_waves import (
-    ANSWER_S, MAX_TRANSPORT_DELAY, WAVES, WINDOW_S, WaveBuffer, parse_waves,
+    ANSWER_S, MAX_HELD, MAX_TRANSPORT_DELAY, WAVES, WINDOW_S, WaveBuffer, parse_waves,
 )
 ```
 
@@ -480,6 +482,7 @@ def test_a_no_signal_block_travels_as_null():
 @pytest.mark.parametrize("stamp, mode, kept", [
     (1000.0 - MAX_TRANSPORT_DELAY + 0.1, "live", True),
     (1000.0 - MAX_TRANSPORT_DELAY, "live", False),             # an outbox replay after an outage
+    (1000.0, "live", True),                                    # received this very instant
     (1000.5, "live", False),                                   # from the future
     (1000.0, "replay", False),
 ])
@@ -498,9 +501,11 @@ def test_the_ring_holds_twenty_seconds_and_an_answer_carries_ten():
         now[0] = 5000.0 + k * 0.2
         waves.consume([event(tick(*at(k), pressure=False, pleth=False, resp=False), now[0])])
     held = [entry[0] for entry in waves.devices[BED]]
-    assert (held[-1] - held[0]) / 1000 <= WINDOW_S
+    assert len(held) == 101                                    # 20.0 s of 200 ms packets, both ends held
+    assert (held[-1] - held[0]) / 1000 == pytest.approx(WINDOW_S)
     found = waves.since([BED], 0)[1][BED]
-    assert found[-1]["t"] - found[0]["t"] <= ANSWER_S
+    assert len(found) == 51                                    # 10.0 s of them
+    assert found[-1]["t"] - found[0]["t"] == pytest.approx(ANSWER_S)
 
 
 def test_after_twenty_seconds_without_data_a_monitor_answers_nothing():
@@ -547,6 +552,32 @@ def test_a_monitor_clock_set_back_by_fifteen_seconds_drops_what_was_held_too():
     assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4985.04}
 
 
+def test_a_block_exactly_ten_seconds_behind_the_newest_is_kept_and_served_beside_it():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(5000, 40), 1000.0)])
+    waves.consume([event(tick(4990, 40), 1000.0)])             # exactly ANSWER_S back: reordering, not a clock
+    assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4990.04, 5000.04}
+
+
+def test_a_set_back_of_at_most_ten_seconds_is_not_detected_and_self_heals():
+    only_ecg = dict(pressure=False, pleth=False, resp=False)
+    now = [1000.0]
+    waves = ring(now)
+    for k in range(50):                                        # 10 s on the old clock: 5000.04 ... 5009.84
+        now[0] = 1000.0 + k * 0.2
+        waves.consume([event(tick(*at(k, 5000), **only_ecg), now[0])])
+    cursor, _ = waves.since([BED], 0)
+    for k in range(25, 50):                                    # clock set back 5 s, phase kept: 5005.04 ... 5009.84
+        now[0] += 0.2
+        waves.consume([event(tick(*at(k, 5000), **only_ecg), now[0])])
+        assert waves.since([BED], cursor) == (cursor, {BED: []})   # every key is held: nothing new for 5 s
+    assert waves.refused == 0
+    now[0] += 0.2
+    waves.consume([event(tick(*at(50, 5000), **only_ecg), now[0])])    # the new clock passes the old newest
+    assert times(waves.since([BED], cursor)[1]) == [(5010.04, ECG)]
+
+
 def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignored():
     now = [1000.0]
     waves = ring(now)
@@ -554,6 +585,31 @@ def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignore
     waves.consume([dict(event(tick(*at(0)), 1000.0), source_ip="192.0.2.99"),
                    dict(event(tick(*at(0)), 1000.0), payload_base64=None)])
     assert waves.cursor == 0 and waves.refused == 0
+
+
+def test_a_refused_packet_in_a_batch_does_not_stop_the_others():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0),
+                   event(tick(*at(1)), 1000.0 - MAX_TRANSPORT_DELAY),   # an outbox replay
+                   event(tick(*at(2)), 1000.0)])
+    cursor, found = waves.since([BED], 0)
+    assert waves.refused == 1 and cursor == 8
+    assert {b["t"] for b in found[BED]} == {1000.04, 1000.44}
+
+
+def test_a_monitor_holds_at_most_max_held_blocks_whatever_it_sends():
+    now = [1000.0]
+    waves = ring(now)
+    for first in range(0, 2000, 100):                          # 2,000 distinct wave ids in one fresh second
+        waves.consume([event(packet(*[block(0x2000 + first + i, 50, ms=40, device_s=1000) for i in range(100)]), 1000.0)])
+    assert waves.cursor == 2000
+    assert len(waves.devices[BED]) == len(waves.keys[BED]) == MAX_HELD
+    assert len(waves.since([BED], 0)[1][BED]) == MAX_HELD
+
+
+def test_the_ring_uses_the_live_views_transport_delay():
+    assert MAX_TRANSPORT_DELAY == LIVE_MAX_TRANSPORT_DELAY
 ```
 
 - [ ] **Step 2: Run them to see them fail.**
@@ -591,6 +647,8 @@ WINDOW_S = 20.0            # what the hub holds per monitor, by device time and 
 ANSWER_S = 10.0            # the most one answer carries per monitor
 MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox replay is never live
 MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
+MAX_HELD = 1024            # entries per monitor, oldest dropped: a bound against a malformed sender
+                           # (a bed at its richest holds ~800: 20 s x 5 packets/s x 8 waves)
 
 
 def _order(entry):
@@ -606,7 +664,10 @@ class WaveBuffer:
     MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
     A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
-    back (a restart, a clock set): what was held is dropped rather than left to hide the new data."""
+    back (a restart, a clock set): what was held is dropped rather than left to hide the new data.
+    A set-back of ANSWER_S or less is not detected: it stalls the monitor for at most that long and
+    then heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits).
+    At most MAX_HELD entries are kept per monitor, the oldest dropped first."""
 
     def __init__(self, inventory, *, clock=time.time):
         self.clock = clock
@@ -660,6 +721,11 @@ class WaveBuffer:
         samples = None if block.samples is None else array("h", block.samples)
         bisect.insort(held, (block.t_ms, block.wave_id, self.cursor, epoch, recv, block.rate, samples), key=_order)
         keys.add(key)
+        overflow = len(held) - MAX_HELD
+        if overflow > 0:
+            for entry in held[:overflow]:
+                keys.discard(entry[:2])
+            del held[:overflow]
 
     def _prune(self, source, now) -> None:
         held, keys = self.devices[source], self.keys[source]
@@ -698,7 +764,7 @@ class WaveBuffer:
 - [ ] **Step 4: Run the tests.**
 
 Run: the command of Step 2.
-Expected: `43 passed` (the file now holds Task 1's 29 cases, after its review, plus the 14 ring cases; the first draft of this plan, before the review, said 35).
+Expected: `49 passed` (the file now holds Task 1's 29 cases, after its review, plus the 20 ring cases; the first draft of this plan, before the review, said 35).
 
 - [ ] **Step 5: Commit.**
 

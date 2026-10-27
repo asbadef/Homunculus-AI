@@ -5,9 +5,10 @@ import pytest
 from infinity_wave_packets import (
     ECG, ECG_OTHER, PLETH, PRESSURE_ART, PRESSURE_P1, RESP, at, block, no_signal, packet, tick,
 )
+from homunculus.edge.infinity_live import MAX_TRANSPORT_DELAY as LIVE_MAX_TRANSPORT_DELAY
 from homunculus.edge.infinity_stream import Inventory, packet_event
 from homunculus.edge.infinity_waves import (
-    ANSWER_S, MAX_TRANSPORT_DELAY, RATES, WAVES, WINDOW_S, WaveBuffer, parse_waves,
+    ANSWER_S, MAX_HELD, MAX_TRANSPORT_DELAY, RATES, WAVES, WINDOW_S, WaveBuffer, parse_waves,
 )
 
 
@@ -166,6 +167,7 @@ def test_a_no_signal_block_travels_as_null():
 @pytest.mark.parametrize("stamp, mode, kept", [
     (1000.0 - MAX_TRANSPORT_DELAY + 0.1, "live", True),
     (1000.0 - MAX_TRANSPORT_DELAY, "live", False),             # an outbox replay after an outage
+    (1000.0, "live", True),                                    # received this very instant
     (1000.5, "live", False),                                   # from the future
     (1000.0, "replay", False),
 ])
@@ -184,9 +186,11 @@ def test_the_ring_holds_twenty_seconds_and_an_answer_carries_ten():
         now[0] = 5000.0 + k * 0.2
         waves.consume([event(tick(*at(k), pressure=False, pleth=False, resp=False), now[0])])
     held = [entry[0] for entry in waves.devices[BED]]
-    assert (held[-1] - held[0]) / 1000 <= WINDOW_S
+    assert len(held) == 101                                    # 20.0 s of 200 ms packets, both ends held
+    assert (held[-1] - held[0]) / 1000 == pytest.approx(WINDOW_S)
     found = waves.since([BED], 0)[1][BED]
-    assert found[-1]["t"] - found[0]["t"] <= ANSWER_S
+    assert len(found) == 51                                    # 10.0 s of them
+    assert found[-1]["t"] - found[0]["t"] == pytest.approx(ANSWER_S)
 
 
 def test_after_twenty_seconds_without_data_a_monitor_answers_nothing():
@@ -233,6 +237,32 @@ def test_a_monitor_clock_set_back_by_fifteen_seconds_drops_what_was_held_too():
     assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4985.04}
 
 
+def test_a_block_exactly_ten_seconds_behind_the_newest_is_kept_and_served_beside_it():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(5000, 40), 1000.0)])
+    waves.consume([event(tick(4990, 40), 1000.0)])             # exactly ANSWER_S back: reordering, not a clock
+    assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {4990.04, 5000.04}
+
+
+def test_a_set_back_of_at_most_ten_seconds_is_not_detected_and_self_heals():
+    only_ecg = dict(pressure=False, pleth=False, resp=False)
+    now = [1000.0]
+    waves = ring(now)
+    for k in range(50):                                        # 10 s on the old clock: 5000.04 ... 5009.84
+        now[0] = 1000.0 + k * 0.2
+        waves.consume([event(tick(*at(k, 5000), **only_ecg), now[0])])
+    cursor, _ = waves.since([BED], 0)
+    for k in range(25, 50):                                    # clock set back 5 s, phase kept: 5005.04 ... 5009.84
+        now[0] += 0.2
+        waves.consume([event(tick(*at(k, 5000), **only_ecg), now[0])])
+        assert waves.since([BED], cursor) == (cursor, {BED: []})   # every key is held: nothing new for 5 s
+    assert waves.refused == 0
+    now[0] += 0.2
+    waves.consume([event(tick(*at(50, 5000), **only_ecg), now[0])])    # the new clock passes the old newest
+    assert times(waves.since([BED], cursor)[1]) == [(5010.04, ECG)]
+
+
 def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignored():
     now = [1000.0]
     waves = ring(now)
@@ -240,3 +270,28 @@ def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignore
     waves.consume([dict(event(tick(*at(0)), 1000.0), source_ip="192.0.2.99"),
                    dict(event(tick(*at(0)), 1000.0), payload_base64=None)])
     assert waves.cursor == 0 and waves.refused == 0
+
+
+def test_a_refused_packet_in_a_batch_does_not_stop_the_others():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0),
+                   event(tick(*at(1)), 1000.0 - MAX_TRANSPORT_DELAY),   # an outbox replay
+                   event(tick(*at(2)), 1000.0)])
+    cursor, found = waves.since([BED], 0)
+    assert waves.refused == 1 and cursor == 8
+    assert {b["t"] for b in found[BED]} == {1000.04, 1000.44}
+
+
+def test_a_monitor_holds_at_most_max_held_blocks_whatever_it_sends():
+    now = [1000.0]
+    waves = ring(now)
+    for first in range(0, 2000, 100):                          # 2,000 distinct wave ids in one fresh second
+        waves.consume([event(packet(*[block(0x2000 + first + i, 50, ms=40, device_s=1000) for i in range(100)]), 1000.0)])
+    assert waves.cursor == 2000
+    assert len(waves.devices[BED]) == len(waves.keys[BED]) == MAX_HELD
+    assert len(waves.since([BED], 0)[1][BED]) == MAX_HELD
+
+
+def test_the_ring_uses_the_live_views_transport_delay():
+    assert MAX_TRANSPORT_DELAY == LIVE_MAX_TRANSPORT_DELAY

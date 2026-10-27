@@ -114,6 +114,8 @@ WINDOW_S = 20.0            # what the hub holds per monitor, by device time and 
 ANSWER_S = 10.0            # the most one answer carries per monitor
 MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox replay is never live
 MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
+MAX_HELD = 1024            # entries per monitor, oldest dropped: a bound against a malformed sender
+                           # (a bed at its richest holds ~800: 20 s x 5 packets/s x 8 waves)
 
 
 def _order(entry):
@@ -129,7 +131,10 @@ class WaveBuffer:
     MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
     A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
-    back (a restart, a clock set): what was held is dropped rather than left to hide the new data."""
+    back (a restart, a clock set): what was held is dropped rather than left to hide the new data.
+    A set-back of ANSWER_S or less is not detected: it stalls the monitor for at most that long and
+    then heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits).
+    At most MAX_HELD entries are kept per monitor, the oldest dropped first."""
 
     def __init__(self, inventory, *, clock=time.time):
         self.clock = clock
@@ -183,6 +188,11 @@ class WaveBuffer:
         samples = None if block.samples is None else array("h", block.samples)
         bisect.insort(held, (block.t_ms, block.wave_id, self.cursor, epoch, recv, block.rate, samples), key=_order)
         keys.add(key)
+        overflow = len(held) - MAX_HELD
+        if overflow > 0:
+            for entry in held[:overflow]:
+                keys.discard(entry[:2])
+            del held[:overflow]
 
     def _prune(self, source, now) -> None:
         held, keys = self.devices[source], self.keys[source]
