@@ -87,11 +87,15 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   `{"schema", "cursor", "hub_now", "devices": {"<id>": {"blocks": […]}}}`. For one device:
   ```json
   {"schema": "homunculus.infinity-waves.v1", "device_id": "…", "cursor": 1234,
-   "hub_now": "…Z",
+   "hub_now": "…Z", "started": "…Z",
    "blocks": [{"t": 804484638.24, "recv": "…Z", "id": 259, "rate": 200,
                "samples": [12, 15, …] | null}]}
   ```
   `samples: null` = the all-`0x0001` "no signal" block. A lone `1` inside a live block is data.
+  `started` is the hub process's start time (plan R19, added after the Task 2 review): a caller
+  that sees it change knows the cursor restarted and re-reads the window. `GET /v1/status` gains
+  `waves: {cursor, refused, started}` when the buffer exists, so a worker clock ahead of the hub
+  (every packet refused as "future") shows up as a counter instead of a silent blackout.
 - `deploy/infinity/build_transport_release.py` gains `infinity_waves` in `EDGE` (new hub release R5).
 - CPU: decoding ≈65 packets/s is a few µs each; acceptance still measures the hub (§8).
 
