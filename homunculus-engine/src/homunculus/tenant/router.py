@@ -531,33 +531,42 @@ async def patch_bed(
 
 async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_id: uuid.UUID,
                          actor: str) -> None:
-    """The bed's last discharged patient off the board before the bed is freed (review I-2): a
+    """The bed's discharged patients off the board before the bed is freed (review I-2): a
     discharge whose board step failed leaves that patient's card standing as admitted on this
-    bed, and a bed freed under it would take a second card. When the identity of the bed's
-    latest DISCHARGED admission is not a tombstone, the step runs again (`BoardLink.take_off`:
+    bed, and a bed freed under it would take a second card. EVERY DISCHARGED admission of the bed
+    whose identity is not a tombstone is checked, not only the row written last (the final
+    review): an older admission's row may be written after a newer one's (`updated_at`), and the
+    newer card would stand behind it. For each, the step runs again (`BoardLink.take_off`:
     idempotent; it ends the patient's alerts, which no longer hold it), audited
-    `admission.discharge_board_retry`; when it still fails, the release is refused
-    `board_not_cleared` with that patient's number (the caller's units hold this bed). Called
-    under the bed's lock. An app without its BoardLink has no board, so no card can stand."""
-    last = (await db.execute(
+    `admission.discharge_board_retry`; when one still fails, the release is refused
+    `board_not_cleared` with that patient's number — the newest such, by `updated_at` — (the
+    caller's units hold this bed). Called under the bed's lock. An app without its BoardLink has
+    no board, so no card can stand.
+
+    Each check reads the identity store once: one read per DISCHARGED admission the bed ever
+    held, a tombstone among them read and passed over."""
+    link = board_link_of(request)
+    if link is None:
+        return
+    discharged = (await db.execute(
         select(Admission.id, Patient.patient_number)
         .join(Patient, Patient.id == Admission.patient_id)
         .where(Admission.bed_id == bed_id, Admission.state == AdmissionState.DISCHARGED)
-        .order_by(Admission.updated_at.desc()).limit(1))).first()
-    link = board_link_of(request)
-    if last is None or link is None:
-        return
-    admission_id, number = last
-    if link.is_discharged(hospital, number):
-        return
-    board, alerts = await link.take_off(hospital, number)
-    trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
-                 payload={"admission_id": str(admission_id), "bed_id": str(bed_id),
-                          "board": board, "alerts": alerts, "via": "bed.release",
-                          "actor": actor})
-    if board != "ok":
-        raise Refusal(409, BOARD_NOT_CLEARED, "The last patient of this bed is still on the board: "
-                      "the board refused the discharge.", extra={"patient_number": number})
+        .order_by(Admission.updated_at.desc()))).all()
+    standing = None
+    for admission_id, number in discharged:
+        if link.is_discharged(hospital, number):
+            continue
+        board, alerts = await link.take_off(hospital, number)
+        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
+                     payload={"admission_id": str(admission_id), "bed_id": str(bed_id),
+                              "board": board, "alerts": alerts, "via": "bed.release",
+                              "actor": actor})
+        if board != "ok" and standing is None:
+            standing = number
+    if standing is not None:
+        raise Refusal(409, BOARD_NOT_CLEARED, "A patient of this bed is still on the board: the "
+                      "board refused the discharge.", extra={"patient_number": standing})
 
 
 @router.post("/beds/{bed_id}/release", response_model=BedResponse,

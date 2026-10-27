@@ -742,6 +742,54 @@ async def test_a_release_heals_a_card_left_standing_or_refuses_and_no_bed_holds_
     assert await on_bed_one() == [nxt.json()["patient_number"]]
 
 
+async def _refused_tombstone(self, tenant, patient_number):
+    raise RuntimeError(f"the discharge of {patient_number} was refused")
+
+
+async def _cards_on(client, bed_id) -> list[str]:
+    cards = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    return [c["patient_id"] for c in cards if c["identity"]["bed_id"] == str(bed_id)]
+
+
+async def test_a_release_checks_every_discharged_patient_of_the_bed_not_the_last_row_written(
+        ward, db_session, monkeypatch):
+    """Final review: the release looked only at the bed's DISCHARGED admission written last
+    (`updated_at`). An older one whose row was written since — here its `updated_at` bumped —
+    hid the newer one whose card still stands, and the bed was freed under that card. Every
+    DISCHARGED admission of the bed whose identity is not a tombstone is checked: the release is
+    refused `board_not_cleared` with the standing card's number while it cannot be taken off,
+    and heals it once it can."""
+    w, client, app = ward
+    bed_id = w.beds["1"].id
+    release = f"/tenant/beds/{bed_id}/release"
+    first = await started(w, client)
+    r = await client.post(f"/admissions/{first['id']}/discharge/confirm", headers=w.auth["charge"])
+    assert (r.status_code, r.json()["board"]) == (200, "ok")
+    assert (await client.post(release, headers=w.auth["nurse"])).status_code == 200
+    second = await started(w, client)                  # the same person, admitted again
+    number = second["patient_number"]
+
+    with monkeypatch.context() as patched:
+        patched.setattr(BoardLink, "discharge_identity", _refused_tombstone)
+        r = await client.post(f"/admissions/{second['id']}/discharge/confirm",
+                              headers=w.auth["charge"])
+        assert (r.status_code, r.json()["board"]) == (200, "failed")
+        await db_session.execute(update(Admission).where(Admission.id == uuid.UUID(first["id"]))
+                                 .values(updated_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+        await db_session.commit()
+        r = await client.post(release, headers=w.auth["nurse"])
+        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) \
+            == (409, "board_not_cleared", number), r.text
+        assert await _cards_on(client, bed_id) == [number]
+
+    r = await client.post(release, headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, bed_id) == []
+    assert [(row.patient_id, row.payload["board"])
+            for row in audited(app, "admission.discharge_board_retry")] == [(number, "failed"),
+                                                                             (number, "ok")]
+
+
 async def test_without_a_board_link_the_card_and_the_alerts_are_failed_never_skipped(
         ward, monkeypatch, caplog):
     """X53 (Task 8 re-review): `skipped` means "not asked". The card's removal is always asked
