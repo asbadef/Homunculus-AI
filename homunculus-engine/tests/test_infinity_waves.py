@@ -72,7 +72,9 @@ def test_nothing_after_the_first_non_block_is_read_even_a_well_formed_block():
     block(ECG, 200, size=90),                 # len short but inside the data: only len != 14 + 2n
 ])
 def test_a_malformed_first_block_yields_nothing(broken):
-    assert parse_waves(packet(broken)) == []
+    # A good block behind the bad one must stay unread: "stop" means stop, not "skip the bad
+    # block by its declared length and carry on" — that refactor would pass without this.
+    assert parse_waves(packet(broken, block(RESP, 50))) == []
 
 
 def test_a_truncated_block_is_dropped_and_the_whole_ones_before_it_kept():
