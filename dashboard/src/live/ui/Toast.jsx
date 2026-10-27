@@ -116,10 +116,20 @@ function createToasts(publish, { open: openAtFirst, session: sessionAtFirst }) {
   }
 
   /** `from`: the session of the useToast() that raised it. A toast raised for another session —
-   *  a write that answered after its session ended — is dropped. */
+   *  a write that answered after its session ended — is dropped.
+   *
+   *  The same words in the same tone REPLACE the earlier copy, on screen or held (G2-B1a walk,
+   *  M-6): a refusal pressed twice stacked two identical errors, which stay until dismissed. The
+   *  copy leaves and the new one comes last, with a clock of its own — and, being new, is said
+   *  again, which is right: it is the answer to a second press. */
   function add(message, tone = "ok", from = session) {
     if (from !== session) return null;
     const kind = TONES[tone] ? tone : "ok";
+    const same = (item) => item.tone === kind && item.message === message;
+    const copies = items.filter(same).map((item) => item.id);
+    if (copies.length) remove(copies);
+    for (const item of held.filter(same)) timers.delete(item.id);
+    held = held.filter((item) => !same(item));
     seq += 1;
     const id = seq;
     const lifetime = TONES[kind].lifetime;
@@ -183,6 +193,10 @@ function createToasts(publish, { open: openAtFirst, session: sessionAtFirst }) {
  *    the rest politely; each says its tone word first ("Xəta: …") and only the message — the close
  *    button is outside them, labelled in the current language and described by its message.
  *  - At most TOAST_MAX on screen; a new one pushes out the oldest that is not an error.
+ *  - The same words in the same tone replace the earlier copy, which leaves its place: never two
+ *    alike (G2-B1a walk, M-6).
+ *  - A toast holds the TEXT it was raised with — every caller passes words already translated, never
+ *    a key — so it stays in the language it was raised in when the reader switches language.
  *  - A toast closed while it has focus gives focus back to where it was (else <body>).
  *  - Stays usable while a Modal is open (MODAL_EXEMPT), and then sits top right instead of
  *    bottom right (<body> carries MODAL_OPEN). On a short screen (390 x 380) a dialog fills it

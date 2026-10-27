@@ -530,6 +530,11 @@ describe("the confirmation (A-30, A-32)", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }))
       .mockRejectedValueOnce(refusal(409, "Only a PENDING_DISCHARGE admission can be confirmed.", { apiCode: "invalid_transition" })));
     await confirmLeft();
+    // The first answer's toast, dismissed: the retry's must come back of itself. (Walk M-6: the same
+    // words replace a copy on screen rather than stack a second, so counting copies proves nothing.)
+    const failedToast = () => toasts().getAllByText(`${SUBJECT} · ${BOARD_FAILED}`);
+    fireEvent.click(within(failedToast()[0].closest("[data-toast]")).getByRole("button", { name: "Bağla" }));
+    expect(toasts().queryAllByText(`${SUBJECT} · ${BOARD_FAILED}`)).toHaveLength(0);
     const retry = () => screen.getByRole("button", { name: RETRY_ROW });
     await act(async () => { fireEvent.click(retry()); });
     await act(async () => { fireEvent.click(retry()); });                   // on its way: nothing more is sent
@@ -538,7 +543,7 @@ describe("the confirmation (A-30, A-32)", () => {
     await act(async () => { answer({ id: "a-3", state: "DISCHARGED", board: "failed", alerts: "failed" }); });
     await settle();
     expect(kept()).toHaveLength(1);
-    expect(toasts().getAllByText(`${SUBJECT} · ${BOARD_FAILED}`).length).toBeGreaterThan(1);
+    expect(failedToast()).toHaveLength(1);                                   // said again, once
 
     await act(async () => { fireEvent.click(retry()); });
     await settle();
