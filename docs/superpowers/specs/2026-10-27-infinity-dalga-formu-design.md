@@ -84,7 +84,7 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   409 when research mode is off; 404 when a named device is unknown; at most 16 devices). The cursor
   is one counter for the whole hub, so a single `since` serves any set of devices (the wall, §11).
   Returns at most **10 s** of blocks per device after `since`; with several devices the body is
-  `{"schema", "cursor", "hub_now", "devices": {"<id>": {"blocks": […]}}}`. For one device:
+  `{"schema", "cursor", "hub_now", "started", "devices": {"<id>": {"blocks": […]}}}`. For one device:
   ```json
   {"schema": "homunculus.infinity-waves.v1", "device_id": "…", "cursor": 1234,
    "hub_now": "…Z", "started": "…Z",
