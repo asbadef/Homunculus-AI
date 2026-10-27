@@ -475,17 +475,18 @@ hospital's written acceptance before the stage is switched on in the ward. At st
 code is inert (no sampler, no mirror, no `shadow` key on the board), so the code and the migration can
 sit on the VM before that; `rules` is the switch the acceptance gates.
 
-**Prerequisite.** Stage B runs after Lane B's B1a is on `main`: admissions with their own bed id
-(migration 0012) and the device→bed table v2 with bed UUIDs. A device feeds a patient only when the
-approved table puts it on a bed and exactly one admitted patient is there; two monitors on a bed, two
-patients on a bed, a bed without a bed id and a discharged number feed nothing (spec D5). Lane B's
-admission (`admission/boardlink.py` on `feat/g2b-kabul`) is merged after this branch, and its merge
-must wire the three hooks `create_app` leaves for it: `app.state.shadow_mirror` after its chart,
-`app.state.shadow_profile` after its `set_profile`, and `app.state.shadow_occupancy_reset` after
-`put_identity` — and its card builder must build through the same `_card`, so its cards carry the
-`shadow` key. Each of the four is pinned with a test at merge time; without them an admission's
-charted values and profile would not reach the shadow engine, its bed would link the old occupant
-for up to 10 s, and its cards would carry no shadow picture.
+**Prerequisite.** Stage B runs on Lane B's B1a (main `ff5348a`, merged into this branch): admissions
+with their own bed id (migration 0012) and the device→bed table v2 with bed UUIDs. A device feeds a
+patient only when the approved table puts it on a bed and exactly one admitted patient is there; two
+monitors on a bed, two patients on a bed, a bed without a bed id and a discharged number feed nothing
+(spec D5). Lane B's admission (`admission/boardlink.py`) reaches the lane through the same hooks Lane
+A's doors use, handed to its `BoardLink` by `create_app`: the weight it charts through
+`app.state.shadow_mirror` (given to its chart, as `/clinical` gives it), its profile through
+`app.state.shadow_profile` after its `set_profile`, `app.state.shadow_occupancy_reset` after its
+identity write (the admission and a resend's retry), and its cards are built by the same `_card` /
+`_identity_card`, so they carry the `shadow` key. Each is pinned in `tests/test_kabul_boardlink.py`;
+without them an admission's charted values and profile would not reach the shadow engine, its bed
+would link the old occupant for up to 10 s, and its cards would carry no shadow picture.
 
 **The switch.** `INFINITY_CLINICAL_STAGE=rules` in `deploy/local/.env`, then
 `docker compose up -d --no-build api` (a plain restart keeps the container's old environment). The

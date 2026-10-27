@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import copy
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,17 +30,20 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog, iter_records
-from homunculus.api.board import board_snapshot
+from homunculus.api.board import board_snapshot, identity_only_board, patient_board
 from homunculus.api.clinical import ClinicalEntryError, chart_observations
 from homunculus.api.notify import Notifier
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
 from homunculus.api.rehydrate import rehydrate
+from homunculus.canonical import SignalCode
 from homunculus.gateway.fhir import parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scenarios.loader import load_scenario
 from homunculus.scope import build_scope, sees_patient
 from tests.test_infinity_shadow_api import HOSPITAL as SHADOW_HOSPITAL
 from tests.test_infinity_shadow_api import _app as shadow_app, _board as shadow_board
+from tests.test_api_shadow_findings import HOSPITAL as RULES_HOSPITAL
+from tests.test_api_shadow_findings import _app as rules_app, _post as rules_post
 from tests.test_infinity_shadow_api import _post as shadow_post
 
 HOSPITAL = "HOSP1"
@@ -51,9 +55,10 @@ SCEN = Path(homunculus.scenarios.__file__).parent
 #: A lactate reading after the scenario's last event (synthetic), its value set by the test.
 LACTATE = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": "lactate"}]},
            "subject": {"reference": "Patient/H2600001"}, "effectiveDateTime": "2026-07-14T11:01:00+00:00"}
-#: Lane A's `chart_observations` takes these, by keyword (the coordinator, 2026-10-26).
+#: Lane A's `chart_observations` takes these, by keyword (the coordinator, 2026-10-26); `mirror` is
+#: Aşama B's — None when the link was built without the shadow lane's hook.
 CHART_KWARGS = {"engine", "store", "audit", "notifier", "hospital", "patient_id", "charted", "now",
-                "escalate_after"}
+                "escalate_after", "mirror"}
 
 
 def record(number: str = "H2600001", bed_id: str = BED, unit_id: str = UNIT,
@@ -228,6 +233,7 @@ def test_the_weight_is_charted_through_the_injected_door_with_the_entries_built_
     assert call["audit"] is world.audit and call["notifier"] is world.notifier
     assert (call["hospital"], call["patient_id"], call["now"], call["escalate_after"]) == \
         (HOSPITAL, "H2600001", T0, ESCALATE_AFTER)
+    assert call["mirror"] is None                                # no shadow lane wired here
     (entry,) = call["charted"]                                   # api/clinical.build_entries
     obs = entry.observation
     assert (obs.patient_id, obs.code.value, obs.value, obs.unit) == ("H2600001", "weight_kg", 72.5, "kg")
@@ -275,6 +281,91 @@ def test_the_comorbidities_reach_the_engine_and_a_restart_replays_them():
     engine, store = Engine(), AckStore()                         # a restart: rebuilt from the audit
     rehydrate(engine, store, iter_records(world.audit, tenant=HOSPITAL, page=500))
     assert engine.profile("H2600001").comorbidities == frozenset({"copd", "dementia"})
+
+
+# ---------------------------------------------------------------- Aşama B: the shadow lane's hooks
+def _hooked_world():
+    """A World whose link is handed Aşama B's four callables, as `api/app.py` hands it the app's
+    own, each recording what reached it: the identity write (and whether the record had landed),
+    each charted observation (and whether the real engine held it already), each profile (and
+    whether the real engine had been given it). `card` and `identity_card` build as the app's do —
+    `patient_board`, `identity_only_board` — and name themselves in the `shadow` key, so a frame
+    says which builder made it. The charting door is the real `chart_observations`."""
+    heard: list[tuple] = []
+    worlds: list[World] = []
+
+    def mirror(hospital, obs, now):
+        real = worlds[0].engine(hospital).state(obs.patient_id).latest(obs.code)
+        heard.append(("mirror", hospital, obs.patient_id, obs.code.value, obs.value, now,
+                      real is not None and real.value == obs.value))
+
+    def mirror_profile(hospital, profile):
+        heard.append(("profile", hospital, profile.patient_id, profile.comorbidities,
+                      worlds[0].engine(hospital).profile(profile.patient_id) == profile))
+
+    def occupancy_reset(hospital):
+        stored = worlds[0].identities.get(hospital, "H2600001")
+        heard.append(("reset", hospital, stored.state if stored is not None else None))
+
+    def card(hospital, patient_id, identity):
+        world = worlds[0]
+        return {**patient_board(world.engine(hospital), patient_id, world.store(hospital),
+                                identity=identity), "shadow": "card"}
+
+    def identity_card(hospital, identity):
+        return {**identity_only_board(identity), "shadow": "identity_card"}
+
+    worlds.append(World(chart=chart_observations, mirror=mirror, mirror_profile=mirror_profile,
+                        occupancy_reset=occupancy_reset, card=card, identity_card=identity_card))
+    return worlds[0], heard
+
+
+def test_the_shadow_lane_hears_the_identity_write_the_weight_and_the_profile():
+    """Aşama B × B1a: the strip's cached occupants are dropped after the identity write has
+    landed — the admission's and a resend's retry's alike — so the next readings body links the
+    bed's new occupant; the weight reaches the shadow engine through the charting door's `mirror`,
+    after the real evaluation, at the link's one instant; the profile right after the real
+    `set_profile`. Every card is the app's builders': the identity-only one before the first
+    value, the measured one after it — so each frame carries the `shadow` key."""
+    world, heard = _hooked_world()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    assert heard == [("reset", HOSPITAL, "admitted")]
+    assert world.published[-1][1]["shadow"] == "identity_card"
+
+    heard.clear()
+    asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+    assert heard == [("mirror", HOSPITAL, "H2600001", "weight_kg", 72.5, T0, True)]
+    assert world.published[-1][1]["shadow"] == "card"
+
+    heard.clear()
+    asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
+    assert heard == [("profile", HOSPITAL, "H2600001", frozenset({"copd"}), True)]
+    assert world.published[-1][1]["shadow"] == "card"
+
+    heard.clear()                                                # a resend's retry: the card again
+    asyncio.run(world.link.put_identity(HOSPITAL, record(at=T0 + timedelta(minutes=1))))
+    assert heard == [("reset", HOSPITAL, "admitted")]
+    assert world.published[-1][1]["shadow"] == "card"
+
+
+@pytest.mark.parametrize("write", ["put_identity", "chart_weight", "apply_profile"])
+def test_a_discharged_number_reaches_no_shadow_hook(write):
+    """A-11 holds for the shadow lane too: a discharged number is refused before the identity
+    write, the chart and the profile, so no hook hears it and no card is built."""
+    world, heard = _hooked_world()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    heard.clear()
+    world.published.clear()
+    calls = {
+        "put_identity": lambda: world.link.put_identity(HOSPITAL, record(at=T0 + timedelta(hours=1))),
+        "chart_weight": lambda: world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"),
+        "apply_profile": lambda: world.link.apply_profile(HOSPITAL, "H2600001", ["copd"],
+                                                          actor="hemsire"),
+    }
+    with pytest.raises(RuntimeError, match="H2600001 is discharged"):
+        asyncio.run(calls[write]())
+    assert heard == [] and world.published == []
 
 
 # ---------------------------------------------------------------- open critical alerts
@@ -614,3 +705,66 @@ def test_the_monitor_strip_links_a_device_to_the_kabul_patient_on_its_bed(tmp_pa
     beds = {b["bed_label"]: b for b in shadow_board(client)["beds"]}
     assert (beds["B-2"]["link"], beds["B-2"]["patient_id"]) == ("one", "H2600001")
     assert (beds["B-1"]["link"], beds["B-1"]["patient_id"]) == ("none", None)
+
+
+# Aşama B × B1a: the app's link is handed the shadow lane's hooks and card builders, by reference.
+def test_the_app_hands_its_board_link_the_shadow_lanes_own_hooks_never_copies():
+    """The admission reaches the shadow engine through the very callables Lane A's doors use, so
+    it can never drift from what `/clinical` and `PUT /clinical/{id}/profile` mirror."""
+    app = app_with()
+    link = app.state.board_link
+    assert link._mirror is app.state.shadow_mirror
+    assert link._mirror_profile is app.state.shadow_profile
+    assert link._occupancy_reset is app.state.shadow_occupancy_reset
+
+
+def test_at_rules_the_apps_admission_feeds_the_shadow_lane_and_its_frames_carry_shadow(tmp_path):
+    """At the stage `rules`, through the link the app builds: the admission's identity write drops
+    the strip's cached occupants, so the very next readings body links the monitor on its bed to
+    the admitted patient (the cache would hold the empty bed for 10 s); a resend's retry writes the
+    card again with the shadow picture on it; the weight and the comorbidities reach the shadow
+    engine; and every frame the link sends is the app's own card, `shadow` key included."""
+    client, _audit, _samples, _identities = rules_app(tmp_path)
+    with client:
+        link, lane = client.app.state.board_link, client.app.state.shadow_lane
+        queue = client.app.state.broadcaster.subscribe(RULES_HOSPITAL)
+
+        def frames() -> list[dict]:
+            sent = []
+            while not queue.empty():
+                sent.append(queue.get_nowait())
+            return [frame for frame in sent if frame["patient_id"] == "H2600001"]
+
+        assert rules_post(client).status_code == 200       # the occupants read and cached: bed-b1 empty
+        admitted_at = datetime.now(timezone.utc)
+        client.portal.call(link.put_identity, RULES_HOSPITAL,
+                           record(bed_id="bed-b1", unit_id="unit-1", at=admitted_at))
+        (frame,) = frames()
+        assert "shadow" in frame and frame["shadow"] is None           # not linked yet
+        assert frame["latest"]["news2"] is None                         # the identity-only card
+        assert rules_post(client).status_code == 200       # the next body, 2 s on: the link starts
+        assert set(lane.linked[RULES_HOSPITAL]) == {"H2600001"}
+        assert rules_post(client).status_code == 200       # the first samples (HR 140, SpO2 85)
+        frames()
+
+        client.portal.call(link.put_identity, RULES_HOSPITAL,          # a resend's retry
+                           record(bed_id="bed-b1", unit_id="unit-1",
+                                  at=admitted_at + timedelta(seconds=1)))
+        (frame,) = frames()
+        assert frame["shadow"]["vitals"]["heart_rate"]["value"] == 140.0
+        assert frame["latest"]["news2"] is None                         # still never measured
+
+        client.portal.call(partial(link.chart_weight, RULES_HOSPITAL, "H2600001", 72.5,
+                                   actor="hemsire"))
+        shadow_engine = lane.engines[RULES_HOSPITAL]
+        assert shadow_engine.state("H2600001").latest(SignalCode("weight_kg")).value == 72.5
+        (frame,) = frames()
+        assert frame["meds"]["weight_kg"] == 72.5                       # the measured card
+        assert frame["shadow"]["vitals"]["heart_rate"]["value"] == 140.0
+
+        client.portal.call(partial(link.apply_profile, RULES_HOSPITAL, "H2600001", ["copd"],
+                                   actor="hemsire"))
+        assert shadow_engine.profile("H2600001").comorbidities == frozenset({"copd"})
+        (frame,) = frames()
+        assert frame["shadow"] is not None
+        assert lane.state == "ok"

@@ -549,6 +549,39 @@ async def test_a_discharge_landing_while_a_resend_writes_the_card_again_keeps_th
     assert app.state.board_link.is_discharged(SLUG, number)
 
 
+async def test_the_admission_and_a_resends_retry_reach_the_shadow_lanes_hooks(ward, monkeypatch):
+    """Aşama B × B1a through the routes: the admission drops the monitor strip's cached occupants
+    after its identity write, then mirrors its weight and its comorbidities to the shadow engine,
+    and its card goes out as the app builds it, `shadow` key included (None: no shadow lane in this
+    app). A resend's retry — the first send's answer lost — drops the occupants again after the card
+    it writes again, and mirrors the comorbidities, never the weight it does not chart twice."""
+    w, client, app = ward
+    link = app.state.board_link
+    heard: list[tuple] = []
+    monkeypatch.setattr(link, "_occupancy_reset", lambda hospital: heard.append(("reset", hospital)))
+    monkeypatch.setattr(link, "_mirror", lambda hospital, obs, now: heard.append(
+        ("mirror", hospital, obs.code.value, obs.value)))
+    monkeypatch.setattr(link, "_mirror_profile", lambda hospital, profile: heard.append(
+        ("profile", hospital, profile.comorbidities)))
+    queue = app.state.broadcaster.subscribe(SLUG)
+
+    r = await client.post("/admissions", json=form(w), headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    assert heard == [("reset", SLUG), ("mirror", SLUG, "weight_kg", 72.5),
+                     ("profile", SLUG, frozenset({"copd"}))]
+    frame = queue.get_nowait()                                   # the card on its bed
+    assert frame["patient_id"] == r.json()["patient_number"]
+    assert "shadow" in frame and frame["shadow"] is None
+
+    heard.clear()
+    body = form(w, "2", request_id=uuid.uuid4())
+    await _lose_the_first_answer(client, monkeypatch, w, body)
+    assert heard == []                                           # no board write was reached
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.json()["engine"] == {"weight": "failed", "profile": "ok", "board": "ok"}
+    assert heard == [("reset", SLUG), ("profile", SLUG, frozenset({"copd"}))]
+
+
 async def test_two_sends_of_one_form_at_once_admit_once_and_answer_alike(ward, db_session):
     """Sent twice at once under one `request_id`: one admission, one number; the send that came
     second waits for the first's answer and gives the same body (200 beside the first's 201)."""

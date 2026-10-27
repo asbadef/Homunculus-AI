@@ -645,18 +645,21 @@ def create_app(
     # `set_profile` — guarded, as `PUT /clinical/{pid}/profile` does it.
     app.state.shadow_profile = lambda hospital, profile: lane.guard(
         "mirror", lambda: lane.mirror_profile(hospital, profile))
-    # Lane B's admission (`admission/boardlink.py` on `feat/g2b-kabul`, merged after this) must
-    # wire all three: `shadow_mirror` after its chart, `shadow_profile` after its `set_profile`,
-    # `shadow_occupancy_reset` after `put_identity` — and build its cards through `_card`, so they
-    # carry the `shadow` key. Each is pinned by a test at that merge (deploy/infinity/README.md,
-    # Aşama B, "Prerequisite").
     # G2-B1a: the admission routes' one way into the board world (admission/boardlink.py). Lane A's
     # doors go in by reference, never copied (A-25, condition 5): the charting loop `/clinical`
-    # runs, the retirement the escalation cycle runs, and the broadcaster's publish.
+    # runs, the retirement the escalation cycle runs, and the broadcaster's publish. Aşama B's
+    # hooks go in the same way (the merge of B1a): the admission's weight reaches the shadow engine
+    # through `shadow_mirror` (handed to its chart), its profile through `shadow_profile` after its
+    # `set_profile`, the strip's occupants are dropped after its identity write
+    # (`shadow_occupancy_reset`), and its cards are built by `_card` / `_identity_card`, so they
+    # carry the `shadow` key (tests/test_kabul_boardlink.py pins each).
     app.state.board_link = BoardLink(
         identities=identities, engine=_engine, store=_store, audit=audit,
         publish=broadcaster.publish, notifier=notifier, escalate_after=escalate_after,
-        chart=chart_observations, retire_patient=app.state.retire_patient, bedmap=bedmap)
+        chart=chart_observations, retire_patient=app.state.retire_patient, bedmap=bedmap,
+        mirror=app.state.shadow_mirror, mirror_profile=app.state.shadow_profile,
+        occupancy_reset=app.state.shadow_occupancy_reset,
+        card=_card, identity_card=_identity_card)
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""

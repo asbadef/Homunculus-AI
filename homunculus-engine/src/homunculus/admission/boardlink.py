@@ -54,6 +54,18 @@ and places it on `app.state.board_link`; a router reaches it through the request
 the admission routes answer every part they asked of it `failed`, logged at ERROR (X53: `skipped`
 means "not asked", never "not done").
 
+Aşama B's shadow engine (api/infinity_rules.py) hears the admission as it hears Lane A's doors,
+through three more of the app's hooks and its two card builders, by reference: the weight charted
+is mirrored to it (`mirror`, handed to the charting door as `/clinical` hands it), the profile set
+is mirrored (`mirror_profile`, right after the real `set_profile`), the monitor strip's cached
+occupants are dropped after the identity write (`occupancy_reset`: the next readings body links
+the bed's new occupant at once, not up to 10 s later), and every card is built by the app's own
+builders (`card`, `identity_card`), so a frame carries the `shadow` key a `/patients` card does.
+The hooks never raise (the two mirrors run inside the lane's `guard`; the reset drops a cache);
+none is reached for a discharged number, which is refused before. A link built without them — a
+test's — mirrors nothing and builds its cards with `patient_board` / `identity_only_board`, as
+before.
+
 PHI: the identity carries the name, as an ADT record does (encrypted at rest by the store). The
 audit rows carry the number and the actor — never a name.
 """
@@ -72,7 +84,9 @@ from homunculus.api.board import identity_only_board, patient_board, tombstone_b
 from homunculus.api.clinical import build_entries, profile_from_payload, profile_to_payload
 from homunculus.api.notify import Notifier
 from homunculus.api.patient_identity import KABUL, IdentityRecord, IdentityStore, is_tombstone
+from homunculus.canonical import Observation
 from homunculus.pipeline import Engine
+from homunculus.state.profile import PatientProfile
 from homunculus.tenant.bedmap import BedMap
 
 log = logging.getLogger(__name__)
@@ -121,8 +135,18 @@ class BoardLink:
     `chart` is the app's charting door, called by keyword as Lane A's
     `chart_observations(engine, store, audit, notifier, hospital, patient_id, charted, now,
     escalate_after)` — `notifier` and `escalate_after` are the app's own, held here only to hand
-    them on; the three are wired together or `chart_weight` refuses to run. `retire_patient` is the
-    app's `retire_and_publish(hospital, patient_id, frame=None, now=None)` (A-20)."""
+    them on; the three are wired together or `chart_weight` refuses to run. The door is also
+    handed `mirror` — one charted observation for Aşama B's shadow engine, or None when the app
+    wired none. `retire_patient` is the app's `retire_and_publish(hospital, patient_id,
+    frame=None, now=None)` (A-20).
+
+    Aşama B's hooks and builders (the module's docstring), each the app's own: `mirror` is
+    `app.state.shadow_mirror(hospital, obs, now)`, `mirror_profile` is
+    `app.state.shadow_profile(hospital, profile)`, `occupancy_reset` is
+    `app.state.shadow_occupancy_reset(hospital)`; `card(hospital, patient_id, identity)` and
+    `identity_card(hospital, record)` are the app's card builders (`_card`, `_identity_card`).
+    Left out, the link mirrors nothing and builds its cards with `patient_board` and
+    `identity_only_board`."""
 
     def __init__(self, *, identities: IdentityStore, engine: Callable[[str], Engine],
                  store: Callable[[str], AckStore], audit: AuditLog,
@@ -131,6 +155,11 @@ class BoardLink:
                  chart: Callable[..., list] | None = None,
                  retire_patient: Callable[..., Awaitable[list]] | None = None,
                  bedmap: BedMap | None = None,
+                 mirror: Callable[[str, Observation, datetime], object] | None = None,
+                 mirror_profile: Callable[[str, PatientProfile], object] | None = None,
+                 occupancy_reset: Callable[[str], object] | None = None,
+                 card: Callable[[str, str, IdentityRecord | None], dict] | None = None,
+                 identity_card: Callable[[str, IdentityRecord], dict] | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self._identities = identities
         self._engine = engine
@@ -142,7 +171,19 @@ class BoardLink:
         self._chart = chart
         self._retire = retire_patient
         self._bedmap = bedmap
+        self._mirror = mirror
+        self._mirror_profile = mirror_profile
+        self._occupancy_reset = occupancy_reset
+        self._card = card if card is not None else self._plain_card
+        self._identity_card = (identity_card if identity_card is not None
+                               else lambda tenant, record: identity_only_board(record, self._bedmap))
         self._clock = clock
+
+    def _plain_card(self, tenant: str, patient_number: str,
+                    identity: IdentityRecord | None) -> dict:
+        """A measured patient's card without the app's builder: `patient_board`, no shadow key."""
+        return patient_board(self._engine(tenant), patient_number, self._store(tenant),
+                             identity=identity, bedmap=self._bedmap)
 
     def _board(self, tenant: str, patient_number: str,
                identity: IdentityRecord | None = None) -> dict | None:
@@ -151,17 +192,17 @@ class BoardLink:
         which would). A tombstone's board is its removal (`tombstone_board`), never an
         identity-only card: the tombstone keeps the name (A-16), and such a card would bring the
         discharged patient back on every screen. A number with neither an identity nor a reading
-        has no board."""
+        has no board. A card is built by the app's own builders (`card`, `identity_card`): it
+        carries the `shadow` key, as the same patient's card on `/patients` does (Aşama B, D6)."""
         engine = self._engine(tenant)
         identity = identity if identity is not None else self._identities.get(tenant, patient_number)
         if is_tombstone(identity):
             return tombstone_board(identity)
         if patient_number in set(engine.patient_ids()):
-            return patient_board(engine, patient_number, self._store(tenant), identity=identity,
-                                 bedmap=self._bedmap)
+            return self._card(tenant, patient_number, identity)
         if identity is None:
             return None
-        return identity_only_board(identity, self._bedmap)
+        return self._identity_card(tenant, identity)
 
     async def _send(self, tenant: str, patient_number: str,
                     identity: IdentityRecord | None = None) -> None:
@@ -172,9 +213,12 @@ class BoardLink:
     async def put_identity(self, tenant: str, record: IdentityRecord) -> None:
         """The admission's card on its bed, then the card republished. A discharged number is
         refused first (`_refuse_discharged`), whatever the record's stamp: see the module's
-        docstring."""
+        docstring. After the write the monitor strip's cached occupants are dropped
+        (`occupancy_reset`), so the next readings body links the bed's new occupant."""
         self._refuse_discharged(tenant, record.patient_id)
         stored = self._identities.apply(tenant, record)
+        if self._occupancy_reset is not None:
+            self._occupancy_reset(tenant)
         await self._send(tenant, record.patient_id, stored)
 
     async def chart_weight(self, tenant: str, patient_number: str, kg: float, *,
@@ -187,7 +231,8 @@ class BoardLink:
         charted: Lane A's `chart_observations` prunes the notifier before it writes the `chart`
         row, so a missing notifier would leave the weight in the engine with no row for a restart
         to replay. A discharged number is refused first (`_refuse_discharged`). It is called for a
-        number the admission has just issued; it is not a door for charting."""
+        number the admission has just issued; it is not a door for charting. The door hands each
+        charted entry to `mirror` after the real evaluation, as `/clinical`'s does (Aşama B, D1)."""
         self._refuse_discharged(tenant, patient_number)
         missing = [name for name, part in (("chart_observations", self._chart),
                                            ("notifier", self._notifier),
@@ -198,21 +243,26 @@ class BoardLink:
         now = self._clock()
         charted = build_entries(patient_number, [{"code": WEIGHT, "value": kg}],
                                 charted_by=actor, recorded_at=now)
+        mirror = ((lambda obs: self._mirror(tenant, obs, now)) if self._mirror is not None
+                  else None)
         self._chart(engine=self._engine(tenant), store=self._store(tenant), audit=self._audit,
                     notifier=self._notifier, hospital=tenant, patient_id=patient_number,
-                    charted=charted, now=now, escalate_after=self._escalate_after)
+                    charted=charted, now=now, escalate_after=self._escalate_after, mirror=mirror)
         await self._send(tenant, patient_number)
 
     async def apply_profile(self, tenant: str, patient_number: str, codes: list[str], *,
                             actor: str) -> None:
         """The comorbidities merged into the engine's profile, audited as `PUT
         /clinical/{id}/profile` audits them, then the card republished. A discharged number is
-        refused first (`_refuse_discharged`)."""
+        refused first (`_refuse_discharged`). Right after the real `set_profile` the profile is
+        mirrored to the shadow engine (`mirror_profile`), as that route mirrors its own."""
         self._refuse_discharged(tenant, patient_number)
         engine = self._engine(tenant)
         profile = profile_from_payload(patient_number, {"comorbidities": list(codes)},
                                        engine.profile(patient_number))
         engine.set_profile(profile)
+        if self._mirror_profile is not None:
+            self._mirror_profile(tenant, profile)
         self._audit.append(AuditEvent(tenant, "profile", profile.patient_id, "",
                                       {**profile_to_payload(profile), "charted_by": actor}))
         await self._send(tenant, patient_number)
