@@ -258,18 +258,34 @@ describe("live UI dictionaries", () => {
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");
   });
 
-  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor» — so a
-  // clinician can match the legend to what the cell prints. If the cell's wording changes, the
-  // legend has to change with it: this holds the two together, language by language.
+  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor», «ölçüm
+  // zamanı bilinmiyor» (NBP-2) — so a clinician can match the legend to what the cell prints. If the
+  // cell's wording changes, the legend has to change with it: this holds the two together, language by
+  // language. The untimed note is quoted whole, in «», as the cell prints it.
   it("the NBP legend quotes the words the strip itself prints, in every language", () => {
     for (const lang of LANG_CODES) {
       const legend = DICTIONARIES[lang]["monitor.legendNbp"];
       const waiting = DICTIONARIES[lang]["monitor.nbpWaiting"];
       const measured = DICTIONARIES[lang]["monitor.nbpMeasured"].split("{")[0];
+      const untimed = DICTIONARIES[lang]["monitor.nbpUntimed"];
       expect(waiting.length, `${lang} nbpWaiting`).toBeGreaterThan(0);
       expect(measured.trim().length, `${lang} nbpMeasured, up to its first {`).toBeGreaterThan(0);
       expect(legend, `${lang} legendNbp quotes nbpWaiting "${waiting}"`).toContain(waiting);
       expect(legend, `${lang} legendNbp quotes nbpMeasured "${measured}"`).toContain(measured);
+      expect(legend, `${lang} legendNbp quotes nbpUntimed "${untimed}"`).toContain(`«${untimed}»`);
+    }
+  });
+
+  // NBP-2 (D4): the untimed cell's screen-reader sentence ends in the very words the cell prints, so
+  // what is heard and what is seen say the same thing; and neither carries a time or an age.
+  it("the untimed NBP's sentence says what its note says, and neither has a time or an age", () => {
+    for (const lang of LANG_CODES) {
+      const note = DICTIONARIES[lang]["monitor.nbpUntimed"];
+      const said = DICTIONARIES[lang]["monitor.nbpUntimedSaid"];
+      expect(said.endsWith(`; ${note}`), `${lang} nbpUntimedSaid ends in "; ${note}"`).toBe(true);
+      expect(placeholders(said), lang).toEqual(["diastolic", "mean", "systolic", "unit"]);
+      expect(placeholders(note), lang).toEqual([]);
+      expect(`${note} ${said}`, lang).not.toMatch(/≤/);
     }
   });
 });

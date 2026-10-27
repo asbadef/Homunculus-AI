@@ -8,7 +8,7 @@ import {
   DISPLAY_MAX_AGE_S, EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge,
   feedSentenceKey, lastSeenMs, linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
 } from "./monitor.js";
-import { NBP_CHANGED_AT, param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
+import { AT, NBP_CHANGED_AT, param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
 import { createTranslator } from "../../i18n/translate.js";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 
@@ -109,6 +109,42 @@ describe("NBP's cell: the time its value last changed", () => {
     const nbpNewer = param("nbp", [118, 79, 92], { last_at: "2026-10-08T09:59:30+00:00" });
     expect(lastSeenMs(bed("REA-01 · 2", [hr, nbpNewer], { status: "silent" }))).toBe(Date.parse("2026-10-08T09:59:00+00:00"));
     expect(lastSeenMs(bed("REA-01 · 2", [nbpNewer], { status: "silent" }))).toBeNull();
+  });
+});
+
+// NBP-2 (D3, D4): the API's `value_untimed` — the monitor's current NBP, a complete valid triple whose
+// change the hub has not seen. Its age is the packet's; there is no time of measurement to show.
+describe("NBP's cell while its change has not been seen: the monitor's current value, its time unknown", () => {
+  const UNTIMED = param("nbp", [118, 79, 92], { state: "value_untimed", changed_at: null, measured_age_s: null });
+  const at = (p, over = {}) => cellOf(p, { nowMs: FETCHED, fetchedAtMs: FETCHED, ...over });
+
+  it("shows the three numbers with the packet's age, and no time of measurement", () => {
+    expect(at(UNTIMED)).toEqual({ kind: "nbp_untimed", systolic: 118, diastolic: 79, mean: 92, ageS: 2 });
+  });
+
+  it("goes old with its packet like any value, keeping the packet's time — there is no change time to keep", () => {
+    expect(at(UNTIMED, { nowMs: FETCHED + 3000 })).toEqual({ kind: "nbp_untimed", systolic: 118, diastolic: 79, mean: 92, ageS: 5 });
+    expect(at(UNTIMED, { nowMs: FETCHED + 14_000 })).toEqual({ kind: "old", ageS: 16, lastAt: AT });
+    expect(at(UNTIMED, { feedOk: false })).toEqual({ kind: "old", ageS: 2, lastAt: AT });
+    expect(at(UNTIMED, { nowMs: FETCHED - 500 })).toEqual({ kind: "old", ageS: null, lastAt: AT });
+  });
+
+  it("judges no age beyond the packet's: the display limit is the only rule, and no measured age is asked for", () => {
+    expect(at({ ...UNTIMED, age_s: 14 }).kind).toBe("nbp_untimed");
+    expect(at({ ...UNTIMED, age_s: 16 })).toEqual({ kind: "old", ageS: 16, lastAt: AT });
+    expect(at(UNTIMED, { maxAgeS: 1 })).toEqual({ kind: "old", ageS: 2, lastAt: AT });
+  });
+
+  it("never draws a number it does not have", () => {
+    expect(at(param("nbp", [118, null, 92], { state: "value_untimed", changed_at: null, measured_age_s: null })))
+      .toEqual({ kind: "old", ageS: 2, lastAt: AT });
+  });
+
+  it("is the timed cell the moment the server sends the change — and a timed answer without one is never untimed", () => {
+    const timed = { ...UNTIMED, state: "value", changed_at: NBP_CHANGED_AT, measured_age_s: 600 };
+    expect(at(timed)).toEqual({ kind: "nbp", systolic: 118, diastolic: 79, mean: 92,
+      changedAtMs: Date.parse(NBP_CHANGED_AT), measuredAgeS: 600, ageS: 2 });
+    expect(at({ ...UNTIMED, state: "value" })).toEqual({ kind: "old", ageS: null, lastAt: null });
   });
 });
 

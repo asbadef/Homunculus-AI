@@ -72,9 +72,14 @@ export function displayAge(param, nowMs, fetchedAtMs) {
  *   {kind: "nbp", systolic, diastolic, mean, changedAtMs, measuredAgeS, ageS}
  *                                  NBP, fresh and valid, with the time its value last changed — an
  *                                  upper bound of the measurement — and how long ago that was
+ *   {kind: "nbp_untimed", systolic, diastolic, mean, ageS}
+ *                                  NBP, fresh and valid, whose change the hub has not seen (the API's
+ *                                  `value_untimed`): the monitor's current value, its measurement time
+ *                                  unknown; the age is the packet's
  *   {kind: "invalid", ageS}        the monitor itself shows "***"
- *   {kind: "old", ageS, lastAt}    anything else — the number is never drawn. For NBP the age is the
- *                                  change's, and `lastAt` null means no change has been seen yet
+ *   {kind: "old", ageS, lastAt}    anything else — the number is never drawn. For a timed NBP the age is
+ *                                  the change's, for an untimed one the packet's; `lastAt` null means the
+ *                                  API holds no NBP it may show («ölçüm bekleniyor»)
  */
 export function cellOf(param, { nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, feedOk = true } = {}) {
   const ageS = displayAge(param, nowMs, fetchedAtMs);
@@ -87,8 +92,15 @@ export function cellOf(param, { nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S,
 
 /** NBP's cell. The time since its value changed is the server's `measured_age_s`, aged like any
  *  other age; the two-hour limit is the API's (past it the answer says `state: "old"`) and is never
- *  decided here. */
+ *  decided here. An untimed NBP (`value_untimed`, NBP-2 D3) has no change time and no measured age:
+ *  it is drawn by the packet's freshness alone, the rule of every other cell, and goes old with its
+ *  packet, keeping the packet's time — there is no other. */
 function nbpCellOf(param, { ageS, fresh, nowMs, fetchedAtMs }) {
+  if (param.state === "value_untimed") {
+    const { systolic, diastolic, mean } = param;
+    if (fresh && [systolic, diastolic, mean].every(Number.isFinite)) return { kind: "nbp_untimed", systolic, diastolic, mean, ageS };
+    return { kind: "old", ageS, lastAt: param.last_at ?? null };
+  }
   const changedAtMs = Date.parse(param.changed_at ?? "");
   if (!Number.isFinite(changedAtMs)) return { kind: "old", ageS: null, lastAt: null };
   const measuredAgeS = displayAge({ age_s: param.measured_age_s }, nowMs, fetchedAtMs);

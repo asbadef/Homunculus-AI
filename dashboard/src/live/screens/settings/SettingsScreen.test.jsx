@@ -161,9 +161,15 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(box).toHaveTextContent(/ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı/);   // the example and the bound are one sentence (X49): the NBSP after "≤" is inside the «» quote, not here
     expect(box).toHaveTextContent(/ən azı bu qədər köhnədir/);   // the time is a bound: the value is at least this old (X49)
     expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
-    expect(box).toHaveTextContent(/dəyəri dəyişən növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // waits for a CHANGED value, after a hub restart or a data interruption (X49)
-    expect(box).toHaveTextContent(/monitorun məlumatı kəsik ikən dəyər dəyişibsə/);   // only a value that CHANGED during the interruption waits (X48, final review M-4)
-    expect(box).toHaveTextContent(/əvvəlki xəstənin ola bilər \(ən çox 2 saat\)/);   // a changed patient's bed may show the previous patient's NBP (X49)
+    expect(box).toHaveTextContent(/monitorun məlumatı kəsik ikən dəyər dəyişibsə dəyişiklik fərq edilməyib/);   // a value that CHANGED during the interruption is untimed (X48, final review M-4; NBP-2)
+    // NBP-2 (D4): no change seen — the monitor's current value, with «ölçmə vaxtı məlum deyil» until the
+    // next cuff measurement that changes it; no 2-hour limit can apply to it, and a triple that is not
+    // complete and valid still waits.
+    expect(box).toHaveTextContent(/dəyəri dəyişən növbəti manjet ölçməsinə qədər «ölçmə vaxtı məlum deyil» qeydi ilə göstərilir/);
+    expect(box).toHaveTextContent(/monitorun hazırda göstərdiyi dəyərdir, nə vaxt ölçüldüyü məlum deyil və 2 saat həddi ona tətbiq edilə bilməz/);
+    expect(box).toHaveTextContent(/üç NBP dəyəri tam və etibarlı deyilsə NBP heç göstərilmir \(«ölçmə gözlənilir»\)/);
+    expect(box).not.toHaveTextContent(/dəyəri dəyişən növbəti ölçməyə qədər göstərilmir/);   // the R4 sentence: an untimed NBP is shown now
+    expect(box).toHaveTextContent(/əvvəlki xəstənin ola bilər \(ən çox 2 saat; ölçmə vaxtı məlum deyilsə daha uzun\)/);   // a changed patient's bed (X49); untimed, longer (NBP-2 O2)
     expect(box).not.toHaveTextContent(/bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");
     expect(box).toHaveTextContent("əvəzində «köhnə» və son dəyərin yaşı yazılır");     // the cell shows an age

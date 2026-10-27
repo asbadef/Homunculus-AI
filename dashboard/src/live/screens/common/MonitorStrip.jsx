@@ -8,7 +8,9 @@
 //     is never dressed as an engine vital; no risk pill, no rail, no green, nothing coloured by a
 //     value;
 //   * every value with its age; an old one is a dash and "eski", never a number; NBP with the time
-//     its value last changed, written "≤" because the cuff measured then or earlier;
+//     its value last changed, written "≤" because the cuff measured then or earlier — or, while no
+//     change has been seen, the monitor's current NBP with «ölçüm zamanı bilinmiyor» in amber, and
+//     no "≤" and no age (NBP-2, D4);
 //   * NO live region and no alert: values change every 5 s and a live region would talk over
 //     everything. The feed's trouble is a static `Note`, as BoardStrip's DEGRADED is.
 // The lock screen never shows any of this (boundaries.test.js).
@@ -42,6 +44,23 @@ function NbpValue({ cell, unit }) {
   );
 }
 
+/** NBP the monitor shows now, whose change the hub has not seen (NBP-2, D4): the numbers and the unit
+ *  as the timed form draws them, and «ölçüm zamanı bilinmiyor» in the attention tone — this interface's
+ *  "cannot vouch" (Decision 14) — rather than the muted one. No "≤", no time and no age: there is no
+ *  measurement time to bound, and the packet's age would read as the measurement's. */
+function NbpUntimedValue({ cell, unit }) {
+  const { t } = useI18n();
+  const { systolic, diastolic, mean } = cell;
+  return (
+    <>
+      <span aria-hidden="true" className="whitespace-nowrap">{`${systolic}/${diastolic} (${mean})`}</span>
+      <small aria-hidden="true" className="ml-0.5 whitespace-nowrap font-text text-10.5 font-semibold text-mute">{unit}</small>
+      <small aria-hidden="true" className="ml-1 font-text text-10.5 font-semibold text-att-ink">{t("monitor.nbpUntimed")}</small>
+      <span className="sr-only">{t("monitor.nbpUntimedSaid", { systolic, diastolic, mean, unit })}</span>
+    </>
+  );
+}
+
 function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   const { t } = useI18n();
   const cell = cellOf(param, { nowMs, fetchedAtMs, maxAgeS, feedOk });
@@ -60,6 +79,8 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
       <dd className="m-0 font-data text-14 font-bold text-ink">
         {cell.kind === "nbp" ? (
           <NbpValue cell={cell} unit={unit} />
+        ) : cell.kind === "nbp_untimed" ? (
+          <NbpUntimedValue cell={cell} unit={unit} />
         ) : cell.kind === "value" ? (
           <>
             {cell.value}

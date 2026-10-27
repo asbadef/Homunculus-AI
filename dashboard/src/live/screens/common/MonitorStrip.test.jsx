@@ -275,6 +275,113 @@ describe("NBP, with the time its value last changed", () => {
   });
 });
 
+// NBP-2 (D4): the monitor's current NBP whose change the hub has not seen, drawn apart from a timed one —
+// the numbers and the unit as every strip value, the note in the attention tone (this interface's "cannot
+// vouch", Decision 14), no «≤» and no age of measurement. The next poll that carries the change draws the
+// timed form.
+describe("NBP whose measurement time is unknown", () => {
+  const UNTIMED = param("nbp", [118, 79, 92], { state: "value_untimed", changed_at: null, measured_age_s: null });
+  const TIMED = { ...UNTIMED, state: "value", changed_at: NBP_CHANGED_AT, measured_age_s: 600 };
+  const TIME = hhmm(Date.parse(NBP_CHANGED_AT));
+  const WORDS = {
+    tr: "ölçüm zamanı bilinmiyor", az: "ölçmə vaxtı məlum deyil", ru: "время измерения неизвестно",
+    en: "measurement time unknown",
+  };
+  const SAID = {
+    tr: "118 bölü 79, ortalama 92 mmHg; ölçüm zamanı bilinmiyor",
+    az: "118 bölü 79, orta 92 mmHg; ölçmə vaxtı məlum deyil",
+    ru: "118 на 79, среднее 92 мм рт. ст.; время измерения неизвестно",
+    en: "118 over 79, mean 92 mmHg; measurement time unknown",
+  };
+  const UNIT = { tr: "mmHg", az: "mmHg", ru: "мм рт. ст.", en: "mmHg" };
+
+  it("shows S/D (M), the unit and that the measurement time is unknown, in every language", () => {
+    expect(Object.keys(WORDS).sort()).toEqual([...LANG_CODES].sort());
+    for (const lang of LANG_CODES) {
+      const { unmount } = show(<Strip entry={card([HR, UNTIMED])} />, lang);
+      const nbp = screen.getAllByRole("definition")[1];
+      expect(nbp, lang).toHaveTextContent("118/79 (92)");
+      expect(within(nbp).getByText(UNIT[lang]), lang).toHaveAttribute("aria-hidden", "true");
+      expect(within(nbp).getByText(WORDS[lang]), lang).toHaveAttribute("aria-hidden", "true");
+      expect(within(nbp).getByText(SAID[lang]), lang).toHaveClass("sr-only");
+      unmount();
+    }
+  });
+
+  it("writes the note in the attention tone, not the muted one, and the numbers in plain ink", () => {
+    show(<Strip entry={card([UNTIMED])} />);
+    const nbp = screen.getByRole("definition");
+    const note = within(nbp).getByText("ölçmə vaxtı məlum deyil");
+    expect(note).toHaveClass("text-att-ink");
+    expect(note).not.toHaveClass("text-mute");
+    expect(nbp).toHaveClass("text-ink");
+    const numbers = within(nbp).getByText("118/79 (92)");
+    expect(numbers.className).not.toMatch(/text-(?:att|mute|crit|high|mid|low|ok|v-)/);
+  });
+
+  it("shows no «≤», no time and no age: neither the measurement's nor the packet's", () => {
+    show(<Strip entry={card([UNTIMED])} />);
+    const nbp = screen.getByRole("definition");
+    expect(nbp).not.toHaveTextContent("≤");
+    expect(nbp).not.toHaveTextContent(/\d{2}:\d{2}/);
+    expect(nbp).not.toHaveTextContent(/\b(?:san|dəq|saat)\b/);
+    expect(nbp).not.toHaveTextContent("ölçmə ≤");
+    expect(nbp).not.toHaveTextContent("ölçmə gözlənilir");
+  });
+
+  it("hides the numbers, the unit and the note from a screen reader, which gets the one sentence", () => {
+    show(<Strip entry={card([UNTIMED])} />);
+    const nbp = screen.getByRole("definition");
+    for (const part of ["118/79 (92)", "mmHg", "ölçmə vaxtı məlum deyil"]) {
+      expect(within(nbp).getByText(part), part).toHaveAttribute("aria-hidden", "true");
+    }
+    const said = within(nbp).getByText(/^118 bölü 79/);
+    expect(said).toHaveClass("sr-only");
+    expect(said).not.toHaveAttribute("aria-hidden");
+    expect(said).toHaveTextContent("ölçmə vaxtı məlum deyil");
+  });
+
+  it("takes two columns of the grid, as the timed form does", () => {
+    show(<Strip entry={card([HR, UNTIMED])} />);
+    const [, nbp] = within(region()).getAllByRole("term").map((term) => term.parentElement);
+    expect(nbp.className.split(/\s+/)).toContain("col-span-2");
+  });
+
+  it("is the timed form on the next poll that carries the change: the same entry, «value» with its time", () => {
+    const { rerender } = show(<Strip entry={card([UNTIMED])} />);
+    expect(screen.getByRole("definition")).toHaveTextContent("ölçmə vaxtı məlum deyil");
+    rerender(<I18nProvider><Strip entry={card([TIMED])} /></I18nProvider>);
+    const nbp = screen.getByRole("definition");
+    expect(nbp).toHaveTextContent("118/79 (92)");
+    expect(nbp).toHaveTextContent(`ölçmə ≤ ${TIME} (10 dəq)`);
+    expect(nbp).not.toHaveTextContent("ölçmə vaxtı məlum deyil");
+  });
+
+  it("goes old with its packet: a dash and «köhnə» with the packet's age, never the number", () => {
+    show(<Strip entry={card([UNTIMED])} nowMs={NOW + 14_000} />);
+    const nbp = screen.getByRole("definition");
+    expect(nbp).toHaveTextContent("—");
+    expect(nbp).toHaveTextContent("köhnə · 16 san");
+    expect(nbp).not.toHaveTextContent("118");
+    expect(nbp).not.toHaveTextContent("ölçmə vaxtı məlum deyil");
+  });
+
+  it("draws no number off a dead feed", () => {
+    show(<Strip entry={card([UNTIMED])} feedOk={false} />);
+    const nbp = screen.getByRole("definition");
+    expect(nbp).not.toHaveTextContent("118");
+    expect(nbp).toHaveTextContent("köhnə · 2 san");
+  });
+
+  it("carries no live region, no alert and no colour of a value", () => {
+    const { container } = show(<Strip entry={card([HR, UNTIMED])} variant="full" />);
+    expect(container.querySelector("[aria-live]")).toBeNull();
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(container.querySelector("[role='status']")).toBeNull();
+    expect(container.querySelector("[class*='text-v-'], [class*='bg-crit'], [class*='text-crit'], [class*='bg-ok']")).toBeNull();
+  });
+});
+
 describe("nothing on it can be taken for an alarm", () => {
   const RISKY = ["bg-crit", "text-crit", "bg-high", "text-high", "bg-mid", "bg-low", "bg-ok", "text-ok",
     "text-v-hr", "text-v-map", "text-v-spo", "text-v-rr", "text-v-t"];
