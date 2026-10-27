@@ -74,6 +74,12 @@ export function patientFromBoard(entry) {
     // against: {pressors, on_pressor, antibiotic_given, antibiotic_at, antibiotic_clock,
     // creatinine, weight_kg}. `antibiotic_given: null` means nobody charted it either way.
     meds: entry?.meds ?? null,
+    // Aşama B (D6): the shadow engine's picture of a monitor-linked patient — {news2, vitals,
+    // findings} — and null for a patient with no monitor link. Carried through untouched: it is
+    // the engine's reading of the monitor's UNVALIDATED numbers, never mixed into `vitals`,
+    // `news2` or `alerts` above, and an absent key stays null, never {} (an empty object would
+    // read as «a shadow with nothing in it»).
+    shadow: entry?.shadow ?? null,
     // HIS demographics only; missing fields stay null.
     display_name: identity?.display_name || null,
     // Sex and date of birth come from the HIS when it sent them. They are here so the admission

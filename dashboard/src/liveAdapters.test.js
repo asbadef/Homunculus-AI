@@ -70,6 +70,22 @@ describe("patientFromBoard", () => {
     expect(patientFromBoard(zeroed).vitals)
       .toEqual({ hr: 0, map: 0, sbp: 0, spo2: 0, temp: 0, rr: 0 });
   });
+
+  it("carries the shadow engine's picture across untouched, and is null without one (Aşama B, D6)", () => {
+    // `shadow` is the engine's picture of a monitor-linked patient; a patient with no monitor link
+    // has none, and the screens tell the two apart by null. An absent key must never become {} —
+    // an empty object would read as «a shadow with nothing in it».
+    const shadow = {
+      news2: { total: 6, partial: false, missing: [], stale: [], assumed: [], breakdown: {}, red_param: false,
+               measured_at: "2026-10-27T09:01:00+00:00", fresh_until: "2026-10-27T09:16:00+00:00" },
+      vitals: { heart_rate: { value: 140, unit: "bpm", at: "2026-10-27T09:01:00+00:00", source: "monitor", via: "hr" } },
+      findings: [],
+    };
+    expect(patientFromBoard({ ...entry, shadow }).shadow).toEqual(shadow);
+    expect(patientFromBoard({ ...entry, shadow: null }).shadow).toBeNull();
+    expect(patientFromBoard(entry).shadow).toBeNull();
+    expect(patientFromBoard({ patient_id: "bed-1" }).shadow).toBeNull();
+  });
 });
 
 describe("patientsFromBoard", () => {

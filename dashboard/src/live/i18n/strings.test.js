@@ -46,6 +46,9 @@ const NEUTRAL = new Set([
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
   "monitor.p.nbp", //              NBP — the Kappa's own label for the cuff pressure
 
+  // shadow (Aşama B) · neutral — the monitor's own labels again, on the shadow box's «monitör · HR»
+  "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // HR, PLS, SpO₂, ART, NBP
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -146,6 +149,11 @@ const AZ_SAME_AS_TR = new Set([
   "patient.medsDrugEpinephrine", //    adrenalin — the same
   "patient.medsDrugDopamine", //       dopamin — the same
   "patient.medsDrugDobutamine", //     dobutamin — the same
+
+  // shadow (Aşama B) · az = tr — the monitor's own labels (HR, PLS, SpO₂, ART, NBP), not words
+  "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // as monitor.p.*
+  "shadow.weekOpened", //    açıldı — the same passive past of "açılmaq" in Azerbaijani (as auth.copied's "Kopyalandı")
+  "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
 
 ]);
 
