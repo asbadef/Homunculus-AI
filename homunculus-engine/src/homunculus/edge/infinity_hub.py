@@ -9,7 +9,7 @@ import threading
 import time
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .infinity_journal import CapacityError, ConflictError
 from .infinity_stream import MAX_BATCH, MAX_REQUEST, UnknownDevice, validate_event
@@ -56,7 +56,8 @@ async function poll(g){try{
  const q=s.collector.heartbeat?.queue;
  el('overview').textContent=s.devices.length+' cihaz · Toplayıcı: '+(s.collector.connected?'erişilebilir':'kalp atışı yok/eski')+
   ' · Bekleyen: '+(q?.rows??'bilinmiyor')+' · Kapasite nedeniyle alınamayan: '+(q?.counters?.queue_full_dropped??0)+
-  ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0);
+  ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0)+
+  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused:'');
  }catch(e){if(g!==generation)return;el('error').textContent=e.message;el('devices').replaceChildren();el('overview').textContent='Güncel durum doğrulanamıyor.';}
  if(g===generation&&key)timer=setTimeout(()=>poll(g),2000);
 }
@@ -205,11 +206,14 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         cursor, found = waves.since(names, int(since))
         now = iso_z(clock())
         timings.since("waves_read_ms", started)
+        # JSONResponse, not a bare dict: FastAPI would run its encoder on the event loop, where it
+        # blocks /v1/packets (a wall poll of 16 devices was measured at ~300 ms); this way
+        # json.dumps runs here, on the threadpool thread.
         if len(names) == 1:
-            return {"schema": WAVES_SCHEMA, "device_id": names[0], "cursor": cursor, "hub_now": now,
-                    "started": hub_started, "blocks": found[names[0]]}
-        return {"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now, "started": hub_started,
-                "devices": {name: {"blocks": found[name]} for name in names}}
+            return JSONResponse({"schema": WAVES_SCHEMA, "device_id": names[0], "cursor": cursor, "hub_now": now,
+                                 "started": hub_started, "blocks": found[names[0]]})
+        return JSONResponse({"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now, "started": hub_started,
+                             "devices": {name: {"blocks": found[name]} for name in names}})
 
     @app.post("/infinity-research/restart")
     def no_live_restart(request: Request):

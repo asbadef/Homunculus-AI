@@ -6,15 +6,17 @@ import importlib.util
 import io
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from infinity_wave_packets import ECG, at, no_signal, packet, tick
 from homunculus.edge.infinity_hub import create_hub
-from homunculus.edge.infinity_journal import Journal
+from homunculus.edge.infinity_journal import CapacityError, Journal
 from homunculus.edge.infinity_live import LiveResearchView
 from homunculus.edge.infinity_stream import Inventory, packet_event
 from homunculus.edge.infinity_timing import HUB_NAMES, valid_snapshot
@@ -52,7 +54,8 @@ def post(client, events):
 
 
 def read(client, *devices, since="0", token=VIEWER):
-    params = [("device", d) for d in devices] + [("since", since)]
+    """`since=None` leaves the parameter out of the request."""
+    params = [("device", d) for d in devices] + ([] if since is None else [("since", since)])
     return client.get("/infinity-research/waves", params=params,
                       headers={"Authorization": "Bearer " + token} if token else {})
 
@@ -71,7 +74,9 @@ def test_only_the_viewer_token_reads_the_waves(hub):
 def test_an_acknowledged_packet_reaches_the_answer_in_the_schema(hub):
     client, _, _ = hub
     assert post(client, [event(tick(*at(0)), 999.8)]).status_code == 200
-    body = read(client, BED).json()
+    answer = read(client, BED)
+    assert answer.headers["content-type"] == "application/json"
+    body = answer.json()
     assert set(body) == {"schema", "device_id", "cursor", "hub_now", "started", "blocks"}
     assert body["schema"] == SCHEMA and body["device_id"] == BED and body["cursor"] == 4
     assert body["hub_now"] == "1970-01-01T00:16:40.000Z"
@@ -91,7 +96,9 @@ def test_a_no_signal_block_is_null_and_the_cursor_moves_on(hub):
 def test_several_monitors_in_one_request_share_one_cursor(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0, 0), event(tick(*at(0)), 1000.0, 1)])
-    body = read(client, BED, OTHER).json()
+    answer = read(client, BED, OTHER)
+    assert answer.headers["content-type"] == "application/json"
+    body = answer.json()
     assert set(body) == {"schema", "cursor", "hub_now", "started", "devices"}
     assert body["cursor"] == 8 and set(body["devices"]) == {BED, OTHER}
     assert all(len(entry["blocks"]) == 4 for entry in body["devices"].values())
@@ -121,6 +128,34 @@ def test_a_monitor_the_inventory_does_not_list_is_404(hub):
     assert read(client, BED, "192.0.2.99").status_code == 404
 
 
+def test_since_left_out_counts_as_zero_but_present_and_empty_is_400(hub):
+    client, _, _ = hub
+    post(client, [event(tick(*at(0)), 1000.0)])
+    body = read(client, BED, since=None).json()
+    assert body["cursor"] == 4 and len(body["blocks"]) == 4
+    assert read(client, BED, since="").status_code == 400
+
+
+def test_sixteen_devices_pass_the_bound_and_seventeen_do_not(hub):
+    client, _, _ = hub
+    sixteen = [f"192.0.2.{i}" for i in range(1, 17)]
+    assert read(client, *sixteen).status_code == 404            # past the 400 gate: only .1 and .2 are listed
+    assert read(client, *sixteen, "192.0.2.17").status_code == 400
+
+
+def test_a_wrong_token_is_401_before_any_other_check(hub, tmp_path):
+    client, _, _ = hub
+    seventeen = [f"192.0.2.{i}" for i in range(17)]
+    assert read(client, *seventeen, token=COLLECTOR).status_code == 401        # not 400
+    assert read(client, "192.0.2.99", token=None).status_code == 401           # not 404
+    journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
+    try:
+        with TestClient(create_hub(INV, journal, COLLECTOR, VIEWER)) as plain:
+            assert read(plain, BED, token=COLLECTOR).status_code == 401        # not 409
+    finally:
+        journal.close()
+
+
 def test_without_waves_the_route_is_409_and_waves_need_payload_acceptance(tmp_path):
     journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
     try:
@@ -139,6 +174,18 @@ def test_a_refused_batch_feeds_the_waves_nothing(hub):
     assert waves.cursor == 0
 
 
+def test_a_batch_the_journal_cannot_hold_feeds_the_waves_nothing(hub, monkeypatch):
+    client, waves, _ = hub
+
+    def full(*args, **kwargs):
+        raise CapacityError("full")
+
+    monkeypatch.setattr(Journal, "append", full)
+    assert post(client, [event(tick(*at(0)), 1000.0)]).status_code == 507
+    assert waves.cursor == 0 and waves.refused == 0
+    assert "waves_ms" not in status(client)["timings"]
+
+
 def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0)])
@@ -146,6 +193,42 @@ def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     seen = status(client)["timings"]
     assert seen["waves_ms"][0] == 1 and seen["waves_read_ms"][0] == 1
     assert valid_snapshot(seen, HUB_NAMES)
+
+
+def test_only_a_read_that_answers_is_timed(hub):
+    client, _, _ = hub
+    assert read(client, "192.0.2.99").status_code == 404
+    assert read(client, BED, since="x").status_code == 400
+    assert read(client, BED, token=None).status_code == 401
+    assert "waves_read_ms" not in status(client)["timings"]
+    assert read(client).status_code == 400
+    assert read(client, BED).status_code == 200
+    assert status(client)["timings"]["waves_read_ms"][0] == 1
+
+
+def test_the_answer_is_encoded_on_a_threadpool_thread_not_on_the_event_loop(hub, monkeypatch):
+    # A bare dict would be encoded by FastAPI on the loop after the threadpool hop, where it holds up
+    # /v1/packets (a wall poll of 16 devices: ~300 ms). /v1/packets is the loop's own handler, so the
+    # thread that renders its answer is the loop thread; the waves answer must render on another.
+    client, _, _ = hub
+    rendered, original = [], JSONResponse.render
+
+    def render(self, content):
+        rendered.append(threading.get_ident())
+        return original(self, content)
+
+    monkeypatch.setattr(JSONResponse, "render", render)
+    post(client, [event(tick(*at(0)), 1000.0)])
+    loop_thread = rendered[-1]
+    assert read(client, BED).status_code == 200
+    assert read(client, BED, OTHER).status_code == 200
+    assert rendered[-2] != loop_thread and rendered[-1] != loop_thread
+
+
+def test_the_hub_page_shows_the_wave_counters(hub):
+    client, _, _ = hub
+    script = client.get("/app.js").text
+    assert "s.waves.cursor" in script and "s.waves.refused" in script
 
 
 def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
@@ -201,7 +284,7 @@ def _run(tmp_path, monkeypatch, *flags):
 
 def test_the_runner_decodes_waves_with_live_research_and_says_so(tmp_path, monkeypatch):
     code, out, served = _run(tmp_path, monkeypatch, "--capture-payload", "--unverified-live-research")
-    assert code == 0 and "Waveform blocks decoded for display only" in out
+    assert code == 0 and "Waveform blocks decoded for display only" in out and "the last 20 s in memory" in out
     with TestClient(served[0]) as client:
         assert read(client, BED).json()["blocks"] == []
 
