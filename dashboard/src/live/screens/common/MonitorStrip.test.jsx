@@ -8,7 +8,7 @@ import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
 import { LANG_CODES } from "../../i18n/langs.js";
 import { AT, NBP_CHANGED_AT, STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
-import { MonitorFeedChip, MonitorStrip } from "./MonitorStrip.jsx";
+import { MonitorFeedChip, MonitorStrip, stripOn } from "./MonitorStrip.jsx";
 
 const NOW = Date.parse("2026-10-08T10:00:05Z");
 
@@ -325,5 +325,25 @@ describe("the feed chip", () => {
   it("says the table is missing, beside the counts", () => {
     show(<MonitorFeedChip data={{ ...ward, table: { ...ward.table, status: "missing", reason: "dosya yok" } }} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
     expect(screen.getByRole("note")).toHaveTextContent("Cihaz→çarpayı cədvəli yoxdur və ya etibarsızdır");
+  });
+});
+
+// Aşama B (D7): with the rules switched on the API answers `stage: "rules"` (the route overwrites
+// board_view's "shadow" with the running stage). The strip is the same strip in both.
+describe("stripOn — the answers that are a strip that is on", () => {
+  it("accepts «shadow» and «rules», and nothing else", () => {
+    expect(stripOn({ stage: "shadow" })).toBe(true);
+    expect(stripOn({ stage: "rules" })).toBe(true);
+    for (const data of [STAGE_OFF, { stage: "alarms" }, { stage: "Rules" }, { stage: "" }, {}, null, undefined, "rules"]) {
+      expect(stripOn(data), JSON.stringify(data)).toBe(false);
+    }
+  });
+
+  it("the feed chip counts at the rules stage as at the shadow one, and draws nothing for «off»", () => {
+    const ward = { ...strip({ beds: [card(), bed("REA-01 · 3", [], { status: "silent" })] }), stage: "rules" };
+    const { container, rerender } = show(<MonitorFeedChip data={ward} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
+    expect(screen.getByText(/məlumat göndərir/).closest("span")).toHaveTextContent("1/2 məlumat göndərir · 1 susur");
+    rerender(<I18nProvider><MonitorFeedChip data={{ ...ward, stage: "off" }} phase="ok" nowMs={NOW} fetchedAtMs={NOW} /></I18nProvider>);
+    expect(container.innerHTML).toBe("");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { ddmm, hhmm } from "../../i18n/dates.js";
 import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { fakeAudio, fakeNotifications, onPage } from "../../signals/fakeAudio.testutil.js";
@@ -180,5 +181,131 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     await legend({ stage: "off" });
     expect(screen.queryByRole("heading", { name: "Monitor zolağı (təsdiqlənməmiş)" })).toBeNull();
     expect(screen.getByRole("heading", { level: 2, name: "Siqnal səsi" })).toBeInTheDocument();
+  });
+});
+
+// Aşama B (D7): the week's list of what the shadow engine would have alerted on — Settings, in the tab
+// that holds the monitor legend, and only while the hospital runs the rules.
+describe("SettingsScreen — «Uyarsaydı — son 7 gün» (Aşama B)", () => {
+  const OPENED_A = "2026-10-27T05:10:00+00:00";
+  const OPENED_B = "2026-10-26T09:00:00+00:00";
+  const CLEARED_B = "2026-10-26T09:40:00+00:00";
+  const WEEK = { days: 7, findings: [
+    { patient_id: "S-002", kind: "sepsis", severity: "critical", opened_at: OPENED_A, cleared_at: null },
+    { patient_id: "S-001", kind: "news2", severity: "high", opened_at: OPENED_B, cleared_at: CLEARED_B },
+  ] };
+  const RULES = { stage: "rules", beds: [], unassigned: [], feed: { state: "ok" } };
+  const settle = () => act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+  const stamp = (iso) => `${ddmm(Date.parse(iso))} ${hhmm(Date.parse(iso))}`;
+  const section = () => document.querySelector("[data-shadow-week]");
+
+  async function week(answer, list) {
+    const mounted = await mount(<SettingsScreen />);
+    mounted.api.shadowBoard.mockResolvedValue(answer);
+    if (typeof list === "function") mounted.api.shadowFindings.mockImplementation(list);
+    else if (list instanceof Error) mounted.api.shadowFindings.mockRejectedValue(list);
+    else mounted.api.shadowFindings.mockResolvedValue(list);
+    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); });
+    tab("Səs və bildiriş");
+    await settle();
+    await settle();
+    return mounted;
+  }
+
+  it("lists the week: five columns, the API's order, the opening and closing stamps as dd.MM hh:mm, «açıq» for an open one", async () => {
+    const { api } = await week(RULES, WEEK);
+    expect(api.shadowFindings).toHaveBeenCalledWith(7);
+    expect(screen.getByRole("heading", { level: 2, name: "Xəbərdarlıq edərdi — son 7 gün" })).toBeInTheDocument();
+    expect(section()).toHaveTextContent(/Yalnız kölgədə açılan tapıntılar/);
+    const table = within(section()).getByRole("table", { name: "Xəbərdarlıq edərdi — son 7 gün" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Xəstə", "Tapıntı", "Səviyyə", "Açılış", "Bağlanış"]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => [within(r).getByRole("rowheader").textContent, ...within(r).getAllByRole("cell").map((c) => c.textContent)])).toEqual([
+      ["S-002", "sepsis", "Kritik", stamp(OPENED_A), "açıq"],
+      ["S-001", "news2", "Yüksək", stamp(OPENED_B), stamp(CLEARED_B)],
+    ]);
+  });
+
+  it("is a dashed box in the legend's tab, after the legend, and says it is for the weekly review", async () => {
+    await week(RULES, WEEK);
+    const legend = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" });
+    expect(legend.compareDocumentPosition(section()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section().querySelector(".rounded-box").className).toContain("!border-dashed");
+    expect(screen.getByRole("tabpanel")).toContainElement(section());
+  });
+
+  it("says there is nothing when the list is empty", async () => {
+    await week(RULES, { days: 7, findings: [] });
+    expect(section()).toHaveTextContent("Son 7 gündə kölgə tapıntı yoxdur.");
+    expect(within(section()).queryByRole("table")).toBeNull();
+  });
+
+  it("says the list is unavailable when it cannot be read — a refusal, an outage, or a body that is not a list", async () => {
+    for (const list of [Object.assign(new Error("forbidden"), { status: 403 }), new Error("down"), { days: 7 }]) {
+      await week(RULES, list);
+      expect(within(section()).getByRole("note")).toHaveTextContent("Kölgə siyahı oxuna bilmədi.");
+      expect(within(section()).queryByRole("table")).toBeNull();
+      expect(section()).not.toHaveTextContent("Son 7 gündə kölgə tapıntı yoxdur.");   // an unread list is not an empty one
+      cleanup();
+    }
+  });
+
+  it("says it is reading while the list is on its way, and nothing about it being empty", async () => {
+    let release;
+    await week(RULES, () => new Promise((resolve) => { release = resolve; }));
+    expect(section()).toHaveTextContent("Siyahı oxunur…");
+    expect(section()).not.toHaveTextContent("kölgə tapıntı yoxdur");
+    await act(async () => { release(WEEK); });
+    expect(section()).not.toHaveTextContent("Siyahı oxunur…");
+    expect(within(section()).getByRole("table")).toBeInTheDocument();
+  });
+
+  it("is not there at the shadow stage or with the stage off — and the list is never asked for", async () => {
+    for (const answer of [{ stage: "shadow", beds: [], unassigned: [], feed: { state: "ok" } }, { stage: "off" }]) {
+      const { api } = await week(answer, WEEK);
+      expect(section(), answer.stage).toBeNull();
+      expect(screen.queryByText(/son 7 gün/)).toBeNull();
+      expect(api.shadowFindings, answer.stage).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("asks again when the tab is opened again, and not on every poll of the strip", async () => {
+    const { api } = await week(RULES, WEEK);
+    expect(api.shadowFindings).toHaveBeenCalledTimes(1);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle();
+    expect(api.shadowFindings).toHaveBeenCalledTimes(1);
+    tab("Görünüş");
+    expect(section()).toBeNull();
+    tab("Səs və bildiriş");
+    await settle();
+    expect(api.shadowFindings).toHaveBeenCalledTimes(2);
+  });
+
+  it("writes a dash for a stamp that does not parse, never a made-up time", async () => {
+    await week(RULES, { days: 7, findings: [{ patient_id: "S-003", kind: "news2", severity: "high", opened_at: "not a time", cleared_at: "also not" }] });
+    const cells = within(within(section()).getAllByRole("row")[1]).getAllByRole("cell").map((c) => c.textContent);
+    expect(cells.slice(-2)).toEqual(["—", "—"]);          // the opening and the closing stamp
+  });
+
+  it("reads a severity this build does not know as the engine sent it, in the attention words, never as a calm one", async () => {
+    await week(RULES, { days: 7, findings: [{ patient_id: "S-003", kind: "news2", severity: "extreme", opened_at: OPENED_A, cleared_at: null }] });
+    expect(section()).toHaveTextContent("Naməlum risk: extreme");
+  });
+
+  it("has no live region and no colour of its own: it is read when the reader goes there", async () => {
+    await week(RULES, WEEK);
+    expect(section().querySelector("[aria-live], [role='alert'], [role='status']")).toBeNull();
+    expect(section().outerHTML).not.toMatch(/text-(crit|high|mid|low|ok)\b/);
+  });
+
+  it("drops the answer of a list that lands after the tab was left", async () => {
+    let release;
+    const { api } = await week(RULES, () => new Promise((resolve) => { release = resolve; }));
+    tab("Görünüş");
+    await act(async () => { release(WEEK); });
+    expect(section()).toBeNull();
+    expect(api.shadowFindings).toHaveBeenCalledTimes(1);
   });
 });

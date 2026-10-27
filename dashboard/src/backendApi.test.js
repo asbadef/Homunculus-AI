@@ -440,6 +440,28 @@ describe("backendApi — what the work screens call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 
+  it("reads Aşama B's week of shadow findings with an authed GET /infinity-shadow/findings?days=N", async () => {
+    const body = { days: 7, findings: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body));
+    const api = signedIn(fetchMock);
+    expect(await api.shadowFindings()).toEqual(body);
+    expect(await api.shadowFindings(3)).toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/infinity-shadow/findings?days=7");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/infinity-shadow/findings?days=3");
+  });
+
+  it("refuses to put anything but a whole number of days on the address", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ days: 7, findings: [] }));
+    const api = signedIn(fetchMock);
+    for (const days of ["7&x=1", "../board", 1.5, NaN, -1, 0, null]) {
+      expect(() => api.shadowFindings(days), String(days)).toThrow(TypeError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("records that a patient was opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);

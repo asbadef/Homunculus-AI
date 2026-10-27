@@ -3,13 +3,14 @@
 // says you are, your password (local accounts) and what the hospital decided about two-step
 // verification and the screen lock. Every signed-in user reaches it; it is the home of a session
 // whose work screens a later wave builds.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { ddmmhhmm } from "../../i18n/dates.js";
 import { useTheme } from "../../theme/ThemeProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { PasswordForm } from "../../auth/PasswordForm.jsx";
 import { useAlarmSignals } from "../../signals/AlarmSignals.jsx";
-import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, useToast } from "../../ui/index.js";
+import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, riskStyle, useToast } from "../../ui/index.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { stripOn } from "../common/MonitorStrip.jsx";
 import { EVIDENCE, PARAM_ORDER, PARTIAL } from "../common/monitor.js";
@@ -155,6 +156,81 @@ function MonitorLegend() {
   );
 }
 
+/** An engine stamp as `dd.MM hh:mm` in the reader's clock, or a dash for one that does not parse — the
+ *  week's list spans days, so every stamp carries its day and month. */
+function whenOf(iso) {
+  const ms = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(ms) ? ddmmhhmm(ms) : "—";
+}
+
+/** Aşama B (D7): «Uyarsaydı — son 7 gün» — every finding the shadow engine opened in the last week, with
+ *  when it cleared: the ones that would not have appeared without the monitor's unvalidated inputs. It is
+ *  the material of the weekly review, nothing more: no row opens a patient, nothing rings, nothing in it
+ *  is coloured by its severity (the word carries it), and it is read when the reader opens this tab —
+ *  fetched once per opening, never polled, never live. Only while the hospital runs the rules (`stage`
+ *  «rules»): at «shadow» or «off» there is no shadow engine to ask, and nothing is asked. A list that
+ *  could not be read says so; it never reads as an empty week. */
+function ShadowWeek() {
+  const { t } = useI18n();
+  const shadow = useShadow();
+  const { store } = shadow;
+  const rules = shadow.data?.stage === "rules";
+  const [week, setWeek] = useState({ phase: "loading", findings: [] });
+  useEffect(() => {
+    if (!rules) return undefined;
+    let current = true;
+    setWeek({ phase: "loading", findings: [] });
+    store.findings(7).then(
+      (body) => { if (current) setWeek({ phase: "ok", findings: body.findings }); },
+      () => { if (current) setWeek({ phase: "failed", findings: [] }); },
+    );
+    return () => { current = false; };
+  }, [rules, store]);
+  if (!rules) return null;
+  return (
+    <div data-shadow-week="">
+      <Box title={t("shadow.week")} icon="clock" level={2} className="!border-dashed">
+        <p className="m-0 text-13 text-mute">{t("shadow.weekHelp")}</p>
+        {week.phase === "loading" ? (
+          <p className="m-0 mt-2 text-13 text-mute">{t("shadow.weekLoading")}</p>
+        ) : week.phase === "failed" ? (
+          <Note tone="warn" className="mt-2">{t("shadow.weekUnavailable")}</Note>
+        ) : week.findings.length === 0 ? (
+          <p className="m-0 mt-2 text-13">{t("shadow.weekNone")}</p>
+        ) : (
+          <div className="mt-2">
+            <Table caption={t("shadow.week")}>
+              <thead>
+                <tr>
+                  <th scope="col">{t("shadow.colPatient")}</th>
+                  <th scope="col">{t("shadow.colKind")}</th>
+                  <th scope="col">{t("shadow.colSeverity")}</th>
+                  <th scope="col">{t("shadow.colOpened")}</th>
+                  <th scope="col">{t("shadow.colCleared")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {week.findings.map((f, i) => {
+                  const severity = riskStyle(f.severity, { measured: true });
+                  return (
+                    <tr key={`${f.patient_id}:${f.kind}:${f.opened_at}:${i}`}>
+                      <th scope="row" className="font-data">{f.patient_id}</th>
+                      <td className="font-data">{f.kind}</td>
+                      <td>{t(severity.labelKey, severity.labelVars)}</td>
+                      <td className="whitespace-nowrap">{whenOf(f.opened_at)}</td>
+                      <td className="whitespace-nowrap">{f.cleared_at ? whenOf(f.cleared_at) : t("shadow.weekOpen")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        )}
+      </Box>
+    </div>
+  );
+}
+
 /** The alarm sound and the critical-alarm notification for this browser (signals/AlarmSignals.jsx):
  *  what the previous workspace's two top-bar buttons did, with what each state means said out loud. */
 function Signals() {
@@ -179,6 +255,7 @@ function Signals() {
         {notify === "granted" ? <Button className="mt-2" onClick={testNotify}>{t("signals.notifyTest")}</Button> : null}
       </Box>
       <MonitorLegend />
+      <ShadowWeek />
     </div>
   );
 }

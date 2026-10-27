@@ -126,3 +126,44 @@ describe("the monitor screen", () => {
     expect(screen.queryByText(/Alınan göndəriş/)).toBeNull();
   });
 });
+
+// Aşama B: with the rules on the stage reads «rules», and a lane that has failed says so beside the
+// feed's own state — a static note, never an alarm. Absent or «ok», it says nothing.
+describe("the monitor screen — the shadow engine's lane (Aşama B)", () => {
+  const rules = (feed = {}) => ({ ...strip({ beds: [bed("REA-01 · 2", [param("hr", 72)])], feed }), stage: "rules" });
+  const LANE = "kölgə mühərrik: xəta";
+
+  it("draws the strip at the rules stage as at the shadow one", async () => {
+    await open(rules());
+    expect(screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" })).toHaveTextContent("72");
+    expect(screen.getByText("Cədvəl versiyası 1 · ab12cd34ef56")).toBeInTheDocument();
+  });
+
+  it("says the shadow engine's lane is in error, as an amber note beside the feed state", async () => {
+    await open(rules({ rules_state: "error" }));
+    const note = screen.getByText(LANE).closest("[role='note']");
+    expect(note).not.toBeNull();
+    expect(note).toHaveAttribute("data-tone", "warn");
+    expect(note.querySelector("[aria-live], [role='alert'], [role='status']")).toBeNull();
+    // Beside the feed's chip, in the same row, not further down the screen.
+    expect(note.parentElement).toBe(screen.getByText(/məlumat göndərir/).closest("div"));
+  });
+
+  it("says nothing when the key is absent or the lane is ok", async () => {
+    await open(rules());
+    expect(screen.queryByText(LANE)).toBeNull();
+    cleanup();
+    await open(rules({ rules_state: "ok" }));
+    expect(screen.queryByText(LANE)).toBeNull();
+  });
+
+  it("does not repeat a lane error from a read it cannot vouch for", async () => {
+    const mounted = await open(rules({ rules_state: "error" }));
+    expect(screen.getByText(LANE)).toBeInTheDocument();
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 18_000);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.queryByText(LANE)).toBeNull();
+    expect(screen.getAllByText("Monitor zolağı oxunmur").length).toBeGreaterThan(0);
+  });
+});

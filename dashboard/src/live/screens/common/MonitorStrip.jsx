@@ -151,8 +151,10 @@ export function MonitorStrip({
   );
 }
 
-/** Whether a board answer is a strip that is on — the only one a screen draws anything for. */
-export const stripOn = (data) => data?.stage === "shadow";
+/** Whether a board answer is a strip that is on — the only one a screen draws anything for. `rules` is
+ *  Aşama B's running stage (the route overwrites board_view's "shadow" with it): the same strip, plus
+ *  the shadow engine's answer on the patient cards. */
+export const stripOn = (data) => data?.stage === "shadow" || data?.stage === "rules";
 
 /** Whether the strip's state cannot be vouched for now: the last poll failed, or the answer it
  *  holds is older than the display limit (a poll that hangs, a hidden tab, a sleeping PC), or its

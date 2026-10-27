@@ -19,26 +19,22 @@
 // is a time from last night that looks like one from an hour ago (the Meds box's rule, final review M1).
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { ddmm, ddmmyyyy, hhmm } from "../../../i18n/dates.js";
+import { dayStamp } from "../../../i18n/dates.js";
 import { Box, Note, StatusPill, Tag, riskStyle } from "../../../ui/index.js";
+import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadowVitals.js";
 
 // StatusPill has no `warn` (that is Tag's tone; ui/index.js lists each component's own): the same amber,
 // «the warning tag's look for a value the screen cannot vouch for», is its `att`. A relation this build
 // does not know takes it too.
 const REL_TONE = { same: "neutral", shadow_only: "att", level_differs: "att" };
 const REL_KEY = { same: "shadow.relSame", shadow_only: "shadow.relShadowOnly", level_differs: "shadow.relLevel" };
-const VIA_KEY = { hr: "shadow.viaHr", pls: "shadow.viaPls", spo2: "shadow.viaSpo2", art: "shadow.viaArt", nbp: "shadow.viaNbp" };
-const CODE_LABEL = { heart_rate: "board.chHr", spo2: "board.chSpo2", sbp: "board.chSbp", map: "board.chMap" };
-const CODE_UNIT = { heart_rate: "board.unitBpm", spo2: "board.unitPct", sbp: "board.unitMmhg", map: "board.unitMmhg" };
-
-const own = (table, key) => (typeof key === "string" && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
 
 /** An engine stamp as the reader's clock — the time alone for today, with its day and month for any
  *  other day — or null for one that does not parse. The two dates are compared as written. */
 function stamp(iso, nowMs) {
   const ms = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
   if (!Number.isFinite(ms)) return null;
-  return ddmmyyyy(ms) === ddmmyyyy(nowMs) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`;
+  return dayStamp(ms, nowMs);
 }
 
 export function ShadowFindingsBox({ shadow, level = 2 }) {

@@ -526,6 +526,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/infinity-shadow/board");
     },
 
+    /** Aşama B: the findings the shadow engine opened or closed in the last `days` days, newest first
+     *  (GET /infinity-shadow/findings?days=N → `{days, findings: [{patient_id, kind, severity, opened_at,
+     *  cleared_at}]}`) — Settings' weekly review. Read by the shadow store only, with the board poll's
+     *  own bearer and refresh-and-retry. A whole number of days and nothing else goes on the address. */
+    shadowFindings(days = 7) {
+      if (!Number.isInteger(days) || days < 1) throw new TypeError("shadowFindings(days): a whole number of days, 1 or more");
+      return authed(`/infinity-shadow/findings?days=${days}`);
+    },
+
     /** What the caller may see, and why. The administration screen reads it for one thing it
      *  cannot ask any other way: `PUT /scope/{id}` is refused (403) unless the CALLER's own scope
      *  is unrestricted by role (`scope/router.py put_scope`, `SCOPE_UNRESTRICTED_ROLES`), which no

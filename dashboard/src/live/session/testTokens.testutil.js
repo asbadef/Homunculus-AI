@@ -54,6 +54,8 @@ export function fakeApi(vi, { access = null } = {}) {
     serverClockSkewMs: vi.fn(() => null),
     // Aşama A's unvalidated monitor strip (data/shadowStore.js)
     shadowBoard: vi.fn(),
+    // Aşama B: Settings' «Uyarsaydı — son 7 gün» list (shadowStore.findings)
+    shadowFindings: vi.fn(),
     // Group 2 · slice 1: the patient screen's trend charts and the patient's own normal
     patientTrends: vi.fn(),
     putPatientProfile: vi.fn(),

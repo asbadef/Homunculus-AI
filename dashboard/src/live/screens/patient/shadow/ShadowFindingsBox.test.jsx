@@ -183,16 +183,16 @@ describe("the shadow findings", () => {
     const summary = within(a).getByText("NEWS2 6 on the monitor's inputs");
     expect(summary).toHaveAttribute("lang", "en");
     expect(a).toHaveTextContent("Yüksek");
-    expect(a).toHaveTextContent(`${hhmm(Date.parse(T0))}'den beri`);
+    expect(a).toHaveTextContent(`açılış ${hhmm(Date.parse(T0))}`);
 
     expect(within(b).getByText("gerçek bulguyla aynı")).toHaveAttribute("data-tone", "neutral");
     expect(within(b).getByText("Systolic pressure 88 on the arterial line")).toHaveAttribute("lang", "en");
     expect(b).toHaveTextContent("Orta");
-    expect(b.textContent).not.toContain("beri"); // no `since`, no «since when»
+    expect(b.textContent).not.toContain("açılış"); // no `since`, no «since when»
 
     expect(within(c).getByText("düzey farklı")).toHaveAttribute("data-tone", "att");
     expect(c).toHaveTextContent("Kritik");
-    expect(c).toHaveTextContent(`${hhmm(Date.parse(T1))}'den beri`);
+    expect(c).toHaveTextContent(`açılış ${hhmm(Date.parse(T1))}`);
   });
 
   it("writes the day and month of a finding or an input that is not from today (the Meds box's M1 rule)", () => {
@@ -204,8 +204,8 @@ describe("the shadow findings", () => {
       findings: [finding({ since: yesterday }), finding({ kind: "sepsis", since: T0 })],
     }} />, "tr");
     const [old, fresh] = items();
-    expect(old).toHaveTextContent(`${dated}'den beri`);
-    expect(fresh).toHaveTextContent(`${hhmm(Date.parse(T0))}'den beri`);
+    expect(old).toHaveTextContent(`açılış ${dated}`);
+    expect(fresh).toHaveTextContent(`açılış ${hhmm(Date.parse(T0))}`);
     expect(fresh.textContent).not.toContain(ddmm(Date.parse(T0)));
     expect(screen.getByText("Nabız", { selector: "dt" }).closest("div")).toHaveTextContent(`monitör · HR · ${dated}`);
   });
@@ -214,7 +214,7 @@ describe("the shadow findings", () => {
     show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [finding({ since: "not a time" })] }} />, "tr");
     const [only] = items();
     expect(only).toHaveTextContent("Yüksek");
-    expect(only.textContent).not.toContain("beri");
+    expect(only.textContent).not.toContain("açılış");
     expect(only.textContent).not.toMatch(/NaN/);
   });
 
@@ -247,8 +247,8 @@ describe("the shadow findings", () => {
 
 describe("the shadow box in every language", () => {
   const WORDS = {
-    tr: { title: "Gölge öneri", tag: "alarm kapalı", rel: ["yalnız gölgede", "gerçek bulguyla aynı", "düzey farklı"], since: `${hhmm(Date.parse(T0))}'den beri`, news2: "Gölge NEWS2: 6", none: "Monitör girdileriyle açık bulgu yok." },
-    az: { title: "Kölgə tövsiyə", tag: "siqnal söndürülüb", rel: ["yalnız kölgədə", "həqiqi tapıntı ilə eyni", "səviyyə fərqlidir"], since: `${hhmm(Date.parse(T0))}-dən bəri`, news2: "Kölgə NEWS2: 6", none: "Monitor girişləri ilə açıq tapıntı yoxdur." },
+    tr: { title: "Gölge öneri", tag: "alarm kapalı", rel: ["yalnız gölgede", "gerçek bulguyla aynı", "düzey farklı"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: "Gölge NEWS2: 6", none: "Monitör girdileriyle açık bulgu yok." },
+    az: { title: "Kölgə tövsiyə", tag: "siqnal söndürülüb", rel: ["yalnız kölgədə", "həqiqi tapıntı ilə eyni", "səviyyə fərqlidir"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: "Kölgə NEWS2: 6", none: "Monitor girişləri ilə açıq tapıntı yoxdur." },
     ru: { title: "Теневая рекомендация", tag: "тревога выключена", rel: ["только в тени", "совпадает с реальной", "уровень отличается"], since: `с ${hhmm(Date.parse(T0))}`, news2: "Теневой NEWS2: 6", none: "По входам монитора открытых находок нет." },
     en: { title: "Shadow advice", tag: "alarm off", rel: ["shadow only", "same as the real finding", "level differs"], since: `since ${hhmm(Date.parse(T0))}`, news2: "Shadow NEWS2: 6", none: "No open finding on the monitor's inputs." },
   };

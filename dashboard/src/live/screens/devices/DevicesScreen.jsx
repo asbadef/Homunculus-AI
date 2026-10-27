@@ -59,6 +59,9 @@ function Strip({ shadow }) {
     <>
       <div className="flex flex-wrap items-center gap-2">
         <MonitorFeedChip data={data} phase={phase} nowMs={shadow.nowMs} fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
+        {/* Aşama B: the shadow engine's lane has failed. The feed is the monitor's; this is the rules' own
+            trouble, said beside it (a static note, as the feed's is) — and only from a read the screen can vouch for. */}
+        {known && data.feed?.rules_state === "error" ? <Note tone="warn">{t("shadow.laneError")}</Note> : null}
       </div>
       {table.status === "ok" ? (
         <p className="m-0 font-data text-12.5 text-mute">

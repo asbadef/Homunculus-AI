@@ -154,6 +154,7 @@ const AZ_SAME_AS_TR = new Set([
   "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // as monitor.p.*
   "shadow.weekOpened", //    açıldı — the same passive past of "açılmaq" in Azerbaijani (as auth.copied's "Kopyalandı")
   "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
+  "shadow.since", //         açılış {time} — "opening {time}", the same noun as colOpened; chosen over "{time}'den beri" / "{time}-dən bəri", whose suffix has to agree with the time's last vowel (reviewed 2026-10-27, Task 10)
 
 ]);
 

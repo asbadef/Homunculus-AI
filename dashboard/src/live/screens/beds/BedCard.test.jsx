@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { patientFromBoard, alertsFromPatients } from "../../../liveAdapters.js";
@@ -365,5 +365,111 @@ describe("the bed card — the monitor strip", () => {
     expect(link.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(strip).toHaveTextContent("72");
     expect(strip).toHaveTextContent("Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır");
+  });
+});
+
+// Aşama B (D7): the shadow engine's one-line answer on a monitor-linked bed — an amber tag in the monitor
+// slot, outside the patient link, never a risk pill, never a row among the alarms.
+describe("the bed card — the shadow tag", () => {
+  const FINDING = { kind: "news2", severity: "high", urgency: "immediate", summary: "NEWS2 6 on the monitor's inputs",
+    evidence: [], relation: "shadow_only", stale_inputs: [], downgraded: false, since: null };
+  const shadowOf = (over = {}) => ({ news2: { total: 6, partial: false }, vitals: {}, findings: [FINDING], ...over });
+  const STRIP = { entry: monitorBed("REA-01 · 2", [monitorParam("hr", 72)], { link: "one", patient_id: "S-001" }),
+    nowMs: NOW, fetchedAtMs: NOW, maxAgeS: 15, feedOk: true };
+
+  function withShadow(shadow, { monitor, alarms = [] } = {}) {
+    const patient = patientFromBoard(entry("S-001", alarms, { identity: identity(), at: measured(30), shadow }));
+    return render(
+      <I18nProvider>
+        <ul><BedCard patient={patient} alerts={alertsFromPatients([patient])} nowMs={NOW} connection={CONNECTION.LIVE} monitor={monitor} /></ul>
+      </I18nProvider>,
+    );
+  }
+  const tag = () => document.querySelector("[data-shadow-tag]");
+  afterEach(() => localStorage.clear());
+
+  it("says «shadow advice · NEWS2 n» in amber when the shadow has a finding", () => {
+    withShadow(shadowOf(), { monitor: STRIP });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6");
+    expect(tag().querySelector("[data-tone]")).toHaveAttribute("data-tone", "warn");
+  });
+
+  it("says «no shadow advice», in the same amber, when it has none", () => {
+    withShadow(shadowOf({ findings: [] }), { monitor: STRIP });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə yoxdur");
+    expect(tag().querySelector("[data-tone]")).toHaveAttribute("data-tone", "warn");
+    expect(tag()).not.toHaveTextContent("NEWS2");
+  });
+
+  it("writes a dash for a NEWS2 total the engine did not send, never a made-up number", () => {
+    withShadow(shadowOf({ news2: null }));
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 —");
+    cleanup();
+    withShadow(shadowOf({ news2: { total: 0, partial: false } }));
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 0");       // a measured 0 is a number
+  });
+
+  it("treats a shadow with no findings key as having none", () => {
+    withShadow({ news2: { total: 3 }, vitals: {} });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə yoxdur");
+  });
+
+  it("sits in the monitor slot, after the strip and outside the patient link", () => {
+    withShadow(shadowOf(), { monitor: STRIP });
+    const slot = document.querySelector("[data-monitor-slot]");
+    const strip = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    expect(slot.contains(strip)).toBe(true);
+    expect(slot.contains(tag())).toBe(true);
+    expect(strip.compareDocumentPosition(tag()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.contains(tag())).toBe(false);
+    expect(strip.contains(tag())).toBe(false);
+  });
+
+  it("still shows the tag, in the slot, when the strip is momentarily not there", () => {
+    withShadow(shadowOf(), { monitor: undefined });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6");
+    expect(document.querySelector("[data-monitor-slot]").contains(tag())).toBe(true);
+    expect(document.querySelector("[data-monitor-strip]")).toBeNull();
+  });
+
+  it("shows nothing — no tag and no empty slot — without a shadow", () => {
+    for (const shadow of [null, undefined]) {
+      withShadow(shadow);
+      expect(tag()).toBeNull();
+      expect(document.querySelector("[data-monitor-slot]")).toBeNull();
+      cleanup();
+    }
+    withShadow(null, { monitor: STRIP });
+    expect(tag()).toBeNull();
+    expect(document.querySelector("[data-monitor-slot]")).not.toBeNull();     // the strip's own slot, as before
+  });
+
+  it("changes nothing the card says about the patient: the risk pill, the alarm rows and the NEWS2 are the same with or without it", () => {
+    const alarms = [alarm("septic_shock", "critical", { summary: "Septik şok ölçütləri qarşılandı" })];
+    const link = () => screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    withShadow(null, { alarms });
+    const without = link().textContent;
+    const rail = document.querySelector("[data-rail]").getAttribute("data-rail");
+    cleanup();
+    withShadow(shadowOf(), { monitor: STRIP, alarms });
+    expect(link().textContent).toBe(without);
+    expect(document.querySelector("[data-rail]").getAttribute("data-rail")).toBe(rail);
+    expect(without).toContain("Kritik");
+    expect(within(link()).getByText("Septik şok ölçütləri qarşılandı")).toHaveAttribute("lang", "en");
+    // The shadow's own finding is not a row among the alarms, nor a pill.
+    expect(screen.queryByText("NEWS2 6 on the monitor's inputs")).toBeNull();
+    expect(tag().closest("a")).toBeNull();
+  });
+
+  it("is worded in each language", () => {
+    withShadow(shadowOf());
+    const az = tag().textContent;
+    cleanup();
+    localStorage.setItem("hmc.lang", "ru");
+    withShadow(shadowOf());
+    expect(tag()).toHaveTextContent("теневая рекомендация · NEWS2 6");
+    expect(tag().textContent).not.toBe(az);
+    localStorage.clear();
   });
 });
