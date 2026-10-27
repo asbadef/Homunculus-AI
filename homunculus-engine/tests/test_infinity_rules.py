@@ -7,10 +7,10 @@ import pytest
 
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.infinity_rules import (
-    DEFAULT_PARAMETERS, REPLAY_HOURS, SAMPLE_INTERVAL_S, Candidate, RulesSettings, Sampler, ShadowLane,
-    pick, relation, rules_from_env,
+    ALLOWED_NAMES, DEFAULT_PARAMETERS, REPLAY_HOURS, SAMPLE_INTERVAL_S, Candidate, RulesSettings, Sampler,
+    ShadowLane, pick, relation, rules_from_env,
 )
-from homunculus.api.infinity_shadow import DeviceView, shadow_settings_from_env
+from homunculus.api.infinity_shadow import DeviceView, ShadowSettings, shadow_settings_from_env
 from homunculus.api.monitor_samples import InMemorySamples
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
@@ -46,19 +46,57 @@ def _view(*params):
 def test_the_stage_rules_is_implemented_and_shadow_is_still_shadow():
     settings = shadow_settings_from_env(ENV, {"d": HOSPITAL})
     assert settings.stage == "rules" and settings.on and settings.rules
+    assert settings.parameters == DEFAULT_PARAMETERS
     plain = shadow_settings_from_env({**ENV, "INFINITY_CLINICAL_STAGE": "shadow"}, {"d": HOSPITAL})
     assert plain.stage == "shadow" and plain.on and not plain.rules
+    assert plain.parameters == ()
+    # An explicit allowlist reaches the settings the lane is built from, in its own order.
+    chosen = shadow_settings_from_env({**ENV, "INFINITY_RULES_PARAMETERS": "spo2,nbp"}, {"d": HOSPITAL})
+    assert chosen.rules and chosen.parameters == ("spo2", "nbp")
     off = shadow_settings_from_env({**ENV, "INFINITY_CLINICAL_STAGE": "alarms"}, {"d": HOSPITAL})
     assert off.stage == "off" and off.problem == "stage_not_implemented"
 
 
 def test_the_allowlist_defaults_and_refuses_an_unknown_name():
-    assert rules_from_env({}).allowed == DEFAULT_PARAMETERS
+    assert rules_from_env({}) == RulesSettings() and rules_from_env({}).allowed == DEFAULT_PARAMETERS
     assert rules_from_env({"INFINITY_RULES_PARAMETERS": " hr, spo2 "}).allowed == ("hr", "spo2")
+    # A strip parameter with no engine row is accepted (D2: the strip's names), and feeds nothing.
+    assert rules_from_env({"INFINITY_RULES_PARAMETERS": "hr,respiration"}).allowed == ("hr", "respiration")
     with pytest.raises(ValueError, match="parameters_unknown"):
         rules_from_env({"INFINITY_RULES_PARAMETERS": "hr,respirations"})
     off = shadow_settings_from_env({**ENV, "INFINITY_RULES_PARAMETERS": "hr,bogus"}, {"d": HOSPITAL})
     assert off.stage == "off" and off.problem == "parameters_unknown"
+
+
+@pytest.mark.parametrize("raw", [",", " , ,", ",,"])
+def test_an_allowlist_of_no_names_is_refused(raw):
+    # Not the default: the operator wrote something, and a `rules` stage feeding nothing would
+    # look switched on while it never takes a sample.
+    with pytest.raises(ValueError, match="parameters_unknown"):
+        rules_from_env({"INFINITY_RULES_PARAMETERS": raw})
+    off = shadow_settings_from_env({**ENV, "INFINITY_RULES_PARAMETERS": raw}, {"d": HOSPITAL})
+    assert off.stage == "off" and off.problem == "parameters_unknown"
+
+
+def test_a_name_that_feeds_nothing_is_named_once_in_the_log(caplog):
+    with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
+        rules_from_env({"INFINITY_RULES_PARAMETERS": "hr,respiration,temperature"})
+    [record] = [r for r in caplog.records if r.name == "homunculus.api.infinity_rules"]
+    assert record.levelname == "WARNING" and "respiration,temperature" in record.getMessage()
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
+        rules_from_env({"INFINITY_RULES_PARAMETERS": "hr,nbp"})
+        rules_from_env({})
+    assert not [r for r in caplog.records if r.name == "homunculus.api.infinity_rules"]
+
+
+def test_a_rules_stage_cannot_be_built_without_parameters():
+    # Only the env reader builds a `rules` stage today; by hand it must carry its allowlist too.
+    with pytest.raises(ValueError):
+        ShadowSettings("rules", "rules", None, SHADOW, HOSPITAL)
+    built = ShadowSettings("rules", "rules", None, SHADOW, HOSPITAL, parameters=DEFAULT_PARAMETERS)
+    assert built.rules and built.parameters == DEFAULT_PARAMETERS
+    assert ShadowSettings("shadow", "shadow", None, SHADOW, HOSPITAL).parameters == ()   # A needs none
 
 
 def test_pick_hr_feeds_pulse_and_pls_only_when_hr_is_not_a_value():
@@ -86,9 +124,11 @@ def test_pick_art_feeds_sbp_and_map_and_nbp_only_without_art_and_within_an_hour(
 def test_pick_honours_the_allowlist_and_the_units():
     only_spo2 = pick(_view(_cell("hr"), _cell("spo2", value=97, unit="%")), ("spo2",), now=T0)
     assert [(c.code, c.value, c.unit, c.via) for c in only_spo2] == [(SignalCode.SPO2, 97.0, "%", "spo2")]
-    # RESP and temperature never feed, even when a misconfigured allowlist names them: the engine
-    # mapping has no row for them (D2), and a name with no row is `parameters_unknown` upstream.
-    assert pick(_view(_cell("respiration", unit="/min"), _cell("temperature", unit="C")), DEFAULT_PARAMETERS, now=T0) == []
+    # RESP, temperature, ART diastolic and EtCO2 never feed, whatever the allowlist says: they are
+    # accepted by the allowlist (strip parameters, D2) but FEEDS has no row for them.
+    assert pick(_view(_cell("respiration", unit="/min"), _cell("temperature", unit="C"),
+                      _cell("art_diastolic", unit="mmHg"), _cell("etco2", unit="mmHg")),
+                tuple(ALLOWED_NAMES), now=T0) == []
     # A wire unit the engine does not expect feeds nothing (fed values carry the lane's units).
     assert pick(_view(_cell("hr", unit="/min")), DEFAULT_PARAMETERS, now=T0) == []
 
@@ -96,6 +136,45 @@ def test_pick_honours_the_allowlist_and_the_units():
 def test_a_candidate_is_stamped_at_the_cell_time_and_named_by_its_source():
     [c] = pick(_view(_cell("spo2", value=97, unit="%", age=4.0)), DEFAULT_PARAMETERS, now=T0)
     assert c.stamp == T0 - 4.0 and c.source == "10.0.0.5" and c.source_device == "infinity:10.0.0.5:spo2"
+
+
+@pytest.mark.parametrize("cells, allowed, expected", [
+    pytest.param((_cell("art_systolic", value=130, unit="mmHg"), _cell("art_mean", state="invalid", unit="mmHg"),
+                  _nbp(sys=110, mean=80)), DEFAULT_PARAMETERS,
+                 {(SignalCode.SBP, 130.0, "art"), (SignalCode.MAP, 80.0, "nbp")}, id="art_mean_invalid_map_from_nbp"),
+    pytest.param((_cell("pls", value=90),), DEFAULT_PARAMETERS, {(SignalCode.HEART_RATE, 90.0, "pls")},
+                 id="no_hr_cell_pulse_from_pls"),
+    pytest.param((_cell("hr", value=0),), DEFAULT_PARAMETERS, {(SignalCode.HEART_RATE, 0.0, "hr")},
+                 id="a_zero_feeds"),
+    pytest.param((_nbp(sys=110, mean=80, measured_age=3600.0),), DEFAULT_PARAMETERS,
+                 {(SignalCode.SBP, 110.0, "nbp"), (SignalCode.MAP, 80.0, "nbp")}, id="nbp_at_exactly_an_hour"),
+    pytest.param((_cell("art_systolic", value=130, unit="mmHg"), _cell("art_mean", value=95, unit="mmHg"),
+                  _nbp(sys=110, mean=80)), ("hr", "nbp"),
+                 {(SignalCode.SBP, 110.0, "nbp"), (SignalCode.MAP, 80.0, "nbp")}, id="art_off_nbp_on"),
+])
+def test_pick_pins_each_branch_and_its_observation(cells, allowed, expected):
+    found = pick(_view(*cells), allowed, now=T0)
+    assert {(c.code, c.value, c.via) for c in found} == expected and len(found) == len(expected)
+    for c in found:
+        obs = c.observation("bed-1")
+        assert obs.timestamp.tzinfo is not None and obs.timestamp.utcoffset() == timedelta(0)
+        assert obs.timestamp.timestamp() == c.stamp and obs.source_device == f"infinity:10.0.0.5:{c.via}"
+        assert type(obs.value) is float and obs.patient_id == "bed-1" and obs.code == c.code
+
+
+def test_a_candidate_built_by_hand_still_observes_a_float():
+    obs = Candidate(SignalCode.HEART_RATE, 88, "bpm", T0, "10.0.0.5", "pls").observation("bed-1")
+    assert type(obs.value) is float and obs.value == 88.0 and obs.source_device == "infinity:10.0.0.5:pls"
+
+
+def test_a_stamp_without_a_time_zone_feeds_nothing():
+    # Read as the server's local time it would move the sample by the server's offset; refused.
+    assert pick(_view(_cell("hr", last_at="2027-01-15T08:00:00")), DEFAULT_PARAMETERS, now=T0) == []
+    naive_nbp = {**_nbp(sys=110, mean=80), "changed_at": "2027-01-15T08:00:00"}
+    assert pick(_view(naive_nbp), DEFAULT_PARAMETERS, now=T0) == []
+    # The same instant with its offset feeds, stamped at that instant.
+    [c] = pick(_view(_cell("hr", last_at="2027-01-15T12:00:00+04:00")), DEFAULT_PARAMETERS, now=T0)
+    assert c.stamp == datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc).timestamp()
 
 
 def _alert(kind, severity="high"):

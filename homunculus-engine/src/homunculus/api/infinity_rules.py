@@ -38,9 +38,10 @@ FEEDS: dict[SignalCode, tuple[str, ...]] = {
     SignalCode.SBP: ("art_systolic", "nbp"),
     SignalCode.MAP: ("art_mean", "nbp"),
 }
-# The unit the engine's rules read for each code (rules/news2.py, rules/septic_shock.py read the
-# raw number; the unit travels for the audit and the card). A wire unit that is not this one
-# feeds nothing: the lane never converts.
+# The strip's WIRE unit per engine code (infinity_shadow.PARAMETERS). The rules read the raw
+# number (rules/news2.py, rules/septic_shock.py), so a cell in this unit feeds as it is; a cell in
+# any other unit feeds nothing — the lane never converts. The unit travels on to the audit and
+# the card.
 ENGINE_UNIT: dict[SignalCode, str] = {
     SignalCode.HEART_RATE: "bpm", SignalCode.SPO2: "%", SignalCode.SBP: "mmHg", SignalCode.MAP: "mmHg",
 }
@@ -48,6 +49,8 @@ _NBP_FIELD = {SignalCode.SBP: "systolic", SignalCode.MAP: "mean"}
 _VIA = {"hr": "hr", "pls": "pls", "spo2": "spo2", "art_systolic": "art", "art_mean": "art", "nbp": "nbp"}
 # Every name the allowlist may hold: the strip's parameters, NBP as one name.
 ALLOWED_NAMES = frozenset(set(PARAMETERS) - {"nbp_systolic", "nbp_diastolic", "nbp_mean"}) | {"nbp"}
+# The names that can feed an engine code at all (FEEDS); the others are allowed and feed nothing.
+_FEEDING_NAMES = frozenset(name for names in FEEDS.values() for name in names)
 
 
 @dataclass(frozen=True)
@@ -57,14 +60,20 @@ class RulesSettings:
 
 def rules_from_env(env: Mapping[str, str]) -> RulesSettings:
     """`INFINITY_RULES_PARAMETERS`: comma-separated strip parameter names; empty is the default
-    list. A name that is not a strip parameter is `ValueError("parameters_unknown")` — the caller
-    turns the stage off with that problem code rather than guessing."""
+    list. A name that is not a strip parameter, or a value that names nothing at all (","), is
+    `ValueError("parameters_unknown")` — the caller turns the stage off with that problem code
+    rather than guessing. A strip parameter FEEDS has no row for (respiration, temperature,
+    art_diastolic, etco2) is accepted and feeds nothing; the log says so, once per read."""
     raw = (env.get("INFINITY_RULES_PARAMETERS", "") or "").strip()
     if not raw:
         return RulesSettings()
     names = tuple(dict.fromkeys(n.strip().lower() for n in raw.split(",") if n.strip()))
-    if any(n not in ALLOWED_NAMES for n in names):
+    if not names or any(n not in ALLOWED_NAMES for n in names):
         raise ValueError("parameters_unknown")
+    idle = [n for n in names if n not in _FEEDING_NAMES]
+    if idle:
+        log.warning("INFINITY_RULES_PARAMETERS: %s hiçbir motor koduna bağlı değil; bu adlar hiçbir şey beslemez",
+                    ",".join(idle))
     return RulesSettings(names)
 
 
@@ -88,9 +97,12 @@ class Candidate:
 
 
 def _epoch(iso: str | None) -> float | None:
+    """A cell's ISO time as epoch seconds; None for none, and for a time without an offset — read
+    as the server's local time it would move the sample by the server's own offset."""
     if not iso:
         return None
-    return datetime.fromisoformat(iso).timestamp()
+    dt = datetime.fromisoformat(iso)
+    return None if dt.tzinfo is None else dt.timestamp()
 
 
 def pick(view: DeviceView, allowed: tuple[str, ...], *, now: float) -> list[Candidate]:

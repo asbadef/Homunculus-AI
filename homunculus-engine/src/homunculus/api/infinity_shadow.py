@@ -50,6 +50,9 @@ class ShadowSettings:
         # POST carrying no credential. The env reader never builds one; nothing else may either.
         if self.stage in ("shadow", "rules") and len(self.token) < MIN_TOKEN:
             raise ValueError("a shadow stage needs a token of at least 32 characters")
+        # A `rules` stage with an empty allowlist would run and never take a sample, looking on.
+        if self.stage == "rules" and not self.parameters:
+            raise ValueError("the stage rules needs at least one parameter")
 
     @property
     def on(self) -> bool:
