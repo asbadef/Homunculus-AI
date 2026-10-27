@@ -4,7 +4,10 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COMORBIDITIES, ageOf, emptyForm, missing, positive, toBody } from "./admitForm.js";
+import { COMORBIDITIES, CONSENTS, ageOf, emptyForm, missing, positive, toBody } from "./admitForm.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
+import { LANG_CODES } from "../../i18n/langs.js";
+import { createTranslator } from "../../i18n/translate.js";
 
 const TODAY = "2026-10-25";
 const complete = () => ({
@@ -122,6 +125,19 @@ describe("the body POST /admissions takes", () => {
     expect(positive("0")).toBeNull();
     expect(positive("1e3")).toBeNull();
     expect(positive("")).toBeNull();
+  });
+
+  // Walk M-4: the Turkish consent read "KVKK onamı imzalandı" — Turkey's data-protection law — at a
+  // hospital in Baku. No consent text names a country's law, in any language. (`KVKK_SIGNED` is the
+  // server's code for the choice and is never shown.)
+  it("names no country's law in any language's consent text", () => {
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      for (const { key } of CONSENTS) {
+        expect(t(key), `${lang} ${key}`).not.toMatch(/KVKK|GDPR|HIPAA|ФЗ|\bLaw\b|\bact\b|qanun|kanun|закон/i);
+      }
+    }
+    expect(createTranslator("tr", DICTIONARIES)("kabul.consent.signed")).toBe("Kişisel veri onayı imzalandı");
   });
 
   it("offers only comorbidity codes the server's form takes (admission/form.py)", () => {

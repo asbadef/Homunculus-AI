@@ -44,7 +44,9 @@ export default {
       dementia: "Demans / kronik konfüzyon" },
     relation: { spouse: "Eşi", mother: "Annesi", father: "Babası", child: "Çocuğu", sibling: "Kardeşi", other: "Diğer" },
     nat: { az: "Azerbaycan", tr: "Türkiye", ru: "Rusya", ge: "Gürcistan", ir: "İran", other: "Diğer" },
-    consent: { signed: "KVKK onamı imzalandı", later: "Bilinci kapalı — onam sonra alınacak" },
+    // Walk M-4: no country's law by name — the hospital is in Baku (KVKK is Turkey's). The choice's
+    // code on the wire stays `KVKK_SIGNED` (admission/models.py Consent); it is never shown.
+    consent: { signed: "Kişisel veri onayı imzalandı", later: "Bilinci kapalı — onam sonra alınacak" },
     missingTitle: "Eksik alanlar", missingNone: "Zorunlu alanların hepsi dolu.",
     miss: {
       name: "Ad soyad", sex: "Cinsiyet", dob: "Doğum tarihi", dobWrong: "Doğum tarihi geçerli değil",
