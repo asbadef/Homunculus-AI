@@ -40,11 +40,18 @@ async def ward(db_session, monkeypatch):
         yield built, client, app
 
 
+def person(bed: str = "1") -> str:
+    """The synthetic person `form` admits into a bed: bed 1's "Sentetik Hasta", bed 2's "Sentetik
+    Hasta 2" … — one person per bed, as the server refuses a second open admission of one person
+    (A-37). A test admitting one person twice names her."""
+    return "Sentetik Hasta" if bed == "1" else f"Sentetik Hasta {bed}"
+
+
 def form(w, bed: str = "1", unit: str = "rea", patient: dict | None = None,
          note: dict | None = None, request_id: uuid.UUID | None = None) -> dict:
-    """The Kabul tab's body: every required field, the bed the picker chose."""
+    """The Kabul tab's body: every required field, the bed the picker chose, its own person."""
     body = {
-        "patient": {"display_name": "Sentetik Hasta", "date_of_birth": "1970-05-05", "sex": "female",
+        "patient": {"display_name": person(bed), "date_of_birth": "1970-05-05", "sex": "female",
                     "consent": "KVKK_SIGNED", "national_id": "5ab12cd", "phone": "+994 50 123 45 67",
                     "father_name": "Sentetik Ata", **(patient or {})},
         "note": {"admitting_unit_id": str(w.units[unit].id), "bed_id": str(w.beds[bed].id),
@@ -139,7 +146,8 @@ async def test_a_bed_outside_the_callers_units_or_its_own_unit_is_refused(ward, 
 async def test_an_occupied_bed_and_a_closed_one_are_refused_with_their_codes(ward, db_session):
     w, client, _ = ward
     assert (await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])).status_code == 201
-    r = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    r = await client.post("/admissions", json=form(w, "1", patient={"display_name": "Sentetik Başqa"}),
+                          headers=w.auth["nurse"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "bed_not_available")
 
     admin = w.auth["admin"]
@@ -642,9 +650,12 @@ async def test_a_resend_that_waits_too_long_answers_the_asked_parts_failed_and_s
     assert not any("Sentetik" in m for m in warned), warned
 
 
-@pytest.mark.parametrize(("bed", "patient"), [("2", {}), ("1", {"display_name": "Sentetik Başka"})],
-                         ids=["another bed", "another name, same bed"])
+@pytest.mark.parametrize(("bed", "patient"), [("2", {"display_name": "Sentetik Hasta"}),
+                                              ("1", {"display_name": "Sentetik Başka"})],
+                         ids=["the same person, another bed", "another name, same bed"])
 async def test_one_request_id_with_another_form_is_refused(ward, db_session, bed, patient):
+    """The replay's look-up runs before the duplicate refusal (A-37): the same person sent to
+    another bed under the first form's id is that id's conflict, not a duplicate."""
     w, client, _ = ward
     request_id, other_bed = uuid.uuid4(), w.beds["2"].id
     first = await client.post("/admissions", json=form(w, request_id=request_id),
@@ -702,6 +713,167 @@ async def test_forms_without_a_request_id_or_each_with_its_own_all_admit(ward, d
                               headers=w.auth["nurse"])
         assert r.status_code == 201, r.text
     assert await _count(db_session, Admission) == 4
+
+
+# ---------------------------------------------------------------- A-37: one open admission a person
+#: The person bed 1's form admits, as another form may name her.
+FIRST = {"display_name": "Sentetik Hasta", "date_of_birth": "1970-05-05"}
+
+
+async def _bed_state(db_session, bed_id: uuid.UUID) -> BedState:
+    db_session.expire_all()
+    return (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one()
+
+
+@pytest.mark.parametrize("state", ["DRAFT", "ACTIVE", "PENDING_DISCHARGE"])
+async def test_a_second_open_admission_of_one_person_is_refused(ward, db_session, state):
+    """The same name and birth date in the tenant while her first admission is open — before it
+    is signed, signed, or with its discharge started: 409 `duplicate_open_admission`, the first
+    admission's number beside it (the caller's units hold its bed, so the screen can name it),
+    never a name; nothing written, the other bed still free."""
+    w, client, _ = ward
+    bed_two = w.beds["2"].id
+    first = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    assert first.status_code == 201, first.text
+    await db_session.execute(update(Admission).values(state=AdmissionState[state]))
+    await db_session.commit()
+
+    r = await client.post("/admissions", json=form(w, "2", patient=FIRST), headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "duplicate_open_admission"), r.text
+    assert r.json()["detail"]["patient_number"] == first.json()["patient_number"]
+    assert "Sentetik" not in r.text
+    assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
+    assert await _bed_state(db_session, bed_two) == BedState.AVAILABLE
+
+
+async def test_once_her_admission_is_discharged_the_person_is_admitted_again(ward, db_session):
+    w, client, _ = ward
+    first = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    await db_session.execute(update(Admission).values(state=AdmissionState.DISCHARGED))
+    await db_session.commit()
+    again = await client.post("/admissions", json=form(w, "2", patient=FIRST),
+                              headers=w.auth["nurse"])
+    assert again.status_code == 201, again.text
+    assert again.json()["patient_number"] != first.json()["patient_number"]
+
+
+@pytest.mark.parametrize("other", [
+    {"display_name": "Sentetik Əkiz İki", "date_of_birth": "2020-02-02"},
+    {"display_name": "Sentetik Əkiz Bir", "date_of_birth": "2020-02-03"},
+], ids=["twins: another name, the same birth date", "the same name, another birth date"])
+async def test_another_name_or_another_birth_date_is_another_person(ward, other):
+    w, client, _ = ward
+    one = {"display_name": "Sentetik Əkiz Bir", "date_of_birth": "2020-02-02"}
+    for bed, patient in (("1", one), ("2", other)):
+        r = await client.post("/admissions", json=form(w, bed, patient=patient),
+                              headers=w.auth["nurse"])
+        assert r.status_code == 201, r.text
+
+
+@pytest.mark.parametrize("written", ["sentetik  HASTA", " SENTETİK Hasta ", "Sentetık Hasta",
+                                     "Sentétik Hâsta"])
+async def test_the_same_name_written_otherwise_is_the_same_person(ward, db_session, written):
+    """Case, İ/ı, accents and spacing (admission/form.py `person_name`) do not make another
+    person of her."""
+    w, client, _ = ward
+    assert (await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])) \
+        .status_code == 201
+    r = await client.post("/admissions", json=form(w, "2", patient={**FIRST, "display_name": written}),
+                          headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "duplicate_open_admission")
+    assert await _count(db_session, Admission) == 1
+
+
+async def test_two_sends_for_one_person_to_two_beds_at_once_admit_one(ward, db_session):
+    """Two forms for one person, two beds, two request ids, sent at once: no bed lock orders them,
+    and each may look before the other has committed. One is admitted; the other is refused
+    `duplicate_open_admission` — by the look-up or, at its flush, by the open-identity index —
+    never `request_conflict`, never a 500, never two admissions."""
+    w, client, _ = ward
+    answers = await asyncio.gather(
+        client.post("/admissions", json=form(w, "1", request_id=uuid.uuid4()),
+                    headers=w.auth["nurse"]),
+        client.post("/admissions", json=form(w, "2", patient=FIRST, request_id=uuid.uuid4()),
+                    headers=w.auth["charge"]))
+    assert sorted(r.status_code for r in answers) == [201, 409], [r.text for r in answers]
+    admitted, refused = sorted(answers, key=lambda r: r.status_code)
+    assert refused.json()["detail"]["code"] == "duplicate_open_admission"
+    assert refused.json()["detail"]["patient_number"] == admitted.json()["patient_number"]
+    assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
+
+
+async def test_a_send_the_look_up_missed_is_refused_by_the_index_at_its_flush(ward, db_session,
+                                                                              monkeypatch):
+    """The look-up of the first one's admission sees nothing (as when it read before the first
+    committed): the open-identity index stops the insert, and the IntegrityError is told apart by
+    the index's name — the same `duplicate_open_admission` with the number, not the request-id
+    conflict, not a 500. The number the refused send took goes back with its transaction."""
+    w, client, _ = ward
+    first = await client.post("/admissions", json=form(w, "1", request_id=uuid.uuid4()),
+                              headers=w.auth["nurse"])
+    assert first.status_code == 201, first.text
+    real, looks = admission_router._open_admission_of, []
+
+    async def blind_once(*args, **kwargs):
+        looks.append(1)
+        return None if len(looks) == 1 else await real(*args, **kwargs)
+
+    monkeypatch.setattr(admission_router, "_open_admission_of", blind_once)
+    r = await client.post("/admissions", json=form(w, "2", patient=FIRST, request_id=uuid.uuid4()),
+                          headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "duplicate_open_admission"), r.text
+    assert r.json()["detail"]["patient_number"] == first.json()["patient_number"]
+    assert len(looks) == 2                         # the look-up, and the number after the index
+    assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
+    nxt = await client.post("/admissions", json=form(w, "3"), headers=w.auth["nurse"])
+    assert int(nxt.json()["patient_number"][3:]) == int(first.json()["patient_number"][3:]) + 1
+
+
+async def test_a_duplicate_names_no_admission_outside_the_callers_units(ward, db_session):
+    """A Neonatal nurse sending the form of a person who lies in Reanimasiya is refused all the
+    same, and learns no number: the refusal stands, the number travels only to a caller whose
+    units hold that bed (A-12: the bed's room's unit)."""
+    w, client, _ = ward
+    first = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    r = await client.post("/admissions", json=form(w, "N1", "neo", patient=FIRST),
+                          headers=w.auth["nurse_b"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "duplicate_open_admission")
+    assert "patient_number" not in r.json()["detail"]
+    assert first.json()["patient_number"] not in r.text
+    assert await _count(db_session, Admission) == 1
+
+
+async def test_a_resend_of_the_form_is_its_admission_never_a_duplicate(ward, db_session):
+    """The replay's look-up runs first (A-19 before A-37): the same form sent again under its
+    `request_id` — whose person has, of course, an open admission: the one it made — is answered
+    with that admission, 200 and the same body."""
+    w, client, _ = ward
+    body = form(w, request_id=uuid.uuid4())
+    first = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert (first.status_code, again.status_code) == (201, 200), again.text
+    assert again.json() == first.json()
+    assert await _count(db_session, Admission) == 1
+
+
+async def test_an_admission_written_before_the_digest_is_never_in_conflict(ward, db_session):
+    """A row with no digest — every admission written before 0012, and one made without the form
+    (the service alone) — is not seen by the refusal, and the index lets it be."""
+    w, client, _ = ward
+    patient = Patient(tenant_id=w.tenant.id, display_name="Sentetik Hasta",
+                      date_of_birth="1970-05-05", sex="female", patient_number="H9900001")
+    db_session.add(patient)
+    await db_session.flush()
+    await service.create_draft_admission(db_session, tenant_id=w.tenant.id, patient=patient,
+                                         note_fields={"admitting_unit_id": w.units["rea"].id,
+                                                      "bed_id": w.beds["2"].id,
+                                                      "admission_diagnosis_free_text": "Sentetik"})
+    await db_session.commit()
+    r = await client.post("/admissions", json=form(w, "1"), headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    digests = (await db_session.execute(select(Admission.identity_digest)
+                                        .order_by(Admission.created_at))).scalars().all()
+    assert digests[0] is None and digests[1] is not None
 
 
 # ---------------------------------------------------------------- A-10, A-16: the hospital's date

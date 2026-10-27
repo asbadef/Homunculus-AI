@@ -24,6 +24,13 @@ Revision 0012, follows 0011.
   `request_digest` (varchar 64) and `engine_writes` (JSON) — one admission form sent once or
   again (amendment A-19): the client's id for it, the keyed digest of its body, and what reached
   the engine after the commit. NULL on every row made without an id; NULLs never collide.
+* `admissions.identity_digest` (varchar 64, nullable) and the partial unique index
+  `uq_admissions_open_identity` on (tenant_id, identity_digest) WHERE the state is open (DRAFT,
+  ACTIVE, PENDING_DISCHARGE, PENDING_TRANSFER — `admission/models.py` OPEN_ADMISSION_STATES): one
+  open admission per person and tenant (amendment A-37). The digest is keyed
+  (`crypto.phi_digest`) over the normalised name and the birth date
+  (`admission/form.py` identity_digest). Every row written before 0012 stays NULL and is never in
+  conflict: NULLs never collide.
 * `beds.is_active` (NOT NULL, true): a closed bed is kept and offered to no admission.
 * `patient_identity.bed_id`, `.unit_id` (text, nullable): a `kabul` record's own bed and unit, the
   tenant UUIDs (spec D9).
@@ -87,6 +94,12 @@ _PHI_0002 = 512
 
 # The year a row was created in, in UTC: the number's two digits and its counter's year.
 _YEAR = "EXTRACT(YEAR FROM created_at AT TIME ZONE 'UTC')::int"
+
+#: One open admission per person and tenant (A-37). The open states are written out (a migration
+#: does not import the models it predates); tests/test_migration_0012_kabul.py holds them to the
+#: model's OPEN_ADMISSION_STATES.
+OPEN_IDENTITY = "uq_admissions_open_identity"
+_OPEN_STATES = "state IN ('DRAFT', 'ACTIVE', 'PENDING_DISCHARGE', 'PENDING_TRANSFER')"
 
 #: The board identity's own bed and unit (IF NOT EXISTS, as 0006). Named here so the Postgres
 #: identity store's own test provisions exactly these (tests/test_patient_identity_postgres.py).
@@ -155,6 +168,9 @@ def upgrade() -> None:
     op.add_column("admissions", sa.Column("engine_writes", postgresql.JSONB(), nullable=True))
     op.create_unique_constraint("uq_admissions_tenant_request", "admissions",
                                 ["tenant_id", "request_id"])
+    op.add_column("admissions", sa.Column("identity_digest", sa.String(64), nullable=True))
+    op.create_index(OPEN_IDENTITY, "admissions", ["tenant_id", "identity_digest"], unique=True,
+                    postgresql_where=sa.text(_OPEN_STATES))
 
     # ---- beds ----
     op.add_column("beds", sa.Column("is_active", sa.Boolean(), nullable=False,
@@ -177,8 +193,9 @@ def downgrade() -> None:
     op.execute("ALTER TABLE patient_identity DROP COLUMN IF EXISTS unit_id")
     op.execute("ALTER TABLE patient_identity DROP COLUMN IF EXISTS bed_id")
     op.drop_column("beds", "is_active")
+    op.drop_index(OPEN_IDENTITY, table_name="admissions")
     op.drop_constraint("uq_admissions_tenant_request", "admissions", type_="unique")
-    for name in ("engine_writes", "request_digest", "request_id",
+    for name in ("identity_digest", "engine_writes", "request_digest", "request_id",
                  "discharge_note", "discharge_at", "discharge_reported_by",
                  "discharge_institution", "discharge_disposition", "comorbidities_text",
                  "comorbidity_codes", "no_known_allergy", "allergies_text", "blood_group",

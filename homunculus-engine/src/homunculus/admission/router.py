@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from contextlib import suppress
 from datetime import date, datetime, timezone
@@ -47,8 +48,8 @@ from homunculus import crypto
 from homunculus.admission import form, service, trail, unitscope
 from homunculus.admission.boardlink import board_link_of, kabul_record
 from homunculus.admission.models import (
-    OPEN_ADMISSION_STATES, Admission, AdmissionState, CareTeamMember, DischargeDisposition,
-    Handover, Patient,
+    OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX, Admission, AdmissionState, CareTeamMember,
+    DischargeDisposition, Handover, Patient,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionNoteFields, AdmissionResponse, AdmissionRow, AdmitResponse,
@@ -58,7 +59,8 @@ from homunculus.admission.schemas import (
     TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, INVALID_TRANSITION, REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal, field_invalid,
+    BED_CLOSED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, REQUEST_CONFLICT,
+    TRANSFER_UNAVAILABLE, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.service import WorkflowError
@@ -264,6 +266,45 @@ async def _earlier(db: AsyncSession, tenant_id: uuid.UUID,
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one_or_none()
 
 
+async def _open_admission_of(db: AsyncSession, tenant_id: uuid.UUID, identity: str):
+    """The patient number, bed and unit (the bed's room's, A-12) of the open admission of the
+    person `identity` names (`form.identity_digest`) in the tenant, if she has one (A-37)."""
+    return (await db.execute(
+        select(Patient.patient_number, Admission.bed_id, Room.unit_id)
+        .select_from(Admission)
+        .join(Patient, Patient.id == Admission.patient_id)
+        .join(Bed, Bed.id == Admission.bed_id)
+        .join(Room, Room.id == Bed.room_id)
+        .where(Admission.tenant_id == tenant_id, Admission.identity_digest == identity,
+               Admission.state.in_(list(OPEN_ADMISSION_STATES)))
+        .limit(1))).first()
+
+
+def _duplicate(found, reach: Scope) -> Refusal:
+    """409 `duplicate_open_admission` (A-37): the person already has an open admission in this
+    tenant, and it is discharged before another is opened. Its number goes beside the code only
+    when the caller's units hold its bed (A-12: the bed's room's unit), so the screen can name it
+    — never a name. The refusal stands either way, and stands when that admission is not found
+    any more (the index saw it at the flush; it has closed since)."""
+    known = found is not None and unitscope.reaches(reach, unit_id=found.unit_id,
+                                                    bed_id=found.bed_id)
+    return Refusal(409, DUPLICATE_OPEN_ADMISSION, "This person already has an open admission: "
+                   "it is discharged before another is opened.",
+                   extra={"patient_number": found.patient_number} if known else None)
+
+
+def _broken_constraint(exc: IntegrityError) -> str | None:
+    """The name of the constraint or unique index an insert broke, as PostgreSQL reports it:
+    asyncpg's `constraint_name` (under SQLAlchemy's adapter, the adapted error's cause), else read
+    from the message. None when neither names one."""
+    for error in (exc.orig, getattr(exc.orig, "__cause__", None)):
+        name = getattr(error, "constraint_name", None)
+        if name:
+            return name
+    named = re.search(r'constraint "([^"]+)"', str(exc.orig))
+    return named.group(1) if named else None
+
+
 async def _board_again(db: AsyncSession, request: Request, hospital: str, admission_id: uuid.UUID,
                        *, weight_asked: bool, actor: str) -> EngineWrites:
     """The board writes of an admission whose first send died between its commit and its board
@@ -396,7 +437,14 @@ async def create_admission(
     send of the same form waits there for the first to commit — and answered by `_answer_again`.
     One that gets past that look-up (another form under the id, so another bed and no lock between
     the two) is stopped by the unique `(tenant_id, request_id)` at its flush and answered the same
-    way."""
+    way.
+
+    Then, before `bed_closed` and the rest, one open admission per person (A-37): a form for
+    someone — the same name and birth date (`form.identity_digest`) — who already has an open
+    admission in the tenant is refused `duplicate_open_admission` (`_duplicate`). The look-up under
+    the bed lock gives the friendly answer; two sends for one person to two beds are not ordered
+    by one bed lock, and the open-identity index stops the second at its flush — the same refusal,
+    told apart from the request id's constraint by the index's name."""
     # The admitting unit and the bed belong to the caller's tenant and the attending is a member
     # of it, all checked before the patient row is written.
     await _ensure_unit_and_bed(db, payload.note.admitting_unit_id, payload.note.bed_id,
@@ -407,6 +455,7 @@ async def create_admission(
                                        .where(Tenant.id == caller_tenant))).one()
     now = _now()
     digest = None if payload.request_id is None else _request_digest(payload)
+    identity = form.identity_digest(payload.patient.display_name, payload.patient.date_of_birth)
     # The caller as plain values: a rollback below expires every object of this session, the
     # caller's own `User` (loaded by the permission check) included.
     actor, user_id = user.username, user.id
@@ -427,6 +476,9 @@ async def create_admission(
                 await _earlier(db, caller_tenant, payload.request_id) is not None:
             await db.rollback()
             return await answer_again()
+        if identity is not None and \
+                (found := await _open_admission_of(db, caller_tenant, identity)) is not None:
+            raise _duplicate(found, reach)
         if not (bed.is_active and room.is_active and unit.is_active):
             raise Refusal(409, BED_CLOSED, "The bed, its room or its unit is closed.")
         number = await next_patient_number(db, caller_tenant, now=now)
@@ -456,16 +508,21 @@ async def create_admission(
     try:
         admission = await service.create_draft_admission(
             db, tenant_id=caller_tenant, patient=patient, note_fields=note,
-            request_id=payload.request_id, request_digest=digest,
+            request_id=payload.request_id, request_digest=digest, identity_digest=identity,
         )
     except WorkflowError as exc:
         raise _wf(exc)
-    except IntegrityError:
+    except IntegrityError as exc:
+        broken = _broken_constraint(exc)
         await db.rollback()
-        if payload.request_id is None or \
-                await _earlier(db, caller_tenant, payload.request_id) is None:
-            raise
-        return await answer_again()
+        # In the look-ups' order: an earlier send under this id first (A-19), then the person.
+        if payload.request_id is not None and \
+                await _earlier(db, caller_tenant, payload.request_id) is not None:
+            return await answer_again()
+        if broken == OPEN_IDENTITY_INDEX:
+            raise _duplicate(await _open_admission_of(db, caller_tenant, identity),
+                             reach).http() from None
+        raise
 
     # Everything the answer, the audit row and the card need is taken before the commit, as plain
     # values: what can still fail after it (reading the row back, the board) loses none of them.
@@ -763,6 +820,9 @@ async def list_care_team(
 #   * the card moved with `put_identity`;
 #   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well;
 #   * a transfer UI.
+# And the arrival's new admission must carry the source's `identity_digest` — flushed once the
+# source has left its open state, as the open-identity index holds one open row per person — or
+# the person's open admission is invisible to the duplicate refusal (A-37).
 def _transfer_closed() -> HTTPException:
     return Refusal(409, TRANSFER_UNAVAILABLE, "Transfers are closed until a transfer slice "
                    "brings their checks and their screen.").http()

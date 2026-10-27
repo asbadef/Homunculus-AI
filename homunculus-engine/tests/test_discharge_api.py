@@ -49,7 +49,10 @@ async def ward(db_session, monkeypatch):
 
 def form(w, bed: str = "1", unit: str = "rea", weight: float | None = 50,
          request_id: uuid.UUID | None = None) -> dict:
-    body = {"patient": {"display_name": "Sentetik Hasta", "date_of_birth": "1970-05-05",
+    """Each bed's form admits its own synthetic person ("Sentetik Hasta", "Sentetik Hasta 2" …):
+    the server refuses a second open admission of one person (A-37)."""
+    name = "Sentetik Hasta" if bed == "1" else f"Sentetik Hasta {bed}"
+    body = {"patient": {"display_name": name, "date_of_birth": "1970-05-05",
                         "sex": "male", "consent": "UNCONSCIOUS_LATER"},
             "note": {"admitting_unit_id": str(w.units[unit].id), "bed_id": str(w.beds[bed].id),
                      "admission_type": "MEDICAL", "admission_diagnosis_free_text": "Sentetik tanı",

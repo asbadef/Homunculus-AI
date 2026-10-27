@@ -83,6 +83,7 @@ async def create_draft_admission(
     note_fields: dict,
     request_id: uuid.UUID | None = None,
     request_digest: str | None = None,
+    identity_digest: str | None = None,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
@@ -90,7 +91,9 @@ async def create_draft_admission(
     Enforces the hard constraint: a patient may not have another open admission.
     `request_id` and `request_digest` are the form's id and its body's digest (amendment A-19,
     admission/router.py); the row's unique `(tenant_id, request_id)` refuses a second admission
-    under one id with an IntegrityError at the flush below.
+    under one id with an IntegrityError at the flush below. `identity_digest` is the person's
+    (A-37, admission/form.py): the open-identity index refuses a second open admission of one
+    person in the tenant the same way, by its own name (`models.OPEN_IDENTITY_INDEX`).
     """
     existing = await get_open_admission_for_patient(db, patient.id)
     if existing is not None:
@@ -124,6 +127,7 @@ async def create_draft_admission(
         state=AdmissionState.DRAFT,
         request_id=request_id,
         request_digest=request_digest,
+        identity_digest=identity_digest,
         **note_fields,
     )
     if admission.admission_datetime is None:

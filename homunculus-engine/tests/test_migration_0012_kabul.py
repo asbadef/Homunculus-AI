@@ -3,7 +3,9 @@
 never `create_all`): every patient that existed before it gets a number in its tenant's year and
 the counters continue after them; `beds.release` reaches the nurse and charge-nurse groups of every
 tenant and no other group; existing beds stay open; the board identity gains its own bed and unit;
-the model and the migration agree on every column 0012 owns; and 0011 → 0012 → 0011 → 0012 runs.
+one person holds one open admission per tenant, admissions written before 0012 never in conflict
+(A-37); the model and the migration agree on every column and index 0012 owns; and
+0011 → 0012 → 0011 → 0012 runs.
 Every encrypted column of `patients` — 0012's nine and 0002's four, which 0012 widens — holds the
 ciphertext of the longest value the form takes in four-byte characters, over the real database;
 the downgrade narrows 0002's four back and never cuts a ciphertext to do it.
@@ -11,6 +13,7 @@ Sync tests on purpose (alembic runs its own event loop, see `clean_db`). Synthet
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from contextlib import contextmanager
 
@@ -28,7 +31,7 @@ import homunculus.admission.models  # noqa: F401  (register every table on Base.
 import homunculus.auth.models  # noqa: F401
 import homunculus.escalation.models  # noqa: F401
 import homunculus.tenant.models  # noqa: F401
-from homunculus.admission.models import Patient
+from homunculus.admission.models import OPEN_ADMISSION_STATES, AdmissionState, Patient
 from homunculus.admission.schemas import PatientIdentity
 from homunculus.db import Base
 from tests.conftest import TEST_DATABASE_URL, requires_db
@@ -55,10 +58,16 @@ ENUMS_0012 = {"consent": ("patients", "consent"),
 ADMISSION_COLUMNS = {"admission_type", "blood_group", "allergies_text", "no_known_allergy",
                      "comorbidity_codes", "comorbidities_text", "discharge_disposition",
                      "discharge_institution", "discharge_reported_by", "discharge_at",
-                     "discharge_note", "request_id", "request_digest", "engine_writes"}
+                     "discharge_note", "request_id", "request_digest", "engine_writes",
+                     "identity_digest"}
 #: 0012's unique constraints: the patient number, and the admission form's request id (A-19).
 UNIQUES_0012 = {"uq_patients_tenant_number": ("patients", ["tenant_id", "patient_number"]),
                 "uq_admissions_tenant_request": ("admissions", ["tenant_id", "request_id"])}
+#: 0012's partial unique index (A-37): one open admission per person and tenant.
+OPEN_IDENTITY = "uq_admissions_open_identity"
+INDEXES_0012 = {OPEN_IDENTITY: ("admissions", ["tenant_id", "identity_digest"])}
+OPEN_STATES = {state.value for state in OPEN_ADMISSION_STATES}
+CLOSED_STATES = {"DISCHARGED", "TRANSFERRED"}
 
 
 def _columns(engine, table: str) -> set[str]:
@@ -106,6 +115,20 @@ def _bed(conn, tenant: uuid.UUID) -> uuid.UUID:
     conn.execute(text("INSERT INTO beds (id, room_id, label) VALUES (:id, :r, '1A')"),
                  {"id": bed, "r": room})
     return bed
+
+
+def _admission(conn, tenant: uuid.UUID, bed: uuid.UUID, patient: uuid.UUID, state: str = "DRAFT",
+               **columns) -> None:
+    """One admission row on `bed` (in its room's unit), with the other columns named."""
+    assert state in OPEN_STATES | CLOSED_STATES                 # written into the statement
+    names = "".join(f", {name}" for name in columns)
+    values = "".join(f", :{name}" for name in columns)
+    conn.execute(text(
+        "INSERT INTO admissions (id, patient_id, tenant_id, state, admission_datetime, "
+        f"admitting_unit_id, bed_id, admission_diagnosis_free_text{names}) "
+        f"SELECT :id, :p, :t, '{state}', now(), r.unit_id, b.id, 'Sentetik tanı'{values} "
+        "FROM beds b JOIN rooms r ON r.id = b.room_id WHERE b.id = :b"),
+        {"id": uuid.uuid4(), "p": patient, "t": tenant, "b": bed, **columns})
 
 
 def _before_0012(cfg, engine) -> dict:
@@ -214,6 +237,53 @@ def test_a_request_id_is_optional_and_unique_within_a_tenant_only(clean_db):
             admit(conn, world["a"], world["bed"], p["a25_eve"], request)
 
 
+def test_one_person_holds_one_open_admission_per_tenant(clean_db):
+    """A-37: the partial unique index on (tenant_id, identity_digest) over the open states. A
+    second open admission of one digest in one tenant is refused, whichever open state it is in;
+    a closed one, another tenant's, and rows with no digest — every admission written before 0012
+    among them, which the upgrade leaves NULL — never collide."""
+    engine, cfg = clean_db
+    world = _before_0012(cfg, engine)
+    p, a, bed = world["patients"], world["a"], world["bed"]
+    with engine.begin() as conn:                           # written at 0011
+        _admission(conn, a, bed, p["a25_first"])
+        _admission(conn, a, bed, p["a25_second"])
+    command.upgrade(cfg, "0012")
+    digest = "d" * 64
+    with engine.begin() as conn:
+        assert set(conn.execute(text("SELECT identity_digest FROM admissions")).scalars()) == {None}
+        bed_b = _bed(conn, world["b"])
+        _admission(conn, a, bed, p["a25_eve"], "DISCHARGED", identity_digest=digest)
+        _admission(conn, a, bed, p["a25_eve"], "TRANSFERRED", identity_digest=digest)
+        _admission(conn, a, bed, p["a26"], "ACTIVE", identity_digest=digest)
+        _admission(conn, world["b"], bed_b, p["b26"], "DRAFT", identity_digest=digest)
+        _admission(conn, a, bed, p["a25_first"])                     # NULLs never collide
+    for state in sorted(OPEN_STATES):
+        with pytest.raises(DBAPIError, match=OPEN_IDENTITY):
+            with engine.begin() as conn:
+                _admission(conn, a, bed, p["a25_second"], state, identity_digest=digest)
+
+
+def test_the_open_identity_index_covers_exactly_the_open_states(clean_db):
+    """The index's predicate, as PostgreSQL holds it, names every state the model counts open
+    (`OPEN_ADMISSION_STATES`) and no other: a state added to one and not the other would let a
+    second open admission of one person through, or refuse a closed one."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "head")
+    assert OPEN_STATES | CLOSED_STATES == {state.value for state in AdmissionState}
+    with engine.connect() as conn:
+        unique, predicate, columns = conn.execute(text(
+            "SELECT i.indisunique, pg_get_expr(i.indpred, i.indrelid), "
+            " array(SELECT a.attname FROM unnest(i.indkey) WITH ORDINALITY AS k(num, pos) "
+            "  JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.num "
+            "  ORDER BY k.pos) "
+            "FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = :name"),
+            {"name": OPEN_IDENTITY}).one()
+    assert unique is True
+    assert list(columns) == INDEXES_0012[OPEN_IDENTITY][1]
+    assert set(re.findall(r"'(\w+)'::admissionstate", predicate)) == OPEN_STATES, predicate
+
+
 def test_beds_release_reaches_the_ward_nurses_of_every_tenant_and_nobody_else(clean_db):
     engine, cfg = clean_db
     world = _before_0012(cfg, engine)
@@ -320,6 +390,7 @@ def test_the_downgrade_takes_it_all_away_and_the_upgrade_gives_it_back(clean_db)
     assert not (ADMISSION_COLUMNS & _columns(engine, "admissions"))
     assert "uq_admissions_tenant_request" not in {
         u["name"] for u in inspect(engine).get_unique_constraints("admissions")}
+    assert OPEN_IDENTITY not in {i["name"] for i in inspect(engine).get_indexes("admissions")}
     assert "is_active" not in _columns(engine, "beds")
     assert not ({"bed_id", "unit_id"} & _columns(engine, "patient_identity"))
     assert "patient_number_counters" not in inspect(engine).get_table_names()
@@ -353,6 +424,8 @@ def test_the_model_and_the_migration_agree_on_what_0012_owns(clean_db):
             return table == "patient_number_counters" or name in owned.get(table, set())
         if type_ == "unique_constraint":
             return name in UNIQUES_0012
+        if type_ == "index":
+            return name in INDEXES_0012
         return False
 
     with engine.connect() as conn:

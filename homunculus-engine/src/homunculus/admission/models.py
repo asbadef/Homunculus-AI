@@ -27,8 +27,8 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer,
-    String, Text, UniqueConstraint,
+    Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer,
+    String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -78,6 +78,13 @@ OPEN_ADMISSION_STATES = {
     AdmissionState.PENDING_DISCHARGE,
     AdmissionState.PENDING_TRANSFER,
 }
+
+#: The partial unique index on (tenant_id, identity_digest) over the open states (amendment A-37,
+#: migration 0012): a second open admission of one person in a tenant is refused at its flush,
+#: whatever the routes' look-up saw. The admission route tells its IntegrityError apart by name.
+OPEN_IDENTITY_INDEX = "uq_admissions_open_identity"
+_OPEN_STATE = text("state IN ({})".format(", ".join(
+    f"'{state.value}'" for state in AdmissionState if state in OPEN_ADMISSION_STATES)))
 
 
 class Sex(str, enum.Enum):
@@ -229,6 +236,8 @@ class Admission(Base):
 
     CONSTRAINT: a patient may have at most one ACTIVE admission at a time. Enforced
     by a partial unique index (see migration) and re-checked in the service layer.
+    And a PERSON — the same name and birth date, `identity_digest` — at most one open admission
+    per tenant (A-37): `OPEN_IDENTITY_INDEX`, and the admission route's look-up before it.
     """
     __tablename__ = "admissions"
 
@@ -304,6 +313,11 @@ class Admission(Base):
     request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     engine_writes: Mapped[dict | None] = mapped_column(JSON_COLUMN, nullable=True)
+    # Who the admission is for (amendment A-37, admission/form.py `identity_digest`): the keyed
+    # digest of the normalised name and the birth date. One open admission per person and tenant
+    # (`OPEN_IDENTITY_INDEX`). NULL on a row written before 0012 or without the form (the service
+    # alone, a transfer's arrival) — NULLs never collide, and the refusal does not see them.
+    identity_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # --- Workflow bookkeeping ---
     # S-26: reminder emitted once when a DRAFT is unreviewed for 2 hours.
@@ -331,6 +345,8 @@ class Admission(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "request_id", name="uq_admissions_tenant_request"),
+        Index(OPEN_IDENTITY_INDEX, "tenant_id", "identity_digest", unique=True,
+              postgresql_where=_OPEN_STATE, sqlite_where=_OPEN_STATE),
     )
 
     def transition_to(self, new_state: AdmissionState) -> None:

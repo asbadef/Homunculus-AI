@@ -24,6 +24,7 @@ import re
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
+from homunculus import crypto
 from homunculus.admission.errors import field_invalid
 from homunculus.admission.models import DischargeDisposition
 from homunculus.admission.schemas import AdmissionCreate, DischargeStart
@@ -159,3 +160,26 @@ def check_discharge(payload: DischargeStart, *, now: datetime,
             raise field_invalid("discharge_at", "The discharge time is in the future.")
         if admitted_at is not None and at < admitted_at:
             raise field_invalid("discharge_at", "The discharge time is before the admission.")
+
+
+# ---------------------------------------------------------------------------
+# The person an admission is for (amendment A-37)
+# ---------------------------------------------------------------------------
+def person_name(name: str) -> str:
+    """A name as two writings of it are compared (A-37): NFKD, combining marks dropped, case
+    folded, the dotless ı read as i, every run of white space one space, trimmed. "İlkin
+    Məmmədov" and "ilkin  MƏMMƏDOV", "Işık" and "ISIK", "Çağla Öz" and "CAGLA OZ" are one name.
+    ə has no decomposition and stays ə, so "Məmmədov" and "Memmedov" are two."""
+    bare = "".join(ch for ch in unicodedata.normalize("NFKD", name) if not unicodedata.combining(ch))
+    return " ".join(bare.casefold().replace("ı", "i").split())
+
+
+def identity_digest(display_name: str, birth_date: date | None) -> str | None:
+    """Who an admission is for, as the admission keeps it (A-37): the keyed digest
+    (`crypto.phi_digest`, 64 hex characters) of the name as `person_name` reads it, "|", and the
+    ISO birth date. Stored on the admission, it lets the server refuse a second open admission of
+    one person in a tenant (`duplicate_open_admission`, the open-identity index) without keeping
+    either in the clear. None without a birth date: a name alone does not tell two people apart."""
+    if birth_date is None:
+        return None
+    return crypto.phi_digest(f"{person_name(display_name)}|{birth_date.isoformat()}")
