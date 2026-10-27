@@ -91,10 +91,16 @@ Kanıtlanan:
 Kanıtlanmayan:
 - **Örnek düzeyinde ekran eşleşmesi.** BED07'nin elde tutulan videosunda ekrandaki QRS
   zamanları ile çözülen R tepeleri hizalandı; en iyi hizada sapma 44 ms, erken atım da
-  eşleşiyor, ama düzenli ritimde bir atım kaydırılmış hiza da aynı puanı aldı. BED08 videosu
-  WhatsApp sıkıştırmasıyla 464×656'ya düşmüş; EKG izi karede 3–6 piksel kaldığı için QRS
-  ayırt edilemiyor. Telefonun **orijinal** dosyasıyla (belge olarak ya da kabloyla) yeniden
-  denenecek.
+  eşleşiyor, ama düzenli ritimde bir atım kaydırılmış hiza da aynı puanı aldı. BED08'in
+  orijinal videosunda (1342×962) QRS sütunları seçilebiliyor; ancak o kayıttaki ritim metronom
+  gibi düzenli (çözülen R-R aralıklarının standart sapması ≈ 10 ms, bir pikselden az), bu
+  yüzden ekrandaki QRS deseninin çözülen R tepelerine **hangi atımla** oturduğu ilkesel olarak
+  belirlenemez: bir atım kaydırılmış her hiza eşit derecede iyidir ve ekran saati dakika
+  gösterir. Sayı dizileriyle kurulan ±1 s'lik zaman hizası bu kayıtta ulaşılabilen en iyi
+  sonuçtur. Atım düzeyinde eşleşme için düzensiz ritimli ya da ekstrasistollü bir yatak, ya
+  da tek bir tanınabilir olay (ör. derivasyon düşmesi) gerekir; telefonun dosya saati
+  (`creation_time`) sayı hizasıyla 2–3 dakika çeliştiği için zaman referansı olarak
+  kullanılamaz.
 - **EKG genliği.** Ekrandaki 0,5 mV çubuğundan kaba tahmin birim başına 0,5–0,8 µV; kalibrasyon
   değildir. Çizim göreli genlikle yapılır, mV ızgarası çizilmez.
 - I, III ve V derivasyonlarının kimlikleri.
