@@ -259,7 +259,10 @@ def create_app(
     # unchanged. The lane is handed engines and observations, never the notifier, the hub, the ack
     # store or the broadcaster: the frames its pictures go out in are published here.
     samples = samples if samples is not None else InMemorySamples()
-    lane = ShadowLane(allowed=shadow.parameters, samples=samples, audit=audit, enabled=shadow.rules)
+    # The lane keeps time on the strip's clock (`shadow_clock`): its install retries, error window and
+    # retired-number hold are compared with the sampler's `now`, which is that clock.
+    lane = ShadowLane(allowed=shadow.parameters, samples=samples, audit=audit, enabled=shadow.rules,
+                      clock=shadow_clock)
     if shadow.rules:
         log.info("Aşama B gölge motor açık (alarm kapalı): hastane %s, parametreler %s",
                  shadow.hospital, ",".join(shadow.parameters))
