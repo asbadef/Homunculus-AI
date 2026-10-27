@@ -7,14 +7,15 @@ import pytest
 
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.infinity_rules import (
-    ALLOWED_NAMES, DEFAULT_PARAMETERS, REPLAY_HOURS, SAMPLE_INTERVAL_S, Candidate, RulesSettings, Sampler,
-    ShadowLane, pick, relation, rules_from_env,
+    ALLOWED_NAMES, DEFAULT_PARAMETERS, PROVISIONAL_GRACE_S, REPLAY_HOURS, RETIRED_GRACE_S, SAMPLE_INTERVAL_S,
+    Candidate, RulesSettings, Sampler, ShadowLane, pick, relation, rules_from_env,
 )
 from homunculus.api.infinity_shadow import DeviceView, ShadowSettings, shadow_settings_from_env
 from homunculus.api.monitor_samples import InMemorySamples
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
+from homunculus.state.profile import PatientProfile
 
 SHADOW = "s" * 40
 HOSPITAL = "h1"
@@ -24,23 +25,23 @@ T0 = 1_800_000_000.0
 DT0 = datetime.fromtimestamp(T0, timezone.utc)
 
 
-def _cell(name, state="value", value=80.0, unit="bpm", age=2.0, **extra):
-    at = datetime.fromtimestamp(T0 - age, timezone.utc).isoformat()
+def _cell(name, state="value", value=80.0, unit="bpm", age=2.0, now=T0, **extra):
+    at = datetime.fromtimestamp(now - age, timezone.utc).isoformat()
     return {"parameter": name, "state": state, "value": value if state == "value" else None,
             "unit": unit, "age_s": age, "last_at": at, "evidence": "screen_match", "partial": False, **extra}
 
 
-def _nbp(state="value", sys=120, dia=70, mean=87, measured_age=600.0, age=2.0):
-    changed = datetime.fromtimestamp(T0 - measured_age, timezone.utc).isoformat()
-    at = datetime.fromtimestamp(T0 - age, timezone.utc).isoformat()
+def _nbp(state="value", sys=120, dia=70, mean=87, measured_age=600.0, age=2.0, now=T0):
+    changed = datetime.fromtimestamp(now - measured_age, timezone.utc).isoformat()
+    at = datetime.fromtimestamp(now - age, timezone.utc).isoformat()
     return {"parameter": "nbp", "state": state, "systolic": sys if state == "value" else None,
             "diastolic": dia if state == "value" else None, "mean": mean if state == "value" else None,
             "unit": "mmHg", "age_s": age, "last_at": at, "changed_at": changed,
             "measured_age_s": measured_age, "evidence": "screen_match", "partial": False}
 
 
-def _view(*params):
-    return DeviceView("10.0.0.5", "239.0.0.1", 2050, "streaming", 1.0, 100.0, tuple(params))
+def _view(*params, source="10.0.0.5"):
+    return DeviceView(source, "239.0.0.1", 2050, "streaming", 1.0, 100.0, tuple(params))
 
 
 def test_the_stage_rules_is_implemented_and_shadow_is_still_shadow():
@@ -181,18 +182,23 @@ def _alert(kind, severity="high"):
     return Alert("bed-1", kind, severity, "immediate", kind, "", [], [], "high")
 
 
-def test_sampler_takes_one_per_minute_per_patient_and_code_and_never_back_fills():
+def test_sampler_takes_one_per_minute_per_patient_code_and_via_never_twice_and_never_before_the_link():
     sampler = Sampler()
-    cand = pick(_view(_cell("hr", value=88)), DEFAULT_PARAMETERS, now=T0)
-    assert sampler.due("bed-1", cand[0], now=T0)
-    sampler.taken("bed-1", cand[0], now=T0)
-    assert not sampler.due("bed-1", cand[0], now=T0 + 59.0)
-    assert sampler.due("bed-1", cand[0], now=T0 + SAMPLE_INTERVAL_S)
-    assert sampler.due("bed-2", cand[0], now=T0 + 1.0)                     # another patient
+    [cand] = pick(_view(_cell("hr", value=88)), DEFAULT_PARAMETERS, now=T0)            # stamped T0 - 2
+    assert not sampler.due("bed-1", cand, now=T0, since=T0)                            # before the link (D5)
+    assert sampler.due("bed-1", cand, now=T0, since=T0 - 10.0)
+    sampler.taken("bed-1", cand, now=T0)
+    [newer] = pick(_view(_cell("hr", value=90, now=T0 + 60.0)), DEFAULT_PARAMETERS, now=T0 + 60.0)
+    assert not sampler.due("bed-1", newer, now=T0 + 59.0, since=0.0)                   # within the minute
+    assert sampler.due("bed-1", newer, now=T0 + SAMPLE_INTERVAL_S, since=0.0)
+    assert not sampler.due("bed-1", cand, now=T0 + SAMPLE_INTERVAL_S, since=0.0)      # the same reading: never twice
+    assert sampler.due("bed-2", cand, now=T0 + 1.0, since=0.0)                         # another patient
     other = pick(_view(_cell("spo2", value=97, unit="%")), DEFAULT_PARAMETERS, now=T0)[0]
-    assert sampler.due("bed-1", other, now=T0 + 1.0)                      # another code
+    assert sampler.due("bed-1", other, now=T0 + 1.0, since=0.0)                        # another code
+    [pls] = pick(_view(_cell("hr", state="invalid"), _cell("pls", value=91)), DEFAULT_PARAMETERS, now=T0)
+    assert sampler.due("bed-1", pls, now=T0 + 1.0, since=0.0)                          # another source of it
     sampler.forget("bed-1")
-    assert sampler.due("bed-1", cand[0], now=T0 + 1.0)
+    assert sampler.due("bed-1", cand, now=T0 + 1.0, since=0.0)
 
 
 def test_relation_of_a_shadow_finding_to_the_real_alerts():
@@ -202,96 +208,527 @@ def test_relation_of_a_shadow_finding_to_the_real_alerts():
     assert relation(_alert("sepsis"), real) == "shadow_only"
 
 
-def _lane(stage_rules=True):
-    audit = InMemoryAuditLog()
-    lane = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=InMemorySamples(), audit=audit,
-                      enabled=stage_rules)
-    real = Engine()
-    return lane, real, audit
+CARD = {"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0.5"}
+BED2 = {"bed_id": "b-2", "link": "one", "patient_id": "bed-2", "source": "10.0.0.6"}
+
+
+def _lane(stage_rules=True, *, samples=None, audit=None):
+    audit = audit if audit is not None else InMemoryAuditLog()
+    lane = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=samples if samples is not None else InMemorySamples(),
+                      audit=audit, enabled=stage_rules)
+    return lane, Engine(), audit
+
+
+def _at(t):
+    return datetime.fromtimestamp(t, timezone.utc)
+
+
+def _vitals(now=T0, hr=140.0, spo2=85.0, source="10.0.0.5"):
+    """HR 140 and SpO2 85 (NEWS2 3 + 3: a moderate finding), stamped 2 s before `now`."""
+    return {source: _view(_cell("hr", value=hr, now=now), _cell("spo2", value=spo2, unit="%", now=now), source=source)}
+
+
+def _link(lane, real, cards=(CARD,), *, at=T0 - 10.0):
+    """The pass that first SEES the links: nothing stamped before it is ever taken for them (D5)."""
+    assert lane.sample("h1", {}, list(cards), real, now=at) == []
+
+
+def _rows(audit):
+    return [(r.event_type, r.subject, r.payload.get("reason")) for r in audit.records(tenant="h1", limit=500)]
+
+
+def _restarted(at=T0 + 30.0, admitted=None):
+    """bed-1 sampled on 10.0.0.5 with a finding open, then a second lane installed from the records."""
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    again, real2 = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=audit, enabled=True), Engine()
+    again.install("h1", real2, now=_at(at), admitted=admitted)
+    return again, real2, audit
 
 
 def test_the_lane_feeds_only_the_shadow_engine_and_writes_sample_rows_and_finding_rows():
     lane, real, audit = _lane()
     lane.install("h1", real)                                  # start-up: a copy of the real engine
-    cards = [{"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0.5"}]
-    views = {"10.0.0.5": _view(_cell("hr", value=140), _cell("spo2", value=85, unit="%"))}
-    changed = lane.sample("h1", views, cards, now=T0)
-    assert changed == ["bed-1"]
-    assert real.patient_ids() == []                              # the real engine never saw it
+    _link(lane, real)
+    assert lane.sample("h1", _vitals(), [CARD], real, now=T0) == ["bed-1"]
+    assert real.patient_ids() == []                           # the real engine never saw it
     shadow = lane.engines["h1"]
     assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).value == 140
     assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).source_device == "infinity:10.0.0.5:hr"
-    kinds = {a.kind for a in shadow.active_alerts("bed-1")}
-    assert "news2" in kinds
-    assert [(r.event_type, r.subject) for r in audit.records(tenant="h1", limit=50)] == [("shadow_alert", "news2")]
+    assert "news2" in {a.kind for a in shadow.active_alerts("bed-1")}
+    [opened] = audit.records(tenant="h1", limit=50)
+    assert (opened.event_type, opened.subject) == ("shadow_alert", "news2")
+    # D6: the row says how the finding stood to the real engine — the weekly list's `shadow_only`.
+    assert opened.payload["relation"] == "shadow_only"
+    assert opened.payload["sources"] == ["infinity:10.0.0.5:hr", "infinity:10.0.0.5:spo2"]
     assert [(s.code, s.via, s.value) for s in lane.samples.since("h1", DT0 - timedelta(hours=1), now=DT0)] == [
         ("heart_rate", "hr", 140.0), ("spo2", "spo2", 85.0)]
     # Within the minute nothing more is taken; after it, no new row for an unchanged finding.
-    assert lane.sample("h1", views, cards, now=T0 + 30.0) == []
-    lane.sample("h1", views, cards, now=T0 + 61.0)
+    assert lane.sample("h1", _vitals(T0 + 30.0), [CARD], real, now=T0 + 30.0) == []
+    assert lane.sample("h1", _vitals(T0 + 61.0), [CARD], real, now=T0 + 61.0) == ["bed-1"]
     assert len(audit.records(tenant="h1", event_type="shadow_alert", limit=50)) == 1
 
 
-def test_findings_carry_the_relation_and_null_without_a_link():
+def test_findings_carry_the_relation_the_since_and_the_news2_line_and_null_without_a_link():
     lane, real, _ = _lane()
     lane.install("h1", real)
-    cards = [{"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0.5"}]
-    views = {"10.0.0.5": _view(_cell("hr", value=140), _cell("spo2", value=85, unit="%"))}
-    lane.sample("h1", views, cards, now=T0)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
     found = lane.findings("h1", "bed-1", real, now=DT0)
-    assert found["news2"]["total"] >= 5 and found["vitals"]["heart_rate"]["source"] == "infinity:10.0.0.5:hr"
+    news2 = found["news2"]
+    assert news2["total"] >= 5 and news2["red_param"] is True
+    assert news2["measured_at"]["pulse"] == _at(T0 - 2.0).isoformat() and news2["measured_at"]["temperature"] is None
+    assert isinstance(news2["fresh_until"]["pulse"], str) and news2["fresh_until"]["temperature"] is None
+    assert "last_charted" not in news2                  # the charted inputs: the real card's own line
+    assert found["vitals"]["heart_rate"]["source"] == "infinity:10.0.0.5:hr"
     assert found["vitals"]["heart_rate"]["via"] == "hr"
     assert [f["relation"] for f in found["findings"]] == ["shadow_only"] * len(found["findings"])
+    # D6: since when the finding stands — the pass that opened it, on the lane's clock.
+    assert [f["since"] for f in found["findings"] if f["kind"] == "news2"] == [DT0.isoformat()]
     assert lane.findings("h1", "bed-2", real, now=DT0) is None
     assert lane.findings("h1", "bed-1", real, now=DT0, linked=False) is None
 
 
-def test_unlink_returns_the_patient_to_the_real_picture_and_clears_the_findings():
+def test_a_linked_patient_with_no_sample_yet_has_an_empty_picture_not_none():
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    _link(lane, real)                                         # the card says `one`; nothing has fed yet
+    found = lane.findings("h1", "bed-1", real, now=DT0)
+    assert found["vitals"] == {} and found["findings"] == []
+    assert found["news2"]["total"] == 0 and sorted(found["news2"]["missing"]) == sorted(
+        ["respiration_rate", "spo2", "systolic_bp", "pulse", "temperature"])
+    assert "bed-1" not in lane.engines["h1"].patient_ids()  # read, not created
+
+
+def test_unlink_returns_the_patient_to_the_real_picture_and_leaves_the_real_engine_alone():
     lane, real, audit = _lane()
     real.ingest(Observation("bed-1", SignalCode.HEART_RATE, 70, "bpm", DT0, "bridge"), now=DT0)
     lane.install("h1", real)
-    cards = [{"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0.5"}]
-    views = {"10.0.0.5": _view(_cell("hr", value=140), _cell("spo2", value=85, unit="%"))}
-    lane.sample("h1", views, cards, now=T0)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    real_before = (real.patient_ids(), real.state("bed-1").history(SignalCode.HEART_RATE),
+                   real.state("bed-1").history(SignalCode.SPO2), real.active_alerts("bed-1"))
     # The next cycle: the bed is empty (the patient was discharged or moved).
-    assert lane.sample("h1", views, [{**cards[0], "link": "none", "patient_id": None}], now=T0 + 61.0) == ["bed-1"]
+    empty = {**CARD, "link": "none", "patient_id": None}
+    assert lane.sample("h1", _vitals(T0 + 61.0), [empty], real, now=T0 + 61.0) == ["bed-1"]
     shadow = lane.engines["h1"]
     assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).value == 70
-    assert [r.event_type for r in audit.records(tenant="h1", limit=50)] == ["shadow_alert", "shadow_alert_cleared"]
-    assert audit.records(tenant="h1", event_type="shadow_alert_cleared", limit=5)[0].payload["reason"] == "unlinked"
+    assert shadow.state("bed-1").latest(SignalCode.SPO2) is None
+    assert "bed-1" not in lane.linked["h1"] and lane.findings("h1", "bed-1", real, now=DT0) is None
+    opened, cleared = audit.records(tenant="h1", limit=50)
+    assert (opened.event_type, cleared.event_type) == ("shadow_alert", "shadow_alert_cleared")
+    assert cleared.payload["reason"] == "unlinked" and cleared.payload["opened_id"] == opened.id
+    # D1: `adopt` read the real engine and wrote nothing into it.
+    assert (real.patient_ids(), real.state("bed-1").history(SignalCode.HEART_RATE),
+            real.state("bed-1").history(SignalCode.SPO2), real.active_alerts("bed-1")) == real_before
 
 
-def test_mirror_reaches_the_shadow_engine_only_and_is_a_no_op_below_rules():
+def test_the_link_is_forward_only_a_new_patient_never_gets_the_last_patients_cuff():
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    _link(lane, real, at=T0 - 100.0)
+
+    def monitor(now, changed):
+        return {"10.0.0.5": _view(_cell("hr", value=80, now=now),
+                                  _nbp(sys=85, mean=60, measured_age=now - changed, now=now))}
+
+    lane.sample("h1", monitor(T0, T0 - 50.0), [CARD], real, now=T0)
+    shadow = lane.engines["h1"]
+    assert shadow.state("bed-1").latest(SignalCode.SBP).source_device == "infinity:10.0.0.5:nbp"
+    # The bed's patient changes; the monitor still shows bed-1's cuff, well within its hour.
+    card = {**CARD, "patient_id": "bed-2"}
+    assert lane.sample("h1", monitor(T0 + 61.0, T0 - 50.0), [card], real, now=T0 + 61.0) == ["bed-1"]
+    assert lane.sample("h1", monitor(T0 + 122.0, T0 - 50.0), [card], real, now=T0 + 122.0) == ["bed-2"]
+    new = shadow.state("bed-2")
+    assert new.latest(SignalCode.HEART_RATE).timestamp == _at(T0 + 120.0)       # its own, after the link
+    assert new.latest(SignalCode.SBP) is None and new.latest(SignalCode.MAP) is None
+    assert shadow.state("bed-1").latest(SignalCode.SBP) is None                 # the old patient's dropped
+    # A new cuff measurement — a later change — is the new patient's own.
+    lane.sample("h1", monitor(T0 + 183.0, T0 + 150.0), [card], real, now=T0 + 183.0)
+    assert new.latest(SignalCode.SBP).value == 85 and new.latest(SignalCode.SBP).timestamp == _at(T0 + 150.0)
+    assert new.latest(SignalCode.MAP).value == 60
+
+
+def test_one_cuff_measurement_is_one_sample_however_long_the_monitor_shows_it():
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    _link(lane, real, at=T0 - 1000.0)
+    for minute in range(10):                                  # one measurement, on the screen for ten minutes
+        now = T0 + 60.0 * minute
+        lane.sample("h1", {"10.0.0.5": _view(_nbp(measured_age=30.0 + 60.0 * minute, now=now))}, [CARD], real, now=now)
+    window = (_at(T0 - 3600.0), _at(T0 + 3600.0))
+    rows = lane.samples.since("h1", window[0], now=window[1])
+    assert [(s.code, s.via, s.captured_at) for s in rows] == [("sbp", "nbp", _at(T0 - 30.0)), ("map", "nbp", _at(T0 - 30.0))]
+    assert len(lane.engines["h1"].state("bed-1").history(SignalCode.SBP)) == 1
+    now = T0 + 600.0                                          # the next cuff measurement
+    lane.sample("h1", {"10.0.0.5": _view(_nbp(sys=118, measured_age=10.0, now=now))}, [CARD], real, now=now)
+    assert len(lane.samples.since("h1", window[0], now=window[1])) == 4
+
+
+def test_a_restart_seeds_the_minute_from_the_receipt_and_the_stamp_from_the_capture():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real, at=T0 - 4000.0)
+    # One cuff measurement, changed half an hour before it was sampled (received) at T0.
+    lane.sample("h1", {"10.0.0.5": _view(_nbp(measured_age=1800.0))}, [CARD], real, now=T0)
+
+    def restarted():
+        again, real2 = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=audit, enabled=True), Engine()
+        again.install("h1", real2, now=_at(T0 + 30.0))
+        return again, real2
+
+    def cuff(now, changed):
+        return {"10.0.0.5": _view(_nbp(measured_age=now - changed, now=now))}
+
+    def count(a_lane):
+        return len(a_lane.samples.since("h1", _at(T0 - 7200.0), now=_at(T0 + 7200.0)))
+
+    assert count(lane) == 2                                   # its SBP and MAP
+    # The stamp: the cuff on the screen since before the restart is not taken again, however late.
+    again, real2 = restarted()
+    again.sample("h1", cuff(T0 + 61.0, T0 - 1800.0), [CARD], real2, now=T0 + 61.0)
+    again.sample("h1", cuff(T0 + 600.0, T0 - 1800.0), [CARD], real2, now=T0 + 600.0)
+    assert count(again) == 2
+    # The minute runs from the RECEIPT: a new measurement 31 s after it waits for the minute
+    # (seeded from the cuff's change, half an hour back, the minute would have passed long ago).
+    again, real2 = restarted()
+    again.sample("h1", cuff(T0 + 31.0, T0 + 20.0), [CARD], real2, now=T0 + 31.0)
+    assert count(again) == 2
+    again.sample("h1", cuff(T0 + 61.0, T0 + 20.0), [CARD], real2, now=T0 + 61.0)
+    assert count(again) == 4
+
+
+def test_art_falling_to_stars_hands_sbp_to_a_cuff_measured_50_minutes_ago():
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    _link(lane, real, at=T0 - 4000.0)
+    art = _view(_cell("art_systolic", value=130, unit="mmHg"), _cell("art_mean", value=95, unit="mmHg"),
+                _nbp(sys=110, mean=80, measured_age=2939.0))
+    lane.sample("h1", {"10.0.0.5": art}, [CARD], real, now=T0)
+    now = T0 + 61.0
+    stars = _view(_cell("art_systolic", state="invalid", unit="mmHg", now=now),
+                  _cell("art_mean", state="invalid", unit="mmHg", now=now),
+                  _nbp(sys=110, mean=80, measured_age=3000.0, now=now))
+    lane.sample("h1", {"10.0.0.5": stars}, [CARD], real, now=now)
+    rows = [(s.code, s.via, s.value) for s in lane.samples.since("h1", _at(T0 - 7200.0), now=_at(T0 + 7200.0))]
+    # Spec §5: the cuff is older than ART's last sample, and still feeds once ART shows ***.
+    assert ("sbp", "art", 130.0) in rows and ("sbp", "nbp", 110.0) in rows and ("map", "nbp", 80.0) in rows
+
+
+class _BrokenSamples(InMemorySamples):
+    def append(self, sample):
+        raise RuntimeError("monitor_samples: the database is down")
+
+
+class _FlakySamples(InMemorySamples):
+    def __init__(self, failures=1):
+        super().__init__()
+        self.failures = failures
+
+    def since(self, hospital, since, *, now):
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("monitor_samples: not reachable yet")
+        return super().since(hospital, since, now=now)
+
+
+def test_a_failing_sample_store_feeds_once_and_the_pass_goes_on():
+    lane, real, _ = _lane(samples=_BrokenSamples())
+    lane.install("h1", real)
+    cards = [CARD, BED2]
+    _link(lane, real, cards)
+
+    def views(now):
+        return {**_vitals(now), **_vitals(now, hr=60.0, spo2=97.0, source="10.0.0.6")}
+
+    assert lane.sample("h1", views(T0), cards, real, now=T0) == ["bed-1", "bed-2"]
+    shadow = lane.engines["h1"]
+    assert [len(shadow.state(p).history(SignalCode.HEART_RATE)) for p in ("bed-1", "bed-2")] == [1, 1]
+    assert set(lane.linked["h1"]) == {"bed-1", "bed-2"} and lane.state == "error"
+    assert [r.event_type for r in lane.audit.records(tenant="h1", limit=50)] == ["shadow_alert"]   # bed-1's
+    # The same readings a minute on: taken already, never fed again.
+    assert lane.sample("h1", views(T0), cards, real, now=T0 + 61.0) == []
+    assert [len(shadow.state(p).history(SignalCode.HEART_RATE)) for p in ("bed-1", "bed-2")] == [1, 1]
+    lane.samples = InMemorySamples()                          # the table is back
+    lane.sample("h1", views(T0 + 61.0), cards, real, now=T0 + 61.0)
+    assert lane.state == "ok" and len(lane.samples.since("h1", DT0, now=_at(T0 + 120.0))) == 4
+
+
+def test_one_patients_failure_does_not_stop_the_pass(monkeypatch):
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    cards = [CARD, BED2]
+    _link(lane, real, cards)
+    publish = lane._publish
+
+    def flaky(hospital, patient_id, now, real_engine):
+        if patient_id == "bed-1":
+            raise RuntimeError("x")
+        return publish(hospital, patient_id, now, real_engine)
+
+    monkeypatch.setattr(lane, "_publish", flaky)
+    views = {**_vitals(), **_vitals(source="10.0.0.6")}
+    assert lane.sample("h1", views, cards, real, now=T0) == ["bed-1", "bed-2"]
+    assert lane.engines["h1"].state("bed-2").latest(SignalCode.HEART_RATE).value == 140
+    assert [r.patient_id for r in lane.audit.records(tenant="h1", limit=50)] == ["bed-2"]
+    assert lane.state == "error"
+
+
+def test_a_failed_install_reads_as_an_error_and_the_next_pass_or_mirror_retries_it():
+    lane, real, _ = _lane(samples=_FlakySamples())
+    assert lane.guard("install", lambda: lane.install("h1", real)) is None
+    assert "h1" not in lane.engines and lane.state == "error"
+    assert lane.findings("h1", "bed-1", real, now=DT0) is None
+    lane.guard("sample", lambda: lane.sample("h1", {}, [CARD], real, now=T0 - 10.0))
+    assert "h1" in lane.engines and "bed-1" in lane.linked["h1"] and lane.state == "ok"
+    # A mirror retries as well — and does not feed twice what the fresh copy already holds.
+    other, real2, _ = _lane(samples=_FlakySamples())
+    other.guard("install", lambda: other.install("h1", real2))
+    obs = Observation("bed-1", SignalCode.SPO2, 90, "%", DT0, "bridge")
+    real2.ingest(obs, now=DT0)
+    other.guard("mirror", lambda: other.mirror_observation("h1", obs, now=DT0, real=real2))
+    assert other.state == "ok" and len(other.engines["h1"].state("bed-1").history(SignalCode.SPO2)) == 1
+
+
+def test_the_guard_keeps_one_state_per_kind_and_logs_each_change_once(caplog):
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+
+    def boom():
+        raise RuntimeError("x")
+
+    with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
+        for _ in range(3):
+            assert lane.guard("sample", boom) is None
+            assert lane.guard("findings", lambda: 1) == 1
+            assert lane.state == "error"                      # a success elsewhere hides no steady failure
+        assert [r.levelname for r in caplog.records] == ["ERROR"]
+        assert lane.guard("sample", lambda: None) is None
+        assert lane.state == "ok" and [r.levelname for r in caplog.records] == ["ERROR", "WARNING"]
+
+
+def test_after_a_restart_a_link_is_provisional_until_its_card_confirms_it():
+    lane, real, audit = _restarted()
+    link = lane.linked["h1"]["bed-1"]
+    assert link.provisional and link.source == "10.0.0.5" and link.since == T0 - 2.0   # the newest sample's
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 30.0)) is None             # nothing guessed (D5)
+    lane.sample("h1", _vitals(T0 + 31.0), [CARD], real, now=T0 + 31.0)
+    link = lane.linked["h1"]["bed-1"]
+    assert not link.provisional and link.since == T0 - 2.0      # the same device: the link goes on
+    found = lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0))
+    assert [f["since"] for f in found["findings"] if f["kind"] == "news2"] == [DT0.isoformat()]
+    assert len(audit.records(tenant="h1", event_type="shadow_alert", limit=50)) == 1   # not opened twice
+
+
+def test_a_provisional_link_ends_as_soon_as_its_device_reports_another_bed():
+    lane, real, audit = _restarted()
+    other = {**CARD, "patient_id": "bed-9"}
+    assert lane.sample("h1", _vitals(T0 + 31.0), [other], real, now=T0 + 31.0) == ["bed-1"]
+    assert "bed-1" not in lane.linked["h1"] and "bed-9" in lane.linked["h1"]
+    assert lane.engines["h1"].state("bed-1").latest(SignalCode.HEART_RATE) is None
+    assert _rows(audit)[-1] == ("shadow_alert_cleared", "news2", "unlinked")
+
+
+def test_a_provisional_link_whose_device_stays_silent_waits_out_the_grace_carried_over():
+    lane, real, audit = _restarted()
+    start = T0 + 31.0
+    assert lane.sample("h1", {}, [BED2], real, now=start) == []
+    assert lane.linked["h1"]["bed-1"].provisional and "bed-2" in lane.linked["h1"]    # beside a new link
+    assert lane.sample("h1", {}, [BED2], real, now=start + PROVISIONAL_GRACE_S - 1.0) == []
+    assert "bed-1" in lane.linked["h1"] and lane.findings("h1", "bed-1", real, now=_at(start)) is None
+    assert lane.sample("h1", {}, [BED2], real, now=start + PROVISIONAL_GRACE_S) == ["bed-1"]
+    assert set(lane.linked["h1"]) == {"bed-2"}
+    assert _rows(audit)[-1] == ("shadow_alert_cleared", "news2", "unlinked")
+
+
+def test_restart_replays_the_last_24_hours_of_samples_and_seeds_the_open_findings():
+    lane, real, audit = _restarted()
+    assert lane.engines["h1"].state("bed-1").latest(SignalCode.HEART_RATE).value == 140
+    [hr, _] = pick(_vitals()["10.0.0.5"], DEFAULT_PARAMETERS, now=T0)
+    assert not lane.sampler.due("bed-1", hr, now=T0 + 30.0, since=0.0)
+    # The finding is open from before: replaying, and a sample after it, do not open it twice.
+    lane.sample("h1", _vitals(T0 + 61.0), [CARD], real, now=T0 + 61.0)
+    assert len(audit.records(tenant="h1", event_type="shadow_alert", limit=50)) == 1
+    assert len(lane.engines["h1"].state("bed-1").history(SignalCode.HEART_RATE)) == 2
+    # Samples older than the replay window are not replayed.
+    stale = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=InMemoryAuditLog(), enabled=True)
+    stale.install("h1", Engine(), now=DT0 + timedelta(hours=REPLAY_HOURS, minutes=1))
+    assert "bed-1" not in stale.engines["h1"].patient_ids() and stale.linked["h1"] == {}
+
+
+def test_a_finding_open_for_more_than_a_day_is_seeded_and_not_opened_twice(monkeypatch):
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    yesterday = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    monkeypatch.setattr("homunculus.api.audit._now_iso", lambda: yesterday)   # the audit's own clock, a day back
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    monkeypatch.undo()
+    # The restart comes after the samples left the replay window: only the audit remembers the finding.
+    later = T0 + 25 * 3600.0
+    again, real2 = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=audit, enabled=True), Engine()
+    again.install("h1", real2, now=_at(later))
+    link = again.linked["h1"]["bed-1"]
+    assert link.provisional and link.source == "10.0.0.5" and link.since == later     # the row's device, from now
+    again.sample("h1", {}, [CARD], real2, now=later + 5.0)                             # the card confirms it
+    again.sample("h1", _vitals(later + 10.0), [CARD], real2, now=later + 10.0)
+    assert len(again.engines["h1"].state("bed-1").history(SignalCode.HEART_RATE)) == 1
+    assert len(audit.records(tenant="h1", event_type="shadow_alert", limit=50)) == 1
+
+
+def test_a_discharged_patients_open_finding_is_closed_at_install_and_their_samples_are_not_replayed():
+    lane, real, audit = _restarted(admitted=lambda pid: pid != "bed-1")
+    assert "bed-1" not in lane.linked["h1"] and "bed-1" not in lane.engines["h1"].patient_ids()
+    opened, cleared = audit.records(tenant="h1", limit=50)
+    assert cleared.event_type == "shadow_alert_cleared" and cleared.payload["reason"] == "discharged"
+    assert cleared.payload["opened_id"] == opened.id and cleared.payload["at"] == _at(T0 + 30.0).isoformat()
+    lane.sample("h1", {}, [], real, now=T0 + 31.0)            # nothing is left to end
+    assert len(audit.records(tenant="h1", limit=50)) == 2
+
+
+def test_a_restart_does_not_seed_a_finding_that_ended_before_it():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    lane.sample("h1", {}, [], real, now=T0 + 61.0)            # unlinked: the finding ends
+    again = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=InMemorySamples(), audit=audit, enabled=True)
+    again.install("h1", Engine(), now=_at(T0 + 120.0))
+    assert again.linked["h1"] == {} and again.close_open("h1", now=_at(T0 + 121.0)) == 0
+
+
+def test_going_below_rules_closes_once_what_a_rules_run_left_open():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real, [CARD, BED2])
+    lane.sample("h1", {**_vitals(), **_vitals(source="10.0.0.6")}, [CARD, BED2], real, now=T0)
+    opened = audit.records(tenant="h1", event_type="shadow_alert", limit=50)
+    assert len(opened) == 2
+    below = ShadowLane(allowed=(), samples=InMemorySamples(), audit=audit, enabled=False)
+    below.install("h1", Engine())                              # a no-op below `rules`
+    assert below.close_open("h1", now=_at(T0 + 60.0)) == 2
+    cleared = audit.records(tenant="h1", event_type="shadow_alert_cleared", limit=50)
+    assert {(c.patient_id, c.payload["reason"], c.payload["opened_id"]) for c in cleared} == {
+        (o.patient_id, "stage", o.id) for o in opened}
+    assert below.close_open("h1", now=_at(T0 + 61.0)) == 0    # once
+    assert below.engines == {} and below.state == "ok"
+
+
+def test_close_open_on_a_running_lane_also_forgets_what_it_closed():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    assert lane.close_open("h1", now=_at(T0 + 5.0)) == 1
+    assert [f["since"] for f in lane.findings("h1", "bed-1", real, now=_at(T0 + 5.0))["findings"]] == [None]
+    lane.sample("h1", {}, [], real, now=T0 + 6.0)             # the unlink has nothing left to close
+    assert _rows(audit) == [("shadow_alert", "news2", None), ("shadow_alert_cleared", "news2", "stage")]
+
+
+def test_a_finding_that_changes_level_is_closed_and_reopened_and_its_since_restarts():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)                            # NEWS2 6: moderate
+    now = T0 + 61.0
+    worse = {"10.0.0.5": _view(_cell("hr", value=140, now=now), _cell("spo2", value=85, unit="%", now=now),
+                               _cell("art_systolic", value=85, unit="mmHg", now=now))}
+    lane.sample("h1", worse, [CARD], real, now=now)                                # + SBP 85: NEWS2 9, high
+    rows = [r for r in audit.records(tenant="h1", limit=50) if r.subject == "news2"]
+    assert [(r.event_type, r.payload.get("severity"), r.payload.get("reason")) for r in rows] == [
+        ("shadow_alert", "moderate", None), ("shadow_alert_cleared", None, "level_changed"),
+        ("shadow_alert", "high", None)]
+    assert rows[1].payload["opened_id"] == rows[0].id
+    [news2] = [f for f in lane.findings("h1", "bed-1", real, now=_at(now))["findings"] if f["kind"] == "news2"]
+    assert news2["severity"] == "high" and news2["since"] == _at(now).isoformat()   # since this level
+
+
+def test_recent_findings_pair_each_opening_with_its_clearing_newest_first():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real, [CARD, BED2])
+    lane.sample("h1", {**_vitals(), **_vitals(source="10.0.0.6")}, [CARD, BED2], real, now=T0)
+    lane.sample("h1", {}, [BED2], real, now=T0 + 61.0)        # bed-1's link ends
+    rows = lane.recent_findings("h1", since=datetime.now(timezone.utc) - timedelta(days=7))
+    assert [(r["patient_id"], r["kind"]) for r in rows] == [("bed-2", "news2"), ("bed-1", "news2")]
+    first = audit.records(tenant="h1", event_type="shadow_alert", limit=5)[0]
+    [cleared] = audit.records(tenant="h1", event_type="shadow_alert_cleared", limit=5)
+    assert rows[0]["cleared_at"] is None
+    # The opening row's payload, then the explicit keys; `at` once — the lane's clock at opening.
+    assert rows[1] == {**first.payload, "patient_id": "bed-1", "kind": "news2", "opened_at": first.ts,
+                       "cleared_at": cleared.ts}
+    assert rows[1]["relation"] == "shadow_only" and rows[1]["at"] == DT0.isoformat()
+
+
+def test_forget_closes_as_discharged_drops_the_link_and_the_clock_and_holds_the_number_out_for_the_grace():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    lane.forget("h1", "bed-1", now=_at(T0 + 1.0))
+    assert "bed-1" not in lane.engines["h1"].patient_ids() and "bed-1" not in lane.linked["h1"]
+    assert lane.sampler.due("bed-1", pick(_vitals()["10.0.0.5"], DEFAULT_PARAMETERS, now=T0)[0], now=T0 + 2.0, since=0.0)
+    assert _rows(audit)[-1] == ("shadow_alert_cleared", "news2", "discharged")
+    # The board's occupants are cached (10 s): a card may name the retired number for a moment.
+    lane.sample("h1", {}, [CARD], real, now=T0 + 1.0 + RETIRED_GRACE_S - 1.0)
+    assert "bed-1" not in lane.linked["h1"]
+    lane.sample("h1", {}, [CARD], real, now=T0 + 1.0 + RETIRED_GRACE_S)          # the hold is over
+    assert "bed-1" in lane.linked["h1"]
+    assert len(audit.records(tenant="h1", limit=50)) == 2
+
+
+def test_a_pass_without_cards_touches_nothing():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+
+    def snapshot():
+        links = {pid: (link.source, link.since, link.provisional) for pid, link in lane.linked["h1"].items()}
+        return links, _rows(audit), len(lane.samples.since("h1", DT0 - timedelta(hours=1), now=_at(T0 + 120.0)))
+
+    before = snapshot()
+    # The device table is missing or invalid: no card at all is not "every link ended".
+    assert lane.sample("h1", _vitals(T0 + 61.0), None, real, now=T0 + 61.0) == []
+    assert snapshot() == before and lane.findings("h1", "bed-1", real, now=_at(T0 + 61.0)) is not None
+
+
+def test_the_mirror_writes_finding_rows_for_a_linked_patient_only_with_their_relation():
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)                                         # bed-1 is linked, bed-2 is not
+    for pid in ("bed-1", "bed-2"):
+        for obs in (Observation(pid, SignalCode.HEART_RATE, 140, "bpm", DT0, "bridge"),
+                    Observation(pid, SignalCode.SPO2, 85, "%", DT0, "bridge")):
+            real.ingest(obs, now=DT0)                         # the door first, then the mirror (D1)
+            lane.mirror_observation("h1", obs, now=DT0, real=real)
+    rows = audit.records(tenant="h1", limit=50)
+    assert [(r.event_type, r.patient_id, r.subject, r.payload["relation"]) for r in rows] == [
+        ("shadow_alert", "bed-1", "news2", "same")]
+    shadow = lane.engines["h1"]
+    assert {a.kind for a in shadow.active_alerts("bed-2")} == {a.kind for a in real.active_alerts("bed-2")}
+
+
+def test_the_mirror_reaches_the_shadow_engine_only_and_the_lane_is_a_no_op_below_rules():
     lane, real, _ = _lane()
     lane.install("h1", real)
     obs = Observation("bed-1", SignalCode.SPO2, 90, "%", DT0, "bridge")
     real.ingest(obs, now=DT0)
-    lane.mirror_observation("h1", obs, now=DT0)
+    lane.mirror_observation("h1", obs, now=DT0, real=real)
     assert lane.engines["h1"].state("bed-1").latest(SignalCode.SPO2).value == 90
-    off, real2, _ = _lane(stage_rules=False)
+    assert len(real.state("bed-1").history(SignalCode.SPO2)) == 1                 # not twice into the real one
+    lane.mirror_profile("h1", PatientProfile("bed-1", baseline_sofa=2))
+    assert lane.engines["h1"].profile("bed-1").baseline_sofa == 2 and real.profile("bed-1") is None
+    off, real2, audit2 = _lane(stage_rules=False)
     off.install("h1", real2)
-    off.mirror_observation("h1", obs, now=DT0)
-    assert "h1" not in off.engines
-
-
-def test_restart_replays_the_last_24_hours_of_samples_and_seeds_the_clock_and_the_open_findings():
-    lane, real, audit = _lane()
-    lane.install("h1", real)
-    cards = [{"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0.5"}]
-    views = {"10.0.0.5": _view(_cell("hr", value=140), _cell("spo2", value=85, unit="%"))}
-    lane.sample("h1", views, cards, now=T0)
-    again = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=audit, enabled=True)
-    again.install("h1", Engine(), now=DT0 + timedelta(seconds=30))
-    shadow = again.engines["h1"]
-    assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).value == 140
-    assert not again.sampler.due("bed-1", pick(views["10.0.0.5"], DEFAULT_PARAMETERS, now=T0 + 30)[0], now=T0 + 30)
-    # The finding is open from before: replaying does not open it twice.
-    again.sample("h1", views, cards, now=T0 + 61.0)
-    assert len(audit.records(tenant="h1", event_type="shadow_alert", limit=50)) == 1
-    # Samples older than the replay window are not replayed.
-    stale = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=InMemoryAuditLog(), enabled=True)
-    stale.install("h1", Engine(), now=DT0 + timedelta(hours=REPLAY_HOURS, minutes=1))
-    assert "bed-1" not in stale.engines["h1"].patient_ids()
+    off.mirror_observation("h1", obs, now=DT0, real=real2)
+    off.mirror_profile("h1", PatientProfile("bed-1"))
+    off.forget("h1", "bed-1", now=DT0)
+    assert off.sample("h1", _vitals(), [CARD], real2, now=T0) == []
+    assert off.findings("h1", "bed-1", real2, now=DT0) is None
+    assert off.engines == {} and off.linked == {} and audit2.records(tenant="h1", limit=5) == []
 
 
 def test_a_lane_failure_is_swallowed_and_logged_once(caplog):
