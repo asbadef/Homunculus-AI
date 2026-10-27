@@ -236,6 +236,18 @@ describe("the router", () => {
     await screen.findByRole("heading", { level: 1, name: "Ayarlar" });
     expect(document.activeElement).toBe(main);                          // back to the first screen too
   });
+
+  // The layout contract jsdom can pin: <main> scrolls its screen and is the containing block for
+  // every absolutely positioned descendant — the screen-reader-only spans above all. Without
+  // `relative`, a span at 1400 px of a long screen sat inside the app scroller (main.jsx) instead,
+  // which then scrolled the whole shell up and showed the dark page background below it (the
+  // ward, 2026-10-26, on every patient screen; measured headless: 1525 px of scroller for 635).
+  it("scrolls its own screen and contains its screen-reader-only text (the black band of 26.10)", async () => {
+    built({ beds: BedsProbe });
+    await renderShell();
+    const main = screen.getByRole("main");
+    for (const cls of ["relative", "min-h-0", "overflow-auto"]) expect(main.classList.contains(cls), cls).toBe(true);
+  });
 });
 
 // The rights come from the token, and a refreshed one carries the CURRENT groups: an

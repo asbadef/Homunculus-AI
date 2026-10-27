@@ -158,7 +158,16 @@ export function Shell({ resume = "" }) {
         <Sidebar perms={user.perms} current={match?.route.under ?? match?.route.id ?? null} />
         <div className="grid min-h-0 min-w-0 grid-rows-[58px_minmax(0,1fr)]">
           <TopBar title={title} />
-          <main ref={main} id="main" tabIndex={-1} className="min-h-0 overflow-auto px-5 pb-10 pt-[18px] outline-none max-[640px]:px-3 max-[640px]:pt-3.5">
+          {/* `relative`: <main> is the containing block for every absolutely positioned descendant, above
+              all the screen-reader-only spans (`sr-only` is `position: absolute`). Without it their
+              containing block is the app scroller (main.jsx AppShell, `relative … overflow-y-auto`), and
+              a span deep in a long screen — the patient screen's trend cards, at 900–1400 px of <main>'s
+              content — sits at its static position INSIDE THE SCROLLER, which then has 890 px of scrollable
+              overflow below the shell: once <main> reached its end the wheel chained to the scroller, the
+              whole shell moved up and the body's dark background filled the window (the ward, 2026-10-26,
+              every Chrome; reproduced headless at 1536×730, dpr 1.25: scroller 1525 px for 635 px, and 635
+              with this). Positioned here, those spans are clipped and scrolled by <main> like everything else. */}
+          <main ref={main} id="main" tabIndex={-1} className="relative min-h-0 overflow-auto px-5 pb-10 pt-[18px] outline-none max-[640px]:px-3 max-[640px]:pt-3.5">
             {content}
           </main>
         </div>
