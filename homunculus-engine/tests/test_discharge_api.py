@@ -790,6 +790,73 @@ async def test_a_release_checks_every_discharged_patient_of_the_bed_not_the_last
                                                                              (number, "ok")]
 
 
+# ---------------------------------------------------------------- the administrator's raw move
+async def test_the_raw_transition_frees_no_bed_whose_admission_is_open(ward, db_session):
+    """Final review: the administrator's raw route (`POST /tenant/beds/{id}/transition`,
+    `structure.manage`) could walk an occupied bed through cleaning to AVAILABLE while its
+    admission stayed open, and the next admission put a second patient on it. A move to
+    AVAILABLE is refused `bed_in_use` while an admission on the bed is open — from cleaning and
+    from maintenance alike; the moves that do not free the bed still go."""
+    w, client, _ = ward
+    bed_id = w.beds["1"].id
+    admission = await signed(w, client)
+
+    async def move(state: str):
+        return await client.post(f"/tenant/beds/{bed_id}/transition", json={"new_state": state},
+                                 headers=w.auth["admin"])
+
+    for state, answer in (("PENDING_DISCHARGE", 200), ("HOUSEKEEPING", 200), ("AVAILABLE", 409),
+                          ("MAINTENANCE", 200), ("AVAILABLE", 409)):
+        r = await move(state)
+        assert r.status_code == answer, (state, r.text)
+        if answer == 409:
+            assert r.json()["detail"]["code"] == "bed_in_use"
+    db_session.expire_all()
+    assert (await db_session.execute(select(Bed.state).where(Bed.id == bed_id))).scalar_one() \
+        == BedState.MAINTENANCE
+    assert (await db_session.execute(select(Admission.state).where(
+        Admission.id == uuid.UUID(admission["id"])))).scalar_one() == AdmissionState.ACTIVE
+    assert await _cards_on(client, bed_id) == [admission["patient_number"]]
+
+
+async def test_the_raw_transition_frees_no_bed_under_a_card_left_standing(ward, db_session,
+                                                                         monkeypatch):
+    """Final review: HOUSEKEEPING → AVAILABLE through the raw route skipped the release's check
+    and freed the bed while its last patient's card stood (a discharge whose board step failed).
+    It runs the release's heal first — and so does MAINTENANCE → AVAILABLE — and is refused
+    `board_not_cleared` with that patient's number while the card cannot be taken off."""
+    w, client, app = ward
+    bed_id = w.beds["1"].id
+    admission = await started(w, client)
+    number = admission["patient_number"]
+
+    async def move(state: str):
+        return await client.post(f"/tenant/beds/{bed_id}/transition", json={"new_state": state},
+                                 headers=w.auth["admin"])
+
+    with monkeypatch.context() as patched:
+        patched.setattr(BoardLink, "discharge_identity", _refused_tombstone)
+        r = await client.post(f"/admissions/{admission['id']}/discharge/confirm",
+                              headers=w.auth["charge"])
+        assert (r.status_code, r.json()["board"]) == (200, "failed")
+        for state, answer in (("AVAILABLE", 409), ("MAINTENANCE", 200), ("AVAILABLE", 409)):
+            r = await move(state)
+            assert r.status_code == answer, (state, r.text)
+            if answer == 409:
+                assert (r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) == \
+                    ("board_not_cleared", number)
+        assert await _cards_on(client, bed_id) == [number]
+
+    r = await move("AVAILABLE")
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, bed_id) == []
+    assert [(row.payload["via"], row.payload["board"], row.payload["actor"])
+            for row in audited(app, "admission.discharge_board_retry")] == [
+        ("bed.transition", "failed", "admin@kabul.example.com"),
+        ("bed.transition", "failed", "admin@kabul.example.com"),
+        ("bed.transition", "ok", "admin@kabul.example.com")]
+
+
 async def test_without_a_board_link_the_card_and_the_alerts_are_failed_never_skipped(
         ward, monkeypatch, caplog):
     """X53 (Task 8 re-review): `skipped` means "not asked". The card's removal is always asked
