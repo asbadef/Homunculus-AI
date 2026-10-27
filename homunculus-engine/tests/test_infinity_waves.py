@@ -2,9 +2,13 @@
 (infinity_wave_packets.py): no capture, no monitor traffic, no patient values."""
 import pytest
 
-from infinity_wave_packets import (ECG, ECG_OTHER, PLETH, PRESSURE_ART, PRESSURE_P1, RESP, block, no_signal,
-                                   packet, tick)
-from homunculus.edge.infinity_waves import RATES, WAVES, parse_waves
+from infinity_wave_packets import (
+    ECG, ECG_OTHER, PLETH, PRESSURE_ART, PRESSURE_P1, RESP, at, block, no_signal, packet, tick,
+)
+from homunculus.edge.infinity_stream import Inventory, packet_event
+from homunculus.edge.infinity_waves import (
+    ANSWER_S, MAX_TRANSPORT_DELAY, RATES, WAVES, WINDOW_S, WaveBuffer, parse_waves,
+)
 
 
 # --- the decoder -----------------------------------------------------------------------------------
@@ -105,3 +109,126 @@ def test_every_catalogue_entry_has_the_same_keys_a_known_evidence_and_an_allowed
         if entry["kind"] == "ecg":
             assert entry["label"] is None, hex(wave)
     assert [wave for wave, entry in WAVES.items() if entry["label"] == "ART"] == [PRESSURE_ART]
+
+
+# --- the ring --------------------------------------------------------------------------------------
+
+def inventory(count=2):
+    return Inventory.parse({"collector_id": "synthetic", "interface": "192.0.2.200/24", "devices": [
+        {"id": f"synthetic-{i}", "source": f"192.0.2.{i}", "group": f"239.20.1.{i}", "port": 2050}
+        for i in range(1, count + 1)]})
+
+
+INV = inventory()
+BED = "192.0.2.1"
+
+
+def event(payload, stamp, *, index=0, mode="live"):
+    return packet_event(INV, INV.devices[index], payload, 2564, received_at=stamp, retain_payload=True, mode=mode)
+
+
+def ring(now):
+    return WaveBuffer(INV, clock=lambda: now[0])
+
+
+def times(found, source=BED):
+    return [(b["t"], b["id"]) for b in found[source]]
+
+
+def test_blocks_come_back_in_device_time_order_whatever_order_they_arrived_in():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(1), ecg=True, pressure=False, pleth=False, resp=False), 1000.0),
+                   event(tick(*at(0), ecg=True, pressure=False, pleth=False, resp=False), 1000.0)])
+    cursor, found = waves.since([BED], 0)
+    assert cursor == 2 and times(found) == [(1000.04, ECG), (1000.24, ECG)]
+    assert [b["seq"] for b in found[BED]] == [2, 1]
+    assert set(found[BED][0]) == {"seq", "t", "recv", "id", "rate", "samples"}
+    assert found[BED][0]["recv"] == "1970-01-01T00:16:40.000Z"
+
+
+def test_a_block_seen_twice_is_kept_once():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0)])
+    waves.consume([event(tick(*at(0)), 1000.0)])               # another event id, the same blocks
+    cursor, found = waves.since([BED], 0)
+    assert cursor == 4 and len(found[BED]) == 4
+
+
+def test_a_no_signal_block_travels_as_null():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(packet(no_signal(ECG, 200)), 1000.0)])
+    assert waves.since([BED], 0)[1][BED][0]["samples"] is None
+
+
+@pytest.mark.parametrize("stamp, mode, kept", [
+    (1000.0 - MAX_TRANSPORT_DELAY + 0.1, "live", True),
+    (1000.0 - MAX_TRANSPORT_DELAY, "live", False),             # an outbox replay after an outage
+    (1000.5, "live", False),                                   # from the future
+    (1000.0, "replay", False),
+])
+def test_only_a_live_packet_younger_than_three_seconds_is_added(stamp, mode, kept):
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), stamp, mode=mode)])
+    assert bool(waves.since([BED], 0)[1][BED]) is kept
+    assert waves.refused == (0 if kept else 1)
+
+
+def test_the_ring_holds_twenty_seconds_and_an_answer_carries_ten():
+    now = [0.0]
+    waves = ring(now)
+    for k in range(125):                                       # 25 s of packets, each fresh
+        now[0] = 5000.0 + k * 0.2
+        waves.consume([event(tick(*at(k), pressure=False, pleth=False, resp=False), now[0])])
+    held = [entry[0] for entry in waves.devices[BED]]
+    assert (held[-1] - held[0]) / 1000 <= WINDOW_S
+    found = waves.since([BED], 0)[1][BED]
+    assert found[-1]["t"] - found[0]["t"] <= ANSWER_S
+
+
+def test_after_twenty_seconds_without_data_a_monitor_answers_nothing():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0)])
+    now[0] = 1000.0 + WINDOW_S + 0.1
+    assert waves.since([BED], 0)[1][BED] == []
+
+
+def test_the_cursor_is_one_counter_for_every_monitor():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0, index=0)])
+    first, _ = waves.since([BED], 0)
+    waves.consume([event(tick(*at(0)), 1000.0, index=1), event(tick(*at(1)), 1000.0, index=0)])
+    cursor, found = waves.since([BED, "192.0.2.2"], first)
+    assert (first, cursor) == (4, 12)
+    # one device time: by wave id (0x0103, 0x0201, 0x0301, 0x1916)
+    assert times(found) == [(1000.24, ECG), (1000.24, RESP), (1000.24, PRESSURE_ART), (1000.24, PLETH)]
+    assert len(found["192.0.2.2"]) == 4
+
+
+def test_a_cursor_from_before_a_restart_counts_as_zero():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(*at(0)), 1000.0)])
+    assert len(waves.since([BED], 10**9)[1][BED]) == 4
+
+
+def test_a_monitor_clock_set_back_drops_what_was_held():
+    now = [1000.0]
+    waves = ring(now)
+    waves.consume([event(tick(5000, 40), 1000.0)])
+    waves.consume([event(tick(100, 40), 1000.0)])
+    assert {b["t"] for b in waves.since([BED], 0)[1][BED]} == {100.04}
+
+
+def test_a_source_the_inventory_does_not_list_and_a_payloadless_event_are_ignored():
+    now = [1000.0]
+    waves = ring(now)
+    assert waves.knows(BED) and not waves.knows("192.0.2.99")
+    waves.consume([dict(event(tick(*at(0)), 1000.0), source_ip="192.0.2.99"),
+                   dict(event(tick(*at(0)), 1000.0), payload_base64=None)])
+    assert waves.cursor == 0 and waves.refused == 0

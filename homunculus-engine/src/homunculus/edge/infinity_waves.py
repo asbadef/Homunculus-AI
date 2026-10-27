@@ -21,7 +21,12 @@ sends no inventory name), so the API can find a monitor on a strip card and ask 
 """
 from __future__ import annotations
 
+import base64
+import bisect
 import struct
+import threading
+import time
+from array import array
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -101,3 +106,110 @@ def parse_waves(payload) -> list[WaveBlock]:
 def iso_z(epoch: float) -> str:
     """An epoch as UTC ISO 8601 with milliseconds and a Z."""
     return datetime.fromtimestamp(epoch, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+# --- the ring ------------------------------------------------------------------------------------
+
+WINDOW_S = 20.0            # what the hub holds per monitor, by device time and by receipt time
+ANSWER_S = 10.0            # the most one answer carries per monitor
+MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox replay is never live
+MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
+
+
+def _order(entry):
+    return entry[0], entry[1]
+
+
+class WaveBuffer:
+    """The last WINDOW_S of wave blocks per monitor, in memory, and one cursor for the whole hub.
+
+    An entry is (t_ms, wave_id, seq, received_at, recv, rate, samples), ordered by device time and
+    one per (t_ms, wave_id). `seq` is the hub-wide cursor value the block was added under, so one
+    `since` serves any set of monitors (phase 2's wall). A packet received more than
+    MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
+    `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
+    A fresh block more than WINDOW_S older than the monitor's newest means the monitor's clock went
+    back (a restart, a clock set): what was held is dropped rather than left to hide the new data."""
+
+    def __init__(self, inventory, *, clock=time.time):
+        self.clock = clock
+        self.lock = threading.Lock()
+        self.devices = {device.source: [] for device in inventory.devices}
+        self.keys = {device.source: set() for device in inventory.devices}
+        self.cursor = 0
+        self.refused = 0
+
+    def knows(self, source) -> bool:
+        return source in self.devices
+
+    def consume(self, events) -> None:
+        now = self.clock()
+        with self.lock:
+            for event in events:
+                self._consume_one(event, now)
+
+    def _consume_one(self, event, now) -> None:
+        source = event.get("source_ip")
+        payload = event.get("payload_base64")
+        if source not in self.devices or payload is None:
+            return
+        epoch = event.get("received_at")
+        if (event.get("mode") != "live" or type(epoch) not in (int, float)
+                or not now - MAX_TRANSPORT_DELAY < epoch <= now):
+            self.refused += 1
+            return
+        try:
+            raw = base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError):
+            self.refused += 1
+            return
+        recv = iso_z(epoch)
+        for block in parse_waves(raw):
+            self._add(source, block, float(epoch), recv)
+        self._prune(source, now)
+
+    def _add(self, source, block, epoch, recv) -> None:
+        held, keys = self.devices[source], self.keys[source]
+        key = (block.t_ms, block.wave_id)
+        if key in keys:
+            return
+        if held and block.t_ms < held[-1][0] - WINDOW_S * 1000:
+            held.clear()
+            keys.clear()
+        self.cursor += 1
+        samples = None if block.samples is None else array("h", block.samples)
+        bisect.insort(held, (block.t_ms, block.wave_id, self.cursor, epoch, recv, block.rate, samples), key=_order)
+        keys.add(key)
+
+    def _prune(self, source, now) -> None:
+        held, keys = self.devices[source], self.keys[source]
+        if not held:
+            return
+        floor, stale = held[-1][0] - WINDOW_S * 1000, now - WINDOW_S
+        cut = 0
+        while cut < len(held) and (held[cut][0] < floor or held[cut][3] < stale):
+            keys.discard(held[cut][:2])
+            cut += 1
+        if cut:
+            del held[:cut]
+
+    def since(self, sources, cursor):
+        """(the hub's cursor now, {source: [block, ...]}): per monitor, the blocks added after
+        `cursor` and at most ANSWER_S behind its newest block. A cursor ahead of this hub's (one
+        from before a restart) counts as 0. Every source must be one `knows` accepts."""
+        now = self.clock()
+        with self.lock:
+            current = self.cursor
+            if cursor > current:
+                cursor = 0
+            found = {}
+            for source in sources:
+                self._prune(source, now)
+                held = self.devices[source]
+                floor = held[-1][0] - ANSWER_S * 1000 if held else 0
+                found[source] = [
+                    {"seq": seq, "t": t_ms / 1000, "recv": recv, "id": wave, "rate": rate,
+                     "samples": None if samples is None else samples.tolist()}
+                    for t_ms, wave, seq, _epoch, recv, rate, samples in held
+                    if seq > cursor and t_ms >= floor]
+        return current, found
