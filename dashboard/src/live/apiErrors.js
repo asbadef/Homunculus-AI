@@ -166,6 +166,9 @@ export const ADMISSION_CODE_KEYS = new Map([
 const WITH_NUMBER = new Map([
   ["request_conflict", "kabul.err.requestConflictNumber"],
   ["board_not_cleared", "kabul.err.boardNotClearedNumber"],
+  // A-37: the person's open admission, by its number when the caller's units hold its bed. The code
+  // itself (`kabul.err.duplicateOpenAdmission`) joins ADMISSION_CODE_KEYS when errors.py raises it.
+  ["duplicate_open_admission", "kabul.err.duplicateOpenAdmissionNumber"],
 ]);
 
 /** The fields no screen sends today (admission/schemas.py AdmissionNoteFields): one sentence says a

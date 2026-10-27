@@ -66,8 +66,9 @@ export function freshForm() {
  *  yet, `{bedId, bed, name, checked, requestId}`; `held`: `{bed}` while a send waits on one of them,
  *  or `{bed, conflict: {key, vars}}` once the server said an admission exists under the form's id
  *  (`request_conflict`, until «Yeni qəbul»; `bed` the earlier send's, or null when that is not one
- *  bed); `done`: the box open in place of the form,
- *  `{number, bed, engine, recovered?, earlier?}`. */
+ *  bed), or `{bed: null, duplicate: {key, vars}}` once it said the form's patient has an admission
+ *  open already (`duplicate_open_admission`, A-37, until «Yeni qəbul»); `done`: the box open in
+ *  place of the form, `{number, bed, engine, recovered?, earlier?}`. */
 const fresh = () => ({ ...freshForm(), sending: false, held: null, unanswered: [], done: null });
 
 /** `state`, its form under the id that is its patient's:

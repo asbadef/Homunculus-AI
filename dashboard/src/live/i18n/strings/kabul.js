@@ -141,6 +141,12 @@ export default {
       // `board_not_cleared`); with that patient's number when the server gives it.
       boardNotCleared: "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı. Biraz sonra yeniden deneyin; sürerse sistem yöneticisine bildirin.",
       boardNotClearedNumber: "Bu yatağın son hastasının kartı (hasta no {number}) hâlâ panoda; yatak boşaltılmadı. Biraz sonra yeniden deneyin; sürerse sistem yöneticisine bildirin.",
+      // A-37: a second open admission of the same person (name and birth date), refused whatever
+      // the form's id (`duplicate_open_admission`); with the open admission's number when the
+      // caller's units hold its bed. And the transfer routes, closed for now (`transfer_unavailable`).
+      duplicateOpenAdmission: "Bu hastanın açık bir kabulü zaten var; önce taburcu edilmeli. Form gönderilmedi.",
+      duplicateOpenAdmissionNumber: "Bu hastanın açık bir kabulü zaten var (hasta no {number}); önce taburcu edilmeli. Form gönderilmedi.",
+      transferUnavailable: "Transfer henüz kullanılamıyor.",
     },
     invalid: {
       displayName: "Ad soyad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",
@@ -290,6 +296,9 @@ export default {
       requestConflictNumber: "Bu forma ilə artıq qəbul yazılıb (xəstə nömrəsi {number}); forma yenidən göndərilmədi. «Evə yazılma › Yatan xəstələr» siyahısına baxın.",
       boardNotCleared: "Bu çarpayının son xəstəsinin kartı hələ paneldədir; çarpayı boşaldılmadı. Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.",
       boardNotClearedNumber: "Bu çarpayının son xəstəsinin kartı (xəstə nömrəsi {number}) hələ paneldədir; çarpayı boşaldılmadı. Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.",
+      duplicateOpenAdmission: "Bu xəstənin artıq açıq qəbulu var; əvvəlcə evə yazılmalıdır. Forma göndərilmədi.",
+      duplicateOpenAdmissionNumber: "Bu xəstənin artıq açıq qəbulu var (xəstə nömrəsi {number}); əvvəlcə evə yazılmalıdır. Forma göndərilmədi.",
+      transferUnavailable: "Köçürmə hələ mümkün deyil.",
     },
     invalid: {
       displayName: "Ad soyad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
@@ -439,6 +448,9 @@ export default {
       requestConflictNumber: "По этой форме приём уже оформлен (номер пациента {number}); форма повторно не отправлена. Проверьте список «Выписка › Госпитализированные пациенты».",
       boardNotCleared: "Карточка последнего пациента этой койки всё ещё на панели; койка не освобождена. Повторите чуть позже; если не поможет — сообщите администратору системы.",
       boardNotClearedNumber: "Карточка последнего пациента этой койки (номер пациента {number}) всё ещё на панели; койка не освобождена. Повторите чуть позже; если не поможет — сообщите администратору системы.",
+      duplicateOpenAdmission: "У этого пациента уже есть открытый приём; сначала его нужно выписать. Форма не отправлена.",
+      duplicateOpenAdmissionNumber: "У этого пациента уже есть открытый приём (номер пациента {number}); сначала его нужно выписать. Форма не отправлена.",
+      transferUnavailable: "Перевод пока недоступен.",
     },
     invalid: {
       displayName: "Нужны имя и фамилия.", dateOfBirth: "Дата рождения неверна.",
@@ -587,6 +599,9 @@ export default {
       requestConflictNumber: "An admission was already recorded under this form (patient number {number}); the form was not sent again. Check «Discharge › Inpatients».",
       boardNotCleared: "This bed's last patient's card is still on the board; the bed was not freed. Try again shortly; if it persists, tell the system administrator.",
       boardNotClearedNumber: "This bed's last patient's card (patient number {number}) is still on the board; the bed was not freed. Try again shortly; if it persists, tell the system administrator.",
+      duplicateOpenAdmission: "This patient already has an open admission; discharge it first. The form was not sent.",
+      duplicateOpenAdmissionNumber: "This patient already has an open admission (patient number {number}); discharge it first. The form was not sent.",
+      transferUnavailable: "Transfer is not available yet.",
     },
     invalid: {
       displayName: "The full name is required.", dateOfBirth: "The date of birth is not valid.",

@@ -747,6 +747,54 @@ describe("AdmitTab", () => {
     });
   });
 
+  // A-37: the server refuses a second OPEN admission of the same person — her name and birth date,
+  // in the hospital — whatever the form's id: `duplicate_open_admission`, with the open admission's
+  // number when the nurse's units hold its bed. Nothing was written; that admission is discharged
+  // first. The form is held, never sent again, and nothing is retried.
+  describe("a second open admission of the same person (A-37)", () => {
+    const DUPLICATE = "Bu xəstənin artıq açıq qəbulu var (xəstə nömrəsi H2600042); əvvəlcə evə yazılmalıdır. Forma göndərilmədi.";
+    const duplicate = () => refusal(409, "An open admission already exists for this patient.",
+      { apiCode: "duplicate_open_admission", patientNumber: "H2600042" });
+
+    it("holds «Qəbul et» with words of its own, sends nothing more and retries nothing — and «Yeni qəbul» starts afresh", async () => {
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE, setup: (a) => a.admit.mockRejectedValueOnce(duplicate()).mockResolvedValue(admitted()),
+      });
+      fillRequired();
+      const spent = admitDraftOf(store).get().requestId;
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);
+
+      const reason = panel().getByText(DUPLICATE);
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+      expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
+      expect(document.activeElement).toBe(reason);                           // the hold is news
+      expect(admitDraftOf(store).get().held).toEqual({
+        bed: null, duplicate: { key: "kabul.err.duplicateOpenAdmissionNumber", vars: { number: "H2600042" } },
+      });
+      expect(panel().queryByRole("button", { name: GO_ON })).toBeNull();    // nothing to go on to: it exists
+      // The toast names no bed: the open admission's is not known here, and the form's is not it.
+      expect(toasts().getAllByText(DUPLICATE).length).toBeGreaterThan(0);
+      expect(toasts().queryByText(`${BED1}: ${DUPLICATE}`)).toBeNull();
+      expect(document.body.textContent).not.toMatch(/already exists/);
+      expect(api.admissions).not.toHaveBeenCalled();                         // a refusal, not a send with no answer
+      expect(admitDraftOf(store).get().unanswered).toEqual([]);
+
+      admitButton().focus();
+      await press();                                                         // never sent again
+      await settle();
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(reason);
+
+      await act(async () => { fireEvent.click(panel().getByRole("button", { name: "Yeni qəbul" })); });
+      expect(nameField().value).toBe("");
+      expect(document.activeElement).toBe(nameField());
+      expect(panel().queryByText(DUPLICATE)).toBeNull();
+      expect(admitDraftOf(store).get().requestId).not.toBe(spent);
+      expect(api.admit).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("the form's memory — the session's, not the tab's (A-21)", () => {
     afterEach(() => {
       window.location.hash = "";

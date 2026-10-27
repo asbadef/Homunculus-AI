@@ -51,6 +51,12 @@
 // the list. Only «Yeni qəbul» leaves the hold: a new form, under a new id. The sends that went under
 // the id stay remembered — not where it landed is known, only that it did — and are looked at again,
 // so a send of another bed or name is held until her look finds it or she has looked once more (R1, R2).
+//
+// ONE PERSON, ONE OPEN ADMISSION (A-37). Whatever the id, the server refuses an admission of a person
+// — her name and birth date — who has one open already: `duplicate_open_admission`, with that
+// admission's number when the nurse's units hold its bed. Nothing was written. «Kabul et» is held as
+// for `request_conflict`, with words of its own, and nothing is sent again or retried; only «Yeni
+// qəbul» leaves the hold. The open admission is discharged first.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -168,7 +174,8 @@ export function AdmitTab() {
   // The session's (admitDraft.js): `sending` is read from the draft at once, so a second press in
   // the same tick — or in a tab mounted while the first is on its way — sees it; `held` ({bed}): a
   // send got no answer, and nothing is sent until she has looked — or ({bed, conflict}) an admission
-  // exists under the form's id, and nothing is sent until «Yeni qəbul»; `unanswered`: every send with no
+  // exists under the form's id, or ({bed: null, duplicate}) one of the form's patient is open (A-37),
+  // and nothing is sent until «Yeni qəbul»; `unanswered`: every send with no
   // answer whose admission is not found yet ({bedId, bed, name, checked, requestId}); `done`: the box.
   const [draftState, draft] = useAdmitDraft();
   const { form, tried, sending: busy, held, done } = draftState;
@@ -330,6 +337,17 @@ export function AdmitTab() {
       await reload();
       return;
     }
+    if (err?.apiCode === "duplicate_open_admission") {
+      // A-37: an admission of the form's patient — her name and birth date, in this hospital — is
+      // open already, under another form or another nurse's. Nothing was written, and nothing of
+      // this form is sent again, nor retried: held, with words of its own (that admission's number
+      // when her units hold its bed), until «Yeni qəbul»; that admission is discharged first. The
+      // toast names no bed: that admission's is not known here, and the form's is not it.
+      draft.update({ held: { bed: null, duplicate: apiErrorKey(err) } });
+      toast(refusedFor(t, "", err), "error");
+      await reload();
+      return;
+    }
     if (mayHaveLanded(err)) {
       draft.update((s) => ({ unanswered: [...s.unanswered.filter((x) => !sameSend(x, sent)), sent] }));
       const tree = await reload();
@@ -402,6 +420,9 @@ export function AdmitTab() {
   }
 
   const where = whereOf(t);
+  // An admission exists — under the form's id (request_conflict), or of the form's patient
+  // (duplicate_open_admission): a hold only «Yeni qəbul» ends.
+  const exists = held?.conflict ?? held?.duplicate ?? null;
   return (
     <form noValidate autoComplete="off" onSubmit={submit} className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
       <div className="grid min-w-0 gap-3">
@@ -547,10 +568,10 @@ export function AdmitTab() {
         {held ? (
           <div className="mt-2 grid justify-items-start gap-2">
             <p id={heldId} tabIndex={-1} className={`m-0 text-12.5 font-semibold text-crit-ink ${FOCUS_RING}`}>
-              {held.conflict ? t(held.conflict.key, held.conflict.vars) : t("kabul.heldNoAnswer", { bed: held.bed, where })}
+              {exists ? t(exists.key, exists.vars) : t("kabul.heldNoAnswer", { bed: held.bed, where })}
             </p>
-            {held.conflict ? (
-              // An admission exists under this form: there is nothing to go on to, only a new form.
+            {exists ? (
+              // An admission exists: there is nothing to go on to, only a new form.
               <Button size="sm" onClick={startAfresh}>{t("kabul.next")}</Button>
             ) : (
               // She has looked: the hold goes, the search does not — every send still looks first (R2).

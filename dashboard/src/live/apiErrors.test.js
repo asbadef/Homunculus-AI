@@ -571,6 +571,24 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     }
   });
 
+  // A-37: the server refuses a second open admission of the same person (name and birth date, in the
+  // tenant) whatever the form's id — `duplicate_open_admission`, naming the open admission's number
+  // only when the caller's units hold its bed — and the transfer routes are closed for now
+  // (`transfer_unavailable`). The sentences are here before errors.py raises the two codes; the
+  // codes join the map with it.
+  it("duplicate_open_admission names the open admission's number when the server gives it, and both A-37 texts exist in the four languages", () => {
+    const withNumber = Object.assign(coded("duplicate_open_admission"), { patientNumber: "H2600042" });
+    expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.duplicateOpenAdmissionNumber", vars: { number: "H2600042" } });
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
+      expect(apiErrorText(t, withNumber), lang).not.toMatch(/\{number\}|English words/);
+      for (const key of ["kabul.err.duplicateOpenAdmission", "kabul.err.transferUnavailable"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+      }
+    }
+  });
+
   // The fields no screen sends today read one sentence that says so — and the guard that they are
   // still not sent: the day a screen sends one, it needs its own sentence here.
   it("a field this screen never sends reads that it was not the screen's, and the form's body indeed holds none of them", () => {
