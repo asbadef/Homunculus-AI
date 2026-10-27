@@ -11,12 +11,13 @@
 // is read again; a bed any re-read shows taken, closed or gone stops being the form's choice, so the
 // panel names the bed missing again.
 //
-// A SEND THAT GOT NO ANSWER (`mayHaveLanded`) MUST NOT BECOME A SECOND ADMISSION. The server makes
-// a new patient for every POST, so the one thing that ties two sends of the same nurse together is
-// the BED: the server locks it and gives it to one admission only. After no answer the structure
-// is read again (and waited for: "Kabul et" stays busy until then):
-//   * the bed is still free — nothing landed yet; she may send again, to the same bed, and the
-//     server takes one of the two;
+// A SEND THAT GOT NO ANSWER (`mayHaveLanded`) MUST NOT BECOME A SECOND ADMISSION. What ties two
+// sends together is the form's REQUEST ID (A-19, below): the server keeps one id to one admission,
+// and answers a send again under it with the admission the first made. The bed no longer does. A
+// send under another id — another name typed, a new form — is a new admission to the server, so
+// after no answer the structure is read again (and waited for: "Kabul et" stays busy until then):
+//   * the bed is still free — nothing landed yet; she may send again, under the same id, and the
+//     server makes one admission of the two;
 //   * the bed is taken, or its state could not be read — the admissions are read, a DRAFT or one a
 //     physician has signed since (ACTIVE, M-1): one on that bed under the name she sent is the
 //     send that landed, and its number box is shown; none, and "Kabul et" is held, with the bed
@@ -26,7 +27,8 @@
 //   * before EVERY later send its admission is looked for — also after «go on», which only marks the
 //     send as looked at (R2);
 //   * while one is unanswered and not looked at, a send to ANOTHER bed or under ANOTHER name is
-//     held, naming the unanswered send's bed (R1): only the same bed lets the server take one of two;
+//     held, naming the unanswered send's bed (R1): another name goes under another id, which the
+//     server ties to nothing the first may have left, and another bed waits until she has looked;
 //   * an admission found is the form's only under the form's own name (R3). Another name's is
 //     an earlier patient's: its number box says so, and the form is kept for its own send — never is
 //     another patient's number shown as the form's, the number the nurse enters on the device;
@@ -73,7 +75,7 @@ const localToday = () => {
 /** Where an admission that may have landed is looked for: "Evə yazılma › Yatan xəstələr". */
 const whereOf = (t) => `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
 
-/** Two sends for the same bed under the same name — the one pair the server's bed lock keeps to one admission. */
+/** Two sends for the same bed under the same name — a retry of one send, under its own request id (A-24 I-1). */
 const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.name, b.name);
 
 /** The engine parts the number box names when they did not land, in the order it names them. */

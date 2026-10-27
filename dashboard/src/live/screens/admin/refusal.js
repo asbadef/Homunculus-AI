@@ -1,7 +1,7 @@
-// src/live/screens/admin/refusal.js — a refused administration write, as the administrator reads
-// it on the toast. ONE copy, shared by the three tabs, for the reason `BoardState.jsx` exists on
-// the clinical side: three tabs with a copy each is how three screens come to word the same
-// refusal three ways.
+// src/live/screens/admin/refusal.js — a refused write, as its reader reads it on the toast. ONE
+// copy, shared by every screen that writes — the administration tabs, the Hasta Kabul screens and
+// the patient screen's forms — for the reason `BoardState.jsx` exists on the clinical side: a copy
+// each is how screens come to word the same refusal several ways.
 //
 // TWO RULES, BOTH LEARNED ON THE CLINICAL SCREENS.
 //
