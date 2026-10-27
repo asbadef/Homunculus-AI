@@ -178,6 +178,27 @@ describe("AdmitTab", () => {
     expect(document.activeElement.textContent).toMatch(/^Reanimasiya/);
   });
 
+  // Final review M-3: the control a "the bed is missing" press focuses says what is wrong — it is
+  // described by the bed's error, by id, as every other field is by its own.
+  it("describes the control the missing bed focuses by the bed's error: a unit, then the chosen unit's first free bed (M-3)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE });
+    const described = (control) => (control.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent);
+    fillRequired(["bed"]);
+    const unit = screen.getByRole("button", { name: /^Reanimasiya/ });
+    expect(described(unit)).toEqual([]);                                     // nothing is wrong yet
+    await press();
+    expect(document.activeElement).toBe(unit);
+    expect(described(unit)).toEqual(["Çarpayı"]);
+
+    fireEvent.click(unit);                                                   // the unit chosen, no bed yet
+    await press();
+    const bed = screen.getByRole("button", { name: "1" });
+    expect(document.activeElement).toBe(bed);
+    expect(described(bed)).toEqual(["Çarpayı"]);
+    expect(described(unit)).toEqual([]);                                     // only the control the press focuses
+  });
+
   it("admits with one request, shows the patient number with what to do with it, and takes the focus there", async () => {
     const { api } = await mountKabul(<AdmitTab />, {
       perms: NURSE,

@@ -29,23 +29,24 @@ const freeBeds = (unit) => (unit.rooms ?? []).flatMap((room) =>
  *  `onBed({id, unitId, label})` report a new one — `label` is "bed · room · unit", the words the
  *  screen names the admission by (choosing a unit clears the bed). `focusId` goes on the control
  *  a "the bed is missing" press focuses: the first bed the chosen unit can give, else that unit,
- *  else the first unit. */
-export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onUnit, onBed, invalid = false, focusId }) {
+ *  else the first unit. `describedBy` (the bed's error, by id, while it shows) describes that
+ *  control and no other (final review M-3). */
+export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onUnit, onBed, invalid = false, focusId, describedBy }) {
   const { t } = useI18n();
   if (!structure) {
     if (phase === "failed") {
       return (
         <div className="grid justify-items-start gap-2">
           <Alert tone="crit">{t("kabul.listFailed", { reason: readErrorText(t, error) })}</Alert>
-          <Button id={focusId} size="sm" onClick={() => onRetry?.()}>{t("admin.retry")}</Button>
+          <Button id={focusId} aria-describedby={describedBy} size="sm" onClick={() => onRetry?.()}>{t("admin.retry")}</Button>
         </div>
       );
     }
-    return <p id={focusId} tabIndex={-1} role="status" className="m-0 text-13 text-mute">{t("kabul.loading")}</p>;
+    return <p id={focusId} aria-describedby={describedBy} tabIndex={-1} role="status" className="m-0 text-13 text-mute">{t("kabul.loading")}</p>;
   }
   const units = (structure.sites ?? []).flatMap((site) => site.units ?? []);
   if (units.length === 0) {
-    return <p id={focusId} tabIndex={-1} className="m-0 text-13 text-mute">{t("kabul.pickerNone")}</p>;
+    return <p id={focusId} aria-describedby={describedBy} tabIndex={-1} className="m-0 text-13 text-mute">{t("kabul.pickerNone")}</p>;
   }
   const unit = units.find((u) => u.id === unitId) ?? null;
   const firstFree = unit ? freeBeds(unit)[0]?.id ?? null : null;
@@ -57,6 +58,7 @@ export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onU
           const open = u.is_active !== false;
           return (
             <button key={u.id} id={u.id === unitFocus ? focusId : undefined} type="button" aria-pressed={u.id === unitId}
+              aria-describedby={u.id === unitFocus ? describedBy : undefined}
               onClick={() => onUnit(u.id)}
               className={`rounded-ctl border px-3 py-1.5 text-13 font-semibold ${u.id === unitId ? "border-pri bg-pri-soft text-ink" : "border-line2 bg-card text-ink"} ${open ? "" : "opacity-60"} ${FOCUS_RING}`}>
               {u.name}
@@ -80,7 +82,7 @@ export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onU
                   const chosen = b.id === bedId;
                   return (
                     <button key={b.id} id={b.id === firstFree ? focusId : undefined} type="button" aria-pressed={chosen}
-                      aria-disabled={why ? "true" : undefined}
+                      aria-disabled={why ? "true" : undefined} aria-describedby={b.id === firstFree ? describedBy : undefined}
                       aria-label={why ? `${b.label} · ${t(why)}` : b.label}
                       onClick={() => {
                         if (!why) onBed({ id: b.id, unitId: unit.id, label: `${b.label} · ${room.name} · ${unit.name}` });

@@ -516,11 +516,13 @@ export function AdmitTab() {
         </Box>
 
         <Box title={<>{t("kabul.groupBed")}<span aria-hidden="true" className="text-crit-ink"> *</span></>} icon="bed" level={2}>
+          {/* The control a "the bed is missing" press focuses is described by the bed's error (M-3). */}
           <BedPicker structure={structure} phase={phase} error={error} onRetry={reload} focusId={idOf("bed")}
+            describedBy={errorOf("bed") ? idOf("bed-error") : undefined}
             unitId={form.unitId} bedId={form.bedId} invalid={Boolean(wrong("bed"))}
             onUnit={(unitId) => set({ unitId, bedId: null, bedLabel: null })}
             onBed={(bed) => set({ bedId: bed.id, unitId: bed.unitId, bedLabel: bed.label })} />
-          {errorOf("bed") ? <p className="m-0 mt-1 text-12 font-semibold text-crit-ink">{errorOf("bed")}</p> : null}
+          {errorOf("bed") ? <p id={idOf("bed-error")} className="m-0 mt-1 text-12 font-semibold text-crit-ink">{errorOf("bed")}</p> : null}
         </Box>
       </div>
 
