@@ -18,13 +18,14 @@ is a durable queue, not a fire-and-forget one.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
 from homunculus.api.audit import (
-    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, since_utc)
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, kinds_of, since_utc)
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -98,14 +99,23 @@ class PostgresAuditLog:
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
                 event_type: str | None = None, since: datetime | None = None,
                 limit: int = 200, newest: bool = False,
-                after_id: int | None = None) -> list[AuditRecord]:
+                after_id: int | None = None,
+                event_types: Iterable[str] | None = None) -> list[AuditRecord]:
         _one_order(newest, after_id)
+        kinds = kinds_of(event_types)
+        if kinds is not None and not kinds:
+            return []                        # an empty set matches nothing; `IN ()` is not SQL
         clauses, params = [], {"limit": limit}
         for column, value in (("tenant", tenant), ("patient_id", patient_id),
                               ("event_type", event_type)):
             if value is not None:
                 clauses.append(f"{column} = :{column}")
                 params[column] = value
+        if kinds is not None:
+            # One bound parameter per kind (`:kind_0`, …), sorted: the kinds are values, never SQL.
+            names = [f"kind_{n}" for n in range(len(kinds))]
+            clauses.append(f"event_type IN ({', '.join(':' + name for name in names)})")
+            params.update(zip(names, sorted(kinds)))
         bound = since_utc(since)
         if bound is not None:
             # `ts` is TEXT (migration 0004). Compared as text it would follow the database's

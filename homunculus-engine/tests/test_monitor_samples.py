@@ -6,7 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from homunculus.api.monitor_samples import RETENTION_DAYS, InMemorySamples, PostgresSamples, Sample
+from homunculus.api import infinity_rules
+from homunculus.api.monitor_samples import (
+    MEMORY_RETENTION_HOURS, RETENTION_DAYS, InMemorySamples, PostgresSamples, Sample, retention_bound,
+)
 from tests.conftest import TEST_DATABASE_URL, requires_db
 
 T0 = datetime(2026, 10, 27, 9, 0, tzinfo=timezone.utc)
@@ -19,9 +22,9 @@ def _sample(i, pid="bed-1", at=None):
 
 
 def _exercise(store):
-    for i in range(3):
-        store.append(_sample(i))
-    store.append(_sample(0, pid="bed-2"))
+    store.append(_sample(0))
+    store.append_many([])                                   # a pass that took nothing writes nothing
+    store.append_many([_sample(1), _sample(2), _sample(0, pid="bed-2")])     # one pass's rows, one write
     rows = store.since("h1", T0 - timedelta(hours=1), now=T0 + timedelta(minutes=5))
     assert [(r.patient_id, r.value) for r in rows] == [("bed-1", 70.0), ("bed-2", 70.0), ("bed-1", 71.0), ("bed-1", 72.0)]
     assert store.since("h2", T0 - timedelta(hours=1), now=T0 + timedelta(minutes=5)) == []
@@ -40,6 +43,19 @@ def test_in_memory_samples():
 
 def test_the_retention_is_thirty_days():
     assert RETENTION_DAYS == 30
+    assert retention_bound(T0) == T0 - timedelta(days=30)
+
+
+def test_in_memory_the_retention_is_the_replay_window():
+    """T6 review: in memory the store held 30 days though nothing reads a sample past the install's
+    replay of the last REPLAY_HOURS. It keeps that window and no more — the durable table keeps 30 days."""
+    assert MEMORY_RETENTION_HOURS == infinity_rules.REPLAY_HOURS == 24
+    assert retention_bound(T0, durable=False) == T0 - timedelta(hours=24)
+    assert retention_bound(T0, durable=True) == retention_bound(T0)
+
+
+def test_only_the_table_is_durable():
+    assert InMemorySamples.durable is False and PostgresSamples.durable is True
 
 
 @requires_db

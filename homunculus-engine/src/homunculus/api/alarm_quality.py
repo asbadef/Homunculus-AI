@@ -37,6 +37,12 @@ from homunculus.api.audit import AuditRecord
 # rather than a delay. Operational, not clinical — it is a reporting boundary, not a rule.
 DEFAULT_SETTLE = timedelta(minutes=10)
 
+# The audit kinds `build_episodes` reads — and the only ones `/alarm-quality` asks the audit for, so
+# that no other row (an `ingest`, a `notification`, Aşama B's `shadow_alert`) takes a place under the
+# report's cap and moves its counters (T6 review). A kind read below and left out here would vanish
+# from the report without a word; tests/test_alarm_quality.py holds the two to each other.
+EPISODE_KINDS = frozenset({"first_seen", "alert", "ack", "escalation", "alert_cleared"})
+
 
 def _parse(ts: str | None) -> datetime | None:
     if not ts:

@@ -502,10 +502,16 @@ forwarder stops the sampling by itself.
 
 **Migration 0013 (bu dalda B1a'dan sonra eklenir).** A new table, `monitor_samples` (hospital,
 patient, bed, source, code, via, value, unit, captured and received times), kept 30 days: an hourly
-task deletes older rows. The deploy blocks run `alembic upgrade head` as they do for 0012, and the API
+task deletes older rows — at every stage on a Postgres deployment, so after a rollback to `shadow` or
+`off` the rows a `rules` run wrote still expire; until the table exists that task logs one WARNING an
+hour («monitor_samples tablosu yok (göç 0013 uygulanmamış)») and skips. Without Postgres (a lab run)
+the samples stay in memory for 24 hours only, all a restart replays. Each sampling pass writes its rows
+in one transaction. The deploy blocks run `alembic upgrade head` as they do for 0012, and the API
 image's start command (`Dockerfile.api`) runs it too, so the table exists once the API is recreated on
 an image that contains the migration. An image rolled back later leaves the table in place; the older
-images do not read it. The table lives in the VM's database only.
+images do not read it. The table lives in the VM's database only. The same migration should add an
+audit index on `(tenant, event_type, id)`: the lane reads its two kinds newest-first and
+`/alarm-quality` reads its five, and without it each read walks the tenant's rows by id.
 
 **What the ward sees** (only at `rules`, only for a patient whose bed is linked):
 
@@ -537,6 +543,14 @@ every clinical output — the board's keys other than `shadow`, the audit rows o
 notifications, acknowledgements, escalation — identical to the stage-`off` run;
 `tests/test_infinity_shadow_isolation.py` holds `api/infinity_rules.py` to importing neither the
 notifier, the ack store, the alert lifecycle nor the alarm-quality module.
+
+**The audit's windows at `rules`.** The shadow rows are in the same audit log as the real ones.
+`/alarm-quality` reads only the kinds it counts (`first_seen`, `alert`, `ack`, `escalation`,
+`alert_cleared`), so no shadow row takes a place under its cap or moves a counter — the gate's three
+runs compare that report too. `/audit` and `/audit/verify` read every kind: `/audit` answers the newest
+1000 rows (fewer of them real at `rules`; pass `event_type=` to read one kind), and `/audit/verify`
+checks the first 10 000 rows, so it reports `complete: false` sooner. Nothing is lost or altered — the
+chain covers the shadow rows like any other — only these two fixed windows hold fewer real rows.
 
 **Rollback, tiers for B** (each stops on its first error):
 

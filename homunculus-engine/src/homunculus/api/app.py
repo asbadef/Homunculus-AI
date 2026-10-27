@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.alarm_quality import alarm_quality
+from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
     Cleared, DISCHARGED, KABUL_SOURCE, READING_DROPPED, acknowledge_latched, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
@@ -51,7 +51,7 @@ from homunculus.api.infinity_shadow import (
     MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
     TooSoon, board_view,
 )
-from homunculus.api.monitor_samples import RETENTION_DAYS, InMemorySamples, SampleStore, retention_bound
+from homunculus.api.monitor_samples import InMemorySamples, SampleStore, is_missing_table, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
@@ -88,6 +88,8 @@ DEVICE_ROLE_MAX = 64
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
 TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
+#: The windows GET /infinity-shadow/findings accepts (`days`, 1–7), as text for the same reason.
+SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 
 #: G2-A2 (D12): the most rows one `/audit` answer carries — the newest; the most `/alarm-quality`
 #: reads for its window (it says `truncated` when the window held more); and the rows a restart
@@ -211,7 +213,8 @@ def create_app(
     `shadow_monotonic` its own spacing-and-silence clock (ShadowStore), both injected by the tests;
     the engine never reads either. `samples` is Aşama B's monitor-sample table
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
-    below `rules` ever needs (it writes none)."""
+    below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
+    rows of a `rules` run still expire after a rollback below it."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -250,6 +253,14 @@ def create_app(
     shadow_store = ShadowStore(clock=shadow_clock, monotonic=shadow_monotonic)
     shadow_table = TableFile(shadow.table_path, clock=time.monotonic)
     shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
+
+    def _occupancy_reset(hospital: str) -> None:
+        """Drops the strip's cached occupants (`_occupants`, SHADOW_OCCUPANCY_CACHE_S): called after
+        every identity write that can move a patient on or off a bed — here a discharge
+        (`retire_and_publish`) and the feed's Patient/Encounter at `/ingest`; Lane B's admission
+        through `app.state.shadow_occupancy_reset`."""
+        shadow_occupancy.pop(hospital, None)
+
     if shadow.on:
         log.info("Aşama A gölge şeridi açık (doğrulanmamış; klinik girdi değil): hastane %s", shadow.hospital)
         shadow_table.current()
@@ -383,7 +394,7 @@ def create_app(
             # and the strip's occupants are re-read, so the retired number is no bed's occupant for
             # the 10 s they are cached.
             lane.guard("forget", lambda: lane.forget(hospital, patient_id, now=_lane_now()))
-            shadow_occupancy.pop(hospital, None)
+            _occupancy_reset(hospital)
             # The in-memory end has happened whatever the audit did (final review): the ward is
             # told and the nurse's dedup re-armed even when a row write raises, and the error
             # still goes up to the caller.
@@ -482,17 +493,34 @@ def create_app(
             except Exception:  # a bad cycle must never kill the loop
                 log.exception("escalation cycle failed; the next one runs in %ss", escalate_interval)
 
-    async def _prune_loop() -> None:
-        """Aşama B (D8): the monitor samples older than RETENTION_DAYS go, at start-up and then
-        hourly, off the loop. Measured on the lane's clock, the one the rows are received on. A
-        failure is logged and the next hour tries again."""
-        while True:
-            try:
-                dropped = await asyncio.to_thread(samples.prune, before=retention_bound(_lane_now()))
-                if dropped:
-                    log.info("monitor_samples: %d satır silindi (%d gün)", dropped, RETENTION_DAYS)
-            except Exception:
+    async def _prune_once() -> None:
+        """Aşama B (D8): one pass of the samples' retention, measured on the lane's clock — the one
+        the rows are received on. The table (`durable`) keeps RETENTION_DAYS and is pruned off the
+        loop; a store in memory keeps MEMORY_RETENTION_HOURS — all an install replays — and is
+        pruned ON the loop, where the lane appends (a worker thread would race it). A missing table
+        (migration 0013 not applied) is one WARNING per pass; any other failure is logged with its
+        traceback. Never raises: the next hour tries again."""
+        durable = samples.durable
+        before = retention_bound(_lane_now(), durable=durable)
+        try:
+            dropped = (await asyncio.to_thread(samples.prune, before=before) if durable
+                       else samples.prune(before=before))
+        except Exception as error:
+            if is_missing_table(error):
+                log.warning("monitor_samples tablosu yok (göç 0013 uygulanmamış); temizlik atlandı, "
+                            "bir saat sonra yeniden")
+            else:
                 log.exception("monitor_samples temizliği başarısız; bir saat sonra yeniden")
+            return
+        if dropped:
+            log.info("monitor_samples: %d satır silindi (%s öncesi alınanlar)", dropped, before.isoformat())
+
+    async def _prune_loop() -> None:
+        """`_prune_once` at start-up, then hourly. Started for a durable store at EVERY stage — a
+        rollback below `rules` keeps deleting what a `rules` run wrote (T6 review) — and for a store
+        in memory at `rules` only: below it nothing is written there."""
+        while True:
+            await _prune_once()
             await asyncio.sleep(3600)
 
     @asynccontextmanager
@@ -509,7 +537,8 @@ def create_app(
                       if ldap is not None else None)
         app.state.ldap_startup_check = ldap_check
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
-        prune = asyncio.create_task(_prune_loop()) if shadow.rules else None   # Aşama B (D8)
+        prune = (asyncio.create_task(_prune_loop())                           # Aşama B (D8)
+                 if samples.durable or shadow.rules else None)
         try:
             yield
         finally:
@@ -576,6 +605,11 @@ def create_app(
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_lane = lane
+    # Aşama B (T6 review): Lane B's admission (`kabul`) calls this right after its identity write,
+    # as its discharge calls `retire_patient` — the strip's occupants are cached for 10 s, and the
+    # next readings body must link the bed's new occupant, not the one the cache still holds.
+    app.state.shadow_occupancy_reset = _occupancy_reset
+    app.state.prune_samples = _prune_once           # one pass of the hourly prune (the tests call it)
     # Aşama B (D1): every door that charts through `chart_observations` hands it this, so each
     # charted entry reaches the shadow engine right after the real one — guarded (Lane B's
     # admission form passes it too).
@@ -895,6 +929,10 @@ def create_app(
             record = identities.apply(hospital, incoming)
             if record is None:
                 return {"patient_id": incoming.patient_id, "identity": "stale"}
+            # Aşama B (T6 review): an admission, a transfer or a discharge from the feed moves who
+            # lies on a bed — the strip's occupants are re-read on the next body, not up to 10 s
+            # later, so a monitor never feeds the patient who left its bed.
+            _occupancy_reset(hospital)
             # Demographics stay in the encrypted store, never in the audit payload.
             audit.append(AuditEvent(hospital, "identity", record.patient_id, "",
                                     {"source": record.source, "state": record.state,
@@ -1212,20 +1250,22 @@ def create_app(
         return body
 
     @app.get("/infinity-shadow/findings")
-    async def shadow_findings(days: int = 7, authorization: str | None = Header(default=None)):
+    async def shadow_findings(days: str = "7", authorization: str | None = Header(default=None)):
         """Aşama B's «uyarsaydı» list (D7): every shadow finding opened in the last `days` (1–7),
         newest first, with when it cleared. For `board.view`, scoped like the board: a row is listed
         when its patient's card would be (`sees_patient` on the identity's bed and unit, as
         `/patients` and `_require_patient` read them). 409 below the stage `rules` and for another
-        hospital; 400 for `days` outside 1–7."""
+        hospital; 400 for `days` anything but 1–7 — read as text, as the trends route reads `hours`,
+        so that "abc" is this route's 400 rather than FastAPI's 422."""
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)
         if not shadow.rules or caller.hospital != shadow.hospital:
             raise HTTPException(status_code=409, detail={"reason": "stage_not_rules"})
-        if not 1 <= days <= 7:
+        if days not in SHADOW_FINDINGS_DAYS_TEXT:
             raise HTTPException(status_code=400, detail="geçersiz days: 1–7 olmalı")
+        window = int(days)
         scope = _readable(await _scope(authorization))
-        since = datetime.now(timezone.utc) - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=window)
         # Two backward walks of the audit's two shadow kinds: off the loop.
         rows = await asyncio.to_thread(lane.recent_findings, caller.hospital, since=since)
         if not scope.unrestricted:
@@ -1241,7 +1281,7 @@ def create_app(
                 return seen[patient_id]
 
             rows = [row for row in rows if visible(row["patient_id"])]
-        return {"days": days, "findings": rows}
+        return {"days": window, "findings": rows}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
@@ -1448,9 +1488,12 @@ def create_app(
         since = now - timedelta(days=max(1, days))
         # The window is the backend's to read (G2-A2, D12): its newest rows, at most `cap`, and one
         # more to know whether it held more — then the report says `truncated` rather than reading
-        # as the whole window (the trends pattern, api/trends.py `_markers`).
+        # as the whole window (the trends pattern, api/trends.py `_markers`). Only the kinds the
+        # report counts (Aşama B, T6 review): a row of any other kind — an `ingest`, the shadow
+        # lane's `shadow_alert` — would take a place under the cap and move every counter.
         cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
-        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True)
+        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True,
+                             event_types=EPISODE_KINDS)
         truncated = len(recs) > cap
         report = alarm_quality(recs[1:] if truncated else recs, now)
         return {**report.as_dict(), "days": days, "truncated": truncated}

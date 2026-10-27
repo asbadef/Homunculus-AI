@@ -18,7 +18,7 @@ from typing import Any
 
 from homunculus.api.audit import AuditEvent, AuditLog, AuditRecord
 from homunculus.api.infinity_shadow import DeviceView, PARAMETERS
-from homunculus.api.monitor_samples import Sample, SampleStore
+from homunculus.api.monitor_samples import MEMORY_RETENTION_HOURS, Sample, SampleStore
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
@@ -29,7 +29,9 @@ log = logging.getLogger(__name__)
 
 SAMPLE_INTERVAL_S = 60.0            # D4: one sample per (patient, engine code) per minute
 NBP_MAX_FOR_RULES_S = 3600.0        # D3: an NBP measured more than an hour ago feeds nothing
-REPLAY_HOURS = 24                   # D9: what the shadow engine is rebuilt from at start-up
+# D9: what the shadow engine is rebuilt from at start-up (24 h) — and so all a sample store in memory
+# keeps (monitor_samples.MEMORY_RETENTION_HOURS, T6 review): one number, defined there.
+REPLAY_HOURS = MEMORY_RETENTION_HOURS
 DEFAULT_PARAMETERS = ("hr", "pls", "spo2", "art_systolic", "art_mean", "nbp")   # D2 (S1)
 SOURCE_PREFIX = "infinity:"
 # Engine code -> the monitor cells that may feed it, in priority order (D3): the first cell that
@@ -562,6 +564,7 @@ class ShadowLane:
             unlinking.setdefault(pid, "unlinked")
             if self._settled(hospital, pid, real, wall):
                 changed.add(pid)
+        kept: list[Sample] = []                       # the pass's rows, written once at its end (D8)
         for pid, card in linked_now.items():
             link, view = links.get(pid), views.get(card["source"])
             if link is None or view is None:
@@ -576,14 +579,15 @@ class ShadowLane:
                     engine.state(pid).drop_source(SOURCE_PREFIX, before=obs.timestamp - timedelta(hours=REPLAY_HOURS))
                     engine.ingest(obs, now=min(obs.timestamp, wall))
                     taken = True
-                    self._keep(Sample(hospital, pid, str(card.get("bed_id") or ""), cand.source,
-                                      cand.code.value, cand.via, obs.value, obs.unit, obs.timestamp, wall))
+                    kept.append(Sample(hospital, pid, str(card.get("bed_id") or ""), cand.source,
+                                       cand.code.value, cand.via, obs.value, obs.unit, obs.timestamp, wall))
                 if taken:
                     self._publish(hospital, pid, wall, real)
             except Exception:
                 self._failed("sample_patient")
             if taken:
                 changed.add(pid)
+        self._keep(kept)
         return sorted(changed)
 
     def _settled(self, hospital: str, patient_id: str, real: Engine, now: datetime) -> bool:
@@ -612,11 +616,15 @@ class ShadowLane:
         self._clear(hospital, patient_id, now, reason=unlinking.get(patient_id, "unlinked"))
         unlinking.pop(patient_id, None)
 
-    def _keep(self, sample: Sample) -> None:
-        """The sample's row (D8). A store that fails is logged (once per error window) and the
-        pass goes on — the shadow engine has the sample already; only a restart misses it."""
+    def _keep(self, samples: list[Sample]) -> None:
+        """The pass's rows (D8), in one write — one transaction for the table, not one per sample on
+        the event loop (T6 review); a pass that took nothing writes nothing. A store that fails is
+        logged (once per error window) and the pass is over all the same — the shadow engine has the
+        samples already; only a restart misses them."""
+        if not samples:
+            return
         try:
-            self.samples.append(sample)
+            self.samples.append_many(samples)
         except Exception:
             self._failed("samples")
 

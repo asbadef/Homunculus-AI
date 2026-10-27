@@ -437,6 +437,43 @@ class _BrokenSamples(InMemorySamples):
     def append(self, sample):
         raise RuntimeError("monitor_samples: the database is down")
 
+    def append_many(self, samples):
+        raise RuntimeError("monitor_samples: the database is down")
+
+
+class _CountingSamples(InMemorySamples):
+    """Every write the lane makes: `("append", 1)` or `("append_many", rows)`."""
+
+    def __init__(self):
+        super().__init__()
+        self.writes = []
+
+    def append(self, sample):
+        self.writes.append(("append", 1))
+        super().append(sample)
+
+    def append_many(self, samples):
+        self.writes.append(("append_many", len(samples)))
+        super().append_many(samples)
+
+
+def test_a_pass_writes_its_samples_once_whatever_it_took():
+    """T6 review: one transaction (and one pool pre-ping) per sample on the event loop, ≈52 a busy
+    pass. The pass collects its rows and writes them once, at its end; a pass that took nothing
+    writes nothing."""
+    store = _CountingSamples()
+    lane, real, _ = _lane(samples=store)
+    lane.install("h1", real)
+    cards = [CARD, BED2]
+    _link(lane, real, cards)
+    assert store.writes == []
+    views = {**_vitals(), **_vitals(hr=60.0, spo2=97.0, source="10.0.0.6")}
+    assert lane.sample("h1", views, cards, real, now=T0) == ["bed-1", "bed-2"]
+    assert store.writes == [("append_many", 4)]               # HR and SpO2 of two patients, one write
+    assert len(store.since("h1", DT0 - timedelta(hours=1), now=DT0)) == 4
+    assert lane.sample("h1", views, cards, real, now=T0 + 30.0) == []       # nothing due: no write
+    assert store.writes == [("append_many", 4)]
+
 
 class _FlakySamples(InMemorySamples):
     """Refuses its first `failures` reads; `reads` holds the instant (`now`) of every read."""

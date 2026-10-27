@@ -69,6 +69,10 @@ SCOPES = {"scoped-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"b
 # Every 30 s from 0.5 to 12 min: a change to the escalation TIMER (5 min) shows at the cycle it moves.
 ESCALATION_MINUTES = [m / 2 for m in range(1, 25)]
 SHADOW_KINDS = ("shadow_alert", "shadow_alert_cleared")      # the only audit rows the lane writes
+# `/alarm-quality` read with a cap this small bites within the scenario (`truncated`): the report is
+# its window's newest rows, so a shadow row counted toward the cap would move every counter (T6
+# review: 91 shadow rows flipped `truncated` and changed the episodes). Read raw — nothing stripped.
+ALARM_QUALITY_LIMIT = 20
 # The card's keys judged at the instant the card is BUILT (`board._meds`: `now` minus the
 # recognition, the deadline minus `now`), not at any input's time. A republish built later on the
 # clinical clock than the frame it repeats shows them moved — by exactly that clock's advance
@@ -182,7 +186,7 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
 
     monkeypatch.setattr(broadcaster, "publish", board_spy)
     monkeypatch.setattr(hub, "publish", note_spy)
-    seen = {"patients": [], "alerts": [], **{f"patients {jwt}": [] for jwt in JWTS},
+    seen = {"patients": [], "alerts": [], "alarm_quality": [], **{f"patients {jwt}": [] for jwt in JWTS},
             **{f"alerts {jwt}": [] for jwt in JWTS}}
     hdr = {"Authorization": f"Bearer {TOKEN}"}
     events = load_scenario(SCEN / "septic_shock.yaml") + load_scenario(SCEN / "news2_deterioration.yaml")
@@ -208,6 +212,9 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
             if probe is not None:          # the cards of the last /patients answer that carried a shadow
                 probe["shadow_cards"] = [card["shadow"] for card in patients["patients"] if card.get("shadow")]
             seen["alerts"].append(json.dumps((await c.get(f"/alerts/{pid}", headers=hdr)).json(), sort_keys=True))
+            quality = await c.get("/alarm-quality", params={"limit": ALARM_QUALITY_LIMIT}, headers=hdr)
+            assert quality.status_code == 200, quality.text
+            seen["alarm_quality"].append(json.dumps(quality.json(), sort_keys=True))
             for jwt in JWTS:
                 bearer = {"Authorization": f"Bearer {jwt}"}
                 seen[f"patients {jwt}"].append(json.dumps((await c.get("/patients", headers=bearer)).json(),
@@ -386,6 +393,9 @@ async def test_every_clinical_output_is_identical_with_the_stage_rules(monkeypat
     assert off["step_frames"] == [] and rules["step_frames"]
     assert any(row[1] == "shadow_alert" for row in rules["audit"])
     assert off["chain_ok"].ok and rules["chain_ok"].ok
+    # The alarm-quality read is compared raw, and its cap bites: a shadow row it counted would show.
+    quality = [json.loads(q) for q in off["alarm_quality"]]
+    assert any(q["truncated"] for q in quality) and any(q["episodes"] for q in quality)
     clinical_off, clinical_rules = _clinical(off), _clinical(rules)
     assert clinical_rules.keys() == clinical_off.keys()
     for key in clinical_off:

@@ -16,7 +16,8 @@ Env:
                    Aşama A's monitor strip, read by api/infinity_shadow.py (`shadow_settings_from_env`);
                    unset = off, a problem = off and logged, never a refusal to start. With the stage
                    `rules` (Aşama B; INFINITY_RULES_PARAMETERS, api/infinity_rules.py) the monitor
-                   samples go to Postgres's `monitor_samples` (migration 0013)
+                   samples go to Postgres's `monitor_samples` (migration 0013), which the API
+                   prunes hourly at every stage on a Postgres deployment
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -40,7 +41,7 @@ from sqlalchemy import Select, select, true
 from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
-from homunculus.api.infinity_shadow import ShadowSettings, shadow_settings_from_env
+from homunculus.api.infinity_shadow import shadow_settings_from_env
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
 from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import (
@@ -468,12 +469,14 @@ def _scope_resolver():
                                break_glass=break_glass_patient_ids)
 
 
-def _samples(settings: ShadowSettings, url: str) -> SampleStore:
+def _samples(url: str) -> SampleStore:
     """Aşama B's monitor samples (api/monitor_samples.py): the table of migration 0013, on the
-    audit's database and with its TLS flag, when the stage `rules` runs on a Postgres deployment;
-    in memory otherwise — a stage below `rules` writes none, and a lab run without Postgres keeps
-    them until it stops (the shadow engine is then rebuilt from nothing)."""
-    if settings.rules and _is_production(url):
+    audit's database and with its TLS flag, on every Postgres deployment whatever the stage — a
+    stage below `rules` writes none, but the API prunes the table at every stage, so the rows a
+    `rules` run wrote still expire after a rollback to `shadow` or `off` (T6 review). In memory
+    without Postgres: a lab run keeps the last 24 h until it stops (the shadow engine is then
+    rebuilt from nothing)."""
+    if _is_production(url):
         return PostgresSamples(
             url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
     return InMemorySamples()
@@ -493,5 +496,5 @@ app = create_app(
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
     ldap=_ldap(_database_url()),
     shadow=_shadow,
-    samples=_samples(_shadow, _database_url()),
+    samples=_samples(_database_url()),
 )

@@ -3,10 +3,12 @@ the board carries `shadow`, the findings route lists the week, and below `rules`
 exists (spec D1, D4, D6, D7, D9, D10). Synthetic numbers and values only (CLAUDE.md rule 6)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
@@ -179,8 +181,12 @@ def test_the_findings_route_lists_the_week_and_is_409_below_rules(tmp_path):
         assert rows and rows[0]["patient_id"] == "bed-1" and rows[0]["kind"] == "news2"
         assert rows[0]["relation"] == "shadow_only" and rows[0]["cleared_at"] is None
         assert client.get("/infinity-shadow/findings", headers=HDR).json() == body       # 7 is the default
-        for days in ("0", "8"):
-            assert client.get(f"/infinity-shadow/findings?days={days}", headers=HDR).status_code == 400
+        # Anything but 1–7 is the route's own 400 in its words — not FastAPI's 422 for a non-number.
+        for days in ("0", "8", "abc", "7.5", "", "-1"):
+            answer = client.get(f"/infinity-shadow/findings?days={days}", headers=HDR)
+            assert answer.status_code == 400, (days, answer.status_code)
+            assert answer.json()["detail"] == "geçersiz days: 1–7 olmalı", days
+        assert client.get("/infinity-shadow/findings?days=1", headers=HDR).json()["days"] == 1
         other = client.get("/infinity-shadow/findings", headers={"Authorization": "Bearer h2-jwt"})
         assert other.status_code == 409 and other.json()["detail"] == {"reason": "stage_not_rules"}
     plain, _, _, _ = _app(tmp_path, stage="shadow")
@@ -315,6 +321,71 @@ def test_a_discharge_drops_the_occupants_cache_at_once(tmp_path):
         assert "bed-1" not in client.app.state.shadow_lane.engines[HOSPITAL].patient_ids()
 
 
+def test_an_adt_transfer_through_ingest_moves_the_link_on_the_next_body(tmp_path):
+    """T6 review: only a discharge made here dropped the occupants' 10 s cache, so an ADT transfer
+    left the old patient linked — and sampled — for up to 10 s. Every identity write through /ingest
+    drops it: the next body links the bed's new occupant and ends the old link."""
+    client, audit, samples, _ = _app(tmp_path)
+    with client:
+        assert client.post("/ingest", json=_encounter("bed-1"), headers=HDR).status_code == 200
+        _linked(client)                                   # bed-1 on bed-b1, its link confirmed
+        lane = client.app.state.shadow_lane
+        assert set(lane.linked[HOSPITAL]) == {"bed-1"}
+        # The transfer, 2 s after the cache was filled: bed-1 to a bed the map does not cover, bed-2 in.
+        assert client.post("/ingest", json=_encounter("bed-1", "YB^9^9"), headers=HDR).status_code == 200
+        assert client.post("/ingest", json=_encounter("bed-2"), headers=HDR).status_code == 200
+        assert _post(client).status_code == 200
+        assert set(lane.linked[HOSPITAL]) == {"bed-2"}
+        cleared = audit.records(tenant=HOSPITAL, event_type="shadow_alert_cleared", limit=10)
+        assert [(r.patient_id, r.payload["reason"]) for r in cleared] == [("bed-1", "unlinked")]
+        bed = client.get("/infinity-shadow/board", headers=HDR).json()["beds"][0]
+        assert (bed["link"], bed["patient_id"]) == ("one", "bed-2")
+        Clock.t += 60.0                                   # a minute on: bed-2's samples, none of bed-1's
+        assert _post(client).status_code == 200
+        assert {s.patient_id for s in _all(samples) if s.received_at.timestamp() > Clock.t - 30.0} == {"bed-2"}
+
+
+def test_lane_bs_admission_can_drop_the_occupants_cache(tmp_path):
+    """The hook Lane B's admission (`kabul`) calls after its identity write, as its discharge calls
+    `retire_patient`: the next body sees the admitted patient on the bed at once."""
+    identities = InMemoryIdentityStore()
+    client, _, _, _ = _app(tmp_path, identities=identities)
+    with client:
+        assert _post(client).status_code == 200           # the cache filled: nobody on bed-b1
+        bed = client.get("/infinity-shadow/board", headers=HDR).json()["beds"][0]
+        assert (bed["link"], bed["patient_id"]) == ("none", None)
+        _kabul(identities, "bed-1")                       # Lane B's admission writes the store...
+        assert client.app.state.shadow_occupancy_reset(HOSPITAL) is None    # ...and drops the cache
+        assert _post(client).status_code == 200
+        assert set(client.app.state.shadow_lane.linked[HOSPITAL]) == {"bed-1"}
+
+
+def test_a_failing_shadow_install_keeps_the_real_engine_and_answers_200(tmp_path):
+    """The guard around the lane's install in `_ensure` (D1): the samples' read fails at start-up —
+    the clinical request still answers 200 with the real engine installed, the device screen reads
+    the error, and after the lane's retry wait the next readings body installs the shadow engine."""
+    class Flaky(InMemorySamples):
+        failures = 1
+
+        def since(self, hospital, since, *, now):
+            if self.failures:
+                self.failures -= 1
+                raise RuntimeError("monitor_samples: not reachable yet")
+            return super().since(hospital, since, now=now)
+
+    client, _, _, _ = _app(tmp_path, samples=Flaky())
+    with client:
+        assert client.post("/ingest", json=_encounter("bed-1"), headers=HDR).status_code == 200
+        lane = client.app.state.shadow_lane
+        assert HOSPITAL in client.app.state.ack_stores and HOSPITAL not in lane.engines   # the real one only
+        assert lane.state == "error"
+        assert [p["patient_id"] for p in client.get("/patients", headers=HDR).json()["patients"]] == ["bed-1"]
+        assert client.get("/infinity-shadow/board", headers=HDR).json()["feed"]["rules_state"] == "error"
+        Clock.t += 29.0                                   # +31 s with the body's 2 s: past INSTALL_RETRY_S
+        assert _post(client).status_code == 200
+        assert HOSPITAL in lane.engines and "bed-1" in lane.linked[HOSPITAL]
+
+
 def test_a_lane_failure_never_fails_the_clinical_request(tmp_path, monkeypatch):
     client, _, _, _ = _app(tmp_path)
     with client:
@@ -383,29 +454,105 @@ def test_a_restart_rebuilds_the_shadow_picture_and_opens_nothing_twice(tmp_path)
     assert len(audit.records(tenant=HOSPITAL, event_type="shadow_alert", limit=100)) == opened
 
 
-def test_the_hourly_prune_drops_the_samples_past_thirty_days(tmp_path):
-    samples = InMemorySamples()
+class _Watched(InMemorySamples):
+    """A store that records each prune's bound and whether it ran on the event loop's thread."""
+
+    def __init__(self, durable=False, error=None):
+        super().__init__()
+        self.durable, self.error = durable, error
+        self.pruned: list[tuple[datetime, bool]] = []
+
+    def prune(self, *, before):
+        try:
+            asyncio.get_running_loop()
+            on_loop = True
+        except RuntimeError:                               # a worker thread has no running loop
+            on_loop = False
+        self.pruned.append((before, on_loop))
+        if self.error is not None:
+            raise self.error
+        return super().prune(before=before)
+
+
+def _wait(condition):
+    deadline = time.monotonic() + 5.0
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return condition()
+
+
+def test_in_memory_at_rules_the_prune_keeps_the_replay_window_on_the_loop(tmp_path):
+    """T6 review: in memory the store kept 30 days (nothing reads them after the install) and its
+    prune ran in a worker thread, racing `append` on the loop. It keeps the 24 h an install replays,
+    and prunes on the loop — at start-up, then hourly."""
+    samples = _Watched()
     lane_now = datetime.fromtimestamp(T0, timezone.utc)
-    old, fresh = _sample(lane_now - timedelta(days=31)), _sample(lane_now - timedelta(days=1))
+    old, fresh = _sample(lane_now - timedelta(hours=25)), _sample(lane_now - timedelta(hours=1))
     samples.append(old)
     samples.append(fresh)
     client, _, _, _ = _app(tmp_path, samples=samples)
-    with client:                                           # the lifespan starts the prune: once now, then hourly
-        deadline = time.monotonic() + 5.0
-        while old in _all(samples) and time.monotonic() < deadline:
-            time.sleep(0.02)
+    with client:
+        assert _wait(lambda: samples.pruned)
+        assert samples.pruned[0] == (lane_now - timedelta(hours=24), True)
         assert _all(samples) == [fresh]
 
 
-def test_prodserver_keeps_the_samples_in_postgres_only_for_the_stage_rules(tmp_path):
+@pytest.mark.parametrize("stage", ["off", "shadow", "rules"])
+def test_a_durable_store_is_pruned_at_every_stage_off_the_loop(tmp_path, stage):
+    """T6 review: the table and its prune existed only at `rules`, so after a rollback to `shadow` or
+    `off` the rows a `rules` run wrote were never deleted. A durable store is pruned whatever the
+    stage — 30 days, off the loop."""
+    samples = _Watched(durable=True)
+    client, _, _, _ = _app(tmp_path, stage=stage, samples=samples)
+    with client:
+        assert _wait(lambda: samples.pruned), stage
+        assert samples.pruned[0] == (datetime.fromtimestamp(T0, timezone.utc) - timedelta(days=30), False)
+
+
+def test_below_rules_a_store_in_memory_has_no_prune_loop(tmp_path):
+    """Below `rules` nothing writes to a store in memory, so nothing is started to prune it."""
+    samples = _Watched()
+    client, _, _, _ = _app(tmp_path, stage="shadow", samples=samples)
+    with client:
+        time.sleep(0.2)                                    # the start-up pass would have run by now
+        assert samples.pruned == []
+
+
+def test_a_missing_table_is_logged_and_skipped_each_hour(tmp_path, caplog):
+    """Migration 0013 not applied: the table's DELETE fails each hour. One WARNING per pass, naming
+    the migration, and the loop goes on — a prune is never a reason for anything else to stop."""
+    from sqlalchemy.exc import ProgrammingError
+
+    class UndefinedTable(Exception):
+        pgcode = "42P01"                                   # psycopg2's undefined_table
+
+    missing = ProgrammingError("DELETE FROM monitor_samples", {}, UndefinedTable('relation "monitor_samples" does not exist'))
+    samples = _Watched(durable=True, error=missing)
+    client, _, _, _ = _app(tmp_path, stage="shadow", samples=samples)
+    with caplog.at_level("WARNING", logger="homunculus.api.app"), client:
+        assert _wait(lambda: samples.pruned)
+        client.portal.call(client.app.state.prune_samples)    # the next hour's pass
+        assert len(samples.pruned) == 2
+        warned = [r for r in caplog.records if "0013" in r.getMessage()]
+        assert len(warned) == 2 and all(r.levelname == "WARNING" and r.exc_info is None for r in warned)
+    other = _Watched(durable=True, error=RuntimeError("the database is down"))
+    client, _, _, _ = _app(tmp_path, stage="shadow", samples=other)
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="homunculus.api.app"), client:
+        assert _wait(lambda: other.pruned)
+        client.portal.call(client.app.state.prune_samples)      # does not raise
+        assert [r.exc_info is not None for r in caplog.records if "monitor_samples" in r.getMessage()] == [True, True]
+
+
+def test_prodserver_keeps_the_samples_in_postgres_whenever_the_database_is_postgres():
+    """At every stage (T6 review): the stage is not an input — a rollback below `rules` keeps
+    pruning the table a `rules` run filled."""
     from homunculus.api import prodserver
 
-    rules, plain = _settings(tmp_path), _settings(tmp_path, "shadow")
-    url = "postgresql+asyncpg://homunculus@db/homunculus"
-    durable = prodserver._samples(rules, url)
+    durable = prodserver._samples("postgresql+asyncpg://homunculus@db/homunculus")
     try:
-        assert isinstance(durable, PostgresSamples)
+        assert isinstance(durable, PostgresSamples) and durable.durable
     finally:
         durable.dispose()
-    assert isinstance(prodserver._samples(plain, url), InMemorySamples)
-    assert isinstance(prodserver._samples(rules, ""), InMemorySamples)
+    assert isinstance(prodserver._samples(""), InMemorySamples)
+    assert isinstance(prodserver._samples("sqlite:///x.db"), InMemorySamples)
