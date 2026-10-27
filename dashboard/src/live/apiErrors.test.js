@@ -484,9 +484,10 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
 
   it("the readers found the codes and the fields the engine raises", () => {
     expect(CODES).toEqual(expect.arrayContaining(["bed_not_available", "critical_alarm_open", "out_of_scope"]));
-    // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8) and
-    // `board_not_cleared` (A-32, Task 9's review).
-    expect(CODES).toHaveLength(14);
+    // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8),
+    // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
+    // `duplicate_open_admission` (A-37, the final review).
+    expect(CODES).toHaveLength(16);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -573,16 +574,21 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
 
   // A-37: the server refuses a second open admission of the same person (name and birth date, in the
   // tenant) whatever the form's id — `duplicate_open_admission`, naming the open admission's number
-  // only when the caller's units hold its bed — and the transfer routes are closed for now
-  // (`transfer_unavailable`). The sentences are here before errors.py raises the two codes; the
-  // codes join the map with it.
+  // only when the caller's units hold its bed; without it, the sentence without it. And the transfer
+  // routes are closed for now (`transfer_unavailable`).
   it("duplicate_open_admission names the open admission's number when the server gives it, and both A-37 texts exist in the four languages", () => {
     const withNumber = Object.assign(coded("duplicate_open_admission"), { patientNumber: "H2600042" });
     expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.duplicateOpenAdmissionNumber", vars: { number: "H2600042" } });
+    expect(apiErrorKey(coded("duplicate_open_admission"))).toEqual({ key: "kabul.err.duplicateOpenAdmission", vars: {} });
+    expect(apiErrorKey(Object.assign(coded("duplicate_open_admission"), { patientNumber: "  " })).key)
+      .toBe("kabul.err.duplicateOpenAdmission");
+    expect(apiErrorKey(coded("transfer_unavailable"))).toEqual({ key: "kabul.err.transferUnavailable", vars: {} });
     for (const lang of LANG_CODES) {
       const t = createTranslator(lang, DICTIONARIES);
       expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
       expect(apiErrorText(t, withNumber), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("duplicate_open_admission")), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("transfer_unavailable")), lang).not.toMatch(/English words/);
       for (const key of ["kabul.err.duplicateOpenAdmission", "kabul.err.transferUnavailable"]) {
         expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
       }

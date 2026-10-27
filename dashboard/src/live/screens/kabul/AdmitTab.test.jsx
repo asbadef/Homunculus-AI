@@ -793,6 +793,32 @@ describe("AdmitTab", () => {
       expect(admitDraftOf(store).get().requestId).not.toBe(spent);
       expect(api.admit).toHaveBeenCalledTimes(1);
     });
+
+    // The open admission's bed is in none of her units: the server withholds its number, and the
+    // hold says the same without it — never the server's English, never a "no answer" hold.
+    it("holds «Qəbul et» with the words without a number when the server withholds it", async () => {
+      const PLAIN = "Bu xəstənin artıq açıq qəbulu var; əvvəlcə evə yazılmalıdır. Forma göndərilmədi.";
+      const { api, store } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(refusal(409, "An open admission already exists for this patient.",
+          { apiCode: "duplicate_open_admission" })),
+      });
+      fillRequired();
+      await press();
+      const reason = panel().getByText(PLAIN);
+      expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+      expect(admitButton().getAttribute("aria-describedby").split(" ")).toContain(reason.id);
+      expect(admitDraftOf(store).get().held).toEqual({
+        bed: null, duplicate: { key: "kabul.err.duplicateOpenAdmission", vars: {} },
+      });
+      expect(panel().getByRole("button", { name: "Yeni qəbul" })).toBeTruthy();
+      expect(toasts().getAllByText(PLAIN).length).toBeGreaterThan(0);
+      expect(document.body.textContent).not.toMatch(/already exists|H26/);
+
+      admitButton().focus();
+      await press();
+      expect(api.admit).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("the form's memory — the session's, not the tab's (A-21)", () => {

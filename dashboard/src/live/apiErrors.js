@@ -160,14 +160,18 @@ export const ADMISSION_CODE_KEYS = new Map([
   // A-32: a bed's release while its last patient's card is still on the board; with that patient's
   // number when the detail carries it (`err.patientNumber`), `kabul.err.boardNotClearedNumber`.
   ["board_not_cleared", "kabul.err.boardNotCleared"],
+  // A-37: the transfer routes are closed for now (no screen calls them).
+  ["transfer_unavailable", "kabul.err.transferUnavailable"],
+  // A-37: a second open admission of the same person (name and birth date); with the open
+  // admission's number when the detail carries it, `kabul.err.duplicateOpenAdmissionNumber`.
+  ["duplicate_open_admission", "kabul.err.duplicateOpenAdmission"],
 ]);
 /** The coded refusals whose detail names a patient's number, each with the sentence that says it.
  *  A number beside any other code is not shown. */
 const WITH_NUMBER = new Map([
   ["request_conflict", "kabul.err.requestConflictNumber"],
   ["board_not_cleared", "kabul.err.boardNotClearedNumber"],
-  // A-37: the person's open admission, by its number when the caller's units hold its bed. The code
-  // itself (`kabul.err.duplicateOpenAdmission`) joins ADMISSION_CODE_KEYS when errors.py raises it.
+  // A-37: the person's open admission, by its number when the caller's units hold its bed.
   ["duplicate_open_admission", "kabul.err.duplicateOpenAdmissionNumber"],
 ]);
 
