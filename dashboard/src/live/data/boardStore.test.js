@@ -157,6 +157,45 @@ describe("the board store", () => {
     expect(state().patients).toHaveLength(2);
   });
 
+  // Aşama B: the API republishes a monitor-linked patient's real card about once a minute with only
+  // its shadow picture new. `alerts` is kept as the SAME array while no alert changes, so the
+  // critical-alarm notification, which re-runs on it (AlarmSignals.jsx), does not bring back one
+  // somebody dismissed; it is a new array the moment an alert changes. The card is always the frame's.
+  it("keeps the alerts array while a frame or a reload changes no alert, and gives a new one when an alert changes", async () => {
+    const { store, handlers, state } = setup();
+    await store.start();
+    handlers[0].onopen();
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    const held = state().alerts;
+    const card = state().patients[0];
+    const shadow = (total) => ({ news2: { total }, vitals: {}, findings: [{ kind: "septic_shock", severity: "critical" }] });
+    const send = (e) => handlers[0].onmessage({ data: JSON.stringify(e) });
+
+    send(entry("P-001", [alert("news2", "high")], { shadow: shadow(9), vitals: { heart_rate: 131 } }));
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0]).not.toBe(card);                      // the card shows the frame
+    expect(state().patients[0].shadow.news2.total).toBe(9);
+    expect(state().patients[0].vitals.hr).toBe(131);
+    send(entry("P-001", [alert("news2", "high")], { shadow: shadow(11), vitals: { heart_rate: 134 } }));
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0].shadow.news2.total).toBe(11);
+    await store.refresh();                                            // a whole reload, same alarms
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0].shadow).toBeNull();
+
+    send(entry("P-001", [alert("news2", "high", { escalated: true })]));
+    expect(state().alerts).not.toBe(held);
+    expect(state().alerts[0].escalated).toBe(true);
+    const escalated = state().alerts;
+    send(entry("P-001", [alert("news2", "high", { escalated: true, acknowledged: true, acknowledged_by: "ayse" })]));
+    expect(state().alerts).not.toBe(escalated);
+    expect(state().alerts[0].status).toBe("ACKNOWLEDGED");
+    const acknowledged = state().alerts;
+    send(entry("P-002", [alert("sepsis", "critical")]));
+    expect(state().alerts).not.toBe(acknowledged);
+    expect(state().alerts.map((a) => a.id)).toEqual(["P-001::news2", "P-002::sepsis"]);
+  });
+
   it("closes a dropped stream and reconnects ONCE, with a fresh ticket", async () => {
     const { api, store, handlers, closes, due, fire, state } = setup();
     await store.start();

@@ -23,7 +23,7 @@
 // HEARTBEAT_MS of silence (api/app.py `sse_board_frames`); a stream that says nothing — no frame,
 // no heartbeat — for STREAM_SILENCE_MS is dropped like a failed one: DEGRADED, a reconnect, and
 // LIVE again only through its open and that open's reload.
-import { patientFromBoard, patientsFromBoard, alertsFromPatients } from "../../liveAdapters.js";
+import { patientFromBoard, patientsFromBoard, alertsFromPatients, alertsEqual } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
 
 export const RECONNECT_DELAY_MS = 5000;
@@ -97,8 +97,24 @@ export function createBoardStore({
   // the engine timestamps a reading by ITS clock, so an age measured by a ward tablet's clock is
   // wrong by however wrong that tablet is — and wrong in the reassuring direction half the time.
   const skewNow = () => (typeof api?.serverClockSkewMs === "function" ? api.serverClockSkewMs() : null);
-  const withPatients = (patients, patch = {}) =>
-    set({ patients, alerts: alertsFromPatients(patients), clockSkewMs: skewNow(), ...patch });
+  // `alerts` is derived from the patients on every change, and would be a fresh array each time.
+  // When it comes out the same as the one held — every alert equal field by field
+  // (liveAdapters.js `alertsEqual`) — the held ARRAY is kept, so its identity changes only when an
+  // alert does. The critical-alarm notification re-runs on that identity (AlarmSignals.jsx), and
+  // re-raises there a notification somebody dismissed for an alarm still waiting. Since Aşama B
+  // the API republishes a monitor-linked patient's real card about once a minute (the sampler,
+  // engine `_sample_and_publish`) with only its `shadow` picture new — which never reaches
+  // `alerts` — so without this a dismissed critical came back within the minute on a background
+  // tab or a phone, vibrating. It also stops that on any real frame or reload that changes no
+  // alert (new readings, NEWS2 stamps, the antibiotic clock). An alert that CHANGES — a new one,
+  // its status, severity, escalation, acknowledgement, a new episode — still gives a new array,
+  // and so still raises again what was dismissed. The patients themselves are always the new ones:
+  // the card shows the frame it was sent.
+  const withPatients = (patients, patch = {}) => {
+    const next = alertsFromPatients(patients);
+    const alerts = alertsEqual(state.alerts, next) ? state.alerts : next;
+    set({ patients, alerts, clockSkewMs: skewNow(), ...patch });
+  };
   const applyFrame = (patients, frame) => (frame.removed
     ? patients.filter((p) => p.patient_id !== frame.patient.patient_id)
     : upsert(patients, frame.patient));

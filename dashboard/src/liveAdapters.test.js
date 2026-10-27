@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients,
+  patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients, alertsEqual,
   ageFromBirthDate, awaitingLocalAdmission,
 } from "./liveAdapters.js";
 
@@ -531,5 +531,73 @@ describe("the medication block (from pharmacyView)", () => {
       .toBe(false);
     expect(withMeds({ antibiotic_given: true, antibiotic_clock: { ...clock, met: true }, pressors: {} })
       .meds.antibiotic_given).toBe(true);
+  });
+});
+
+// The board store keeps its `alerts` array when the next one is the same list (boardStore.js
+// `withPatients`), so a frame that changes no alert — the sampler's republish with a new shadow
+// picture (Aşama B) — does not bring back a critical notification somebody dismissed. "The same"
+// must mean every field of every alert; anything an alert can change must make it different.
+describe("alertsEqual — two alert lists that are the same list", () => {
+  const card = (alerts, over = {}) => patientFromBoard({ ...entry, alerts, ...over });
+  const sepsis = { ...entry.alerts[0], supporting_evidence: ["sepsis-3-jama-2016"], recommended_actions: ["Lactate."] };
+  const listOf = (...cards) => alertsFromPatients(cards);
+  const base = () => listOf(card([sepsis]), card([], { patient_id: "bed-4" }));
+
+  it("are equal when derived twice from the same cards — two arrays, one list", () => {
+    const [a, b] = [base(), base()];
+    expect(a).not.toBe(b);
+    expect(alertsEqual(a, b)).toBe(true);
+    expect(alertsEqual(a, a)).toBe(true);
+    expect(alertsEqual([], [])).toBe(true);
+  });
+
+  it("are equal whatever the order the fields come in", () => {
+    const a = base();
+    const b = a.map((alert) => Object.fromEntries(Object.entries(alert).reverse()));
+    expect(Object.keys(b[0])[0]).not.toBe(Object.keys(a[0])[0]);
+    expect(alertsEqual(a, b)).toBe(true);
+  });
+
+  it("ignore what is not an alert: the card's readings, NEWS2 and shadow picture", () => {
+    const a = listOf(card([sepsis]));
+    const b = listOf(card([sepsis], {
+      latest: { ...entry.latest, heart_rate: 140, news2: { ...entry.latest.news2, total: 11 } },
+      shadow: { news2: { total: 13 }, vitals: {}, findings: [{ kind: "septic_shock", severity: "critical" }] },
+    }));
+    expect(alertsEqual(a, b)).toBe(true);
+  });
+
+  it("differ the moment an alert does: its status, severity, escalation, acknowledgement, episode, text, evidence or bed", () => {
+    const a = listOf(card([sepsis]));
+    const changed = {
+      acknowledged: { acknowledged: true, acknowledged_by: "ayse", acknowledged_at: "2026-08-27T10:05:00Z" },
+      resolved: { resolved_at: "2026-08-27T10:06:00Z" },
+      severity: { severity: "critical" },
+      escalated: { escalated: true },
+      episode: { first_seen_at: "2026-08-27T10:30:00Z" },
+      summary: { summary: "NEWS2 10" },
+      evidence: { supporting_evidence: ["sepsis-3-jama-2016", "surviving-sepsis-campaign-2021"] },
+      actions: { recommended_actions: [] },
+    };
+    for (const [what, over] of Object.entries(changed)) {
+      expect(alertsEqual(a, listOf(card([{ ...sepsis, ...over }]))), what).toBe(false);
+    }
+    const moved = listOf(card([sepsis], { identity: { patient_id: "bed-3", bed_label: "REA-01 · 4" } }));
+    expect(alertsEqual(a, moved), "bed").toBe(false);
+  });
+
+  it("differ when an alert comes, goes, or the list is in another order", () => {
+    const one = listOf(card([sepsis]));
+    const two = listOf(card([sepsis, { ...sepsis, kind: "news2" }]));
+    expect(alertsEqual(one, two)).toBe(false);
+    expect(alertsEqual(two, one)).toBe(false);
+    expect(alertsEqual(two, [...two].reverse())).toBe(false);
+    expect(alertsEqual(one, [])).toBe(false);
+  });
+
+  it("are never equal to something that is not a list", () => {
+    expect(alertsEqual(base(), null)).toBe(false);
+    expect(alertsEqual(undefined, [])).toBe(false);
   });
 });
