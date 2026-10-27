@@ -7,6 +7,7 @@ Permission guards (see auth/permissions.py):
   * admissions.sign_off        physician sign-off
   * admissions.move.initiate   initiate a transfer or discharge
   * admissions.transfer.confirm   confirm a transfer arrival
+  (the two transfer routes are closed for now — 409 `transfer_unavailable`, A-37; see below)
   * admissions.discharge.confirm  confirm a discharge, release the bed
   * care_team.claim / .assign  claim or assign a care-team role
   * shifts.manage              shift schedules
@@ -57,7 +58,7 @@ from homunculus.admission.schemas import (
     TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, INVALID_TRANSITION, REQUEST_CONFLICT, Refusal, field_invalid,
+    BED_CLOSED, INVALID_TRANSITION, REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.service import WorkflowError
@@ -602,9 +603,10 @@ async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> A
 
     `also`: other beds the transaction writes or must find free — a transfer's target (review
     M-1), checked AVAILABLE only once it is locked, so an admission into it at the same moment is
-    waited for. Every bed is locked in the order of its id, then the admission: two transactions
-    that both need two beds take them in the same order and cannot wait on each other in a
-    circle.
+    waited for. No route passes one while the transfer routes are closed (A-37); it is kept for
+    the slice that reopens them. Every bed is locked in the order of its id, then the admission:
+    two transactions that both need two beds take them in the same order and cannot wait on each
+    other in a circle.
 
     Both locks are FOR NO KEY UPDATE, the strength of every unit and bed lock (tenant/router.py
     `_lock_bed`): an insert of a row pointing at the bed, or at the admission (a care-team
@@ -741,34 +743,44 @@ async def list_care_team(
 
 
 # ---------------------------------------------------------------------------
-# Transfer (§4.6)
+# Transfer (§4.6) — CLOSED (amendment A-37, the user's decision of 2026-10-27)
 # ---------------------------------------------------------------------------
+# Both routes answer 409 `transfer_unavailable` and write nothing. They keep their permission
+# guards (tests/test_route_permissions.py) and their tenant checks — another tenant's admission,
+# unit or bed is the 404 a missing one is (tests/test_tenant_isolation.py); the refusal comes
+# after those, before any lock or read. The service's transfer code (admission/service.py
+# `initiate_transfer`, `confirm_transfer_arrival`) is kept for the slice that reopens them.
+#
+# Why (the final review's C-1 and C-2): an arrival closed the source admission and sent its bed to
+# cleaning while the card stayed on that bed, so the bed could be released and admitted into
+# again — two cards on one bed, and the monitor's link broken; and a physician of one unit could
+# move another unit's patient into her own unit and then discharge her. No client calls them.
+#
+# A transfer slice reopens them only with:
+#   * `_reach_admission` on the source bed and `require_reach` on the target bed's REAL unit;
+#   * `target_unit_id` taken from the target bed, or refused when it differs;
+#   * the confirm bound to the bed named at initiate;
+#   * the card moved with `put_identity`;
+#   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well;
+#   * a transfer UI.
+def _transfer_closed() -> HTTPException:
+    return Refusal(409, TRANSFER_UNAVAILABLE, "Transfers are closed until a transfer slice "
+                   "brings their checks and their screen.").http()
+
+
 @router.post("/{admission_id}/transfer/initiate", response_model=AdmissionResponse)
 async def transfer_initiate(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("admissions.move.initiate")),
+    _user: User = Depends(require_permission("admissions.move.initiate")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    """Under the admission's bed and row locks, as the sign-off and discharge routes (G2-B1a,
-    review M-1): a transfer started while a discharge is started waits for it and is refused
-    `invalid_transition`; a state machine's ValueError is that 409, never a 500."""
-    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    """Closed (A-37): 409 `transfer_unavailable` once the admission and the body's unit and bed
+    are found to be the caller's tenant's. Nothing is locked, read further or written."""
+    await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
-    admission = await _locked(db, admission)
-    try:
-        await service.initiate_transfer(
-            db, admission, target_bed_id=payload.target_bed_id,
-            target_unit_id=payload.target_unit_id,
-        )
-    except WorkflowError as exc:
-        raise _wf(exc)
-    except ValueError as exc:
-        raise _not_now(exc) from None
-    await db.commit()
-    await db.refresh(admission)
-    return admission
+    raise _transfer_closed()
 
 
 @router.post("/{admission_id}/transfer/confirm", response_model=AdmissionResponse, status_code=201)
@@ -776,28 +788,15 @@ async def transfer_confirm(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("admissions.transfer.confirm")),
+    _user: User = Depends(require_permission("admissions.transfer.confirm")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    """Both beds — the source and the TARGET, in the order of their ids — and then the admission,
-    locked before the target is checked AVAILABLE (G2-B1a, review M-1): an admission into the
-    target at the same moment is waited for and the arrival refused `bed_not_available`, never
-    two patients on one bed. A state machine's ValueError is a 409 `invalid_transition`."""
-    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    """Closed (A-37): 409 `transfer_unavailable` once the admission and the body's unit and bed
+    are found to be the caller's tenant's — a transfer pending from before included. Nothing is
+    locked, read further or written."""
+    await _get_admission_or_404(db, admission_id, caller_tenant)
     await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
-    admission = await _locked(db, admission, payload.target_bed_id)
-    try:
-        new_admission = await service.confirm_transfer_arrival(
-            db, admission, target_bed_id=payload.target_bed_id,
-            target_unit_id=payload.target_unit_id,
-        )
-    except WorkflowError as exc:
-        raise _wf(exc)
-    except ValueError as exc:
-        raise _not_now(exc) from None
-    await db.commit()
-    await db.refresh(new_admission)
-    return new_admission
+    raise _transfer_closed()
 
 
 # ---------------------------------------------------------------------------

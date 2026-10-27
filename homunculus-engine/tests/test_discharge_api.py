@@ -22,13 +22,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text, update
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission import router as admission_router
 from homunculus.admission import service
 from homunculus.admission.boardlink import BoardLink
-from homunculus.admission.models import (
-    OPEN_ADMISSION_STATES, Admission, AdmissionState, DischargeDisposition,
-)
+from homunculus.admission.models import Admission, AdmissionState, DischargeDisposition
 from homunculus.api.app import sse_board_frames
 from homunculus.scope import build_scope, sees_patient
 from homunculus.tenant.models import Bed, BedState
@@ -459,60 +458,96 @@ async def test_a_bed_moved_under_a_started_discharge_is_a_409_and_nothing_is_wri
     assert state == AdmissionState.PENDING_DISCHARGE
 
 
-# ---------------------------------------------------------------- transfers (review M-1)
-async def test_a_transfer_and_a_discharge_start_at_once_one_wins(ward, db_session, monkeypatch):
-    """The transfer routes lock the bed and then the admission, as the discharge routes do: a
-    transfer started while a discharge start is writing waits, reads the admission
-    PENDING_DISCHARGE and is refused `invalid_transition` — never a 500 from the bed's state
-    machine, never both."""
-    w, client, _ = ward
-    beds = {name: w.beds[name].id for name in ("1", "2")}
-    target = {"target_bed_id": str(beds["2"]), "target_unit_id": str(w.units["rea"].id)}
-    admission = await signed(w, client)
-    base = f"/admissions/{admission['id']}"
-    first, second = await at_once(
-        db_session, monkeypatch, "initiate_discharge",
-        lambda: client.post(base + "/discharge/initiate", json={"disposition": "HOME"},
-                            headers=w.auth["doctor"]),
-        lambda: client.post(base + "/transfer/initiate", json=target, headers=w.auth["admin"]))
-    assert (first.status_code, second.status_code) == (200, 409), (first.text, second.text)
-    assert second.json()["detail"]["code"] == "invalid_transition"
-    db_session.expire_all()
-    assert (await db_session.execute(select(Admission.state))).scalar_one() == \
-        AdmissionState.PENDING_DISCHARGE
-    states = dict((await db_session.execute(select(Bed.id, Bed.state)
-                                            .where(Bed.id.in_(beds.values())))).all())
-    assert (states[beds["1"]], states[beds["2"]]) == (BedState.PENDING_DISCHARGE,
-                                                      BedState.AVAILABLE)
+# ---------------------------------------------------------------- transfers: closed (A-37)
+def _target(w, bed: str = "2", unit: str = "rea") -> dict:
+    return {"target_bed_id": str(w.beds[bed].id), "target_unit_id": str(w.units[unit].id)}
 
 
-async def test_a_transfer_arrival_and_an_admission_into_its_target_bed_at_once_admit_one(
-        ward, db_session, monkeypatch):
-    """The arrival locks its target bed (both beds, in the order of their ids, then the
-    admission) before it checks the bed AVAILABLE: an admission into that bed writing at the same
-    moment is waited for, and the arrival is refused `bed_not_available` — one patient on the
-    bed, never two."""
-    w, client, _ = ward
-    bed_two = w.beds["2"].id
-    target = {"target_bed_id": str(bed_two), "target_unit_id": str(w.units["rea"].id)}
-    other = form(w, "2")
+async def _the_ward(db_session) -> tuple:
+    """Every admission (its bed, unit and state) and every bed's state, as committed — read in a
+    session of its own, so the test's ward objects are not expired under it."""
+    async with async_sessionmaker(db_session.bind)() as fresh:
+        admissions = sorted((await fresh.execute(select(
+            Admission.id, Admission.bed_id, Admission.admitting_unit_id, Admission.state))).all())
+        return admissions, dict((await fresh.execute(select(Bed.id, Bed.state))).all())
+
+
+async def test_the_transfer_routes_answer_transfer_unavailable_and_write_nothing(ward, db_session):
+    """A-37, the user's decision: the transfer API is closed until a transfer slice brings its
+    checks and its screen. Both routes answer 409 `transfer_unavailable` to callers holding their
+    permission — the unit's physician, its charge nurse, the administrator — and write nothing:
+    no admission or bed moves, no audit row, no frame, the card stays on its bed."""
+    w, client, app = ward
     admission = await signed(w, client)
     base = f"/admissions/{admission['id']}"
-    r = await client.post(base + "/transfer/initiate", json=target, headers=w.auth["doctor"])
-    assert r.status_code == 200, r.text
-    first, second = await at_once(
-        db_session, monkeypatch, "create_draft_admission",
-        lambda: client.post("/admissions", json=other, headers=w.auth["nurse"]),
-        lambda: client.post(base + "/transfer/confirm", json=target, headers=w.auth["charge"]))
-    assert (first.status_code, second.status_code) == (201, 409), (first.text, second.text)
-    assert second.json()["detail"]["code"] == "bed_not_available"
-    db_session.expire_all()
-    on_two = (await db_session.execute(select(Admission.id).where(
-        Admission.bed_id == bed_two, Admission.state.in_(list(OPEN_ADMISSION_STATES))))).all()
-    assert len(on_two) == 1
-    assert (await db_session.execute(select(Admission.state).where(
-        Admission.id == uuid.UUID(admission["id"])))).scalar_one() == \
-        AdmissionState.PENDING_TRANSFER
+    before = await _the_ward(db_session)
+    cards = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    rows = len(app.state.audit.records(tenant=SLUG, limit=500))
+    queue = app.state.broadcaster.subscribe(SLUG)
+
+    for path, who in (("/transfer/initiate", "doctor"), ("/transfer/initiate", "admin"),
+                      ("/transfer/confirm", "charge"), ("/transfer/confirm", "admin")):
+        r = await client.post(base + path, json=_target(w), headers=w.auth[who])
+        assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable"), r.text
+
+    assert await _the_ward(db_session) == before
+    assert (await client.get("/patients", headers=BOARD)).json()["patients"] == cards
+    assert len(app.state.audit.records(tenant=SLUG, limit=500)) == rows
+    assert drain(queue) == []
+
+
+async def test_a_transfer_can_no_longer_leave_a_card_on_a_bed_freed_for_another_patient(
+        ward, db_session):
+    """The review's C-1: an arrival closed the source admission and sent its bed to cleaning while
+    the card stayed on it, so the bed could be released and admitted into again — two cards on
+    one bed, the monitor's link broken. A transfer already pending (here written by the service,
+    as one started before the closure would be) cannot be confirmed either: the bed keeps its
+    patient, it cannot be released, and nobody else is admitted into it."""
+    w, client, _ = ward
+    bed_one = w.beds["1"].id
+    admission = await signed(w, client)
+    async with async_sessionmaker(db_session.bind, expire_on_commit=False)() as fresh:
+        row = await fresh.get(Admission, uuid.UUID(admission["id"]))
+        await service.initiate_transfer(fresh, row, target_bed_id=w.beds["2"].id,
+                                        target_unit_id=w.units["rea"].id)
+        await fresh.commit()
+    before = await _the_ward(db_session)
+
+    r = await client.post(f"/admissions/{admission['id']}/transfer/confirm", json=_target(w),
+                          headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable")
+    assert await _the_ward(db_session) == before
+    r = await client.post(f"/tenant/beds/{bed_one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "invalid_transition")
+    other = form(w)
+    other["patient"]["display_name"] = "Sentetik Başqa"
+    r = await client.post("/admissions", json=other, headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "bed_not_available")
+    cards = (await client.get("/patients", headers=BOARD)).json()["patients"]
+    assert [c["patient_id"] for c in cards if c["identity"]["bed_id"] == str(bed_one)] == \
+        [admission["patient_number"]]
+
+
+async def test_a_physician_can_no_longer_move_another_units_patient_into_her_own(ward,
+                                                                              db_session):
+    """The review's C-2: a Reanimasiya physician moved a Neonatal patient into a Reanimasiya bed
+    and could then discharge her. Both steps of the move are refused `transfer_unavailable`; the
+    patient stays on her Neonatal bed, out of that physician's reach (`out_of_scope`)."""
+    w, client, _ = ward
+    neo = await admit(w, client, "N1", "neo", who="nurse_b")
+    await db_session.execute(update(Admission).where(Admission.id == uuid.UUID(neo["id"]))
+                             .values(state=AdmissionState.ACTIVE))
+    await db_session.commit()
+    base = f"/admissions/{neo['id']}"
+    before = await _the_ward(db_session)
+
+    for path, who in (("/transfer/initiate", "doctor"), ("/transfer/confirm", "charge")):
+        r = await client.post(base + path, json=_target(w), headers=w.auth[who])
+        assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable"), r.text
+    assert await _the_ward(db_session) == before
+    r = await client.post(base + "/discharge/initiate", json={"disposition": "HOME"},
+                          headers=w.auth["doctor"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "out_of_scope")
 
 
 # ---------------------------------------------------------------- the confirm's board parts (A-25)
