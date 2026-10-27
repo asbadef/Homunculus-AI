@@ -938,13 +938,15 @@ def create_app(
             return {"patient_id": patient_id, "dropped": DISCHARGED}
 
         engine.set_profile(profile)
-        # Aşama B (D1): the shadow engine judges against the same profile — guarded.
-        lane.guard("mirror", lambda: lane.mirror_profile(hospital, profile))
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
         # alarms it was written to quieten, without anything looking broken.
         audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
                                 {**profile_to_payload(profile),
                                  "charted_by": _charted_by(caller)}))
+        # Aşama B (D1): the shadow engine judges against the same profile — guarded, and AFTER the
+        # audit row (Lane B's review of 457a2bd, M-1): whatever the lane does, the engine's
+        # profile has the row a restart replays behind it. BoardLink orders its own the same way.
+        lane.guard("mirror", lambda: lane.mirror_profile(hospital, profile))
 
         board = _card(hospital, patient_id, record)
         await broadcaster.publish(hospital, board)

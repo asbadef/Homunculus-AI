@@ -402,6 +402,32 @@ def test_lane_bs_admission_can_mirror_its_profile_to_the_shadow_engine(tmp_path)
         assert _kinds(audit) == written and lane.state == "ok"
 
 
+def test_the_profile_door_audits_before_it_mirrors_and_a_raising_mirror_leaves_the_row(
+        tmp_path, monkeypatch):
+    """Lane B's review of 457a2bd (M-1): `PUT /clinical/{pid}/profile` writes its `profile` audit
+    row before the shadow lane hears the profile. The lane's guard swallows a failure, so the
+    order is the point: the row is already there when the lane is called, and a lane that raises
+    leaves the row a restart replays and an answer as if it were not there."""
+    identities = InMemoryIdentityStore()
+    _kabul(identities, "bed-1")
+    client, audit, _, _ = _app(tmp_path, identities=identities)
+    with client:
+        lane = client.app.state.shadow_lane
+        heard: list[bool] = []
+
+        def boom(hospital, profile):
+            heard.append("profile" in _kinds(audit))
+            raise RuntimeError("synthetic lane failure")
+
+        monkeypatch.setattr(lane, "mirror_profile", boom)
+        put = client.put("/clinical/bed-1/profile", json={"comorbidities": ["copd"]}, headers=HDR)
+        assert put.status_code == 200, put.text
+        assert put.json()["comorbidities"] == ["copd"]
+        assert heard == [True]                           # the row was there when the lane was called
+        (row,) = audit.records(tenant=HOSPITAL, event_type="profile", patient_id="bed-1", limit=10)
+        assert row.payload["comorbidities"] == ["copd"]
+
+
 def test_a_failing_shadow_install_keeps_the_real_engine_and_answers_200(tmp_path):
     """The guard around the lane's install in `_ensure` (D1): the samples' read fails at start-up —
     the clinical request still answers 200 with the real engine installed, the device screen reads

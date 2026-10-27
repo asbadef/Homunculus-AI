@@ -57,14 +57,23 @@ means "not asked", never "not done").
 Aşama B's shadow engine (api/infinity_rules.py) hears the admission as it hears Lane A's doors,
 through three more of the app's hooks and its two card builders, by reference: the weight charted
 is mirrored to it (`mirror`, handed to the charting door as `/clinical` hands it), the profile set
-is mirrored (`mirror_profile`, right after the real `set_profile`), the monitor strip's cached
-occupants are dropped after the identity write (`occupancy_reset`: the next readings body links
-the bed's new occupant at once, not up to 10 s later), and every card is built by the app's own
-builders (`card`, `identity_card`), so a frame carries the `shadow` key a `/patients` card does.
-The hooks never raise (the two mirrors run inside the lane's `guard`; the reset drops a cache);
-none is reached for a discharged number, which is refused before. A link built without them — a
-test's — mirrors nothing and builds its cards with `patient_board` / `identity_only_board`, as
-before.
+is mirrored (`mirror_profile`, right after the audit row of the real `set_profile`), the monitor
+strip's cached occupants are dropped after the identity write (`occupancy_reset`: the next
+readings body links the bed's new occupant at once, not up to 10 s later), and every card is
+built by the app's own builders (`card`, `identity_card`), so a frame carries the `shadow` key a
+`/patients` card does.
+The app's hooks do not raise (the two mirrors run inside the lane's `guard`; the reset drops a
+cache), and the link does not rest on that: each call goes through `_hook`, and one that raises is
+logged (`log.exception`, naming the hook, never a value) and the write stands. The shadow lane
+hears a write; it is never a condition of it. Left unwrapped, a hook that raised between
+`engine.set_profile` and its audit row would leave the engine holding a profile no restart could
+replay, and one raising inside the charting door would skip the `chart` row the door writes after
+its `mirror` (Lane B's review of the merge, M-1). For the same reason `apply_profile` writes its
+audit row BEFORE it calls `mirror_profile`. None is reached for a discharged number, which is
+refused before. A link built without them — a test's — mirrors nothing and builds its cards with
+`patient_board` / `identity_only_board`, as before, save that the second is given the `shadow`
+key the first always carries (None, there being no builder to fill it): every card the link sends
+has the one shape (M-2).
 
 PHI: the identity carries the name, as an ADT record does (encrypted at rest by the store). The
 audit rows carry the number and the actor — never a name.
@@ -146,7 +155,9 @@ class BoardLink:
     `app.state.shadow_occupancy_reset(hospital)`; `card(hospital, patient_id, identity)` and
     `identity_card(hospital, record)` are the app's card builders (`_card`, `_identity_card`).
     Left out, the link mirrors nothing and builds its cards with `patient_board` and
-    `identity_only_board`."""
+    `identity_only_board`, to whose card it adds `"shadow": None` — the key `patient_board`'s card
+    always carries — so the two have one shape. The three hooks are called through `_hook`: one
+    that raises is logged and the write stands."""
 
     def __init__(self, *, identities: IdentityStore, engine: Callable[[str], Engine],
                  store: Callable[[str], AckStore], audit: AuditLog,
@@ -176,14 +187,31 @@ class BoardLink:
         self._occupancy_reset = occupancy_reset
         self._card = card if card is not None else self._plain_card
         self._identity_card = (identity_card if identity_card is not None
-                               else lambda tenant, record: identity_only_board(record, self._bedmap))
+                               else self._plain_identity_card)
         self._clock = clock
 
     def _plain_card(self, tenant: str, patient_number: str,
                     identity: IdentityRecord | None) -> dict:
-        """A measured patient's card without the app's builder: `patient_board`, no shadow key."""
+        """A measured patient's card without the app's builder: `patient_board`, which always
+        carries the `shadow` key — None, as no shadow picture is handed it. `open_critical` reads
+        its alerts from it too: the count has no use for the shadow picture."""
         return patient_board(self._engine(tenant), patient_number, self._store(tenant),
                              identity=identity, bedmap=self._bedmap)
+
+    def _plain_identity_card(self, tenant: str, record: IdentityRecord) -> dict:
+        """An admitted patient's card, never measured, without the app's builder:
+        `identity_only_board` plus `"shadow": None`, so the two plain cards have one shape —
+        `identity_only_board` itself has no such key (`patient_board` always sets it)."""
+        return {**identity_only_board(record, self._bedmap), "shadow": None}
+
+    def _hook(self, name: str, hook: Callable[..., object], *args: object) -> None:
+        """One of the shadow lane's hooks, called so that it cannot undo the write it follows: a
+        hook that raises is logged (the traceback, naming the hook — never a value) and the write
+        stands."""
+        try:
+            hook(*args)
+        except Exception:
+            log.exception("the shadow lane's %s hook raised; the write stands", name)
 
     def _board(self, tenant: str, patient_number: str,
                identity: IdentityRecord | None = None) -> dict | None:
@@ -214,11 +242,12 @@ class BoardLink:
         """The admission's card on its bed, then the card republished. A discharged number is
         refused first (`_refuse_discharged`), whatever the record's stamp: see the module's
         docstring. After the write the monitor strip's cached occupants are dropped
-        (`occupancy_reset`), so the next readings body links the bed's new occupant."""
+        (`occupancy_reset`), so the next readings body links the bed's new occupant; a reset that
+        raises is logged, and the card is sent all the same."""
         self._refuse_discharged(tenant, record.patient_id)
         stored = self._identities.apply(tenant, record)
         if self._occupancy_reset is not None:
-            self._occupancy_reset(tenant)
+            self._hook("occupancy_reset", self._occupancy_reset, tenant)
         await self._send(tenant, record.patient_id, stored)
 
     async def chart_weight(self, tenant: str, patient_number: str, kg: float, *,
@@ -232,7 +261,8 @@ class BoardLink:
         row, so a missing notifier would leave the weight in the engine with no row for a restart
         to replay. A discharged number is refused first (`_refuse_discharged`). It is called for a
         number the admission has just issued; it is not a door for charting. The door hands each
-        charted entry to `mirror` after the real evaluation, as `/clinical`'s does (Aşama B, D1)."""
+        charted entry to `mirror` after the real evaluation, as `/clinical`'s does (Aşama B, D1);
+        a `mirror` that raises is logged, and the door goes on to write its `chart` row."""
         self._refuse_discharged(tenant, patient_number)
         missing = [name for name, part in (("chart_observations", self._chart),
                                            ("notifier", self._notifier),
@@ -243,8 +273,8 @@ class BoardLink:
         now = self._clock()
         charted = build_entries(patient_number, [{"code": WEIGHT, "value": kg}],
                                 charted_by=actor, recorded_at=now)
-        mirror = ((lambda obs: self._mirror(tenant, obs, now)) if self._mirror is not None
-                  else None)
+        mirror = ((lambda obs: self._hook("mirror", self._mirror, tenant, obs, now))
+                  if self._mirror is not None else None)
         self._chart(engine=self._engine(tenant), store=self._store(tenant), audit=self._audit,
                     notifier=self._notifier, hospital=tenant, patient_id=patient_number,
                     charted=charted, now=now, escalate_after=self._escalate_after, mirror=mirror)
@@ -254,24 +284,31 @@ class BoardLink:
                             actor: str) -> None:
         """The comorbidities merged into the engine's profile, audited as `PUT
         /clinical/{id}/profile` audits them, then the card republished. A discharged number is
-        refused first (`_refuse_discharged`). Right after the real `set_profile` the profile is
-        mirrored to the shadow engine (`mirror_profile`), as that route mirrors its own."""
+        refused first (`_refuse_discharged`). The audit row is written right after the real
+        `set_profile` and BEFORE the profile is mirrored to the shadow engine (`mirror_profile`),
+        as that route orders them: whatever the lane does, the engine's profile has the row a
+        restart replays behind it. A mirror that raises is logged, and the write stands (M-1)."""
         self._refuse_discharged(tenant, patient_number)
         engine = self._engine(tenant)
         profile = profile_from_payload(patient_number, {"comorbidities": list(codes)},
                                        engine.profile(patient_number))
         engine.set_profile(profile)
-        if self._mirror_profile is not None:
-            self._mirror_profile(tenant, profile)
         self._audit.append(AuditEvent(tenant, "profile", profile.patient_id, "",
                                       {**profile_to_payload(profile), "charted_by": actor}))
+        if self._mirror_profile is not None:
+            self._hook("mirror_profile", self._mirror_profile, tenant, profile)
         await self._send(tenant, patient_number)
 
     def open_critical(self, tenant: str, patient_number: str) -> int:
+        """The critical alerts on this patient's board nobody has acknowledged. Read from the
+        plain card (`_plain_card`), never the app's builder: the count is of the real engine's
+        alerts, and the builder would also compute the shadow picture only to have it dropped. A
+        tombstone's card is its removal, which has none."""
         engine = self._engine(tenant)
         if patient_number not in set(engine.patient_ids()):
             return 0                     # never measured: no alert can be on its board
-        board = self._board(tenant, patient_number) or {}
+        board = self._plain_card(tenant, patient_number,
+                                 self._identities.get(tenant, patient_number))
         return count_open_critical(board.get("alerts") or [])
 
     def is_discharged(self, tenant: str, patient_number: str) -> bool:

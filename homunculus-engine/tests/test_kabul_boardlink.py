@@ -160,6 +160,23 @@ def test_a_number_with_neither_an_identity_nor_a_reading_sends_nothing_and_creat
     assert world.engine(HOSPITAL).patient_ids() == []
 
 
+def test_a_link_without_the_apps_builders_sends_every_card_with_the_shadow_key_none():
+    """Lane B's review of 457a2bd (M-2): `patient_board` always sets `"shadow"` and
+    `identity_only_board` has no such key, so a link built without the app's builders used to send
+    two shapes. Both plain cards — the identity-only one before the first value, the measured one
+    after it — carry the key, None: there is no builder to fill it."""
+    world = World(chart=chart_observations)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    identity_card = world.published[-1][1]
+    asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+    measured_card = world.published[-1][1]
+
+    assert "meds" not in identity_card and "meds" in measured_card      # the two branches
+    assert "shadow" in identity_card and identity_card["shadow"] is None
+    assert "shadow" in measured_card and measured_card["shadow"] is None
+    assert set(identity_card) == set(identity_only_board(record())) | {"shadow"}
+
+
 @pytest.mark.parametrize("stamp", [T0, T0 + timedelta(hours=2)],
                          ids=["stamped before the discharge", "stamped after it"])
 def test_a_card_written_after_the_discharge_is_refused_whatever_its_stamp(stamp):
@@ -368,6 +385,99 @@ def test_a_discharged_number_reaches_no_shadow_hook(write):
     assert heard == [] and world.published == []
 
 
+# ---------------------------------------------------------------- Aşama B: the hooks are witnesses
+# Lane B's review of 457a2bd (M-1): the shadow lane hears a write and is never a condition of it.
+def _broken(*_args):
+    raise RuntimeError("synthetic hook failure")
+
+
+def _hook_errors(caplog, hook: str) -> list:
+    """The ERROR records the link logged for this hook, each with its traceback."""
+    return [r for r in caplog.records
+            if r.levelname == "ERROR" and r.name == "homunculus.admission.boardlink"
+            and f"{hook} hook raised" in r.getMessage()]
+
+
+def _profile_rows(world: World) -> list[tuple]:
+    rows = world.audit.records(tenant=HOSPITAL, patient_id="H2600001", event_type="profile", limit=50)
+    return [(row.event_type, row.payload) for row in rows]
+
+
+def test_the_profile_is_audited_before_the_shadow_lane_hears_it():
+    """The engine holds the profile and the row a restart replays stands behind it before
+    `mirror_profile` is called: nothing the lane does can leave the one without the other."""
+    seen: list[int] = []
+    worlds: list[World] = []
+
+    def mirror_profile(hospital, profile):
+        seen.append(len(worlds[0].audit.records(tenant=hospital, patient_id=profile.patient_id,
+                                                event_type="profile", limit=10)))
+
+    worlds.append(World(mirror_profile=mirror_profile))
+    world = worlds[0]
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
+    assert seen == [1]                                           # the row was there when it was heard
+
+
+def test_a_profile_mirror_that_raises_leaves_the_audit_row_and_the_write_stands(caplog):
+    plain = World()                                              # the same writes, no hook at all
+    asyncio.run(plain.link.put_identity(HOSPITAL, record()))
+    asyncio.run(plain.link.apply_profile(HOSPITAL, "H2600001", ["copd", "dementia"],
+                                         actor="hemsire"))
+
+    world = World(mirror_profile=_broken)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    with caplog.at_level("ERROR", logger="homunculus.admission.boardlink"):
+        asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd", "dementia"],
+                                             actor="hemsire"))
+
+    assert world.engine(HOSPITAL).profile("H2600001").comorbidities == frozenset({"copd", "dementia"})
+    assert len(_profile_rows(world)) == 1 and _profile_rows(world) == _profile_rows(plain)
+    assert len(world.published) == len(plain.published) == 2     # the card was republished
+    assert world.published[-1][1]["patient_id"] == "H2600001"
+
+    engine, store = Engine(), AckStore()                         # a restart replays the profile
+    rehydrate(engine, store, iter_records(world.audit, tenant=HOSPITAL, page=500))
+    assert engine.profile("H2600001").comorbidities == frozenset({"copd", "dementia"})
+
+    (error,) = _hook_errors(caplog, "mirror_profile")
+    assert error.exc_info is not None                            # the traceback, no value in the line
+    assert "copd" not in error.getMessage() and "H2600001" not in error.getMessage()
+
+
+def test_an_occupancy_reset_that_raises_leaves_the_identity_written_and_the_card_sent(caplog):
+    world = World(occupancy_reset=_broken)
+    with caplog.at_level("ERROR", logger="homunculus.admission.boardlink"):
+        asyncio.run(world.link.put_identity(HOSPITAL, record()))
+        asyncio.run(world.link.put_identity(HOSPITAL, record(at=T0 + timedelta(minutes=1))))  # a resend
+
+    stored = world.identities.get(HOSPITAL, "H2600001")
+    assert stored is not None and stored.state == "admitted" and stored.bed_id == BED
+    assert [frame["patient_id"] for _hospital, frame in world.published] == ["H2600001"] * 2
+    assert world.published[-1][1]["identity"]["bed_id"] == BED
+    errors = _hook_errors(caplog, "occupancy_reset")
+    assert len(errors) == 2 and all(error.exc_info is not None for error in errors)
+
+
+def test_a_weight_mirror_that_raises_leaves_the_chart_row_the_door_writes_after_it(caplog):
+    """`chart_observations` calls `mirror` before it writes the `chart` row: a `mirror` that raised
+    through it would leave the weight in the engine with no row for a restart to replay."""
+    world = World(chart=chart_observations, mirror=_broken)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    with caplog.at_level("ERROR", logger="homunculus.admission.boardlink"):
+        asyncio.run(world.link.chart_weight(HOSPITAL, "H2600001", 72.5, actor="hemsire"))
+
+    (chart,) = world.audit.records(tenant=HOSPITAL, event_type="chart", patient_id="H2600001",
+                                   limit=10)
+    assert (chart.subject, chart.payload["value"], chart.payload["charted_by"]) == \
+        ("weight_kg", 72.5, "hemsire")
+    assert world.engine(HOSPITAL).state("H2600001").latest(SignalCode("weight_kg")).value == 72.5
+    assert world.published[-1][1]["patient_id"] == "H2600001"
+    (error,) = _hook_errors(caplog, "mirror")
+    assert error.exc_info is not None
+
+
 # ---------------------------------------------------------------- open critical alerts
 def test_open_critical_counts_a_critical_nobody_acknowledged_firing_then_latched():
     """G2-A1 (O17): a critical alert whose rule stops firing while nobody acknowledged it stays on
@@ -413,6 +523,30 @@ def test_open_critical_on_a_number_with_no_identity_is_nought_and_creates_nothin
     world = World()
     assert world.link.open_critical(HOSPITAL, "H2600099") == 0
     assert world.engine(HOSPITAL).patient_ids() == []
+
+
+def test_open_critical_counts_through_plain_cards_never_the_apps_card_builder():
+    """Lane B's review of 457a2bd (M-3): the count needs the real engine's alerts, not the shadow
+    picture the app's `card` builder computes. The injected builder here answers a card with no
+    alerts, and records that it was called: the count is still 1, and it was never called."""
+    built: list[str] = []
+
+    def card(hospital, patient_id, identity):
+        built.append(patient_id)
+        return {"patient_id": patient_id, "alerts": [], "shadow": "card"}
+
+    world = World(card=card)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        world.ingest(fhir)
+    built.clear()
+
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 1
+    assert built == []
+
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))   # a tombstone's card: a removal
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 0
+    assert built == []
 
 
 # ---------------------------------------------------------------- discharge and retirement
