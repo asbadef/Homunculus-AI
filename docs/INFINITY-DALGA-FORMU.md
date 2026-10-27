@@ -48,6 +48,12 @@ tekrar ya da çakışma görülmedi (60 s'de 300, 300 s'de 1501 blok, her dalga 
 kanaldaki bütün örnekler bu değeri taşır. Bu değer **düz çizgi olarak çizilmemelidir** — düz
 EKG çizgisi asistoli gibi okunur; "sinyal yok" boşluğu olarak gösterilir.
 
+Açık iki nokta (koğuşta bir derivasyon kendiliğinden düştüğünde bakılacak, V6): blok ortasında
+düşen bir derivasyonun o bloğu nasıl doldurduğu (canlı örneklerden sonra `0x0001` dizisi mi;
+öyleyse çizim bir sonraki bloğa kadar en fazla 200 ms düz parça gösterir) ve `0x0001` dışında
+sentinel değer olup olmadığı (doygunluk ya da geçersiz örnek için `0x8000`/`0x7fff` gibi).
+Kayıtlarda ikisi de görülmedi; bilinmeden kural yazılmaz.
+
 ## Dalga kimlikleri
 
 | Kimlik | Hız | Anlam | Kanıt |
