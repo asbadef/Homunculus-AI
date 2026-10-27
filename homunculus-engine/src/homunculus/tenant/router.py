@@ -12,9 +12,12 @@ is open to `admissions.view`, `admissions.admit`, `beds.release`, `structure.man
 `users.manage` (the scope editor names the units and beds it grants); and
 `POST /tenant/beds/{id}/release` (cleaning done, bed free) to `beds.release`, the ward's nurses, in
 their own units. Their refusals, and those of the create / rename / close / reopen routes, carry a
-stable code (admission/errors.py). A bed is never freed while the card of its last discharged
-patient still stands on the board (a discharge whose board step failed): the release takes that
-card off first (`BoardLink.take_off`), and is refused `board_not_cleared` when it cannot.
+stable code (admission/errors.py). A bed is never freed — by the release, or by the
+administrator's raw move to AVAILABLE (`POST /tenant/beds/{id}/transition`) — while the card of
+one of its discharged patients still stands on the board (a discharge whose board step failed):
+both take every such card off first (`_last_card_off`, `BoardLink.take_off`), and are refused
+`board_not_cleared` when they cannot. The raw move frees no bed whose admission is still open
+either (`bed_in_use`); the release needs no such check, as only cleaning is released.
 
 Every structure write — create a site, unit, room or bed; rename, close or reopen one — writes one
 audit row per change (`structure.create|rename|close|reopen`: the kind, the id, the unit, the old
@@ -55,7 +58,7 @@ from homunculus.admission.errors import (
     BED_IN_USE, BED_LABEL_TAKEN, BOARD_NOT_CLEARED, HAS_OPEN_BEDS, INVALID_TRANSITION, NAME_TAKEN,
     Refusal, field_invalid,
 )
-from homunculus.admission.models import Admission, AdmissionState, Patient
+from homunculus.admission.models import OPEN_ADMISSION_STATES, Admission, AdmissionState, Patient
 from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission, require_platform_operator,
 )
@@ -63,7 +66,9 @@ from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.tenant import scope
-from homunculus.tenant.models import Bed, BedState, Room, Site, Tenant, Unit
+from homunculus.tenant.models import (
+    BED_STATE_TRANSITIONS, Bed, BedState, Room, Site, Tenant, Unit,
+)
 from homunculus.tenant.schemas import (
     BedCreate, BedPatch, BedResponse, BedStateTransitionRequest,
     RoomCreate, RoomPatch, RoomResponse, SiteCreate, SiteResponse,
@@ -530,34 +535,43 @@ async def patch_bed(
 
 
 async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_id: uuid.UUID,
-                         actor: str) -> None:
-    """The bed's last discharged patient off the board before the bed is freed (review I-2): a
+                         actor: str, *, via: str = "bed.release") -> None:
+    """The bed's discharged patients off the board before the bed is freed (review I-2): a
     discharge whose board step failed leaves that patient's card standing as admitted on this
-    bed, and a bed freed under it would take a second card. When the identity of the bed's
-    latest DISCHARGED admission is not a tombstone, the step runs again (`BoardLink.take_off`:
+    bed, and a bed freed under it would take a second card. EVERY DISCHARGED admission of the bed
+    whose identity is not a tombstone is checked, not only the row written last (the final
+    review): an older admission's row may be written after a newer one's (`updated_at`), and the
+    newer card would stand behind it. For each, the step runs again (`BoardLink.take_off`:
     idempotent; it ends the patient's alerts, which no longer hold it), audited
-    `admission.discharge_board_retry`; when it still fails, the release is refused
-    `board_not_cleared` with that patient's number (the caller's units hold this bed). Called
-    under the bed's lock. An app without its BoardLink has no board, so no card can stand."""
-    last = (await db.execute(
+    `admission.discharge_board_retry` with `via` — the release (`bed.release`) or the
+    administrator's raw move (`bed.transition`); when one still fails, the bed is refused
+    `board_not_cleared` with that patient's number — the newest such, by `updated_at` — (the
+    caller's units hold this bed, or the caller administers the structure). Called under the
+    bed's lock. An app without its BoardLink has no board, so no card can stand.
+
+    Each check reads the identity store once: one read per DISCHARGED admission the bed ever
+    held, a tombstone among them read and passed over."""
+    link = board_link_of(request)
+    if link is None:
+        return
+    discharged = (await db.execute(
         select(Admission.id, Patient.patient_number)
         .join(Patient, Patient.id == Admission.patient_id)
         .where(Admission.bed_id == bed_id, Admission.state == AdmissionState.DISCHARGED)
-        .order_by(Admission.updated_at.desc()).limit(1))).first()
-    link = board_link_of(request)
-    if last is None or link is None:
-        return
-    admission_id, number = last
-    if link.is_discharged(hospital, number):
-        return
-    board, alerts = await link.take_off(hospital, number)
-    trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
-                 payload={"admission_id": str(admission_id), "bed_id": str(bed_id),
-                          "board": board, "alerts": alerts, "via": "bed.release",
-                          "actor": actor})
-    if board != "ok":
-        raise Refusal(409, BOARD_NOT_CLEARED, "The last patient of this bed is still on the board: "
-                      "the board refused the discharge.", extra={"patient_number": number})
+        .order_by(Admission.updated_at.desc()))).all()
+    standing = None
+    for admission_id, number in discharged:
+        if link.is_discharged(hospital, number):
+            continue
+        board, alerts = await link.take_off(hospital, number)
+        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
+                     payload={"admission_id": str(admission_id), "bed_id": str(bed_id),
+                              "board": board, "alerts": alerts, "via": via, "actor": actor})
+        if board != "ok" and standing is None:
+            standing = number
+    if standing is not None:
+        raise Refusal(409, BOARD_NOT_CLEARED, "A patient of this bed is still on the board: the "
+                      "board refused the discharge.", extra={"patient_number": standing})
 
 
 @router.post("/beds/{bed_id}/release", response_model=BedResponse,
@@ -595,14 +609,38 @@ async def release_bed(
     return BedResponse.model_validate(bed)
 
 
+async def _holds_open_admission(db: AsyncSession, bed_id: uuid.UUID) -> bool:
+    """Whether an admission on the bed is still open (DRAFT, ACTIVE or PENDING_*)."""
+    return (await db.execute(select(Admission.id).where(
+        Admission.bed_id == bed_id, Admission.state.in_(list(OPEN_ADMISSION_STATES)))
+        .limit(1))).first() is not None
+
+
 @router.post("/beds/{bed_id}/transition", response_model=BedResponse,
              summary="Transition a bed to a new lifecycle state (§1.3)")
 async def transition_bed(
-    bed_id: uuid.UUID, body: BedStateTransitionRequest,
-    db: AsyncSession = Depends(get_db), _user=_admin, caller_tenant: uuid.UUID = _tenant,
+    bed_id: uuid.UUID, body: BedStateTransitionRequest, request: Request,
+    db: AsyncSession = Depends(get_db), user: User = _admin, caller_tenant: uuid.UUID = _tenant,
 ) -> BedResponse:
+    """The administrator's raw move along the bed's state machine (§1.3; a move it does not allow
+    is a 400). A move that FREES the bed — to AVAILABLE, from cleaning, maintenance or a block —
+    frees none the release would not (the final review): it is refused `bed_in_use` while an
+    admission on the bed is still open (it is discharged first), and it runs the release's check
+    first (`_last_card_off`: every discharged patient's card still standing is taken off the
+    board, or the move is refused `board_not_cleared` with that patient's number). Under the
+    bed's lock, as the release."""
     scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
-    bed = await _get_or_404(db, Bed, bed_id, "Bed")
+    bed = await _lock_bed(db, bed_id)
+    if body.new_state == BedState.AVAILABLE and \
+            body.new_state in BED_STATE_TRANSITIONS.get(bed.state, set()):
+        try:
+            if await _holds_open_admission(db, bed.id):
+                raise Refusal(409, BED_IN_USE, "An admission on this bed is still open: it is "
+                              "discharged before the bed is freed.")
+            await _last_card_off(request, db, await trail.hospital_of(db, caller_tenant), bed.id,
+                                 user.username, via="bed.transition")
+        except Refusal as exc:
+            raise exc.http() from None
     try:
         bed.transition_to(body.new_state)
     except ValueError as exc:

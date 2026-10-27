@@ -16,8 +16,11 @@ writes from the first into the second, and nothing else in `admission/` does:
 * `open_critical`      how many critical alerts on this patient's board nobody has acknowledged —
                        a latched one (`resolved_at` set, G2-A1) counted as firing ones are: the
                        same alerts the clinician sees, never the Postgres escalation tables;
-* `is_discharged`      whether the number is a `kabul` tombstone (A-11: the app's doors drop a
-                       reading for it before the engine);
+* `is_discharged`      whether the number is a `kabul` tombstone — asked by the writes below
+                       (`_refuse_discharged`) and by the bed's card check before it is freed
+                       (tenant/router.py `_last_card_off`). The app's doors that drop a reading
+                       for a tombstone before the engine (A-11) ask
+                       `patient_identity.is_tombstone` themselves, not this;
 * `discharge_identity` the tombstone written: the card is off every board read from then on. It
                        publishes NOTHING (A-11d, A-20), returns the tombstone (a second discharge
                        returns it too) and raises when the store refuses it;

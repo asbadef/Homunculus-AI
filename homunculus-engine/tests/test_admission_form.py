@@ -6,6 +6,7 @@ No database: the rules are pure. Synthetic values only."""
 from __future__ import annotations
 
 import enum
+import hashlib
 import json
 import math
 from datetime import date, datetime, timedelta, timezone
@@ -19,13 +20,13 @@ from sqlalchemy import Enum as SqlEnum, String
 
 from homunculus.admission.errors import CODES, Refusal
 from homunculus.admission.form import (
-    CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_discharge,
+    CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_discharge, identity_digest, person_name,
 )
 from homunculus.admission.models import Admission, DischargeDisposition, Patient
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionNoteFields, DischargeStart, PatientIdentity,
 )
-from homunculus.crypto import EncryptedString, encrypt_phi
+from homunculus.crypto import EncryptedString, encrypt_phi, phi_digest
 from homunculus.rules import patient_relative
 
 TODAY = date(2026, 10, 25)
@@ -420,7 +421,45 @@ def test_every_other_refusal_has_a_stable_code():
     assert CODES == {"bed_not_available", "bed_closed", "out_of_scope", "critical_alarm_open",
                      "patient_number_exhausted", "invalid_transition", "missing_attending",
                      "open_admission", "bed_in_use", "has_open_beds", "name_taken",
-                     "bed_label_taken", "request_conflict", "board_not_cleared"}
+                     "bed_label_taken", "request_conflict", "board_not_cleared",
+                     "transfer_unavailable", "duplicate_open_admission"}
+
+
+# ---------------------------------------------------------------- the person (A-37)
+@pytest.mark.parametrize(("one", "other"), [
+    ("İlkin Məmmədov", "ilkin  MƏMMƏDOV"),
+    ("Işık", "ISIK"), ("ISIK", "isik"), ("Işık", "isik"),
+    ("Çağla Öz", "CAGLA OZ"),
+    ("  Sentetik\tHasta ", "sentetik hasta"),
+])
+def test_one_name_written_two_ways_is_one_person(one, other):
+    """NFKD, combining marks dropped, case folded, ı read as i, white space collapsed: Turkish and
+    Azerbaijani İ/ı/ə and accents, as a nurse may type them on another day."""
+    assert person_name(one) == person_name(other)
+    born = date(1970, 5, 5)
+    assert identity_digest(one, born) == identity_digest(other, born)
+
+
+def test_two_names_or_two_birth_dates_are_two_people():
+    born = date(1970, 5, 5)
+    assert identity_digest("Sentetik Hasta", born) != identity_digest("Sentetik Başqa", born)
+    assert identity_digest("Sentetik Məmmədov", born) != identity_digest("Sentetik Memmedov", born)
+    assert identity_digest("Sentetik Əkiz Bir", born) != identity_digest("Sentetik Əkiz İki", born)
+    assert identity_digest("Sentetik Hasta", born) != identity_digest("Sentetik Hasta",
+                                                                      date(1970, 5, 6))
+
+
+def test_without_a_birth_date_there_is_no_digest():
+    assert identity_digest("Sentetik Hasta", None) is None
+
+
+def test_the_digest_is_keyed_and_never_the_name():
+    """64 hex characters of `crypto.phi_digest` (keyed by the PHI key), not a plain hash a reader
+    of the database could check a guessed name and birth date against."""
+    digest = identity_digest("Sentetik Hasta", date(1970, 5, 5))
+    assert len(digest) == 64 and int(digest, 16) >= 0
+    assert digest != hashlib.sha256(b"sentetik hasta|1970-05-05").hexdigest()
+    assert digest == phi_digest("sentetik hasta|1970-05-05")
 
 
 def test_a_workflow_refusal_answers_its_code_beside_its_words():

@@ -995,10 +995,12 @@ def create_app(
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
-        """Admitted patients per bed, through the site's bed map — read-only and counting nothing
-        (`BedMap.lookup`), cached 10 s. The ONLY bridge between a monitor and a patient in
-        Aşama A: an explicit binding the hospital already made (ADT or set_identity), never a
-        guess from a name (design K3, K5). Discharged identities are not admitted, so never here."""
+        """Admitted patients per bed, cached 10 s: a `kabul` record (an admission made here, G2-B1a)
+        by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed map
+        — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
+        a patient in Aşama A: an explicit binding the hospital already made (an admission here,
+        ADT or set_identity), never a guess from a name (design K3, K5). Discharged identities
+        are not admitted, so never here."""
         cached = shadow_occupancy.get(hospital)
         if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
             return cached[1]

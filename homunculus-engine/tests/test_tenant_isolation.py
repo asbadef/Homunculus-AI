@@ -236,9 +236,11 @@ BY_ID: dict[str, ById] = {
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",
         lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+    # A-37: the transfer routes are closed — the caller's own admission gets past the tenant
+    # check to the 409 `transfer_unavailable`.
     "transfer initiate": ById(
         "POST", lambda s: f"/admissions/{s.admission}/transfer/initiate",
-        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}),
+        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
     "transfer confirm": ById(
         "POST", lambda s: f"/admissions/{s.admission}/transfer/confirm",
         lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
@@ -324,12 +326,13 @@ IN_BODY: dict[str, InBody] = {
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(x.unit, a.free_bed), 201),
     "admit into another tenant's bed": InBody(
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(a.unit, x.free_bed), 201),
+    # A-37: closed — the caller's own ids get past the tenant check to `transfer_unavailable`.
     "transfer to another tenant's bed": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 200),
+        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
     "transfer to another tenant's unit": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 200),
+        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 409),
     "transfer confirmed into another tenant's bed": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/confirm",
         lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
@@ -449,20 +452,20 @@ async def test_a_deactivated_account_is_no_member_though_its_membership_is_activ
 
 # ---------------------------------------------------------------- the risky success paths
 @requires_db
-async def test_a_pending_transfer_is_confirmed_into_the_callers_own_bed(world):
+async def test_a_pending_transfer_is_not_confirmed_even_into_the_callers_own_bed(world):
+    """A-37: the transfer routes are closed. A transfer pending from before (written here by the
+    service) is refused `transfer_unavailable` after the tenant checks, and nothing is written."""
     admission = await world.db.get(Admission, world.a.admission)
     await adm_service.initiate_transfer(world.db, admission, target_bed_id=world.a.free_bed,
                                         target_unit_id=world.a.unit)
     await world.db.commit()
+    before = await _snapshot(world.db)
 
     r = await _call(world, "POST", f"/admissions/{world.a.admission}/transfer/confirm",
                     {"target_bed_id": world.a.free_bed, "target_unit_id": world.a.unit})
 
-    assert r.status_code == 201, r.text
-    new = r.json()
-    assert new["state"] == "ACTIVE" and new["bed_id"] == str(world.a.free_bed)
-    assert new["tenant_id"] == str(world.a.tenant)
-    assert new["source_admission_id"] == str(world.a.admission)
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable"), r.text
+    assert await _snapshot(world.db) == before
 
 
 @requires_db
