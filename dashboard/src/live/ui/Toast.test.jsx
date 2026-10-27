@@ -212,6 +212,57 @@ describe("the toast stack", () => {
   });
 });
 
+// G2-B1a walk (M-6): a refusal pressed twice stacked two identical error toasts, which stay until
+// dismissed — the screen filled with copies. The same words in the same tone are one toast.
+describe("a toast raised again", () => {
+  const REFUSED = "Otaq 1 · Reanimasiya: Əvvəlcə altındakı bütün çarpayıları bağlayın.";
+
+  it("replaces the copy on screen: an identical message never shows twice, nor is it said twice at once", () => {
+    mount();
+    show(REFUSED, "error");
+    show(REFUSED, "error");
+    expect(cards()).toHaveLength(1);
+    expect(alerts().querySelectorAll("p")).toHaveLength(1);
+  });
+
+  it("comes last, as the newest, and the copy it replaces leaves its place", () => {
+    mount();
+    show("birinci", "error");
+    show("ikinci", "error");
+    show("birinci", "error");
+    expect(cards().map((el) => el.textContent)).toEqual(["ikinci", "birinci"]);
+  });
+
+  it("restarts a confirmation's clock instead of adding a second", () => {
+    mount();
+    show("Yadda saxlanıldı");
+    act(() => vi.advanceTimersByTime(TOAST_MS - 100));
+    show("Yadda saxlanıldı");
+    expect(cards()).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(200));
+    expect(card("Yadda saxlanıldı")).not.toBeNull();          // the newest one's own 3.6 s
+    act(() => vi.advanceTimersByTime(TOAST_MS));
+    expect(card("Yadda saxlanıldı")).toBeNull();
+  });
+
+  it("keeps another message, or the same words in another tone, as a toast of its own", () => {
+    mount();
+    show("Saxlanılmadı", "error");
+    show("Saxlanılmadı", "warn");
+    show("Başqa bir xəta", "error");
+    expect(cards()).toHaveLength(3);
+  });
+
+  it("replaces a copy held behind the lock too", () => {
+    const gate = gated();
+    show(REFUSED, "error");
+    gate({ open: false });                                 // locked: the one on screen is held
+    show(REFUSED, "error");                                // answered behind the lock
+    gate({ open: true });
+    expect(cards()).toHaveLength(1);
+  });
+});
+
 describe("the toast stack over a dialog", () => {
   // At 390 x 380 a dialog fills the screen and its sticky footer (Save, Cancel) sits where the
   // stack does. While one is open the stack moves to the top — a rule keyed on <body>'s mark.

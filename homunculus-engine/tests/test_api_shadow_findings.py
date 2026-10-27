@@ -322,6 +322,30 @@ def test_a_discharge_drops_the_occupants_cache_at_once(tmp_path):
         assert "bed-1" not in client.app.state.shadow_lane.engines[HOSPITAL].patient_ids()
 
 
+def test_a_republish_the_lane_asks_for_after_a_discharge_here_is_the_removal(tmp_path, monkeypatch):
+    """Merge with G2-B1a: a settle the lane retries on a later pass reports the retired number as
+    changed, and the sampler republishes it. The real engine has forgotten the patient, so the frame
+    would be the identity-only card — of a `kabul` tombstone, which keeps the name (A-16): the
+    discharged patient back on every screen (A-29). It is the tombstone's removal, as
+    `patient_board` answers it: no name, no shadow key."""
+    identities = InMemoryIdentityStore()
+    _kabul(identities, "bed-1")
+    client, _, _, _ = _app(tmp_path, identities=identities)
+    with client:
+        _linked(client)
+        _kabul(identities, "bed-1", state="discharged")
+        client.portal.call(client.app.state.retire_patient, HOSPITAL, "bed-1")
+        lane = client.app.state.shadow_lane
+        monkeypatch.setattr(lane, "sample", lambda *a, **k: ["bed-1"])     # the retried settle's report
+        queue = client.app.state.broadcaster.subscribe(HOSPITAL)
+        assert _post(client).status_code == 200
+        frame = queue.get_nowait()
+        assert queue.empty()
+        assert (frame["patient_id"], frame["removed"]) == ("bed-1", True)
+        assert "shadow" not in frame and "SYNTH" not in repr(frame)
+        assert "bed-1" not in client.app.state.shadow_lane.engines[HOSPITAL].patient_ids()
+
+
 def test_an_adt_transfer_through_ingest_moves_the_link_on_the_next_body(tmp_path):
     """T6 review: only a discharge made here dropped the occupants' 10 s cache, so an ADT transfer
     left the old patient linked — and sampled — for up to 10 s. Every identity write through /ingest

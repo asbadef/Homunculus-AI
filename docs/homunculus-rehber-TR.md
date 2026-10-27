@@ -353,7 +353,7 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 21 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
+- *Homunculus'ta:* 22 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -680,7 +680,8 @@ Dalga 3'te geldi: 3.6.
 **Yönetim ekranı (Kullanıcılar · Roller ve yetkiler · Giriş kaynağı)**
 - *Basit:* Hastanenin kendi hesaplarını, gruplarını ve kurumsal (AD) girişini yönettiği sayfa.
   Sol menüde "Yönetim" (Azerbaycanca arayüzde "İdarə"); içinde üç sekme var: Kullanıcılar, Roller
-  ve yetkiler, Giriş kaynağı ("İstifadəçilər", "Rollar və səlahiyyətlər", "Giriş mənbəyi").
+  ve yetkiler, Giriş kaynağı ("İstifadəçilər", "Rollar və səlahiyyətlər", "Giriş mənbəyi"); G2-B1a
+  dördüncüsünü ekledi: Yapı ("Struktur", `structure.manage`; aşağıda 3.8).
   Sayfanın başlığı her değişikliğin denetim kaydına yazıldığını söyler.
 - *Kim açabilir:* Sayfa `users.manage` ya da `groups.manage` izni olana açılır, her sekme de
   kendi iznine bakar: Kullanıcılar ve Giriş kaynağı `users.manage`, Roller ve yetkiler
@@ -699,10 +700,11 @@ Dalga 3'te geldi: 3.6.
   - **Birimler (birim kapsamı):** kişinin panoda hangi birimlerin ve yatakların hastalarını
     gördüğü. Bütün kullanıcıların kapsamını birden okuyan bir uç yok, bu yüzden "Birimler" sütunu
     bir kişinin kapsamı okunana dek "Okunmadı" der; birimler penceresi açılınca okunur. Penceredeki
-    seçenekler panodaki kartlardan, kişinin mevcut atamalarından ve elle yazılan bir anahtardan
-    gelir (hastası olmayan boş bir birim panoda görünmez, anahtarı elle yazılır). Kapsamı yalnız
-    kendi kapsamı **rolü gereği** sınırsız olan yönetici (Sistem Yöneticisi ya da platform
-    operatörü) kaydedebilir; `users.manage` tek başına yetmez. Ataması olmayan bir hesap bugün
+    seçenekler G2-B1a'dan beri koğuşun yapısından gelir — her birim adıyla, her yatak "etiket ·
+    oda · birim" olarak, hastası olmayan boş bir birim de — ve ayrıca panodaki kartlardan ve
+    kişinin mevcut atamalarından; elle anahtar yazma kutusu kalktı, aynı yer iki kez verilemez
+    (3.8). Kapsamı yalnız kendi kapsamı **rolü gereği** sınırsız olan yönetici (Sistem Yöneticisi
+    ya da platform operatörü) kaydedebilir; `users.manage` tek başına yetmez. Ataması olmayan bir hesap bugün
     bütün hastaları görür; sunucu ataması olmayanları kısıtlayacak biçimde ayarlanırsa
     (`SCOPE_ENFORCE_UNASSIGNED`) yalnız bakım ekibinde adı geçtiği ya da acil erişimle açtığı
     hastaları görür. Ekran hangisinin geçerli olduğunu sunucudan okuyup yazar. Sekmedeki "Hiç
@@ -1083,6 +1085,157 @@ Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
+
+### 3.8 Hasta Kabul (Grup 2 · B1a)
+
+Bu dilimden önce hiçbir ekran "bu hasta bu yatakta yatıyor" diyemiyordu: kabul kayıtları ile
+pano iki ayrı dünyaydı ve hiçbir şey onları bağlamıyordu. **Artık Homunculus'ta yapılan kabul,
+hangi hastanın hangi yatakta yattığının asıl kaydıdır** (kullanıcı kararı D1); HBYS akışı
+geldiğinde yalnız formu önceden dolduracak. Bu ekranlar kimin hangi yatakta yattığını ve hastanın
+nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesaplamaz. Örneklerdeki
+numaralar ve yerler uydurmadır.
+
+**Üç sekme** — menüde "Hasta Kabul":
+- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* ad soyad\*, baba adı, cinsiyet\*, doğum
+  tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
+  *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
+  "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
+  onam:* yakını, refakatçi, onam\* ("Kişisel veri onayı imzalandı" ya da "Bilinci kapalı — onam
+  sonra alınacak"), SMS izni. *Yatak\*:* önce birim, sonra oda ve yatak; yalnız boş ve açık yatak
+  seçilir, dolu, temizlikteki ve kapalı yataklar soluk ve nedeniyle görünür. Sağdaki "Eksik
+  alanlar" paneli eksik her zorunlu alanı adıyla söyler; panel boşalmadan kabul gönderilmez.
+  Form yarıda bırakılıp başka bir sekmeye ya da ekrana geçilse de kaybolmaz; onu "Yeni kabul" ya
+  da oturumun kapanması temizler.
+- **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
+  "Yatan hastalar".
+- **Yataklar:** birimlerinizin yatakları oda oda, durumlarıyla (Boş, Dolu, Taburcu bekliyor,
+  Temizlikte, Kapatılmış…); temizlikteki yatakta "Temizlik bitti · boş" düğmesi.
+
+**Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
+değiştirilebilir):
+
+| İş | Kim | İzin |
+|---|---|---|
+| Kabul et | Hemşire, Sorumlu Hemşire | `admissions.admit` |
+| Kabulü imzala (hasta ekranından) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
+| Taburcuyu başlat | Sorumlu Hekim, Ünite Hekimi | `admissions.move.initiate` |
+| Hasta çıktı · onayla | Sorumlu Hemşire | `admissions.discharge.confirm` |
+| Temizlik bitti · boş | Hemşire, Sorumlu Hemşire | `beds.release` |
+| Yönetim › Yapı | Sistem Yöneticisi | `structure.manage` |
+
+Sistem Yöneticisi bütün izinleri taşır. Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
+salt okunur bir notla görür. "Hekim" grubu kabul kayıtlarını görür ama imzalamaz ve taburcu
+başlatmaz. Herkes yalnız kendi birimlerinin yataklarında işlem yapar (birim kapsamı); birimi
+atanmamış hesap (pilot ayarı) ve yönetici her yere ulaşır.
+
+**Hasta numarası:** Homunculus her kabule bir numara verir: `H` + yılın iki hanesi + beş hane
+(ör. `H2600001`). Kurum ve takvim yılı başına sıralıdır (yıl UTC'dir), her yıl 1'den başlar; iki
+kabul aynı numarayı asla alamaz; bir yılda 99 999'a ulaşılırsa kabul reddedilir. `H` öneki
+numarayı HBYS protokol numaralarından ayırır — ikisi aynı olsaydı iki hasta tek karta düşerdi.
+HBYS protokol numarası ayrı ve isteğe bağlı bir alandır. Aynı kişi yeniden yatarsa yeni bir numara
+alır.
+
+**Numara neden başucu cihazına girilir:** monitör ölçümü hastanın numarasıyla gönderir; Homunculus
+ölçümü bu numaraya bakarak karta bağlar. Kabulden sonra ekran numarayı büyük yazar ve "Başucu
+cihazına bu numarayı girin" der. Numara cihaza girilmezse ya da yanlış girilirse ölçümler bu karta
+ulaşmaz. (Aşama A'nın Infinity Kappa şeridi karta numarayla değil yatakla bağlanır: cihaz→yatak
+tablosu yatağın kimliğini taşıdığında şerit o yataktaki kartta görünür — hastanenin sunucusunda
+bunun için tablonun yeni sürümü gerekir.)
+
+**Kart hemen, hekim imzası sonra:** "Kabul et"ten sonra kart hemen seçilen yatağa ve birime düşer
+ve izlem başlar ("Panoda gör" onu gösterir). Kilo ve işaretlenen eşlik eden hastalıklar (KOAH,
+kronik solunum yetmezliği, evde oksijen, demans / kronik konfüzyon) motora yazılır; motor hastayı
+kendi bazaline göre değerlendirirken bunları kullanır. "Diğer eşlik eden hastalıklar" kaydedilir
+ama motora kod olarak gitmez. Biri motora ulaşmazsa kabul yine durur ve ekran hangisinin
+ulaşmadığını söyler. Hekim imzası sonraki adımdır (D3): imzalanmamış kabulde hasta ekranında
+"Hekim imzası bekliyor — kart ve izlem imzayı beklemez" şeridi, yatak kartında küçük bir rozet
+görünür. İmza yetkisi olan hekim şeritten "Kabulü imzala" der ve kabulün sorumlu hekimi olur.
+İmzalanmamış kabul taburcu edilemez; Taburcu listesinde "Önce kabul imzalanmalı (hasta ekranı)"
+yazar. Sunucunun yanıtı gelmezse ekran kabulün kaydedilip kaydedilmediğini bilmediğini söyler ve
+yeniden göndermeden önce listeye bakmanızı ister; aynı form yeniden gönderilse de sunucu ikinci
+bir hasta ya da numara açmaz.
+
+**Taburcu iki adımdır** (D7):
+1. **Hekim başlatır:** "Taburcuyu başlat" der ve çıkış şeklini seçer — Eve taburcu, Başka kuruma
+   sevk (kurumun adıyla) ya da Vefat (exitus; bildiren hekim, boş bırakılırsa kendisi) — çıkış
+   zamanı (gelecekte ya da kabulden önce olamaz) ve not. Hasta "Taburcusu başlatılan" listesine
+   geçer, yatak "Taburcu bekliyor" olur.
+2. **Sorumlu hemşire onaylar:** hasta servisten çıkınca "Hasta çıktı · onayla". Bu geri alınamaz:
+   kart bütün ekranlardan kalkar, yatak temizliğe alınır.
+
+**Kritik alarm tutması — başlatmada da, onayda da:** hastanın onaylanmamış kritik bir alarmı
+varsa (kuralı susmuş ama kimsenin "Gördüm" demediği kritik alarm dahil, G2-A1) taburcu ne
+başlatılabilir ne onaylanabilir. Düğme tutulur ve nedenini söyler; ekran görmese bile sunucu
+kendisi reddeder. **Vefatta da istisna yoktur:** önce monitörün son kritik alarmları onaylanır,
+sonra taburcu. Amaç, hasta servisten çıkmadan her kritik olayın birinin gözünden geçmiş olmasıdır
+(kullanıcı kararı 26.10: onayda da denetle).
+
+**Taburcudan sonra kart ve ölçümler:** kart her ekrandan kalkar — Yataklar, Alarmlar, hasta
+ekranı; birimle sınırlı ekranlar da. Hastanın bilgileri silinmez, saklanır (kullanıcı kararı);
+eski kabullere bakma ekranı sonraki dilimde gelecek. O numaraya sonradan gelen ölçümler motordan
+önce düşer: alarm, çağrı ya da kart doğmaz, yalnız denetim kaydına bir satır yazılır (G2-A11).
+**Bu yüzden taburcudan sonra numarayı başucu cihazından silin:** yeni hastanın ölçümleri eski
+numarayla gelirse hiçbir ekranda görünmez ve alarm vermez. Yeni hastaya kendi yeni numarası girilir.
+
+**Yatağın boşaltılması:** onaydan sonra yatak "Temizlikte"dir. Temizlik bitince hemşire ya da
+sorumlu hemşire Yataklar sekmesinde "Temizlik bitti · boş" der — gece yönetici olmadan da yatak
+dönebilsin diye (D8). Yatak, son hastasının kartı panodan kalkmadan boşalmaz: sunucu kartı bir kez
+daha kaldırmayı dener, olmazsa "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı"
+der. Neden: eski kart dururken yatağa yeni hasta yatırılırsa aynı yatakta iki kart olur ve monitör
+hangisine bağlanacağını bilemez. Taburcu onayında kart panodan kaldırılamadıysa Taburcu sekmesi
+"Panodan yeniden kaldır" düğmesini gösterir.
+
+**Yönetim › Yapı:** sistem yöneticisi koğuşu kurar: bina → birim (türüyle: Erişkin YBÜ, Yenidoğan
+YBÜ…) → oda (numarası ve izolasyon isteğe bağlı) → yatak (etiketiyle). Adını değiştirir, kapatır,
+yeniden açar. **Hiçbir şey silinmez;** kapatılan yer kalır ve kabule sunulmaz. Hastası olan yatak
+kapatılamaz; altında açık yatak olan oda ya da birim de. **Bir birimde iki yatak aynı etiketi
+taşıyamaz** — oda farklı olsa da, kapalı yataklar dahil; büyük/küçük harf ve baştaki/sondaki
+boşluk fark etmez — böylece bir etiket birimde tek bir yeri gösterir. Aynı birimde iki oda da aynı
+adı taşıyamaz. Her yapı değişikliği denetim kaydına yazılır. **Ekranlar yerleri hep adıyla
+söyler, asla iç kodla:** yatak "etiket · oda · birim" diye yazılır (ör. "3 · Otaq 1 ·
+Reanimasiya"). Ad henüz okunamadıysa yer tutucu bir numara ("Birim 1") ve bunun yalnız yer tutucu
+olduğunu söyleyen bir not görünür; yapı okunmuş ama yeri tanımıyorsa ekran "Bilinmeyen birim 1"
+der.
+
+**Kapsam düzenleyicisi:** Yönetim › Kullanıcılar'da bir çalışanın birimleri düzenlenirken seçenekler
+artık yapıdan gelir: her birim adıyla, her yatak "etiket · oda · birim" olarak, boş bir birim de.
+Kod yazma kutusu yoktur ve aynı yer iki kez verilemez. Eski, serbest metinle verilmiş atamalar
+yazıldığı gibi görünür ve kaldırılabilir; yalnız eski anahtarıyla bilinen boş bir birim ise buradan
+verilemez (kapsam dilimine kaldı). Panodaki kapsam notu da atanmış ama kartı olmayan birim ve
+yatakları okuyanın dilinde, adlarıyla söyler.
+
+**Kişi başına tek açık kabul:** aynı ad soyad ve doğum tarihiyle açık bir kabul (imza bekleyen,
+yatan ya da taburcusu başlatılmış) varken ikinci kabul reddedilir: "Bu hastanın açık bir kabulü
+zaten var; önce taburcu edilmeli." Açık kabulün yatağı sizin birimlerinizdeyse numarası da yazılır.
+Karşılaştırmada büyük/küçük harf, aksan ve fazla boşluk fark etmez (İ/ı dahil); "ə" ise
+ayrışmaz: "Məmmədov" ile "Memmedov" iki ayrı addır. Neden: bir sayfa yenilemesi, ikinci bir sekme
+ya da yeniden giriş aynı hastayı iki yatağa yatıramasın.
+
+**Transfer henüz yok:** hastayı başka bir yatağa ya da birime taşımak bu dilimde yapılamaz;
+transfer kapalıdır ("Transfer henüz kullanılamıyor."). Eski transfer yolu kartı eski yatakta
+bırakıyordu (aynı yatakta iki kart, bozulan monitör bağlantısı) ve bir birimin hekimi başka bir
+birimin hastasını kendi birimine taşıyabiliyordu; bu yüzden kullanıcı kararıyla kapatıldı.
+Transfer kendi diliminde (B1b), birim denetimleri ve ekranıyla gelecek.
+
+**Reddedilen işlem:** sunucu her reddi değişmez bir kodla verir; ekran onu okuyanın dilinde
+söyler, sunucunun İngilizce sözcüklerini göstermez. Ret, işlemin konusu olan yatakla birlikte
+bildirimde (toast) görünür.
+
+**Bu dilimin henüz yapmadıkları**
+- Transfer (B1b), bakım ekibi (B1c), protokol ve hasta etiketi, barkod (B1d).
+- HBYS'den bekleyen hastalar paneli ve formun HBYS'den önceden dolması (ADT akışı gelince).
+- Yeniden yatan bir kişiyi eski kaydıyla eşleştirme (her yatış yeni numara alır); kimliği
+  bilinmeyen hastanın (doğum tarihsiz) kabulü; başucu cihazında hastanın adının görünmesi.
+- Taburcu edilmiş bir hastanın eski kabullerine ve bilgilerine bakma (kimin bakabileceği,
+  denetimli — sonraki dilim).
+- Taburcu sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
+  (rozet yalnız kartta).
+- İmza, imzalayan hekimi bakım ekibine eklemez (B1c).
+- Kabul, Taburcu, Yataklar ve Yapı'nın Azerbaycanca, Rusça ve İngilizce metinleri yerel bir
+  okuyucunun okumasını bekliyor.
+- **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak; orada önce
+  Yönetim › Yapı'da koğuş kurulur, sonra monitörlerin cihaz→yatak tablosu yeni yatak kimlikleriyle
+  onaylanır.
 
 ---
 

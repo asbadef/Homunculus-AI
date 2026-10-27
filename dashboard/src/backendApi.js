@@ -292,6 +292,8 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason.
     let detail = fallback;
     let fieldErrors;
+    let apiCode;
+    let patientNumber;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -302,6 +304,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
           .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
           .filter(Boolean).join("; ");
         if (text) detail = text;
+      } else if (typeof body?.detail?.code === "string" && typeof body.detail.message === "string") {
+        // A refusal with a stable code beside its words (homunculus-engine admission/errors.py,
+        // Group 2 · B1a): the words are the message, the code is what a screen maps.
+        detail = body.detail.message;
+        apiCode = body.detail.code;
+        // `request_conflict` names the earlier admission's number, `board_not_cleared` the bed's last
+        // patient's (admission/errors.py `Refusal.extra`): the one extra a screen shows. Nothing else
+        // of the detail is kept — never a name.
+        if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -310,6 +321,8 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // that could not answer (5xx) without parsing text. A network failure has no status at all.
     const err = new Error(detail);
     err.status = res.status;
+    if (apiCode) err.apiCode = apiCode;
+    if (patientNumber !== undefined) err.patientNumber = patientNumber;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
@@ -376,8 +389,14 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     return a !== null && a === subOf(stored);
   }
 
-  async function authedOnce(doFetch, path, { method = "GET", body, credential = false } = {}) {
+  async function authedOnce(doFetch, path, { method = "GET", body, credential = false, read } = {}) {
     const gen = generation;
+    // The answer's body — and, for a call that needs more of the response than its body (a header),
+    // whatever its own `read(body, res)` makes of the two.
+    const answered = async (res) => {
+      const data = res.status === 204 ? null : await res.json();     // DELETE answers with no body
+      return read ? read(data, res) : data;
+    };
     let sentAccess = null;
     const send = () => {
       sentAccess = accessToken();
@@ -424,7 +443,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         forget();
         res = await send();
         if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-        return res.status === 204 ? null : res.json();
+        return answered(res);
       }
       if (refreshed.status >= 500) {
         throw await failure(refreshed,
@@ -446,8 +465,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       res = await send();
     }
     if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-    if (res.status === 204) return null;     // DELETE answers with no body
-    return res.json();
+    return answered(res);
   }
 
   /** A path segment from an id: an id can name a record, never another route. */
@@ -825,9 +843,62 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
     },
 
+    // ---- G2-B1a: Hasta Kabul (homunculus-engine admission/router.py, tenant/router.py) ----
+    // Their refusals carry `err.apiCode` (admission/errors.py): `bed_not_available`,
+    // `out_of_scope`, `critical_alarm_open`, `field_invalid:<field>` … — screens map the code.
+
+    /** The caller's units, rooms and beds with names, states and `is_active`
+     *  ({tenant_id, sites: [{id, name, units: [{id, name, rooms: [{id, name, beds: [...]}]}]}]}). */
+    structure() { return authed("/tenant/structure"); },
+    /** Admission rows of the caller's units, newest first; `states` narrows them — a list, one
+     *  state as a string, or null/undefined for every state. A list the server cut at its cap is
+     *  marked `rows.truncated === true` (`X-Result-Truncated: 1`, A-30); a whole one is not marked. */
+    admissions(states = []) {
+      const query = new URLSearchParams();
+      for (const state of [].concat(states ?? [])) query.append("state", state);
+      const suffix = query.toString();
+      return authed(`/admissions${suffix ? `?${suffix}` : ""}`, { read: markTruncated });
+    },
+    /** One admission ({patient, note}): {…admission, patient_number, engine: {weight, profile, board}}. */
+    admit(body) { return authed("/admissions", { method: "POST", body }); },
+    signOffAdmission(id) { return authed(`/admissions/${seg(id)}/sign-off`, { method: "POST" }); },
+    /** {disposition, institution?, reported_by?, discharge_at?, note?} */
+    startDischarge(id, body) {
+      return authed(`/admissions/${seg(id)}/discharge/initiate`, { method: "POST", body });
+    },
+    /** {…admission, board: ok|failed, alerts: ok|incomplete|failed} — whether the card left the board,
+     *  and how the patient's alarms were retired. Sent again for a DISCHARGED admission, it takes a
+     *  card that did not leave the board off it again (A-32). */
+    confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
+    releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // The administrator's structure tab: add under a parent, rename / close / reopen.
+    createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },
+    createUnit(siteId, body) { return authed(`/tenant/sites/${seg(siteId)}/units`, { method: "POST", body }); },
+    createRoom(unitId, body) { return authed(`/tenant/units/${seg(unitId)}/rooms`, { method: "POST", body }); },
+    createBed(roomId, body) { return authed(`/tenant/rooms/${seg(roomId)}/beds`, { method: "POST", body }); },
+    patchUnit(id, body) { return authed(`/tenant/units/${seg(id)}`, { method: "PATCH", body }); },
+    patchRoom(id, body) { return authed(`/tenant/rooms/${seg(id)}`, { method: "PATCH", body }); },
+    patchBed(id, body) { return authed(`/tenant/beds/${seg(id)}`, { method: "PATCH", body }); },
+
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };
+}
+
+/** The header a list cut at its cap carries (homunculus-engine admission/router.py TRUNCATED_HEADER). */
+const TRUNCATED_HEADER = "X-Result-Truncated";
+
+/** `rows`, marked `truncated` when the response says the server cut them at its cap. Read
+ *  defensively: same-origin on the ward's VM the header is readable, but a response with no headers
+ *  to read, or another origin whose CORS does not expose it, leaves the rows unmarked — as a whole
+ *  list, which is what the screen showed before it could tell. */
+function markTruncated(rows, res) {
+  let cut = false;
+  try {
+    cut = res?.headers?.get?.(TRUNCATED_HEADER) === "1";
+  } catch { /* an unreadable header is an absent one */ }
+  if (cut && Array.isArray(rows)) rows.truncated = true;
+  return rows;
 }
 
 /** The items of a FastAPI validation error as {field, type, message[, ctx]}: the field is the `loc`

@@ -154,6 +154,9 @@ class Bed(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # Group 2 · B1a: a closed bed is kept (nothing is deleted) and offered to no admission. Only a
+    # bed that holds no patient may be closed (tenant/router.py PATCH /tenant/beds/{id}).
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     room: Mapped[Room] = relationship("Room", back_populates="beds")
 

@@ -1,7 +1,7 @@
-// src/live/screens/admin/refusal.js — a refused administration write, as the administrator reads
-// it on the toast. ONE copy, shared by the three tabs, for the reason `BoardState.jsx` exists on
-// the clinical side: three tabs with a copy each is how three screens come to word the same
-// refusal three ways.
+// src/live/screens/admin/refusal.js — a refused write, as its reader reads it on the toast. ONE
+// copy, shared by every screen that writes — the administration tabs, the Hasta Kabul screens and
+// the patient screen's forms — for the reason `BoardState.jsx` exists on the clinical side: a copy
+// each is how screens come to word the same refusal several ways.
 //
 // TWO RULES, BOTH LEARNED ON THE CLINICAL SCREENS.
 //
@@ -51,6 +51,20 @@ export function mayHaveLanded(err) {
   if (!err || typeof err !== "object") return false;
   if (err.superseded === true) return false;
   return NO_ANSWER.has(apiErrorKey(err)?.key);
+}
+
+/**
+ * A refused write's reason, ready for `refusedFor`. A 404 that neither a code nor a known message
+ * names ("Bed not found.", "Admission not found.", "Room not found" — a place gone from under the
+ * screen) has only English words to show, so it is said by its STATUS, in the reader's language
+ * (amendments A-9, A-14). Anything a map knows — a code, a translated message — says more than the
+ * status, and goes on as it is; so does every other failure, and words already in the reader's
+ * language. ONE copy: the Hasta Kabul screens and the structure tab each had their own.
+ */
+export function reasonOf(t, err) {
+  return err && typeof err === "object" && err.status === 404 && !apiErrorKey(err)
+    ? t("errors.requestFailed", { status: 404 })
+    : err;
 }
 
 /**

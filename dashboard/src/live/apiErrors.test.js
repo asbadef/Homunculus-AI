@@ -7,10 +7,19 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText } from "./apiErrors.js";
+import {
+  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText,
+} from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
 import { createTranslator } from "./i18n/translate.js";
+import { emptyForm, toBody } from "./screens/kabul/admitForm.js";
+import { dischargeBody } from "./screens/kabul/DischargeDialog.jsx";
+
+/** What the discharge dialog sends (every key, whichever the disposition). */
+const DISCHARGE_FIELDS = Object.keys(dischargeBody({
+  disposition: "EXITUS", institution: "Sentetik", reportedBy: "Sentetik", dischargeAt: "2026-10-25T08:00:00Z", note: "Sentetik",
+}));
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE = path.resolve(HERE, "../../../homunculus-engine/src/homunculus");
@@ -447,6 +456,191 @@ describe("readErrorText", () => {
   it("anything else reads exactly as apiErrorText says it", () => {
     for (const err of [new Error("Parola hatalı"), Object.assign(new Error("x"), { status: 503 }), new Error("Beklenmeyen")]) {
       expect(readErrorText(en, err)).toBe(apiErrorText(en, err));
+    }
+  });
+});
+
+// G2-B1a — the admission and structure routes' coded refusals, read from the engine's sources.
+describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words", () => {
+  const ERRORS_PY = py("admission/errors.py");
+  /** The codes: every `NAME = "code"` constant of errors.py but FIELD_INVALID's prefix. */
+  const CODES = [...ERRORS_PY.matchAll(/^([A-Z_]+) = "([a-z_]+)"/gm)]
+    .filter(([, name]) => name !== "FIELD_INVALID").map(([, , code]) => code);
+  const FORM_PY = py("admission/form.py");
+  /** Fields form.py refuses in a loop — `for name in ("phone", "relative_phone"): … field_invalid(name, …)` —
+   *  read from the loop's own tuple, so a name added to it is seen without anyone listing it. */
+  const LOOPED = [...FORM_PY.matchAll(/for (\w+) in \(([^)]*)\):\r?\n(?:[^\n]*\n){0,6}?[^\n]*field_invalid\(\1\b/g)]
+    .flatMap((m) => [...m[2].matchAll(/"(\w+)"/g)].map((name) => name[1]));
+  /** Fields the request models refuse while the body is read (A-10, A-16): every text and JSON list
+   *  of the form and the discharge is a `FormText`, `OptionalFormText`, `list[FormText]` or `FormJson`,
+   *  whose validator answers `field_invalid:<the field's own name>` (admission/schemas.py `_refusal`). */
+  const SCHEMA_RAISED = [...py("admission/schemas.py")
+    .matchAll(/^\s+(\w+): (?:(?:OptionalFormText|FormText|FormJson)\b|list\[FormText\])/gm)].map((m) => m[1]);
+  /** Every field a `field_invalid("<field>", …)` names, in the three files that raise one, and the
+   *  two kinds above. */
+  const FIELDS = [...new Set([...["admission/form.py", "admission/router.py", "tenant/router.py"]
+    .flatMap((file) => [...py(file).matchAll(/field_invalid\(\s*"(\w+)"/g)].map((m) => m[1])), ...LOOPED, ...SCHEMA_RAISED])];
+  const coded = (apiCode) => Object.assign(new Error("English words a screen must not show"), { status: 409, apiCode });
+
+  it("the readers found the codes and the fields the engine raises", () => {
+    expect(CODES).toEqual(expect.arrayContaining(["bed_not_available", "critical_alarm_open", "out_of_scope"]));
+    // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8),
+    // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
+    // `duplicate_open_admission` (A-37, the final review).
+    expect(CODES).toHaveLength(16);
+    // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
+    expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
+    // The two loops of form.py: the names, and the phones.
+    expect([...LOOPED].sort()).toEqual(["companion_name", "father_name", "phone", "relative_name", "relative_phone"]);
+    // Both request models' texts, a JSON list, and the discharge's note.
+    expect(SCHEMA_RAISED).toEqual(expect.arrayContaining(["display_name", "his_patient_reference", "icd10_codes",
+      "known_allergies", "comorbidities_text", "institution", "reported_by", "note"]));
+    // 11 of the patient, 15 of the note, 3 of the discharge (a new one fails below until it is mapped)
+    expect(SCHEMA_RAISED.length).toBeGreaterThanOrEqual(29);
+  });
+
+  it("every text either map points at, and the generic field sentence, exists in the four languages (A-9)", () => {
+    const keys = [...ADMISSION_CODE_KEYS.values(), ...INVALID_FIELD_KEYS.values(), "kabul.invalid.other"];
+    expect(keys.length).toBe(ADMISSION_CODE_KEYS.size + INVALID_FIELD_KEYS.size + 1);
+    for (const key of keys) {
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+    }
+  });
+
+  it("the map holds every code errors.py raises, and nothing else", () => {
+    expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
+  });
+
+  it.each(CODES)("%s has a text in the four languages", (code) => {
+    const hit = apiErrorKey(coded(code));
+    expect(hit.key).toMatch(/^kabul\.err\./);
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  it.each(FIELDS)("field_invalid:%s names its field in the four languages", (field) => {
+    const hit = apiErrorKey(coded(`field_invalid:${field}`));
+    expect(hit.key).not.toBe("kabul.invalid.other");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {
+    const en = createTranslator("en", DICTIONARIES);
+    expect(apiErrorKey(coded("field_invalid:something_new")).key).toBe("kabul.invalid.other");
+    expect(apiErrorText(en, coded("bed_not_available"))).not.toMatch(/English words/);
+    expect(apiErrorText(en, coded("bed_not_available"))).toBe(en("kabul.err.bedNotAvailable"));
+  });
+
+  it("a code wins over a message that happens to be mapped", () => {
+    const both = Object.assign(new Error("hasta bulunamadı"), { status: 403, apiCode: "out_of_scope" });
+    expect(apiErrorKey(both).key).toBe("kabul.err.outOfScope");
+  });
+
+  // A-19, A-29: the form's request id came before with another form. An admission exists under it;
+  // the nurse is sent to the list, with the earlier admission's number when the server gave it (its
+  // bed is in her units). Nothing is said of a retry: there is none.
+  it("request_conflict says an admission exists under this form, sends the nurse to the list, and names its number when given", () => {
+    const withNumber = Object.assign(coded("request_conflict"), { patientNumber: "H2600042" });
+    expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.requestConflictNumber", vars: { number: "H2600042" } });
+    expect(apiErrorKey(coded("request_conflict"))).toEqual({ key: "kabul.err.requestConflict", vars: {} });
+    expect(apiErrorKey(Object.assign(coded("request_conflict"), { patientNumber: "  " })).key).toBe("kabul.err.requestConflict");
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      const list = `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
+      expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
+      expect(apiErrorText(t, withNumber), lang).toContain(list);
+      expect(apiErrorText(t, coded("request_conflict")), lang).toContain(list);
+      expect(apiErrorText(t, coded("request_conflict")), lang).not.toMatch(/\{number\}|English words/);
+    }
+  });
+
+  // A-32: a bed's release refused while its last patient's card is still on the board. The server
+  // names that patient's number (tenant/router.py `_last_card_off`; the caller's units hold the bed),
+  // so the nurse knows whose card stands; without one, the sentence without it. A number on a code
+  // that has no such sentence is not shown.
+  it("board_not_cleared names the patient whose card still stands when the server gives the number", () => {
+    const withNumber = Object.assign(coded("board_not_cleared"), { patientNumber: "H2600042" });
+    expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.boardNotClearedNumber", vars: { number: "H2600042" } });
+    expect(apiErrorKey(coded("board_not_cleared"))).toEqual({ key: "kabul.err.boardNotCleared", vars: {} });
+    expect(apiErrorKey(Object.assign(coded("board_not_cleared"), { patientNumber: "  " })).key).toBe("kabul.err.boardNotCleared");
+    expect(apiErrorKey(Object.assign(coded("bed_not_available"), { patientNumber: "H2600042" })))
+      .toEqual({ key: "kabul.err.bedNotAvailable", vars: {} });
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
+      expect(apiErrorText(t, withNumber), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("board_not_cleared")), lang).not.toMatch(/\{number\}|English words/);
+    }
+  });
+
+  // A-37: the server refuses a second open admission of the same person (name and birth date, in the
+  // tenant) whatever the form's id — `duplicate_open_admission`, naming the open admission's number
+  // only when the caller's units hold its bed; without it, the sentence without it. And the transfer
+  // routes are closed for now (`transfer_unavailable`).
+  it("duplicate_open_admission names the open admission's number when the server gives it, and both A-37 texts exist in the four languages", () => {
+    const withNumber = Object.assign(coded("duplicate_open_admission"), { patientNumber: "H2600042" });
+    expect(apiErrorKey(withNumber)).toEqual({ key: "kabul.err.duplicateOpenAdmissionNumber", vars: { number: "H2600042" } });
+    expect(apiErrorKey(coded("duplicate_open_admission"))).toEqual({ key: "kabul.err.duplicateOpenAdmission", vars: {} });
+    expect(apiErrorKey(Object.assign(coded("duplicate_open_admission"), { patientNumber: "  " })).key)
+      .toBe("kabul.err.duplicateOpenAdmission");
+    expect(apiErrorKey(coded("transfer_unavailable"))).toEqual({ key: "kabul.err.transferUnavailable", vars: {} });
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      expect(apiErrorText(t, withNumber), lang).toContain("H2600042");
+      expect(apiErrorText(t, withNumber), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("duplicate_open_admission")), lang).not.toMatch(/\{number\}|English words/);
+      expect(apiErrorText(t, coded("transfer_unavailable")), lang).not.toMatch(/English words/);
+      for (const key of ["kabul.err.duplicateOpenAdmission", "kabul.err.transferUnavailable"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  // The fields no screen sends today read one sentence that says so — and the guard that they are
+  // still not sent: the day a screen sends one, it needs its own sentence here.
+  it("a field this screen never sends reads that it was not the screen's, and the form's body indeed holds none of them", () => {
+    const body = toBody({ ...emptyForm(), name: "Sentetik", fin: "AB12C34" }, "11111111-1111-4111-8111-111111111111");
+    const sent = new Set([...Object.keys(body), ...Object.keys(body.patient), ...Object.keys(body.note),
+      ...DISCHARGE_FIELDS]);
+    const unsent = FIELDS.filter((field) => INVALID_FIELD_KEYS.get(field) === "kabul.invalid.notOnScreen");
+    expect(unsent).toEqual(expect.arrayContaining(["icd10_codes", "known_allergies", "baseline_spo2_range", "admission_note_narrative"]));
+    for (const field of unsent) expect(sent.has(field), field).toBe(false);
+    // and every field the screens do send names itself
+    for (const field of FIELDS.filter((f) => sent.has(f))) {
+      expect(INVALID_FIELD_KEYS.get(field), field).toBeDefined();
+      expect(INVALID_FIELD_KEYS.get(field), field).not.toBe("kabul.invalid.notOnScreen");
+    }
+  });
+});
+
+// A-10, A-16: the request models refuse a field they do not have (`extra="forbid"`) and a number
+// that is not one (`strict=True`); pydantic answers those as a 422 list, not a code.
+describe("a 422 for a field the server does not take, or a number that is not one", () => {
+  const en = createTranslator("en", DICTIONARIES);
+  const e422 = (...items) => Object.assign(
+    new Error(items.map((i) => `${i.field}: ${i.message}`).join("; ")), { status: 422, fieldErrors: items },
+  );
+
+  it("extra_forbidden says the server does not know a field the screen sent — never pydantic's English", () => {
+    const err = e422({ field: "request_id", type: "extra_forbidden", message: "Extra inputs are not permitted" });
+    expect(apiErrorKey(err)).toEqual({ key: "kabul.invalid.extraField", vars: {} });
+    expect(apiErrorText(en, err)).not.toMatch(/Extra inputs/);
+    expect(fieldRefusals(en, err, []).others).toEqual([en("kabul.invalid.extraField")]);
+  });
+
+  it("float_type names the weight and the height, and any other field as a number expected", () => {
+    const item = (field) => ({ field, type: "float_type", message: "Input should be a valid number" });
+    expect(apiErrorText(en, e422(item("note.weight_kg")))).toBe(en("kabul.miss.weight"));
+    expect(apiErrorText(en, e422(item("note.height_cm")))).toBe(en("kabul.miss.height"));
+    expect(apiErrorText(en, e422(item("note.gestational_age_weeks")))).toBe(en("kabul.invalid.number"));
+    expect(apiErrorText(en, e422({ ...item("note.postnatal_day"), type: "int_type" }))).toBe(en("kabul.invalid.number"));
+    expect(apiErrorText(en, e422(item("note.weight_kg")))).not.toMatch(/valid number/);
+  });
+
+  it("both texts exist in the four languages", () => {
+    for (const lang of LANG_CODES) {
+      for (const key of ["kabul.invalid.extraField", "kabul.invalid.number"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+      }
     }
   });
 });

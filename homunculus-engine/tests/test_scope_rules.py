@@ -147,12 +147,35 @@ class TestDSayingWhyTheBoardIsThisSize:
     def test_a_grant_nothing_on_the_board_matches_is_named(self):
         result = apply_scope(WARD, build_scope("NURSE", unit_ids=["unit-adult", "unit-ghost"]))
         assert result.unmatched_grants == ("unit-ghost",)
-        assert "unit-ghost" in scope_report(result)
+
+    def test_unmatched_grants_travel_as_data_units_apart_from_beds_never_in_a_sentence(self):
+        """G2-B1a walk (I-1): since B1a a grant key is the tenant's UUID (spec D9), and the Turkish
+        sentence that listed the keys put one on a nurse's board. The keys go out as data, units
+        apart from beds, and the screen names each from the structure in its reader's language;
+        the server writes no prose around them. The flat `unmatched_grants` list leaves the
+        payload: nothing read it, and a key whose kind is lost cannot be named."""
+        result = apply_scope(WARD, build_scope("NURSE", unit_ids=["unit-adult", "unit-ghost"],
+                                               bed_ids=["bed-ghost"]))
+        assert result.unmatched_unit_ids == ("unit-ghost",)
+        assert result.unmatched_bed_ids == ("bed-ghost",)
+        assert result.unmatched_grants == ("bed-ghost", "unit-ghost")   # the log line's view
+        published = result.as_dict()
+        assert published["unmatched_unit_ids"] == ["unit-ghost"]
+        assert published["unmatched_bed_ids"] == ["bed-ghost"]
+        assert "unmatched_grants" not in published
+        assert scope_report(result) is None
 
     def test_a_scope_that_fully_matches_reports_nothing(self):
         result = apply_scope(WARD, build_scope("NURSE", unit_ids=["unit-adult"]))
         assert result.unmatched_grants == ()
+        assert result.as_dict()["unmatched_unit_ids"] == []
+        assert result.as_dict()["unmatched_bed_ids"] == []
         assert scope_report(result) is None
+
+    def test_an_unrestricted_scope_has_no_unmatched_keys(self):
+        published = apply_scope(WARD, build_scope("HOSPITAL_ADMIN")).as_dict()
+        assert published["unmatched_unit_ids"] == []
+        assert published["unmatched_bed_ids"] == []
 
     def test_the_published_shape_carries_the_reason(self):
         result = apply_scope(WARD, build_scope("NURSE", unit_ids=["unit-adult"]))

@@ -29,6 +29,9 @@ export const PERMISSION_KEYS = freeze([
   "break_glass.use", "audit.view",
   "users.manage", "groups.manage", "structure.manage", "devices.manage",
   "clinical.chart", "scores.sign",
+
+  // G2-B1a — a cleaned bed marked free by the ward's nurses (spec D8)
+  "beds.release",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

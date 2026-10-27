@@ -26,7 +26,7 @@ import {
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 const DESK = [...PERMISSION_KEYS];
-/** A catalogue of four rows: the table is groups × catalogue, and twenty-one rows in a test is
+/** A catalogue of four rows: the table is groups × catalogue, and twenty-two rows in a test is
  *  noise. The catalogue's own descriptions are the server's ENGLISH (admin.testutil.js); what the
  *  screen shows is the dashboard's text for the key (strings/perms.js), so the names the tests
  *  look cells up by come from that dictionary, not from the fixture. */

@@ -60,6 +60,7 @@ import { TrendsBox } from "./trends/TrendsBox.jsx";
 import { MedsBox } from "./meds/MedsBox.jsx";
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
+import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 
 const TICK_MS = 30_000;
 
@@ -389,6 +390,7 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} nowMs={nowMs} />
             </div>
           </header>
+          <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>

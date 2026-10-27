@@ -196,6 +196,22 @@ describe("the board store", () => {
     expect(state().alerts.map((a) => a.id)).toEqual(["P-001::news2", "P-002::sepsis"]);
   });
 
+  // A discharged `kabul` patient's board is its removal (G2-B1a, X54): the server omits it from
+  // `/patients`, and should one arrive there all the same, it is a card that has LEFT — never a
+  // nameless, readingless card on the ward, nor an alarm of a patient who is gone (A-14, Lane A's
+  // note D). The same rule the stream's frames keep, above.
+  it("takes a snapshot's removed entry as a card that has left, as it takes a removed frame", async () => {
+    const gone = { ...entry("P-009", [alert("septic_shock", "critical")]), removed: true };
+    const { store, handlers, state } = setup({ board: board([...BOARD.patients, gone], { scope: BOARD.scope }) });
+    await store.start();
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    expect(state().alerts.map((a) => a.patientId)).toEqual(["P-001"]);
+    handlers[0].onopen();                                              // the open's reload: the same snapshot
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    expect(patientsFromBoard({ patients: [gone] })).toEqual([]);
+  });
+
   it("closes a dropped stream and reconnects ONCE, with a fresh ticket", async () => {
     const { api, store, handlers, closes, due, fire, state } = setup();
     await store.start();

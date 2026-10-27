@@ -28,15 +28,15 @@ from fastapi.responses import StreamingResponse
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
-    Cleared, DISCHARGED, KABUL_SOURCE, READING_DROPPED, acknowledge_latched, is_tombstone,
+    Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
-    board_snapshot, freshness_turned, identity_only_board, patient_board,
+    board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
 )
 from homunculus.api.patient_identity import (
-    DISCHARGED_TTL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
+    DISCHARGED_TTL, KABUL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
     parse_fhir_patient,
 )
 from homunculus.api.broadcast import Broadcaster
@@ -56,6 +56,7 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
+from homunculus.admission.boardlink import BoardLink    # G2-B1a
 from homunculus.auth.permissions import validate_permissions
 from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
@@ -364,8 +365,11 @@ def create_app(
               *, counted: bool = True) -> dict:
         """`patient_board` with the shadow key. `identity` is the record the caller already holds
         (None: the card carries no identity); left out, it is read here. `counted` False: the
-        card's bed is resolved without counting a miss (the sampler's republish)."""
+        card's bed is resolved without counting a miss (the sampler's republish). A `kabul`
+        tombstone's card is its removal (G2-B1a, as `patient_board` answers it), with no shadow key."""
         record = identities.get(hospital, patient_id) if identity is _READ else identity
+        if is_tombstone(record):
+            return tombstone_board(record)
         return patient_board(_engine(hospital), patient_id, _store(hospital), identity=record,
                              bedmap=bedmap if counted else uncounted_bedmap, now=now,
                              shadow=_shadow_for(hospital, patient_id, now))
@@ -373,7 +377,12 @@ def create_app(
     def _identity_card(hospital: str, record, now: datetime | None = None, *, counted: bool = True) -> dict:
         """The card of an admitted patient the real engine has never measured, with the shadow key:
         built without creating the patient in the real engine — `patient_board` would, and its
-        `news2: null` would read as a NEWS2 0 nobody measured (D1). `counted` as for `_card`."""
+        `news2: null` would read as a NEWS2 0 nobody measured (D1). `counted` as for `_card`.
+        A `kabul` tombstone's is its removal, as `_card`'s (merge with G2-B1a): the tombstone keeps
+        the name (A-16), and a republish the lane asks for after a discharge here — a settle it
+        retries on a later pass — must never bring the discharged patient back on a screen (A-29)."""
+        if is_tombstone(record):
+            return tombstone_board(record)
         return {**identity_only_board(record, bedmap if counted else uncounted_bedmap),
                 "shadow": _shadow_for(hospital, record.patient_id, now)}
 
@@ -445,10 +454,12 @@ def create_app(
             # G2-A11 (D6): an alerting patient whose admission here was discharged is retired,
             # not escalated — the guard for a discharge whose retire call never came. Read only
             # for patients with a firing alert: one identity read per alerting patient, not per bed.
-            gone = {pid for pid in {p for p, _a in alerts}
-                    if is_tombstone(identities.get(hospital, pid))}
+            gone = {pid: record for pid in {p for p, _a in alerts}
+                    if is_tombstone(record := identities.get(hospital, pid))}
             for pid in sorted(gone):
-                await retire_and_publish(hospital, pid, now=now)
+                # G2-B1a (A-25): the removal is the tombstone's board, built from the record read
+                # above — its last bed and unit, so a screen scoped to that unit is told too.
+                await retire_and_publish(hospital, pid, frame=tombstone_board(gone[pid]), now=now)
             alerts = [(pid, a) for pid, a in alerts if pid not in gone]
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
@@ -490,7 +501,13 @@ def create_app(
                 if engine is not None and record.patient_id in set(engine.patient_ids()):
                     board = _card(hospital, record.patient_id, identity=None)
                 else:
-                    board = {**identity_only_board(record), "identity": None, "removed": True}
+                    # G2-B1a: a record with its own bed sends its last bed and unit with the
+                    # removal, so a screen scoped to that unit is told too (`sees_patient` reads
+                    # them). A HIS-fed one has none to send (`_merge` cleared its location).
+                    board = {**identity_only_board(record), "removed": True,
+                             "identity": ({"bed_id": record.bed_id,
+                                           "unit_id": record.unit_id or None}
+                                          if record.bed_id else None)}
                 await broadcaster.publish(hospital, board)
         identities.prune(now)
 
@@ -633,6 +650,13 @@ def create_app(
     # `shadow_occupancy_reset` after `put_identity` — and build its cards through `_card`, so they
     # carry the `shadow` key. Each is pinned by a test at that merge (deploy/infinity/README.md,
     # Aşama B, "Prerequisite").
+    # G2-B1a: the admission routes' one way into the board world (admission/boardlink.py). Lane A's
+    # doors go in by reference, never copied (A-25, condition 5): the charting loop `/clinical`
+    # runs, the retirement the escalation cycle runs, and the broadcaster's publish.
+    app.state.board_link = BoardLink(
+        identities=identities, engine=_engine, store=_store, audit=audit,
+        publish=broadcaster.publish, notifier=notifier, escalate_after=escalate_after,
+        chart=chart_observations, retire_patient=app.state.retire_patient, bedmap=bedmap)
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""
@@ -780,9 +804,15 @@ def create_app(
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
-        card = {"patient_id": patient_id,
-                "identity": (identity_only_board(record, bedmap)["identity"]
-                             if record is not None else None)}
+        if is_tombstone(record):
+            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
+            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
+            # the route, whose discharged-number drop answers; another unit's still get the 404.
+            identity = tombstone_board(record)["identity"]
+        else:
+            identity = (identity_only_board(record, bedmap)["identity"]
+                        if record is not None else None)
+        card = {"patient_id": patient_id, "identity": identity}
         if sees_patient(card, scope):
             return
         audit.append(AuditEvent(hospital, "scope_denied", patient_id, scope.reason,
@@ -938,11 +968,11 @@ def create_app(
             # is refused outright; a feed writing onto a `kabul` record is refused before `apply`,
             # so `_merge`'s None keeps meaning "older" here, and the card below is never built
             # for a discharged admission.
-            if incoming.source == KABUL_SOURCE:
+            if incoming.source == KABUL:
                 raise HTTPException(status_code=400,
                                     detail="identity source 'kabul' is reserved for the admission")
             existing = identities.get(hospital, incoming.patient_id)
-            if existing is not None and existing.source == KABUL_SOURCE:
+            if existing is not None and existing.source == KABUL:
                 return {"patient_id": incoming.patient_id, "identity": "refused", "reason": "kabul"}
             record = identities.apply(hospital, incoming)
             if record is None:
@@ -1133,10 +1163,12 @@ def create_app(
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
-        """Admitted patients per bed, through the site's bed map — read-only and counting nothing
-        (`BedMap.lookup`), cached 10 s. The ONLY bridge between a monitor and a patient in
-        Aşama A: an explicit binding the hospital already made (ADT or set_identity), never a
-        guess from a name (design K3, K5). Discharged identities are not admitted, so never here."""
+        """Admitted patients per bed, cached 10 s: a `kabul` record (an admission made here, G2-B1a)
+        by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed map
+        — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
+        a patient in Aşama A: an explicit binding the hospital already made (an admission here,
+        ADT or set_identity), never a guess from a name (design K3, K5). Discharged identities
+        are not admitted, so never here."""
         cached = shadow_occupancy.get(hospital)
         if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
             return cached[1]
@@ -1145,9 +1177,15 @@ def create_app(
             record = identities.get(hospital, patient_id)
             if record is None:
                 continue
-            ref = bedmap.lookup(record.unit, record.room, record.bed)
-            if ref is not None and normalise_id(ref.bed_id):
-                beds.setdefault(normalise_id(ref.bed_id), []).append(patient_id)
+            # G2-B1a: an admission made here names its own bed — the tenant's UUID, which the
+            # device→bed table carries from now on. A HIS-fed record goes through the bed map.
+            if record.bed_id:
+                bed_id = record.bed_id
+            else:
+                ref = bedmap.lookup(record.unit, record.room, record.bed)
+                bed_id = ref.bed_id if ref is not None else ""
+            if normalise_id(bed_id):
+                beds.setdefault(normalise_id(bed_id), []).append(patient_id)
         shadow_occupancy[hospital] = (now, beds)
         return beds
 

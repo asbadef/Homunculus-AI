@@ -44,6 +44,9 @@ import monitor from "./strings/monitor.js";
 // Aşama B: the shadow engine's findings, «Gölge öneri · alarm kapalı» (screens/patient/shadow/).
 import shadow from "./strings/shadow.js";
 
+// G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
+import kabul from "./strings/kabul.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -68,6 +71,8 @@ export const NAMESPACES = {
   monitor,
 
   shadow,
+
+  kabul, // G2-B1a
 };
 
 function flattenInto(out, prefix, entries) {

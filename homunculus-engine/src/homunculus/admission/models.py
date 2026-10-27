@@ -27,8 +27,8 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer,
-    String, Text, UniqueConstraint,
+    Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer,
+    String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -79,6 +79,13 @@ OPEN_ADMISSION_STATES = {
     AdmissionState.PENDING_TRANSFER,
 }
 
+#: The partial unique index on (tenant_id, identity_digest) over the open states (amendment A-37,
+#: migration 0012): a second open admission of one person in a tenant is refused at its flush,
+#: whatever the routes' look-up saw. The admission route tells its IntegrityError apart by name.
+OPEN_IDENTITY_INDEX = "uq_admissions_open_identity"
+_OPEN_STATE = text("state IN ({})".format(", ".join(
+    f"'{state.value}'" for state in AdmissionState if state in OPEN_ADMISSION_STATES)))
+
 
 class Sex(str, enum.Enum):
     male = "male"
@@ -95,11 +102,55 @@ class SourceOfAdmission(str, enum.Enum):
     OTHER = "OTHER"
 
 
+# --- Group 2 · B1a (Hasta Kabul): the prototype's admission form (spec §4.1) ---
+class AdmissionType(str, enum.Enum):
+    """The prototype's `ADM_T`: medical, surgical, intensive care, procedure."""
+    MEDICAL = "MEDICAL"
+    SURGICAL = "SURGICAL"
+    ICU = "ICU"
+    PROCEDURE = "PROCEDURE"
+
+
+class BloodGroup(str, enum.Enum):
+    """ABO and Rh as charted at admission; UNKNOWN is a charted answer, not a missing one."""
+    A_POS = "A_POS"
+    A_NEG = "A_NEG"
+    B_POS = "B_POS"
+    B_NEG = "B_NEG"
+    AB_POS = "AB_POS"
+    AB_NEG = "AB_NEG"
+    O_POS = "O_POS"
+    O_NEG = "O_NEG"
+    UNKNOWN = "UNKNOWN"
+
+
+class Consent(str, enum.Enum):
+    """The data-processing consent: signed, or the patient cannot consent now (asked later)."""
+    KVKK_SIGNED = "KVKK_SIGNED"
+    UNCONSCIOUS_LATER = "UNCONSCIOUS_LATER"
+
+
+class DischargeDisposition(str, enum.Enum):
+    """Where the patient went: home, another institution (named), or exitus."""
+    HOME = "HOME"
+    OTHER_INSTITUTION = "OTHER_INSTITUTION"
+    EXITUS = "EXITUS"
+
+
 class CareTeamRole(str, enum.Enum):
     """§4.2–4.3 — care-team clinician roles scoped to an admission."""
     ATTENDING = "ATTENDING"
     ASSOCIATE_PHYSICIAN = "ASSOCIATE_PHYSICIAN"
     ONCALL_PHYSICIAN = "ONCALL_PHYSICIAN"
+
+
+#: The width of every encrypted column of `patients`. The request's `max_length` counts characters,
+#: and a character is up to four bytes of UTF-8; Fernet adds 57 bytes and pads to 16, base64 grows
+#: that by a third, and `enc::v1::` adds 9. The longest bound (`display_name`, 200 characters) in
+#: four-byte characters is 1173 characters of ciphertext — measured, and checked for every bound
+#: by tests/test_admission_form.py — so 1536 leaves a third to spare. (512, 0002's width, held 200
+#: Latin letters but not 200 Azerbaijani ones: 641.) Migration 0012 sets it.
+PHI_COLUMN_LENGTH = 1536
 
 
 class HandoverStatus(str, enum.Enum):
@@ -126,10 +177,29 @@ class Patient(Base):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # PHI — encrypted at rest (§5.2 fields 2, 3, 4, 28)
-    display_name: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)          # #2
-    date_of_birth: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)          # #3 (ISO-8601 date str)
-    sex: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)                     # #4
-    his_patient_reference: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)  # #28
+    display_name: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)  # #2
+    date_of_birth: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)  # #3 (ISO-8601 date str)
+    sex: Mapped[str] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=False)          # #4
+    his_patient_reference: Mapped[str | None] = mapped_column(
+        EncryptedString(PHI_COLUMN_LENGTH), nullable=True)                                        # #28
+
+    # Group 2 · B1a. The Homunculus patient number (`H` + two-digit year + five digits, spec §4.2):
+    # the board's key for a patient admitted here, and what the nurse enters on the bedside device.
+    # In the clear — it is the key, as the HIS protocol number is the identity store's key — and
+    # unique per tenant. `admission/numbers.py` issues it.
+    patient_number: Mapped[str] = mapped_column(String(16), nullable=False)
+    # The admission form's identity and contact fields: PHI, encrypted at rest like the name.
+    father_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    nationality: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    national_id: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)  # FİN
+    passport_no: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    phone: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_relation: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    relative_phone: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    companion_name: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    consent: Mapped[Consent | None] = mapped_column(Enum(Consent), nullable=True)
+    sms_permitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -138,6 +208,22 @@ class Patient(Base):
     admissions: Mapped[list[Admission]] = relationship(
         "Admission", back_populates="patient", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "patient_number", name="uq_patients_tenant_number"),
+    )
+
+
+class PatientNumberCounter(Base):
+    """The last patient number issued per tenant and calendar year (UTC). The admission takes the
+    next one under this row's lock, in its own transaction, so two can never share one (§4.2)."""
+    __tablename__ = "patient_number_counters"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +236,8 @@ class Admission(Base):
 
     CONSTRAINT: a patient may have at most one ACTIVE admission at a time. Enforced
     by a partial unique index (see migration) and re-checked in the service layer.
+    And a PERSON — the same name and birth date, `identity_digest` — at most one open admission
+    per tenant (A-37): `OPEN_IDENTITY_INDEX`, and the admission route's look-up before it.
     """
     __tablename__ = "admissions"
 
@@ -200,6 +288,37 @@ class Admission(Base):
     )                                                                                              # #27
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # --- Group 2 · B1a: the admission form (spec §4.1) and the discharge's disposition ---
+    admission_type: Mapped[AdmissionType | None] = mapped_column(Enum(AdmissionType), nullable=True)
+    blood_group: Mapped[BloodGroup | None] = mapped_column(Enum(BloodGroup), nullable=True)
+    # Exactly one of the two on a form admission: a known allergy as text, or "none known".
+    allergies_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    no_known_allergy: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # The engine's comorbidity codes (rules/patient_relative.py) ticked on the form, and free text
+    # that is stored but never sent to the engine as a code.
+    comorbidity_codes: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)
+    comorbidities_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    discharge_disposition: Mapped[DischargeDisposition | None] = mapped_column(
+        Enum(DischargeDisposition), nullable=True
+    )
+    discharge_institution: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    discharge_reported_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    discharge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discharge_note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # One filled form, sent once or again (amendment A-19, admission/router.py): the client's id for
+    # it (unique per tenant; NULL when none was sent — NULLs never collide), the keyed digest of the
+    # body it came with (`crypto.phi_digest`: the body holds PHI, so never a plain hash), and what
+    # of the admission reached the engine after the commit (`EngineWrites`), so a resend of the
+    # same form is answered with the same body.
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_writes: Mapped[dict | None] = mapped_column(JSON_COLUMN, nullable=True)
+    # Who the admission is for (amendment A-37, admission/form.py `identity_digest`): the keyed
+    # digest of the normalised name and the birth date. One open admission per person and tenant
+    # (`OPEN_IDENTITY_INDEX`). NULL on a row written before 0012 or without the form (the service
+    # alone, a transfer's arrival) — NULLs never collide, and the refusal does not see them.
+    identity_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # --- Workflow bookkeeping ---
     # S-26: reminder emitted once when a DRAFT is unreviewed for 2 hours.
     draft_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -222,6 +341,12 @@ class Admission(Base):
     patient: Mapped[Patient] = relationship("Patient", back_populates="admissions")
     care_team: Mapped[list[CareTeamMember]] = relationship(
         "CareTeamMember", back_populates="admission", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "request_id", name="uq_admissions_tenant_request"),
+        Index(OPEN_IDENTITY_INDEX, "tenant_id", "identity_digest", unique=True,
+              postgresql_where=_OPEN_STATE, sqlite_where=_OPEN_STATE),
     )
 
     def transition_to(self, new_state: AdmissionState) -> None:

@@ -59,6 +59,23 @@ export function fakeApi(vi, { access = null } = {}) {
     // Group 2 · slice 1: the patient screen's trend charts and the patient's own normal
     patientTrends: vi.fn(),
     putPatientProfile: vi.fn(),
+
+    // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
+    structure: vi.fn(),
+    admissions: vi.fn(),
+    admit: vi.fn(),
+    signOffAdmission: vi.fn(),
+    startDischarge: vi.fn(),
+    confirmDischarge: vi.fn(),
+    releaseBed: vi.fn(),
+    createSite: vi.fn(),
+    createUnit: vi.fn(),
+    createRoom: vi.fn(),
+    createBed: vi.fn(),
+    patchUnit: vi.fn(),
+    patchRoom: vi.fn(),
+    patchBed: vi.fn(),
+
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

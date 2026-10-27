@@ -28,6 +28,8 @@ import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
 
 import { DevicesScreen } from "../screens/devices/DevicesScreen.jsx";
 
+import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -45,6 +47,8 @@ const SCREENS = Object.freeze({
   admin: AdminScreen, // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
 
   devices: DevicesScreen, // Aşama A — biomedical's monitor screen (devices, beds, values; no patient)
+
+  kabul: KabulScreen, // G2-B1a — Hasta Kabul: admission, discharge, beds
 
   settings: SettingsScreen,
 });
@@ -74,6 +78,11 @@ export const ROUTES = Object.freeze([
   // the vendor's support group sign in to this alone; it shows no patient.
   route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
     perms: ["devices.manage"], work: true, nav: "main" }),
+
+  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits, confirms a discharge or
+  // releases a bed. After the board's screens in the table, so nobody's home moves.
+  route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
+    perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm", "beds.release"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

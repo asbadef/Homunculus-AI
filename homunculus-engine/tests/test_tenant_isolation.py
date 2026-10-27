@@ -41,6 +41,7 @@ from homunculus.admission import service as adm_service
 from homunculus.admission.models import (
     Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
+from homunculus.admission.numbers import next_patient_number
 from homunculus.auth.dependencies import caller_tenant_id
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import create_access_token, decode_token
@@ -120,7 +121,8 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     bed, free_bed = Bed(room_id=room.id, label="1A"), Bed(room_id=room.id, label="1B")
     db.add_all([bed, free_bed])
     patient = Patient(tenant_id=tenant.id, display_name=f"Sentetik Hasta {slug}",
-                      date_of_birth="1980-01-01", sex="female")
+                      date_of_birth="1980-01-01", sex="female",
+                      patient_number=await next_patient_number(db, tenant.id))
     db.add(patient)
     await db.flush()
 
@@ -198,8 +200,10 @@ def _admission_body(unit: uuid.UUID, bed: uuid.UUID, attending: uuid.UUID | None
                             "admission_diagnosis_free_text": "Sentetik tanı"}
     if attending is not None:
         note["attending_physician_id"] = attending
+    # G2-B1a: the admission form's required fields (admission/form.py).
+    note.update(admission_type="ICU", no_known_allergy=True)
     return {"patient": {"display_name": "Sentetik Yeni Hasta", "date_of_birth": "1990-02-02",
-                        "sex": "male"},
+                        "sex": "male", "consent": "KVKK_SIGNED"},
             "note": note}
 
 
@@ -232,15 +236,17 @@ BY_ID: dict[str, ById] = {
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",
         lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+    # A-37: the transfer routes are closed — the caller's own admission gets past the tenant
+    # check to the 409 `transfer_unavailable`.
     "transfer initiate": ById(
         "POST", lambda s: f"/admissions/{s.admission}/transfer/initiate",
-        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}),
+        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
     "transfer confirm": ById(
         "POST", lambda s: f"/admissions/{s.admission}/transfer/confirm",
         lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
     "discharge initiate": ById(
         "POST", lambda s: f"/admissions/{s.admission}/discharge/initiate",
-        lambda a: {"discharge_summary": "Sentetik taburcu özeti"}),
+        lambda a: {"disposition": "HOME", "note": "Sentetik taburcu notu"}),
     "discharge confirm": ById(
         "POST", lambda s: f"/admissions/{s.admission}/discharge/confirm", control=409),
     "alert acknowledge": ById("POST", lambda s: f"/alerts/{s.alert}/acknowledge", lambda a: {}),
@@ -273,6 +279,12 @@ BY_ID: dict[str, ById] = {
     "bed transition": ById(
         "POST", lambda s: f"/tenant/beds/{s.free_bed}/transition",
         lambda a: {"new_state": "OCCUPIED"}),
+    # G2-B1a (Hasta Kabul): rename / close / reopen, and the release of a cleaned bed (the free
+    # bed is AVAILABLE, so the caller's own is refused by the domain: 409 invalid_transition).
+    "unit patch": ById("PATCH", lambda s: f"/tenant/units/{s.unit}", lambda a: {"name": "Yeni"}),
+    "room patch": ById("PATCH", lambda s: f"/tenant/rooms/{s.room}", lambda a: {"name": "Oda 9"}),
+    "bed patch": ById("PATCH", lambda s: f"/tenant/beds/{s.free_bed}", lambda a: {"label": "9Z"}),
+    "bed release": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/release", control=409),
 }
 
 
@@ -314,12 +326,13 @@ IN_BODY: dict[str, InBody] = {
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(x.unit, a.free_bed), 201),
     "admit into another tenant's bed": InBody(
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(a.unit, x.free_bed), 201),
+    # A-37: closed — the caller's own ids get past the tenant check to `transfer_unavailable`.
     "transfer to another tenant's bed": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 200),
+        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
     "transfer to another tenant's unit": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 200),
+        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 409),
     "transfer confirmed into another tenant's bed": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/transfer/confirm",
         lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
@@ -439,26 +452,27 @@ async def test_a_deactivated_account_is_no_member_though_its_membership_is_activ
 
 # ---------------------------------------------------------------- the risky success paths
 @requires_db
-async def test_a_pending_transfer_is_confirmed_into_the_callers_own_bed(world):
+async def test_a_pending_transfer_is_not_confirmed_even_into_the_callers_own_bed(world):
+    """A-37: the transfer routes are closed. A transfer pending from before (written here by the
+    service) is refused `transfer_unavailable` after the tenant checks, and nothing is written."""
     admission = await world.db.get(Admission, world.a.admission)
     await adm_service.initiate_transfer(world.db, admission, target_bed_id=world.a.free_bed,
                                         target_unit_id=world.a.unit)
     await world.db.commit()
+    before = await _snapshot(world.db)
 
     r = await _call(world, "POST", f"/admissions/{world.a.admission}/transfer/confirm",
                     {"target_bed_id": world.a.free_bed, "target_unit_id": world.a.unit})
 
-    assert r.status_code == 201, r.text
-    new = r.json()
-    assert new["state"] == "ACTIVE" and new["bed_id"] == str(world.a.free_bed)
-    assert new["tenant_id"] == str(world.a.tenant)
-    assert new["source_admission_id"] == str(world.a.admission)
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable"), r.text
+    assert await _snapshot(world.db) == before
 
 
 @requires_db
 async def test_a_draft_admission_is_signed_off_by_the_callers_own_attending(world):
     patient = Patient(tenant_id=world.a.tenant, display_name="Sentetik Taslak Hasta",
-                      date_of_birth="1970-03-03", sex="male")
+                      date_of_birth="1970-03-03", sex="male",
+                      patient_number=await next_patient_number(world.db, world.a.tenant))
     world.db.add(patient)
     await world.db.flush()
     draft = await adm_service.create_draft_admission(
@@ -487,6 +501,19 @@ async def test_the_admission_list_holds_only_the_callers_tenant(world):
     r = await world.client.get("/admissions", params={"unit_id": str(world.b.unit)},
                                headers=world.auth)
     assert r.status_code == 200 and r.json() == []
+
+
+@requires_db
+async def test_the_structure_holds_only_the_callers_tenant(world):
+    """G2-B1a: GET /tenant/structure, which every screen reads its unit and bed names from."""
+    r = await _call(world, "GET", "/tenant/structure")
+    assert r.status_code == 200, r.text
+    units = {u["id"] for s in r.json()["sites"] for u in s["units"]}
+    beds = {b["id"] for s in r.json()["sites"] for u in s["units"] for room in u["rooms"]
+            for b in room["beds"]}
+    assert r.json()["tenant_id"] == str(world.a.tenant)
+    assert units == {str(world.a.unit)}
+    assert beds == {str(world.a.bed), str(world.a.free_bed)}
 
 
 @requires_db

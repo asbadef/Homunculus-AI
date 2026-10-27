@@ -49,6 +49,10 @@ const NEUTRAL = new Set([
   // shadow (Aşama B) · neutral — the monitor's own labels again, on the shadow box's «monitör · HR»
   "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // HR, PLS, SpO₂, ART, NBP
 
+  // G2-B1a (kabul) · neutral — ABO and Rh, written the same in every script
+  "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg",
+  "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -142,6 +146,20 @@ const AZ_SAME_AS_TR = new Set([
   "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
   "monitor.p.nbp", //        NBP — the monitor's label, not a word
+
+  // G2-B1a (kabul) · az = tr
+  "kabul.f.name", "kabul.miss.name", // Ad soyad — as admin.fieldFullName (the prototype's AZ dictionary)
+  "kabul.f.fin", //          FİN — the Azerbaijani personal code's own name
+  "kabul.f.phone", //        Telefon — the same word in Azerbaijani
+  "kabul.choose", //         Seçin… — the same imperative in Azerbaijani
+  "kabul.age", //            "{years} yaş {months} ay {days} gün" — yaş, ay, gün are Azerbaijani too
+  "kabul.nat.ir", //         İran — the country's name in Azerbaijani
+  "kabul.freeBeds", //       "{count} boş" — boş is Azerbaijani for empty
+  "kabul.state.AVAILABLE", // Boş — the same
+  "kabul.state.OCCUPIED", // Dolu — the same word in Azerbaijani
+  "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg", // ABO and Rh: symbols
+  "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
+  "kabul.placeholder.site", // Bina adı — bina and ad are Azerbaijani too (az newSite: "Yeni binanın adı")
 
   // G2-A3 (patient · meds) · az = tr
   "patient.medsBolusUnit", //          mL — a unit symbol, not a word

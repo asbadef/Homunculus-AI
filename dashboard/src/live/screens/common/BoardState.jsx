@@ -12,7 +12,9 @@
 //   <ScopeNote>    the engine's own sentence about why this board is the size it is
 //                  (`scope_note`), and the counts it sent with it. Never the screen's words: the
 //                  server knows what it filtered and why, and it writes that sentence itself — a
-//                  paraphrase in four languages is four chances to say something it did not.
+//                  paraphrase in four languages is four chances to say something it did not. The
+//                  one exception (G2-B1a walk, I-1): the grant keys no card matched are DATA the
+//                  engine sent, and the screen names them, since only the structure can.
 //   <FeedHealth>   whether readings are still arriving (screens/common/feedHealth.js). An
 //                  operational statement about the feed, never a clinical one about the values.
 //
@@ -20,7 +22,7 @@
 // ("no open alarms", "nothing waiting"): only a LIVE board may. It is the same rule the bell and
 // the lock screen read through `alarmCounts` / `lockSummary`; a screen that shows the cards
 // themselves needs the flag rather than the summaries.
-import React from "react";
+import React, { useMemo } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { Alert, Note, Pill, StatusPill } from "../../ui/index.js";
@@ -31,6 +33,7 @@ import { wardFeedHealth } from "./feedHealth.js";
 import { useNow } from "./useNow.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { isChronicExpected } from "../../data/boardStore.js";
+import { useBedNames, useUnitNames } from "../../data/StructureProvider.jsx"; // G2-B1a walk I-1
 
 /** Whether this board may be spoken of as current — the only state in which a screen may say that
  *  nothing is waiting. DEGRADED has data but no open stream (or no reload since it opened), so what
@@ -62,17 +65,48 @@ export function BoardStrip({ connection, className = "" }) {
   return <Note tone={state.tone} icon={state.icon} className={className}>{t(state.key)}</Note>;
 }
 
+const NO_IDS = Object.freeze([]);
+/** A list of ids from the engine, or none: what `useUnitNames` / `useBedNames` take. */
+const idsOf = (list) => (Array.isArray(list) && list.length > 0 ? list : NO_IDS);
+
 /** The engine's sentence about this board's size, as the engine wrote it, plus the counts it sent
  *  with it (`scope.hidden`, `scope.unresolved_hidden`). A load that failed drops the scope with the
  *  patients (boardStore), so there is nothing to draw then — which is right: a stale scope block
- *  would explain an empty board as "this is your scope" when the reason was the connection. */
+ *  would explain an empty board as "this is your scope" when the reason was the connection.
+ *
+ *  G2-B1a walk (I-1): the grant keys no card matched (`scope.unmatched_unit_ids`,
+ *  `unmatched_bed_ids`) come as data, not inside the engine's sentence — since B1a they are UUIDs,
+ *  and that sentence printed one on a nurse's board. The note says them itself, in the reader's
+ *  language, each named from the structure (`useUnitNames`, `useBedNames`: a key the structure
+ *  cannot name yet is its numbered placeholder, never the UUID). A blind board is the engine's own
+ *  sentence to say; the keys would only repeat it.
+ *
+ *  A-43: whenever one of those names is a numbered placeholder — the structure is still being read,
+ *  its read failed, or this session holds no right that opens it (phase "unasked") — the note says
+ *  so in the scope editor's own words (`kabul.namesPending`): "Şöbə 1" is not a unit's name. A key
+ *  the structure, once read, does not hold is «Naməlum şöbə 1» — a claim, not a placeholder. */
 export function ScopeNote({ scope, scopeNote, className = "" }) {
   const { t } = useI18n();
   const hidden = Number.isFinite(scope?.hidden) ? scope.hidden : 0;
   const unresolved = Number.isFinite(scope?.unresolved_hidden) ? scope.unresolved_hidden : 0;
-  if (!scopeNote && hidden === 0) return null;
+  const unitIds = useMemo(() => idsOf(scope?.unmatched_unit_ids), [scope?.unmatched_unit_ids]);
+  const bedIds = useMemo(() => idsOf(scope?.unmatched_bed_ids), [scope?.unmatched_bed_ids]);
+  const unitNames = useUnitNames(unitIds);
+  const bedNames = useBedNames(bedIds);
+  const blind = scope?.blind === true;
+  const unmatched = blind
+    ? []
+    : [...unitNames.sorted.map(unitNames.nameOf), ...bedNames.sorted.map(bedNames.nameOf)];
+  const namesPending = !blind && unitNames.placeholders + bedNames.placeholders > 0;
+  if (!scopeNote && hidden === 0 && unmatched.length === 0) return null;
   return (
     <Note tone="info" icon="shield" className={className}>
+      {unmatched.length > 0 ? (
+        <span className="block">{t("board.scopeUnmatched", { names: unmatched.join(", ") })}</span>
+      ) : null}
+      {namesPending ? (
+        <span className="mt-0.5 block text-11 font-normal text-mute">{t("kabul.namesPending")}</span>
+      ) : null}
       {scopeNote ? (
         <>
           {/* The engine writes this sentence in Turkish (`api/board.py` `_scope_note`). Printing it

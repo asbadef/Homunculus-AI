@@ -15,7 +15,9 @@
 // only the engine's summary; the patient screen, which shows reasoning, evidence and confidence
 // together, says the longer `patient.recoLanguage` instead. `scopeNoteLang` labels the one piece of
 // server prose this UI prints verbatim: `scope_note` is written in Turkish by `api/board.py`, so a
-// Russian-reading clinician meets a Turkish sentence and is owed an explanation of why.
+// Russian-reading clinician meets a Turkish sentence and is owed an explanation of why. Since the
+// G2-B1a walk (I-1) the engine writes that prose only for a blind board: the grant keys no card
+// matched come as data and `scopeUnmatched` says them, each named from the structure.
 //
 // `ch*` are the names of the engine's own signals; `Isı` is deliberately NOT the word the
 // prototype's dictionary carries for temperature (that entry resolves to "heat map" — an
@@ -42,6 +44,8 @@ export default {
     hidden: "Kapsamınız dışında kalan kart: {count}.",
     unresolved: "Bunların {count} tanesi hiçbir yatağa eşleşmiyor.",
     scopeNoteLang: "Bu cümleyi sunucu yazdı; dili Türkçedir.",
+    // G2-B1a walk I-1: the grant keys no card matched, named from the structure (`names`).
+    scopeUnmatched: "Kapsamınızdaki şu birim ve yatakların panoda kartı yok: {names} — gerçekten boş olabilirler ya da yatak eşlemesi tutmuyor olabilir.",
     silent: "Sessiz yatak: {count}",
     feedOk: "Bütün yataklardan veri geliyor",
     feedTitle: "Cihaz ve veri akışı",
@@ -85,6 +89,7 @@ export default {
     hidden: "Əhatənizdən kənarda qalan kart: {count}.",
     unresolved: "Bunlardan {count} ədədi heç bir çarpayıya uyğun gəlmir.",
     scopeNoteLang: "Bu cümləni server yazıb; dili türkcədir.",
+    scopeUnmatched: "Əhatənizdəki bu şöbə və çarpayıların paneldə kartı yoxdur: {names} — həqiqətən boş ola bilərlər, ya da çarpayı uyğunlaşdırması tutmur.",
     silent: "Səssiz çarpayı: {count}",
     feedOk: "Bütün çarpayılardan məlumat gəlir",
     feedTitle: "Cihaz və məlumat axını",
@@ -128,6 +133,7 @@ export default {
     hidden: "Карточек вне вашей области доступа: {count}.",
     unresolved: "Из них не сопоставлено ни с одной койкой: {count}.",
     scopeNoteLang: "Эту фразу написал сервер; она на турецком языке.",
+    scopeUnmatched: "У этих отделений и коек из вашей области на панели нет карточек: {names} — возможно, они действительно пусты или не совпадает сопоставление коек.",
     silent: "Молчащих коек: {count}",
     feedOk: "Данные поступают со всех коек",
     feedTitle: "Устройства и поток данных",
@@ -174,6 +180,7 @@ export default {
     hidden: "Cards outside your scope: {count}.",
     unresolved: "Of those, {count} match no bed at all.",
     scopeNoteLang: "The server wrote this sentence; it is in Turkish.",
+    scopeUnmatched: "These units and beds in your scope have no card on the board: {names} — they may really be empty, or the bed mapping does not match.",
     silent: "Silent beds: {count}",
     feedOk: "Data is arriving from every bed",
     feedTitle: "Devices and the data feed",

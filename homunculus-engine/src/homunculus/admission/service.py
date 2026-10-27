@@ -20,8 +20,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.admission import errors
 from homunculus.admission.models import (
-    Admission, AdmissionState, CareTeamMember, CareTeamRole, Handover,
+    Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
     HandoverStatus, NurseBedAssignment, OPEN_ADMISSION_STATES, Patient,
 )
 from homunculus.tenant.models import Bed, BedState, Unit
@@ -38,7 +39,12 @@ def _now() -> datetime:
 
 
 class WorkflowError(Exception):
-    """Raised for business-rule violations; mapped to HTTP 4xx by the router."""
+    """Raised for business-rule violations; mapped to HTTP 409 by the router, with `code` beside
+    the words (admission/errors.py) — the dashboard reads the code, never the words."""
+
+    def __init__(self, message: str, code: str = errors.INVALID_TRANSITION) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 # ---------------------------------------------------------------------------
@@ -75,32 +81,53 @@ async def create_draft_admission(
     tenant_id: uuid.UUID,
     patient: Patient,
     note_fields: dict,
+    request_id: uuid.UUID | None = None,
+    request_digest: str | None = None,
+    identity_digest: str | None = None,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
 
     Enforces the hard constraint: a patient may not have another open admission.
+    `request_id` and `request_digest` are the form's id and its body's digest (amendment A-19,
+    admission/router.py); the row's unique `(tenant_id, request_id)` refuses a second admission
+    under one id with an IntegrityError at the flush below. `identity_digest` is the person's
+    (A-37, admission/form.py): the open-identity index refuses a second open admission of one
+    person in the tenant the same way, by its own name (`models.OPEN_IDENTITY_INDEX`).
     """
     existing = await get_open_admission_for_patient(db, patient.id)
     if existing is not None:
         raise WorkflowError(
             f"Patient already has an open admission ({existing.state.value}); "
-            f"a patient may have only one active admission at a time."
+            f"a patient may have only one active admission at a time.",
+            errors.OPEN_ADMISSION,
         )
 
-    bed = await db.get(Bed, note_fields["bed_id"])
+    # The bed row is LOCKED until the transaction ends (G2-B1a, spec §3.1): two admissions into one
+    # bed at once wait for each other here, and the second finds it OCCUPIED. FOR NO KEY UPDATE, as
+    # every bed lock (tenant/router.py `_lock_bed`, amendment A-26): it lets an insert of a row
+    # pointing at the bed through. A caller that already holds the lock takes nothing more here.
+    # Read afresh under the lock: a bed loaded before it would come back as it was then.
+    bed = (await db.execute(
+        select(Bed).where(Bed.id == note_fields["bed_id"]).with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
     if bed is None:
         raise WorkflowError("Target bed not found.")
     if bed.state != BedState.AVAILABLE:
         raise WorkflowError(
             f"Bed is not AVAILABLE (current state: {bed.state.value}); "
-            f"cannot admit."
+            f"cannot admit.",
+            errors.BED_NOT_AVAILABLE,
         )
 
     admission = Admission(
         patient_id=patient.id,
         tenant_id=tenant_id,
         state=AdmissionState.DRAFT,
+        request_id=request_id,
+        request_digest=request_digest,
+        identity_digest=identity_digest,
         **note_fields,
     )
     if admission.admission_datetime is None:
@@ -127,12 +154,13 @@ async def sign_off_admission(
     if admission.attending_physician_id is None:
         raise WorkflowError(
             "attending_physician_id must be resolved before a DRAFT can become ACTIVE "
-            "(§5.2 field 8)."
+            "(§5.2 field 8).",
+            errors.MISSING_ATTENDING,
         )
     # Re-check single-ACTIVE constraint at the moment of activation.
     active = await get_active_admission_for_patient(db, admission.patient_id)
     if active is not None and active.id != admission.id:
-        raise WorkflowError("Patient already has an ACTIVE admission.")
+        raise WorkflowError("Patient already has an ACTIVE admission.", errors.OPEN_ADMISSION)
 
     admission.transition_to(AdmissionState.ACTIVE)
     admission.signed_by = signing_user_id
@@ -268,7 +296,8 @@ async def initiate_transfer(
         raise WorkflowError("Target bed not found.")
     if target_bed.state != BedState.AVAILABLE:
         raise WorkflowError(
-            f"Target bed is not AVAILABLE (state: {target_bed.state.value})."
+            f"Target bed is not AVAILABLE (state: {target_bed.state.value}).",
+            errors.BED_NOT_AVAILABLE,
         )
 
     admission.transition_to(AdmissionState.PENDING_TRANSFER)
@@ -294,7 +323,7 @@ async def confirm_transfer_arrival(
 
     target_bed = await db.get(Bed, target_bed_id)
     if target_bed is None or target_bed.state != BedState.AVAILABLE:
-        raise WorkflowError("Target bed is no longer AVAILABLE.")
+        raise WorkflowError("Target bed is no longer AVAILABLE.", errors.BED_NOT_AVAILABLE)
 
     # Close source.
     admission.transition_to(AdmissionState.TRANSFERRED)
@@ -363,20 +392,30 @@ async def confirm_transfer_arrival(
 # ---------------------------------------------------------------------------
 async def initiate_discharge(
     db: AsyncSession, admission: Admission, *,
-    discharge_summary: str, unacknowledged_critical_count: int = 0,
+    disposition: DischargeDisposition, institution: str | None = None,
+    reported_by: str | None = None, discharge_at: datetime | None = None,
+    note: str | None = None, unacknowledged_critical_count: int = 0,
 ) -> Admission:
+    """§4.7 steps 1–2 as Group 2 · B1a decides them (spec D7): the physician's disposition — home,
+    another institution (named), or exitus (reported by) — its time (now unless given) and a note,
+    recorded on the admission; the narrative is no longer appended to (X58).
+    `unacknowledged_critical_count` is the board's own (admission/boardlink.py `open_critical`);
+    any one blocks the start."""
     if admission.state != AdmissionState.ACTIVE:
         raise WorkflowError("Only an ACTIVE admission can be discharged.")
     # §4.7 step 2 — block on unacknowledged CRITICAL alerts.
     if unacknowledged_critical_count > 0:
         raise WorkflowError(
             f"Discharge blocked: {unacknowledged_critical_count} unacknowledged "
-            f"CRITICAL alert(s) must be acknowledged with a reason first (§4.7)."
+            f"CRITICAL alert(s) must be acknowledged with a reason first (§4.7).",
+            errors.CRITICAL_ALARM_OPEN,
         )
     admission.transition_to(AdmissionState.PENDING_DISCHARGE)
-    admission.admission_note_narrative = (
-        (admission.admission_note_narrative or "") + f"\n[DISCHARGE] {discharge_summary}"
-    )
+    admission.discharge_disposition = disposition
+    admission.discharge_institution = institution
+    admission.discharge_reported_by = reported_by
+    admission.discharge_at = discharge_at or _now()
+    admission.discharge_note = note
     bed = await db.get(Bed, admission.bed_id)
     if bed is not None:
         bed.transition_to(BedState.PENDING_DISCHARGE)
@@ -384,10 +423,22 @@ async def initiate_discharge(
     return admission
 
 
-async def confirm_discharge(db: AsyncSession, admission: Admission) -> Admission:
-    """§4.7 steps 5–7: charge nurse confirms the patient has left the bed."""
+async def confirm_discharge(
+    db: AsyncSession, admission: Admission, *, unacknowledged_critical_count: int = 0,
+) -> Admission:
+    """§4.7 steps 5–7: charge nurse confirms the patient has left the bed.
+
+    `unacknowledged_critical_count` is the board's own, read again at the confirmation (Group 2 ·
+    B1a, the user's decision of 2026-10-26): the discharge ends every alert of the patient, so a
+    critical one that fired after the start is acknowledged first. An exitus is not exempt."""
     if admission.state != AdmissionState.PENDING_DISCHARGE:
         raise WorkflowError("Admission is not pending discharge.")
+    if unacknowledged_critical_count > 0:
+        raise WorkflowError(
+            f"Discharge blocked: {unacknowledged_critical_count} unacknowledged CRITICAL "
+            f"alert(s) must be acknowledged before the discharge is confirmed.",
+            errors.CRITICAL_ALARM_OPEN,
+        )
     admission.transition_to(AdmissionState.DISCHARGED)
     bed = await db.get(Bed, admission.bed_id)
     if bed is not None:
@@ -454,7 +505,8 @@ async def sign_handover_outgoing(
     if unacknowledged_critical_count > 0:
         raise WorkflowError(
             f"Handover blocked: {unacknowledged_critical_count} unacknowledged "
-            f"CRITICAL alert(s). Acknowledge (with reason) or escalate first (S-07)."
+            f"CRITICAL alert(s). Acknowledge (with reason) or escalate first (S-07).",
+            errors.CRITICAL_ALARM_OPEN,
         )
     handover.outgoing_signed_at = _now()
     if narrative_note is not None:

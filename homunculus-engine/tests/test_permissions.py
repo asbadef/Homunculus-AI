@@ -20,10 +20,12 @@ SPEC_KEYS = {
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage", "clinical.chart", "scores.sign",
+    "beds.release",       # G2-B1a (spec D8)
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_one_keys():
+def test_the_catalogue_is_exactly_the_specified_twenty_two_keys():
+    assert len(SPEC_KEYS) == 22
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -120,10 +122,10 @@ SPEC_GROUPS = {
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
-                                    "break_glass.use", "clinical.chart"}),
+                                    "break_glass.use", "clinical.chart", "beds.release"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
-                             "clinical.chart"}),
+                             "clinical.chart", "beds.release"}),
     "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                       "admissions.view", "break_glass.use", "clinical.chart"}),
     "auditor": (False, False, {"board.view", "audit.view"}),
@@ -158,6 +160,15 @@ def test_clinical_and_scoring_keys_exist_and_are_granted_as_designed():
     for slug in ("charge_nurse", "nurse", "rapid_response", "auditor", "pharmacist",
                  "biomedical", "platform_support"):
         assert "scores.sign" not in by_slug[slug], slug
+
+
+def test_a_cleaned_bed_is_released_by_the_wards_nurses_and_no_one_else_by_default():
+    """G2-B1a, spec D8: a ward turns its beds over at night without an administrator. Changing the
+    structure stays `structure.manage`; the system group holds every key by rule."""
+    by_slug = {g["slug"]: set(g["permissions"]) for g in DEFAULT_GROUPS}
+    holders = {slug for slug, perms in by_slug.items() if "beds.release" in perms}
+    assert holders == {"nurse", "charge_nurse", "hospital_admin"}
+    assert "structure.manage" not in by_slug["nurse"] | by_slug["charge_nurse"]
 
 
 def test_legacy_pharmacist_and_biomedical_convert():

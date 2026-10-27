@@ -17,7 +17,9 @@ from homunculus.gateway.fhir import to_utc
 # A diagnosis is health data, so it is encrypted at rest alongside the name.
 _PHI = ("family", "given", "birth_date", "sex")
 _COLUMNS = ("patient_id", "family", "given", "birth_date", "sex", "unit", "room", "bed",
-            "state", "source", "updated_at", "diagnoses")
+            "state", "source", "updated_at", "diagnoses", "bed_id", "unit_id")
+# G2-B1a: what the 24-hour sweep may take — never a `kabul` tombstone (patient_identity.py).
+_PRUNABLE = " AND (source IS NULL OR source <> 'kabul')"
 
 
 def _decode(row) -> IdentityRecord | None:
@@ -28,6 +30,8 @@ def _decode(row) -> IdentityRecord | None:
         values[key] = plain(values[key], "unknown" if key == "sex" else "")
     values["updated_at"] = datetime.fromisoformat(values["updated_at"])
     values["diagnoses"] = _decode_diagnoses(values.get("diagnoses"))
+    values["bed_id"] = values["bed_id"] or ""           # NULL on a row from before 0012
+    values["unit_id"] = values["unit_id"] or ""
     return IdentityRecord(**values)
 
 
@@ -72,7 +76,10 @@ class PostgresIdentityStore:
         return _decode(row)
 
     def _ids(self, hospital: str, admitted: bool = False) -> list[str]:
-        clause = " AND state='admitted'" if admitted else ""
+        # G2-B1a: the inventory never lists a `kabul` tombstone (kept for good). NULL-safe: the
+        # row `apply` locks on has no state and no source until its first write lands.
+        clause = (" AND state='admitted'" if admitted else
+                  " AND NOT (COALESCE(state, '')='discharged' AND COALESCE(source, '')='kabul')")
         with self._engine.connect() as conn:
             return list(conn.execute(text(
                 "SELECT patient_id FROM patient_identity WHERE tenant=:tenant" + clause +
@@ -89,14 +96,15 @@ class PostgresIdentityStore:
         with self._engine.connect() as conn:
             rows = conn.execute(text(
                 "SELECT * FROM patient_identity WHERE tenant=:tenant AND state='discharged'"
-                " AND updated_at < :cutoff ORDER BY patient_id"),
+                " AND updated_at < :cutoff" + _PRUNABLE + " ORDER BY patient_id"),
                 {"tenant": hospital, "cutoff": (to_utc(now) - ttl).isoformat()}).mappings().all()
         return [_decode(row) for row in rows]
 
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         with self._engine.begin() as conn:
             return conn.execute(text(
-                "DELETE FROM patient_identity WHERE state='discharged' AND updated_at < :cutoff"),
+                "DELETE FROM patient_identity WHERE state='discharged' AND updated_at < :cutoff"
+                + _PRUNABLE),
                 {"cutoff": (to_utc(now) - ttl).isoformat()}).rowcount
 
     def close(self) -> None:
