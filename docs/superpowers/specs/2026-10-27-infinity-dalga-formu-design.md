@@ -33,11 +33,20 @@ label). These traces are real, so "temsili" would now be false; the stamp of §5
 - Every packet (5/s per bed) = 64-byte header + wave blocks; byte 29 is the message type; the 1/s
   type adds the numeric-record section after the same blocks.
 - Block: `u16 rate_hz | u16 len | u16 ms | u32 device_s | u16 wave_id | u8 n | u8 0 | n×i16 BE`.
-- `0x0103` ECG (screen lead II) 200 Hz · `0x0301` ART 100 Hz, **mmHg = sample/40** · `0x1916` pleth
-  100 Hz (relative) · `0x0201` resp 50 Hz (relative) · `0x0102/0104/0122/0124` other ECG leads,
-  identity unverified.
+- ECG 200 Hz on `0x0102`, `0x0103`, `0x0104` (and `0x0122`, `0x0124`, never seen live). **Which
+  one is live differs by bed** (BED07: `0x0103`; BED08: `0x0102`); id→lead-name is unverified, so
+  the panel picks ECG rows by liveness and never prints a lead name.
+- Pressure 100 Hz, **mmHg = sample/40** on both ids seen: `0x0301` (screen "ART", BED07) and
+  `0x0e01` (screen "P1", BED08). A pressure row is labelled by its id (`ART` only for `0x0301`,
+  `P1` for `0x0e01`); any other pressure id is drawn unlabelled as "basınç".
+- `0x1916` pleth 100 Hz (relative) · `0x0201` resp 50 Hz (relative).
 - A block whose samples are **all** `0x0001` means "no signal" (lead off / channel closed).
-- Validated structurally and numerically; **not** yet sample-exact against the screen; ECG gain unknown.
+- Validated structurally and numerically on two beds, and at the one-second level against the
+  BED08 screen (HR, PLS, SpO₂, resp, P1 series all match through 40 s); **not** sample-exact
+  against the screen; ECG gain unknown.
+- **Numeric ids `0x0101` and `0x1905` are the reverse of `infinity_records.py`'s `hr`/`pls`
+  labels** (BED08, 2026-10-27). Out of this slice's scope — see the protocol doc — but the panel's
+  "numbers beside the waves" are the strip's, so the strip's fix carries into the panel.
 
 ## 3. Data path
 
@@ -140,9 +149,13 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   - Samples beyond the row are clipped, with a clip mark.
   - Autoscale would amplify noise into something that looks like a rhythm.
   - No mV grid or calibration bar (the gain is not known).
-  - Label `II` for `0x0103`; `EKG (derivasyon doğrulanmadı)` for another lead.
-  - If several ECG leads are live, the panel shows `0x0103` and at most one more.
-- **ART.** Fixed axis 0–200 mmHg (extends to 250 if exceeded), faint lines at 50/100/150.
+  - ECG rows are chosen by **liveness** (a channel whose blocks carry samples), in the order
+    `0x0102`, `0x0103`, `0x0104`, `0x0122`, `0x0124`, at most two rows.
+  - Every ECG row is labelled `EKG` with the note `derivasyon adı doğrulanmadı`; no lead name is
+    ever printed (the id→lead mapping is unverified and the live id differs by bed).
+- **Pressure (ART / P1).** Fixed axis 0–200 mmHg (extends to 250 if exceeded), faint lines at
+  50/100/150. Label from the catalogue by id (`ART` = `0x0301`, `P1` = `0x0e01`). Both rows when
+  both are live, after the ECG rows and before pleth.
 - **Pleth, resp.** Slow autoscale over the last 10 s with a minimum span. Labelled `göreli`.
 
 ## 5. Safety rules (the price of W2)
@@ -241,12 +254,17 @@ Passive only: nobody touches the patient, the cables, the monitor settings or al
 
 Checks (results go to the protocol doc, never values):
 
-- **V1.** On-screen lead II QRS times align uniquely with decoded `0x0103` R-peaks (sweep-head
-  method), residual sd ≤ 20 ms.
-- **V2.** The ART trace shape and the screen's systolic/diastolic agree with §2's ÷40.
-- **V3.** The ids of the other ECG leads on a 5-lead bed.
-- **V4.** Where the screen shows HR ≠ PLS, which numeric id carries which.
-- **V5.** The pleth and resp rows match the screen's.
+- **V1.** On-screen QRS times align uniquely with the live ECG channel's decoded R-peaks
+  (sweep-head method), residual sd ≤ 20 ms. **Open (2026-10-27):** the BED08 video arrived
+  WhatsApp-compressed (464×656; the trace is 3–6 px tall), so QRS cannot be separated; needs the
+  phone's original file.
+- **V2.** The pressure trace's beat max/min ÷40 and the screen's systolic/diastolic agree.
+  **Done (BED08, P1 `0x0e01`): within 2 mmHg; P1 mean/diastolic records match the screen.**
+- **V3.** The ids of the other ECG leads on a 5-lead bed. Open (BED08 showed one trace, `0x0102`).
+- **V4.** Where the screen shows HR ≠ PLS, which numeric id carries which. **Done: `0x0101` =
+  screen HR, `0x1905` = screen PLS — the reverse of the reader's labels (protocol doc).**
+- **V5.** The pleth and resp rows match the screen's. **Done at the number level (resp and SpO₂
+  series match through 40 s); the pleth row shape is pending V1's original video.**
 
 ## 10. Lanes, branches, deploy
 

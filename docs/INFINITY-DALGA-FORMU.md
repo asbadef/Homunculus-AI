@@ -4,10 +4,12 @@ Dräger Infinity multicast yükündeki dalga formu verisinin yapısı. Sayısal 
 [INFINITY-PARAMETER-RECORDS.md](INFINITY-PARAMETER-RECORDS.md)'dedir. Bu belge yapıyı ve
 doğrulamanın düzeyini kaydeder; **hasta ölçüm değerleri buraya yazılmaz**.
 
-Çözüm, depo dışında saklanan mevcut kayıtlar üzerinde çevrimdışı yapıldı: 19 Eylül'de `.27`
+Çözüm, depo dışında saklanan kayıtlar üzerinde çevrimdışı yapıldı: 19 Eylül'de `.27`
 cihazından alınan iki doğrudan Ethernet kaydı (EKG takılmadan önce ve sonra, 300'er saniye),
-aynı gün VM üzerinden alınan 60 saniyelik kayıt ve 21 Eylül'de `.28`'den alınan iki 60
-saniyelik kayıt (biri monitör ekranının videosuyla birlikte). Yeni ağ trafiği yakalanmadı.
+aynı gün VM üzerinden alınan 60 saniyelik kayıt, 21 Eylül'de `.28`'den (BED07) alınan iki 60
+saniyelik kayıt (biri monitör ekranının videosuyla birlikte) ve 27 Ekim'de `.37`'den (BED08)
+worker üzerinde alınan planlı 60 saniyelik pasif kayıt, ekranın eş zamanlı 91 saniyelik
+videosuyla. Hiçbir kayıtta monitörlere bir şey gönderilmedi.
 
 ## Paket
 
@@ -50,23 +52,26 @@ EKG çizgisi asistoli gibi okunur; "sinyal yok" boşluğu olarak gösterilir.
 
 | Kimlik | Hız | Anlam | Kanıt |
 |---|---|---|---|
-| `0x0103` | 200 Hz | EKG, ekranda **II** derivasyonu | ekranda yalnız II çiziliyordu ("RL Lead OFF"); paketlerde de yalnız `0x0103` canlıydı. R-R'den hesaplanan HR kayıttaki HR ile 1–3 atım/dk içinde |
-| `0x0102`, `0x0104` | 200 Hz | EKG, büyük olasılıkla I ve III | gözlenen yataklarda hep `0x0001`; **doğrulanmadı** |
+| `0x0102`, `0x0103`, `0x0104` | 200 Hz | EKG derivasyonları | **Canlı kanal yatağa göre değişir:** BED07'de yalnız `0x0103` (ekranda II), BED08'de yalnız `0x0102` canlıydı. Kimlik→derivasyon adı eşlemesi doğrulanmadı; ekranda derivasyon adı yazılmaz. R-R'den hesaplanan HR, ekrandaki HR ile 1–3 atım/dk içinde |
 | `0x0122`, `0x0124` | 200 Hz | EKG (V derivasyonları olabilir) | hep `0x0001`; **doğrulanmadı** |
-| `0x0301` | 100 Hz | arteriyel basınç (ART) | **mmHg = örnek / 40** — aşağıya bakın |
-| `0x1916` | 100 Hz | pletismogram | tepe aralığı kayıttaki nabızla örtüşüyor; birim yok (göreli) |
-| `0x0201` | 50 Hz | impedans solunumu | periyodu kayıttaki RESP ile ±1/dk; EKG elektrotları takılınca canlanıyor |
+| `0x0301` | 100 Hz | arteriyel basınç, ekranda **ART** (BED07) | **mmHg = örnek / 40** — aşağıya bakın |
+| `0x0e01` | 100 Hz | basınç, ekranda **P1** (BED08) | **mmHg = örnek / 40**; vuru tepe/dip ÷40, ekrandaki sistolik/diyastolikle 2 mmHg içinde |
+| `0x1916` | 100 Hz | pletismogram | tepe aralığı ekrandaki PLS ile örtüşüyor; birim yok (göreli) |
+| `0x0201` | 50 Hz | impedans solunumu | periyodu ekrandaki RESP ile ±1/dk; EKG elektrotları takılınca canlanıyor |
 
-Kimlik önekleri sayısal kayıtlarınkiyle aynı aileyi izliyor: `0x03` ART, `0x02` impedans
-solunumu, `0x19` SpO₂ modülü.
+Kimlik önekleri sayısal kayıtlarınkiyle aynı aileyi izliyor: `0x01` EKG, `0x02` impedans
+solunumu, `0x03` ART, `0x0e` P1, `0x19` SpO₂ modülü. Bir basınç dalgası yalnız kimliği
+`0x0301` ise "ART" diye etiketlenir; `0x0e01` "P1"dir.
 
-## ART ölçeği
+## Basınç ölçeği
 
-Arteriyel dalganın vuru başına tepe ve dip değerleri, aynı 10 saniyelik pencerelerdeki
-`art_systolic` / `art_diastolic` kayıtlarına doğrusal olarak uyduruldu. İki bağımsız kayıtta
-eğim **1/40,17** ve **1/40,80** çıktı; ölçek tam 1/40 alındığında kalan ofset **0,3 ± 1,8** ve
-**0,5 ± 2,1 mmHg**. Sonuç: örnek değeri 40'a bölününce mmHg verir (0,025 mmHg/birim), sıfır
-ofsetle. Bu, ekran olmadan çalışan yapısal bir doğrulamadır; MAP bağıntısının dalga karşılığı.
+Basınç dalgasının vuru başına tepe ve dip değerleri, aynı pencerelerdeki sistolik/diyastolik
+kayıtlarına doğrusal olarak uyduruldu. ART (`0x0301`) için iki bağımsız kayıtta eğim
+**1/40,17** ve **1/40,80** çıktı; ölçek tam 1/40 alındığında kalan ofset **0,3 ± 1,8** ve
+**0,5 ± 2,1 mmHg**. P1 (`0x0e01`) için BED08 kaydında tepe/dip ÷40, aynı andaki ekran
+sistolik/diyastolik değerleriyle 2 mmHg içinde; P1 ortalama (`0x0e09`) ve diyastolik
+(`0x0e07`) kayıtları da ekranla birebir. Sonuç: her iki basınç dalgasında örnek değeri 40'a
+bölününce mmHg verir (0,025 mmHg/birim), sıfır ofsetle.
 
 ## Doğrulamanın düzeyi
 
@@ -78,11 +83,18 @@ Kanıtlanan:
 - ART'ın mmHg ölçeği.
 - Ekrandaki canlı derivasyon (II) ile `0x0103`'ün tek canlı EKG kanalı olması örtüşüyor.
 
+- **BED08, 27 Ekim 2026 (planlı kayıt + 91 sn video):** ekrandaki HR, PLS, SpO₂, solunum ve
+  P1 sayı dizileri, paketlerden okunan kayıtlarla aynı sabit kaymayla (video−yakalama ≈ 12 s,
+  ±1 s) 40 saniye boyunca her değişimde birebir örtüştü. Bu, saniye düzeyinde bir zaman
+  hizasıdır ve hangi sayısal kimliğin ekranda hangi sayı olduğunu kesinleştirir (aşağıda).
+
 Kanıtlanmayan:
-- **Örnek düzeyinde ekran eşleşmesi.** Elde tutulan videoda ekrandaki QRS zamanları ile
-  çözülen R tepeleri hizalandı; en iyi hizada eşleşen atımların sapması 44 ms, erken atım da
-  eşleşiyor. Ama düzenli ritimde bir atım kaydırılmış hiza da aynı puanı aldı, yani hiza tek
-  değil. Planlı bir kayıt gerekir (sabit kamera, 90 sn+, ART'lı yatak dahil).
+- **Örnek düzeyinde ekran eşleşmesi.** BED07'nin elde tutulan videosunda ekrandaki QRS
+  zamanları ile çözülen R tepeleri hizalandı; en iyi hizada sapma 44 ms, erken atım da
+  eşleşiyor, ama düzenli ritimde bir atım kaydırılmış hiza da aynı puanı aldı. BED08 videosu
+  WhatsApp sıkıştırmasıyla 464×656'ya düşmüş; EKG izi karede 3–6 piksel kaldığı için QRS
+  ayırt edilemiyor. Telefonun **orijinal** dosyasıyla (belge olarak ya da kabloyla) yeniden
+  denenecek.
 - **EKG genliği.** Ekrandaki 0,5 mV çubuğundan kaba tahmin birim başına 0,5–0,8 µV; kalibrasyon
   değildir. Çizim göreli genlikle yapılır, mV ızgarası çizilmez.
 - I, III ve V derivasyonlarının kimlikleri.
@@ -103,13 +115,35 @@ yalnız doğrudan Ethernet kaydında görüldüler.
   ("ECG Leads Invalid", "HR > 160", "… Alarm at BED10" gibi). Aşama C için ayrı bir araştırma
   konusu.
 
-## Sayısal kimlikler hakkında bir şüphe
+## Sayısal kimlikler: HR ve PLS adları ters — 27 Ekim 2026
 
-Dalga kimliklerinde `0x01` öneki EKG'ye, `0x19` öneki SpO₂ modülüne ait. Bu, sayısal kayıtlarda
-`0x0101`'in EKG'den gelen **HR**, `0x1905`'in ise SpO₂'den gelen **nabız (PLS)** olabileceğini
-düşündürüyor — `infinity_records.py`'deki `hr`/`pls` adlarının tersi. Gözlenen yataklarda HR ile
-PLS eşit olduğu için ayırt edilemedi. HR ile PLS'nin farklı gösterildiği bir yatakta (aritmi,
-zayıf perfüzyon) ekranla kontrol edilmelidir.
+Dalga kimliklerinde `0x01` öneki EKG'ye, `0x19` öneki SpO₂ modülüne ait; bu, sayısal kayıtlarda
+`0x0101`'in EKG'den gelen **HR**, `0x1905`'in SpO₂'den gelen **nabız (PLS)** olduğunu
+düşündürüyordu. **BED08 kaydı bunu doğruladı:** ekranda HR ile PLS'nin belirgin farklı olduğu
+40 saniye boyunca, `infinity_records.py`'nin `hr` diye okuduğu `0x1905` ekrandaki **PLS**'yi,
+`pls` diye okuduğu `0x0101` ekrandaki **HR**'yi her değişimde birebir izledi. Yani okuyucudaki
+iki ad **terstir**. Önceki doğrulama (22 Eylül) HR ile PLS'nin eşit olduğu yataklarda yapıldığı
+için farkı görememişti.
+
+Sonuçları:
+- Aşama A şeridi koğuşta "HR" başlığıyla SpO₂ nabzını, "PLS" başlığıyla EKG kalp hızını
+  gösteriyor. Değerler çoğu hastada eşit ya da yakındır; aritmi ya da zayıf perfüzyonda ayrılır.
+  Düzeltme `infinity_records.py` tablosunda iki satırlık ad değişimidir; karar ve dağıtım
+  sahibinindir.
+- Aşama B gölge motoru "hr"ı kurallara (NEWS2 dahil) verecekse, düzeltme ondan önce girmelidir.
+
+## Yeni sayısal kimlikler (BED08)
+
+| Kimlik | Birim | Anlam | Kanıt |
+|---|---|---|---|
+| `0x0e07` | `0x09` mmHg | P1 diyastolik | ekranla birebir |
+| `0x0e09` | `0x09` mmHg | P1 ortalama | ekranla birebir |
+| `0x0e08` | — | P1 sistolik (beklenen) | bu kayıtta geçerli kayıt olarak **görülmedi**; açık |
+| `0x0104` | `0x1a` | bilinmiyor | geçerli, alarm sınırı 0–10; ekranda karşılığı bulunamadı; **okunmaz** |
+| `0x1a0c`, `0x1a0d` | `0x11`, `0x2c` | sıcaklık ailesi (Tb, ΔT olabilir) | hep geçersiz; **okunmaz** |
+
+Bu kayıtlar hizalı 36 baytlık dizinin içindedir ve `infinity_records.py` bilmediği kimlikleri
+zaten atlar; P1 kayıtlarının okuyucuya eklenmesi ayrı bir karardır.
 
 ## Sınırlar
 
