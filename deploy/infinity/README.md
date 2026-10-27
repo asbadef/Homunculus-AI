@@ -478,7 +478,14 @@ sit on the VM before that; `rules` is the switch the acceptance gates.
 **Prerequisite.** Stage B runs after Lane B's B1a is on `main`: admissions with their own bed id
 (migration 0012) and the device→bed table v2 with bed UUIDs. A device feeds a patient only when the
 approved table puts it on a bed and exactly one admitted patient is there; two monitors on a bed, two
-patients on a bed, a bed without a bed id and a discharged number feed nothing (spec D5).
+patients on a bed, a bed without a bed id and a discharged number feed nothing (spec D5). Lane B's
+admission (`admission/boardlink.py` on `feat/g2b-kabul`) is merged after this branch, and its merge
+must wire the three hooks `create_app` leaves for it: `app.state.shadow_mirror` after its chart,
+`app.state.shadow_profile` after its `set_profile`, and `app.state.shadow_occupancy_reset` after
+`put_identity` — and its card builder must build through the same `_card`, so its cards carry the
+`shadow` key. Each of the four is pinned with a test at merge time; without them an admission's
+charted values and profile would not reach the shadow engine, its bed would link the old occupant
+for up to 10 s, and its cards would carry no shadow picture.
 
 **The switch.** `INFINITY_CLINICAL_STAGE=rules` in `deploy/local/.env`, then
 `docker compose up -d --no-build api` (a plain restart keeps the container's old environment). The
@@ -540,24 +547,33 @@ escalation, the alarm-quality counters, the Alarmlar screen and the bell; the au
 sees one). The only new audit rows are `shadow_alert` and `shadow_alert_cleared`. The gate is
 `tests/test_infinity_shadow_equivalence.py`, whose **third run** (stage `rules`, lane fed) must give
 every clinical output — the board's keys other than `shadow`, the audit rows other than `shadow_*`,
-notifications, acknowledgements, escalation — identical to the stage-`off` run;
-`tests/test_infinity_shadow_isolation.py` holds `api/infinity_rules.py` to importing neither the
-notifier, the ack store, the alert lifecycle nor the alarm-quality module.
+notifications, acknowledgements, escalation, the bed map's discovery counters — identical to the
+stage-`off` run, both runs going through a restart mid-run, a charted profile and a link end;
+`tests/test_infinity_shadow_isolation.py` holds `api/infinity_rules.py` to importing, directly or
+through its imports, none of the notifier, the ack store, the alert lifecycle, the alarm-quality
+module, escalation, the broadcaster, the audit replay, the clinical door, the board or the app.
 
 **The audit's windows at `rules`.** The shadow rows are in the same audit log as the real ones.
 `/alarm-quality` reads only the kinds it counts (`first_seen`, `alert`, `ack`, `escalation`,
 `alert_cleared`), so no shadow row takes a place under its cap or moves a counter — the gate's three
-runs compare that report too. `/audit` and `/audit/verify` read every kind: `/audit` answers the newest
-1000 rows (fewer of them real at `rules`; pass `event_type=` to read one kind), and `/audit/verify`
-checks the first 10 000 rows, so it reports `complete: false` sooner. Nothing is lost or altered — the
-chain covers the shadow rows like any other — only these two fixed windows hold fewer real rows.
+runs compare that report too. That filter is new with this code and applies at **every** stage, `off`
+included, from the deploy that brings it: before it every kind of row (each reading's `ingest` row
+among them) took a place under the cap, so after the deploy the report's `truncated` flag and its
+counters may read differently for the same window even at `off` — more accurate, but expect
+different figures than before the deploy. `/audit` and `/audit/verify` read every kind: `/audit`
+answers the newest `limit` rows (default 200, at most 1000; fewer of them real at `rules`; pass
+`event_type=` to read one kind), and `/audit/verify` checks the first 10 000 rows, so it reports
+`complete: false` sooner. Nothing is lost or altered — the chain covers the shadow rows like any
+other — only these two fixed windows hold fewer real rows.
 
 **Rollback, tiers for B** (each stops on its first error):
 
 1. **G-1 — forwarder off** (hub; unchanged from Aşama A): delete `93-asama-a-golge.conf`,
    `systemctl daemon-reload`, restart the hub. The posts stop, so the samples stop (the sampler runs
-   only when a body arrives); the strip says "Monitör verisi gelmiyor" within 15–20 s. Shadow findings
-   already open stay open until their links end.
+   only when a body arrives); the strip says "Monitör verisi gelmiyor" within 15–20 s. With no body
+   no sampling pass runs, so no link ends either: shadow findings already open stay open — shown
+   with their ages — until the forwarder returns or the stage changes (a discharge made here still
+   closes that patient's).
 2. **G-2b — back to `shadow`** (API): `INFINITY_CLINICAL_STAGE=shadow` in `.env`, then
    `docker compose up -d --no-build api`. The sampling and the mirror stop, every open shadow finding
    gets one `shadow_alert_cleared` row with `reason: stage`, the `shadow` key, the box, the tags and

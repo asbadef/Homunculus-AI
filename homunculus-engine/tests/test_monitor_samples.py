@@ -3,6 +3,7 @@ TEST_DATABASE_URL, through the migration the server runs."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,8 @@ from homunculus.api.monitor_samples import (
     MEMORY_RETENTION_HOURS, RETENTION_DAYS, InMemorySamples, PostgresSamples, Sample, retention_bound,
 )
 from tests.conftest import TEST_DATABASE_URL, requires_db
+
+MIGRATION_0013 = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0013_monitor_samples.py"
 
 T0 = datetime(2026, 10, 27, 9, 0, tzinfo=timezone.utc)
 
@@ -59,7 +62,17 @@ def test_only_the_table_is_durable():
 
 
 @requires_db
+@pytest.mark.skipif(not MIGRATION_0013.exists(), reason="migration 0013 lands after B1a's 0012")
 def test_postgres_samples_through_the_migration():
+    # Migration 0013 (alembic/versions/0013_monitor_samples.py, down_revision 0012) is written when
+    # B1a's 0012 is on main (plan Task 3, Step 4). It must create, for this store and the lane:
+    #   - `monitor_samples` with an `id` bigserial primary key (`since` orders by captured_at, id);
+    #   - the columns the store reads and writes: hospital, patient_id, bed_id, source, code, via,
+    #     value, unit, captured_at, received_at (both timestamptz);
+    #   - an index on (hospital, patient_id, captured_at) — the install's 24 h replay;
+    #   - an index on received_at — the hourly prune deletes by it;
+    #   - on the `audit` table, an index on (tenant, event_type, id) — the lane reads its two kinds newest
+    #     first and /alarm-quality its five (deploy/infinity/README.md, "Migration 0013").
     from sqlalchemy import text
     store = PostgresSamples(TEST_DATABASE_URL)
     with store._engine.begin() as conn:                           # noqa: SLF001 — test setup
@@ -68,9 +81,8 @@ def test_postgres_samples_through_the_migration():
     # `upgrade()` under `Operations.context(MigrationContext.configure(conn))`, which binds alembic's `op`.
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    import importlib.util, pathlib
-    path = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0013_monitor_samples.py"
-    spec = importlib.util.spec_from_file_location("m0013", path)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("m0013", MIGRATION_0013)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     with store._engine.begin() as conn:                           # noqa: SLF001

@@ -286,12 +286,16 @@ class ShadowLane:
     the last REPLAY_HOURS of samples of the patients still admitted (D9), and seeds the sampler,
     the open findings (from the audit, whatever their age) and provisional links. It builds aside
     and assigns at the end: an install that fails leaves no engine, `state` reads "error", and a
-    later `sample`, mirror or `forget` retries it — INSTALL_RETRY_S of lane time after the failure,
+    later `sample` — only `sample` — retries it, INSTALL_RETRY_S of lane time after the failure,
     the wait doubling with each failed retry up to INSTALL_RETRY_MAX_S. One unreadable sample or
     finding row is skipped, not a failed install. The doors call `mirror_*` and `forget` after the
-    real engine; the readings route calls `sample` with the strip's bed cards; `findings` builds
-    the board's `shadow` key and `recent_findings` the 7-day list. Every call from a door goes
-    through `guard`: the lane never fails a clinical request. The real engine is read, never written.
+    real engine, and never retry an install: a retry replays REPLAY_HOURS on the event loop, and
+    inside a door it would run before the real frame and the nurse's notification are sent. While
+    one is pending they leave the shadow side as it is — the install, when it runs, copies a real
+    engine that already holds what they were given. The readings route calls `sample` with the
+    strip's bed cards; `findings` builds the board's `shadow` key and `recent_findings` the 7-day
+    list. Every call from a door goes through `guard`: the lane never fails a clinical request.
+    The real engine is read, never written.
 
     `clock` is the lane's epoch clock — the one `sample` is given (`shadow_clock` in the app). It
     times what the caller does not: an install's or `close_open`'s default `now`, a discharge's
@@ -367,8 +371,9 @@ class ShadowLane:
         """`admitted(pid)`: the patient is admitted now (None: every patient is). A patient who is
         not has no sample replayed, and the findings left open for them close here (`discharged`).
         `now` (default: the lane clock) is the instant the replay runs up to. On failure the install
-        stays pending and the error is raised for the caller's guard: `state` is "error", and a
-        pass, mirror or `forget` retries it once INSTALL_RETRY_S of lane time has passed."""
+        stays pending and the error is raised for the caller's guard: `state` is "error", and the
+        next pass (`sample`) retries it once INSTALL_RETRY_S of lane time has passed — a mirror or
+        `forget` never does."""
         if not self.enabled:
             return
         self._pending[hospital] = _Pending(real, admitted)
@@ -446,7 +451,8 @@ class ShadowLane:
     def _ready(self, hospital: str, now: datetime | None) -> Engine | None:
         """The hospital's shadow engine — after retrying its install, when the last one failed
         and its wait is over (`now` on the lane clock; default: the clock). A retry that fails is
-        logged as `install`'s failure, not the caller's, and leaves no engine."""
+        logged as `install`'s failure, not the caller's, and leaves no engine. `sample` alone
+        calls it: a door uses `_installed`, which never retries."""
         pending = self._pending.get(hospital)
         if pending is not None:
             at = self._now(now)
@@ -459,13 +465,23 @@ class ShadowLane:
                 return None
         return self.engines.get(hospital)
 
+    def _installed(self, hospital: str) -> Engine | None:
+        """The hospital's shadow engine for a door (the mirror, `forget`): None while its install
+        is pending, which a door never retries (final review) — a retry replays REPLAY_HOURS of
+        samples on the event loop, and inside `/ingest` it would run before the real frame and the
+        nurse's notification are sent. The next `sample` retries it, and the copy it makes of the
+        real engine holds what the door gave the real one."""
+        if hospital in self._pending:
+            return None
+        return self.engines.get(hospital)
+
     # --- the mirror (D1) ----------------------------------------------------------------------
     def mirror_observation(self, hospital: str, obs: Observation, *, now: datetime, real: Engine) -> None:
-        """`now` is the door's: the instant the real engine judged `obs` at. A pending install is
-        retried on the lane clock."""
-        fresh = hospital in self._pending          # a copy made now already holds what `real` was given
-        engine = self._ready(hospital, None)
-        if engine is None or fresh:
+        """`now` is the door's: the instant the real engine judged `obs` at. With the install
+        pending this does nothing (`_installed`): the install, when the next pass runs it, copies a
+        real engine that holds `obs` already."""
+        engine = self._installed(hospital)
+        if engine is None:
             return
         engine.ingest(obs, now=min(obs.timestamp, now))
         # A charted input can open or end a linked patient's shadow finding; an unlinked patient
@@ -475,7 +491,9 @@ class ShadowLane:
             self._publish(hospital, obs.patient_id, now, real)
 
     def mirror_profile(self, hospital: str, profile) -> None:
-        engine = self._ready(hospital, None)
+        """The profile the real engine was just given. With the install pending this does nothing
+        (`_installed`): the copy the next pass's install makes carries the profile."""
+        engine = self._installed(hospital)
         if engine is not None:
             engine.set_profile(profile)
 
@@ -485,12 +503,14 @@ class ShadowLane:
         out of the sampling for RETIRED_GRACE_S from `now` — which must be on the lane's clock,
         the one `sample` is given; left out, it is the lane clock. If any of it fails the error
         is raised for the caller's guard, and the next pass finishes it, the rows still written
-        as `discharged`."""
+        as `discharged`. With the install pending only the hold is recorded (`_installed`): the
+        install, when the next pass runs it, copies a real engine that has forgotten them already,
+        and closes their findings left open as `discharged` once its `admitted` no longer names them."""
         if not self.enabled:
             return
         at = self._now(now)
         self._retired.setdefault(hospital, {})[patient_id] = at.timestamp()
-        engine = self._ready(hospital, at)
+        engine = self._installed(hospital)
         if engine is None:
             return     # the install, when it runs, copies a real engine that has forgotten them already
         self.linked.get(hospital, {}).pop(patient_id, None)
@@ -629,19 +649,15 @@ class ShadowLane:
             self._failed("samples")
 
     # --- the findings (D6) --------------------------------------------------------------------
-    def findings(self, hospital: str, patient_id: str, real: Engine, *, now: datetime,
-                 linked: bool | None = None) -> dict | None:
+    def findings(self, hospital: str, patient_id: str, real: Engine, *, now: datetime) -> dict | None:
         """The board's `shadow` key: None without a confirmed link of the lane's — no link, or a
-        provisional one (nothing is guessed, D5) — with `linked` False, and below the stage
-        `rules`. `linked` None (the default) leaves it to the lane's link; True is read as None —
-        it once showed a patient with no link, had no caller, and is kept only so that a call
-        naming it still works. A linked patient the shadow engine holds nothing for yet (every
-        cell *** or old) gets the picture of nothing — no vitals, no findings, NEWS2 of an empty
-        state — read, not created, in the engine. `since` per finding is when it was published at
-        this level; None for one not published yet (a mirrored alert from before the link, until
-        its first sample)."""
+        provisional one (nothing is guessed, D5) — and below the stage `rules`. A linked patient
+        the shadow engine holds nothing for yet (every cell *** or old) gets the picture of
+        nothing — no vitals, no findings, NEWS2 of an empty state — read, not created, in the
+        engine. `since` per finding is when it was published at this level; None for one not
+        published yet (a mirrored alert from before the link, until its first sample)."""
         engine = self.engines.get(hospital)
-        if engine is None or linked is False:
+        if engine is None:
             return None
         link = self.linked.get(hospital, {}).get(patient_id)
         if link is None or link.provisional:

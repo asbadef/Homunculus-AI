@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
+from homunculus.api.clinical import profile_from_payload
 from homunculus.api.identity import Caller
 from homunculus.api.infinity_device_beds import TableFile, TableState
 from homunculus.api.infinity_shadow import shadow_settings_from_env
@@ -358,6 +359,23 @@ def test_lane_bs_admission_can_drop_the_occupants_cache(tmp_path):
         assert client.app.state.shadow_occupancy_reset(HOSPITAL) is None    # ...and drops the cache
         assert _post(client).status_code == 200
         assert set(client.app.state.shadow_lane.linked[HOSPITAL]) == {"bed-1"}
+
+
+def test_lane_bs_admission_can_mirror_its_profile_to_the_shadow_engine(tmp_path):
+    """The hook Lane B's admission calls after its `set_profile` (final review), as
+    `PUT /clinical/{pid}/profile` mirrors its own: the shadow engine judges against the same
+    profile. Guarded, and it writes nothing — the admission audits its profile itself."""
+    identities = InMemoryIdentityStore()
+    _kabul(identities, "bed-1")
+    client, audit, _, _ = _app(tmp_path, identities=identities)
+    with client:
+        _linked(client)
+        lane = client.app.state.shadow_lane
+        profile = profile_from_payload("bed-1", {"comorbidities": ["copd"]})
+        written = _kinds(audit)
+        assert client.app.state.shadow_profile(HOSPITAL, profile) is None
+        assert lane.engines[HOSPITAL].profile("bed-1") == profile
+        assert _kinds(audit) == written and lane.state == "ok"
 
 
 def test_a_failing_shadow_install_keeps_the_real_engine_and_answers_200(tmp_path):

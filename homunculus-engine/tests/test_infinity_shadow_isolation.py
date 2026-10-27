@@ -8,8 +8,9 @@ closed and empty.
 
 Aşama B (spec 2026-10-27, D11): `api/infinity_rules.py`, the bridge to the SHADOW engine, imports
 the engine on purpose — it drives a second instance of it — but nothing that rings: not the
-notifier, the ack store, the alert lifecycle, the alarm-quality counters, the app or the board.
-And it writes audit rows of its own two kinds only.
+notifier, the ack store, the alert lifecycle, the alarm-quality counters, the escalation, the
+broadcaster, the audit replay, the clinical door, the app or the board — neither directly nor
+through what it imports. And it writes audit rows of its own two kinds only.
 """
 from __future__ import annotations
 
@@ -53,9 +54,12 @@ FORBIDDEN = ("homunculus.pipeline", "homunculus.rules", "homunculus.reco", "homu
 LANE = ("api/infinity_shadow.py", "api/infinity_device_beds.py", "edge/infinity_shadow.py")
 # Aşama B's bridge (api/infinity_rules.py) is held to its own set: it imports the engine to drive
 # the shadow one, and must reach nothing that notifies, acknowledges, ends an episode, counts an
-# alarm, or builds or publishes a card — the frames its pictures go out in are the app's.
+# alarm, escalates, builds or publishes a card, replays the audit into the real engine or charts
+# a clinical entry — the frames its pictures go out in are the app's.
 RULES_FORBIDDEN = ("homunculus.api.notify", "homunculus.api.ackstore", "homunculus.api.alert_lifecycle",
-                   "homunculus.api.alarm_quality", "homunculus.api.app", "homunculus.api.board")
+                   "homunculus.api.alarm_quality", "homunculus.api.app", "homunculus.api.board",
+                   "homunculus.api.escalation", "homunculus.api.broadcast", "homunculus.api.rehydrate",
+                   "homunculus.api.clinical")
 BRIDGE = PACKAGE / "api" / "infinity_rules.py"
 
 
@@ -107,10 +111,32 @@ def test_the_trend_charts_import_nothing_of_the_lane():
     assert not sorted(n for n in imported if any(n == m or n.startswith(m + ".") for m in lane))
 
 
+def _rules_forbidden(name: str) -> bool:
+    return any(name == f or name.startswith(f + ".") for f in RULES_FORBIDDEN)
+
+
+def test_the_forbidden_modules_of_the_bridge_exist():
+    """A name in RULES_FORBIDDEN that names no module would hold the bridge to nothing."""
+    for name in RULES_FORBIDDEN:
+        assert (SRC / Path(*name.split("."))).with_suffix(".py").is_file(), name
+
+
 def test_the_bridge_imports_nothing_that_rings():
     imported = _imports(BRIDGE)
     assert "homunculus.pipeline" in imported, "the scan went blind"
-    assert not sorted(n for n in imported if any(n == f or n.startswith(f + ".") for f in RULES_FORBIDDEN))
+    assert not sorted(n for n in imported if _rules_forbidden(n))
+
+
+def test_importing_the_bridge_loads_nothing_that_rings_even_indirectly():
+    """The transitive check: what the bridge's imports import, in a fresh interpreter with no
+    environment — the AST scan above sees only the bridge's own lines."""
+    code = ("import sys; import homunculus.api.infinity_rules; "
+            "print('\\n'.join(sorted(m for m in sys.modules if m.startswith('homunculus'))))")
+    loaded = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,
+                            env={"PYTHONPATH": str(SRC), "SYSTEMROOT": os.environ.get("SYSTEMROOT", "")},
+                            ).stdout.split()
+    assert "homunculus.api.infinity_rules" in loaded and "homunculus.pipeline" in loaded, "the scan went blind"
+    assert not [m for m in loaded if _rules_forbidden(m)], loaded
 
 
 def test_the_bridge_writes_only_the_two_shadow_audit_kinds():

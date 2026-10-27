@@ -526,7 +526,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/infinity-shadow/board");
     },
 
-    /** Aşama B: the findings the shadow engine opened or closed in the last `days` days, newest first
+    /** Aşama B: the findings the shadow engine OPENED in the last `days` days (each with its clearing, if any), newest first
      *  (GET /infinity-shadow/findings?days=N → `{days, findings: [{patient_id, kind, severity, opened_at,
      *  cleared_at}]}`) — Settings' weekly review. Read by the shadow store only, with the board poll's
      *  own bearer and refresh-and-retry. A whole number of days from 1 to 7 — the route's own window, the

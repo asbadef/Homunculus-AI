@@ -1053,8 +1053,8 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   bir bant yoktur — bu boşluk kasada kayıtlı, ekranda başka bir bantla kapatılmaz.
 - "Hastanın normali", `clinical.chart` yetkisi olan birinin bu hasta için girdiği aralıktır. NEWS2
   puanı alan bütün değerler bu aralıklardaysa bulgu gösterilir ama alarm vermez; aralığın dışına
-  çıkan değer ayrıca bildirilir. Cihazın kendi alarm sınırları Aşama B'de
-  doğrulanınca eklenecek; şimdilik yoktur.
+  çıkan değer ayrıca bildirilir. Cihazın (monitörün) kendi alarm sınırları ayrı ve daha sonraki
+  bir iştir — buradaki Aşama B'nin (gölge motor) parçası değildir; şimdilik gösterilmez.
 
 **Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; Aşama A'nın monitör
 değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı; Aşama B açılırsa dakikalık
@@ -1238,7 +1238,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       yazılmaz (eski hastanın gölge bulguları kapanır, yeni hasta ilk örneğini bir dakika içinde
       alır); monitör taburcu edilmiş bir numaraya bağlıysa hiçbir şey yazılmaz.
     - *Açma ve kapatma:* hastanenin yazılı onayı olmadan sahada açılmaz. Kapatma kademeleri:
-      **G-1** forwarder kapalı (örnekleme durur; açık gölge bulgular bağlantı bitene dek kalır);
+      **G-1** forwarder kapalı (örnekleme geçişi hiç çalışmaz, bağlantı da bitmez: açık gölge
+      bulgular yaşlarıyla gösterilerek forwarder dönene ya da aşama değişene dek açık kalır);
       **G-2b** API `.env`'de `INFINITY_CLINICAL_STAGE=shadow` (örnekleme durur, açık her gölge
       bulgu kapanır, kutu ve etiketler kalkar, gerçek pano değişmez); **G-2** `off` (şerit de
       kalkar). Ayrıntı: `deploy/infinity/README.md`, "Aşama B" bölümü; tasarım:

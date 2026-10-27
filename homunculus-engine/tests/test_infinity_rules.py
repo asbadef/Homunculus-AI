@@ -304,7 +304,6 @@ def test_findings_carry_the_relation_the_since_and_the_news2_line_and_null_witho
     # D6: since when the finding stands — the pass that opened it, on the lane's clock.
     assert [f["since"] for f in found["findings"] if f["kind"] == "news2"] == [DT0.isoformat()]
     assert lane.findings("h1", "bed-2", real, now=DT0) is None
-    assert lane.findings("h1", "bed-1", real, now=DT0, linked=False) is None
 
 
 def test_a_linked_patient_with_no_sample_yet_has_an_empty_picture_not_none():
@@ -539,7 +538,7 @@ def test_one_patients_failure_does_not_stop_the_pass(monkeypatch):
     assert lane.state == "error"
 
 
-def test_a_failed_install_reads_as_an_error_and_a_pass_or_mirror_retries_it_after_its_wait():
+def test_a_failed_install_reads_as_an_error_and_only_a_pass_retries_it_after_its_wait():
     start = T0 - 100.0
     clock = _Clock(start)
     lane, real, _ = _lane(samples=_FlakySamples(), clock=clock)
@@ -555,17 +554,27 @@ def test_a_failed_install_reads_as_an_error_and_a_pass_or_mirror_retries_it_afte
     assert lane.state == "error"                              # the failure is not ERROR_WINDOW_S old yet
     clock.t = start + ERROR_WINDOW_S
     assert lane.state == "ok"
-    # A mirror retries as well, after the wait — and does not feed twice what the fresh copy holds.
+    # A door never retries it (final review): a retry replays 24 h of samples on the event loop,
+    # inside `/ingest`, before the real frame and the nurse's notification go out. A mirror, a
+    # profile and a discharge during a pending install change nothing and read nothing, even after
+    # the wait; the next pass installs, and its copy of the real engine holds what they gave it.
     clock2 = _Clock(T0)
     other, real2, _ = _lane(samples=_FlakySamples(), clock=clock2)
     other.guard("install", lambda: other.install("h1", real2))
+    clock2.t = T0 + INSTALL_RETRY_S                           # the wait is over
     obs = Observation("bed-1", SignalCode.SPO2, 90, "%", DT0, "bridge")
-    real2.ingest(obs, now=DT0)
+    profile = PatientProfile("bed-1", comorbidities=frozenset({"copd"}))
+    real2.ingest(obs, now=DT0)                                # the door first, then the mirror (D1)
     other.guard("mirror", lambda: other.mirror_observation("h1", obs, now=DT0, real=real2))
-    assert "h1" not in other.engines                          # before the wait: nothing built, nothing fed
-    clock2.t = T0 + INSTALL_RETRY_S
-    other.guard("mirror", lambda: other.mirror_observation("h1", obs, now=DT0, real=real2))
-    assert len(other.engines["h1"].state("bed-1").history(SignalCode.SPO2)) == 1
+    real2.set_profile(profile)
+    other.guard("mirror", lambda: other.mirror_profile("h1", profile))
+    other.guard("forget", lambda: other.forget("h1", "bed-9"))
+    assert "h1" not in other.engines and other.samples.reads == [T0]    # no retry: nothing built, nothing read
+    assert other.guard("sample", lambda: other.sample("h1", {}, [CARD], real2, now=clock2.t)) == ["bed-1"]
+    assert other.samples.reads == [T0, T0 + INSTALL_RETRY_S]           # the pass retried it, once
+    shadow = other.engines["h1"]
+    assert len(shadow.state("bed-1").history(SignalCode.SPO2)) == 1    # in the copy, fed once
+    assert shadow.profile("bed-1") == profile
 
 
 def test_a_failing_install_is_retried_with_a_doubling_wait_up_to_ten_minutes():
@@ -1033,14 +1042,13 @@ def test_the_lane_clock_times_a_discharge_hold_a_restart_and_a_closing():
     assert audit3.records(tenant="h1", event_type=SHADOW_CLEARED, limit=5)[0].payload["at"] == _at(T0 + 50.0).isoformat()
 
 
-def test_findings_show_a_confirmed_link_only_whatever_linked_says():
+def test_findings_show_a_confirmed_link_only():
     lane, real, _ = _restarted()                              # bed-1's link is provisional; bed-2 has none
-    for linked in (None, True):
-        assert lane.findings("h1", "bed-1", real, now=_at(T0 + 30.0), linked=linked) is None
-        assert lane.findings("h1", "bed-2", real, now=_at(T0 + 30.0), linked=linked) is None
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 30.0)) is None
+    assert lane.findings("h1", "bed-2", real, now=_at(T0 + 30.0)) is None
     lane.sample("h1", {}, [CARD], real, now=T0 + 31.0)        # confirmed
-    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0), linked=True) is not None
-    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0), linked=False) is None
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0)) is not None
+    assert lane.findings("h1", "bed-2", real, now=_at(T0 + 31.0)) is None
 
 
 def test_at_the_read_cap_an_opening_cleared_before_the_newest_clears_still_reads_closed(monkeypatch):

@@ -285,8 +285,9 @@ def create_app(
 
     def _admitted(hospital: str) -> Callable[[str], bool]:
         """`admitted(pid)` for the lane's install: the hospital's admitted numbers, read once per
-        pass rather than once per replayed sample (a database read in production), and again after
-        SHADOW_OCCUPANCY_CACHE_S — an install that failed is retried later, with this callable."""
+        install attempt rather than once per replayed sample (a database read in production) and
+        cached SHADOW_OCCUPANCY_CACHE_S (10 s) — an install that failed is retried later with this
+        same callable, at least INSTALL_RETRY_S on, so each retry reads them afresh."""
         ids: frozenset[str] = frozenset()
         read_at: float | None = None
 
@@ -354,18 +355,26 @@ def create_app(
         return lane.guard("findings", lambda: lane.findings(hospital, patient_id, _engine(hospital),
                                                             now=now or datetime.now(timezone.utc)))
 
-    def _card(hospital: str, patient_id: str, identity=_READ, now: datetime | None = None) -> dict:
+    # The bed map as the sampler's republishes read it (final review): the same table, its misses
+    # not counted — at a link's end the patient may lie on a location the table does not cover,
+    # and a shadow pass must move no discovery counter (the equivalence gate compares them).
+    uncounted_bedmap = bedmap.uncounted()
+
+    def _card(hospital: str, patient_id: str, identity=_READ, now: datetime | None = None,
+              *, counted: bool = True) -> dict:
         """`patient_board` with the shadow key. `identity` is the record the caller already holds
-        (None: the card carries no identity); left out, it is read here."""
+        (None: the card carries no identity); left out, it is read here. `counted` False: the
+        card's bed is resolved without counting a miss (the sampler's republish)."""
         record = identities.get(hospital, patient_id) if identity is _READ else identity
         return patient_board(_engine(hospital), patient_id, _store(hospital), identity=record,
-                             bedmap=bedmap, now=now, shadow=_shadow_for(hospital, patient_id, now))
+                             bedmap=bedmap if counted else uncounted_bedmap, now=now,
+                             shadow=_shadow_for(hospital, patient_id, now))
 
-    def _identity_card(hospital: str, record, now: datetime | None = None) -> dict:
+    def _identity_card(hospital: str, record, now: datetime | None = None, *, counted: bool = True) -> dict:
         """The card of an admitted patient the real engine has never measured, with the shadow key:
         built without creating the patient in the real engine — `patient_board` would, and its
-        `news2: null` would read as a NEWS2 0 nobody measured (D1)."""
-        return {**identity_only_board(record, bedmap),
+        `news2: null` would read as a NEWS2 0 nobody measured (D1). `counted` as for `_card`."""
+        return {**identity_only_board(record, bedmap if counted else uncounted_bedmap),
                 "shadow": _shadow_for(hospital, record.patient_id, now)}
 
     def _audit_cleared(hospital: str, cleared: list[Cleared], at: datetime) -> None:
@@ -615,6 +624,15 @@ def create_app(
     # admission form passes it too).
     app.state.shadow_mirror = lambda hospital, obs, now: lane.guard(
         "mirror", lambda: lane.mirror_observation(hospital, obs, now=now, real=_engine(hospital)))
+    # Aşama B (D1, final review): a charted profile reaches the shadow engine after the real one's
+    # `set_profile` — guarded, as `PUT /clinical/{pid}/profile` does it.
+    app.state.shadow_profile = lambda hospital, profile: lane.guard(
+        "mirror", lambda: lane.mirror_profile(hospital, profile))
+    # Lane B's admission (`admission/boardlink.py` on `feat/g2b-kabul`, merged after this) must
+    # wire all three: `shadow_mirror` after its chart, `shadow_profile` after its `set_profile`,
+    # `shadow_occupancy_reset` after `put_identity` — and build its cards through `_card`, so they
+    # carry the `shadow` key. Each is pinned by a test at that merge (deploy/infinity/README.md,
+    # Aşama B, "Prerequisite").
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""
@@ -1198,11 +1216,12 @@ def create_app(
         def _frame(patient_id: str) -> dict | None:
             # A measured patient's card as every door builds it; an admitted, never-measured one's
             # identity-only card (D1: the real engine is not made to hold them); nothing for a
-            # number with neither.
+            # number with neither. Its bed is resolved uncounted: a republish is not the board's
+            # own traffic, and the discovery counters stay the real path's alone.
             if patient_id in set(_engine(hospital).patient_ids()):
-                return _card(hospital, patient_id)
+                return _card(hospital, patient_id, counted=False)
             record = identities.get(hospital, patient_id)
-            return _identity_card(hospital, record) if record is not None else None
+            return _identity_card(hospital, record, counted=False) if record is not None else None
 
         for patient_id in changed:
             frame = lane.guard("publish", lambda: _frame(patient_id))
@@ -1272,11 +1291,12 @@ def create_app(
             seen: dict[str, bool] = {}          # one identity read per patient, not per row
 
             def visible(patient_id: str) -> bool:
+                # The bed read uncounted: this list is the shadow lane's, and moves no discovery counter.
                 if patient_id not in seen:
                     record = identities.get(caller.hospital, patient_id)
                     seen[patient_id] = sees_patient(
                         {"patient_id": patient_id,
-                         "identity": (identity_only_board(record, bedmap)["identity"]
+                         "identity": (identity_only_board(record, uncounted_bedmap)["identity"]
                                       if record is not None else None)}, scope)
                 return seen[patient_id]
 

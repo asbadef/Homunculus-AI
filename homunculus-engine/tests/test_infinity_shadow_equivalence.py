@@ -9,7 +9,10 @@ Aşama B (spec 2026-10-27, D11) runs B a third time with the stage `rules`: the 
 a SECOND engine, which may add exactly three things — the `shadow` key on a card, audit rows of the
 two shadow kinds, and the frames the sampler republishes inside a shadow step (a linked patient's
 real card, carrying its new shadow picture). `_clinical` takes those out and nothing else;
-`_republish_drift` holds each republished frame to being the real card it repeats.
+`_republish_drift` holds each republished frame to being the real card it repeats. That comparison
+runs both of its apps through a restart mid-run, a charted profile and a link end (`lifecycle`,
+final review): the shadow lane's install from a non-empty real engine, its profile mirror and its
+return of an unlinked patient to the real picture must leave every clinical output alone too.
 
 Every wall-clock read on the clinical path is frozen (`_freeze`). Found by grepping
 `datetime.now` / `_now_iso` / `time.time()` under src/homunculus/api/ (and the engine's packages)
@@ -19,6 +22,7 @@ api/infinity_rules.py reads `time.time` only as the default of its clock, and th
 `shadow_clock` — the lane's clock here. Grep again when this file changes, and add any new one:
 two runs must differ ONLY by the shadow lane.
 """
+import contextlib
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
@@ -40,6 +44,7 @@ from homunculus.api.audit import InMemoryAuditLog, verify_chain
 from homunculus.api.identity import Caller
 from homunculus.api.infinity_rules import DEFAULT_PARAMETERS
 from homunculus.api.infinity_shadow import ShadowSettings
+from homunculus.api.monitor_samples import InMemorySamples
 from homunculus.api.patient_identity import InMemoryIdentityStore
 from homunculus.scenarios.loader import load_scenario
 from homunculus.scope import Scope, ScopeReason
@@ -154,17 +159,23 @@ def _settings(stage, table):
     return ShadowSettings("rules", "rules", None, SHADOW, HOSPITAL, str(table), parameters=DEFAULT_PARAMETERS)
 
 
-async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
+def _client(app):
+    return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+
+
+async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, lifecycle=False, probe=None):
+    """One run of the scenario at `stage`. `lifecycle` (the stage-`rules` gate, in BOTH of its runs,
+    so the comparison stays symmetric) adds what a ward's day holds besides readings: a restart
+    after the scenario's readings — a second app on the same audit, identities, samples and bed
+    map, as a restarted server finds them — then a charted profile, and at the end a link end (the
+    patient moves to a bed the map does not cover, so the monitor's card names nobody)."""
     _freeze(monkeypatch)
-    table = tmp_path / f"{stage}-{extra_ingest}-table.json"
+    table = tmp_path / f"{stage}-{extra_ingest}-{lifecycle}-table.json"
     table.write_text(json.dumps(TABLE), encoding="utf-8")
     settings = _settings(stage, table)
     bedmap = BedMap({"YB^1^1": BedRef("bed-b1", "unit-1", "B-1")})
-    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    audit, identities, samples = InMemoryAuditLog(), InMemoryIdentityStore(), InMemorySamples()
     lane = {"t": 1_800_000_000.0}           # the lane's own clock: advanced 2 s per shadow step
-    app = create_app({TOKEN: HOSPITAL}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
-                     audit=audit, identities=identities, bedmap=bedmap, shadow=settings,
-                     shadow_clock=lambda: lane["t"], resolve_jwt=_resolve_jwt, resolve_scope=_resolve_scope)
     # Everything the board stream and the notification hub are ever handed, for any tenant and any
     # audience — not what one subscriber happens to receive.
     published = {"frames": [], "notes": []}
@@ -172,27 +183,43 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
     # it, the sampler's republishes of a linked patient's card (a sample taken, a link started).
     step_frames: list[int] = []
     frame_at: list[str] = []                 # the clinical clock's instant each frame was published at
-    broadcaster, hub = app.state.broadcaster, app.state.notification_hub
-    board_publish, note_publish = broadcaster.publish, hub.publish
 
-    async def board_spy(tenant, message):
-        published["frames"].append(json.dumps([tenant, _record(message)], sort_keys=True, default=str))
-        frame_at.append(Frozen.now_value.isoformat())
-        await board_publish(tenant, message)
+    def build():
+        """An app on the run's stores, its stream and its hub spied on. Built again for the restart:
+        what the stores hold outlives it, nothing the app holds in memory does."""
+        app = create_app({TOKEN: HOSPITAL}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
+                         audit=audit, identities=identities, samples=samples, bedmap=bedmap, shadow=settings,
+                         shadow_clock=lambda: lane["t"], resolve_jwt=_resolve_jwt, resolve_scope=_resolve_scope)
+        broadcaster, hub = app.state.broadcaster, app.state.notification_hub
+        board_publish, note_publish = broadcaster.publish, hub.publish
 
-    async def note_spy(tenant, note):
-        published["notes"].append(json.dumps([tenant, _record(note)], sort_keys=True, default=str))
-        await note_publish(tenant, note)
+        async def board_spy(tenant, message):
+            published["frames"].append(json.dumps([tenant, _record(message)], sort_keys=True, default=str))
+            frame_at.append(Frozen.now_value.isoformat())
+            await board_publish(tenant, message)
 
-    monkeypatch.setattr(broadcaster, "publish", board_spy)
-    monkeypatch.setattr(hub, "publish", note_spy)
+        async def note_spy(tenant, note):
+            published["notes"].append(json.dumps([tenant, _record(note)], sort_keys=True, default=str))
+            await note_publish(tenant, note)
+
+        monkeypatch.setattr(broadcaster, "publish", board_spy)
+        monkeypatch.setattr(hub, "publish", note_spy)
+        return app
+
+    app = build()
     seen = {"patients": [], "alerts": [], "alarm_quality": [], **{f"patients {jwt}": [] for jwt in JWTS},
             **{f"alerts {jwt}": [] for jwt in JWTS}}
     hdr = {"Authorization": f"Bearer {TOKEN}"}
     events = load_scenario(SCEN / "septic_shock.yaml") + load_scenario(SCEN / "news2_deterioration.yaml")
     pid = events[0][1]["subject"]["reference"].split("/", 1)[1]
     other = events[-1][1]["subject"]["reference"].split("/", 1)[1]      # the NEWS2 scenario's patient
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+    rules = probe is not None and stage == "rules"
+    if probe is not None:
+        probe["patients"] = (pid, other)
+    async with contextlib.AsyncExitStack() as clients:
+        # `c` and `app` are rebound by the restart; the steps below read them when they run.
+        c = await clients.enter_async_context(_client(app))
+
         async def shadow_step():
             before = len(published["frames"])
             if stage != "off":
@@ -231,6 +258,22 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
         for _ts, fhir in events:
             assert (await c.post("/ingest", json=fhir, headers=hdr)).status_code == 200
             await shadow_step(); await observe()
+        if lifecycle:
+            # The restart (final review): the real engine rehydrates from the audit — the same
+            # engine, so nothing clinical moves — and at `rules` the lane's install copies it, not
+            # empty (both scenarios' patients are in it), plus the stored samples, its links
+            # provisional until the monitor's card confirms them on the next body.
+            app = build()
+            c = await clients.enter_async_context(_client(app))
+            await shadow_step(); await observe()
+            if rules:
+                probe["restart_shadow_ids"] = sorted(app.state.shadow_lane.engines[HOSPITAL].patient_ids())
+            # A charted profile: the real engine's own, mirrored to the shadow one (D1).
+            profiled = await c.put(f"/clinical/{pid}/profile", json={"comorbidities": ["copd"]}, headers=hdr)
+            assert profiled.status_code == 200, profiled.text
+            await shadow_step(); await observe()
+            if rules:
+                probe["shadow_profile"] = app.state.shadow_lane.engines[HOSPITAL].profile(pid)
         if extra_ingest:
             assert (await c.post("/ingest", json={**events[0][1], "code": {"coding": [{"code": "heart_rate"}]},
                                                   "valueQuantity": {"value": 180, "unit": "/min"}},
@@ -247,6 +290,14 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
             Frozen.now_value = FROZEN + timedelta(minutes=minutes)
             await app.state.escalation_cycle(Frozen.now_value)
             await shadow_step(); await observe()
+        if lifecycle:
+            # The link end: the patient moves to a bed the map does not cover, so the next body's
+            # card for the monitor names nobody — at `rules` the shadow picture goes back to the
+            # real one and the shadow findings close (`unlinked`).
+            assert (await c.post("/ingest", json=_encounter(pid, "YB^9^9"), headers=hdr)).status_code == 200
+            await shadow_step(); await observe()
+            if rules:
+                probe["linked_after_end"] = sorted(app.state.shadow_lane.linked.get(HOSPITAL, {}))
         Frozen.now_value = FROZEN
     store = app.state.ack_stores[HOSPITAL]
     return {
@@ -386,8 +437,20 @@ async def test_the_harness_sees_a_real_clinical_difference(monkeypatch, tmp_path
 
 @pytest.mark.anyio
 async def test_every_clinical_output_is_identical_with_the_stage_rules(monkeypatch, tmp_path):
-    off = await _run(monkeypatch, tmp_path, stage="off")
-    rules = await _run(monkeypatch, tmp_path, stage="rules")
+    # Both runs restart mid-way, chart a profile and end the link (`lifecycle`): symmetric.
+    off = await _run(monkeypatch, tmp_path, stage="off", lifecycle=True)
+    probe: dict = {}
+    rules = await _run(monkeypatch, tmp_path, stage="rules", lifecycle=True, probe=probe)
+    # The lifecycle is not vacuous: the restart's install copied a real engine holding both
+    # scenarios' patients — the NEWS2 one was never linked or sampled, so only the copy put them in
+    # the shadow engine —, the profile reached the shadow engine, and the link end left no link
+    # and closed the shadow findings as `unlinked`.
+    pid, other = probe["patients"]
+    assert {pid, other} <= set(probe["restart_shadow_ids"]), probe["restart_shadow_ids"]
+    assert "copd" in probe["shadow_profile"].comorbidities
+    assert probe["linked_after_end"] == []
+    assert any(row[1] == "shadow_alert_cleared" and json.loads(row[4])["reason"] == "unlinked"
+               for row in rules["audit"])
     # Not vacuous: the shadow engine opened findings and the sampler republished cards; below
     # `rules` nothing is published inside a shadow step. Both chains hold, not merely agree.
     assert off["step_frames"] == [] and rules["step_frames"]
