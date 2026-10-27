@@ -53,6 +53,7 @@
 | R16 | `INFINITY_WAVES=on` with the hub settings missing or not https → 503 with the reason (`not_configured` / `misconfigured`), logged once at start; flag off → 409 `waves_off`; strip off or another hospital → 409 `stage_off`. Gate order: the board's 401/403 first, then the flag, the stage, the monitor (404 `no_device`), the cursor (400 `bad_since`). | §3.2 "status mapping"; a caller without the right learns nothing else. |
 | R17 | The new boundary rule lives in its own file `live/waveBoundaries.test.js` (both directions, plus a ban on audio, speech, vibration, notification, storage and canvas-export APIs in wave modules). `src/reachable.test.js` gets a named, temporary `PENDING` list (Task 8) that Task 15 removes. | `boundaries.test.js` is shared with Lane A; the page reaches the wave modules only after the screen lines. |
 | R18 | `api/app.py` gets one 4-line hunk beside the research router: a local import and `register_waves(app, board=lambda authorization: shadow_board(authorization))` — `shadow_board` is defined later in `create_app` and looked up when a request comes. The two route-inventory tests declare the route as caller-resolved outside `app.py`. | §10: one registration away from the shadow routes; the gates are the board's own, by construction. |
+| R19 | The hub names its process: `create_hub` keeps `hub_started = iso_z(clock())` once, the waves answer carries it as a top-level `"started"` (both shapes), and `GET /v1/status` gains `"waves": {"cursor", "refused", "started"}` — only when the hub has a `WaveBuffer`. Task 5 reads `started`. | (1) `WaveBuffer.refused` (events turned away: not live, over 3 s old, ahead of the hub's clock) was surfaced nowhere, so a worker clock a few hundred ms ahead of the hub's would black out every wave while the journal acknowledged each packet; the status page now shows it. (2) A restarted hub counts its cursor from 0 again, and "a cursor ahead of the hub's counts as 0" is only a heuristic (a cursor can be *behind* the new count and silently skip blocks); a per-process token makes the restart exact for every caller. (Task 2 review.) |
 
 **Ground rules (every task).**
 - TDD: the failing test first, then the code. Run tests in the **foreground** with a timeout; never background a suite and wait.
@@ -73,8 +74,8 @@
 | `homunculus-engine/tests/infinity_wave_packets.py` | 1 | new: the synthetic packet builder (not collected) |
 | `homunculus-engine/tests/test_infinity_waves.py` | 1, 2 | new: decoder, then ring |
 | `deploy/infinity/build_transport_release.py`, `homunculus-engine/tests/test_infinity_release.py` | 3 | `infinity_waves` in `EDGE` / `FILES` / the import check |
-| `homunculus-engine/src/homunculus/edge/infinity_timing.py` | 3 | `HUB_NAMES` += `waves_ms`, `waves_read_ms` |
-| `homunculus-engine/src/homunculus/edge/infinity_hub.py` | 4 | `waves=` param, consume after the journal, `GET /infinity-research/waves` |
+| `homunculus-engine/src/homunculus/edge/infinity_timing.py` | 4 | `HUB_NAMES` += `waves_ms`, `waves_read_ms` |
+| `homunculus-engine/src/homunculus/edge/infinity_hub.py` | 4 | `waves=` param, consume after the journal, `GET /infinity-research/waves` (with `started`), `waves` in `/v1/status` (R19) |
 | `homunculus-engine/scripts/run_infinity_transport.py` | 4 | a `WaveBuffer` with live research; one printed line |
 | `homunculus-engine/tests/test_infinity_waves_hub.py` | 4 | new |
 | `homunculus-engine/src/homunculus/api/infinity_waves.py` | 5, 7 | new: settings, `checked`, `answer`, `HubWaves`; then `register` |
@@ -840,11 +841,11 @@ cd /c/tmp/inf-dalga && git add deploy/infinity/build_transport_release.py homunc
 
 ### Task 4: The hub's two hooks, and the runner
 
-Hook 1: `/v1/packets` hands the acknowledged events to the `WaveBuffer` right after `research_view.consume`. Hook 2: `GET /infinity-research/waves?device=<addr>[&device=…]&since=<cursor>` — viewer token, 409 when there is no buffer, 400 out of bounds (0 or more than 16 devices, a repeated device, a cursor that is not 1–15 digits), 404 for an address the inventory does not list. One device → `{schema, device_id, cursor, hub_now, blocks}`; several → `{schema, cursor, hub_now, devices: {addr: {blocks}}}`. Both are timed under two new closed names.
+Hook 1: `/v1/packets` hands the acknowledged events to the `WaveBuffer` right after `research_view.consume`. Hook 2: `GET /infinity-research/waves?device=<addr>[&device=…]&since=<cursor>` — viewer token, 409 when there is no buffer, 400 out of bounds (0 or more than 16 devices, a repeated device, a cursor that is not 1–15 digits), 404 for an address the inventory does not list. One device → `{schema, device_id, cursor, hub_now, started, blocks}`; several → `{schema, cursor, hub_now, started, devices: {addr: {blocks}}}`. Both are timed under two new closed names. (R19) `started` is the hub process's start time (`iso_z` of the hub clock at `create_hub`): a reader that holds a cursor treats a changed `started` as a restarted hub. `GET /v1/status` gains `"waves": {cursor, refused, started}` when the hub has a buffer, and has no such key otherwise.
 
 **Files:**
 - Create: `homunculus-engine/tests/test_infinity_waves_hub.py`
-- Modify: `homunculus-engine/src/homunculus/edge/infinity_hub.py:4-15, 64-69, 159-162, 174`
+- Modify: `homunculus-engine/src/homunculus/edge/infinity_hub.py:4-15, 64-69, 159-162, 174, 235-236`
 - Modify: `homunculus-engine/src/homunculus/edge/infinity_timing.py:28-29`
 - Modify: `homunculus-engine/scripts/run_infinity_transport.py:60-65, 94-95`
 
@@ -878,6 +879,7 @@ COLLECTOR, VIEWER = "synthetic-collector-token-" + "c" * 32, "synthetic-viewer-t
 INV = Inventory.parse({"collector_id": "synthetic", "interface": "192.0.2.200/24", "devices": [
     {"id": f"synthetic-{i}", "source": f"192.0.2.{i}", "group": f"239.20.1.{i}", "port": 2050} for i in (1, 2)]})
 BED, OTHER = "192.0.2.1", "192.0.2.2"
+STARTED = "1970-01-01T00:16:40.000Z"      # the hub fixture's clock when the hub is created
 
 
 def event(payload, stamp, index=0):
@@ -909,6 +911,10 @@ def read(client, *devices, since="0", token=VIEWER):
                       headers={"Authorization": "Bearer " + token} if token else {})
 
 
+def status(client):
+    return client.get("/v1/status", headers={"Authorization": "Bearer " + VIEWER}).json()
+
+
 def test_only_the_viewer_token_reads_the_waves(hub):
     client, _, _ = hub
     assert read(client, BED, token=None).status_code == 401
@@ -920,7 +926,7 @@ def test_an_acknowledged_packet_reaches_the_answer_in_the_schema(hub):
     client, _, _ = hub
     assert post(client, [event(tick(*at(0)), 999.8)]).status_code == 200
     body = read(client, BED).json()
-    assert set(body) == {"schema", "device_id", "cursor", "hub_now", "blocks"}
+    assert set(body) == {"schema", "device_id", "cursor", "hub_now", "started", "blocks"}
     assert body["schema"] == SCHEMA and body["device_id"] == BED and body["cursor"] == 4
     assert body["hub_now"] == "1970-01-01T00:16:40.000Z"
     assert [set(b) for b in body["blocks"]] == [{"seq", "t", "recv", "id", "rate", "samples"}] * 4
@@ -940,9 +946,20 @@ def test_several_monitors_in_one_request_share_one_cursor(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0, 0), event(tick(*at(0)), 1000.0, 1)])
     body = read(client, BED, OTHER).json()
-    assert set(body) == {"schema", "cursor", "hub_now", "devices"}
+    assert set(body) == {"schema", "cursor", "hub_now", "started", "devices"}
     assert body["cursor"] == 8 and set(body["devices"]) == {BED, OTHER}
     assert all(len(entry["blocks"]) == 4 for entry in body["devices"].values())
+
+
+def test_every_answer_names_the_hub_process_it_came_from(hub):
+    # A caller that holds a cursor compares `started` with the one it saw before: a different value is
+    # a restarted hub, whose cursor counts from 0 again. It is fixed at create_hub; `hub_now` moves.
+    client, _, now = hub
+    one = read(client, BED).json()
+    now[0] = 1005.0
+    several = read(client, BED, OTHER).json()
+    assert one["started"] == several["started"] == STARTED
+    assert one["hub_now"] == STARTED and several["hub_now"] == "1970-01-01T00:16:45.000Z"
 
 
 @pytest.mark.parametrize("devices, since", [((), "0"), (tuple(f"192.0.2.{i}" for i in range(17)), "0"),
@@ -980,9 +997,30 @@ def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     client, _, _ = hub
     post(client, [event(tick(*at(0)), 1000.0)])
     read(client, BED)
-    seen = client.get("/v1/status", headers={"Authorization": "Bearer " + VIEWER}).json()["timings"]
+    seen = status(client)["timings"]
     assert seen["waves_ms"][0] == 1 and seen["waves_read_ms"][0] == 1
     assert valid_snapshot(seen, HUB_NAMES)
+
+
+def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
+    # A worker clock a few hundred ms ahead of the hub's makes the buffer refuse every packet while the
+    # journal acknowledges it: without these numbers the waves go dark and nothing says why.
+    client, _, _ = hub
+    assert status(client)["waves"] == {"cursor": 0, "refused": 0, "started": STARTED}
+    assert post(client, [event(tick(*at(0)), 1000.4)]).status_code == 200      # ahead of the hub's clock
+    assert status(client)["waves"] == {"cursor": 0, "refused": 1, "started": STARTED}
+    assert post(client, [event(tick(*at(1)), 1000.0)]).status_code == 200
+    assert status(client)["waves"] == {"cursor": 4, "refused": 1, "started": STARTED}
+    assert read(client, BED).json()["cursor"] == 4
+
+
+def test_status_has_no_waves_object_without_a_buffer(tmp_path):
+    journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
+    try:
+        with TestClient(create_hub(INV, journal, COLLECTOR, VIEWER)) as client:
+            assert "waves" not in status(client)
+    finally:
+        journal.close()
 
 
 # --- the runner ----------------------------------------------------------------------------------
@@ -1048,7 +1086,7 @@ HUB_NAMES = JOURNAL_NAMES | {"packets_ms", "body_ms", "validate_ms", "consume_ms
                              "batch_events", "status_ms", "waves_ms", "waves_read_ms"}
 ```
 
-- [ ] **Step 4: The hub.** Five Edits in `src/homunculus/edge/infinity_hub.py`.
+- [ ] **Step 4: The hub.** Six Edits in `src/homunculus/edge/infinity_hub.py`.
 
 (a) Replace
 
@@ -1105,6 +1143,10 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         raise ValueError("Research decoding requires explicit payload acceptance.")
     if waves is not None and not accept_payload:
         raise ValueError("Waveform decoding requires explicit payload acceptance.")
+    # One value per hub process (named hub_started because the handlers' own `started` is a timing
+    # start). The wave cursor counts from 0 in every process, so a reader that holds a cursor compares
+    # this with the one it saw: a different value is a restarted hub and its cursor means nothing.
+    hub_started = iso_z(clock()) if waves is not None else None
 ```
 
 (d) Replace
@@ -1155,11 +1197,33 @@ with
         timings.since("waves_read_ms", started)
         if len(names) == 1:
             return {"schema": WAVES_SCHEMA, "device_id": names[0], "cursor": cursor, "hub_now": now,
-                    "blocks": found[names[0]]}
-        return {"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now,
+                    "started": hub_started, "blocks": found[names[0]]}
+        return {"schema": WAVES_SCHEMA, "cursor": cursor, "hub_now": now, "started": hub_started,
                 "devices": {name: {"blocks": found[name]} for name in names}}
 
     @app.post("/infinity-research/restart")
+```
+
+(f) Replace
+
+```python
+        timings.since("status_ms", started)
+        return {"devices": devices, "collector": collector, "archive": archive,
+                "clinical_forwarding": False, "kernel_drop_count": None, "timings": timings.snapshot()}
+```
+
+with
+
+```python
+        timings.since("status_ms", started)
+        answer = {"devices": devices, "collector": collector, "archive": archive,
+                  "clinical_forwarding": False, "kernel_drop_count": None, "timings": timings.snapshot()}
+        if waves is not None:
+            # Lane C (dalga): what the buffer holds back, readable without asking for waves. `refused`
+            # counts events the buffer turned away (not live, older than 3 s, ahead of the hub's clock):
+            # a worker clock a few hundred ms fast would otherwise black out every wave silently.
+            answer["waves"] = {"cursor": waves.cursor, "refused": waves.refused, "started": hub_started}
+        return answer
 ```
 
 - [ ] **Step 5: The runner.** Two Edits in `scripts/run_infinity_transport.py`.
@@ -1208,12 +1272,12 @@ with
 - [ ] **Step 6: Run the hub's tests and its neighbours.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_hub.py tests/test_infinity_waves.py tests/test_infinity_release.py tests/test_infinity_timing.py tests/test_infinity_transport.py tests/test_infinity_live.py tests/test_infinity_shadow_forwarder.py`
-Expected: all pass (`16` new hub tests among them; the release test passes only because Tasks 1–2 are committed — run it again after Step 7 if in doubt).
+Expected: all pass (`19` new hub tests among them, 204 in these seven files in all; the release test passes only because Tasks 1–2 are committed — run it again after Step 7 if in doubt).
 
 - [ ] **Step 7: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hub.py homunculus-engine/src/homunculus/edge/infinity_timing.py homunculus-engine/scripts/run_infinity_transport.py homunculus-engine/tests/test_infinity_waves_hub.py && git commit -m "feat(infinity): the hub decodes wave blocks of acknowledged packets and serves them to the viewer token" -m "Hook 1: /v1/packets hands the events it has journaled to the WaveBuffer, next to the live research view, timed as waves_ms. Hook 2: GET /infinity-research/waves takes 1 to 16 monitor addresses and one hub-wide cursor; the viewer token only (the collector's is refused), 409 without decoding, 400 out of bounds, 404 for an address the inventory does not list. One device answers with its blocks, several with a map — the shape phase 2's wall will poll in one request. The runner builds the buffer only with live research and payload capture, and says so in one line." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hub.py homunculus-engine/src/homunculus/edge/infinity_timing.py homunculus-engine/scripts/run_infinity_transport.py homunculus-engine/tests/test_infinity_waves_hub.py && git commit -m "feat(infinity): the hub decodes wave blocks of acknowledged packets and serves them to the viewer token" -m "Hook 1: /v1/packets hands the events it has journaled to the WaveBuffer, next to the live research view, timed as waves_ms. Hook 2: GET /infinity-research/waves takes 1 to 16 monitor addresses and one hub-wide cursor; the viewer token only (the collector's is refused), 409 without decoding, 400 out of bounds, 404 for an address the inventory does not list. One device answers with its blocks, several with a map — the shape phase 2's wall will poll in one request. Every answer carries `started`, the hub process's start time, so a reader that holds a cursor can tell a restarted hub (whose cursor counts from 0 again) exactly; /v1/status shows the buffer's cursor, its refused count and the same token, so a worker clock ahead of the hub's is visible instead of a silent blackout. The runner builds the buffer only with live research and payload capture, and says so in one line." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
