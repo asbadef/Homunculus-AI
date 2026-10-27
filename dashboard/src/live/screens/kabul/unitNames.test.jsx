@@ -38,10 +38,10 @@ function menuItems() {
 }
 
 /** The scope editor for a user holding these grants (as GET /scope/{id} answers them). */
-const editorFor = (grants) => (
+const editorFor = (grants, save = vi.fn()) => (
   <ScopeEditor user={{ username: "ayse", fullName: "Ayşe Sentetik" }} mayAssign
     scope={scopeFromApi({ user_id: "u-1", unrestricted: false, reason: "assigned", grants })}
-    save={vi.fn()} reread={vi.fn()} onSaved={vi.fn()} onRefused={vi.fn()} onClose={vi.fn()} />
+    save={save} reread={vi.fn()} onSaved={vi.fn()} onRefused={vi.fn()} onClose={vi.fn()} />
 );
 const rowHeaders = () => within(screen.getByRole("table")).getAllByRole("rowheader").map((th) => th.textContent);
 
@@ -211,6 +211,34 @@ describe("the administrator's scope editor", () => {
     expectNoUuid();
   });
 
+  // Walk I-2: the editor offered only the units and beds that had a card on the board, or a grant
+  // already — an empty unit could not be granted by name, and the typed-key box asked for a key
+  // («e.g. REA-01») that has been a UUID since B1a. The structure offers every unit and bed now.
+  it("offers every unit and bed of the structure by name, an empty one included, and grants it by name", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    await mountKabul(editorFor([], save), { perms: ["users.manage"] });
+    // No card stands on any bed here: the board offers nothing, the structure offers all of it —
+    // a unit with its name, a bed as "label · room · unit", in the structure's own order.
+    expect(choicesOf(az("admin.scopeUnits"))).toEqual(["Neonatal", "Reanimasiya"]);
+    expect(choicesOf(az("admin.scopeBeds"))).toEqual([
+      "1 · Otaq 1 · Reanimasiya", "2 · Otaq 1 · Reanimasiya", "3 · Otaq 1 · Reanimasiya", "4 · Otaq 1 · Reanimasiya",
+      "5 · Otaq 2 · Reanimasiya", "N1 · N-1 · Neonatal",
+    ]);
+    expect(screen.getByText(/Seçimlər xəstəxananın strukturundan/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Neonatal" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "5 · Otaq 2 · Reanimasiya" }));
+    expect(rowHeaders()).toEqual(["Neonatal", "—"]);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: az("admin.scopeSave") })); });
+    expect(save).toHaveBeenCalledWith([{ unit_id: NEO }, { bed_id: BED(5) }], []);
+    expectNoUuid();
+  });
+
+  it("has no box for typing a key: every key is a unit or a bed the structure names", async () => {
+    await open();
+    expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/REA-01/);
+  });
+
   it("gives its icon-only Remove button the unit's name, not its key", async () => {
     await open();
     expect(screen.getByRole("button", { name: `${az("admin.remove")}: Reanimasiya` })).toBeTruthy();
@@ -236,6 +264,8 @@ describe("the administrator's scope editor", () => {
     it(`says names cannot be shown yet while the structure is ${state}, and does not call a grant «unknown»`, async () => {
       await open({ setup });
       expect(screen.getByText(az("kabul.namesPending"))).toBeTruthy();
+      // Only what is known is offered, and the editor says why the list is short (walk I-2).
+      expect(screen.getByText(/Xəstəxananın strukturu hələ oxunmayıb/)).toBeTruthy();
       const table = within(screen.getByRole("table"));
       expect(table.getByRole("rowheader", { name: "Şöbə 1" })).toBeTruthy();   // the placeholder numbers the offered units
       expect(table.getByRole("rowheader", { name: "Şöbə 2" })).toBeTruthy();   // ... each its own: Neonatal is not Reanimasiya
@@ -264,14 +294,6 @@ describe("a placeholder number in the scope editor", () => {
     expect(rowHeaders()).toEqual(["Şöbə 2", "Şöbə 3"]);                     // not 1 and 2
     const boxes = within(screen.getByRole("group", { name: az("admin.scopeUnits") })).getAllByRole("checkbox");
     expect(boxes.map((box) => box.closest("label").textContent)).toEqual(["Şöbə 2", "Şöbə 3"]);
-  });
-
-  it("goes to the next number for a key typed by hand that sorts before all the others", async () => {
-    await mountKabul(editorFor(THREE), { perms: ["users.manage"], setup: down });
-    fireEvent.change(screen.getByLabelText(az("admin.scopeManual")), { target: { value: "00000000-0000-4000-8000-000000000001" } });
-    fireEvent.click(screen.getByRole("button", { name: az("admin.scopeAdd") }));
-    expect(rowHeaders()).toEqual(["Şöbə 1", "Şöbə 2", "Şöbə 3", "Şöbə 4"]);   // the new row last, numbered 4
-    expectNoUuid();
   });
 
   it("is the number the top bar gave the same unit — one count for the whole shell", async () => {
