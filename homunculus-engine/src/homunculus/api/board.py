@@ -2,6 +2,7 @@
 """Pure builders that turn an Engine's state (+ ack/escalation store) into the dashboard's board JSON."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -321,7 +322,8 @@ def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) ->
 
 def patient_board(engine: Engine, patient_id: str, store: AckStore,
                   identity: IdentityRecord | None = None,
-                  bedmap: BedMap | None = None, now: datetime | None = None) -> dict:
+                  bedmap: BedMap | None = None, now: datetime | None = None,
+                  shadow: dict | None = None) -> dict:
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
     # One instant for the whole card (G2-A2, D3, X2): NEWS2's freshness and the antibiotic clock
@@ -358,17 +360,23 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
         "sepsis": _sepsis_context(engine, state, patient_id),
         # Infusions, the antibiotic clock, and the two numbers a pharmacist reads them against.
         "meds": _meds(engine, state, patient_id, now),
+        # Aşama B (D6): the shadow engine's picture for a monitor-linked patient; None otherwise and
+        # below the stage `rules`. Built by the lane (api/infinity_rules.py), never here — this
+        # module holds no reference to it.
+        "shadow": shadow,
     }
 
 
 def board_snapshot(engine: Engine, store: AckStore,
                    identities: IdentityStore | None = None, hospital: str = "",
-                   bedmap: BedMap | None = None, now: datetime | None = None) -> list[dict]:
+                   bedmap: BedMap | None = None, now: datetime | None = None,
+                   shadow_for: Callable[[str], dict | None] | None = None) -> list[dict]:
     measured = engine.patient_ids()
     now = now or datetime.now(timezone.utc)      # every card judged at one instant (G2-A2, D3)
     boards = [patient_board(engine, pid, store,
                             identity=identities.get(hospital, pid) if identities else None,
-                            bedmap=bedmap, now=now)
+                            bedmap=bedmap, now=now,
+                            shadow=shadow_for(pid) if shadow_for is not None else None)
               for pid in measured]
     if identities is not None:
         seen = set(measured)
