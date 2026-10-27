@@ -108,9 +108,11 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
     request.
 - Response passed through an allow-list (the keys above). The API adds a `waves` catalogue:
   ```text
-  {id: {kind: ecg|art|pleth|resp|ecg_other, label, rate, unit, scale, evidence}}
+  {id: {kind: ecg|pressure|pleth|resp, label, rate, unit, scale, evidence}}
   ```
-  `art` → `unit: "mmHg", scale: 1/40`; the others relative.
+  `pressure` → `unit: "mmHg", scale: 1/40`, label `ART` (`0x0301`) or `P1` (`0x0e01`); `ecg` has
+  no label (the screen says "EKG"); the others relative. (Amended 2026-10-27 after BED08: the
+  earlier `art`/`ecg_other` kinds are superseded.)
 - Nothing is written: no DB, no audit row, no log line containing samples.
 - nginx API prefix list + `tests/test_nginx_routes.py` + Vite proxy gain `/infinity-waves`.
 
@@ -123,7 +125,8 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
 - `live/screens/common/WavePanel.jsx`:
   - `<canvas>` with a `requestAnimationFrame` loop;
   - pure geometry in `waveGeometry.js` (testable without a canvas);
-  - rows in fixed order: ECG lead, ART, pleth, resp — a row only for a wave the bed transmits.
+  - rows in fixed order: ECG (≤ 2, by liveness), pressure (≤ 2, ART/P1), pleth, resp — a row only
+    for a wave the bed transmits; a transmitted-but-dead group still gets one "sinyal yok" row.
 - Placement:
   - `DevicesScreen` card, under the full MonitorStrip;
   - `PatientScreen`, under the MonitorStrip block (only when the strip shows one linked device,
