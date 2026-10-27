@@ -33,7 +33,7 @@ def _decode(row) -> IdentityRecord | None:
 
 class PostgresIdentityStore:
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
-        self._engine = create_engine(to_sync_url(url), pool_pre_ping=True,
+        self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
                                      connect_args={"sslmode": "require"} if ssl_required else {})
 
     def apply(self, hospital: str, incoming: IdentityRecord) -> IdentityRecord | None:

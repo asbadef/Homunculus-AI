@@ -46,7 +46,8 @@ class PostgresAuditLog:
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
         connect_args = {"sslmode": "require"} if ssl_required else {}
         self._engine = create_engine(
-            to_sync_url(url), pool_pre_ping=True, connect_args=connect_args, future=True
+            to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
+            connect_args=connect_args, future=True
         )
 
     def append(self, event: AuditEvent) -> AuditRecord:

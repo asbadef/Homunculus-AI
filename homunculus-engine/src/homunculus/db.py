@@ -88,8 +88,10 @@ def ssl_context():
 _SSL_CONTEXT = ssl_context()
 _CONNECT_ARGS = {"ssl": _SSL_CONTEXT, "statement_cache_size": 0} if _SSL_CONTEXT else {}
 
+# a failed statement never logs its bound parameters: clinical text travels in them (Aşama B, D12)
 engine = create_async_engine(
-    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_CONNECT_ARGS
+    DATABASE_URL, echo=False, pool_pre_ping=True, hide_parameters=True,
+    connect_args=_CONNECT_ARGS,
 )
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
