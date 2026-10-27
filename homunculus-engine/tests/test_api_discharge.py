@@ -50,10 +50,10 @@ def _his_patient(patient, source="comed", active=True):
             "meta": {"lastUpdated": WHEN.isoformat(), "source": source}}
 
 
-def _kabul(store, patient, state="admitted"):
+def _kabul(store, patient, state="admitted", at=WHEN):
     """What Lane B's admission writes: a record whose source is `kabul`; discharged, a tombstone."""
     store.apply("h1", IdentityRecord(patient, family="TEST", given="SYNTH", state=state,
-                                     source="kabul", updated_at=WHEN))
+                                     source="kabul", updated_at=at))
 
 
 @pytest.fixture
@@ -207,7 +207,11 @@ class TestTheDischargeRetiresThePatient:
                 client.post("/ingest", json=_obs(code, value, patient), headers=HEAD)
         alerts = client.get("/alerts/H-2", headers=HEAD).json()["alerts"]
         assert alerts[0]["kind"] == "news2" and alerts[0]["urgency"] == "immediate"
-        _kabul(app.state.test_identities, "H-2", state="discharged")      # the retire call never came
+        # Stamped NOW, as a discharge made here is: a tombstone stamped at the fixed WHEN crossed
+        # the 24-hour retention (DISCHARGED_TTL) on 2026-10-27 08:30Z and the sweep then sent a
+        # second `removed` frame every run after that (a date-dependent test, found 27.10).
+        _kabul(app.state.test_identities, "H-2", state="discharged",
+               at=datetime.now(timezone.utc))                                # the retire call never came
         queue = app.state.broadcaster.subscribe("h1")
         cycle_at = datetime.now(timezone.utc) + timedelta(minutes=30)     # past the 5-minute delay
         client.portal.call(app.state.escalation_cycle, cycle_at)
