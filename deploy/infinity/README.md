@@ -457,3 +457,101 @@ none clinical):
 | K9 biomedical / nurse | a biomedical-only account reaches Monitörler (13 devices, bed labels and addresses, no patient name or number) and nothing else; a nurse-only account has no Monitörler. A first attempt with both "Ek görev" boxes ticked gave the biomedical account `board.view` — the account was wrong, not the screen. |
 
 The pending rows (K7, the bedside comparison) are filled in here when they are taken.
+
+# Aşama B — `rules`: the shadow engine (spec 2026-10-27)
+
+Stage B is the parent design's `rules` stage: the monitor strip's values reach the rules, and every
+alarm stays off. The API keeps a second, **shadow** engine per hospital beside the real one; a
+sampler feeds it the linked beds' monitor values, and feeds nothing else. The ward sees what the
+rules would have said, dressed as advice that cannot be mistaken for an alarm; nothing rings, pages,
+escalates or counts. **State: code on `feat/infinity-asama-b`, not on `main`, not on the VM.** Spec
+`docs/superpowers/specs/2026-10-27-infinity-asama-b-golge-motor-design.md` (decisions D1–D13), plan
+`docs/superpowers/plans/2026-10-27-infinity-asama-b-golge-motor.md`. The deploy blocks are written
+when the user gives the word; the hub and the worker do not change (the forwarder already sends every
+parameter the lane needs).
+
+**The hospital's written acceptance comes first.** The parent design's decision 12 (§8.12) puts the
+hospital's written acceptance before the stage is switched on in the ward. At stage `shadow` the new
+code is inert (no sampler, no mirror, no `shadow` key on the board), so the code and the migration can
+sit on the VM before that; `rules` is the switch the acceptance gates.
+
+**Prerequisite.** Stage B runs after Lane B's B1a is on `main`: admissions with their own bed id
+(migration 0012) and the device→bed table v2 with bed UUIDs. A device feeds a patient only when the
+approved table puts it on a bed and exactly one admitted patient is there; two monitors on a bed, two
+patients on a bed, a bed without a bed id and a discharged number feed nothing (spec D5).
+
+**The switch.** `INFINITY_CLINICAL_STAGE=rules` in `deploy/local/.env`, then
+`docker compose up -d --no-build api` (a plain restart keeps the container's old environment). The
+token, hospital and device→bed table are the ones Aşama A uses; a problem with any of them, or with
+the allowlist below, turns the stage off and the device screen says why. `alarms` is still
+`stage_not_implemented`. At each start with `rules` the shadow engine is built as a copy of the real
+one plus the last 24 hours of stored samples; findings are recomputed before the first frame and
+nothing is audited again for them.
+
+**The allowlist.** `INFINITY_RULES_PARAMETERS` (passed by `deploy/local/docker-compose.yml`, explained
+in `.env.example`): comma-separated strip parameter names. Unset or empty is the default,
+`hr,pls,spo2,art_systolic,art_mean,nbp`. `respiration`, `temperature`, `art_diastolic` and `etco2` are
+not in it (RESP is not screen-verified, the temperature site is unknown); naming one is accepted but
+this build has no engine code for it, so it feeds nothing and the log says so. A name that is not a
+strip parameter turns the stage off with the problem `parameters_unknown`. Changing the list is an
+`.env` edit plus `up -d --no-build api`, not a deploy. Which cell feeds which engine signal (spec D3):
+heart rate from `hr`, else `pls`; SpO₂ from `spo2`; systolic and mean pressure from the arterial line,
+else from NBP when it was measured at most an hour ago, stamped at its `changed_at`. At most one sample
+a minute per patient and signal, taken when a forwarder body arrives; there is no timer, so a silent
+forwarder stops the sampling by itself.
+
+**Migration 0013 (bu dalda B1a'dan sonra eklenir).** A new table, `monitor_samples` (hospital,
+patient, bed, source, code, via, value, unit, captured and received times), kept 30 days: an hourly
+task deletes older rows. The deploy blocks run `alembic upgrade head` as they do for 0012, and the API
+image's start command (`Dockerfile.api`) runs it too, so the table exists once the API is recreated on
+an image that contains the migration. An image rolled back later leaves the table in place; the older
+images do not read it. The table lives in the VM's database only.
+
+**What the ward sees** (only at `rules`, only for a patient whose bed is linked):
+
+- The patient screen: under «Ölçülen değerler», cards from the monitor tagged `monitör · HR`, `PLS`,
+  `SpO₂`, `ART` or `NBP` with their time, beside the charted ones and never replacing them; and the
+  box **«Gölge öneri · alarm kapalı»** — the «Gölge NEWS2» with its inputs and the same caveats the
+  real NEWS2 prints, then the shadow findings, each marked «gerçek bulguyla aynı», «yalnız gölgede»
+  or «düzey farklı» against the real engine's.
+- The bed card: one amber tag under the strip, «gölge öneri · NEWS2 N · yaş» when the shadow has a
+  finding, «gölge öneri yok» when it has none on a live board, «gölge öneri · bilinmiyor» when the
+  board is stale.
+- Settings: **«Uyarsaydı — son 7 gün»**, read from `GET /infinity-shadow/findings?days=7` — only the
+  findings that opened in the shadow alone, for the weekly review. Its acceptance figure is open (spec
+  O2).
+- The strip's foot sentence (and Settings' legend) changes. Below `rules` it says no alarm, score
+  (NEWS2 included), notification or sound comes from the values; at `rules` it says no alarm,
+  notification or sound comes from them and they enter no counter, that only an advisory shadow score
+  is computed from them and shown in «Gölge öneri · alarm kapalı», and that the bedside monitor stays
+  the primary alarm.
+- The device screen shows `gölge motor: hata` when the lane is in an error state (the clinical
+  request that triggered it still answered 200).
+
+**What does not change.** The real engine, the ack store, the alert lifecycle, the notifier,
+escalation, the alarm-quality counters, the Alarmlar screen and the bell; the audit's `ingest`,
+`alert` and first-seen rows (a monitor sample is no `ingest` row, so the real engine's replay never
+sees one). The only new audit rows are `shadow_alert` and `shadow_alert_cleared`. The gate is
+`tests/test_infinity_shadow_equivalence.py`, whose **third run** (stage `rules`, lane fed) must give
+every clinical output — the board's keys other than `shadow`, the audit rows other than `shadow_*`,
+notifications, acknowledgements, escalation — identical to the stage-`off` run;
+`tests/test_infinity_shadow_isolation.py` holds `api/infinity_rules.py` to importing neither the
+notifier, the ack store, the alert lifecycle nor the alarm-quality module.
+
+**Rollback, tiers for B** (each stops on its first error):
+
+1. **G-1 — forwarder off** (hub; unchanged from Aşama A): delete `93-asama-a-golge.conf`,
+   `systemctl daemon-reload`, restart the hub. The posts stop, so the samples stop (the sampler runs
+   only when a body arrives); the strip says "Monitör verisi gelmiyor" within 15–20 s. Shadow findings
+   already open stay open until their links end.
+2. **G-2b — back to `shadow`** (API): `INFINITY_CLINICAL_STAGE=shadow` in `.env`, then
+   `docker compose up -d --no-build api`. The sampling and the mirror stop, every open shadow finding
+   gets one `shadow_alert_cleared` row with `reason: stage`, the `shadow` key, the box, the tags and
+   the 7-day list disappear, the findings route answers 409, and the Aşama A strip is as it was. The
+   real board, alarms and counters are unchanged.
+3. **G-2 — stage off** (API): `INFINITY_CLINICAL_STAGE=off`, as for Aşama A: the strip goes too.
+4. **Code back:** API and web to the previous images, only after the stage is `shadow` or `off`. B
+   changes nothing on the hub, so there is no hub step; the `monitor_samples` table stays.
+
+For a problem on the shadow box alone: G-2b, then G-2 if the strip must go as well. Acceptance
+measurements for B are filled in here when they are taken; none exist yet.

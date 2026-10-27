@@ -1057,8 +1057,9 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   doğrulanınca eklenecek; şimdilik yoktur.
 
 **Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; Aşama A'nın monitör
-değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı); MAP ve laktat için kişisel normal
-(motor tutmuyor).
+değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı; Aşama B açılırsa dakikalık
+monitör örnekleri 30 gün saklanır, ama bu eğrilere yine çizilmez); MAP ve laktat için kişisel
+normal (motor tutmuyor).
 
 **Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa motor seyreltir — eşit
 zaman dilimlerinin her birinde ilk, son, en düşük ve en yüksek ölçüm kalır, yani en kötü değer
@@ -1172,8 +1173,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     seri protokolü (MS28819, X5 konektörü — MEDIBUS'tan farklı) bir sonraki seçenek olur.
   - **Aşama A şeridi (19 Ekim 2026'dan beri canlı):** Gateway beklenmeden, kendi çözücümüzün
     okuduğu 13 Kappa monitörünün değerleri klinik panoda "Monitör · doğrulanmamış" başlıklı kesik
-    çizgili bir şeritte görünür. Yalnız görüntüdür: alarm, skor, bildirim, ses üretmez; motor bu
-    değerleri hiç görmez (kabulde pano özeti değişmedi, denetim kaydına 0 satır düştü). Bütün
+    çizgili bir şeritte görünür. Aşama A'da yalnız görüntüdür: alarm, skor, bildirim, ses
+    üretmez; motor bu değerleri hiç görmez (kabulde pano özeti değişmedi, denetim kaydına 0 satır
+    düştü). Aşama B açılırsa (aşağıdaki «Gölge öneri» maddesi) bu değerlerden *gölge* bir skor
+    (NEWS2 dahil) hesaplanır — alarm kapalı, yalnız tavsiye; gerçek motor yine hiçbir şey
+    görmez. Bütün
     klinisyenler görür; biyomedikal ayrıca "Monitörler" ekranında cihazları hasta bilgisi olmadan
     görür. Kapatma üç kademe: **G-1** forwarder kapalı (hub'da drop-in 93 silinir; saniyeler
     sürer; şerit "Monitör verisi gelmiyor" der), **G-2** aşama kapalı (API `.env`'de
@@ -1196,6 +1200,49 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     değerle yinelenen ölçüm fark edilmez (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4,
     drop-in 94; geri alma: önce 94 silinir (hub R3'e, NBP'siz şeride döner), API/web ancak ondan
     sonra. Dağıtımda sıra tersidir: önce API ve web, sonra hub.
+  - **Gölge öneri · alarm kapalı (Aşama B — kodda, hastanede henüz açık değil):** Aşama B
+    açıldığında şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
+    gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
+    (NEWS2, sepsis…) monitörün doğrulanmamış değerleriyle söyleyeceği şeydir. Her yatak için,
+    parametre başına dakikada bir örnek alınır (her ölçüm değil); yalnız monitörü yatağa bağlı olan
+    ve o yatakta tam bir hasta kayıtlı bulunan yataklarda. İki hasta ya da iki monitör varsa hiçbir
+    şey yazılmaz.
+    - *Ne değildir:* **alarm değildir.** Zil çalmaz, bildirim gitmez, eskalasyon olmaz, Alarmlar
+      ekranına girmez, hiçbir alarm sayacına girmez; bu değerler gerçek motorun hiçbir kaydına
+      yazılmaz. Başucu monitörü birincil alarmdır — gölge öneri onun yerine geçmez ve ona bakmayı
+      bırakmak için gerekçe değildir. Tanı da koymaz: kuralların hangi girdilerle ne söyleyeceğini
+      gösterir, kararı klinisyen verir.
+    - *Nerede görünür:* (1) Hasta ekranında «Ölçülen değerler» bölümünde, kayıtlı değerlerin
+      yanında (yerlerine geçmeden) «monitör · HR», «monitör · PLS», «monitör · SpO₂»,
+      «monitör · ART» ya da «monitör · NBP» etiketli, saatli kartlar; ve ekranın aşağısında
+      «Gölge öneri · alarm kapalı» kutusu: gölge NEWS2 puanı ve girdileri (eksik ya da varsayılan
+      girdi uyarıları gerçek NEWS2'dekiyle aynı biçimde yazılır; gölge puan çoğunlukla kısmidir,
+      çünkü solunum ve sıcaklık monitörden okunmaz), gölge bulgular ve her birinin gerçek motorun
+      bulgusuyla ilişkisi: «gerçek bulguyla aynı», «yalnız gölgede», «düzey farklı». (2) Yatak
+      kartında şeridin altında kehribar bir etiket: gölge bir bulgu varsa «gölge öneri · NEWS2 7 ·
+      3 dk önce» (puan ve son girdinin yaşı), yoksa «gölge öneri yok»; pano güncel değilse «gölge
+      öneri · bilinmiyor». (3) Ayarlar'da «Uyarsaydı — son 7 gün»: yalnız gölgede açılan bulgular,
+      yani monitör girdileri olmasaydı görünmeyecek olanlar; haftalık değerlendirme içindir. Haftada
+      kaç tanesinin kabul edilebilir olduğu için kasada bir kaynak yok; bu rakamı klinisyen
+      belirleyecek.
+    - *Kaynak etiketleri:* **HR** EKG'den nabız; **PLS** SpO₂ probundan nabız (yalnız HR yoksa
+      kullanılır); **SpO₂** monitörün SpO₂'si; **ART** arter hattının sistolik ve ortalama basıncı;
+      **NBP** manşet basıncı — yalnız arter hattı değeri yoksa ve ölçüm en çok 1 saat önceyse
+      kullanılır. Manşetin saati şeritteki gibi «≤» ile verilen bir üst sınırdır ve puan o saate göre
+      değerlendirilir. Kart hangi kaynaktan okunduğunu yazar; kaynak değişirse (ör. HR kesilip
+      PLS'e geçilirse) etiket de değişir.
+    - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
+      kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
+      basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.
+    - *Hasta değişince:* yatağın hastası değişirse eski hastanın monitör değerleri yeni hastaya
+      yazılmaz (eski hastanın gölge bulguları kapanır, yeni hasta ilk örneğini bir dakika içinde
+      alır); monitör taburcu edilmiş bir numaraya bağlıysa hiçbir şey yazılmaz.
+    - *Açma ve kapatma:* hastanenin yazılı onayı olmadan sahada açılmaz. Kapatma kademeleri:
+      **G-1** forwarder kapalı (örnekleme durur; açık gölge bulgular bağlantı bitene dek kalır);
+      **G-2b** API `.env`'de `INFINITY_CLINICAL_STAGE=shadow` (örnekleme durur, açık her gölge
+      bulgu kapanır, kutu ve etiketler kalkar, gerçek pano değişmez); **G-2** `off` (şerit de
+      kalkar). Ayrıntı: `deploy/infinity/README.md`, "Aşama B" bölümü; tasarım:
+      `docs/superpowers/specs/2026-10-27-infinity-asama-b-golge-motor-design.md`.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
