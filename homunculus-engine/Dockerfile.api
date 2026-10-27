@@ -44,4 +44,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s CMD python -c "import
 # Migrate, then bootstrap the first admin, then serve. seed_admin.py is idempotent and exits 0 when
 # SEED_ADMIN_PASSWORD is unset, so restarts keep working after the operator removes the password.
 # exec is used so uvicorn becomes PID 1 and receives SIGTERM on container shutdown (not sh).
+# --workers must stay 1 (uvicorn's default; do not add the flag): state that has to be one per
+# server lives in this process's memory - the wait of an admission form sent again (amendment
+# A-29, admission/router.py `_ANSWERING`) and the sign-in attempt limits (auth/limits.py), with
+# the engine and the board. A second worker would hold its own copies of each.
 CMD ["sh", "-c", "alembic upgrade head && python scripts/seed_admin.py && exec uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
