@@ -3,10 +3,15 @@
 observation series for drawing."""
 from __future__ import annotations
 
+import bisect
 from collections import defaultdict
 from datetime import datetime, timedelta
 
 from homunculus.canonical import Observation, SignalCode
+
+
+def _stamp(obs: Observation) -> datetime:
+    return obs.timestamp
 
 
 class PatientState:
@@ -15,10 +20,11 @@ class PatientState:
         self._history: dict[SignalCode, list[Observation]] = defaultdict(list)
 
     def ingest(self, obs: Observation) -> None:
-        series = self._history[obs.code]
-        series.append(obs)
-        # Keep sorted by timestamp so out-of-order arrivals are handled.
-        series.sort(key=lambda o: o.timestamp)
+        # Kept sorted by timestamp so out-of-order arrivals are handled. A binary insertion, after
+        # any reading with the same stamp — the order append + stable sort gave, without re-sorting
+        # the whole series per reading (Aşama B re-review: the shadow lane's 24 h replay at
+        # start-up was quadratic in it).
+        bisect.insort(self._history[obs.code], obs, key=_stamp)
 
     def copy(self) -> "PatientState":
         """An independent state with the same readings (Aşama B, D9: the shadow engine starts as a

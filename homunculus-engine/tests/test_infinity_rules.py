@@ -5,13 +5,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from homunculus.api.audit import InMemoryAuditLog
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.infinity_rules import (
-    ALLOWED_NAMES, DEFAULT_PARAMETERS, PROVISIONAL_GRACE_S, REPLAY_HOURS, RETIRED_GRACE_S, SAMPLE_INTERVAL_S,
+    ALLOWED_NAMES, DEFAULT_PARAMETERS, ERROR_WINDOW_S, INSTALL_RETRY_MAX_S, INSTALL_RETRY_S, PROVISIONAL_GRACE_S,
+    REPLAY_HOURS, RETIRED_GRACE_S, SAMPLE_INTERVAL_S, SHADOW_ALERT, SHADOW_CLEARED,
     Candidate, RulesSettings, Sampler, ShadowLane, pick, relation, rules_from_env,
 )
 from homunculus.api.infinity_shadow import DeviceView, ShadowSettings, shadow_settings_from_env
-from homunculus.api.monitor_samples import InMemorySamples
+from homunculus.api.monitor_samples import InMemorySamples, Sample
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
@@ -182,7 +183,7 @@ def _alert(kind, severity="high"):
     return Alert("bed-1", kind, severity, "immediate", kind, "", [], [], "high")
 
 
-def test_sampler_takes_one_per_minute_per_patient_code_and_via_never_twice_and_never_before_the_link():
+def test_sampler_takes_one_per_minute_per_patient_and_code_never_the_same_reading_twice_nor_before_the_link():
     sampler = Sampler()
     [cand] = pick(_view(_cell("hr", value=88)), DEFAULT_PARAMETERS, now=T0)            # stamped T0 - 2
     assert not sampler.due("bed-1", cand, now=T0, since=T0)                            # before the link (D5)
@@ -195,8 +196,11 @@ def test_sampler_takes_one_per_minute_per_patient_code_and_via_never_twice_and_n
     assert sampler.due("bed-2", cand, now=T0 + 1.0, since=0.0)                         # another patient
     other = pick(_view(_cell("spo2", value=97, unit="%")), DEFAULT_PARAMETERS, now=T0)[0]
     assert sampler.due("bed-1", other, now=T0 + 1.0, since=0.0)                        # another code
-    [pls] = pick(_view(_cell("hr", state="invalid"), _cell("pls", value=91)), DEFAULT_PARAMETERS, now=T0)
-    assert sampler.due("bed-1", pls, now=T0 + 1.0, since=0.0)                          # another source of it
+    # D4: the minute is the code's, whichever cell fed it — PLS standing in for HR waits for it too;
+    # the stamp is the source's own, so PLS's older reading is not "the same reading" as HR's.
+    [pls] = pick(_view(_cell("hr", state="invalid"), _cell("pls", value=91, age=30.0)), DEFAULT_PARAMETERS, now=T0)
+    assert not sampler.due("bed-1", pls, now=T0 + 1.0, since=0.0)
+    assert sampler.due("bed-1", pls, now=T0 + SAMPLE_INTERVAL_S, since=0.0)
     sampler.forget("bed-1")
     assert sampler.due("bed-1", cand, now=T0 + 1.0, since=0.0)
 
@@ -212,10 +216,21 @@ CARD = {"bed_id": "b-1", "link": "one", "patient_id": "bed-1", "source": "10.0.0
 BED2 = {"bed_id": "b-2", "link": "one", "patient_id": "bed-2", "source": "10.0.0.6"}
 
 
-def _lane(stage_rules=True, *, samples=None, audit=None):
+class _Clock:
+    """The lane's clock (epoch s), moved by the test."""
+
+    def __init__(self, t=T0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def _lane(stage_rules=True, *, samples=None, audit=None, clock=None):
     audit = audit if audit is not None else InMemoryAuditLog()
+    extra = {} if clock is None else {"clock": clock}
     lane = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=samples if samples is not None else InMemorySamples(),
-                      audit=audit, enabled=stage_rules)
+                      audit=audit, enabled=stage_rules, **extra)
     return lane, Engine(), audit
 
 
@@ -229,8 +244,9 @@ def _vitals(now=T0, hr=140.0, spo2=85.0, source="10.0.0.5"):
 
 
 def _link(lane, real, cards=(CARD,), *, at=T0 - 10.0):
-    """The pass that first SEES the links: nothing stamped before it is ever taken for them (D5)."""
-    assert lane.sample("h1", {}, list(cards), real, now=at) == []
+    """The pass that first SEES the links: nothing stamped before it is ever taken for them (D5).
+    It returns the newly linked patients — their `shadow` key goes from None to a picture."""
+    assert lane.sample("h1", {}, list(cards), real, now=at) == sorted(c["patient_id"] for c in cards)
 
 
 def _rows(audit):
@@ -339,7 +355,7 @@ def test_the_link_is_forward_only_a_new_patient_never_gets_the_last_patients_cuf
     assert shadow.state("bed-1").latest(SignalCode.SBP).source_device == "infinity:10.0.0.5:nbp"
     # The bed's patient changes; the monitor still shows bed-1's cuff, well within its hour.
     card = {**CARD, "patient_id": "bed-2"}
-    assert lane.sample("h1", monitor(T0 + 61.0, T0 - 50.0), [card], real, now=T0 + 61.0) == ["bed-1"]
+    assert lane.sample("h1", monitor(T0 + 61.0, T0 - 50.0), [card], real, now=T0 + 61.0) == ["bed-1", "bed-2"]
     assert lane.sample("h1", monitor(T0 + 122.0, T0 - 50.0), [card], real, now=T0 + 122.0) == ["bed-2"]
     new = shadow.state("bed-2")
     assert new.latest(SignalCode.HEART_RATE).timestamp == _at(T0 + 120.0)       # its own, after the link
@@ -423,11 +439,15 @@ class _BrokenSamples(InMemorySamples):
 
 
 class _FlakySamples(InMemorySamples):
+    """Refuses its first `failures` reads; `reads` holds the instant (`now`) of every read."""
+
     def __init__(self, failures=1):
         super().__init__()
         self.failures = failures
+        self.reads = []
 
     def since(self, hospital, since, *, now):
+        self.reads.append(now.timestamp())
         if self.failures:
             self.failures -= 1
             raise RuntimeError("monitor_samples: not reachable yet")
@@ -435,7 +455,8 @@ class _FlakySamples(InMemorySamples):
 
 
 def test_a_failing_sample_store_feeds_once_and_the_pass_goes_on():
-    lane, real, _ = _lane(samples=_BrokenSamples())
+    clock = _Clock(T0)
+    lane, real, _ = _lane(samples=_BrokenSamples(), clock=clock)
     lane.install("h1", real)
     cards = [CARD, BED2]
     _link(lane, real, cards)
@@ -452,8 +473,13 @@ def test_a_failing_sample_store_feeds_once_and_the_pass_goes_on():
     assert lane.sample("h1", views(T0), cards, real, now=T0 + 61.0) == []
     assert [len(shadow.state(p).history(SignalCode.HEART_RATE)) for p in ("bed-1", "bed-2")] == [1, 1]
     lane.samples = InMemorySamples()                          # the table is back
+    clock.t = T0 + 61.0
     lane.sample("h1", views(T0 + 61.0), cards, real, now=T0 + 61.0)
-    assert lane.state == "ok" and len(lane.samples.since("h1", DT0, now=_at(T0 + 120.0))) == 4
+    assert len(lane.samples.since("h1", DT0, now=_at(T0 + 120.0))) == 4
+    # The word stays "error" until the window has passed with no new failure, then reads "ok".
+    assert lane.state == "error"
+    clock.t = T0 + ERROR_WINDOW_S
+    assert lane.state == "ok"
 
 
 def test_one_patients_failure_does_not_stop_the_pass(monkeypatch):
@@ -476,37 +502,116 @@ def test_one_patients_failure_does_not_stop_the_pass(monkeypatch):
     assert lane.state == "error"
 
 
-def test_a_failed_install_reads_as_an_error_and_the_next_pass_or_mirror_retries_it():
-    lane, real, _ = _lane(samples=_FlakySamples())
+def test_a_failed_install_reads_as_an_error_and_a_pass_or_mirror_retries_it_after_its_wait():
+    start = T0 - 100.0
+    clock = _Clock(start)
+    lane, real, _ = _lane(samples=_FlakySamples(), clock=clock)
     assert lane.guard("install", lambda: lane.install("h1", real)) is None
     assert "h1" not in lane.engines and lane.state == "error"
     assert lane.findings("h1", "bed-1", real, now=DT0) is None
-    lane.guard("sample", lambda: lane.sample("h1", {}, [CARD], real, now=T0 - 10.0))
-    assert "h1" in lane.engines and "bed-1" in lane.linked["h1"] and lane.state == "ok"
-    # A mirror retries as well — and does not feed twice what the fresh copy already holds.
-    other, real2, _ = _lane(samples=_FlakySamples())
+    # The first retry waits INSTALL_RETRY_S of lane time: a pass before it builds nothing.
+    assert lane.sample("h1", {}, [CARD], real, now=start + INSTALL_RETRY_S - 1.0) == []
+    assert "h1" not in lane.engines and lane.samples.reads == [start]
+    clock.t = start + INSTALL_RETRY_S
+    assert lane.guard("sample", lambda: lane.sample("h1", {}, [CARD], real, now=clock.t)) == ["bed-1"]
+    assert "h1" in lane.engines and "bed-1" in lane.linked["h1"]
+    assert lane.state == "error"                              # the failure is not ERROR_WINDOW_S old yet
+    clock.t = start + ERROR_WINDOW_S
+    assert lane.state == "ok"
+    # A mirror retries as well, after the wait — and does not feed twice what the fresh copy holds.
+    clock2 = _Clock(T0)
+    other, real2, _ = _lane(samples=_FlakySamples(), clock=clock2)
     other.guard("install", lambda: other.install("h1", real2))
     obs = Observation("bed-1", SignalCode.SPO2, 90, "%", DT0, "bridge")
     real2.ingest(obs, now=DT0)
     other.guard("mirror", lambda: other.mirror_observation("h1", obs, now=DT0, real=real2))
-    assert other.state == "ok" and len(other.engines["h1"].state("bed-1").history(SignalCode.SPO2)) == 1
+    assert "h1" not in other.engines                          # before the wait: nothing built, nothing fed
+    clock2.t = T0 + INSTALL_RETRY_S
+    other.guard("mirror", lambda: other.mirror_observation("h1", obs, now=DT0, real=real2))
+    assert len(other.engines["h1"].state("bed-1").history(SignalCode.SPO2)) == 1
 
 
-def test_the_guard_keeps_one_state_per_kind_and_logs_each_change_once(caplog):
-    lane, real, _ = _lane()
+def test_a_failing_install_is_retried_with_a_doubling_wait_up_to_ten_minutes():
+    # The re-review: a failing install was retried on every readings POST (every ~5 s), each
+    # retry replaying 24 h of samples on the event loop.
+    clock = _Clock(T0)
+    flaky = _FlakySamples(failures=7)
+    lane, real, _ = _lane(samples=flaky, clock=clock)
+    lane.guard("install", lambda: lane.install("h1", real))
+    for second in range(1, 2200):                             # a readings POST every second
+        clock.t = T0 + second
+        lane.guard("sample", lambda: lane.sample("h1", {}, [], real, now=clock.t))
+    waits = [later - earlier for earlier, later in zip(flaky.reads, flaky.reads[1:])]
+    assert (INSTALL_RETRY_S, INSTALL_RETRY_MAX_S) == (30.0, 600.0)
+    assert waits == [30.0, 60.0, 120.0, 240.0, 480.0, 600.0, 600.0]
+    assert "h1" in lane.engines                               # the eighth read built it
+
+
+def test_a_bad_sample_row_or_finding_row_is_skipped_and_logged_once_per_install(caplog):
+    samples, audit = InMemorySamples(), InMemoryAuditLog()
+    for pid, code, via, value, unit, ago in (("bed-1", "heart_rate", "hr", 140.0, "bpm", 60.0),
+                                             ("bed-1", "bogus", "hr", 1.0, "bpm", 50.0),     # unreadable
+                                             ("bed-2", "spo2", "spo2", 97.0, "%", 40.0)):
+        source = "10.0.0.5" if pid == "bed-1" else "10.0.0.6"
+        samples.append(Sample("h1", pid, "b", source, code, via, value, unit, _at(T0 - ago), _at(T0 - ago + 1.0)))
+    audit.append(AuditEvent("h1", SHADOW_ALERT, "bed-7", "news2", {"severity": "high", "evidence": 5}))   # unreadable
+    audit.append(AuditEvent("h1", SHADOW_ALERT, "bed-2", "news2",
+                            {"severity": "moderate", "sources": ["infinity:10.0.0.6:spo2"]}))
+    lane, real, _ = _lane(samples=samples, audit=audit)
+    with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
+        lane.install("h1", real, now=DT0)
+    shadow = lane.engines["h1"]
+    assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).value == 140
+    assert shadow.state("bed-2").latest(SignalCode.SPO2).value == 97
+    assert set(lane.linked["h1"]) == {"bed-1", "bed-2"} and lane.state == "ok"
+    assert ("h1", "bed-2") in lane._open and ("h1", "bed-7") not in lane._open
+    [record] = [r for r in caplog.records if r.name == "homunculus.api.infinity_rules"]
+    assert record.levelname == "WARNING" and "1 örnek" in record.getMessage() and "1 bulgu" in record.getMessage()
+
+
+def test_one_failed_call_reads_as_an_error_for_the_window_and_then_clears_by_itself(caplog):
+    clock = _Clock(T0)
+    lane, real, _ = _lane(clock=clock)
     lane.install("h1", real)
 
     def boom():
         raise RuntimeError("x")
 
     with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
-        for _ in range(3):
-            assert lane.guard("sample", boom) is None
-            assert lane.guard("findings", lambda: 1) == 1
-            assert lane.state == "error"                      # a success elsewhere hides no steady failure
+        assert lane.guard("forget", boom) is None             # one failed discharge, never repeated
+        assert lane.state == "error"
+        clock.t = T0 + ERROR_WINDOW_S - 1.0
+        assert lane.state == "error"
+        clock.t = T0 + ERROR_WINDOW_S
+        assert lane.state == "ok"                             # no second discharge needed to clear it
         assert [r.levelname for r in caplog.records] == ["ERROR"]
-        assert lane.guard("sample", lambda: None) is None
-        assert lane.state == "ok" and [r.levelname for r in caplog.records] == ["ERROR", "WARNING"]
+        assert lane.guard("findings", lambda: 1) == 1         # the next call says so, once
+        assert lane.guard("findings", lambda: 1) == 1
+        assert [r.levelname for r in caplog.records] == ["ERROR", "WARNING"]
+        assert "forget" in caplog.records[1].getMessage()
+
+
+def test_a_flapping_kind_logs_one_error_and_reads_error_until_a_quiet_window(caplog):
+    clock = _Clock(T0)
+    lane, real, _ = _lane(clock=clock)
+    lane.install("h1", real)
+
+    def boom():
+        raise RuntimeError("x")
+
+    with caplog.at_level("WARNING", logger="homunculus.api.infinity_rules"):
+        for step in range(10):            # one patient's `shadow` key fails, the next one's builds: every board
+            clock.t = T0 + 20.0 * step
+            assert lane.guard("findings", boom) is None
+            assert lane.guard("findings", lambda: {"news2": {}}) == {"news2": {}}
+            assert lane.state == "error"
+        assert [r.levelname for r in caplog.records] == ["ERROR"] and caplog.records[0].exc_info is not None
+        clock.t = T0 + 20.0 * 9 + ERROR_WINDOW_S
+        assert lane.state == "ok"
+        lane.guard("sample", lambda: None)
+        assert [r.levelname for r in caplog.records] == ["ERROR", "WARNING"]
+        lane.guard("findings", boom)                          # failing again after the window: a new ERROR
+        assert [r.levelname for r in caplog.records] == ["ERROR", "WARNING", "ERROR"] and lane.state == "error"
 
 
 def test_after_a_restart_a_link_is_provisional_until_its_card_confirms_it():
@@ -525,7 +630,7 @@ def test_after_a_restart_a_link_is_provisional_until_its_card_confirms_it():
 def test_a_provisional_link_ends_as_soon_as_its_device_reports_another_bed():
     lane, real, audit = _restarted()
     other = {**CARD, "patient_id": "bed-9"}
-    assert lane.sample("h1", _vitals(T0 + 31.0), [other], real, now=T0 + 31.0) == ["bed-1"]
+    assert lane.sample("h1", _vitals(T0 + 31.0), [other], real, now=T0 + 31.0) == ["bed-1", "bed-9"]
     assert "bed-1" not in lane.linked["h1"] and "bed-9" in lane.linked["h1"]
     assert lane.engines["h1"].state("bed-1").latest(SignalCode.HEART_RATE) is None
     assert _rows(audit)[-1] == ("shadow_alert_cleared", "news2", "unlinked")
@@ -534,7 +639,7 @@ def test_a_provisional_link_ends_as_soon_as_its_device_reports_another_bed():
 def test_a_provisional_link_whose_device_stays_silent_waits_out_the_grace_carried_over():
     lane, real, audit = _restarted()
     start = T0 + 31.0
-    assert lane.sample("h1", {}, [BED2], real, now=start) == []
+    assert lane.sample("h1", {}, [BED2], real, now=start) == ["bed-2"]          # bed-2's new link
     assert lane.linked["h1"]["bed-1"].provisional and "bed-2" in lane.linked["h1"]    # beside a new link
     assert lane.sample("h1", {}, [BED2], real, now=start + PROVISIONAL_GRACE_S - 1.0) == []
     assert "bed-1" in lane.linked["h1"] and lane.findings("h1", "bed-1", real, now=_at(start)) is None
@@ -731,14 +836,192 @@ def test_the_mirror_reaches_the_shadow_engine_only_and_the_lane_is_a_no_op_below
     assert off.engines == {} and off.linked == {} and audit2.records(tenant="h1", limit=5) == []
 
 
-def test_a_lane_failure_is_swallowed_and_logged_once(caplog):
+class _FlakyAudit(InMemoryAuditLog):
+    """Refuses the next `failures` rows of the kind `event_type`."""
+
+    def __init__(self, event_type=SHADOW_CLEARED, failures=0):
+        super().__init__()
+        self.event_type, self.failures = event_type, failures
+
+    def append(self, event):
+        if self.failures and event.event_type == self.event_type:
+            self.failures -= 1
+            raise RuntimeError("audit: not reachable")
+        return super().append(event)
+
+
+def test_a_failed_adopt_is_retried_and_a_new_link_of_the_patient_waits_for_it(monkeypatch):
+    lane, real, audit = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)                  # HR 140 from the monitor, a finding open
+    shadow = lane.engines["h1"]
+    adopt, failures = shadow.adopt, [1, 1]
+
+    def flaky(other, patient_id):
+        if failures:
+            failures.pop()
+            raise RuntimeError("x")
+        return adopt(other, patient_id)
+
+    monkeypatch.setattr(shadow, "adopt", flaky)
+    empty = {**CARD, "link": "none", "patient_id": None}
+    assert lane.sample("h1", {}, [empty], real, now=T0 + 61.0) == []      # the link ended; its adopt failed
+    assert "bed-1" not in lane.linked["h1"] and lane.findings("h1", "bed-1", real, now=_at(T0 + 61.0)) is None
+    assert _rows(audit) == [("shadow_alert", "news2", None)] and lane.state == "error"
+    # The monitor shows bed-1 again: the retry fails once more, and the new link waits for it.
+    assert lane.sample("h1", _vitals(T0 + 122.0), [CARD], real, now=T0 + 122.0) == []
+    assert "bed-1" not in lane.linked["h1"]
+    # The next pass: back to the real picture and closed `unlinked` first, then linked again from now.
+    assert lane.sample("h1", _vitals(T0 + 183.0), [CARD], real, now=T0 + 183.0) == ["bed-1"]
+    assert lane.linked["h1"]["bed-1"].since == T0 + 183.0
+    found = lane.findings("h1", "bed-1", real, now=_at(T0 + 183.0))
+    assert found["vitals"] == {} and found["findings"] == []            # not the old link's HR 140
+    assert _rows(audit) == [("shadow_alert", "news2", None), ("shadow_alert_cleared", "news2", "unlinked")]
+
+
+def test_a_discharge_whose_closing_row_fails_is_closed_as_discharged_by_the_next_pass():
+    audit = _FlakyAudit()
+    lane, real, _ = _lane(audit=audit)
+    lane.install("h1", real)
+    _link(lane, real)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)
+    audit.failures = 1
+    assert lane.guard("forget", lambda: lane.forget("h1", "bed-1", now=_at(T0 + 1.0))) is None
+    assert lane.state == "error" and "bed-1" not in lane.engines["h1"].patient_ids()
+    assert _rows(audit) == [("shadow_alert", "news2", None)]
+    assert lane.sample("h1", {}, [], real, now=T0 + 2.0) == ["bed-1"]
+    assert _rows(audit) == [("shadow_alert", "news2", None), ("shadow_alert_cleared", "news2", "discharged")]
+    lane.sample("h1", {}, [], real, now=T0 + 3.0)                         # once
+    assert len(_rows(audit)) == 2
+    # At start-up too: a discharged patient's finding whose closing row fails closes `discharged` next pass.
+    first, real1, _ = _lane(audit=_FlakyAudit())
+    first.install("h1", real1)
+    _link(first, real1)
+    first.sample("h1", _vitals(), [CARD], real1, now=T0)
+    first.audit.failures = 1
+    again = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=first.samples, audit=first.audit, enabled=True)
+    again.install("h1", Engine(), now=_at(T0 + 30.0), admitted=lambda pid: pid != "bed-1")
+    assert "h1" in again.engines and "bed-1" not in again.linked["h1"] and again.state == "error"
+    assert _rows(first.audit) == [("shadow_alert", "news2", None)]
+    assert again.sample("h1", {}, [], Engine(), now=T0 + 31.0) == ["bed-1"]
+    assert _rows(first.audit) == [("shadow_alert", "news2", None), ("shadow_alert_cleared", "news2", "discharged")]
+
+
+def test_confirming_a_provisional_link_returns_the_patient_though_no_sample_was_taken():
+    lane, real, _ = _restarted()
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0)) is None
+    assert lane.sample("h1", {}, [CARD], real, now=T0 + 31.0) == ["bed-1"]           # None -> a picture
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0)) is not None
+    assert lane.sample("h1", {}, [CARD], real, now=T0 + 32.0) == []                  # nothing changed since
+
+
+def test_a_patient_moved_to_another_monitor_takes_nothing_it_showed_before_the_move():
     lane, real, _ = _lane()
     lane.install("h1", real)
-    calls = []
-    def boom(): calls.append(1); raise RuntimeError("x")
-    with caplog.at_level("ERROR"):
-        assert lane.guard("sample", boom) is None
-        assert lane.guard("sample", boom) is None
-    assert len(calls) == 2 and sum("gölge motor" in r.message for r in caplog.records) == 1
-    assert lane.state == "error"
-    assert lane.guard("sample", lambda: 1) == 1 and lane.state == "ok"
+    _link(lane, real, at=T0 - 100.0)
+    lane.sample("h1", _vitals(), [CARD], real, now=T0)                               # HR 140 on 10.0.0.5
+    now = T0 + 61.0
+    moved = {**CARD, "source": "10.0.0.6"}
+    other = {"10.0.0.6": _view(_cell("hr", value=70, now=now), _nbp(sys=95, mean=65, measured_age=600.0, now=now),
+                               source="10.0.0.6")}
+    assert lane.sample("h1", other, [moved], real, now=now) == ["bed-1"]             # the move, republished
+    link = lane.linked["h1"]["bed-1"]
+    assert link.source == "10.0.0.6" and link.since == now and not link.provisional
+    state = lane.engines["h1"].state("bed-1")
+    assert state.latest(SignalCode.SBP) is None                      # the new monitor's 10-minute-old cuff: refused
+    assert state.latest(SignalCode.HEART_RATE).source_device == "infinity:10.0.0.5:hr"   # its own samples kept
+    later = now + 61.0
+    newer = {"10.0.0.6": _view(_cell("hr", value=72, now=later), _nbp(sys=95, mean=65, measured_age=30.0, now=later),
+                               source="10.0.0.6")}
+    assert lane.sample("h1", newer, [moved], real, now=later) == ["bed-1"]
+    assert state.latest(SignalCode.SBP).source_device == "infinity:10.0.0.6:nbp"
+    assert state.latest(SignalCode.HEART_RATE).value == 72
+
+
+def test_a_mirror_for_a_provisional_link_feeds_the_shadow_engine_and_writes_no_row():
+    lane, real, audit = _restarted()
+    before = _rows(audit)
+    at = _at(T0 + 20.0)
+    obs = Observation("bed-1", SignalCode.SBP, 85, "mmHg", at, "bridge")   # with HR 140 and SpO2 85: NEWS2 high
+    real.ingest(obs, now=at)
+    lane.mirror_observation("h1", obs, now=at, real=real)
+    shadow = lane.engines["h1"]
+    assert shadow.state("bed-1").latest(SignalCode.SBP).value == 85
+    assert "high" in {a.severity for a in shadow.active_alerts("bed-1")}   # a confirmed link would write rows
+    assert _rows(audit) == before
+
+
+def test_heart_rate_flipping_between_hr_and_pls_is_still_one_sample_a_minute():
+    lane, real, _ = _lane()
+    lane.install("h1", real)
+    _link(lane, real)
+    for step in range(30):                                    # a body every 7 s; HR is *** every other one
+        now = T0 + 7.0 * step
+        view = _view(_cell("hr", state="value" if step % 2 == 0 else "invalid", value=88, now=now),
+                     _cell("pls", value=90, now=now))
+        lane.sample("h1", {"10.0.0.5": view}, [CARD], real, now=now)
+    rows = [s for s in lane.samples.since("h1", _at(T0 - 60.0), now=_at(T0 + 600.0)) if s.code == "heart_rate"]
+    assert [(s.via, s.received_at.timestamp() - T0) for s in rows] == [
+        ("hr", 0.0), ("pls", 63.0), ("hr", 126.0), ("pls", 189.0)]
+
+
+def test_the_lane_clock_times_a_discharge_hold_a_restart_and_a_closing():
+    clock = _Clock(T0 - 10.0)
+    lane, real, audit = _lane(clock=clock)
+    lane.install("h1", real)                                  # `now` from the lane clock
+    _link(lane, real, at=clock.t)
+    clock.t = T0
+    lane.sample("h1", _vitals(), [CARD], real, now=clock.t)
+    clock.t = T0 + 1.0
+    lane.forget("h1", "bed-1")                                # no `now`: retired at the lane clock
+    [cleared] = audit.records(tenant="h1", event_type=SHADOW_CLEARED, limit=5)
+    assert cleared.payload["reason"] == "discharged" and cleared.payload["at"] == _at(T0 + 1.0).isoformat()
+    lane.sample("h1", {}, [CARD], real, now=T0 + 1.0 + RETIRED_GRACE_S - 1.0)
+    assert "bed-1" not in lane.linked["h1"]
+    lane.sample("h1", {}, [CARD], real, now=T0 + 1.0 + RETIRED_GRACE_S)
+    assert "bed-1" in lane.linked["h1"]
+    # A restart with no `now` replays the 24 h before the LANE clock — here T0 + 30, not the wall clock.
+    again = ShadowLane(allowed=DEFAULT_PARAMETERS, samples=lane.samples, audit=InMemoryAuditLog(), enabled=True,
+                       clock=_Clock(T0 + 30.0))
+    again.install("h1", Engine())
+    assert again.engines["h1"].state("bed-1").latest(SignalCode.HEART_RATE).value == 140
+    assert again.linked["h1"]["bed-1"].provisional and again.linked["h1"]["bed-1"].since == T0 - 2.0
+    # And `close_open` with no `now` closes at the lane clock.
+    third, real3, audit3 = _lane(clock=_Clock(T0 + 50.0))
+    third.install("h1", real3)
+    _link(third, real3)
+    third.sample("h1", _vitals(), [CARD], real3, now=T0)
+    assert third.close_open("h1") == 1
+    assert audit3.records(tenant="h1", event_type=SHADOW_CLEARED, limit=5)[0].payload["at"] == _at(T0 + 50.0).isoformat()
+
+
+def test_findings_show_a_confirmed_link_only_whatever_linked_says():
+    lane, real, _ = _restarted()                              # bed-1's link is provisional; bed-2 has none
+    for linked in (None, True):
+        assert lane.findings("h1", "bed-1", real, now=_at(T0 + 30.0), linked=linked) is None
+        assert lane.findings("h1", "bed-2", real, now=_at(T0 + 30.0), linked=linked) is None
+    lane.sample("h1", {}, [CARD], real, now=T0 + 31.0)        # confirmed
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0), linked=True) is not None
+    assert lane.findings("h1", "bed-1", real, now=_at(T0 + 31.0), linked=False) is None
+
+
+def test_at_the_read_cap_an_opening_cleared_before_the_newest_clears_still_reads_closed(monkeypatch):
+    monkeypatch.setattr("homunculus.api.infinity_rules._AUDIT_READ_MAX", 2)
+    audit = InMemoryAuditLog()
+
+    def opening(pid):
+        return audit.append(AuditEvent("h1", SHADOW_ALERT, pid, "news2", {"severity": "moderate"}))
+
+    def clearing(rec):
+        audit.append(AuditEvent("h1", SHADOW_CLEARED, rec.patient_id, "news2", {"reason": "ended", "opened_id": rec.id}))
+
+    a, b, c = opening("bed-a"), opening("bed-b"), opening("bed-c")
+    clearing(c)
+    opening("bed-d")
+    clearing(a)
+    clearing(b)
+    # The newest two openings are bed-c's and bed-d's; the newest two clearings, bed-a's and bed-b's.
+    lane, real, _ = _lane(audit=audit)
+    lane.install("h1", real, now=DT0)
+    assert set(lane.linked["h1"]) == {"bed-d"}                # bed-c's clearing is read too
