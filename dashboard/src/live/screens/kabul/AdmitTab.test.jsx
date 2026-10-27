@@ -386,7 +386,7 @@ describe("AdmitTab", () => {
       expect(screen.queryByText(GO_ON)).toBeNull();
 
       await press();
-      expect(api.admissions).toHaveBeenCalledWith(["DRAFT"]);              // the first is looked for first
+      expect(api.admissions).toHaveBeenCalledWith(["DRAFT", "ACTIVE"]);    // the first is looked for first
       expect(api.admit).toHaveBeenCalledTimes(2);
       expect(screen.getByText("H2600042")).toBeTruthy();
     });
@@ -399,13 +399,32 @@ describe("AdmitTab", () => {
       await press();
 
       expect(api.admit).toHaveBeenCalledTimes(1);
-      expect(api.admissions).toHaveBeenCalledWith(["DRAFT"]);
+      expect(api.admissions).toHaveBeenCalledWith(["DRAFT", "ACTIVE"]);
       expect(screen.getByText("H2600042")).toBeTruthy();
       expect(screen.getByText(`Çarpayı: ${BED1}`)).toBeTruthy();
       expect(screen.getByText(RECORDED)).toBeTruthy();
       expect(toasts().getAllByText(`${BED1} · qəbul edildi, xəstə nömrəsi H2600042`).length).toBeGreaterThan(0);
       expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Qəbul edildi" }));
       expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    });
+
+    // Final review M-1: the physician may sign the admission the first send left before the nurse
+    // looks for it. Signed, it is ACTIVE — no longer a DRAFT, and still that send's admission.
+    it("finds the send that landed when a physician has already signed it: an ACTIVE admission, not only a DRAFT (M-1)", async () => {
+      const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+      fillRequired();
+      api.structure.mockResolvedValue(withBed(1, { state: "OCCUPIED" }));
+      const signed = row({ id: "a-9", state: "ACTIVE", bed_id: BED(1), patient_number: "H2600042" });
+      // The server answers the states asked for, and no other.
+      api.admissions.mockImplementation(async (states) => [signed].filter((r) => [].concat(states).includes(r.state)));
+      await press();
+
+      expect(api.admit).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("H2600042")).toBeTruthy();
+      expect(screen.getByText(`Çarpayı: ${BED1}`)).toBeTruthy();
+      expect(screen.getByText(RECORDED)).toBeTruthy();
+      expect(screen.queryByText(HELD)).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Qəbul edildi" }));
     });
 
     it("holds «Qəbul et», naming the bed and where to look, when the bed is taken and no DRAFT of this patient shows", async () => {
@@ -763,8 +782,8 @@ describe("AdmitTab", () => {
       await press();                                                         // no answer; bed 1 still free: no hold
       fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
       pickBed5();
-      // The form's lookup (DRAFT only) is held in flight; Taburcu's own read answers at once.
-      api.admissions.mockImplementation((states) => (states.length === 1
+      // The form's lookup is held in flight; Taburcu's own read (the started discharges too) answers at once.
+      api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
       await openTab("Evə yazılma");
@@ -823,7 +842,7 @@ describe("AdmitTab", () => {
       await press();
       fireEvent.change(nameField(), { target: { value: "Sentetik Başqası" } });
       pickBed5();
-      api.admissions.mockImplementation((states) => (states.length === 1
+      api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });
       await openTab("Evə yazılma");

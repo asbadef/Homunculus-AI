@@ -62,7 +62,7 @@ export function freshForm() {
   };
 }
 
-/** What a session's draft holds. `unanswered`: every send with no answer whose DRAFT is not found
+/** What a session's draft holds. `unanswered`: every send with no answer whose admission is not found
  *  yet, `{bedId, bed, name, checked, requestId}`; `held`: `{bed}` while a send waits on one of them,
  *  or `{bed, conflict: {key, vars}}` once the server said an admission exists under the form's id
  *  (`request_conflict`, until «Yeni qəbul»; `bed` the earlier send's, or null when that is not one

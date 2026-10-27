@@ -17,21 +17,22 @@
 // is read again (and waited for: "Kabul et" stays busy until then):
 //   * the bed is still free — nothing landed yet; she may send again, to the same bed, and the
 //     server takes one of the two;
-//   * the bed is taken, or its state could not be read — the DRAFT admissions are read: one on
-//     that bed under the name she sent is the send that landed, and its number box is shown; none,
-//     and "Kabul et" is held, with the bed and the list to look in ("Evə yazılma › Yatan
-//     xəstələr"), until she says she has looked. The hold says only that the outcome is not known.
-// Every send that got no answer is remembered until its DRAFT is found (A-19):
-//   * before EVERY later send its DRAFT is looked for — also after «go on», which only marks the
+//   * the bed is taken, or its state could not be read — the admissions are read, a DRAFT or one a
+//     physician has signed since (ACTIVE, M-1): one on that bed under the name she sent is the
+//     send that landed, and its number box is shown; none, and "Kabul et" is held, with the bed
+//     and the list to look in ("Evə yazılma › Yatan xəstələr"), until she says she has looked.
+//     The hold says only that the outcome is not known.
+// Every send that got no answer is remembered until its admission is found (A-19):
+//   * before EVERY later send its admission is looked for — also after «go on», which only marks the
 //     send as looked at (R2);
 //   * while one is unanswered and not looked at, a send to ANOTHER bed or under ANOTHER name is
 //     held, naming the unanswered send's bed (R1): only the same bed lets the server take one of two;
-//   * a DRAFT found is the form's admission only under the form's own name (R3). Another name's is
+//   * an admission found is the form's only under the form's own name (R3). Another name's is
 //     an earlier patient's: its number box says so, and the form is kept for its own send — never is
 //     another patient's number shown as the form's, the number the nurse enters on the device;
 //   * a later send refused because that same bed is taken is read the same way — the first may
 //     have landed while the second was on its way. That refusal is definite, though: when the
-//     first's DRAFT is found and no send's outcome is left unknown, nothing is held (M-b).
+//     first's admission is found and no send's outcome is left unknown, nothing is held (M-b).
 //
 // NONE OF THIS IS THE TAB'S (A-21). The screen mounts only the open tab and the shell only the open
 // screen, so the form, `tried`, the send on its way, the hold, the sends with no answer and the box
@@ -158,7 +159,7 @@ export function AdmitTab() {
   // the same tick — or in a tab mounted while the first is on its way — sees it; `held` ({bed}): a
   // send got no answer, and nothing is sent until she has looked — or ({bed, conflict}) an admission
   // exists under the form's id, and nothing is sent until «Yeni qəbul»; `unanswered`: every send with no
-  // answer whose DRAFT is not found yet ({bedId, bed, name, checked, requestId}); `done`: the box.
+  // answer whose admission is not found yet ({bedId, bed, name, checked, requestId}); `done`: the box.
   const [draftState, draft] = useAdmitDraft();
   const { form, tried, sending: busy, held, done } = draftState;
   const [focusTo, setFocusTo] = useState(null);     // {field}: focused once the render it asks for is drawn
@@ -240,13 +241,14 @@ export function AdmitTab() {
     toast(t("kabul.heldNoAnswer", { bed, where: whereOf(t) }), "warn");
   }
 
-  /** The DRAFTs sends with no answer left after all — on their bed, under the name they sent —
+  /** The admissions sends with no answer left after all — on their bed, under the name they sent —
    *  the one under `name` (the form's) first; null when none shows, undefined when the list could
-   *  not be read. */
+   *  not be read. A DRAFT, or ACTIVE: a physician may have signed it before the nurse looks
+   *  (final review M-1). */
   async function findLanded(name) {
     let rows;
     try {
-      rows = await store.track(() => store.api.admissions(["DRAFT"]));
+      rows = await store.track(() => store.api.admissions(["DRAFT", "ACTIVE"]));
     } catch {
       return undefined;
     }
@@ -258,7 +260,7 @@ export function AdmitTab() {
     return found.find((f) => sameName(f.send.name, name)) ?? found[0] ?? null;
   }
 
-  /** A send's DRAFT found. Under the form's name (`name`) it is the form's admission; under
+  /** A send's admission found. Under the form's name (`name`) it is the form's; under
    *  another it is an earlier patient's (R3): shown as that patient's, and the form is kept. The
    *  found send's request id is that patient's: the form takes a new one only if it still carried
    *  it, else it keeps its own, which a send of its own still unanswered may carry (A-24 I-1).
@@ -279,8 +281,8 @@ export function AdmitTab() {
     return false;
   }
 
-  /** The bed of a send is taken, or its state is not known: a DRAFT of the form's patient is the
-   *  admission; else "Kabul et" waits until the nurse has looked — unless nothing is left unknown:
+  /** The bed of a send is taken, or its state is not known: an admission found under the form's
+   *  name is the form's; else "Kabul et" waits until the nurse has looked — unless nothing is left unknown:
    *  this send was refused outright and the earlier send it met was found (M-b). */
   async function bedTaken(err, sent) {
     const landed = await findLanded(sent.name);
@@ -297,7 +299,7 @@ export function AdmitTab() {
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
   async function failed(err, sent) {
     if (err?.apiCode === "request_conflict") {
-      // An admission exists under this form's id (A-19) — not known where, and its DRAFT not found.
+      // An admission exists under this form's id (A-19) — not known where, and not found by a look.
       // Held, with the words that say so, until «Yeni qəbul». The sends that went under the id are
       // KEPT, and looked at again: «go on» said none had landed, and one had (R2, review I-3). Dropped,
       // the same patient typed again after «Yeni qəbul» would go out to another bed as a second one.
