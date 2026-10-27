@@ -42,6 +42,13 @@ def _level(alert: Alert) -> tuple[Severity, Urgency]:
 
 
 class Engine:
+    #: Every dict the engine keeps per patient besides the readings in its repository. `forget`,
+    #: `copy` and `adopt` move exactly these: a per-patient dict added to `__init__` and left off
+    #: this list would be kept by a discharged patient and lost by a shadow copy, so a test pins
+    #: the list against the instance's dicts.
+    _PER_PATIENT = ("_recognized_at", "_dropped_anchor", "_alerts", "_held_news2_alert",
+                    "_news2_judged_at", "_profiles")
+
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
         self._recognized_at: dict[str, datetime] = {}
@@ -281,22 +288,22 @@ class Engine:
         dropped at the door, so nothing would ever end these alerts otherwise. A profile is the
         admission's — a readmission is a new number and a new profile. Idempotent."""
         self._repo.remove(patient_id)
-        for mapping in (self._recognized_at, self._dropped_anchor, self._alerts,
-                        self._held_news2_alert, self._news2_judged_at, self._profiles):
-            mapping.pop(patient_id, None)
+        for name in self._PER_PATIENT:
+            getattr(self, name).pop(patient_id, None)
 
     def copy(self) -> "Engine":
-        """A deep, independent copy: every patient's readings, profile, alerts and the per-patient
-        memory (Aşama B, D9 — the shadow engine starts as the real engine's copy). The optional
-        model scorer is shared, not copied: it is read-only."""
-        twin = Engine()
-        twin._repo = _copy.deepcopy(self._repo)
-        twin._recognized_at = dict(self._recognized_at)
-        twin._dropped_anchor = dict(self._dropped_anchor)
-        twin._alerts = _copy.deepcopy(self._alerts)
-        twin._held_news2_alert = _copy.deepcopy(self._held_news2_alert)
-        twin._news2_judged_at = dict(self._news2_judged_at)
-        twin._profiles = _copy.deepcopy(self._profiles)
+        """An independent copy: every patient's readings, profile, alerts and the per-patient
+        memory (Aşama B, D9 — the shadow engine starts as the real engine's copy). Readings are
+        copied series by series (`PatientState.copy`), everything else in `_PER_PATIENT` deeply;
+        nothing is shared, so what the copy ingests never reaches this engine (D1). The optional
+        model scorer is shared, not copied: it is read-only. Assumes the in-memory repository:
+        the twin always gets one, filled through the repository protocol."""
+        repo = InMemoryPatientRepository()
+        for patient_id in self._repo.patient_ids():
+            repo.put(patient_id, self._repo.get_or_create(patient_id).copy())
+        twin = Engine(repo)
+        for name in self._PER_PATIENT:
+            setattr(twin, name, _copy.deepcopy(getattr(self, name)))
         twin._scorer = self._scorer
         return twin
 
@@ -304,13 +311,13 @@ class Engine:
         """Replace everything this engine holds for `patient_id` with a deep copy of what `other`
         holds (Aşama B, D5: un-linking a monitor returns the shadow patient to the real one's
         picture). A patient `other` does not know is forgotten here. `other` is read, never
-        written."""
+        written (D1). Each structure is copied only where `other` has an entry: a patient can have
+        a profile and no reading (after a restart the replay only sets the profile), and that
+        profile must survive the un-linking. Assumes the in-memory repository, as `copy` does."""
         self.forget(patient_id)
-        if patient_id not in other.patient_ids():
-            return
-        self._repo._states[patient_id] = _copy.deepcopy(other._repo.get_or_create(patient_id))  # noqa: SLF001
-        for name in ("_recognized_at", "_dropped_anchor", "_alerts", "_held_news2_alert",
-                     "_news2_judged_at", "_profiles"):
+        if patient_id in other.patient_ids():       # the guard keeps other.state() from creating the patient
+            self._repo.put(patient_id, other.state(patient_id).copy())
+        for name in self._PER_PATIENT:
             theirs = getattr(other, name)
             if patient_id in theirs:
                 getattr(self, name)[patient_id] = _copy.deepcopy(theirs[patient_id])

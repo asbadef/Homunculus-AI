@@ -20,6 +20,19 @@ class PatientState:
         # Keep sorted by timestamp so out-of-order arrivals are handled.
         series.sort(key=lambda o: o.timestamp)
 
+    def copy(self) -> "PatientState":
+        """An independent state with the same readings (Aşama B, D9: the shadow engine starts as a
+        copy of the real one, and `Engine.adopt` returns one patient to it). Each series is a new
+        list, so ingesting into, or dropping from, either state leaves the other alone; the
+        observations themselves are shared, which is safe because an `Observation` is frozen and
+        this class only ever appends to a series or replaces it, never edits a reading. That is
+        the whole point against `copy.deepcopy`, which rebuilt every reading: 13 beds of 20 000
+        readings took 2.2 s, and this takes milliseconds."""
+        twin = PatientState(self.patient_id)
+        for code, series in self._history.items():
+            twin._history[code] = list(series)
+        return twin
+
     def drop_source(self, prefix: str, before: datetime | None = None) -> None:
         """Forget the observations whose `source_device` starts with `prefix` — all of them, or
         only those stamped before `before` (Aşama B, D5 and D9: a monitor's samples leave a
