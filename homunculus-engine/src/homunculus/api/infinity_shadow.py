@@ -10,6 +10,9 @@ same with the stage on or off.
 Configuration never stops the API: a clinical service that will not boot over an optional
 display feature is the worse failure. A problem makes the stage `off`, says why, and the
 device screen shows it.
+
+The stage `rules` is Aşama B: the sampler and the shadow engine live in `infinity_rules.py`;
+this module only reads the switch that turns them on.
 """
 from __future__ import annotations
 
@@ -27,29 +30,36 @@ from homunculus.scope.rules import normalise_id
 log = logging.getLogger(__name__)
 
 STAGES = ("off", "shadow", "rules", "alarms")   # the design's switch (§5)
-IMPLEMENTED = ("off", "shadow")                 # this build: Stage A only
+IMPLEMENTED = ("off", "shadow", "rules")        # Aşama A and Aşama B; `alarms` is C
 MIN_TOKEN = 32
 DEFAULT_TABLE_PATH = "/etc/homunculus/infinity-shadow/device-beds.json"
 
 
 @dataclass(frozen=True)
 class ShadowSettings:
-    stage: str = "off"                 # what runs: "off" or "shadow"
+    stage: str = "off"                 # what runs: "off", "shadow" or "rules"
     configured: str = "off"            # what the environment asked for
     problem: str | None = None
     token: str = field(default="", repr=False)
     hospital: str = ""
     table_path: str = DEFAULT_TABLE_PATH
+    parameters: tuple[str, ...] = ()   # Aşama B's allowlist (api/infinity_rules.py); () below `rules`
 
     def __post_init__(self) -> None:
         # compare_digest(b"", b"") is True: an "on" lane with an empty or short token would take a
         # POST carrying no credential. The env reader never builds one; nothing else may either.
-        if self.stage == "shadow" and len(self.token) < MIN_TOKEN:
+        if self.stage in ("shadow", "rules") and len(self.token) < MIN_TOKEN:
             raise ValueError("a shadow stage needs a token of at least 32 characters")
 
     @property
     def on(self) -> bool:
-        return self.stage == "shadow"
+        """The strip runs: Aşama A, or Aşama B which contains it."""
+        return self.stage in ("shadow", "rules")
+
+    @property
+    def rules(self) -> bool:
+        """Aşama B: the sampler, the mirror, the shadow board key and the findings route run."""
+        return self.stage == "rules"
 
 
 def shadow_settings_from_env(env: Mapping[str, str], tenants: Mapping[str, str]) -> ShadowSettings:
@@ -80,7 +90,16 @@ def shadow_settings_from_env(env: Mapping[str, str], tenants: Mapping[str, str])
         return off("token_reused")
     if not hospital or hospital not in set(tenants.values()):
         return off("hospital_missing")
-    return ShadowSettings("shadow", configured, None, token, hospital, table_path)
+    parameters: tuple[str, ...] = ()
+    if configured == "rules":
+        # Imported here, not at the top: infinity_rules imports the engine, and this module must
+        # keep importing nothing clinical (tests/test_infinity_shadow_isolation.py).
+        from homunculus.api.infinity_rules import rules_from_env
+        try:
+            parameters = rules_from_env(env).allowed
+        except ValueError as exc:
+            return off(str(exc))
+    return ShadowSettings(configured, configured, None, token, hospital, table_path, parameters)
 
 
 # --- the wire format and the store ---------------------------------------------------------------
