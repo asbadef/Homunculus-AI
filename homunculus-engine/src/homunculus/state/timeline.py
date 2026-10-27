@@ -20,6 +20,19 @@ class PatientState:
         # Keep sorted by timestamp so out-of-order arrivals are handled.
         series.sort(key=lambda o: o.timestamp)
 
+    def drop_source(self, prefix: str, before: datetime | None = None) -> None:
+        """Forget the observations whose `source_device` starts with `prefix` — all of them, or
+        only those stamped before `before` (Aşama B, D5 and D9: a monitor's samples leave a
+        patient's shadow state when the bed's patient changes, and age out after a day). A code
+        left with no observation is removed, so `latest()` answers None as for a code never seen."""
+        for code in list(self._history):
+            kept = [o for o in self._history[code]
+                    if not (o.source_device.startswith(prefix) and (before is None or o.timestamp < before))]
+            if kept:
+                self._history[code] = kept
+            else:
+                del self._history[code]
+
     def latest(self, code: SignalCode) -> Observation | None:
         series = self._history.get(code)
         return series[-1] if series else None

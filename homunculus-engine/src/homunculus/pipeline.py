@@ -3,6 +3,7 @@
 Holds per-patient recognition time to anchor the antibiotic clock."""
 from __future__ import annotations
 
+import copy as _copy
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -283,3 +284,33 @@ class Engine:
         for mapping in (self._recognized_at, self._dropped_anchor, self._alerts,
                         self._held_news2_alert, self._news2_judged_at, self._profiles):
             mapping.pop(patient_id, None)
+
+    def copy(self) -> "Engine":
+        """A deep, independent copy: every patient's readings, profile, alerts and the per-patient
+        memory (Aşama B, D9 — the shadow engine starts as the real engine's copy). The optional
+        model scorer is shared, not copied: it is read-only."""
+        twin = Engine()
+        twin._repo = _copy.deepcopy(self._repo)
+        twin._recognized_at = dict(self._recognized_at)
+        twin._dropped_anchor = dict(self._dropped_anchor)
+        twin._alerts = _copy.deepcopy(self._alerts)
+        twin._held_news2_alert = _copy.deepcopy(self._held_news2_alert)
+        twin._news2_judged_at = dict(self._news2_judged_at)
+        twin._profiles = _copy.deepcopy(self._profiles)
+        twin._scorer = self._scorer
+        return twin
+
+    def adopt(self, other: "Engine", patient_id: str) -> None:
+        """Replace everything this engine holds for `patient_id` with a deep copy of what `other`
+        holds (Aşama B, D5: un-linking a monitor returns the shadow patient to the real one's
+        picture). A patient `other` does not know is forgotten here. `other` is read, never
+        written."""
+        self.forget(patient_id)
+        if patient_id not in other.patient_ids():
+            return
+        self._repo._states[patient_id] = _copy.deepcopy(other._repo.get_or_create(patient_id))  # noqa: SLF001
+        for name in ("_recognized_at", "_dropped_anchor", "_alerts", "_held_news2_alert",
+                     "_news2_judged_at", "_profiles"):
+            theirs = getattr(other, name)
+            if patient_id in theirs:
+                getattr(self, name)[patient_id] = _copy.deepcopy(theirs[patient_id])
