@@ -156,6 +156,7 @@ const AZ_SAME_AS_TR = new Set([
   "kabul.state.OCCUPIED", // Dolu — the same word in Azerbaijani
   "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg", // ABO and Rh: symbols
   "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
+  "kabul.placeholder.site", // Bina adı — bina and ad are Azerbaijani too (az newSite: "Yeni binanın adı")
 
   // G2-A3 (patient · meds) · az = tr
   "patient.medsBolusUnit", //          mL — a unit symbol, not a word

@@ -41,10 +41,17 @@ const UNIT_TYPE_KEYS = Object.freeze(Object.fromEntries(UNIT_TYPES.map((o) => [o
  *  100, a bed's label 50, a room's number 20). */
 const MAX = Object.freeze({ site: 200, unit: 200, room: 100, bed: 50, roomNumber: 20 });
 
+/** What a name box SHOWS it takes (walk M-2): its accessible name is the long "new unit name in
+ *  <site>", which a sighted reader never sees — four empty boxes said nothing. */
+const PLACEHOLDER = Object.freeze({
+  site: "kabul.placeholder.site", unit: "kabul.placeholder.unit", room: "kabul.placeholder.room", bed: "kabul.placeholder.bed",
+});
+
 /** One text box and its button: add a child, or rename this node. The button's name is
  *  "<button>: <subject>". It is held — `aria-disabled`, pointing at why — while another write is
- *  out (`held`: the id of the sentence that says so) and while the box is blank (`blankKey`). */
-function Line({ id, label, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
+ *  out (`held`: the id of the sentence that says so) and while the box is blank (`blankKey`).
+ *  `placeholder`: what the box shows it takes, beside its accessible name `label`. */
+function Line({ id, label, placeholder, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
   const { t } = useI18n();
   const [value, setValue] = useState(initial);
   const [tried, setTried] = useState(false);
@@ -61,7 +68,7 @@ function Line({ id, label, initial = "", subject, submitKey, blankKey, maxLength
       }
       if (await onSubmit(value.trim())) setValue(initial);
     }}>
-      <Input aria-label={label} value={value} readOnly={busy} maxLength={maxLength} autoFocus={autoFocus}
+      <Input aria-label={label} placeholder={placeholder} value={value} readOnly={busy} maxLength={maxLength} autoFocus={autoFocus}
         aria-invalid={tried && blank ? "true" : undefined} aria-describedby={tried && blank ? blankId : undefined}
         onChange={(e) => { setValue(e.target.value); setTried(false); }}
         className="!w-auto min-w-[160px] flex-1" />
@@ -80,11 +87,13 @@ function UnitAdd({ site, busy, held, onAdd }) {
   const { t } = useI18n();
   const [unitType, setUnitType] = useState("ADULT_ICU");
   return (
-    <Line label={t("kabul.newUnit", { site: site.name })} subject={site.name} submitKey="kabul.addUnit"
-      blankKey="kabul.invalid.name" maxLength={MAX.unit} busy={busy} held={held}
+    <Line label={t("kabul.newUnit", { site: site.name })} placeholder={t(PLACEHOLDER.unit)} subject={site.name}
+      submitKey="kabul.addUnit" blankKey="kabul.invalid.name" maxLength={MAX.unit} busy={busy} held={held}
       onSubmit={(name) => onAdd({ name, unit_type: unitType })}>
+      {/* Its natural width beside the name, but never wider than the line (walk M-1): its longest
+          option is wider than a 390 px screen's column, and it pushed the whole tab sideways. */}
       <Select aria-label={`${t("kabul.unitTypeLabel")}: ${site.name}`} value={unitType}
-        onChange={(e) => setUnitType(e.target.value)} className="!w-auto">
+        onChange={(e) => setUnitType(e.target.value)} className="!w-auto min-w-0 max-w-full">
         {UNIT_TYPES.map((o) => <option key={o.value} value={o.value}>{t(o.key)}</option>)}
       </Select>
     </Line>
@@ -99,7 +108,7 @@ function RoomAdd({ unit, busy, held, savingId, onAdd }) {
   const [number, setNumber] = useState("");
   const [isolation, setIsolation] = useState(false);
   return (
-    <Line label={t("kabul.newRoom", { unit })} subject={unit} submitKey="kabul.addRoom"
+    <Line label={t("kabul.newRoom", { unit })} placeholder={t(PLACEHOLDER.room)} subject={unit} submitKey="kabul.addRoom"
       blankKey="kabul.invalid.name" maxLength={MAX.room} busy={busy} held={held}
       onSubmit={async (name) => {
         const ok = await onAdd({ name, room_number: number.trim() || null, is_isolation: isolation });
@@ -139,7 +148,7 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
     toggleRef.current?.focus();
   };
   return (
-    <li className="grid gap-1.5 rounded-ctl border border-line bg-card px-3 py-2">
+    <li className="grid grid-cols-1 gap-1.5 rounded-ctl border border-line bg-card px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <b className={kind === "bed" ? "font-data" : ""}>{name}</b>
         {closed ? <Tag>{t("kabul.closed")}</Tag> : null}
@@ -154,7 +163,8 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
         </span>
       </div>
       {renaming ? (
-        <Line id={editorId} label={t("kabul.renameOf", { name: subject })} initial={name} subject={subject} submitKey="common.save"
+        <Line id={editorId} label={t("kabul.renameOf", { name: subject })} placeholder={t(PLACEHOLDER[kind])}
+          initial={name} subject={subject} submitKey="common.save"
           blankKey={kind === "bed" ? "kabul.invalid.label" : "kabul.invalid.name"} maxLength={maxLength}
           busy={busy} held={held} autoFocus
           onSubmit={async (value) => {
@@ -233,21 +243,23 @@ export function StructureTab() {
   // A unit by its name, and its site's once there is more than one site: two sites may each have a
   // "Reanimasiya". A room and a bed carry their unit's subject after their own name.
   const manySites = (structure.sites ?? []).length > 1;
+  // Every grid of the tab is `grid-cols-1` — one column of `minmax(0, 1fr)` — so no column grows
+  // to its content's min-content and pushes the tab sideways at 390 px (walk M-1).
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-1 gap-3">
       {error ? <Alert tone="crit">{t("kabul.listStale", { reason: readErrorText(t, error) })}</Alert> : null}
       <p className="m-0 text-13 text-mute">{t("kabul.structureIntro")}</p>
       {busy ? <p id={heldId} className="m-0 text-12 font-semibold text-mute">{saying}</p> : null}
       <Announce text={saying} />
-      <Line label={t("kabul.newSite")} subject={hospital} submitKey="kabul.addSite" blankKey="kabul.invalid.name"
-        maxLength={MAX.site} busy={isBusy("site")} held={holdFor("site")}
+      <Line label={t("kabul.newSite")} placeholder={t(PLACEHOLDER.site)} subject={hospital} submitKey="kabul.addSite"
+        blankKey="kabul.invalid.name" maxLength={MAX.site} busy={isBusy("site")} held={holdFor("site")}
         onSubmit={(name) => write("site", name, () => api.createSite(structure.tenant_id, { name }), "kabul.added")} />
       {(structure.sites ?? []).map((site) => (
         <Box key={site.id} title={site.name} icon="building" level={2}>
           <UnitAdd site={site} busy={isBusy(site.id)} held={holdFor(site.id)}
             onAdd={(body) => write(site.id, manySites ? `${body.name} · ${site.name}` : body.name,
               () => api.createUnit(site.id, body), "kabul.added")} />
-          <ul className="m-0 mt-2 grid list-none gap-2 p-0">
+          <ul className="m-0 mt-2 grid list-none grid-cols-1 gap-2 p-0">
             {(site.units ?? []).map((unit) => {
               const unitName = manySites ? `${unit.name} · ${site.name}` : unit.name;
               return (
@@ -258,7 +270,7 @@ export function StructureTab() {
                   onToggle={() => toggle(unit, api.patchUnit, unitName)}>
                   <RoomAdd unit={unitName} busy={isBusy(`${unit.id}+`)} held={holdFor(`${unit.id}+`)} savingId={heldId}
                     onAdd={(body) => write(`${unit.id}+`, `${body.name} · ${unitName}`, () => api.createRoom(unit.id, body), "kabul.added")} />
-                  <ul className="m-0 grid list-none gap-2 p-0 ps-4">
+                  <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 ps-4">
                     {(unit.rooms ?? []).map((room) => {
                       // A room with its unit, a bed as the header's rule names it — on the toast and
                       // on every control.
@@ -275,14 +287,17 @@ export function StructureTab() {
                           busy={isBusy(room.id)} held={holdFor(room.id)}
                           onRename={(name) => write(room.id, roomName, () => api.patchRoom(room.id, { name }), "kabul.renamed")}
                           onToggle={() => toggle(room, api.patchRoom, roomName)}>
-                          <Line label={t("kabul.newBed", { room: roomName })} subject={roomName} submitKey="kabul.addBed"
-                            blankKey="kabul.invalid.label" maxLength={MAX.bed}
+                          <Line label={t("kabul.newBed", { room: roomName })} placeholder={t(PLACEHOLDER.bed)} subject={roomName}
+                            submitKey="kabul.addBed" blankKey="kabul.invalid.label" maxLength={MAX.bed}
                             busy={isBusy(`${room.id}+`)} held={holdFor(`${room.id}+`)}
                             onSubmit={(label) => write(`${room.id}+`, bedName(label), () => api.createBed(room.id, { label }), "kabul.added")} />
-                          <ul className="m-0 grid list-none gap-1.5 p-0 ps-4">
+                          <ul className="m-0 grid list-none grid-cols-1 gap-1.5 p-0 ps-4">
                             {(room.beds ?? []).map((bed) => (
                               <Node key={bed.id} kind="bed" item={bed} name={bed.label} subject={bedName(bed.label)} maxLength={MAX.bed}
-                                tags={bed.state ? <Tag>{t(BED_STATE_KEYS[bed.state] ?? "kabul.bedOther")}</Tag> : null}
+                                // A closed bed says only that it is closed (walk M-5): its state
+                                // underneath ("Boş") beside "Bağlıdır" read as a free bed.
+                                tags={bed.state && bed.is_active !== false
+                                  ? <Tag>{t(BED_STATE_KEYS[bed.state] ?? "kabul.bedOther")}</Tag> : null}
                                 busy={isBusy(bed.id)} held={holdFor(bed.id)}
                                 onRename={(label) => write(bed.id, bedName(bed.label), () => api.patchBed(bed.id, { label }), "kabul.renamed")}
                                 onToggle={() => toggle(bed, api.patchBed, bedName(bed.label))} />

@@ -53,6 +53,43 @@ describe("StructureTab", () => {
     }
   });
 
+  // Walk M-5: a closed bed read "Bağlıdır" and "Boş" side by side. Closed is the whole statement.
+  it("shows a closed bed's closed state only, and an open bed's state", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    expect(within(line("4")).getByText("Bağlıdır")).toBeTruthy();       // closed, and AVAILABLE underneath
+    expect(within(line("4")).queryByText("Boş")).toBeNull();
+    expect(within(line("1")).getByText("Boş")).toBeTruthy();
+    expect(within(line("2")).getByText("Dolu")).toBeTruthy();
+  });
+
+  // Walk M-2: the boxes for a new site's, unit's, room's and bed's name had only an accessible name
+  // — a sighted reader met four empty boxes. Each shows what it takes, as "Otaq nömrəsi" does.
+  it("shows in every new-name box what it takes, beside its accessible name", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const shown = (name) => screen.getByRole("textbox", { name }).getAttribute("placeholder");
+    expect(shown("Yeni binanın adı")).toBe("Bina adı");
+    expect(shown("Ana bina daxilində yeni şöbənin adı")).toBe("Şöbə adı");
+    expect(shown("Reanimasiya daxilində yeni otağın adı")).toBe("Otaq adı");
+    expect(shown("Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi")).toBe("Çarpayı etiketi");
+    expect(shown("Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)")).toBe("Otaq nömrəsi");
+    fireEvent.click(button("Adını dəyiş: 1 · Otaq 1 · Reanimasiya"));
+    expect(shown("1 · Otaq 1 · Reanimasiya üçün yeni ad")).toBe("Çarpayı etiketi");
+  });
+
+  // Walk M-1: at 390 px the tab scrolled sideways inside <main> and clipped "Bina əlavə et": a grid
+  // column grows to its content's min-content, and the unit-type box's is its longest option. jsdom
+  // lays nothing out, so the classes are the guard (as BedsScreen's narrow grid is).
+  it("never scrolls sideways at 390 px: every column may shrink, and the unit-type box keeps to its line", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const tab = screen.getByText(/^Bina, şöbə, otaq və çarpayıları buradan qurun/).parentElement;
+    const grids = [tab, ...tab.querySelectorAll("ul.grid, li.grid")];
+    expect(grids.length).toBeGreaterThan(10);
+    for (const grid of grids) expect(grid).toHaveClass("grid-cols-1");
+    const type = screen.getByRole("combobox", { name: "Şöbənin növü: Ana bina" });
+    expect(type).toHaveClass("min-w-0");
+    expect(type).toHaveClass("max-w-full");
+  });
+
   it("says it is loading, as a status", async () => {
     await mountKabul(<StructureTab />, { perms: ADMIN, setup: (a) => a.structure.mockReturnValue(new Promise(() => {})) });
     expect(screen.getByText("Yüklənir…").getAttribute("role")).toBe("status");
