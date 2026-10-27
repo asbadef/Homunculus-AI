@@ -86,6 +86,9 @@ export const API_MESSAGE_KEYS = new Map([
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
+  // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.
+  // backendApi.shadowFindings refuses one before it is sent; the server's own word is translated all the same.
+  ["geçersiz days: 1–7 olmalı", "badShadowDays"],
 
   // admin/service.py — its module constants and the AdminError literals.
   ["Son yönetici yetkisi kaldırılamaz", "lastAdmin"],

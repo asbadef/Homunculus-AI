@@ -158,14 +158,20 @@ export function nameOf(patient, t) {
  *  with its age: the server's stamp (`measured_at`) against `nowMs`, the clock the screen read with
  *  `useBoardNow`. The age is the screen's to state; "too old" is the engine's (freshness.js), and
  *  `fresh_until` is never compared with a clock here. An expired chart also names what it last read
- *  (`last_charted`, X11): «assumed: room air (last charted: on oxygen, 9 h ago)». */
-export function News2({ news2, nowMs, className = "" }) {
+ *  (`last_charted`, X11): «assumed: room air (last charted: on oxygen, 9 h ago)».
+ *
+ *  `label` (Aşama B): the word printed before the total — «NEWS2» unless a caller names its score
+ *  otherwise. The patient screen's «Gölge öneri» box draws the shadow engine's NEWS2 with this very
+ *  component, labelled «Gölge NEWS2», so it carries the same caveats (partial and what is missing,
+ *  stale, assumed, the red parameter) rather than a bare total. */
+export function News2({ news2, nowMs, label, className = "" }) {
   const { t } = useI18n();
+  const word = label ?? t("board.news2");
   const missing = Array.isArray(news2?.missing) ? news2.missing : [];
   if (!news2 || typeof news2.total !== "number") {
     return (
       <span className={`inline-flex items-center gap-1.5 text-11.5 font-semibold text-mute ${className}`}>
-        <span>{`${t("board.news2")}: —`}</span>
+        <span>{`${word}: —`}</span>
         <span className="sr-only">{t("news2.noEngine")}</span>
       </span>
     );
@@ -187,7 +193,7 @@ export function News2({ news2, nowMs, className = "" }) {
   };
   return (
     <span className={`inline-flex flex-wrap items-center gap-1.5 text-11.5 font-semibold ${className}`}>
-      <span className="text-mute">{t("board.news2")}:</span>
+      <span className="text-mute">{word}:</span>
       <b className="font-data text-13 text-ink">{news2.total}</b>
       {news2.partial ? (
         <StatusPill tone="att" icon="alert">

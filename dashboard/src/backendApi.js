@@ -529,9 +529,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** Aşama B: the findings the shadow engine opened or closed in the last `days` days, newest first
      *  (GET /infinity-shadow/findings?days=N → `{days, findings: [{patient_id, kind, severity, opened_at,
      *  cleared_at}]}`) — Settings' weekly review. Read by the shadow store only, with the board poll's
-     *  own bearer and refresh-and-retry. A whole number of days and nothing else goes on the address. */
+     *  own bearer and refresh-and-retry. A whole number of days from 1 to 7 — the route's own window, the
+     *  week's review — and nothing else goes on the address. */
     shadowFindings(days = 7) {
-      if (!Number.isInteger(days) || days < 1) throw new TypeError("shadowFindings(days): a whole number of days, 1 or more");
+      if (!Number.isInteger(days) || days < 1 || days > 7) throw new TypeError("shadowFindings(days): a whole number of days, 1 to 7");
       return authed(`/infinity-shadow/findings?days=${days}`);
     },
 

@@ -21,6 +21,13 @@
 // (`nbpWaiting`); `legendNbp` says what the time means (an upper bound), the 2-hour limit, the
 // waits after a hub restart or an interruption of the monitor's data, and that a changed
 // patient's bed may show the previous patient's NBP.
+//
+// `fullRules` is `full` at Aşama B's «rules» stage, where the four things change in one place: the
+// shadow engine DOES compute a score from these values — advice with every alarm off, shown in the
+// patient screen's «Gölge öneri · alarm kapalı» box, quoted by that box's own heading and tag
+// (strings.test.js holds the two together) — while still no alarm, notification, sound or count comes
+// from them and the bedside monitor stays the primary alarm. `full` would be false there («no score,
+// NEWS2 included»), so the strip and the Settings legend pick by the board answer's stage.
 const p = {
   hr: "HR", pls: "PLS", spo2: "SpO₂", etco2: "etCO₂", temperature: "Ta",
   art_systolic: "ART S", art_diastolic: "ART D", art_mean: "ART M", respiration: "RESP", nbp: "NBP",
@@ -32,6 +39,7 @@ export default {
     tag: "DOĞRULANMAMIŞ",
     short: "Araştırma çözümlemesi · karar için ölçüm değildir · alarm üretmez",
     full: "Bu değerler başucu monitörünün ağ yayınından araştırma amacıyla çözülüyor ve doğrulanmadı. Karar için başucu monitörüne bakın. Bu değerlerden hiçbir alarm, skor (NEWS2 dahil), bildirim ya da ses üretilmez; birincil alarm başucu monitörünün kendi alarmıdır.",
+    fullRules: "Bu değerler başucu monitörünün ağ yayınından araştırma amacıyla çözülüyor ve doğrulanmadı. Karar için başucu monitörüne bakın. Bu değerlerden hiçbir alarm, bildirim ya da ses üretilmez ve hiçbir sayaca girmez. Onlardan yalnız tavsiye niteliğinde bir gölge skor hesaplanır ve monitöre bağlı hastanın ekranında «Gölge öneri · alarm kapalı» kutusunda gösterilir; birincil alarm başucu monitörünün kendi alarmıdır.",
     noSound: "Bu şerit hiçbir zaman ses çıkarmaz, bildirim göndermez, alarm listesine ve «Yanıt bekleyen alarmlar»a girmez.",
     section: "Monitörler — doğrulanmamış",
     sectionSub: "Bir hasta kartına bağlanmamış monitörler. Değerler hiçbir hastaya yazılmaz.",
@@ -101,6 +109,7 @@ export default {
     tag: "TƏSDİQLƏNMƏMİŞ",
     short: "Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır",
     full: "Bu dəyərlər çarpayı yanındakı monitorun şəbəkə yayımından tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib. Qərar üçün çarpayı yanındakı monitora baxın. Bu dəyərlərdən heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır; əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır.",
+    fullRules: "Bu dəyərlər çarpayı yanındakı monitorun şəbəkə yayımından tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib. Qərar üçün çarpayı yanındakı monitora baxın. Bu dəyərlərdən heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur. Onlardan yalnız tövsiyə xarakterli kölgə bal hesablanır və monitora bağlı xəstənin ekranında «Kölgə tövsiyə · siqnal söndürülüb» blokunda göstərilir; əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır.",
     noSound: "Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.",
     section: "Monitorlar — təsdiqlənməmiş",
     sectionSub: "Heç bir xəstə kartına bağlanmamış monitorlar. Dəyərlər heç bir xəstəyə yazılmır.",
@@ -170,6 +179,7 @@ export default {
     tag: "НЕ ВАЛИДИРОВАНО",
     short: "Исследовательское декодирование · не измерение для принятия решений · не создаёт тревог",
     full: "Эти значения в исследовательских целях декодируются из сетевой трансляции прикроватного монитора и не валидированы. Для принятия решений смотрите на прикроватный монитор. Никакие тревоги, шкалы (включая NEWS2), уведомления или звуки из этих значений не создаются; основной сигнал тревоги — собственная тревога прикроватного монитора.",
+    fullRules: "Эти значения в исследовательских целях декодируются из сетевой трансляции прикроватного монитора и не валидированы. Для принятия решений смотрите на прикроватный монитор. Никакие тревоги, уведомления или звуки из этих значений не создаются, и они не попадают ни в какие счётчики. Из них рассчитывается только рекомендательная теневая оценка — она показывается на экране пациента, связанного с монитором, в блоке «Теневая рекомендация · тревога выключена»; основной сигнал тревоги — собственная тревога прикроватного монитора.",
     noSound: "Этот блок никогда не издаёт звук, не отправляет уведомления и не попадает ни в список тревог, ни в «Тревоги без ответа».",
     section: "Мониторы — данные не валидированы",
     sectionSub: "Мониторы, не привязанные к карточке пациента. Значения ни одному пациенту не записываются.",
@@ -239,6 +249,7 @@ export default {
     tag: "UNVALIDATED",
     short: "Research decoding · not a measurement for decisions · raises no alarms",
     full: "These values are decoded, for research, from the bedside monitor's network broadcast and have not been validated. Look at the bedside monitor for decisions. No alarm, score (NEWS2 included), notification or sound is produced from them; the bedside monitor's own alarm remains the primary alarm.",
+    fullRules: "These values are decoded, for research, from the bedside monitor's network broadcast and have not been validated. Look at the bedside monitor for decisions. No alarm, notification or sound is produced from them, and they enter no count. Only an advisory shadow score is computed from them, shown on the screen of the patient linked to the monitor in the «Shadow advice · alarm off» box; the bedside monitor's own alarm remains the primary alarm.",
     noSound: "This strip never sounds, never notifies, and never enters the alarm list or «Alarms awaiting response».",
     section: "Monitors — unvalidated",
     sectionSub: "Monitors not linked to a patient card. Their values are written to no patient.",

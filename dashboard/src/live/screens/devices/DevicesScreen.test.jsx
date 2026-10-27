@@ -139,6 +139,19 @@ describe("the monitor screen — the shadow engine's lane (Aşama B)", () => {
     expect(screen.getByText("Cədvəl versiyası 1 · ab12cd34ef56")).toBeInTheDocument();
   });
 
+  it("says at each strip's foot what the stage makes of the values: an advisory shadow score at «rules», none at «shadow»", async () => {
+    await open(rules());
+    let region = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(region).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(region).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+    cleanup();
+    await open(strip({ beds: [bed("REA-01 · 2", [param("hr", 72)])] }));
+    region = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+    expect(region).not.toHaveTextContent("kölgə bal");
+  });
+
   it("says the shadow engine's lane is in error, as an amber note beside the feed state", async () => {
     await open(rules({ rules_state: "error" }));
     const note = screen.getByText(LANE).closest("[role='note']");

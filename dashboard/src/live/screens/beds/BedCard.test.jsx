@@ -377,14 +377,15 @@ describe("the bed card — the shadow tag", () => {
   const STRIP = { entry: monitorBed("REA-01 · 2", [monitorParam("hr", 72)], { link: "one", patient_id: "S-001" }),
     nowMs: NOW, fetchedAtMs: NOW, maxAgeS: 15, feedOk: true };
 
-  function withShadow(shadow, { monitor, alarms = [] } = {}) {
+  function withShadow(shadow, { monitor, alarms = [], connection = CONNECTION.LIVE, nowMs = NOW } = {}) {
     const patient = patientFromBoard(entry("S-001", alarms, { identity: identity(), at: measured(30), shadow }));
     return render(
       <I18nProvider>
-        <ul><BedCard patient={patient} alerts={alertsFromPatients([patient])} nowMs={NOW} connection={CONNECTION.LIVE} monitor={monitor} /></ul>
+        <ul><BedCard patient={patient} alerts={alertsFromPatients([patient])} nowMs={nowMs} connection={connection} monitor={monitor} /></ul>
       </I18nProvider>,
     );
   }
+  const input = (at, via = "hr") => ({ value: 140, unit: "bpm", at, source: "monitor", via });
   const tag = () => document.querySelector("[data-shadow-tag]");
   afterEach(() => localStorage.clear());
 
@@ -470,6 +471,40 @@ describe("the bed card — the shadow tag", () => {
     withShadow(shadowOf());
     expect(tag()).toHaveTextContent("теневая рекомендация · NEWS2 6");
     expect(tag().textContent).not.toBe(az);
+    cleanup();
+    withShadow(shadowOf({ vitals: { heart_rate: input(ago(120)) } }));
+    expect(tag()).toHaveTextContent("теневая рекомендация · NEWS2 6 · 2 мин назад");
+    cleanup();
+    withShadow(shadowOf({ findings: [] }), { connection: CONNECTION.DEGRADED });
+    expect(tag()).toHaveTextContent("теневая рекомендация · неизвестно");
     localStorage.clear();
+  });
+
+  // A held score: the API republishes a patient only when a sample is taken or a link ends, so with a
+  // silent forwarder the tag would read the same number for as long as nobody looks. Its newest input's
+  // age goes with it, on the card's own clock.
+  it("ages the score by its newest input — «… · NEWS2 n · age» — and prints no age with no input", () => {
+    withShadow(shadowOf({ vitals: { heart_rate: input(ago(300)), sbp: input(ago(120), "art"), spo2: input("not a time", "spo2") } }));
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6 · 2 dəq əvvəl");
+    expect(tag().textContent).not.toMatch(/NaN/);
+    cleanup();
+    withShadow(shadowOf({ vitals: { heart_rate: input(ago(300)) } }), { nowMs: NOW + 3_600_000 });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6 · 65 dəq əvvəl");   // the card's clock, not a frozen stamp
+    cleanup();
+    withShadow(shadowOf({ vitals: {} }));
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6");
+    expect(tag().textContent).not.toMatch(/əvvəl|·\s*$/);
+  });
+
+  it("says «unknown», never «no shadow advice», when the board is not live — and still shows a score it holds", () => {
+    for (const connection of [CONNECTION.DEGRADED, CONNECTION.CONNECTING, CONNECTION.UNAVAILABLE]) {
+      withShadow(shadowOf({ findings: [] }), { connection });
+      expect(tag(), connection).toHaveTextContent("kölgə tövsiyə · bilinmir");
+      expect(tag().textContent, connection).not.toContain("yoxdur");
+      expect(tag().querySelector("[data-tone]")).toHaveAttribute("data-tone", "warn");
+      cleanup();
+    }
+    withShadow(shadowOf({ vitals: { heart_rate: input(ago(120)) } }), { connection: CONNECTION.DEGRADED });
+    expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6 · 2 dəq əvvəl");
   });
 });

@@ -12,7 +12,7 @@ import { PasswordForm } from "../../auth/PasswordForm.jsx";
 import { useAlarmSignals } from "../../signals/AlarmSignals.jsx";
 import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, riskStyle, useToast } from "../../ui/index.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { stripOn } from "../common/MonitorStrip.jsx";
+import { fullNoteKey, stripOn } from "../common/MonitorStrip.jsx";
 import { EVIDENCE, PARAM_ORDER, PARTIAL } from "../common/monitor.js";
 
 const BUILD_SHA = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
@@ -119,14 +119,16 @@ const NOTIFY_NOTE = {
 
 /** Aşama A: what the unvalidated monitor strip is, beside the sound and the notifications it never
  *  makes — shown only while the hospital has it on. The evidence table is every parameter the
- *  strip can show, in the API's order, with the four only partly checked marked. */
+ *  strip can show, in the API's order, with the four only partly checked marked. Its first sentence is
+ *  the strip's own whole note for the stage (`fullNoteKey`): at Aşama B's «rules» the shadow engine
+ *  computes an advisory score from the values, and the legend must not say that nothing does. */
 function MonitorLegend() {
   const { t } = useI18n();
   const { data } = useShadow();
   if (!stripOn(data)) return null;
   return (
     <Box title={t("monitor.legendTitle")} icon="activity" level={2} className="!border-dashed">
-      <p className="m-0 text-13">{t("monitor.full")}</p>
+      <p className="m-0 text-13">{t(fullNoteKey(data.stage))}</p>
       <p className="m-0 mt-2 text-13 font-semibold">{t("monitor.noSound")}</p>
       <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendAges")}</p>
       <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendNbp")}</p>
@@ -163,32 +165,41 @@ function whenOf(iso) {
   return Number.isFinite(ms) ? ddmmhhmm(ms) : "—";
 }
 
-/** Aşama B (D7): «Uyarsaydı — son 7 gün» — every finding the shadow engine opened in the last week, with
- *  when it cleared: the ones that would not have appeared without the monitor's unvalidated inputs. It is
+/** Aşama B (D6, D7): «Uyarsaydı — son 7 gün» — the findings the shadow ALONE opened in the last week
+ *  (`relation: "shadow_only"`), with when each cleared: the ones that would not have appeared without the
+ *  monitor's unvalidated inputs. The API's list also carries the findings the real engine had too, or had
+ *  at another level (`same`, `level_differs`); those would not have alerted, and are left out here. It is
  *  the material of the weekly review, nothing more: no row opens a patient, nothing rings, nothing in it
  *  is coloured by its severity (the word carries it), and it is read when the reader opens this tab —
  *  fetched once per opening, never polled, never live. Only while the hospital runs the rules (`stage`
- *  «rules»): at «shadow» or «off» there is no shadow engine to ask, and nothing is asked. A list that
- *  could not be read says so; it never reads as an empty week. */
+ *  «rules»): at «shadow» or «off» there is no shadow engine to ask, and nothing is asked — nor for a
+ *  session without `board.view`, the route's own permission (a `devices.manage`-only session reaches this
+ *  tab for the legend and would be refused the list every time). A list that could not be read says so;
+ *  it never reads as an empty week.
+ *
+ *  `min-w-0`: the box is an item of the Signals grid, and a grid item's `min-width: auto` let the
+ *  five-column table widen the page past 390 px instead of scrolling inside the Table's own frame. */
 function ShadowWeek() {
   const { t } = useI18n();
+  const { user } = useSession();
   const shadow = useShadow();
   const { store } = shadow;
-  const rules = shadow.data?.stage === "rules";
+  // Asked, and drawn, only at the rules stage and for a session the route will answer.
+  const ask = shadow.data?.stage === "rules" && Boolean(user?.perms?.includes("board.view"));
   const [week, setWeek] = useState({ phase: "loading", findings: [] });
   useEffect(() => {
-    if (!rules) return undefined;
+    if (!ask) return undefined;
     let current = true;
     setWeek({ phase: "loading", findings: [] });
     store.findings(7).then(
-      (body) => { if (current) setWeek({ phase: "ok", findings: body.findings }); },
+      (body) => { if (current) setWeek({ phase: "ok", findings: body.findings.filter((f) => f?.relation === "shadow_only") }); },
       () => { if (current) setWeek({ phase: "failed", findings: [] }); },
     );
     return () => { current = false; };
-  }, [rules, store]);
-  if (!rules) return null;
+  }, [ask, store]);
+  if (!ask) return null;
   return (
-    <div data-shadow-week="">
+    <div data-shadow-week="" className="min-w-0">
       <Box title={t("shadow.week")} icon="clock" level={2} className="!border-dashed">
         <p className="m-0 text-13 text-mute">{t("shadow.weekHelp")}</p>
         {week.phase === "loading" ? (

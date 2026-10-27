@@ -112,10 +112,13 @@ function statusSentence(t, entry) {
  * `title` replaces the heading ("{bed} · monitor"), which always carries the "unvalidated" word.
  * `unreadable`: the strip's last poll failed or its answer is too old — said in words on the strip
  * itself, while the values it still holds age out.
+ * `stage`: the board answer's stage. At Aşama B's «rules» the whole note is `monitor.fullRules` — the
+ * shadow engine computes an advisory score from these values, so «no score is produced» would be false;
+ * at any other stage (and when it is not given) it is `monitor.full`. The short note does not change.
  */
 export function MonitorStrip({
   entry, variant = "compact", nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, feedOk = true, title, level = 3,
-  unreadable = false, className = "", children,
+  unreadable = false, stage, className = "", children,
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -146,10 +149,14 @@ export function MonitorStrip({
       ) : (
         <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{t("monitor.noValues")}</p>
       )}
-      <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? "monitor.full" : "monitor.short")}</p>
+      <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? fullNoteKey(stage) : "monitor.short")}</p>
     </section>
   );
 }
+
+/** The whole note's key for a board answer's stage: at «rules» the shadow engine scores the values (advice,
+ *  alarm off), and the note says so; anywhere else, that nothing is scored. The Settings legend reads it too. */
+export const fullNoteKey = (stage) => (stage === "rules" ? "monitor.fullRules" : "monitor.full");
 
 /** Whether a board answer is a strip that is on — the only one a screen draws anything for. `rules` is
  *  Aşama B's running stage (the route overwrites board_view's "shadow" with it): the same strip, plus

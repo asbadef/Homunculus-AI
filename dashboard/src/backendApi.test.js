@@ -462,6 +462,19 @@ describe("backendApi — what the work screens call", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // The route answers 1–7 days (the week's review); a longer window is refused here rather than sent.
+  it("asks for 1 to 7 days and no more", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ days: 1, findings: [] }));
+    const api = signedIn(fetchMock);
+    for (const days of [8, 30, 365, Number.MAX_SAFE_INTEGER]) {
+      expect(() => api.shadowFindings(days), String(days)).toThrow(TypeError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    await api.shadowFindings(1);
+    await api.shadowFindings(7);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/infinity-shadow/findings?days=1", "/infinity-shadow/findings?days=7"]);
+  });
+
   it("records that a patient was opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);

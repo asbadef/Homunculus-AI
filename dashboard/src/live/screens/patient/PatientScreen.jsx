@@ -69,14 +69,17 @@ const TICK_MS = 30_000;
  *  says «the engine measured this»), the border is dashed (the house's «this screen cannot vouch for
  *  it»), and the line under it names the source — «monitor · ART» — with the stamp. The channel and the
  *  unit are written BY CODE with the words the measured cards use; a code or a source this build does
- *  not know prints as the engine sent it (shadowVitals.js). No age is computed: the stamp is the
- *  engine's, in the reader's clock, with its day and month when it is not today's. */
+ *  not know prints as the engine sent it (shadowVitals.js). The stamp is the engine's, in the reader's
+ *  clock, with its day and month when it is not today's — and beside it its age on the screen's clock,
+ *  as the measured cards write theirs («hh:mm · 3 dk önce»): a monitor number with no age cannot be told
+ *  from one that stopped arriving an hour ago. */
 function ShadowVital({ code, input, nowMs }) {
   const { t } = useI18n();
   const label = own(CODE_LABEL, code);
   const unit = own(CODE_UNIT, code);
   const via = own(VIA_KEY, input?.via);
   const ms = typeof input?.at === "string" ? Date.parse(input.at) : Number.NaN;
+  const age = Number.isFinite(ms) ? ageText(t, input.at, nowMs) : null;
   return (
     <div data-shadow-vital="" className="rounded-ctl border border-dashed border-line2 bg-card px-2.5 py-2">
       <dt className="text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] text-mute">{label ? t(label) : code}</dt>
@@ -85,6 +88,7 @@ function ShadowVital({ code, input, nowMs }) {
         <small className="ml-1 font-text text-11 font-semibold text-mute">{unit ? t(unit) : input?.unit}</small>
         <small className="mt-0.5 block font-text text-11 text-mute">
           {t("shadow.via", { via: via ? t(via) : String(input?.via ?? "—") })} · {Number.isFinite(ms) ? dayStamp(ms, nowMs) : "—"}
+          {age ? ` · ${age}` : null}
         </small>
       </dd>
     </div>
@@ -394,13 +398,15 @@ export function PatientScreen({ params }) {
           {monitor ? (
             <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}
               fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeOf(shadow.data)}
-              feedOk={shadow.data.feed?.state === "ok"}
+              feedOk={shadow.data.feed?.state === "ok"} stage={shadow.data.stage}
               unreadable={readUnknown(shadow, shadow.nowMs, maxAgeOf(shadow.data))} />
           ) : null}
 
           {/* Aşama B (D7): the shadow engine's answer on the monitor's numbers, after the strip it reads and
-              before the engine's own findings it must not be mistaken for. Nothing when there is no shadow. */}
-          <ShadowFindingsBox shadow={patient.shadow} />
+              before the engine's own findings it must not be mistaken for. Nothing when there is no shadow.
+              The screen's clock, and whether the board is live: «no shadow finding» is said only from a
+              live read, as the engine's own «no finding» below. */}
+          <ShadowFindingsBox shadow={patient.shadow} known={known} nowMs={nowMs} />
 
           <section className="grid gap-2">
             <h2 className="m-0 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">{t("patient.reco")}</h2>

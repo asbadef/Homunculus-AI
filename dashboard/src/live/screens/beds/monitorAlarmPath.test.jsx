@@ -14,7 +14,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
-import { NOW, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
+import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { alarmCounts, alarmsToSignal, lockSummary, waitingAlarms } from "../../data/boardStore.js";
 import { ShellProvider } from "../../shell/ShellContext.jsx";
@@ -43,8 +43,9 @@ function Probe() {
   return <p data-testid="signals">{`${sound} ${notify}`}</p>;
 }
 
-const reaBed = (id, bedLabel, alarms) => entry(id, alarms, {
+const reaBed = (id, bedLabel, alarms, shadow) => entry(id, alarms, {
   identity: identity({ patient_id: id, bed_label: bedLabel, bed_id: bedLabel.replace(" · ", "-") }), at: measured(30),
+  ...(shadow === undefined ? {} : { shadow }),
 });
 const WARD = [
   reaBed("S-001", "REA-01 · 1", [alarm("septic_shock", "critical")]),
@@ -60,6 +61,28 @@ const ALARMING = strip({
   ],
   unassigned: [unassigned("192.0.2.28", "table_unassigned", [param("hr", 180)])],
 });
+
+// Aşama B: the shadow engine's picture of a monitor-linked patient, as alarming as it gets — a NEWS2 of
+// 13 and two CRITICAL findings that only the shadow opened, on the monitor's HR 180 / SpO2 70. It is
+// advice with every alarm off: none of it may reach the sound, the notification, the bell or the lock.
+const SHADOW_FINDING = (kind) => ({
+  kind, severity: "critical", urgency: "immediate", summary: `${kind} on the monitor's inputs`, evidence: [],
+  relation: "shadow_only", stale_inputs: [], downgraded: false, since: ago(120),
+});
+const ALARMING_SHADOW = {
+  news2: { total: 13, partial: true, missing: ["respiration_rate", "temperature"], stale: [], assumed: ["air_or_oxygen", "consciousness"],
+    breakdown: { pulse: 3, spo2: 3 }, red_param: true, measured_at: { pulse: ago(5), spo2: ago(5) }, fresh_until: {} },
+  vitals: {
+    heart_rate: { value: 180, unit: "bpm", at: ago(5), source: "monitor", via: "hr" },
+    spo2: { value: 70, unit: "%", at: ago(5), source: "monitor", via: "spo2" },
+  },
+  findings: [SHADOW_FINDING("septic_shock"), SHADOW_FINDING("news2")],
+};
+const SHADOWED_WARD = [
+  reaBed("S-001", "REA-01 · 1", [alarm("septic_shock", "critical")], ALARMING_SHADOW),
+  reaBed("S-002", "REA-01 · 2", [alarm("news2", "high")]),
+  reaBed("S-003", "REA-01 · 3", [], ALARMING_SHADOW),
+];
 
 /** One run of the ward. Returns everything the alarm path reads or says. */
 async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
@@ -123,6 +146,13 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
     alarmCounts: alarmCounts(state),
     lockSummary: lockSummary(state),
     board: JSON.stringify({ patients: state.patients, alerts: state.alerts, connection: state.connection, loaded: state.loaded }),
+    // The board with each card's shadow taken out: what the alarm path could read besides it.
+    boardSansShadow: JSON.stringify({
+      patients: state.patients.map(({ shadow: _shadow, ...rest }) => rest),
+      alerts: state.alerts, connection: state.connection, loaded: state.loaded,
+    }),
+    shadowCards: state.patients.filter((p) => p.shadow).length,
+    shadowTags: document.querySelectorAll("[data-shadow-tag]").length,
     boardUntouchedByPolls: state === boardBefore,
     cardsInOrder,
     cards,
@@ -159,6 +189,27 @@ describe("the monitor strip never reaches the alarm path", () => {
     }
     expect(on.cards).toHaveLength(3);
     expect(on.cards[0]).toMatch(/data-rail=/);                 // the comparison holds the rail and the pill
+  });
+
+  it("gives the alarm path identical inputs and outputs with or without the shadow engine's critical shadow-only findings", async () => {
+    const plain = await run({ shadow: STAGE_OFF });
+    const shadowed = await run({ patients: SHADOWED_WARD, shadow: { ...ALARMING, stage: "rules" } });
+    // Not vacuous: the shadow reached the board's cards and was drawn on two beds, beside a strip that
+    // was polled at the rules stage.
+    expect(plain.shadowCards).toBe(0);
+    expect(shadowed.shadowCards).toBe(2);
+    expect(plain.shadowTags).toBe(0);
+    expect(shadowed.shadowTags).toBe(2);
+    expect(shadowed.shadowAsked).toBe(10);
+    expect(plain.pulses.length).toBeGreaterThan(0);
+    expect(plain.notifications.length).toBeGreaterThan(0);
+    expect(plain.waitingAlarms.items).toHaveLength(2);
+    for (const key of ["pulses", "audible", "notifications", "signals", "alarmsToSignal", "waitingAlarms", "alarmCounts",
+      "lockSummary", "boardSansShadow", "cardsInOrder", "cards", "waitingLine"]) {
+      expect(shadowed[key], key).toEqual(plain[key]);
+    }
+    expect(shadowed.board).not.toEqual(plain.board);            // the harness does see the shadow on the board
+    expect(shadowed.boardUntouchedByPolls).toBe(true);
   });
 
   it("the harness sees a real difference: one more critical alarm changes what the alarm path says", async () => {

@@ -15,3 +15,22 @@ export const VIA_KEY = { hr: "shadow.viaHr", pls: "shadow.viaPls", spo2: "shadow
 
 /** An own property of a table, or undefined — never an inherited one («constructor», «toString»). */
 export const own = (table, key) => (typeof key === "string" && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
+
+/** The stamp of the newest input the shadow engine read (`vitals[*].at`, as the engine wrote it), or null
+ *  when it read none with a stamp that parses. A held shadow score is aged by it — the API republishes a
+ *  patient only when a sample is taken or a link ends, so with a silent forwarder the same number would
+ *  otherwise stand undated for as long as nobody looks (the «Gölge öneri» box, the bed card's tag). The
+ *  stamps are compared, not computed with: the age itself is ageText's, against the screen's clock. */
+export function newestInputAt(shadow) {
+  let newest = null;
+  let newestMs = Number.NEGATIVE_INFINITY;
+  for (const input of Object.values(shadow?.vitals ?? {})) {
+    const at = input?.at;
+    const ms = typeof at === "string" ? Date.parse(at) : Number.NaN;
+    if (Number.isFinite(ms) && ms > newestMs) {
+      newest = at;
+      newestMs = ms;
+    }
+  }
+  return newest;
+}

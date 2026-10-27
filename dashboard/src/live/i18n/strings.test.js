@@ -152,7 +152,6 @@ const AZ_SAME_AS_TR = new Set([
 
   // shadow (Aşama B) · az = tr — the monitor's own labels (HR, PLS, SpO₂, ART, NBP), not words
   "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // as monitor.p.*
-  "shadow.weekOpened", //    açıldı — the same passive past of "açılmaq" in Azerbaijani (as auth.copied's "Kopyalandı")
   "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
   "shadow.since", //         açılış {time} — "opening {time}", the same noun as colOpened; chosen over "{time}'den beri" / "{time}-dən bəri", whose suffix has to agree with the time's last vowel (reviewed 2026-10-27, Task 10)
 
@@ -220,6 +219,19 @@ describe("live UI dictionaries", () => {
     expect(DICTIONARIES.tr["news2.chartedOxygen.air"]).toBe("oda havası");
     for (const lang of LANG_CODES) {
       expect(placeholders(DICTIONARIES[lang]["news2.assumedLastValue"]), lang).toEqual(["age", "value"]);
+    }
+  });
+
+  // Aşama B: at «rules» the strip's whole note sends the reader to the box the shadow score is shown in,
+  // by that box's own heading and tag — so if either is reworded, the note has to follow, language by
+  // language. It never says the score is NEWS2-free, and it still names the bedside monitor's own alarm.
+  it("the strip's rules-stage note names the shadow box by its own heading and tag, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const note = DICTIONARIES[lang]["monitor.fullRules"];
+      const box = `«${DICTIONARIES[lang]["shadow.title"]} · ${DICTIONARIES[lang]["shadow.tag"]}»`;
+      expect(note, `${lang} fullRules quotes ${box}`).toContain(box);
+      expect(note, lang).not.toMatch(/\(NEWS2/);
+      expect(note.length, lang).toBeGreaterThan(DICTIONARIES[lang]["monitor.full"].length / 2);
     }
   });
 

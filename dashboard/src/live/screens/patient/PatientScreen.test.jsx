@@ -983,6 +983,23 @@ describe("the monitor strip on the patient screen", () => {
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" })).toHaveTextContent("Monitor zolağı oxunmur");
   });
+
+  // Aşama B: at «rules» the shadow engine DOES score these values (advice, alarm off). The foot that says
+  // no score comes from them is the «shadow» stage's, and would be false here.
+  it("says at its foot what the stage makes of the values: no score at «shadow», an advisory shadow score at «rules»", async () => {
+    await withStrip(linked());
+    let region = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+    expect(region).not.toHaveTextContent("kölgə bal");
+    cleanup();
+    await withStrip({ ...linked(), stage: "rules" });
+    region = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(region).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(region).toHaveTextContent("«Kölgə tövsiyə · siqnal söndürülüb»");
+    expect(region).toHaveTextContent("əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır");
+    expect(region).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+  });
 });
 
 // Aşama B (D7): the shadow engine's picture of a monitor-linked patient — {news2, vitals, findings}, null
@@ -993,8 +1010,8 @@ describe("the shadow on the patient screen", () => {
   const AT_HR = ago(120);
   const AT_SBP = ago(60);
   const SHADOW = {
-    news2: { total: 6, partial: false, missing: [], stale: [], assumed: [], breakdown: { heart_rate: 2 },
-      red_param: false, measured_at: AT_HR, fresh_until: ago(-780) },
+    news2: { total: 6, partial: false, missing: [], stale: [], assumed: [], breakdown: { pulse: 2 },
+      red_param: false, measured_at: { pulse: AT_HR, systolic_bp: AT_SBP }, fresh_until: { pulse: ago(-780), systolic_bp: ago(-840) } },
     vitals: {
       heart_rate: { value: 140, unit: "bpm", at: AT_HR, source: "monitor", via: "hr" },
       sbp: { value: 88, unit: "mmHg", at: AT_SBP, source: "monitor", via: "art" },
@@ -1020,17 +1037,49 @@ describe("the shadow on the patient screen", () => {
     expect(names).toEqual(["Nəbz", "Sistolik AT"]);
   });
 
-  it("writes each input by channel code: the value in plain ink, the screen's unit word, the monitor's label and the stamp", async () => {
-    await open({ payload: withShadow(SHADOW) });
+  it("writes each input by channel code: the value in plain ink, the screen's unit word, the monitor's label, the stamp and its age", async () => {
+    // The clock is pinned to noon of a LOCAL day and the stamps sit minutes before it, so they are «today»
+    // in whatever zone the suite runs: NOW is a fixed UTC instant, which is just past local midnight at
+    // UTC−10 and at UTC+14, where two minutes earlier is yesterday.
+    const noon = new Date(2026, 9, 8, 12, 0, 0).getTime();
+    vi.setSystemTime(noon);
+    const atHr = new Date(noon - 180_000).toISOString();
+    const atSbp = new Date(noon - 120_000).toISOString();
+    await open({ payload: withShadow({ ...SHADOW, vitals: {
+      heart_rate: { ...SHADOW.vitals.heart_rate, at: atHr }, sbp: { ...SHADOW.vitals.sbp, at: atSbp },
+    } }) });
     const [hr, sbp] = cards();
     expect(hr).toHaveTextContent("140");
     expect(hr).toHaveTextContent("/dəq");                      // board.unitBpm, never the wire's "bpm"
     expect(hr).not.toHaveTextContent("bpm");
-    expect(hr).toHaveTextContent(`monitor · HR · ${hhmm(Date.parse(AT_HR))}`);
+    // The measured cards' «hh:mm · age», mirrored: a monitor number with no age cannot be told from one
+    // that stopped arriving an hour ago.
+    expect(hr).toHaveTextContent(`monitor · HR · ${hhmm(Date.parse(atHr))} · 3 dəq əvvəl`);
     expect(sbp).toHaveTextContent("88");
     expect(sbp).toHaveTextContent("mmHg");
-    expect(sbp).toHaveTextContent(`monitor · ART · ${hhmm(Date.parse(AT_SBP))}`);
+    expect(sbp).toHaveTextContent(`monitor · ART · ${hhmm(Date.parse(atSbp))} · 2 dəq əvvəl`);
     expect(hr.querySelector("small:last-child")).toHaveTextContent(/^monitor · HR/);
+  });
+
+  it("ages the shadow box's NEWS2 by its newest input, on the screen's clock", async () => {
+    await open({ payload: withShadow(SHADOW) });
+    const line = document.querySelector("[data-shadow-box] [data-shadow-news2]");
+    expect(line).toHaveTextContent(/^Kölgə NEWS2:\s*6/);
+    expect(line).toHaveTextContent("60 san əvvəl");            // AT_SBP, the newer of the two
+  });
+
+  it("says the shadow has no finding only from a live board; off it, that it cannot know", async () => {
+    const none = withShadow({ ...SHADOW, findings: [] });
+    await open({ payload: none });
+    let note = within(document.querySelector("[data-shadow-box]")).getByRole("note");
+    expect(note).toHaveTextContent("Monitor girişləri ilə açıq tapıntı yoxdur.");
+    expect(note).toHaveAttribute("data-tone", "info");
+    cleanup();
+    await open({ payload: none, connection: "degraded" });
+    note = within(document.querySelector("[data-shadow-box]")).getByRole("note");
+    expect(note).toHaveTextContent("Panel güncəl deyil; kölgə tapıntının olub-olmadığı bilinmir.");
+    expect(note).toHaveAttribute("data-tone", "warn");
+    expect(document.querySelector("[data-shadow-box]")).not.toHaveTextContent("açıq tapıntı yoxdur");
   });
 
   it("never dresses a monitor value as one of the engine's: no vital identity colour on any shadow card", async () => {

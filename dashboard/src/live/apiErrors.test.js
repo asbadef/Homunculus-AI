@@ -154,7 +154,7 @@ describe("no message site escapes the readers", () => {
     // Wave 3's files.
     ["api/app.py", /^f"permission required:/, 1, "a permission key of the route; the key is not translated, the sentence around it is"],
     ["api/app.py", /^str\(exc\)/, 6, "ClinicalEntryError / GatewayError / ScoreError: the engine's own validation text, shown as the engine wrote it"],
-    ["api/app.py", /^\{"reason": "/, 5, "Aşama A's forwarder lane (POST /infinity-shadow/readings): the hub reads these by status; no screen calls the route or shows them"],
+    ["api/app.py", /^\{"reason": "/, 6, "Aşama A's forwarder lane (POST /infinity-shadow/readings), read by the hub by status, and Aşama B's findings list asked at a stage other than «rules» (GET /infinity-shadow/findings, 409 stage_not_rules), which Settings' week list only ever reads as «could not be read»: no screen shows them"],
     ["admin/service.py", /^f"\{BEYOND_OWN_RIGHTS\}/, 1, "the constant plus the keys it lacks; matched by shape (BEYOND_OWN_RIGHTS in apiErrors.js)"],
     ["admin/service.py", /^detail\) from None/, 1, "_flush's own parameter: every caller passes a constant read above"],
     ["admin/service.py", /^str\(exc\)\)/, 2, "the ORM's own message for a bad id or a group of another tenant, shown as it arrived"],

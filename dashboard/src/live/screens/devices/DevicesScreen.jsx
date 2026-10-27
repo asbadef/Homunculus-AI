@@ -49,9 +49,10 @@ function Strip({ shadow }) {
   const maxAgeS = maxAgeOf(data);
   const unreadable = readUnknown(shadow, shadow.nowMs, maxAgeS);
   const known = phase === SHADOW_PHASE.OK && !unreadable;
+  // `stage`: at «rules» each strip's whole note says the shadow engine scores these values (MonitorStrip).
   const view = {
     nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs, maxAgeS,
-    feedOk: data.feed?.state === "ok", unreadable, level: 2,
+    feedOk: data.feed?.state === "ok", unreadable, level: 2, stage: data.stage,
   };
   const table = data.table ?? {};
   const rejected = data.feed?.rejected;

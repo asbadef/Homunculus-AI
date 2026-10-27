@@ -28,10 +28,15 @@ const finding = (over = {}) => ({
   kind: "news2", severity: "high", urgency: "immediate", summary: "NEWS2 6 on the monitor's inputs",
   evidence: [], relation: "shadow_only", stale_inputs: [], downgraded: false, since: T0, ...over,
 });
+// The shadow NEWS2 as api/infinity_rules.py sends it — per-input stamps — and as it almost always is:
+// partial (respiration and temperature are not read from the monitor, D2) and scored on room air and
+// Alert, because nothing current is charted for either.
 const SHADOW = {
   news2: {
-    total: 6, partial: false, missing: [], stale: [], assumed: [], breakdown: { heart_rate: 2, spo2: 1 },
-    red_param: false, measured_at: T0, fresh_until: "2026-10-27T05:16:00+00:00",
+    total: 6, partial: true, missing: ["respiration_rate", "temperature"], stale: [], assumed: ["air_or_oxygen", "consciousness"],
+    breakdown: { pulse: 2, spo2: 1 }, red_param: false,
+    measured_at: { pulse: T0, spo2: T0, systolic_bp: T1 },
+    fresh_until: { pulse: "2026-10-27T05:16:00+00:00", spo2: "2026-10-27T05:16:00+00:00", systolic_bp: "2026-10-27T05:22:00+00:00" },
   },
   vitals: {
     heart_rate: { value: 140, unit: "bpm", at: T0, source: "monitor", via: "hr" },
@@ -46,6 +51,7 @@ const SHADOW = {
   ],
 };
 const box = () => document.querySelector("[data-shadow-box]");
+const news2Line = () => box().querySelector("[data-shadow-news2]");
 
 describe("the shadow box is absent without a shadow", () => {
   it("renders nothing for null and for undefined", () => {
@@ -76,35 +82,83 @@ describe("the shadow box says what it is", () => {
   });
 
   it("has no live region, no button and no risk pill: it never announces, never asks, never rates", () => {
-    show(<ShadowFindingsBox shadow={SHADOW} />, "tr");
+    show(<ShadowFindingsBox shadow={SHADOW} known nowMs={NOW} />, "tr");
     expect(box().querySelector("[aria-live], [role='alert'], [role='status'], [role='log'], [role='timer']")).toBeNull();
     expect(within(box()).queryAllByRole("button")).toHaveLength(0);
     expect(within(box()).queryAllByRole("link")).toHaveLength(0);
-    // The only tagged things are the amber tag and one relation pill per finding: no pill carries a
-    // risk label, and the severity is plain text on the finding's line.
-    const tagged = [...box().querySelectorAll("[data-tone]")].filter((el) => el.getAttribute("role") !== "note");
+    // Outside the NEWS2 line the only tagged things are the amber tag and one relation pill per
+    // finding; the severity is plain text on the finding's line.
+    const tagged = [...box().querySelectorAll("[data-tone]")]
+      .filter((el) => el.getAttribute("role") !== "note" && !news2Line().contains(el));
     expect(tagged.map((el) => el.textContent)).toEqual(["alarm kapalı", "yalnız gölgede", "gerçek bulguyla aynı", "düzey farklı"]);
-    expect(box().querySelectorAll("svg")).toHaveLength(1); // the heading's eye; a RiskPill would add its own icon
+    // Inside it, only the house NEWS2's own caveat pills: no pill anywhere wears a risk level's tone,
+    // and none carries RiskPill's visually hidden «Risk:».
+    const tones = [...box().querySelectorAll("[data-tone]")].map((el) => el.getAttribute("data-tone"));
+    expect(tones.filter((tone) => ["crit", "high", "mid", "low", "ok"].includes(tone))).toEqual([]);
+    expect(box().textContent).not.toMatch(/Risk:/);
+    // The heading's eye is the one icon outside the NEWS2 line (whose caveat pills carry their own);
+    // a RiskPill would add one.
+    expect([...box().querySelectorAll("svg")].filter((svg) => !news2Line().contains(svg))).toHaveLength(1);
   });
 });
 
-describe("the shadow NEWS2", () => {
-  it("prints the engine's total, and «kısmi» only when the score is partial", () => {
-    const { unmount } = show(<ShadowFindingsBox shadow={SHADOW} />, "tr");
-    expect(within(box()).getByText("Gölge NEWS2: 6")).toBeInTheDocument();
-    expect(within(box()).queryByText("kısmi")).toBeNull();
-    unmount();
-    show(<ShadowFindingsBox shadow={{ ...SHADOW, news2: { ...SHADOW.news2, partial: true } }} />, "tr");
-    expect(within(box()).getByText("Gölge NEWS2: 6")).toBeInTheDocument();
-    expect(within(box()).getByText("kısmi")).toHaveAttribute("data-tone", "neutral");
+describe("the shadow NEWS2 — the house NEWS2, with the engine's caveats", () => {
+  it("prints the engine's total under the label «Gölge NEWS2», in the house component's own look", () => {
+    show(<ShadowFindingsBox shadow={SHADOW} known nowMs={NOW} />, "tr");
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*6/);
+    // The total in the data face the bed card and the header draw it in: the same component, not a copy.
+    expect(within(news2Line()).getByText("6").tagName).toBe("B");
+    expect(news2Line().textContent).not.toMatch(/^NEWS2:/);
+  });
+
+  it("carries every caveat the engine sent: partial and what is missing, room air and Alert assumed, a red parameter, a stale input with its age", () => {
+    const news2 = { ...SHADOW.news2, red_param: true, stale: ["pulse"] };
+    show(<ShadowFindingsBox shadow={{ ...SHADOW, news2 }} known nowMs={NOW} />, "tr");
+    const line = news2Line();
+    expect(within(line).getByText("kısmi").closest("[data-tone]")).toHaveAttribute("data-tone", "att");
+    // What is missing, said to a screen reader inside the pill (BoardState's News2).
+    expect(line).toHaveTextContent("Kısmi skor — solunum hızı, ateş ölçülmedi; gerçek toplam daha yüksek olabilir.");
+    expect(line).toHaveTextContent(/varsayıldı: oda havası.*uyanık/);
+    expect(line).toHaveTextContent("Bir parametre 3 puan aldı");
+    expect(line).toHaveTextContent("eski veri: nabız · 29 dk önce");          // T0 against the screen's clock
+  });
+
+  it("says «kısmi» only when the score is partial", () => {
+    show(<ShadowFindingsBox shadow={{ ...SHADOW, news2: { ...SHADOW.news2, partial: false, missing: [] } }} known nowMs={NOW} />, "tr");
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*6/);
+    expect(within(news2Line()).queryByText("kısmi")).toBeNull();
   });
 
   it("keeps a total of 0 and a missing score apart: 0 is a score, «—» is none", () => {
     const { unmount } = show(<ShadowFindingsBox shadow={{ ...SHADOW, news2: { ...SHADOW.news2, total: 0 } }} />, "tr");
-    expect(within(box()).getByText("Gölge NEWS2: 0")).toBeInTheDocument();
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*0/);
     unmount();
     show(<ShadowFindingsBox shadow={{ ...SHADOW, news2: null }} />, "tr");
-    expect(within(box()).getByText("Gölge NEWS2: —")).toBeInTheDocument();
+    expect(within(news2Line()).getByText("Gölge NEWS2: —")).toBeInTheDocument();
+  });
+
+  it("ages the score by its newest input, on the screen's clock — a held score is never undated", () => {
+    show(<ShadowFindingsBox shadow={SHADOW} known nowMs={NOW} />, "tr");
+    expect(news2Line()).toHaveTextContent("· 23 dk önce");                    // T1, the newest of the four
+  });
+
+  it("skips an input whose stamp does not parse, and prints no age when no input has one", () => {
+    const vitals = (...ats) => Object.fromEntries(ats.map((at, i) => [`c${i}`, { value: 1, unit: "x", at, source: "monitor", via: "hr" }]));
+    const { unmount } = show(<ShadowFindingsBox shadow={{ ...SHADOW, vitals: vitals("not a time", T0, null) }} known nowMs={NOW} />, "tr");
+    expect(news2Line()).toHaveTextContent("· 29 dk önce");
+    expect(news2Line().textContent).not.toMatch(/NaN/);
+    unmount();
+    show(<ShadowFindingsBox shadow={{ ...SHADOW, vitals: vitals("not a time") }} known nowMs={NOW} />, "tr");
+    expect(news2Line().textContent).not.toMatch(/önce/);
+  });
+
+  it("prints no age with no input at all, and none without the screen's clock (no clock, no age)", () => {
+    const { unmount } = show(<ShadowFindingsBox shadow={{ ...SHADOW, vitals: {} }} known nowMs={NOW} />, "tr");
+    expect(news2Line().textContent).not.toMatch(/önce/);
+    unmount();
+    show(<ShadowFindingsBox shadow={SHADOW} known />, "tr");
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*6/);
+    expect(news2Line().textContent).not.toMatch(/önce/);
   });
 });
 
@@ -127,6 +181,14 @@ describe("the monitor inputs the shadow engine read", () => {
     expect(item("Sistolik TA")).toHaveTextContent(hhmm(Date.parse(T1)));
     expect(item("MAP")).toHaveTextContent("62");
     expect(item("MAP")).toHaveTextContent("monitör · NBP");
+  });
+
+  it("is a list named «Girdiler», with the name on screen", () => {
+    show(<ShadowFindingsBox shadow={SHADOW} />, "tr");
+    const group = within(box()).getByRole("group", { name: "Girdiler" });
+    expect(group.querySelector("dl")).not.toBeNull();
+    expect(within(group).getByText("Girdiler")).toBeVisible();
+    expect(within(group).getByText("Nabız", { selector: "dt" })).toBeInTheDocument();
   });
 
   it("writes the unit by channel code, never the wire's own string: «bpm» is «/dk» on this screen", () => {
@@ -166,7 +228,16 @@ describe("the monitor inputs the shadow engine read", () => {
   it("omits the list when the shadow read no input", () => {
     show(<ShadowFindingsBox shadow={{ ...SHADOW, vitals: {} }} />, "tr");
     expect(box().querySelector("dl")).toBeNull();
-    expect(within(box()).getByText("Gölge NEWS2: 6")).toBeInTheDocument();
+    expect(within(box()).queryByRole("group", { name: "Girdiler" })).toBeNull();
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*6/);
+  });
+
+  it("writes its stamps on the screen's clock, not this browser's: a day that is not the screen's today carries its date", () => {
+    // The browser says 05:30 on the 27th; the screen's (server-corrected) clock says a day later.
+    show(<ShadowFindingsBox shadow={SHADOW} known nowMs={NOW + 24 * 3600_000} />, "tr");
+    expect(item("Nabız")).toHaveTextContent(`monitör · HR · ${ddmm(Date.parse(T0))} ${hhmm(Date.parse(T0))}`);
+    const [first] = within(within(box()).getByRole("list")).getAllByRole("listitem");
+    expect(first).toHaveTextContent(`açılış ${ddmm(Date.parse(T0))} ${hhmm(Date.parse(T0))}`);
   });
 });
 
@@ -228,29 +299,48 @@ describe("the shadow findings", () => {
     expect(only).toHaveTextContent("Tanımsız risk: odd");
   });
 
-  it("says so, in a note, when the monitor's inputs open no finding", () => {
-    show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} />, "tr");
+  it("says so, in a note, when the monitor's inputs open no finding on a live board", () => {
+    show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} known nowMs={NOW} />, "tr");
     expect(within(box()).queryByRole("list")).toBeNull();
-    expect(within(box()).getByRole("note")).toHaveTextContent("Monitör girdileriyle açık bulgu yok.");
+    const note = within(box()).getByRole("note");
+    expect(note).toHaveTextContent("Monitör girdileriyle açık bulgu yok.");
+    expect(note).toHaveAttribute("data-tone", "info");
     // …and the NEWS2 and the inputs are still there: an empty list is not an empty box.
-    expect(within(box()).getByText("Gölge NEWS2: 6")).toBeInTheDocument();
+    expect(news2Line()).toHaveTextContent(/^Gölge NEWS2:\s*6/);
     expect(box().querySelector("dl")).not.toBeNull();
+  });
+
+  it("never says there is none from a board that is not live: it says it cannot know, in amber", () => {
+    for (const props of [{ known: false }, {}]) {
+      show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} nowMs={NOW} {...props} />, "tr");
+      const note = within(box()).getByRole("note");
+      expect(note).toHaveTextContent("Pano güncel değil; gölge bulgu olup olmadığı bilinemez.");
+      expect(note).toHaveAttribute("data-tone", "warn");
+      expect(box().textContent).not.toContain("açık bulgu yok");
+      cleanup();
+    }
+  });
+
+  it("lists the findings it has whatever the board's state: only «none» needs a live read", () => {
+    show(<ShadowFindingsBox shadow={SHADOW} known={false} nowMs={NOW} />, "tr");
+    expect(items()).toHaveLength(3);
+    expect(within(box()).queryByRole("note")).toBeNull();
   });
 
   it("keeps a box that carries no findings key at all, as one with none", () => {
     const { findings, ...bare } = SHADOW;
     expect(findings).toHaveLength(3);
-    show(<ShadowFindingsBox shadow={bare} />, "tr");
+    show(<ShadowFindingsBox shadow={bare} known />, "tr");
     expect(within(box()).getByRole("note")).toHaveTextContent("Monitör girdileriyle açık bulgu yok.");
   });
 });
 
 describe("the shadow box in every language", () => {
   const WORDS = {
-    tr: { title: "Gölge öneri", tag: "alarm kapalı", rel: ["yalnız gölgede", "gerçek bulguyla aynı", "düzey farklı"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: "Gölge NEWS2: 6", none: "Monitör girdileriyle açık bulgu yok." },
-    az: { title: "Kölgə tövsiyə", tag: "siqnal söndürülüb", rel: ["yalnız kölgədə", "həqiqi tapıntı ilə eyni", "səviyyə fərqlidir"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: "Kölgə NEWS2: 6", none: "Monitor girişləri ilə açıq tapıntı yoxdur." },
-    ru: { title: "Теневая рекомендация", tag: "тревога выключена", rel: ["только в тени", "совпадает с реальной", "уровень отличается"], since: `с ${hhmm(Date.parse(T0))}`, news2: "Теневой NEWS2: 6", none: "По входам монитора открытых находок нет." },
-    en: { title: "Shadow advice", tag: "alarm off", rel: ["shadow only", "same as the real finding", "level differs"], since: `since ${hhmm(Date.parse(T0))}`, news2: "Shadow NEWS2: 6", none: "No open finding on the monitor's inputs." },
+    tr: { title: "Gölge öneri", tag: "alarm kapalı", rel: ["yalnız gölgede", "gerçek bulguyla aynı", "düzey farklı"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: /^Gölge NEWS2:\s*6/, inputs: "Girdiler", age: "23 dk önce", none: "Monitör girdileriyle açık bulgu yok.", unknown: "Pano güncel değil; gölge bulgu olup olmadığı bilinemez." },
+    az: { title: "Kölgə tövsiyə", tag: "siqnal söndürülüb", rel: ["yalnız kölgədə", "həqiqi tapıntı ilə eyni", "səviyyə fərqlidir"], since: `açılış ${hhmm(Date.parse(T0))}`, news2: /^Kölgə NEWS2:\s*6/, inputs: "Girişlər", age: "23 dəq əvvəl", none: "Monitor girişləri ilə açıq tapıntı yoxdur.", unknown: "Panel güncəl deyil; kölgə tapıntının olub-olmadığı bilinmir." },
+    ru: { title: "Теневая рекомендация", tag: "тревога выключена", rel: ["только в тени", "совпадает с реальной", "уровень отличается"], since: `с ${hhmm(Date.parse(T0))}`, news2: /^Теневой NEWS2:\s*6/, inputs: "Входы", age: "23 мин назад", none: "По входам монитора открытых находок нет.", unknown: "Панель неактуальна; есть ли теневые находки, неизвестно." },
+    en: { title: "Shadow advice", tag: "alarm off", rel: ["shadow only", "same as the real finding", "level differs"], since: `since ${hhmm(Date.parse(T0))}`, news2: /^Shadow NEWS2:\s*6/, inputs: "Inputs", age: "23 min ago", none: "No open finding on the monitor's inputs.", unknown: "The board is out of date; whether there is a shadow finding cannot be known." },
   };
 
   it("covers the four languages the dictionaries have", () => {
@@ -258,12 +348,14 @@ describe("the shadow box in every language", () => {
   });
 
   for (const lang of LANG_CODES) {
-    it(`words the heading, the tag, the NEWS2, the relations and «since» in ${lang}`, () => {
+    it(`words the heading, the tag, the NEWS2 and its age, the inputs, the relations and «since» in ${lang}`, () => {
       const w = WORDS[lang];
-      show(<ShadowFindingsBox shadow={SHADOW} />, lang);
+      show(<ShadowFindingsBox shadow={SHADOW} known nowMs={NOW} />, lang);
       expect(screen.getByRole("heading", { level: 2, name: w.title })).toBeInTheDocument();
       expect(within(box()).getByText(w.tag)).toHaveAttribute("data-tone", "warn");
-      expect(within(box()).getByText(w.news2)).toBeInTheDocument();
+      expect(news2Line()).toHaveTextContent(w.news2);
+      expect(news2Line()).toHaveTextContent(w.age);
+      expect(within(box()).getByRole("group", { name: w.inputs })).toBeInTheDocument();
       const [a, b, c] = within(within(box()).getByRole("list")).getAllByRole("listitem");
       expect(within(a).getByText(w.rel[0])).toHaveAttribute("data-tone", "att");
       expect(within(b).getByText(w.rel[1])).toHaveAttribute("data-tone", "neutral");
@@ -273,9 +365,12 @@ describe("the shadow box in every language", () => {
       expect(within(a).getByText("NEWS2 6 on the monitor's inputs")).toHaveAttribute("lang", "en");
     });
 
-    it(`words the empty case in ${lang}`, () => {
-      show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} />, lang);
+    it(`words the empty case, live and not, in ${lang}`, () => {
+      const { unmount } = show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} known nowMs={NOW} />, lang);
       expect(within(box()).getByRole("note")).toHaveTextContent(WORDS[lang].none);
+      unmount();
+      show(<ShadowFindingsBox shadow={{ ...SHADOW, findings: [] }} known={false} nowMs={NOW} />, lang);
+      expect(within(box()).getByRole("note")).toHaveTextContent(WORDS[lang].unknown);
     });
   }
 });

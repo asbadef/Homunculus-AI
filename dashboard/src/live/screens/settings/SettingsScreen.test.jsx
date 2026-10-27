@@ -153,6 +153,8 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     await legend({ stage: "shadow", beds: [], unassigned: [], feed: { state: "ok" } });
     const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" }).closest("div.rounded-box");
     expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
+    expect(box).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+    expect(box).not.toHaveTextContent("kölgə bal");
     expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
     expect(box).toHaveTextContent(/15 saniyədən köhnə dəyər göstərilmir/);
     expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi saatla göstərilir/);
@@ -177,6 +179,19 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(within(rows[9]).getByText("Monitor ekranı ilə eynidir")).toBeInTheDocument();          // NBP
   });
 
+  // Aşama B: at «rules» the shadow engine scores these values (advice, alarm off) — the «shadow» stage's
+  // sentence that no score comes from them would be false, so the legend says what the rules do instead.
+  it("at the rules stage says an advisory shadow score is computed from the values — and still no alarm, no sound", async () => {
+    await legend({ stage: "rules", beds: [], unassigned: [], feed: { state: "ok" } });
+    const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" }).closest("div.rounded-box");
+    expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
+    expect(box).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(box).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(box).toHaveTextContent("«Kölgə tövsiyə · siqnal söndürülüb»");
+    expect(box).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+    expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
+  });
+
   it("with the stage off shows no legend", async () => {
     await legend({ stage: "off" });
     expect(screen.queryByRole("heading", { name: "Monitor zolağı (təsdiqlənməmiş)" })).toBeNull();
@@ -190,22 +205,26 @@ describe("SettingsScreen — «Uyarsaydı — son 7 gün» (Aşama B)", () => {
   const OPENED_A = "2026-10-27T05:10:00+00:00";
   const OPENED_B = "2026-10-26T09:00:00+00:00";
   const CLEARED_B = "2026-10-26T09:40:00+00:00";
+  // Every row the API sends carries its `relation` to the real engine's findings (D6); the week is the
+  // `shadow_only` ones — what would have alerted that nothing else did.
+  const row = (over) => ({ relation: "shadow_only", cleared_at: null, ...over });
   const WEEK = { days: 7, findings: [
-    { patient_id: "S-002", kind: "sepsis", severity: "critical", opened_at: OPENED_A, cleared_at: null },
-    { patient_id: "S-001", kind: "news2", severity: "high", opened_at: OPENED_B, cleared_at: CLEARED_B },
+    row({ patient_id: "S-002", kind: "sepsis", severity: "critical", opened_at: OPENED_A }),
+    row({ patient_id: "S-001", kind: "news2", severity: "high", opened_at: OPENED_B, cleared_at: CLEARED_B }),
   ] };
   const RULES = { stage: "rules", beds: [], unassigned: [], feed: { state: "ok" } };
   const settle = () => act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
   const stamp = (iso) => `${ddmm(Date.parse(iso))} ${hhmm(Date.parse(iso))}`;
   const section = () => document.querySelector("[data-shadow-week]");
+  const rowheaders = () => within(within(section()).getByRole("table")).getAllByRole("rowheader").map((h) => h.textContent);
 
-  async function week(answer, list) {
-    const mounted = await mount(<SettingsScreen />);
+  async function week(answer, list, perms = ["board.view", "alerts.ack"]) {
+    const mounted = await mount(<SettingsScreen />, { access: token({ perms }), me: profile({ perms }) });
     mounted.api.shadowBoard.mockResolvedValue(answer);
     if (typeof list === "function") mounted.api.shadowFindings.mockImplementation(list);
     else if (list instanceof Error) mounted.api.shadowFindings.mockRejectedValue(list);
     else mounted.api.shadowFindings.mockResolvedValue(list);
-    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); });
+    await act(async () => { mounted.shadow.start(perms); });
     tab("Səs və bildiriş");
     await settle();
     await settle();
@@ -238,6 +257,51 @@ describe("SettingsScreen — «Uyarsaydı — son 7 gün» (Aşama B)", () => {
     await week(RULES, { days: 7, findings: [] });
     expect(section()).toHaveTextContent("Son 7 gündə kölgə tapıntı yoxdur.");
     expect(within(section()).queryByRole("table")).toBeNull();
+  });
+
+  it("lists only what the shadow alone opened: a finding the real engine also had, or had at another level, would not have alerted", async () => {
+    await week(RULES, { days: 7, findings: [
+      row({ patient_id: "S-004", kind: "news2", severity: "high", relation: "same", opened_at: OPENED_A }),
+      row({ patient_id: "S-005", kind: "sepsis", severity: "critical", relation: "level_differs", opened_at: OPENED_A }),
+      row({ patient_id: "S-006", kind: "hypotension", severity: "moderate", opened_at: OPENED_B, cleared_at: CLEARED_B }),
+    ] });
+    expect(rowheaders()).toEqual(["S-006"]);
+    expect(section()).not.toHaveTextContent("S-004");
+    expect(section()).not.toHaveTextContent("S-005");
+  });
+
+  it("says there is nothing when no row of the list is shadow-only", async () => {
+    await week(RULES, { days: 7, findings: [
+      row({ patient_id: "S-004", kind: "news2", severity: "high", relation: "same", opened_at: OPENED_A }),
+      row({ patient_id: "S-005", kind: "sepsis", severity: "critical", relation: "level_differs", opened_at: OPENED_A }),
+    ] });
+    expect(section()).toHaveTextContent("Son 7 gündə kölgə tapıntı yoxdur.");
+    expect(within(section()).queryByRole("table")).toBeNull();
+    expect(section()).not.toHaveTextContent("S-004");
+  });
+
+  // Measured at 390 px: the box is an item of the Signals grid, and a grid item's `min-width: auto`
+  // let the five-column table widen the page to 431–558 px instead of scrolling inside its own frame.
+  // jsdom has no layout, so the class that makes the frame work is what is held here.
+  it("may shrink below its table's width, so the table scrolls in its own frame at 390 px", async () => {
+    await week(RULES, WEEK);
+    expect(section().className.split(/\s+/)).toContain("min-w-0");
+    expect(section().parentElement.className.split(/\s+/)).toContain("grid");   // the Signals grid it is an item of
+    expect(within(section()).getByRole("table").closest(".overflow-x-auto")).not.toBeNull();   // Table's own frame
+  });
+
+  // The route is `board.view`'s: a session holding only `devices.manage` reaches this tab (and the legend,
+  // whose strip it may read) but would be refused the list every time.
+  it("is not drawn, and the list is not asked for, for a session that may not read the board", async () => {
+    const { api } = await week(RULES, WEEK, ["devices.manage"]);
+    expect(screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" })).toBeInTheDocument();
+    expect(section()).toBeNull();
+    expect(screen.queryByText(/son 7 gün/)).toBeNull();
+    expect(api.shadowFindings).not.toHaveBeenCalled();
+    cleanup();
+    const both = await week(RULES, WEEK, ["devices.manage", "board.view"]);
+    expect(section()).not.toBeNull();
+    expect(both.api.shadowFindings).toHaveBeenCalledWith(7);
   });
 
   it("says the list is unavailable when it cannot be read — a refusal, an outage, or a body that is not a list", async () => {
@@ -284,13 +348,13 @@ describe("SettingsScreen — «Uyarsaydı — son 7 gün» (Aşama B)", () => {
   });
 
   it("writes a dash for a stamp that does not parse, never a made-up time", async () => {
-    await week(RULES, { days: 7, findings: [{ patient_id: "S-003", kind: "news2", severity: "high", opened_at: "not a time", cleared_at: "also not" }] });
+    await week(RULES, { days: 7, findings: [row({ patient_id: "S-003", kind: "news2", severity: "high", opened_at: "not a time", cleared_at: "also not" })] });
     const cells = within(within(section()).getAllByRole("row")[1]).getAllByRole("cell").map((c) => c.textContent);
     expect(cells.slice(-2)).toEqual(["—", "—"]);          // the opening and the closing stamp
   });
 
   it("reads a severity this build does not know as the engine sent it, in the attention words, never as a calm one", async () => {
-    await week(RULES, { days: 7, findings: [{ patient_id: "S-003", kind: "news2", severity: "extreme", opened_at: OPENED_A, cleared_at: null }] });
+    await week(RULES, { days: 7, findings: [row({ patient_id: "S-003", kind: "news2", severity: "extreme", opened_at: OPENED_A })] });
     expect(section()).toHaveTextContent("Naməlum risk: extreme");
   });
 
@@ -300,12 +364,24 @@ describe("SettingsScreen — «Uyarsaydı — son 7 gün» (Aşama B)", () => {
     expect(section().outerHTML).not.toMatch(/text-(crit|high|mid|low|ok)\b/);
   });
 
-  it("drops the answer of a list that lands after the tab was left", async () => {
-    let release;
-    const { api } = await week(RULES, () => new Promise((resolve) => { release = resolve; }));
+  // The tab is left and opened again while the first list is still on its way: the box on screen is the
+  // second opening's, and the first answer — landing late, with a row of its own — must not be shown in it.
+  it("drops the answer of a list that lands after the tab was left, and shows the one the new opening asked for", async () => {
+    const releases = [];
+    const { api } = await week(RULES, () => new Promise((resolve) => { releases.push(resolve); }));
     tab("Görünüş");
-    await act(async () => { release(WEEK); });
-    expect(section()).toBeNull();
-    expect(api.shadowFindings).toHaveBeenCalledTimes(1);
+    tab("Səs və bildiriş");
+    await settle();
+    expect(api.shadowFindings).toHaveBeenCalledTimes(2);
+    expect(section()).toHaveTextContent("Siyahı oxunur…");
+    const LATE = { days: 7, findings: [row({ patient_id: "S-009", kind: "news2", severity: "high", opened_at: OPENED_A })] };
+    await act(async () => { releases[0](LATE); });
+    await settle();
+    expect(section()).not.toHaveTextContent("S-009");
+    expect(section()).toHaveTextContent("Siyahı oxunur…");     // still the second opening's, still waiting
+    await act(async () => { releases[1](WEEK); });
+    await settle();
+    expect(rowheaders()).toEqual(["S-002", "S-001"]);
+    expect(section()).not.toHaveTextContent("S-009");
   });
 });

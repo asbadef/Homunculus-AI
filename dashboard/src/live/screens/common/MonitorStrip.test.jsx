@@ -55,6 +55,40 @@ describe("the strip says what it is", () => {
     expect(within(region()).queryByText("Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır")).toBeNull();
   });
 
+  // Aşama B: at «rules» the shadow engine scores these values — advice, alarm off — so the whole note
+  // says that instead of «no score»; the stage is the board answer's, handed down by the screen.
+  it("says in its whole note what the stage makes of the values: no score at «shadow», an advisory shadow score at «rules»", () => {
+    for (const stage of ["shadow", undefined]) {
+      const { unmount } = show(<Strip variant="full" stage={stage} />);
+      expect(region(), String(stage)).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+      expect(region().textContent, String(stage)).not.toContain("kölgə bal");
+      unmount();
+    }
+    const { unmount } = show(<Strip variant="full" stage="rules" />);
+    expect(region()).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
+    expect(region()).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(region()).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(region()).toHaveTextContent("«Kölgə tövsiyə · siqnal söndürülüb»");
+    expect(region()).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+    unmount();
+    // The short note says nothing about a score, at either stage.
+    show(<Strip stage="rules" />);
+    expect(within(region()).getByText("Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır")).toBeInTheDocument();
+    expect(region().textContent).not.toContain("kölgə bal");
+  });
+
+  it("words the rules stage's whole note in every language", () => {
+    const words = { tr: "«Gölge öneri · alarm kapalı»", az: "«Kölgə tövsiyə · siqnal söndürülüb»",
+      ru: "«Теневая рекомендация · тревога выключена»", en: "«Shadow advice · alarm off»" };
+    expect(Object.keys(words).sort()).toEqual([...LANG_CODES].sort());
+    for (const lang of LANG_CODES) {
+      const { unmount } = show(<Strip variant="full" stage="rules" />, lang);
+      expect(screen.getByRole("region").textContent, lang).toContain(words[lang]);
+      expect(screen.getByRole("region").textContent, lang).not.toMatch(/\(NEWS2/);
+      unmount();
+    }
+  });
+
   it("shows the evidence of each parameter in the full variant", () => {
     show(<Strip variant="full" entry={card([HR, param("art_mean", 84)])} />);
     expect(within(region()).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();

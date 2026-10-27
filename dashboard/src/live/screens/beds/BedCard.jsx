@@ -34,6 +34,8 @@ import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
 import { MonitorStrip } from "../common/MonitorStrip.jsx";
+import { ageText } from "../patient/ageText.js";
+import { newestInputAt } from "../patient/shadow/shadowVitals.js";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -76,6 +78,15 @@ function Vitals({ patient }) {
   );
 }
 
+/** The shadow tag's words: the score with its newest input's age, «none» from a live board only. */
+function shadowTagText(t, shadow, known, nowMs) {
+  if (!shadow.findings?.length) return t(known ? "shadow.cardNone" : "shadow.cardUnknown");
+  const total = shadow.news2?.total ?? "—";
+  const newest = newestInputAt(shadow);
+  const age = newest ? ageText(t, newest, nowMs) : null;
+  return age ? t("shadow.cardTag", { total, age }) : t("shadow.cardTagNoAge", { total });
+}
+
 /**
  * `patient`: one record from `liveAdapters.patientsFromBoard`.
  * `alerts`: that patient's alarms from `boardStore`'s `alerts` (already flattened).
@@ -93,11 +104,15 @@ function Vitals({ patient }) {
  *   patient reads out, and nothing on the card above it (risk, alarms, NEWS2) reads it.
  *
  * `patient.shadow` (Aşama B, D7): the shadow engine's picture of a monitor-linked patient, or null.
- *   When there is one, the slot carries one amber tag under the strip — «gölge öneri · NEWS2 n» when the
- *   shadow has a finding, «gölge öneri yok» when it has none. It is a tag and nothing more: no risk pill,
- *   no rail, no alarm row, nothing in the link; the card's risk, alarms and NEWS2 above read none of it.
- *   The slot is drawn for the shadow alone too (the strip may be momentarily unreadable), the strip
- *   part staying conditional on its own entry.
+ *   When there is one, the slot carries one amber tag under the strip — «gölge öneri · NEWS2 n · 3 dk
+ *   önce» when the shadow has a finding (the age of the newest input it read, on the card's clock: the
+ *   API republishes a patient only when a sample is taken or a link ends, so a held score would otherwise
+ *   stand undated; no input, no age), «gölge öneri yok» when it has none — said only from a LIVE board,
+ *   the rule `connection` already carries for the overdue count: off it the tag reads «gölge öneri ·
+ *   bilinmiyor», never «none». It is a tag and nothing more: no risk pill, no rail, no alarm row, nothing
+ *   in the link; the card's risk, alarms and NEWS2 above read none of it. The slot is drawn for the
+ *   shadow alone too (the strip may be momentarily unreadable), the strip part staying conditional on
+ *   its own entry.
  */
 export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
   const { t } = useI18n();
@@ -178,9 +193,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
             <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
               {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
               <Tag tone="warn" className="!whitespace-normal">
-                {patient.shadow.findings?.length
-                  ? t("shadow.cardTag", { total: patient.shadow.news2?.total ?? "—" })
-                  : t("shadow.cardNone")}
+                {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
               </Tag>
             </div>
           ) : null}
