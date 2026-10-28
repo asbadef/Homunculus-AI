@@ -69,3 +69,31 @@ time to apply it to); any change to the worker.
 - **O2** A monitor that keeps showing a reading taken before the patient was admitted shows it untimed on the new
   patient's bed until the next cuff — the strip's bed-level rule (the previous patient's NBP may show for up to 2 h)
   gets a longer tail for untimed values; the «zamanı bilinmiyor» note is the warning.
+
+## 7. Done on the branch (2026-10-28)
+
+**Departure from the usual spec → plan → tasks:** no plan file was written for this slice. §3's component list
+was the task list; each component was implemented and reviewed on the branch, with one final review of the whole
+(APPROVE; its five minors closed in `6ebd277`). The gates below are the plan's Task-8 equivalent.
+
+| Commit | What |
+|---|---|
+| `8c38fca` | this spec |
+| `ceb643e` | API: `changed_at: null` taken on a v2 NBP reading, `value_untimed` on the board, never a rule input; `shadow_check` counts it (D2, D3, D5, D7) |
+| `c8fc491` | dashboard: the strip's untimed cell «ölçüm zamanı bilinmiyor», the legend sentence in four languages (D4) |
+| `05c31e4` | hub: the forwarder sends the untimed complete valid triple with `changed_at: None`; `nbp_triple` in the live view's snapshot (D1) |
+| `f3336a5` | dashboard: an untimed NBP cell reads its state before its time (`***` and a packet gone old are drawn as such) |
+| `cb981b7` | docs: README R5 and drop-in 95 (order, rollback), the guide's bullet, the roadmap row |
+| `6ebd277` | review minors: a `***` cell whose packet aged keeps the packet's time; `_untimed_nbp` needs the whole held triple; `shadow_check`'s per-bed count takes an untimed NBP; the legend's 2-hour sentence names the timed value; the guide's R4 sentence marked superseded; store → `pick` test |
+| `e38b03d` | the Settings legend test follows the reworded sentence |
+| (this commit) | the release name in the README; this section |
+
+**Gates at `e38b03d`:** engine, no DB, Python 3.12 — 2827 passed, 822 skipped; the six Infinity files on the
+3.14 lane — 309 passed; dashboard — 104 files, 2972 tests; `vite build` ok.
+
+**Hub release R5:** `transport-c51afb1059de3a08` (tarball sha256 `d1a517314189719e2abd5651636df04881c83c9a4eb2b6857d09fee3eee73808`), built from
+`e38b03d` and rebuilt at the final head — the same name, since the transport files are unchanged by docs.
+Drop-in `95-nbp2.conf`. The deploy blocks are in `/c/tmp/infinity-a-releases/NBP2-bloklari.txt`
+(`nbp2-<short>.bundle` of `12453ee..feat/infinity-nbp2`; the API and web first, then the hub).
+
+· **VM: bekliyor** (önce api+web, sonra hub R5; işçi değişmez) ·

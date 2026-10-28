@@ -402,7 +402,7 @@ plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
 **R5 — the untimed NBP** (spec `docs/superpowers/specs/2026-10-28-infinity-nbp2-zamansiz-deger-design.md`;
 owner decision 2026-10-28 «son degeri gostersin»):
 
-- Release R5 `/opt/homunculus-infinity/@REL@`: R4 plus one rule in the forwarder — when a device's
+- Release R5 `/opt/homunculus-infinity/transport-c51afb1059de3a08`: R4 plus one rule in the forwarder — when a device's
   three NBP components are present, valid, fresh and the complete valid triple the hub holds, but no
   change has been seen since the hub started (X38/X46), the three travel with `changed_at: null`
   (`_untimed_nbp`). A `***`, stale or missing part, or a partial packet's lone newer value, still
