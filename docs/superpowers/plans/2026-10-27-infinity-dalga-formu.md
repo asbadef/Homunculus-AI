@@ -50,12 +50,14 @@
 | R13 | The pleth/resp minimum span is 200 counts. | A display constant, not a measurement; to be checked in the ward (spec §9, V5). |
 | R14 | The hub decodes waves whenever it runs live research with payload capture (no separate hub flag); `INFINITY_WAVES` on the API is the switch. | Spec §3.1 hook 1; §5.7. |
 | R15 | Full screen uses the browser Fullscreen API when it can, else a window-filling overlay; Esc, × or leaving browser full screen close it; Tab stays on ×; focus returns to ⤢. | W5; the shell's own full screen (`shell/TopBar.jsx`) uses the same API. |
-| R16 | `INFINITY_WAVES=on` with the hub settings missing or not https → 503 with the reason (`not_configured` / `misconfigured`), logged once at start; flag off → 409 `waves_off`; strip off or another hospital → 409 `stage_off`. Gate order: the board's 401/403 first, then the flag, the stage, the monitor (404 `no_device`), the cursor (400 `bad_since`). | §3.2 "status mapping"; a caller without the right learns nothing else. |
+| R16 | `INFINITY_WAVES=on` with the hub settings missing or not https → 503 with the reason (`not_configured` / `misconfigured`), logged once at start; flag off → 409 `waves_off`; strip off or another hospital → 409 `stage_off`. Gate order: the board's 401/403 first, then the flag, the stage, the monitor (404 `no_device`), the cursor (400 `bad_since`), the hub process it came from (400 `bad_started`, amendment A3). | §3.2 "status mapping"; a caller without the right learns nothing else. |
 | R17 | The new boundary rule lives in its own file `live/waveBoundaries.test.js` (both directions, plus a ban on audio, speech, vibration, notification, storage and canvas-export APIs in wave modules). `src/reachable.test.js` gets a named, temporary `PENDING` list (Task 8) that Task 15 removes. | `boundaries.test.js` is shared with Lane A; the page reaches the wave modules only after the screen lines. |
 | R18 | `api/app.py` gets one 4-line hunk beside the research router: a local import and `register_waves(app, board=lambda authorization: shadow_board(authorization))` — `shadow_board` is defined later in `create_app` and looked up when a request comes. The two route-inventory tests declare the route as caller-resolved outside `app.py`. | §10: one registration away from the shadow routes; the gates are the board's own, by construction. |
 | R19 | The hub names its process: `create_hub` keeps `hub_started = iso_z(clock())` once, the waves answer carries it as a top-level `"started"` (both shapes), and `GET /v1/status` gains `"waves": {"cursor", "refused", "started"}` — only when the hub has a `WaveBuffer`. Task 5 reads `started`. | (1) `WaveBuffer.refused` (events turned away: not live, over 3 s old, ahead of the hub's clock) was surfaced nowhere, so a worker clock a few hundred ms ahead of the hub's would black out every wave while the journal acknowledged each packet; the status page now shows it. (2) A restarted hub counts its cursor from 0 again, and "a cursor ahead of the hub's counts as 0" is only a heuristic (a cursor can be *behind* the new count and silently skip blocks); a per-process token makes the restart exact for every caller. (Task 2 review.) |
 
 *R19 in Task 5 (lead amendment A2).* `api/infinity_waves.py` requires `started` as a non-empty string on every hub answer (without it the answer is `hub_invalid`, 502), passes it to the browser top-level and unchanged, and `answer(…, started=…)` serves the whole window to a caller whose cursor came from another hub process; the cursor is always the answer's top-level `cursor`, never read from a block (blocks are in device-time order, so `seq` is not monotonic down the list).
+
+*R16 / R19 in Task 7 (lead amendment A3).* The route reads an optional `started` (the hub process the caller's cursor came from; at most `MAX_TEXT` = 40 characters, a longer one is 400 `bad_started`; empty names no process and is served the whole window) and passes it to `answer(…, started=…)`; the five route reasons (`waves_off`, `stage_off`, `no_device`, `bad_since`, `bad_started`) join `REASONS`, each emitted as a literal `{"reason": "…"}` so the scan test stays meaningful; the answer is a `JSONResponse` carrying its own `Cache-Control: no-store` (FastAPI's `jsonable_encoder` on a bare dict measured 7.2 ms against 0.75 ms for a first full window; the injected `Response`'s headers do not reach a returned response); and the app's custom `lifespan` closes `app.state.wave_feed` at teardown (Starlette ignores `add_event_handler("shutdown")` once a lifespan is set).
 
 **Ground rules (every task).**
 - TDD: the failing test first, then the code. Run tests in the **foreground** with a timeout; never background a suite and wait.
@@ -2100,12 +2102,12 @@ cd /c/tmp/inf-dalga && git add deploy/local/web/nginx.conf dashboard/vite.config
 
 ### Task 7: The route — `GET /infinity-waves/{device_id}` behind the strip board's own gates
 
-`register(app, board=…)` adds the route; `board(authorization)` is `shadow_board` itself, so its 401 and 403 are this route's and its cards are exactly what this caller may see (R16, R18). Then: the flag (409 `waves_off`, or 503 with the reason it cannot run), the strip (409 `stage_off` — the stage off or another hospital), the monitor on one of the caller's cards (404 `no_device`, the same for "not yours" and "none"), the cursor (400 `bad_since`), the hub (Task 5's outcomes). `Cache-Control: no-store`.
+`register(app, board=…)` adds the route; `board(authorization)` is `shadow_board` itself, so its 401 and 403 are this route's and its cards are exactly what this caller may see (R16, R18). Then: the flag (409 `waves_off`, or 503 with the reason it cannot run), the strip (409 `stage_off` — the stage off or another hospital), the monitor on one of the caller's cards (404 `no_device`, the same for "not yours" and "none"), the cursor (400 `bad_since`), the hub process it came from (400 `bad_started`; A3), the hub (Task 5's outcomes). `Cache-Control: no-store`, on a `JSONResponse` (A3).
 
 **Files:**
-- Modify: `homunculus-engine/src/homunculus/api/infinity_waves.py` (imports; append the route)
+- Modify: `homunculus-engine/src/homunculus/api/infinity_waves.py` (imports; the five route reasons into `REASONS`; append the route)
 - Modify: `homunculus-engine/tests/test_infinity_waves_api.py` (append the route tests)
-- Modify: `homunculus-engine/src/homunculus/api/app.py:475` (one hunk)
+- Modify: `homunculus-engine/src/homunculus/api/app.py:475` (one hunk) and the `lifespan` teardown (`:433`, one guarded `aclose()` — A3)
 - Modify: `homunculus-engine/tests/test_route_inventory.py:21, 41-43`, `homunculus-engine/tests/test_tenant_isolation.py:722-729, 783`
 - Modify: `deploy/local/docker-compose.yml:71`, `deploy/local/.env.example:122`, `homunculus-engine/tests/test_local_compose_env.py:28-36`
 
@@ -2183,8 +2185,9 @@ def _client(tmp_path, *, hub=None, settings=ON, stage=True, audit=None):
         yield client, hub
 
 
-def _get(client, device=BED, token="nurse-jwt", since="0"):
-    return client.get(f"/infinity-waves/{device}", params={"since": since}, headers=_hdr(token))
+def _get(client, device=BED, token="nurse-jwt", since="0", started=None):
+    params = {"since": since} if started is None else {"since": since, "started": started}
+    return client.get(f"/infinity-waves/{device}", params=params, headers=_hdr(token))
 
 
 def test_a_permitted_caller_gets_the_monitors_blocks_and_the_catalogue(tmp_path):
@@ -2192,8 +2195,8 @@ def test_a_permitted_caller_gets_the_monitors_blocks_and_the_catalogue(tmp_path)
         response = _get(client)
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
     body = response.json()
-    assert set(body) == {"schema", "device_id", "cursor", "hub_now", "blocks", "waves"}
-    assert (body["schema"], body["device_id"], body["cursor"]) == (SCHEMA, BED, 4)
+    assert set(body) == {"schema", "device_id", "cursor", "hub_now", "started", "blocks", "waves"}
+    assert (body["schema"], body["device_id"], body["cursor"], body["started"]) == (SCHEMA, BED, 4, STARTED)
     assert [set(b) for b in body["blocks"]] == [{"t", "recv", "id", "rate", "samples"}] * 4
     assert body["blocks"][3]["samples"] is None
     assert body["waves"]["259"] == {"kind": "ecg", "label": None, "rate": 200, "unit": None, "scale": None,
@@ -2211,6 +2214,33 @@ def test_each_caller_gets_the_blocks_after_its_own_cursor(tmp_path):
         for bad in ("-1", "x", "1" * 16):
             response = _get(client, since=bad)
             assert response.status_code == 400 and response.json()["detail"] == {"reason": "bad_since"}
+
+
+def test_a_caller_names_the_hub_process_its_cursor_came_from(tmp_path):
+    # The hub restarted and has already counted past the viewer's cursor 4: a cursor alone would
+    # silently skip blocks 1-4; the process name makes the restart exact (R19, amendment A3).
+    restarted = Hub(payload=window([block(i, 2000.0 + i / 5) for i in range(1, 7)], cursor=6, started=RESTARTED))
+    with _client(tmp_path, hub=restarted) as (client, _):
+        same = _get(client, since="4", started=RESTARTED)
+        other = _get(client, since="4", started=STARTED)
+        unsaid = _get(client, since="4")
+        nothing = _get(client, since="4", started="")
+    assert [b["t"] for b in same.json()["blocks"]] == [2000.0 + 5 / 5, 2000.0 + 6 / 5]      # same process: it filters
+    assert len(other.json()["blocks"]) == 6 and other.json()["started"] == RESTARTED       # another: the whole window
+    assert len(unsaid.json()["blocks"]) == 2                                                # no claim: the cursor alone
+    assert nothing.status_code == 200 and len(nothing.json()["blocks"]) == 6                # names no process: whole
+
+
+def test_a_started_longer_than_the_hubs_is_400_bad_started_after_the_cursor_and_before_the_hub(tmp_path):
+    with _client(tmp_path) as (client, hub):
+        too_long = _get(client, started="x" * 41)
+        assert too_long.status_code == 400 and too_long.json()["detail"] == {"reason": "bad_started"}
+        assert _get(client, started="x" * 1000).status_code == 400
+        assert _get(client, since="x", started="x" * 41).json()["detail"] == {"reason": "bad_since"}   # the cursor first
+        assert _get(client, "192.0.2.99", started="x" * 41).json()["detail"] == {"reason": "no_device"}  # the monitor first
+        assert hub.requests == []
+        assert _get(client, started="x" * 40).status_code == 200                # the hub's own bound
+    assert len(hub.requests) == 1
 
 
 def test_only_the_allow_list_reaches_the_browser(tmp_path):
@@ -2285,10 +2315,35 @@ def test_the_strip_off_is_409_stage_off(tmp_path):
     assert response.status_code == 409 and response.json()["detail"] == {"reason": "stage_off"}
 
 
+def test_every_refusal_the_route_makes_names_a_reason_from_the_one_set(tmp_path):
+    seen = set()
+    with _client(tmp_path) as (client, _):
+        seen.update(r.json()["detail"]["reason"]
+                    for r in (_get(client, "192.0.2.99"), _get(client, since="x"), _get(client, started="x" * 41)))
+    for kwargs in ({"settings": WaveSettings()}, {"settings": WaveSettings(problem="not_configured")},
+                   {"settings": WaveSettings(problem="misconfigured")}, {"stage": False}):
+        with _client(tmp_path, **kwargs) as (client, _):
+            response = _get(client)
+            assert response.status_code in (409, 503)
+            seen.add(response.json()["detail"]["reason"])
+    assert seen == {"no_device", "bad_since", "bad_started", "waves_off", "not_configured", "misconfigured",
+                    "stage_off"}
+    assert seen <= REASONS
+
+
 def test_a_hub_failure_reaches_the_browser_as_its_named_status_never_a_500(tmp_path):
     with _client(tmp_path, hub=Hub(status=404)) as (client, _):
         response = _get(client)
     assert response.status_code == 503 and response.json()["detail"] == {"reason": "hub_no_waves"}
+
+
+def test_the_hub_client_is_closed_when_the_app_stops(tmp_path):
+    with _client(tmp_path) as (client, _):
+        feed = client.app.state.wave_feed
+        assert _get(client).status_code == 200
+        http = feed._client
+        assert http is not None and not http.is_closed
+    assert http.is_closed and feed._client is None                   # the lifespan's teardown closed it
 
 
 def test_the_app_reads_the_flag_from_its_environment_at_start(monkeypatch):
@@ -2391,9 +2446,9 @@ with
 - [ ] **Step 3: Run them to see them fail.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_api.py tests/test_route_inventory.py tests/test_tenant_isolation.py tests/test_local_compose_env.py`
-Expected: the route tests fail (`404` where 200/401/403/409 are expected; `AttributeError: … 'State' object has no attribute 'wave_feed'` in the environment test); the tenant test fails on the stale `CALLER_ELSEWHERE` entry; the compose tests fail with `INFINITY_WAVES` missing from compose and `.env.example`.
+Expected: the 19 route tests fail (`404` where 200/401/403/409 are expected; `AttributeError: … 'State' object has no attribute 'wave_feed'` in the environment test; the `started` tests, the reasons test and the lifespan test with them); the tenant test fails on the stale `CALLER_ELSEWHERE` entry; the compose tests fail with `INFINITY_WAVES` missing from compose and `.env.example` — `22 failed, 57 passed, 108 skipped` over the four files.
 
-- [ ] **Step 4: Write the route.** In `src/homunculus/api/infinity_waves.py`, three import Edits — replace
+- [ ] **Step 4: Write the route.** In `src/homunculus/api/infinity_waves.py`, three import Edits and the reasons — replace
 
 ```python
 import math
@@ -2433,9 +2488,34 @@ with
 
 ```python
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from homunculus.edge.infinity_waves import RATES, SCHEMA, WAVES
+```
+
+replace (A3: the route's five reasons join the one set; the scan test then holds the route to it)
+
+```python
+#: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
+#: (and the panel's words) read the same list. A new reason is added here or the scan test fails.
+REASONS = frozenset({
+    "not_configured", "misconfigured", "hub_no_waves", "research_off", "hub_unauthorized",
+    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid"})
+```
+
+with
+
+```python
+#: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
+#: (and the panel's words) read the same list. A new reason is added here or the scan test fails.
+#: The route's own (waves_off … bad_started) are written as literal `{"reason": "…"}` dicts, which
+#: is what the scan reads; only a settings problem, whose values the scan reads at their source,
+#: is passed through.
+REASONS = frozenset({
+    "not_configured", "misconfigured", "hub_no_waves", "research_off", "hub_unauthorized",
+    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid",
+    "waves_off", "stage_off", "no_device", "bad_since", "bad_started"})
 ```
 
 — then append to the end of the file (after two blank lines):
@@ -2450,7 +2530,7 @@ def register(app: FastAPI, *, board: Callable[[str | None], Awaitable[dict]],
              settings: WaveSettings | None = None) -> HubWaves:
     """Add GET /infinity-waves/{device_id}. `board(authorization)` is the strip board's own handler:
     its 401 and 403 are this route's, and its cards are what this caller may see. The hub client
-    is `app.state.wave_feed` (a test puts a fake hub there)."""
+    is `app.state.wave_feed` (a test puts a fake hub there); the app's lifespan closes it."""
     settings = settings if settings is not None else wave_settings_from_env(os.environ)
     if settings.problem:
         # Names the problem, never a token or the URL.
@@ -2458,7 +2538,7 @@ def register(app: FastAPI, *, board: Callable[[str | None], Awaitable[dict]],
     app.state.wave_feed = HubWaves(settings)
 
     @app.get("/infinity-waves/{device_id}")
-    async def infinity_waves(device_id: str, request: Request, response: Response, since: str = "0",
+    async def infinity_waves(device_id: str, request: Request, since: str = "0", started: str | None = None,
                              authorization: str | None = Header(default=None)):
         shown = await board(authorization)
         feed: HubWaves = request.app.state.wave_feed
@@ -2473,11 +2553,15 @@ def register(app: FastAPI, *, board: Callable[[str | None], Awaitable[dict]],
             raise HTTPException(404, {"reason": "no_device"})
         if not SINCE.fullmatch(since):
             raise HTTPException(400, {"reason": "bad_since"})
+        if started is not None and len(started) > MAX_TEXT:      # the hub's own bound on its `started`
+            raise HTTPException(400, {"reason": "bad_started"})
         outcome = await feed.window(device_id)
         if outcome.status != 200:
             raise HTTPException(outcome.status, outcome.body)
-        response.headers["Cache-Control"] = "no-store"
-        return answer(device_id, outcome.body, int(since))
+        # A JSONResponse, not a bare dict: FastAPI's jsonable_encoder on a first full window measured
+        # 7.2 ms against 0.75 ms (the hub's route does the same). The header goes on it, not on `response`.
+        return JSONResponse(answer(device_id, outcome.body, int(since), started=started),
+                            headers={"Cache-Control": "no-store"})
 
     return app.state.wave_feed
 ```
@@ -2499,6 +2583,25 @@ with
 ```
 
 `shadow_board` is assigned later in `create_app` (`@app.get("/infinity-shadow/board")`, ≈ line 1030 after this hunk); the lambda reads it when a request arrives, by which time `create_app` has returned. If Aşama B renames `shadow_board` or changes its signature, Task 15's merge is where this line follows it (the route tests fail first).
+
+And the one teardown line (A3): `create_app` has its own `lifespan` (`FastAPI(title="Homunculus", lifespan=lifespan)`, ≈ line 411), so `app.add_event_handler("shutdown", …)` would be silently ignored; the client is closed in that lifespan's `finally`. Replace
+
+```python
+            if ldap is not None:
+                ldap.close()                 # the directory's own worker threads
+```
+
+with
+
+```python
+            if ldap is not None:
+                ldap.close()                 # the directory's own worker threads
+            feed = getattr(app.state, "wave_feed", None)      # Lane C (dalga): the hub client
+            if feed is not None:
+                await feed.aclose()
+```
+
+An app that never registered the route (`getattr` default) is unaffected; `test_the_hub_client_is_closed_when_the_app_stops` is the proof it runs.
 
 - [ ] **Step 6: The switch reaches the container.** In `deploy/local/docker-compose.yml`, replace
 
@@ -2540,12 +2643,12 @@ with
 - [ ] **Step 7: Run the route tests and every route inventory.**
 
 Run: the command of Step 3, then `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_nginx_routes.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_isolation.py tests/test_infinity_research_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`67` in `test_infinity_waves_api.py`).
+Expected: all pass (`71` in `test_infinity_waves_api.py` = 52 + 15 + 4 for A3; `4` in the route inventory, `1 passed, 108 skipped` in the tenant file without `TEST_DATABASE_URL`, `3` compose, `44` nginx, `10` research, `45` + `18` shadow, `4` dependencies). Measured at this commit (Tasks 1–7 applied) with the whole engine suite (`--ignore=tests/test_infinity_vm_pilot.py`): `2567 passed, 654 skipped`.
 
 - [ ] **Step 8: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_infinity_waves_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_tenant_isolation.py homunculus-engine/tests/test_local_compose_env.py deploy/local/docker-compose.yml deploy/local/.env.example && git commit -m "feat(api): GET /infinity-waves/{device_id} — a monitor's live waves behind the strip board's own gates" -m "The route calls the strip board's handler for the caller, so board.view or devices.manage, the shadow hospital and the scope are the board's own, and a monitor is served only from a card that board shows this caller; any other address is a 404, the same as none. Off unless INFINITY_WAVES=on (409 waves_off; 503 with the reason when 'on' cannot run); the strip off or another hospital is 409 stage_off. Nothing is written: no row, no audit, no log line carrying a sample. One hunk in app.py, beside the research router and away from the shadow routes; the two route inventories declare the route as caller-resolved outside app.py; compose and .env.example carry the switch." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_infinity_waves_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_tenant_isolation.py homunculus-engine/tests/test_local_compose_env.py deploy/local/docker-compose.yml deploy/local/.env.example && git commit -m "feat(api): GET /infinity-waves/{device_id} — a monitor's live waves behind the strip board's own gates" -m "The route calls the strip board's handler for the caller, so board.view or devices.manage, the shadow hospital and the scope are the board's own, and a monitor is served only from a card that board shows this caller; any other address is a 404, the same as none. Off unless INFINITY_WAVES=on (409 waves_off; 503 with the reason when 'on' cannot run); the strip off or another hospital is 409 stage_off. Nothing is written: no row, no audit, no log line carrying a sample. An optional `started` names the hub process a cursor came from (a restarted hub is then served whole; over 40 characters is 400 bad_started), and the answer is a JSONResponse. One hunk in app.py, beside the research router and away from the shadow routes, plus one guarded aclose() in the app's lifespan teardown so the hub client is closed with the app; the two route inventories declare the route as caller-resolved outside app.py; compose and .env.example carry the switch." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
