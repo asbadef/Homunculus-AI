@@ -55,6 +55,8 @@
 | R18 | `api/app.py` gets one 4-line hunk beside the research router: a local import and `register_waves(app, board=lambda authorization: shadow_board(authorization))` — `shadow_board` is defined later in `create_app` and looked up when a request comes. The two route-inventory tests declare the route as caller-resolved outside `app.py`. | §10: one registration away from the shadow routes; the gates are the board's own, by construction. |
 | R19 | The hub names its process: `create_hub` keeps `hub_started = iso_z(clock())` once, the waves answer carries it as a top-level `"started"` (both shapes), and `GET /v1/status` gains `"waves": {"cursor", "refused", "started"}` — only when the hub has a `WaveBuffer`. Task 5 reads `started`. | (1) `WaveBuffer.refused` (events turned away: not live, over 3 s old, ahead of the hub's clock) was surfaced nowhere, so a worker clock a few hundred ms ahead of the hub's would black out every wave while the journal acknowledged each packet; the status page now shows it. (2) A restarted hub counts its cursor from 0 again, and "a cursor ahead of the hub's counts as 0" is only a heuristic (a cursor can be *behind* the new count and silently skip blocks); a per-process token makes the restart exact for every caller. (Task 2 review.) |
 
+*R19 in Task 5 (lead amendment A2).* `api/infinity_waves.py` requires `started` as a non-empty string on every hub answer (without it the answer is `hub_invalid`, 502), passes it to the browser top-level and unchanged, and `answer(…, started=…)` serves the whole window to a caller whose cursor came from another hub process; the cursor is always the answer's top-level `cursor`, never read from a block (blocks are in device-time order, so `seq` is not monotonic down the list).
+
 **Ground rules (every task).**
 - TDD: the failing test first, then the code. Run tests in the **foreground** with a timeout; never background a suite and wait.
 - Engine: from `/c/tmp/inf-dalga/homunculus-engine`, `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q <files>`. Never run `tests/test_infinity_vm_pilot.py` (`--ignore` it in whole-suite runs). Never export `DATABASE_URL`; the DB tests skip without `TEST_DATABASE_URL` (≈ 650 skips is normal). The ldap3 `DeprecationWarning`s and Starlette's "install `httpx2`" warning are known noise.
@@ -1396,7 +1398,7 @@ cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hu
 
 ### Task 5: The API's hub client — settings, the window check, the browser's copy, one keep-alive client
 
-`api/infinity_waves.py` without its route yet: `WaveSettings` / `wave_settings_from_env` (off unless `INFINITY_WAVES=on`; the research window's three hub settings, https only), `checked` (the hub's answer, type by type; blocks of an uncatalogued wave dropped), `answer` (the blocks after a caller's cursor, through the allow-list, plus the catalogue), and `HubWaves` (one `httpx.AsyncClient` for the life of the process — no redirects, no proxy from the environment, the CA pinned; 2 s; 1 MiB; a 250 ms per-monitor cache with single-flight, forgotten 250 ms after it was fetched; every failure a named outcome).
+`api/infinity_waves.py` without its route yet: `WaveSettings` / `wave_settings_from_env` (off unless `INFINITY_WAVES=on`; the research window's three hub settings, https only), `checked` (the hub's answer, type by type — `started`, the hub process's start (R19), must be a non-empty string; blocks of an uncatalogued wave dropped), `answer` (the blocks after a caller's cursor, through the allow-list, plus the catalogue; `started` goes through to the browser unchanged, and a caller that names another hub process than the answer's is served the whole window), and `HubWaves` (one `httpx.AsyncClient` for the life of the process — no redirects, no proxy from the environment, the CA pinned; 2 s; 1 MiB; a 250 ms per-monitor cache with single-flight, forgotten 250 ms after it was fetched; every failure a named outcome).
 
 **Files:**
 - Modify: `homunculus-engine/pyproject.toml` (dependencies)
@@ -1439,6 +1441,7 @@ SRC = ROOT / "src"
 VIEWER = "v" * 40
 ON = WaveSettings(True, "https://hub.example:8766", VIEWER, "/etc/homunculus/infinity-ca.pem")
 BED, OTHER_UNIT, UNLISTED = "192.0.2.10", "192.0.2.11", "192.0.2.13"
+STARTED, RESTARTED = "2027-01-15T06:00:00.000Z", "2027-01-15T07:00:30.000Z"     # two hub processes
 
 
 def block(seq, t, wave=0x0103, rate=200, samples="pattern"):
@@ -1446,10 +1449,11 @@ def block(seq, t, wave=0x0103, rate=200, samples="pattern"):
     return {"seq": seq, "t": t, "recv": "2027-01-15T07:00:00.000Z", "id": wave, "rate": rate, "samples": values}
 
 
-def window(blocks=None, *, device=BED, cursor=None):
+def window(blocks=None, *, device=BED, cursor=None, started=STARTED):
+    # The hub lists blocks in DEVICE-TIME order (then wave id), so `seq` is not monotonic down the list.
     blocks = blocks if blocks is not None else [
-        block(1, 1000.0), block(2, 1000.2), block(3, 1000.0, 0x0301, 100), block(4, 1000.2, 0x0301, 100, None)]
-    return {"schema": SCHEMA, "device_id": device, "hub_now": "2027-01-15T07:00:00.500Z",
+        block(1, 1000.0), block(3, 1000.0, 0x0301, 100), block(2, 1000.2), block(4, 1000.2, 0x0301, 100, None)]
+    return {"schema": SCHEMA, "device_id": device, "hub_now": "2027-01-15T07:00:00.500Z", "started": started,
             "cursor": cursor if cursor is not None else max((b["seq"] for b in blocks), default=0), "blocks": blocks}
 
 
@@ -1496,6 +1500,8 @@ def test_httpx_is_a_runtime_dependency_of_the_api_image():
 
 @pytest.mark.parametrize("raw", [
     [], {**window(), "cursor": -1}, {**window(), "cursor": True}, {**window(), "hub_now": "x" * 41},
+    {key: value for key, value in window().items() if key != "started"},      # no hub process named
+    {**window(), "started": ""}, {**window(), "started": 7}, {**window(), "started": "x" * 41},
     window([block(5, 1000.0)], cursor=4),                         # a block after the hub's own cursor
     window([dict(block(1, 1000.0), rate=True)]), window([dict(block(1, 1000.0), t=float("nan"))]),
     window([block(1, 1000.0, samples=[1] * 39)]), window([block(1, 1000.0, samples=[40000] * 40)]),
@@ -1512,11 +1518,24 @@ def test_checked_drops_a_wave_the_catalogue_does_not_name():
 
 def test_answer_drops_seq_and_starts_again_for_a_cursor_from_before_a_restart():
     checked_window = checked(window(), BED)
+    assert checked_window["started"] == STARTED
     assert [b["id"] for b in answer(BED, checked_window, 3)["blocks"]] == [0x0301]
     assert len(answer(BED, checked_window, 10)["blocks"]) == 4
     copy = answer(BED, checked_window, 0)
+    assert set(copy) == {"schema", "device_id", "cursor", "hub_now", "started", "blocks", "waves"}
+    assert copy["started"] == STARTED                                # the hub process, passed on unchanged
     assert all(set(b) == {"t", "recv", "id", "rate", "samples"} for b in copy["blocks"])
     assert copy["waves"]["259"]["label"] is None and copy["waves"]["3585"]["label"] == "P1"
+
+
+def test_the_cursor_is_the_answers_own_never_taken_from_a_block():
+    # Blocks are in device-time order, so neither the last block's seq nor the largest is the hub's
+    # cursor (which also counts other monitors' blocks and blocks since dropped).
+    held = checked(window([block(9, 1000.0), block(6, 1000.2), block(7, 1000.4)], cursor=12), BED)
+    assert held["cursor"] == 12
+    copy = answer(BED, held, 6)
+    assert copy["cursor"] == 12
+    assert [b["t"] for b in copy["blocks"]] == [1000.0, 1000.4]         # filtered block by block, order kept
 
 
 # --- the shared client: keep-alive, the cache, single-flight, the failures -----------------------
@@ -1565,6 +1584,23 @@ async def test_a_failure_is_cached_too_so_a_dead_hub_is_not_hammered():
     assert len(hub.requests) == 1
 
 
+async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
+    now = [0.0]
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+    before = answer(BED, (await feed.window(BED)).body, 0)           # a viewer, holding cursor 4 of hub STARTED
+    assert (before["started"], before["cursor"]) == (STARTED, 4)
+    # The hub restarts: its cursor counts from 0 again and has already passed the viewer's 4.
+    hub.payload = window([block(i, 2000.0 + i / 5) for i in range(1, 7)], cursor=6, started=RESTARTED)
+    now[0] = CACHE_S + 0.05
+    after = await feed.window(BED)
+    assert len(hub.requests) == 2 and after.body["started"] == RESTARTED
+    assert len(answer(BED, after.body, 4)["blocks"]) == 2            # a cursor alone cannot tell: blocks 1-4 are lost
+    whole = answer(BED, after.body, before["cursor"], started=before["started"])
+    assert whole["started"] == RESTARTED and len(whole["blocks"]) == 6
+    assert len(answer(BED, after.body, 4, started=RESTARTED)["blocks"]) == 2    # the same process: the cursor filters
+
+
 @pytest.mark.parametrize("hub, status, detail", [
     (Hub(status=404), 503, {"reason": "hub_no_waves"}),            # a hub without the route (before R5)
     (Hub(status=409), 503, {"reason": "research_off"}),
@@ -1577,6 +1613,7 @@ async def test_a_failure_is_cached_too_so_a_dead_hub_is_not_hammered():
     (Hub(content=b"not json"), 502, {"reason": "hub_invalid"}),
     (Hub(payload=window(device="192.0.2.99")), 502, {"reason": "hub_invalid"}),   # another monitor's window
     (Hub(payload={**window(), "schema": "other"}), 502, {"reason": "hub_invalid"}),
+    (Hub(payload={**window(), "started": ""}), 502, {"reason": "hub_invalid"}),    # a hub that names no process
 ])
 async def test_a_hub_failure_is_a_named_outcome(hub, status, detail):
     outcome = await HubWaves(ON, transport=httpx.MockTransport(hub)).window(BED)
@@ -1739,10 +1776,13 @@ def _number(value) -> bool:
 
 def checked(raw, device: str) -> dict:
     """The hub's answer for one monitor, checked type by type; ValueError for anything else. Blocks
-    of a wave the catalogue does not name are dropped: the screen has no row for them."""
+    of a wave the catalogue does not name are dropped: the screen has no row for them. `started` —
+    the hub process's start — must be a non-empty string: an answer without it is invalid. The
+    cursor is the answer's own; blocks come in device-time order, so none of them carries it."""
     if (not isinstance(raw, dict) or raw.get("schema") != SCHEMA or raw.get("device_id") != device
             or type(raw.get("cursor")) is not int or raw["cursor"] < 0
             or not isinstance(raw.get("hub_now"), str) or len(raw["hub_now"]) > MAX_TEXT
+            or not isinstance(raw.get("started"), str) or not 0 < len(raw["started"]) <= MAX_TEXT
             or not isinstance(raw.get("blocks"), list)):
         raise ValueError("not a waves window")
     blocks = []
@@ -1759,15 +1799,19 @@ def checked(raw, device: str) -> dict:
             raise ValueError("samples")
         if wave in WAVES:
             blocks.append({"seq": seq, "t": float(t), "recv": recv, "id": wave, "rate": rate, "samples": samples})
-    return {"cursor": raw["cursor"], "hub_now": raw["hub_now"], "blocks": blocks}
+    return {"cursor": raw["cursor"], "hub_now": raw["hub_now"], "started": raw["started"], "blocks": blocks}
 
 
-def answer(device: str, window: dict, since: int) -> dict:
+def answer(device: str, window: dict, since: int, started: str | None = None) -> dict:
     """The browser's copy of a checked window: the blocks after its cursor — all of them for a
-    cursor from before a hub restart — through the allow-list, and the catalogue."""
-    if since > window["cursor"]:
+    cursor from before a hub restart — through the allow-list, and the catalogue; `started` goes
+    through unchanged. A cursor ahead of the hub's is from before a restart; but a restarted hub
+    may already have counted past the caller's cursor, so a caller that says which hub process its
+    cursor came from (`started`) and names another is served the whole window."""
+    if since > window["cursor"] or (started is not None and started != window["started"]):
         since = 0
     return {"schema": SCHEMA, "device_id": device, "cursor": window["cursor"], "hub_now": window["hub_now"],
+            "started": window["started"],
             "blocks": [{key: block[key] for key in BLOCK_KEYS} for block in window["blocks"] if block["seq"] > since],
             "waves": {str(wave): dict(entry) for wave, entry in sorted(WAVES.items())}}
 
@@ -1857,12 +1901,12 @@ class HubWaves:
 - [ ] **Step 5: Run the tests and the dependency pins.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`34` in the new file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
+Expected: all pass (`41` in the new file, `4` in the dependency file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/pyproject.toml homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/tests/test_infinity_waves_api.py && git commit -m "feat(api): the waveform panel's hub client — one keep-alive connection, a 250 ms single-flight cache, an allow-list" -m "HubWaves keeps one httpx.AsyncClient for the life of the API (no TLS handshake per poll; the research window's CA pinned, no redirect followed, no proxy read from the environment; 2 s; 1 MiB) and answers each monitor from a 250 ms cache with single-flight, so several viewers of one bed cost one hub request and a dead hub is not hammered. It always asks the hub for the monitor's last 10 s; answer() serves each caller the blocks after its own cursor (all of them for a cursor from before a hub restart), through an allow-list, with the catalogue. Every hub failure is a named status — a hub without the route (before R5) is 'hub_no_waves' — never a 500. httpx moves from the dev extra to the API's dependencies; constraints.txt already pins it." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/pyproject.toml homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/tests/test_infinity_waves_api.py && git commit -m "feat(api): the waveform panel's hub client — one keep-alive connection, a 250 ms single-flight cache, an allow-list" -m "HubWaves keeps one httpx.AsyncClient for the life of the API (no TLS handshake per poll; the research window's CA pinned, no redirect followed, no proxy read from the environment; 2 s; 1 MiB) and answers each monitor from a 250 ms cache with single-flight, so several viewers of one bed cost one hub request and a dead hub is not hammered. It always asks the hub for the monitor's last 10 s; answer() serves each caller the blocks after its own cursor (all of them for a cursor from before a hub restart), through an allow-list, with the catalogue. Every hub failure is a named status — a hub without the route (before R5) is 'hub_no_waves' — never a 500. httpx moves from the dev extra to the API's dependencies; constraints.txt already pins it." -m "The hub answer's 'started' (R19) is required by checked() and passed to the browser unchanged; answer() takes the 'started' a caller's cursor was issued under and serves the whole window when it names another hub process, because a restarted hub may already have counted past that cursor. The cursor is the answer's own, never read from a block (blocks come in device-time order)." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -2374,7 +2418,7 @@ with
 - [ ] **Step 7: Run the route tests and every route inventory.**
 
 Run: the command of Step 3, then `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_nginx_routes.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_isolation.py tests/test_infinity_research_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`49` in `test_infinity_waves_api.py`).
+Expected: all pass (`56` in `test_infinity_waves_api.py`).
 
 - [ ] **Step 8: Commit.**
 
