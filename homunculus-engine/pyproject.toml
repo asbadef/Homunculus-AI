@@ -21,6 +21,7 @@ dependencies = [
     "email-validator>=2.1",             # Email validation
     "uvicorn[standard]>=0.30",          # ASGI server (production serving)
     "ldap3>=2.9",                       # Active Directory sign-in (pure Python; spec §7)
+    "httpx>=0.27",                      # the keep-alive client to the Infinity hub (api/infinity_waves.py)
 ]
 
 [project.optional-dependencies]
