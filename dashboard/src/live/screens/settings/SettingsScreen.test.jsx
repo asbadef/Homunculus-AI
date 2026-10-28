@@ -160,7 +160,7 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi saatla göstərilir/);
     expect(box).toHaveTextContent(/ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı/);   // the example and the bound are one sentence (X49): the NBSP after "≤" is inside the «» quote, not here
     expect(box).toHaveTextContent(/ən azı bu qədər köhnədir/);   // the time is a bound: the value is at least this old (X49)
-    expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
+    expect(box).toHaveTextContent(/Saatı bilinən və dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);   // the 2-hour rule is the timed value's
     expect(box).toHaveTextContent(/monitorun məlumatı kəsik ikən dəyər dəyişibsə dəyişiklik fərq edilməyib/);   // a value that CHANGED during the interruption is untimed (X48, final review M-4; NBP-2)
     // NBP-2 (D4): no change seen — the monitor's current value, with «ölçmə vaxtı məlum deyil» until the
     // next cuff measurement that changes it; no 2-hour limit can apply to it, and a triple that is not
