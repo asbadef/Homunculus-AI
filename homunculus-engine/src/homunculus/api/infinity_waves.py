@@ -39,6 +39,11 @@ MAX_BODY = 1024 * 1024
 MAX_TEXT = 40                         # an ISO instant, with room
 BLOCK_KEYS = ("t", "recv", "id", "rate", "samples")
 _UPSTREAM = {401: "hub_unauthorized", 404: "hub_no_waves", 409: "research_off"}
+#: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
+#: (and the panel's words) read the same list. A new reason is added here or the scan test fails.
+REASONS = frozenset({
+    "not_configured", "misconfigured", "hub_no_waves", "research_off", "hub_unauthorized",
+    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid"})
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,10 @@ def wave_settings_from_env(env: Mapping[str, str]) -> WaveSettings:
     if not url.startswith("https://"):
         # The viewer credential rides in a header: never over plain HTTP (infinity_research.py).
         return WaveSettings(problem="misconfigured")
+    try:
+        httpx.URL(url)                 # a typo ("https://hub:abc") is named here, not raised per request
+    except httpx.InvalidURL:
+        return WaveSettings(problem="misconfigured")
     return WaveSettings(True, url, token, ca_file)
 
 
@@ -73,7 +82,9 @@ class Outcome:
 
 
 def _number(value) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    # Not math.isfinite(value) on an int: it converts to float first, and a 400-digit integer
+    # (json.loads accepts one) raises OverflowError. An int must be one a float holds exactly.
+    return (type(value) is float and math.isfinite(value)) or (type(value) is int and -2**53 < value < 2**53)
 
 
 def checked(raw, device: str) -> dict:
@@ -122,7 +133,10 @@ class HubWaves:
     """One keep-alive client to the hub for the life of the process (no redirects, no proxy, the
     research window's CA); a CACHE_S answer per monitor, single-flight, forgotten CACHE_S after it
     was fetched. Every hub request asks for the monitor's last seconds (since=0); `answer` serves
-    each caller the blocks after its own cursor."""
+    each caller the blocks after its own cursor. It trusts its caller to ask `window()` only about
+    a device on the caller's board (which bounds the cache's keys) and only when `settings.on`.
+    `aclose()` ends the client: the app's lifespan teardown calls it (Starlette ignores
+    add_event_handler("shutdown") when a lifespan is set)."""
 
     def __init__(self, settings: WaveSettings, *, transport: httpx.AsyncBaseTransport | None = None,
                  clock: Callable[[], float] = time.monotonic):
@@ -141,10 +155,17 @@ class HubWaves:
                 self._client = httpx.AsyncClient(transport=self._transport, **common)
             else:
                 context = ssl.create_default_context(cafile=self.settings.ca_file)
+                # keepalive_expiry < uvicorn's timeout_keep_alive (5 s): the client drops an idle socket
+                # before the hub does, so a request is never sent into a connection that is closing.
                 self._client = httpx.AsyncClient(
                     verify=context, **common,
-                    limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=30.0))
+                    limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=4.0))
         return self._client
+
+    async def aclose(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     async def window(self, device: str) -> Outcome:
         held = self._cache.get(device)
@@ -192,9 +213,11 @@ class HubWaves:
                             return Outcome(502, {"reason": "hub_too_large"})
         except (TimeoutError, httpx.TimeoutException):
             return Outcome(503, {"reason": "hub_timeout"})
+        except httpx.InvalidURL:                  # not an HTTPError; settings catch it first, this is the net
+            return Outcome(503, {"reason": "misconfigured"})
         except httpx.HTTPError:
             return Outcome(503, {"reason": "hub_unreachable"})
         try:
             return Outcome(200, checked(json.loads(body), device))
-        except (ValueError, TypeError, RecursionError):
+        except (ValueError, TypeError, RecursionError, OverflowError):
             return Outcome(502, {"reason": "hub_invalid"})

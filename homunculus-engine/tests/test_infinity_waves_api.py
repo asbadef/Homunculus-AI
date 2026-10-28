@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api import infinity_waves
 from homunculus.api.infinity_waves import (
-    CACHE_S, MAX_BODY, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
+    CACHE_S, MAX_BODY, REASONS, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
 )
 from homunculus.edge.infinity_waves import SCHEMA
 
@@ -81,6 +81,13 @@ def test_the_flag_reads_on_and_names_what_stops_it():
     assert VIEWER not in repr(on)
 
 
+def test_a_hub_url_httpx_cannot_parse_is_named_at_start_not_raised_per_request():
+    env = {"INFINITY_WAVES": "on", "INFINITY_HUB_URL": "https://hub:abc", "INFINITY_VIEWER_TOKEN": VIEWER,
+           "INFINITY_HUB_CA_FILE": "/etc/homunculus/infinity-ca.pem"}
+    settings = wave_settings_from_env(env)
+    assert settings.problem == "misconfigured" and settings.on is False
+
+
 def test_httpx_is_a_runtime_dependency_of_the_api_image():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert any(dep.split(">")[0].split("=")[0].strip() == "httpx" for dep in project["dependencies"])
@@ -94,12 +101,17 @@ def test_httpx_is_a_runtime_dependency_of_the_api_image():
     {**window(), "started": ""}, {**window(), "started": 7}, {**window(), "started": "x" * 41},
     window([block(5, 1000.0)], cursor=4),                         # a block after the hub's own cursor
     window([dict(block(1, 1000.0), rate=True)]), window([dict(block(1, 1000.0), t=float("nan"))]),
+    window([dict(block(1, 1000.0), t=10 ** 400)]), window([dict(block(1, 1000.0), t=2 ** 53)]),   # no OverflowError
     window([block(1, 1000.0, samples=[1] * 39)]), window([block(1, 1000.0, samples=[40000] * 40)]),
     window([block(1, 1000.0, samples=[1.5] * 40)]), window(["not a block"], cursor=1),
 ])
 def test_checked_refuses_what_is_not_a_window(raw):
     with pytest.raises(ValueError):
         checked(raw, BED)
+
+
+def test_checked_takes_an_integer_instant_a_float_holds_exactly():
+    assert checked(window([dict(block(1, 1000.0), t=1000)]), BED)["blocks"][0]["t"] == 1000.0
 
 
 def test_checked_drops_a_wave_the_catalogue_does_not_name():
@@ -126,6 +138,10 @@ def test_the_cursor_is_the_answers_own_never_taken_from_a_block():
     copy = answer(BED, held, 6)
     assert copy["cursor"] == 12
     assert [b["t"] for b in copy["blocks"]] == [1000.0, 1000.4]         # filtered block by block, order kept
+
+
+def test_a_cursor_ahead_of_the_hubs_is_served_whole_even_from_the_same_process():
+    assert len(answer(BED, checked(window(), BED), 10, started=STARTED)["blocks"]) == 4
 
 
 # --- the shared client: keep-alive, the cache, single-flight, the failures -----------------------
@@ -174,6 +190,56 @@ async def test_a_failure_is_cached_too_so_a_dead_hub_is_not_hammered():
     assert len(hub.requests) == 1
 
 
+async def test_every_waiter_leaving_does_not_cancel_the_flight():
+    gate = asyncio.Event()
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        await gate.wait()
+        return httpx.Response(200, json=window())
+
+    feed = HubWaves(ON, transport=httpx.MockTransport(handler), clock=lambda: 0.0)
+    waiters = [asyncio.ensure_future(feed.window(BED)) for _ in range(2)]
+    await asyncio.sleep(0.01)
+    for waiter in waiters:
+        waiter.cancel()
+    await asyncio.gather(*waiters, return_exceptions=True)
+    gate.set()
+    await asyncio.sleep(0.01)                                        # the flight finishes with nobody waiting
+    assert feed._flights == {} and BED in feed._cache
+    assert (await feed.window(BED)).status == 200 and len(calls) == 1
+
+
+async def test_ten_polls_across_cache_expiry_use_one_client_and_one_hub_request_per_expiry():
+    now = [0.0]
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+    await feed.window(BED)
+    client = feed._client
+    for n in range(1, 11):
+        now[0] = n * (CACHE_S + 0.05)
+        await feed.window(BED)
+        await feed.window(BED)                                       # inside the 250 ms: the cache
+        assert len(hub.requests) == n + 1 and feed._client is client
+
+
+async def test_aclose_ends_the_client_and_a_later_request_makes_a_fresh_one():
+    now = [0.0]
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+    await HubWaves(ON).aclose()                                      # never used: nothing to close
+    await feed.window(BED)
+    client = feed._client
+    await feed.aclose()
+    await feed.aclose()                                              # twice is fine
+    assert client.is_closed and feed._client is None
+    now[0] = CACHE_S + 0.05
+    assert (await feed.window(BED)).status == 200
+    assert feed._client is not client and not feed._client.is_closed and len(hub.requests) == 2
+    await feed.aclose()
+
+
 async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
     now = [0.0]
     hub = Hub()
@@ -204,6 +270,7 @@ async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
     (Hub(payload=window(device="192.0.2.99")), 502, {"reason": "hub_invalid"}),   # another monitor's window
     (Hub(payload={**window(), "schema": "other"}), 502, {"reason": "hub_invalid"}),
     (Hub(payload={**window(), "started": ""}), 502, {"reason": "hub_invalid"}),    # a hub that names no process
+    (Hub(payload=window([dict(block(1, 1000.0), t=10 ** 400)])), 502, {"reason": "hub_invalid"}),   # json.loads takes it
 ])
 async def test_a_hub_failure_is_a_named_outcome(hub, status, detail):
     outcome = await HubWaves(ON, transport=httpx.MockTransport(hub)).window(BED)
@@ -227,6 +294,26 @@ async def test_an_unreadable_ca_file_is_a_misconfiguration_not_a_crash(tmp_path)
     feed = HubWaves(WaveSettings(True, "https://hub.example:8766", VIEWER, str(tmp_path / "missing.pem")))
     outcome = await feed.window(BED)
     assert outcome.status == 503 and outcome.body == {"reason": "misconfigured"}
+
+
+async def test_a_url_httpx_refuses_is_a_misconfiguration_not_a_crash():
+    feed = HubWaves(WaveSettings(True, "https://hub:abc", VIEWER, "/x.pem"), transport=httpx.MockTransport(Hub()))
+    outcome = await feed.window(BED)                                 # settings catch it first; this is the net
+    assert (outcome.status, outcome.body) == (503, {"reason": "misconfigured"})
+
+
+def test_every_reason_the_module_emits_is_in_the_one_set():
+    found = set()
+    for node in ast.walk(ast.parse((SRC / "homunculus/api/infinity_waves.py").read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Dict):
+            found.update(value.value for key, value in zip(node.keys, node.values)
+                         if isinstance(key, ast.Constant) and key.value == "reason" and isinstance(value, ast.Constant))
+        elif isinstance(node, ast.keyword) and node.arg == "problem" and isinstance(node.value, ast.Constant):
+            found.add(node.value.value)
+        elif (isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+              and any(isinstance(target, ast.Name) and target.id == "_UPSTREAM" for target in node.targets)):
+            found.update(value.value for value in node.value.values)
+    assert found == REASONS                                          # nothing emitted outside it, nothing stale in it
 
 
 # --- isolation: nothing clinical ------------------------------------------------------------------
