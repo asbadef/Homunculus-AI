@@ -41,6 +41,7 @@ CACHE_S = 0.25
 TIMEOUT_S = 2.0
 MAX_BODY = 1024 * 1024
 MAX_TEXT = 40                         # an ISO instant, with room
+MAX_CURSOR = 10 ** 15                 # the hub's cursor stays below it: the route's SINCE takes 15 digits back
 BLOCK_KEYS = ("t", "recv", "id", "rate", "samples")
 _UPSTREAM = {401: "hub_unauthorized", 404: "hub_no_waves", 409: "research_off"}
 #: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
@@ -101,7 +102,7 @@ def checked(raw, device: str) -> dict:
     the hub process's start — must be a non-empty string: an answer without it is invalid. The
     cursor is the answer's own; blocks come in device-time order, so none of them carries it."""
     if (not isinstance(raw, dict) or raw.get("schema") != SCHEMA or raw.get("device_id") != device
-            or type(raw.get("cursor")) is not int or raw["cursor"] < 0
+            or type(raw.get("cursor")) is not int or not 0 <= raw["cursor"] < MAX_CURSOR
             or not isinstance(raw.get("hub_now"), str) or len(raw["hub_now"]) > MAX_TEXT
             or not isinstance(raw.get("started"), str) or not 0 < len(raw["started"]) <= MAX_TEXT
             or not isinstance(raw.get("blocks"), list)):

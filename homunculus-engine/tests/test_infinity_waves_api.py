@@ -96,7 +96,8 @@ def test_httpx_is_a_runtime_dependency_of_the_api_image():
 # --- the window and the browser's copy ------------------------------------------------------------
 
 @pytest.mark.parametrize("raw", [
-    [], {**window(), "cursor": -1}, {**window(), "cursor": True}, {**window(), "hub_now": "x" * 41},
+    [], {**window(), "cursor": -1}, {**window(), "cursor": True}, {**window(), "cursor": 10 ** 15},
+    {**window(), "hub_now": "x" * 41},
     {key: value for key, value in window().items() if key != "started"},      # no hub process named
     {**window(), "started": ""}, {**window(), "started": 7}, {**window(), "started": "x" * 41},
     window([block(5, 1000.0)], cursor=4),                         # a block after the hub's own cursor
@@ -112,6 +113,12 @@ def test_checked_refuses_what_is_not_a_window(raw):
 
 def test_checked_takes_an_integer_instant_a_float_holds_exactly():
     assert checked(window([dict(block(1, 1000.0), t=1000)]), BED)["blocks"][0]["t"] == 1000.0
+
+
+def test_the_hubs_cursor_is_bounded_where_the_route_can_take_it_back():
+    # The browser sends the cursor back as `since`, which the route admits to 15 digits.
+    assert checked(window([], cursor=10 ** 15 - 1), BED)["cursor"] == 10 ** 15 - 1
+    assert infinity_waves.SINCE.fullmatch(str(10 ** 15 - 1)) and not infinity_waves.SINCE.fullmatch(str(10 ** 15))
 
 
 def test_checked_drops_a_wave_the_catalogue_does_not_name():
@@ -547,6 +554,20 @@ def test_the_strip_off_is_409_stage_off(tmp_path):
     with _client(tmp_path, stage=False) as (client, hub):
         response = _get(client)
     assert response.status_code == 409 and response.json()["detail"] == {"reason": "stage_off"}
+
+
+def test_the_gates_answer_in_r16s_order(tmp_path):
+    def refused(response, status, reason=None):
+        assert response.status_code == status and (reason is None or response.json()["detail"] == {"reason": reason})
+
+    with _client(tmp_path, settings=WaveSettings()) as (client, _):                 # waves off
+        refused(_get(client, token=None), 401)                                      # the board before the flag
+        refused(_get(client, token="none-jwt"), 403)
+        refused(_get(client, token="elsewhere-jwt"), 409, "waves_off")              # the flag before the stage
+    with _client(tmp_path, stage=False, settings=WaveSettings()) as (client, _):
+        refused(_get(client), 409, "waves_off")
+    with _client(tmp_path) as (client, _):                                          # waves on
+        refused(_get(client, "192.0.2.99", since="x"), 404, "no_device")            # the monitor before the cursor
 
 
 def test_every_refusal_the_route_makes_names_a_reason_from_the_one_set(tmp_path):
