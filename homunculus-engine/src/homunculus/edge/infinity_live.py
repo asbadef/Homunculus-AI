@@ -212,6 +212,9 @@ class LiveResearchView:
                     "status": status, "packets": state.packets,
                     "packet_age_ms": packet_age,
                     "parameters": parameters,
+                    # The last complete valid NBP triple held, or None while none has been seen.
+                    # It may be older than its entries' readings; their `status` says what is current.
+                    "nbp_triple": None if state.nbp_triple is None else list(state.nbp_triple),
                 })
             return {
                 "schema": SCHEMA, "mode": "live", "evidence": "record_decoded",

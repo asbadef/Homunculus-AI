@@ -7,8 +7,9 @@ standard library: the release packs only `edge/` (deploy/infinity/build_transpor
 
 One body per cycle: for each device, its status and, for each forwarded parameter, the value the
 live view holds now — at most one value per parameter per device per INTERVAL_S; NBP also carries
-the time its value last changed. A device is named by its address only; a bed comes from the API's
-approved table, never from here.
+the time its value last changed, or null while no change has been seen and the three are the complete
+valid triple the monitor repeats (NBP-2). A device is named by its address only; a bed comes from the
+API's approved table, never from here.
 
 Off unless its environment is set (`settings_from_env`), which on the hub only the drop-in
 `93-asama-a-golge.conf` does, through an `EnvironmentFile=`. Its failures never leave its thread;
@@ -38,9 +39,13 @@ PORT = 2050                          # the inventory admits no other (infinity_s
 # monitor repeats the last NBP in every packet and its own clock is not decoded, so that time is an
 # upper bound of the measurement: the cuff measured then or earlier. Without a change seen as it
 # happened (after a hub start, an outage, or any gap of more than NBP_CONTINUITY_S between complete
-# valid triples; X46) the hub has no time, and no NBP is sent. A newer value of one component that
-# is not the held triple's carries no time either, and is not sent (X38). Airway RESP is absent on
-# purpose (layout unverified).
+# valid triples; X46) the hub has no time, and the three travel with `changed_at: None` — what the
+# monitor shows now, its measurement time unknown (NBP-2, D1) — but only whole: all three present,
+# valid, fresh and the values of the triple the hub holds (`_untimed_nbp`). A newer value of one
+# component that is not the held triple's carries no time and is not sent (X38), and while it is
+# held no untimed NBP is sent at all; nor is an untimed triple with a "***", stale or missing part.
+# The API must take a null `changed_at` before a hub sends one (NBP-2 D6: the API first). Airway RESP
+# is absent on purpose (layout unverified).
 FORWARDED = ("hr", "pls", "spo2", "etco2", "temperature",
              "art_systolic", "art_diastolic", "art_mean", "respiration") + NBP
 _STATES = {401: "token_refused", 409: "stage_off", 429: "too_soon"}
@@ -71,27 +76,47 @@ def settings_from_env(env):
     return {"url": url, "token": token, "ca_file": ca_file}
 
 
+def _untimed_nbp(device):
+    """Whether the device's three NBP entries travel untimed: each present, valid, younger than
+    MAX_FORWARD_AGE_MS, with no change time, and holding its component of the triple the hub holds
+    (`nbp_triple`) — the complete valid triple the monitor repeats now, its change not seen. All
+    three or none: a missing, stale or "***" part, or a partial packet's lone newer value (X38),
+    would put half a cuff, or a half-updated one, on the strip."""
+    triple = device.get("nbp_triple")
+    if triple is None:
+        return False
+    for name, held in zip(NBP, triple):
+        entry = device["parameters"].get(name)
+        if (entry is None or entry["status"] != "candidate" or entry["age_ms"] >= MAX_FORWARD_AGE_MS
+                or entry.get("changed_at") is not None or entry["value"] != held):
+            return False
+    return True
+
+
 def thin(snapshot, *, now, collector_age, counters):
     """The body for one cycle, from one live-view snapshot: per device its address, the hub's own
     status word and packet age, and each forwarded parameter's current value if it is younger
     than MAX_FORWARD_AGE_MS. A device's "***" travels as `valid: false, value: null`; a stale
-    parameter does not travel; an NBP reading travels only with its `changed_at`. No device id or
-    inventory name leaves the hub."""
+    parameter does not travel; an NBP reading travels with its `changed_at`, or with
+    `changed_at: None` when the three are a whole untimed triple (`_untimed_nbp`), else not at all.
+    No device id or inventory name leaves the hub."""
     devices = []
     for device in snapshot["devices"]:
         readings = []
+        untimed = _untimed_nbp(device)
         for name in FORWARDED:
             entry = device["parameters"].get(name)
             if entry is None or entry["status"] == "stale" or entry["age_ms"] >= MAX_FORWARD_AGE_MS:
                 continue
-            if name in NBP and entry.get("changed_at") is None:
-                continue                                    # its measurement time is not known
+            if name in NBP and entry.get("changed_at") is None and not untimed:
+                continue                                    # no time, and not a whole untimed triple
             valid = entry["status"] == "candidate"
             reading = {"parameter": name, "value": entry["value"] if valid else None,
                        "unit": entry["unit"], "valid": valid,
                        "captured_at": float(entry["capture_epoch"])}
             if name in NBP:
-                reading["changed_at"] = float(entry["changed_at"])
+                changed = entry.get("changed_at")
+                reading["changed_at"] = None if changed is None else float(changed)
             readings.append(reading)
         age = device["packet_age_ms"]
         devices.append({"source": device["source_ip"], "group": device["group"], "port": PORT,

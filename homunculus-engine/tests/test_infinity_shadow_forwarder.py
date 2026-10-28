@@ -1,5 +1,5 @@
-"""Aşama A's hub forwarder: thinned, fresh, NBP only with the time it changed, display only, off unless
-its environment is set.
+"""Aşama A's hub forwarder: thinned, fresh, NBP with the time it changed — or untimed and whole while no
+change was seen (NBP-2) — display only, off unless its environment is set.
 
 Synthetic only: the live view's own test inventory (192.0.2.x / 239.20.1.x) and the records
 decoder's test records. The end-to-end tests carry a `thin` body into the clinical API's shadow
@@ -14,6 +14,7 @@ import io
 import ipaddress
 import json
 import logging
+import random
 import socket
 import sys
 import threading
@@ -32,7 +33,7 @@ from test_infinity_records import ART_SYS, HR, SPO2, TEMPERATURE, record
 from homunculus.edge import infinity_collector
 from homunculus.edge.infinity_hub import create_hub
 from homunculus.edge.infinity_journal import Journal
-from homunculus.edge.infinity_live import LiveResearchView
+from homunculus.edge.infinity_live import NBP, LiveResearchView
 from homunculus.edge.infinity_shadow import (
     BACKOFF_S, FORWARDED, INTERVAL_S, MAX_FORWARD_AGE_MS, SCHEMA, ShadowMisconfigured, ShadowSender,
     forward_loop, settings_from_env, thin,
@@ -66,11 +67,12 @@ def _nbp(systolic, diastolic, mean):
     return record(NBP_SYS, systolic) + record(NBP_DIA, diastolic) + record(NBP_MEAN, mean)
 
 
-def test_thin_sends_nbp_with_its_change_time_and_not_before_a_change_was_seen():
+def test_thin_sends_nbp_untimed_until_a_change_is_seen_and_then_with_its_change_time():
     view, now = _view()
     view.consume([event(T - 2.2, PAYLOAD + _nbp(120, 80, 93))])     # first seen after a start: time unknown
-    body = _thin(view, now)
-    assert _names(body) == ["hr", "spo2"] and "nbp" not in json.dumps(body)
+    readings = _thin(view, now)["devices"][0]["readings"]
+    assert [r["parameter"] for r in readings] == ["hr", "spo2", "nbp_systolic", "nbp_diastolic", "nbp_mean"]
+    assert [(r["value"], r["changed_at"]) for r in readings[2:]] == [(120, None), (80, None), (93, None)]
     view.consume([event(T - 1.2, PAYLOAD + _nbp(118, 79, 92))])     # the triple changed: measured at or before
     view.consume([event(T - 0.2, PAYLOAD + _nbp(118, 79, 92))])     # and repeated in every packet
     readings = _thin(view, now)["devices"][0]["readings"]
@@ -98,6 +100,146 @@ def test_an_nbp_three_seconds_old_never_leaves_the_hub():
     entry = view.snapshot()["devices"][0]["parameters"]["nbp_systolic"]
     assert (entry["status"], entry["changed_at"]) == ("stale", T - 0.5)    # stale, yet it keeps its time
     assert _names(_thin(view, now)) == []                          # so it is thin() that drops it
+
+
+# --- NBP-2: an untimed NBP is the whole complete valid triple, or nothing --------------------------
+#
+# After a hub start, an outage or a gap the hub has seen no change, so the cuff's measurement time is
+# unknown. The three still travel, `changed_at: None`, when they are the complete valid triple the
+# monitor shows now: all present, valid, fresh, and the values of the triple the hub holds. Anything
+# less sends none of the three: never half a cuff, never a half-updated one.
+
+def test_an_untimed_complete_valid_triple_travels_whole_with_changed_at_null():
+    view, now = _view()
+    view.consume([event(T - 0.4, _nbp(120, 80, 93)), event(T - 0.2, _nbp(120, 80, 93))])   # repeated, never changed
+    readings = _thin(view, now)["devices"][0]["readings"]
+    assert readings == [{"parameter": name, "value": value, "unit": "mmHg", "valid": True,
+                         "captured_at": T - 0.2, "changed_at": None}
+                        for name, value in zip(NBP, (120, 80, 93))]
+    assert json.dumps(readings).count('"changed_at": null') == 3
+
+
+def test_a_change_seen_only_after_a_gap_travels_untimed_with_the_new_values():
+    view, now = _view()
+    now[0] = T - 10.0
+    view.consume([event(T - 10.2, _nbp(120, 80, 93)), event(T - 10.1, _nbp(118, 79, 92))])   # a change seen live
+    assert {r["changed_at"] for r in _thin(view, now)["devices"][0]["readings"]} == {T - 10.1}
+    now[0] = T
+    view.consume([event(T - 0.2, _nbp(131, 85, 100))])            # after 10 s without NBP: changed, but when?
+    assert [(r["parameter"], r["value"], r["changed_at"]) for r in _thin(view, now)["devices"][0]["readings"]] == [
+        ("nbp_systolic", 131, None), ("nbp_diastolic", 85, None), ("nbp_mean", 100, None)]
+
+
+def test_an_untimed_triple_with_a_star_component_sends_none_of_the_three():
+    view, now = _view()
+    view.consume([event(T - 0.6, record(NBP_SYS, 120) + record(NBP_DIA, 4, valid=False) + record(NBP_MEAN, 93))])
+    assert view.snapshot()["devices"][0]["nbp_triple"] is None and _names(_thin(view, now)) == []
+    view.consume([event(T - 0.5, _nbp(120, 80, 93))])                       # the triple held, untimed
+    view.consume([dict(event(T - 0.4, PAYLOAD), payload_base64="!")])       # undecodable: the readings go, the triple stays
+    view.consume([event(T - 0.2, record(NBP_SYS, 120) + record(NBP_DIA, 4, valid=False) + record(NBP_MEAN, 93))])
+    state = view.snapshot()["devices"][0]
+    assert state["nbp_triple"] == [120, 80, 93]
+    assert [state["parameters"][name]["status"] for name in NBP] == ["candidate", "device_reports_invalid",
+                                                                     "candidate"]
+    assert _names(_thin(view, now)) == []                                   # not 120/— (93), not 120 and 93
+
+
+def test_an_untimed_triple_with_a_stale_component_sends_none_of_the_three():
+    view, now = _view()
+    now[0] = T - 3.4
+    view.consume([event(T - 3.5, _nbp(120, 80, 93))])                       # the triple held, untimed
+    now[0] = T
+    view.consume([event(T - 0.2, record(NBP_SYS, 120) + record(NBP_MEAN, 93))])    # the diastolic not carried since
+    state = view.snapshot()["devices"][0]
+    assert state["nbp_triple"] == [120, 80, 93]
+    assert [state["parameters"][name]["status"] for name in NBP] == ["candidate", "stale", "candidate"]
+    assert _names(_thin(view, now)) == []
+
+
+def test_an_untimed_triple_with_a_missing_component_sends_none_of_the_three():
+    view, now = _view()
+    view.consume([event(T - 0.6, record(NBP_SYS, 120) + record(NBP_MEAN, 93))])    # two of the three, no triple held
+    assert view.snapshot()["devices"][0]["nbp_triple"] is None and _names(_thin(view, now)) == []
+    view.consume([event(T - 0.5, _nbp(120, 80, 93))])                       # the triple held, untimed
+    view.consume([dict(event(T - 0.4, PAYLOAD), payload_base64="!")])       # undecodable: the readings go, the triple stays
+    view.consume([event(T - 0.2, record(NBP_SYS, 120) + record(NBP_MEAN, 93))])
+    state = view.snapshot()["devices"][0]
+    assert state["nbp_triple"] == [120, 80, 93] and "nbp_diastolic" not in state["parameters"]
+    assert _names(_thin(view, now)) == []
+
+
+def test_three_components_from_partial_packets_are_not_a_triple_and_none_is_sent():
+    # Each is valid and fresh, but no packet carried the three together: the hub holds no triple,
+    # so nothing says these three were ever on the monitor's screen at once.
+    view, now = _view()
+    view.consume([event(T - 0.4, record(NBP_SYS, 120) + record(NBP_MEAN, 93)), event(T - 0.2, record(NBP_DIA, 80))])
+    state = view.snapshot()["devices"][0]
+    assert state["nbp_triple"] is None
+    assert [state["parameters"][name]["status"] for name in NBP] == ["candidate"] * 3
+    assert _names(_thin(view, now)) == []
+
+
+def test_a_lone_newer_component_of_an_untimed_triple_sends_none_of_the_three():
+    # X38 without a time: a partial packet brought a newer systolic alone. 105/80 (93) would draw a
+    # half-updated cuff, 80 (93) half a cuff; the timed form of this case is the test above it.
+    view, now = _view()
+    view.consume([event(T - 1.2, _nbp(120, 80, 93))])                       # the triple held, untimed
+    view.consume([event(T - 0.2, record(NBP_SYS, 105))])                    # a packet carrying the systolic alone
+    state = view.snapshot()["devices"][0]
+    assert state["nbp_triple"] == [120, 80, 93] and state["parameters"]["nbp_systolic"]["value"] == 105
+    assert _names(_thin(view, now)) == []
+
+
+FUZZ_NBP = (80, 93, 118, 120)      # few values, so repeats and a return to an older triple are common
+
+
+def _fuzz_payload(rng):
+    payload = PAYLOAD if rng.random() < 0.5 else b""
+    for identifier in (NBP_SYS, NBP_DIA, NBP_MEAN):
+        draw = rng.random()
+        if draw < 0.15:
+            continue                                                         # not carried in this packet
+        payload += record(identifier, rng.choice(FUZZ_NBP), valid=draw >= 0.25)   # one in ten: the device's ***
+    return payload or NO_RECORDS
+
+
+def test_fuzzed_packets_give_bodies_the_api_takes_with_nbp_timed_or_whole_and_untimed():
+    """Deterministic: 300 runs of 40 steps over two monitors — packets late, repeated, undecodable or
+    replayed; NBP components missing, flagged, changed or returning to an older triple; gaps of up to
+    10 s — and one body after every step. Each body, as JSON, passes the API's own `_validate`, and
+    NBP-2 holds: an untimed NBP is the whole triple the hub holds, a timed one is never after its
+    packet, and no *** or stale NBP ever travels."""
+    from homunculus.api.infinity_shadow import _validate
+
+    rng, seen = random.Random(20261028), {"timed": 0, "untimed": 0}
+    inv = inventory(2)
+    for _ in range(300):
+        view, now = _view(2)
+        for _ in range(40):
+            now[0] += rng.choice((0.0, 0.2, 0.5, 1.0, 2.0, 3.5, 10.0))
+            index, stamp = rng.randrange(2), now[0] - rng.choice((0.0, 0.1, 0.3, 2.9, 3.5))
+            item = event(stamp, _fuzz_payload(rng), index=index, inv=inv,
+                         mode="replay" if rng.random() < 0.02 else "live")
+            if rng.random() < 0.03:
+                item = dict(item, payload_base64="!")
+            if rng.random() < 0.9:
+                view.consume([item])
+            snapshot = view.snapshot()
+            body = json.loads(json.dumps(thin(snapshot, now=now[0], collector_age=1.0,
+                                              counters={"sent": 0, "failed": 0}), allow_nan=False))
+            _validate(body)                                                  # the API takes it whole
+            for sent, held in zip(body["devices"], snapshot["devices"]):
+                nbp = [r for r in sent["readings"] if r["parameter"] in NBP]
+                assert all(r["valid"] and now[0] - r["captured_at"] < 3.0 for r in nbp)
+                untimed = [r for r in nbp if r["changed_at"] is None]
+                if untimed:
+                    assert untimed == nbp and [r["parameter"] for r in nbp] == list(NBP)
+                    assert [r["value"] for r in nbp] == held["nbp_triple"]
+                    seen["untimed"] += 1
+                elif nbp:
+                    assert all(0 < r["changed_at"] <= r["captured_at"] for r in nbp)
+                    seen["timed"] += 1
+    assert min(seen.values()) > 500, seen                                   # both forms were exercised
 
 
 def test_airway_respiration_is_never_sent_and_impedance_respiration_is():
