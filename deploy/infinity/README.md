@@ -399,6 +399,28 @@ plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
   regular 3.00–3.01 s gap between complete valid triples about every 45 s and none longer; the user
   chose to deploy as is and to widen `NBP_CONTINUITY_S` with a day's evidence (O38).
 
+**R5 — the untimed NBP** (spec `docs/superpowers/specs/2026-10-28-infinity-nbp2-zamansiz-deger-design.md`;
+owner decision 2026-10-28 «son degeri gostersin»):
+
+- Release R5 `/opt/homunculus-infinity/@REL@`: R4 plus one rule in the forwarder — when a device's
+  three NBP components are present, valid, fresh and the complete valid triple the hub holds, but no
+  change has been seen since the hub started (X38/X46), the three travel with `changed_at: null`
+  (`_untimed_nbp`). A `***`, stale or missing part, or a partial packet's lone newer value, still
+  sends nothing. The live view's snapshot carries `nbp_triple`. The schema stays v2.
+- The API takes `changed_at: null` on a v2 NBP reading and shows the triple as `value_untimed`: the
+  numbers with the packet's age, no measurement time, hidden by packet age like every parameter
+  (15 s) and forgotten after 120 s; the 2-hour rule needs a time and does not apply. A `***` part is
+  `invalid`, a mixed triple is «ölçüm bekleniyor». **Never a rule input:** the rules lane feeds NBP
+  only with a `changed_at` (`api/infinity_rules.py` `pick`); Aşama B's gates are unchanged.
+- The strip draws it apart: «S/D (M) mmHg · ölçüm zamanı bilinmiyor» (the note in the attention
+  tone, no «≤», no measured age); the first seen change turns it into «ölçüm ≤ HH:MM (N dk)». The
+  Settings legend says so. `shadow_check.py`'s `nbp:` line counts «M cihazda zamanı bilinmeyen değer».
+- `95-nbp2.conf` — `94-nbp.conf` with the release path changed to R5, checked by `diff` before it is
+  installed. 93 stays. **Order: the API and web first, then the hub** — an R5 hub posting null to the
+  older API is refused whole (400). **Rollback — the hub first:** delete `95-nbp2.conf`, `daemon-reload`,
+  restart the hub (R4: untimed cuffs back to «ölçüm bekleniyor»); the API/web by image tag only after
+  that. No migration.
+
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 
 - `shadow-forwarder.env` (root:root 0600) holds `INFINITY_SHADOW_URL`

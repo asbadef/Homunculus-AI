@@ -1353,6 +1353,14 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     değerle yinelenen ölçüm fark edilmez (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4,
     drop-in 94; geri alma: önce 94 silinir (hub R3'e, NBP'siz şeride döner), API/web ancak ondan
     sonra. Dağıtımda sıra tersidir: önce API ve web, sonra hub.
+  - **Şeritte zamanı bilinmeyen NBP (NBP-2, 28.10 kararı «son değeri göstersin»):** hub açıldığından
+    beri değeri değişmemiş bir NBP'nin saati bilinmez; şerit onu artık gizlemez, monitörün o an
+    gösterdiği değeri **«ölçüm zamanı bilinmiyor»** notuyla gösterir: "NBP 118/79 (92) mmHg · ölçüm
+    zamanı bilinmiyor". Not dikkat renginde, "≤" ve ölçüm yaşı yok: değer monitörün gösterdiğidir,
+    ne zaman ölçüldüğü bilinmez. İlk değişiklik görülünce saatli biçime döner. Yalnız tam ve geçerli
+    üçlü gösterilir (`***` ya da eksik parça varsa gösterilmez); paket eskiyince diğer değerler gibi
+    gizlenir. Bu değer hiçbir kurala girmez (gölge motor NBP'yi yalnız saatiyle alır). Hub sürümü R5,
+    drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner).
   - **Gölge öneri · alarm kapalı (Aşama B — kodda, hastanede henüz açık değil):** Aşama B
     açıldığında şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
     gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
