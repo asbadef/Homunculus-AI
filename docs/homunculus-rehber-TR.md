@@ -1347,9 +1347,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     saat, hub saatine göre, gerçeğinden en çok 3 saniye yeni olur (işçi ile API arasındaki en çok
     2 sn'lik saat kayması şeritteki her yaş için aynıdır). Hub yeniden başladıktan sonra, ya da
     değer bir kesinti ya da tam üçlüler arasında 3 saniyeden uzun bir boşluk sırasında değiştiyse,
-    NBP değeri değiştiren bir sonraki ölçüme kadar "— ölçüm bekleniyor" yazar (aynı değer geri
-    gelirse eski saatiyle hemen görünür). Değeri 2 saatten uzun süredir değişmemiş NBP gösterilmez
-    ("— eski · 3 sa"; API 2 saatten 15 sn önce keser ki hiçbir ekranda 2 saati geçmesin). Aynı
+    NBP'nin saati bilinmez: R4'te değeri değiştiren bir sonraki ölçüme kadar "— ölçüm bekleniyor"
+    yazardı; NBP-2 (R5) ile değer «ölçüm zamanı bilinmiyor» notuyla gösterilir (bir sonraki madde).
+    Aynı değer geri gelirse eski saatiyle hemen görünür. Saati bilinen ve değeri 2 saatten uzun
+    süredir değişmemiş NBP gösterilmez ("— eski · 3 sa"; API 2 saatten 15 sn önce keser ki hiçbir
+    ekranda 2 saati geçmesin). Aynı
     değerle yinelenen ölçüm fark edilmez (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4,
     drop-in 94; geri alma: önce 94 silinir (hub R3'e, NBP'siz şeride döner), API/web ancak ondan
     sonra. Dağıtımda sıra tersidir: önce API ve web, sonra hub.

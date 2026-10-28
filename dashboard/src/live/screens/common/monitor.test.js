@@ -143,6 +143,8 @@ describe("NBP's cell while its change has not been seen: the monitor's current v
   it("an untimed triple with a *** part is the monitor's ***, and one whose packet the server aged is old — never \"awaiting\"", () => {
     const flagged = param("nbp", null, { state: "invalid", age_s: 2, last_at: AT, changed_at: null, measured_age_s: null });
     expect(at(flagged)).toEqual({ kind: "invalid", ageS: 2 });
+    expect(at(flagged, { nowMs: FETCHED + 20_000 })).toEqual({ kind: "old", ageS: 22, lastAt: AT });   // its packet aged
+    expect(at(flagged, { feedOk: false })).toEqual({ kind: "old", ageS: 2, lastAt: AT });              // the feed is down
     const aged = param("nbp", null, { state: "old", age_s: 20, last_at: AT, changed_at: null, measured_age_s: null });
     expect(at(aged)).toEqual({ kind: "old", ageS: 20, lastAt: AT });
     const waiting = param("nbp", null, { state: "old", age_s: null, last_at: null, changed_at: null, measured_age_s: null });

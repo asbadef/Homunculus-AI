@@ -159,6 +159,11 @@ def test_the_nbp_line_counts_untimed_values_apart_and_one_whose_packet_went_old_
                                      "değer, 1 cihazda ölçüm bekleniyor, 1 cihazda gizli (eski)")
     for secret in ("211", "37", "95"):
         assert secret not in check.nbp_line(after), secret
+    # The per-bed count takes the untimed NBP as the fresh cell it is (its age is the packet's): B-1's
+    # two fresh cells and the cuff; B-2 holds nothing but a packet gone old.
+    lines = check.details(after)
+    assert any(line.startswith("  yatak B-1:") and "3 taze değer" in line for line in lines), lines
+    assert any(line.startswith("  yatak B-2:") and "0 taze değer" in line for line in lines), lines
 
 
 def test_a_missing_endpoint_is_stage_yok_and_the_board_hash_is_still_printed(tmp_path, capsys):

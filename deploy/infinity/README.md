@@ -410,8 +410,9 @@ owner decision 2026-10-28 «son degeri gostersin»):
 - The API takes `changed_at: null` on a v2 NBP reading and shows the triple as `value_untimed`: the
   numbers with the packet's age, no measurement time, hidden by packet age like every parameter
   (15 s) and forgotten after 120 s; the 2-hour rule needs a time and does not apply. A `***` part is
-  `invalid`, a mixed triple is «ölçüm bekleniyor». **Never a rule input:** the rules lane feeds NBP
-  only with a `changed_at` (`api/infinity_rules.py` `pick`); Aşama B's gates are unchanged.
+  `invalid` (the API's own rule — an R5 hub sends no untimed triple with a `***` part), a mixed
+  triple is «ölçüm bekleniyor». **Never a rule input:** the rules lane feeds NBP only with a
+  `changed_at` (`api/infinity_rules.py` `pick`); Aşama B's gates are unchanged.
 - The strip draws it apart: «S/D (M) mmHg · ölçüm zamanı bilinmiyor» (the note in the attention
   tone, no «≤», no measured age); the first seen change turns it into «ölçüm ≤ HH:MM (N dk)». The
   Settings legend says so. `shadow_check.py`'s `nbp:` line counts «M cihazda zamanı bilinmeyen değer».

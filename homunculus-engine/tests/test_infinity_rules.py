@@ -132,6 +132,19 @@ def test_pick_never_feeds_an_nbp_whose_measurement_time_is_unknown():
     assert pick(_view({**untimed, "state": "value"}), DEFAULT_PARAMETERS, now=T0) == []
 
 
+def test_pick_feeds_nothing_from_the_untimed_nbp_the_store_itself_shows():
+    # The same end to end: the hub's untimed body, through the store's own board entry, into `pick`.
+    from homunculus.api.infinity_shadow import ShadowStore
+    from test_infinity_shadow_store import Clock, body, device, untimed
+
+    store = ShadowStore(Clock(T0))
+    store.ingest(body(device("192.0.2.10", *untimed(captured_at=T0 - 0.5))))
+    view = store.devices(T0)["192.0.2.10"]
+    [cell] = view.parameters
+    assert (cell["state"], cell["changed_at"], cell["systolic"]) == ("value_untimed", None, 118)
+    assert pick(view, DEFAULT_PARAMETERS, now=T0) == []
+
+
 def test_pick_honours_the_allowlist_and_the_units():
     only_spo2 = pick(_view(_cell("hr"), _cell("spo2", value=97, unit="%")), ("spo2",), now=T0)
     assert [(c.code, c.value, c.unit, c.via) for c in only_spo2] == [(SignalCode.SPO2, 97.0, "%", "spo2")]

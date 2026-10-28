@@ -161,7 +161,7 @@ def details(board):
                                       ("total", "streaming", "standby", "silent", "waiting", "unsupported", "unknown")),
              nbp_line(board)]
     for bed in board.get("beds") or []:
-        fresh = [p.get("age_s") for p in bed.get("parameters") or [] if p.get("state") == "value"]
+        fresh = [p.get("age_s") for p in bed.get("parameters") or [] if p.get("state") in ("value", "value_untimed")]
         ages = [a for a in fresh if isinstance(a, (int, float))]
         oldest = f", en eski {max(ages):.1f} sn" if ages else ""
         lines.append(f"  yatak {bed.get('bed_label')}: {bed.get('status')}, {len(fresh)} taze değer{oldest}")

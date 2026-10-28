@@ -36,7 +36,7 @@ from homunculus.edge.infinity_journal import Journal
 from homunculus.edge.infinity_live import NBP, LiveResearchView
 from homunculus.edge.infinity_shadow import (
     BACKOFF_S, FORWARDED, INTERVAL_S, MAX_FORWARD_AGE_MS, SCHEMA, ShadowMisconfigured, ShadowSender,
-    forward_loop, settings_from_env, thin,
+    _untimed_nbp, forward_loop, settings_from_env, thin,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +117,18 @@ def test_an_untimed_complete_valid_triple_travels_whole_with_changed_at_null():
                          "captured_at": T - 0.2, "changed_at": None}
                         for name, value in zip(NBP, (120, 80, 93))]
     assert json.dumps(readings).count('"changed_at": null') == 3
+
+
+def test_the_untimed_rule_needs_the_whole_held_triple_to_compare_against():
+    # The guard reads the live view's `nbp_triple`. A snapshot without the key, or with an empty or a
+    # short one, can vouch for no part of the cuff: none of the three travel untimed.
+    fresh = {name: {"status": "candidate", "age_ms": 100.0, "changed_at": None, "value": value}
+             for name, value in zip(NBP, (120, 80, 93))}
+    assert _untimed_nbp({"parameters": fresh, "nbp_triple": (120, 80, 93)})
+    assert not _untimed_nbp({"parameters": fresh})
+    assert not _untimed_nbp({"parameters": fresh, "nbp_triple": None})
+    assert not _untimed_nbp({"parameters": fresh, "nbp_triple": []})
+    assert not _untimed_nbp({"parameters": fresh, "nbp_triple": (120, 80)})
 
 
 def test_a_change_seen_only_after_a_gap_travels_untimed_with_the_new_values():

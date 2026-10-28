@@ -83,7 +83,7 @@ def _untimed_nbp(device):
     three or none: a missing, stale or "***" part, or a partial packet's lone newer value (X38),
     would put half a cuff, or a half-updated one, on the strip."""
     triple = device.get("nbp_triple")
-    if triple is None:
+    if triple is None or len(triple) != len(NBP):
         return False
     for name, held in zip(NBP, triple):
         entry = device["parameters"].get(name)

@@ -103,9 +103,10 @@ function nbpCellOf(param, { ageS, fresh, nowMs, fetchedAtMs }) {
   }
   if (param.changed_at == null) {
     // No change time (NBP-2): the monitor's "***" and a packet gone old still read as such, with the
-    // packet's time; only an entry with no packet at all is "awaiting a measurement".
+    // packet's time — a "***" whose packet aged, or whose feed is down, too; only an entry with no
+    // packet at all is "awaiting a measurement".
     if (fresh && param.state === "invalid") return { kind: "invalid", ageS };
-    if (param.state === "old" && param.last_at) return { kind: "old", ageS, lastAt: param.last_at };
+    if ((param.state === "old" || param.state === "invalid") && param.last_at) return { kind: "old", ageS, lastAt: param.last_at };
     return { kind: "old", ageS: null, lastAt: null };        // a "value" with no time is never drawn
   }
   const changedAtMs = Date.parse(param.changed_at);
