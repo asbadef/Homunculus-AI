@@ -140,6 +140,15 @@ describe("NBP's cell while its change has not been seen: the monitor's current v
       .toEqual({ kind: "old", ageS: 2, lastAt: AT });
   });
 
+  it("an untimed triple with a *** part is the monitor's ***, and one whose packet the server aged is old — never \"awaiting\"", () => {
+    const flagged = param("nbp", null, { state: "invalid", age_s: 2, last_at: AT, changed_at: null, measured_age_s: null });
+    expect(at(flagged)).toEqual({ kind: "invalid", ageS: 2 });
+    const aged = param("nbp", null, { state: "old", age_s: 20, last_at: AT, changed_at: null, measured_age_s: null });
+    expect(at(aged)).toEqual({ kind: "old", ageS: 20, lastAt: AT });
+    const waiting = param("nbp", null, { state: "old", age_s: null, last_at: null, changed_at: null, measured_age_s: null });
+    expect(at(waiting)).toEqual({ kind: "old", ageS: null, lastAt: null });
+  });
+
   it("is the timed cell the moment the server sends the change — and a timed answer without one is never untimed", () => {
     const timed = { ...UNTIMED, state: "value", changed_at: NBP_CHANGED_AT, measured_age_s: 600 };
     expect(at(timed)).toEqual({ kind: "nbp", systolic: 118, diastolic: 79, mean: 92,
