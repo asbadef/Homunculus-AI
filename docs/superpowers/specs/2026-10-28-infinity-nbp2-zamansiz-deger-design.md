@@ -86,14 +86,15 @@ was the task list; each component was implemented and reviewed on the branch, wi
 | `cb981b7` | docs: README R5 and drop-in 95 (order, rollback), the guide's bullet, the roadmap row |
 | `6ebd277` | review minors: a `***` cell whose packet aged keeps the packet's time; `_untimed_nbp` needs the whole held triple; `shadow_check`'s per-bed count takes an untimed NBP; the legend's 2-hour sentence names the timed value; the guide's R4 sentence marked superseded; store → `pick` test |
 | `e38b03d` | the Settings legend test follows the reworded sentence |
-| (this commit) | the release name in the README; this section |
+| `013021e`, then this commit | the release name in the README; this section |
 
 **Gates at `e38b03d`:** engine, no DB, Python 3.12 — 2827 passed, 822 skipped; the six Infinity files on the
 3.14 lane — 309 passed; dashboard — 104 files, 2972 tests; `vite build` ok.
 
-**Hub release R5:** `transport-c51afb1059de3a08` (tarball sha256 `d1a517314189719e2abd5651636df04881c83c9a4eb2b6857d09fee3eee73808`), built from
-`e38b03d` and rebuilt at the final head — the same name, since the transport files are unchanged by docs.
-Drop-in `95-nbp2.conf`. The deploy blocks are in `/c/tmp/infinity-a-releases/NBP2-bloklari.txt`
-(`nbp2-<short>.bundle` of `12453ee..feat/infinity-nbp2`; the API and web first, then the hub).
+**Hub release R5:** `transport-c51afb1059de3a08`, first built from `e38b03d` and rebuilt at the final head — the
+same name, since the name is the transport files' and docs do not change them; the tarball's bytes do follow the
+head (`RELEASE.json` names the commit), so its sha256 is the one quoted in the deploy blocks, not here. Drop-in
+`95-nbp2.conf`. The deploy blocks are in `/c/tmp/infinity-a-releases/NBP2-bloklari.txt` (`nbp2-<short>.bundle` of
+`12453ee..feat/infinity-nbp2`; the API and web first, then the hub).
 
 · **VM: bekliyor** (önce api+web, sonra hub R5; işçi değişmez) ·
