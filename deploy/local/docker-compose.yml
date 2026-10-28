@@ -69,6 +69,8 @@ services:
       INFINITY_HUB_URL: ${INFINITY_HUB_URL:-}
       INFINITY_VIEWER_TOKEN: ${INFINITY_VIEWER_TOKEN:-}
       INFINITY_HUB_CA_FILE: ${INFINITY_HUB_CA_FILE:-}
+      # Lane C (dalga) — the live waveform panel, through the same hub settings. Unset = off.
+      INFINITY_WAVES: ${INFINITY_WAVES:-}
       # Aşama A — the unvalidated monitor strip (docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md).
       # Unset = off. The token is the hub forwarder's, NOT a TENANTS device token: it opens
       # POST /infinity-shadow/readings and nothing else.

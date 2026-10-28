@@ -726,7 +726,10 @@ NOT_THE_BOARD = {
     # deployment serving several hospitals from one API would have to bind the hub to a tenant.
     ("GET", "/infinity-research/state"),
 }
-UNSCOPED_BY_DESIGN = NOT_THE_BOARD | {
+# Lane C (dalga): the waveform GET lives in api/infinity_waves.py but is the strip board's own gate:
+# it calls `shadow_board` (the Caller, and only a caller of the ONE shadow hospital gets a card).
+CALLER_ELSEWHERE = {("GET", "/infinity-waves/{device_id}")}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -779,4 +782,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE == board

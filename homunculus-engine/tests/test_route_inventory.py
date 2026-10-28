@@ -20,6 +20,9 @@ PRE_PASSWORD = {"/auth/password"}
 # The board and device routes live in api/app.py and resolve their caller through the separate
 # Caller resolver (tenant token or JWT), not through FastAPI dependencies.
 CALLER_RESOLVED_MODULE = "homunculus.api.app"
+# Lane C (dalga): the waveform GET is registered from api/infinity_waves.py, and resolves its caller
+# by calling the strip board's own handler (`shadow_board`: the Caller, board.view/devices.manage).
+CALLER_RESOLVED_ELSEWHERE = {"/infinity-waves/{device_id}"}
 
 
 def _calls(dependant) -> set:
@@ -39,7 +42,7 @@ def _routes():
 def test_every_route_is_guarded_or_explicitly_exempt():
     missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
                if r.endpoint.__module__ != CALLER_RESOLVED_MODULE
-               and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD
+               and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD | CALLER_RESOLVED_ELSEWHERE
                and get_principal not in _calls(r.dependant)]
     assert missing == []
 

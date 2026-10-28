@@ -22,12 +22,16 @@ import asyncio
 import json
 import logging
 import math
+import os
+import re
 import ssl
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 
 import httpx
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from homunculus.edge.infinity_waves import RATES, SCHEMA, WAVES
 
@@ -41,9 +45,13 @@ BLOCK_KEYS = ("t", "recv", "id", "rate", "samples")
 _UPSTREAM = {401: "hub_unauthorized", 404: "hub_no_waves", 409: "research_off"}
 #: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
 #: (and the panel's words) read the same list. A new reason is added here or the scan test fails.
+#: The route's own (waves_off … bad_started) are written as literal `{"reason": "…"}` dicts, which
+#: is what the scan reads; only a settings problem, whose values the scan reads at their source,
+#: is passed through.
 REASONS = frozenset({
     "not_configured", "misconfigured", "hub_no_waves", "research_off", "hub_unauthorized",
-    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid"})
+    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid",
+    "waves_off", "stage_off", "no_device", "bad_since", "bad_started"})
 
 
 @dataclass(frozen=True)
@@ -221,3 +229,48 @@ class HubWaves:
             return Outcome(200, checked(json.loads(body), device))
         except (ValueError, TypeError, RecursionError, OverflowError):
             return Outcome(502, {"reason": "hub_invalid"})
+
+
+# --- the route ------------------------------------------------------------------------------------
+
+SINCE = re.compile(r"[0-9]{1,15}")        # a cursor: digits only, and few enough for an int
+
+
+def register(app: FastAPI, *, board: Callable[[str | None], Awaitable[dict]],
+             settings: WaveSettings | None = None) -> HubWaves:
+    """Add GET /infinity-waves/{device_id}. `board(authorization)` is the strip board's own handler:
+    its 401 and 403 are this route's, and its cards are what this caller may see. The hub client
+    is `app.state.wave_feed` (a test puts a fake hub there); the app's lifespan closes it."""
+    settings = settings if settings is not None else wave_settings_from_env(os.environ)
+    if settings.problem:
+        # Names the problem, never a token or the URL.
+        log.error("INFINITY_WAVES=on çalıştırılamıyor (%s); dalga formu kapalı", settings.problem)
+    app.state.wave_feed = HubWaves(settings)
+
+    @app.get("/infinity-waves/{device_id}")
+    async def infinity_waves(device_id: str, request: Request, since: str = "0", started: str | None = None,
+                             authorization: str | None = Header(default=None)):
+        shown = await board(authorization)
+        feed: HubWaves = request.app.state.wave_feed
+        if not feed.settings.on:
+            if feed.settings.problem:
+                raise HTTPException(503, {"reason": feed.settings.problem})
+            raise HTTPException(409, {"reason": "waves_off"})
+        if shown.get("stage", "off") == "off" or "beds" not in shown:
+            raise HTTPException(409, {"reason": "stage_off"})
+        cards = (*shown.get("beds", ()), *shown.get("unassigned", ()))
+        if not any(card.get("source") == device_id for card in cards):
+            raise HTTPException(404, {"reason": "no_device"})
+        if not SINCE.fullmatch(since):
+            raise HTTPException(400, {"reason": "bad_since"})
+        if started is not None and len(started) > MAX_TEXT:      # the hub's own bound on its `started`
+            raise HTTPException(400, {"reason": "bad_started"})
+        outcome = await feed.window(device_id)
+        if outcome.status != 200:
+            raise HTTPException(outcome.status, outcome.body)
+        # A JSONResponse, not a bare dict: FastAPI's jsonable_encoder on a first full window measured
+        # 7.2 ms against 0.75 ms (the hub's route does the same). The header goes on it, not on `response`.
+        return JSONResponse(answer(device_id, outcome.body, int(since), started=started),
+                            headers={"Cache-Control": "no-store"})
+
+    return app.state.wave_feed
