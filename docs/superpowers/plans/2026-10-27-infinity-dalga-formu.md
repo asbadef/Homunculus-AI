@@ -37,7 +37,7 @@
 | R1 | A monitor is named by its **source address** (the strip card's `source`) on both routes: hub `device=192.0.2.21`, API `/infinity-waves/192.0.2.21`; the JSON field stays `device_id`. | The API knows monitors only by address (the forwarder sends no inventory id; the table maps addresses). |
 | R2 | Hub blocks carry `seq` (the cursor value they were added under); the API strips it. | So one cached 10 s window serves every viewer's own cursor. |
 | R3 | The API always asks the hub for `since=0` (the 10 s window) and caches **per monitor** for 250 ms. | "Several viewers of one bed cost one hub request" needs a per-monitor cache; a per-(monitor, cursor) one would not share. Cost (measured, Task 4 review): ≈ 86–113 KB per device per 10 s window (BED08-shaped / all nine waves live), ≤ 4 hub requests/s per watched monitor. Phase 2's wall must use `since` as a real cursor: 16 devices × a full window (1.4–1.8 MB) would exceed the API's 1 MiB cap, and the hub's encode of it (≈ 300 ms) is why the hub route returns `JSONResponse` (encoded on the threadpool, not the loop). |
-| R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
+| R4 | Hub 404 (a hub before R5 has no route) → API **503 `hub_no_waves`** ("Dalga akışı yok"); hub 409 → 503 `research_off`; 401 → 503 `hub_unauthorized`; other → 503 `hub_error` + status; timeout/connection → 503; oversize/invalid → 502; `OverflowError` (a 400-digit integer in the answer) and `httpx.InvalidURL` (a typo in `INFINITY_HUB_URL`, named at start as `misconfigured`) are caught too, never a 500. | Spec §10: the API answers "dalga akışı yok" while the hub lacks the route; never a 500. |
 | R5 | A fresh block more than 10 s (`ANSWER_S`) older than the monitor's newest **clears that monitor's ring** (its clock was set back). The ring also forgets blocks **received** more than 20 s ago. | `since` floors its answer at the newest block − 10 s, so a fresh block older than that could never be served and the old newest would hide it (a 10–20 s set-back would stall the display for set-back − 10 s and leave a phantom newest for ~35 s); a transport delay is ≤ 3 s, so only a clock reaches 10 s. Otherwise a restarted monitor stalls, and a silent monitor's last blocks would be served to a new viewer as a window. (Task 2 review: the first draft cleared at 20 s.) **Known limit, pinned by a test:** a set-back of 10 s or less is not detected; it stalls (phase kept) or overlaps the old stream (phase shifted) for at most that long and self-heals (monitor clocks are not NTP-synced, so set-backs come from restarts and manual edits). |
 | R5b | Ring cap: 1024 entries per monitor (`MAX_HELD`), oldest dropped. | A bound against a malformed or spoofing sender (the decoder accepts any wave id and a 64 KB packet carries ~1,200 blocks); never reached by a real bed (≈ 909 at the worst: 9 catalogue waves × 101 blocks in the inclusive 20 s window). |
 | R6 | Stall timing: a row freezes when the render time (head − 2 s) reaches the data's end, greys and says "akış durdu · N sn" **1.5 s later (≈ 3.5 s after the data stopped)**, N = whole seconds since the data's end; it is cleared **10 s after the data's end**. | Spec §5.3 read literally; the acceptance "within ~3 s" is ≈ 3.5–4 s with worker batching. |
@@ -81,7 +81,7 @@
 | `homunculus-engine/scripts/run_infinity_transport.py` | 4 | a `WaveBuffer` with live research; one printed line |
 | `homunculus-engine/tests/test_infinity_waves_hub.py` | 4 | new |
 | `homunculus-engine/src/homunculus/api/infinity_waves.py` | 5, 7 | new: settings, `checked`, `answer`, `HubWaves`; then `register` |
-| `homunculus-engine/pyproject.toml` | 5 | `httpx>=0.27` in `dependencies` |
+| `homunculus-engine/pyproject.toml` | 5 | `httpx>=0.27` in `dependencies` (and out of the `dev` extra) |
 | `homunculus-engine/tests/test_infinity_waves_api.py` | 5, 7 | new: the pieces, then the route |
 | `deploy/local/web/nginx.conf`, `homunculus-engine/tests/test_nginx_routes.py`, `dashboard/vite.config.js` | 6 | `/infinity-waves` |
 | `homunculus-engine/src/homunculus/api/app.py` | 7 | one hunk beside the research router |
@@ -1398,7 +1398,7 @@ cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/edge/infinity_hu
 
 ### Task 5: The API's hub client — settings, the window check, the browser's copy, one keep-alive client
 
-`api/infinity_waves.py` without its route yet: `WaveSettings` / `wave_settings_from_env` (off unless `INFINITY_WAVES=on`; the research window's three hub settings, https only), `checked` (the hub's answer, type by type — `started`, the hub process's start (R19), must be a non-empty string; blocks of an uncatalogued wave dropped), `answer` (the blocks after a caller's cursor, through the allow-list, plus the catalogue; `started` goes through to the browser unchanged, and a caller that names another hub process than the answer's is served the whole window), and `HubWaves` (one `httpx.AsyncClient` for the life of the process — no redirects, no proxy from the environment, the CA pinned; 2 s; 1 MiB; a 250 ms per-monitor cache with single-flight, forgotten 250 ms after it was fetched; every failure a named outcome).
+`api/infinity_waves.py` without its route yet: `WaveSettings` / `wave_settings_from_env` (off unless `INFINITY_WAVES=on`; the research window's three hub settings, https only), `checked` (the hub's answer, type by type — `started`, the hub process's start (R19), must be a non-empty string; blocks of an uncatalogued wave dropped), `answer` (the blocks after a caller's cursor, through the allow-list, plus the catalogue; `started` goes through to the browser unchanged, and a caller that names another hub process than the answer's is served the whole window), `REASONS` (the one set of reason codes the module emits, held by a scan test), and `HubWaves` (one `httpx.AsyncClient` for the life of the process, closed by `aclose()` at the lifespan's teardown — no redirects, no proxy from the environment, the CA pinned; 2 s; 1 MiB; a 250 ms per-monitor cache with single-flight, forgotten 250 ms after it was fetched; every failure a named outcome).
 
 **Files:**
 - Modify: `homunculus-engine/pyproject.toml` (dependencies)
@@ -1432,7 +1432,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api import infinity_waves
 from homunculus.api.infinity_waves import (
-    CACHE_S, MAX_BODY, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
+    CACHE_S, MAX_BODY, REASONS, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
 )
 from homunculus.edge.infinity_waves import SCHEMA
 
@@ -1491,6 +1491,13 @@ def test_the_flag_reads_on_and_names_what_stops_it():
     assert VIEWER not in repr(on)
 
 
+def test_a_hub_url_httpx_cannot_parse_is_named_at_start_not_raised_per_request():
+    env = {"INFINITY_WAVES": "on", "INFINITY_HUB_URL": "https://hub:abc", "INFINITY_VIEWER_TOKEN": VIEWER,
+           "INFINITY_HUB_CA_FILE": "/etc/homunculus/infinity-ca.pem"}
+    settings = wave_settings_from_env(env)
+    assert settings.problem == "misconfigured" and settings.on is False
+
+
 def test_httpx_is_a_runtime_dependency_of_the_api_image():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert any(dep.split(">")[0].split("=")[0].strip() == "httpx" for dep in project["dependencies"])
@@ -1504,12 +1511,17 @@ def test_httpx_is_a_runtime_dependency_of_the_api_image():
     {**window(), "started": ""}, {**window(), "started": 7}, {**window(), "started": "x" * 41},
     window([block(5, 1000.0)], cursor=4),                         # a block after the hub's own cursor
     window([dict(block(1, 1000.0), rate=True)]), window([dict(block(1, 1000.0), t=float("nan"))]),
+    window([dict(block(1, 1000.0), t=10 ** 400)]), window([dict(block(1, 1000.0), t=2 ** 53)]),   # no OverflowError
     window([block(1, 1000.0, samples=[1] * 39)]), window([block(1, 1000.0, samples=[40000] * 40)]),
     window([block(1, 1000.0, samples=[1.5] * 40)]), window(["not a block"], cursor=1),
 ])
 def test_checked_refuses_what_is_not_a_window(raw):
     with pytest.raises(ValueError):
         checked(raw, BED)
+
+
+def test_checked_takes_an_integer_instant_a_float_holds_exactly():
+    assert checked(window([dict(block(1, 1000.0), t=1000)]), BED)["blocks"][0]["t"] == 1000.0
 
 
 def test_checked_drops_a_wave_the_catalogue_does_not_name():
@@ -1536,6 +1548,10 @@ def test_the_cursor_is_the_answers_own_never_taken_from_a_block():
     copy = answer(BED, held, 6)
     assert copy["cursor"] == 12
     assert [b["t"] for b in copy["blocks"]] == [1000.0, 1000.4]         # filtered block by block, order kept
+
+
+def test_a_cursor_ahead_of_the_hubs_is_served_whole_even_from_the_same_process():
+    assert len(answer(BED, checked(window(), BED), 10, started=STARTED)["blocks"]) == 4
 
 
 # --- the shared client: keep-alive, the cache, single-flight, the failures -----------------------
@@ -1584,6 +1600,56 @@ async def test_a_failure_is_cached_too_so_a_dead_hub_is_not_hammered():
     assert len(hub.requests) == 1
 
 
+async def test_every_waiter_leaving_does_not_cancel_the_flight():
+    gate = asyncio.Event()
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        await gate.wait()
+        return httpx.Response(200, json=window())
+
+    feed = HubWaves(ON, transport=httpx.MockTransport(handler), clock=lambda: 0.0)
+    waiters = [asyncio.ensure_future(feed.window(BED)) for _ in range(2)]
+    await asyncio.sleep(0.01)
+    for waiter in waiters:
+        waiter.cancel()
+    await asyncio.gather(*waiters, return_exceptions=True)
+    gate.set()
+    await asyncio.sleep(0.01)                                        # the flight finishes with nobody waiting
+    assert feed._flights == {} and BED in feed._cache
+    assert (await feed.window(BED)).status == 200 and len(calls) == 1
+
+
+async def test_ten_polls_across_cache_expiry_use_one_client_and_one_hub_request_per_expiry():
+    now = [0.0]
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+    await feed.window(BED)
+    client = feed._client
+    for n in range(1, 11):
+        now[0] = n * (CACHE_S + 0.05)
+        await feed.window(BED)
+        await feed.window(BED)                                       # inside the 250 ms: the cache
+        assert len(hub.requests) == n + 1 and feed._client is client
+
+
+async def test_aclose_ends_the_client_and_a_later_request_makes_a_fresh_one():
+    now = [0.0]
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+    await HubWaves(ON).aclose()                                      # never used: nothing to close
+    await feed.window(BED)
+    client = feed._client
+    await feed.aclose()
+    await feed.aclose()                                              # twice is fine
+    assert client.is_closed and feed._client is None
+    now[0] = CACHE_S + 0.05
+    assert (await feed.window(BED)).status == 200
+    assert feed._client is not client and not feed._client.is_closed and len(hub.requests) == 2
+    await feed.aclose()
+
+
 async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
     now = [0.0]
     hub = Hub()
@@ -1614,6 +1680,7 @@ async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
     (Hub(payload=window(device="192.0.2.99")), 502, {"reason": "hub_invalid"}),   # another monitor's window
     (Hub(payload={**window(), "schema": "other"}), 502, {"reason": "hub_invalid"}),
     (Hub(payload={**window(), "started": ""}), 502, {"reason": "hub_invalid"}),    # a hub that names no process
+    (Hub(payload=window([dict(block(1, 1000.0), t=10 ** 400)])), 502, {"reason": "hub_invalid"}),   # json.loads takes it
 ])
 async def test_a_hub_failure_is_a_named_outcome(hub, status, detail):
     outcome = await HubWaves(ON, transport=httpx.MockTransport(hub)).window(BED)
@@ -1637,6 +1704,26 @@ async def test_an_unreadable_ca_file_is_a_misconfiguration_not_a_crash(tmp_path)
     feed = HubWaves(WaveSettings(True, "https://hub.example:8766", VIEWER, str(tmp_path / "missing.pem")))
     outcome = await feed.window(BED)
     assert outcome.status == 503 and outcome.body == {"reason": "misconfigured"}
+
+
+async def test_a_url_httpx_refuses_is_a_misconfiguration_not_a_crash():
+    feed = HubWaves(WaveSettings(True, "https://hub:abc", VIEWER, "/x.pem"), transport=httpx.MockTransport(Hub()))
+    outcome = await feed.window(BED)                                 # settings catch it first; this is the net
+    assert (outcome.status, outcome.body) == (503, {"reason": "misconfigured"})
+
+
+def test_every_reason_the_module_emits_is_in_the_one_set():
+    found = set()
+    for node in ast.walk(ast.parse((SRC / "homunculus/api/infinity_waves.py").read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Dict):
+            found.update(value.value for key, value in zip(node.keys, node.values)
+                         if isinstance(key, ast.Constant) and key.value == "reason" and isinstance(value, ast.Constant))
+        elif isinstance(node, ast.keyword) and node.arg == "problem" and isinstance(node.value, ast.Constant):
+            found.add(node.value.value)
+        elif (isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+              and any(isinstance(target, ast.Name) and target.id == "_UPSTREAM" for target in node.targets)):
+            found.update(value.value for value in node.value.values)
+    assert found == REASONS                                          # nothing emitted outside it, nothing stale in it
 
 
 # --- isolation: nothing clinical ------------------------------------------------------------------
@@ -1691,6 +1778,18 @@ with
 ]
 ```
 
+and, in the same file, take it out of the `dev` extra (it is a runtime dependency now): replace
+
+```toml
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27", "uvicorn>=0.30"]
+```
+
+with
+
+```toml
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "uvicorn>=0.30"]
+```
+
 `constraints.txt` is **not** regenerated: its freeze (`pip install '/b[dev]'`) already pins `httpx==0.28.1` and every package it brings (`anyio`, `certifi`, `h11`, `httpcore`, `idna`); `tests/test_api_image_dependencies.py` holds the pin within the new range.
 
 - [ ] **Step 4: Write the module.** Create `homunculus-engine/src/homunculus/api/infinity_waves.py`:
@@ -1737,6 +1836,11 @@ MAX_BODY = 1024 * 1024
 MAX_TEXT = 40                         # an ISO instant, with room
 BLOCK_KEYS = ("t", "recv", "id", "rate", "samples")
 _UPSTREAM = {401: "hub_unauthorized", 404: "hub_no_waves", 409: "research_off"}
+#: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
+#: (and the panel's words) read the same list. A new reason is added here or the scan test fails.
+REASONS = frozenset({
+    "not_configured", "misconfigured", "hub_no_waves", "research_off", "hub_unauthorized",
+    "hub_error", "hub_timeout", "hub_unreachable", "hub_too_large", "hub_invalid"})
 
 
 @dataclass(frozen=True)
@@ -1761,6 +1865,10 @@ def wave_settings_from_env(env: Mapping[str, str]) -> WaveSettings:
     if not url.startswith("https://"):
         # The viewer credential rides in a header: never over plain HTTP (infinity_research.py).
         return WaveSettings(problem="misconfigured")
+    try:
+        httpx.URL(url)                 # a typo ("https://hub:abc") is named here, not raised per request
+    except httpx.InvalidURL:
+        return WaveSettings(problem="misconfigured")
     return WaveSettings(True, url, token, ca_file)
 
 
@@ -1771,7 +1879,9 @@ class Outcome:
 
 
 def _number(value) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    # Not math.isfinite(value) on an int: it converts to float first, and a 400-digit integer
+    # (json.loads accepts one) raises OverflowError. An int must be one a float holds exactly.
+    return (type(value) is float and math.isfinite(value)) or (type(value) is int and -2**53 < value < 2**53)
 
 
 def checked(raw, device: str) -> dict:
@@ -1820,7 +1930,10 @@ class HubWaves:
     """One keep-alive client to the hub for the life of the process (no redirects, no proxy, the
     research window's CA); a CACHE_S answer per monitor, single-flight, forgotten CACHE_S after it
     was fetched. Every hub request asks for the monitor's last seconds (since=0); `answer` serves
-    each caller the blocks after its own cursor."""
+    each caller the blocks after its own cursor. It trusts its caller to ask `window()` only about
+    a device on the caller's board (which bounds the cache's keys) and only when `settings.on`.
+    `aclose()` ends the client: the app's lifespan teardown calls it (Starlette ignores
+    add_event_handler("shutdown") when a lifespan is set)."""
 
     def __init__(self, settings: WaveSettings, *, transport: httpx.AsyncBaseTransport | None = None,
                  clock: Callable[[], float] = time.monotonic):
@@ -1839,10 +1952,17 @@ class HubWaves:
                 self._client = httpx.AsyncClient(transport=self._transport, **common)
             else:
                 context = ssl.create_default_context(cafile=self.settings.ca_file)
+                # keepalive_expiry < uvicorn's timeout_keep_alive (5 s): the client drops an idle socket
+                # before the hub does, so a request is never sent into a connection that is closing.
                 self._client = httpx.AsyncClient(
                     verify=context, **common,
-                    limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=30.0))
+                    limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=4.0))
         return self._client
+
+    async def aclose(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     async def window(self, device: str) -> Outcome:
         held = self._cache.get(device)
@@ -1890,23 +2010,25 @@ class HubWaves:
                             return Outcome(502, {"reason": "hub_too_large"})
         except (TimeoutError, httpx.TimeoutException):
             return Outcome(503, {"reason": "hub_timeout"})
+        except httpx.InvalidURL:                  # not an HTTPError; settings catch it first, this is the net
+            return Outcome(503, {"reason": "misconfigured"})
         except httpx.HTTPError:
             return Outcome(503, {"reason": "hub_unreachable"})
         try:
             return Outcome(200, checked(json.loads(body), device))
-        except (ValueError, TypeError, RecursionError):
+        except (ValueError, TypeError, RecursionError, OverflowError):
             return Outcome(502, {"reason": "hub_invalid"})
 ```
 
 - [ ] **Step 5: Run the tests and the dependency pins.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`41` in the new file, `4` in the dependency file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
+Expected: all pass (`52` in the new file, `4` in the dependency file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/pyproject.toml homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/tests/test_infinity_waves_api.py && git commit -m "feat(api): the waveform panel's hub client — one keep-alive connection, a 250 ms single-flight cache, an allow-list" -m "HubWaves keeps one httpx.AsyncClient for the life of the API (no TLS handshake per poll; the research window's CA pinned, no redirect followed, no proxy read from the environment; 2 s; 1 MiB) and answers each monitor from a 250 ms cache with single-flight, so several viewers of one bed cost one hub request and a dead hub is not hammered. It always asks the hub for the monitor's last 10 s; answer() serves each caller the blocks after its own cursor (all of them for a cursor from before a hub restart), through an allow-list, with the catalogue. Every hub failure is a named status — a hub without the route (before R5) is 'hub_no_waves' — never a 500. httpx moves from the dev extra to the API's dependencies; constraints.txt already pins it." -m "The hub answer's 'started' (R19) is required by checked() and passed to the browser unchanged; answer() takes the 'started' a caller's cursor was issued under and serves the whole window when it names another hub process, because a restarted hub may already have counted past that cursor. The cursor is the answer's own, never read from a block (blocks come in device-time order)." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/pyproject.toml homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/tests/test_infinity_waves_api.py && git commit -m "feat(api): the waveform panel's hub client — one keep-alive connection, a 250 ms single-flight cache, an allow-list" -m "HubWaves keeps one httpx.AsyncClient for the life of the API (no TLS handshake per poll; the research window's CA pinned, no redirect followed, no proxy read from the environment; 2 s; 1 MiB) and answers each monitor from a 250 ms cache with single-flight, so several viewers of one bed cost one hub request and a dead hub is not hammered. It always asks the hub for the monitor's last 10 s; answer() serves each caller the blocks after its own cursor (all of them for a cursor from before a hub restart), through an allow-list, with the catalogue. Every hub failure is a named status — a hub without the route (before R5) is 'hub_no_waves' — never a 500. httpx moves from the dev extra to the API's dependencies; constraints.txt already pins it." -m "The hub answer's 'started' (R19) is required by checked() and passed to the browser unchanged; answer() takes the 'started' a caller's cursor was issued under and serves the whole window when it names another hub process, because a restarted hub may already have counted past that cursor. The cursor is the answer's own, never read from a block (blocks come in device-time order)." -m "Nothing the hub sends or the settings say can make window() raise: a 400-digit integer instant is refused (OverflowError is named hub_invalid), a URL httpx cannot parse is 'misconfigured' at start and per request; HubWaves.aclose() ends the client at teardown; the reason codes live in one set (REASONS) that a test holds against the source." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -2418,7 +2540,7 @@ with
 - [ ] **Step 7: Run the route tests and every route inventory.**
 
 Run: the command of Step 3, then `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_nginx_routes.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_isolation.py tests/test_infinity_research_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`56` in `test_infinity_waves_api.py`).
+Expected: all pass (`67` in `test_infinity_waves_api.py`).
 
 - [ ] **Step 8: Commit.**
 
