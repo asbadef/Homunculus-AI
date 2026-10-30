@@ -97,4 +97,19 @@ head (`RELEASE.json` names the commit), so its sha256 is the one quoted in the d
 `95-nbp2.conf`. The deploy blocks are in `/c/tmp/infinity-a-releases/NBP2-bloklari.txt` (`nbp2-<short>.bundle` of
 `12453ee..feat/infinity-nbp2`; the API and web first, then the hub).
 
-· **VM: bekliyor** (önce api+web, sonra hub R5; işçi değişmez) ·
+· **VM'de ✅ 2026-10-30** (main `cad9bea`; api+web C-2 ≈18:58 UTC, hub R5 + drop-in 95 19:03 UTC; geri dönüş
+etiketleri `:pre-nbp2`, hub G-1; işçi değişmedi) ·
+
+**On the VM (2026-10-30), read-only checks** with `shadow_check.py` at `fix/shadow-check-rules` `7fe61a9` — the
+check at `cad9bea` knew only the stage `shadow` and stopped at its stage row at `rules`; its board hash also moved
+with each card's `shadow` picture, so the fix leaves that picture out:
+
+| Reading | Result |
+|---|---|
+| before (A-2), stage `rules`, hub R4 | six KABUL; `nbp:` 5 timed, 0 untimed, 1 awaiting; PANO_OZET `cb259cc4…` (9 cards, 1 alert) |
+| new API + web, hub R4 (C-3) | six KABUL; 0 untimed; PANO_OZET unchanged; shadow engine `ok`, 3 linked beds; API log clean |
+| hub R5 (D-2) | six KABUL; `nbp:` 0 timed, **5 untimed**, 1 awaiting; PANO_OZET unchanged; forwarder 0 failed; no 4xx |
+| D5 on the VM | every NBP-sourced `sbp`/`map` in the shadow pictures is stamped before the hub's restart and ages between two readings: no untimed value is fed |
+
+Two block defects found and fixed during the run: the acceptance check at the stage `rules` (above), and B-1's
+file check, which expected `ls | sort` in the wrong order (now compared against the same `sort`).

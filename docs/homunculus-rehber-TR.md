@@ -1362,7 +1362,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     ne zaman ölçüldüğü bilinmez. İlk değişiklik görülünce saatli biçime döner. Yalnız tam ve geçerli
     üçlü gösterilir (`***` ya da eksik parça varsa gösterilmez); paket eskiyince diğer değerler gibi
     gizlenir. Bu değer hiçbir kurala girmez (gölge motor NBP'yi yalnız saatiyle alır). Hub sürümü R5,
-    drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner).
+    drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner). VM'de
+    30.10.2026'dan beri çalışıyor.
   - **Gölge öneri · alarm kapalı (Aşama B — kodda, hastanede henüz açık değil):** Aşama B
     açıldığında şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
     gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
