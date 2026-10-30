@@ -430,7 +430,7 @@ strip showed the SpO₂ pulse under "HR" and the ECG rate under "PLS" (equal on 
 before `pls` (spec D3), was fed the SpO₂ pulse first. Shadow samples, findings and audit rows written
 before R6 keep the old names; nothing rewrites them.
 
-- Release R6 `/opt/homunculus-infinity/@REL6@`: R5 with the two names swapped in `PARAMETERS`, nothing
+- Release R6 `/opt/homunculus-infinity/transport-107b84b09fb7caab`: R5 with the two names swapped in `PARAMETERS`, nothing
   else. The wire schema (v2), the API, the web and the worker do not change.
 - `96-hr-pls.conf` — `95-nbp2.conf` with the release path changed to R6, checked by `diff` before it
   is installed. 93 and 94 stay. **Hub only.** Rollback: delete `96-hr-pls.conf`, `daemon-reload`,
