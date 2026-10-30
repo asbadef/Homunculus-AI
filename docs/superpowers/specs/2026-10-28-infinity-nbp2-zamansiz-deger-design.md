@@ -110,6 +110,7 @@ with each card's `shadow` picture, so the fix leaves that picture out:
 | new API + web, hub R4 (C-3) | six KABUL; 0 untimed; PANO_OZET unchanged; shadow engine `ok`, 3 linked beds; API log clean |
 | hub R5 (D-2) | six KABUL; `nbp:` 0 timed, **5 untimed**, 1 awaiting; PANO_OZET unchanged; forwarder 0 failed; no 4xx |
 | D5 on the VM | every NBP-sourced `sbp`/`map` in the shadow pictures is stamped before the hub's restart and ages between two readings: no untimed value is fed |
+| E-1 bedside look (the project owner, 2026-10-30) | a linked bed's strip shows the untimed form «S/D (M) mmHg · ölçüm zamanı bilinmiyor» — confirmed («E1 okey»); no value recorded |
 
 Two block defects found and fixed during the run: the acceptance check at the stage `rules` (above), and B-1's
 file check, which expected `ls | sort` in the wrong order (now compared against the same `sort`).
