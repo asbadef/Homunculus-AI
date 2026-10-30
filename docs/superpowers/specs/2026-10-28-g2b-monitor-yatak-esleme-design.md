@@ -756,6 +756,8 @@ TDD, red first, with Postgres where the code needs it (`TEST_DATABASE_URL`).
   - the two partial indexes refuse a second current row per device and per bed, and allow closed
     history;
   - the trigger refuses DELETE and any UPDATE but a close;
+  - the downgrade's order: after upgrade then downgrade, neither the table, nor a `device_beds_%`
+    trigger, nor the function remains (R-2);
   - model/migration type parity.
 - **Dashboard:**
   - the list: columns; absent with and without last seen; «başka birimde»; editable gating;
@@ -777,8 +779,9 @@ TDD, red first, with Postgres where the code needs it (`TEST_DATABASE_URL`).
   - the occupied-bed step;
   - a charge nurse's scope;
   - the Yapı fixes, a rename followed by the strip, and the `bed_has_monitor` refusal;
-  - the old image at 0014 (O11): the stack's api image from before the slice started with the
-    override of §7.3 against the migrated database serves `/health` and the board.
+  - the R-1 rehearsal (O11, §7.3): the pre-slice image (main `cad9bea`) started with R-1's override
+    against the database at 0014 serves `/health` and the board (table version 2, the file's sha),
+    then the stack rolls forward again (new image, `upgrade head` a no-op, import `already`).
 
 ## 7. Deploy
 
@@ -805,7 +808,9 @@ Every `docker compose run|exec`, `psql` or `ssh` inside a pasted heredoc takes `
 block stops at its first error, and "durdum" means nothing changed.
 
 The file of blocks is `/c/tmp/infinity-a-releases/G2B-ESLEME-bloklari.txt`, on the model of
-`G2B1a-bloklari.txt`. Five groups:
+`G2B1a-bloklari.txt`. **Its header says the blocks start only after Lane A reports NBP-2's deploy
+done and the user says «onay»** (one VM deploy at a time; NBP-2 was at its D-1 on 2026-10-30). Five
+groups:
 
 - **A — pre-checks and rollback tags** (VM):
   - the running code is main `cad9bea` (NBP-2 deployed), `alembic current` = 0013, the stage, the
@@ -836,10 +841,17 @@ The file of blocks is `/c/tmp/infinity-a-releases/G2B-ESLEME-bloklari.txt`, on t
     (O11); the block's note says to go on with B, or to start it with R-1's override.
 - **C — the strip before and after** (agent, read-only, from the workstation): `shadow_check.py`
   before A and after B, with `--table-version` and `--table-sha` from `import.txt` (D19):
-  - at `cad9bea`, `shadow_check.py` judges the stage first and reports anything but `shadow` as RED
-    (`deploy/infinity/shadow_check.py:94-98`) — the VM runs `rules`; the copy that judges `rules`
-    like `shadow` is `7fe61a9` (branch `fix/shadow-check-rules`, not on main), which NBP-2's blocks
-    run. C runs that copy, or main's once the fix is merged;
+  - **pinned by commit, never by branch** (Lane A, 2026-10-30). Every run in every block is
+    `git -C <local worktree> show 7fe61a9:deploy/infinity/shadow_check.py | ssh -i ~/.ssh/homunculus_vm sysadmin@172.100.101.72 'python3 - --window 60 --table-version <v> --table-sha <sha12> …'`.
+    Here ssh's stdin IS the script, by the pipe: it reads no line of a pasted heredoc, so it takes no
+    `</dev/null` (every other stdin consumer in a block does). If `fix/shadow-check-rules` reaches main
+    first, the pin may move to that main commit — a commit, still;
+  - why the pin: at `cad9bea`, `shadow_check.py` judges the stage first and reports anything but
+    `shadow` as RED (`deploy/infinity/shadow_check.py:94-98`) — the VM runs `rules`; `7fe61a9` judges
+    `rules` like `shadow`, as NBP-2's blocks ran it;
+  - its `PANO_OZET` leaves out each card's `shadow` picture, so a hash taken before 2026-10-30 (with
+    the older script) is not comparable: the "before" reading is taken in C, before A, with the same
+    pinned script;
   - what it compares for the table (`:101-106`): `status` `ok`, `version` equal to `--table-version`,
     `sha256` starting with `--table-sha`; then the unassigned sources against `--unassigned`
     (`:113-115`), the feed, the lag and the forwarder's posts;
@@ -878,33 +890,58 @@ again in a loop. Nothing else checks the revision (no other Alembic reference in
 whatever 0014 contains; what D20 guarantees is that the old CODE can serve against 0014 — only its
 start command refuses.
 
-**R-1 — the old images, the database left at 0014** (the soft rollback; also the way to start the old
-API if it stops between B's migration and B's new start). The blocks write, in A, a compose override
-outside the repository, `~/esleme/eski-imaj-0014.yml`:
+**R-1 — the fast path: the old images, the database left at 0014** (Lane A accepted it, 2026-10-30;
+also the way to start the old API if it stops between B's migration and B's new start).
 
-```yaml
-services:
-  api:
-    command: ["sh", "-c", "python scripts/seed_admin.py && exec uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
-```
+- **The override is the old image's OWN start command with only the migration step removed.** At
+  `cad9bea` that command is the image's `CMD` (`homunculus-engine/Dockerfile.api:51`):
+  `["sh", "-c", "alembic upgrade head && python scripts/seed_admin.py && exec uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]`;
+  the compose file sets no `command:`, `entrypoint:` or `user:` for `api`
+  (`deploy/local/docker-compose.yml:34-130`), and the image has no `ENTRYPOINT`. The blocks write, in
+  A, outside the repository, `~/esleme/eski-imaj-0014.yml`, with exactly:
 
-— the old image's own command without its migration step. R-1 retags `:pre-esleme` onto the images
-compose runs and starts `api` and `web` with `-f docker-compose.yml -f ~/esleme/eski-imaj-0014.yml`.
-The old code reads the file again (unchanged on disk); `device_beds` and its history stay in the
-database, unread; the `devices.map_beds` grant stays, dropped from every token (§4.6). While the
-database is at 0014 under the old image, every `up` of `api` takes the override. A later redeploy of
-this slice needs no migration and no import (it finds them done: §5.4 `"already": true`, or exit 3
-if edits were made, which are then kept).
+  ```yaml
+  services:
+    api:
+      command: ["sh", "-c", "python scripts/seed_admin.py && exec uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
+  ```
+
+  Nothing else: the entrypoint (none), the user (`USER homunculus`, `Dockerfile.api:37`), the one
+  uvicorn worker (no `--workers`) and the health check (`HEALTHCHECK …/health`, `:42`) stay the
+  image's own. Block A prints the running image's `Config.Cmd` and stops unless it is that CMD.
+- **What R-1 does.** It retags `:pre-esleme` onto the images compose runs and starts `api` and `web`
+  with `-f docker-compose.yml -f ~/esleme/eski-imaj-0014.yml`. While the database is at 0014 under
+  the old image, every `up` of `api` takes the override.
+- **What R-1 leaves behind (the block says it in one place).** The old code reads the mapping from
+  the v2 file, so the strip shows the file's mapping and does not see any bind made since the deploy;
+  those binds stay in `device_beds`, with their history and audit rows, and redeploying the new image
+  brings them back; the `devices.map_beds` grant stays in `group_permissions`, dropped from every
+  token, and the old Rollar shows the charge nurse's column read-only, naming the key (§4.6). After
+  the restart the block prints the board's `table.version` and `table.sha256` and expects `2` and
+  `84ac1760d59f…` — the file's.
+- **Forward again after R-1 is safe.** 0014 is already applied, so the new image's `alembic upgrade
+  head` is a no-op; the import answers `"already": true` over untouched rows, or exit 3 if binds were
+  made — which are then kept as they are (§5.4).
 
 **R-2 — full: back to 0013.**
 - `docker compose run --rm --no-deps -T api alembic downgrade 0013 </dev/null` with the NEW image
-  (the old one does not know 0014);
+  (the old one does not know 0014). The downgrade drops the triggers (and their function) BEFORE the
+  table (§5.1), so no trigger stands on a dropped table;
+- the block then checks, read-only through `psql … </dev/null`: `SELECT to_regclass('public.device_beds')`
+  is null, no trigger `device_beds_%` and no function `device_beds_history_kept` remain, and
+  `alembic current` reads `0013`; it stops otherwise;
 - `DELETE FROM group_permissions WHERE permission = 'devices.map_beds'` through `psql … </dev/null`,
   printing the count (the import's grant; not part of 0014's downgrade, §5.1);
-- the `:pre-esleme` images back and `up -d api web` with their own command;
-- the old code reads the file again, unchanged on disk;
+- the `:pre-esleme` images back and `up -d api web` with their own command (no override);
+- the old code reads the file again, unchanged on disk; the board's table reads version `2`, sha
+  `84ac1760d59f…`;
 - mapping changes made since the deploy are lost from the table; the dump and the audit rows keep
   them.
+
+**The rehearsal.** The local walk (§6) rehearses R-1 on its stack at 0014: the pre-slice image (main
+`cad9bea`) started with the override against the migrated database serves `/health` and the board
+(table version 2), then the stack rolls forward again (the new image, no migration, the import
+`already`).
 
 A future slice's image could start against a newer, additive database by itself (a start step that
 tolerates a revision it does not know); that is Lane A's to decide and not in this slice.
