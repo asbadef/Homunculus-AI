@@ -47,6 +47,9 @@ import shadow from "./strings/shadow.js";
 // G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
 import kabul from "./strings/kabul.js";
 
+// G2-ESLEME: the monitor→bed editor on «Monitörler» (screens/devices/MappingSection.jsx, MappingDialog.jsx).
+import esleme from "./strings/esleme.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -73,6 +76,8 @@ export const NAMESPACES = {
   shadow,
 
   kabul, // G2-B1a
+
+  esleme, // G2-ESLEME
 };
 
 function flattenInto(out, prefix, entries) {

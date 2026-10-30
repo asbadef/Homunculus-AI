@@ -53,6 +53,9 @@ const NEUTRAL = new Set([
   "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg",
   "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
 
+  // G2-ESLEME (esleme) · neutral — an arrow between two names the screen fills in
+  "esleme.confirm.bind",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -160,6 +163,10 @@ const AZ_SAME_AS_TR = new Set([
   "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg", // ABO and Rh: symbols
   "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
   "kabul.placeholder.site", // Bina adı — bina and ad are Azerbaijani too (az newSite: "Yeni binanın adı")
+
+  // G2-ESLEME (esleme) · az = tr
+  "esleme.confirm.bind", //  "{monitor} → {bed}" — no word in it
+  "esleme.pick.occupied", // dolu — the same word in Azerbaijani, as kabul.state.OCCUPIED
 
   // G2-A3 (patient · meds) · az = tr
   "patient.medsBolusUnit", //          mL — a unit symbol, not a word
