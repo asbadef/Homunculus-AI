@@ -6,7 +6,7 @@ from homunculus.edge.infinity_records import (
     read_record,
 )
 
-HR, SPO2, TEMPERATURE, ART_SYS = 0x1905, 0x190E, 0x1A0B, 0x0308
+HR, PLS, SPO2, TEMPERATURE, ART_SYS = 0x0101, 0x1905, 0x190E, 0x1A0B, 0x0308
 
 
 def record(identifier, value, *, unit=None, low=0, high=1000, valid=True):
@@ -28,8 +28,17 @@ def test_a_well_formed_record_carries_value_unit_and_limits():
     assert found["valid"] and found["evidence"] == "display_verified"
 
 
+def test_hr_is_the_screens_ecg_rate_and_pls_the_spo2_pulse():
+    # Confirmed 2026-10-27 on a bedside capture with video where the two rates differed: 0x0101 is the
+    # rate the screen shows as HR (ECG), 0x1905 the one it shows as PLS (SpO2 pulse). Swapped until R6.
+    assert (PARAMETERS[0x0101][0], PARAMETERS[0x1905][0]) == ("hr", "pls")
+    ecg, pulse = read_record(record(HR, 88), 0), read_record(record(PLS, 67), 0)
+    assert (ecg["name"], ecg["value"], pulse["name"], pulse["value"]) == ("hr", 88, "pls", 67)
+    assert ecg["unit"] == pulse["unit"] == "bpm"
+
+
 def test_an_unknown_parameter_is_not_a_record():
-    assert read_record(record(HR, 72).replace(b"\x19\x05", b"\xab\xcd"), 0) is None
+    assert read_record(record(HR, 72).replace(HR.to_bytes(2, "big"), b"\xab\xcd"), 0) is None
 
 
 def test_a_known_parameter_wearing_the_wrong_unit_is_rejected():

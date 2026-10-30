@@ -422,6 +422,20 @@ owner decision 2026-10-28 «son degeri gostersin»):
   restart the hub (R4: untimed cuffs back to «ölçüm bekleniyor»); the API/web by image tag only after
   that. No migration.
 
+**R6 — HR and PLS named as the screen shows them** (finding of 2026-10-27, a planned bedside capture
+with video on a bed where the two rates differed): record `0x0101` is the screen's HR (ECG) and `0x1905`
+the screen's PLS (SpO₂ pulse) — the reverse of `infinity_records.py`'s table up to R5. Until R6 the
+strip showed the SpO₂ pulse under "HR" and the ECG rate under "PLS" (equal on most patients; about
+20/min apart on that bed that day), and Aşama B's rules lane, which takes `HEART_RATE` from `hr`
+before `pls` (spec D3), was fed the SpO₂ pulse first. Shadow samples, findings and audit rows written
+before R6 keep the old names; nothing rewrites them.
+
+- Release R6 `/opt/homunculus-infinity/@REL6@`: R5 with the two names swapped in `PARAMETERS`, nothing
+  else. The wire schema (v2), the API, the web and the worker do not change.
+- `96-hr-pls.conf` — `95-nbp2.conf` with the release path changed to R6, checked by `diff` before it
+  is installed. 93 and 94 stay. **Hub only.** Rollback: delete `96-hr-pls.conf`, `daemon-reload`,
+  restart the hub (R5, the old names). No migration.
+
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 
 - `shadow-forwarder.env` (root:root 0600) holds `INFINITY_SHADOW_URL`

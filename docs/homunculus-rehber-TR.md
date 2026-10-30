@@ -1364,8 +1364,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     gizlenir. Bu değer hiçbir kurala girmez (gölge motor NBP'yi yalnız saatiyle alır). Hub sürümü R5,
     drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner). VM'de
     30.10.2026'dan beri çalışıyor.
-  - **Gölge öneri · alarm kapalı (Aşama B — kodda, hastanede henüz açık değil):** Aşama B
-    açıldığında şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
+  - **Gölge öneri · alarm kapalı (Aşama B — hastanede 28.10.2026'dan beri açık, aşama `rules`):**
+    Aşama B'de şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
     gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
     (NEWS2, sepsis…) monitörün doğrulanmamış değerleriyle söyleyeceği şeydir. Her yatak için,
     parametre başına dakikada bir örnek alınır (her ölçüm değil); yalnız monitörü yatağa bağlı olan
@@ -1395,6 +1395,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       kullanılır. Manşetin saati şeritteki gibi «≤» ile verilen bir üst sınırdır ve puan o saate göre
       değerlendirilir. Kart hangi kaynaktan okunduğunu yazar; kaynak değişirse (ör. HR kesilip
       PLS'e geçilirse) etiket de değişir.
+    - *HR/PLS düzeltmesi (hub sürümü R6):* 27.10'da, HR ile PLS'in farklı olduğu bir yatakta planlı
+      kayıt ve videoyla doğrulandı ki kod iki adı **ters** veriyordu. R6'ya kadar şeritteki «HR»
+      aslında SpO₂ nabzı, «PLS» EKG nabzıydı; gölge motor da nabzı önce SpO₂ probundan aldı. Çoğu
+      hastada ikisi aynıdır. R6 iki adı yer değiştirir; ondan önceki gölge örnekleri ve bulgular eski
+      adlarla kayıtlı kalır.
     - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
       kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
       basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.

@@ -36,8 +36,11 @@ UNITS = {MMHG: "mmHg", CELSIUS: "C", BPM: "bpm", PER_MIN: "/min", PERCENT: "%"}
 
 # id -> (name, unit code, scale, verified against the central station's display)
 PARAMETERS = {
-    0x1905: ("hr", BPM, 1, True),
-    0x0101: ("pls", BPM, 1, True),
+    # 0x0101 is the screen's HR (ECG rate) and 0x1905 its PLS (SpO2 pulse): confirmed 2026-10-27 on a
+    # planned bedside capture with video, where the two differed. The table had them the other way
+    # round until transport release R6 (the first check saw beds where the two were equal).
+    0x0101: ("hr", BPM, 1, True),
+    0x1905: ("pls", BPM, 1, True),
     0x190E: ("spo2", PERCENT, 1, True),
     0x1F0F: ("etco2", MMHG, 1, True),
     0x1A0B: ("temperature", CELSIUS, 10, True),

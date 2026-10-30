@@ -35,9 +35,14 @@ gösterilen değer ile kayıttaki değer **birebir aynıydı**.
 
 | Kimlik | Parametre | Birim kodu | Doğrulama |
 |---|---|---|---|
-| `0x1905` | HR | `0x1a` atım/dk | iki cihazda ekranla birebir |
-| `0x0101` | PLS | `0x1a` | iki cihazda ekranla birebir |
+| `0x0101` | HR (EKG) | `0x1a` atım/dk | BED08'de planlı kayıt + video, iki değer farklıyken (27.10.2026) |
+| `0x1905` | PLS (SpO₂ nabzı) | `0x1a` | BED08'de planlı kayıt + video, iki değer farklıyken (27.10.2026) |
 | `0x190e` | SpO₂ | `0x1c` % | iki cihazda ekranla birebir |
+
+**27.10.2026 düzeltmesi (HR/PLS):** ilk eşleme `0x1905` = HR, `0x0101` = PLS idi ve "iki cihazda ekranla
+birebir" diye kaydedilmişti. BED08'de HR ile PLS farklıyken alınan planlı kayıt ve video bunun **ters**
+olduğunu gösterdi: `0x0101` ekrandaki HR (EKG), `0x1905` ekrandaki PLS (SpO₂ nabzı). İlk karşılaştırmada iki
+değer büyük olasılıkla eşitti, bu yüzden fark görünmedi. Kod düzeltmesi taşıma sürümü R6'dadır.
 | `0x1f0f` | etCO₂ | `0x09` mmHg | iki cihazda ekranla birebir |
 | `0x1a0b` | Ta (sıcaklık) | `0x11` °C | ekranla birebir, **onda bir ölçekli** |
 | `0x0307` | ART diyastolik | `0x09` | MAP kimliği + ekran eğilimi |
