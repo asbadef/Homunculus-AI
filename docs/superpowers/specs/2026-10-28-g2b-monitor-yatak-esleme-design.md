@@ -842,13 +842,13 @@ groups:
 - **C — the strip before and after** (agent, read-only, from the workstation): `shadow_check.py`
   before A and after B, with `--table-version` and `--table-sha` from `import.txt` (D19):
   - **pinned by commit, never by branch** (Lane A, 2026-10-30). Every run in every block is
-    `git -C <local worktree> show 7fe61a9:deploy/infinity/shadow_check.py | ssh -i ~/.ssh/homunculus_vm sysadmin@172.100.101.72 'python3 - --window 60 --table-version <v> --table-sha <sha12> …'`.
-    Here ssh's stdin IS the script, by the pipe: it reads no line of a pasted heredoc, so it takes no
-    `</dev/null` (every other stdin consumer in a block does). If `fix/shadow-check-rules` reaches main
-    first, the pin may move to that main commit — a commit, still;
+    `git -C <local worktree> show ade8da8:deploy/infinity/shadow_check.py | ssh -i ~/.ssh/homunculus_vm sysadmin@172.100.101.72 'python3 - --window 60 --table-version <v> --table-sha <sha12> …'`.
+    `ade8da8` is main (2026-10-30), which holds the fix `7fe61a9`; the script is identical at both,
+    so `7fe61a9` is an equivalent pin. Here ssh's stdin IS the script, by the pipe: it reads no line
+    of a pasted heredoc, so it takes no `</dev/null` (every other stdin consumer in a block does);
   - why the pin: at `cad9bea`, `shadow_check.py` judges the stage first and reports anything but
-    `shadow` as RED (`deploy/infinity/shadow_check.py:94-98`) — the VM runs `rules`; `7fe61a9` judges
-    `rules` like `shadow`, as NBP-2's blocks ran it;
+    `shadow` as RED (`deploy/infinity/shadow_check.py:94-98`) — the VM runs `rules`; the fix
+    (`7fe61a9`, on main since `ade8da8`) judges `rules` like `shadow`, as NBP-2's blocks ran it;
   - its `PANO_OZET` leaves out each card's `shadow` picture, so a hash taken before 2026-10-30 (with
     the older script) is not comparable: the "before" reading is taken in C, before A, with the same
     pinned script;
@@ -1013,8 +1013,8 @@ The O-numbers are kept. Each entry states the answer and where the body carries 
   separators=(",",":"), ensure_ascii=False)`, `bed_id` a string or null. `shadow_check.py`'s
   `--table-version`/`--table-sha` stay; the import prints both; the blocks quote them. At `cad9bea`,
   `shadow_check.py` compares: the stage, which must be `shadow` (`:94-98`; anything else, `rules`
-  included, is one RED row and nothing more — the fix `7fe61a9` on `fix/shadow-check-rules` judges
-  `rules` like `shadow` and is what the blocks run); the table's `status` `ok`, `version` equal to
+  included, is one RED row and nothing more — the fix `7fe61a9`, on main since `ade8da8`, judges
+  `rules` like `shadow`, and the blocks run it pinned at `ade8da8`); the table's `status` `ok`, `version` equal to
   `--table-version` and `sha256` starting with `--table-sha` (`:101-106`); the unassigned sources
   against `--unassigned` (`:113-115`); the feed, the lag, the forwarder's posts. D19, §5.3, §7.2 C.
 - **O11 The old image and 0014 — RESOLVED (Lane A).** 0014 is purely additive (no change to an
