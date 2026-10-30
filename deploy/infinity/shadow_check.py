@@ -18,7 +18,12 @@ per criterion (KABUL / RED), what each device is doing (per assigned bed: its la
 many fresh values and the oldest one's age), the unassigned devices and why, then `SONUÇ:` and
 `PANO_OZET {"sha256", "cards", "alerts"}` — the hash of /patients with the two keys that age by
 themselves (`elapsed_sec`, `remaining_sec`) removed at every depth, so two readings of an unchanged
-board hash alike (Kabul K4).
+board hash alike (Kabul K4). Each card's `shadow` picture (Aşama B) is left out too: it is the shadow
+engine's view of the monitors, which follows them minute by minute and is never the engine's output;
+the cards, their alerts and every other key still count.
+
+The strip runs at the stage `shadow` (Aşama A) and at `rules` (Aşama B: the same strip, plus the
+shadow engine fed from it); both are judged alike, and the stage row names which one runs.
 
 A strip endpoint that does not exist (the build before Aşama A: a 404, or nginx's HTML page) is
 "aşama: yok", and PANO_OZET is still printed: that is how D-2's "before" is read.
@@ -46,6 +51,7 @@ INTERVAL_S = 5                 # the forwarder's cadence
 POSTS_MIN_SHARE = 0.9          # of window / INTERVAL_S
 LAG_EDGES_MS = (10, 50, 100, 250, 500, 1000, 3000)    # the API's histogram: count, total, then buckets
 AGEING_KEYS = frozenset({"elapsed_sec", "remaining_sec"})
+ON_STAGES = ("shadow", "rules")       # the strip runs; `rules` adds Aşama B's shadow engine beside it
 
 
 class Missing(Exception):
@@ -61,8 +67,13 @@ def _without_ageing(node):
 
 
 def projection(patients_body):
-    """/patients as canonical JSON, without the keys that age on their own."""
-    return json.dumps(_without_ageing(patients_body), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    """/patients as canonical JSON, without the keys that age on their own and without each card's
+    `shadow` picture (the shadow engine's view of the monitors, not the engine's output)."""
+    body = patients_body
+    if isinstance(body, dict) and isinstance(body.get("patients"), list):
+        body = {**body, "patients": [{k: v for k, v in card.items() if k != "shadow"} if isinstance(card, dict)
+                                     else card for card in body["patients"]]}
+    return json.dumps(_without_ageing(body), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def summary(patients_body):
@@ -92,11 +103,11 @@ def evaluate(before, after, *, window_s, table_version, table_sha, unassigned):
     if board_b is None:
         return [("asama", False, "aşama: yok — uç nokta yok (Aşama A öncesi sürüm)")]
     stage = board_b.get("stage")
-    if stage != "shadow":
+    if stage not in ON_STAGES:
         problem = board_b.get("problem")
         text = f"aşama: {stage}" + (f" (istenen {board_b.get('configured_stage')}, sorun: {problem})" if problem else "")
         return [("asama", False, text)]
-    rows = [("asama", True, "aşama: shadow")]
+    rows = [("asama", True, f"aşama: {stage}")]
 
     table = board_b.get("table") or {}
     sha = str(table.get("sha256") or "")
@@ -154,7 +165,7 @@ def nbp_line(board):
 
 def details(board):
     """What each device is doing — statuses, counts, ages; never a value or a patient."""
-    if not board or board.get("stage") != "shadow":
+    if not board or board.get("stage") not in ON_STAGES:
         return []
     devices = (board.get("feed") or {}).get("devices") or {}
     lines = ["cihazlar: " + ", ".join(f"{k} {devices.get(k, 0)}" for k in

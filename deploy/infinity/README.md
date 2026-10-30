@@ -462,7 +462,11 @@ It reads `TENANT_TOKEN` from the API's `.env` (never printing it), asks the API 
 and the board twice, `--window` seconds apart, and prints one KABUL/RED row per criterion, each
 device's status with its fresh-value count and oldest age, and `PANO_OZET` — the sha256 of
 `/patients` with the self-ageing keys removed, so two readings of an unchanged board hash
-alike. It never prints a physiological value, a patient id or a token.
+alike. It never prints a physiological value, a patient id or a token. It judges the stage
+`shadow` and the stage `rules` (Aşama B) alike; at `rules` the hash leaves out each card's
+`shadow` picture, which follows the monitors minute by minute and is not the engine's output.
+(Before 2026-10-30 the check knew only `shadow`: at `rules` it stopped at its stage row, and its
+hash moved with the shadow picture. Hashes from before and after that change are not comparable.)
 
 **Acceptance as measured on 2026-10-19** (Kabul K0–K9 of the plan; engineering thresholds,
 none clinical):

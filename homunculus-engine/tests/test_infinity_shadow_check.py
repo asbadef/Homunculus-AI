@@ -65,8 +65,34 @@ def test_a_good_pair_passes_every_criterion():
     assert rows == {name: True for name in ("asama", "tablo", "besleme", "atanmamis", "gecikme", "gonderim")}
 
 
+def test_the_stage_rules_is_the_same_strip_and_is_judged_alike():
+    # Aşama B: the board answers `rules` while the strip runs with the shadow engine beside it.
+    before, after = (board(sent=40, lag=(0,) * 10, stage="rules"), PATIENTS), (board(sent=100, stage="rules"), PATIENTS)
+    assert results(before=before, after=after) == {
+        name: True for name in ("asama", "tablo", "besleme", "atanmamis", "gecikme", "gonderim")}
+    lines = check.report(before, after, window_s=300, **EXPECT)
+    text = "\n".join(lines)
+    assert "KABUL  asama      aşama: rules" in text and "SONUÇ: KABUL" in text
+    assert any(line.startswith("nbp: ") for line in lines) and any(line.startswith("  yatak B-1:") for line in lines)
+
+
+def test_the_board_hash_leaves_out_each_cards_shadow_picture_and_nothing_else():
+    # The shadow picture follows the monitors minute by minute; the engine's own output must still count.
+    card = {"patient_id": "S-SECRET-1", "alerts": [{"kind": "news2", "elapsed_sec": 12}], "latest": {"heart_rate": 91}}
+    one = {"patients": [{**card, "shadow": {"vitals": {"hr": {"value": 88}}, "findings": []}}], "scope": {}}
+    two = {"patients": [{**card, "shadow": {"vitals": {"hr": {"value": 93}}, "findings": [{"kind": "x"}]}}], "scope": {}}
+    plain = {"patients": [card], "scope": {}}
+    assert check.projection(one) == check.projection(two) == check.projection(plain)
+    assert check.summary(one) == check.summary(plain)
+    assert check.projection(one) != check.projection({"patients": [{**card, "alerts": []}], "scope": {}})
+    assert check.projection(one) != check.projection({"patients": [{**card, "latest": {"heart_rate": 90}}], "scope": {}})
+    nested = {"patients": [{**card, "detail": {"shadow": 1}}]}             # only the card's own key is left out
+    assert check.projection(nested) != check.projection(plain)
+
+
 @pytest.mark.parametrize(("after", "over", "failed"), [
     (board(stage="off"), {}, "asama"),
+    (board(stage="alarms"), {}, "asama"),
     (board(version=2), {}, "tablo"),
     (board(sha="ff" * 32), {}, "tablo"),
     (board(table_status="missing"), {}, "tablo"),
