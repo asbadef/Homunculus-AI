@@ -21,11 +21,12 @@ SPEC_KEYS = {
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage", "clinical.chart", "scores.sign",
     "beds.release",       # G2-B1a (spec D8)
+    "devices.map_beds",   # G2 monitor→bed editor (spec D2)
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_two_keys():
-    assert len(SPEC_KEYS) == 22
+def test_the_catalogue_is_exactly_the_specified_twenty_three_keys():
+    assert len(SPEC_KEYS) == 23
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -122,7 +123,8 @@ SPEC_GROUPS = {
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
-                                    "break_glass.use", "clinical.chart", "beds.release"}),
+                                    "break_glass.use", "clinical.chart", "beds.release",
+                                    "devices.map_beds"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
                              "clinical.chart", "beds.release"}),
@@ -160,6 +162,16 @@ def test_clinical_and_scoring_keys_exist_and_are_granted_as_designed():
     for slug in ("charge_nurse", "nurse", "rapid_response", "auditor", "pharmacist",
                  "biomedical", "platform_support"):
         assert "scores.sign" not in by_slug[slug], slug
+
+
+def test_a_monitor_is_bound_to_a_bed_by_the_charge_nurse_and_the_administrator_by_default():
+    """Spec D2: the administrator (by rule: the system group holds every key) and the charge nurse,
+    so a moved monitor can be fixed at night. Not biomedical: `devices.manage` opens the research
+    window, a different right."""
+    by_slug = {g["slug"]: set(g["permissions"]) for g in DEFAULT_GROUPS}
+    holders = {slug for slug, perms in by_slug.items() if "devices.map_beds" in perms}
+    assert holders == {"charge_nurse", "hospital_admin"}
+    assert "devices.map_beds" not in by_slug["biomedical"] | by_slug["platform_support"]
 
 
 def test_a_cleaned_bed_is_released_by_the_wards_nurses_and_no_one_else_by_default():

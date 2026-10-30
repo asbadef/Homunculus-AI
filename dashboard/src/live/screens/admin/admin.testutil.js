@@ -108,6 +108,9 @@ export const PERMISSION_TEXTS = Object.freeze({
 
   // G2-B1a
   "beds.release": "Mark a cleaned bed free again (housekeeping → available), in one's own units",
+
+  // G2-ESLEME
+  "devices.map_beds": "Bind a bedside monitor to a bed, or unbind it, on the Monitörler screen — beds in one's own units only; a bed with an admitted patient asks a second confirmation",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 
