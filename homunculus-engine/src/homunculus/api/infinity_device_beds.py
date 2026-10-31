@@ -394,20 +394,25 @@ class DeviceBedSource(Protocol):
 
 
 def rows_digest(rows: Iterable[Row]) -> str:
-    """Lane A's digest of a table (spec D19): the SHA-256 of the rows as [source, bed_id, bed_label]
-    lists, sorted by source, in compact JSON (`,`/`:`, non-ASCII kept) encoded UTF-8. Pass the CURRENT
-    rows: two tables with the same devices on the same beds under the same strip labels hash alike,
-    whatever their history."""
-    lists = sorted(([row.source, row.bed_id, row.bed_label] for row in rows), key=lambda item: item[0])
+    """Lane A's digest of a table (spec D19, A-9): the SHA-256 of the CURRENT rows (`valid_to` None;
+    a closed row passed in changes nothing) as [source, bed_id, bed_label] lists, in compact JSON
+    (`,`/`:`, non-ASCII kept) encoded UTF-8. The bed_id is `normalise_id`'s form (null when none), as
+    the strip and `board_view` read it, so the file's and the database's ids hash alike; the order is
+    the whole triple's, so the caller's order never matters. Two tables with the same devices on the
+    same beds under the same strip labels hash alike, whatever their history."""
+    lists = [[row.source, normalise_id(row.bed_id) or None, row.bed_label]
+             for row in rows if row.valid_to is None]
+    lists.sort(key=lambda item: (item[0], item[1] or "", item[2] or ""))
     return hashlib.sha256(json.dumps(lists, separators=(",", ":"), ensure_ascii=False)
                           .encode("utf-8")).hexdigest()
 
 
 def check_current(rows: Iterable[Row]) -> None:
     """`TableError` unless the CURRENT rows (`valid_to` None) hold one row per source, one bound row
-    per bed (by `bed_id`, as `board_view` tells beds apart) and a label on every bound row. Not the
-    file's label rule (`_same_bed`): a label-only row named like a Yapı bed is no second monitor
-    there, and refusing it would take every monitor off its bed."""
+    per bed (by `bed_id`, as `board_view` tells beds apart), and on every bound row a label that is
+    not blank and a unit (the twin of the database's `ck_device_beds_bed_unit`). Not the file's
+    label rule (`_same_bed`): a label-only row named like a Yapı bed is no second monitor there, and
+    refusing it would take every monitor off its bed."""
     sources: set[str] = set()
     beds: dict[str, str] = {}
     for row in rows:
@@ -417,8 +422,10 @@ def check_current(rows: Iterable[Row]) -> None:
             raise TableError(f"aynı kaynak ({row.source}) için iki güncel satır var")
         sources.add(row.source)
         if row.bed_id:
-            if row.bed_label is None:
-                raise TableError(f"yatağa bağlı satırın etiketi yok ({row.source})")
+            if not (row.bed_label or "").strip():
+                raise TableError(f"yatağa bağlı satırın etiketi yok ya da boş ({row.source})")
+            if not row.unit_id:
+                raise TableError(f"yatağa bağlı satırın birimi yok ({row.source})")
             bed = normalise_id(row.bed_id)
             if bed in beds:
                 raise TableError(f"aynı yatak için iki güncel satır var ({beds[bed]}, {row.source}): "
