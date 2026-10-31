@@ -74,7 +74,7 @@ export default {
     groups: { manage: "Qrupları və səlahiyyət dəstlərini idarə edir" },
     structure: { manage: "Təşkilat, bina, şöbə, otaq və çarpayı konfiqurasiyası" },
     devices: { manage: "Cihaz ekranını və tədqiqat pəncərəsini açır: çarpayı yanındakı monitorların trafikindən deşifrə olunan, hər cihaz üzrə canlı dəyərlər — TƏSDİQLƏNMƏMİŞ. Mərhələ A onları klinik heyətə «təsdiqlənməmiş» işarəli zolaq kimi göstərir; heç vaxt müşahidə deyil və onlardan qayda, bal, siqnal, bildiriş və ya audit qeydi yaradılmır. Xəstə göstərmir. Standart olaraq biotibbi texniklər qrupunda və istehsalçının dəstək qrupunda var",
-      map_beds: "«Monitorlar» ekranında çarpayı yanındakı monitoru çarpayıya bağlayır və ya bağlantısını kəsir — yalnız öz şöbələrindəki çarpayılar; xəstəsi yatan çarpayı ikinci təsdiq istəyir" },
+      map_beds: "«Monitorlar» ekranında çarpayı yanındakı monitoru çarpayıya qoşur və ya bağlantısını kəsir — yalnız öz şöbələrindəki çarpayılar; xəstəsi yatan çarpayı ikinci təsdiq istəyir" },
     clinical: { chart: "Klinisistin müşahidə etdiyi məlumatları (infeksiya şübhəsi, vazopressor, maye, QKŞ…) və xəstənin öz bazal dəyərlərini qeyd edir" },
     scores: { sign: "Ağırlıq balı formasını (SOFA) düzəlişlərlə imzalayır" },
 
@@ -140,7 +140,7 @@ export default {
     groups: { manage: "Manage groups and their permission sets" },
     structure: { manage: "Configure the tenant, sites, units, rooms and beds" },
     devices: { manage: "Open the device screen and the research window: live per-device values decoded from bedside-monitor traffic — UNVALIDATED. Stage A shows them to clinicians as a strip labelled unvalidated; they are never an observation, and no rule, score, alert, notification or audit row is made from them. Shows no patient. By default the biomedical group and the vendor's support group hold it",
-      map_beds: "Bind a bedside monitor to a bed, or unbind it, on the Monitors screen — beds in their own units only; a bed with an admitted patient asks for a second confirmation" },
+      map_beds: "Assign a bedside monitor to a bed, or unassign it, on the Monitors screen — beds in their own units only; a bed with an admitted patient asks for a second confirmation" },
     clinical: { chart: "Chart clinician-observed inputs (suspected infection, pressor, fluids, GCS…) and the patient's own baseline" },
     scores: { sign: "Sign a severity-score form (SOFA) with corrections" },
 

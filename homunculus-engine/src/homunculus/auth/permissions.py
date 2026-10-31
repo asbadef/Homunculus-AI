@@ -56,9 +56,9 @@ PERMISSIONS: dict[str, str] = {
 
     # G2-ESLEME — the monitor→bed editor on the Monitörler screen (spec D2). Not
     # `devices.manage`, which opens the research window and every unassigned device.
-    "devices.map_beds": "Bind a bedside monitor to a bed, or unbind it, on the Monitörler screen — "
-                        "beds in one's own units only; a bed with an admitted patient asks for a "
-                        "second confirmation",
+    "devices.map_beds": "Assign a bedside monitor to a bed, or unassign it, on the Monitörler "
+                        "screen — beds in one's own units only; a bed with an admitted patient "
+                        "asks for a second confirmation",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
