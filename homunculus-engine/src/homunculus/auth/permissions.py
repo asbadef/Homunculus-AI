@@ -54,11 +54,11 @@ PERMISSIONS: dict[str, str] = {
     # G2-B1a — a ward turns its beds over at night without an administrator (spec D8).
     "beds.release": "Mark a cleaned bed free again (housekeeping → available), in one's own units",
 
-    # G2 — the monitor→bed editor on the Monitörler screen (spec D2). Not `devices.manage`, which
-    # opens the research window and every unassigned device.
+    # G2-ESLEME — the monitor→bed editor on the Monitörler screen (spec D2). Not
+    # `devices.manage`, which opens the research window and every unassigned device.
     "devices.map_beds": "Bind a bedside monitor to a bed, or unbind it, on the Monitörler screen — "
-                        "beds in one's own units only; a bed with an admitted patient asks a second "
-                        "confirmation",
+                        "beds in one's own units only; a bed with an admitted patient asks for a "
+                        "second confirmation",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)

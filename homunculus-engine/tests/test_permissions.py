@@ -21,7 +21,7 @@ SPEC_KEYS = {
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage", "clinical.chart", "scores.sign",
     "beds.release",       # G2-B1a (spec D8)
-    "devices.map_beds",   # G2 monitor→bed editor (spec D2)
+    "devices.map_beds",   # G2-ESLEME monitor→bed editor (spec D2)
 }
 
 
