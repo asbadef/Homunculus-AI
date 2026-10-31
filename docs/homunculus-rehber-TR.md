@@ -1399,7 +1399,7 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       kayıt ve videoyla doğrulandı ki kod iki adı **ters** veriyordu. R6'ya kadar şeritteki «HR»
       aslında SpO₂ nabzı, «PLS» EKG nabzıydı; gölge motor da nabzı önce SpO₂ probundan aldı. Çoğu
       hastada ikisi aynıdır. R6 iki adı yer değiştirir; ondan önceki gölge örnekleri ve bulgular eski
-      adlarla kayıtlı kalır.
+      adlarla kayıtlı kalır. VM'de 30.10.2026'dan beri R6 çalışıyor.
     - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
       kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
       basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.

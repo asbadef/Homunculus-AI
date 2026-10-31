@@ -435,6 +435,10 @@ before R6 keep the old names; nothing rewrites them.
 - `96-hr-pls.conf` — `95-nbp2.conf` with the release path changed to R6, checked by `diff` before it
   is installed. 93 and 94 stay. **Hub only.** Rollback: delete `96-hr-pls.conf`, `daemon-reload`,
   restart the hub (R5, the old names). No migration.
+- **On the VM since 2026-10-30 19:41 UTC.** The read-only check (shadow_check at `ec66a57`) passed all six
+  criteria with PANO_OZET unchanged; after the switch the shadow engine fed `HEART_RATE` via `hr` (ECG) on
+  the two linked beds that had it and via `pls` on the one that had only the SpO₂ pulse. The forwarder's
+  first post after the restart was refused as too soon (one `failed`), the next ones passed.
 
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 
