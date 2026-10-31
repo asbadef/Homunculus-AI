@@ -8,8 +8,9 @@ at the API's wall clock (history stays in the table), `max(id)` and the tenant's
 and the rows come from one snapshot.
 
 Bounded, because the loop waits: the connect gives up after CONNECT_TIMEOUT_S, a statement after
-STATEMENT_TIMEOUT_MS and a pool checkout after the same CONNECT_TIMEOUT_S, so a database that accepts
-and stays silent costs a few seconds, not the loop (A-10).
+STATEMENT_TIMEOUT_MS, a pool checkout after the same CONNECT_TIMEOUT_S and data the network leaves
+unacknowledged after TCP_USER_TIMEOUT_MS, so a database that accepts and stays silent, or a link that
+goes dead mid-query, costs a few seconds, not the loop (A-10).
 
 Strictly fail closed, on purpose: no rows is `missing`; an unreadable or stalled database, a broken
 current set, or ANY exception while the rows are read or built is `invalid`. Both place no monitor on
@@ -17,7 +18,8 @@ any bed, as a missing or broken file does. There is no grace period on a read er
 good mapping for a while would, right after a bind or an unbind (`invalidate()`), serve the OLD one, and
 a monitor just moved to another bed could show on the previous bed's patient. A database outage only
 blinks the strip, with every device unassigned. A change of state is logged once; a failure logs the
-exception's class, never its message."""
+exception's class and, when the driver gave one, its 5-character SQLSTATE (`OperationalError 57014`),
+never its message."""
 from __future__ import annotations
 
 import logging
@@ -37,6 +39,7 @@ log = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_S = 3
 STATEMENT_TIMEOUT_MS = 2000
+TCP_USER_TIMEOUT_MS = 4000          # a libpq 12+ keyword; psycopg2-binary>=2.9 bundles libpq 13 or later
 # The tenant (by slug) LEFT JOINed to its rows valid at :now, with its max(id) (history included): one
 # statement, one snapshot. A tenant with no rows, or none valid, comes back as one row whose `source` is
 # NULL; an unknown slug comes back as none.
@@ -51,10 +54,19 @@ MISSING = "eşleme tablosunda bu hastane için satır yok"
 UNREADABLE = "eşleme tablosu okunamadı"
 
 
+def _failure(exc: BaseException) -> str:
+    """What the log may say of a failure: the exception's class, then the driver's SQLSTATE when it
+    gave one (`OperationalError 57014`, query_canceled). Never a message, which can hold SQL or a URL;
+    a `pgcode` that is not exactly 5 characters of text is not kept."""
+    code = getattr(getattr(exc, "orig", None), "pgcode", None)
+    name = type(exc).__name__
+    return f"{name} {code}" if isinstance(code, str) and len(code) == 5 else name
+
+
 class PostgresDeviceBeds:
     def __init__(self, url: str, *, hospital: str, clock: Callable[[], float] = time.monotonic,
                  wall: Callable[[], float] = time.time, ssl_required: bool = False) -> None:
-        connect_args = {"connect_timeout": CONNECT_TIMEOUT_S,
+        connect_args = {"connect_timeout": CONNECT_TIMEOUT_S, "tcp_user_timeout": TCP_USER_TIMEOUT_MS,
                         "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
                         **({"sslmode": "require"} if ssl_required else {})}
         self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, pool_timeout=CONNECT_TIMEOUT_S,
@@ -90,14 +102,14 @@ class PostgresDeviceBeds:
         self._engine.dispose()
 
     def _read(self) -> tuple[TableState, str | None]:
-        """The state, and the class name of the exception behind an `invalid` one (None for a broken
+        """The state, and `_failure`'s label of the exception behind an `invalid` one (None for a broken
         current set, which names its own rule). Never raises: the last `ok` is not kept."""
         try:
             return self._load(), None
         except TableError as error:
             return TableState(None, "invalid", error.reason, None, None), None
         except Exception as exc:                  # the database, or building the table from its rows
-            return TableState(None, "invalid", UNREADABLE, None, None), type(exc).__name__
+            return TableState(None, "invalid", UNREADABLE, None, None), _failure(exc)
 
     def _load(self) -> TableState:
         wall = datetime.fromtimestamp(self._wall(), timezone.utc)

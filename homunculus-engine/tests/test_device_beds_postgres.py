@@ -172,6 +172,37 @@ async def test_only_rows_valid_now_are_loaded_and_the_version_counts_history(db_
     assert state.version == new.id > old.id
 
 
+async def test_a_row_closed_ahead_of_the_api_clock_loads_beside_its_successor_and_resolves_by_time(db_session):
+    """E4: a change closes the old row and opens the new one at the database's time t. While the API's wall
+    clock is still behind t, both rows are loaded (`valid_to > :now`), `check_current` looks at the open row
+    only, and `table.at()` resolves each moment to its own row; once the clock passes t the closed row is no
+    longer loaded and the digest, which is of the current rows alone, has not changed."""
+    tenant, unit, bed = await _ward(db_session)
+    t = datetime.now(timezone.utc) - timedelta(seconds=30)
+    old = _device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05", valid_to=t)
+    db_session.add(old)
+    await db_session.flush()
+    new = _device(tenant, "10.10.203.23", label="BED05")                # the unbind: no bed, opened at t
+    new.valid_from = t
+    db_session.add(new)
+    await db_session.commit()
+
+    behind = PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG, clock=lambda: 0.0,
+                                wall=lambda: (t - timedelta(seconds=5)).timestamp())
+    state = behind.current()
+    assert state.status == "ok", state.reason                          # check_current stayed quiet
+    assert [r.valid_to is None for r in state.table.rows] == [False, True]
+    assert state.table.at("10.10.203.23", t - timedelta(seconds=5)).bed_id == str(bed.id)
+    assert state.table.at("10.10.203.23", t + timedelta(seconds=5)).bed_id is None
+    assert state.version == new.id
+
+    ahead = PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG, clock=lambda: 0.0,
+                               wall=lambda: (t + timedelta(seconds=5)).timestamp())
+    later = ahead.current()
+    assert later.status == "ok" and [r.valid_to is None for r in later.table.rows] == [True]
+    assert later.sha256 == state.sha256 and later.version == state.version
+
+
 async def test_a_tenant_whose_every_row_is_closed_is_missing(db_session):
     tenant, unit, bed = await _ward(db_session)
     db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05",
@@ -265,7 +296,23 @@ def test_an_outage_is_logged_once_with_the_error_class_only(caplog):
     assert first.status == second.status == "invalid"
     said = [r for r in caplog.records if r.name == LOGGER]
     assert len(said) == 1 and said[0].levelno == logging.WARNING
-    assert "OperationalError" in said[0].getMessage() and "127.0.0.1" not in said[0].getMessage()
+    assert "[OperationalError]" in said[0].getMessage()                # a refused connection has no SQLSTATE
+    assert "127.0.0.1" not in said[0].getMessage()
+
+
+def test_the_failure_label_is_the_class_and_a_five_character_sqlstate_never_a_message():
+    from homunculus.api.device_beds_postgres import _failure          # the module's private label
+
+    class Failed(Exception):
+        def __init__(self, pgcode):
+            super().__init__("secret-detail")
+            self.orig = type("Driver", (), {"pgcode": pgcode, "args": ("secret-detail",)})()
+
+    assert _failure(Failed("57014")) == "Failed 57014"
+    assert _failure(Failed(None)) == "Failed"
+    assert _failure(Failed("57014 secret-detail")) == "Failed"          # not a SQLSTATE: nothing of it is kept
+    assert _failure(Failed(57014)) == "Failed"
+    assert _failure(RuntimeError("secret-detail")) == "RuntimeError"    # no `.orig` at all
 
 
 def test_a_database_that_accepts_and_never_answers_is_invalid_within_seconds():
@@ -280,9 +327,10 @@ def test_a_database_that_accepts_and_never_answers_is_invalid_within_seconds():
     assert elapsed < 5.0, f"current() took {elapsed:.1f} s"
 
 
-async def test_a_query_stalled_on_a_lock_is_cut_off_and_invalid(db_session):
+async def test_a_query_stalled_on_a_lock_is_cut_off_and_invalid(db_session, caplog):
     """A-10: past the connect, a statement is bounded too (statement_timeout 2 s): a table another session
-    holds locked costs two seconds and a fail-closed answer."""
+    holds locked costs two seconds and a fail-closed answer. The log line carries the SQLSTATE, 57014
+    (query_canceled), with the exception's class and nothing of its message (which holds the SQL)."""
     tenant, unit, bed = await _ward(db_session)
     db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05"))
     await db_session.commit()
@@ -290,7 +338,8 @@ async def test_a_query_stalled_on_a_lock_is_cut_off_and_invalid(db_session):
     holder = locker.connect()
     try:
         holder.exec_driver_sql("LOCK TABLE device_beds IN ACCESS EXCLUSIVE MODE")
-        state, elapsed = _timed_current(_source())
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            state, elapsed = _timed_current(_source())
     finally:
         holder.rollback()
         holder.close()
@@ -298,6 +347,9 @@ async def test_a_query_stalled_on_a_lock_is_cut_off_and_invalid(db_session):
     assert state is not None, "current() had not returned after 8 s"
     assert (state.status, state.table, state.version, state.sha256) == ("invalid", None, None, None)
     assert elapsed < 5.0, f"current() took {elapsed:.1f} s"
+    said = [r.getMessage() for r in caplog.records if r.name == LOGGER]
+    assert len(said) == 1 and "[OperationalError 57014]" in said[0]
+    assert "device_beds" not in said[0] and "SELECT" not in said[0]
 
 
 @pytest.mark.parametrize("broken", ["to_row", "check_current", "rows_digest"])
