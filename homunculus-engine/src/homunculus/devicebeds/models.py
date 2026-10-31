@@ -39,6 +39,7 @@ class DeviceBed(Base):
     bed_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("beds.id"))
     unit_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id"))
     method: Mapped[str | None] = mapped_column(String(32))
+    # v2's imported strings are kept as they are; an editor row writes full ISO-8601 UTC (O9, D21)
     verified_at: Mapped[str | None] = mapped_column(String(40))
     verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     note: Mapped[str | None] = mapped_column(String(500))

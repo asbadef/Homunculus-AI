@@ -2,15 +2,20 @@
 """The monitor→bed editor (spec 2026-10-28 §5.1): `device_beds`, the per-tenant device→bed table
 
 Revision 0014, follows 0013. PURELY ADDITIVE (spec D20, O11): one new table with its checks and
-indexes, one function and two triggers; no existing table, column, index or row changes, and no
+indexes, one function and three triggers; no existing table, column, index or row changes, and no
 data is written — the v2 rows come from scripts/import_device_beds.py, which also grants
 `devices.map_beds` to the charge nurses (not here). An image from before this revision can serve
 against it; only its start command's `alembic upgrade head` refuses an unknown revision (§7.3).
 
 * One current row per device (`uq_device_beds_current_source`) and per bed
   (`uq_device_beds_current_bed`): partial unique indexes over `valid_to IS NULL`.
-* History kept: `device_beds_history_kept()` refuses a DELETE, and an UPDATE unless it only closes
-  an open row (sets `valid_to`, every other column unchanged) — the pattern of 0004's audit.
+* History kept (Lane A's A-8): `device_beds_history_kept()` refuses a DELETE, a TRUNCATE, and an
+  UPDATE unless it only closes an open row, in the past: `valid_to` goes from NULL to a time not
+  after the clock, and the rest of the row — compared as `to_jsonb`, so a column a later migration
+  adds is covered without touching this function — is unchanged. `clock_timestamp()`, not `now()`:
+  the app reads its time after the transaction began. OLD/NEW are read only inside the UPDATE
+  branch (PL/pgSQL's AND does not short-circuit, and a statement trigger has no row). The pattern
+  of 0004's audit.
 
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013). Downgrade drops exactly this.
 
@@ -37,23 +42,23 @@ CURRENT_BED = "uq_device_beds_current_bed"
 HISTORY = "ix_device_beds_tenant_source"
 _CREATE_FUNCTION = """CREATE OR REPLACE FUNCTION device_beds_history_kept() RETURNS trigger AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND OLD.valid_to IS NULL AND NEW.valid_to IS NOT NULL
-     AND ROW(NEW.id, NEW.tenant_id, NEW.source, NEW.group_address, NEW.port, NEW.device_bed_label,
-             NEW.bed_label, NEW.bed_id, NEW.unit_id, NEW.method, NEW.verified_at, NEW.verified_by,
-             NEW.note, NEW.valid_from, NEW.approved_by, NEW.approved_at)
-         IS NOT DISTINCT FROM
-         ROW(OLD.id, OLD.tenant_id, OLD.source, OLD.group_address, OLD.port, OLD.device_bed_label,
-             OLD.bed_label, OLD.bed_id, OLD.unit_id, OLD.method, OLD.verified_at, OLD.verified_by,
-             OLD.note, OLD.valid_from, OLD.approved_by, OLD.approved_at) THEN
-    RETURN NEW;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.valid_to IS NULL AND NEW.valid_to IS NOT NULL
+       AND NEW.valid_to <= clock_timestamp()
+       AND (to_jsonb(NEW) - 'valid_to') = (to_jsonb(OLD) - 'valid_to') THEN
+      RETURN NEW;
+    END IF;
   END IF;
-  RAISE EXCEPTION 'device_beds keeps its history: a row is never deleted, only closed once';
+  RAISE EXCEPTION 'device_beds keeps its history: a row is never deleted or edited, only closed once, and not in the future';
 END;
 $$ LANGUAGE plpgsql"""
 _CREATE_NO_DELETE = ("CREATE TRIGGER device_beds_no_delete BEFORE DELETE ON device_beds"
                      " FOR EACH ROW EXECUTE FUNCTION device_beds_history_kept()")
 _CREATE_CLOSE_ONLY = ("CREATE TRIGGER device_beds_close_only BEFORE UPDATE ON device_beds"
                       " FOR EACH ROW EXECUTE FUNCTION device_beds_history_kept()")
+_CREATE_NO_TRUNCATE = ("CREATE TRIGGER device_beds_no_truncate BEFORE TRUNCATE ON device_beds"
+                       " FOR EACH STATEMENT EXECUTE FUNCTION device_beds_history_kept()")
+_DROP_NO_TRUNCATE = "DROP TRIGGER IF EXISTS device_beds_no_truncate ON device_beds"
 _DROP_CLOSE_ONLY = "DROP TRIGGER IF EXISTS device_beds_close_only ON device_beds"
 _DROP_NO_DELETE = "DROP TRIGGER IF EXISTS device_beds_no_delete ON device_beds"
 _DROP_FUNCTION = "DROP FUNCTION IF EXISTS device_beds_history_kept()"
@@ -72,6 +77,7 @@ def upgrade() -> None:
         sa.Column("bed_id", UUID(as_uuid=True), sa.ForeignKey("beds.id"), nullable=True),
         sa.Column("unit_id", UUID(as_uuid=True), sa.ForeignKey("units.id"), nullable=True),
         sa.Column("method", sa.String(32), nullable=True),
+        # v2's imported strings are kept as they are; an editor row writes full ISO-8601 UTC (O9, D21)
         sa.Column("verified_at", sa.String(40), nullable=True),
         sa.Column("verified_by", UUID(as_uuid=True), nullable=True),
         sa.Column("note", sa.String(500), nullable=True),
@@ -91,10 +97,12 @@ def upgrade() -> None:
     op.execute(_CREATE_FUNCTION)
     op.execute(_CREATE_NO_DELETE)
     op.execute(_CREATE_CLOSE_ONLY)
+    op.execute(_CREATE_NO_TRUNCATE)
 
 
 def downgrade() -> None:
-    # The triggers and their function first, then the indexes, then the table (spec §7.3 R-2).
+    # The three triggers and their function first, then the indexes, then the table (spec §7.3 R-2).
+    op.execute(_DROP_NO_TRUNCATE)
     op.execute(_DROP_CLOSE_ONLY)
     op.execute(_DROP_NO_DELETE)
     op.execute(_DROP_FUNCTION)
