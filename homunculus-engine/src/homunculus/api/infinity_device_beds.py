@@ -21,11 +21,11 @@ import logging
 import os
 import re
 import stat as stat_module
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 from homunculus.scope.rules import normalise_id
 
@@ -330,6 +330,11 @@ class TableFile:
         self._state = state
         return state
 
+    def invalidate(self) -> None:
+        """The next `current()` looks at the file again, whatever RELOAD_EVERY_S says; the same bytes
+        still give the same state, unannounced (`DeviceBedSource`, spec §5.3)."""
+        self._checked_at = float("-inf")
+
     def _fetch(self) -> tuple[TableState | None, bytes | None]:
         """The file's bytes, or the state that says why there are none."""
         try:
@@ -375,3 +380,47 @@ class TableFile:
         else:
             log.warning("cihaz→yatak tablosu okunamadı (%s): %s; bütün cihazlar atanmamış",
                         state.status, state.reason)
+
+
+# ------------------------------------------------- the one interface (monitor→bed editor, spec §5.3)
+@runtime_checkable
+class DeviceBedSource(Protocol):
+    """What the strip and Aşama B read: `TableFile` in the lab, `PostgresDeviceBeds`
+    (api/device_beds_postgres.py) in production. `now` is monotonic seconds, as `TableFile`'s."""
+
+    def current(self, now: float | None = None) -> TableState: ...
+
+    def invalidate(self) -> None: ...
+
+
+def rows_digest(rows: Iterable[Row]) -> str:
+    """Lane A's digest of a table (spec D19): the SHA-256 of the rows as [source, bed_id, bed_label]
+    lists, sorted by source, in compact JSON (`,`/`:`, non-ASCII kept) encoded UTF-8. Pass the CURRENT
+    rows: two tables with the same devices on the same beds under the same strip labels hash alike,
+    whatever their history."""
+    lists = sorted(([row.source, row.bed_id, row.bed_label] for row in rows), key=lambda item: item[0])
+    return hashlib.sha256(json.dumps(lists, separators=(",", ":"), ensure_ascii=False)
+                          .encode("utf-8")).hexdigest()
+
+
+def check_current(rows: Iterable[Row]) -> None:
+    """`TableError` unless the CURRENT rows (`valid_to` None) hold one row per source, one bound row
+    per bed (by `bed_id`, as `board_view` tells beds apart) and a label on every bound row. Not the
+    file's label rule (`_same_bed`): a label-only row named like a Yapı bed is no second monitor
+    there, and refusing it would take every monitor off its bed."""
+    sources: set[str] = set()
+    beds: dict[str, str] = {}
+    for row in rows:
+        if row.valid_to is not None:
+            continue
+        if row.source in sources:
+            raise TableError(f"aynı kaynak ({row.source}) için iki güncel satır var")
+        sources.add(row.source)
+        if row.bed_id:
+            if row.bed_label is None:
+                raise TableError(f"yatağa bağlı satırın etiketi yok ({row.source})")
+            bed = normalise_id(row.bed_id)
+            if bed in beds:
+                raise TableError(f"aynı yatak için iki güncel satır var ({beds[bed]}, {row.source}): "
+                                 "bir yatakta iki monitör")
+            beds[bed] = row.source
