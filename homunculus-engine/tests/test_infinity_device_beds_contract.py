@@ -1,8 +1,9 @@
 # homunculus-engine/tests/test_infinity_device_beds_contract.py
 """The one interface the strip and Aşama B read (spec D6, D19, §5.3): `DeviceBedSource`
 (`current()`, `invalidate()`), `rows_digest` (Lane A's rule: the current rows as [source, bed_id,
-bed_label], sorted by source, compact JSON, UTF-8) and `check_current` (one current row per source,
-one current bound row per bed, a bound row names its bed; NOT the file's label rule). No database."""
+bed_label], sorted by the whole triple, compact JSON, UTF-8) and `check_current` (one current row
+per source, one current bound row per bed, a bound row names its bed, has a non-blank label and a
+unit; NOT the file's label rule). No database."""
 from __future__ import annotations
 
 import logging
@@ -72,7 +73,12 @@ def test_the_digest_does_not_depend_on_the_callers_order_or_on_the_ids_spelling(
     `normalise_id`), as the strip and `board_view` read it: the file's and the database's ids agree."""
     same_source = [_row("10.10.203.23", "BED05", BED), _row("10.10.203.23", "BED06", BED2)]
     assert rows_digest(same_source) == rows_digest(reversed(same_source))
-    plain = [_row("10.10.203.25", "BED01"), _row("10.10.203.23", "BED05", BED)]
+    no_bed_or_a_bed = [_row("10.10.203.23", "BED05"), _row("10.10.203.23", "BED05", BED)]    # None sorts as ""
+    assert rows_digest(no_bed_or_a_bed) == rows_digest(reversed(no_bed_or_a_bed))
+    no_label_or_a_label = [replace(_row("10.10.203.23", "BED05", BED), bed_label=None),
+                           _row("10.10.203.23", "BED05", BED)]
+    assert rows_digest(no_label_or_a_label) == rows_digest(reversed(no_label_or_a_label))
+    plain =[_row("10.10.203.25", "BED01"), _row("10.10.203.23", "BED05", BED)]
     upper = [plain[0], replace(plain[1], bed_id=BED.upper())]
     padded = [plain[0], replace(plain[1], bed_id=f"  {BED} ")]
     assert rows_digest(upper) == rows_digest(plain) == rows_digest(padded)
@@ -116,10 +122,17 @@ def test_a_second_current_after_invalidate_on_unchanged_bytes_logs_nothing(caplo
     ([replace(_row("10.10.203.23", "BED05", BED), unit_id=None)], "birim"),
     ([replace(_row("10.10.203.23", "BED05", BED), unit_id="")], "birim"),
 ])
-def test_check_current_refuses_two_rows_for_a_device_two_monitors_on_a_bed_a_blank_label_and_a_bed_without_its_unit(
-        rows, reason):
+def test_check_current_refuses_the_broken_current_rows(rows, reason):
     with pytest.raises(TableError, match=reason):
         check_current(rows)
+
+
+def test_check_current_reads_bound_as_the_digest_does_a_blank_bed_id_is_unbound():
+    """`rows_digest` hashes `normalise_id(bed_id) or None`, so a whitespace-only bed_id is no bed: no
+    label, no unit needed, and two such rows are not two monitors on one bed."""
+    check_current([replace(_row("10.10.203.23"), bed_id="   "),
+                   replace(_row("10.10.203.24"), bed_id=" "),
+                   replace(_row("10.10.203.25"), bed_id="")])
 
 
 def test_check_current_allows_history_and_a_label_only_row_named_like_a_yapi_bed():

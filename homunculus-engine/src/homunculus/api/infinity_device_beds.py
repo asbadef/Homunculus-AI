@@ -421,7 +421,7 @@ def check_current(rows: Iterable[Row]) -> None:
         if row.source in sources:
             raise TableError(f"aynı kaynak ({row.source}) için iki güncel satır var")
         sources.add(row.source)
-        if row.bed_id:
+        if normalise_id(row.bed_id):                  # "bound" as `rows_digest` reads it
             if not (row.bed_label or "").strip():
                 raise TableError(f"yatağa bağlı satırın etiketi yok ya da boş ({row.source})")
             if not row.unit_id:
