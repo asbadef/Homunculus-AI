@@ -286,11 +286,11 @@ export default {
     closed: "Bağlıdır", added: "əlavə edildi", renamed: "adı dəyişdi", closedDone: "bağlandı", reopened: "yenidən açıldı",
     roomNumber: "Otaq nömrəsi", roomNumberIs: "Otaq nömrəsi: {number}", newRoomNumber: "{unit} daxilində yeni otağın nömrəsi (məcburi deyil)",
     isolation: "İzolyasiya otağı", newRoomIsolation: "{unit} daxilində yeni otaq izolyasiya otağıdır",
-    roomNameLabel: "Otağın adı", roomNumberLabel: "Otağın nömrəsi (məcburi deyil, məs. 05)",
-    roomHint: "Çarpayı otaq əlavə edildikdən sonra otağın altında «Çarpayı əlavə et» ilə əlavə olunur.",
+    roomNameLabel: "Otaq adı", roomNumberLabel: "Otaq nömrəsi (məcburi deyil, məs. 05)",
+    roomHint: "Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.",
     err: {
       bedNotAvailable: "Bu çarpayı artıq boş deyil; başqa çarpayı seçin.",
-      bedHasMonitor: "Bu çarpayıya monitor bağlıdır — əvvəlcə «Monitorlar» ekranında bağlantını açın.",
+      bedHasMonitor: "Bu çarpayıya monitor qoşulub — əvvəlcə «Monitorlar» ekranında bağlantını kəsin.",
       bedClosed: "Bu çarpayı, onun otağı və ya şöbəsi bağlıdır.",
       outOfScope: "Bu çarpayı sizin şöbələrinizdən birində deyil.",
       criticalAlarmOpen: "Təsdiqlənməmiş kritik siqnal var; evə yazılma başladıla bilməz. Əvvəlcə siqnala baxın.",
@@ -443,7 +443,7 @@ export default {
     roomNumber: "Номер палаты", roomNumberIs: "Номер палаты: {number}", newRoomNumber: "Номер новой палаты в «{unit}» (необязательно)",
     isolation: "Изолятор", newRoomIsolation: "Новая палата в «{unit}» — изолятор",
     roomNameLabel: "Название палаты", roomNumberLabel: "Номер палаты (необязательно, напр. 05)",
-    roomHint: "Койку добавляют под палатой, когда палата уже есть, — «Добавить койку».",
+    roomHint: "Койки добавляются в палату после её создания — кнопкой «Добавить койку».",
     err: {
       bedNotAvailable: "Эта койка уже не свободна; выберите другую.",
       bedHasMonitor: "К этой койке привязан монитор — сначала отвяжите его на экране «Мониторы».",
@@ -601,7 +601,7 @@ export default {
     roomHint: "Beds are added under the room once it exists, with «Add bed».",
     err: {
       bedNotAvailable: "This bed is no longer free; choose another.",
-      bedHasMonitor: "A monitor is bound to this bed — unbind it first on the Monitors screen.",
+      bedHasMonitor: "A monitor is assigned to this bed — unassign it first on the Monitors screen.",
       bedClosed: "This bed, its room or its unit is closed.",
       outOfScope: "This bed is not in one of your units.",
       criticalAlarmOpen: "A critical alarm nobody acknowledged is open; the discharge cannot start. See the alarm first.",

@@ -167,6 +167,7 @@ const AZ_SAME_AS_TR = new Set([
   // G2-ESLEME (esleme) · az = tr
   "esleme.confirm.bind", //  "{monitor} → {bed}" — no word in it
   "esleme.pick.occupied", // dolu — the same word in Azerbaijani, as kabul.state.OCCUPIED
+  "esleme.col.visibility", // Görünürlük — "visibility" is spelled the same in Azerbaijani (A-7)
 
   // G2-A3 (patient · meds) · az = tr
   "patient.medsBolusUnit", //          mL — a unit symbol, not a word
