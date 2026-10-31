@@ -1,13 +1,22 @@
 # homunculus-engine/tests/test_device_beds_postgres.py
 """`PostgresDeviceBeds` on the test database (spec §5.3): the tenant's rows as `Row`s, `version` =
 max(id), `sha256` = rows_digest of the current rows, `site` = the tenant's name; only rows valid now;
-the 10-s cache and `invalidate()`; `missing` and `invalid` fail closed. Synthetic rows only."""
+the 10-s cache and `invalidate()`; `missing` and `invalid` fail closed, a stalled database included
+(A-10). Synthetic rows only."""
 from __future__ import annotations
 
+import contextlib
 import logging
+import socket
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
+from sqlalchemy import create_engine
+
+from homunculus.api.audit_postgres import to_sync_url
 from homunculus.api.device_beds_postgres import PostgresDeviceBeds
 from homunculus.api.infinity_device_beds import DeviceBedSource, Row, rows_digest
 from homunculus.devicebeds.models import DeviceBed
@@ -17,6 +26,7 @@ from tests.conftest import TEST_DATABASE_URL, requires_db
 
 pytestmark = [requires_db]
 SLUG = "esleme-hastane"
+LOGGER = "homunculus.api.device_beds_postgres"
 FROM = datetime(2026, 10, 19, tzinfo=timezone.utc)
 APPROVED = datetime(2026, 10, 27, tzinfo=timezone.utc)
 
@@ -51,6 +61,45 @@ def _device(tenant, source, *, bed=None, unit=None, label=None, valid_to=None, a
 
 def _source(clock=None):
     return PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG, clock=clock or (lambda: 0.0))
+
+
+def _timed_current(source, patience=8.0):
+    """`source.current()` on a daemon thread, so that a read that never returns fails the test instead
+    of hanging the suite: (its state, or None if it had not returned after `patience`; seconds taken)."""
+    box = []
+    started = time.monotonic()
+    worker = threading.Thread(target=lambda: box.append(source.current()), daemon=True)
+    worker.start()
+    worker.join(patience)
+    return (box[0] if box else None), time.monotonic() - started
+
+
+@contextlib.contextmanager
+def _silent_server():
+    """A TCP server that accepts and never answers: the port of a database that stalls."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+    server.settimeout(0.2)
+    held, stop = [], threading.Event()
+
+    def accept_forever():
+        while not stop.is_set():
+            try:
+                held.append(server.accept()[0])
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+
+    threading.Thread(target=accept_forever, daemon=True).start()
+    try:
+        yield server.getsockname()[1]
+    finally:
+        stop.set()
+        server.close()
+        for connection in held:
+            connection.close()
 
 
 async def test_a_tenant_without_rows_is_missing_and_places_nothing(db_session):
@@ -147,8 +196,25 @@ async def test_the_read_is_cached_ten_seconds_and_invalidate_reads_again(db_sess
     second = source.current()
     assert len(second.table.rows) == 2 and second.version > first.version
     assert second.sha256 != first.sha256
+    db_session.add(_device(tenant, "10.10.203.27"))                    # a change the cache has not seen
+    await db_session.commit()
+    now[0] = 110.0
+    assert source.current() is second                                  # still inside the window
     now[0] = 116.0
-    assert len(source.current().table.rows) == 2                       # past the window: re-read
+    third = source.current()                                           # past the window: a real re-read
+    assert third is not second and len(third.table.rows) == 3 and third.version > second.version
+
+
+async def test_dispose_closes_the_pool_and_the_source_still_reads(db_session):
+    tenant, unit, bed = await _ward(db_session)
+    db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05"))
+    await db_session.commit()
+    source = _source()
+    assert source.current().status == "ok"
+    source.dispose()
+    source.invalidate()
+    assert source.current().status == "ok"
+    source.dispose()
 
 
 async def test_a_broken_current_set_is_invalid_and_names_the_rule(db_session):
@@ -168,17 +234,17 @@ async def test_a_change_of_state_is_logged_once(db_session, caplog):
     db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05"))
     await db_session.commit()
     source = _source()
-    with caplog.at_level(logging.INFO, logger="homunculus.api.device_beds_postgres"):
+    with caplog.at_level(logging.INFO, logger=LOGGER):
         source.current()
         source.invalidate()
         assert source.current().status == "ok"                          # re-read, nothing changed
-        said = [r for r in caplog.records if r.name == "homunculus.api.device_beds_postgres"]
+        said = [r for r in caplog.records if r.name == LOGGER]
         assert len(said) == 1 and said[0].levelno == logging.INFO
         db_session.add(_device(tenant, "10.10.203.26"))
         await db_session.commit()
         source.invalidate()
         source.current()
-        said = [r for r in caplog.records if r.name == "homunculus.api.device_beds_postgres"]
+        said = [r for r in caplog.records if r.name == LOGGER]
         assert len(said) == 2                                            # the version moved: said again
 
 
@@ -186,3 +252,74 @@ def test_an_unreadable_database_is_invalid_and_places_nothing():
     state = PostgresDeviceBeds("postgresql://x:y@127.0.0.1:1/none", hospital=SLUG, clock=lambda: 0.0).current()
     assert (state.status, state.table) == ("invalid", None)
     assert "okunamadı" in state.reason
+
+
+def test_an_outage_is_logged_once_with_the_error_class_only(caplog):
+    """The same failure on every re-read is one line, not one per 10 s; the line names the exception's
+    class, nothing from its message (a URL, a parameter)."""
+    source = PostgresDeviceBeds("postgresql://x:y@127.0.0.1:1/none", hospital=SLUG, clock=lambda: 0.0)
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        first = source.current()
+        source.invalidate()
+        second = source.current()
+    assert first.status == second.status == "invalid"
+    said = [r for r in caplog.records if r.name == LOGGER]
+    assert len(said) == 1 and said[0].levelno == logging.WARNING
+    assert "OperationalError" in said[0].getMessage() and "127.0.0.1" not in said[0].getMessage()
+
+
+def test_a_database_that_accepts_and_never_answers_is_invalid_within_seconds():
+    """A-10: `current()` runs on the event loop; a server that takes the connection and stays silent must
+    cost a few seconds, not the loop. The connect is bounded at 3 s."""
+    with _silent_server() as port:
+        source = PostgresDeviceBeds(f"postgresql://x:y@127.0.0.1:{port}/none", hospital=SLUG, clock=lambda: 0.0)
+        state, elapsed = _timed_current(source)
+    assert state is not None, "current() had not returned after 8 s"
+    assert (state.status, state.table, state.version, state.sha256) == ("invalid", None, None, None)
+    assert "okunamadı" in state.reason
+    assert elapsed < 5.0, f"current() took {elapsed:.1f} s"
+
+
+async def test_a_query_stalled_on_a_lock_is_cut_off_and_invalid(db_session):
+    """A-10: past the connect, a statement is bounded too (statement_timeout 2 s): a table another session
+    holds locked costs two seconds and a fail-closed answer."""
+    tenant, unit, bed = await _ward(db_session)
+    db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05"))
+    await db_session.commit()
+    locker = create_engine(to_sync_url(TEST_DATABASE_URL))
+    holder = locker.connect()
+    try:
+        holder.exec_driver_sql("LOCK TABLE device_beds IN ACCESS EXCLUSIVE MODE")
+        state, elapsed = _timed_current(_source())
+    finally:
+        holder.rollback()
+        holder.close()
+        locker.dispose()
+    assert state is not None, "current() had not returned after 8 s"
+    assert (state.status, state.table, state.version, state.sha256) == ("invalid", None, None, None)
+    assert elapsed < 5.0, f"current() took {elapsed:.1f} s"
+
+
+@pytest.mark.parametrize("broken", ["to_row", "check_current", "rows_digest"])
+async def test_any_exception_in_the_read_fails_closed_and_the_old_state_is_not_served(
+        db_session, caplog, monkeypatch, broken):
+    """A-10: not only the database's errors. Whatever raises while the rows are built is `invalid` with
+    no table, for the whole window too: the last `ok` is never kept, and nothing escapes into the loop."""
+    tenant, unit, bed = await _ward(db_session)
+    db_session.add(_device(tenant, "10.10.203.23", bed=bed, unit=unit, label="BED05"))
+    await db_session.commit()
+    source = _source()
+    assert source.current().status == "ok"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("secret-detail")
+
+    monkeypatch.setattr(f"{PostgresDeviceBeds.__module__}.{broken}", boom)
+    source.invalidate()
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        state = source.current()
+        again = source.current()                                       # inside the window: still the failure
+    assert (state.status, state.table, state.version, state.sha256) == ("invalid", None, None, None)
+    assert again is state
+    said = " ".join(r.getMessage() for r in caplog.records if r.name == LOGGER)
+    assert "RuntimeError" in said and "secret-detail" not in said
