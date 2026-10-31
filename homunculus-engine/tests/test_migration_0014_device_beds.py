@@ -143,10 +143,14 @@ def _assert_the_model_agrees(engine) -> None:
                 getattr(getattr(obj, "table", None), "name", None) in OWN)})
         assert compare_metadata(ctx, Base.metadata) == []
 
-        checks = {r[0] for r in conn.execute(text(
-            "SELECT conname FROM pg_constraint WHERE conrelid = 'public.device_beds'::regclass AND contype = 'c'"))}
-        assert checks == CHECKS
-        assert checks == {c.name for c in DeviceBed.__table__.constraints if isinstance(c, CheckConstraint)}
+        stored_checks = dict(conn.execute(text(
+            "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conrelid = 'public.device_beds'::regclass AND contype = 'c'")).all())
+        model_checks = {c.name: c for c in DeviceBed.__table__.constraints if isinstance(c, CheckConstraint)}
+        assert set(stored_checks) == CHECKS
+        assert set(model_checks) == CHECKS
+        for name, check in model_checks.items():            # the text too, whatever the rendering: "CHECK ((a) = (b))" vs "a = b"
+            assert _squash(stored_checks[name]) == "CHECK" + _squash(str(check.sqltext)), name
 
         defs = dict(conn.execute(text(
             "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'device_beds'")).all())
@@ -258,7 +262,7 @@ def _new_value(column: str, data_type: str) -> str:
         return f"{column} + 1000000"
     if data_type == "integer":
         return f"{column} + 1"
-    if data_type == "character varying":
+    if data_type in ("character varying", "text"):
         return f"COALESCE({column}, '') || 'x'"
     if data_type == "timestamp with time zone":
         return f"{column} - interval '1 day'"
