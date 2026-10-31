@@ -5,13 +5,16 @@ cross-check of A-9 — the file's rows digest equals the table's, or nothing is 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from homunculus.api.audit import InMemoryAuditLog
@@ -23,6 +26,7 @@ from homunculus.devicebeds.models import DeviceBed
 from homunculus.devicebeds.rows import to_row
 from homunculus.devicebeds.seed import APPROVED_V2_SHA256, ImportRefused, import_v2
 from tests.conftest import TEST_DATABASE_URL, requires_db
+from homunculus.tenant.models import Site, Tenant
 from tests.esleme_v2 import GRANT_GROUP, GRANT_KEY, V2, V2_DIGEST, tenant_only, v2_ward
 
 pytestmark = [requires_db]
@@ -313,3 +317,144 @@ async def test_a_failing_audit_store_does_not_undo_the_committed_import(db_sessi
     printed = capsys.readouterr()
     assert printed.out == ""
     assert "ESLEME_ICE_AKTARIM_DENETIM_YAZILAMADI RuntimeError" in printed.err and "secret-detail" not in printed.err
+
+
+# ------------------------------------------------------------------ A-13 (Task 5 review)
+@contextlib.asynccontextmanager
+async def _tamper(db, assignment: str):
+    """A test-local BEFORE INSERT trigger on `device_beds` that rewrites every row as the database stores it
+    (`assignment` is one PL/pgSQL statement, e.g. `NEW.port := 2051`): what the session holds in memory is
+    then NOT what the table holds. Dropped, with its function, whatever happens."""
+    await db.execute(text("CREATE OR REPLACE FUNCTION esleme_test_tamper() RETURNS trigger LANGUAGE plpgsql "
+                          f"AS $$ BEGIN {assignment}; RETURN NEW; END $$"))
+    await db.execute(text("CREATE TRIGGER esleme_test_tamper BEFORE INSERT ON device_beds FOR EACH ROW "
+                          "EXECUTE FUNCTION esleme_test_tamper()"))
+    await db.commit()
+    try:
+        yield
+    finally:
+        await db.rollback()
+        await db.execute(text("DROP TRIGGER IF EXISTS esleme_test_tamper ON device_beds"))
+        await db.execute(text("DROP FUNCTION IF EXISTS esleme_test_tamper()"))
+        await db.commit()
+
+
+@pytest.mark.parametrize("assignment", [
+    "NEW.port := 2051", "NEW.note := 'elle degisti'", "NEW.group_address := '224.0.2.250'"])
+async def test_a_stored_row_that_differs_from_the_file_outside_the_digest_is_rolled_back_with_exit_2(
+        db_session, assignment):
+    """A-13 1: the digest holds source, bed and label only. The history trigger of 0014 would refuse a later
+    correction of a wrong group, port, note, so the WHOLE row is compared before the grant."""
+    tenant, _ = await v2_ward(db_session)
+    tenant_id = tenant.id
+    audit = InMemoryAuditLog()
+    async with _tamper(db_session, assignment):
+        with pytest.raises(ImportRefused, match="alan alan") as refused:
+            await import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=audit)
+    assert refused.value.code == 2
+    assert await _count(db_session) == 0 and await _granted(db_session, tenant_id) == set()
+    assert audit.records() == []
+
+
+async def test_the_cross_check_reads_the_database_and_not_the_sessions_memory(db_session):
+    """A-13 2 (pins `populate_existing`): the seeded objects are still in the session, correct; the table holds a
+    label with a letter added by a trigger. Only a read that refreshes the objects sees it."""
+    tenant, _ = await v2_ward(db_session)
+    tenant_id = tenant.id
+    async with _tamper(db_session, "NEW.bed_label := NEW.bed_label || 'X'"):
+        with pytest.raises(ImportRefused, match="özet") as refused:
+            await import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None)
+    assert refused.value.code == 2
+    assert await _count(db_session) == 0 and await _granted(db_session, tenant_id) == set()
+
+
+async def test_a_row_changed_behind_the_sessions_back_is_not_taken_for_the_files(db_session):
+    """The same pin for the first read: the session still holds the seeded rows as they were; the table has
+    moved on (an editor, another process). The re-run must see the table, not the memory."""
+    await v2_ward(db_session)
+    await import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None)
+    held = (await db_session.execute(select(DeviceBed).order_by(DeviceBed.id))).scalars().all()
+    await db_session.execute(text("UPDATE device_beds SET note = 'elle degisti' WHERE id = "
+                                  "(SELECT min(id) FROM device_beds)"))
+    await db_session.commit()
+    assert held[0].note != "elle degisti"                                        # the memory is stale
+    with pytest.raises(ImportRefused) as refused:
+        await import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None)
+    assert refused.value.code == 3
+
+
+async def test_a_failing_read_back_after_the_commit_falls_back_to_the_pre_commit_values(
+        db_session, monkeypatch, capsys):
+    """A-13 3: the rows are committed; a failed read-back must not turn that into a traceback and no line.
+    The pre-commit (version, digest) are identical by construction; the line and the audit still follow."""
+    tenant, _ = await v2_ward(db_session)
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("secret-detail")
+
+    monkeypatch.setattr(seed, "_read_back", broken)
+    audit = InMemoryAuditLog()
+    result = await import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=audit)
+    assert await _count(db_session) == 13 and await _granted(db_session, tenant.id) == {GRANT_GROUP}
+    assert result.already is False and result.granted == ["charge_nurse"]
+    assert result.version == (await db_session.execute(select(func.max(DeviceBed.id)))).scalar_one()
+    assert result.sha256 == V2_DIGEST
+    assert json.loads(result.line().split(" ", 1)[1])["sha256"] == V2_DIGEST
+    [row] = audit.records(event_type="device_bed.import")
+    assert (row.payload["version"], row.payload["sha256"]) == (result.version, V2_DIGEST)
+    printed = capsys.readouterr()
+    assert printed.out == "" and "RuntimeError" in printed.err and "secret-detail" not in printed.err
+
+
+async def test_the_tenant_lock_is_key_share_so_inserts_that_reference_the_tenant_go_through(db_session, monkeypatch):
+    """A-13 4: `FOR NO KEY UPDATE` still serialises two imports but does not block a row whose foreign key
+    points at the tenant (a new site, an admission) - the old API keeps serving while the import runs."""
+    tenant, _ = await v2_ward(db_session)
+    tenant_id = tenant.id
+    reached, release = asyncio.Event(), asyncio.Event()
+    real = seed._check_beds
+
+    async def paused(*args, **kwargs):                     # the import holds the lock and waits here
+        reached.set()
+        await release.wait()
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(seed, "_check_beds", paused)
+    engine = create_async_engine(TEST_DATABASE_URL)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def run():
+        async with maker() as session:
+            return await import_v2(session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None)
+
+    task = asyncio.create_task(run())
+    try:
+        await asyncio.wait_for(reached.wait(), 15)
+        async with maker() as other:
+            other.add(Site(tenant_id=tenant_id, name="Ikinci bina"))
+            await asyncio.wait_for(other.commit(), 3)      # blocks (and times out) under a plain FOR UPDATE
+    finally:
+        release.set()
+        result = await task
+        await engine.dispose()
+    assert result.already is False and await _count(db_session) == 13
+
+
+async def test_a_tenant_row_held_by_someone_else_is_given_up_after_five_seconds(db_session):
+    """A-13 4: `SET LOCAL lock_timeout = '5s'`. The import stops with the database's error instead of waiting for
+    ever, and nothing is written."""
+    await v2_ward(db_session)
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.connect() as holder:
+            await holder.execute(select(Tenant.id).where(Tenant.slug == SLUG).with_for_update())
+            started = time.monotonic()
+            with pytest.raises(DBAPIError):
+                await asyncio.wait_for(import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None), 30)
+            waited = time.monotonic() - started
+            await holder.rollback()
+    finally:
+        await engine.dispose()
+    await db_session.rollback()
+    assert 4.0 <= waited < 15.0, f"waited {waited:.1f} s"
+    assert await _count(db_session) == 0
