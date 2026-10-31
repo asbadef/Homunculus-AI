@@ -95,7 +95,7 @@ export default {
     loading: "Monitör şeridi yükleniyor…",
     deviceAddress: "Adres {source} · grup {group}",
     deviceRow: "Tabloda: {method} · doğrulama {verified}",
-    method: { central_station_list: "merkezi istasyon listesi", monitor_screen: "monitör ekranı", both: "liste ve ekran", editor: "ekrandan eşleme" },
+    method: { central_station_list: "merkezi istasyon listesi", monitor_screen: "monitör ekranı", both: "liste ve ekran", editor: "uygulamada elle eşleme" },
     feedPosts: "Alınan gönderi: {posts} · forwarder: {sent} gönderildi, {failed} başarısız",
     feedRejected: "Reddedilen okumalar — çok eski: {too_old} · saat: {clock} · birim: {unit} · aralık: {range} · bilinmeyen: {unknown_parameter} · yinelenen: {duplicate}",
     ev: {
@@ -167,7 +167,7 @@ export default {
     loading: "Monitor zolağı yüklənir…",
     deviceAddress: "Ünvan {source} · qrup {group}",
     deviceRow: "Cədvəldə: {method} · yoxlama {verified}",
-    method: { central_station_list: "mərkəzi stansiya siyahısı", monitor_screen: "monitor ekranı", both: "siyahı və ekran", editor: "ekrandan uyğunlaşdırma" },
+    method: { central_station_list: "mərkəzi stansiya siyahısı", monitor_screen: "monitor ekranı", both: "siyahı və ekran", editor: "tətbiqdə əl ilə uyğunlaşdırma" },
     feedPosts: "Alınan göndəriş: {posts} · forwarder: {sent} göndərildi, {failed} uğursuz",
     feedRejected: "Rədd edilən oxunuşlar — çox köhnə: {too_old} · saat: {clock} · vahid: {unit} · diapazon: {range} · naməlum: {unknown_parameter} · təkrar: {duplicate}",
     ev: {
@@ -239,7 +239,7 @@ export default {
     loading: "Блок монитора загружается…",
     deviceAddress: "Адрес {source} · группа {group}",
     deviceRow: "В таблице: {method} · проверено {verified}",
-    method: { central_station_list: "список центральной станции", monitor_screen: "экран монитора", both: "список и экран", editor: "привязка на экране" },
+    method: { central_station_list: "список центральной станции", monitor_screen: "экран монитора", both: "список и экран", editor: "вручную в приложении" },
     feedPosts: "Получено отправок: {posts} · forwarder: отправлено {sent}, неудачно {failed}",
     feedRejected: "Отклонённые показания — слишком старые: {too_old} · часы: {clock} · единица: {unit} · диапазон: {range} · неизвестные: {unknown_parameter} · повтор: {duplicate}",
     ev: {
@@ -311,7 +311,7 @@ export default {
     loading: "Loading the monitor strip…",
     deviceAddress: "Address {source} · group {group}",
     deviceRow: "In the table: {method} · checked {verified}",
-    method: { central_station_list: "central station list", monitor_screen: "monitor screen", both: "list and screen", editor: "set on screen" },
+    method: { central_station_list: "central station list", monitor_screen: "monitor screen", both: "list and screen", editor: "set by hand in the app" },
     feedPosts: "Bodies received: {posts} · forwarder: {sent} sent, {failed} failed",
     feedRejected: "Readings refused — too old: {too_old} · clock: {clock} · unit: {unit} · range: {range} · unknown: {unknown_parameter} · duplicate: {duplicate}",
     ev: {
