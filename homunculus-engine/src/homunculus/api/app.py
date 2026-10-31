@@ -45,7 +45,7 @@ from homunculus.api.clinical import (
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
-from homunculus.api.infinity_device_beds import TableFile
+from homunculus.api.infinity_device_beds import DeviceBedSource, TableFile
 from homunculus.api.infinity_rules import ShadowLane
 from homunculus.api.infinity_shadow import (
     MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
@@ -191,6 +191,7 @@ def create_app(
     shadow_clock: Callable[[], float] = time.time,
     shadow_monotonic: Callable[[], float] | None = None,
     samples: SampleStore | None = None,
+    device_beds: DeviceBedSource | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -212,7 +213,10 @@ def create_app(
     `shadow` is Aşama A's monitor strip (`api/infinity_shadow.py`); None is the stage `off`, so
     every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds) and
     `shadow_monotonic` its own spacing-and-silence clock (ShadowStore), both injected by the tests;
-    the engine never reads either. `samples` is Aşama B's monitor-sample table
+    the engine never reads either.
+    `device_beds` is the device→bed table the strip reads (G2-ESLEME, spec D6): `PostgresDeviceBeds`
+    in production; None reads the file at `shadow.table_path` (the lab).
+    `samples` is Aşama B's monitor-sample table
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
     rows of a `rules` run still expire after a rollback below it."""
@@ -252,7 +256,7 @@ def create_app(
     # read right here, so its version and sha256 (or why it failed) are in the start-up log.
     shadow = shadow if shadow is not None else ShadowSettings()
     shadow_store = ShadowStore(clock=shadow_clock, monotonic=shadow_monotonic)
-    shadow_table = TableFile(shadow.table_path, clock=time.monotonic)
+    shadow_table = device_beds if device_beds is not None else TableFile(shadow.table_path, clock=time.monotonic)
     shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
 
     def _occupancy_reset(hospital: str) -> None:
@@ -631,6 +635,12 @@ def create_app(
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_lane = lane
+    # G2-ESLEME (the monitor→bed editor, devicebeds/router.py): the lane's settings and clock, so the
+    # editor answers only while this strip runs for its hospital (spec D15), and the table's
+    # invalidate, so the next read after a change re-reads (§4.4 step 11).
+    app.state.shadow_settings = shadow
+    app.state.shadow_clock = shadow_clock
+    app.state.shadow_table_reset = shadow_table.invalidate
     # Aşama B (T6 review): Lane B's admission (`kabul`) calls this right after its identity write,
     # as its discharge calls `retire_patient` — the strip's occupants are cached for 10 s, and the
     # next readings body must link the bed's new occupant, not the one the cache still holds.
@@ -1167,16 +1177,14 @@ def create_app(
                               now=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
-    def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
-        """Admitted patients per bed, cached 10 s: a `kabul` record (an admission made here, G2-B1a)
-        by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed map
-        — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
+    def _occupants_now(hospital: str) -> dict[str, list[str]]:
+        """Admitted patients per bed, read now (uncached): a `kabul` record (an admission made here,
+        G2-B1a) by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed
+        map — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
         a patient in Aşama A: an explicit binding the hospital already made (an admission here,
         ADT or set_identity), never a guess from a name (design K3, K5). Discharged identities
-        are not admitted, so never here."""
-        cached = shadow_occupancy.get(hospital)
-        if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
-            return cached[1]
+        are not admitted, so never here. The strip reads it through `_occupants` (cached 10 s); the
+        monitor→bed editor through `app.state.bed_occupants` (fresh: G2-ESLEME §4.4 step 8b)."""
         beds: dict[str, list[str]] = {}
         for patient_id in identities.admitted_ids(hospital):
             record = identities.get(hospital, patient_id)
@@ -1191,8 +1199,18 @@ def create_app(
                 bed_id = ref.bed_id if ref is not None else ""
             if normalise_id(bed_id):
                 beds.setdefault(normalise_id(bed_id), []).append(patient_id)
+        return beds
+
+    def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
+        """`_occupants_now`, cached SHADOW_OCCUPANCY_CACHE_S per hospital (`_occupancy_reset` drops it)."""
+        cached = shadow_occupancy.get(hospital)
+        if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
+            return cached[1]
+        beds = _occupants_now(hospital)
         shadow_occupancy[hospital] = (now, beds)
         return beds
+
+    app.state.bed_occupants = _occupants_now          # G2-ESLEME: the editor's fresh read (§4.9)
 
     @app.post("/infinity-shadow/readings")
     async def shadow_readings(request: Request, authorization: str | None = Header(default=None)):

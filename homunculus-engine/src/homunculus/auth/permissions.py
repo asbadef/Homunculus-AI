@@ -53,6 +53,12 @@ PERMISSIONS: dict[str, str] = {
 
     # G2-B1a — a ward turns its beds over at night without an administrator (spec D8).
     "beds.release": "Mark a cleaned bed free again (housekeeping → available), in one's own units",
+
+    # G2-ESLEME — the monitor→bed editor on the Monitörler screen (spec D2). Not
+    # `devices.manage`, which opens the research window and every unassigned device.
+    "devices.map_beds": "Assign a bedside monitor to a bed, or unassign it, on the Monitörler "
+                        "screen — beds in one's own units only; a bed with an admitted patient "
+                        "asks for a second confirmation",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -147,7 +153,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
-                     "shifts.manage", "break_glass.use", "clinical.chart", "beds.release")},
+                     "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
+                     "devices.map_beds")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
