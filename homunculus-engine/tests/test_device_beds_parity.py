@@ -68,8 +68,12 @@ def _refusal(captured, code: int) -> str:
 async def _both(db):
     await v2_ward(db)
     await import_v2(db, tenant_slug=SLUG, data=V2.read_bytes(), audit=None)
-    return (TableFile(V2, clock=lambda: 0.0).current(),
-            PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG, clock=lambda: 0.0).current())
+    source = PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG, clock=lambda: 0.0)
+    try:
+        database = source.current()
+    finally:
+        source.dispose()
+    return TableFile(V2, clock=lambda: 0.0).current(), database
 
 
 def _same_strip_and_rows(file, database) -> None:
@@ -207,10 +211,13 @@ async def test_a_table_edited_since_is_exit_3_on_stderr(db_session, capsys):
 
 class _FailsLikeADriver:
     """A session maker whose session cannot even open: it raises what a driver raises, with the
-    statement and its parameters in the message — what a bare traceback would have printed."""
+    statement and its parameters in the message — what a bare traceback would have printed. `pgcode` is the
+    SQLSTATE the driver's own exception carries (or does not)."""
 
-    error = DBAPIError("INSERT INTO device_beds (source) VALUES (%(source)s)", {"source": MARKER},
-                       Exception("tuzak"))
+    def __init__(self, pgcode=None):
+        orig = Exception(f"tuzak {MARKER}")
+        orig.pgcode = pgcode
+        self.error = DBAPIError("INSERT INTO device_beds (source) VALUES (%(source)s)", {"source": MARKER}, orig)
 
     def __call__(self):
         return self
@@ -222,13 +229,20 @@ class _FailsLikeADriver:
         return False
 
 
-async def test_an_unexpected_failure_is_exit_1_with_the_class_only_and_no_traceback(capsys):
-    assert MARKER in str(_FailsLikeADriver.error)                       # what the default traceback would carry
-    assert await _script().run(["--file", str(V2), "--tenant", SLUG], maker=_FailsLikeADriver()) == 1
+@pytest.mark.parametrize("pgcode, label", [
+    ("28P01", "DBAPIError 28P01"),               # a failed login: the SQLSTATE tells it from a lock timeout
+    (None, "DBAPIError"),                         # a driver that gave none
+    (MARKER, "DBAPIError"),                       # not 5 characters: text, not a SQLSTATE - never printed
+])
+async def test_an_unexpected_failure_is_exit_1_with_the_class_and_sqlstate_only_and_no_traceback(
+        capsys, pgcode, label):
+    failing = _FailsLikeADriver(pgcode)
+    assert MARKER in str(failing.error)                                 # what the default traceback would carry
+    assert await _script().run(["--file", str(V2), "--tenant", SLUG], maker=failing) == 1
     err = _refusal(capsys.readouterr(), 1)
-    assert err.startswith("ESLEME_ICE_AKTARIM_RED 1 DBAPIError ")
-    assert "satırlar yazılmış olabilir; yeniden çalıştırın — already:true ise yazılmıştır" in err
-    assert MARKER not in err and "INSERT" not in err and "Traceback" not in err
+    assert err.startswith(f"ESLEME_ICE_AKTARIM_RED 1 {label} — satırlar yazılmış olabilir; yeniden çalıştırın "
+                          "— already:true ise yazılmıştır"), err
+    assert MARKER not in err and "INSERT" not in err and "Traceback" not in err and "tuzak" not in err
     assert err.count("\n") == 1
 
 
@@ -246,7 +260,7 @@ async def test_a_lock_timeout_is_exit_1_nothing_is_written_and_a_rerun_succeeds(
         await holder.execute(text("SELECT id FROM tenants WHERE slug = :s FOR UPDATE"), {"s": SLUG})
         assert await script.run(["--file", str(V2), "--tenant", SLUG], maker=maker) == 1
     err = _refusal(capsys.readouterr(), 1)
-    assert err.startswith("ESLEME_ICE_AKTARIM_RED 1 DBAPIError ")        # the driver's lock_not_available, by class
+    assert err.startswith("ESLEME_ICE_AKTARIM_RED 1 DBAPIError 55P03 ")  # lock_not_available, by class and SQLSTATE
     assert "satırlar yazılmış olabilir" in err and "Traceback" not in err and "[SQL:" not in err
     async with maker() as db:
         assert (await db.execute(select(DeviceBed).where(DeviceBed.tenant_id == tenant_id))).first() is None

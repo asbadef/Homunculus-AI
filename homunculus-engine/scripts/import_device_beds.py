@@ -20,7 +20,8 @@ Exit codes
   0  imported, or already imported (`"already": true`: nothing written, not even the grant);
      `--dry-run` also ends 0 and writes nothing.
   1  an unexpected failure (a lock timeout, the database down, …). Rows may have been written: run the
-     same command again — `"already": true` means they were. stderr carries the exception's CLASS only,
+     same command again — `"already": true` means they were. stderr carries the exception's CLASS and
+     the driver's SQLSTATE when it gave one (`DBAPIError 55P03` is a lock timeout), never a message and
      never a traceback (a driver error prints the statement's parameters).
   2  a check refused, nothing written: no tenant, an unreadable or oversized file, a sha256 that is not
      the approved v2's, a bed or unit that is not this tenant's, no DATABASE_URL. (An unknown option
@@ -36,6 +37,7 @@ import os
 import sys
 from pathlib import Path
 
+from homunculus.api.device_beds_postgres import _failure       # the accessor's own label: class + SQLSTATE
 from homunculus.api.infinity_device_beds import MAX_BYTES, read_capped
 from homunculus.devicebeds.seed import DEFAULT_FILE, LINE, ImportRefused, import_v2
 
@@ -84,11 +86,16 @@ async def run(argv=None, *, maker=None, audit=None) -> int:
             result = await import_v2(db, tenant_slug=tenant, data=data, audit=audit, dry_run=args.dry_run)
     except ImportRefused as refused:
         return _refused(refused.code, refused.reason)
-    except Exception as exc:  # noqa: BLE001 — A-13: the class only; a driver's message carries SQL parameters
-        return _refused(1, f"{type(exc).__name__} — {MAYBE_WRITTEN}")
+    except Exception as exc:  # noqa: BLE001 — A-13: never the message, which carries SQL parameters
+        # the class, then the driver's SQLSTATE when it gave one (`DBAPIError 55P03`): a lock timeout is
+        # told from a failed login or a lost connection without reading the driver's text
+        return _refused(1, f"{_failure(exc)} — {MAYBE_WRITTEN}")
     finally:
         if engine is not None:
-            await engine.dispose()
+            try:
+                await engine.dispose()
+            except Exception:  # noqa: BLE001 — the result is decided: no traceback after it
+                pass
     print(result.line())
     return 0
 
