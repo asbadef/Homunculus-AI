@@ -225,7 +225,11 @@ export function openLabelWindow(win = window) {
   }
 }
 
-/** The page written into `popup`, then printed a moment later (the page must lay out first). */
+/** The page written into `popup`, then printed a moment later (the page must lay out first) and the
+ *  window closed once printing is over: it holds the patient's full name, and a window left open is a
+ *  name on a screen nobody is watching (Task 13 review F-11). `afterprint` fires when the print dialog
+ *  closes, printed or cancelled; the handler is set after the page is written (`document.open()`
+ *  clears a window's handlers) and before `print()` (which may block until the dialog is over). */
 export function printLabel(popup, label, { t, lang, schedule = (fn) => setTimeout(fn, 250) }) {
   const doc = popup.document;
   doc.open();
@@ -234,6 +238,13 @@ export function printLabel(popup, label, { t, lang, schedule = (fn) => setTimeou
   popup.focus?.();
   schedule(() => {
     try {
+      popup.onafterprint = () => {
+        try {
+          popup.close();
+        } catch {
+          /* gone already */
+        }
+      };
       popup.print();
     } catch {
       /* the reader may close it first */

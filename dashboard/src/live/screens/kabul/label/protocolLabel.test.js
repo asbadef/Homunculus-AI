@@ -252,6 +252,39 @@ describe("the page", () => {
     expect(openLabelWindow({ open: () => { throw new Error("blocked"); } })).toBeNull();
   });
 
+  // Task 13 review F-11: the print window holds the full name; it is closed once printing is over.
+  // `afterprint` fires when the print dialog closes, printed or cancelled. The handler is set AFTER the
+  // page is written (document.open() clears a window's handlers) and BEFORE print() (which may block).
+  it("closes its window after printing, and sets the handler after the page is written and before print", () => {
+    const events = [];
+    const popup = {
+      document: { open: () => events.push("open"), write: () => events.push("write"), close: () => events.push("document.close") },
+      focus: () => events.push("focus"),
+      close: vi.fn(() => events.push("window.close")),
+      print: vi.fn(() => { events.push("print"); popup.onafterprint(); }),
+    };
+    let handler = null;
+    Object.defineProperty(popup, "onafterprint", {
+      get: () => handler,
+      set: (fn) => { handler = fn; events.push("handler"); },
+    });
+    printLabel(popup, LABEL, { t, lang: "az", schedule: (fn) => fn() });
+    expect(events).toEqual(["open", "write", "document.close", "focus", "handler", "print", "window.close"]);
+    expect(popup.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close the window before the dialog is over, and a window gone already is no error", () => {
+    let fire = null;
+    const popup = { document: { open() {}, write() {}, close() {} }, focus() {}, print: vi.fn(),
+      close: vi.fn(() => { throw new Error("gone already"); }) };
+    printLabel(popup, LABEL, { t, lang: "az", schedule: (fn) => fn() });
+    fire = popup.onafterprint;
+    expect(typeof fire).toBe("function");
+    expect(popup.close).not.toHaveBeenCalled();
+    expect(() => fire()).not.toThrow();
+    expect(popup.close).toHaveBeenCalledTimes(1);
+  });
+
   it("the test label is synthetic: the zero protocol, the words «test label», nothing else", () => {
     const label = testLabel(t, { width_mm: 50, height_mm: 30, printer_dpi: 300 });
     expect(label.protocol_no).toBe(TEST_PROTOCOL);
