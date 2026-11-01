@@ -14,17 +14,20 @@
 // WHAT IT WRITES. A `clinical.chart` holder completes a row (D3, SofaEditors.jsx `ChartEntry`): one measurement
 // through POST /clinical/{id}, and the form is read again — the engine re-scores, never this screen. A
 // `scores.sign` holder corrects a measured value (D5, `CorrectionEntry`); the corrections are held here, unsent,
-// until «Önizle» asks the engine what a signature would seal (D6, `preview: true`, no audit row). «İmzala» is
-// offered only on a preview of exactly the corrections held now — change one and the preview is stale until it
-// is asked again (X12) — and sends the same list. It appears where «Önizle» stood, so for SIGN_ARM_MS after a
-// preview it is held (aria-disabled), and the second press of a double click is never a press: a double click
-// on «Önizle» must not sign. If the record moved between the two — the signed total, an organ's points, or the
-// value under a correction (the engine reads each `original` at signing) — the signature is the engine's and
-// the screen says the record moved (X11). Against an engine that sends no `min_reason_chars` — one older than
-// G2-A4, which ignores `preview` and would SIGN — nothing is corrected, previewed or signed (X13); and an answer
-// to «Önizle» is shown as a preview only when it says it is one. One that says it was SIGNED is said, and the
-// box reads its signature again; any other shape is a refused preview. Each control is ABSENT without its
-// right, never disabled, and a sentence says why.
+// until «Önizle» asks the engine what a signature would seal (D6) — on the preview route, which writes nothing
+// and can never sign (review 2, C1). «İmzala» is offered only on a preview of exactly the corrections held now —
+// change one and the preview is stale until it is asked again (X12) — and sends the same list with the
+// preview's fingerprint, `expect` (C2): the engine signs only the record that preview scored. If anything under
+// the form moved in between it answers 409 and signs nothing: the preview is let go, the form read again, and
+// that is said. «İmzala» appears where «Önizle» stood, so for SIGN_ARM_MS after a preview it is held
+// (aria-disabled), and the second press of a double click is never a press: a double click on «Önizle» must not
+// sign. A signature whose total, organ points or value under a correction (the engine reads each `original` at
+// signing) still differ from the preview's is said as such (X11) — a second line behind the 409. Against an
+// engine that sends no `min_reason_chars` — one older than G2-A4 — nothing is corrected, previewed or signed
+// (X13); one without the preview route (404, 405) refuses the preview, which is said, and nothing is offered to
+// sign (C1). An answer to «Önizle» is shown as a preview only when it says it is one and carries its
+// fingerprint. One that says it was SIGNED is said, and the box reads its signature again; any other shape is a
+// refused preview. Each control is ABSENT without its right, never disabled, and a sentence says why.
 //
 // THE REFUSALS are the house's (admin/refusal.js, meds/MedsChartForm.jsx): on the toast, named after the bed —
 // and, D10, the same sentence in the footer as plain text, which is no live region, so the refusal is announced
@@ -52,11 +55,24 @@ import {
  *  comes well inside this (measured in Chrome on a dialog of the same shape). */
 export const SIGN_ARM_MS = 600;
 
-/** Is this answer to `preview: true` really a preview? An engine older than G2-A4 ignores the flag and answers
- *  a signature (`signed: true`); anything else that does not say it is a preview — with a form and a total —
- *  is not shown as one (X13). */
+/** The fingerprint a preview gives the record it scored (review 2, C2): 64 lowercase hex, as the engine writes it. */
+const FINGERPRINT = /^[0-9a-f]{64}$/;
+
+/** Is this answer to «Önizle» really a preview? It says so — not signed, with a form and a total — and carries
+ *  the fingerprint a signature of it must send back (C2). The preview route never signs (C1); an answer that
+ *  says it did, or any other shape, is not shown as a preview (X13), and without a fingerprint there is
+ *  nothing to sign. */
 const isPreview = (answer) => answer?.preview === true && answer.signed === false
-  && answer.form !== null && typeof answer.form === "object" && Number.isInteger(answer.total);
+  && answer.form !== null && typeof answer.form === "object" && Number.isInteger(answer.total)
+  && typeof answer.expect === "string" && FINGERPRINT.test(answer.expect);
+
+/** A server that does not know the preview route (C1): an engine older than it answers 404 — FastAPI's own
+ *  "Not Found", or no sentence at all — or 405 there, and signs nothing. A 404 in the engine's own words,
+ *  "hasta bulunamadı" (the patient is not, or no longer, in her scope), is that refusal, said as such. */
+function unknownRoute(err) {
+  if (err?.status === 405) return true;
+  return err?.status === 404 && apiErrorKey(err)?.key !== "errors.patientNotFound";
+}
 
 /** What the record held under an answer, as one string: each correction's `original` by code (the engine reads
  *  it from the record when it scores) and each organ's points. A preview and its signature agree on this only
@@ -143,9 +159,10 @@ function OrganRow({ entry, children }) {
   );
 }
 
-/** `bed` names the patient in the title and on every toast; `api` is `{ read, chart, preview, sign }`, bound to
- *  the patient by the box; `canChart` / `canSign` are her rights; `nowMs` the screen's clock (the reader's
- *  "today"). `onClose(changed)` — `changed` says that something was written, so the box reads its form again. */
+/** `bed` names the patient in the title and on every toast; `api` is `{ read, chart(entries, recordedAt),
+ *  preview(overrides), sign(overrides, expect) }`, bound to the patient by the box; `canChart` / `canSign` are
+ *  her rights; `nowMs` the screen's clock (the reader's "today"). `onClose(changed)` — `changed` says that
+ *  something was written, so the box reads its form again. */
 export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api, onClose }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -208,8 +225,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   const key = correctionsKey(corrections);
   const fresh = preview !== null && preview.key === key;
   const shown = fresh ? preview.answer.form : form;
-  // The engine's reason length. An engine older than G2-A4 sends none — and it ignores `preview`, so a
-  // «preview» sent to it would SIGN: no correction, preview or signature is offered against it (X13).
+  // The engine's reason length. An engine older than G2-A4 sends none, and it can neither preview nor say
+  // how long a reason must be: no correction, preview or signature is offered against it (X13).
   const minReason = Number.isInteger(form?.min_reason_chars) ? form.min_reason_chars : null;
   const signable = canSign && minReason !== null;
   const label = (code) => labelOf(t, code).label;
@@ -299,10 +316,11 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   }
 
   /** «Önizle» (D6): the engine's answer to the corrections held now, signed by nobody and written nowhere. A
-   *  failure is a read's: nothing was written, so nothing "may have landed". The answer is a preview only when
-   *  it says so (X13): one that says it SIGNED — an engine older than G2-A4, which ignores `preview` — is a
-   *  signature in the record, said as such, and the box reads its last signature again; any other shape is a
-   *  refused preview, never something to sign. */
+   *  failure is a read's: nothing was written, so nothing "may have landed"; a server without the preview
+   *  route says so in the form's words (C1). The answer is a preview only when it says so and carries its
+   *  fingerprint (X13, C2): one that says it SIGNED — which the preview route never does — is a signature in
+   *  the record, said as such, and the box reads its last signature again; any other shape is a refused
+   *  preview, never something to sign. */
   async function previewIt() {
     if (sending.current) return;
     sending.current = true;
@@ -329,7 +347,10 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
       if (err?.superseded) return;
       // A 403 here is a signature's 403 (the preview keeps every refusal of signing, X3), and closes alike.
       const forbidden = err?.status === 403;
-      const reason = forbidden ? forbiddenReason(t, err, "sofa.signNoRight") : readErrorText(t, err);
+      let reason;
+      if (forbidden) reason = forbiddenReason(t, err, "sofa.signNoRight");
+      else if (unknownRoute(err)) reason = t("sofa.previewUnsupported");
+      else reason = readErrorText(t, err);
       done = { text: t("sofa.previewRefused", { subject: bed, reason }), tone: "error", close: forbidden };
     } finally {
       sending.current = false;
@@ -340,10 +361,12 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     if (done.close) onClose(changed.current);
   }
 
-  /** «İmzala» (D6): the same corrections the fresh preview was asked with. Not inside the arming window, and
-   *  never the second press of a double click (`detail` > 1): «İmzala» appeared where «Önizle» stood. What the
-   *  engine signs is the engine's: if the record moved since the preview — another desk charted, the window
-   *  slid — the total, an organ's points or the value under a correction differ, and that is said (X11). */
+  /** «İmzala» (D6): the same corrections the fresh preview was asked with, and its fingerprint (C2). Not
+   *  inside the arming window, and never the second press of a double click (`detail` > 1): «İmzala»
+   *  appeared where «Önizle» stood. If the record moved since the preview — another desk charted, the window
+   *  slid — the engine answers 409 and signs nothing: the preview is let go and the form read again, her
+   *  corrections kept to be previewed anew, and nothing is marked as changed. Should a signature still differ
+   *  from its preview — the total, an organ's points, the value under a correction — that is said (X11). */
   async function signIt(event) {
     if ((event?.detail ?? 0) > 1 || !armed.current) return;
     if (sending.current || !fresh) return;
@@ -353,7 +376,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     const previewed = asked.total;
     let done;
     try {
-      const answer = await api.sign(overridesOf(corrections));
+      const answer = await api.sign(overridesOf(corrections), asked.expect);
       changed.current = true;
       // A total the engine did not send is never claimed: the box's signature line is where it is read.
       const total = Number.isInteger(answer?.total) ? answer.total : null;
@@ -371,6 +394,9 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
       if (mayHaveLanded(err)) {
         changed.current = true;
         done = { text: t("sofa.signMayHaveLanded", { subject: bed }), tone: "warn", close: true };
+      } else if (err?.status === 409) {
+        // C2: the record is no longer the one the preview scored. Nothing was signed, so nothing changed.
+        done = { text: t("sofa.recordMovedResign", { subject: bed }), tone: "warn", close: false, reread: true };
       } else {
         const forbidden = err?.status === 403;
         const reason = forbidden ? forbiddenReason(t, err, "sofa.signNoRight") : apiErrorText(t, err);
@@ -381,8 +407,16 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
       if (mounted.current) setBusy(null);
     }
     toast(done.text, done.tone);
-    if (done.close) onClose(changed.current);
-    else if (mounted.current) setSaid({ text: done.text, warn: true });
+    if (done.close) {
+      onClose(changed.current);
+      return;
+    }
+    if (!mounted.current) return;
+    setSaid({ text: done.text, warn: true });
+    if (done.reread) {
+      setPreview(null);
+      await read();
+    }
   }
 
   /** The controls her rights give her on one cell: «Ölçüm gir» for the six inputs the form takes (D3; MAP and

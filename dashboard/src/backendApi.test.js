@@ -484,23 +484,28 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001" });
   });
 
-  // G2-A4 (D6): the SOFA form is read, previewed with `preview: true`, and signed without it — the same
-  // corrections both times, so what is signed is what was previewed.
-  it("reads the SOFA form, previews the corrections with preview: true and signs them without", async () => {
+  // G2-A4 (D6; review 2, C1–C2): the SOFA form is read, previewed on a route of its own — which writes
+  // nothing — and signed with the preview's fingerprint (`expect`): the engine signs only the record that
+  // was previewed. The same corrections both times. The sign route never carries `preview`.
+  it("reads the SOFA form, previews the corrections on the preview route and signs them with its expect", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ total: 3 }));
     const api = signedIn(fetchMock);
     const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı, cihaz değil" }];
+    const expectHex = "0123456789abcdef".repeat(4);
     await api.severityForm("S-001");
-    await api.signSeverityForm("S-001", { overrides, preview: true });
-    await api.signSeverityForm("S-001", { overrides });
-    const [[readUrl, readInit], [previewUrl, previewInit], [signUrl, signInit]] = fetchMock.mock.calls;
+    await api.previewSeverityForm("S-001", { overrides });
+    await api.signSeverityForm("S-001", { overrides, expect: expectHex });
+    await api.signSeverityForm("S-001", { overrides, expect: expectHex, preview: true });   // an old caller's flag
+    const [[readUrl, readInit], [previewUrl, previewInit], [signUrl, signInit], [, flaggedInit]] = fetchMock.mock.calls;
     expect(readUrl).toBe("/scores/sofa/S-001?hours=24");
     expect(readInit.method || "GET").toBe("GET");
-    expect(previewUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(previewUrl).toBe("/scores/sofa/S-001/preview?hours=24");
     expect(previewInit.method).toBe("POST");
-    expect(JSON.parse(previewInit.body)).toEqual({ overrides, preview: true });
+    expect(JSON.parse(previewInit.body)).toEqual({ overrides });
     expect(signUrl).toBe("/scores/sofa/S-001?hours=24");
-    expect(JSON.parse(signInit.body)).toEqual({ overrides });
+    expect(signInit.method).toBe("POST");
+    expect(JSON.parse(signInit.body)).toEqual({ overrides, expect: expectHex });
+    expect(JSON.parse(flaggedInit.body)).toEqual({ overrides, expect: expectHex });
   });
 
   it("lifts an account's directory sign-in throttle with the administrator's reason", async () => {

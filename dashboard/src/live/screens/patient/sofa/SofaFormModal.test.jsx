@@ -13,7 +13,7 @@ import { dayStamp } from "../../../i18n/dates.js";
 import { ANNOUNCE_DELAY_MS } from "../../../ui/Alert.jsx";
 import { SIGN_ARM_MS, SofaFormModal } from "./SofaFormModal.jsx";
 import { toLocalInput } from "./sofaFields.js";
-import { MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
+import { EXPECT, MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
 // The fake-timer recipe of the earlier waves (meds/MedsChartForm.test.jsx): installed BEFORE the mount, `Date`
 // faked with them, nothing advancing on its own — so «İmzalayın»'s arming window is crossed only when a test
@@ -274,9 +274,71 @@ describe("preview, then sign (D6)", () => {
     expect(organ("Laxtalanma")).toHaveTextContent("2 bal");
     expect(organ("Laxtalanma")).toHaveTextContent("Düzəldilib — qeyddəki dəyər: 45");
     await press(button("İmzalayın"));
-    expect(api.sign).toHaveBeenCalledWith(overrides);
+    expect(api.sign).toHaveBeenCalledWith(overrides, EXPECT);                   // with the preview's fingerprint (C2)
     expect(toasted(`${BED}: SOFA forması imzalandı · cəmi 4.`).length).toBeGreaterThan(0);
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it("a server that does not know the preview route (404, 405) is a refused preview, said so: nothing to sign, nothing closed (C1)", async () => {
+    for (const err of [refusal(404, "Not Found"), refusal(405, "Method Not Allowed"), refusal(404, "İstek başarısız (404)")]) {
+      const { api, onClose } = await open({ api: { preview: vi.fn(() => Promise.reject(err)) } });
+      await correctPlatelets();
+      await previewed();
+      const said = `${BED} üçün öncədən baxış alınmadı: Server öncədən baxışı tanımır; imza təklif edilmir.`;
+      expect(toasted(said).length, err.message).toBeGreaterThan(0);
+      expect(toneOf(said)).toBe("error");
+      expect(footer()).toHaveTextContent(said);
+      expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+      expect(api.sign).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("a 404 in the engine's own words — the patient is not in her scope — is that refusal, not an unknown route (C1)", async () => {
+    await open({ api: { preview: vi.fn(() => Promise.reject(refusal(404, "hasta bulunamadı"))) } });
+    await correctPlatelets();
+    await previewed();
+    expect(toasted(`${BED} üçün öncədən baxış alınmadı: Bu xəstə panelinizdə yoxdur: ya belə bir qeyd yoxdur, ya da əhatənizdən kənardır.`).length).toBeGreaterThan(0);
+    expect(toasted(/tanımır/)).toHaveLength(0);
+  });
+
+  it("a preview with no fingerprint to sign it by — or a malformed one — is a refused preview, never something to sign (C2)", async () => {
+    for (const fingerprint of [undefined, null, "ABC", EXPECT.toUpperCase(), EXPECT.slice(1), `${EXPECT}0`]) {
+      const { expect: _given, ...rest } = previewAnswer();
+      const answer = fingerprint === undefined ? rest : { ...rest, expect: fingerprint };
+      const { api } = await open({ api: { preview: vi.fn(() => Promise.resolve(answer)) } });
+      await correctPlatelets();
+      await previewed();
+      expect(toasted(`${BED} üçün öncədən baxış alınmadı: mühərrikin cavabı öncədən baxış deyildi`).length, String(fingerprint)).toBeGreaterThan(0);
+      expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+      expect(within(dialog()).queryByText(/^Öncədən baxış: cəmi/)).toBeNull();
+      expect(api.sign).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("a 409 — the record moved since the preview — signed nothing: the preview is let go, the form read again, and it is said (C2)", async () => {
+    const reason = "kayıt önizlemeden sonra değişti — formu yeniden önizleyin";
+    const { api, onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(409, reason))) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    expect(api.sign).toHaveBeenCalledWith([{ code: "platelets", value: 80, reason: WHY }], EXPECT);
+    const said = `${BED}: qeyd öncədən baxışdan sonra dəyişib; heç nə imzalanmayıb. Formaya yenidən öncədən baxın.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(footer()).toHaveTextContent(said);
+    expect(api.read).toHaveBeenCalledTimes(2);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(within(dialog()).getByText("Cəmi: 5")).toBeInTheDocument();                 // the record's form, not the preview's
+    expect(footer()).toHaveTextContent("İmzalamazdan əvvəl öncədən baxın");
+    // Her corrections stay, to be previewed again.
+    expect(within(dialog()).getByText(`Trombosit sayı: 45 → 80 · əsaslandırma: «${WHY}»`)).toBeInTheDocument();
+    expect(button("Öncədən baxın")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    await press(within(dialog()).getAllByRole("button", { name: "Bağla" }).at(-1));
+    expect(onClose).toHaveBeenCalledWith(false);                                        // nothing was signed: nothing changed
   });
 
   it("a correction changed after the preview makes it stale: no «İmzalayın» until it is previewed again", async () => {
@@ -394,7 +456,7 @@ describe("preview, then sign (D6)", () => {
     expect(toasted(said).length).toBeGreaterThan(0);
   });
 
-  it("an answer to «Öncədən baxın» that SIGNED — an engine older than G2-A4 — is said on the toast and in the footer, the box reads again, and nothing more is offered (X13)", async () => {
+  it("an answer to «Öncədən baxın» that says it SIGNED — which the preview route never does — is said on the toast and in the footer, the box reads again, and nothing more is offered (X13)", async () => {
     const { api, onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(signedAnswer())) } });
     await correctPlatelets();
     await previewed();

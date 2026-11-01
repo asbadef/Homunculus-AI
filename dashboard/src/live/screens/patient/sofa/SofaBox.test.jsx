@@ -11,7 +11,7 @@ import { NOW } from "../../../data/board.testutil.js";
 import { dayStamp } from "../../../i18n/dates.js";
 import { SofaBox } from "./SofaBox.jsx";
 import { SIGN_ARM_MS } from "./SofaFormModal.jsx";
-import { LAST_SIGNED, WHY, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
+import { EXPECT, LAST_SIGNED, WHY, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const ALL = ["board.view", "alerts.ack", "clinical.chart", "scores.sign"];
@@ -78,7 +78,8 @@ describe("the SOFA box (D1)", () => {
       setup: (a) => {
         a.severityForm.mockResolvedValueOnce(sofaForm()).mockResolvedValueOnce(sofaForm())
           .mockResolvedValue(sofaForm({ last_signed: LAST_SIGNED }));
-        a.signSeverityForm.mockImplementation((_id, { preview }) => Promise.resolve(preview ? previewAnswer() : signedAnswer()));
+        a.previewSeverityForm.mockResolvedValue(previewAnswer());
+        a.signSeverityForm.mockResolvedValue(signedAnswer());
       },
     });
     await press(within(box()).getByRole("button", { name: "Formanı açın" }));
@@ -91,7 +92,9 @@ describe("the SOFA box (D1)", () => {
     await press(within(dialog).getByRole("button", { name: "Öncədən baxın" }));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, SIGN_ARM_MS)); });   // «İmzalayın» is armed
     await press(within(dialog).getByRole("button", { name: "İmzalayın" }));
-    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides: [{ code: "platelets", value: 80, reason: WHY }] });
+    const overrides = [{ code: "platelets", value: 80, reason: WHY }];
+    expect(api.previewSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides });
+    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides, expect: EXPECT });   // review 2, C1–C2
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.severityForm).toHaveBeenCalledTimes(3);
     expect(box()).toHaveTextContent(`İmzalanıb · dr.elif · ${SIGNED_AT()} · cəmi 4`);

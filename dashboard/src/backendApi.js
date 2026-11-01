@@ -771,19 +771,33 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * What a signature of the form with these corrections WOULD seal — the same parsing, re-scoring and
+     * refusals as the signature — signed by nobody and written nowhere (G2-A4, D6).
+     *
+     * A route of its own (review 2, C1): the sign route no longer takes a `preview` flag, so no answer
+     * here can ever be a signature. An engine older than the route answers 404 or 405 and signs nothing.
+     * The answer carries `expect`, the fingerprint of the record it scored, which the signature sends back.
+     */
+    previewSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}/preview?hours=${hours}`, {
+        method: "POST", body: { overrides },
+      });
+    },
+
+    /**
      * Sign the form, with the clinician's corrections.
      *
      * `overrides` is `[{code, value, reason}]`. A correction replaces the VALUE — the engine
      * re-scores the row from the band table, because a typed point value would enter quality
      * reporting unbanded. The reason is mandatory and the engine enforces its length.
      *
-     * `preview: true` (G2-A4, D6) asks for the form a signature WOULD seal — the same parsing, re-scoring
-     * and refusals — and signs nothing (no audit row). The key is sent only then: an engine older than
-     * G2-A4 ignores it and would sign, which is why the screen never previews against one (X13).
+     * `expect` is the preview's fingerprint (review 2, C2): the engine signs only the record that was
+     * previewed — if anything under the form moved since, it answers 409 and signs nothing. Nothing else
+     * is sent, whatever else a caller passes: a `preview` key on this route is refused.
      */
-    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [], preview = false } = {}) {
+    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [], expect } = {}) {
       return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`, {
-        method: "POST", body: { overrides, ...(preview ? { preview: true } : {}) },
+        method: "POST", body: { overrides, expect },
       });
     },
 

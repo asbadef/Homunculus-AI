@@ -86,6 +86,12 @@ export const API_MESSAGE_KEYS = new Map([
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // POST /scores/sofa/{id} (G2-A4, D6 X2): `preview` must be a real true/false; the form always sends one.
   ["preview true ya da false olmalı", "scorePreviewNotBoolean"],
+  // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
+  // sign route; a signature without the preview's fingerprint (`expect`); and the 409 of a record that moved
+  // since the preview. None of them signed anything, and each says so.
+  ["önizleme imza yolundan istenemez — önizleme yolunu kullanın", "scorePreviewOnSignRoute"],
+  ["imza bir önizlemenin parmak izini ister — önce önizleyin", "scoreSignNeedsPreview"],
+  ["kayıt önizlemeden sonra değişti — formu yeniden önizleyin", "scoreRecordMoved"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.

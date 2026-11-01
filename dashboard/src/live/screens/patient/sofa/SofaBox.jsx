@@ -96,7 +96,7 @@ export function SofaBox({ patientId, bed, nowMs = Date.now() }) {
         read: () => board.store.sofaForm(id),
         chart: (entries, recordedAt) => board.store.chart(id, entries, recordedAt),
         preview: (overrides) => board.store.sofaPreview(id, overrides),
-        sign: (overrides) => board.store.sofaSign(id, overrides),
+        sign: (overrides, expect) => board.store.sofaSign(id, overrides, expect),
       },
     });
   }

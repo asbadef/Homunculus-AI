@@ -397,20 +397,22 @@ export function createBoardStore({
       const form = await track(() => api.severityForm(patientId));
       return mine === generation ? form : null;
     },
-    /** The form a signature would seal with these corrections, signed by nobody (D6: `preview: true`,
-     *  permission `scores.sign`, no audit row). `overrides` is `[{code, value, reason}]`. Rejects with the
-     *  API's own error. */
+    /** The form a signature would seal with these corrections, signed by nobody (D6; the preview route,
+     *  review 2 C1; permission `scores.sign`, no audit row). `overrides` is `[{code, value, reason}]`; the
+     *  answer carries the `expect` a signature of it sends back. Rejects with the API's own error. */
     async sofaPreview(patientId, overrides) {
       const mine = generation;
-      const answer = await track(() => api.signSeverityForm(patientId, { overrides, preview: true }));
+      const answer = await track(() => api.previewSeverityForm(patientId, { overrides }));
       return mine === generation ? answer : null;
     },
     /** Sign the form with these corrections (D6, permission `scores.sign`): the engine re-scores and seals
-     *  it into the audit chain. Rejects with the API's own error, having changed nothing here. The board
-     *  is not reloaded — a signature changes no card; the SOFA box reads its form again for the new line. */
-    async sofaSign(patientId, overrides) {
+     *  it into the audit chain — only if the record is still the one the preview whose `expect` this is
+     *  scored (review 2, C2; else a 409, nothing signed). Rejects with the API's own error, having changed
+     *  nothing here. The board is not reloaded — a signature changes no card; the SOFA box reads its form
+     *  again for the new line. */
+    async sofaSign(patientId, overrides, expect) {
       const mine = generation;
-      const answer = await track(() => api.signSeverityForm(patientId, { overrides }));
+      const answer = await track(() => api.signSeverityForm(patientId, { overrides, expect }));
       return mine === generation ? answer : null;
     },
     /** Load, then stream (LIVE once the stream has opened and its reload landed). Resolves once

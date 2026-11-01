@@ -314,17 +314,21 @@ describe("the board store", () => {
 
   // G2-A4: the SOFA box and form read, preview and sign through the store, the only door to the API.
   // A signature changes no card, so nothing reloads the board; an answer after clear() is dropped.
+  // Review 2 (C1–C2): the preview asks its own route, and the signature carries the preview's `expect`.
   it("reads the SOFA form, previews corrections and signs them, and drops an answer that lands after clear()", async () => {
     const { api, store } = setup();
     const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı" }];
+    const expectHex = "0123456789abcdef".repeat(4);
     api.severityForm = vi.fn().mockResolvedValue({ total: 3, last_signed: null });
-    api.signSeverityForm = vi.fn().mockResolvedValue({ preview: true, signed: false, total: 2 });
+    api.previewSeverityForm = vi.fn().mockResolvedValue({ preview: true, signed: false, total: 2, expect: expectHex });
+    api.signSeverityForm = vi.fn().mockResolvedValue({ signed: true, total: 2 });
     expect(await store.sofaForm("S-001")).toEqual({ total: 3, last_signed: null });
     expect(api.severityForm).toHaveBeenCalledWith("S-001");
-    expect(await store.sofaPreview("S-001", overrides)).toMatchObject({ preview: true, total: 2 });
-    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides, preview: true });
-    await store.sofaSign("S-001", overrides);
-    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides });
+    expect(await store.sofaPreview("S-001", overrides)).toMatchObject({ preview: true, total: 2, expect: expectHex });
+    expect(api.previewSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides });
+    expect(api.signSeverityForm).not.toHaveBeenCalled();               // a preview never asks the sign route
+    await store.sofaSign("S-001", overrides, expectHex);
+    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides, expect: expectHex });
     expect(api.boardPatients).not.toHaveBeenCalled();
     let answer;
     api.severityForm.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
