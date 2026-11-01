@@ -98,6 +98,7 @@ export default {
     dropFor: "Düzeltmeyi kaldır: {input}",
     held: "{input} için düzeltme tutuldu; önizlemede puanlanır.",
     heldTitle: "Bekleyen düzeltmeler",
+    heldDropped: "{subject}: form kapatıldı, imzalanmamış düzeltmeler bırakıldı.",
     heldItem: "{input}: {original} → {value} · gerekçe: «{reason}»",
     // preview, then sign (D6)
     preview: "Önizle",
@@ -111,6 +112,7 @@ export default {
     sign: "İmzala",
     signing: "İmzalanıyor…",
     signedToast: "{subject}: SOFA formu imzalandı · toplam {total}.",
+    signedNoTotal: "{subject}: SOFA formu imzalandı; motor toplamı göndermedi — SOFA kutusundaki son imza satırına bakın.",
     signedDiffers: "{subject}: SOFA formu toplam {total} ile imzalandı — önizlemede {previewed} idi; kayıt arada değişti.",
     signedRecordMoved: "{subject}: SOFA formu toplam {total} ile imzalandı — ama kayıt önizlemeden sonra değişti: formu yeniden açıp kontrol edin.",
     signRefused: "{subject} için imza reddedildi: {reason}",
@@ -211,6 +213,7 @@ export default {
     dropFor: "Düzəlişi götürün: {input}",
     held: "{input} üçün düzəliş saxlanıldı; öncədən baxışda qiymətləndirilir.",
     heldTitle: "Gözləyən düzəlişlər",
+    heldDropped: "{subject}: forma bağlandı, imzalanmamış düzəlişlər ləğv edildi.",
     heldItem: "{input}: {original} → {value} · əsaslandırma: «{reason}»",
     // preview, then sign (D6)
     preview: "Öncədən baxın",
@@ -224,6 +227,7 @@ export default {
     sign: "İmzalayın",
     signing: "İmzalanır…",
     signedToast: "{subject}: SOFA forması imzalandı · cəmi {total}.",
+    signedNoTotal: "{subject}: SOFA forması imzalandı; mühərrik cəmi göndərmədi — SOFA qutusundakı son imza sətrinə baxın.",
     signedDiffers: "{subject}: SOFA forması cəmi {total} ilə imzalandı — öncədən baxışda {previewed} idi; qeyd arada dəyişib.",
     signedRecordMoved: "{subject}: SOFA forması cəmi {total} ilə imzalandı — amma qeyd öncədən baxışdan sonra dəyişib: formanı yenidən açıb yoxlayın.",
     signRefused: "{subject} üçün imza rədd edildi: {reason}",
@@ -324,6 +328,7 @@ export default {
     dropFor: "Убрать исправление: {input}",
     held: "Исправление для {input} сохранено; оно оценивается в предпросмотре.",
     heldTitle: "Ожидающие исправления",
+    heldDropped: "{subject}: форма закрыта, неподписанные исправления отброшены.",
     heldItem: "{input}: {original} → {value} · обоснование: «{reason}»",
     // preview, then sign (D6)
     preview: "Предпросмотр",
@@ -337,6 +342,7 @@ export default {
     sign: "Подписать",
     signing: "Подписывается…",
     signedToast: "{subject}: форма SOFA подписана · сумма {total}.",
+    signedNoTotal: "{subject}: форма SOFA подписана; система не передала сумму — проверьте строку последней подписи в блоке SOFA.",
     signedDiffers: "{subject}: форма SOFA подписана с суммой {total} — в предпросмотре было {previewed}; запись за это время изменилась.",
     signedRecordMoved: "{subject}: форма SOFA подписана с суммой {total} — но запись изменилась после предпросмотра: откройте форму снова и проверьте её.",
     signRefused: "Подпись для {subject} отклонена: {reason}",
@@ -437,6 +443,7 @@ export default {
     dropFor: "Remove the correction: {input}",
     held: "Correction kept for {input}; it is scored in the preview.",
     heldTitle: "Corrections held",
+    heldDropped: "{subject}: form closed; corrections not signed were dropped.",
     heldItem: "{input}: {original} → {value} · reason: «{reason}»",
     // preview, then sign (D6)
     preview: "Preview",
@@ -450,6 +457,7 @@ export default {
     sign: "Sign",
     signing: "Signing…",
     signedToast: "{subject}: SOFA form signed · total {total}.",
+    signedNoTotal: "{subject}: SOFA form signed; the engine sent no total — check the last signature line in the SOFA box.",
     signedDiffers: "{subject}: SOFA form signed with total {total} — the preview said {previewed}; the record changed in between.",
     signedRecordMoved: "{subject}: SOFA form signed with total {total} — but the record changed since the preview: open the form again and check it.",
     signRefused: "The signature for {subject} was refused: {reason}",

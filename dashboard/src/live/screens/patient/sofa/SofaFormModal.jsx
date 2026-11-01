@@ -28,15 +28,19 @@
 //
 // THE REFUSALS are the house's (admin/refusal.js, meds/MedsChartForm.jsx): on the toast, named after the bed —
 // and, D10, the same sentence in the footer as plain text, which is no live region, so the refusal is announced
-// once (X4). A write with no answer may have landed (`mayHaveLanded`): a measurement reads the form again, a
+// once (X4). The footer says the last outcome BESIDE the standing note — why a control is absent, or what
+// signing needs first — never instead of it. A 403 is said in the engine's own words when it sent some (a
+// device, a scope, a permission), and only a bare one as "no right"; on a preview or a signature it closes the
+// form. A write with no answer may have landed (`mayHaveLanded`): a measurement reads the form again, a
 // signature closes the form and the box reads its last signature again. A preview writes nothing, so its failure
-// is a read's (`readErrorText`). Nothing here alerts, rings or notifies (D10).
+// is a read's (`readErrorText`); a preview that lands is announced, since nothing else says it. Closing with
+// corrections held drops them, and the toast says so. Nothing here alerts, rings or notifies (D10).
 //
 // THE PATIENT IS FIXED AT OPENING: `api` is bound to it by the box (SofaBox.jsx), so a write in flight stays with
 // its patient when the screen moves on; the box closes this dialog for another patient.
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { apiErrorText, readErrorText } from "../../../apiErrors.js";
+import { apiErrorKey, apiErrorText, readErrorText } from "../../../apiErrors.js";
 import { Announce, Button, Modal, Note, StatusPill, useToast } from "../../../ui/index.js";
 import { mayHaveLanded } from "../../admin/refusal.js";
 import { ChartEntry, CorrectionEntry } from "./SofaEditors.jsx";
@@ -68,6 +72,18 @@ function recordUnder(answer) {
   }
   const sorted = (table) => Object.keys(table).sort().map((k) => [k, table[k]]);
   return JSON.stringify([sorted(originals), sorted(points)]);
+}
+
+/** A total as the engine sent it, or a dash: never a number it did not send. */
+const totalOf = (n) => (Number.isInteger(n) ? n : "—");
+
+/** A 403's reason: the engine's own refusal when it sent one — a device's, a scope's, a permission's, in the
+ *  reader's words — and `noRightKey` ("this account has no right to …") only for a bare 403, which says
+ *  nothing more than its status. Never the second in place of the first. */
+function forbiddenReason(t, err, noRightKey) {
+  const text = typeof err?.message === "string" ? err.message.trim() : "";
+  const bare = text === "" || apiErrorKey(err)?.key === "errors.requestFailed";
+  return bare ? t(noRightKey) : apiErrorText(t, err);
 }
 
 /** The window line (D2): the engine's hours and bounds — or, when the patient has been here for less than the
@@ -144,6 +160,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   const buttons = useRef({});                          // `${kind}:${code}` -> the button an editor gives focus back to
   const armed = useRef(true);                          // false inside the arming window, read by the press itself
   const armTimer = useRef(null);
+  const editingNow = useRef(null);                     // `editing` as last rendered, for an answer that lands late
   const mounted = useRef(false);
   // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
   useEffect(() => {
@@ -192,15 +209,28 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   const signable = canSign && minReason !== null;
   const label = (code) => labelOf(t, code).label;
   const heldOf = (code) => (Object.prototype.hasOwnProperty.call(corrections, code) ? corrections[code] : null);
-  const close = () => onClose(changed.current);
   const keepButton = (kind, code) => (el) => { buttons.current[`${kind}:${code}`] = el; };
+  // The editor open now, for an answer that lands after she opened another one.
+  editingNow.current = editing;
+
+  /** Escape, ✕, the backdrop or «Kapat»: never held up, but corrections held and not signed are dropped with
+   *  the dialog, and the toast says so. */
+  function close() {
+    if (Object.keys(corrections).length > 0) toast(t("sofa.heldDropped", { subject: bed }), "warn");
+    onClose(changed.current);
+  }
 
   function openEditor(next) {
     setSaid(null);
     setEditing(next);
   }
-  /** Close the editor and give the focus back to the button that opened it, which stays on the row. */
+  /** Close THIS editor — the one of `kind` for `code`, if it is still the one open — and give the focus back to
+   *  the button that opened it, which stays on the row. An editor she opened since is hers: a chart that lands
+   *  late neither closes it nor takes its focus. */
   function closeEditor(kind, code) {
+    const open = editingNow.current;
+    if (open?.kind !== kind || open?.code !== code) return;
+    editingNow.current = null;
     setEditing(null);
     buttons.current[`${kind}:${code}`]?.focus();
   }
@@ -226,7 +256,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         done = { text: t("sofa.chartMayHaveLanded", { subject: bed }), tone: "warn", close: true, reread: true };
       } else {
         const forbidden = err?.status === 403;
-        const reason = forbidden ? t("sofa.chartNoRight") : apiErrorText(t, err);
+        const reason = forbidden ? forbiddenReason(t, err, "sofa.chartNoRight") : apiErrorText(t, err);
         done = { text: t("sofa.chartRefused", { subject: bed, reason }), tone: "error", close: forbidden, reread: false };
       }
     } finally {
@@ -284,15 +314,18 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         if (!mounted.current) return;
         setPreview({ key: correctionsKey(asked), answer });
         arm();
-        setSaid({ text: t("sofa.previewed", { total: answer.total }), warn: false });
+        // Spoken too: no toast says a preview landed, and «İmzala» has just appeared.
+        setSaid({ text: t("sofa.previewed", { total: answer.total }), warn: false, spoken: true });
         return;
       } else {
         done = { text: t("sofa.previewRefused", { subject: bed, reason: t("sofa.previewNotPreview") }), tone: "error", close: false };
       }
     } catch (err) {
       if (err?.superseded) return;
-      const reason = err?.status === 403 ? t("sofa.signNoRight") : readErrorText(t, err);
-      done = { text: t("sofa.previewRefused", { subject: bed, reason }), tone: "error", close: false };
+      // A 403 here is a signature's 403 (the preview keeps every refusal of signing, X3), and closes alike.
+      const forbidden = err?.status === 403;
+      const reason = forbidden ? forbiddenReason(t, err, "sofa.signNoRight") : readErrorText(t, err);
+      done = { text: t("sofa.previewRefused", { subject: bed, reason }), tone: "error", close: forbidden };
     } finally {
       sending.current = false;
       if (mounted.current) setBusy(null);
@@ -317,8 +350,11 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     try {
       const answer = await api.sign(overridesOf(corrections));
       changed.current = true;
-      const total = answer?.total ?? previewed;
-      if (total !== previewed) {
+      // A total the engine did not send is never claimed: the box's signature line is where it is read.
+      const total = Number.isInteger(answer?.total) ? answer.total : null;
+      if (total === null) {
+        done = { text: t("sofa.signedNoTotal", { subject: bed }), tone: "warn", close: true };
+      } else if (total !== previewed) {
         done = { text: t("sofa.signedDiffers", { subject: bed, total, previewed }), tone: "warn", close: true };
       } else if (recordUnder(answer) !== recordUnder(asked)) {
         done = { text: t("sofa.signedRecordMoved", { subject: bed, total }), tone: "warn", close: true };
@@ -332,7 +368,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         done = { text: t("sofa.signMayHaveLanded", { subject: bed }), tone: "warn", close: true };
       } else {
         const forbidden = err?.status === 403;
-        const reason = forbidden ? t("sofa.signNoRight") : apiErrorText(t, err);
+        const reason = forbidden ? forbiddenReason(t, err, "sofa.signNoRight") : apiErrorText(t, err);
         done = { text: t("sofa.signRefused", { subject: bed, reason }), tone: "error", close: forbidden };
       }
     } finally {
@@ -417,8 +453,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         <p className="m-0 mt-2 text-12.5 text-mute">{windowLine(t, shown, nowMs)}</p>
         <p className="m-0 mt-1 font-display text-17 font-bold">
           {fresh
-            ? t("sofa.totalPreview", { total: preview.answer.total, auto: preview.answer.auto_total })
-            : t("sofa.total", { total: shown.total })}
+            ? t("sofa.totalPreview", { total: preview.answer.total, auto: totalOf(preview.answer.auto_total) })
+            : t("sofa.total", { total: totalOf(shown.total) })}
         </p>
         {!canChart ? <p className="m-0 mt-1 text-12 text-mute">{t("sofa.chartNoRightNote")}</p> : null}
         {/* role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver. */}
@@ -460,38 +496,43 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     );
   }
 
-  // The footer's sentence: the last outcome when there is one; else why she cannot sign, or what signing needs
-  // first. Plain text, not a live region (X4): the toast is what announces.
-  let footer = said;
-  if (!footer && shown) {
-    if (!canSign) footer = { text: t("sofa.signNoRightNote"), warn: false };
-    else if (minReason === null) footer = { text: t("sofa.signOldEngine"), warn: true };
-    else if (preview !== null && !fresh) footer = { text: t("sofa.previewStale"), warn: true };
-    else if (!fresh) footer = { text: t("sofa.previewFirst"), warn: false };
+  // The footer: the last outcome, and BESIDE it the standing note — why she cannot sign, or what signing needs
+  // first — so an absent control never loses its explanation to an outcome. Plain text, not a live region (X4):
+  // the toast is what announces.
+  let standing = null;
+  if (shown) {
+    if (!canSign) standing = { text: t("sofa.signNoRightNote"), warn: false };
+    else if (minReason === null) standing = { text: t("sofa.signOldEngine"), warn: true };
+    else if (preview !== null && !fresh) standing = { text: t("sofa.previewStale"), warn: true };
+    else if (!fresh) standing = { text: t("sofa.previewFirst"), warn: false };
   }
+  const footer = [said, standing].filter(Boolean);
+  const describedBy = footer.length > 0 ? footerId : undefined;
+  const busyText = busy === "chart" ? t("sofa.saving") : busy === "preview" ? t("sofa.previewing") : busy === "sign" ? t("sofa.signing") : "";
 
   return (
     <Modal
       open title={`${t("sofa.title")} · ${bed}`} onClose={close} busy={busy !== null}
       actions={(
         <div className="flex w-full flex-wrap items-center justify-end gap-2">
-          {footer ? (
-            <p id={footerId} data-sofa-footer=""
-              className={`m-0 mr-auto min-w-0 flex-[1_1_14rem] text-12 font-semibold ${footer.warn ? "text-att-ink" : "text-mute"}`}>
-              {footer.text}
-            </p>
+          {footer.length > 0 ? (
+            <div id={footerId} data-sofa-footer="" className="mr-auto min-w-0 flex-[1_1_14rem] text-12 font-semibold">
+              {footer.map((line) => (
+                <p key={line.text} className={`m-0 ${line.warn ? "text-att-ink" : "text-mute"}`}>{line.text}</p>
+              ))}
+            </div>
           ) : null}
           {/* The buttons are one flex item: on a phone they wrap as a group, under the sentence. */}
           <div className="ml-auto flex shrink-0 flex-wrap gap-2">
             <Button variant="ghost" onClick={close} busy={busy !== null}>{t("common.close")}</Button>
             {signable && shown ? (
-              <Button icon="eye" onClick={previewIt} busy={busy === "preview"} aria-describedby={footer ? footerId : undefined}>
+              <Button icon="eye" onClick={previewIt} busy={busy !== null} aria-describedby={describedBy}>
                 {t("sofa.preview")}
               </Button>
             ) : null}
             {signable && fresh ? (
-              <Button variant="primary" icon="ok" onClick={signIt} busy={busy === "sign"} aria-disabled={arming ? "true" : undefined}
-                aria-describedby={footer ? footerId : undefined}>
+              <Button variant="primary" icon="ok" onClick={signIt} busy={busy !== null} aria-disabled={arming ? "true" : undefined}
+                aria-describedby={describedBy}>
                 {t("sofa.sign")}
               </Button>
             ) : null}
@@ -500,8 +541,9 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
       )}
     >
       {body}
-      {/* A busy Button reads only "unavailable" to a screen reader; what is happening is said once, here. */}
-      <Announce text={busy === "chart" ? t("sofa.saving") : busy === "preview" ? t("sofa.previewing") : busy === "sign" ? t("sofa.signing") : ""} />
+      {/* A busy Button reads only "unavailable" to a screen reader; what is happening is said once, here — and
+          so is a preview that landed, which no toast says. */}
+      <Announce text={busyText || (said?.spoken ? said.text : "")} />
     </Modal>
   );
 }

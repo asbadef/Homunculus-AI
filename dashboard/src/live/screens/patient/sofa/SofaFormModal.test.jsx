@@ -10,6 +10,7 @@ import { mount, refusal } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW } from "../../../data/board.testutil.js";
 import { dayStamp } from "../../../i18n/dates.js";
+import { ANNOUNCE_DELAY_MS } from "../../../ui/Alert.jsx";
 import { SIGN_ARM_MS, SofaFormModal } from "./SofaFormModal.jsx";
 import { toLocalInput } from "./sofaFields.js";
 import { MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
@@ -343,7 +344,7 @@ describe("preview, then sign (D6)", () => {
     await correctPlatelets();
     await previewed();
     await press(button("İmzalayın"));
-    expect(toasted(`${BED} üçün imza rədd edildi: Bu hesabın imza səlahiyyəti yoxdur.`).length).toBeGreaterThan(0);
+    expect(toasted(`${BED} üçün imza rədd edildi: Bu əməliyyat üçün səlahiyyətiniz yoxdur (scores.sign).`).length).toBeGreaterThan(0);
     expect(onClose).toHaveBeenCalledWith(false);
     cleanup();
     ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))) } }));
@@ -366,5 +367,101 @@ describe("preview, then sign (D6)", () => {
     expect(within(dialog()).queryAllByRole("button", { name: /^Düzəldin/ })).toHaveLength(0);
     expect(within(dialog()).queryByRole("button", { name: "Öncədən baxın" })).toBeNull();
     expect(footer()).toHaveTextContent("Mühərrikin bu versiyası öncədən baxışı bilmir: düzəliş və imza bu ekrandan bağlıdır.");
+  });
+});
+
+describe("the footer, the announcement, the editors and the close (review minors)", () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
+  const chartEntry = (input) => within(dialog()).getByRole("form", { name: `${input} — yeni ölçmə` });
+  async function chartBilirubin() {
+    await press(within(organ("Qaraciyər")).getByRole("button", { name: "Ölçmə daxil edin: Bilirubin səviyyəsi" }));
+    fireEvent.change(within(chartEntry("Bilirubin səviyyəsi")).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
+    await press(within(chartEntry("Bilirubin səviyyəsi")).getByRole("button", { name: "Yadda saxla" }));
+  }
+
+  it("the footer says the last outcome AND why a control is absent: the standing note is never hidden by it", async () => {
+    await open({ canSign: false });
+    await chartBilirubin();
+    expect(footer()).toHaveTextContent(`${BED}: Bilirubin səviyyəsi qeyd olundu; forma yenidən oxunur.`);
+    expect(footer()).toHaveTextContent("Düzəltmək və imzalamaq scores.sign səlahiyyəti tələb edir.");
+    cleanup();
+    const { min_reason_chars: _min, ...older } = sofaForm();
+    await open({ form: older });
+    await chartBilirubin();
+    expect(footer()).toHaveTextContent(`${BED}: Bilirubin səviyyəsi qeyd olundu; forma yenidən oxunur.`);
+    expect(footer()).toHaveTextContent("Mühərrikin bu versiyası öncədən baxışı bilmir");
+  });
+
+  it("a signature whose answer carries no total claims none", async () => {
+    const { onClose } = await open({ api: { sign: vi.fn(() => Promise.resolve({ signed: true })) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    const said = `${BED}: SOFA forması imzalandı; mühərrik cəmi göndərmədi — SOFA qutusundakı son imza sətrinə baxın.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(toasted(/cəmi 4/)).toHaveLength(0);
+    expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it("a chart that lands closes its own editor, not the one she opened while it was in flight", async () => {
+    let land;
+    const chart = vi.fn(() => new Promise((resolve) => { land = resolve; }));
+    await open({ api: { chart } });
+    await chartBilirubin();
+    expect(chart).toHaveBeenCalledTimes(1);
+    expect(button("Öncədən baxın")).toHaveAttribute("aria-busy", "true");           // one request at a time, said
+    await press(within(organ("Laxtalanma")).getByRole("button", { name: "Düzəldin: Trombosit sayı" }));
+    await act(async () => { land({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+    expect(within(dialog()).getByRole("form", { name: "Trombosit sayı — düzəliş" })).toBeInTheDocument();
+    expect(button("Öncədən baxın")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("while a preview is in flight «Öncədən baxın» is busy, and a preview that lands is announced with its total", async () => {
+    let land;
+    await open({ api: { preview: vi.fn(() => new Promise((resolve) => { land = resolve; })) } });
+    await correctPlatelets();
+    await press(button("Öncədən baxın"));
+    expect(button("Öncədən baxın")).toHaveAttribute("aria-busy", "true");
+    await act(async () => { land(previewAnswer()); await settle(); });
+    act(() => { vi.advanceTimersByTime(ANNOUNCE_DELAY_MS); });
+    const spoken = within(dialog()).getAllByRole("status").map((el) => el.textContent);
+    expect(spoken.some((text) => /^Öncədən baxış hazırdır: cəmi 4\./.test(text))).toBe(true);
+  });
+
+  it("a 403 on the preview closes the form, as one on the signature does, and says the engine's own reason when it sent one", async () => {
+    let { onClose } = await open({ api: { preview: vi.fn(() => Promise.reject(refusal(403, "skor formunu yalnız bir kişi imzalayabilir"))) } });
+    await correctPlatelets();
+    await press(button("Öncədən baxın"));
+    expect(toasted(`${BED} üçün öncədən baxış alınmadı: Bal formasını yalnız bir nəfər imzalaya bilər.`).length).toBeGreaterThan(0);
+    expect(onClose).toHaveBeenCalledWith(false);
+    cleanup();
+    ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(403, "İstek başarısız (403)"))) } }));
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    expect(toasted(`${BED} üçün imza rədd edildi: Bu hesabın imza səlahiyyəti yoxdur.`).length).toBeGreaterThan(0);   // no reason sent: the right
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it("a close with corrections held says they were dropped, and closes all the same; a close with none says nothing", async () => {
+    let { onClose } = await open();
+    await correctPlatelets();
+    await press(within(dialog()).getAllByRole("button", { name: "Bağla" })[0]);          // the ✕
+    const said = `${BED}: forma bağlandı, imzalanmamış düzəlişlər ləğv edildi.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(onClose).toHaveBeenCalledWith(false);
+    cleanup();
+    ({ onClose } = await open());
+    await correctPlatelets();
+    await act(async () => { fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" }); await settle(); });
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(onClose).toHaveBeenCalledWith(false);
+    cleanup();
+    ({ onClose } = await open());
+    await press(within(dialog()).getAllByRole("button", { name: "Bağla" }).at(-1));       // the footer's
+    expect(toasted(said)).toHaveLength(0);
+    expect(onClose).toHaveBeenCalledWith(false);
   });
 });
