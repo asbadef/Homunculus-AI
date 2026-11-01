@@ -972,31 +972,36 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   **en kötü** değerleriyle doldurulur — ikisi aynı sayı olmak zorunda değil. «Formu aç» altı organı kaynaktaki sırayla
   gösterir (solunum, pıhtılaşma, karaciğer, kardiyovasküler, merkezi sinir sistemi, böbrek): her girdinin en kötü
   değeri, birimi, ölçüm saati, kaynağı ve puanı; ölçümü olmayan organda «ölçülmedi» (skor onu 0 sayar, ekran 0
-  yazmaz); 3 ve üstü puanda «≥3 puan · organ yetmezliği eşiği» işareti. Hasta 24 saatten kısa süredir buradaysa form
-  bunu söyler.
+  yazmaz); 3 ve üstü puanda «≥3 puan» işareti (hastanenin basılı formunun dipnotundaki organ yetmezliği eşiği;
+  kaynağı henüz bilgi vault'una alınmadı). Hasta 24 saatten kısa süredir buradaysa form bunu söyler.
   **Tamamlama** (`clinical.chart`): trombosit (×10³/µL), bilirubin ve kreatinin (**mg/dL**, laboratuvarın birimi —
-  ekran çevirmez; µmol/L yazılmış normal ya da yüksek bir kreatinin, 44 ve üstü, 40 sınırını aşar ve reddedilir;
-  µmol/L bir bilirubin ise reddedilmeyebilir: birimi alanın yanından okuyun), GCS, PaO₂/FiO₂ ve «solunum desteği»
-  (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz değiştirene kadar şimdidir, en çok
-  24 saat geriye gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı motor hesaplar. Solunum desteği:
-  formda son 24 saatte bir «evet» varsa PaO₂/FiO₂ destekte sayılır ve pencere içindeki bu «evet»i bir «hayır» geri
-  almaz; pencerede «evet» yoksa son kayıt geçerlidir, pencereden önceki bir kayıt da olsa. Alarm SOFA'sı ise son kaydı
-  okur ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
+  ekran çevirmez; µmol/L yazılmış bir kreatinin 40'ın üstündeyse reddedilir, altındaysa reddedilmez; µmol/L bir
+  bilirubin de reddedilmeyebilir: koruma alanın yanında yazan birimdir, birimi oradan okuyun), GCS (tam sayı),
+  PaO₂/FiO₂ ve «solunum desteği» (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz
+  değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı
+  motor hesaplar. Solunum desteği: form en kötü PaO₂/FiO₂ ölçümünü (en düşük oranı) seçer ve onu **o ölçümün
+  saatinde** geçerli olan destek kaydıyla puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır»,
+  24 saatten eski olsa da; destek kaydı yoksa destekte sayılmaz. Ölçümden sonraki bir saate girilen kayıt o ölçümü
+  değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir. Solunum satırı hangi destek
+  kaydıyla puanlandığını (evet/hayır ve saati) yazar. Alarm SOFA'sı ise son kaydı okur ve 8 saatten eski bir destek
+  kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
   **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere, doğru değer ve en az 20 karakterlik bir gerekçeyle (sayaç
-  gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; kayıt kapısının yazım hatası
-  sınırları düzeltmede de geçerlidir (18000 yazılmış bir trombosit hem önizlemede hem imzada reddedilir).
-  **Önizle, sonra imzala:** «Önizle» motordan imzalanacak formu ister ve hiçbir şey yazmaz; «İmzala» yalnız o
-  önizlemeden sonra ve aynı düzeltmelerle çıkar (bir düzeltme değişirse yeniden önizlenir), çıktıktan sonra kısa bir
-  an basılamaz (hızlı bir çift tıklama imza atmasın diye); imza adınızla denetim zincirine mühürlenir. Önizleme ile
-  imza arasında kayıt değiştiyse (başka biri ölçüm girdiyse ya da 24 saatlik pencere kaydıysa) ekran bunu söyler:
-  toplam değiştiyse farkını, toplam aynı kaldıysa altındaki bir değerin değiştiğini. Önizlemeyi tanımayan eski bir
-  sunucuya karşı form düzeltme, önizleme ve imza sunmaz; önizleme yerine imza dönerse ekran uyarır ve ikinci kez imza
-  sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını söyler. Formu `board.view`
-  yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır. **Yapmadıkları:** alarm, bildirim ya
-  da zil yok; idrar çıkışı böbrek puanına katılmaz (eksik kaydedilmiş bir günün toplamı oligüri gibi okunurdu); MAP
-  formdan girilmez (kayıttan gelir — monitör henüz gerçek motoru beslemediği için çoğu hastada «ölçülmedi»);
-  vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok; APACHE, PRISM
-  ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
+  gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
+  de geçerlidir (18000 yazılmış bir trombosit ya da 9000 yazılmış bir MAP hem önizlemede hem imzada reddedilir).
+  **Önizle, sonra imzala:** «Önizle» motorun ayrı önizleme yolundan imzalanacak formu ve onun parmak izini ister,
+  hiçbir şey yazmaz; «İmzala» yalnız o önizlemeden sonra, aynı düzeltmelerle ve o parmak iziyle çıkar (bir düzeltme
+  değişirse yeniden önizlenir), çıktıktan sonra kısa bir an basılamaz (hızlı bir çift tıklama imza atmasın diye);
+  imza adınızla denetim zincirine mühürlenir. Önizleme ile imza arasında formda görünen bir şey değiştiyse (başka
+  biri ölçüm girdiyse ya da 24 saatlik pencere bir ölçümün üstünden kaydıysa) motor **imzalamaz**: «kayıt
+  önizlemeden sonra değişti — formu yeniden önizleyin» der ve hiçbir şey yazmaz; yeniden önizler, gördüğünüzü
+  imzalarsınız — imzalanan sayı her zaman önizlenen sayıdır. Önizlemeyi tanımayan eski bir sunucuya karşı form
+  düzeltme, önizleme ve imza sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını
+  söyler. Formu `board.view` yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır.
+  **Yapmadıkları:** Formun kendisi alarm üretmez; buradan girilen bir ölçüm hasta kaydına yazılır ve uyarı kuralları
+  (Sepsis-3 kutusu) da onu okur. İdrar çıkışı böbrek puanına katılmaz (eksik kaydedilmiş bir günün toplamı oligüri
+  gibi okunurdu); MAP formdan girilmez (kayıttan gelir — monitör henüz gerçek motoru beslemediği için çoğu hastada
+  «ölçülmedi»); vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok;
+  APACHE, PRISM ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
   numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
   kaydından çizilir (3.7).
