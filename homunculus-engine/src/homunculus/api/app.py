@@ -619,6 +619,9 @@ def create_app(
     app.include_router(ldap_admin_router)
     app.include_router(scope_router)
     app.include_router(infinity_research_router)
+    # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
+    from homunculus.protocol.router import router as protocol_router
+    app.include_router(protocol_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores

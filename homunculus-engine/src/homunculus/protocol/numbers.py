@@ -41,6 +41,15 @@ def parse_protocol_no(text: object) -> int | None:
     return int(text)
 
 
+def parse_start_no(text: object) -> int | None:
+    """The start number the administrator may set (A-1): twelve ASCII digits, and at least
+    000000000001 — 000000000000 is the number the test label prints (the dashboard's sample), and
+    no real protocol may equal it. None for anything else. Admissions and queries still read any
+    twelve digits with `parse_protocol_no`; only the start is held to this."""
+    number = parse_protocol_no(text)
+    return number if number is not None and number >= 1 else None
+
+
 async def next_protocol_no(db: AsyncSession, tenant_id: uuid.UUID) -> str:
     """The tenant's next protocol number. Call it inside the transaction that writes the admission:
     the settings row stays locked until that transaction commits or rolls back.
