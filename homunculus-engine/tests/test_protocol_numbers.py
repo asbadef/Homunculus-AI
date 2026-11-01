@@ -33,8 +33,17 @@ def test_twelve_ascii_digits_read_as_their_number(text, number):
     assert parse_protocol_no(text) == number
 
 
+#: 202600000001 in full-width digits: twelve characters, so only the `[0-9]`-not-`\d` guard refuses it
+#: (`re.fullmatch(r"\d{12}", …)` accepts it).
+FULL_WIDTH = "２０２６０００００００１"
+
+
+def test_the_full_width_case_is_twelve_characters():
+    assert len(FULL_WIDTH) == 12
+
+
 @pytest.mark.parametrize("text", ["20260000001", "2026000000012", "20260000000A", " 202600000001",
-                                  "２０２６００００００１", "", None, 202600000001])
+                                  FULL_WIDTH, "", None, 202600000001])
 def test_anything_else_is_not_a_protocol_number(text):
     assert parse_protocol_no(text) is None
 
