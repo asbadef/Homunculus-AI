@@ -513,10 +513,12 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
   });
 
+  // G2-ESLEME: the editor's four device codes are said by its own namespace; Yapı's `bed_has_monitor`
+  // stays in `kabul`. The namespace is pinned per code, so neither can drift into the other's.
+  const ESLEME = ["monitor_lane_off", "device_unknown", "bed_occupied", "mapping_changed"];
   it.each(CODES)("%s has a text in the four languages", (code) => {
     const hit = apiErrorKey(coded(code));
-    // G2-ESLEME: the editor's four device codes are said by its own namespace; Yapı's stays kabul.
-    expect(hit.key).toMatch(/^(kabul|esleme)\.err\./);
+    expect(hit.key).toMatch(ESLEME.includes(code) ? /^esleme\.err\./ : /^kabul\.err\./);
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
   });
 

@@ -315,8 +315,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // of the detail is kept — never a name.
         if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
         // G2-ESLEME: `bed_occupied` names the occupied beds and, to a board.view holder, the patients'
-        // board ids (devicebeds/service.py step 8). Only those two keys are kept — never a name.
-        if (Array.isArray(body.detail.occupied)) {
+        // board ids (devicebeds/service.py step 8; spec §4.5's "Extra" column). Read for that code only,
+        // and only those two keys are kept — never a name.
+        if (body.detail.code === "bed_occupied" && Array.isArray(body.detail.occupied)) {
           occupied = body.detail.occupied.filter((o) => typeof o?.bed_id === "string")
             .map((o) => (typeof o.patient_id === "string" ? { bed_id: o.bed_id, patient_id: o.patient_id } : { bed_id: o.bed_id }));
         }

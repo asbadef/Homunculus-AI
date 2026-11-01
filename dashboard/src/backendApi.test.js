@@ -1591,11 +1591,23 @@ describe("backendApi — the monitor→bed editor", () => {
   it("a bed_occupied refusal carries the beds and patient ids, and nothing else of the detail", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
       code: "bed_occupied", message: "An admitted patient is on this bed; confirm to go on.",
-      occupied: [{ bed_id: "b-2", patient_id: "H2600042", display_name: "Ahmet Yılmaz" }, { bed_id: "b-1" }, { bed_id: 7 }],
+      occupied: [{ bed_id: "b-2", patient_id: "H2600042", display_name: "Ahmet Yılmaz" }, { bed_id: "b-1" }, { bed_id: 7 },
+        { bed_id: "b-3", patient_id: 42 }],
     } }, { ok: false, status: 409 }));
     const err = await signedIn(fetchMock).bindDeviceBed({}).catch((e) => e);
     expect(err).toMatchObject({ status: 409, apiCode: "bed_occupied" });
-    expect(err.occupied).toEqual([{ bed_id: "b-2", patient_id: "H2600042" }, { bed_id: "b-1" }]);
+    // a patient_id that is not a string is dropped: the entry is {bed_id} only
+    expect(err.occupied).toEqual([{ bed_id: "b-2", patient_id: "H2600042" }, { bed_id: "b-1" }, { bed_id: "b-3" }]);
     expect(JSON.stringify(Object.entries(err))).not.toContain("Ahmet");
+  });
+
+  it("only a bed_occupied refusal carries err.occupied; any other code leaves it undefined, list or no list", async () => {
+    const refuse = (detail) => signedIn(vi.fn().mockResolvedValue(jsonResponse({ detail }, { ok: false, status: 409 })))
+      .bindDeviceBed({}).catch((e) => e);
+    const without = await refuse({ code: "mapping_changed", message: "The mapping changed." });
+    expect(without).toMatchObject({ status: 409, apiCode: "mapping_changed" });
+    expect(without.occupied).toBeUndefined();
+    const stray = await refuse({ code: "mapping_changed", message: "The mapping changed.", occupied: [{ bed_id: "b-1", patient_id: "H2600042" }] });
+    expect(stray.occupied).toBeUndefined();
   });
 });
