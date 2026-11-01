@@ -47,6 +47,9 @@ import shadow from "./strings/shadow.js";
 // G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
 import kabul from "./strings/kabul.js";
 
+// G2-B1d: Protokol — the protocol number, its label, Yönetim › Protokol ve etiket.
+import protokol from "./strings/protokol.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -73,6 +76,8 @@ export const NAMESPACES = {
   shadow,
 
   kabul, // G2-B1a
+
+  protokol, // G2-B1d
 };
 
 function flattenInto(out, prefix, entries) {

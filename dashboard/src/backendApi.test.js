@@ -1473,6 +1473,33 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect((await signedIn(odd).admit({}).catch((e) => e)).patientNumber).toBeUndefined();
   });
 
+  // G2-B1d (E6): the number a screen shows beside a refusal is the card's — `board_key` when the
+  // detail carries it (a protocol number), else `patient_number` (an API before the protocol).
+  it("a refusal's number is its board key when the detail carries one", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "duplicate_open_admission", message: "This person already has an open admission.",
+      patient_number: "H2600042", board_key: "202600000001",
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).admit({ patient: {}, note: {} }).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "duplicate_open_admission", patientNumber: "202600000001" });
+  });
+
+  it("reads and writes the protocol settings, and asks an admission's label by its own route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    const settings = { next_no: "202600000001", label_width_mm: 50, label_height_mm: 30, printer_dpi: 203 };
+    await api.protocolSettings();
+    await api.saveProtocolSettings(settings);
+    await api.admissionLabel("a 1");
+    await api.admissionLabel("a-1", true);
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/admin/protocol-settings"], ["PUT", "/admin/protocol-settings"],
+      ["POST", "/admissions/a%201/label"], ["POST", "/admissions/a-1/label"],
+    ]);
+    expect(sent(fetchMock, 1).body).toEqual(settings);
+    expect([sent(fetchMock, 2).body, sent(fetchMock, 3).body]).toEqual([{ reprint: false }, { reprint: true }]);
+  });
+
   it("a refusal without a code has none, as before", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: "Admission not found." }, { ok: false, status: 404 }));
     const err = await signedIn(fetchMock).signOffAdmission("a-1").catch((e) => e);

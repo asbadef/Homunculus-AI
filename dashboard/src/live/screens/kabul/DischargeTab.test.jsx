@@ -701,3 +701,27 @@ describe("DischargeDialog's local time", () => {
     }
   });
 });
+
+// G2-B1d (spec §4, E12): the row says the card's number, and the hold reads the card's alarms.
+describe("DischargeTab · the protocol (G2-B1d)", () => {
+  const KEYED = [row({ id: "a-1", patient_number: "H2600001", protocol_no: "202600000001", board_key: "202600000001",
+    bed_label: "2", state: "ACTIVE" })];
+
+  it("names the row by its card's number and holds its start for the protocol card's critical alarm", async () => {
+    const { api } = await open(DOCTOR, (a) => {
+      a.admissions.mockResolvedValue(KEYED);
+      a.boardPatients.mockResolvedValue(board([entry("202600000001", [alarm("septic_shock", "critical")])]));
+    });
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText("H2600001")).toBeNull();
+    expectHeld(api, "Təsdiqlənməmiş kritik siqnal var: əvvəlcə siqnala baxın.");
+  });
+
+  it("is not held by an alarm under the H-number: that is not this admission's card", async () => {
+    await open(DOCTOR, (a) => {
+      a.admissions.mockResolvedValue(KEYED);
+      a.boardPatients.mockResolvedValue(board([entry("H2600001", [alarm("septic_shock", "critical")])]));
+    });
+    expect(startAllowed()).toBe(true);
+  });
+});

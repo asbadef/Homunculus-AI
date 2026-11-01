@@ -45,6 +45,7 @@ import { ddmm, hhmm } from "../../i18n/dates.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { DISPOSITIONS, DischargeDialog } from "./DischargeDialog.jsx";
 import { useAdmissions } from "./useAdmissions.js";
+import { boardKeyOf } from "./boardKey.js"; // G2-B1d
 
 const STATES = ["DRAFT", "ACTIVE", "PENDING_DISCHARGE"];
 const EVERY_MS = 60_000;
@@ -76,7 +77,7 @@ function Row({ row, children }) {
           <span className="font-data">{row.bed_label}</span> · {row.room_name} · {row.unit_name}
         </p>
         <p className="m-0 text-13 text-mute">
-          {row.display_name} · <span className="font-data">{row.patient_number}</span>
+          {row.display_name} · <span className="font-data">{boardKeyOf(row)}</span>
           {row.state === "DRAFT" ? <> · <Tag tone="warn">{t("kabul.badgeDraft")}</Tag></> : null}
         </p>
       </div>
@@ -228,7 +229,7 @@ export function DischargeTab() {
   const retryingText = retried ? t("kabul.retryingBoard", { bed: retried.subject }) : "";
   // The question's own «Hasta çıktı · onayla» is held as the row's is — read again on every render,
   // so an alarm that fires (or a board that is lost) while the question is open holds it (review I-2).
-  const leavingHold = leaving ? holdOf(leaving.patient_number, "confirm") : null;
+  const leavingHold = leaving ? holdOf(boardKeyOf(leaving), "confirm") : null;
   const pending = (rows ?? []).filter((r) => r.state === "PENDING_DISCHARGE");
   const lying = (rows ?? []).filter((r) => r.state === "DRAFT" || r.state === "ACTIVE");
   // "Loading" only while the first read is on its way: after a failed one the Alert says why.
@@ -255,7 +256,7 @@ export function DischargeTab() {
                   {row.discharge_at ? ` · ${whenOf(Date.parse(row.discharge_at))}` : ""}
                 </p>
                 {confirms ? (
-                  <RowAction words={t("kabul.confirmLeft")} subject={bedOf(row)} hold={holdOf(row.patient_number, "confirm")}
+                  <RowAction words={t("kabul.confirmLeft")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "confirm")}
                     variant="primary" icon="ok" busy={confirming && leaving?.id === row.id} onPress={() => setLeaving(row)} />
                 ) : null}
               </Row>
@@ -273,7 +274,7 @@ export function DischargeTab() {
               <Row key={row.id} row={row}>
                 {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
                   : starts ? (
-                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(row.patient_number, "start")}
+                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "start")}
                       icon="out" onPress={() => setStarting(row)} />
                   ) : null}
               </Row>
@@ -298,7 +299,7 @@ export function DischargeTab() {
               </Button>
             </>
           )}>
-          <p className="m-0 text-14">{t("kabul.confirmLeftBody", { bed: bedOf(leaving), number: leaving.patient_number })}</p>
+          <p className="m-0 text-14">{t("kabul.confirmLeftBody", { bed: bedOf(leaving), number: boardKeyOf(leaving) })}</p>
           {leavingHold ? (
             <p id={leavingHeld} className={`m-0 mt-2 text-13 font-semibold ${CRITICAL_HOLDS.has(leavingHold) ? "text-crit-ink" : "text-mute"}`}>
               {t(leavingHold)}
