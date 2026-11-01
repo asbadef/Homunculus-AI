@@ -20,6 +20,9 @@ PRE_PASSWORD = {"/auth/password"}
 # The board and device routes live in api/app.py and resolve their caller through the separate
 # Caller resolver (tenant token or JWT), not through FastAPI dependencies.
 CALLER_RESOLVED_MODULE = "homunculus.api.app"
+# G2-B1d (E22): the bridge's patient query is built by a factory bound to the app's `_caller`
+# (api/edge_query.py, E2): the device token only, so it too has no JWT principal to reach.
+CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "/edge/patient-query")}
 
 
 def _calls(dependant) -> set:
@@ -39,6 +42,7 @@ def _routes():
 def test_every_route_is_guarded_or_explicitly_exempt():
     missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
                if r.endpoint.__module__ != CALLER_RESOLVED_MODULE
+               and (r.endpoint.__module__, r.path) not in CALLER_RESOLVED_ROUTES
                and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD
                and get_principal not in _calls(r.dependant)]
     assert missing == []

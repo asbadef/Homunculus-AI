@@ -759,7 +759,10 @@ NOT_THE_BOARD = {
     # deployment serving several hospitals from one API would have to bind the hub to a tenant.
     ("GET", "/infinity-research/state"),
 }
-UNSCOPED_BY_DESIGN = NOT_THE_BOARD | {
+# G2-B1d (spec D12): the bridge's patient query — the device credential's own hospital, through
+# the app's `_caller`, outside `homunculus.api.app` (api/edge_query.py, E2).
+DEVICE_ONLY = {("POST", "/edge/patient-query")}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | DEVICE_ONLY | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -815,4 +818,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - DEVICE_ONLY == board

@@ -29,6 +29,9 @@ API_PATHS = [
 ]
 # Paths that must stay with the single-page app.
 SPA_PATHS = ["/", "/index.html", "/assets/index-abc.js", "/administrator-guide"]
+# API prefixes nginx must NOT proxy: the bridge reaches them on the compose network only
+# (G2-B1d, spec D12 — the device's patient query).
+NOT_PROXIED = {"/edge"}
 
 
 def _api_locations() -> list[re.Pattern[str]]:
@@ -56,8 +59,17 @@ def test_every_app_route_prefix_is_proxied() -> None:
     prefixes = _app_prefixes()
     # Guard against the introspection going vacuous (a schema change once hid every router).
     assert {"/auth", "/admin", "/patients"} <= prefixes, prefixes
-    missing = sorted(p for p in prefixes if not any(loc.search(p) for loc in _api_locations()))
+    missing = sorted(p for p in prefixes - NOT_PROXIED
+                     if not any(loc.search(p) for loc in _api_locations()))
     assert not missing, f"routers not proxied by nginx: {missing}"
+
+
+def test_the_bridges_patient_query_is_never_proxied() -> None:
+    """D12: /edge/patient-query is in the app (the bridge calls it on the compose network) and in
+    no location that hands a path to the API — from outside, it is the single-page app's."""
+    assert NOT_PROXIED <= _app_prefixes()
+    for path in ("/edge", "/edge/patient-query"):
+        assert not any(loc.search(path) for loc in _api_locations()), path
 
 
 def test_stream_ticket_is_served_by_the_sse_block() -> None:
