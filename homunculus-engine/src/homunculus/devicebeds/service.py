@@ -4,7 +4,8 @@ that `change()` runs in order:
 
   1. `_resolve`        steps 2-4   the device, the target bed, the device's current row (no lock)
   2. `_lock_and_check` steps 5-7   the beds, the rows; `changed:false`; `expected`; the unit scope
-     — the hook of step 8 (occupancy, Task 10) sits here in `change()`: before `t`, before any write —
+     `_occupancy`      step 8      an admitted patient on the target bed or the bed left (O5); before `t`,
+                                   before any write, so a refusal needs no rollback
   3. `_write`          steps 9-11  `t`, every close, every insert, the commit, the strip's table reset
   4. `_audit`          steps 12-13 one audit row per device's change, after the commit; the fresh list
 
@@ -30,13 +31,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import trail, unitscope
-from homunculus.admission.errors import BED_CLOSED, DEVICE_UNKNOWN, MAPPING_CHANGED, Refusal, field_invalid
+from homunculus.admission.errors import (
+    BED_CLOSED, BED_OCCUPIED, DEVICE_UNKNOWN, MAPPING_CHANGED, Refusal, field_invalid,
+)
+from homunculus.admission.models import OPEN_ADMISSION_STATES, Admission, Patient
 from homunculus.api.infinity_device_beds import PORT, unicast_ipv4
 from homunculus.auth.dependencies import Principal
 from homunculus.auth.models import User
 from homunculus.devicebeds import listing
 from homunculus.devicebeds.models import DeviceBed
 from homunculus.devicebeds.rows import brief, current_rows, db_time, editor_row
+from homunculus.scope.rules import normalise_id
 from homunculus.tenant import scope
 from homunculus.tenant.models import Bed, Room, Unit
 from homunculus.tenant.router import _lock_bed
@@ -126,8 +131,7 @@ async def change(request: Request, db: AsyncSession, tenant_id: uuid.UUID, user:
     held = await _lock_and_check(db, tenant_id, principal, ask, seen)
     if held is None:                                                  # asked for what already holds
         return await _answer(state, db, tenant_id, principal, changed=False)
-    # 8. occupancy — Task 10 (reads `held.leaving`, `ask.bed_id`, `ask.confirm_occupied`; refuses before any write)
-    occupied: list[dict] = []
+    occupied = await _occupancy(state, db, principal, hospital, ask, held)      # 8: refuses before `t`, before any write
     written = await _write(db, tenant_id, user, ask, seen, held)
     state.shadow_table_reset()                                        # 11
     _audit(request, hospital, user, ask, held, written, occupied)
@@ -193,6 +197,51 @@ async def _lock_and_check(db: AsyncSession, tenant_id: uuid.UUID, principal: Pri
         except Refusal as refusal:
             raise refusal.http() from None
     return _Held(mine, on_bed, leaving, target_place, leaving_place)
+
+
+async def _open_admission_number(db: AsyncSession, bed_id: uuid.UUID) -> str | None:
+    """The patient number of an open admission on the bed, or None when there is none — exactly
+    `tenant.router._holds_open_admission`'s condition (`Admission.bed_id`, `OPEN_ADMISSION_STATES`), but it
+    returns the number (E9): the audit and the refusal need it, and the helper answers a bool. A column, not
+    an entity, so a row committed after an earlier load is seen. `patient_number` is NOT NULL: None here is
+    never an admission without a number."""
+    return (await db.execute(
+        select(Patient.patient_number).join(Admission, Admission.patient_id == Patient.id)
+        .where(Admission.bed_id == bed_id, Admission.state.in_(list(OPEN_ADMISSION_STATES))).limit(1)
+    )).scalar_one_or_none()
+
+
+async def _occupancy(state, db: AsyncSession, principal: Principal, hospital: str, ask: Ask,
+                     held: _Held) -> list[dict]:
+    """Step 8 (spec D4, §4.4, O5). A bed is occupied when an open admission holds it (read now, under the bed
+    lock) or the board puts an admitted patient on it (`app.state.bed_occupants`, the strip's rule read fresh —
+    HIS-fed records included). The beds that count are the TARGET bed (a bind: where the monitor's vitals will
+    start to flow — a monitor replaced there is on that same bed) and the bed the device LEAVES (a move or an
+    unbind: where they stop); target first. The monitor of a replace is not a third bed.
+
+    Returns the occupied beds the change goes over, `[{bed_id, patient_id?}]`, for the audit — [] when none.
+    Raises 409 `bed_occupied` unless `confirm_occupied` is true. The audit keeps every `patient_id`; the answer
+    shows it only to a `board.view` holder (a key-only holder learns that a patient is there, not who). A bed
+    with two board patients and no admission here names no one: either would be a guess. No name anywhere."""
+    on_board = state.bed_occupants(hospital)
+    occupied: list[dict] = []
+    for bed in (ask.bed_id, held.leaving):
+        if bed is None:
+            continue
+        present = on_board.get(normalise_id(str(bed)), [])
+        number = await _open_admission_number(db, bed)
+        if not present and number is None:
+            continue
+        hit = {"bed_id": str(bed)}
+        patient = present[0] if len(present) == 1 else number
+        if patient:
+            hit["patient_id"] = patient
+        occupied.append(hit)
+    if occupied and not ask.confirm_occupied:
+        shown = [hit if "board.view" in principal.perms else {"bed_id": hit["bed_id"]} for hit in occupied]
+        raise Refusal(409, BED_OCCUPIED, "An admitted patient is on this bed; confirm to go on.",
+                      {"occupied": shown}).http()
+    return occupied
 
 
 async def _write(db: AsyncSession, tenant_id: uuid.UUID, user: User, ask: Ask, seen: _Seen,

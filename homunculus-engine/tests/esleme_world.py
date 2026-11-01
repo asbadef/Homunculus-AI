@@ -73,10 +73,14 @@ async def seed(db: AsyncSession, ward: Ward, *rows: tuple[str, str | None, str |
 
 @asynccontextmanager
 async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: str = SLUG, sources=SOURCES,
-                        monotonic=None, device_groups=None) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
+                        monotonic=None, device_groups=None, identities=None,
+                        bedmap=None) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
     """`monotonic` is the store's own clock (report ages): a test that moves it makes the worker's
     devices fall silent without waiting. `device_groups` ({source: group}) puts a reported device in another
-    multicast group than `group_of(source)`. The table's pool is closed on the way out (A-22 I1)."""
+    multicast group than `group_of(source)`. `identities` is the board's identity store and `bedmap` the HIS
+    location → bed table (a function of the ward, whose bed UUIDs exist only once it is built): a patient on a
+    bed through either (occupancy, Task 10); None is `create_app`'s own. The table's pool is closed on the way
+    out (A-22 I1)."""
     ward = await build_ward(db)
     groups = await ensure_default_groups(db, ward.tenant.id)
     bio = await add_user(db, username="bio@kabul.example.com", tenant_id=ward.tenant.id, group=groups["biomedical"])
@@ -87,7 +91,8 @@ async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: st
     table = PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG)
     try:
         app = create_app({DEVICE: SLUG}, run_escalation_loop=False, shadow=settings, audit=InMemoryAuditLog(),
-                         device_beds=table, shadow_monotonic=monotonic)
+                         device_beds=table, shadow_monotonic=monotonic, identities=identities,
+                         bedmap=bedmap(ward) if bedmap is not None else None)
         maker = async_sessionmaker(db.bind, expire_on_commit=False)
 
         async def _db():
