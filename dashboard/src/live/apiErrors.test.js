@@ -8,7 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText,
+  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, WITH_NUMBER, WITH_PROTOCOL,
+  apiErrorKey, apiErrorText, fieldRefusals, readErrorText,
 } from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
@@ -516,6 +517,13 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
       expect(protocol).toContain("protokol nömrəsi 202600000001");
       expect(legacy).toContain("xəstə nömrəsi H2600042");
     });
+
+  // Task 12 review F-2: admissionCodeKey asks WITH_NUMBER `.has(code)` and then WITH_PROTOCOL `.get(code)`;
+  // a code in one map alone would answer `key: undefined` for the other kind of number.
+  it("the protocol and number refusal maps carry the same codes", () => {
+    expect([...WITH_PROTOCOL.keys()].sort()).toEqual([...WITH_NUMBER.keys()].sort());
+    expect(WITH_NUMBER.size).toBeGreaterThan(0);
+  });
 
   it("the map holds every code errors.py raises, and nothing else", () => {
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
