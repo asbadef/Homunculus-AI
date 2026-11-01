@@ -37,6 +37,7 @@ GUARDED_MODULES = {
     "homunculus.admission.router",
     "homunculus.escalation.router",
     "homunculus.tenant.router",
+    "homunculus.devicebeds.router",
 }
 
 _S = "structure.manage"
@@ -127,6 +128,8 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("GET", "/admin/ldap/group-mappings"): ANY(_U),
     ("POST", "/admin/ldap/group-mappings"): ANY(_U),
     ("DELETE", "/admin/ldap/group-mappings/{mapping_id}"): ANY(_U),
+    # devicebeds/router.py — the monitor→bed editor (G2-ESLEME, spec §4.1)
+    ("GET", "/infinity-shadow/device-beds"): ANY("devices.manage", "devices.map_beds"),
 }
 
 
@@ -212,7 +215,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 59
+    assert len(EXPECTED) == 60
 
 
 def test_no_guarded_route_is_missing_from_the_table():

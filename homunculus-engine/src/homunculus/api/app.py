@@ -612,6 +612,7 @@ def create_app(
     # The device-research window: same origin, permission-gated (`devices.manage`), credential
     # held server-side. Off unless INFINITY_HUB_URL / _VIEWER_TOKEN / _HUB_CA_FILE are all set.
     from homunculus.api.infinity_research import router as infinity_research_router
+    from homunculus.devicebeds.router import router as device_beds_router   # G2-ESLEME
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
@@ -623,6 +624,7 @@ def create_app(
     app.include_router(ldap_admin_router)
     app.include_router(scope_router)
     app.include_router(infinity_research_router)
+    app.include_router(device_beds_router)          # G2-ESLEME: the monitor→bed editor (spec §4.1)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
