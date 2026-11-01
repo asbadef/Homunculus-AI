@@ -115,12 +115,13 @@ def _at(hours):
     return (T0 - timedelta(hours=hours)).isoformat()
 
 
-class TestSupportIsTakenAsOfTheWorstReading:
-    """G2-A4 (D13, X21): the 3- and 4-point PaO2/FiO2 bands apply only on respiratory support, and the
-    support is the one in force WHEN the worst ratio was measured — the latest support observation at or
-    before that reading, over the patient's whole record — and the row says which one it used. Scoring an
-    eight-hour-old ratio against a ventilator connected since would credit the score for a treatment
-    that was not running at the time."""
+class TestEachRatioIsScoredOnItsOwnSupport:
+    """G2-A4 (D13, X21): the 3- and 4-point PaO2/FiO2 bands apply only on respiratory support. Each reading
+    is scored on the support in force WHEN it was measured — the latest support observation at or before
+    it, over the patient's whole record — and the row is the window's worst SCORE (ties: the lowest value,
+    then the latest reading), and says which support it was scored on. Scoring an eight-hour-old ratio
+    against a ventilator connected since would credit the score for a treatment that was not running at
+    the time."""
 
     def test_support_charted_before_the_reading_opens_the_three_point_band(self):
         row = _ratio_and_support([(150, 6)], [(1, 10)])
@@ -148,13 +149,46 @@ class TestSupportIsTakenAsOfTheWorstReading:
         row = _ratio_and_support([(150, 6)], [(1, 6)])
         assert row.points == 3 and row.as_dict()["support"]["at"] == _at(6)
 
-    def test_the_worst_reading_is_the_lowest_ratio_whatever_the_support(self):
-        """Support does not choose the worst reading: 150 off support is the worst by value, and is scored
-        off support (2) — even though 180, measured later on support, would score 3."""
+    def test_a_higher_ratio_on_support_outscores_a_lower_one_off_it(self):
+        """The row is the worst SCORE: 180 measured on support scores 3, 150 measured before support 2 —
+        the form shows the 180, on support."""
         row = _ratio_and_support([(150, 6), (180, 2)], [(1, 3)])
-        assert row.inputs[0].value == 150 and row.inputs[0].at == T0 - timedelta(hours=6)
-        assert row.points == 2
+        assert row.inputs[0].value == 180 and row.inputs[0].at == T0 - timedelta(hours=2)
+        assert row.points == 3
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(3)}
+
+    def test_four_points_on_support_beat_three_on_support(self):
+        row = _ratio_and_support([(120, 6), (90, 2)], [(1, 10)])
+        assert (row.inputs[0].value, row.points) == (90, 4)
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(10)}
+
+    def test_with_every_reading_off_support_the_lowest_value_wins(self):
+        """250 and 150 both score 2 off support: the tie goes to the lower value, as it always did."""
+        row = _ratio_and_support([(250, 6), (150, 4), (350, 2)], [])
+        assert (row.inputs[0].value, row.points) == (150, 2)
         assert row.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_a_no_timed_before_a_reading_turns_that_reading_off_support(self):
+        """150 at 6 h falls under the «evet» at 10 h (3); 160 at 2 h under the «hayır» at 4 h (2)."""
+        row = _ratio_and_support([(150, 6), (160, 2)], [(1, 10), (0, 4)])
+        assert (row.inputs[0].value, row.points) == (150, 3)
+        only_the_later = _ratio_and_support([(150, 2)], [(1, 10), (0, 4)])
+        assert only_the_later.points == 2
+        assert only_the_later.as_dict()["support"] == {"on_support": False, "at": _at(4)}
+
+    def test_a_tie_on_points_goes_to_the_lower_value(self):
+        row = _ratio_and_support([(120, 6), (150, 2)], [(1, 10)])      # both 3 on support
+        assert (row.inputs[0].value, row.points) == (120, 3)
+
+    def test_a_tie_on_points_and_value_goes_to_the_latest_reading(self):
+        row = _ratio_and_support([(150, 6), (150, 3)], [])
+        assert row.inputs[0].at == T0 - timedelta(hours=3) and row.points == 2
+
+    def test_equal_values_on_different_support_are_ranked_by_their_points(self):
+        """The same 150 twice: on support at 6 h (3), off it at 2 h (2). The score decides, not the time."""
+        row = _ratio_and_support([(150, 6), (150, 2)], [(1, 10), (0, 4)])
+        assert row.inputs[0].at == T0 - timedelta(hours=6) and row.points == 3
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(10)}
 
     def test_a_reading_from_before_the_window_is_scored_on_its_own_times_support(self):
         row = _ratio_and_support([(150, 30)], [(1, 40), (0, 20)])
@@ -167,6 +201,13 @@ class TestSupportIsTakenAsOfTheWorstReading:
         assert on.points == 4 and on.as_dict()["support"] == {"on_support": True, "at": _at(10)}
         off = _ratio_and_support([(150, 6)], [(1, 2)], overrides={SignalCode.PAO2_FIO2: 90})
         assert off.points == 2 and off.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_a_correction_takes_the_support_of_the_reading_it_corrects(self):
+        """The row's reading is the 180 on support (3); corrected to 90 it scores 4 on that support — not
+        on the 150's, which was off support."""
+        row = _ratio_and_support([(150, 6), (180, 2)], [(1, 3)], overrides={SignalCode.PAO2_FIO2: 90})
+        assert row.inputs[0].original == 180 and row.points == 4
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(3)}
 
     def test_with_no_ratio_at_all_there_is_no_support_basis(self):
         assert _ratio_and_support([], []).as_dict()["support"] is None

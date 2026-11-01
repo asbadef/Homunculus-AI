@@ -63,7 +63,7 @@ CHARTABLE: dict[SignalCode, str] = {
     # (medibus: a ventilator answering its poll is support, and it only ever says yes); no ventilator
     # feeds the ward, and whether a patient is supported is seen at the bedside, so this is a clinician's
     # observation as much as a device's. Charted here it reaches both SOFAs: the form's
-    # (scoring/sofa_form.py — the support in force when the worst ratio was measured, D13) and the alerting
+    # (scoring/sofa_form.py — each ratio scored on the support in force at its own time, D13) and the alerting
     # one (rules/sofa.py reads the latest). A flag, 1 or 0 (`_BOOLEAN`).
     SignalCode.ON_RESP_SUPPORT: "bool",
     # Labs a clinician transcribes while there is no feed from the laboratory. When the HIS
@@ -115,6 +115,10 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.CREATININE: (0.0, 40.0),           # mg/dL
     SignalCode.PAO2_FIO2: (20.0, 700.0),          # mmHg (CHARTABLE: "ratio")
 }
+
+# G2-A4 review: the refusal of a GCS that is not a whole number — at this door, and for a SOFA correction
+# (api/app.py `_sofa_to_sign`), in one sentence.
+GCS_NOT_WHOLE = "GCS tam sayı olmalı"
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,
@@ -170,7 +174,7 @@ def _value(code: SignalCode, raw) -> float:
     if code is SignalCode.GCS and not value.is_integer():
         # G2-A4 review: the scale counts whole points, so 14.5 is a slip, not an assessment — and between
         # two bands of the SOFA table it would be scored as one of them without anyone having said which.
-        raise ClinicalEntryError("GCS tam sayı olmalı")
+        raise ClinicalEntryError(GCS_NOT_WHOLE)
     low, high = PLAUSIBLE.get(code, (float("-inf"), float("inf")))
     if not (low <= value <= high):
         raise ClinicalEntryError(

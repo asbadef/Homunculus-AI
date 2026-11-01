@@ -979,12 +979,13 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   bilirubin de reddedilmeyebilir: koruma alanın yanında yazan birimdir, birimi oradan okuyun), GCS (tam sayı),
   PaO₂/FiO₂ ve «solunum desteği» (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz
   değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı
-  motor hesaplar. Solunum desteği: form en kötü PaO₂/FiO₂ ölçümünü (en düşük oranı) seçer ve onu **o ölçümün
-  saatinde** geçerli olan destek kaydıyla puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır»,
-  24 saatten eski olsa da; destek kaydı yoksa destekte sayılmaz. Ölçümden sonraki bir saate girilen kayıt o ölçümü
-  değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir. Solunum satırı hangi destek
-  kaydıyla puanlandığını (evet/hayır ve saati) yazar. Alarm SOFA'sı ise son kaydı okur ve 8 saatten eski bir destek
-  kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
+  motor hesaplar. Solunum desteği: form her PaO₂/FiO₂ ölçümünü **kendi saatinde** geçerli olan destek kaydıyla
+  puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır», 24 saatten eski olsa da; destek kaydı yoksa
+  destekte sayılmaz — ve satıra pencerenin en kötü **puanını** alır (eşit puanda düşük oran, sonra son ölçüm):
+  destekteyken ölçülmüş 180 (3 puan), destek yokken ölçülmüş 150'nin (2 puan) önüne geçer. Ölçümden sonraki bir
+  saate girilen kayıt o ölçümü değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir.
+  Solunum satırı hangi destek kaydıyla puanlandığını (evet/hayır ve saati) yazar. Alarm SOFA'sı ise son kaydı okur
+  ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
   **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere, doğru değer ve en az 20 karakterlik bir gerekçeyle (sayaç
   gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
   de geçerlidir (18000 yazılmış bir trombosit ya da 9000 yazılmış bir MAP hem önizlemede hem imzada reddedilir).

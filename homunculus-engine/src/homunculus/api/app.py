@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -42,7 +43,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
+    GCS_NOT_WHOLE, PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
     profile_to_payload,
 )
 from homunculus.api.escalation import escalate
@@ -126,6 +127,23 @@ class _SofaToSign:
     rebuilt: sofa_form.SofaForm
     overrides: list[Override]
     signed: SignedScore
+
+
+def _refuse_fractional_gcs(payload: object) -> None:
+    """G2-A4 review: a GCS correction is a whole number, as a charted GCS is (api/clinical.py `_value`),
+    refused 400 in the door's sentence. Only a finite number that is not whole is refused here; any other
+    shape or value is left to `parse_overrides`, which refuses it in its own words."""
+    if not isinstance(payload, (list, tuple)):
+        return
+    for entry in payload:
+        if not isinstance(entry, dict) or str(entry.get("code") or "").strip() != SignalCode.GCS.value:
+            continue
+        try:
+            value = float(entry.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value) and not value.is_integer():
+            raise HTTPException(status_code=400, detail=GCS_NOT_WHOLE)
 
 
 def _device_role(value: object) -> str:
@@ -1548,6 +1566,7 @@ def create_app(
         # Built twice on purpose: `auto` is what the record alone produced, `rebuilt` is what the
         # clinician is signing. The difference is the audit trail of the correction.
         auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
+        _refuse_fractional_gcs(body.get("overrides"))   # G2-A4 review: before the corrections are parsed
         try:
             # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
             # preview and a signature alike, both parsed here — and MAP to its own (CORRECTION_BOUNDS).

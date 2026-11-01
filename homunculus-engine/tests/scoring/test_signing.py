@@ -619,6 +619,20 @@ class TestTheRouteBoundsACorrection(_AsPeople):
         door = client.post("/clinical/yatak-1", headers=AUTH, json={"entries": [{"code": "map", "value": 65}]})
         assert door.status_code == 400 and "elle girilemez" in door.json()["detail"]
 
+    def test_a_fractional_gcs_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
+        """G2-A4 review: a GCS is a whole number in a correction as at the door, in the door's sentence —
+        checked before the corrections are parsed, so it is the answer even beside a short reason."""
+        self._chart(client, "yatak-1", "platelets", 45)
+        for half in ([{"code": "gcs", "value": 14.5, "reason": WHY}],
+                     [{"code": " gcs ", "value": "14.5", "reason": "kısa"}]):
+            for path, body in ((PREVIEW, {"overrides": half}), (SIGN, {"overrides": half, "expect": "0" * 64})):
+                r = client.post(path, headers=DOCTOR, json=body)
+                assert (r.status_code, r.json()["detail"]) == (400, "GCS tam sayı olmalı"), (path, half)
+        assert self._signed_rows(client) == []
+        signed = _preview_then_sign(client, "yatak-1", [{"code": "gcs", "value": 14, "reason": WHY}])
+        assert signed.status_code == 200, signed.text
+        assert len(self._signed_rows(client)) == 1
+
     def test_a_correction_inside_the_bound_still_previews_and_signs(self, client):
         """The edge itself is inside: 5000, the door's platelet bound (X18)."""
         self._chart(client, "yatak-1", "platelets", 45)
