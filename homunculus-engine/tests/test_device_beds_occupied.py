@@ -63,7 +63,8 @@ async def test_binding_to_an_admitted_patients_bed_asks_first_then_audits_the_pa
     assert done.status_code == 200
     assert (rec.patient_id, rec.payload["occupied_confirmed"]) == ("H2600042", True)
     assert rec.payload["occupied"] == [{"bed_id": str(ward.beds["2"].id), "patient_id": "H2600042"}]
-    assert "Ahmet" not in json.dumps([refused.json(), done.json(), rec.payload], ensure_ascii=False)
+    everything = json.dumps([refused.json(), done.json(), rec.payload], ensure_ascii=False)
+    assert "Ahmet" not in everything and "Yılmaz" not in everything          # given name and family name
 
 
 async def test_a_patient_the_board_puts_on_the_bed_counts_too_when_unbinding(db_session):
@@ -78,6 +79,8 @@ async def test_a_patient_the_board_puts_on_the_bed_counts_too_when_unbinding(db_
         [rec] = app.state.audit.records(event_type="device_bed.unbind")
     assert refused.json()["detail"]["occupied"] == [{"bed_id": str(ward.beds["1"].id), "patient_id": "H2600043"}]
     assert done.status_code == 200 and rec.patient_id == "H2600043"
+    everything = json.dumps([refused.json(), done.json(), rec.payload], ensure_ascii=False)
+    assert "Ahmet" not in everything and "Yılmaz" not in everything          # the board record holds the name
 
 
 async def test_a_move_lists_the_target_bed_first_then_the_bed_it_leaves(db_session):
@@ -122,15 +125,64 @@ async def test_another_tenants_bed_is_the_same_404_as_a_missing_one(db_session):
     assert foreign.json() == missing.json()
 
 
-async def test_another_tenants_administrator_gets_monitor_lane_off(db_session):
-    async with esleme_client(db_session) as (client, _, _ward):
+async def test_another_tenants_admitted_bed_reveals_nothing_even_with_the_confirmation(db_session):
+    """A foreign bed that holds an admitted patient, asked with `confirm_occupied: true`: still the missing
+    bed's 404, byte for byte - no `occupied`, no patient id, no hint that the bed exists."""
+    async with esleme_client(db_session) as (client, app, ward):
+        _other, foreign_bed = await _other_with_bed(db_session, admitted="H2600050")
+        body = {"source": "192.0.2.13", "confirm_occupied": True, "expected": {"device_row_id": None, "bed_row_id": None}}
+        foreign = await client.post(f"{URL}/bind", headers=ward.auth["admin"], json={**body, "bed_id": str(foreign_bed)})
+        missing = await client.post(f"{URL}/bind", headers=ward.auth["admin"],
+                                    json={**body, "bed_id": "00000000-0000-4000-8000-000000000000"})
+        rows = (await db_session.execute(select(func.count()).select_from(DeviceBed))).scalar_one()
+        written = [app.state.audit.records(event_type=kind) for kind in ("device_bed.bind", "device_bed.unbind")]
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    assert "H2600050" not in foreign.text and "occupied" not in foreign.text
+    assert rows == 0 and written == [[], []]
+
+
+async def test_another_tenants_administrator_gets_monitor_lane_off_on_all_three_routes(db_session):
+    """The list, a bind and an unbind. The bind names the ward's own ADMITTED bed (and confirms): the lane
+    guard answers first, so neither the bed nor its patient is touched, named or hinted at."""
+    async with esleme_client(db_session) as (client, app, ward):
+        await _admit(db_session, ward, "2", "H2600051")
         other = await tenant_only(db_session, "baska-hastane")
         groups = await ensure_default_groups(db_session, other.id)
         admin = await add_user(db_session, username="admin@baska.example.com", tenant_id=other.id,
                                group=groups["hospital_admin"])
         await db_session.commit()
-        response = await client.get(URL, headers=await bearer(db_session, admin))
-    assert response.status_code == 409 and response.json()["detail"]["code"] == "monitor_lane_off"
+        headers = await bearer(db_session, admin)
+        answers = [
+            await client.get(URL, headers=headers),
+            await client.post(f"{URL}/bind", headers=headers, json={
+                "source": "192.0.2.13", "bed_id": str(ward.beds["2"].id), "confirm_occupied": True,
+                "expected": {"device_row_id": None, "bed_row_id": None}}),
+            await client.post(f"{URL}/unbind", headers=headers, json={
+                "source": "192.0.2.11", "confirm_occupied": True, "expected": {"device_row_id": None}})]
+        rows = (await db_session.execute(select(func.count()).select_from(DeviceBed))).scalar_one()
+        written = [app.state.audit.records(event_type=kind) for kind in ("device_bed.bind", "device_bed.unbind")]
+    for answer in answers:
+        assert answer.status_code == 409 and answer.json()["detail"]["code"] == "monitor_lane_off"
+        assert "occupied" not in answer.text and "H2600051" not in answer.text
+    assert rows == 0 and written == [[], []]
+
+
+async def test_a_charge_nurse_out_of_reach_of_an_admitted_bed_learns_nothing_of_the_patient(db_session):
+    """Step 7 (unit scope) runs before step 8 (occupancy): a bed in Neonatal, which she is not granted, is
+    `out_of_scope` - with no `occupied` key and no patient id - whether it is the target or the bed left."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "N1", "BED05"))
+        await _admit(db_session, ward, "N1", "H2600052")
+        target = await _bind(client, ward, "charge", "192.0.2.13", "N1", bed_row=ids["192.0.2.11"])   # a replace
+        leaving = await client.post(f"{URL}/unbind", headers=ward.auth["charge"], json={
+            "source": "192.0.2.11", "confirm_occupied": True, "expected": {"device_row_id": ids["192.0.2.11"]}})
+        rows = (await db_session.execute(select(func.count()).select_from(DeviceBed))).scalar_one()
+        written = [app.state.audit.records(event_type=kind) for kind in ("device_bed.bind", "device_bed.unbind")]
+    for answer in (target, leaving):
+        assert (answer.status_code, answer.json()["detail"]["code"]) == (403, "out_of_scope")
+        assert "occupied" not in answer.json()["detail"] and "H2600052" not in answer.text
+    assert rows == 1 and written == [[], []]                         # the seeded row only; nothing written
 
 
 # ---- beyond the task file's six: what else the rule has to hold ------------------------------------------
@@ -222,18 +274,40 @@ async def test_an_admission_made_here_and_the_board_record_of_it_name_the_bed_on
 
 
 async def test_two_patients_the_board_puts_on_one_bed_are_never_guessed_between(db_session):
-    """Two admitted records on one bed and no admission here: the bed is occupied, and no id is named, to the
-    caller or to the audit (it would be one of the two, at random)."""
+    """Two admitted records on one bed and no admission here: the bed is occupied, and no id is named to the
+    caller or in the row's `patient_id` (it would be one of the two, at random). The audit PAYLOAD keeps
+    the trail: both ids, in `patient_ids` - which the answer never shows."""
     identities = InMemoryIdentityStore()
     async with esleme_client(db_session, identities=identities) as (client, app, ward):
+        _on_board(identities, ward, "2", "H2600048", given="Leyla", family="Sentetik")
+        _on_board(identities, ward, "2", "H2600047")
+        refused = await _bind(client, ward, "admin", "192.0.2.13", "2")
+        done = await _bind(client, ward, "admin", "192.0.2.13", "2", confirm=True)
+        [rec] = app.state.audit.records(event_type="device_bed.bind")
+    bed = str(ward.beds["2"].id)
+    assert refused.json()["detail"]["occupied"] == [{"bed_id": bed}]
+    assert "H26" not in refused.text and "patient_ids" not in refused.text
+    assert done.status_code == 200
+    assert (rec.patient_id, rec.payload["occupied_confirmed"]) == ("", True)
+    assert rec.payload["occupied"] == [{"bed_id": bed, "patient_ids": ["H2600047", "H2600048"]}]
+    assert "Ahmet" not in json.dumps(rec.payload, ensure_ascii=False) and "Leyla" not in json.dumps(rec.payload)
+
+
+async def test_two_board_patients_and_an_admission_here_name_the_admissions_patient(db_session):
+    """The admission made here is the hospital's own record of who lies there: it is named, to the caller and
+    in the row's `patient_id`, and there is no `patient_ids` trail (nothing was left unnamed)."""
+    identities = InMemoryIdentityStore()
+    async with esleme_client(db_session, identities=identities) as (client, app, ward):
+        await _admit(db_session, ward, "2", "H2600049")
         _on_board(identities, ward, "2", "H2600047")
         _on_board(identities, ward, "2", "H2600048", given="Leyla", family="Sentetik")
         refused = await _bind(client, ward, "admin", "192.0.2.13", "2")
         done = await _bind(client, ward, "admin", "192.0.2.13", "2", confirm=True)
         [rec] = app.state.audit.records(event_type="device_bed.bind")
-    assert refused.json()["detail"]["occupied"] == [{"bed_id": str(ward.beds["2"].id)}]
-    assert done.status_code == 200
-    assert (rec.patient_id, rec.payload["occupied_confirmed"]) == ("", True)
+    named = [{"bed_id": str(ward.beds["2"].id), "patient_id": "H2600049"}]
+    assert refused.json()["detail"]["occupied"] == named
+    assert done.status_code == 200 and rec.patient_id == "H2600049"
+    assert rec.payload["occupied"] == named
 
 
 async def test_a_his_fed_patient_found_through_the_bed_map_counts_too(db_session):
@@ -255,7 +329,8 @@ async def test_a_his_fed_patient_found_through_the_bed_map_counts_too(db_session
     assert done.status_code == 200 and rec.patient_id == "S-100"
 
 
-async def _other_with_bed(db):
+async def _other_with_bed(db, admitted: str | None = None):
+    """Another tenant's one bed; with `admitted` (a synthetic patient number), an open admission on it."""
     from homunculus.tenant.models import Bed, Room, Site, Unit, UnitType
     other = await tenant_only(db, "ucuncu-hastane")
     site = Site(tenant_id=other.id, name="Bina")
@@ -269,5 +344,14 @@ async def _other_with_bed(db):
     await db.flush()
     bed = Bed(room_id=room.id, label="1")
     db.add(bed)
+    await db.flush()
+    if admitted is not None:
+        patient = Patient(tenant_id=other.id, display_name="Sentetik Başqa", date_of_birth="1980-01-01",
+                          sex="female", patient_number=admitted)
+        db.add(patient)
+        await db.flush()
+        db.add(Admission(tenant_id=other.id, patient_id=patient.id, admitting_unit_id=unit.id, bed_id=bed.id,
+                         admission_datetime=NOW, state=AdmissionState.ACTIVE,
+                         admission_diagnosis_free_text="Sentetik tanı"))
     await db.commit()
     return other, bed.id

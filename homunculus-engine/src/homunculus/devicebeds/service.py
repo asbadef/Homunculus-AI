@@ -1,13 +1,14 @@
 # homunculus-engine/src/homunculus/devicebeds/service.py
-"""Bind, move, replace and unbind (spec §4.4) — one transaction on the request's session, in four steps
+"""Bind, move, replace and unbind (spec §4.4) — one transaction on the request's session, in five steps
 that `change()` runs in order:
 
   1. `_resolve`        steps 2-4   the device, the target bed, the device's current row (no lock)
   2. `_lock_and_check` steps 5-7   the beds, the rows; `changed:false`; `expected`; the unit scope
-     `_occupancy`      step 8      an admitted patient on the target bed or the bed left (O5); before `t`,
-                                   before any write, so a refusal needs no rollback
-  3. `_write`          steps 9-11  `t`, every close, every insert, the commit, the strip's table reset
-  4. `_audit`          steps 12-13 one audit row per device's change, after the commit; the fresh list
+  3. `_occupancy`      step 8      an admitted patient on the target bed or the bed left (O5); after the unit
+                                   scope (a caller out of reach learns nothing of who lies there), before `t`
+                                   and before any write, so a refusal needs no rollback
+  4. `_write`          steps 9-11  `t`, every close, every insert, the commit, the strip's table reset
+  5. `_audit`          steps 12-13 one audit row per device's change, after the commit; the fresh list
 
 Locks follow B1a's rules (A-26): the beds touched, FOR NO KEY UPDATE through `tenant.router._lock_bed`
 (imported, so the rule is one — E3), in id order; then the current rows involved, FOR UPDATE, in id
@@ -219,10 +220,16 @@ async def _occupancy(state, db: AsyncSession, principal: Principal, hospital: st
     start to flow — a monitor replaced there is on that same bed) and the bed the device LEAVES (a move or an
     unbind: where they stop); target first. The monitor of a replace is not a third bed.
 
-    Returns the occupied beds the change goes over, `[{bed_id, patient_id?}]`, for the audit — [] when none.
-    Raises 409 `bed_occupied` unless `confirm_occupied` is true. The audit keeps every `patient_id`; the answer
-    shows it only to a `board.view` holder (a key-only holder learns that a patient is there, not who). A bed
-    with two board patients and no admission here names no one: either would be a guess. No name anywhere."""
+    Returns the occupied beds the change goes over, `[{bed_id, patient_id?, patient_ids?}]`, for the audit —
+    [] when none. Raises 409 `bed_occupied` unless `confirm_occupied` is true. The audit keeps every
+    `patient_id`; the answer shows it only to a `board.view` holder (a key-only holder learns that a patient
+    is there, not who).
+
+    Who is named when the board holds two or more patients on one bed: with an admission made here, that
+    admission's patient (the one the hospital recorded here); with none, no one — either board patient would
+    be a guess, so the row's `patient_id` stays "" and the answer names no one. The audit still keeps the
+    trail: that hit carries `patient_ids` (all of them, sorted), which only the audit payload sees; the
+    answer drops it. No name anywhere."""
     on_board = state.bed_occupants(hospital)
     occupied: list[dict] = []
     for bed in (ask.bed_id, held.leaving):
@@ -236,9 +243,13 @@ async def _occupancy(state, db: AsyncSession, principal: Principal, hospital: st
         patient = present[0] if len(present) == 1 else number
         if patient:
             hit["patient_id"] = patient
+        elif len(present) > 1:
+            hit["patient_ids"] = sorted(present)
         occupied.append(hit)
     if occupied and not ask.confirm_occupied:
-        shown = [hit if "board.view" in principal.perms else {"bed_id": hit["bed_id"]} for hit in occupied]
+        may_name = "board.view" in principal.perms
+        shown = [{key: value for key, value in hit.items()
+                  if key == "bed_id" or (key == "patient_id" and may_name)} for hit in occupied]
         raise Refusal(409, BED_OCCUPIED, "An admitted patient is on this bed; confirm to go on.",
                       {"occupied": shown}).http()
     return occupied
