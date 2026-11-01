@@ -311,8 +311,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         apiCode = body.detail.code;
         // `request_conflict` names the earlier admission's number, `board_not_cleared` the bed's last
         // patient's (admission/errors.py `Refusal.extra`): the one extra a screen shows. Nothing else
-        // of the detail is kept — never a name.
-        if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
+        // of the detail is kept — never a name. G2-B1d (E6): the card's own number, `board_key` (a
+        // protocol number), when the detail carries it; else the H-number of an API before it.
+        if (typeof body.detail.board_key === "string") patientNumber = body.detail.board_key;
+        else if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -871,6 +873,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  card that did not leave the board off it again (A-32). */
     confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
     releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // G2-B1d — Yönetim › Protokol ve etiket, and an admission's label (spec §3, §6).
+    /** {configured, next_no, last_issued, label_width_mm, label_height_mm, printer_dpi, updated_at} */
+    protocolSettings() { return authed("/admin/protocol-settings"); },
+    /** {next_no, label_width_mm, label_height_mm, printer_dpi} → as protocolSettings() */
+    saveProtocolSettings(body) { return authed("/admin/protocol-settings", { method: "PUT", body }); },
+    /** {protocol_no, display_name, date_of_birth, sex, unit_name, bed_label, label: {width_mm,
+     *  height_mm, printer_dpi}} — every call is an audited print (`reprint`: not the first). */
+    admissionLabel(id, reprint = false) {
+      return authed(`/admissions/${seg(id)}/label`, { method: "POST", body: { reprint: Boolean(reprint) } });
+    },
     // The administrator's structure tab: add under a parent, rename / close / reopen.
     createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },
     createUnit(siteId, body) { return authed(`/tenant/sites/${seg(siteId)}/units`, { method: "POST", body }); },

@@ -486,8 +486,8 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     expect(CODES).toEqual(expect.arrayContaining(["bed_not_available", "critical_alarm_open", "out_of_scope"]));
     // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8),
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
-    // `duplicate_open_admission` (A-37, the final review).
-    expect(CODES).toHaveLength(16);
+    // `duplicate_open_admission` (A-37, the final review); G2-B1d's eight (its own block).
+    expect(CODES).toHaveLength(24);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -507,13 +507,23 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     }
   });
 
+  // G2-B1d (E6): a protocol beside a refusal is called a protocol, an H-number a patient number.
+  it.each(["request_conflict", "board_not_cleared", "duplicate_open_admission"])(
+    "%s names a protocol as a protocol and an H-number as a patient number", (code) => {
+      const az = createTranslator("az", DICTIONARIES);
+      const protocol = apiErrorText(az, Object.assign(coded(code), { patientNumber: "202600000001" }));
+      const legacy = apiErrorText(az, Object.assign(coded(code), { patientNumber: "H2600042" }));
+      expect(protocol).toContain("protokol nömrəsi 202600000001");
+      expect(legacy).toContain("xəstə nömrəsi H2600042");
+    });
+
   it("the map holds every code errors.py raises, and nothing else", () => {
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
   });
 
   it.each(CODES)("%s has a text in the four languages", (code) => {
     const hit = apiErrorKey(coded(code));
-    expect(hit.key).toMatch(/^kabul\.err\./);
+    expect(hit.key).toMatch(/^(kabul|protokol)\.err\./);   // G2-B1d's codes speak in `protokol`
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
   });
 
