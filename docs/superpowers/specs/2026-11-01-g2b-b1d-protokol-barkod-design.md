@@ -97,10 +97,12 @@ for that purpose any more:
   responses, which gain `protocol_no` and `board_key`. The `admission.admit` audit row gains `protocol_no`.
 - **`scope/service.py` `read_own_patient_ids`:** the care team's "own patients" list includes the key.
 - **`scope/resolver.py` `break_glass_in_tenant`:** D9.
-- **Lane B's editor `devicebeds/service.py` `_patient_of`** (not on main yet): it reads the open admission on a bed
-  and returns and audits `patient_id` = `Patient.patient_number`, which the dialog uses to find the card and show
-  «Ahmet Y.». It uses `board_key` after B1d. Whichever of the two slices lands second adapts it, with a test (Lane B,
-  2026-11-01). Lane A's `app.py` `_occupants_now` reads kabul records by `bed_id`. The record's own key is the card
+- **Lane B's editor `devicebeds/service.py` `_open_admission_number`** (≈ line 208 on `feat/g2b-esleme-be` @
+  `2e311e9`, not on main yet): it reads `Patient.patient_number` of the open admission on a bed. That value reaches the
+  `bed_occupied` refusal's `occupied[].patient_id`, which the dialog uses to find the card and show «Ahmet Y.». It uses
+  `board_key` after B1d; `_patient_of`, which only picks the audit row's id, stays as it is. Whichever of the two slices
+  lands second adapts it, and tests `occupied[].patient_id` for a kabul patient admitted after B1d (Lane B,
+  2026-11-01, corrected the same day). Lane A's `app.py` `_occupants_now` reads kabul records by `bed_id`. The record's own key is the card
   key, so it needs no change; the plan confirms this in a test.
 - **Dashboard:** every match between an admission and a card uses `board_key`: `BedsScreen.jsx` `draftNumbers`,
   `DischargeTab.jsx`, `SignOffStrip.jsx`, and `AdmitTab.jsx`'s result box.
