@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 import { DICTIONARIES } from "../../../i18n/catalog.js";
 import { createTranslator } from "../../../i18n/translate.js";
 import {
-  TEST_PROTOCOL, birthText, labelHtml, labelLines, labelRefusal, minWidthMm, moduleMm,
-  openLabelWindow, printLabel, testLabel,
+  TEST_PROTOCOL, birthText, fitBorn, fitName, fitPlace, labelHtml, labelLayout, labelLines, labelRefusal,
+  minWidthMm, moduleMm, openLabelWindow, printLabel, testLabel, wrapRows,
 } from "./protocolLabel.js";
 
 // (Paths built with node:path: under jsdom the global URL is jsdom's — apiErrors.test.js.)
@@ -45,6 +45,20 @@ describe("the fit rule — the engine's own case table", () => {
     expect(labelRefusal(50.5, 30, 203)).toBe("label_size");
     expect(labelRefusal(Number.NaN, 30, 203)).toBe("label_size");
   });
+
+  // Task 13 review F-8: translate.js documents Chrome 87 / Safari 14 targets, which have no Object.hasOwn.
+  it("does not need Object.hasOwn", () => {
+    const hasOwn = Object.hasOwn;
+    try {
+      Object.hasOwn = undefined;
+      expect(labelRefusal(50, 30, 203)).toBeNull();
+      expect(labelRefusal(50, 30, 300)).toBeNull();
+      expect(labelRefusal(50, 30, 150)).toBe("label_dpi");
+      expect(labelRefusal(50, 30, 0)).toBe("label_dpi");
+    } finally {
+      Object.hasOwn = hasOwn;
+    }
+  });
 });
 
 describe("the lines", () => {
@@ -66,6 +80,142 @@ describe("the lines", () => {
   it("print a birth date only when it is a whole ISO date — a wrong date is worse than none", () => {
     expect(birthText("1970-05-05")).toBe("05.05.1970");
     for (const bad of ["1970-5-5", "05.05.1970", "", null, "1970-05-05T00:00:00Z"]) expect(birthText(bad)).toBeNull();
+  });
+});
+
+// A-3 (Task 13 review F-3, F-9): a name is never cut — no clamp, no ellipsis, no hidden overflow. The
+// name keeps two rows at the normal size; a longer one is set smaller, by its length, and at the smallest
+// size it takes a third row (and as many more as it needs); whatever then no longer fits the page is
+// dropped WHOLE, the unit · bed line first. The unit · bed line steps down like the name and is never
+// clipped mid-text. The reference label is 50×30: 47 mm of row, text scale 1. The model sets a bold
+// capital at 0.75 em and a regular character at 0.7 em — the worst case, so a mixed-case name sets
+// narrower than planned — which makes a row of the name hold 21 / 25 / 29 / 39 characters at 2.9 / 2.5 /
+// 2.1 / 1.6 mm, and a row of the place 27 / 31 / 37 at 2.4 / 2.1 / 1.8 mm.
+describe("the layout — the name is never cut (A-3)", () => {
+  const REF = { widthMm: 50, heightMm: 30 };
+  const AVAIL = 47;
+  const N = (n) => "N".repeat(n);                      // a name with no space: the strictest, breaks anywhere
+  const layoutOf = (over = {}, dims = REF) => labelLayout(labelLines({ ...LABEL, ...over }, t), dims);
+  const lineOf = (layout, kind) => layout.lines.find((line) => line.kind === kind);
+  const kindsOf = (layout) => layout.lines.map((line) => line.kind);
+
+  it("counts rows the way the page wraps: at spaces, a word too long for a row broken anywhere", () => {
+    expect(wrapRows("", 21)).toBe(0);
+    expect(wrapRows("Test Hasta", 21)).toBe(1);
+    expect(wrapRows(N(21), 21)).toBe(1);
+    expect(wrapRows(N(22), 21)).toBe(2);
+    expect(wrapRows(`${N(12)} ${N(8)}`, 21)).toBe(1);   // 12 + 1 + 8 = 21 fits the row
+    expect(wrapRows(`${N(12)} ${N(9)}`, 21)).toBe(2);   // 22 does not: the word moves down
+    expect(wrapRows(`${N(5)} ${N(43)}`, 21)).toBe(4);   // the long word starts a row of its own, then breaks over three
+  });
+
+  it.each([
+    [42, 2.9, 2], [43, 2.5, 2],       // the normal size holds 2 × 21
+    [50, 2.5, 2], [51, 2.1, 2],       // 2 × 25
+    [58, 2.1, 2], [59, 1.6, 2],       // 2 × 29: past it the smallest size …
+    [78, 1.6, 2], [79, 1.6, 3],       // … which holds 2 × 39 in two rows, then takes a third row
+    [117, 1.6, 3], [118, 1.6, 4],     // 3 × 39: past it more rows — never a shorter name
+    [200, 1.6, 6],                    // the server's longest display_name (max_length 200)
+  ])("a %i-character name is set at %f mm in %i rows", (length, size, rows) => {
+    expect(fitName(N(length), AVAIL, 1)).toEqual({ size, rows });
+  });
+
+  it("steps by where the words fall, not by the count alone: three 12-letter words need the 25-character row", () => {
+    const name = `${N(12)} ${N(12)} ${N(12)}`;           // 38 characters, yet 3 rows at 21 to a row
+    expect(name).toHaveLength(38);
+    expect(fitName(name, AVAIL, 1)).toEqual({ size: 2.5, rows: 2 });
+  });
+
+  it.each([
+    [27, 2.4, 1], [28, 2.1, 1],       // the unit · bed line is one row at 2.4 mm up to 27 characters
+    [31, 2.1, 1], [32, 1.8, 1],
+    [37, 1.8, 1], [38, 1.8, 2],       // at the smallest size it may take a second row
+    [74, 1.8, 2],
+  ])("a %i-character place is set at %f mm in %i rows", (length, size, rows) => {
+    expect(fitPlace(N(length), AVAIL, 1)).toEqual({ size, rows });
+  });
+
+  it("a place that fits no step is dropped whole, never cut — and the birth line the same", () => {
+    expect(fitPlace(N(75), AVAIL, 1)).toBeNull();
+    expect(fitBorn(N(37), AVAIL, 1)).toEqual({ size: 1.8, rows: 1 });
+    expect(fitBorn(N(38), AVAIL, 1)).toBeNull();
+  });
+
+  it("sets an ordinary label at the normal sizes: the protocol, the name in one row, the rest", () => {
+    const layout = layoutOf();
+    expect(layout.lines).toEqual([
+      { kind: "protocol", text: "202600000001", size: 3.6, rows: 1 },
+      { kind: "name", text: "Test Hasta", size: 2.9, rows: 1 },
+      { kind: "born", text: "05.05.1970 · Qadın", size: 2.4, rows: 1 },
+      { kind: "place", text: "Reanimasiya · Çarpayı 1", size: 2.4, rows: 1 },
+    ]);
+    expect(layout.fits).toBe(true);
+  });
+
+  it("the unit · bed line steps down in size when it is long, and keeps every word of it", () => {
+    const unit = "Reanimasiya və intensiv";                  // 23 + " · Çarpayı 1" = 35 characters
+    const place = lineOf(layoutOf({ unit_name: unit }), "place");
+    expect(place).toEqual({ kind: "place", text: `${unit} · Çarpayı 1`, size: 1.8, rows: 1 });
+  });
+
+  it("a unit · bed line too long for any step is dropped whole, not shown cut", () => {
+    const unit = "Ürək-damar cərrahiyyəsi reanimasiya və intensiv terapiya şöbəsi, ikinci korpus, üçüncü mərtəbə";
+    const layout = layoutOf({ unit_name: unit });
+    expect(kindsOf(layout)).toEqual(["protocol", "name", "born"]);
+    const html = labelHtml({ ...LABEL, unit_name: unit }, { t, lang: "az" });
+    expect(html).not.toContain("Ürək-damar");
+    expect(html).not.toContain("Çarpayı");
+  });
+
+  it("a name that needs a fourth row pushes the unit · bed line off before it is ever shortened", () => {
+    const four = layoutOf({ display_name: N(120) });          // 4 rows at 1.6 mm: 7.36 + 2.76 + 2.76 ≤ 13.86 mm
+    expect(kindsOf(four)).toEqual(["protocol", "name", "born", "place"]);
+    expect(lineOf(four, "name")).toMatchObject({ text: N(120), size: 1.6, rows: 4 });
+    const five = layoutOf({ display_name: N(160) });          // 5 rows: 9.2 + 2.76 + 2.76 > 13.86 mm
+    expect(kindsOf(five)).toEqual(["protocol", "name", "born"]);
+    expect(lineOf(five, "name")).toMatchObject({ text: N(160), size: 1.6, rows: 5 });
+    expect(five.fits).toBe(true);
+    expect(labelHtml({ ...LABEL, display_name: N(160) }, { t, lang: "az" })).not.toContain("Reanimasiya");
+  });
+
+  it("scales the text by the height, but never past what the width holds", () => {
+    // 60×60: the bars and the frame double (k = 2); the text only grows to the width, 60 / 50 = 1.2.
+    const layout = layoutOf({}, { widthMm: 60, heightMm: 60 });
+    expect(layout.scale).toBeCloseTo(1.2, 9);
+    expect(lineOf(layout, "name").size).toBeCloseTo(2.9 * 1.2, 9);
+    expect(layoutOf({}, { widthMm: 110, heightMm: 20 }).scale).toBeCloseTo(20 / 30, 9);
+    expect(layoutOf({}, { widthMm: 49, heightMm: 80 }).scale).toBeCloseTo(49 / 50, 9);
+  });
+
+  it("holds the longest name the server accepts, whole, on every label size the settings allow", () => {
+    const names = [
+      N(200), `${"Abcdefgh ".repeat(22)}Abcd`.slice(0, 200), "Wi ".repeat(66),
+      `${"Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ".repeat(6)}Xxxxxxxxxxxxxxxxxxxx`.slice(0, 200),
+      "MMMMMMMM WWWWWWWW ".repeat(11), "Test Hasta",
+    ];
+    for (const widthMm of [44, 49, 50, 60, 80, 110]) {
+      for (const heightMm of [20, 25, 30, 45, 60, 80]) {
+        for (const name of names) {
+          const layout = layoutOf({ display_name: name }, { widthMm, heightMm });
+          expect({ widthMm, heightMm, name: name.length, fits: layout.fits }).toEqual({ widthMm, heightMm, name: name.length, fits: true });
+          expect(lineOf(layout, "name").text).toBe(name.trim());
+        }
+      }
+    }
+  });
+
+  it("writes the name uncut: no clamp, no ellipsis, no hidden overflow, the size on the line itself", () => {
+    const name = "Sentetik Hasta ".repeat(10).trim();          // 149 characters
+    const html = labelHtml({ ...LABEL, display_name: name }, { t, lang: "az" });
+    expect(html).toContain(name);
+    expect(html).not.toMatch(/line-clamp|text-overflow|ellipsis|…/);
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(css).not.toMatch(/\.line[^}]*overflow\s*:\s*hidden/);
+    expect(css).not.toMatch(/\.line[^}]*nowrap/);
+    expect(css).not.toMatch(/\.name[^}]*-webkit-box/);
+    expect(html).toMatch(/<div class="line name" style="font-size: 1\.6mm">Sentetik Hasta/);
+    expect(labelHtml(LABEL, { t, lang: "az" })).toMatch(/<div class="line name" style="font-size: 2\.9mm">Test Hasta</);
+    expect(labelHtml(LABEL, { t, lang: "az" })).toMatch(/<div class="line place" style="font-size: 2\.4mm">Reanimasiya/);
   });
 });
 

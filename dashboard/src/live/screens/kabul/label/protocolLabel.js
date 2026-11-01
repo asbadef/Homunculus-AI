@@ -8,7 +8,16 @@
 // THE LINES: the barcode, the protocol large, the FULL name (a label is paper: the screen's masking
 // does not apply), birth date · sex, unit · bed. A line with nothing to say is dropped, never written
 // as «—»: an empty field printed as a dash reads as "none", and "not told" is not "none". The words
-// on it are the printing user's language. A larger configured size prints the same lines larger.
+// on it are the printing user's language. A larger configured size prints the same lines larger — as
+// large as the label's width lets the text be (`labelLayout`).
+//
+// NOTHING ON THE LABEL IS EVER CUT (amendment A-3; Task 13 review F-3, F-9). A name cut to fit is a
+// wrong-patient risk on paper, so there is no line clamp, no ellipsis and no hidden overflow. The name
+// keeps two rows at the normal size; a longer one is set smaller, the size chosen by its length
+// (`fitName`, a pure step function); at the smallest size it takes a third row, and as many more as it
+// needs. The unit · bed line and the birth line step down the same way (`fitPlace`, `fitBorn`). What
+// then does not fit the page is dropped WHOLE — the unit · bed line first, the birth line next — and
+// never shown cut. `labelLayout` decides all of it, in one place, from the text alone.
 import { code128cSvg } from "./code128c.js";
 
 export const MM_PER_INCH = 25.4;
@@ -21,7 +30,8 @@ export const HEIGHT_MM = Object.freeze([20, 80]);
 export const TEST_PROTOCOL = "000000000000";
 const SEXES = new Set(["female", "male", "other", "unknown"]);
 
-const knownDpi = (dpi) => Number.isInteger(dpi) && Object.hasOwn(DOTS_PER_MODULE, dpi);
+// (Not Object.hasOwn: translate.js documents Chrome 87 / Safari 14 targets, which do not have it.)
+const knownDpi = (dpi) => Number.isInteger(dpi) && Object.prototype.hasOwnProperty.call(DOTS_PER_MODULE, dpi);
 const within = (value, [lo, hi]) => Number.isInteger(value) && value >= lo && value <= hi;
 
 /** One bar module at this resolution, in millimetres. */
@@ -64,31 +74,144 @@ export function labelLines(label, t) {
   ].filter((line) => line.text);
 }
 
+// ── The layout (A-3) ─────────────────────────────────────────────────────────────────────────────
+// All sizes are millimetres on the 50×30 reference label, times the text scale. A row holds as many
+// characters as its width divides by the character's width; no layout is measured here (this is a pure
+// function), so a character is taken at its WORST case — bold capitals 0.75 em, regular text with
+// capitals and digits 0.7 em. A mixed-case name sets narrower than planned, and the difference is a
+// margin: the plan may expect one row more than the page needs, never one less.
+const EM_BOLD = 0.75;
+const EM_REGULAR = 0.7;
+export const LINE_HEIGHT = 1.15;
+const BAR_MM = 10; //          the barcode, at 30 mm of label height
+const PROTOCOL_MM = 3.6; //    the protocol number's size
+const FRAME_MM = 1; //         the top padding, and the same again kept free at the bottom
+
+/** `rows` is how many rows the size is allowed. The NAME's last step is open: it takes the rows it
+ *  needs, because the name is never shortened. */
+export const NAME_STEPS = Object.freeze([
+  Object.freeze({ size: 2.9, rows: 2 }), // the normal size, two rows
+  Object.freeze({ size: 2.5, rows: 2 }),
+  Object.freeze({ size: 2.1, rows: 2 }),
+  Object.freeze({ size: 1.6, rows: 3 }), // the smallest: a third row, and more when the name needs them
+]);
+export const BORN_STEPS = Object.freeze([
+  Object.freeze({ size: 2.4, rows: 1 }), Object.freeze({ size: 2.1, rows: 1 }), Object.freeze({ size: 1.8, rows: 1 }),
+]);
+export const PLACE_STEPS = Object.freeze([
+  Object.freeze({ size: 2.4, rows: 1 }), Object.freeze({ size: 2.1, rows: 1 }), Object.freeze({ size: 1.8, rows: 2 }),
+]);
+
+/** How many rows `text` takes when `perRow` characters fit a row: words wrap at spaces, and a word
+ *  longer than a row is broken anywhere (`overflow-wrap: anywhere`) after moving to a row of its own,
+ *  as the page does. 0 for no text. */
+export function wrapRows(text, perRow) {
+  let rows = 0;
+  let used = 0; // characters on the last row; 0 = that row is empty
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    const length = [...word].length;
+    if (rows > 0 && used > 0 && used + 1 + length <= perRow) {
+      used += 1 + length;
+    } else if (length <= perRow) {
+      rows += 1;
+      used = length;
+    } else {
+      const over = Math.ceil(length / perRow); // too long for a row: a row of its own, then broken anywhere
+      rows += over;
+      used = length - (over - 1) * perRow;
+    }
+  }
+  return rows;
+}
+
+/** The first step (the largest size) at which `text` fits its rows, as {size, rows} in millimetres
+ *  already times `scale`; past the last step, the last one with the rows the text needs if `open`
+ *  (the name), else null (a line that fits no step is dropped whole). */
+function fitText(text, steps, { availMm, scale, em, open = false }) {
+  let last = null;
+  for (const step of steps) {
+    const size = step.size * scale;
+    const perRow = Math.max(1, Math.floor(availMm / (size * em) + 1e-9));
+    const rows = wrapRows(text, perRow);
+    last = { size, rows };
+    if (rows <= step.rows) return last;
+  }
+  return open ? last : null;
+}
+
+/** The size and rows of the full name: stepped by its length, never shortened. */
+export const fitName = (name, availMm, scale) => fitText(name, NAME_STEPS, { availMm, scale, em: EM_BOLD, open: true });
+/** The birth date · sex line, or null when it fits no step. */
+export const fitBorn = (text, availMm, scale) => fitText(text, BORN_STEPS, { availMm, scale, em: EM_REGULAR });
+/** The unit · bed line, or null when it fits no step — then it is dropped whole. */
+export const fitPlace = (text, availMm, scale) => fitText(text, PLACE_STEPS, { availMm, scale, em: EM_REGULAR });
+
+/**
+ * The lines of `labelLines` with the size and rows each is set in, and whatever does not fit the page
+ * dropped whole. `scale` is the text's scale: the height's (a 60 mm label is twice a 30 mm one) but
+ * never more than the width holds (a 50 mm wide label is 1), so a tall narrow label does not set its
+ * lines wider than its paper. `fits` is false only when even the name does not fit the page — which
+ * the sizes above rule out for any name of the server's 200 characters on every label size.
+ */
+export function labelLayout(lines, { widthMm, heightMm }) {
+  const k = heightMm / 30;
+  const scale = Math.min(k, widthMm / 50);
+  const availMm = widthMm - 2 * SIDE_MARGIN_MM;
+  const rowsMm = (rows, size) => rows * size * LINE_HEIGHT;
+  const text = (kind) => lines.find((line) => line.kind === kind)?.text;
+
+  const set = [];
+  let used = FRAME_MM * k * 2 + BAR_MM * k;
+  if (text("protocol")) {
+    const size = PROTOCOL_MM * scale;
+    set.push({ kind: "protocol", text: text("protocol"), size, rows: 1 });
+    used += rowsMm(1, size);
+  }
+  if (text("name")) {
+    const fit = fitName(text("name"), availMm, scale);
+    set.push({ kind: "name", text: text("name"), ...fit });
+    used += rowsMm(fit.rows, fit.size);
+  }
+  // The birth line, then the unit · bed line: each only if it fits a step and the page is not full —
+  // the last one goes first (A-3), whole.
+  const optional = [];
+  for (const [kind, fitter] of [["born", fitBorn], ["place", fitPlace]]) {
+    const fit = text(kind) ? fitter(text(kind), availMm, scale) : null;
+    if (fit) optional.push({ kind, text: text(kind), ...fit });
+  }
+  const fitsPage = (more) => used + more.reduce((sum, line) => sum + rowsMm(line.rows, line.size), 0) <= heightMm + 1e-9;
+  while (optional.length && !fitsPage(optional)) optional.pop();
+  for (const line of optional) {
+    set.push(line);
+    used += rowsMm(line.rows, line.size);
+  }
+  return { lines: set, scale, usedMm: used, fits: used <= heightMm + 1e-9 };
+}
+
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => ESCAPES[c]);
 const mm = (value) => `${Math.round(value * 100) / 100}mm`;
 
 /** The whole print page: `@page` in the label's size, margin-free; the bars ≈10 mm high at 30 mm,
- *  every size in proportion to the height. */
+ *  every size in proportion to the height. Each line carries its own size from `labelLayout`; no line
+ *  is clipped, clamped or ellipsised. */
 export function labelHtml(label, { t, lang }) {
   const { width_mm: w, height_mm: h, printer_dpi: dpi } = label.label;
   const k = h / 30;
-  const svg = code128cSvg(label.protocol_no, { moduleMm: moduleMm(dpi), heightMm: Math.round(10 * k * 100) / 100 }) ?? "";
-  const lines = labelLines(label, t)
-    .map(({ kind, text }) => `<div class="line ${kind}">${escapeHtml(text)}</div>`).join("");
+  const svg = code128cSvg(label.protocol_no, { moduleMm: moduleMm(dpi), heightMm: Math.round(BAR_MM * k * 100) / 100 }) ?? "";
+  const lines = labelLayout(labelLines(label, t), { widthMm: w, heightMm: h }).lines
+    .map(({ kind, text, size }) => `<div class="line ${kind}" style="font-size: ${mm(size)}">${escapeHtml(text)}</div>`).join("");
   return "<!doctype html>"
     + `<html lang="${escapeHtml(lang)}"><head><meta charset="utf-8"><title>${escapeHtml(label.protocol_no ?? "")}</title><style>`
     + `@page { size: ${w}mm ${h}mm; margin: 0; }`
     + "html, body { margin: 0; padding: 0; background: #fff; color: #000; }"
     + `body { width: ${w}mm; height: ${h}mm; overflow: hidden; font-family: Arial, Helvetica, sans-serif; }`
-    + `.label { box-sizing: border-box; width: ${w}mm; height: ${h}mm; padding: ${mm(k)} ${SIDE_MARGIN_MM}mm 0;`
+    + `.label { box-sizing: border-box; width: ${w}mm; height: ${h}mm; padding: ${mm(FRAME_MM * k)} ${SIDE_MARGIN_MM}mm 0;`
     + " display: flex; flex-direction: column; align-items: center; }"
     + ".code svg { display: block; }"
-    + ".line { width: 100%; text-align: center; line-height: 1.15; white-space: nowrap; overflow: hidden; }"
-    + `.protocol { font-size: ${mm(3.6 * k)}; font-weight: 700; letter-spacing: .04em; }`
-    + `.name { font-size: ${mm(2.9 * k)}; font-weight: 700; white-space: normal; overflow-wrap: anywhere;`
-    + " display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }"
-    + `.born, .place { font-size: ${mm(2.4 * k)}; }`
+    + `.line { width: 100%; text-align: center; line-height: ${LINE_HEIGHT}; overflow-wrap: anywhere; }`
+    + ".protocol { font-weight: 700; letter-spacing: .04em; }"
+    + ".name { font-weight: 700; }"
     + `</style></head><body><div class="label"><div class="code">${svg}</div>${lines}</div></body></html>`;
 }
 
