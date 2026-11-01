@@ -84,6 +84,8 @@ export const API_MESSAGE_KEYS = new Map([
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
+  // POST /scores/sofa/{id} (G2-A4, D6 X2): `preview` must be a real true/false; the form always sends one.
+  ["preview true ya da false olmalı", "scorePreviewNotBoolean"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.
