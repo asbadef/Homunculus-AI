@@ -184,3 +184,73 @@ class TestThroughTheApi:
             "overrides": [{"code": "platelets", "value": 180}]})
         assert r.status_code == 400
         assert "gerekçe" in r.json()["detail"]
+
+
+NURSE = {"Authorization": "Bearer nurse-jwt"}
+NURSE_PERMS = frozenset(next(g["permissions"] for g in DEFAULT_GROUPS if g["slug"] == "nurse"))
+
+
+async def _resolve_person(credential: str) -> Caller:
+    """A signed-in physician (the default group holds `scores.sign`) or, for `nurse-jwt`, a nurse — who
+    sees and charts the patient (`board.view`, `clinical.chart`) but does not sign."""
+    if credential == "nurse-jwt":
+        return Caller(hospital="h1", actor="hem.ayse", groups=("nurse",), perms=NURSE_PERMS)
+    return Caller(hospital="h1", actor="dr.elif", groups=("physician",), perms=PHYSICIAN_PERMS)
+
+
+class _AsPeople:
+    """G2-A4: the app with a physician and a nurse behind their tokens; the bridge's token charts."""
+
+    @pytest.fixture()
+    def client(self):
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve_person)
+        with TestClient(app) as c:
+            yield c
+
+    def _chart(self, client, patient_id, code, value, minutes_ago=60):
+        at = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+        r = client.post(f"/clinical/{patient_id}",
+                        json={"entries": [{"code": code, "value": value}], "recorded_at": at},
+                        headers=AUTH)
+        assert r.status_code == 200, r.text
+
+    def _signed_rows(self, client):
+        return client.get("/audit?event_type=score_signed", headers=AUTH).json()["records"]
+
+
+class TestTheFormKnowsItsLastSignature(_AsPeople):
+    """G2-A4 (D7): the form's own answer says who signed it last, when, and to what total — read with the
+    form's permission from this patient's `score_signed` rows only — and how long a correction's reason
+    must be, so the screen counts against the engine's number rather than a copy of it."""
+
+    def test_an_unsigned_form_has_no_last_signature_and_states_the_reason_length(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        body = client.get("/scores/sofa/yatak-1", headers=NURSE).json()
+        assert body["last_signed"] is None
+        assert body["min_reason_chars"] == MIN_REASON_CHARS == 20
+        assert body["total"] == 3 and body["signed"] is False      # the form itself is unchanged
+
+    def test_the_newest_signature_is_the_one_in_the_form(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={}).status_code == 200
+        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
+            "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]}).status_code == 200
+        last = client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"]
+        assert last == {"total": 0, "auto_total": 3, "signed_by": "dr.elif",
+                        "at": last["at"], "corrections": 1}
+        assert datetime.fromisoformat(last["at"]).tzinfo is not None
+
+    def test_another_patients_signature_is_not_this_ones(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        self._chart(client, "yatak-2", "platelets", 45)
+        assert client.post("/scores/sofa/yatak-2", headers=DOCTOR, json={}).status_code == 200
+        assert client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"] is None
+        assert client.get("/scores/sofa/yatak-2", headers=NURSE).json()["last_signed"]["total"] == 3
+
+    def test_a_nurse_reads_the_signature_without_the_audit_permission(self, client):
+        """The form's permission is `board.view`; the trail itself stays `audit.view`'s."""
+        self._chart(client, "yatak-1", "platelets", 45)
+        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={}).status_code == 200
+        last = client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"]
+        assert last["signed_by"] == "dr.elif"
+        assert client.get("/audit?patient_id=yatak-1", headers=NURSE).status_code == 403

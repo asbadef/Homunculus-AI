@@ -62,7 +62,7 @@ from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_obs
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
-    ScoreSigningError, parse_overrides, sign as sign_score,
+    MIN_REASON_CHARS, ScoreSigningError, parse_overrides, sign as sign_score,
 )
 from homunculus.scope import Scope, ScopeReason, apply_scope, normalise_id, scope_report, sees_patient
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
@@ -839,6 +839,23 @@ def create_app(
             return PatientState(patient_id)
         raise HTTPException(status_code=404, detail="hasta bulunamadı")
 
+    def _last_signed(hospital: str, patient_id: str) -> dict | None:
+        """The patient's newest `score_signed` row as the SOFA box prints it (G2-A4, D7), or None.
+
+        This patient's signing rows and nothing else of the trail: the box needs who, when and what
+        total, and a ward doctor reading it holds `board.view`, not `audit.view`. `corrections` is the
+        COUNT of the cells corrected — the reasons stay in the trail, for whoever may read it. Every
+        signing row today is a SOFA form's; when another score signs, this read names the score (O7).
+        """
+        rows = audit.records(tenant=hospital, patient_id=patient_id, event_type="score_signed",
+                             limit=1, newest=True)
+        if not rows:
+            return None
+        signed = rows[-1].payload
+        return {"total": signed.get("total"), "auto_total": signed.get("auto_total"),
+                "signed_by": signed.get("signed_by"), "at": signed.get("at"),
+                "corrections": len(signed.get("overrides") or [])}
+
     def _body_patient_id(body: dict) -> str:
         """The `patient_id` a request body names: a non-blank string of at most PATIENT_ID_MAX
         characters. Anything else is the caller's error (400); a dict used to reach a set
@@ -1468,7 +1485,12 @@ def create_app(
                                 {"total": form.total, "window_hours": form.window_hours,
                                  "unmeasured": form.unmeasured_organs,
                                  "read_by": _charted_by(caller)}))
-        return form.as_dict()
+        # G2-A4 (D7): the patient's newest signature and the engine's own reason length travel with the
+        # form, under this route's permission — `board.view` and the patient's scope — so the SOFA box can
+        # say «signed by whom, when, to what total» without a ward doctor holding `audit.view`, and the
+        # correction's counter counts against the number the engine enforces, not a copy of it.
+        return {**form.as_dict(), "last_signed": _last_signed(hospital, patient_id),
+                "min_reason_chars": MIN_REASON_CHARS}
 
     @app.post("/scores/sofa/{patient_id}")
     async def sign_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
