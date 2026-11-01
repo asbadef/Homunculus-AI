@@ -146,17 +146,24 @@ describe("the monitor screen", () => {
     expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
   });
 
-  it("prints a strip's method line with an editor row's time in local time and a v2 date as written", async () => {
+  it("prints a strip's method line with an editor row's time in local time, a v2 value as written, and «—» only for none", async () => {
+    // The expected local time is built from the same Date getters, so the test holds in any time zone.
+    const pad = (n) => String(n).padStart(2, "0");
+    const at = new Date("2026-10-30T09:12:03.120000+00:00");
+    const local = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
     await open(strip({ beds: [
       bed("REA-01 · 2", [], { method: "editor", verified_at: "2026-10-30T09:12:03.120000+00:00" }),
       bed("REA-01 · 5", [], { method: "central_station_list", verified_at: "2026-09-22" }),
       bed("REA-01 · 6", [], { method: "both", verified_at: null }),
+      bed("REA-01 · 7", [], { method: "monitor_screen", verified_at: "elle doğrulandı" }),
     ] }));
     const lines = screen.getAllByText(/^Cədvəldə: /).map((p) => p.textContent);
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^Cədvəldə: tətbiqdə əl ilə uyğunlaşdırma · yoxlama 2026-10-30 \d{2}:\d{2}$/);
-    expect(lines[1]).toBe("Cədvəldə: mərkəzi stansiya siyahısı · yoxlama 2026-09-22");
-    expect(lines[2]).toBe("Cədvəldə: siyahı və ekran · yoxlama —");
+    expect(lines).toEqual([
+      `Cədvəldə: tətbiqdə əl ilə uyğunlaşdırma · yoxlama ${local}`,
+      "Cədvəldə: mərkəzi stansiya siyahısı · yoxlama 2026-09-22",
+      "Cədvəldə: siyahı və ekran · yoxlama —",
+      "Cədvəldə: monitor ekranı · yoxlama elle doğrulandı",
+    ]);
   });
 });
 

@@ -3,6 +3,12 @@ import { bedText, canSeeMapping, monitorName, occupiedNames, shortName, verified
 
 const t = (key, vars) => (vars ? `${key} ${JSON.stringify(vars)}` : key);
 
+// The expected local time comes from the same Date getters the screen is meant to use, so these asserts
+// hold in any time zone the suite runs in.
+const pad = (n) => String(n).padStart(2, "0");
+const clockOf = (iso) => { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const stampOf = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${clockOf(iso)}`; };
+
 describe("the editor's pure rules", () => {
   // Amendment A-1 (O61 resolved): display_name is one free-text «ad soyad» field, so the word order is
   // whatever the clerk typed; Baku writes «soyad ad ata adı». The first word stays whole, each later
@@ -33,15 +39,23 @@ describe("the editor's pure rules", () => {
       expect(shortName(`Soyad Ad ${marker.toLocaleUpperCase()}`), marker.toLocaleUpperCase()).toBe("Soyad A.");
     }
     expect(shortName("Soyad Ad oğlu oğlu")).toBe("Soyad A.");
-    expect(shortName("Soyad oğlu Ad")).toBe("Soyad O. A.");        // a marker in the middle is a name
+    expect(shortName("Soyad oğlu Ad")).toBe("Soyad o. A.");        // a marker in the middle is a name
     expect(shortName("Əli oğlu")).toBe("Əli");                      // the first word is never dropped
     expect(shortName("oğlu")).toBe("oğlu");
   });
 
-  it("takes the initial by code point and upper-cases it without a locale", () => {
-    expect(shortName("Ali 😀x")).toBe("Ali 😀.");                    // a surrogate pair is not split
-    expect(shortName("Soyad əli həsən")).toBe("Soyad Ə. H.");
-    expect(shortName("ömer şahin")).toBe("ömer Ş.");
+  // Amendment A-18: the initial is exactly the letter typed. `toLocaleUpperCase()` with no argument follows
+  // the browser's locale, so «ilkin» would be «İ.» on an az/tr browser and «I.» on an en one, and the same
+  // patient would read differently on two screens. Names are typed capitalised.
+  it("keeps each initial exactly as typed: a lower-case dotted i stays i, whatever the browser's locale", () => {
+    expect(shortName("Məmmədov ilkin")).toBe("Məmmədov i.");
+    expect(shortName("Məmmədov Ilkin")).toBe("Məmmədov I.");
+    expect(shortName("Soyad əli həsən")).toBe("Soyad ə. h.");
+    expect(shortName("ömer şahin")).toBe("ömer ş.");
+  });
+
+  it("takes the initial by code point, so a surrogate pair is not split", () => {
+    expect(shortName("Ali 😀x")).toBe("Ali 😀.");
   });
 
   it("finds each occupied bed's patient on the session's own board, and never prints a number", () => {
@@ -71,13 +85,24 @@ describe("the editor's pure rules", () => {
     expect(visibility({ seen: false, last_seen_at: "bozuk" })).toEqual({ key: "esleme.unseenUnknown", vars: undefined });
     const at = visibility({ seen: false, last_seen_at: "2026-10-30T09:02:00+00:00" });
     expect(at.key).toBe("esleme.unseenAt");
-    expect(at.vars.time).toMatch(/^\d{2}:\d{2}$/);
+    expect(at.vars).toEqual({ time: clockOf("2026-10-30T09:02:00+00:00") });
   });
 
   it("prints a v2 date as written and an editor row's time in local time", () => {
     expect(verifiedText("2026-09-22")).toBe("2026-09-22");
-    expect(verifiedText("2026-10-30T09:12:03.120000+00:00")).toMatch(/^2026-10-30 \d{2}:\d{2}$/);
-    expect([verifiedText(null), verifiedText(undefined), verifiedText("bozuk")]).toEqual(["—", "—", "—"]);
+    expect(verifiedText("2026-10-30T09:12:03.120000+00:00")).toBe(stampOf("2026-10-30T09:12:03.120000+00:00"));
+    expect(verifiedText("2026-10-30T09:12:03+00:00")).toBe(stampOf("2026-10-30T09:12:03+00:00"));
+  });
+
+  // Amendment A-18: «—» reads as "never verified", so it is only for a missing value. Anything the screen
+  // cannot read as a date or a time is printed as it was written, never hidden.
+  it("prints a value it cannot read as it was written; «—» is only for a missing one", () => {
+    expect([verifiedText(null), verifiedText(undefined), verifiedText(42), verifiedText({})]).toEqual(["—", "—", "—", "—"]);
+    expect(verifiedText("bozuk")).toBe("bozuk");
+    expect(verifiedText("elle doğrulandı, 22 Eylül 2026")).toBe("elle doğrulandı, 22 Eylül 2026");
+    expect(verifiedText("2026-09-22 ekranda görüldü")).toBe("2026-09-22 ekranda görüldü");
+    expect(verifiedText("2026-13-45T99:99:00Z")).toBe("2026-13-45T99:99:00Z");     // ISO-shaped, not a date
+    expect(verifiedText("foo 1")).toBe("foo 1");                                    // V8's lenient parser would make a date of it
   });
 
   it("shows the section to a holder of either key", () => {

@@ -32,6 +32,9 @@ describe("the monitor–bed list", () => {
     expect(within(table).getAllByRole("row").slice(1).map((r) => r.cells[0].firstChild.textContent))   // the address, then « · 2050»
       .toEqual(["192.0.2.11", "192.0.2.12", "192.0.2.13", "192.0.2.14", "192.0.2.20", "192.0.2.21"]);
     expect(rowOf("192.0.2.11").cells[0]).toHaveTextContent("192.0.2.11 · 2050");
+    // the monitor names its row, so a screen reader reads the address with each cell of it
+    expect(within(rowOf("192.0.2.11")).getByRole("rowheader")).toHaveTextContent("192.0.2.11 · 2050");
+    expect(within(table).getAllByRole("rowheader")).toHaveLength(6);
     expect(within(rowOf("192.0.2.11")).getByText("1 · Otaq 1 · Reanimasiya")).toBeTruthy();
     expect(within(rowOf("192.0.2.11")).getByText("BED05")).toBeTruthy();
     expect(within(rowOf("192.0.2.11")).getByText("224.0.2.11")).toBeTruthy();

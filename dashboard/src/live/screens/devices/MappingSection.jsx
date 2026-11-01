@@ -3,13 +3,18 @@
 // whether it is seen, its bed (named from the server's names, or «başka birimde») and — for a
 // holder of devices.map_beds on a monitor she may change — «Yatağa bağla» / «Bağlantıyı çöz».
 // Read every POLL_MS while on screen and right after each change. No patient anywhere here.
-import React, { useCallback, useEffect, useId, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { POLL_MS } from "../../data/shadowStore.js";
 import { Announce, Button, Note, Table } from "../../ui/index.js";
 import { bedText, monitorName, visibility } from "./deviceMap.js";
 import { MappingDialog } from "./MappingDialog.jsx";
+
+// Either says hidden, it is hidden: a browser keeps the two in step, and a page that says so through only one
+// of them still costs the ward nothing (the same rule as data/shadowStore.js, whose helper is private to it).
+const pageVisible = () => typeof document === "undefined"
+  || (document.visibilityState !== "hidden" && document.hidden !== true);
 
 function Row({ device, onAct }) {
   const { t } = useI18n();
@@ -18,7 +23,8 @@ function Row({ device, onAct }) {
   const bound = Boolean(device.bed);
   return (
     <tr>
-      <td className="font-data">{device.source} · {device.port}<span className="block text-12 text-mute">{device.group}</span></td>
+      {/* The monitor names its row, so a screen reader reads its address with each cell of it. */}
+      <th scope="row" className="font-data font-semibold">{device.source} · {device.port}<span className="block text-12 text-mute">{device.group}</span></th>
       <td className="font-data">{device.device_bed_label ?? "—"}</td>
       <td>{t(seen.key, seen.vars)}</td>
       <td>{bedText(t, device)}</td>
@@ -48,22 +54,43 @@ export function MappingSection() {
   const [state, setState] = useState({ phase: "loading", body: null });
   const [dialog, setDialog] = useState(null);       // {mode: "bind" | "unbind", device}
   const [said, setSaid] = useState("");
+  // Every read takes a number, and so does every list handed in from outside (a finished change): an
+  // answer that is not the newest number is dropped, whatever order the reads land in. A read started
+  // before a bind must never put the old bed back on screen (as StructureProvider's `seq`).
+  const seq = useRef(0);
+  const alive = useRef(true);
+  const reading = useRef(0);                         // the poll's read that is out, so a slow one is not stacked on
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (poll = false) => {
+    // A hidden tab costs the ward nothing; it reads again the moment it is seen (the effect below).
+    if (!pageVisible() || (poll && reading.current !== 0)) return;
+    const mine = ++seq.current;
+    reading.current = mine;
     try {
       // Inside `track`, as every screen's call is (sessionStore.js `api`): a refused refresh ends the session here too.
       const body = await store.track(() => store.api.deviceBeds());
+      if (!alive.current || mine !== seq.current) return;
       if (!body || !Array.isArray(body.devices)) throw new Error("not a list");
       setState({ phase: "ok", body });
     } catch (err) {
+      if (!alive.current || mine !== seq.current) return;
       setState((was) => ({ phase: err?.apiCode === "monitor_lane_off" ? "off" : "unreadable", body: was.body }));
+    } finally {
+      if (reading.current === mine) reading.current = 0;
     }
   }, [store]);
 
   useEffect(() => {
+    alive.current = true;
     load();
-    const timer = setInterval(load, POLL_MS);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => load(true), POLL_MS);
+    const seen = () => { if (pageVisible()) load(); };
+    document.addEventListener("visibilitychange", seen);
+    return () => {
+      alive.current = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", seen);
+    };
   }, [load]);
 
   const { phase, body } = state;
@@ -99,6 +126,8 @@ export function MappingSection() {
           onDone={(text, fresh) => {
             setDialog(null);
             setSaid(text);
+            // The change is done: a read that was already out may carry the bed from before it.
+            seq.current += 1;
             if (fresh && Array.isArray(fresh.devices)) setState({ phase: "ok", body: fresh });
             else load();
           }} />
