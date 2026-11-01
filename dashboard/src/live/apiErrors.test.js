@@ -265,8 +265,13 @@ describe("apiErrorText", () => {
       .toBe("A preview cannot be asked of the signing route; the form was not signed. Use the preview route.");
     expect(apiErrorText(en, new Error("imza bir önizlemenin parmak izini ister — önce önizleyin")))
       .toBe("A signature needs a preview's fingerprint; the form was not signed. Preview first.");
-    expect(apiErrorText(az, Object.assign(new Error("kayıt önizlemeden sonra değişti — formu yeniden önizleyin"), { status: 409 })))
-      .toBe("Qeyd öncədən baxışdan sonra dəyişib; forma imzalanmayıb. Formaya yenidən öncədən baxın.");
+    // Review 3 (M-5): the 409 says what moved — a new entry or the window sliding — not only "the record".
+    const moved = "form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu yeniden önizleyin";
+    expect(apiErrorText(az, Object.assign(new Error(moved), { status: 409 })))
+      .toBe("Forma öncədən baxışdan sonra dəyişib (yeni qeyd və ya pəncərənin sürüşməsi) və imzalanmayıb. Formaya yenidən öncədən baxın.");
+    expect(apiErrorText(en, Object.assign(new Error(moved), { status: 409 })))
+      .toBe("The form changed after the preview (a new entry or the window shifting) and was not signed. Preview the form again.");
+    expect(apiErrorKey(new Error("kayıt önizlemeden sonra değişti — formu yeniden önizleyin"))).toBeNull();   // the old sentence is gone
   });
 
   // The charting door's (api/clinical.py, through `str(exc)`, so no sweep reads it): a GCS that is not whole.

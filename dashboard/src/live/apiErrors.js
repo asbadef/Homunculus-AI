@@ -86,10 +86,11 @@ export const API_MESSAGE_KEYS = new Map([
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
   // sign route; a signature without the preview's fingerprint (`expect`); and the 409 of a record that moved
-  // since the preview. None of them signed anything, and each says so.
+  // since the preview — which, since review 3 (M-5), says what moved: a new entry or the window sliding. None of
+  // them signed anything, and each says so.
   ["önizleme imza yolundan istenemez — önizleme yolunu kullanın", "scorePreviewOnSignRoute"],
   ["imza bir önizlemenin parmak izini ister — önce önizleyin", "scoreSignNeedsPreview"],
-  ["kayıt önizlemeden sonra değişti — formu yeniden önizleyin", "scoreRecordMoved"],
+  ["form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu yeniden önizleyin", "scoreRecordMoved"],
   // POST /clinical/{id} (G2-A4 review 2): the charting door refuses a GCS that is not whole. Its refusals reach
   // the screen through `str(exc)` and are shown as the engine wrote them; this one is a fixed sentence, so it
   // is said in the reader's words. The SOFA form holds a 14,5 back before it is sent (sofaFields).

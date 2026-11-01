@@ -5,7 +5,7 @@
 // in the source's. Times are against data/board.testutil.js's NOW (2026-10-08T10:00Z): measured 2 h 30 min
 // before it, signed 2 min before.
 export const MEASURED_AT = "2026-10-08T07:30:00+00:00";
-/** The support entry the ratio was scored on (review 2, C3): the latest at or before the worst reading, 30 min before it. */
+/** The support entry the row's reading was scored on (review 2, C3): the latest at or before that reading's time, 30 min before it. */
 export const SUPPORT_AT = "2026-10-08T07:00:00+00:00";
 export const SIGNED_AT = "2026-10-08T09:58:00+00:00";
 /** A reason long enough for the engine's 20 characters. */

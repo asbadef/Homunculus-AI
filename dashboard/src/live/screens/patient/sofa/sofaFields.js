@@ -49,9 +49,11 @@ export const ENTERABLE = Object.freeze({
 
 /** The cardiovascular row's inputs, which the form shows and may correct but never completes (D9: MAP comes
  *  from the record, the pressors from the Meds box): the board's MAP words, and the Meds form's drug names,
- *  unit and bounds. MAP has no bound at the door and has none here. */
+ *  unit and bounds. MAP is not chartable at the door, so the door has no bound for it; its CORRECTION is held
+ *  by the engine to 0–300 mmHg (api/app.py CORRECTION_BOUNDS, an engineering slip bound), mirrored here
+ *  (review 3, M-4) so a 9000 typed for 90 is held before it is sent. */
 const OTHER_INPUTS = Object.freeze({
-  map: Object.freeze({ labelKey: "board.chMap", unitKey: "board.unitMmhg" }),
+  map: Object.freeze({ labelKey: "board.chMap", unitKey: "board.unitMmhg", min: 0, max: 300 }),
   ...Object.fromEntries(PRESSORS.map((p) => [
     p.code, Object.freeze({ labelKey: p.labelKey, unitKey: "patient.medsRateUnit", min: p.min, max: p.max }),
   ])),
@@ -112,15 +114,28 @@ export function checkValue(code, raw) {
 /** A minute of skew between this browser's clock and the server's is not "ahead" (the Meds form's minute). */
 const SKEW_MS = 60_000;
 
-/** A completion's measurement time (D3): `{ recordedAt }` — a UTC instant, which carries a zone (the door
- *  refuses a stamp without one) — or `{ error }`: up to 24 h back, never ahead. `local` is the
- *  `datetime-local` value in the browser's zone; `now` the browser's clock in ms. */
-export function checkTime(local, now) {
-  const at = fromLocalInput(local);
+/** A measurement time as an instant (D3): `{ recordedAt }` — a UTC instant, which carries a zone (the door
+ *  refuses a stamp without one) — or `{ error }`: up to 24 h back, never ahead. `at` and `now` are ms; the
+ *  instant is kept to the millisecond (a reading's own time, review 3 S-2, is not rounded to the minute). */
+export function checkInstant(at, now) {
   if (!Number.isFinite(at)) return { error: { key: "sofa.atInvalid" } };
   if (at > now + SKEW_MS) return { error: { key: "sofa.atFuture" } };
   if (at < now - BACKDATE_MS) return { error: { key: "sofa.atTooOld" } };
   return { recordedAt: new Date(at).toISOString() };
+}
+
+/** A typed measurement time (D3), by the same rule: `local` is the `datetime-local` value in the browser's
+ *  zone; `now` the browser's clock in ms. */
+export const checkTime = (local, now) => checkInstant(fromLocalInput(local), now);
+
+/** The time of the respiration row's measured PaO₂/FiO₂ reading, as the engine sent it (ISO), or null — no
+ *  ratio, or none this build can read. The support entry starts from it (review 3, S-2): a support entry counts
+ *  only for readings at or after its time, so an untouched «yes» charted after the ratio, timed now, would
+ *  leave that very ratio off support. Read from the RECORD's form, where a cell is never a correction. */
+export function readingAtOf(form) {
+  const row = (Array.isArray(form?.rows) ? form.rows : []).find((r) => r?.organ === "respiration");
+  const ratio = (Array.isArray(row?.inputs) ? row.inputs : []).find((c) => c?.code === "pao2_fio2");
+  return ratio?.measured === true && typeof ratio.at === "string" && Number.isFinite(Date.parse(ratio.at)) ? ratio.at : null;
 }
 
 /** A correction's reason counted as the engine counts it (scoring/signing.py: the stripped text's `len`) —
@@ -154,14 +169,20 @@ export function stampOf(iso, nowMs) {
   return Number.isFinite(ms) ? dayStamp(ms, nowMs) : "";
 }
 
-/** The support state the PaO₂/FiO₂ was scored on (review 2, C3), as the engine sent it on the respiration row
- *  (`support`: the latest support entry at or before the worst reading's time): «yes» or «no» with the time of
- *  that entry, or that no support was charted. "" when the row has no ratio (`support` null), when the engine
- *  sends no `support` (one before C3), or for a shape this build does not know — nothing is guessed. A «yes»
- *  without a time is still a yes: the engine scored it on support. */
-export function supportText(t, support, nowMs) {
+/** The support basis the row's reading was scored on (review 2, C3; review 3, S-2), as the engine sent it on the
+ *  respiration row. The engine scores EACH PaO₂/FiO₂ reading on the support in force at its own time — the
+ *  last support entry at or before it — and the row shows the reading that scores the most points; `support`
+ *  is that reading's basis: `{on_support, at}`, `at` the entry used or null for none. Said as the basis, not as
+ *  a current state: scored on or off support with the entry's time, or — no entry at or before the reading —
+ *  scored off support, naming the reading's time (`readingAt`, the row's PaO₂/FiO₂ cell `at`; a corrected
+ *  ratio has none, and the line then names no time). "" when the row has no ratio (`support` null), when the
+ *  engine sends no `support` (one before C3), or for a shape this build does not know — nothing is guessed. A
+ *  «yes» without a time is still a yes: the engine scored it on support. */
+export function supportText(t, support, nowMs, readingAt = null) {
   if (support === null || typeof support !== "object" || typeof support.on_support !== "boolean") return "";
   const time = stampOf(support.at, nowMs);
   if (support.on_support) return t("sofa.supportBasisYes", { time: time || "—" });
-  return time ? t("sofa.supportBasisNo", { time }) : t("sofa.supportBasisNone");
+  if (time) return t("sofa.supportBasisNo", { time });
+  const reading = stampOf(readingAt, nowMs);
+  return reading ? t("sofa.supportBasisNoneAt", { time: reading }) : t("sofa.supportBasisNone");
 }

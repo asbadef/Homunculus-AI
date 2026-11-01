@@ -4,14 +4,18 @@
 // toast and the read that follows.
 //
 // COMPLETING (D3) — `ChartEntry`, for a `clinical.chart` holder: one new measurement of an input the form
-// takes, with its measurement time — the support flag too: the ratio is scored on the support state as of its
-// worst reading (review 2, C3), so a «no» back-dated to before that reading is how that state is set right.
-// It is a measurement, not a correction, so it asks for no reason; it goes
-// through the door every charted value goes through (POST /clinical/{id}), and the engine scores it. The time
-// field is the Meds form's (meds/MedsChartForm.jsx, final review I2; X8): it shows NOW until she edits it — it
-// follows the clock (`useNow`, once a minute) — and a time she types goes up to 24 h back, never ahead. Unlike
-// the Meds form, an untouched time is not sent (review 2): the server stamps the measurement with its own
-// clock, so a browser clock ahead of the server's cannot chart it in the future, out of the read that follows.
+// takes, with its measurement time — the support flag too: the engine scores each PaO₂/FiO₂ reading on the
+// support in force at its own time (the last support entry at or before it) and the row shows the reading that
+// scores the most points (D13), so an entry counts only for readings at or after its time, and a «no» timed
+// before a reading takes that reading off support. It is a measurement, not a correction, so it asks for no
+// reason; it goes through the door every charted value goes through (POST /clinical/{id}), and the engine
+// scores it. The time field is the Meds form's (meds/MedsChartForm.jsx, final review I2; X8): it shows NOW
+// until she edits it — it follows the clock (`useNow`, once a minute) — and a time she types goes up to 24 h
+// back, never ahead. Unlike the Meds form, an untouched time is not sent (review 2): the server stamps the
+// measurement with its own clock, so a browser clock ahead of the server's cannot chart it in the future, out
+// of the read that follows. The one exception is the support entry when the row has a measured ratio
+// (review 3, S-2): its time starts at that reading's (`defaultAt`), said under the field, and is sent — chart
+// the ratio, then «evet», both untouched, and the support counts for that ratio rather than starting after it.
 //
 // CORRECTING (D5) — `CorrectionEntry`, for a `scores.sign` holder and a MEASURED input only: the value it
 // should have been, and why. The reason is counted live against the engine's own `min_reason_chars`, so the
@@ -26,7 +30,10 @@ import { flushSync } from "react-dom";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Button, Field, Input, Select } from "../../../ui/index.js";
 import { useNow } from "../../common/useNow.js";
-import { BACKDATE_MS, checkTime, checkValue, isFlag, labelOf, reasonCount, toLocalInput } from "./sofaFields.js";
+import { dayStamp } from "../../../i18n/dates.js";
+import {
+  BACKDATE_MS, checkInstant, checkTime, checkValue, isFlag, labelOf, reasonCount, toLocalInput,
+} from "./sofaFields.js";
 
 /** How often an untouched measurement time is moved on to the clock: the field shows minutes. */
 const CLOCK_MS = 60_000;
@@ -36,35 +43,56 @@ const PANEL = "mt-2 rounded-ctl border border-line2 bg-card2 px-3 py-2.5";
 const withUnit = (label, unit) => (unit ? <>{label} <span className="font-normal">({unit})</span></> : label);
 
 /** One new measurement of `code` (D3). `onSave(value, recordedAt)` is the form's write — `recordedAt` the
- *  time she typed, or null for an untouched time (the server's clock): the form closes this editor once the
- *  write is settled as a save and leaves it open — the draft kept — on a refusal. `busy` is the form's: a
- *  request is in flight, a preview's too, and the fields and the Save are held still, visibly. */
-export function ChartEntry({ code, busy, onSave, onCancel }) {
+ *  time she typed, the reading's (`defaultAt`), or null for an untouched time (the server's clock): the form
+ *  closes this editor once the write is settled as a save and leaves it open — the draft kept — on a refusal.
+ *  `busy` is the form's: a request is in flight, a preview's too, and the fields and the Save are held still,
+ *  visibly. `defaultAt` (review 3, S-2) is the instant (ISO) the time starts from instead of the clock — the
+ *  form passes the respiration row's reading for the support entry only — taken when it is within the 24-hour
+ *  rule as the editor opens, and held to that rule again at the press; outside it, the time is the clock's. */
+export function ChartEntry({ code, busy, onSave, onCancel, defaultAt = null }) {
   const { t } = useI18n();
   const { label, unit } = labelOf(t, code);
   const flag = isFlag(code);
   const [value, setValue] = useState("");
   const [at, setAt] = useState("");
-  // False until she edits the time: until then the time is the clock's, not a value of the draft.
+  // False until she edits the time: until then the time is the clock's — or the reading's — not a value of the draft.
   const [atTouched, setAtTouched] = useState(false);
+  // The reading's instant, decided once as the editor opens: what is shown is what is sent, or refused.
+  const [fromReading] = useState(() => {
+    const ms = typeof defaultAt === "string" ? Date.parse(defaultAt) : Number.NaN;
+    return checkInstant(ms, Date.now()).error ? null : ms;
+  });
   const [tried, setTried] = useState(false);
   const valueRef = useRef(null);
   const atRef = useRef(null);
   useNow(CLOCK_MS);                         // re-rendered on the clock, so an untouched time moves on
   const now = Date.now();
-  const shownAt = atTouched ? at : toLocalInput(now);
+  const shownAt = atTouched ? at : toLocalInput(fromReading ?? now);
   const say = (error) => (error ? t(error.key, error.params) : undefined);
+  /** The draft's time as it would be sent at `nowMs`: hers, the reading's, or none (the server's clock). */
+  const timedAt = (nowMs) => {
+    if (atTouched) return checkTime(at, nowMs);
+    if (fromReading !== null) return checkInstant(fromReading, nowMs);
+    return { recordedAt: null };
+  };
   const valueError = tried ? say(checkValue(code, value).error) : undefined;
-  const atError = tried ? say(checkTime(shownAt, now).error) : undefined;
+  const atError = tried ? say(timedAt(now).error) : undefined;
+  const atHint = fromReading === null ? t("sofa.atHint") : (
+    <>
+      {t("sofa.atHint")}
+      <span className="block">{t("sofa.supportAtHint", { time: dayStamp(fromReading, now) })}</span>
+    </>
+  );
 
   function save(event) {
     event.preventDefault();
     if (busy) return;
     // Checked again at the press. An untouched time is sent as none (`null`): the server stamps the
     // measurement with ITS clock (review 2) — this browser's, if ahead of the server's, would chart it in the
-    // future, missing from the read that follows. A time she typed is hers, and is sent.
+    // future, missing from the read that follows. A time she typed is hers, and is sent; so is the reading's
+    // a support entry starts from (S-2), while it is still within 24 hours.
     const checked = checkValue(code, value);
-    const timed = atTouched ? checkTime(at, Date.now()) : { recordedAt: null };
+    const timed = timedAt(Date.now());
     if (checked.error || timed.error) {
       // The error is in the DOM, tied to its field, when the focus arrives there.
       flushSync(() => setTried(true));
@@ -91,7 +119,7 @@ export function ChartEntry({ code, busy, onSave, onCancel }) {
             onChange={(e) => setValue(e.target.value)} readOnly={busy} />
         </Field>
       )}
-      <Field label={t("sofa.at")} hint={t("sofa.atHint")} layout="col" error={atError}>
+      <Field label={t("sofa.at")} hint={atHint} layout="col" error={atError}>
         <Input
           ref={atRef} type="datetime-local" min={toLocalInput(now - BACKDATE_MS)} max={toLocalInput(now)}
           value={shownAt} onChange={(e) => { setAtTouched(true); setAt(e.target.value); }} readOnly={busy}

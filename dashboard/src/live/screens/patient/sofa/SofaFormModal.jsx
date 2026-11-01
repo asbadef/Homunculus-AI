@@ -9,9 +9,10 @@
 // when the patient has been here for less than it (`covers_full_window` false), that the form rests on the
 // shorter stay. Under the renal row: urine output is not scored here (D8). Under the cardiovascular row: MAP
 // comes from the record and is not entered here, the pressors come from the Meds box (D9). Under the
-// respiration row: what charted support changes, and the support state the ratio was scored on — the engine's,
-// as of the worst reading (review 2, C3). The browser scores nothing (Decision 1): every point, total and
-// failure mark is the engine's.
+// respiration row: what charted support changes, and the support basis the row's reading was scored on — the
+// engine's: each reading is scored on the support in force at its own time (the last support entry at or before
+// it) and the row shows the reading that scores the most points (D13; review 2, C3; review 3, S-1, S-2). The
+// browser scores nothing (Decision 1): every point, total and failure mark is the engine's.
 //
 // WHAT IT WRITES. A `clinical.chart` holder completes a row (D3, SofaEditors.jsx `ChartEntry`): one measurement
 // through POST /clinical/{id}, and the form is read again — the engine re-scores, never this screen. A
@@ -50,7 +51,8 @@ import { Announce, Button, Modal, Note, StatusPill, useToast } from "../../../ui
 import { mayHaveLanded } from "../../admin/refusal.js";
 import { ChartEntry, CorrectionEntry } from "./SofaEditors.jsx";
 import {
-  correctionsKey, isEnterable, labelOf, overridesOf, recordedOf, rowsInOrder, sourceText, stampOf, supportText,
+  correctionsKey, isEnterable, labelOf, overridesOf, readingAtOf, recordedOf, rowsInOrder, sourceText, stampOf,
+  supportText,
 } from "./sofaFields.js";
 
 /** How long «İmzala» is held after a preview: it appears where «Önizle» stood, and a double click's second press
@@ -144,11 +146,13 @@ function Cell({ cell, nowMs, held, children }) {
   );
 }
 
-/** The support state the respiration row's ratio was scored on (review 2, C3) — the engine's `support`, said
- *  as `supportText` says it; nothing when the engine sent none (a row with no ratio, an engine before C3). */
-function SupportBasis({ support, nowMs }) {
+/** The support basis the respiration row's reading was scored on (review 2, C3; review 3, S-2) — the engine's
+ *  `support`, said as `supportText` says it, with the reading's time from the row's PaO₂/FiO₂ cell when no entry
+ *  preceded it; nothing when the engine sent none (a row with no ratio, an engine before C3). */
+function SupportBasis({ row, nowMs }) {
   const { t } = useI18n();
-  const text = supportText(t, support, nowMs);
+  const ratio = (Array.isArray(row?.inputs) ? row.inputs : []).find((c) => c?.code === "pao2_fio2");
+  const text = supportText(t, row?.support, nowMs, ratio?.at ?? null);
   return text ? <p data-sofa-support="" className="m-0 mt-1.5 text-12.5">{text}</p> : null;
 }
 
@@ -180,7 +184,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   const [readError, setReadError] = useState(null);
   const [reading, setReading] = useState(true);
   const [corrections, setCorrections] = useState({});  // code -> { value, reason }: held until the preview (D5)
-  const [preview, setPreview] = useState(null);        // { key, answer }: the engine's answer to `preview: true`
+  const [preview, setPreview] = useState(null);        // { key, answer }: the preview route's answer, keyed by the corrections asked
   const [editing, setEditing] = useState(null);        // { kind: "chart" | "correct", code }: one editor at a time
   const [busy, setBusy] = useState(null);              // "chart" | "preview" | "sign": the request in flight
   const [said, setSaid] = useState(null);              // { text, warn }: the footer's sentence for the last outcome
@@ -347,6 +351,10 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     setBusy("preview");
     const asked = corrections;
     let done;
+    // Review 3 (M-3): any outcome that is not a preview lets the earlier preview go — refused, failed, dropped,
+    // or answered with something else — so «İmzala» never stands beside "preview refused", offering to sign a
+    // preview the engine was just asked to redo.
+    let previewed = false;
     try {
       const answer = await api.preview(overridesOf(asked));
       // null: the store dropped the answer, the session ended — nothing is said, nothing closed (as `read`, `signIt`).
@@ -356,6 +364,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         done = { text: t("sofa.previewSigned", { subject: bed }), tone: "warn", close: true };
       } else if (isPreview(answer)) {
         if (!mounted.current) return;
+        previewed = true;
         setPreview({ key: correctionsKey(asked), answer });
         arm();
         // Spoken too: no toast says a preview landed, and «İmzala» has just appeared.
@@ -375,7 +384,10 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
       done = { text: t("sofa.previewRefused", { subject: bed, reason }), tone: "error", close: forbidden };
     } finally {
       sending.current = false;
-      if (mounted.current) setBusy(null);
+      if (mounted.current) {
+        setBusy(null);
+        if (!previewed) setPreview(null);
+      }
     }
     toast(done.text, done.tone);
     if (mounted.current) setSaid({ text: done.text, warn: true });
@@ -491,9 +503,11 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   }
 
   // Respiratory support (D4) is no cell of the form — it decides which PaO₂/FiO₂ bands apply — so it is charted
-  // from under the respiration row, by a `clinical.chart` holder only. What the ratio was scored ON — the
-  // engine's `support`, the state as of the worst reading (review 2, C3) — is printed there for every reader:
-  // a «no» charted for the right time is what moves it, and she has to see what it stands on now.
+  // from under the respiration row, by a `clinical.chart` holder only. What the row's reading was scored ON —
+  // the engine's `support`: each reading on the support in force at its own time, the last entry at or before
+  // it (D13; review 2, C3; review 3, S-1) — is printed there for every reader: an entry timed at or before the
+  // reading is what moves it, and she has to see what it stands on now. The entry's time starts at that
+  // reading's (review 3, S-2), read from the RECORD's form: untouched, «evet» charted after the ratio counts for it.
   const supportOpen = editing?.code === "on_resp_support";
   const support = canChart ? (
     <div data-sofa-cell="on_resp_support" className="mt-1.5">
@@ -503,7 +517,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         {t("sofa.supportChart")}
       </Button>
       {supportOpen ? (
-        <ChartEntry code="on_resp_support" busy={busy !== null} onCancel={() => closeEditor("chart", "on_resp_support")}
+        <ChartEntry code="on_resp_support" busy={busy !== null} defaultAt={readingAtOf(form)}
+          onCancel={() => closeEditor("chart", "on_resp_support")}
           onSave={(value, recordedAt) => chartOne("on_resp_support", value, recordedAt)} />
       ) : null}
     </div>
@@ -532,7 +547,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
               ))}
               {entry.organ === "respiration" ? (
                 <>
-                  <SupportBasis support={entry.row.support} nowMs={nowMs} />
+                  <SupportBasis row={entry.row} nowMs={nowMs} />
                   {support}
                 </>
               ) : null}

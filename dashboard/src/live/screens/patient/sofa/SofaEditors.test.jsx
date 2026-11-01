@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { mount } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW } from "../../../data/board.testutil.js";
+import { dayStamp } from "../../../i18n/dates.js";
 import { ChartEntry, CorrectionEntry } from "./SofaEditors.jsx";
 import { toLocalInput } from "./sofaFields.js";
 import { WHY } from "./sofa.testutil.js";
@@ -66,6 +67,69 @@ describe("ChartEntry (D3)", () => {
     value("11");
     await save();
     expect(onSave).toHaveBeenCalledWith(11, new Date(NOW - 120 * MIN).toISOString());
+  });
+});
+
+// Review 3 (S-2): the support entry's time starts at the respiration row's reading — chart the ratio, then
+// «evet», both untouched, and the support counts for that ratio — still editable, and still within 24 hours.
+describe("ChartEntry for respiratory support, from the reading's time (S-2)", () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
+  const READING = NOW - 150 * MIN;                                         // the ratio, 2 h 30 min before NOW
+  async function open(defaultAt = new Date(READING).toISOString()) {
+    vi.useFakeTimers(FAKE_TIMERS);
+    vi.setSystemTime(NOW);
+    const onSave = vi.fn();
+    await mount(<ChartEntry code="on_resp_support" defaultAt={defaultAt} busy={false} onSave={onSave} onCancel={vi.fn()} />,
+      { access: token(), me: profile() });
+    return { onSave };
+  }
+  const entry = () => screen.getByRole("form", { name: "Tənəffüs dəstəyi — yeni ölçmə" });
+  const time = () => within(entry()).getByLabelText("Ölçmə saatı");
+  const yes = () => fireEvent.change(within(entry()).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "1" } });
+  const save = () => act(async () => { fireEvent.click(within(entry()).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+
+  it("untouched, the time is the reading's — shown, said under the field, and sent — however late it is saved", async () => {
+    const { onSave } = await open();
+    expect(time()).toHaveValue(toLocalInput(READING));
+    expect(time()).toHaveAccessibleDescription(
+      new RegExp(`Saat sətirdəki PaO₂/FiO₂ ölçməsinin saatı ilə \\(${dayStamp(READING, NOW)}\\) gəlir`));
+    act(() => { vi.setSystemTime(NOW + 10 * MIN); vi.advanceTimersByTime(MIN); });   // the clock moves; the time does not
+    expect(time()).toHaveValue(toLocalInput(READING));
+    yes();
+    await save();
+    expect(onSave).toHaveBeenCalledWith(1, new Date(READING).toISOString());
+  });
+
+  it("stays hers to change: a typed time is sent instead", async () => {
+    const { onSave } = await open();
+    fireEvent.change(time(), { target: { value: toLocalInput(READING - 30 * MIN) } });
+    yes();
+    await save();
+    expect(onSave).toHaveBeenCalledWith(1, new Date(READING - 30 * MIN).toISOString());
+  });
+
+  it("within the 24-hour rule: a reading that ages past it before the press is held, with the focus on the time", async () => {
+    const edge = NOW - 24 * 3600_000 + 5 * MIN;                            // inside the rule at opening, by 5 min
+    const { onSave } = await open(new Date(edge).toISOString());
+    expect(time()).toHaveValue(toLocalInput(edge));
+    act(() => { vi.setSystemTime(NOW + 10 * MIN); });
+    yes();
+    await save();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(within(entry()).getByText("Ölçmə saatı 24 saatdan köhnə ola bilməz.")).toBeInTheDocument();
+    expect(document.activeElement).toBe(time());
+  });
+
+  it("a reading older than 24 hours — or none — leaves the time to the clock, and nothing is said of a reading", async () => {
+    for (const defaultAt of [new Date(NOW - 30 * 3600_000).toISOString(), null]) {
+      const { onSave } = await open(defaultAt);
+      expect(time()).toHaveValue(toLocalInput(NOW));
+      expect(entry()).not.toHaveTextContent("PaO₂/FiO₂ ölçməsinin saatı");
+      yes();
+      await save();
+      expect(onSave).toHaveBeenCalledWith(1, null);
+      cleanup();
+    }
   });
 });
 
