@@ -61,6 +61,7 @@ import { MedsBox } from "./meds/MedsBox.jsx";
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
+import { LabelReprint } from "../kabul/label/LabelReprint.jsx"; // G2-B1d: the protocol label, again
 
 const TICK_MS = 30_000;
 
@@ -391,6 +392,7 @@ export function PatientScreen({ params }) {
             </div>
           </header>
           <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
+          <LabelReprint key={`label-${id}`} patientId={id} />{/* G2-B1d (spec §6): an open admission's protocol label, again */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>
