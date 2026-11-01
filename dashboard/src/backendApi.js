@@ -294,6 +294,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     let fieldErrors;
     let apiCode;
     let patientNumber;
+    let occupied;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -313,6 +314,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // patient's (admission/errors.py `Refusal.extra`): the one extra a screen shows. Nothing else
         // of the detail is kept — never a name.
         if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
+        // G2-ESLEME: `bed_occupied` names the occupied beds and, to a board.view holder, the patients'
+        // board ids (devicebeds/service.py step 8; spec §4.5's "Extra" column). Read for that code only,
+        // and only those two keys are kept — never a name.
+        if (body.detail.code === "bed_occupied" && Array.isArray(body.detail.occupied)) {
+          occupied = body.detail.occupied.filter((o) => typeof o?.bed_id === "string")
+            .map((o) => (typeof o.patient_id === "string" ? { bed_id: o.bed_id, patient_id: o.patient_id } : { bed_id: o.bed_id }));
+        }
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -323,6 +331,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     err.status = res.status;
     if (apiCode) err.apiCode = apiCode;
     if (patientNumber !== undefined) err.patientNumber = patientNumber;
+    if (occupied !== undefined) err.occupied = occupied;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
@@ -879,6 +888,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     patchUnit(id, body) { return authed(`/tenant/units/${seg(id)}`, { method: "PATCH", body }); },
     patchRoom(id, body) { return authed(`/tenant/rooms/${seg(id)}`, { method: "PATCH", body }); },
     patchBed(id, body) { return authed(`/tenant/beds/${seg(id)}`, { method: "PATCH", body }); },
+
+    // ---- G2-ESLEME: the monitor→bed editor (homunculus-engine devicebeds/router.py) ----
+    // Refusals carry `err.apiCode` (`monitor_lane_off`, `device_unknown`, `bed_occupied` with
+    // `err.occupied`, `mapping_changed`, `out_of_scope`, `bed_closed`).
+    /** {stage, generated_at, can_bind, devices: [{source, group, port, device_bed_label, seen, status,
+     *  last_seen_at, row_id, bed: null | {id, in_scope, label?, room?, unit?}, editable}]} */
+    deviceBeds() { return authed("/infinity-shadow/device-beds"); },
+    /** {source, bed_id, expected: {device_row_id, bed_row_id}, confirm_occupied} → {changed, replaced_source, list} */
+    bindDeviceBed(body) { return authed("/infinity-shadow/device-beds/bind", { method: "POST", body }); },
+    /** {source, expected: {device_row_id}, confirm_occupied} → {changed, replaced_source, list} */
+    unbindDeviceBed(body) { return authed("/infinity-shadow/device-beds/unbind", { method: "POST", body }); },
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,

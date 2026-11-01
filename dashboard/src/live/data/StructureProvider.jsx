@@ -37,7 +37,8 @@ import { EMPTY_INDEX, bedNamer, indexStructure, normId, ordinalRegistry, unitNam
 
 /** The rights GET /tenant/structure opens to (tenant/router.py) — the scope editor's
  *  `users.manage` among them. */
-export const STRUCTURE_PERMS = Object.freeze(["admissions.view", "admissions.admit", "beds.release", "structure.manage", "users.manage"]);
+export const STRUCTURE_PERMS = Object.freeze(["admissions.view", "admissions.admit", "beds.release", "structure.manage", "users.manage",
+  "devices.map_beds"]);   // G2-ESLEME: the monitor→bed editor's bed picker (spec §4.1)
 
 /** The wait before the first retry of a failed read, doubled after each failure, and its ceiling. */
 export const RETRY_FIRST_MS = 2_000;

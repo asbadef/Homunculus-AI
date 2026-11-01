@@ -1560,3 +1560,54 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     ]);
   });
 });
+
+// G2-ESLEME — the monitor→bed editor (homunculus-engine devicebeds/router.py)
+describe("backendApi — the monitor→bed editor", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+  const sent = (fetchMock, at = 0) => {
+    const [url, init] = fetchMock.mock.calls[at];
+    return { url, method: init.method ?? "GET", body: init.body === undefined ? undefined : JSON.parse(init.body) };
+  };
+
+  it("reads the list and binds and unbinds by their own routes, each body as given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    const bind = { source: "192.0.2.11", bed_id: "b-1", expected: { device_row_id: 3, bed_row_id: null }, confirm_occupied: false };
+    const unbind = { source: "192.0.2.11", expected: { device_row_id: 4 }, confirm_occupied: true };
+    await api.deviceBeds();
+    await api.bindDeviceBed(bind);
+    await api.unbindDeviceBed(unbind);
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/infinity-shadow/device-beds"], ["POST", "/infinity-shadow/device-beds/bind"],
+      ["POST", "/infinity-shadow/device-beds/unbind"],
+    ]);
+    expect([sent(fetchMock, 1).body, sent(fetchMock, 2).body]).toEqual([bind, unbind]);
+  });
+
+  it("a bed_occupied refusal carries the beds and patient ids, and nothing else of the detail", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "bed_occupied", message: "An admitted patient is on this bed; confirm to go on.",
+      occupied: [{ bed_id: "b-2", patient_id: "H2600042", display_name: "Ahmet Yılmaz" }, { bed_id: "b-1" }, { bed_id: 7 },
+        { bed_id: "b-3", patient_id: 42 }],
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).bindDeviceBed({}).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "bed_occupied" });
+    // a patient_id that is not a string is dropped: the entry is {bed_id} only
+    expect(err.occupied).toEqual([{ bed_id: "b-2", patient_id: "H2600042" }, { bed_id: "b-1" }, { bed_id: "b-3" }]);
+    expect(JSON.stringify(Object.entries(err))).not.toContain("Ahmet");
+  });
+
+  it("only a bed_occupied refusal carries err.occupied; any other code leaves it undefined, list or no list", async () => {
+    const refuse = (detail) => signedIn(vi.fn().mockResolvedValue(jsonResponse({ detail }, { ok: false, status: 409 })))
+      .bindDeviceBed({}).catch((e) => e);
+    const without = await refuse({ code: "mapping_changed", message: "The mapping changed." });
+    expect(without).toMatchObject({ status: 409, apiCode: "mapping_changed" });
+    expect(without.occupied).toBeUndefined();
+    const stray = await refuse({ code: "mapping_changed", message: "The mapping changed.", occupied: [{ bed_id: "b-1", patient_id: "H2600042" }] });
+    expect(stray.occupied).toBeUndefined();
+  });
+});

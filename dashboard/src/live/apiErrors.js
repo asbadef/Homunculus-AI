@@ -168,6 +168,13 @@ export const ADMISSION_CODE_KEYS = new Map([
   // A-37: a second open admission of the same person (name and birth date); with the open
   // admission's number when the detail carries it, `kabul.err.duplicateOpenAdmissionNumber`.
   ["duplicate_open_admission", "kabul.err.duplicateOpenAdmission"],
+  // G2-ESLEME — the monitor→bed editor (spec §4.5). `bed_occupied` opens the second confirmation
+  // (MappingDialog.jsx); its sentence is said only where a screen shows the refusal itself.
+  ["monitor_lane_off", "esleme.err.laneOff"],
+  ["device_unknown", "esleme.err.deviceUnknown"],
+  ["bed_occupied", "esleme.err.bedOccupied"],
+  ["mapping_changed", "esleme.err.mappingChanged"],
+  ["bed_has_monitor", "kabul.err.bedHasMonitor"],      // Yapı: unbind the monitor first, on «Monitörler»
 ]);
 /** The coded refusals whose detail names a patient's number, each with the sentence that says it.
  *  A number beside any other code is not shown. */

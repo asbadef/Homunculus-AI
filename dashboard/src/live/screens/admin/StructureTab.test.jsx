@@ -279,6 +279,117 @@ describe("StructureTab", () => {
     expect(toasts().getAllByText("4 · Otaq 1 · Reanimasiya · yenidən açıldı").length).toBeGreaterThan(0);
   });
 
+  // G2-ESLEME (spec §3.7, walk lessons of B1a's deploy)
+  // Item 1: the walk met «Çarpayı əlavə et» held with no reason in sight, and took the bed for added.
+  it("shows, without a press, why a blank adder's button is held — muted, and as an error once she presses", async () => {
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN });
+    const reasons = screen.getAllByText("Çarpayı etiketi boş ola bilməz.");
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const el of reasons) {
+      expect(el.className).not.toContain("sr-only");
+      expect(el.className).toContain("text-mute");
+      expect(el.className).not.toContain("text-crit-ink");
+    }
+    // the same sentence, the button's own `aria-describedby`, turns to the error style after a press
+    const addBed = button("Çarpayı əlavə et: Otaq 1 · Reanimasiya");
+    expect(describedBy(addBed).className).toContain("text-mute");
+    await submitIn("Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi", "   ");
+    expect(api.createBed).not.toHaveBeenCalled();
+    expect(describedBy(addBed).className).toContain("text-crit-ink");
+    expect(describedBy(addBed).className).not.toContain("text-mute");
+  });
+
+  // Every adder and rename box, not only the bed adder: a site, a unit, a room, and a rename's box.
+  it("shows the reason under every blank adder and rename box", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    fireEvent.click(button("Adını dəyiş: 1 · Otaq 1 · Reanimasiya"));
+    fireEvent.change(screen.getByRole("textbox", { name: "1 · Otaq 1 · Reanimasiya üçün yeni ad" }), { target: { value: "" } });
+    for (const text of ["Ad boş ola bilməz.", "Çarpayı etiketi boş ola bilməz."]) {
+      const shown = screen.getAllByText(text);
+      expect(shown.length).toBeGreaterThan(0);
+      for (const el of shown) expect(el.className).not.toContain("sr-only");
+    }
+    // site (1) + unit adder (1) + room adder (2 units) = at least four blank name boxes
+    expect(screen.getAllByText("Ad boş ola bilməz.").length).toBeGreaterThanOrEqual(4);
+    // the rename box, emptied, says the bed label's reason too: the bed adders (3 rooms) + this one
+    expect(screen.getAllByText("Çarpayı etiketi boş ola bilməz.").length).toBeGreaterThanOrEqual(4);
+  });
+
+  // Item 2: «Otaq nömrəsi» took a bed's label — the two room boxes had only a placeholder and a long
+  // accessible name; they now carry a visible label each, and a hint says where beds are added.
+  it("labels the room adder's two boxes where they can be seen, and says where beds are added", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const nameCaption = screen.getAllByText("Otaq adı").find((el) => el.tagName === "LABEL");
+    expect(nameCaption).toBeTruthy();
+    // the caption is tied to the room-name box of the first unit (not only drawn near it)
+    expect(document.getElementById(nameCaption.getAttribute("for")))
+      .toBe(screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın adı" }));
+    expect(screen.getAllByText("Otaq nömrəsi (məcburi deyil, məs. 05)").length).toBeGreaterThan(0);
+    expect(screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)" }).closest("label").textContent)
+      .toContain("Otaq nömrəsi (məcburi deyil, məs. 05)");
+    expect(screen.getAllByText("Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.").length)
+      .toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
+  // Task 19's review: above phone width the name box sat ~10 px higher than the number box and its
+  // caption a row above it. Each caption now stacks directly over its own box, and the boxes, the
+  // checkbox and the button share a bottom line (`items-end`; the caption-less adders stay centred).
+  it("lines each room caption directly over its own box, on one row that shares a bottom line", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const nameBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın adı" });
+    const numberBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)" });
+    const nameCaption = nameBox.parentElement.querySelector("label");
+    expect(nameCaption.textContent).toBe("Otaq adı");
+    expect(nameCaption.getAttribute("for")).toBe(nameBox.id);
+    expect(nameBox).toHaveClass("!w-full");
+    // the name's column and the number's label are siblings on the form's row
+    const row = nameBox.closest("form");
+    expect(numberBox.closest("label").parentElement).toBe(row);
+    expect(nameBox.parentElement.parentElement).toBe(row);
+    expect(row).toHaveClass("items-end");
+    expect(row).not.toHaveClass("items-center");
+    // an adder with no caption keeps the centred row and the box as it was
+    const bedBox = screen.getByRole("textbox", { name: "Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi" });
+    expect(bedBox.closest("form")).toHaveClass("items-center");
+    expect(bedBox.parentElement).toBe(bedBox.closest("form"));
+  });
+
+  // The hint is read with the two room boxes (aria-describedby), merged with the blank-name sentence
+  // once she tries — not instead of it.
+  it("ties the room hint to both room boxes, and keeps the blank-name sentence beside it once she tries", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const hintText = "Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.";
+    const nameBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın adı" });
+    const numberBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)" });
+    const hint = nameBox.closest("form").parentElement.querySelector(":scope > p");
+    expect(hint.textContent).toBe(hintText);
+    expect(hint.id).toBeTruthy();
+    expect(numberBox.getAttribute("aria-describedby")).toBe(hint.id);
+    expect(nameBox.getAttribute("aria-describedby")).toBe(hint.id);
+    await submitIn("Reanimasiya daxilində yeni otağın adı", "   ");
+    const ids = nameBox.getAttribute("aria-describedby").split(" ");
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(hint.id);
+    const blank = ids.filter((id) => id !== hint.id).map((id) => document.getElementById(id).textContent);
+    expect(blank).toEqual(["Ad boş ola bilməz."]);
+    // no other adder carries the hint
+    expect(screen.getByRole("textbox", { name: "Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi" }).getAttribute("aria-describedby")).toBeNull();
+  });
+
+  // Item 3 (A-4): `kabul.err.bedHasMonitor` has no {bed}, so the toast's own subject — the bed as the
+  // tab names it everywhere — says which bed it means. No new code: the pin of a behaviour Task 16 mapped.
+  it("says a bed with a monitor is unbound on «Monitorlar» first, named after the bed", async () => {
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN,
+      setup: (a) => a.patchBed.mockRejectedValue(refusal(409, "A monitor is bound to this bed.", { apiCode: "bed_has_monitor" })) });
+    await press("Bağla: 5 · Otaq 2 · Reanimasiya");
+    expect(api.patchBed).toHaveBeenCalledWith(BED(5), { is_active: false });
+    expect(toasts().getAllByText("5 · Otaq 2 · Reanimasiya: Bu çarpayıya monitor qoşulub — əvvəlcə «Monitorlar» ekranında bağlantını kəsin.").length)
+      .toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("A monitor is bound to this bed.");
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
   it("sends one write at a time: a second submit sends nothing, and every other write is held and says why", async () => {
     let land;
     const { api } = await mountKabul(<StructureTab />, { perms: ADMIN,
