@@ -336,9 +336,13 @@ describe("the board store", () => {
 
   it("a refused SOFA call rejects with the API's own error, having changed nothing", async () => {
     const { api, store, state } = setup();
+    await store.start();
+    const loaded = state().patients;
+    expect(loaded.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
     api.signSeverityForm = vi.fn().mockRejectedValue(Object.assign(new Error("permission required: scores.sign"), { status: 403 }));
     await expect(store.sofaSign("S-001", [])).rejects.toMatchObject({ status: 403 });
-    expect(state().patients).toEqual([]);
+    expect(state().patients).toBe(loaded);                             // the board it held, untouched
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // the start's load, and no reload
   });
 });
 

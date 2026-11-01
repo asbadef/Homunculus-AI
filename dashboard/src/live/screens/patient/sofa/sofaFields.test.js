@@ -48,17 +48,20 @@ describe("sofaFields", () => {
     expect(isEnterable("constructor")).toBe(false);
   });
 
+  // The field holds minutes (toLocalInput drops the seconds), so each edge is tried a whole minute either side.
   it("dates a measurement up to 24 h back and never ahead, a minute of skew aside", () => {
     expect(checkTime(toLocalInput(NOW), NOW)).toEqual({ recordedAt: new Date(NOW).toISOString() });
-    expect(checkTime(toLocalInput(NOW + 10 * 60_000), NOW).error.key).toBe("sofa.atFuture");
-    expect(checkTime(toLocalInput(NOW + 30_000), NOW).error).toBeUndefined();
-    expect(checkTime(toLocalInput(NOW - 25 * 3600_000), NOW).error.key).toBe("sofa.atTooOld");
+    expect(checkTime(toLocalInput(NOW + 60_000), NOW)).toEqual({ recordedAt: new Date(NOW + 60_000).toISOString() });   // the skew
+    expect(checkTime(toLocalInput(NOW + 2 * 60_000), NOW).error.key).toBe("sofa.atFuture");
+    expect(checkTime(toLocalInput(NOW - 24 * 3600_000), NOW)).toEqual({ recordedAt: new Date(NOW - 24 * 3600_000).toISOString() });
+    expect(checkTime(toLocalInput(NOW - 24 * 3600_000 - 60_000), NOW).error.key).toBe("sofa.atTooOld");
     expect(checkTime("", NOW).error.key).toBe("sofa.atInvalid");
   });
 
   it("counts a reason as the engine does — trimmed, in characters — and reads what the record holds", () => {
     expect(reasonCount("  qısa  ")).toBe(4);
     expect(reasonCount(null)).toBe(0);
+    expect(reasonCount("😀")).toBe(1);                                                        // one character, two UTF-16 units
     expect(recordedOf(sofaForm(), "platelets")).toBe(45);
     expect(recordedOf(previewAnswer().form, "platelets")).toBe(45);                           // a corrected cell's original
     expect(recordedOf(sofaForm(), "bilirubin")).toBeNull();
