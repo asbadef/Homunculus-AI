@@ -311,6 +311,39 @@ describe("the board store", () => {
     await store.chart("S-001", [{ code: "weight_kg", value: 81 }]);
     expect(api.chart).toHaveBeenLastCalledWith("S-001", [{ code: "weight_kg", value: 81 }], null);
   });
+
+  // G2-A4: the SOFA box and form read, preview and sign through the store, the only door to the API.
+  // A signature changes no card, so nothing reloads the board; an answer after clear() is dropped.
+  it("reads the SOFA form, previews corrections and signs them, and drops an answer that lands after clear()", async () => {
+    const { api, store } = setup();
+    const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı" }];
+    api.severityForm = vi.fn().mockResolvedValue({ total: 3, last_signed: null });
+    api.signSeverityForm = vi.fn().mockResolvedValue({ preview: true, signed: false, total: 2 });
+    expect(await store.sofaForm("S-001")).toEqual({ total: 3, last_signed: null });
+    expect(api.severityForm).toHaveBeenCalledWith("S-001");
+    expect(await store.sofaPreview("S-001", overrides)).toMatchObject({ preview: true, total: 2 });
+    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides, preview: true });
+    await store.sofaSign("S-001", overrides);
+    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides });
+    expect(api.boardPatients).not.toHaveBeenCalled();
+    let answer;
+    api.severityForm.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    const late = store.sofaForm("S-001");
+    store.clear();
+    answer({ total: 9 });
+    expect(await late).toBeNull();
+  });
+
+  it("a refused SOFA call rejects with the API's own error, having changed nothing", async () => {
+    const { api, store, state } = setup();
+    await store.start();
+    const loaded = state().patients;
+    expect(loaded.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    api.signSeverityForm = vi.fn().mockRejectedValue(Object.assign(new Error("permission required: scores.sign"), { status: 403 }));
+    await expect(store.sofaSign("S-001", [])).rejects.toMatchObject({ status: 403 });
+    expect(state().patients).toBe(loaded);                             // the board it held, untouched
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // the start's load, and no reload
+  });
 });
 
 // The server's keep-alives are SSE comments, which EventSource never hands to the page: a

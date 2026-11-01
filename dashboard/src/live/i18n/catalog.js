@@ -47,6 +47,9 @@ import shadow from "./strings/shadow.js";
 // G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
 import kabul from "./strings/kabul.js";
 
+// G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
+import sofa from "./strings/sofa.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -73,6 +76,8 @@ export const NAMESPACES = {
   shadow,
 
   kabul, // G2-B1a
+
+  sofa, // G2-A4
 };
 
 function flattenInto(out, prefix, entries) {

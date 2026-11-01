@@ -484,6 +484,25 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001" });
   });
 
+  // G2-A4 (D6): the SOFA form is read, previewed with `preview: true`, and signed without it — the same
+  // corrections both times, so what is signed is what was previewed.
+  it("reads the SOFA form, previews the corrections with preview: true and signs them without", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ total: 3 }));
+    const api = signedIn(fetchMock);
+    const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı, cihaz değil" }];
+    await api.severityForm("S-001");
+    await api.signSeverityForm("S-001", { overrides, preview: true });
+    await api.signSeverityForm("S-001", { overrides });
+    const [[readUrl, readInit], [previewUrl, previewInit], [signUrl, signInit]] = fetchMock.mock.calls;
+    expect(readUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(readInit.method || "GET").toBe("GET");
+    expect(previewUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(previewInit.method).toBe("POST");
+    expect(JSON.parse(previewInit.body)).toEqual({ overrides, preview: true });
+    expect(signUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(JSON.parse(signInit.body)).toEqual({ overrides });
+  });
+
   it("lifts an account's directory sign-in throttle with the administrator's reason", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);

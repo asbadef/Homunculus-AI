@@ -11,7 +11,7 @@
 export default {
   tr: {
     back: "Yataklara dön",
-    onlyWrite: "Bu ekran hasta kaydına üç şey yazar, üçü de yalnız clinical.chart yetkisiyle: şüpheli enfeksiyon işareti, hastanın normali ve ilaç / sıvı kaydı; başka hiçbir şey buradan yazılmaz.",
+    onlyWrite: "Bu ekran hasta kaydına dört şey yazar, dördü de yalnız clinical.chart yetkisiyle: şüpheli enfeksiyon işareti, hastanın normali, ilaç / sıvı kaydı ve SOFA formundan girilen ölçümler. SOFA formunun imzası ayrıca scores.sign yetkisi ister ve denetim kaydına geçer; başka hiçbir şey buradan yazılmaz.",
     notFound: "Bu hasta gösterilemiyor",
     notFoundHelp: "Panonuzda bu kimlikle bir kart yok: ya böyle bir kayıt yok ya da kapsamınız dışında. İkisini ayırt edemiyoruz — sunucu ikisine de aynı yanıtı verir.",
     notFoundUnknown: "Pano okunamadığı için bu hastanın panonuzda olup olmadığını söyleyemiyoruz.",
@@ -59,7 +59,6 @@ export default {
     recoLanguage: "Motorun gerekçe, dayanak ve kesinlik metinleri İngilizcedir; çevrilmemiştir.",
     seenBy: "Gördü: {who}",
     trends: "Vital eğrileri",
-    formsSoon: "SOFA formunu doldurma ve imzalama bu ekrana sonraki grupta eklenecek.",
     // Group 2 · slice 1 — the trend charts and the patient's own normal (spec §9, plus the
     // table, the dialog's controls and the form's own words).
     trendsNote: "NEWS2 · yetişkin bantları; hastanın normali, girildiyse",
@@ -169,7 +168,7 @@ export default {
   },
   az: {
     back: "Çarpayılara qayıt",
-    onlyWrite: "Bu ekran xəstə qeydinə üç şey yazır, hər üçü yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi, xəstənin norması və dərman / maye qeydi; buradan başqa heç nə yazılmır.",
+    onlyWrite: "Bu ekran xəstə qeydinə dörd şey yazır, hər dördü yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi, xəstənin norması, dərman / maye qeydi və SOFA formasından daxil edilən ölçmələr. SOFA formasının imzası əlavə olaraq scores.sign səlahiyyəti tələb edir və audit qeydinə düşür; buradan başqa heç nə yazılmır.",
     notFound: "Bu xəstə göstərilə bilmir",
     notFoundHelp: "Panelinizdə bu identifikatorla kart yoxdur: ya belə bir qeyd yoxdur, ya da əhatənizdən kənardır. İkisini ayırd edə bilmirik — server ikisinə də eyni cavabı verir.",
     notFoundUnknown: "Panel oxunmadığı üçün bu xəstənin panelinizdə olub-olmadığını deyə bilmirik.",
@@ -217,7 +216,6 @@ export default {
     recoLanguage: "Mühərrikin əsaslandırma, dayaq və dəqiqlik mətnləri İngiliscədir; tərcümə olunmayıb.",
     seenBy: "Gördü: {who}",
     trends: "Vital qrafikləri",
-    formsSoon: "SOFA formasının doldurulması və imzalanması bu ekrana növbəti qrupda əlavə olunacaq.",
     trendsNote: "NEWS2 · yetkin zolaqları; xəstənin norması, daxil edilibsə",
     trendsLoading: "Vital qrafikləri oxunur…",
     trendsUnreadable: "Vital qrafikləri oxuna bilmir (son: {time})",
@@ -325,7 +323,7 @@ export default {
   },
   ru: {
     back: "К койкам",
-    onlyWrite: "Этот экран записывает в карту пациента три вещи, все только с правом clinical.chart: отметку о подозрении на инфекцию, норму пациента и запись о препарате / жидкости; больше отсюда ничего не записывается.",
+    onlyWrite: "Этот экран записывает в карту пациента четыре вещи, все только с правом clinical.chart: отметку о подозрении на инфекцию, норму пациента, запись о препарате / жидкости и измерения, введённые в форме SOFA. Подпись формы SOFA требует ещё права scores.sign и попадает в журнал аудита; больше отсюда ничего не записывается.",
     notFound: "Этого пациента показать нельзя",
     notFoundHelp: "На вашей панели нет карточки с этим идентификатором: либо такой записи нет, либо она вне вашей области доступа. Различить мы не можем — сервер отвечает одинаково.",
     notFoundUnknown: "Панель не прочитана, поэтому мы не можем сказать, есть ли этот пациент на вашей панели.",
@@ -373,7 +371,6 @@ export default {
     recoLanguage: "Тексты обоснования, основания и уверенности система выдаёт по-английски; они не переведены.",
     seenBy: "Принял: {who}",
     trends: "Графики показателей",
-    formsSoon: "Заполнение и подпись формы SOFA будут добавлены на этот экран в следующей группе.",
     trendsNote: "Полосы NEWS2 · для взрослых; норма пациента — если введена",
     trendsLoading: "Графики показателей загружаются…",
     trendsUnreadable: "Графики показателей не загружаются (последнее чтение: {time})",
@@ -481,7 +478,7 @@ export default {
   },
   en: {
     back: "Back to the beds",
-    onlyWrite: "This screen writes three things to the patient's record, all only with clinical.chart: the suspected-infection charting, the patient's normal and the medication / fluid entry; nothing else is written from here.",
+    onlyWrite: "This screen writes four things to the patient's record, all only with clinical.chart: the suspected-infection charting, the patient's normal, the medication / fluid entry and the measurements entered on the SOFA form. Signing the SOFA form also needs scores.sign and goes into the audit trail; nothing else is written from here.",
     notFound: "This patient cannot be shown",
     notFoundHelp: "Your board holds no card with this identifier: either there is no such record, or it is outside your scope. We cannot tell which — the server answers both the same way.",
     notFoundUnknown: "The board could not be read, so we cannot say whether this patient is on it.",
@@ -529,7 +526,6 @@ export default {
     recoLanguage: "The engine writes its reasoning, evidence and certainty in English; they are not translated.",
     seenBy: "Seen by {who}",
     trends: "Vital trends",
-    formsSoon: "Filling in and signing the SOFA form comes to this screen in the next group.",
     trendsNote: "NEWS2 · adult bands; the patient's normal, if one was entered",
     trendsLoading: "Loading vital trends…",
     trendsUnreadable: "Vital trends cannot be loaded (last read {time})",
