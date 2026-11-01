@@ -90,11 +90,11 @@ describe("CorrectionEntry (D5)", () => {
 
   it("holds a value outside the door's bounds, with the focus on it (X7)", async () => {
     const { onKeep } = await open();
-    fireEvent.change(valueField(), { target: { value: "4500" } });
+    fireEvent.change(valueField(), { target: { value: "6000" } });
     fireEvent.change(reasonField(), { target: { value: WHY } });
     await keep();
     expect(onKeep).not.toHaveBeenCalled();
-    expect(within(entry()).getByText("Gözlənilən aralıqdan (0–2000) kənardadır — vahid və ya onluq vergül səhvi ola bilər.")).toBeInTheDocument();
+    expect(within(entry()).getByText("Gözlənilən aralıqdan (0–5000) kənardadır — vahid və ya onluq vergül səhvi ola bilər.")).toBeInTheDocument();
     expect(document.activeElement).toBe(valueField());
   });
 

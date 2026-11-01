@@ -35,7 +35,7 @@ describe("the SOFA box (D1)", () => {
     expect(api.severityForm).toHaveBeenCalledWith("S-001");
     expect(box()).toHaveTextContent("Forma cəmi 5 · 4 / 6 orqanda ölçmə yoxdur");
     expect(box()).toHaveTextContent("İmzalanmayıb.");
-    expect(box()).toHaveTextContent("Sepsis-3 qutusundakı SOFA son dəyərlərlə hesablanır");
+    expect(box()).toHaveTextContent("Sepsis-3 qutusundakı SOFA son dəyərlərlə hesablanır; ikisi eyni ədəd olmaya bilər.");
     expect(box()).toHaveTextContent(`${dayStamp(Date.parse("2026-10-08T10:00:00+00:00"), NOW)} oxunuşu.`);
   });
 

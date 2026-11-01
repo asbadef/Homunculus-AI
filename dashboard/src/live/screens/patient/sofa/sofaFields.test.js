@@ -22,11 +22,12 @@ describe("sofaFields", () => {
   });
 
   it("holds a slipped digit back with the door's bounds, and a correction of the pressors by theirs", () => {
-    expect(checkValue("platelets", "2000")).toEqual({ value: 2000 });
-    expect(checkValue("platelets", "2001")).toEqual({ error: { key: "sofa.outOfRange", params: { low: 0, high: 2000 } } });
+    expect(checkValue("platelets", "5000")).toEqual({ value: 5000 });                        // the engine's bounds, mirrored
+    expect(checkValue("platelets", "5001")).toEqual({ error: { key: "sofa.outOfRange", params: { low: 0, high: 5000 } } });
     expect(checkValue("bilirubin", "2,4")).toEqual({ value: 2.4 });
     expect(checkValue("bilirubin", "61").error.key).toBe("sofa.outOfRange");
-    expect(checkValue("creatinine", "150").error.params).toEqual({ low: 0, high: 30 });      // a µmol/L creatinine
+    expect(checkValue("creatinine", "40")).toEqual({ value: 40 });
+    expect(checkValue("creatinine", "150").error.params).toEqual({ low: 0, high: 40 });      // a µmol/L creatinine
     expect(checkValue("gcs", "2").error.params).toEqual({ low: 3, high: 15 });
     expect(checkValue("pao2_fio2", "19").error.params).toEqual({ low: 20, high: 700 });
     expect(checkValue("pao2_fio2", "700")).toEqual({ value: 700 });
@@ -78,6 +79,7 @@ describe("sofaFields", () => {
     expect(sourceText(t, "")).toBe("");
     expect(labelOf(t, "creatinine")).toEqual({ label: "sofa.inCreatinine", unit: "sofa.unitMgdl" });   // D11: mg/dL
     expect(labelOf(t, "map")).toEqual({ label: "board.chMap", unit: "board.unitMmhg" });
+    expect(labelOf(t, "gcs")).toEqual({ label: "sofa.inGcs", unit: "" });                    // its label says GCS; "points" would be the score's word
     expect(labelOf(t, "dopamine_rate")).toEqual({ label: "patient.medsDrugDopamine", unit: "patient.medsRateUnit" });
     expect(labelOf(t, "constructor")).toEqual({ label: "constructor", unit: "" });
     expect(stampOf(null, NOW)).toBe("");

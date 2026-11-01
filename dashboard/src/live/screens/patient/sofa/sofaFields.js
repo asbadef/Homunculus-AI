@@ -33,16 +33,18 @@ export const ORGANS = Object.freeze([
   Object.freeze({ organ: "renal", labelKey: "sofa.organRenal", noteKey: "sofa.renalNote" }),
 ]);
 
-/** The six inputs the form completes through POST /clinical/{id} (D3, D4), with the door's bounds.
- *  `on_resp_support` is a flag the door takes as 1 or 0; it is no cell of the form — it decides which
- *  PaO₂/FiO₂ bands apply — so it is charted from under the respiration row. */
+/** The six inputs the form completes through POST /clinical/{id} (D3, D4), with the door's bounds — the
+ *  engine's PLAUSIBLE as the G2-A4 review raised it (platelets 0–5000, creatinine 0–40), which a correction
+ *  is held to as well (X7). `on_resp_support` is a flag the door takes as 1 or 0; it is no cell of the form —
+ *  it decides which PaO₂/FiO₂ bands apply — so it is charted from under the respiration row. GCS has no unit:
+ *  its label says GCS, and "points" would be the word the form uses for the SOFA score's own points. */
 export const ENTERABLE = Object.freeze({
   pao2_fio2: Object.freeze({ labelKey: "sofa.inPf", unitKey: "board.unitMmhg", min: 20, max: 700 }),
   on_resp_support: Object.freeze({ labelKey: "sofa.inSupport", flag: true }),
-  platelets: Object.freeze({ labelKey: "sofa.inPlatelets", unitKey: "sofa.unitPlatelets", min: 0, max: 2000 }),
+  platelets: Object.freeze({ labelKey: "sofa.inPlatelets", unitKey: "sofa.unitPlatelets", min: 0, max: 5000 }),
   bilirubin: Object.freeze({ labelKey: "sofa.inBilirubin", unitKey: "sofa.unitMgdl", min: 0, max: 60 }),
-  gcs: Object.freeze({ labelKey: "sofa.inGcs", unitKey: "sofa.unitGcs", min: 3, max: 15 }),
-  creatinine: Object.freeze({ labelKey: "sofa.inCreatinine", unitKey: "sofa.unitMgdl", min: 0, max: 30 }),
+  gcs: Object.freeze({ labelKey: "sofa.inGcs", min: 3, max: 15 }),
+  creatinine: Object.freeze({ labelKey: "sofa.inCreatinine", unitKey: "sofa.unitMgdl", min: 0, max: 40 }),
 });
 
 /** The cardiovascular row's inputs, which the form shows and may correct but never completes (D9: MAP comes

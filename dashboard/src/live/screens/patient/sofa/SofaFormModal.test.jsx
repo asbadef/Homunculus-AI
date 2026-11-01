@@ -80,9 +80,9 @@ describe("the SOFA form (D2)", () => {
   it("prints the engine's points, «ölçülməyib» — never a 0 — for an organ with no measurement, and the failure mark", async () => {
     await open();
     expect(organ("Laxtalanma")).toHaveTextContent("3 bal");
-    expect(within(organ("Laxtalanma")).getByText("orqan çatışmazlığı")).toBeInTheDocument();
+    expect(within(organ("Laxtalanma")).getByText("≥3 bal · orqan çatışmazlığı həddi")).toBeInTheDocument();   // a threshold, not a finding
     expect(organ("Tənəffüs")).toHaveTextContent("2 bal");
-    expect(within(organ("Tənəffüs")).queryByText("orqan çatışmazlığı")).toBeNull();
+    expect(within(organ("Tənəffüs")).queryByText(/orqan çatışmazlığı/)).toBeNull();
     for (const name of ["Qaraciyər", "Ürək-damar", "Mərkəzi sinir sistemi", "Böyrək"]) {
       expect(organ(name)).toHaveTextContent("ölçülməyib");
       expect(organ(name)).not.toHaveTextContent(/\b0 bal/);
@@ -141,6 +141,9 @@ describe("completing a row (clinical.chart, D3)", () => {
     const { api } = await open();
     await press(within(organ("Tənəffüs")).getByRole("button", { name: "Dəstək vəziyyətini qeyd edin" }));
     const entry = entryFor("Tənəffüs dəstəyi");
+    // The engine's rule (X14), its fallback too: an in-window «bəli» stands; without one, the latest state does.
+    expect(entry).toHaveTextContent("«xeyr» onu geri almır");
+    expect(entry).toHaveTextContent("ən son qeyd olunan vəziyyət keçərlidir, pəncərədən əvvəlki qeyd olsa belə");
     await save(entry);
     expect(api.chart).not.toHaveBeenCalled();
     expect(within(entry).getByText("Bəli və ya xeyr seçin.")).toBeInTheDocument();
@@ -157,7 +160,7 @@ describe("completing a row (clinical.chart, D3)", () => {
     fireEvent.change(value, { target: { value: "150" } });                  // a µmol/L creatinine (D11)
     await save(entry);
     expect(api.chart).not.toHaveBeenCalled();
-    expect(within(entry).getByText("Gözlənilən aralıqdan (0–30) kənardadır — vahid və ya onluq vergül səhvi ola bilər.")).toBeInTheDocument();
+    expect(within(entry).getByText("Gözlənilən aralıqdan (0–40) kənardadır — vahid və ya onluq vergül səhvi ola bilər.")).toBeInTheDocument();
     expect(document.activeElement).toBe(value);
     fireEvent.change(value, { target: { value: "1.4" } });
     const time = within(entry).getByLabelText("Ölçmə saatı");
@@ -234,6 +237,7 @@ describe("preview, then sign (D6)", () => {
     const overrides = [{ code: "platelets", value: 80, reason: WHY }];
     expect(api.preview).toHaveBeenCalledWith(overrides);
     expect(within(dialog()).getByText("Öncədən baxış: cəmi 4 (qeyddən: 5) — hələ imzalanmayıb")).toBeInTheDocument();
+    expect(footer()).toHaveTextContent("«İmzalayın» bu düzəlişləri imzalayır; mühərrik imza anında yenidən hesablayır.");   // not "this number"
     expect(organ("Laxtalanma")).toHaveTextContent("2 bal");
     expect(organ("Laxtalanma")).toHaveTextContent("Düzəldilib — qeyddəki dəyər: 45");
     await press(button("İmzalayın"));
