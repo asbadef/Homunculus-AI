@@ -1,9 +1,9 @@
 """Time bounds on the API's sync Postgres engines (spec 2026-11-01-pg-sinirlari-design.md).
 
 The audit, the identity store, the monitor samples and the device→bed table (G2-ESLEME) reach
-Postgres through a sync driver from the event loop: a database that accepts a connection and then says nothing would hold every request of
-the API, and the ward's screens with it, until the operating system's TCP timeout. None of these
-tests needs a database."""
+Postgres through a sync driver from the event loop: a database that accepts a connection and then
+says nothing would hold every request of the API, and the ward's screens with it, until the
+operating system's TCP timeout. None of these tests needs a database."""
 from __future__ import annotations
 
 import functools
@@ -17,7 +17,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from homunculus.api import audit_postgres, device_beds_postgres, monitor_samples, patient_identity_postgres
+from homunculus.api import (
+    audit_postgres, device_beds_postgres, monitor_samples, patient_identity_postgres,
+)
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.audit_postgres import (
