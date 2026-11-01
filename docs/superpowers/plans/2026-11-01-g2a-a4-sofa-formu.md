@@ -4,11 +4,11 @@
 
 **Goal:** The patient screen gets a «SOFA formu» box (the form's total, how many organs it has no measurement for, the last signature or «imzalanmadı») and a «Formu aç» dialog that shows the engine's six organ rows in the source's order, lets a `clinical.chart` holder complete a missing input through `/clinical`, lets a `scores.sign` holder correct a measured value with a reason, and signs only after the engine has previewed exactly that.
 
-**Architecture:** The engine already builds, re-scores and signs the form (`scoring/sofa_form.py`, `scoring/signing.py`, `api/app.py`); it gains one chartable flag and four slip bounds at the door (`api/clinical.py`), `last_signed` and `min_reason_chars` on `GET /scores/sofa/{id}`, and `preview: true` on the POST (same parsing, same refusals, no audit row). The dashboard gets `preview` on `backendApi.signSeverityForm`, three store methods (`sofaForm`, `sofaPreview`, `sofaSign`), a `sofa` strings namespace in four languages, and a new folder `live/screens/patient/sofa/`: `sofaFields.js` (tables and pure rules), `SofaEditors.jsx` (the completion and correction editors), `SofaFormModal.jsx` (the dialog), `SofaBox.jsx` (the box), each with its tests; `PatientScreen.jsx` mounts the box where the «formlar yakında» note stood.
+**Architecture:** The engine already builds, re-scores and signs the form (`scoring/sofa_form.py`, `scoring/signing.py`, `api/app.py`); it gains one chartable flag and four slip bounds at the door (`api/clinical.py`), `last_signed` and `min_reason_chars` on `GET /scores/sofa/{id}`, `preview: true` on the POST (same parsing, same refusals, no audit row), and the door's slip bounds on a correction (`parse_overrides(..., bounds=PLAUSIBLE)`, for a preview and a signature alike). The dashboard gets `preview` on `backendApi.signSeverityForm`, three store methods (`sofaForm`, `sofaPreview`, `sofaSign`), a `sofa` strings namespace in four languages, and a new folder `live/screens/patient/sofa/`: `sofaFields.js` (tables and pure rules), `SofaEditors.jsx` (the completion and correction editors), `SofaFormModal.jsx` (the dialog), `SofaBox.jsx` (the box), each with its tests; `PatientScreen.jsx` mounts the box where the «formlar yakında» note stood.
 
 **Tech Stack:** Python 3.12 / FastAPI / pytest (engine); React 18, Vite, Vitest + Testing Library (dashboard).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-11-01-g2a-a4-sofa-formu-design.md` (D1–D11, O1 closed: mg/dL; commits `ae1dcaa`, `9303a07`). The contract decisions the controller took on 2026-11-01 (the `CHARTABLE`/`PLAUSIBLE` additions, the shape of `last_signed`, the shape of the preview answer, the three store methods, the folder and its files) are written into the tasks as given. Where the code made the spec's letter impossible, unsafe or merely unspecified, this plan departs from it; every departure is numbered below and tagged in the code.
+**Spec (authoritative):** `docs/superpowers/specs/2026-11-01-g2a-a4-sofa-formu-design.md` (D1–D11, O1 closed: mg/dL; commits `ae1dcaa`, `9303a07`). The contract decisions the controller took on 2026-11-01 (the `CHARTABLE`/`PLAUSIBLE` additions, the shape of `last_signed`, the shape of the preview answer, the three store methods, the folder and its files) are written into the tasks as given, and so is the coordinator's later change of the same day: O6 moves into this slice — the server holds a correction to the door's bounds (Task 3b). Where the code made the spec's letter impossible, unsafe or merely unspecified, this plan departs from it; every departure is numbered below and tagged in the code.
 
 ---
 
@@ -22,7 +22,7 @@
 | X4 | D10: "the refusal in text as well as the toast" | `admin/refusal.js:8–13`: a refusal goes on the toast, "never ALSO as an inline `Alert`" (one `role="alert"` each would announce it twice); A3 resolved the same tension as toast-only (its X7) | Both: the toast (named after the bed) is the one announcement; the dialog's footer repeats the sentence as **plain text** (`<p>`, not a live region, not an `Alert`) |
 | X5 | D1: «İmzalandı · {who} · {HH:MM} · toplam {n}» | The house `dayStamp` (`i18n/dates.js:28`) adds `dd.MM` for a stamp that is not today's (A3 X4) | The signature time, every measured time and the window bounds use `dayStamp`: a signature from yesterday must not read as this morning's |
 | X6 | §3 lists no change to the screen's "what this screen writes" sentence | `patient.onlyWrite` says "three things", and `PatientScreen.jsx:1–6` says so too | `onlyWrite` (four languages) and the header comment name the fourth write (the SOFA form's measurements) and the signature (`scores.sign`, a row in the audit chain) |
-| X7 | D5: a correction replaces the value | `parse_overrides` (`signing.py:85–136`) has no plausibility bound; the door's are in `clinical.py:139–153` | A correction's value is held in the browser to the door's bounds for the six inputs and the pressors (MAP has none, as at the door). The server stays the judge of what it accepts; O6 asks for the same bound there |
+| X7 | D5: a correction replaces the value | `parse_overrides` (`signing.py:85–136`) had no plausibility bound; the door's are in `clinical.py:139–153` | The server holds a correction to the door's bounds (Task 3b: `parse_overrides(..., bounds=PLAUSIBLE)`, preview and signature alike — O6, moved into this slice); the browser **mirrors** that bound for the six inputs and the pressors (MAP has none, at the door or here) so a slip is held before it is sent. The server is the guard; the browser is a courtesy |
 | X8 | D3: the measurement time is "now by default" | A3's form follows the clock until touched and reads it again at the press (its X3, final review I2) | The same: an untouched time is the moment Save is pressed |
 | X9 | D1/D7: the box shows the form's total and signature | The box reads once per patient; an open dialog may be used an hour later | The dialog reads the form itself when it opens (one more `score` audit row per opening — spec O4 accepted) rather than reusing the box's read |
 | X10 | D3/D5/D6: the controls for their right's holders | — | «Formu aç» is offered to every holder of `board.view` (the form read-only without the rights); an absent control is explained in a sentence (`sofa.chartNoRightNote`, `sofa.signNoRightNote`), never a disabled button |
@@ -38,7 +38,7 @@
 - `scoring/sofa_form.py:133–138` — the respiration row's docstring says support "is taken as of the worst reading", but the code (`:141–148`) takes **any** support observation in the window, else the latest. Not changed here (out of scope); the screen states the code's rule (X14).
 - `scoring/sofa_form.py:200–206` builds the rows respiration, cardiovascular, coagulation, liver, cns, renal; D2 wants the source table's order (respiration, coagulation, liver, cardiovascular, cns, renal) — the screen reorders (`sofaFields.js` `ORGANS`).
 - `scoring/sofa_form.py:78–80` / `scoring/worst.py:227–239` — the form's answer carries no support state, so the respiration row cannot say whether its points were scored on support (O5).
-- `scoring/signing.py:85–136` — no plausibility bounds on a correction (X7, O6).
+- `scoring/signing.py:85–136` — no plausibility bounds on a correction, unlike the charting door's `_value` (`clinical.py:139–153`). Task 3b adds them (O6 closed, X7).
 - `api/app.py:1467–1470` — every GET appends a `score` audit row; the box and the dialog read once each per opening (O4, X9).
 - `dashboard/src/live/screens/patient/PatientScreen.jsx:434` — the comment calls the SOFA form "Group 3's"; the spec makes it G2-A4. The note itself is at `:435`; both go in Task 10.
 - `dashboard/src/live/session/testTokens.testutil.js:47–109` — `fakeApi` lists every call the live UI makes, but not `severityForm` / `signSeverityForm` (nothing used them since G1-16). Task 4 adds them.
@@ -48,7 +48,7 @@
 
 - **O1–O4:** the spec's §6 (O1 closed: mg/dL).
 - **O5** The form says nothing of the support state the respiration row was scored on; a `support` field on the row (`sofa_form.py`) would let the screen print it. Engine change, not this slice's.
-- **O6** `parse_overrides` takes any finite number; the door's `PLAUSIBLE` bounds belong there too for the codes they cover (X7).
+- **O6 — closed in this slice (Task 3b, 2026-11-01):** `parse_overrides` takes `bounds`, and the API passes the door's `PLAUSIBLE`, so a correction outside a code's bound is refused 400 in the door's words for a preview and a signature alike (X7).
 - **O7** `last_signed` reads the newest `score_signed` row without the score's name: correct while SOFA is the only signed form; when APACHE/PRISM sign, the read filters on `subject`.
 - **O8** A native Azerbaijani and Russian reader reviews the `sofa.*` strings with the rest of the pilot's texts (units `mq/dl`, `×10³/mkl`, `мг/дл`; the formal register).
 - **O9** The box does not re-read on board frames (each read is an audit row, O4); the time of its read is printed (X12), and the dialog reads afresh.
@@ -56,6 +56,7 @@
 ## Deploy notes
 
 - **The API before or with the web.** A web of this slice on an older API: the box shows the total but no signature line (X15), the dialog offers no correction, preview or signature (X13), the support flag is refused at the door (`'on_resp_support' elle girilemez`, on the toast) and the four labs pass unbounded. An older web on this API is unaffected (the new keys are ignored; `preview` is never sent).
+- **A correction outside the door's bound is now refused** (400, `platelets: 18000 beklenen aralığın (0–2000) dışında — …`) where the old API signed it. No live screen signed before this slice, so no ward workflow loses anything.
 - No migration; no new audit event type (`score_signed` is read, `score` is written as before).
 - VM deploy with the next deploy, on the owner's word (spec §5).
 
@@ -75,6 +76,7 @@
 | 1 | 2839 / 822 | — | `test_api_clinical.py` 27 → **35** |
 | 2 | 2843 / 822 | — | `scoring/test_signing.py` 17 → **21** |
 | 3 | 2849 / 822 | — | `scoring/test_signing.py` 21 → **27** |
+| 3b | 2854 / 822 | — | `scoring/test_signing.py` 27 → **32** |
 | 4 | — | 104 / 2975 | `backendApi.test.js` +1, `boardStore.test.js` +2 |
 | 5 | — | 104 / 2975 | `strings.test.js` (unchanged, green) |
 | 6 | — | 105 / 2982 | `sofaFields.test.js` new, **7** |
@@ -83,9 +85,9 @@
 | 9 | — | 108 / 3011 | `SofaBox.test.jsx` new, **6** |
 | 10 | — | 108 / 3011 | `PatientScreen.test.jsx`: one test replaced, one changed |
 | 11 | docs only | — | — |
-| 12 | 2849 / 822 (gate) | 108 / 3011 (gate), build 20 | — |
+| 12 | 2854 / 822 (gate) | 108 / 3011 (gate), build 20 | — |
 
-These are the plan's arithmetic (engine +18, dashboard +39 in 4 new files), not a measurement: the gates' own numbers are the record. If a total differs, the task's own file count is what to check first.
+These are the plan's arithmetic (engine +23, dashboard +39 in 4 new files), not a measurement: the gates' own numbers are the record. If a total differs, the task's own file count is what to check first.
 
 ---
 
@@ -130,8 +132,9 @@ These are the plan's arithmetic (engine +18, dashboard +39 in 4 new files), not 
 |---|---|---|
 | `homunculus-engine/src/homunculus/api/clinical.py` | `CHARTABLE[ON_RESP_SUPPORT] = "bool"`, `_BOOLEAN`, four `PLAUSIBLE` bounds (D4, X16) | 1 |
 | `homunculus-engine/tests/test_api_clinical.py` | `TestTheSofaFormsInputs` (8) | 1 |
-| `homunculus-engine/src/homunculus/api/app.py` | import `MIN_REASON_CHARS`; `_last_signed`; GET adds `last_signed`, `min_reason_chars` (D7); POST `preview` (D6, X2, X3) | 2, 3 |
-| `homunculus-engine/tests/scoring/test_signing.py` | `_resolve_person`, `_AsPeople`, `TestTheFormKnowsItsLastSignature` (4), `TestPreviewSignsNothing` (6) | 2, 3 |
+| `homunculus-engine/src/homunculus/api/app.py` | import `MIN_REASON_CHARS`; `_last_signed`; GET adds `last_signed`, `min_reason_chars` (D7); POST `preview` (D6, X2, X3); import `PLAUSIBLE`, `parse_overrides(..., bounds=PLAUSIBLE)` (O6) | 2, 3, 3b |
+| `homunculus-engine/src/homunculus/scoring/signing.py` | `parse_overrides(payload, form, *, bounds=None)` (O6) | 3b |
+| `homunculus-engine/tests/scoring/test_signing.py` | `_resolve_person`, `_AsPeople`, `TestTheFormKnowsItsLastSignature` (4), `TestPreviewSignsNothing` (6), `TestTheServerBoundsACorrection` (3), `TestTheRouteBoundsACorrection` (2) | 2, 3, 3b |
 | `dashboard/src/backendApi.js`, `backendApi.test.js` | `signSeverityForm` gains `preview` | 4 |
 | `dashboard/src/live/data/boardStore.js`, `boardStore.test.js` | `sofaForm`, `sofaPreview`, `sofaSign` | 4 |
 | `dashboard/src/live/session/testTokens.testutil.js` | `fakeApi` lists `severityForm`, `signSeverityForm` | 4 |
@@ -664,7 +667,7 @@ Expected: all passed (`test_signing.py` 27).
 
 Run: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -3`
 
-Expected: `2849 passed, 822 skipped` (2831 + 18). Write the line down: Task 11 quotes it.
+Expected: `2849 passed, 822 skipped` (2831 + 18). (Task 3b runs it again; its line is the one Task 11 quotes.)
 
 - [ ] **Step 6: Line ends, then commit**
 
@@ -682,6 +685,199 @@ preview must be a JSON boolean (X2): a "true" string would otherwise sign.
 
 Red first: 3 failed (the "preview" signed; the string flag signed); the three refusal tests were green
 from the start and pin that the preview keeps them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+MSG
+```
+
+---
+
+### Task 3b: The server holds a correction to the door's bounds — for a preview and a signature alike (O6, X7)
+
+**Files:**
+- Modify: `homunculus-engine/src/homunculus/scoring/signing.py` (imports ~line 33–37; `parse_overrides` ~85–136)
+- Modify: `homunculus-engine/src/homunculus/api/app.py` (the `api.clinical` import ~line 43–45; the `parse_overrides` call in `sign_sofa_form` ~1511)
+- Test: `homunculus-engine/tests/scoring/test_signing.py` (append; `_form`, `_state`, `T0`, `WHY`, `DOCTOR`, `_AsPeople` exist)
+
+The engine is the only scorer, so the bound that catches a slipped digit cannot live only in the browser: a corrected value is typed by the same hand as a charted one and slips the same way. `scoring` must not import `api`, so the bounds are passed in; the route passes the door's `PLAUSIBLE`, which after Task 1 holds the four labs, GCS and the pressors. Preview and signing parse through the same call, so one change covers both.
+
+- [ ] **Step 1: Write the failing tests** — append to `tests/scoring/test_signing.py`:
+
+```python
+
+
+class TestTheServerBoundsACorrection:
+    """G2-A4 (O6): a corrected value is held to the same slip bounds the charting door holds a charted
+    one to, in the door's words (api/clinical.py `_value`). `scoring` does not import `api`: the bounds
+    are passed in, and without them only a finite number is required, as before."""
+
+    BOUNDS = {SignalCode.PLATELETS: (0.0, 2000.0)}
+
+    def test_without_bounds_any_finite_value_is_a_correction(self):
+        [override] = parse_overrides([{"code": "platelets", "value": 18000, "reason": WHY}], _form())
+        assert override.value == 18000
+
+    def test_a_value_outside_its_bound_is_refused_in_the_doors_words(self):
+        with pytest.raises(ScoreSigningError) as caught:
+            parse_overrides([{"code": "platelets", "value": 18000, "reason": WHY}], _form(),
+                            bounds=self.BOUNDS)
+        assert str(caught.value) == ("platelets: 18000 beklenen aralığın (0–2000) dışında — "
+                                     "birim veya ondalık hatası olabilir")
+
+    def test_a_value_inside_its_bound_and_a_code_with_none_are_corrections(self):
+        form = sofa_form.build(_state([(SignalCode.PLATELETS, 45, 6), (SignalCode.MAP, 60, 2)]), T0)
+        overrides = parse_overrides([{"code": "platelets", "value": 2000, "reason": WHY},
+                                     {"code": "map", "value": 900, "reason": WHY}],
+                                    form, bounds=self.BOUNDS)
+        assert [o.value for o in overrides] == [2000, 900]
+
+
+class TestTheRouteBoundsACorrection(_AsPeople):
+    """G2-A4 (O6): the route passes the door's PLAUSIBLE, so a slipped correction is refused for a preview
+    and for a signature alike — both go through the same parse — and nothing is signed."""
+
+    SLIPPED = [{"code": "platelets", "value": 18000, "reason": WHY}]
+    SAID = "platelets: 18000 beklenen aralığın (0–2000) dışında — birim veya ondalık hatası olabilir"
+
+    def test_a_slipped_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        for body in ({"preview": True, "overrides": self.SLIPPED}, {"overrides": self.SLIPPED}):
+            r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json=body)
+            assert r.status_code == 400, body
+            assert r.json()["detail"] == self.SAID
+        assert self._signed_rows(client) == []
+
+    def test_a_correction_inside_the_bound_still_previews_and_signs(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        inside = [{"code": "platelets", "value": 2000, "reason": WHY}]
+        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True, "overrides": inside})
+        assert previewed.status_code == 200 and previewed.json()["total"] == 0
+        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": inside})
+        assert signed.status_code == 200 and signed.json()["total"] == 0
+        assert len(self._signed_rows(client)) == 1
+```
+
+- [ ] **Step 2: Run them and see the right three red**
+
+Run: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/scoring/test_signing.py 2>&1 | tail -3`
+
+Expected: `3 failed, 29 passed`. Red: the two unit tests that pass `bounds=` (`TypeError: parse_overrides() got an unexpected keyword argument 'bounds'`) and `test_a_slipped_correction_is_refused_for_a_preview_and_for_a_signature` (`assert 200 == 400` — the preview took 18000). Green from the start, and kept as guards: no bounds means any finite value (the old behaviour), and a correction inside the bound previews and signs.
+
+- [ ] **Step 3: `bounds` in `parse_overrides`** — in `scoring/signing.py`, three Edits:
+
+old:
+```python
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+```
+new:
+```python
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+```
+
+old:
+```python
+def parse_overrides(payload: object, form: SofaForm) -> list[Override]:
+    """Read the corrections out of a signing request, refusing the ones that are not corrections.
+
+    Each entry is `{code, value, reason}`. The original value is looked up from the form rather
+    than taken from the caller — a client that could state both would be free to state a false
+    "original" and make an override look like agreement.
+    """
+```
+new:
+```python
+def parse_overrides(payload: object, form: SofaForm, *,
+                    bounds: Mapping[SignalCode, tuple[float, float]] | None = None) -> list[Override]:
+    """Read the corrections out of a signing request, refusing the ones that are not corrections.
+
+    Each entry is `{code, value, reason}`. The original value is looked up from the form rather
+    than taken from the caller — a client that could state both would be free to state a false
+    "original" and make an override look like agreement.
+
+    `bounds` (G2-A4, O6) are the slip bounds a value of each code is held to, `{code: (low, high)}`.
+    A corrected value is typed by the same hand as a charted one and slips the same way, and the
+    engine is the only scorer, so the bound cannot live only in a browser. The caller passes them —
+    the API passes the charting door's `PLAUSIBLE` — because this module does not import the API.
+    Without them only a finite number is required, as before.
+    """
+```
+
+old:
+```python
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ScoreSigningError(f"{raw_code}: geçersiz sayı")
+```
+new:
+```python
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ScoreSigningError(f"{raw_code}: geçersiz sayı")
+        # G2-A4 (O6): the door's slip bound, in the door's words (api/clinical.py `_value`) — a platelet
+        # count corrected to 18000 is the same slipped digit whether it was charted or typed over the record.
+        span = (bounds or {}).get(code)
+        if span is not None and not span[0] <= value <= span[1]:
+            low, high = span
+            raise ScoreSigningError(
+                f"{raw_code}: {value:g} beklenen aralığın ({low:g}–{high:g}) dışında — "
+                f"birim veya ondalık hatası olabilir")
+```
+
+- [ ] **Step 4: The route passes the door's bounds** — in `api/app.py`, two Edits:
+
+old:
+```python
+from homunculus.api.clinical import (
+    ClinicalEntryError, build_entries, chart_observations, profile_from_payload, profile_to_payload,
+)
+```
+new:
+```python
+from homunculus.api.clinical import (
+    PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
+    profile_to_payload,
+)
+```
+
+old:
+```python
+            overrides = parse_overrides(body.get("overrides"), auto)
+```
+new:
+```python
+            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
+            # preview and a signature alike, both parsed here. The dashboard mirrors them (X7); this is
+            # the guard.
+            overrides = parse_overrides(body.get("overrides"), auto, bounds=PLAUSIBLE)
+```
+
+- [ ] **Step 5: Run green, then the whole engine suite**
+
+Run: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/scoring tests/test_api_clinical.py 2>&1 | tail -3`
+
+Expected: all passed (`test_signing.py` 32).
+
+Run: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -3`
+
+Expected: `2854 passed, 822 skipped` (2831 + 23). Write the line down: Task 11 quotes it.
+
+- [ ] **Step 6: Line ends, then commit**
+
+```bash
+cd /c/tmp/g2a-a4 && for f in homunculus-engine/src/homunculus/scoring/signing.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/scoring/test_signing.py; do printf '%s ' "$f"; /c/tmp/f7-py312/venv/Scripts/python.exe -c "import sys;b=open(sys.argv[1],'rb').read();print(b.count(b'\r\n'), b.count(b'\n'))" "$f"; done
+git add -- homunculus-engine/src/homunculus/scoring/signing.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/scoring/test_signing.py
+git status --short && git diff --cached --stat
+git commit -F - <<'MSG'
+feat(api): a SOFA correction is held to the door's slip bounds, for a preview and a signature alike (G2-A4, O6)
+
+parse_overrides takes bounds={code: (low, high)} and refuses a value outside its code's bound in the
+door's words ("platelets: 18000 beklenen aralığın (0–2000) dışında — birim veya ondalık hatası
+olabilir"); sign_sofa_form passes api/clinical.py's PLAUSIBLE. The engine is the only scorer, so the
+bound cannot live only in the browser (which mirrors it, X7). scoring still imports nothing from api.
+
+Red first: 3 failed (the bounds keyword unknown; the preview took 18000); the no-bounds and
+inside-the-bound tests were green from the start and stay as guards.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 MSG
@@ -3461,7 +3657,8 @@ new:
   gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı motor hesaplar. Formda son 24 saatteki tek bir
   «evet» PaO₂/FiO₂'yi destekte sayar, «hayır» onu geri almaz (alarm SOFA'sı ise son kaydı okur). **Düzeltme**
   (`scores.sign`): yalnız ölçülmüş bir değere, doğru değer ve en az 20 karakterlik bir gerekçeyle (sayaç gösterir);
-  puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır. **Önizle, sonra imzala:** «Önizle» motordan
+  puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; kayıt kapısının yazım hatası sınırları düzeltmede
+  de geçerlidir (18000 yazılmış bir trombosit hem önizlemede hem imzada reddedilir). **Önizle, sonra imzala:** «Önizle» motordan
   imzalanacak formu ister ve hiçbir şey yazmaz; «İmzala» yalnız o önizlemeden sonra ve aynı düzeltmelerle çıkar
   (bir düzeltme değişirse yeniden önizlenir), imza adınızla denetim zincirine mühürlenir. Kayıt arada değiştiyse
   (başka biri ölçüm girdiyse) ekran imzalanan toplamın önizlemedekinden farklı olduğunu söyler. Formu `board.view`
@@ -3479,7 +3676,7 @@ new:
 cd /c/tmp/g2a-a4 && git rev-parse --short HEAD
 ```
 
-`{HEAD}` = that sha (the head after Task 10); `{ENGINE}` = Task 3 Step 5's whole-suite line (`2849 / 822` if it matched); `{DASH}` = Task 10 Step 6's numbers (`108 dosya / 3011 test` if they matched). Then Edit (replace the three braces with those values):
+`{HEAD}` = that sha (the head after Task 10); `{ENGINE}` = Task 3b Step 5's whole-suite line (`2854 / 822` if it matched); `{DASH}` = Task 10 Step 6's numbers (`108 dosya / 3011 test` if they matched). Then Edit (replace the three braces with those values):
 
 old:
 ```
@@ -3487,7 +3684,7 @@ old:
 ```
 new:
 ```
-| G2-A4 | SOFA formu: hasta ekranında İlaç kutusunun altında «SOFA formu» kutusu — formun toplamı, ölçümü olmayan organ sayısı, son imza («İmzalandı · {kim} · {saat} · toplam {n}», düzeltme sayısıyla) ya da «İmzalanmadı»; Sepsis-3 kutusundaki alarm SOFA'sından ayrı olduğunu söyler — ve «Formu aç» penceresi: altı organ kaynaktaki sırayla, her girdinin en kötü değeri, birimi, ölçüm saati, kaynağı ve puanı, «ölçülmedi» (0 yazılmaz), organ yetmezliği işareti, pencere (yatış 24 saatten kısaysa söyler), böbrekte idrar çıkışı puanlanmaz (D8), MAP formdan girilmez (D9); **tamamlama** (`clinical.chart`, `/clinical` kapısından, gerekçesiz): trombosit, bilirubin ve kreatinin (mg/dL, D11), GCS, PaO₂/FiO₂, solunum desteği evet/hayır, ölçüm saati en çok 24 sa geriye; **düzeltme** (`scores.sign`, ölçülmüş değere, ≥ 20 karakter gerekçe, puanı motor hesaplar); **«Önizle»** (`preview: true`, denetim satırı yok) **sonra «İmzala»** (aynı düzeltmeler); motor: `ON_RESP_SUPPORT` kaydedilebilir bayrak, PLATELETS/BILIRUBIN/CREATININE/PAO2_FIO2 için yazım hatası sınırları, GET formu `last_signed` + `min_reason_chars` taşır · dal `feat/g2a-a4-sofa` (main `ec66a57`'den) · spec: [2026-11-01](../specs/2026-11-01-g2a-a4-sofa-formu-design.md) · plan: [G2-A4](2026-11-01-g2a-a4-sofa-formu.md) | Kodda, VM'de değil (`{HEAD}`; kapılar motor {ENGINE}, pano {DASH} / 0, derleme ✅); api ve web birlikte, önce api (planın dağıtım notları: eski api'ye karşı yeni web düzeltme/önizleme/imza sunmaz). **Açık:** X1–X16 · O1–O9 (plan) |
+| G2-A4 | SOFA formu: hasta ekranında İlaç kutusunun altında «SOFA formu» kutusu — formun toplamı, ölçümü olmayan organ sayısı, son imza («İmzalandı · {kim} · {saat} · toplam {n}», düzeltme sayısıyla) ya da «İmzalanmadı»; Sepsis-3 kutusundaki alarm SOFA'sından ayrı olduğunu söyler — ve «Formu aç» penceresi: altı organ kaynaktaki sırayla, her girdinin en kötü değeri, birimi, ölçüm saati, kaynağı ve puanı, «ölçülmedi» (0 yazılmaz), organ yetmezliği işareti, pencere (yatış 24 saatten kısaysa söyler), böbrekte idrar çıkışı puanlanmaz (D8), MAP formdan girilmez (D9); **tamamlama** (`clinical.chart`, `/clinical` kapısından, gerekçesiz): trombosit, bilirubin ve kreatinin (mg/dL, D11), GCS, PaO₂/FiO₂, solunum desteği evet/hayır, ölçüm saati en çok 24 sa geriye; **düzeltme** (`scores.sign`, ölçülmüş değere, ≥ 20 karakter gerekçe, puanı motor hesaplar); **«Önizle»** (`preview: true`, denetim satırı yok) **sonra «İmzala»** (aynı düzeltmeler); motor: `ON_RESP_SUPPORT` kaydedilebilir bayrak, PLATELETS/BILIRUBIN/CREATININE/PAO2_FIO2 için yazım hatası sınırları — düzeltmede de, önizleme ve imzada (`parse_overrides(..., bounds=PLAUSIBLE)`, O6) —, GET formu `last_signed` + `min_reason_chars` taşır · dal `feat/g2a-a4-sofa` (main `ec66a57`'den) · spec: [2026-11-01](../specs/2026-11-01-g2a-a4-sofa-formu-design.md) · plan: [G2-A4](2026-11-01-g2a-a4-sofa-formu.md) | Kodda, VM'de değil (`{HEAD}`; kapılar motor {ENGINE}, pano {DASH} / 0, derleme ✅); api ve web birlikte, önce api (planın dağıtım notları: eski api'ye karşı yeni web düzeltme/önizleme/imza sunmaz). **Açık:** X1–X16 · O1–O5, O7–O9 (plan; O6 bu dilimde kapandı) |
 | G2-B1a | Hasta Kabul (Lane B): Yönetim › Yapı
 ```
 
@@ -3513,7 +3710,7 @@ MSG
 
 ### Task 12: The gates, the final review and the fold (controller)
 
-- [ ] **Step 1: The gates on the branch's head** — the engine's whole no-DB suite (`2849 passed, 822 skipped`), the dashboard's whole suite (`108 files / 3011 tests`, 0 failed) and `npx vite build` (`precache  20 entries`), each in the foreground. Optionally the dashboard suite again under `TZ=Pacific/Chatham` and `TZ=America/New_York` (A3 ran five zones): every time in the tests is computed with `dayStamp`/`toLocalInput`, so none may depend on the zone.
+- [ ] **Step 1: The gates on the branch's head** — the engine's whole no-DB suite (`2854 passed, 822 skipped`), the dashboard's whole suite (`108 files / 3011 tests`, 0 failed) and `npx vite build` (`precache  20 entries`), each in the foreground. Optionally the dashboard suite again under `TZ=Pacific/Chatham` and `TZ=America/New_York` (A3 ran five zones): every time in the tests is computed with `dayStamp`/`toLocalInput`, so none may depend on the zone.
 - [ ] **Step 2: The final whole-branch review (opus)** against the spec D1–D11, this plan's X1–X16, Decision 1 (no clinical arithmetic in the browser), accessibility (labels, the focus after each editor, keyboard-only, a 390 px dialog), the four languages, CRLF on every touched file, no PHI. Fix-first findings are fixed in their task's files with `fix(...)` commits.
 - [ ] **Step 3: The fold.** Append to this plan a "Done on the branch (fold, date)" section — the table task → commit → what it pinned, the final review's findings and their fixes, the counts at the head, any departure the review added (X17…), the open items carried — and update the roadmap row's sha and counts to the folded head. Commit `docs(plan): G2-A4 — the fold: commits, the final review, the counts`.
 - [ ] **Step 4:** Push `feat/g2a-a4-sofa` only on the user's word; the merge waits for the user; the VM deploy goes with the next deploy, API before or with the web (Deploy notes).
@@ -3527,17 +3724,18 @@ MSG
 | 0 worktree, junction, baseline | — | — | — |
 | 1 the door: `ON_RESP_SUPPORT`, four bounds (D4) | 0 | 4, 5, 6 | — |
 | 2 GET `last_signed`, `min_reason_chars` (D7) | 1 (its tests chart through the same door; serially, for the counts) | 4, 5, 6 | `api/app.py`, `tests/scoring/test_signing.py` (3) |
-| 3 POST `preview` (D6) | 2 (`_AsPeople`, `NURSE`; `api/app.py`, serially) | 4, 5, 6 | — |
-| 4 client `preview`, store methods, `fakeApi` | 0 (the contract's shape only) | 1–3, 5, 6 | `testTokens.testutil.js` is read by 9, 10 |
+| 3 POST `preview` (D6) | 2 (`_AsPeople`, `NURSE`; `api/app.py`, serially) | 4, 5, 6 | `api/app.py`, `tests/scoring/test_signing.py` (3b) |
+| 3b the server bounds a correction (O6) | 1 (the four lab bounds in `PLAUSIBLE`), 3 (`api/app.py`, `test_signing.py`, serially) | 4, 5, 6 | — |
+| 4 client `preview`, store methods, `fakeApi` | 0 (the contract's shape only) | 1–3b, 5, 6 | `testTokens.testutil.js` is read by 9, 10 |
 | 5 strings `sofa.*` (X1) | 0 | 1–4, 6 | `catalog.js` — Lane B's next slice may add its own namespace there: blank lines either side |
 | 6 `sofaFields.js`, `sofa.testutil.js` | 0 (the strings are keys only; the tests use an identity `t`) | 1–5 | — |
 | 7 the editors | 5 (az texts), 6 | 1–3 | — |
 | 8 the dialog | 7 | 1–3 | — |
 | 9 the box | 4 (store), 8 | 1–3 | — |
 | 10 the screen, `onlyWrite`, `formsSoon` | 9 | 1–3 | `strings/patient.js` |
-| 11 docs | 3, 10 (the counts and the head it quotes) | — | — |
+| 11 docs | 3b, 10 (the counts and the head it quotes) | — | — |
 | 12 gates, review, fold | 1–11 | — | — |
 
-**Why this order.** The engine first in plan order because the dashboard's deploy safety (X13) leans on the engine's answer, but the dashboard tasks depend only on the answer's shape, which the contract fixed, so they can be built beside the engine. Tasks 2 and 3 both edit `api/app.py` and `tests/scoring/test_signing.py` (Task 3's class extends Task 2's base), and every Edit's old text was checked unique against the file as the earlier task left it: they run serially. On the dashboard, each layer's tests mount the layer below it (the box mounts the dialog, the dialog the editors, the editors read `sofaFields`), and the az texts the tests assert come from Task 5.
+**Why this order.** The engine first in plan order because the dashboard's deploy safety (X13) leans on the engine's answer, but the dashboard tasks depend only on the answer's shape, which the contract fixed, so they can be built beside the engine. Tasks 2, 3 and 3b all edit `api/app.py` and `tests/scoring/test_signing.py` (Task 3's and 3b's API classes extend Task 2's base; 3b's route test needs Task 1's platelet bound in `PLAUSIBLE`), and every Edit's old text was checked unique against the file as the earlier task left it: they run serially. On the dashboard, each layer's tests mount the layer below it (the box mounts the dialog, the dialog the editors, the editors read `sofaFields`), and the az texts the tests assert come from Task 5.
 
-**Waves, if run in parallel:** A = {1 → 2 → 3} beside B = {4, 5, 6 → 7 → 8 → 9 → 10}; then 11, 12. The counts in this plan assume the serial order 0 → 12; a parallel merge re-runs Task 12's gates on the merged head.
+**Waves, if run in parallel:** A = {1 → 2 → 3 → 3b} beside B = {4, 5, 6 → 7 → 8 → 9 → 10}; then 11, 12. The counts in this plan assume the serial order 0 → 12; a parallel merge re-runs Task 12's gates on the merged head.
