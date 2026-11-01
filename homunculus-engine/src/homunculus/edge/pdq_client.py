@@ -11,9 +11,9 @@ even against an API whose store blocks.
 `ask` answers a `PatientIdentity` (found: the name always, D3), `pdq.NOT_FOUND` (D4), or raises
 `QueryUnavailable` for anything the bridge cannot trust — no route, no answer in time, a status
 that is not 200 (the route's 503 included: its store could not answer), a body that is not the
-route's. The bridge then answers from its mirror (D8). Stdlib only, as edge/uplink.py. The default opener ignores the proxy variables and
-follows no redirect (a 30x is «cannot answer»): the token and the number go to the configured
-address and nowhere else.
+route's. The bridge then answers from its mirror (D8). Stdlib only, as edge/uplink.py. The default
+opener ignores the proxy variables and follows no redirect (a 30x is «cannot answer»): the token
+and the number go to the configured address and nowhere else.
 
 PHI: the answer holds a name; nothing here logs, and a failure's words never name the id.
 """
