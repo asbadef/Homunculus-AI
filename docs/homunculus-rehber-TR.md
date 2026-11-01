@@ -978,24 +978,35 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   ekran çevirmez; µmol/L yazılmış bir kreatinin 40'ın üstündeyse reddedilir, altındaysa reddedilmez; µmol/L bir
   bilirubin de reddedilmeyebilir: koruma alanın yanında yazan birimdir, birimi oradan okuyun), GCS (tam sayı),
   PaO₂/FiO₂ ve «solunum desteği» (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz
-  değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı
-  motor hesaplar. Solunum desteği: form her PaO₂/FiO₂ ölçümünü **kendi saatinde** geçerli olan destek kaydıyla
+  değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez — solunum desteği girilirken ise, satırda
+  ölçülmüş bir PaO₂/FiO₂ varsa, saat o ölçümün saatiyle gelir (alanın altında yazar; değiştirebilirsiniz): oranı
+  girip ardından «evet»i saate dokunmadan kaydetmek o oranı da destekte saydırır; kayıttan sonra form yeniden
+  okunur, puanı motor hesaplar. Solunum desteği: form her PaO₂/FiO₂ ölçümünü **kendi saatinde** geçerli olan destek kaydıyla
   puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır», 24 saatten eski olsa da; destek kaydı yoksa
   destekte sayılmaz — ve satıra pencerenin en kötü **puanını** alır (eşit puanda düşük oran, sonra son ölçüm):
   destekteyken ölçülmüş 180 (3 puan), destek yokken ölçülmüş 150'nin (2 puan) önüne geçer. Ölçümden sonraki bir
   saate girilen kayıt o ölçümü değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir.
-  Solunum satırı hangi destek kaydıyla puanlandığını (evet/hayır ve saati) yazar. Alarm SOFA'sı ise son kaydı okur
+  Solunum satırı ölçümünün neye göre puanlandığını yazar: «Destekte puanlandı — 07:00 kaydı», «Destek dışı
+  puanlandı — 07:00 kaydı» ya da, ölçümün saatinde veya öncesinde destek kaydı yoksa, «Bu ölçümün saatinde (ya da
+  öncesinde) destek kaydı yok — destek dışı puanlandı (07:30)». Alarm SOFA'sı ise son kaydı okur
   ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
-  **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere, doğru değer ve en az 20 karakterlik bir gerekçeyle (sayaç
-  gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
+  **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere (ölçülmemiş bir değerin düzeltmesini motor da reddeder:
+  «ölçülmemiş bir değer düzeltilemez — ölçümü formdan girin»), doğru değer ve en az 20 karakterlik bir gerekçeyle
+  (sayaç gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
   de geçerlidir (18000 yazılmış bir trombosit ya da 9000 yazılmış bir MAP hem önizlemede hem imzada reddedilir).
   **Önizle, sonra imzala:** «Önizle» motorun ayrı önizleme yolundan imzalanacak formu ve onun parmak izini ister,
   hiçbir şey yazmaz; «İmzala» yalnız o önizlemeden sonra, aynı düzeltmelerle ve o parmak iziyle çıkar (bir düzeltme
-  değişirse yeniden önizlenir), çıktıktan sonra kısa bir an basılamaz (hızlı bir çift tıklama imza atmasın diye);
-  imza adınızla denetim zincirine mühürlenir. Önizleme ile imza arasında formda görünen bir şey değiştiyse (başka
-  biri ölçüm girdiyse ya da 24 saatlik pencere bir ölçümün üstünden kaydıysa) motor **imzalamaz**: «kayıt
-  önizlemeden sonra değişti — formu yeniden önizleyin» der ve hiçbir şey yazmaz; yeniden önizler, gördüğünüzü
-  imzalarsınız — imzalanan sayı her zaman önizlenen sayıdır. Önizlemeyi tanımayan eski bir sunucuya karşı form
+  değişirse yeniden önizlenir; yeniden önizleme reddedilir ya da yanıt alamazsa önceki önizleme de bırakılır),
+  çıktıktan sonra kısa bir an basılamaz (hızlı bir çift tıklama imza atmasın diye);
+  imza adınızla, önizlemenin parmak iziyle birlikte denetim zincirine mühürlenir. Parmak izi şunları kapsar: hasta,
+  pencerenin uzunluğu ve kalış süresinin pencereyi doldurup doldurmadığı, toplam, her organın puanı, her girdinin
+  değeri, ölçüm saati, puanı ve pencereden önceki bir ölçüm olup olmadığı, solunum satırının destek kaydı, her
+  düzeltmenin değeri, kayıttaki değeri ve gerekçesi. Önizleme ile imza arasında bunlardan biri değiştiyse (başka biri
+  ölçüm girdiyse, 24 saatlik pencere bir ölçümün üstünden kaydıysa, imza başka bir gerekçe ya da pencereyle
+  gönderildiyse) motor **imzalamaz**: «form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu
+  yeniden önizleyin» der ve hiçbir şey yazmaz; yeniden önizler, gördüğünüzü imzalarsınız — imzalanan sayı her zaman
+  önizlenen sayıdır. Parmak izine girmeyenler: pencerenin başlangıç ve bitiş saati (her saniye kayar), bir girdinin
+  kaynağı ve pencerede kaç ölçüm bulunduğu (ekranda yazmaz). Önizlemeyi tanımayan eski bir sunucuya karşı form
   düzeltme, önizleme ve imza sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını
   söyler. Formu `board.view` yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır.
   **Yapmadıkları:** Formun kendisi alarm üretmez; buradan girilen bir ölçüm hasta kaydına yazılır ve uyarı kuralları
