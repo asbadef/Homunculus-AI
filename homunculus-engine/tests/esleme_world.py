@@ -41,12 +41,14 @@ def group_of(source: str) -> str:
     return "224.0.2." + source.rsplit(".", 1)[1]
 
 
-def readings(sources, now: float) -> dict:
-    """A forwarder body reporting `sources` streaming, with no readings (the editor needs presence)."""
+def readings(sources, now: float, groups: dict[str, str] | None = None) -> dict:
+    """A forwarder body reporting `sources` streaming, with no readings (the editor needs presence). A
+    device's multicast group is `group_of(source)` unless `groups` names another for it."""
+    groups = groups or {}
     return {"schema": SCHEMA, "sent_at": now,
             "forwarder": {"interval_s": 5, "sent": 1, "failed": 0, "decoder": None},
             "hub": {"collector_age_s": 1.0, "accepted_packets": 1, "old_or_duplicate_packets": 0},
-            "devices": [{"source": s, "group": group_of(s), "port": 2050, "status": "streaming",
+            "devices": [{"source": s, "group": groups.get(s, group_of(s)), "port": 2050, "status": "streaming",
                          "packet_age_ms": 100.0, "readings": []} for s in sources]}
 
 
@@ -71,9 +73,10 @@ async def seed(db: AsyncSession, ward: Ward, *rows: tuple[str, str | None, str |
 
 @asynccontextmanager
 async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: str = SLUG, sources=SOURCES,
-                        monotonic=None) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
+                        monotonic=None, device_groups=None) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
     """`monotonic` is the store's own clock (report ages): a test that moves it makes the worker's
-    devices fall silent without waiting."""
+    devices fall silent without waiting. `device_groups` ({source: group}) puts a reported device in another
+    multicast group than `group_of(source)`. The table's pool is closed on the way out (A-22 I1)."""
     ward = await build_ward(db)
     groups = await ensure_default_groups(db, ward.tenant.id)
     bio = await add_user(db, username="bio@kabul.example.com", tenant_id=ward.tenant.id, group=groups["biomedical"])
@@ -81,17 +84,20 @@ async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: st
     ward.users["bio"], ward.auth["bio"] = bio, await bearer(db, bio)
     settings = (ShadowSettings() if stage == "off" else
                 ShadowSettings(stage, stage, None, TOKEN, hospital, parameters=("hr",) if stage == "rules" else ()))
-    app = create_app({DEVICE: SLUG}, run_escalation_loop=False, shadow=settings, audit=InMemoryAuditLog(),
-                     device_beds=PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG),
-                     shadow_monotonic=monotonic)
-    maker = async_sessionmaker(db.bind, expire_on_commit=False)
+    table = PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG)
+    try:
+        app = create_app({DEVICE: SLUG}, run_escalation_loop=False, shadow=settings, audit=InMemoryAuditLog(),
+                         device_beds=table, shadow_monotonic=monotonic)
+        maker = async_sessionmaker(db.bind, expire_on_commit=False)
 
-    async def _db():
-        async with maker() as session:
-            yield session
+        async def _db():
+            async with maker() as session:
+                yield session
 
-    app.dependency_overrides[get_db] = _db
-    if settings.on:
-        app.state.shadow_store.ingest(readings(sources, time.time()))
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, app, ward
+        app.dependency_overrides[get_db] = _db
+        if settings.on:
+            app.state.shadow_store.ingest(readings(sources, time.time(), device_groups))
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client, app, ward
+    finally:
+        table.dispose()          # its sync engine holds a pooled connection: one per test, against max_connections

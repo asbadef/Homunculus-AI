@@ -15,12 +15,15 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from homunculus.admission import trail
+from homunculus.api.device_beds_postgres import PostgresDeviceBeds
+from homunculus.devicebeds import service
 from homunculus.devicebeds.models import DeviceBed
+from homunculus.devicebeds.rows import current_rows, db_time, editor_row
 from homunculus.devicebeds.schemas import BindBody, UnbindBody
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from tests.conftest import TEST_DATABASE_URL, _sync_engine_url, requires_db
-from tests.esleme_world import APPROVED, FROM, SOURCES, URL, esleme_client, group_of, seed
-from tests.kabul_world import BOARD
+from tests.esleme_world import APPROVED, FROM, SOURCES, UNIT_OF, URL, esleme_client, group_of, seed
+from tests.kabul_world import BOARD, build_ward
 
 pytestmark = [requires_db]
 
@@ -310,16 +313,29 @@ async def test_a_bed_with_a_monitor_takes_the_new_one_and_the_old_one_is_unbound
     assert (entries["192.0.2.12"]["bed"], entries["192.0.2.11"]["bed"]["label"]) == (None, "2")
 
 
-@pytest.mark.parametrize("bed_key, label", [("1", "BED05"), (None, "BED01")])
-async def test_an_unbind_writes_an_unbound_row_for_a_bound_and_a_label_only_monitor(db_session, bed_key, label):
+async def test_an_unbind_closes_a_bound_row_and_opens_an_unbound_one(db_session):
     async with esleme_client(db_session) as (client, app, ward):
-        ids = await seed(db_session, ward, ("192.0.2.11", bed_key, label))
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
         assert (await _unbind(client, ward, "admin", "192.0.2.11", ids["192.0.2.11"])).status_code == 200
         rows = await _rows(db_session, "192.0.2.11")
         [rec] = app.state.audit.records(event_type="device_bed.unbind")
-    assert [(r.bed_label, r.valid_to is None) for r in rows] == [(label, False), (None, True)]
-    assert (rows[1].method, rows[1].bed_id, rows[1].unit_id, rows[1].device_bed_label) == ("editor", None, None, label)
+    assert [(r.bed_label, r.valid_to is None) for r in rows] == [("BED05", False), (None, True)]
+    assert (rows[1].method, rows[1].bed_id, rows[1].unit_id, rows[1].device_bed_label) == ("editor", None, None, "BED05")
     assert rec.payload["reason"] == "unbound" and rec.payload["new"]["bed_label"] is None
+
+
+async def test_an_unbind_of_a_label_only_v2_row_is_changed_false_and_writes_nothing(db_session):
+    """A-22 M3: a v2 row with a central-station label and no Yapı bed (BED01) is an unbound device (spec §4.3), and
+    the dashboard offers no unbind there (E23). The expected row id is not even looked at."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", None, "BED01"))
+        resets = _spy_reset(app)
+        right = await _unbind(client, ward, "admin", "192.0.2.11", ids["192.0.2.11"])
+        stale = await _unbind(client, ward, "admin", "192.0.2.11", 999)
+        rows = await _rows(db_session, "192.0.2.11")
+    assert [(r.status_code, r.json()["changed"]) for r in (right, stale)] == [(200, False), (200, False)]
+    assert [(r.bed_label, r.valid_to is None) for r in rows] == [("BED01", True)]
+    assert app.state.audit.records() == [] and resets == []
 
 
 async def test_asking_for_what_already_holds_changes_nothing_even_with_a_stale_expected(db_session):
@@ -353,6 +369,85 @@ async def test_a_request_sent_again_after_its_answer_was_lost_answers_changed_fa
     assert [r.event_type for r in audit] == ["device_bed.bind", "device_bed.unbind"]
 
 
+async def _another_writer(db, ward, monkeypatch, source, bed_key, *, reopen=True):
+    """Between the transaction's read of the device's row (step 4) and its locks (steps 5-6), a second session
+    commits a change of its own: it closes `source`'s current row and, if `reopen`, opens one on `bed_key` (None:
+    unbound). Done by wrapping `service._lock_bed`, which the transaction calls in between — once, before the
+    first real lock, so nothing it holds can wait for the writer."""
+    maker, done = async_sessionmaker(db.bind, expire_on_commit=False), []
+    real = service._lock_bed
+
+    async def lock_after_the_other_writer(session, bed_id):
+        if not done:
+            done.append(True)
+            async with maker() as other:
+                current = (await current_rows(other, ward.tenant.id, sources=[source]))[source]
+                t = await db_time(other)
+                current.valid_to = t
+                await other.flush()
+                if reopen:
+                    bed = ward.beds[bed_key] if bed_key else None
+                    other.add(editor_row(ward.tenant.id, source, current.group_address, 2050, current.device_bed_label,
+                                         bed.label if bed else None, bed.id if bed else None,
+                                         ward.units[UNIT_OF[bed_key]].id if bed else None, t, ward.users["admin"]))
+                await other.commit()
+        return await real(session, bed_id)
+
+    monkeypatch.setattr(service, "_lock_bed", lock_after_the_other_writer)
+    return done
+
+
+async def test_two_identical_binds_in_flight_the_second_answers_changed_false_not_mapping_changed(db_session, monkeypatch):
+    """A-22 M1, spec §4.4 step 6: the request asking for what already holds is answered `changed:false` BEFORE the
+    'it moved between steps 4 and 6' comparison. Here the same bind commits between this one's read and its locks."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        resets, audit = _spy_reset(app), app.state.audit
+        done = await _another_writer(db_session, ward, monkeypatch, "192.0.2.11", "2")
+        response = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])
+        rows = await _rows(db_session, "192.0.2.11")
+    assert done and (response.status_code, response.json()["changed"]) == (200, False)
+    assert [(r.bed_id, r.valid_to is None) for r in rows] == [(ward.beds["1"].id, False), (ward.beds["2"].id, True)]
+    assert audit.records() == [] and resets == []                          # this request wrote and announced nothing
+
+
+async def test_two_identical_unbinds_in_flight_the_second_answers_changed_false_not_mapping_changed(db_session, monkeypatch):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        done = await _another_writer(db_session, ward, monkeypatch, "192.0.2.11", None)
+        response = await _unbind(client, ward, "admin", "192.0.2.11", ids["192.0.2.11"])
+        rows = await _rows(db_session, "192.0.2.11")
+    assert done and (response.status_code, response.json()["changed"]) == (200, False)
+    assert [(r.bed_id, r.valid_to is None) for r in rows] == [(ward.beds["1"].id, False), (None, True)]
+    assert app.state.audit.records() == []
+
+
+async def test_a_device_that_moved_to_a_third_bed_between_the_read_and_the_locks_is_mapping_changed(db_session, monkeypatch):
+    """A-22 M4: the 'it moved between steps 4 and 6' branch. The request wants bed 2; the device meanwhile went to
+    bed 3 — not what was asked, not what the screen saw: 409, and the other writer's row is untouched."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        resets = _spy_reset(app)
+        done = await _another_writer(db_session, ward, monkeypatch, "192.0.2.11", "3")
+        response = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])
+        rows = await _rows(db_session, "192.0.2.11")
+    assert done and (response.status_code, response.json()["detail"]["code"]) == (409, "mapping_changed")
+    assert [(r.bed_id, r.valid_to is None) for r in rows] == [(ward.beds["1"].id, False), (ward.beds["3"].id, True)]
+    assert app.state.audit.records() == [] and resets == []
+
+
+async def test_a_row_only_monitor_whose_row_vanished_under_the_locks_is_mapping_changed_not_an_error(db_session, monkeypatch):
+    """A-22 M4, E33: the worker does not report the device and its only row was closed (with none opened) between
+    the read and the locks — nothing is left to take a group from."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.20", None, None))
+        done = await _another_writer(db_session, ward, monkeypatch, "192.0.2.20", None, reopen=False)
+        response = await _bind(client, ward, "admin", "192.0.2.20", "2", ids["192.0.2.20"])
+        rows = await _rows(db_session, "192.0.2.20")
+    assert done and (response.status_code, response.json()["detail"]["code"]) == (409, "mapping_changed")
+    assert [r.valid_to is None for r in rows] == [False] and app.state.audit.records() == []
+
+
 async def test_a_stale_expected_is_mapping_changed_and_writes_nothing(db_session):
     async with esleme_client(db_session) as (client, app, ward):
         ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))
@@ -383,6 +478,25 @@ async def test_the_refusals_carry_their_codes(db_session):
     assert (multicast.status_code, multicast.json()["detail"]["code"]) == (422, "field_invalid:source")
     assert (closed.status_code, closed.json()["detail"]["code"]) == (409, "bed_closed")
     assert missing.status_code == 404 and extra.status_code == 422 and not_text.status_code == 422
+
+
+async def test_a_displaced_monitor_that_the_worker_reports_takes_the_workers_group_for_its_new_row(db_session):
+    """A-22 M7, spec §5.3: the group of ANY row the editor opens is the worker's when it reports the device."""
+    async with esleme_client(db_session, device_groups={"192.0.2.12": "224.0.2.99"}) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))   # its row: .12
+        assert (await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"], ids["192.0.2.12"])).status_code == 200
+        _, unbound = await _rows(db_session, "192.0.2.12")
+        [_, bound] = await _rows(db_session, "192.0.2.11")
+    assert (unbound.bed_id, unbound.group_address) == (None, "224.0.2.99")
+    assert bound.group_address == "224.0.2.11"
+
+
+async def test_a_displaced_monitor_the_worker_does_not_report_keeps_its_own_rows_group(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.20", "3", "BED07"))
+        assert (await _bind(client, ward, "admin", "192.0.2.11", "3", ids["192.0.2.11"], ids["192.0.2.20"])).status_code == 200
+        _, unbound = await _rows(db_session, "192.0.2.20")
+    assert (unbound.bed_id, unbound.group_address, unbound.device_bed_label) == (None, "224.0.2.20", "BED07")
 
 
 @pytest.mark.parametrize("closing", ["room", "unit"])
@@ -478,17 +592,87 @@ async def test_the_bodies_are_closed_a_unit_in_the_request_is_refused_not_droppe
     assert sent.status_code == 422 and app.state.audit.records() == []
 
 
-@pytest.mark.parametrize("code, loud", [("23505", False), (None, False), ("23514", True), ("23503", True)])
-def test_only_an_index_that_fires_is_mapping_changed_a_check_or_a_key_that_fires_is_loud(code, loud):
-    """Spec §4.4 step 9 answers `mapping_changed` for the partial unique indexes. A CHECK (the interval) or a
-    foreign key firing is a bug of ours: it stays an error (a 500), not a refusal the screen would retry. A driver
-    that does not name the constraint is given the benefit of the doubt."""
+@pytest.mark.parametrize("confirm", [1, 0, "yes", "true", "false", None, [], {}])
+async def test_confirm_occupied_is_a_real_boolean_nothing_else_confirms_a_patients_bed(db_session, confirm):
+    """A-22 M5: the second confirmation is the one that lets a monitor be moved off or onto an admitted patient's
+    bed; `1` and `"yes"` are not it. Pydantic's lax bool would take both."""
+    ok = {"source": "192.0.2.13", "bed_id": str(uuid.uuid4()), "expected": {"device_row_id": None, "bed_row_id": None}}
+    for model, body in ((BindBody, ok), (UnbindBody, {"source": "192.0.2.13", "expected": {"device_row_id": None}})):
+        for allowed in (True, False):
+            assert model.model_validate(body | {"confirm_occupied": allowed}).confirm_occupied is allowed
+        assert model.model_validate(body).confirm_occupied is False
+        with pytest.raises(ValidationError):
+            model.model_validate(body | {"confirm_occupied": confirm})
+    async with esleme_client(db_session) as (client, app, ward):
+        bound = await _bind(client, ward, "admin", "192.0.2.13", "2", confirm_occupied=confirm)
+        unbound = await _unbind(client, ward, "admin", "192.0.2.13", None, confirm_occupied=confirm)
+        assert await _rows(db_session, "192.0.2.13") == []
+    assert (bound.status_code, unbound.status_code) == (422, 422) and app.state.audit.records() == []
+
+
+def _fake_error(*, constraint=None, via="cause", sqlstate=None, pgcode=None):
+    """An IntegrityError whose `orig` carries what a driver's does: a SQLSTATE under either name (`sqlstate`,
+    `pgcode`), and the constraint's name on the exception's `__cause__` (asyncpg, behind SQLAlchemy's adapter), on
+    psycopg2's `diag`, or on the exception itself."""
     from types import SimpleNamespace
 
     from sqlalchemy.exc import IntegrityError
+    orig = SimpleNamespace()
+    if sqlstate:
+        orig.sqlstate = sqlstate
+    if pgcode:
+        orig.pgcode = pgcode
+    if constraint and via == "cause":
+        orig.__cause__ = SimpleNamespace(constraint_name=constraint)
+    elif constraint and via == "diag":
+        orig.diag = SimpleNamespace(constraint_name=constraint)
+    elif constraint:
+        orig.constraint_name = constraint
+    return IntegrityError("INSERT", {}, orig)
 
-    from homunculus.devicebeds.service import _is_other_than_a_unique_violation
-    assert _is_other_than_a_unique_violation(IntegrityError("INSERT", {}, SimpleNamespace(pgcode=code))) is loud
+
+@pytest.mark.parametrize("error, retry", [
+    (_fake_error(sqlstate="23505", constraint="uq_device_beds_current_source"), True),
+    (_fake_error(sqlstate="23505", constraint="uq_device_beds_current_bed"), True),
+    (_fake_error(pgcode="23505", constraint="uq_device_beds_current_bed", via="diag"), True),
+    (_fake_error(pgcode="23505", constraint="uq_device_beds_current_source", via="self"), True),
+    (_fake_error(sqlstate="23505", constraint="uq_bed_label_per_room"), False),     # a unique violation, but not ours
+    (_fake_error(sqlstate="23505"), False),                          # only a SQLSTATE: cannot be proved ours
+    (_fake_error(pgcode="23505"), False),
+    (_fake_error(), False),                                          # a driver that says nothing at all
+    (_fake_error(sqlstate="23514", constraint="ck_device_beds_interval"), False),
+    (_fake_error(sqlstate="23503", constraint="device_beds_bed_id_fkey"), False),
+    (_fake_error(sqlstate="40P01"), False),
+    (_fake_error(constraint="uq_device_beds_current_source"), False),   # a name with no 23505 beside it
+])
+def test_only_our_two_current_row_indexes_firing_is_a_retry_everything_else_is_loud(error, retry):
+    """A-22 M2 (spec §4.4 step 9): `mapping_changed` is for the two partial unique indexes, by their names. Any other
+    unique violation, a CHECK (the interval), a foreign key, or a driver that does not name the constraint is a bug
+    or an unknown: it stays an error (a 500), never a refusal the screen would tell the user to repeat."""
+    assert service._current_row_index_fired(error) is retry
+
+
+@pytest.mark.parametrize("case, retry", [("source", True), ("bed", True), ("label", False)])
+async def test_the_real_asyncpg_unique_violation_names_its_constraint_where_the_helper_reads_it(db_session, case, retry):
+    """The attribute path is checked on REAL errors, not on fakes: a duplicate current row for one device, a second
+    current row on one bed, and a unique violation that is not ours (two beds of one room with one label)."""
+    from sqlalchemy.exc import IntegrityError
+    ward = await build_ward(db_session)
+    row = dict(tenant_id=ward.tenant.id, group_address="224.0.2.11", port=2050, valid_from=FROM,
+               approved_by="proje sahibi", approved_at=APPROVED)
+    bed, unit = ward.beds["1"], ward.units["rea"]
+    if case == "source":
+        db_session.add_all([DeviceBed(source="192.0.2.11", **row), DeviceBed(source="192.0.2.11", **row)])
+    elif case == "bed":
+        bound = dict(row, bed_label="1", bed_id=bed.id, unit_id=unit.id)
+        db_session.add_all([DeviceBed(source="192.0.2.11", **bound), DeviceBed(source="192.0.2.12", **bound)])
+    else:
+        db_session.add(Bed(room_id=bed.room_id, label=bed.label))
+    with pytest.raises(IntegrityError) as caught:
+        await db_session.flush()
+    await db_session.rollback()
+    assert service._current_row_index_fired(caught.value) is retry
+    assert caught.value.orig.__cause__.sqlstate == "23505"             # the path the helper walks, on the real thing
 
 
 async def test_the_strips_table_is_reset_once_the_change_has_committed_and_only_then(db_session):
@@ -520,6 +704,27 @@ async def test_a_change_shows_on_the_strip_at_once_not_after_the_tables_ten_seco
     assert beds_of(before, "192.0.2.11") == [str(ward.beds["1"].id)]
     assert beds_of(after, "192.0.2.11") == [str(ward.beds["2"].id)]
     assert beds_of(gone, "192.0.2.11") == []
+
+
+@pytest.mark.parametrize("fails", [False, True])
+async def test_the_test_world_closes_the_pool_of_the_table_it_opens_even_when_the_test_fails(db_session, monkeypatch, fails):
+    """A-22 I1: each `esleme_client` opens a sync engine (`PostgresDeviceBeds`); left undisposed it held one
+    connection per test, 42 after 60 tests, against max_connections=100 on a database shared with Lane A."""
+    disposed, original = [], PostgresDeviceBeds.dispose
+
+    def dispose(self):
+        disposed.append(type(self).__name__)
+        original(self)
+
+    monkeypatch.setattr(PostgresDeviceBeds, "dispose", dispose)
+    try:
+        async with esleme_client(db_session) as (client, _, ward):
+            await client.get(URL, headers=ward.auth["admin"])        # the table is read: a connection is checked out
+            if fails:
+                raise RuntimeError("the test failed")
+    except RuntimeError:
+        assert fails
+    assert disposed == ["PostgresDeviceBeds"]
 
 
 # --- A-12: the writes against the real triggers (the migrated chain) ----------------------------------------

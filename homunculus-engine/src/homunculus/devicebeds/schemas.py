@@ -4,12 +4,14 @@ misspelt key is FastAPI's 422, not a value dropped. Both `expected` keys are req
 explicit value ("the screen saw none"). A well-formed wrong value is `field_invalid:<field>`.
 
 There is no `unit_id` (A-8): the bind path reads the bed's unit from the bed's own room, so a body
-that carries one is refused, not obeyed and not ignored."""
+that carries one is refused, not obeyed and not ignored. `confirm_occupied` is a real boolean
+(`StrictBool`, A-22 M5): it is the second confirmation for an admitted patient's bed, and `1`, `"yes"`
+or `"true"` are not it."""
 from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool
 
 
 class _Closed(BaseModel):
@@ -29,10 +31,10 @@ class BindBody(_Closed):
     source: str
     bed_id: uuid.UUID
     expected: BindExpected
-    confirm_occupied: bool = False
+    confirm_occupied: StrictBool = False
 
 
 class UnbindBody(_Closed):
     source: str
     expected: UnbindExpected
-    confirm_occupied: bool = False
+    confirm_occupied: StrictBool = False
