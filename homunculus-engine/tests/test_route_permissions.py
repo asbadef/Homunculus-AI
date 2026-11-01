@@ -71,7 +71,8 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("POST", "/tenant/beds/{bed_id}/transition"): ANY(_S),
     # G2-B1a (Hasta Kabul): the names every screen reads, the administrator's rename / close /
     # reopen, and a nurse's "cleaning done, bed free" (spec §4.4, D8)
-    ("GET", "/tenant/structure"): ANY("admissions.view", "admissions.admit", "beds.release", _S, _U),
+    ("GET", "/tenant/structure"): ANY("admissions.view", "admissions.admit", "beds.release", _S, _U,
+                                      "devices.map_beds"),
     ("PATCH", "/tenant/units/{unit_id}"): ANY(_S),
     ("PATCH", "/tenant/rooms/{room_id}"): ANY(_S),
     ("PATCH", "/tenant/beds/{bed_id}"): ANY(_S),

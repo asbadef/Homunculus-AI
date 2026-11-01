@@ -8,8 +8,9 @@ validated against the bed lifecycle state machine (§1.3).
 
 Two exceptions since Group 2 · B1a (Hasta Kabul): `GET /tenant/structure` — the names of the
 caller's own units and beds, which every clinical screen needs and no screen may print as a UUID —
-is open to `admissions.view`, `admissions.admit`, `beds.release`, `structure.manage` and
-`users.manage` (the scope editor names the units and beds it grants); and
+is open to `admissions.view`, `admissions.admit`, `beds.release`, `structure.manage`,
+`users.manage` (the scope editor names the units and beds it grants) and `devices.map_beds` (the
+monitor→bed editor's picker); and
 `POST /tenant/beds/{id}/release` (cleaning done, bed free) to `beds.release`, the ward's nurses, in
 their own units. Their refusals, and those of the create / rename / close / reopen routes, carry a
 stable code (admission/errors.py). A bed is never freed — by the release, or by the
@@ -31,6 +32,11 @@ it so: `label` is in the unique index `uq_bed_label_per_room`, so the relabel's 
 the bed's lock to FOR UPDATE until the commit. Code that writes a row pointing at a bed must
 therefore lock that bed first (see `_lock_bed`). An audit store that fails after the commit is
 logged, never a 500 for the committed change (trail.record, A-26).
+
+Yapı follows the monitor→bed mapping (Group 2 · G2-ESLEME, devicebeds/writes.py, inside
+`patch_bed`'s transaction, after its unit and bed locks): a bed with a monitor bound is not closed
+(`bed_has_monitor`); a rename of one relabels the monitor's current mapping row — a close and a new
+row, in the rename's commit — and is audited `device_bed.relabel` beside `structure.rename`.
 
 Tenant isolation (spec §5): every route acts on the caller's own tenant only (`caller_tenant_id`,
 the token's `tenant` claim). A tenant, site, unit, room or bed of another tenant named in the path
@@ -65,6 +71,7 @@ from homunculus.auth.dependencies import (
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import User
 from homunculus.db import get_db
+from homunculus.devicebeds import writes as device_beds   # G2-ESLEME: Yapı follows the mapping (D18)
 from homunculus.tenant import scope
 from homunculus.tenant.models import (
     BED_STATE_TRANSITIONS, Bed, BedState, Room, Site, Tenant, Unit,
@@ -382,10 +389,12 @@ async def structure(
     db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
     principal: Principal = Depends(get_principal),
     _user: User = Depends(require_permission("admissions.view", "admissions.admit",
-                                             "beds.release", "structure.manage", "users.manage")),
+                                             "beds.release", "structure.manage", "users.manage",
+                                             "devices.map_beds")),
 ) -> StructureResponse:
     """The tree a screen resolves every unit and bed NAME from (spec D9: no UUID on a screen).
     `users.manage` too: the scope editor names the units and beds it grants (plan X52).
+    `devices.map_beds` too: the monitor→bed editor's picker names the beds (G2-ESLEME).
 
     Limited to the caller's units: a unit she is granted with all its rooms and beds, a bed she is
     granted with its room and unit around it. An unrestricted caller sees every unit, and so does
@@ -522,15 +531,32 @@ async def patch_bed(
     is_active = bed.is_active if body.is_active is None else body.is_active
     if bed.is_active and not is_active and bed.state not in _FREE_TO_CLOSE:
         raise Refusal(409, BED_IN_USE, f"A bed that is {bed.state.value} cannot be closed.").http()
+    if bed.is_active and not is_active:
+        await device_beds.refuse_close_if_bound(db, caller_tenant, bed.id)          # G2-ESLEME (O7)
     changes = _changes(old_name=bed.label, new_name=label, was_active=bed.is_active,
                        is_active=is_active)
     hospital = await trail.hospital_of(db, caller_tenant)
+    # G2-ESLEME (O3): the bound monitor's row follows the rename, in this transaction — before the
+    # bed's own UPDATE is pending, so the relabel's flush carries no UPDATE of the bed (its lock stays
+    # NO KEY UPDATE until the commit) and a label race still ends in `bed_label_taken` at the commit,
+    # which rolls the relabel back with the rename.
+    relabelled = (await device_beds.relabel_bed(db, caller_tenant, bed.id, label, user)
+                  if label != bed.label else None)
     bed.label, bed.is_active = label, is_active
     await _commit_unless_taken(db, _BED_LABEL_TAKEN)
     await db.refresh(bed)
     for event_type, change in changes:
         _audit(request, hospital, event_type, user, kind="bed", obj_id=bed.id, unit_id=unit_id,
                change=change)
+    if relabelled is not None:
+        closed, opened = relabelled
+        trail.record(request, hospital, "device_bed.relabel", subject=closed.source, payload={
+            "source": closed.source, "bed_id": str(bed.id), "unit_id": str(unit_id),
+            "old": {"row_id": closed.id, "bed_label": closed.bed_label},
+            "new": {"row_id": opened.id, "bed_label": opened.bed_label}, "actor": user.username})
+        reset = getattr(request.app.state, "shadow_table_reset", None)
+        if reset is not None:
+            reset()
     return BedResponse.model_validate(bed)
 
 
