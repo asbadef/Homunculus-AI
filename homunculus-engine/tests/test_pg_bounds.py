@@ -20,7 +20,7 @@ from homunculus.api import audit_postgres, monitor_samples, patient_identity_pos
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.audit_postgres import (
-    PostgresAuditLog, bounded_connect_args, set_local_statement_timeout,
+    CONNECT_TIMEOUT_S, PostgresAuditLog, bounded_connect_args, set_local_statement_timeout,
 )
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, Sample
 from homunculus.api.patient_identity import InMemoryIdentityStore
@@ -147,6 +147,8 @@ def _gives_up_in_time(operation) -> BaseException:
     assert not worker.is_alive(), f"still waiting on a silent server after {SILENT_BOUND_S} s"
     assert "error" in outcome, "the operation returned against a server that never answered"
     assert outcome["elapsed"] < SILENT_BOUND_S
+    # Not an instant refusal either: the connect bound is what fired.
+    assert outcome["elapsed"] >= CONNECT_TIMEOUT_S - 1
     return outcome["error"]
 
 
