@@ -37,6 +37,10 @@ services:
       dockerfile: Dockerfile.api
     container_name: homunculus-api
     restart: unless-stopped
+    # No `ports:` here, and none may be added: POST /edge/patient-query (G2-B1d, spec D12) is
+    # closed to the outside only because nginx does not proxy /edge AND the API publishes no host
+    # port. The bridge reaches it as http://api:8000 on the compose network
+    # (tests/test_nginx_routes.py pins this).
     environment:
       # DATABASE_SSL is deliberately UNSET: ssl_context() then returns None and the connection is
       # plain, which is correct for a database on the same host. Setting it would demand a

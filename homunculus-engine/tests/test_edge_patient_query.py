@@ -102,6 +102,15 @@ def test_only_a_device_asks(store):
     assert client.post(URL, json={"id": NUMBER}, headers={"Authorization": "Bearer nope"}).status_code == 401
 
 
+@pytest.mark.parametrize("sent", [{"content": b"junk"}, {"json": {}}, {"json": {"id": ""}}])
+def test_the_device_check_comes_before_the_body_is_read(store, sent):
+    """The order is pinned: a clinician's JWT with a body that would be a 400 is 403 — the route
+    does not tell a non-device what a good body looks like — and no credential is 401 first."""
+    client = _client(store)
+    assert client.post(URL, headers=NURSE, **sent).status_code == 403
+    assert client.post(URL, **sent).status_code == 401
+
+
 @pytest.mark.parametrize("sent", [{}, {"id": ""}, {"id": 202600000001}, {"id": None},
                                   {"id": "9" * 65}, ["202600000001"], "202600000001"])
 def test_a_body_that_is_not_one_number_is_400(store, sent):

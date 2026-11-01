@@ -57,8 +57,8 @@ from homunculus.admission.schemas import (
     AdmitResponse,
     AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
     EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign, LabelAsk,
-    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
-    TransferInitiate,
+    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse,
+    ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.errors import (
     BED_CLOSED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL, REQUEST_CONFLICT,
@@ -416,8 +416,9 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
         unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
                                     .where(Bed.id == earlier.bed_id))).scalar_one()
         known = unitscope.reaches(reach, unit_id=unit_id, bed_id=earlier.bed_id)
+        extra = _numbers(number, earlier.protocol_no) if known else None
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
-                      "form.", extra=_numbers(number, earlier.protocol_no) if known else None).http()
+                      "form.", extra=extra).http()
     first = AdmissionResponse.model_validate(earlier)
     key = board_key(earlier.protocol_no, number)
     admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
@@ -798,7 +799,8 @@ async def admission_label(
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     if admission.protocol_no is None:
-        raise Refusal(409, NO_PROTOCOL, "This admission has no protocol number, so no label.").http()
+        raise Refusal(409, NO_PROTOCOL,
+                      "This admission has no protocol number, so no label.").http()
     name, born, sex, bed_label, unit_name = (await db.execute(
         select(Patient.display_name, Patient.date_of_birth, Patient.sex, Bed.label, Unit.name)
         .select_from(Admission)

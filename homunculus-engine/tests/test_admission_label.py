@@ -97,14 +97,25 @@ async def test_a_discharged_admissions_label_still_prints_and_is_audited(ward, d
     assert [row.payload["reprint"] for row in printed(app)] == [True]
 
 
-@pytest.mark.parametrize("who, status", [("nurse_b", 403), ("doctor", 403), ("auditor", 403)])
-async def test_only_admissions_admit_within_the_beds_units_prints(ward, who, status):
-    """nurse_b holds admissions.admit for Neonatal only: the bed is Reanimasiya's (out_of_scope);
-    the physician and the auditor hold no admissions.admit."""
+@pytest.mark.parametrize("who", ["doctor", "auditor"])
+async def test_only_admissions_admit_prints(ward, who):
+    """The physician and the auditor hold no admissions.admit: the permission 403, whose detail
+    is words, not a refusal code (told apart from the unit one below)."""
     w, client, app = ward
     admission = await _admitted(w, client)
     r = await client.post(f"/admissions/{admission['id']}/label", headers=w.auth[who])
-    assert r.status_code == status, r.text
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"].startswith("permission required"), r.text
+    assert printed(app) == []
+
+
+async def test_only_within_the_beds_units_prints(ward):
+    """nurse_b holds admissions.admit for Neonatal only: the bed is Reanimasiya's, so the 403 is
+    the unit's — `out_of_scope` — not the permission's."""
+    w, client, app = ward
+    admission = await _admitted(w, client)
+    r = await client.post(f"/admissions/{admission['id']}/label", headers=w.auth["nurse_b"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "out_of_scope"), r.text
     assert printed(app) == []
 
 
