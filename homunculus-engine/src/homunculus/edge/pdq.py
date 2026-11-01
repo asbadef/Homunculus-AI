@@ -91,6 +91,25 @@ def _hl7_date(iso_date: object) -> str:
     return digits if len(digits) == 8 else ""
 
 
+def _query_msh(segs: list[str]) -> list[str] | None:
+    """The MSH fields when the message is a QBP^Q22 query, else None — the one test both
+    `is_patient_query` and `patient_query_response` ask."""
+    if not segs or not segs[0].startswith("MSH|"):
+        return None
+    msh = _fields(segs[0])
+    return msh if any(_at(msh, 8).startswith(t) for t in _QUERY_TYPES) else None
+
+
+def is_patient_query(message: str) -> bool:
+    """True for a QBP^Q22 patient query — exactly the messages `patient_query_response` answers.
+
+    Pure and cheap (the message is split into segments, nothing more): the MLLP server asks it
+    before it spends a worker thread on a message (G2-B1d F-32), so that a reading never waits
+    behind a query's wait on the API.
+    """
+    return _query_msh(split_segments(message)) is not None
+
+
 def patient_query_response(
     message: str,
     lookup: Callable[[str], "PatientIdentity | _NotFound | None"] | None = None,
@@ -103,10 +122,8 @@ def patient_query_response(
     broken mirror must never stop a measurement.
     """
     segs = split_segments(message)
-    if not segs or not segs[0].startswith("MSH|"):
-        return None
-    msh = _fields(segs[0])
-    if not any(_at(msh, 8).startswith(t) for t in _QUERY_TYPES):
+    msh = _query_msh(segs)
+    if msh is None:
         return None
 
     qpd = next((_fields(s) for s in segs if s.startswith("QPD|")), ["QPD"])

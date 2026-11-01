@@ -141,3 +141,82 @@ async def test_a_failing_handler_still_gets_an_error_ack_and_keeps_the_connectio
     assert "MSA|AE|" in first.decode("utf-8")                     # failure acknowledged, not dropped
     assert "MSA|AA|" in second.decode("utf-8")                    # link survived
     assert len(seen) == 2
+
+
+# ----------------------------------------------- the responder's thread (G2-B1d, F-32)
+QUERY = "MSH|^~\\&|NCE|HOSP|EMR|HIS|20261101080000||QBP^Q22|Q1|P|2.6\rQPD|x|Q1|y\r"
+
+
+async def _exchange(server, *messages: str) -> list[str]:
+    """Send each message on one connection, one at a time; the framed answers, decoded."""
+    port = server.sockets[0].getsockname()[1]
+    answers: list[str] = []
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        for message in messages:
+            writer.write(frame(message))
+            await writer.drain()
+            answers.append((await asyncio.wait_for(reader.read(4096), timeout=5))[1:-2].decode())
+    finally:
+        writer.close()
+        server.close()
+        await asyncio.wait_for(server.wait_closed(), timeout=5)
+    return answers
+
+
+@pytest.mark.asyncio
+async def test_only_what_responds_to_accepts_leaves_the_loop_and_the_rest_stays_on_it():
+    """The responder may wait on the network, so it gets a worker thread — but only for the
+    messages the predicate names; every other message goes to the handler on the loop, as it did
+    before the responder moved off it, and the responder never sees it."""
+    import threading
+
+    loop_thread = threading.get_ident()
+    asked: list[tuple[str, int]] = []
+    handled: list[tuple[str, int]] = []
+
+    def responder(message: str):
+        asked.append((message, threading.get_ident()))
+        return "RSP|answer\r"
+
+    def handler(message: str) -> None:
+        handled.append((message, threading.get_ident()))
+
+    server = await serve_mllp("127.0.0.1", 0, handler=handler, responder=responder,
+                              responds_to=lambda message: message.startswith("MSH|^~\\&|NCE") and
+                              "QBP^Q22" in message)
+    answers = await _exchange(server, QUERY, ORU)
+    assert answers[0] == "RSP|answer\r"
+    assert "MSA|AA|MSG00042" in answers[1]
+    assert [m for m, _ in asked] == [QUERY]
+    assert asked[0][1] != loop_thread                      # the query waited on a worker
+    assert handled == [(ORU, loop_thread)]                 # the reading ran on the loop
+
+
+@pytest.mark.asyncio
+async def test_without_responds_to_the_responder_sees_every_message_off_the_loop():
+    import threading
+
+    asked: list[int] = []
+
+    def responder(message: str):
+        asked.append(threading.get_ident())
+        return None
+
+    server = await serve_mllp("127.0.0.1", 0, handler=lambda _m: None, responder=responder)
+    answers = await _exchange(server, QUERY, ORU)
+    assert len(asked) == 2 and threading.get_ident() not in asked
+    assert all("MSA|AA|" in a for a in answers)            # None from the responder: a plain ACK
+
+
+@pytest.mark.asyncio
+async def test_a_predicate_that_fails_does_not_silence_the_message():
+    seen: list[str] = []
+
+    def broken(_message: str) -> bool:
+        raise ValueError("simulated predicate failure")
+
+    server = await serve_mllp("127.0.0.1", 0, handler=seen.append, responder=lambda _m: "RSP\r",
+                              responds_to=broken)
+    answers = await _exchange(server, ORU)
+    assert "MSA|AA|MSG00042" in answers[0] and seen == [ORU]    # handled and acknowledged

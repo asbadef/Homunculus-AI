@@ -23,7 +23,7 @@ from homunculus.canonical import Observation, SignalCode
 from homunculus.edge.adt import identity_to_fhir, is_adt, parse_hl7_adt
 from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.mllp import serve_mllp
-from homunculus.edge.pdq import NOT_FOUND, patient_query_response
+from homunculus.edge.pdq import NOT_FOUND, is_patient_query, patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
 from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru, split_segments
@@ -231,4 +231,7 @@ class EdgeBridge:
     async def serve(self, host: str = "0.0.0.0", port: int = 2575) -> asyncio.AbstractServer:
         """Start listening. 2575 is the IANA-registered port for HL7 over MLLP."""
         _log.info("edge bridge listening for MLLP on %s:%s", host, port)
-        return await serve_mllp(host, port, handler=self.handle_message, responder=self.answer_query)
+        # Only a patient query takes a worker thread (it may wait 2 s on the API); a reading is
+        # handled on the loop and never queues behind a slow lookup (F-32).
+        return await serve_mllp(host, port, handler=self.handle_message,
+                                responder=self.answer_query, responds_to=is_patient_query)

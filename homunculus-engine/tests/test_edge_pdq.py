@@ -70,6 +70,19 @@ def test_anything_that_is_not_a_pdq_query_is_left_to_the_handler():
     assert patient_query_response("garbage") is None
 
 
+def test_is_patient_query_says_what_patient_query_response_would_answer():
+    """F-32: the MLLP server asks this cheap predicate before it spends a worker thread on a
+    message, so it must agree with the responder on every message — a query it called «no» would
+    be handled as a result and rejected."""
+    from homunculus.edge.pdq import is_patient_query
+
+    adt = "MSH|^~\\&|HIS|HOSP|EMR|HIS|20260903160000||ADT^A01|A1|P|2.5\rPID|||123456A\r"
+    for message in (QBP, QBP.replace("\r", "\n"), QBP.replace("\r", "\r\n"), ORU, adt, "garbage", "",
+                    "\r\r", QBP.replace("QBP^Q22", "QBP^Q21"), "QPD|IHE PDQ Query|1|@PID.3.1^1\r"):
+        assert is_patient_query(message) == (patient_query_response(message) is not None), message
+    assert is_patient_query(QBP) and not is_patient_query(ORU)
+
+
 def frame(message: str) -> bytes:
     return VT + message.encode() + FS + CR
 

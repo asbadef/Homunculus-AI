@@ -229,6 +229,59 @@ async def test_a_slow_api_holds_its_own_query_and_never_a_reading_on_another_con
         await _shut(server, writers, release)
 
 
+async def test_a_reading_is_handled_at_once_while_slow_queries_hold_every_worker(mirror):
+    """F-32: only a patient query leaves the loop. The loop's default executor is made small (two
+    workers stand in for the real cpu+4) and three queries wait on the API: every worker is busy
+    and one query is queued behind them. A reading on another connection is still acknowledged
+    at once — it never takes a worker, it runs on the loop as before Task 10."""
+    import concurrent.futures
+
+    release = threading.Event()
+    at_api: list[str] = []
+
+    def slow(number: str):
+        at_api.append(number)
+        release.wait(10)
+        return found(number)
+
+    async def both_workers_at_api() -> None:                 # polled: the pool is full, so no
+        while len(at_api) < 2:                               # helper may borrow one of its threads
+            await asyncio.sleep(0.01)
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    asyncio.get_running_loop().set_default_executor(pool)
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror, query=slow)
+    server = await bridge.serve(host="127.0.0.1", port=0)
+    port = server.sockets[0].getsockname()[1]
+    writers: list[asyncio.StreamWriter] = []
+    try:
+        query_readers = []
+        for _ in range(3):                                   # one more than there are workers
+            query_reader, query_writer = await asyncio.open_connection("127.0.0.1", port)
+            writers.append(query_writer)
+            query_readers.append(query_reader)
+            query_writer.write(frame(qbp()))
+            await query_writer.drain()
+        await asyncio.wait_for(both_workers_at_api(), timeout=5)    # and one query is queued
+
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writers.append(writer)
+        writer.write(frame(ORU))
+        await writer.drain()
+        ack = await asyncio.wait_for(reader.read(4096), timeout=1)
+        assert b"MSA|AA|R1" in ack
+        assert bridge.stats.messages == 1
+
+        release.set()
+        for query_reader in query_readers:                   # the queued one is answered too
+            reply = (await asyncio.wait_for(query_reader.read(4096), timeout=5))[1:-2].decode()
+            assert f"PID|||{NUMBER}||^Test Hasta" in reply
+        assert bridge.stats.queries == 3
+    finally:
+        await _shut(server, writers, release)
+        pool.shutdown(wait=True)
+
+
 # ------------------------------------------- worker threads: the mirror and the counters (E25)
 async def _ask_over_mllp(bridge: EdgeBridge, number: str = NUMBER) -> dict[str, list[str]]:
     server = await bridge.serve(host="127.0.0.1", port=0)
