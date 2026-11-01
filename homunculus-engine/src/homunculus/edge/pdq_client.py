@@ -11,7 +11,9 @@ even against an API whose store blocks.
 `ask` answers a `PatientIdentity` (found: the name always, D3), `pdq.NOT_FOUND` (D4), or raises
 `QueryUnavailable` for anything the bridge cannot trust — no route, no answer in time, a status
 that is not 200 (the route's 503 included: its store could not answer), a body that is not the
-route's. The bridge then answers from its mirror (D8). Stdlib only, as edge/uplink.py.
+route's. The bridge then answers from its mirror (D8). Stdlib only, as edge/uplink.py. The default opener ignores the proxy variables and
+follows no redirect (a 30x is «cannot answer»): the token and the number go to the configured
+address and nowhere else.
 
 PHI: the answer holds a name; nothing here logs, and a failure's words never name the id.
 """
@@ -32,6 +34,22 @@ TIMEOUT_S = 2.0
 _FIELDS = ("family", "given", "birth_date", "sex")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the Authorization header and the number to wherever it points:
+    never follow one. The 3xx then arrives as an HTTPError, which `ask` maps to «cannot answer»
+    (same idiom as edge/infinity_shadow.py)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _direct_opener() -> Callable:
+    """`urlopen`'s shape, minus what must not happen to this request: no proxy from the
+    environment (HTTP(S)_PROXY would carry the token and the number through it — the API is
+    reached directly, on the compose network) and no redirect."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect()).open
+
+
 class QueryUnavailable(Exception):
     """The API could not answer the query, or answered something the bridge cannot trust. Its
     words name the reason, never the id."""
@@ -43,21 +61,29 @@ def query_url(cloud_url: str) -> str:
 
 
 class PatientQueryClient:
-    """`ask(number)`. `opener` and `clock` are injected by the tests."""
+    """`ask(number)`. `opener` and `clock` are injected by the tests; the default opener is the
+    direct, redirect-free one above."""
 
     def __init__(self, url: str, token: str, *, timeout: float = TIMEOUT_S,
-                 opener: Callable = urllib.request.urlopen,
+                 opener: Callable | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self.url = url
         self._token = token
         self.timeout = timeout
-        self._open = opener
+        self._open = opener if opener is not None else _direct_opener()
         self._clock = clock
 
     def ask(self, patient_id: str) -> PatientIdentity | object:
-        request = urllib.request.Request(
-            self.url, data=json.dumps({"id": patient_id}).encode("utf-8"), method="POST",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self._token}"})
+        try:
+            # Built inside the try: a `--cloud-url` without a scheme makes Request raise
+            # ValueError («unknown url type»), and that too is «cannot answer», not a crash
+            # (F-31). The words name the class only — the URL is the operator's, not ours to echo.
+            request = urllib.request.Request(
+                self.url, data=json.dumps({"id": patient_id}).encode("utf-8"), method="POST",
+                headers={"Content-Type": "application/json",
+                         "Authorization": f"Bearer {self._token}"})
+        except ValueError as exc:
+            raise QueryUnavailable(f"the request could not be made ({type(exc).__name__})") from None
         try:
             with self._open(request, timeout=self.timeout) as response:
                 status, body = response.status, response.read()
