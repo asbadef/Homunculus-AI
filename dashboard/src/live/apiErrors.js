@@ -84,8 +84,6 @@ export const API_MESSAGE_KEYS = new Map([
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
-  // POST /scores/sofa/{id} (G2-A4, D6 X2): `preview` must be a real true/false; the form always sends one.
-  ["preview true ya da false olmalı", "scorePreviewNotBoolean"],
   // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
   // sign route; a signature without the preview's fingerprint (`expect`); and the 409 of a record that moved
   // since the preview. None of them signed anything, and each says so.
