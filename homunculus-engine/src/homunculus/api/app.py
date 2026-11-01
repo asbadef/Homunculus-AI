@@ -13,11 +13,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -63,7 +64,8 @@ from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_obs
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
-    MIN_REASON_CHARS, ScoreSigningError, parse_overrides, sign as sign_score,
+    MIN_REASON_CHARS, Override, ScoreSigningError, SignedScore, form_digest, parse_overrides,
+    sign as sign_score,
 )
 from homunculus.scope import Scope, ScopeReason, apply_scope, normalise_id, scope_report, sees_patient
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
@@ -99,6 +101,24 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
+
+#: G2-A4 (D12, X20): the shape of a preview's fingerprint (`scoring/signing.py` `form_digest`) — SHA-256 as
+#: 64 lowercase hex digits. A signature without one is refused before any fingerprint is compared.
+FORM_DIGEST_SHAPE = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class _SofaToSign:
+    """What the SOFA preview and the signature share (G2-A4, X19): who asks, when, the form the record
+    alone fills (`auto`), the form with the clinician's corrections (`rebuilt`), the corrections, and the
+    signature `sign_score` would seal. Built by one helper, so the two routes cannot drift."""
+    hospital: str
+    signed_by: str
+    now: datetime
+    auto: sofa_form.SofaForm
+    rebuilt: sofa_form.SofaForm
+    overrides: list[Override]
+    signed: SignedScore
 
 
 def _device_role(value: object) -> str:
@@ -1493,42 +1513,26 @@ def create_app(
         return {**form.as_dict(), "last_signed": _last_signed(hospital, patient_id),
                 "min_reason_chars": MIN_REASON_CHARS}
 
-    @app.post("/scores/sofa/{patient_id}")
-    async def sign_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
-                             authorization: str | None = Header(default=None)):
-        """Sign a SOFA severity form, with the clinician's corrections.
+    async def _sofa_to_sign(patient_id: str, body: dict, hours: float,
+                            authorization: str | None) -> _SofaToSign:
+        """The steps the SOFA preview and the signature share (G2-A4, D12, X19), in one place so the two
+        routes cannot drift: the permission and the device refusal, the patient's scope, the corrections
+        parsed against the record and held to the slip bounds, the form re-scored with them, and
+        `sign_score` — whose refusal of an unnamed signer therefore holds for a preview too (X3). Nothing
+        here writes to the audit, but for the `scope_denied` row `_require_patient` writes on every route
+        for a patient out of scope.
 
-        The form arrives pre-filled, which is the product's value and also its risk: a number that
-        appeared on its own is a number nobody checked. This is where a person takes responsibility
-        for it.
-
-        A correction replaces the VALUE and the row is re-scored from the table — a clinician says
-        "the platelet count was 38", never "this row scores 2". Both numbers are kept, because a
-        pattern of corrections on one parameter is exactly the signal that a feed is wrong, and an
-        override that erased the original would destroy the only evidence of it.
-
-        The signature goes into the append-only audit and is sealed into its hash chain, so the
-        record of who signed what cannot later be edited quietly.
-
-        A signature names a person, so a device is refused outright: it passes every permission
-        check, and without this the bridge's token could sign a form as "tenant-token".
+        A signature names a person, so a device is refused outright: it passes every permission check,
+        and without this the bridge's token could sign a form as "tenant-token".
         """
         caller = await _caller(authorization)
         _require(caller, SCORES_SIGN)
         if caller.is_device:
             raise HTTPException(status_code=403,
                                 detail="skor formunu yalnız bir kişi imzalayabilir")
-        # G2-A4 (D6, X2): `preview: true` asks what a signature WOULD seal. Only a real boolean: by
-        # truthiness "false" would preview and 0, "" or null would sign — a flag whose meaning depends on
-        # its spelling is refused, not guessed. Refused here, after the permission and the device
-        # refusals and before anything is read.
-        preview = body.get("preview", False)
-        if not isinstance(preview, bool):
-            raise HTTPException(status_code=400, detail="preview true ya da false olmalı")
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
         state = _score_state(hospital, patient_id)
-        signed_by = caller.actor
         now = datetime.now(timezone.utc)
         window = timedelta(hours=max(1.0, min(float(hours), 168.0)))
         record = identities.get(hospital, patient_id)
@@ -1548,29 +1552,78 @@ def create_app(
         rebuilt = sofa_form.build(state, now, window=window, admitted_at=admitted,
                                   overrides={o.code: o.value for o in overrides})
         try:
-            signed = sign_score(auto, rebuilt, signed_by=signed_by, overrides=overrides, now=now)
+            signed = sign_score(auto, rebuilt, signed_by=caller.actor, overrides=overrides, now=now)
         except ScoreSigningError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+        return _SofaToSign(hospital=hospital, signed_by=caller.actor, now=now, auto=auto,
+                           rebuilt=rebuilt, overrides=overrides, signed=signed)
 
-        if preview:
-            # G2-A4 (D6, X3): the form a signature would seal — the same parsing, the same re-scoring and
-            # every refusal above, `sign_score`'s unnamed signer included — and NO audit row, because
-            # nothing was signed. The screen shows this number, then signs with the same corrections;
-            # the engine stays the only scorer.
-            return {"preview": True, "signed": False, "total": rebuilt.total,
-                    "auto_total": auto.total, "overrides": [o.as_dict() for o in overrides],
-                    "form": {**rebuilt.as_dict(), "auto_total": auto.total}}
+    @app.post("/scores/sofa/{patient_id}/preview")
+    async def preview_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
+                                authorization: str | None = Header(default=None)):
+        """What a signature of this SOFA form WOULD seal, and nothing signed (G2-A4, D6, D12, X19).
 
-        audit.append(AuditEvent(hospital, "score_signed", patient_id, "SOFA", {
-            "total": signed.total,
-            "auto_total": auto.total,
-            "window_hours": rebuilt.window_hours,
-            "unmeasured": rebuilt.unmeasured_organs,
-            "overrides": [o.as_dict() for o in overrides],
-            "signed_by": signed_by,
-            "at": now.isoformat(),
+        The same helper as the signature — the same permission, device refusal, scope, parsing,
+        re-scoring and refusals — and NO audit row of any kind, because nothing was signed. The screen
+        shows this number; the signature then sends the same corrections with `expect`, this form's
+        fingerprint, and the engine signs only if the form it would seal still has it (X20). The engine
+        stays the only scorer.
+        """
+        s = await _sofa_to_sign(patient_id, body, hours, authorization)
+        return {"preview": True, "signed": False, "total": s.rebuilt.total,
+                "auto_total": s.auto.total, "overrides": [o.as_dict() for o in s.overrides],
+                "form": {**s.rebuilt.as_dict(), "auto_total": s.auto.total},
+                "expect": form_digest(s.rebuilt, s.overrides)}
+
+    @app.post("/scores/sofa/{patient_id}")
+    async def sign_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
+                             authorization: str | None = Header(default=None)):
+        """Sign a SOFA severity form, with the clinician's corrections — exactly the form she previewed.
+
+        The form arrives pre-filled, which is the product's value and also its risk: a number that
+        appeared on its own is a number nobody checked. This is where a person takes responsibility
+        for it.
+
+        A correction replaces the VALUE and the row is re-scored from the table — a clinician says
+        "the platelet count was 38", never "this row scores 2". Both numbers are kept, because a
+        pattern of corrections on one parameter is exactly the signal that a feed is wrong, and an
+        override that erased the original would destroy the only evidence of it.
+
+        G2-A4 (D12, X20): the body is `{overrides, expect}`, `expect` being the fingerprint the preview
+        answered. The engine rebuilds the form it would seal from the same corrections; if its
+        fingerprint is not the previewed one — another desk charted, the window moved past a reading,
+        other corrections were sent — the answer is 409 and nothing is written: she re-previews and
+        signs what she then sees.
+
+        The signature goes into the append-only audit and is sealed into its hash chain, so the
+        record of who signed what cannot later be edited quietly.
+        """
+        s = await _sofa_to_sign(patient_id, body, hours, authorization)
+        if "preview" in body:
+            # G2-A4 (X19): this route previewed once, on `preview: true`; the preview has its own route
+            # now. A body that still asks for one — any value — is refused, so an older screen asking
+            # this route for a preview can never sign.
+            raise HTTPException(status_code=400,
+                                detail="önizleme imza yolundan istenemez — önizleme yolunu kullanın")
+        expect = body.get("expect")
+        if not isinstance(expect, str) or not FORM_DIGEST_SHAPE.fullmatch(expect):
+            raise HTTPException(status_code=400,
+                                detail="imza bir önizlemenin parmak izini ister — önce önizleyin")
+        if form_digest(s.rebuilt, s.overrides) != expect:
+            # G2-A4 (X20): the record moved since the preview (X11's case, now refused rather than signed).
+            raise HTTPException(status_code=409,
+                                detail="kayıt önizlemeden sonra değişti — formu yeniden önizleyin")
+
+        audit.append(AuditEvent(s.hospital, "score_signed", patient_id, "SOFA", {
+            "total": s.signed.total,
+            "auto_total": s.auto.total,
+            "window_hours": s.rebuilt.window_hours,
+            "unmeasured": s.rebuilt.unmeasured_organs,
+            "overrides": [o.as_dict() for o in s.overrides],
+            "signed_by": s.signed_by,
+            "at": s.now.isoformat(),
         }))
-        return signed.as_dict()
+        return s.signed.as_dict()
 
     @app.get("/alarm-quality")
     async def get_alarm_quality(days: int = 7, limit: int = 20000,

@@ -46,7 +46,10 @@ CASES = [
     ("POST", "/clinical/p1", {"entries": []}, "clinical.chart", 400),     # empty chart refused
     ("PUT", "/clinical/p1/profile", {}, "clinical.chart", 400),           # empty profile refused
     ("GET", "/scores/sofa/p1", None, "board.view", 200),
-    ("POST", "/scores/sofa/p1", {"overrides": []}, "scores.sign", 200),
+    # G2-A4 (D12, X20): past the permission, a signature with no preview's fingerprint is refused — the
+    # route's own answer, not the permission's; the preview route answers the form.
+    ("POST", "/scores/sofa/p1", {"overrides": []}, "scores.sign", 400),
+    ("POST", "/scores/sofa/p1/preview", {"overrides": []}, "scores.sign", 200),
     ("GET", "/alarm-quality", None, "audit.view", 200),
     ("GET", "/audit/verify", None, "audit.view", 200),
 ]

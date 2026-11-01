@@ -6,6 +6,9 @@ safe to put a clinician's name on.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -18,7 +21,7 @@ from homunculus.auth.permissions import DEFAULT_GROUPS
 from homunculus.canonical import Observation, SignalCode
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
-    MIN_REASON_CHARS, ScoreSigningError, parse_overrides, sign,
+    MIN_REASON_CHARS, ScoreSigningError, form_digest, parse_overrides, sign,
 )
 from homunculus.state.timeline import PatientState
 
@@ -119,9 +122,75 @@ class TestNobodyIsNotASignature:
         assert signed.signed_by == "dr.elif"
 
 
+def _digest(series, corrections=()):
+    """The fingerprint of the form `series` fills, with `corrections` applied as the API applies them."""
+    state = _state(series)
+    auto = sofa_form.build(state, T0)
+    overrides = parse_overrides(list(corrections), auto)
+    rebuilt = sofa_form.build(state, T0, overrides={o.code: o.value for o in overrides})
+    return form_digest(rebuilt, overrides)
+
+
+class TestTheFormsFingerprint:
+    """G2-A4 (D12, X20): `form_digest` is the fingerprint of a form as the clinician saw it — its total,
+    every row's points, every cell's value, time and points, the respiration row's support basis and each
+    correction's value and original. The preview answers it; a signature carries it back, and the engine
+    signs only when the form it would seal has the same one."""
+
+    PLATELETS_45 = [(SignalCode.PLATELETS, 45, 6)]
+
+    def test_the_same_form_gives_the_same_fingerprint_in_lowercase_hex(self):
+        first, second = _digest(self.PLATELETS_45), _digest(self.PLATELETS_45)
+        assert first == second
+        assert re.fullmatch(r"[0-9a-f]{64}", first)
+
+    def test_it_is_the_sha256_of_the_canonical_payload(self):
+        """The recipe itself, pinned: sorted keys, no spaces, UTF-8, SHA-256."""
+        unmeasured = [None, None, 0]
+        payload = {
+            "total": 3,
+            "points": {"respiration": 0, "cardiovascular": 0, "coagulation": 3, "liver": 0, "cns": 0,
+                       "renal": 0},
+            "cells": {"pao2_fio2": unmeasured, "map": unmeasured,
+                      "platelets": [45, (T0 - timedelta(hours=6)).isoformat(), 3],   # as the form holds it
+                      "bilirubin": unmeasured, "gcs": unmeasured, "creatinine": unmeasured},
+            "support": None,                                  # no ratio, so no support basis
+            "corrections": {},
+        }
+        text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        assert _digest(self.PLATELETS_45) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def test_a_moved_value_gives_another_fingerprint_even_inside_the_same_band(self):
+        assert _digest(self.PLATELETS_45) != _digest([(SignalCode.PLATELETS, 44, 6)])   # both 3 points
+
+    def test_a_moved_time_gives_another_fingerprint(self):
+        assert _digest(self.PLATELETS_45) != _digest([(SignalCode.PLATELETS, 45, 5)])
+
+    def test_a_correction_gives_another_fingerprint(self):
+        fix = [{"code": "platelets", "value": 80, "reason": WHY}]
+        assert _digest(self.PLATELETS_45) != _digest(self.PLATELETS_45, fix)
+
+    def test_a_moved_original_gives_another_fingerprint(self):
+        """The corrected cell, the points and the total are the same (80, 2); only the original the record
+        held differs — and that is part of what the clinician signs."""
+        fix = [{"code": "platelets", "value": 80, "reason": WHY}]
+        assert _digest(self.PLATELETS_45, fix) != _digest([(SignalCode.PLATELETS, 44, 6)], fix)
+
+
 DOCTOR = {"Authorization": "Bearer doctor-jwt"}
 PHYSICIAN_PERMS = frozenset(next(g["permissions"] for g in DEFAULT_GROUPS
                                  if g["slug"] == "physician"))
+
+
+def _preview_then_sign(client, patient_id, overrides=None, headers=None):
+    """G2-A4 (D12, X20): a signature carries the fingerprint of the preview it signs — so preview, then
+    sign exactly what was previewed."""
+    headers = headers or DOCTOR
+    body = {"overrides": overrides or []}
+    previewed = client.post(f"/scores/sofa/{patient_id}/preview", headers=headers, json=body)
+    assert previewed.status_code == 200, previewed.text
+    return client.post(f"/scores/sofa/{patient_id}", headers=headers,
+                       json={**body, "expect": previewed.json()["expect"]})
 
 
 async def _resolve_doctor(_credential: str) -> Caller:
@@ -154,8 +223,7 @@ class TestThroughTheApi:
 
     def test_signing_records_who_and_what_changed(self, client):
         self._chart(client, "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
-            "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]})
+        r = _preview_then_sign(client, "yatak-1", [{"code": "platelets", "value": 180, "reason": WHY}])
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["signed"] is True and body["total"] == 0
@@ -172,7 +240,7 @@ class TestThroughTheApi:
 
     def test_the_signature_is_sealed_into_the_audit_chain(self, client):
         self._chart(client, "platelets", 45)
-        client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={})
+        assert _preview_then_sign(client, "yatak-1").status_code == 200
         rows = client.get("/audit?event_type=score_signed", headers=AUTH).json()["records"]
         assert rows and rows[0]["payload"]["total"] == 3
         assert rows[0]["payload"]["signed_by"] == "dr.elif"
@@ -233,9 +301,9 @@ class TestTheFormKnowsItsLastSignature(_AsPeople):
 
     def test_the_newest_signature_is_the_one_in_the_form(self, client):
         self._chart(client, "yatak-1", "platelets", 45)
-        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={}).status_code == 200
-        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
-            "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]}).status_code == 200
+        assert _preview_then_sign(client, "yatak-1").status_code == 200
+        assert _preview_then_sign(client, "yatak-1",
+                                  [{"code": "platelets", "value": 180, "reason": WHY}]).status_code == 200
         last = client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"]
         assert last == {"total": 0, "auto_total": 3, "signed_by": "dr.elif",
                         "at": last["at"], "corrections": 1}
@@ -244,82 +312,26 @@ class TestTheFormKnowsItsLastSignature(_AsPeople):
     def test_another_patients_signature_is_not_this_ones(self, client):
         self._chart(client, "yatak-1", "platelets", 45)
         self._chart(client, "yatak-2", "platelets", 45)
-        assert client.post("/scores/sofa/yatak-2", headers=DOCTOR, json={}).status_code == 200
+        assert _preview_then_sign(client, "yatak-2").status_code == 200
         assert client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"] is None
         assert client.get("/scores/sofa/yatak-2", headers=NURSE).json()["last_signed"]["total"] == 3
 
     def test_a_nurse_reads_the_signature_without_the_audit_permission(self, client):
         """The form's permission is `board.view`; the trail itself stays `audit.view`'s."""
         self._chart(client, "yatak-1", "platelets", 45)
-        assert client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={}).status_code == 200
+        assert _preview_then_sign(client, "yatak-1").status_code == 200
         last = client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"]
         assert last["signed_by"] == "dr.elif"
         assert client.get("/audit?patient_id=yatak-1", headers=NURSE).status_code == 403
 
 
-class TestPreviewSignsNothing(_AsPeople):
-    """G2-A4 (D6): `preview: true` answers with the form a signature would seal — re-scored by the engine
-    from the same corrections — and writes nothing, so a clinician sees the exact number before she puts
-    her name to it and the server stays the only scorer. Every refusal of signing holds for it."""
-
-    def test_the_preview_is_the_rebuilt_form_and_no_signature(self, client):
-        self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
-            "preview": True, "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]})
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["preview"] is True and body["signed"] is False
-        assert body["total"] == 0 and body["auto_total"] == 3
-        assert body["overrides"] == [{"code": "platelets", "value": 180, "reason": WHY, "original": 45}]
-        assert body["form"]["auto_total"] == 3 and body["form"]["signed"] is False
-        assert body["form"]["corrected_cells"] == ["platelets"]
-        assert self._signed_rows(client) == []
-
-    def test_signing_the_same_corrections_seals_the_previewed_total(self, client):
-        self._chart(client, "yatak-1", "platelets", 45)
-        overrides = [{"code": "platelets", "value": 80, "reason": WHY}]
-        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR,
-                                json={"preview": True, "overrides": overrides}).json()
-        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": overrides}).json()
-        assert signed["signed"] is True and signed["total"] == previewed["total"] == 2
-        rows = self._signed_rows(client)
-        assert len(rows) == 1 and rows[0]["payload"]["total"] == 2
-
-    def test_a_short_reason_is_refused_for_a_preview_as_for_a_signature(self, client):
-        self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
-            "preview": True, "overrides": [{"code": "platelets", "value": 180, "reason": "yanlis"}]})
-        assert r.status_code == 400
-        assert "gerekçe" in r.json()["detail"]
-        assert self._signed_rows(client) == []
-
-    def test_the_bridge_token_cannot_preview(self, client):
-        self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=AUTH, json={"preview": True})
-        assert r.status_code == 403
-        assert r.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"
-
-    def test_a_nurse_without_scores_sign_cannot_preview(self, client):
-        self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=NURSE, json={"preview": True})
-        assert r.status_code == 403
-        assert r.json()["detail"] == "permission required: scores.sign"
-
-    @pytest.mark.parametrize("flag", ["true", "false", 0, 1, "", None])
-    def test_preview_must_be_a_real_yes_or_no(self, client, flag):
-        """X2: only a real boolean. By truthiness "false" would preview and 0, "" or null would sign — a
-        flag whose meaning depends on its spelling is refused, not guessed."""
-        self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": flag})
-        assert r.status_code == 400
-        assert "preview" in r.json()["detail"]
-        assert self._signed_rows(client) == []
+PREVIEW = "/scores/sofa/yatak-1/preview"
+SIGN = "/scores/sofa/yatak-1"
 
 
-class TestThePreviewsPromises(_AsPeople):
-    """G2-A4 review: what the preview promises, pinned against the whole audit log rather than one event
-    type — a preview writes no row of ANY kind, refuses what a signature refuses, and is not a hold on
-    the record: a chart that lands between it and the signature is in what the signature seals (X11)."""
+class _Logged(_AsPeople):
+    """The app over an audit log the test holds, so a promise of "no row" is pinned against the whole log
+    rather than one event type."""
 
     @pytest.fixture()
     def log(self):
@@ -335,27 +347,193 @@ class TestThePreviewsPromises(_AsPeople):
     def _all_rows(log):
         return log.records(limit=1_000_000)
 
+
+class TestPreviewSignsNothing(_AsPeople):
+    """G2-A4 (D6, D12, X19): the preview is its own route, `POST /scores/sofa/{id}/preview`. It answers with
+    the form a signature would seal — re-scored by the engine from the same corrections — and that form's
+    fingerprint (`expect`), and writes nothing, so a clinician sees the exact number before she puts her
+    name to it and the server stays the only scorer. Every refusal of signing holds for it: the two routes
+    run one helper."""
+
+    def test_the_preview_is_the_rebuilt_form_its_fingerprint_and_no_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post(PREVIEW, headers=DOCTOR, json={
+            "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body) == {"preview", "signed", "total", "auto_total", "overrides", "form", "expect"}
+        assert body["preview"] is True and body["signed"] is False
+        assert body["total"] == 0 and body["auto_total"] == 3
+        assert body["overrides"] == [{"code": "platelets", "value": 180, "reason": WHY, "original": 45}]
+        assert body["form"]["auto_total"] == 3 and body["form"]["signed"] is False
+        assert body["form"]["corrected_cells"] == ["platelets"]
+        assert re.fullmatch(r"[0-9a-f]{64}", body["expect"])
+        assert self._signed_rows(client) == []
+
+    def test_signing_with_the_previews_fingerprint_seals_the_previewed_total(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        overrides = [{"code": "platelets", "value": 80, "reason": WHY}]
+        previewed = client.post(PREVIEW, headers=DOCTOR, json={"overrides": overrides}).json()
+        signed = client.post(SIGN, headers=DOCTOR,
+                             json={"overrides": overrides, "expect": previewed["expect"]}).json()
+        assert signed["signed"] is True and signed["total"] == previewed["total"] == 2
+        rows = self._signed_rows(client)
+        assert len(rows) == 1 and rows[0]["payload"]["total"] == 2
+
+    def test_a_short_reason_is_refused_for_a_preview_as_for_a_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post(PREVIEW, headers=DOCTOR, json={
+            "overrides": [{"code": "platelets", "value": 180, "reason": "yanlis"}]})
+        assert r.status_code == 400
+        assert "gerekçe" in r.json()["detail"]
+        assert self._signed_rows(client) == []
+
+    def test_the_bridge_token_cannot_preview(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post(PREVIEW, headers=AUTH, json={})
+        assert r.status_code == 403
+        assert r.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"
+
+    def test_a_nurse_without_scores_sign_cannot_preview(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post(PREVIEW, headers=NURSE, json={})
+        assert r.status_code == 403
+        assert r.json()["detail"] == "permission required: scores.sign"
+
+    def test_an_unknown_patient_is_404_for_a_preview_as_for_a_signature(self, client):
+        for path in ("/scores/sofa/yok-1/preview", "/scores/sofa/yok-1"):
+            r = client.post(path, headers=DOCTOR, json={"overrides": []})
+            assert (r.status_code, r.json()["detail"]) == (404, "hasta bulunamadı"), path
+
+
+async def _resolve_nameless(_credential: str) -> Caller:
+    """A physician's rights behind an account with no name."""
+    return Caller(hospital="h1", actor="   ", groups=("physician",), perms=PHYSICIAN_PERMS)
+
+
+def test_a_nameless_account_is_refused_for_a_preview_as_for_a_signature():
+    """X3: a signature names somebody. A JWT with no actor is refused at the door (`_caller`, 401) for
+    both routes, before the form is read; `sign_score`'s own refusal of an unnamed signer, which the
+    shared helper runs for both, stays behind it (TestNobodyIsNotASignature)."""
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve_nameless)
+    with TestClient(app) as client:
+        at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        assert client.post("/clinical/yatak-1", headers=AUTH, json={
+            "entries": [{"code": "platelets", "value": 45}], "recorded_at": at}).status_code == 200
+        for path, body in ((PREVIEW, {"overrides": []}), (SIGN, {"overrides": [], "expect": "0" * 64})):
+            r = client.post(path, headers=DOCTOR, json=body)
+            assert (r.status_code, r.json()["detail"]) == (401, "unknown credential"), path
+        assert not client.get("/audit?event_type=score_signed", headers=AUTH).json()["records"]
+
+
+class TestASignatureSignsWhatWasPreviewed(_Logged):
+    """G2-A4 (D12, X19, X20): the sign route takes `{overrides, expect}`, where `expect` is the fingerprint
+    the preview answered. The engine rebuilds the form it would seal from the same corrections and signs it
+    only when its fingerprint is the one previewed: a record that moved in between is a 409, not a
+    signature of a number nobody saw. And the sign route no longer previews — a `preview` key is refused,
+    so an older screen asking it for a preview can never sign."""
+
+    ASKS_PREVIEW = "önizleme imza yolundan istenemez — önizleme yolunu kullanın"
+    NEEDS_EXPECT = "imza bir önizlemenin parmak izini ister — önce önizleyin"
+    MOVED = "kayıt önizlemeden sonra değişti — formu yeniden önizleyin"
+
+    def _expect(self, client, overrides=None):
+        r = client.post(PREVIEW, headers=DOCTOR, json={"overrides": overrides or []})
+        assert r.status_code == 200, r.text
+        return r.json()["expect"]
+
+    @pytest.mark.parametrize("flag", [True, False, None, "true", 0])
+    def test_a_preview_asked_of_the_sign_route_is_refused_and_writes_nothing(self, client, log, flag):
+        """The body an older screen sent to ask for a preview, any value of the key."""
+        self._chart(client, "yatak-1", "platelets", 45)
+        before = len(self._all_rows(log))
+        r = client.post(SIGN, headers=DOCTOR, json={"preview": flag, "overrides": []})
+        assert (r.status_code, r.json()["detail"]) == (400, self.ASKS_PREVIEW)
+        assert len(self._all_rows(log)) == before
+
+    def test_a_preview_key_is_refused_even_beside_a_good_fingerprint(self, client, log):
+        self._chart(client, "yatak-1", "platelets", 45)
+        expect = self._expect(client)
+        before = len(self._all_rows(log))
+        r = client.post(SIGN, headers=DOCTOR, json={"preview": False, "overrides": [], "expect": expect})
+        assert (r.status_code, r.json()["detail"]) == (400, self.ASKS_PREVIEW)
+        assert len(self._all_rows(log)) == before
+
+    MISSING = object()
+
+    @pytest.mark.parametrize("expect", [MISSING, None, "", "abc", "0" * 63, "0" * 65, "g" * 64, 123,
+                                        ["0" * 64]],
+                             ids=["missing", "null", "empty", "short-word", "63", "65", "not-hex", "number",
+                                  "list"])
+    def test_a_signature_without_a_well_formed_fingerprint_is_refused(self, client, log, expect):
+        self._chart(client, "yatak-1", "platelets", 45)
+        body = {"overrides": []} if expect is self.MISSING else {"overrides": [], "expect": expect}
+        before = len(self._all_rows(log))
+        r = client.post(SIGN, headers=DOCTOR, json=body)
+        assert (r.status_code, r.json()["detail"]) == (400, self.NEEDS_EXPECT)
+        assert len(self._all_rows(log)) == before
+
+    def test_the_previews_own_fingerprint_in_capitals_is_not_well_formed(self, client, log):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post(SIGN, headers=DOCTOR, json={"overrides": [], "expect": self._expect(client).upper()})
+        assert (r.status_code, r.json()["detail"]) == (400, self.NEEDS_EXPECT)
+
+    def test_a_record_that_moved_since_the_preview_is_a_409_and_nothing_is_written(self, client, log):
+        """Another desk charts between the preview and the press: the signature would seal a total nobody
+        saw. Previewed again, the form signs the record as it is now."""
+        self._chart(client, "yatak-1", "platelets", 45)                     # coagulation 3
+        expect = self._expect(client)
+        self._chart(client, "yatak-1", "creatinine", 2.5, minutes_ago=30)   # renal 2
+        before = len(self._all_rows(log))
+        r = client.post(SIGN, headers=DOCTOR, json={"overrides": [], "expect": expect})
+        assert (r.status_code, r.json()["detail"]) == (409, self.MOVED)
+        assert len(self._all_rows(log)) == before
+        signed = _preview_then_sign(client, "yatak-1")
+        assert signed.status_code == 200 and signed.json()["total"] == 5
+
+    def test_the_same_value_at_a_later_time_is_a_moved_record(self, client):
+        """The worst platelet count is the same number but now a later reading (a tie goes to the most
+        recent): the time the clinician checked against the chart is not the one she would sign."""
+        self._chart(client, "yatak-1", "platelets", 45, minutes_ago=60)
+        expect = self._expect(client)
+        self._chart(client, "yatak-1", "platelets", 45, minutes_ago=30)
+        r = client.post(SIGN, headers=DOCTOR, json={"overrides": [], "expect": expect})
+        assert (r.status_code, r.json()["detail"]) == (409, self.MOVED)
+        assert self._signed_rows(client) == []
+
+    def test_a_reading_that_changes_nothing_shown_does_not_move_the_form(self, client):
+        """A better platelet count charted after the preview leaves the worst — value, time, points — as
+        it was: the clinician signs what she saw."""
+        self._chart(client, "yatak-1", "platelets", 45, minutes_ago=60)
+        expect = self._expect(client)
+        self._chart(client, "yatak-1", "platelets", 160, minutes_ago=30)
+        r = client.post(SIGN, headers=DOCTOR, json={"overrides": [], "expect": expect})
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == 3
+
+    def test_other_corrections_than_the_previewed_ones_are_a_409(self, client, log):
+        self._chart(client, "yatak-1", "platelets", 45)
+        expect = self._expect(client, [{"code": "platelets", "value": 80, "reason": WHY}])
+        before = len(self._all_rows(log))
+        r = client.post(SIGN, headers=DOCTOR, json={
+            "overrides": [{"code": "platelets", "value": 90, "reason": WHY}], "expect": expect})
+        assert (r.status_code, r.json()["detail"]) == (409, self.MOVED)
+        assert len(self._all_rows(log)) == before
+
+
+class TestThePreviewsPromises(_Logged):
+    """G2-A4 review: what the preview promises, pinned against the whole audit log rather than one event
+    type — a preview writes no row of ANY kind and refuses what a signature refuses."""
+
     def test_a_preview_of_no_correction_writes_no_audit_row_of_any_kind(self, client, log):
         self._chart(client, "yatak-1", "platelets", 45)
         before = len(self._all_rows(log))
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True})
+        r = client.post(PREVIEW, headers=DOCTOR, json={})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["signed"] is False and body["overrides"] == []
         assert body["total"] == body["auto_total"] == 3
         assert len(self._all_rows(log)) == before
-
-    def test_a_chart_between_the_preview_and_the_signature_is_in_what_is_sealed(self, client, log):
-        """X11, the engine's side: the signature re-scores the record as it is at the press. The screen
-        says so when the totals differ; the engine's number stands."""
-        self._chart(client, "yatak-1", "platelets", 45)                     # coagulation 3
-        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True}).json()
-        self._chart(client, "yatak-1", "creatinine", 2.5, minutes_ago=30)   # another desk: renal 2
-        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={})
-        assert signed.status_code == 200, signed.text
-        assert (previewed["total"], signed.json()["total"]) == (3, 5)
-        [row] = [r for r in self._all_rows(log) if r.event_type == "score_signed"]
-        assert (row.payload["total"], row.payload["auto_total"]) == (5, 5)
 
     @pytest.mark.parametrize(("overrides", "said"), [
         ([{"code": "kalp_hizi", "value": 90, "reason": WHY}], "bilinmeyen alan"),
@@ -367,10 +545,11 @@ class TestThePreviewsPromises(_AsPeople):
                                                                            overrides, said):
         self._chart(client, "yatak-1", "platelets", 45)
         before = len(self._all_rows(log))
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR,
-                        json={"preview": True, "overrides": overrides})
-        assert r.status_code == 400
-        assert said in r.json()["detail"]
+        for path, body in ((PREVIEW, {"overrides": overrides}),
+                           (SIGN, {"overrides": overrides, "expect": "0" * 64})):
+            r = client.post(path, headers=DOCTOR, json=body)
+            assert r.status_code == 400, path
+            assert said in r.json()["detail"]
         assert len(self._all_rows(log)) == before
 
 
@@ -409,9 +588,10 @@ class TestTheRouteBoundsACorrection(_AsPeople):
 
     def test_a_slipped_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
         self._chart(client, "yatak-1", "platelets", 45)
-        for body in ({"preview": True, "overrides": self.SLIPPED}, {"overrides": self.SLIPPED}):
-            r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json=body)
-            assert r.status_code == 400, body
+        for path, body in ((PREVIEW, {"overrides": self.SLIPPED}),
+                           (SIGN, {"overrides": self.SLIPPED, "expect": "0" * 64})):
+            r = client.post(path, headers=DOCTOR, json=body)
+            assert r.status_code == 400, path
             assert r.json()["detail"] == self.SAID
         assert self._signed_rows(client) == []
 
@@ -419,8 +599,9 @@ class TestTheRouteBoundsACorrection(_AsPeople):
         """The edge itself is inside: 5000, the door's platelet bound (X18)."""
         self._chart(client, "yatak-1", "platelets", 45)
         inside = [{"code": "platelets", "value": 5000, "reason": WHY}]
-        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True, "overrides": inside})
+        previewed = client.post(PREVIEW, headers=DOCTOR, json={"overrides": inside})
         assert previewed.status_code == 200 and previewed.json()["total"] == 0
-        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": inside})
+        signed = client.post(SIGN, headers=DOCTOR,
+                             json={"overrides": inside, "expect": previewed.json()["expect"]})
         assert signed.status_code == 200 and signed.json()["total"] == 0
         assert len(self._signed_rows(client)) == 1

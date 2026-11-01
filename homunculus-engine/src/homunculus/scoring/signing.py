@@ -27,9 +27,16 @@ question an inspection asks first.
 And one refusal that is not about overrides: **the form does not sign itself.** A severity score
 entering quality reporting with nobody behind it is the failure this module must not enable, so
 signing requires an identified clinician and is recorded as its own event.
+
+And since G2-A4 (D12, X20) **a signature seals only what was seen.** `form_digest` fingerprints a form
+as the preview showed it; the signature carries that fingerprint back, and the API signs only when the
+form it would seal has the same one — so a chart that lands between the preview and the press is a
+refusal to re-preview, never a signature of a number nobody looked at.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -150,6 +157,28 @@ def parse_overrides(payload: object, form: SofaForm, *,
         overrides.append(Override(code=code, value=value, reason=reason,
                                   original=by_code[raw_code]))
     return overrides
+
+
+def form_digest(rebuilt: SofaForm, overrides: list[Override]) -> str:
+    """The fingerprint of a form as the clinician saw it (G2-A4, D12, X20): SHA-256, lowercase hex.
+
+    It covers what she checks before she signs — the total; every row's points; every cell's value, the
+    time of the measurement behind it and its points; the respiration row's support basis (D13); and each
+    correction's value and the original the record held — so any change to any of them between the
+    preview and the signature is another fingerprint. The cells are read from `as_dict()`, the very form
+    the screen is sent. Not in it: the window's bounds, which move with the clock on every read.
+    """
+    respiration = next((r for r in rebuilt.rows if r.organ == "respiration"), None)
+    payload = {
+        "total": rebuilt.total,
+        "points": {row.organ: row.points for row in rebuilt.rows},
+        "cells": {cell["code"]: [cell["value"], cell["at"], cell["points"]]
+                  for row in rebuilt.rows for cell in (c.as_dict() for c in row.inputs)},
+        "support": respiration.as_dict().get("support") if respiration is not None else None,
+        "corrections": {o.code.value: [o.value, o.original] for o in overrides},
+    }
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def sign(form: SofaForm, rebuilt: SofaForm, *, signed_by: str,
