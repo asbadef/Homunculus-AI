@@ -170,6 +170,13 @@ class TestTheFormsFingerprint:
         fix = [{"code": "platelets", "value": 80, "reason": WHY}]
         assert _digest(self.PLATELETS_45) != _digest(self.PLATELETS_45, fix)
 
+    def test_a_moved_support_time_gives_another_fingerprint(self):
+        """The ratio, its time, its points (3) and the total are the same; only the support observation the
+        row was scored on is another one (D13)."""
+        ratio = (SignalCode.PAO2_FIO2, 150, 2)
+        assert (_digest([ratio, (SignalCode.ON_RESP_SUPPORT, 1, 10)])
+                != _digest([ratio, (SignalCode.ON_RESP_SUPPORT, 1, 9)]))
+
     def test_a_moved_original_gives_another_fingerprint(self):
         """The corrected cell, the points and the total are the same (80, 2); only the original the record
         held differs — and that is part of what the clinician signs."""

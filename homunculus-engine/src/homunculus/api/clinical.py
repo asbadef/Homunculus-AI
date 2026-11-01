@@ -62,8 +62,8 @@ CHARTABLE: dict[SignalCode, str] = {
     # (medibus: a ventilator answering its poll is support, and it only ever says yes); no ventilator
     # feeds the ward, and whether a patient is supported is seen at the bedside, so this is a clinician's
     # observation as much as a device's. Charted here it reaches both SOFAs: the form's
-    # (scoring/sofa_form.py — any yes in the window counts) and the alerting one (rules/sofa.py reads the
-    # latest). A flag, 1 or 0 (`_BOOLEAN`).
+    # (scoring/sofa_form.py — the support in force when the worst ratio was measured, D13) and the alerting
+    # one (rules/sofa.py reads the latest). A flag, 1 or 0 (`_BOOLEAN`).
     SignalCode.ON_RESP_SUPPORT: "bool",
     # Labs a clinician transcribes while there is no feed from the laboratory. When the HIS
     # ORU feed opens these arrive on their own and this door stops being the usual way in.

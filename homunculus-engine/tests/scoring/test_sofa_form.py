@@ -99,6 +99,90 @@ class TestItReportsAndDoesNotAlert:
         assert sofa_form.build(PatientState("y"), T0).as_dict()["source"] == "sepsis-3-jama-2016"
 
 
+def _ratio_and_support(ratios, supports, overrides=None):
+    """A form from PaO2/FiO2 readings `(value, hours_ago)` and support flags `(1|0, hours_ago)`."""
+    state = PatientState("yatak-1")
+    for value, hours in ratios:
+        state.ingest(Observation("yatak-1", SignalCode.PAO2_FIO2, float(value), "ratio",
+                                 T0 - timedelta(hours=hours), "lab"))
+    for flag, hours in supports:
+        state.ingest(Observation("yatak-1", SignalCode.ON_RESP_SUPPORT, float(flag), "bool",
+                                 T0 - timedelta(hours=hours), "clinician"))
+    return _row(sofa_form.build(state, T0, overrides=overrides), "respiration")
+
+
+def _at(hours):
+    return (T0 - timedelta(hours=hours)).isoformat()
+
+
+class TestSupportIsTakenAsOfTheWorstReading:
+    """G2-A4 (D13, X21): the 3- and 4-point PaO2/FiO2 bands apply only on respiratory support, and the
+    support is the one in force WHEN the worst ratio was measured — the latest support observation at or
+    before that reading, over the patient's whole record — and the row says which one it used. Scoring an
+    eight-hour-old ratio against a ventilator connected since would credit the score for a treatment
+    that was not running at the time."""
+
+    def test_support_charted_before_the_reading_opens_the_three_point_band(self):
+        row = _ratio_and_support([(150, 6)], [(1, 10)])
+        assert row.points == 3
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(10)}
+
+    def test_support_charted_after_the_reading_does_not_reach_back(self):
+        row = _ratio_and_support([(150, 6)], [(1, 2)])
+        assert row.points == 2
+        assert row.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_a_no_charted_before_the_reading_ends_an_earlier_yes(self):
+        """The old rule counted any yes in the window and a later «hayır» could not cancel it."""
+        row = _ratio_and_support([(150, 6)], [(1, 10), (0, 8)])
+        assert row.points == 2
+        assert row.as_dict()["support"] == {"on_support": False, "at": _at(8)}
+
+    def test_support_from_before_the_window_still_counts(self):
+        """Looked up over the whole record: a ventilator connected 30 h ago is still running."""
+        row = _ratio_and_support([(150, 6)], [(1, 30)])
+        assert row.points == 3
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(30)}
+
+    def test_support_charted_at_the_readings_own_time_counts(self):
+        row = _ratio_and_support([(150, 6)], [(1, 6)])
+        assert row.points == 3 and row.as_dict()["support"]["at"] == _at(6)
+
+    def test_the_worst_reading_is_the_lowest_ratio_whatever_the_support(self):
+        """Support does not choose the worst reading: 150 off support is the worst by value, and is scored
+        off support (2) — even though 180, measured later on support, would score 3."""
+        row = _ratio_and_support([(150, 6), (180, 2)], [(1, 3)])
+        assert row.inputs[0].value == 150 and row.inputs[0].at == T0 - timedelta(hours=6)
+        assert row.points == 2
+        assert row.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_a_reading_from_before_the_window_is_scored_on_its_own_times_support(self):
+        row = _ratio_and_support([(150, 30)], [(1, 40), (0, 20)])
+        assert row.inputs[0].outside_window is True
+        assert row.points == 3
+        assert row.as_dict()["support"] == {"on_support": True, "at": _at(40)}
+
+    def test_a_corrected_ratio_is_scored_on_the_original_readings_support(self):
+        on = _ratio_and_support([(150, 6)], [(1, 10)], overrides={SignalCode.PAO2_FIO2: 90})
+        assert on.points == 4 and on.as_dict()["support"] == {"on_support": True, "at": _at(10)}
+        off = _ratio_and_support([(150, 6)], [(1, 2)], overrides={SignalCode.PAO2_FIO2: 90})
+        assert off.points == 2 and off.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_with_no_ratio_at_all_there_is_no_support_basis(self):
+        assert _ratio_and_support([], []).as_dict()["support"] is None
+        assert _ratio_and_support([], [(1, 2)]).as_dict()["support"] is None
+
+    def test_a_ratio_typed_over_an_unmeasured_cell_has_no_reading_to_take_support_from(self):
+        """No reading, so no time to look the support up at: scored off support, and the row says so."""
+        row = _ratio_and_support([], [(1, 2)], overrides={SignalCode.PAO2_FIO2: 90})
+        assert row.points == 2
+        assert row.as_dict()["support"] == {"on_support": False, "at": None}
+
+    def test_only_the_respiration_row_carries_a_support_basis(self):
+        form = sofa_form.build(_state([(SignalCode.PLATELETS, 90, 4)]), T0).as_dict()
+        assert [r["organ"] for r in form["rows"] if "support" in r] == ["respiration"]
+
+
 class TestItIsNotTheAlertingSofa:
     def test_the_form_can_exceed_the_live_score_because_it_looks_back(self):
         """The live rule reads the latest values and sees a recovering patient; the form reads the

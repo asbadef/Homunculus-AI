@@ -385,20 +385,36 @@ class TestTheSofaFormsInputs:
         assert (before, after) == (2, 3)
 
     def test_charted_support_opens_the_three_and_four_point_bands_on_the_form(self, client):
-        """And on the SOFA form (scoring/sofa_form.py): a ratio of 150 scores 2 off support, 3 once
-        support is charted, 4 at 80."""
+        """And on the SOFA form (scoring/sofa_form.py), as of the worst reading (D13, X21): a ratio of 150
+        scores 2 off support; support charted after that reading does not reach back to it; charted before
+        it, 3; a ratio of 80 measured on support, 4 — and the row says which support it was scored on."""
         now = datetime.now(timezone.utc)
 
         def respiration():
             rows = client.get("/scores/sofa/bed-3", headers=AUTH).json()["rows"]
-            return next(r for r in rows if r["organ"] == "respiration")["points"]
+            row = next(r for r in rows if r["organ"] == "respiration")
+            return row["points"], row["support"]
 
-        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 150}],
-                      at=now - timedelta(minutes=90)).status_code == 200
-        assert respiration() == 2
-        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}],
-                      at=now - timedelta(minutes=60)).status_code == 200
-        assert respiration() == 3
-        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 80}],
-                      at=now - timedelta(minutes=30)).status_code == 200
-        assert respiration() == 4
+        def at(minutes):
+            return now - timedelta(minutes=minutes)
+
+        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 150}], at=at(90)).status_code == 200
+        assert respiration() == (2, {"on_support": False, "at": None})
+        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}], at=at(60)).status_code == 200
+        assert respiration() == (2, {"on_support": False, "at": None})        # after the reading
+        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}], at=at(120)).status_code == 200
+        assert respiration() == (3, {"on_support": True, "at": at(120).isoformat()})
+        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 80}], at=at(30)).status_code == 200
+        assert respiration() == (4, {"on_support": True, "at": at(60).isoformat()})
+
+    def test_a_no_charted_for_before_the_reading_takes_effect_on_the_form(self, client):
+        """D13: a «hayır» charted later, timed before the worst reading, ends the «evet» before it — the old
+        rule (any «evet» in the window) let it stand."""
+        now = datetime.now(timezone.utc)
+        _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}], at=now - timedelta(minutes=120))
+        _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 150}], at=now - timedelta(minutes=90))
+        _chart(client, "bed-3", [{"code": "on_resp_support", "value": 0}], at=now - timedelta(minutes=100))
+        rows = client.get("/scores/sofa/bed-3", headers=AUTH).json()["rows"]
+        row = next(r for r in rows if r["organ"] == "respiration")
+        assert (row["points"], row["support"]) == (
+            2, {"on_support": False, "at": (now - timedelta(minutes=100)).isoformat()})
