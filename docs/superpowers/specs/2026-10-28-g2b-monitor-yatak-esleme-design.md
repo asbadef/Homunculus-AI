@@ -16,6 +16,10 @@ was read again at `cad9bea` and corrected. The open items are resolved (§9): La
 O9, O10, O11) and the controller's calls (O1, O3, O4, O7) are folded into the sections they change —
 §2 (D1, D2, D4, D7, D11, D14, and the new D18–D21), §3, §4, §5, §6 and §7.
 
+**As built** (2026-11-01): §10 records what the code does where it departs from this text, and why.
+Notes marked *As built* in §2 (D19, D20), §3.3, §4.7, §5.1, §5.3, §5.4 and §9 (O10, O61) point there;
+the body above them is left as approved.
+
 ## 1. What this slice delivers
 
 Today a monitor sits on a bed only through a reviewed file, `deploy/infinity/device-beds.icu2.json`
@@ -56,8 +60,8 @@ This slice:
 | D16 | **Two Yapı fixes in this slice.** First, a held «Çarpayı əlavə et» says why. Second, the room adder's boxes carry visible labels and a hint that beds are added under the room. | Approved §3. These are B1a deploy lessons (brief, "State at slice start"). |
 | D17 | **Four languages** (az default, tr, en, ru). No UUID on any screen. Keyboard and screen reader supported throughout. | Approved §1. |
 | D18 | **Yapı follows the mapping.** (a) A bed rename that changes the label closes the bed's current bound row (`valid_to` = t) and opens a new one: the same device and bed, the new label, `method: editor`; audited `device_bed.relabel`; in the rename's own transaction (O3). (b) Closing a bed (`is_active` → false) that has a monitor bound to it is refused `bed_has_monitor`; the screen sends the user to «Monitörler» to unbind first (O7). A room or a unit closes only once all its beds are closed, so (b) covers them. | O3, O7 (controller, 2026-10-30). §4.10. |
-| D19 | **`version` and `sha256` from the database** (Lane A's rule): `version` = `max(id)` of the tenant's `device_beds` rows, history included; `sha256` = the SHA-256 of the canonical JSON of the CURRENT rows as `[source, bed_id, bed_label]` lists, sorted by source. The import prints both; the deploy blocks quote them to `shadow_check.py --table-version/--table-sha`, whose flags stay. | O10 (Lane A). §5.3. |
-| D20 | **Migration 0014 is purely additive** and holds no data: a new table, its indexes, a function and two triggers. The `devices.map_beds` grant is the seed import's one-time step (D7). An image from before this slice can therefore serve against a database at 0014; only its start command refuses, and the blocks start it without its migration step (§7.3). | O11 (Lane A). §5.1, §7. |
+| D19 | **`version` and `sha256` from the database** (Lane A's rule): `version` = `max(id)` of the tenant's `device_beds` rows, history included; `sha256` = the SHA-256 of the canonical JSON of the CURRENT rows as `[source, bed_id, bed_label]` lists, sorted by source. The import prints both; the deploy blocks quote them to `shadow_check.py --table-version/--table-sha`, whose flags stay. *As built (A-9):* the digest's `bed_id` is `normalise_id`'s form (null when none), and the order is the whole triple's (`None` as `""` in the sort key, null in the JSON), over the current rows only. | O10 (Lane A). §5.3. |
+| D20 | **Migration 0014 is purely additive** and holds no data: a new table, its indexes, a function and two triggers (*as built:* three, §5.1). The `devices.map_beds` grant is the seed import's one-time step (D7). An image from before this slice can therefore serve against a database at 0014; only its start command refuses, and the blocks start it without its migration step (§7.3). | O11 (Lane A). §5.1, §7. |
 | D21 | **An editor row's provenance:** `method: "editor"`, `verified_at` = the database time of the change (`t`, §4.4) in UTC ISO-8601, `verified_by` = the acting user's id. The import copies v2's `method` and `verified_at` per row unchanged (`verified_by` null). | O9 (Lane A wording). §5.3. |
 
 **Lane A's binding constraints, and where this spec meets them**
@@ -122,6 +126,12 @@ Which rows appear:
    - closed beds, rooms and units are dimmed with the reason and cannot be picked;
    - each bed shows the monitor already on it («monitör: 10.10.203.24 (BED11)») and «dolu» when the
      structure's state is `OCCUPIED` / `PENDING_*`.
+
+   *As built (E37):* one radio list in one fieldset, not grouped under unit and room headings: the
+   session's beds sorted by unit, room and label (numbers by value), each reading «label · room ·
+   unit». A bed that cannot be picked is dimmed and disabled and names its outermost closed place —
+   «birim kapalı», else «oda kapalı», else «yatak kapalı». The device's own current bed is left out.
+   «dolu» covers `OCCUPIED`, `PENDING_DISCHARGE` and `PENDING_TRANSFER_OUT`.
 2. **Confirm.** One sentence names the monitor and the bed: «10.10.203.37 (BED08) → bed08 · Otaq 08 ·
    Reanimasiya».
    - If the bed has another monitor, a second sentence names it and says it will be unbound
@@ -142,6 +152,20 @@ Which rows appear:
      no id is printed. When the session has no such card (no `board.view`, or the card is not in its
      board), the step says that an admitted patient is on the bed, without a name. The server sends
      no name to this screen.
+   - *As built (A-1, A-18; O61 resolved).* `display_name` is free text, so the short form is a
+     recognition aid, not an identification. `shortName` (`screens/devices/deviceMap.js`) drops
+     trailing patronymic markers (`oğlu`, `qızı`, `kızı`, `оглы`, `кызы`, `oglu`, `qizi`), keeps the
+     first word whole and adds the first letter of each later word with a dot, at most three:
+     «Ahmet Yılmaz» → «Ahmet Y.», «Məmmədov Əli Həsən oğlu» → «Məmmədov Ə. H.». The letter is taken
+     by code point and kept as typed, not upper-cased, so one patient reads alike in every browser
+     locale. The step has one line per occupied bed of the refusal, each with its own bed's label
+     («Yatakta: bed08 · Ahmet Y.», or «bed08: Bu yatakta yatan bir hasta var.» with no name); the
+     short name appears nowhere else — no toast, log, `console.*` or request body.
+   - *As built (A-21).* Each step's primary button is held (`aria-disabled`) for 600 ms after the
+     step opens, and a click that is part of a multi-click is ignored, so a double-click cannot skip
+     a step — this one above all. The confirm of this step resends the `expected` rows the first
+     request carried, not the list as it has been re-read since: if the mapping changed meanwhile the
+     answer is `mapping_changed`, and no monitor the user never saw is unbound.
 4. **Done.** Nothing changes until the last confirm. The result is said on screen and in a toast
    («bağlandı»). The list reloads, and the strip shows the change at its next poll (≤ 5 s).
 
@@ -443,6 +467,13 @@ device's change is its own row (B1a A-4, "two changes, two rows").
     held it or does not exist;
   - `actor: "import"`.
 
+*As built.* (E64) The `device_bed.relabel` payload also carries `group` and `device_bed_label`, as
+`device_bed.bind` does (`tenant/router.py` `patch_bed`). (E54) A bed the board puts two or more
+patients on, with no open admission here, is occupied but names no one: the row's `patient_id`
+stays "", and that bed's `occupied` entry carries `patient_ids` (all of them, sorted) in the audit
+payload only — the refusal is built from an allow-list (`bed_id`, and `patient_id` for a
+`board.view` holder) and never shows it.
+
 `rehydrate` ignores these kinds: it replays `ingest`, `chart`, `profile`, `ack`, `first_seen` and the
 discharge rows only (`api/rehydrate.py:41-62`), so a `patient_id` on a `device_bed.*` row changes no
 replay.
@@ -540,6 +571,15 @@ Constraints and indexes:
   `verified_at` is text because `Row.verified_at` is text and the import copies v2's dates byte for
   byte (exact parity), while an editor row's is a timestamp (D21). `verified_by` has no foreign key:
   history outlives an account, as the audit's actor does.
+- *As built (A-8).* THREE triggers on the one function: `device_beds_no_delete` (BEFORE DELETE),
+  `device_beds_close_only` (BEFORE UPDATE) and `device_beds_no_truncate` (BEFORE TRUNCATE, FOR EACH
+  STATEMENT). The close test is a whole-row freeze, `(to_jsonb(NEW) - 'valid_to') =
+  (to_jsonb(OLD) - 'valid_to')`, so a column a later migration adds is frozen as well, and a close
+  may not lie in the future: `NEW.valid_to <= clock_timestamp()`. The function reads OLD and NEW
+  only when `TG_OP = 'UPDATE'`, and raises otherwise. A code comment on `verified_at` (migration
+  and model) says v2's strings are kept as written and an editor row writes ISO-8601 UTC. The
+  downgrade drops `no_truncate`, `close_only`, `no_delete`, then the function, the indexes and the
+  table.
 
 One statement per `op.execute` (asyncpg; see 0004, 0010, 0013).
 
@@ -579,6 +619,13 @@ It also gains:
 - `check_current(rows)`: one current row per source; one current bound row per `bed_id`; a bound row
   has a `bed_label`.
 
+*As built (A-9, E4).* The digest's `bed_id` is `normalise_id`'s form (stripped and case-folded; null
+when none), and the order is the whole triple's (`None` as `""` in the sort key, null in the JSON),
+over the current rows (`valid_to` None) only: a closed row passed in changes nothing.
+`check_current` also looks at the current rows only, reads "bound" as the digest does
+(`normalise_id(bed_id)`), and refuses a bound row whose label is blank or that has no `unit_id`
+(the twin of `ck_device_beds_bed_unit`).
+
 `check_current` deliberately does NOT apply the file's label rule `_same_bed`. That rule would refuse
 the whole table, and put every monitor off its bed, if a Yapı label happened to equal a label-only
 row's (BED01). Beds are told apart by `bed_id`, as `board_view` does (`infinity_shadow.py:533-536`,
@@ -590,6 +637,21 @@ clock=time.monotonic, ssl_required=False)`:
   Aşama B D12);
 - in its own module, because importing the audit's helpers from the lane module would break the
   isolation test's transitive check.
+
+*As built.* (E12) The read is ONE statement — the tenant by slug, LEFT JOINed to its rows valid at
+`:now`, with `max(id)` as a subquery — so the version and the rows come from one snapshot; an
+unknown slug, a tenant with no rows and a tenant with none valid all answer `missing`. (A-10) The
+engine is bounded, because the loop waits on it: connect 3 s, statement 2000 ms, pool checkout 3 s,
+TCP user timeout 4000 ms. It first set these in its own `connect_args`; since `8c4374d` (the merge
+with main, N1) it builds them with `audit_postgres.bounded_connect_args` and `POOL_TIMEOUT_S`, the
+helper every sync store shares (`2026-11-01-pg-sinirlari-design.md` D1): the same values, plus the
+TCP keepalives it lacked. The API's lifespan disposes it at shutdown with the audit, identity and
+samples stores (that spec's D4). The lane module `infinity_device_beds.py` still imports none of
+it. (A-10) Fail-closed is strict, by decision: any exception while the rows are read or built is
+`invalid`, a stalled database is `invalid` within those bounds, and no last `ok` is kept — after an
+`invalidate()` a grace period would serve the OLD mapping, and a monitor just moved could show on
+the previous bed's patient. A change of state is logged once, a failure with the exception's class
+and SQLSTATE, never its message.
 
 `current()` behaves as follows:
 - It re-reads at most every `RELOAD_EVERY_S` (10 s, `infinity_device_beds.py:45`), and on the first
@@ -674,6 +736,28 @@ Exit codes:
 - 3: the tenant's table holds other rows than the file's, nothing written.
 
 `--dry-run` runs every check and writes nothing.
+
+*As built (A-9, A-13, A-14, A-15; `devicebeds/seed.py`, `scripts/import_device_beds.py`):*
+- **Step 3's lock** is `FOR NO KEY UPDATE` on the tenant's row (`with_for_update(key_share=True)`)
+  after `SET LOCAL lock_timeout = '5s'`: two imports still run one after the other, an insert whose
+  foreign key points at the tenant (the running API's) is not blocked, and a held lock ends in 5 s
+  with the database's error (SQLSTATE 55P03, exit 1). "Already done" compares every row the tenant
+  holds, history included, read from the database by id, with the file's rows field for field, in
+  file order.
+- **Before the grant and the commit** the inserted rows are read back from the database and must
+  equal the file twice over: their `rows_digest` equals the file's (v2: `e470d3342025…`), and every
+  field of every row equals the file's, in order. Otherwise everything rolls back, exit 2 — 0014's
+  trigger would refuse any later correction. If the post-commit read-back raises, the line uses the
+  pre-commit `(version, sha256)`, identical by construction, and says so on stderr.
+- **The line has a tenth key, `dry_run`.** A `--dry-run` over a tenant with no rows yet carries the
+  file's rows digest as `sha256` and no `version`.
+- **Exit codes.** A missing `DATABASE_URL` is exit 2, never a silent fallback to localhost (E16), as
+  is an unknown tenant or a file that cannot be read. Exit 1 is any other failure: stderr says
+  `ESLEME_ICE_AKTARIM_RED 1 <Class>[ <SQLSTATE>] — <note>` (the note itself contains " — "), never
+  the driver's message or a traceback, and the note says rows may have been written — run again,
+  `"already": true` means they were. Every refusal and note goes to stderr; stdout carries the one
+  line or nothing (E15). A failed audit append after the commit prints
+  `ESLEME_ICE_AKTARIM_DENETIM_YAZILAMADI <Class>` on stderr and undoes nothing.
 
 The file itself is never edited. It stays on the VM and in the repo as read-only history, and
 `test_the_committed_site_table_is_approved_and_puts_every_monitor_on_its_own_bed`
@@ -1017,6 +1101,10 @@ The O-numbers are kept. Each entry states the answer and where the body carries 
   `rules` like `shadow`, and the blocks run it pinned at `ade8da8`); the table's `status` `ok`, `version` equal to
   `--table-version` and `sha256` starting with `--table-sha` (`:101-106`); the unassigned sources
   against `--unassigned` (`:113-115`); the feed, the lag, the forwarder's posts. D19, §5.3, §7.2 C.
+  *As built (A-9):* the digest's `bed_id` is `normalise_id`'s form, and the order is the whole
+  triple's (`None` as `""` in the sort key, null in the JSON), over the current rows only. v2's rows
+  digest is `e470d3342025100ad3dce0e6e42606aa37051d18f4bcac8f02a5abfa3b3b79af` (pinned in
+  `tests/esleme_v2.py`).
 - **O11 The old image and 0014 — RESOLVED (Lane A).** 0014 is purely additive (no change to an
   existing table or row; the grant moved out). The old image cannot restart by itself at 0014 because
   its start command runs `alembic upgrade head` first (`Dockerfile.api:51`), which stops on a revision
@@ -1028,3 +1116,83 @@ The O-numbers are kept. Each entry states the answer and where the body carries 
 - **O12 Native-speaker review — unchanged** of the new az/ru/en texts, as for B1a.
 - **O13 One lane hospital — unchanged.** The table is per-tenant, but the lane reads one hospital
   (`INFINITY_SHADOW_HOSPITAL`); another tenant gets `monitor_lane_off` (D15).
+- **O61 (the plan's) The short-name rule — RESOLVED (Lane A; amendments A-1, A-18).** O5's rule
+  ("the first word and the initial of its last") names nobody when the name was typed «surname name
+  patronymic»: «Məmmədov Əli Həsən oğlu» would read «Məmmədov o.». As built: the first word whole,
+  the initial of each later word (at most three), trailing patronymic markers dropped, each initial
+  kept as typed. `display_name` is free text, so the short form is a recognition aid, not an
+  identification. §3.3.
+
+## 10. As built (2026-11-01, plan `2026-10-30-g2b-monitor-yatak-esleme.md`)
+
+- **Code.** `c027345..8c4374d` on `feat/g2b-monitor-esleme` (`git log 5f733d3..8c4374d`: 56
+  commits, 3 of them merges). The backend lane (Tasks 1–14) reached the slice branch at `e8f3087`,
+  the dashboard lane (Tasks 15–20) was merged `--no-ff` at `0f66257`, and main `5f733d3` (G2-A4 and
+  pg-bounds) was merged at `d66a90b`; `8c4374d` (N1) then put `PostgresDeviceBeds` under the shared
+  bounds and the shutdown release (§5.3). Lane A OK'd its hunks in both lanes (amendment A-27;
+  `0f66257`).
+- **Gates.** Task 21 was running when this was written; its counts are added here when it ends.
+- **The walk.** Task 22 follows the gates; its findings and the R-1 / R-2 rehearsal are added here.
+- **Departures planned (the plan's E1–E10), each with its reason:**
+  - E1: the package `homunculus/devicebeds/` (`models`, `rows`, `seed`, `listing`, `service`,
+    `schemas`, `router`, `writes`) instead of one router module — five responsibilities, and one
+    file would pass 600 lines. `scripts/import_device_beds.py` is a thin CLI over `seed.py`.
+  - E2: `field_invalid:source` / `:bed_id` / `:expected` are answered but not mapped on screen
+    (`INVALID_FIELD_KEYS`): the screen sends ids it read from the server, never typed text.
+  - E3: `_lock_bed` is imported from `tenant/router.py`, not copied, so the lock rule stays one;
+    `tenant/router.py` imports only `devicebeds/writes.py`, so there is no import cycle.
+  - E4: `check_current` runs over the rows with `valid_to IS NULL` only, while `table.at()` resolves
+    over everything loaded: a row closed at the database's `t` is still valid at an API clock a
+    moment behind.
+  - E5: the downstream tests run the app on the real clock, because editor rows start at the
+    database's `t`, which an injected fake clock would not reach.
+  - E6: the short-name rule is new code (`shortName`, `screens/devices/deviceMap.js`): the strip had
+    none. Its final form is A-1 and A-18 (§3.3, O61).
+  - E7: the read-only before/after summary is `deploy/infinity/esleme_ozet.py`, standard library
+    only, so it runs on the hub's `python3` as `shadow_check.py` does. It prints
+    `ESLEME_OZET_<ETIKET> {…}` and compares two saved lines (`AYNI` / `FARKLI`).
+  - E8: `last_seen_at` is the strip's wall clock minus the store's `status_age_s` (which is
+    monotonic); null when the device is not in the store.
+  - E9: the occupancy read takes `Patient.patient_number` of an open admission on the bed, with
+    `_holds_open_admission`'s exact condition, under the bed lock: that helper answers a bool, and
+    the refusal and the audit need the number.
+  - E10: the device routes' two isolation tests live in `tests/test_device_beds_occupied.py`.
+    `test_tenant_isolation.py`'s world runs the lane off, where every device route answers
+    `monitor_lane_off` before reading an id; its route walk covers the three routes unchanged.
+- **Departures found while building** (each recorded with file and line in its commit body; here the
+  ones that change behaviour):
+  - The accessor reads in one statement (E12), is bounded and strictly fail-closed (A-10, N1): §5.3.
+  - 0014 has three triggers and a whole-row, past-only close (A-8): §5.1.
+  - The import locks key-share with a 5 s `lock_timeout`, checks whole rows before the grant, has an
+    exit 1 and the tenth key `dry_run`; a missing `DATABASE_URL` is exit 2 (A-13, E15, E16): §5.4.
+  - The transaction runs in five functions (`service.py`): resolve (§4.4 steps 2–4), lock and check
+    (5–7: `changed: false` first, then a device moved between steps 4 and 6, then `expected`, then
+    the unit scope), occupancy (8), write (9–11) and audit (12–13). `t` is read in the write, after
+    the locks and after the scope and occupancy checks, right before the closes.
+  - Only a unique violation of one of 0014's two current-row indexes is `mapping_changed`. Any other
+    `IntegrityError` — a CHECK, a foreign key, another unique index, a driver that names no
+    constraint — stays a 500, not a refusal the screen would tell the user to repeat (E31, A-22).
+  - The unit of the bed a device leaves is read from that bed's own room, as the target's is (E32).
+    A device with no row under the lock that the worker no longer reports is `mapping_changed`
+    (E33). An unbind of a label-only v2 row (`bed_id` null, BED01) is `changed: false` with no write
+    (A-22). `confirm_occupied` is a strict boolean: `1` or `"yes"` is 422 (A-22). The displaced
+    monitor's new row takes the worker's group, else its own row's (A-22).
+  - A bed the board puts two or more patients on, with no admission here, names no one, and its ids
+    go to the audit only (E54); the relabel audit carries `group` and `device_bed_label` (E64): §4.7.
+  - The picker is one sorted list, not grouped (E37): §3.3. «Bağlantıyı çöz» is offered only when the
+    monitor has a bed, so never on BED01's label-only row (E23). The list is read through
+    `store.track` (E24), and a poll tick is skipped while the previous read is still out (E26).
+  - `kabul.err.bedHasMonitor` names no bed, like its `kabul.err.*` siblings; Yapı's toast names the
+    bed as its subject («5 · Otaq 2 · Reanimasiya: …») (E28, amendment A-4).
+  - Each dialog step's primary is held 600 ms and ignores a multi-click, and the occupied step
+    resends the first request's `expected` (A-21): §3.3.
+  - The «görünmüyor · son görülme HH:MM» time, and an editor row's `verified_at` on the strip's
+    method line, are printed in the browser's local time (`deviceMap.js`, `new Date(…)`), not in the
+    tenant's zone; §3.2 and §3.6 say "the hospital's local time". The two agree on the ward's
+    browsers, which run on the hospital's time.
+- **Open after the build:** O60 (block D's label case: the user's word when the chosen bed's Yapı
+  label differs from its v2 label), O62 (the native-speaker read), O66 (an image that starts by itself
+  against a newer, additive database — later, Lane A), and O67: `confirm_occupied: true` is a blanket
+  confirm, so a patient admitted onto the target bed between the refusal and the confirm is covered
+  too (the audit's `occupied` records it); a confirm that carries the shown `{bed_id, patient_id}`
+  pairs, refused on any difference, would close that — a spec follow-up, not in this slice.

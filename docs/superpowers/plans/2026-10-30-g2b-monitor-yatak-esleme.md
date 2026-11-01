@@ -85,7 +85,7 @@ Numbered from O60 (B1a holds O39–O53).
 
 | File | Responsibility | Task |
 |---|---|---|
-| `alembic/versions/0014_device_beds.py` **(Lane A review)** | the table, its checks, two partial unique indexes, the history index, the function and two triggers; downgrade | 2 |
+| `alembic/versions/0014_device_beds.py` **(Lane A review)** | the table, its checks, two partial unique indexes, the history index, the function and two triggers; downgrade (*as built:* three triggers — `no_delete`, `close_only`, `no_truncate` — a whole-row freeze and a close at or before `clock_timestamp()`; amendment A-8, spec §5.1) | 2 |
 | `src/homunculus/devicebeds/__init__.py` | the package (empty docstring) | 2 |
 | `src/homunculus/devicebeds/models.py` | `DeviceBed` on `Base` | 2 |
 | `src/homunculus/devicebeds/rows.py` | `to_row`, `current_rows`, `db_time`, `close_row`, `insert_row`, `iso_utc` | 4 |
