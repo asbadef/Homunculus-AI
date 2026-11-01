@@ -198,13 +198,13 @@ def _not_reached(*, weight_asked: bool, profile_asked: bool) -> EngineWrites:
                         profile="failed" if profile_asked else "skipped", board="failed")
 
 
-async def _attempt(number: str, what: str, write) -> EngineWrite:
-    """One engine write, on its own: `ok`, or `failed` and logged with the number, never a name."""
+async def _attempt(key: str, what: str, write) -> EngineWrite:
+    """One engine write, on its own: `ok`, or `failed` and logged with the board key, never a name."""
     try:
         await write()
         return "ok"
     except Exception:
-        log.exception("admission %s: the %s did not reach the engine", number, what)
+        log.exception("admission %s: the %s did not reach the engine", key, what)
         return "failed"
 
 
@@ -355,7 +355,7 @@ _ROUNDS = 3
 
 
 async def _engine_of(db: AsyncSession, request: Request, hospital: str, admission_id: uuid.UUID,
-                     number: str, *, weight_asked: bool, profile_asked: bool,
+                     key: str, *, weight_asked: bool, profile_asked: bool,
                      actor: str) -> EngineWrites:
     """What reached the engine for an admission a resend found (A-19), once nobody is writing it.
 
@@ -372,7 +372,7 @@ async def _engine_of(db: AsyncSession, request: Request, hospital: str, admissio
                 await asyncio.wait_for(answering.wait(), ANSWER_WAIT_S)
             except TimeoutError:
                 log.warning("admission %s: a resend of its form waited %ss for the first send's "
-                            "board writes and answers the parts asked for as failed", number,
+                            "board writes and answers the parts asked for as failed", key,
                             ANSWER_WAIT_S)
                 return _not_reached(weight_asked=weight_asked, profile_asked=profile_asked)
         report = (await db.execute(select(Admission.engine_writes)
