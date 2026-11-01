@@ -10,6 +10,7 @@ import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW } from "../../../data/board.testutil.js";
 import { dayStamp } from "../../../i18n/dates.js";
 import { SofaBox } from "./SofaBox.jsx";
+import { SIGN_ARM_MS } from "./SofaFormModal.jsx";
 import { LAST_SIGNED, WHY, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -88,6 +89,7 @@ describe("the SOFA box (D1)", () => {
     fireEvent.change(within(entry).getByLabelText("Əsaslandırma"), { target: { value: WHY } });
     await press(within(entry).getByRole("button", { name: "Düzəlişi saxlayın" }));
     await press(within(dialog).getByRole("button", { name: "Öncədən baxın" }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, SIGN_ARM_MS)); });   // «İmzalayın» is armed
     await press(within(dialog).getByRole("button", { name: "İmzalayın" }));
     expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides: [{ code: "platelets", value: 80, reason: WHY }] });
     expect(screen.queryByRole("dialog")).toBeNull();

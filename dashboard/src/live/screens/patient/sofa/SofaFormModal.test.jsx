@@ -10,16 +10,22 @@ import { mount, refusal } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW } from "../../../data/board.testutil.js";
 import { dayStamp } from "../../../i18n/dates.js";
-import { SofaFormModal } from "./SofaFormModal.jsx";
+import { SIGN_ARM_MS, SofaFormModal } from "./SofaFormModal.jsx";
 import { toLocalInput } from "./sofaFields.js";
 import { MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The fake-timer recipe of the earlier waves (meds/MedsChartForm.test.jsx): installed BEFORE the mount, `Date`
+// faked with them, nothing advancing on its own — so «İmzalayın»'s arming window is crossed only when a test
+// says so; `settle` yields one turn of the REAL event loop.
+const realSetTimeout = globalThis.setTimeout;
+const FAKE_TIMERS = { toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] };
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 const BED = "REA-01 · 2";
 const ALL = ["board.view", "alerts.ack", "clinical.chart", "scores.sign"];
 const AT = () => dayStamp(Date.parse(MEASURED_AT), NOW);
 
 async function open({ canChart = true, canSign = true, form = sofaForm(), api: over = {} } = {}) {
+  vi.useFakeTimers(FAKE_TIMERS);
   vi.setSystemTime(NOW);
   const api = {
     read: vi.fn(() => Promise.resolve(form)),
@@ -40,7 +46,18 @@ const organ = (name) => within(dialog()).getByRole("heading", { level: 3, name }
 const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
 const button = (name) => within(dialog()).getByRole("button", { name });
 const toasted = (text) => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(text);
+/** The tone of the toast card that says `text` (its visible copy carries `data-tone`). */
+const toneOf = (text) => toasted(text).map((el) => el.closest("[data-tone]")?.getAttribute("data-tone")).find(Boolean);
 const footer = () => dialog().querySelector("[data-sofa-footer]");
+/** «İmzalayın» is held for SIGN_ARM_MS after a preview: the time a double click's second press takes. */
+const armed = () => act(() => { vi.advanceTimersByTime(SIGN_ARM_MS); });
+/** «Öncədən baxın», and the arming window let pass. */
+async function previewed() {
+  await press(button("Öncədən baxın"));
+  await armed();
+}
+/** A click as the browser counts it: `detail` is the click's place in a run of clicks (2 for a double click's second). */
+const click = (el, detail) => act(async () => { fireEvent.click(el, { detail }); await settle(); });
 
 async function correctPlatelets(value = "80") {
   await press(within(organ("Laxtalanma")).getByRole("button", { name: "Düzəldin: Trombosit sayı" }));
@@ -212,7 +229,7 @@ describe("preview, then sign (D6)", () => {
     expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();          // never before a preview
     expect(footer()).toHaveTextContent("İmzalamazdan əvvəl öncədən baxın");
     await correctPlatelets();
-    await press(button("Öncədən baxın"));
+    await previewed();
     const overrides = [{ code: "platelets", value: 80, reason: WHY }];
     expect(api.preview).toHaveBeenCalledWith(overrides);
     expect(within(dialog()).getByText("Öncədən baxış: cəmi 4 (qeyddən: 5) — hələ imzalanmayıb")).toBeInTheDocument();
@@ -237,16 +254,82 @@ describe("preview, then sign (D6)", () => {
   it("says so when the signed total is not the previewed one: the record moved in between (X11)", async () => {
     await open({ api: { sign: vi.fn(() => Promise.resolve(signedAnswer({ total: 6 }))) } });
     await correctPlatelets();
-    await press(button("Öncədən baxın"));
+    await previewed();
     await press(button("İmzalayın"));
-    expect(toasted(`${BED}: SOFA forması cəmi 6 ilə imzalandı — öncədən baxışda 4 idi; qeyd arada dəyişib.`).length).toBeGreaterThan(0);
+    const said = `${BED}: SOFA forması cəmi 6 ilə imzalandı — öncədən baxışda 4 idi; qeyd arada dəyişib.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+  });
+
+  it("says so when the total held but the record under a correction moved: another original, or an organ's points (X11)", async () => {
+    const moved = signedAnswer();
+    moved.overrides = [{ ...moved.overrides[0], original: 50 }];                // the window slid: 50 is under her 80 now
+    await open({ api: { sign: vi.fn(() => Promise.resolve(moved)) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    const said = `${BED}: SOFA forması cəmi 4 ilə imzalandı — amma qeyd öncədən baxışdan sonra dəyişib: formanı yenidən açıb yoxlayın.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(toasted(`${BED}: SOFA forması imzalandı · cəmi 4.`)).toHaveLength(0);
+    cleanup();
+    const shifted = signedAnswer();                                              // 4 still, but from other organs
+    shifted.form = { ...shifted.form, rows: shifted.form.rows.map((row) => (
+      row.organ === "respiration" ? { ...row, points: 1 } : row.organ === "liver" ? { ...row, points: 1, measured: true } : row)) };
+    await open({ api: { sign: vi.fn(() => Promise.resolve(shifted)) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    expect(toasted(said).length).toBeGreaterThan(0);
+  });
+
+  it("an answer to «Öncədən baxın» that SIGNED — an engine older than G2-A4 — is said on the toast and in the footer, the box reads again, and nothing more is offered (X13)", async () => {
+    const { api, onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(signedAnswer())) } });
+    await correctPlatelets();
+    await previewed();
+    const said = `${BED}: mühərrik öncədən baxış etmədi, formanı imzaladı — imza qeyddədir. SOFA qutusundakı son imza sətrinə baxın.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(footer()).toHaveTextContent(said);
+    expect(onClose).toHaveBeenCalledWith(true);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(within(dialog()).queryByText(/^Öncədən baxış: cəmi/)).toBeNull();
+    expect(api.sign).not.toHaveBeenCalled();
+  });
+
+  it("an answer to «Öncədən baxın» that is not a preview is a refused preview: nothing is shown as previewed, nothing offered to sign", async () => {
+    const { preview: _flag, ...unflagged } = previewAnswer();
+    const { onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(unflagged)) } });
+    await correctPlatelets();
+    await previewed();
+    const said = `${BED} üçün öncədən baxış alınmadı: mühərrikin cavabı öncədən baxış deyildi`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(footer()).toHaveTextContent(said);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(within(dialog()).queryByText(/^Öncədən baxış: cəmi/)).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a double click on «Öncədən baxın» never signs: «İmzalayın», where it lands, is held for SIGN_ARM_MS", async () => {
+    const { api } = await open();
+    await correctPlatelets();
+    await click(button("Öncədən baxın"), 1);
+    const sign = button("İmzalayın");                                            // where the second press lands
+    expect(sign).toHaveAttribute("aria-disabled", "true");
+    await click(sign, 2);
+    await click(sign, 1);                                                        // even a single press, inside the window
+    expect(api.sign).not.toHaveBeenCalled();
+    await armed();
+    expect(button("İmzalayın")).not.toHaveAttribute("aria-disabled");
+    await click(button("İmzalayın"), 1);
+    expect(api.sign).toHaveBeenCalledTimes(1);
   });
 
   it("a refused signature is said on the toast and in the footer, and the form stays open with its corrections", async () => {
     const reason = "platelets: düzeltme gerekçesi en az 20 karakter olmalı — bu sayı hastane raporlamasına giriyor ve neden değiştirildiği kayda geçmeli";
     const { onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(400, reason))) } });
     await correctPlatelets();
-    await press(button("Öncədən baxın"));
+    await previewed();
     await press(button("İmzalayın"));
     const said = `${BED} üçün imza rədd edildi: ${reason}`;
     expect(toasted(said).length).toBeGreaterThan(0);
@@ -258,14 +341,14 @@ describe("preview, then sign (D6)", () => {
   it("a right taken away (403) closes the form; a signature with no answer may have gone through, and closes it too", async () => {
     let { onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(403, "permission required: scores.sign"))) } });
     await correctPlatelets();
-    await press(button("Öncədən baxın"));
+    await previewed();
     await press(button("İmzalayın"));
     expect(toasted(`${BED} üçün imza rədd edildi: Bu hesabın imza səlahiyyəti yoxdur.`).length).toBeGreaterThan(0);
     expect(onClose).toHaveBeenCalledWith(false);
     cleanup();
     ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))) } }));
     await correctPlatelets();
-    await press(button("Öncədən baxın"));
+    await previewed();
     await press(button("İmzalayın"));
     expect(toasted(`${BED} üçün imza cavab almadı; atılmış ola bilər — SOFA qutusundakı son imza sətrinə baxın.`).length).toBeGreaterThan(0);
     expect(onClose).toHaveBeenCalledWith(true);

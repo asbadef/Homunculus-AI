@@ -16,10 +16,15 @@
 // `scores.sign` holder corrects a measured value (D5, `CorrectionEntry`); the corrections are held here, unsent,
 // until «Önizle» asks the engine what a signature would seal (D6, `preview: true`, no audit row). «İmzala» is
 // offered only on a preview of exactly the corrections held now — change one and the preview is stale until it
-// is asked again (X12) — and sends the same list. If the record moved between the two, the signed total is the
-// engine's and the screen says it differed from the preview (X11). Against an engine that sends no
-// `min_reason_chars` — one older than G2-A4, which ignores `preview` and would SIGN — nothing is corrected,
-// previewed or signed (X13). Each control is ABSENT without its right, never disabled, and a sentence says why.
+// is asked again (X12) — and sends the same list. It appears where «Önizle» stood, so for SIGN_ARM_MS after a
+// preview it is held (aria-disabled), and the second press of a double click is never a press: a double click
+// on «Önizle» must not sign. If the record moved between the two — the signed total, an organ's points, or the
+// value under a correction (the engine reads each `original` at signing) — the signature is the engine's and
+// the screen says the record moved (X11). Against an engine that sends no `min_reason_chars` — one older than
+// G2-A4, which ignores `preview` and would SIGN — nothing is corrected, previewed or signed (X13); and an answer
+// to «Önizle» is shown as a preview only when it says it is one. One that says it was SIGNED is said, and the
+// box reads its signature again; any other shape is a refused preview. Each control is ABSENT without its
+// right, never disabled, and a sentence says why.
 //
 // THE REFUSALS are the house's (admin/refusal.js, meds/MedsChartForm.jsx): on the toast, named after the bed —
 // and, D10, the same sentence in the footer as plain text, which is no live region, so the refusal is announced
@@ -38,6 +43,32 @@ import { ChartEntry, CorrectionEntry } from "./SofaEditors.jsx";
 import {
   correctionsKey, isEnterable, labelOf, overridesOf, recordedOf, rowsInOrder, sourceText, stampOf,
 } from "./sofaFields.js";
+
+/** How long «İmzala» is held after a preview: it appears where «Önizle» stood, and a double click's second press
+ *  comes well inside this (measured in Chrome on a dialog of the same shape). */
+export const SIGN_ARM_MS = 600;
+
+/** Is this answer to `preview: true` really a preview? An engine older than G2-A4 ignores the flag and answers
+ *  a signature (`signed: true`); anything else that does not say it is a preview — with a form and a total —
+ *  is not shown as one (X13). */
+const isPreview = (answer) => answer?.preview === true && answer.signed === false
+  && answer.form !== null && typeof answer.form === "object" && Number.isInteger(answer.total);
+
+/** What the record held under an answer, as one string: each correction's `original` by code (the engine reads
+ *  it from the record when it scores) and each organ's points. A preview and its signature agree on this only
+ *  when the record did not move between them (X11). */
+function recordUnder(answer) {
+  const originals = {};
+  for (const o of Array.isArray(answer?.overrides) ? answer.overrides : []) {
+    if (o && typeof o.code === "string") originals[o.code] = o.original ?? null;
+  }
+  const points = {};
+  for (const row of Array.isArray(answer?.form?.rows) ? answer.form.rows : []) {
+    if (row && typeof row.organ === "string") points[row.organ] = row.points ?? null;
+  }
+  const sorted = (table) => Object.keys(table).sort().map((k) => [k, table[k]]);
+  return JSON.stringify([sorted(originals), sorted(points)]);
+}
 
 /** The window line (D2): the engine's hours and bounds — or, when the patient has been here for less than the
  *  window (`covers_full_window` false), that the form rests on the shorter stay. */
@@ -105,17 +136,34 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   const [editing, setEditing] = useState(null);        // { kind: "chart" | "correct", code }: one editor at a time
   const [busy, setBusy] = useState(null);              // "chart" | "preview" | "sign": the request in flight
   const [said, setSaid] = useState(null);              // { text, warn }: the footer's sentence for the last outcome
+  const [arming, setArming] = useState(false);         // «İmzala» just appeared: held for SIGN_ARM_MS
   const footerId = useId();
   const changed = useRef(false);                       // something was written: the box reads its form again
   const sending = useRef(false);                       // a second press that beats the re-render is ignored
   const reads = useRef(0);                             // only the newest read lands
   const buttons = useRef({});                          // `${kind}:${code}` -> the button an editor gives focus back to
+  const armed = useRef(true);                          // false inside the arming window, read by the press itself
+  const armTimer = useRef(null);
   const mounted = useRef(false);
   // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      clearTimeout(armTimer.current);
+    };
   }, []);
+
+  /** Hold «İmzala» for SIGN_ARM_MS: it has just appeared where «Önizle» stood. */
+  function arm() {
+    clearTimeout(armTimer.current);
+    armed.current = false;
+    setArming(true);
+    armTimer.current = setTimeout(() => {
+      armed.current = true;
+      if (mounted.current) setArming(false);
+    }, SIGN_ARM_MS);
+  }
 
   async function read() {
     const mine = ++reads.current;
@@ -216,44 +264,67 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   }
 
   /** «Önizle» (D6): the engine's answer to the corrections held now, signed by nobody and written nowhere. A
-   *  failure is a read's: nothing was written, so nothing "may have landed". */
+   *  failure is a read's: nothing was written, so nothing "may have landed". The answer is a preview only when
+   *  it says so (X13): one that says it SIGNED — an engine older than G2-A4, which ignores `preview` — is a
+   *  signature in the record, said as such, and the box reads its last signature again; any other shape is a
+   *  refused preview, never something to sign. */
   async function previewIt() {
     if (sending.current) return;
     sending.current = true;
     setBusy("preview");
     const asked = corrections;
+    let done;
     try {
       const answer = await api.preview(overridesOf(asked));
-      if (!mounted.current || !answer) return;
-      setPreview({ key: correctionsKey(asked), answer });
-      setSaid({ text: t("sofa.previewed", { total: answer.total }), warn: false });
+      if (!answer) return;                             // the session ended: nothing is said into the next one
+      if (answer.signed === true) {
+        changed.current = true;
+        done = { text: t("sofa.previewSigned", { subject: bed }), tone: "warn", close: true };
+      } else if (isPreview(answer)) {
+        if (!mounted.current) return;
+        setPreview({ key: correctionsKey(asked), answer });
+        arm();
+        setSaid({ text: t("sofa.previewed", { total: answer.total }), warn: false });
+        return;
+      } else {
+        done = { text: t("sofa.previewRefused", { subject: bed, reason: t("sofa.previewNotPreview") }), tone: "error", close: false };
+      }
     } catch (err) {
       if (err?.superseded) return;
       const reason = err?.status === 403 ? t("sofa.signNoRight") : readErrorText(t, err);
-      const text = t("sofa.previewRefused", { subject: bed, reason });
-      toast(text, "error");
-      if (mounted.current) setSaid({ text, warn: true });
+      done = { text: t("sofa.previewRefused", { subject: bed, reason }), tone: "error", close: false };
     } finally {
       sending.current = false;
       if (mounted.current) setBusy(null);
     }
+    toast(done.text, done.tone);
+    if (mounted.current) setSaid({ text: done.text, warn: true });
+    if (done.close) onClose(changed.current);
   }
 
-  /** «İmzala» (D6): the same corrections the fresh preview was asked with. The total the engine signs is the
-   *  engine's: if the record moved since the preview (another desk charted), it is said, not hidden (X11). */
-  async function signIt() {
+  /** «İmzala» (D6): the same corrections the fresh preview was asked with. Not inside the arming window, and
+   *  never the second press of a double click (`detail` > 1): «İmzala» appeared where «Önizle» stood. What the
+   *  engine signs is the engine's: if the record moved since the preview — another desk charted, the window
+   *  slid — the total, an organ's points or the value under a correction differ, and that is said (X11). */
+  async function signIt(event) {
+    if ((event?.detail ?? 0) > 1 || !armed.current) return;
     if (sending.current || !fresh) return;
     sending.current = true;
     setBusy("sign");
-    const previewed = preview.answer.total;
+    const asked = preview.answer;
+    const previewed = asked.total;
     let done;
     try {
       const answer = await api.sign(overridesOf(corrections));
       changed.current = true;
       const total = answer?.total ?? previewed;
-      done = total === previewed
-        ? { text: t("sofa.signedToast", { subject: bed, total }), tone: "ok", close: true }
-        : { text: t("sofa.signedDiffers", { subject: bed, total, previewed }), tone: "warn", close: true };
+      if (total !== previewed) {
+        done = { text: t("sofa.signedDiffers", { subject: bed, total, previewed }), tone: "warn", close: true };
+      } else if (recordUnder(answer) !== recordUnder(asked)) {
+        done = { text: t("sofa.signedRecordMoved", { subject: bed, total }), tone: "warn", close: true };
+      } else {
+        done = { text: t("sofa.signedToast", { subject: bed, total }), tone: "ok", close: true };
+      }
     } catch (err) {
       if (err?.superseded) return;
       if (mayHaveLanded(err)) {
@@ -419,7 +490,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
               </Button>
             ) : null}
             {signable && fresh ? (
-              <Button variant="primary" icon="ok" onClick={signIt} busy={busy === "sign"} aria-describedby={footer ? footerId : undefined}>
+              <Button variant="primary" icon="ok" onClick={signIt} busy={busy === "sign"} aria-disabled={arming ? "true" : undefined}
+                aria-describedby={footer ? footerId : undefined}>
                 {t("sofa.sign")}
               </Button>
             ) : null}
