@@ -218,6 +218,67 @@ def test_every_differing_part_is_named_and_the_table_is_shown_not_judged(tmp_pat
     assert out.isascii()
 
 
+# ---- Task 13 review (E47 ...): the comparison fails closed; every read failure is an exit 2 ------------
+
+
+def test_a_saved_line_without_the_compared_keys_is_refused_not_compared(tmp_path, capsys):
+    module = _load()
+    whole = _saved(tmp_path, "whole.txt", "ONCE", module.summary(BOARD))
+    empty = _saved(tmp_path, "empty.txt", "SONRA", {})
+    partial = _saved(tmp_path, "partial.txt", "SONRA", {"beds": [], "unassigned": []})
+    for first, second in ((empty, empty), (whole, empty), (partial, whole), (whole, partial)):
+        assert module.main(["--karsilastir", first, second]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "beds, unassigned, link_one" in captured.err
+
+
+def test_an_env_file_that_is_not_utf8_exits_2_and_names_only_the_class(tmp_path, capsys):
+    path = tmp_path / ".env"
+    path.write_bytes(b"# \xff\xfe\nTENANT_TOKEN=gizli-sentetik-token\n")
+
+    def get(path_, token):
+        raise AssertionError("the board must not be asked when the .env cannot be read")
+
+    assert _load().main(["--etiket", "ONCE"], get=get, env_path=str(path)) == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and ".env" in captured.err and "UnicodeDecodeError" in captured.err
+    assert "gizli" not in captured.err
+
+
+@pytest.mark.parametrize("board", [
+    {"beds": "H2600042"}, {"beds": {"H2600042": 1}}, {"beds": 5}, {"beds": [None]}, {"beds": ["H2600042"]},
+    {"table": ["H2600042"]}, {"unassigned": [None]}, {"unassigned": "H2600042"},
+    {"feed": ["H2600042"]}, {"feed": {"devices": ["H2600042"]}},
+])
+def test_a_board_of_odd_shape_exits_2_and_prints_none_of_it(tmp_path, capsys, board):
+    assert _load().main(["--etiket", "ONCE"], get=lambda p, t: board, env_path=_env(tmp_path)) == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "board biçimi beklenmedik" in captured.err
+    assert "H2600042" not in captured.err
+
+
+def test_the_line_is_pure_ascii_and_the_labels_come_back_through_json(tmp_path, capsys):
+    module = _load()
+    board = json.loads(json.dumps(BOARD))
+    board["beds"][0]["bed_label"] = "Çarpayı 1"
+    board["unassigned"][0]["reason"] = "Şüpheli"
+    assert module.main(["--etiket", "ONCE"], get=lambda p, t: board, env_path=_env(tmp_path)) == 0
+    out = capsys.readouterr().out
+    assert out.isascii()
+    parsed = json.loads(out.strip().split(" ", 1)[1])
+    assert parsed == module.summary(board)
+    assert ["10.10.203.24", "ec5a3244-426b-4877-af3c-bb2bb829ce1f", "Çarpayı 1"] in parsed["beds"]
+    # A line written with the characters themselves compares equal to the escaped one.
+    escaped = tmp_path / "escaped.txt"
+    escaped.write_text(out, encoding="utf-8")
+    raw = _saved(tmp_path, "raw.txt", "SONRA", module.summary(board))
+    Path(raw).write_text("ESLEME_OZET_SONRA " + json.dumps(module.summary(board), ensure_ascii=False) + "\n",
+                         encoding="utf-8")
+    assert module.main(["--karsilastir", str(escaped), raw]) == 0
+    assert "AYNI" in capsys.readouterr().out
+
+
 def test_the_script_imports_only_the_standard_library():
     tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
     imported = set()
