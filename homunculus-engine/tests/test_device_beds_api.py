@@ -2,15 +2,23 @@
 """The editor's routes (spec §4): the list (Task 8); bind and unbind (Task 9). Synthetic ward."""
 from __future__ import annotations
 
+import asyncio
 import time
+import uuid
 from datetime import datetime
 
 import pytest
+from alembic import command
+from pydantic import ValidationError
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from homunculus.admission import trail
 from homunculus.devicebeds.models import DeviceBed
+from homunculus.devicebeds.schemas import BindBody, UnbindBody
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
-from tests.conftest import requires_db
+from tests.conftest import TEST_DATABASE_URL, _sync_engine_url, requires_db
 from tests.esleme_world import APPROVED, FROM, SOURCES, URL, esleme_client, group_of, seed
 from tests.kabul_world import BOARD
 
@@ -19,6 +27,26 @@ pytestmark = [requires_db]
 
 def _by_source(body):
     return {d["source"]: d for d in body["devices"]}
+
+
+async def _foreign_bed(db) -> tuple[Tenant, Unit, Bed]:
+    """A bed of ANOTHER hospital (synthetic): its tenant, its unit and the bed."""
+    other = Tenant(name="Sentetik Başqa Xəstəxana", slug="baska-hastane", country_code="AZ")
+    db.add(other)
+    await db.flush()
+    site = Site(tenant_id=other.id, name="Başqa bina")
+    db.add(site)
+    await db.flush()
+    unit = Unit(site_id=site.id, name="Başqa şöbə", unit_type=UnitType.ADULT_ICU)
+    db.add(unit)
+    await db.flush()
+    room = Room(unit_id=unit.id, name="Başqa otaq")
+    db.add(room)
+    await db.flush()
+    bed = Bed(room_id=room.id, label="X1")
+    db.add(bed)
+    await db.flush()
+    return other, unit, bed
 
 
 async def test_the_list_is_the_workers_devices_and_the_tables_rows_in_address_order(db_session):
@@ -113,21 +141,7 @@ async def test_a_row_pointing_at_another_tenants_bed_names_nothing_even_to_the_a
     """A bed has no tenant_id (A-8): the names come through room, unit and site, so a row that
     somehow names a bed of another hospital shows its id alone and is not editable."""
     async with esleme_client(db_session) as (client, _, ward):
-        other = Tenant(name="Sentetik Başqa Xəstəxana", slug="baska-hastane", country_code="AZ")
-        db_session.add(other)
-        await db_session.flush()
-        site = Site(tenant_id=other.id, name="Başqa bina")
-        db_session.add(site)
-        await db_session.flush()
-        unit = Unit(site_id=site.id, name="Başqa şöbə", unit_type=UnitType.ADULT_ICU)
-        db_session.add(unit)
-        await db_session.flush()
-        room = Room(unit_id=unit.id, name="Başqa otaq")
-        db_session.add(room)
-        await db_session.flush()
-        foreign = Bed(room_id=room.id, label="X1")
-        db_session.add(foreign)
-        await db_session.flush()
+        _, unit, foreign = await _foreign_bed(db_session)
         db_session.add(DeviceBed(tenant_id=ward.tenant.id, source="192.0.2.11", group_address=group_of("192.0.2.11"),
                                  port=2050, device_bed_label="BED05", bed_label="BED05", bed_id=foreign.id,
                                  unit_id=unit.id, valid_from=FROM, approved_by="proje sahibi", approved_at=APPROVED))
@@ -168,3 +182,390 @@ async def test_with_the_strip_off_the_lane_check_asks_the_database_nothing(db_se
 async def test_at_stage_rules_the_list_says_rules(db_session):
     async with esleme_client(db_session, stage="rules") as (client, _, ward):
         assert (await client.get(URL, headers=ward.auth["admin"])).json()["stage"] == "rules"
+
+
+# --- Task 9: bind and unbind (spec §4.3-§4.5, §4.7) -----------------------------------------------------------
+
+async def _rows(db, source):
+    return (await db.execute(select(DeviceBed).where(DeviceBed.source == source)
+                             .order_by(DeviceBed.id).execution_options(populate_existing=True))).scalars().all()
+
+
+async def _open_rows(db, tenant_id):
+    return (await db.execute(select(DeviceBed).where(DeviceBed.tenant_id == tenant_id, DeviceBed.valid_to.is_(None))
+                             .order_by(DeviceBed.id).execution_options(populate_existing=True))).scalars().all()
+
+
+def _bind(client, ward, who, source, bed_key, device_row=None, bed_row=None, **extra):
+    return client.post(f"{URL}/bind", headers=ward.auth[who], json={
+        "source": source, "bed_id": str(ward.beds[bed_key].id) if bed_key in ward.beds else bed_key,
+        "expected": {"device_row_id": device_row, "bed_row_id": bed_row}, **extra})
+
+
+def _unbind(client, ward, who, source, device_row, **extra):
+    return client.post(f"{URL}/unbind", headers=ward.auth[who],
+                       json={"source": source, "expected": {"device_row_id": device_row}, **extra})
+
+
+def _row_id(response, source):
+    """The `row_id` the answer's list gives `source` — what the screen would send as `expected`."""
+    return _by_source(response.json()["list"])[source]["row_id"]
+
+
+def _committed_bed_of(source):
+    """The bed the DATABASE holds for `source` right now, read on a connection of its own (so only what
+    has committed is visible)."""
+    engine = create_engine(_sync_engine_url(TEST_DATABASE_URL))
+    try:
+        with engine.connect() as conn:
+            return conn.execute(text("SELECT bed_id FROM device_beds WHERE source = :s AND valid_to IS NULL"),
+                                {"s": source}).scalar_one_or_none()
+    finally:
+        engine.dispose()
+
+
+def _spy_reset(app, observe=lambda: None):
+    """Wrap `app.state.shadow_table_reset`: each call records what `observe()` sees at that moment."""
+    seen, original = [], app.state.shadow_table_reset
+
+    def reset():
+        seen.append(observe())
+        original()
+
+    app.state.shadow_table_reset = reset
+    return seen
+
+
+async def test_a_new_monitor_is_bound_to_an_empty_bed_as_an_editor_row(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        primed = (await client.get("/infinity-shadow/board", headers=BOARD)).json()   # the strip has read its table
+        response = await _bind(client, ward, "admin", "192.0.2.13", "2")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        [row] = await _rows(db_session, "192.0.2.13")
+        audit = app.state.audit.records(event_type="device_bed.bind")
+        board = (await client.get("/infinity-shadow/board", headers=BOARD)).json()
+    assert [c for c in primed["beds"] if c["bed_id"] == str(ward.beds["2"].id)] == []
+    assert body["changed"] is True and body["replaced_source"] is None
+    assert (row.bed_id, row.bed_label, row.unit_id) == (ward.beds["2"].id, "2", ward.units["rea"].id)
+    assert (row.group_address, row.port, row.device_bed_label, row.note) == ("224.0.2.13", 2050, None, None)
+    assert (row.method, row.verified_by, row.approved_by) == ("editor", ward.users["admin"].id, ward.users["admin"].username)
+    assert datetime.fromisoformat(row.verified_at) == row.valid_from == row.approved_at and row.verified_at.endswith("+00:00")
+    [entry] = [d for d in body["list"]["devices"] if d["source"] == "192.0.2.13"]
+    assert entry["row_id"] == row.id and entry["bed"]["label"] == "2"
+    [rec] = audit
+    assert (rec.subject, rec.patient_id, rec.payload["old"], rec.payload["new"]["row_id"]) == ("192.0.2.13", "", None, row.id)
+    assert rec.payload["actor"] == ward.users["admin"].username
+    assert [c["source"] for c in board["beds"] if c["bed_id"] == str(ward.beds["2"].id)] == ["192.0.2.13"]
+
+
+async def test_the_unit_of_the_new_row_is_the_beds_own_never_the_requests(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        assert (await _bind(client, ward, "admin", "192.0.2.13", "N1")).status_code == 200
+        [row] = await _rows(db_session, "192.0.2.13")
+    assert (row.bed_id, row.unit_id, row.bed_label) == (ward.beds["N1"].id, ward.units["neo"].id, "N1")
+
+
+async def test_a_bound_monitor_moves_closing_its_row_and_opening_one(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        assert (await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])).status_code == 200
+        old, new = await _rows(db_session, "192.0.2.11")
+        [rec] = app.state.audit.records(event_type="device_bed.bind")
+    assert old.valid_to == new.valid_from and new.valid_to is None
+    assert (new.bed_id, new.bed_label, new.device_bed_label) == (ward.beds["2"].id, "2", "BED05")
+    assert rec.payload["old"] == {"row_id": old.id, "bed_id": str(ward.beds["1"].id),
+                                  "unit_id": str(ward.units["rea"].id), "bed_label": "BED05"}
+
+
+async def test_a_monitor_only_a_row_holds_can_be_moved_and_keeps_its_group(db_session):
+    """Not reported by the worker, yet in the table (D8): the group is the last row's."""
+    async with esleme_client(db_session) as (client, _, ward):
+        ids = await seed(db_session, ward, ("192.0.2.20", "3", "BED07"))
+        response = await _bind(client, ward, "admin", "192.0.2.20", "2", ids["192.0.2.20"])
+        _, new = await _rows(db_session, "192.0.2.20")
+    assert response.status_code == 200
+    assert (new.bed_id, new.group_address, new.device_bed_label) == (ward.beds["2"].id, "224.0.2.20", "BED07")
+
+
+async def test_a_bed_with_a_monitor_takes_the_new_one_and_the_old_one_is_unbound(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))
+        response = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"], ids["192.0.2.12"])
+        displaced = await _rows(db_session, "192.0.2.12")
+        current = await _open_rows(db_session, ward.tenant.id)
+        binds = app.state.audit.records(event_type="device_bed.bind")
+        unbinds = app.state.audit.records(event_type="device_bed.unbind")
+    assert response.json()["replaced_source"] == "192.0.2.12"
+    assert [(r.bed_id, r.valid_to is None) for r in displaced] == [(ward.beds["2"].id, False), (None, True)]
+    assert displaced[1].device_bed_label == "BED06" and displaced[1].bed_label is None
+    assert displaced[0].valid_to == displaced[1].valid_from
+    on_bed_two = [r.source for r in current if r.bed_id == ward.beds["2"].id]
+    assert on_bed_two == ["192.0.2.11"]                                  # a bed never has two monitors, not even after
+    assert sorted(r.source for r in current) == ["192.0.2.11", "192.0.2.12"]    # one current row per source
+    [rec] = unbinds
+    assert (rec.subject, rec.payload["reason"], rec.payload["by_source"]) == ("192.0.2.12", "replaced", "192.0.2.11")
+    assert [(r.subject, r.payload["replaced_source"]) for r in binds] == [("192.0.2.11", "192.0.2.12")]
+    entries = _by_source(response.json()["list"])
+    assert (entries["192.0.2.12"]["bed"], entries["192.0.2.11"]["bed"]["label"]) == (None, "2")
+
+
+@pytest.mark.parametrize("bed_key, label", [("1", "BED05"), (None, "BED01")])
+async def test_an_unbind_writes_an_unbound_row_for_a_bound_and_a_label_only_monitor(db_session, bed_key, label):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", bed_key, label))
+        assert (await _unbind(client, ward, "admin", "192.0.2.11", ids["192.0.2.11"])).status_code == 200
+        rows = await _rows(db_session, "192.0.2.11")
+        [rec] = app.state.audit.records(event_type="device_bed.unbind")
+    assert [(r.bed_label, r.valid_to is None) for r in rows] == [(label, False), (None, True)]
+    assert (rows[1].method, rows[1].bed_id, rows[1].unit_id, rows[1].device_bed_label) == ("editor", None, None, label)
+    assert rec.payload["reason"] == "unbound" and rec.payload["new"]["bed_label"] is None
+
+
+async def test_asking_for_what_already_holds_changes_nothing_even_with_a_stale_expected(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", None, None))
+        resets = _spy_reset(app)
+        again = await _bind(client, ward, "admin", "192.0.2.11", "1", 999, 999)
+        unbound = await _unbind(client, ward, "admin", "192.0.2.12", 999)
+        never_had_a_row = await _unbind(client, ward, "admin", "192.0.2.13", 999)
+        assert len(await _rows(db_session, "192.0.2.11")) == 1
+        assert await _rows(db_session, "192.0.2.13") == []
+    assert (again.json()["changed"], unbound.json()["changed"], never_had_a_row.json()["changed"]) == (False, False, False)
+    assert again.json()["replaced_source"] is None and "devices" in again.json()["list"]
+    assert app.state.audit.records() == []
+    assert resets == []                                                  # nothing changed: the strip's table stays
+
+
+async def test_a_request_sent_again_after_its_answer_was_lost_answers_changed_false_not_mapping_changed(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        first = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])
+        again = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])   # the same body, byte for byte
+        now_bound = _row_id(first, "192.0.2.11")
+        unbound = await _unbind(client, ward, "admin", "192.0.2.11", now_bound)
+        unbound_again = await _unbind(client, ward, "admin", "192.0.2.11", now_bound)
+        rows = await _rows(db_session, "192.0.2.11")
+        audit = app.state.audit.records()
+    assert [r.status_code for r in (first, again, unbound, unbound_again)] == [200, 200, 200, 200]
+    assert [r.json()["changed"] for r in (first, again, unbound, unbound_again)] == [True, False, True, False]
+    assert len(rows) == 3                                               # the old row, the bound row, the unbound row
+    assert [r.event_type for r in audit] == ["device_bed.bind", "device_bed.unbind"]
+
+
+async def test_a_stale_expected_is_mapping_changed_and_writes_nothing(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))
+        resets = _spy_reset(app)
+        stale_device = await _bind(client, ward, "admin", "192.0.2.11", "2", None, ids["192.0.2.12"])
+        stale_bed = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"], None)
+        wrong_bed_row = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"], ids["192.0.2.11"])
+        stale_unbind = await _unbind(client, ward, "admin", "192.0.2.11", ids["192.0.2.12"])
+        current = await _open_rows(db_session, ward.tenant.id)
+    for response in (stale_device, stale_bed, wrong_bed_row, stale_unbind):
+        assert response.status_code == 409 and response.json()["detail"]["code"] == "mapping_changed"
+    assert [(r.source, r.bed_id) for r in current] == [("192.0.2.11", ward.beds["1"].id), ("192.0.2.12", ward.beds["2"].id)]
+    assert app.state.audit.records() == [] and resets == []
+
+
+async def test_the_refusals_carry_their_codes(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        ward.beds["10"].is_active = False
+        await db_session.commit()
+        unknown = await _bind(client, ward, "admin", "192.0.2.99", "2")
+        multicast = await _bind(client, ward, "admin", "224.0.2.13", "2")
+        closed = await _bind(client, ward, "admin", "192.0.2.13", "10")
+        missing = await _bind(client, ward, "admin", "192.0.2.13", str(uuid.uuid4()))
+        extra = await _bind(client, ward, "admin", "192.0.2.13", "2", surplus=True)
+        not_text = await client.post(f"{URL}/unbind", headers=ward.auth["admin"],
+                                     json={"source": 7, "expected": {"device_row_id": None}})
+    assert (unknown.status_code, unknown.json()["detail"]["code"]) == (404, "device_unknown")
+    assert (multicast.status_code, multicast.json()["detail"]["code"]) == (422, "field_invalid:source")
+    assert (closed.status_code, closed.json()["detail"]["code"]) == (409, "bed_closed")
+    assert missing.status_code == 404 and extra.status_code == 422 and not_text.status_code == 422
+
+
+@pytest.mark.parametrize("closing", ["room", "unit"])
+async def test_a_bed_whose_room_or_unit_is_closed_is_bed_closed(db_session, closing):
+    async with esleme_client(db_session) as (client, _, ward):
+        (ward.rooms["o2"] if closing == "room" else ward.units["rea"]).is_active = False
+        await db_session.commit()
+        response = await _bind(client, ward, "admin", "192.0.2.13", "3")
+        assert await _rows(db_session, "192.0.2.13") == []
+    assert (response.status_code, response.json()["detail"]["code"]) == (409, "bed_closed")
+
+
+async def test_a_bed_of_another_hospital_is_the_same_404_as_a_bed_that_does_not_exist(db_session):
+    """A-8: a bed has no tenant_id; the tenant is proved through room, unit and site. The refusal never
+    confirms that the id exists elsewhere, and nothing is written."""
+    async with esleme_client(db_session) as (client, app, ward):
+        _, _, foreign = await _foreign_bed(db_session)
+        await db_session.commit()
+        elsewhere = await _bind(client, ward, "admin", "192.0.2.13", str(foreign.id))
+        nowhere = await _bind(client, ward, "admin", "192.0.2.13", str(uuid.uuid4()))
+        rows = await _rows(db_session, "192.0.2.13")
+    assert elsewhere.status_code == nowhere.status_code == 404
+    assert elsewhere.json() == nowhere.json() == {"detail": "Bed not found"}
+    assert rows == [] and app.state.audit.records() == []
+
+
+async def test_another_hospitals_row_for_the_same_address_is_neither_read_nor_closed(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        other, unit, foreign = await _foreign_bed(db_session)
+        theirs = DeviceBed(tenant_id=other.id, source="192.0.2.13", group_address="224.0.2.13", port=2050,
+                           device_bed_label="BEDX", bed_label="X1", bed_id=foreign.id, unit_id=unit.id,
+                           valid_from=FROM, approved_by="proje sahibi", approved_at=APPROVED)
+        db_session.add(theirs)
+        await db_session.commit()
+        response = await _bind(client, ward, "admin", "192.0.2.13", "2")          # we have no row for it: expected null
+        [ours] = [r for r in await _rows(db_session, "192.0.2.13") if r.tenant_id == ward.tenant.id]
+        await db_session.refresh(theirs)
+    assert response.status_code == 200 and ours.bed_id == ward.beds["2"].id
+    assert (theirs.valid_to, theirs.bed_id) == (None, foreign.id)
+
+
+async def test_a_charge_nurse_acts_only_in_her_units(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "N1", "BEDN1"))
+        into_neo = await _bind(client, ward, "charge", "192.0.2.13", "N1", None, ids["192.0.2.11"])   # expected as it holds
+        out_of_neo = await _bind(client, ward, "charge", "192.0.2.11", "2", ids["192.0.2.11"])
+        unbind_neo = await _unbind(client, ward, "charge", "192.0.2.11", ids["192.0.2.11"])
+        own = await _bind(client, ward, "charge", "192.0.2.13", "2")
+    for response in (into_neo, out_of_neo, unbind_neo):
+        assert response.status_code == 403 and response.json()["detail"]["code"] == "out_of_scope"
+    assert own.status_code == 200
+
+
+@pytest.mark.parametrize("who", ["nurse", "bio"])
+async def test_without_the_key_nobody_writes(db_session, who):
+    async with esleme_client(db_session) as (client, _, ward):
+        assert (await _bind(client, ward, who, "192.0.2.13", "2")).status_code == 403
+        assert (await _unbind(client, ward, who, "192.0.2.13", None)).status_code == 403
+
+
+async def test_a_device_token_is_not_a_person_on_the_writes_either(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        denied = await client.post(f"{URL}/bind", headers=BOARD, json={
+            "source": "192.0.2.13", "bed_id": str(ward.beds["2"].id), "expected": {"device_row_id": None, "bed_row_id": None}})
+    assert denied.status_code == 401
+
+
+@pytest.mark.parametrize("options", [{"stage": "off"}, {"hospital": "baska-hastane"}])
+async def test_the_writes_answer_monitor_lane_off_unless_the_strip_runs_for_this_hospital(db_session, options):
+    async with esleme_client(db_session, **options) as (client, _, ward):
+        bound = await _bind(client, ward, "admin", "192.0.2.13", "2")
+        unbound = await _unbind(client, ward, "admin", "192.0.2.13", None)
+        assert await _rows(db_session, "192.0.2.13") == []
+    for response in (bound, unbound):
+        assert response.status_code == 409 and response.json()["detail"]["code"] == "monitor_lane_off"
+
+
+async def test_the_bodies_are_closed_a_unit_in_the_request_is_refused_not_dropped(db_session):
+    """A-8: the bind path takes the unit from the bed's own room, so the body has no place for one. `extra="forbid"`
+    makes a client that sends one hear about it (422) instead of a value silently ignored."""
+    ok = {"source": "192.0.2.13", "bed_id": str(uuid.uuid4()), "expected": {"device_row_id": None, "bed_row_id": None}}
+    BindBody.model_validate(ok)
+    for body, model in ((ok | {"unit_id": str(uuid.uuid4())}, BindBody),
+                        (ok | {"expected": {"device_row_id": None, "bed_row_id": None, "unit_id": "x"}}, BindBody),
+                        ({"source": "192.0.2.13", "expected": {"device_row_id": None}, "bed_id": ok["bed_id"]}, UnbindBody),
+                        ({k: v for k, v in ok.items() if k != "expected"}, BindBody),
+                        (ok | {"expected": {"device_row_id": None}}, BindBody)):         # both expected keys are required
+        with pytest.raises(ValidationError):
+            model.model_validate(body)
+    async with esleme_client(db_session) as (client, app, ward):
+        sent = await _bind(client, ward, "admin", "192.0.2.13", "2", unit_id=str(ward.units["neo"].id))
+        assert await _rows(db_session, "192.0.2.13") == []
+    assert sent.status_code == 422 and app.state.audit.records() == []
+
+
+@pytest.mark.parametrize("code, loud", [("23505", False), (None, False), ("23514", True), ("23503", True)])
+def test_only_an_index_that_fires_is_mapping_changed_a_check_or_a_key_that_fires_is_loud(code, loud):
+    """Spec §4.4 step 9 answers `mapping_changed` for the partial unique indexes. A CHECK (the interval) or a
+    foreign key firing is a bug of ours: it stays an error (a 500), not a refusal the screen would retry. A driver
+    that does not name the constraint is given the benefit of the doubt."""
+    from types import SimpleNamespace
+
+    from sqlalchemy.exc import IntegrityError
+
+    from homunculus.devicebeds.service import _is_other_than_a_unique_violation
+    assert _is_other_than_a_unique_violation(IntegrityError("INSERT", {}, SimpleNamespace(pgcode=code))) is loud
+
+
+async def test_the_strips_table_is_reset_once_the_change_has_committed_and_only_then(db_session):
+    """Spec §4.4 step 11: `shadow_table_reset` runs after the commit (the reset sees the new row on a
+    connection of its own), once per change — a replace is one change — and not for a refusal."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))
+        resets = _spy_reset(app, lambda: _committed_bed_of("192.0.2.11"))
+        refused = await _bind(client, ward, "admin", "192.0.2.11", "2", None, None)
+        assert resets == []
+        moved = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"], ids["192.0.2.12"])
+    assert (refused.status_code, moved.status_code) == (409, 200)
+    assert [str(bed) for bed in resets] == [str(ward.beds["2"].id)]
+
+
+async def test_a_change_shows_on_the_strip_at_once_not_after_the_tables_ten_seconds(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        app.state.shadow_table_reset()          # the app read its (empty) table at start-up, before the rows existed
+        before = (await client.get("/infinity-shadow/board", headers=BOARD)).json()       # primes the table's cache
+        moved = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])
+        after = (await client.get("/infinity-shadow/board", headers=BOARD)).json()
+        await _unbind(client, ward, "admin", "192.0.2.11", _row_id(moved, "192.0.2.11"))
+        gone = (await client.get("/infinity-shadow/board", headers=BOARD)).json()
+
+    def beds_of(board, source):
+        return [c["bed_id"] for c in board["beds"] if c["source"] == source]
+
+    assert beds_of(before, "192.0.2.11") == [str(ward.beds["1"].id)]
+    assert beds_of(after, "192.0.2.11") == [str(ward.beds["2"].id)]
+    assert beds_of(gone, "192.0.2.11") == []
+
+
+# --- A-12: the writes against the real triggers (the migrated chain) ----------------------------------------
+
+def test_bind_move_replace_and_unbind_commit_on_the_migrated_chain_and_the_history_stays_kept(clean_db):
+    """The `db_session` schema comes from `create_all`, so 0014's three triggers are absent there. Here the schema
+    is built by `alembic upgrade head`: every write of the editor (a first bind = an insert; a move = a close and an
+    insert; a replace = two closes and two inserts; an unbind) must commit through the history trigger, and what the
+    trigger forbids — a close in the future, an edit of a closed row — must still raise."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "head")
+
+    async def scenario():
+        aengine = create_async_engine(TEST_DATABASE_URL)
+        try:
+            async with async_sessionmaker(aengine, expire_on_commit=False)() as db:
+                async with esleme_client(db) as (client, app, ward):
+                    ids = await seed(db, ward, ("192.0.2.11", "1", "BED05"), ("192.0.2.12", "2", "BED06"))
+                    first = await _bind(client, ward, "admin", "192.0.2.13", "3")                        # insert
+                    move = await _bind(client, ward, "admin", "192.0.2.11", "10", ids["192.0.2.11"])     # close + insert
+                    replace = await _bind(client, ward, "admin", "192.0.2.13", "2",
+                                          _row_id(first, "192.0.2.13"), ids["192.0.2.12"])                  # 2 closes + 2 inserts
+                    unbind = await _unbind(client, ward, "admin", "192.0.2.11", _row_id(move, "192.0.2.11"))   # close + insert
+                    answers = (first, move, replace, unbind)
+                    return [r.status_code for r in answers], [r.json()["changed"] for r in answers]
+        finally:
+            await aengine.dispose()
+
+    statuses, changed = asyncio.run(scenario())
+
+    assert statuses == [200, 200, 200, 200] and changed == [True] * 4
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'device_beds_%'")).scalar_one() == 3
+        # inserts only (a close is an UPDATE): 2 seeded + 1 first + 1 move + 2 replace + 1 unbind
+        assert conn.execute(text("SELECT count(*) FROM device_beds")).scalar_one() == 7
+        assert conn.execute(text("SELECT count(*) FROM device_beds WHERE valid_to IS NULL")).scalar_one() == 3
+        assert conn.execute(text("SELECT count(DISTINCT source) FROM device_beds WHERE valid_to IS NULL")).scalar_one() == 3
+        assert conn.execute(text("SELECT count(*) FROM device_beds WHERE method = 'editor' AND verified_by IS NOT NULL "
+                                 "AND approved_at = valid_from")).scalar_one() == 5
+        assert conn.execute(text("SELECT count(*) FROM device_beds WHERE bed_id IS NOT NULL AND valid_to IS NULL")).scalar_one() == 1
+        open_id = conn.execute(text("SELECT id FROM device_beds WHERE valid_to IS NULL ORDER BY id LIMIT 1")).scalar_one()
+        closed_id = conn.execute(text("SELECT id FROM device_beds WHERE valid_to IS NOT NULL ORDER BY id LIMIT 1")).scalar_one()
+    kept = "keeps its history"
+    with pytest.raises(DBAPIError, match=kept), engine.begin() as conn:                    # a close at t + 1 h
+        conn.execute(text("UPDATE device_beds SET valid_to = clock_timestamp() + interval '1 hour' WHERE id = :i"), {"i": open_id})
+    with pytest.raises(DBAPIError, match=kept), engine.begin() as conn:                    # an edit of a closed row
+        conn.execute(text("UPDATE device_beds SET bed_label = 'x' WHERE id = :i"), {"i": closed_id})
+    with pytest.raises(DBAPIError, match=kept), engine.begin() as conn:                    # a delete
+        conn.execute(text("DELETE FROM device_beds WHERE id = :i"), {"i": closed_id})

@@ -1,7 +1,9 @@
 # homunculus-engine/src/homunculus/devicebeds/listing.py
 """`GET /infinity-shadow/device-beds`'s body (spec §4.2). Devices: the worker's (the strip's store)
 ∪ the tenant's current rows, ordered by address. Identity from the worker when it reports the device,
-else from its row; a bed named only when the caller's scope reaches it. No patient anywhere."""
+else from its row; a bed named only when the caller's scope reaches it. No patient anywhere. The
+current rows come from `rows.current_rows`, the reader the bind/unbind transaction locks through too
+(A-19)."""
 from __future__ import annotations
 
 import uuid
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from homunculus.admission import unitscope
 from homunculus.api.infinity_device_beds import PORT
 from homunculus.auth.dependencies import Principal
-from homunculus.devicebeds.models import DeviceBed
+from homunculus.devicebeds.rows import current_rows
 from homunculus.tenant.models import Bed, Room, Site, Unit
 
 UNSEEN = (None, "unknown")
@@ -31,12 +33,6 @@ def _address(source: str) -> tuple[tuple[int, ...], str]:
     if all(part.isascii() and part.isdigit() for part in parts):
         return tuple(int(part) for part in parts), source
     return (999,), source
-
-
-async def current_rows(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, DeviceBed]:
-    rows = (await db.execute(select(DeviceBed).where(DeviceBed.tenant_id == tenant_id,
-                                                     DeviceBed.valid_to.is_(None)))).scalars().all()
-    return {row.source: row for row in rows}
 
 
 async def bed_places(db: AsyncSession, tenant_id: uuid.UUID, bed_ids) -> dict[uuid.UUID, tuple[str, str, str, uuid.UUID]]:

@@ -15,7 +15,8 @@ from homunculus.admission.errors import MONITOR_LANE_OFF, Refusal
 from homunculus.auth.dependencies import Principal, caller_tenant_id, get_principal, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
-from homunculus.devicebeds import listing
+from homunculus.devicebeds import listing, service
+from homunculus.devicebeds.schemas import BindBody, UnbindBody
 
 router = APIRouter(prefix="/infinity-shadow/device-beds", tags=["device-beds"])
 
@@ -41,3 +42,28 @@ async def device_beds(
 ) -> dict:
     await lane_hospital(request, db, caller_tenant)
     return await listing.build(request.app.state, db, caller_tenant, principal)
+
+
+_MAP = require_permission("devices.map_beds")
+
+
+@router.post("/bind", summary="Bind a monitor to a bed (a move or a replace included)")
+async def bind(
+    body: BindBody, request: Request, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = Depends(caller_tenant_id), principal: Principal = Depends(get_principal),
+    user: User = Depends(_MAP),
+) -> dict:
+    hospital = await lane_hospital(request, db, caller_tenant)
+    return await service.change(request, db, caller_tenant, user, principal, hospital, service.Ask(
+        body.source, body.bed_id, body.expected.device_row_id, body.expected.bed_row_id, body.confirm_occupied))
+
+
+@router.post("/unbind", summary="Unbind a monitor: it stays in the list, on no bed")
+async def unbind(
+    body: UnbindBody, request: Request, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = Depends(caller_tenant_id), principal: Principal = Depends(get_principal),
+    user: User = Depends(_MAP),
+) -> dict:
+    hospital = await lane_hospital(request, db, caller_tenant)
+    return await service.change(request, db, caller_tenant, user, principal, hospital, service.Ask(
+        body.source, None, body.expected.device_row_id, None, body.confirm_occupied))
