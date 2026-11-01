@@ -6,20 +6,23 @@ import { act, cleanup, screen, within } from "@testing-library/react";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
 import { BIO, device, list, mountMapping, onBed } from "./esleme.testutil.js";
 import { MappingSection } from "./MappingSection.jsx";
+import { pinZone } from "./zone.testutil.js";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); localStorage.clear(); });
 
-const pad = (n) => String(n).padStart(2, "0");
-const local = (iso) => { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+// Baku, UTC+4: «09:02Z» is «13:02» below, so a screen that printed UTC fails here whatever zone CI runs in (A-20).
+pinZone();
 
+// A monitor the worker no longer reports is `status: "unknown"`, `seen: false` and carries the last time the API
+// saw it, or none (devicebeds/listing.py): never a null status beside a time (A-19).
 const WARD = list([
   device("192.0.2.11", { device_bed_label: "BED05", row_id: 1, bed: onBed(1, "1") }),
   device("192.0.2.12", { device_bed_label: "BED01", row_id: 2 }),
   device("192.0.2.13"),
   device("192.0.2.14", { device_bed_label: "BEDN1", row_id: 4, editable: false, bed: { id: "x", in_scope: false } }),
-  device("192.0.2.20", { device_bed_label: "BED07", row_id: 5, seen: false, status: null,
+  device("192.0.2.20", { device_bed_label: "BED07", row_id: 5, seen: false, status: "unknown",
     last_seen_at: "2026-10-30T09:02:00+00:00", bed: onBed(5, "5", "Otaq 2") }),
-  device("192.0.2.21", { row_id: 6, seen: false, status: null, last_seen_at: null }),
+  device("192.0.2.21", { row_id: 6, seen: false, status: "unknown", last_seen_at: null }),
 ]);
 
 const rowOf = (source) => screen.getByText(new RegExp(`^${source.replace(/\./g, "\\.")}`)).closest("tr");
@@ -42,7 +45,7 @@ describe("the monitor–bed list", () => {
     expect(within(rowOf("192.0.2.12")).getByText("qoşulmayıb")).toBeTruthy();
     expect(within(rowOf("192.0.2.13")).getByText("qoşulmayıb")).toBeTruthy();
     expect(within(rowOf("192.0.2.14")).getByText("başqa şöbədə")).toBeTruthy();
-    expect(within(rowOf("192.0.2.20")).getByText(`görünmür · son görünmə ${local("2026-10-30T09:02:00+00:00")}`)).toBeTruthy();
+    expect(within(rowOf("192.0.2.20")).getByText("görünmür · son görünmə 13:02")).toBeTruthy();
     expect(within(rowOf("192.0.2.20")).getByText("5 · Otaq 2 · Reanimasiya")).toBeTruthy();
     expect(within(rowOf("192.0.2.21")).getByText("görünmür · son görünmə bilinmir")).toBeTruthy();
     expectNoUuid();

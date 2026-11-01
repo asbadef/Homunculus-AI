@@ -8,7 +8,9 @@ import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { DevicesScreen } from "./DevicesScreen.jsx";
+import { pinZone } from "./zone.testutil.js";
 
+pinZone();   // the method line prints an editor row's UTC time as local time: pinned (Baku, UTC+4) so a literal can be asserted (A-20)
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -147,10 +149,7 @@ describe("the monitor screen", () => {
   });
 
   it("prints a strip's method line with an editor row's time in local time, a v2 value as written, and «—» only for none", async () => {
-    // The expected local time is built from the same Date getters, so the test holds in any time zone.
-    const pad = (n) => String(n).padStart(2, "0");
-    const at = new Date("2026-10-30T09:12:03.120000+00:00");
-    const local = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    const local = "2026-10-30 13:12";       // 09:12Z in the pinned zone (Baku, UTC+4), so UTC printing fails in any CI
     await open(strip({ beds: [
       bed("REA-01 · 2", [], { method: "editor", verified_at: "2026-10-30T09:12:03.120000+00:00" }),
       bed("REA-01 · 5", [], { method: "central_station_list", verified_at: "2026-09-22" }),

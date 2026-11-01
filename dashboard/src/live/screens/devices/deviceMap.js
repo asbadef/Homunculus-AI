@@ -62,11 +62,11 @@ export function visibility(d) {
 
 /** The strip's method line (DevicesScreen.jsx): an editor row's UTC time (D21) as this browser's local
  *  «YYYY-AA-GG SS:DD»; v2's date, and any other text a row carries, exactly as written. «—» is only for no
- *  value at all (null, a non-string): it reads as "never verified", so it never stands for a value that
- *  could not be read (A-18). Only an ISO date-time is parsed, because `Date.parse` makes a date of almost
- *  any text with a number in it («foo 1»). */
+ *  value at all (null, a non-string, a blank): it reads as "never verified", so it never stands for a value that
+ *  could not be read (A-18); a blank or whitespace-only string is no value either (A-20). Only an ISO
+ *  date-time is parsed, because `Date.parse` makes a date of almost any text with a number in it («foo 1»). */
 export function verifiedText(value) {
-  if (typeof value !== "string") return "—";
+  if (typeof value !== "string" || value.trim() === "") return "—";
   if (DATE_ONLY.test(value) || !ISO_DATE_TIME.test(value)) return value;
   const ms = Date.parse(value);
   if (!Number.isFinite(ms)) return value;

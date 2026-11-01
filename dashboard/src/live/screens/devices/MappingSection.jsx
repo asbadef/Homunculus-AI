@@ -22,7 +22,7 @@ function Row({ device, onAct }) {
   const seen = visibility(device);
   const bound = Boolean(device.bed);
   return (
-    <tr>
+    <tr data-source={device.source}>
       {/* The monitor names its row, so a screen reader reads its address with each cell of it. */}
       <th scope="row" className="font-data font-semibold">{device.source} · {device.port}<span className="block text-12 text-mute">{device.group}</span></th>
       <td className="font-data">{device.device_bed_label ?? "—"}</td>
@@ -53,7 +53,12 @@ export function MappingSection() {
   const headId = useId();
   const [state, setState] = useState({ phase: "loading", body: null });
   const [dialog, setDialog] = useState(null);       // {mode: "bind" | "unbind", device}
-  const [said, setSaid] = useState("");
+  // What the last change said. A live region speaks only when its text CHANGES, so the same sentence twice in a
+  // row (two monitors unbound one after the other, both «no change») would be heard once. `n` counts the sayings
+  // and keys the region: each one is a fresh, empty region that takes its text a moment later (A-20).
+  const [said, setSaid] = useState({ n: 0, text: "" });
+  const root = useRef(null);
+  const returnTo = useRef(null);                     // the source of the monitor whose dialog is, or just was, open
   // Every read takes a number, and so does every list handed in from outside (a finished change): an
   // answer that is not the newest number is dropped, whatever order the reads land in. A read started
   // before a bind must never put the old bed back on screen (as StructureProvider's `seq`).
@@ -93,9 +98,22 @@ export function MappingSection() {
     };
   }, [load]);
 
+  // When the dialog ends, focus goes back to the button it started from (the Modal does that). An unbind takes that
+  // button away with the bond, and focus would fall to <body>, so a keyboard user would lose her place in the page:
+  // it goes to the monitor's row instead, to the button that is left there (spec §3.6).
+  useEffect(() => {
+    if (dialog !== null || returnTo.current === null) return;
+    const source = returnTo.current;
+    returnTo.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const row = [...(root.current?.querySelectorAll("tr[data-source]") ?? [])].find((tr) => tr.dataset.source === source);
+    row?.querySelector("button")?.focus();
+  }, [dialog]);
+
   const { phase, body } = state;
   return (
-    <section aria-labelledby={headId} className="flex flex-col gap-2">
+    <section ref={root} aria-labelledby={headId} className="flex flex-col gap-2">
       <div>
         <h2 id={headId} className="m-0 font-display text-17 font-bold">{t("esleme.title")}</h2>
         <p className="m-0 text-13 text-mute">{t("esleme.sub")}</p>
@@ -114,18 +132,20 @@ export function MappingSection() {
               </tr>
             </thead>
             <tbody>
-              {body.devices.map((d) => <Row key={d.source} device={d} onAct={(mode, device) => setDialog({ mode, device })} />)}
+              {body.devices.map((d) => (
+                <Row key={d.source} device={d} onAct={(mode, device) => { returnTo.current = device.source; setDialog({ mode, device }); }} />
+              ))}
             </tbody>
           </Table>
         )
       ) : null}
-      <Announce text={said} />
+      <Announce key={said.n} text={said.text} />
       {dialog ? (
         <MappingDialog mode={dialog.mode} device={dialog.device} devices={body?.devices ?? []}
           onClose={() => setDialog(null)}
           onDone={(text, fresh) => {
             setDialog(null);
-            setSaid(text);
+            setSaid((was) => ({ n: was.n + 1, text }));
             // The change is done: a read that was already out may carry the bed from before it.
             seq.current += 1;
             if (fresh && Array.isArray(fresh.devices)) setState({ phase: "ok", body: fresh });

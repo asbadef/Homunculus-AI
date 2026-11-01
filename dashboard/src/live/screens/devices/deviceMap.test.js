@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { bedText, canSeeMapping, monitorName, occupiedNames, shortName, verifiedText, visibility } from "./deviceMap.js";
+import { pinZone } from "./zone.testutil.js";
 
 const t = (key, vars) => (vars ? `${key} ${JSON.stringify(vars)}` : key);
 
-// The expected local time comes from the same Date getters the screen is meant to use, so these asserts
-// hold in any time zone the suite runs in.
+// The expected local time comes from the same Date getters the screen is meant to use, so most asserts hold in
+// any time zone. The zone is pinned (Baku, UTC+4) so that a few of them are literal as well: a CI in UTC cannot
+// hide a screen that prints UTC (A-20).
+pinZone();
 const pad = (n) => String(n).padStart(2, "0");
 const clockOf = (iso) => { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const stampOf = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${clockOf(iso)}`; };
@@ -92,6 +95,21 @@ describe("the editor's pure rules", () => {
     expect(verifiedText("2026-09-22")).toBe("2026-09-22");
     expect(verifiedText("2026-10-30T09:12:03.120000+00:00")).toBe(stampOf("2026-10-30T09:12:03.120000+00:00"));
     expect(verifiedText("2026-10-30T09:12:03+00:00")).toBe(stampOf("2026-10-30T09:12:03+00:00"));
+  });
+
+  // The zone is pinned above, so these are literal: a screen that printed UTC would fail them in any CI.
+  it("prints local time, not UTC, in the pinned zone: the clock moves by four hours and a late hour crosses midnight", () => {
+    expect(verifiedText("2026-10-30T09:12:03+00:00")).toBe("2026-10-30 13:12");
+    expect(verifiedText("2026-10-30T22:30:00.000000+00:00")).toBe("2026-10-31 02:30");
+    expect(verifiedText("2026-10-30T09:12:03+04:00")).toBe("2026-10-30 09:12");      // an offset the string states
+    expect(visibility({ seen: false, last_seen_at: "2026-10-30T09:02:00+00:00" }).vars).toEqual({ time: "13:02" });
+    expect(visibility({ seen: false, last_seen_at: "2026-10-30T21:59:00+00:00" }).vars).toEqual({ time: "01:59" });
+  });
+
+  // A blank is "no value", the same as null: «—» reads as "never verified", and it is the truth (A-20).
+  it("gives «—» for a blank or whitespace-only value, as for none", () => {
+    expect([verifiedText(""), verifiedText(" "), verifiedText("   "), verifiedText("\t\n")]).toEqual(["—", "—", "—", "—"]);
+    expect(verifiedText(" 2026-09-22 ")).toBe(" 2026-09-22 ");                  // a value with spaces round it is still a value
   });
 
   // Amendment A-18: «—» reads as "never verified", so it is only for a missing value. Anything the screen

@@ -1,11 +1,13 @@
 // «Monitör–yatak eşleme»: the list's reads are numbered (a stale answer is dropped), paused in a hidden
 // tab, and never stacked behind a slow one (Task 17 review). Apart from MappingSection.test.jsx because
-// the dialog is replaced here by a stand-in that ends a change as MappingDialog does (`onDone`), which a
-// stale-answer test needs and which the real dialog's own test (MappingDialog.test.jsx) must not inherit.
+// the dialog is replaced here by a stand-in that ends a change as MappingDialog does (`onDone(text, fresh)`,
+// `onClose`), which a stale-answer test needs and which the real dialog's own test (MappingDialog.test.jsx)
+// must not inherit. That test keeps the real dialog to the same contract, in its last `describe` (A-20).
 import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
+import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { device, list, mountMapping, onBed } from "./esleme.testutil.js";
 import { MappingSection } from "./MappingSection.jsx";
 
@@ -120,7 +122,10 @@ describe("the list's reads are numbered", () => {
     expect(within(rowOf("192.0.2.11")).getByText("5 · Otaq 2 · Reanimasiya")).toBeTruthy();
   });
 
-  it("says nothing and sets nothing when a read lands after the section has left the screen", async () => {
+  // On React 18.3 a state update after unmount warns nothing, so this cannot fail for the `alive` guard's sake: it
+  // pins what a reader can see, which is no throw and nothing on the page once the section has left (A-20). The
+  // guard itself stays (it also keeps a late read from touching a section that is gone).
+  it("throws nothing and leaves no list behind when a read lands after the section has left the screen", async () => {
     vi.useFakeTimers();
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const mounted = await mountMapping(<MappingSection />, { body: OLD });
@@ -130,6 +135,39 @@ describe("the list's reads are numbered", () => {
     cleanup();
     await act(async () => { late.resolve(NEW); });
     expect(errors).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(document.body.textContent).not.toContain("192.0.2.11");
+  });
+});
+
+// `said` is announced by a live region that speaks only when its text CHANGES: the same sentence twice in a row
+// (two monitors unbound one after the other, each «Dəyişiklik yoxdur») has to be spoken twice (A-20).
+describe("what a finished change says", () => {
+  const status = () => within(screen.getByRole("region", { name: "Monitor–çarpayı uyğunlaşdırması" })).getByRole("status");
+  const finishOne = async () => {
+    fireEvent.click(within(rowOf("192.0.2.13")).getByRole("button", { name: "Çarpayıya qoş: 192.0.2.13" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "done" })); });
+  };
+
+  it("announces the sentence once the live region has had time to take it", async () => {
+    vi.useFakeTimers();
+    await mountMapping(<MappingSection />, { body: OLD });
+    await finishOne();
+    expect(status().textContent).toBe("");
+    await tick(ANNOUNCE_DELAY_MS + 1);
+    expect(status().textContent).toBe("said");
+  });
+
+  it("announces the same sentence again when a second change ends with it", async () => {
+    vi.useFakeTimers();
+    await mountMapping(<MappingSection />, { body: OLD });
+    await finishOne();
+    await tick(ANNOUNCE_DELAY_MS + 1);
+    expect(status().textContent).toBe("said");
+    await finishOne();                                                       // the very same text, straight after
+    expect(status().textContent).toBe("");                                   // the region was emptied: its text will CHANGE
+    await tick(ANNOUNCE_DELAY_MS + 1);
+    expect(status().textContent).toBe("said");
   });
 });
 
