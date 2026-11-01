@@ -54,7 +54,8 @@ from homunculus.admission.models import (
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
-    AdmitResponse, AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
+    AdmitResponse,
+    AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
     EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign, LabelAsk,
     LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
     TransferInitiate,
@@ -201,7 +202,8 @@ def _not_reached(*, weight_asked: bool, profile_asked: bool) -> EngineWrites:
 
 
 async def _attempt(key: str, what: str, write) -> EngineWrite:
-    """One engine write, on its own: `ok`, or `failed` and logged with the board key, never a name."""
+    """One engine write, on its own: `ok`, or `failed` and logged with the board key, never a
+    name."""
     try:
         await write()
         return "ok"
@@ -717,13 +719,13 @@ def _not_now(exc: ValueError) -> HTTPException:
 
 async def _key_of(db: AsyncSession, admission: Admission) -> str:
     """The admission's board key (`board_key`: its protocol, a legacy admission's H-number) — the
-    card the board steps act on, the number they log, and the audit row's patient (E4)."""
+    card the board steps act on, the key they log, and the audit row's patient (E4)."""
     number = (await db.execute(select(Patient.patient_number)
                                .where(Patient.id == admission.patient_id))).scalar_one()
     return board_key(admission.protocol_no, number)
 
 
-def _open_critical(request: Request, hospital: str, number: str) -> int:
+def _open_critical(request: Request, hospital: str, key: str) -> int:
     """The critical alerts on this patient's board nobody acknowledged (`BoardLink.open_critical`:
     firing or latched, the alerts the clinician sees), which hold a discharge's start and its
     confirmation. Only an app assembled without its board (a test mounting the routers alone)
@@ -731,9 +733,9 @@ def _open_critical(request: Request, hospital: str, number: str) -> int:
     link = board_link_of(request)
     if link is None:
         log.error("discharge %s: this app has no BoardLink; no critical alarm could be read",
-                  number)
+                  key)
         return 0
-    return link.open_critical(hospital, number)
+    return link.open_critical(hospital, key)
 
 
 # ---------------------------------------------------------------------------
@@ -762,11 +764,11 @@ async def sign_off(
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
-    number = await _key_of(db, admission)
+    key = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    trail.record(request, hospital, "admission.sign_off", patient_id=number,
+    trail.record(request, hospital, "admission.sign_off", patient_id=key,
                  payload={"admission_id": str(written.id), "actor": actor})
     return written
 
@@ -964,7 +966,7 @@ async def discharge_initiate(
     except Refusal as exc:
         raise exc.http() from None
     admission = await _locked(db, admission)
-    number = await _key_of(db, admission)
+    key = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     reported_by = _strip(payload.reported_by)
     if payload.disposition == DischargeDisposition.EXITUS and reported_by is None:
@@ -974,7 +976,7 @@ async def discharge_initiate(
             db, admission, disposition=payload.disposition,
             institution=_strip(payload.institution), reported_by=reported_by,
             discharge_at=payload.discharge_at, note=_strip(payload.note),
-            unacknowledged_critical_count=_open_critical(request, hospital, number),
+            unacknowledged_critical_count=_open_critical(request, hospital, key),
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -982,25 +984,24 @@ async def discharge_initiate(
         raise _not_now(exc) from None
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    trail.record(request, hospital, "admission.discharge_start", patient_id=number,
+    trail.record(request, hospital, "admission.discharge_start", patient_id=key,
                  payload={"admission_id": str(written.id),
                           "disposition": payload.disposition.value, "actor": actor})
     return written
 
 
-async def _off_the_board(request: Request, hospital: str, number: str) -> tuple[EngineWrite,
-                                                                                 AlertRetire]:
+async def _off_the_board(request: Request, hospital: str, key: str) -> tuple[EngineWrite,
+                                                                             AlertRetire]:
     """After the discharge has committed (A-11d, A-23, A-25), and at its retry: the patient taken
     off the board and out of the alert world — `BoardLink.take_off`, which says what it answers
     and never raises. An app without its BoardLink did neither: `failed`, `failed`, logged at
-    ERROR (X53). The discharge stands either way. Logged with the patient number, never a
-    name."""
+    ERROR (X53). The discharge stands either way. Logged with the board key, never a name."""
     link = board_link_of(request)
     if link is None:
         log.error("discharge %s: this app has no BoardLink; the card did not leave the board and "
-                  "the patient's alerts were not ended", number)
+                  "the patient's alerts were not ended", key)
         return "failed", "failed"
-    return await link.take_off(hospital, number)
+    return await link.take_off(hospital, key)
 
 
 @router.post("/{admission_id}/discharge/confirm", response_model=DischargeConfirmResponse)
@@ -1037,30 +1038,30 @@ async def discharge_confirm(
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     admission = await _locked(db, admission)
-    number = await _key_of(db, admission)
+    key = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     if admission.state == AdmissionState.DISCHARGED:
         written, actor = AdmissionResponse.model_validate(admission), user.username
         await db.rollback()                   # nothing is written; the locks go before the step
-        board, alerts = await _off_the_board(request, hospital, number)
-        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
+        board, alerts = await _off_the_board(request, hospital, key)
+        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=key,
                      payload={"admission_id": str(written.id), "board": board, "alerts": alerts,
                               "via": "discharge.confirm", "actor": actor})
         return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
     try:
         await service.confirm_discharge(
             db, admission,
-            unacknowledged_critical_count=_open_critical(request, hospital, number))
+            unacknowledged_critical_count=_open_critical(request, hospital, key))
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
-    trail.record(request, hospital, "admission.discharge_confirm", patient_id=number,
+    trail.record(request, hospital, "admission.discharge_confirm", patient_id=key,
                  payload={"admission_id": str(written.id), "bed_id": str(written.bed_id),
                           "actor": actor})
-    board, alerts = await _off_the_board(request, hospital, number)
+    board, alerts = await _off_the_board(request, hospital, key)
     return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
 
 

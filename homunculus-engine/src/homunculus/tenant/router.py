@@ -546,9 +546,10 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     idempotent; it ends the patient's alerts, which no longer hold it), audited
     `admission.discharge_board_retry` with `via` — the release (`bed.release`) or the
     administrator's raw move (`bed.transition`); when one still fails, the bed is refused
-    `board_not_cleared` with that patient's number and board key — the newest such, by `updated_at` — (the
-    caller's units hold this bed, or the caller administers the structure). Called under the
-    bed's lock. An app without its BoardLink has no board, so no card can stand.
+    `board_not_cleared` with that patient's number and board key — the newest such, by
+    `updated_at` — (the caller's units hold this bed, or the caller administers the structure).
+    Called under the bed's lock. An app without its BoardLink has no board, so no card can
+    stand.
 
     Each check reads the identity store once: one read per DISCHARGED admission the bed ever
     held, a tombstone among them read and passed over."""
