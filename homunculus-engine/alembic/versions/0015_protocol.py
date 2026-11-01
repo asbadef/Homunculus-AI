@@ -1,8 +1,7 @@
 # homunculus-engine/alembic/versions/0015_protocol.py
 """G2-B1d (spec 2026-11-01 §3): `protocol_settings`, and `admissions.protocol_no`
 
-Revision 0015, follows 0013 (E1: the editor's 0014 is not on main yet; when it lands, this file's
-`down_revision` becomes "0014" before main or the VM — never a fork in the chain).
+Revision 0015, follows the editor's 0014 (device_beds).
 
 * `protocol_settings`: one row per tenant (FK tenants ON DELETE CASCADE) — `next_no` and
   `last_issued` (BIGINT, NULL = not configured / none issued), `label_width_mm` 50,
@@ -18,7 +17,7 @@ Downgrade drops exactly this — and with it every protocol number issued (spec 
 before the first protocol admission).
 
 Revision ID: 0015
-Revises: 0013
+Revises: 0014
 Create Date: 2026-11-01
 """
 from __future__ import annotations
@@ -30,7 +29,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision: str = "0015"
-down_revision: Union[str, None] = "0013"
+down_revision: Union[str, None] = "0014"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

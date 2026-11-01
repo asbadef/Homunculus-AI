@@ -4,8 +4,8 @@ additive — `protocol_settings` (one row per tenant, none written by the migrat
 until the administrator sets the start number, D5) and `admissions.protocol_no`, which every row
 written before it keeps NULL (D7: a legacy admission keeps its H-number key). Twelve ASCII digits
 or NULL (a CHECK); one number per tenant, NULLs never colliding (a partial unique index); the dpi
-203 or 300; the settings go with their tenant. The model agrees with the migration; 0013 → 0015 →
-0013 → 0015 runs. Synthetic rows only."""
+203 or 300; the settings go with their tenant. The model agrees with the migration; 0014 → 0015 →
+0014 → 0015 runs (0015 follows the editor's 0014, device_beds). Synthetic rows only."""
 from __future__ import annotations
 
 import uuid
@@ -75,7 +75,7 @@ def _columns(engine, table: str) -> set[str]:
 
 def test_0015_adds_the_settings_and_the_column_and_writes_no_row(clean_db):
     engine, cfg = clean_db
-    command.upgrade(cfg, "0013")
+    command.upgrade(cfg, "0014")
     with engine.begin() as conn:
         tenant = _tenant(conn, "hastane-a")
         legacy = _admission(conn, tenant, _bed(conn, tenant), "H2600001")
@@ -85,11 +85,11 @@ def test_0015_adds_the_settings_and_the_column_and_writes_no_row(clean_db):
                             {"id": legacy}).scalar_one() is None              # D7: legacy stays
         assert conn.execute(text(f"SELECT count(*) FROM {SETTINGS}")).scalar_one() == 0   # D5
     assert "protocol_no" in _columns(engine, "admissions")
-    command.downgrade(cfg, "0013")
+    command.downgrade(cfg, "0014")
     assert "protocol_no" not in _columns(engine, "admissions")
     assert SETTINGS not in inspect(engine).get_table_names()
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0014"
         assert conn.execute(text("SELECT count(*) FROM admissions")).scalar_one() == 1
 
 
@@ -147,7 +147,7 @@ def test_settings_default_to_a_50_by_30_label_at_203_dpi_and_take_no_other_dpi(c
 def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "0013")
+    command.downgrade(cfg, "0014")
     command.upgrade(cfg, "0015")
 
     def only_0015(object_, name, type_, reflected, compare_to):

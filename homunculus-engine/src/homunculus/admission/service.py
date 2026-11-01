@@ -334,6 +334,10 @@ async def confirm_transfer_arrival(
         source_bed.transition_to(BedState.HOUSEKEEPING)
 
     # Create new ACTIVE admission at target, copying the short note.
+    # F-34 (G2-B1d): the new row carries no `protocol_no`, so its board key would be the H-number while the
+    # card stands under the protocol (E3). Unreachable while transfers are closed (`_transfer_closed` ->
+    # 409 `transfer_unavailable`); the transfer slice must move the protocol to this row or issue a new one
+    # (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Spec §12 O8.
     new_admission = Admission(
         patient_id=admission.patient_id,
         tenant_id=admission.tenant_id,

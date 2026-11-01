@@ -17,11 +17,10 @@ takes the number in a POST body (never in a URL, so never in an access log) and 
 
 `create_app` builds it with its own `_caller` and identity store (a factory: `_caller` is a
 closure of `create_app`, E2). Reading the sync store from this async route is the app's own
-pattern (/ingest does it). "A stalled store raises within seconds" (so the 503 above comes fast)
-holds only once Lane A's `fix/pg-bounds` is on main: until then a stalled database holds the
-API's event loop here as it already does in /ingest, and the bridge's own 2 s timeout and mirror
-protect the device alone, not the API. Hence the deploy order (amendment A-4): the bounds slice
-reaches the VM before or together with B1d.
+pattern (/ingest does it). The identity store's statement bound (Lane A's pg-bounds, on main since
+`5f733d3`) makes a stalled store raise within seconds, so the 503 above comes fast and the API's
+event loop is not held here. The bridge's own 2 s timeout and its mirror still protect the device
+whatever the API does.
 """
 from __future__ import annotations
 
