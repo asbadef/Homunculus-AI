@@ -7,10 +7,11 @@ reads, and costs one small query per RELOAD_EVERY_S. That one statement loads th
 at the API's wall clock (history stays in the table), `max(id)` and the tenant's name, so the version
 and the rows come from one snapshot.
 
-Bounded, because the loop waits: the connect gives up after CONNECT_TIMEOUT_S, a statement after
-STATEMENT_TIMEOUT_MS, a pool checkout after the same CONNECT_TIMEOUT_S and data the network leaves
-unacknowledged after TCP_USER_TIMEOUT_MS, so a database that accepts and stays silent, or a link that
-goes dead mid-query, costs a few seconds, not the loop (A-10).
+Bounded, because the loop waits, with the bounds every sync store shares (audit_postgres's
+`bounded_connect_args`, spec 2026-11-01 D1): the connect gives up after 3 s, a statement after
+STATEMENT_TIMEOUT_MS, a pool checkout after POOL_TIMEOUT_S, and keepalives and the TCP user timeout
+end a link that goes dead mid-query, so a database that accepts and stays silent costs a few seconds,
+not the loop (A-10). The lifespan disposes the engine at shutdown (D4).
 
 Strictly fail closed, on purpose: no rows is `missing`; an unreadable or stalled database, a broken
 current set, or ANY exception while the rows are read or built is `invalid`. Both place no monitor on
@@ -29,7 +30,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
-from homunculus.api.audit_postgres import to_sync_url
+from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
 from homunculus.api.infinity_device_beds import (
     RELOAD_EVERY_S, DeviceBedTable, TableError, TableState, check_current, rows_digest,
 )
@@ -37,9 +38,7 @@ from homunculus.devicebeds.rows import to_row
 
 log = logging.getLogger(__name__)
 
-CONNECT_TIMEOUT_S = 3
 STATEMENT_TIMEOUT_MS = 2000
-TCP_USER_TIMEOUT_MS = 4000          # a libpq 12+ keyword; psycopg2-binary>=2.9 bundles libpq 13 or later
 # The tenant (by slug) LEFT JOINed to its rows valid at :now, with its max(id) (history included): one
 # statement, one snapshot. A tenant with no rows, or none valid, comes back as one row whose `source` is
 # NULL; an unknown slug comes back as none.
@@ -66,11 +65,11 @@ def _failure(exc: BaseException) -> str:
 class PostgresDeviceBeds:
     def __init__(self, url: str, *, hospital: str, clock: Callable[[], float] = time.monotonic,
                  wall: Callable[[], float] = time.time, ssl_required: bool = False) -> None:
-        connect_args = {"connect_timeout": CONNECT_TIMEOUT_S, "tcp_user_timeout": TCP_USER_TIMEOUT_MS,
-                        "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
-                        **({"sslmode": "require"} if ssl_required else {})}
-        self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, pool_timeout=CONNECT_TIMEOUT_S,
-                                     hide_parameters=True, connect_args=connect_args)
+        self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, pool_timeout=POOL_TIMEOUT_S,
+                                     hide_parameters=True,
+                                     connect_args=bounded_connect_args(
+                                         ssl_required=ssl_required,
+                                         statement_timeout_ms=STATEMENT_TIMEOUT_MS))
         self._hospital, self._clock, self._wall = hospital, clock, wall
         self._state: TableState | None = None
         self._checked_at = float("-inf")

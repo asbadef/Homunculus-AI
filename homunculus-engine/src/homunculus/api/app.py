@@ -270,7 +270,7 @@ def create_app(
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
     rows of a `rules` run still expire after a rollback below it.
-    At shutdown the lifespan releases `audit`, `identities` and `samples` (`dispose`, `close`):
+    At shutdown the lifespan releases `audit`, `identities`, `samples` and `device_beds` (`dispose`, `close`):
     an engine's pool reopens on its next use, but SQLite's identity file stays closed."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
@@ -642,7 +642,8 @@ def create_app(
             # keeps no other's connections open.
             for name, store, release in (("audit", audit, "dispose"),
                                          ("identities", identities, "close"),
-                                         ("samples", samples, "dispose")):
+                                         ("samples", samples, "dispose"),
+                                         ("device_beds", device_beds, "dispose")):
                 method = getattr(store, release, None)
                 if callable(method):
                     try:
