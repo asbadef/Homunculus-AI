@@ -551,7 +551,8 @@ async def patch_bed(
     if relabelled is not None:
         closed, opened = relabelled
         trail.record(request, hospital, "device_bed.relabel", subject=closed.source, payload={
-            "source": closed.source, "bed_id": str(bed.id), "unit_id": str(unit_id),
+            "source": closed.source, "group": closed.group_address,
+            "device_bed_label": closed.device_bed_label, "bed_id": str(bed.id), "unit_id": str(unit_id),
             "old": {"row_id": closed.id, "bed_label": closed.bed_label},
             "new": {"row_id": opened.id, "bed_label": opened.bed_label}, "actor": user.username})
         reset = getattr(request.app.state, "shadow_table_reset", None)

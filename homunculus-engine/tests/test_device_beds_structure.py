@@ -85,6 +85,7 @@ async def test_renaming_a_bound_bed_relabels_its_row_and_the_strip_follows(db_se
     assert rec.payload["new"] == {"row_id": new.id, "bed_label": "Yatak 1"} and rec.patient_id == ""
     assert (rec.subject, rec.payload["source"], rec.payload["bed_id"], rec.payload["unit_id"], rec.payload["actor"]) == (
         "192.0.2.11", "192.0.2.11", str(ward.beds["1"].id), str(ward.units["rea"].id), ward.users["admin"].username)
+    assert (rec.payload["group"], rec.payload["device_bed_label"]) == (old.group_address, "BED05")     # as bind names them
     assert len(renames) == 1
     assert [c["bed_label"] for c in board["beds"] if c["source"] == "192.0.2.11"] == ["Yatak 1"]
 
@@ -118,6 +119,52 @@ async def test_a_refused_rename_writes_no_mapping_row(db_session):
         assert response.json()["detail"]["code"] == "bed_label_taken"
         assert len(await _rows(db_session)) == 1
         assert app.state.audit.records(event_type="device_bed.relabel") == []
+
+
+async def test_a_rename_against_a_v2_label_is_a_no_op_an_alignment_or_a_relabel(db_session):
+    """O60 / A-26 as built: the VM's v2 rows say «BED05» where Yapı says «bed05», and the strip shows the ROW's label.
+    (i) A PATCH that leaves Yapı's label alone never touches the row; (ii) a rename to the row's own label («BED05») is
+    a Yapı rename only - the way to align a bed before the live try; (iii) any other rename, «bed05» included, closes
+    the v2 row and opens an editor row (version + 1, a new sha, the strip follows). Pins the gate `label != bed.label`
+    and the row's own comparison in `relabel_bed`."""
+    async with esleme_client(db_session) as (client, app, ward):
+        ward.beds["1"].label = "bed05"                                      # Yapı's label, set as a fixture (no audit)
+        await db_session.commit()
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        real_reset = app.state.shadow_table_reset
+        resets = _spy_reset(app)
+
+        async def strip():
+            """(version, sha, the strip's label of the monitor), the table read afresh - not through the spied reset."""
+            real_reset()
+            board = (await client.get("/infinity-shadow/board", headers=BOARD)).json()
+            return (board["table"]["version"], board["table"]["sha256"],
+                    [c["bed_label"] for c in board["beds"] if c["source"] == "192.0.2.11"])
+
+        version, sha, shown = await strip()
+        assert (version, shown) == (ids["192.0.2.11"], ["BED05"])           # the row's label, not Yapı's
+
+        # (i) Yapı's label stays: `is_active` alone, and the same label (trimmed by BedPatch)
+        for body in ({"is_active": True}, {"label": "bed05"}, {"label": " bed05 "}):
+            assert (await _patch(client, ward, "1", **body)).status_code == 200
+        assert (len(await _rows(db_session)), resets, await strip()) == (1, [], (version, sha, ["BED05"]))
+        assert app.state.audit.records() == []                              # not even a structure.rename
+
+        # (ii) a rename to the row's own label: Yapı renames, the mapping does not move
+        assert (await _patch(client, ward, "1", label="BED05")).status_code == 200
+        assert (len(await _rows(db_session)), resets, await strip()) == (1, [], (version, sha, ["BED05"]))
+        assert [r.event_type for r in app.state.audit.records()] == ["structure.rename"]
+
+        # (iii) any other label closes the v2 row and opens an editor row
+        assert (await _patch(client, ward, "1", label="Yatak 5")).status_code == 200
+        old, new = await _rows(db_session, "192.0.2.11")
+        version_after, sha_after, shown_after = await strip()
+        kinds = [r.event_type for r in app.state.audit.records()]
+    assert (old.bed_label, old.method, old.valid_to == new.valid_from) == ("BED05", "central_station_list", True)
+    assert (new.bed_label, new.method, new.valid_to) == ("Yatak 5", "editor", None)
+    assert (version_after, shown_after) == (version + 1, ["Yatak 5"]) and sha_after != sha
+    assert resets == [True]                                                 # the relabel's one (strip() calls the real reset)
+    assert kinds == ["structure.rename", "structure.rename", "device_bed.relabel"]
 
 
 async def test_a_label_race_only_the_commit_catches_rolls_the_relabel_back_with_the_rename(db_session, monkeypatch):
@@ -209,9 +256,9 @@ async def test_the_structure_opens_to_a_holder_of_devices_map_beds(db_session):
 # point after its locks (the bind before it writes; the Yapı write before its hook) and goes on only once the other
 # is queued behind that very lock (`pg_stat_activity`). So the outcome is the lock's, not the scheduler's.
 
-async def _queued_behind_a_bed_lock(db, timeout: float = 5.0) -> None:
+async def _queued_behind_a_bed_lock(db, timeout: float = 15.0) -> None:       # the shared database is under contention
     sql = text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() "
-               "AND wait_event_type = 'Lock' AND query LIKE '%FROM beds%FOR NO KEY UPDATE%'")
+               "AND wait_event_type = 'Lock' AND query LIKE '%FROM beds%beds.id%FOR NO KEY UPDATE%'")
     maker = async_sessionmaker(db.bind, expire_on_commit=False)
     async with asyncio.timeout(timeout):
         while True:
