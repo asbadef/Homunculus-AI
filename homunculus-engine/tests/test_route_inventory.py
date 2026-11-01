@@ -21,8 +21,9 @@ PRE_PASSWORD = {"/auth/password"}
 # Caller resolver (tenant token or JWT), not through FastAPI dependencies.
 CALLER_RESOLVED_MODULE = "homunculus.api.app"
 # G2-B1d (E22): the bridge's patient query is built by a factory bound to the app's `_caller`
-# (api/edge_query.py, E2): the device token only, so it too has no JWT principal to reach.
-CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "/edge/patient-query")}
+# (api/edge_query.py, E2): the device token only, so it too has no JWT principal to reach. Keyed
+# on (module, method, path): a GET or PUT added later to the same path is not exempted by it.
+CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-query")}
 
 
 def _calls(dependant) -> set:
@@ -39,10 +40,16 @@ def _routes():
     return api_routes(create_app({"t": "HOSP1"}, run_escalation_loop=False))
 
 
+def _caller_resolved(route) -> bool:
+    """Every method of the route is one the exemption names (module, method, path)."""
+    return all((route.endpoint.__module__, method, route.path) in CALLER_RESOLVED_ROUTES
+               for method in route.methods)
+
+
 def test_every_route_is_guarded_or_explicitly_exempt():
     missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
                if r.endpoint.__module__ != CALLER_RESOLVED_MODULE
-               and (r.endpoint.__module__, r.path) not in CALLER_RESOLVED_ROUTES
+               and not _caller_resolved(r)
                and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD
                and get_principal not in _calls(r.dependant)]
     assert missing == []

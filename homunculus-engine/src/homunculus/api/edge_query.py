@@ -57,7 +57,8 @@ def edge_query_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             raise HTTPException(status_code=400, detail="the body is one JSON object") from None
         asked = body.get("id") if isinstance(body, dict) else None
         if not isinstance(asked, str) or not asked or len(asked) > MAX_ID:
-            raise HTTPException(status_code=400, detail="id: one non-empty string of at most 64")
+            raise HTTPException(status_code=400,
+                                detail=f"id: one non-empty string of at most {MAX_ID}")
         try:
             record = identities.get(who.hospital, asked)
             gone = record is None or is_tombstone(record) or record.state == _DISCHARGED

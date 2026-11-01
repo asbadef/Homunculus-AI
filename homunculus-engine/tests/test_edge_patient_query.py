@@ -68,7 +68,7 @@ def test_a_comed_fed_record_is_answered_the_same_way():
 
 
 @pytest.mark.parametrize("asked", ["202600000002", "20260000000", NUMBER + "0", " " + NUMBER,
-                                   "2026000000"])
+                                   "2026000000", "9" * 64])      # 64: the inclusive bound, a 200
 def test_any_other_number_is_not_found_exact_match_only(store, asked):
     r = _client(store).post(URL, json={"id": asked}, headers=DEVICE)
     assert (r.status_code, r.json()) == (200, {"found": False})

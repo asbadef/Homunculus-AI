@@ -70,6 +70,7 @@ def test_the_bridges_patient_query_is_never_proxied() -> None:
     """D12: /edge/patient-query is in the app (the bridge calls it on the compose network) and in
     no location that hands a path to the API — from outside, it is the single-page app's."""
     assert NOT_PROXIED <= _app_prefixes()
+    assert _api_locations()         # vacuity guard: with no API location the loop below proves nothing
     for path in ("/edge", "/edge/patient-query"):
         assert not any(loc.search(path) for loc in _api_locations()), path
 
