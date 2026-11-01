@@ -13,7 +13,7 @@ import { dayStamp } from "../../../i18n/dates.js";
 import { ANNOUNCE_DELAY_MS } from "../../../ui/Alert.jsx";
 import { SIGN_ARM_MS, SofaFormModal } from "./SofaFormModal.jsx";
 import { toLocalInput } from "./sofaFields.js";
-import { MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
+import { EXPECT, MEASURED_AT, SUPPORT_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
 // The fake-timer recipe of the earlier waves (meds/MedsChartForm.test.jsx): installed BEFORE the mount, `Date`
 // faked with them, nothing advancing on its own — so «İmzalayın»'s arming window is crossed only when a test
@@ -85,9 +85,11 @@ describe("the SOFA form (D2)", () => {
   it("prints the engine's points, «ölçülməyib» — never a 0 — for an organ with no measurement, and the failure mark", async () => {
     await open();
     expect(organ("Laxtalanma")).toHaveTextContent("3 bal");
-    expect(within(organ("Laxtalanma")).getByText("≥3 bal · orqan çatışmazlığı həddi")).toBeInTheDocument();   // a threshold, not a finding
+    // The mark on the engine's `failure` flag says the points only (review 2, S6a): no "organ failure", no "threshold".
+    expect(within(organ("Laxtalanma")).getByText("≥3 bal")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent(/orqan çatışmazlığı|həddi/);
     expect(organ("Tənəffüs")).toHaveTextContent("2 bal");
-    expect(within(organ("Tənəffüs")).queryByText(/orqan çatışmazlığı/)).toBeNull();
+    expect(within(organ("Tənəffüs")).queryByText("≥3 bal")).toBeNull();
     for (const name of ["Qaraciyər", "Ürək-damar", "Mərkəzi sinir sistemi", "Böyrək"]) {
       expect(organ(name)).toHaveTextContent("ölçülməyib");
       expect(organ(name)).not.toHaveTextContent(/\b0 bal/);
@@ -104,6 +106,12 @@ describe("the SOFA form (D2)", () => {
     expect(organ("Tənəffüs")).toHaveTextContent(`PaO₂/FiO₂ nisbəti: 250 mmHg · ${AT()} · klinisist qeydi`);
   });
 
+  it("says the form itself raises no alert — and that a measurement entered here is in the record the alerting rules read (review 2, S4)", async () => {
+    await open();
+    expect(within(dialog()).getByText(/Formanın özü siqnal yaratmır; buradan daxil edilən ölçmə xəstə qeydinə yazılır və xəbərdarlıq qaydaları \(Sepsis-3 qutusu\) da onu oxuyur\./)).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("Forma siqnal yaratmır;");
+  });
+
   it("says the window and a stay shorter than it, and the renal, cardiovascular and respiratory notes (D8, D9)", async () => {
     await open();
     expect(within(dialog()).getByText(/^Pəncərə: son 24 saat · /)).toBeInTheDocument();
@@ -113,6 +121,27 @@ describe("the SOFA form (D2)", () => {
     cleanup();
     await open({ form: sofaForm({ covers_full_window: false }) });
     expect(within(dialog()).getByText(/xəstə 24 saatdan az müddətdir buradadır/)).toBeInTheDocument();
+  });
+
+  it("prints the support state the ratio was scored on, from the engine's respiration row — to a reader without clinical.chart too (C3)", async () => {
+    const at = dayStamp(Date.parse(SUPPORT_AT), NOW);
+    const withSupport = (support) => {
+      const form = sofaForm();
+      form.rows[0] = { ...form.rows[0], support };
+      return form;
+    };
+    await open({ canChart: false });
+    expect(organ("Tənəffüs")).toHaveTextContent(`Tənəffüs dəstəyi: bəli (qeyd ${at})`);
+    cleanup();
+    await open({ form: withSupport({ on_support: false, at: SUPPORT_AT }) });
+    expect(organ("Tənəffüs")).toHaveTextContent(`Tənəffüs dəstəyi: xeyr (qeyd ${at})`);
+    cleanup();
+    await open({ form: withSupport({ on_support: false, at: null }) });
+    expect(organ("Tənəffüs")).toHaveTextContent("Tənəffüs dəstəyi qeydi yoxdur");
+    cleanup();
+    await open({ form: withSupport(null) });                                     // a row with no ratio: nothing said
+    expect(organ("Tənəffüs")).not.toHaveTextContent(/Tənəffüs dəstəyi: |Tənəffüs dəstəyi qeydi/);
+    expect(organ("Laxtalanma")).not.toHaveTextContent(/Tənəffüs dəstəyi/);       // only under the respiration row
   });
 
   it("a form that cannot be read says so, and is asked again", async () => {
@@ -136,7 +165,7 @@ describe("completing a row (clinical.chart, D3)", () => {
     const entry = entryFor("Bilirubin səviyyəsi");
     fireEvent.change(within(entry).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
     await save(entry);
-    expect(api.chart).toHaveBeenCalledWith([{ code: "bilirubin", value: 2.4 }], new Date(NOW).toISOString());
+    expect(api.chart).toHaveBeenCalledWith([{ code: "bilirubin", value: 2.4 }], null);    // untouched: the server's clock (review 2)
     expect(api.read).toHaveBeenCalledTimes(2);
     expect(toasted(`${BED}: Bilirubin səviyyəsi qeyd olundu; forma yenidən oxunur.`).length).toBeGreaterThan(0);
     expect(within(dialog()).queryByRole("form", { name: /yeni ölçmə$/ })).toBeNull();
@@ -146,15 +175,27 @@ describe("completing a row (clinical.chart, D3)", () => {
     const { api } = await open();
     await press(within(organ("Tənəffüs")).getByRole("button", { name: "Dəstək vəziyyətini qeyd edin" }));
     const entry = entryFor("Tənəffüs dəstəyi");
-    // The engine's rule (X14), its fallback too: an in-window «bəli» stands; without one, the latest state does.
-    expect(entry).toHaveTextContent("«xeyr» onu geri almır");
-    expect(entry).toHaveTextContent("ən son qeyd olunan vəziyyət keçərlidir, pəncərədən əvvəlki qeyd olsa belə");
+    // The engine's rule (review 2, C3): the state as of the worst reading — the latest entry at or before it.
+    expect(entry).toHaveTextContent("PaO₂/FiO₂ ən pis oxunduğu andakı tənəffüs dəstəyi vəziyyəti ilə qiymətləndirilir");
+    expect(entry).toHaveTextContent("qeydi həmin saata geri tarixləyərək daxil edə bilərsiniz");
+    expect(entry).not.toHaveTextContent("«xeyr» onu geri almır");                // the old "any yes in 24 h" rule
     await save(entry);
     expect(api.chart).not.toHaveBeenCalled();
     expect(within(entry).getByText("Bəli və ya xeyr seçin.")).toBeInTheDocument();
     fireEvent.change(within(entry).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "1" } });
     await save(entry);
-    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 1 }], new Date(NOW).toISOString());
+    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 1 }], null);
+  });
+
+  it("a «xeyr» back-dated to before the worst reading is charted with its time: the support entry keeps its time field (C3)", async () => {
+    const { api } = await open();
+    await press(within(organ("Tənəffüs")).getByRole("button", { name: "Dəstək vəziyyətini qeyd edin" }));
+    const entry = entryFor("Tənəffüs dəstəyi");
+    fireEvent.change(within(entry).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "0" } });
+    const before = Date.parse(MEASURED_AT) - 60 * 60_000;                       // an hour before the ratio's reading
+    fireEvent.change(within(entry).getByLabelText("Ölçmə saatı"), { target: { value: toLocalInput(before) } });
+    await save(entry);
+    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 0 }], new Date(before).toISOString());
   });
 
   it("holds a slipped digit or a time ahead before anything is sent, and takes the focus there", async () => {
@@ -274,9 +315,71 @@ describe("preview, then sign (D6)", () => {
     expect(organ("Laxtalanma")).toHaveTextContent("2 bal");
     expect(organ("Laxtalanma")).toHaveTextContent("Düzəldilib — qeyddəki dəyər: 45");
     await press(button("İmzalayın"));
-    expect(api.sign).toHaveBeenCalledWith(overrides);
+    expect(api.sign).toHaveBeenCalledWith(overrides, EXPECT);                   // with the preview's fingerprint (C2)
     expect(toasted(`${BED}: SOFA forması imzalandı · cəmi 4.`).length).toBeGreaterThan(0);
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it("a server that does not know the preview route (404, 405) is a refused preview, said so: nothing to sign, nothing closed (C1)", async () => {
+    for (const err of [refusal(404, "Not Found"), refusal(405, "Method Not Allowed"), refusal(404, "İstek başarısız (404)")]) {
+      const { api, onClose } = await open({ api: { preview: vi.fn(() => Promise.reject(err)) } });
+      await correctPlatelets();
+      await previewed();
+      const said = `${BED} üçün öncədən baxış alınmadı: Server öncədən baxışı tanımır; imza təklif edilmir.`;
+      expect(toasted(said).length, err.message).toBeGreaterThan(0);
+      expect(toneOf(said)).toBe("error");
+      expect(footer()).toHaveTextContent(said);
+      expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+      expect(api.sign).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("a 404 in the engine's own words — the patient is not in her scope — is that refusal, not an unknown route (C1)", async () => {
+    await open({ api: { preview: vi.fn(() => Promise.reject(refusal(404, "hasta bulunamadı"))) } });
+    await correctPlatelets();
+    await previewed();
+    expect(toasted(`${BED} üçün öncədən baxış alınmadı: Bu xəstə panelinizdə yoxdur: ya belə bir qeyd yoxdur, ya da əhatənizdən kənardır.`).length).toBeGreaterThan(0);
+    expect(toasted(/tanımır/)).toHaveLength(0);
+  });
+
+  it("a preview with no fingerprint to sign it by — or a malformed one — is a refused preview, never something to sign (C2)", async () => {
+    for (const fingerprint of [undefined, null, "ABC", EXPECT.toUpperCase(), EXPECT.slice(1), `${EXPECT}0`]) {
+      const { expect: _given, ...rest } = previewAnswer();
+      const answer = fingerprint === undefined ? rest : { ...rest, expect: fingerprint };
+      const { api } = await open({ api: { preview: vi.fn(() => Promise.resolve(answer)) } });
+      await correctPlatelets();
+      await previewed();
+      expect(toasted(`${BED} üçün öncədən baxış alınmadı: mühərrikin cavabı öncədən baxış deyildi`).length, String(fingerprint)).toBeGreaterThan(0);
+      expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+      expect(within(dialog()).queryByText(/^Öncədən baxış: cəmi/)).toBeNull();
+      expect(api.sign).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("a 409 — the record moved since the preview — signed nothing: the preview is let go, the form read again, and it is said (C2)", async () => {
+    const reason = "kayıt önizlemeden sonra değişti — formu yeniden önizleyin";
+    const { api, onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(409, reason))) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    expect(api.sign).toHaveBeenCalledWith([{ code: "platelets", value: 80, reason: WHY }], EXPECT);
+    const said = `${BED}: qeyd öncədən baxışdan sonra dəyişib; heç nə imzalanmayıb. Formaya yenidən öncədən baxın.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(toneOf(said)).toBe("warn");
+    expect(footer()).toHaveTextContent(said);
+    expect(api.read).toHaveBeenCalledTimes(2);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(within(dialog()).getByText("Cəmi: 5")).toBeInTheDocument();                 // the record's form, not the preview's
+    expect(footer()).toHaveTextContent("İmzalamazdan əvvəl öncədən baxın");
+    // Her corrections stay, to be previewed again.
+    expect(within(dialog()).getByText(`Trombosit sayı: 45 → 80 · əsaslandırma: «${WHY}»`)).toBeInTheDocument();
+    expect(button("Öncədən baxın")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    await press(within(dialog()).getAllByRole("button", { name: "Bağla" }).at(-1));
+    expect(onClose).toHaveBeenCalledWith(false);                                        // nothing was signed: nothing changed
   });
 
   it("a correction changed after the preview makes it stale: no «İmzalayın» until it is previewed again", async () => {
@@ -394,7 +497,7 @@ describe("preview, then sign (D6)", () => {
     expect(toasted(said).length).toBeGreaterThan(0);
   });
 
-  it("an answer to «Öncədən baxın» that SIGNED — an engine older than G2-A4 — is said on the toast and in the footer, the box reads again, and nothing more is offered (X13)", async () => {
+  it("an answer to «Öncədən baxın» that says it SIGNED — which the preview route never does — is said on the toast and in the footer, the box reads again, and nothing more is offered (X13)", async () => {
     const { api, onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(signedAnswer())) } });
     await correctPlatelets();
     await previewed();
@@ -566,6 +669,55 @@ describe("the footer, the announcement, the editors and the close (review minors
     expect(toasted(`${BED} üçün imza rədd edildi: Əhatə təyin etmək üçün əhatəsi məhdud olmayan administrator olmalısınız.`).length).toBeGreaterThan(0);
     expect(toasted(/Bu hesabın imza səlahiyyəti yoxdur/)).toHaveLength(0);
     expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it("a Save during a preview is held visibly — «Yadda saxla» says it is busy, nothing is sent — and goes once the preview has landed", async () => {
+    let land;
+    const { api } = await open({ api: { preview: vi.fn(() => new Promise((resolve) => { land = resolve; })) } });
+    await correctPlatelets();
+    await press(within(organ("Qaraciyər")).getByRole("button", { name: "Ölçmə daxil edin: Bilirubin səviyyəsi" }));
+    fireEvent.change(within(chartEntry("Bilirubin səviyyəsi")).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
+    await press(button("Öncədən baxın"));
+    const save = within(chartEntry("Bilirubin səviyyəsi")).getByRole("button", { name: "Yadda saxla" });
+    expect(save).toHaveAttribute("aria-busy", "true");
+    await press(save);
+    expect(api.chart).not.toHaveBeenCalled();
+    await act(async () => { land(previewAnswer()); await settle(); });
+    await press(within(chartEntry("Bilirubin səviyyəsi")).getByRole("button", { name: "Yadda saxla" }));
+    expect(api.chart).toHaveBeenCalledTimes(1);
+  });
+
+  it("a null answer — the store dropped it after the session ended — says nothing and closes nothing, for a preview and a signature alike", async () => {
+    let { onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(null)) } });
+    await correctPlatelets();
+    const before = footer().textContent;
+    await previewed();
+    expect(toastText()).toBe("");
+    expect(footer().textContent).toBe(before);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    cleanup();
+    ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.resolve(null)) } }));
+    await correctPlatelets();
+    await previewed();
+    const previewedSaid = footer().textContent;
+    await press(button("İmzalayın"));
+    expect(toastText()).toBe("");
+    expect(footer().textContent).toBe(previewedSaid);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a read answered with null — dropped after the session ended — lands nothing: the form shown stays, and «no form» is never said", async () => {
+    const read = vi.fn().mockResolvedValueOnce(sofaForm()).mockResolvedValueOnce(null);
+    await open({ api: { read } });
+    await chartBilirubin();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(within(dialog()).getByText("Cəmi: 5")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("göndərmədi");
+    cleanup();
+    await open({ api: { read: vi.fn(() => Promise.resolve(null)) } });
+    expect(within(dialog()).getByText("SOFA forması oxunur…")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("göndərmədi");
   });
 
   it("a close with corrections held says they were dropped, and closes all the same; a close with none says nothing", async () => {

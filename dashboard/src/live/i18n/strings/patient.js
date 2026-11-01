@@ -168,7 +168,7 @@ export default {
   },
   az: {
     back: "Çarpayılara qayıt",
-    onlyWrite: "Bu ekran xəstə qeydinə dörd şey yazır, hər dördü yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi, xəstənin norması, dərman / maye qeydi və SOFA formasından daxil edilən ölçmələr. SOFA formasının imzası əlavə olaraq scores.sign səlahiyyəti tələb edir və audit qeydinə düşür; buradan başqa heç nə yazılmır.",
+    onlyWrite: "Bu ekran xəstə qeydinə dörd şey yazır, hər dördü yalnız clinical.chart səlahiyyəti ilə: şübhəli infeksiya işarəsi, xəstənin norması, dərman / maye qeydi və SOFA formasından daxil edilən ölçmələr. SOFA formasının imzası ayrıca scores.sign səlahiyyəti tələb edir və audit qeydinə düşür; buradan başqa heç nə yazılmır.",
     notFound: "Bu xəstə göstərilə bilmir",
     notFoundHelp: "Panelinizdə bu identifikatorla kart yoxdur: ya belə bir qeyd yoxdur, ya da əhatənizdən kənardır. İkisini ayırd edə bilmirik — server ikisinə də eyni cavabı verir.",
     notFoundUnknown: "Panel oxunmadığı üçün bu xəstənin panelinizdə olub-olmadığını deyə bilmirik.",
@@ -323,7 +323,7 @@ export default {
   },
   ru: {
     back: "К койкам",
-    onlyWrite: "Этот экран записывает в карту пациента четыре вещи, все только с правом clinical.chart: отметку о подозрении на инфекцию, норму пациента, запись о препарате / жидкости и измерения, введённые в форме SOFA. Подпись формы SOFA требует ещё права scores.sign и попадает в журнал аудита; больше отсюда ничего не записывается.",
+    onlyWrite: "Этот экран записывает в карту пациента четыре вещи, все только с правом clinical.chart: отметку о подозрении на инфекцию, норму пациента, запись о препарате / жидкости и измерения, введённые в форме SOFA. Подпись формы SOFA требует отдельного права scores.sign и попадает в журнал аудита; больше отсюда ничего не записывается.",
     notFound: "Этого пациента показать нельзя",
     notFoundHelp: "На вашей панели нет карточки с этим идентификатором: либо такой записи нет, либо она вне вашей области доступа. Различить мы не можем — сервер отвечает одинаково.",
     notFoundUnknown: "Панель не прочитана, поэтому мы не можем сказать, есть ли этот пациент на вашей панели.",
@@ -478,7 +478,7 @@ export default {
   },
   en: {
     back: "Back to the beds",
-    onlyWrite: "This screen writes four things to the patient's record, all only with clinical.chart: the suspected-infection charting, the patient's normal, the medication / fluid entry and the measurements entered on the SOFA form. Signing the SOFA form also needs scores.sign and goes into the audit trail; nothing else is written from here.",
+    onlyWrite: "This screen writes four things to the patient's record, all only with clinical.chart: the suspected-infection charting, the patient's normal, the medication / fluid entry and the measurements entered on the SOFA form. Signing the SOFA form needs scores.sign, separately, and goes into the audit trail; nothing else is written from here.",
     notFound: "This patient cannot be shown",
     notFoundHelp: "Your board holds no card with this identifier: either there is no such record, or it is outside your scope. We cannot tell which — the server answers both the same way.",
     notFoundUnknown: "The board could not be read, so we cannot say whether this patient is on it.",

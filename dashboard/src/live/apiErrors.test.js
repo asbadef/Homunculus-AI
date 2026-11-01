@@ -254,6 +254,24 @@ describe("apiErrorText", () => {
   const az = createTranslator("az", DICTIONARIES);
   const en = createTranslator("en", DICTIONARIES);
 
+  // G2-A4 review 2 (C1–C2): the SOFA sign route's new refusals, pinned here as well as by the sweep above,
+  // which finds them in api/app.py only once the engine's side of the round is in the same tree.
+  it("says the SOFA preview and signature refusals of the preview route's round, each saying nothing was signed", () => {
+    expect(apiErrorText(en, new Error("önizleme imza yolundan istenemez — önizleme yolunu kullanın")))
+      .toBe("A preview cannot be asked of the signing route; the form was not signed. Use the preview route.");
+    expect(apiErrorText(en, new Error("imza bir önizlemenin parmak izini ister — önce önizleyin")))
+      .toBe("A signature needs a preview's fingerprint; the form was not signed. Preview first.");
+    expect(apiErrorText(az, Object.assign(new Error("kayıt önizlemeden sonra değişti — formu yeniden önizleyin"), { status: 409 })))
+      .toBe("Qeyd öncədən baxışdan sonra dəyişib; forma imzalanmayıb. Formaya yenidən öncədən baxın.");
+  });
+
+  // The charting door's (api/clinical.py, through `str(exc)`, so no sweep reads it): a GCS that is not whole.
+  // The SOFA form holds one back before it is sent (sofaFields); any other client's is said in the reader's words.
+  it("says the charting door's refusal of a GCS that is not a whole number", () => {
+    expect(apiErrorText(en, new Error("GCS tam sayı olmalı"))).toBe("The GCS must be a whole number.");
+    expect(apiErrorText(az, new Error("GCS tam sayı olmalı"))).toBe("GCS tam ədəd olmalıdır.");
+  });
+
   it("translates a known message, whatever whitespace surrounds it", () => {
     expect(apiErrorText(az, new Error("  Invalid credentials \n"))).toBe("İstifadəçi adı və ya şifrə səhvdir.");
     expect(apiErrorText(en, "Parola hatalı")).toBe("Incorrect password.");

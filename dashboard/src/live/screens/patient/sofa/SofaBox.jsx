@@ -74,6 +74,10 @@ export function SofaBox({ patientId, bed, nowMs = Date.now() }) {
     try {
       const form = await board.store.sofaForm(id);
       if (!mounted.current || mine !== reads.current) return;
+      // null is the store's word for an answer it DROPPED — it came after the session ended; the engine answers
+      // every read with a form. Nothing lands (review 2): the box stays as it was, reading or with its error,
+      // and «noForm» is said only for an answer that is not a form.
+      if (form === null) return;
       setRead({ forId: id, form: form ?? null, error: null, reading: false });
     } catch (err) {
       if (err?.superseded || !mounted.current || mine !== reads.current) return;
@@ -96,7 +100,7 @@ export function SofaBox({ patientId, bed, nowMs = Date.now() }) {
         read: () => board.store.sofaForm(id),
         chart: (entries, recordedAt) => board.store.chart(id, entries, recordedAt),
         preview: (overrides) => board.store.sofaPreview(id, overrides),
-        sign: (overrides) => board.store.sofaSign(id, overrides),
+        sign: (overrides, expect) => board.store.sofaSign(id, overrides, expect),
       },
     });
   }
