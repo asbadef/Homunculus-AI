@@ -17,7 +17,10 @@ Env:
                    unset = off, a problem = off and logged, never a refusal to start. With the stage
                    `rules` (Aşama B; INFINITY_RULES_PARAMETERS, api/infinity_rules.py) the monitor
                    samples go to Postgres's `monitor_samples` (migration 0013), which the API
-                   prunes hourly at every stage on a Postgres deployment
+                   prunes hourly at every stage on a Postgres deployment. With the lane on in
+                   production the API reads the device→bed table from the database
+                   (`PostgresDeviceBeds`), not from INFINITY_DEVICE_BEDS_PATH; the file stays the
+                   lab's source and the import's input
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
