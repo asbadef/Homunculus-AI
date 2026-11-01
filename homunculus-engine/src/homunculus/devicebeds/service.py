@@ -172,6 +172,8 @@ async def _lock_and_check(db: AsyncSession, tenant_id: uuid.UUID, principal: Pri
             return None
     elif mine is None or mine.bed_id is None:                         # no row, or one on no bed (A-22 M3)
         return None
+    # Defence in depth: `expected` below already subsumes this check (row ids are immutable, so the id the screen
+    # saw is the row step 4 read, and a device whose bed changed has another row). It stays as the cheap local test.
     if (mine.bed_id if mine is not None else None) != leaving:
         raise _CHANGED.http()                                         # it moved between 4 and 6
     if mine is None and ask.source not in seen.views:

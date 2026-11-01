@@ -369,11 +369,11 @@ async def test_a_request_sent_again_after_its_answer_was_lost_answers_changed_fa
     assert [r.event_type for r in audit] == ["device_bed.bind", "device_bed.unbind"]
 
 
-async def _another_writer(db, ward, monkeypatch, source, bed_key, *, reopen=True):
-    """Between the transaction's read of the device's row (step 4) and its locks (steps 5-6), a second session
-    commits a change of its own: it closes `source`'s current row and, if `reopen`, opens one on `bed_key` (None:
-    unbound). Done by wrapping `service._lock_bed`, which the transaction calls in between — once, before the
-    first real lock, so nothing it holds can wait for the writer."""
+def _before_the_locks(db, monkeypatch, action):
+    """Between the transaction's reads without a lock (steps 2-4) and its locks (steps 5-6), a second session runs
+    `await action(session)` and commits. Done by wrapping `service._lock_bed`, which the transaction calls in
+    between — once, before the first real lock, so nothing the request holds can wait for the other writer.
+    Returns a list that is non-empty once the other writer has run."""
     maker, done = async_sessionmaker(db.bind, expire_on_commit=False), []
     real = service._lock_bed
 
@@ -381,20 +381,28 @@ async def _another_writer(db, ward, monkeypatch, source, bed_key, *, reopen=True
         if not done:
             done.append(True)
             async with maker() as other:
-                current = (await current_rows(other, ward.tenant.id, sources=[source]))[source]
-                t = await db_time(other)
-                current.valid_to = t
-                await other.flush()
-                if reopen:
-                    bed = ward.beds[bed_key] if bed_key else None
-                    other.add(editor_row(ward.tenant.id, source, current.group_address, 2050, current.device_bed_label,
-                                         bed.label if bed else None, bed.id if bed else None,
-                                         ward.units[UNIT_OF[bed_key]].id if bed else None, t, ward.users["admin"]))
+                await action(other)
                 await other.commit()
         return await real(session, bed_id)
 
     monkeypatch.setattr(service, "_lock_bed", lock_after_the_other_writer)
     return done
+
+
+async def _another_writer(db, ward, monkeypatch, source, bed_key, *, reopen=True):
+    """The other writer closes `source`'s current row and, if `reopen`, opens one on `bed_key` (None: unbound)."""
+    async def move(other):
+        current = (await current_rows(other, ward.tenant.id, sources=[source]))[source]
+        t = await db_time(other)
+        current.valid_to = t
+        await other.flush()
+        if reopen:
+            bed = ward.beds[bed_key] if bed_key else None
+            other.add(editor_row(ward.tenant.id, source, current.group_address, 2050, current.device_bed_label,
+                                 bed.label if bed else None, bed.id if bed else None,
+                                 ward.units[UNIT_OF[bed_key]].id if bed else None, t, ward.users["admin"]))
+
+    return _before_the_locks(db, monkeypatch, move)
 
 
 async def test_two_identical_binds_in_flight_the_second_answers_changed_false_not_mapping_changed(db_session, monkeypatch):
@@ -438,14 +446,33 @@ async def test_a_device_that_moved_to_a_third_bed_between_the_read_and_the_locks
 
 async def test_a_row_only_monitor_whose_row_vanished_under_the_locks_is_mapping_changed_not_an_error(db_session, monkeypatch):
     """A-22 M4, E33: the worker does not report the device and its only row was closed (with none opened) between
-    the read and the locks — nothing is left to take a group from."""
+    the read and the locks — nothing is left to take a group from. The request is sent as by a client that saw NO
+    row (`expected` null, null), so that the `expected` comparison passes and it is the E33 guard alone that
+    refuses: with a real row id in `expected` that comparison answered 409 first and the guard never ran."""
     async with esleme_client(db_session) as (client, app, ward):
-        ids = await seed(db_session, ward, ("192.0.2.20", None, None))
+        await seed(db_session, ward, ("192.0.2.20", None, None))
+        resets = _spy_reset(app)
         done = await _another_writer(db_session, ward, monkeypatch, "192.0.2.20", None, reopen=False)
-        response = await _bind(client, ward, "admin", "192.0.2.20", "2", ids["192.0.2.20"])
+        response = await _bind(client, ward, "admin", "192.0.2.20", "2", None, None)
         rows = await _rows(db_session, "192.0.2.20")
     assert done and (response.status_code, response.json()["detail"]["code"]) == (409, "mapping_changed")
-    assert [r.valid_to is None for r in rows] == [False] and app.state.audit.records() == []
+    assert [r.valid_to is None for r in rows] == [False] and app.state.audit.records() == [] and resets == []
+
+
+async def test_a_bed_closed_between_the_read_and_the_locks_is_bed_closed_and_nothing_is_written(db_session, monkeypatch):
+    """Spec §4.4 step 6: the target bed's (and its room's and unit's) `is_active` is read again under the bed lock —
+    step 3 read it before any lock, and a close may have committed since."""
+    async with esleme_client(db_session) as (client, app, ward):
+        resets = _spy_reset(app)
+
+        async def close_the_bed(other):
+            (await other.get(Bed, ward.beds["2"].id)).is_active = False
+
+        done = _before_the_locks(db_session, monkeypatch, close_the_bed)
+        response = await _bind(client, ward, "admin", "192.0.2.13", "2")
+        rows = await _rows(db_session, "192.0.2.13")
+    assert done and (response.status_code, response.json()["detail"]["code"]) == (409, "bed_closed")
+    assert rows == [] and app.state.audit.records() == [] and resets == []
 
 
 async def test_a_stale_expected_is_mapping_changed_and_writes_nothing(db_session):

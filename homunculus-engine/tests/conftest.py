@@ -29,10 +29,18 @@ from homunculus.db import Base  # noqa: E402
 # survived a killed run and made the next `drop_all` fail on the table it points at (A-22 I2).
 import importlib  # noqa: E402
 import pkgutil  # noqa: E402
+import sys  # noqa: E402
 
 import homunculus  # noqa: E402
 
-for _module in pkgutil.walk_packages(homunculus.__path__, "homunculus."):
+
+def raise_on_package_error(name: str) -> None:
+    """`walk_packages`' `onerror`: by default a package whose `__init__` fails to import is skipped, and
+    its models with it, silently. Here it is the run that fails, naming the package."""
+    raise ImportError(f"package {name} did not import; the models under it would be skipped silently") from sys.exception()
+
+
+for _module in pkgutil.walk_packages(homunculus.__path__, "homunculus.", onerror=raise_on_package_error):
     if _module.name.rsplit(".", 1)[-1] == "models":
         importlib.import_module(_module.name)
 
