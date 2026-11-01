@@ -57,6 +57,14 @@ CHARTABLE: dict[SignalCode, str] = {
     SignalCode.ACVPU: "ordinal",
     SignalCode.URINE_OUTPUT_ML: "mL",
     SignalCode.SUPPLEMENTAL_OXYGEN: "bool",
+    # G2-A4 (D4, X16): whether the patient is on respiratory support — the fact the 3- and 4-point
+    # PaO2/FiO2 bands turn on (rules/sofa.py `respiration_points_of`). The ventilator bridge infers it
+    # (medibus: a ventilator answering its poll is support, and it only ever says yes); no ventilator
+    # feeds the ward, and whether a patient is supported is seen at the bedside, so this is a clinician's
+    # observation as much as a device's. Charted here it reaches both SOFAs: the form's
+    # (scoring/sofa_form.py — any yes in the window counts) and the alerting one (rules/sofa.py reads the
+    # latest). A flag, 1 or 0 (`_BOOLEAN`).
+    SignalCode.ON_RESP_SUPPORT: "bool",
     # Labs a clinician transcribes while there is no feed from the laboratory. When the HIS
     # ORU feed opens these arrive on their own and this door stops being the usual way in.
     SignalCode.LACTATE: "mmol/L",
@@ -92,11 +100,20 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.SODIUM: (80.0, 200.0),
     SignalCode.POTASSIUM: (1.0, 10.0),
     SignalCode.HAEMATOCRIT: (5.0, 75.0),
+    # G2-A4 (D4): the SOFA form's labs, in the units CHARTABLE fixes. Engineering bounds against a slipped
+    # digit or a unit — a creatinine typed in µmol/L lands far above 30 mg/dL; a PaO2/FiO2 worked out with
+    # FiO2 as a percentage lands far below 20 — never clinical thresholds: the band tables in rules/sofa.py
+    # stay the only place a value is judged. A bilirubin typed in µmol/L can still fall inside 0–60; the
+    # unit printed beside the field is the guard there (D11).
+    SignalCode.PLATELETS: (0.0, 2000.0),          # ×10³/µL
+    SignalCode.BILIRUBIN: (0.0, 60.0),            # mg/dL
+    SignalCode.CREATININE: (0.0, 30.0),           # mg/dL
+    SignalCode.PAO2_FIO2: (20.0, 700.0),          # mmHg
 }
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,
-            SignalCode.SUPPLEMENTAL_OXYGEN}
+            SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ON_RESP_SUPPORT}   # G2-A4 (D4)
 
 
 # Vitals a clinician may chart a personal baseline range for. These are the parameters NEWS2

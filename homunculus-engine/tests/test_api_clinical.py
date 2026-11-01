@@ -340,3 +340,64 @@ class TestChartingEndsAnAlert:
             shock = self._alert(c, "septic_shock")
             assert shock is not None, "an unacknowledged critical must not vanish (D2)"
             assert shock["resolved_at"] is not None and shock["acknowledged"] is False
+
+
+class TestTheSofaFormsInputs:
+    """G2-A4 (D4): the SOFA form completes its organ rows through this door. Whether the patient is on
+    respiratory support becomes a flag a clinician can chart — without it the 3- and 4-point PaO2/FiO2
+    bands could not be reached from charting at all — and the four labs the form takes get the kind of
+    bound the others have: one that catches a slipped digit or a unit, never a clinical threshold."""
+
+    def test_respiratory_support_is_charted_as_yes_or_no(self, client):
+        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}]).status_code == 200
+        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 0}]).status_code == 200
+        r = _chart(client, "bed-3", [{"code": "on_resp_support", "value": 2}])
+        assert r.status_code == 400
+        assert "yalnız 0 veya 1" in r.json()["detail"]
+
+    def test_support_is_recorded_as_a_flag_a_person_charted(self):
+        [entry] = build_entries("bed-1", [{"code": "on_resp_support", "value": 1}],
+                                charted_by="dr-elif", recorded_at=WHEN)
+        assert entry.observation.code is SignalCode.ON_RESP_SUPPORT
+        assert entry.observation.unit == "bool"
+        assert entry.observation.source_device == "clinician"
+
+    @pytest.mark.parametrize(("code", "low", "high", "slipped"), [
+        ("platelets", 0.0, 2000.0, 15000),    # 150 typed with two zeros too many
+        ("bilirubin", 0.0, 60.0, 120),        # far past any bilirubin in mg/dL
+        ("creatinine", 0.0, 30.0, 177),       # a creatinine typed in µmol/L (D11)
+        ("pao2_fio2", 20.0, 700.0, 4),        # a ratio worked out with FiO2 as a percentage
+    ])
+    def test_the_four_labs_refuse_a_slip_and_take_their_bounds(self, client, code, low, high, slipped):
+        assert _chart(client, "bed-3", [{"code": code, "value": low}]).status_code == 200
+        assert _chart(client, "bed-3", [{"code": code, "value": high}]).status_code == 200
+        r = _chart(client, "bed-3", [{"code": code, "value": slipped}])
+        assert r.status_code == 400
+        assert "aralığın" in r.json()["detail"]
+
+    def test_charted_support_reaches_the_alerting_sofa_too(self, client):
+        """rules/sofa.py reads the same code: a ratio of 150 scores 2 off support and 3 on it."""
+        _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 150}])
+        before = client.get("/patients", headers=AUTH).json()["patients"][0]["latest"]["sofa"]
+        _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}], at=WHEN + timedelta(minutes=5))
+        after = client.get("/patients", headers=AUTH).json()["patients"][0]["latest"]["sofa"]
+        assert (before, after) == (2, 3)
+
+    def test_charted_support_opens_the_three_and_four_point_bands_on_the_form(self, client):
+        """And on the SOFA form (scoring/sofa_form.py): a ratio of 150 scores 2 off support, 3 once
+        support is charted, 4 at 80."""
+        now = datetime.now(timezone.utc)
+
+        def respiration():
+            rows = client.get("/scores/sofa/bed-3", headers=AUTH).json()["rows"]
+            return next(r for r in rows if r["organ"] == "respiration")["points"]
+
+        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 150}],
+                      at=now - timedelta(minutes=90)).status_code == 200
+        assert respiration() == 2
+        assert _chart(client, "bed-3", [{"code": "on_resp_support", "value": 1}],
+                      at=now - timedelta(minutes=60)).status_code == 200
+        assert respiration() == 3
+        assert _chart(client, "bed-3", [{"code": "pao2_fio2", "value": 80}],
+                      at=now - timedelta(minutes=30)).status_code == 200
+        assert respiration() == 4
