@@ -116,9 +116,54 @@ describe("ProtocolTab", () => {
     expect(api.saveProtocolSettings).not.toHaveBeenCalled();
   });
 
+  it("prints the test label in the saved size when the size on screen does not fit", async () => {
+    let html = "";
+    const popup = { document: { open() {}, write(s) { html += s; }, close() {} }, focus() {}, print: vi.fn() };
+    await mounted((a) => a.protocolSettings.mockResolvedValue(SET), { win: { open: () => popup } });
+    fireEvent.change(width(), { target: { value: "40" } });
+    expect(screen.getByText("Barkod bu enə sığmır: ən azı 49 mm lazımdır.")).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Sınaq etiketi çap et" })); });
+    await settle();
+    expect(html).toContain("@page { size: 50mm 30mm");
+    expect(html).not.toContain("size: 40mm");
+  });
+
+  it("refuses a decimal width with the size text, which says whole millimetres", async () => {
+    const { api } = await mounted((a) => a.protocolSettings.mockResolvedValue(SET));
+    fireEvent.change(width(), { target: { value: "50.5" } });
+    expect(screen.getByText("En 30–110 mm, hündürlük 20–80 mm olmalıdır; yalnız tam millimetr daxil edin.")).toBeTruthy();
+    await save();
+    expect(api.saveProtocolSettings).not.toHaveBeenCalled();
+  });
+
   it("says the settings could not be read, in the reader's words", async () => {
     await mounted((a) => a.protocolSettings.mockRejectedValue(refusal(503, "Service Unavailable")));
     expect(screen.getByText(/^Ayarlar oxunmadı: /)).toBeTruthy();
+  });
+
+  // E19: a form never stands on defaults it did not read — saving 50 x 30 over a stored 100 x 60
+  // because one read failed would be a write the administrator never chose.
+  it("offers no form, no field and no save button while no read has answered", async () => {
+    await mounted((a) => a.protocolSettings.mockRejectedValue(refusal(503, "Service Unavailable")));
+    expect(screen.getByText(/^Ayarlar oxunmadı: /).closest("[role='alert']")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(screen.queryByLabelText(/^Növbəti protokol nömrəsi/)).toBeNull();
+    expect(screen.queryByLabelText(/^Etiketin eni/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Yenidən cəhd et" })).toBeTruthy();
+  });
+
+  it("reads again on «Yenidən cəhd et», and the form then stands on what was read", async () => {
+    const { api } = await mounted((a) => {
+      a.protocolSettings.mockRejectedValueOnce(refusal(503, "Service Unavailable")).mockResolvedValueOnce(SET);
+    });
+    expect(screen.getByText(/^Ayarlar oxunmadı: /)).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenidən cəhd et" })); });
+    await settle();
+    expect(nextNo().value).toBe("202600000042");
+    expect(screen.getByRole("button", { name: "Yadda saxla" })).toBeTruthy();
+    expect(screen.queryByText(/^Ayarlar oxunmadı: /)).toBeNull();
+    expect(document.querySelector("[role='alert'][data-tone='crit']")).toBeNull();
+    expect(api.protocolSettings).toHaveBeenCalledTimes(2);
   });
 });
 

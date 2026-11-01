@@ -30,7 +30,7 @@ export default {
     invalid: {
       nextNo: "12 rakam girin.",
       nextNoZero: "Başlangıç numarası en az 000000000001 olmalı.",
-      size: "Genişlik 30–110 mm, yükseklik 20–80 mm olmalı.",
+      size: "Genişlik 30–110 mm, yükseklik 20–80 mm olmalı; yalnızca tam milimetre girin.",
       tooNarrow: "Barkod bu genişliğe sığmaz: en az {min} mm gerekir.",
     },
     print: "Etiketi yazdır",
@@ -84,7 +84,7 @@ export default {
     invalid: {
       nextNo: "12 rəqəm daxil edin.",
       nextNoZero: "Başlanğıc nömrəsi ən azı 000000000001 olmalıdır.",
-      size: "En 30–110 mm, hündürlük 20–80 mm olmalıdır.",
+      size: "En 30–110 mm, hündürlük 20–80 mm olmalıdır; yalnız tam millimetr daxil edin.",
       tooNarrow: "Barkod bu enə sığmır: ən azı {min} mm lazımdır.",
     },
     print: "Etiketi çap et",
@@ -138,7 +138,7 @@ export default {
     invalid: {
       nextNo: "Введите 12 цифр.",
       nextNoZero: "Начальный номер — не менее 000000000001.",
-      size: "Ширина 30–110 мм, высота 20–80 мм.",
+      size: "Ширина 30–110 мм, высота 20–80 мм; только целые миллиметры.",
       tooNarrow: "Штрихкод не помещается в эту ширину: нужно не менее {min} мм.",
     },
     print: "Напечатать этикетку",
@@ -192,7 +192,7 @@ export default {
     invalid: {
       nextNo: "Enter 12 digits.",
       nextNoZero: "The start number must be at least 000000000001.",
-      size: "Width 30–110 mm, height 20–80 mm.",
+      size: "Width 30–110 mm, height 20–80 mm, in whole millimetres only.",
       tooNarrow: "The barcode does not fit this width: at least {min} mm is needed.",
     },
     print: "Print label",
