@@ -35,7 +35,8 @@ _FHIR_SEX_TO_HL7 = {"male": "M", "female": "F", "other": "O", "unknown": "U"}
 
 
 class _NotFound:
-    """The lookup's definite «not one of ours» (G2-B1d D4) — distinct from None, «nobody knows»."""
+    """The lookup's definite «not one of ours» (G2-B1d D4) — distinct from None,
+    «nobody knows»."""
 
     def __repr__(self) -> str:
         return "NOT_FOUND"

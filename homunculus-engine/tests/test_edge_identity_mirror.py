@@ -196,6 +196,7 @@ def test_the_mirror_takes_reads_and_writes_from_several_threads_at_once(tmp_path
         t.start()
     for t in threads:
         t.join(timeout=30)
+    assert not any(t.is_alive() for t in threads)
     assert failures == []
     assert mirror.count() == 4 * 30
     mirror.close()
