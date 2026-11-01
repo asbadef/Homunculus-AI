@@ -103,6 +103,10 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
+#: Spec 2026-11-01: the most records one `/audit/verify` reads — one read under the audit's read
+#: bound, re-hashed on the event loop. A larger `limit` is clamped, and the answer says
+#: `complete: false` when the tenant's trail held more, as for any partial run.
+AUDIT_VERIFY_LIMIT_MAX = 50000
 
 #: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE, and one for
 #: MAP, which the door does not need (MAP is not chartable there) but the cardiovascular row's MAP can be
@@ -261,7 +265,9 @@ def create_app(
     the engine never reads either. `samples` is Aşama B's monitor-sample table
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
-    rows of a `rules` run still expire after a rollback below it."""
+    rows of a `rules` run still expire after a rollback below it.
+    At shutdown the lifespan releases `audit`, `identities` and `samples` (`dispose`, `close`):
+    an engine's pool reopens on its next use, but SQLite's identity file stays closed."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -513,27 +519,33 @@ def create_app(
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
             changed: set[str] = set()
             if newly != store.escalated:
-                added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
-                # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
-                # critical that latches and returns, or an alert that clears and returns within the
-                # delay, is "added" again — but the doctor was told about this chain already. A new
-                # chain pages anew.
-                to_page = added - store.paged
-                if to_page:
-                    store.paged |= to_page
-                    alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
-                    for key in to_page:
-                        audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
-                                                {"at": now.isoformat()}))
-                    for note in notifier.for_escalation(hospital, to_page, alert_by_key):
+            # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
+            # critical that latches and returns, or an alert that clears and returns within the
+            # delay, is escalated again — but the doctor was told about this chain already (`paged`).
+            # A new chain pages anew.
+            # At least once, never lost (spec 2026-11-01, D3): a key joins `paged` only after its
+            # `escalation` row is written and its note published, with that note's row. An append
+            # that fails — a bounded audit times out in seconds now, where it used to wait — stops
+            # the cycle with this key and every one after it still unpaged, and the next cycle pages
+            # them: what is escalated and not yet paged, not only what this cycle escalated, which a
+            # failed cycle has already recorded. The cost after a failure is a second row or page,
+            # never a lost one.
+            to_page = newly - store.paged
+            if to_page:
+                alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
+                for key in sorted(to_page):
+                    audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
+                                            {"at": now.isoformat()}))
+                    for note in notifier.for_escalation(hospital, {key}, alert_by_key):
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+                    store.paged.add(key)
             await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
             freshness_since[hospital] = now                                  # G2-A2 (D5)
 
@@ -620,6 +632,20 @@ def create_app(
                 prune.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
+            # The stores' connection pools go back now rather than at the server's idle timeout
+            # (spec 2026-11-01, D4) — Postgres's `dispose`, the identity store's `close`; a store
+            # with neither holds nothing to return. Each on its own: one that fails is logged and
+            # keeps no other's connections open.
+            for name, store, release in (("audit", audit, "dispose"),
+                                         ("identities", identities, "close"),
+                                         ("samples", samples, "dispose")):
+                method = getattr(store, release, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        log.exception("the %s store failed to release its connections at shutdown",
+                                      name)
             if ldap is not None:
                 ldap.close()                 # the directory's own worker threads
 
@@ -1000,12 +1026,15 @@ def create_app(
         if is_tombstone(record):
             return {"patient_id": patient_id, "dropped": DISCHARGED}
 
-        engine.set_profile(profile)
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
-        # alarms it was written to quieten, without anything looking broken.
+        # alarms it was written to quieten, without anything looking broken. The row first (spec
+        # 2026-11-01, as /ack): an append that fails — a bounded audit times out — answers 500 and
+        # leaves the engine without the profile, rather than quietening alarms on one the trail
+        # does not hold and the clinician was told was not saved.
         audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
                                 {**profile_to_payload(profile),
                                  "charted_by": _charted_by(caller)}))
+        engine.set_profile(profile)
         # Aşama B (D1): the shadow engine judges against the same profile — guarded, and AFTER the
         # audit row (Lane B's review of 457a2bd, M-1): whatever the lane does, the engine's
         # profile has the row a restart replays behind it. BoardLink orders its own the same way.
@@ -1132,16 +1161,22 @@ def create_app(
         now = datetime.now(timezone.utc)
         # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
         # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
-        latched = acknowledge_latched(store, patient_id, kind)
-        if latched is None:
-            if (patient_id, kind) not in live_keys(engine, store):
-                raise HTTPException(status_code=404, detail="no such active alert")
+        latched = (patient_id, kind) in store.resolved          # what `acknowledge_latched` takes
+        if not latched and (patient_id, kind) not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        # The trail before memory (spec 2026-11-01, D3): an append that fails — a bounded audit
+        # times out in seconds — answers 500 with the alert still unacknowledged here as well, so
+        # it still escalates and the screen, the trail and the escalation agree. Applied first, a
+        # failed ack silenced an escalation the ward was told had not been answered, and that a
+        # restart, replaying the trail, would re-arm. Nothing is awaited in between.
+        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
+        if latched:
+            closed = acknowledge_latched(store, patient_id, kind)
+            _audit_cleared(hospital, [closed], now)
+            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
+        else:
             store.acknowledge(patient_id, kind, who["role"], now)
             store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
-        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
-        if latched is not None:
-            _audit_cleared(hospital, [latched], now)
-            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
         board = _card(hospital, patient_id)
         await broadcaster.publish(hospital, board)
         return board
@@ -1701,8 +1736,9 @@ def create_app(
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
-        recs = audit.records(tenant=hospital, limit=limit)
+        cap = min(limit, AUDIT_VERIFY_LIMIT_MAX)
+        recs = audit.records(tenant=hospital, limit=cap)
         report = verify_chain(recs)
-        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < limit}
+        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < cap}
 
     return app

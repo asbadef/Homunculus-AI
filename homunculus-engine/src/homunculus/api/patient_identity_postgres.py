@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine, text
 
-from homunculus.api.audit_postgres import to_sync_url
+from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, IdentityRecord, _decode_diagnoses, _merge, plain,
 )
@@ -20,6 +20,9 @@ _COLUMNS = ("patient_id", "family", "given", "birth_date", "sex", "unit", "room"
             "state", "source", "updated_at", "diagnoses", "bed_id", "unit_id")
 # G2-B1a: what the 24-hour sweep may take — never a `kabul` tombstone (patient_identity.py).
 _PRUNABLE = " AND (source IS NULL OR source <> 'kabul')"
+# Every call reads or writes a handful of rows: 2 s, the bound Lane B's reader uses (spec
+# 2026-11-01, D2).
+STATEMENT_TIMEOUT_MS = 2000
 
 
 def _decode(row) -> IdentityRecord | None:
@@ -37,8 +40,13 @@ def _decode(row) -> IdentityRecord | None:
 
 class PostgresIdentityStore:
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
+        # Called on the event loop, so bounded like the audit (audit_postgres.bounded_connect_args):
+        # a silent database fails the call in seconds instead of holding every request.
         self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
-                                     connect_args={"sslmode": "require"} if ssl_required else {})
+                                     pool_timeout=POOL_TIMEOUT_S,
+                                     connect_args=bounded_connect_args(
+                                         ssl_required=ssl_required,
+                                         statement_timeout_ms=STATEMENT_TIMEOUT_MS))
 
     def apply(self, hospital: str, incoming: IdentityRecord) -> IdentityRecord | None:
         params = {"tenant": hospital, "patient_id": incoming.patient_id}

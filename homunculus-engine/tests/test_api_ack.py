@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import homunculus.api.app as app_module
 import homunculus.scenarios
 from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.scenarios.loader import load_scenario
 
 SCEN = Path(homunculus.scenarios.__file__).parent
@@ -436,3 +437,158 @@ async def test_an_unanswered_high_alert_that_returns_within_the_delay_keeps_its_
     assert await _page_minutes(app, client, wall, script, 20, "news2") == [5]
     assert store.first_seen[NEWS2] == WALL0 + timedelta(minutes=5), "a new episode (D5)"
     assert store.clock_from[NEWS2] == WALL0, "on its chain's clock"
+
+
+# --- Spec 2026-11-01 (time bounds): an audit that times out fails its write in seconds now, where it
+# used to wait. Whatever fails, the doctor's page is late at worst, never lost, and an ack the trail
+# does not hold is not one in memory either.
+
+
+class _TimesOut(InMemoryAuditLog):
+    """An audit whose append of `fail_on` raises once, after letting `skip` of them through — the
+    database timing out mid-cycle or mid-request."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on, self.skip = None, 0
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            if self.skip:
+                self.skip -= 1
+            else:
+                self.fail_on = None
+                raise RuntimeError("audit timed out")
+        return super().append(event)
+
+
+def _bounded_app(audit):
+    app = create_app({"tok": "HOSP1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
+                     audit=audit)
+    return app, app.state.notification_hub.subscribe("HOSP1", "doctor")
+
+
+def _doctor_pages(queue):
+    """The doctor's notifications since the last look, as (patient, kind)."""
+    pages = []
+    while not queue.empty():
+        note = queue.get_nowait()
+        pages.append((note["patient_id"], note["kind"]))
+    return pages
+
+
+def _news2_seven(client, patient_id):
+    """NEWS2 7 — pulse 115, temperature 39.5, respiration 26: an `immediate` alert, which escalates."""
+    for code, value in (("heart_rate", 115), ("temperature", 39.5), ("resp_rate", 26)):
+        fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
+                "subject": {"reference": f"Patient/{patient_id}"},
+                "effectiveDateTime": START.isoformat(), "valueQuantity": {"value": value, "unit": ""}}
+        assert client.post("/ingest", json=fhir, headers=_hdr("tok")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_an_escalation_whose_audit_row_fails_is_paged_by_the_next_cycle_and_once(wall):
+    """Before, the key was marked paged before its row and its note: the row's failure lost the page
+    for good, since the next cycle saw it paged."""
+    audit = _TimesOut()
+    app, doctor = _bounded_app(audit)
+    client = TestClient(app)
+    _drive_shock(client)                                             # first seen at WALL0
+    audit.fail_on = "escalation"
+    with pytest.raises(RuntimeError, match="audit timed out"):
+        await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert _pages(client) == (0, 0) and _doctor_pages(doctor) == []
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=7))
+    assert _pages(client) == (1, 1) and _doctor_pages(doctor) == [SHOCK]
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=8))   # a cycle that pages never repeats it
+    assert _pages(client) == (1, 1) and _doctor_pages(doctor) == []
+
+
+@pytest.mark.anyio
+async def test_a_failure_part_way_through_a_cycle_leaves_the_keys_after_it_to_the_next(wall):
+    audit = _TimesOut()
+    app, doctor = _bounded_app(audit)
+    client = TestClient(app)
+    for patient_id in ("bed-1", "bed-2"):
+        _news2_seven(client, patient_id)
+    audit.fail_on, audit.skip = "escalation", 1                      # the cycle's second page fails
+    with pytest.raises(RuntimeError, match="audit timed out"):
+        await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    first = _doctor_pages(doctor)
+    assert len(first) == 1, "the page before the failure went out, with its row"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=7))
+    second = _doctor_pages(doctor)
+    assert len(second) == 1 and second != first, "the next cycle paged the other, and only it"
+    assert sorted(first + second) == [("bed-1", "news2"), ("bed-2", "news2")]
+    rows = audit.records(tenant="HOSP1", event_type="escalation", limit=100)
+    assert sorted((r.patient_id, r.subject) for r in rows) == sorted(first + second)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=8))
+    assert _doctor_pages(doctor) == []
+
+
+@pytest.mark.anyio
+async def test_a_page_whose_notification_row_fails_is_sent_again_never_lost(wall):
+    """The accepted cost of at-least-once: the note went out but its row did not, so the key is not
+    yet paged and the next cycle pages it again — a second page, not a missing one."""
+    audit = _TimesOut()
+    app, doctor = _bounded_app(audit)
+    client = TestClient(app)
+    _drive_shock(client)
+    audit.fail_on = "notification"
+    with pytest.raises(RuntimeError, match="audit timed out"):
+        await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert _doctor_pages(doctor) == [SHOCK]
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=7))
+    assert _doctor_pages(doctor) == [SHOCK]
+    assert _pages(client) == (2, 1)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=8))
+    assert _doctor_pages(doctor) == []
+
+
+@pytest.mark.anyio
+async def test_an_ack_whose_audit_row_fails_is_a_500_and_the_alert_still_escalates(wall):
+    """The trail before memory: before, the ack was applied and escalation silenced while the nurse
+    read a 500 and the trail held no ack — so a restart re-armed what the ward had been told failed."""
+    audit = _TimesOut()
+    app, doctor = _bounded_app(audit)
+    client = TestClient(app, raise_server_exceptions=False)
+    _drive_shock(client)                                             # first seen at WALL0
+    store = app.state.ack_stores["HOSP1"]
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    assert SHOCK not in store.acks and _on_board(client)["acknowledged"] is False
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert SHOCK in store.escalated and _doctor_pages(doctor) == [SHOCK]
+    assert _ack(client).status_code == 200, "the retry is the ack"
+    assert SHOCK in store.acks and SHOCK not in store.escalated
+    assert [event for event, _reason in _trail(client)] == ["first_seen", "ack"]
+
+
+@pytest.mark.anyio
+async def test_an_escalated_alert_whose_ack_fails_to_audit_stays_escalated(wall):
+    audit = _TimesOut()
+    app, _doctor = _bounded_app(audit)
+    client = TestClient(app, raise_server_exceptions=False)
+    _drive_shock(client)
+    store = app.state.ack_stores["HOSP1"]
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    assert SHOCK in store.escalated and _on_board(client)["escalated"] is True
+
+
+def test_an_ack_of_a_latched_critical_whose_audit_row_fails_leaves_it_latched():
+    audit = _TimesOut()
+    client = TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit),
+                        raise_server_exceptions=False)
+    _drive_shock(client)
+    _reading(client, "lactate", 1.5, minute=61)                      # latched
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    shock = _on_board(client)
+    assert shock is not None, "a failed ack must not close the latch"
+    assert shock["resolved_at"] is not None and shock["acknowledged"] is False
+    assert _trail(client) == [("first_seen", None), ("alert_cleared", "resolved")]
+    assert _ack(client).status_code == 200 and _on_board(client) is None
+    assert _trail(client) == [("first_seen", None), ("alert_cleared", "resolved"), ("ack", None),
+                              ("alert_cleared", "acked_after_resolve")]
