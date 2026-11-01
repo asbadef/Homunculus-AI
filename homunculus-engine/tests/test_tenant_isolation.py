@@ -779,6 +779,7 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | DEVICE_ONLY | {
     ("PUT", "/clinical/{patient_id}/profile"),
     ("GET", "/scores/sofa/{patient_id}"),
     ("POST", "/scores/sofa/{patient_id}"),
+    ("POST", "/scores/sofa/{patient_id}/preview"),     # G2-A4 (X19): the sign route's helper, its Caller
     ("GET", "/alarm-quality"),
     ("GET", "/audit/verify"),
     # Group 2's trend charts (api/trends.py): the board's Caller, board.view and _require_patient.

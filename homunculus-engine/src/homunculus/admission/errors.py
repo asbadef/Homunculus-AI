@@ -31,6 +31,12 @@ TRANSFER_UNAVAILABLE = "transfer_unavailable"    # the transfer routes are close
 # The same person (name and birth date) already has an open admission in the tenant (A-37).
 DUPLICATE_OPEN_ADMISSION = "duplicate_open_admission"
 FIELD_INVALID = "field_invalid"                  # + ":<field>"
+# G2 monitor→bed editor (spec 2026-10-28 §4.5)
+MONITOR_LANE_OFF = "monitor_lane_off"            # the strip is off, or the caller is not its hospital
+DEVICE_UNKNOWN = "device_unknown"                # the worker never reported it and no row holds it
+BED_OCCUPIED = "bed_occupied"                    # an admitted patient there, and no confirm_occupied
+MAPPING_CHANGED = "mapping_changed"              # `expected` is not what holds, or an index fired
+BED_HAS_MONITOR = "bed_has_monitor"              # Yapı: a bed with a monitor bound is not closed
 
 #: Every code but FIELD_INVALID, which travels with its field.
 CODES = frozenset({
@@ -38,6 +44,7 @@ CODES = frozenset({
     INVALID_TRANSITION, MISSING_ATTENDING, OPEN_ADMISSION, BED_IN_USE, HAS_OPEN_BEDS, NAME_TAKEN,
     BED_LABEL_TAKEN, REQUEST_CONFLICT, BOARD_NOT_CLEARED, TRANSFER_UNAVAILABLE,
     DUPLICATE_OPEN_ADMISSION,
+    MONITOR_LANE_OFF, DEVICE_UNKNOWN, BED_OCCUPIED, MAPPING_CHANGED, BED_HAS_MONITOR,
 })
 
 # G2-B1d — the protocol number and its label (spec 2026-11-01 §7). Its own block AFTER `CODES`,

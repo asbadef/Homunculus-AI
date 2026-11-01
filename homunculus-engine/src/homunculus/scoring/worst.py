@@ -105,6 +105,27 @@ def worst_observation(observations: list[Observation], points_of: Callable[[floa
     return max(observations, key=rank)
 
 
+def readings_considered(state: PatientState, code: SignalCode, now: datetime,
+                        window: timedelta = DEFAULT_WINDOW,
+                        fall_back_to_last_known: bool = True) -> tuple[list[Observation], bool]:
+    """The measurements of `code` a form cell is chosen from, and whether they lie before the window.
+
+    Every measurement in the window; with none there, the last one before it (the form's second
+    footnote, see `worst_in_window`), flagged True; with none at all, nothing. Shared by
+    `worst_in_window` and by a row that scores each reading on more than its value (the SOFA form's
+    respiration row, G2-A4 D13), so both choose from the same readings.
+    """
+    since = now - window
+    inside = state.window(code, since, now)
+    if inside:
+        return inside, False
+    if fall_back_to_last_known:
+        previous = [o for o in state.history(code) if o.timestamp < since]
+        if previous:
+            return [previous[-1]], True
+    return [], False
+
+
 def worst_in_window(state: PatientState, code: SignalCode,
                     points_of: Callable[[float], int], now: datetime,
                     window: timedelta = DEFAULT_WINDOW,
@@ -123,21 +144,12 @@ def worst_in_window(state: PatientState, code: SignalCode,
     morning are not the same evidence and the person signing the form is entitled to know which
     they are signing.
     """
-    since = now - window
-    inside = state.window(code, since, now)
-    if inside:
-        best = worst_observation(inside, points_of, higher_is_worse)
+    readings, outside = readings_considered(state, code, now, window, fall_back_to_last_known)
+    if readings:
+        best = worst_observation(readings, points_of, higher_is_worse)
         return WorstValue(code=code, value=best.value, at=best.timestamp,
                           points=points_of(best.value), source=best.source_device,
-                          considered=len(inside))
-
-    if fall_back_to_last_known:
-        previous = [o for o in state.history(code) if o.timestamp < since]
-        if previous:
-            last = previous[-1]
-            return WorstValue(code=code, value=last.value, at=last.timestamp,
-                              points=points_of(last.value), source=last.source_device,
-                              considered=0, outside_window=True)
+                          considered=0 if outside else len(readings), outside_window=outside)
 
     # Nothing at all. Points are 0 because that is what the score says; `measured` is False
     # because that is what actually happened, and the two must not be confused.

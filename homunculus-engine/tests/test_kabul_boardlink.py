@@ -420,6 +420,36 @@ def test_the_profile_is_audited_before_the_shadow_lane_hears_it():
     assert seen == [1]                                           # the row was there when it was heard
 
 
+def test_a_trail_row_that_cannot_be_written_leaves_the_engine_without_the_profile(monkeypatch):
+    """A-25: the trail row is written BEFORE the engine is given the profile, as `PUT
+    /clinical/{id}/profile` orders them once the audit engines are bounded (an `append` that
+    used to wait now raises). A failed append propagates, and the screen and the trail agree:
+    the engine holds no comorbidity the trail does not, the shadow lane hears nothing, and no
+    card is sent."""
+    heard: list[tuple] = []
+    world = World(mirror_profile=lambda hospital, profile: heard.append((hospital, profile)))
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd"], actor="hemsire"))
+    charted = world.engine(HOSPITAL).profile("H2600001")
+    assert charted.comorbidities == frozenset({"copd"})
+    heard.clear()
+    sent, rows = len(world.published), _profile_rows(world)
+
+    def refuse(_event):
+        raise OSError("synthetic audit failure")
+
+    monkeypatch.setattr(world.audit, "append", refuse)           # the object the link holds
+    with pytest.raises(OSError, match="synthetic audit failure"):
+        asyncio.run(world.link.apply_profile(HOSPITAL, "H2600001", ["copd", "dementia"],
+                                             actor="hemsire"))
+
+    assert world.engine(HOSPITAL).profile("H2600001") == charted
+    assert world.engine(HOSPITAL).profile("H2600001").comorbidities == frozenset({"copd"})
+    assert _profile_rows(world) == rows and len(rows) == 1       # the trail agrees with the screen
+    assert heard == []                                           # the mirror hook was not called
+    assert len(world.published) == sent                          # nothing was sent
+
+
 def test_a_profile_mirror_that_raises_leaves_the_audit_row_and_the_write_stands(caplog):
     plain = World()                                              # the same writes, no hook at all
     asyncio.run(plain.link.put_identity(HOSPITAL, record()))

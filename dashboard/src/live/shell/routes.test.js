@@ -137,9 +137,11 @@ describe("the monitor screen's route", () => {
   afterEach(() => resetScreens());
   const devices = () => ROUTES.find((r) => r.id === "devices");
 
-  it("is a work screen for devices.manage alone, on the main rail, with its own icon and names", () => {
-    expect(devices()).toMatchObject({ path: "/devices", perms: ["devices.manage"], work: true, nav: "main",
+  it("is a work screen for devices.manage or devices.map_beds, on the main rail, with its own icon and names", () => {
+    expect(devices()).toMatchObject({ path: "/devices", perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main",
       icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort" });
+    expect(canReach(devices(), ["devices.map_beds"])).toBe(true);     // G2-ESLEME: a charge nurse reaches it from the rail
+    expect(canReach(devices(), ["board.view"])).toBe(false);
     expect(screenOf(devices())).not.toBeNull();
     expect(ICON_NAMES).toContain("activity");
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["nav.devices"], lang).toBeTruthy();

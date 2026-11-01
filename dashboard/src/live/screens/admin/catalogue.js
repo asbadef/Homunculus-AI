@@ -32,6 +32,9 @@ export const PERMISSION_KEYS = freeze([
 
   // G2-B1a — a cleaned bed marked free by the ward's nurses (spec D8)
   "beds.release",
+
+  // G2-ESLEME — a monitor bound to a bed on the Monitörler screen (spec D2)
+  "devices.map_beds",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

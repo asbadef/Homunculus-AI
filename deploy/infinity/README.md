@@ -450,7 +450,9 @@ before R6 keep the old names; nothing rewrites them.
 token. `infinity-shadow/device-beds.json` is the device→bed table: version 1, sha256
 `ac5ce1c9549c…`, 13 devices on 13 beds, 0 unassigned, approved by the project owner on
 2026-10-19 from the central station's bed list (commit `a2c1257`). A change to the table is a
-new version approved the same way, never an edit in place.
+new version approved the same way, never an edit in place. (Superseded by the monitor→bed editor
+once it is deployed: the table then lives in the database and is changed on «Monitörler» — see
+"The device→bed table in the database" at the end of this file.)
 
 **Rollback, three tiers** (blocks in the plan; each stops on its first error, and a line saying
 "durdum" means nothing changed):
@@ -631,3 +633,74 @@ other — only these two fixed windows hold fewer real rows.
 
 For a problem on the shadow box alone: G-2b, then G-2 if the strip must go as well. Acceptance
 measurements for B are filled in here when they are taken; none exist yet.
+
+# The device→bed table in the database (G2-ESLEME, the monitor→bed editor)
+
+From the editor's deploy on, the strip and Aşama B read the device→bed table from the database
+(`device_beds`, migration 0014), not from `device-beds.json`, and the administrator or the charge
+nurse (`devices.map_beds`) changes it on «Monitörler». Spec
+`docs/superpowers/specs/2026-10-28-g2b-monitor-yatak-esleme-design.md`, plan
+`docs/superpowers/plans/2026-10-30-g2b-monitor-yatak-esleme.md`. **State:** code on
+`feat/g2b-monitor-esleme`, merged with main `5f733d3`; not on the VM. The deploy waits for the user's
+word, and it never touches the hub or the worker.
+
+- **What the API reads.** In production (a Postgres `DATABASE_URL`) with the lane on, the API reads
+  the table through `PostgresDeviceBeds` (`homunculus-engine/src/homunculus/api/device_beds_postgres.py`)
+  and no longer reads `INFINITY_DEVICE_BEDS_PATH`. The file stays on the VM and in the repo as
+  read-only history, the lab's source (no Postgres) and the import's input. **Editing it on the VM
+  moves nothing:** a change is made on «Monitörler».
+- **The read** is one statement, at most every 10 s and again at the first read after a change, on
+  the event loop, bounded like every sync store (`bounded_connect_args`: connect 3 s, statement 2000 ms, pool checkout
+  3 s, keepalives, TCP user timeout 4000 ms; `homunculus-engine/README.md`, "Database time bounds") and
+  released at shutdown. It fails closed: no rows for the hospital is `missing`, an unreadable database
+  or a broken current set is `invalid`, and either puts every monitor among the unassigned devices
+  until the next good read. No last good mapping is kept, so a monitor just moved never shows on the
+  previous bed's patient. The API image's libpq must be 12 or later (`tcp_user_timeout`): `docker
+  compose exec -T api python -c "import psycopg2; print(psycopg2.__libpq_version__)" </dev/null`
+  prints at least 120000.
+- **Order at the deploy:** `alembic upgrade head` in a one-off container of the NEW api image (0014 is
+  purely additive; the old API keeps serving), then the import, then the new API. The import comes
+  before the new API starts, so the strip never reads an empty table.
+- **Seed, once:** `docker compose run --rm --no-deps -T api python scripts/import_device_beds.py --tenant <slug> </dev/null`
+  checks the file's sha256 against the approved v2 (`84ac1760d59f…`), parses it with the strip's own
+  reader, checks every bed and unit against the tenant's structure, writes its 13 rows (12 on a bed,
+  1 without), grants `devices.map_beds` to the tenant's `charge_nurse` group in the same transaction,
+  audits `device_bed.import`, and prints one line on stdout: `ESLEME_ICE_AKTARIM {"tenant",
+  "file_sha256", "rows", "with_bed", "without_bed", "granted", "version", "sha256", "already",
+  "dry_run"}`. `--file` defaults to `/etc/homunculus/infinity-shadow/device-beds.json` (the path
+  compose mounts read-only), `--tenant` to `INFINITY_SHADOW_HOSPITAL`; `--dry-run` checks everything
+  and writes nothing.
+- **Its exit codes.** 0: imported, or — run again over untouched rows — `"already": true` with
+  nothing written, not even the grant, which an administrator may have taken away since. 2: a check
+  refused, nothing written (no tenant, no `DATABASE_URL`, an unreadable file, a sha that is not v2's,
+  a bed or unit that is not this tenant's). 3: the tenant's table holds other rows than the file's
+  (the editor has been used since), nothing written. 1: an unexpected failure (a lock timeout, the
+  database down); stderr says `ESLEME_ICE_AKTARIM_RED 1 <Class>[ <SQLSTATE>] — <note>`, rows may have
+  been written, and the same command run again says `"already": true` if they were. Every note and
+  refusal goes to stderr; stdout carries the one line or nothing.
+- **`version` and `sha256`** in `GET /infinity-shadow/board`'s `table` change meaning at the switch.
+  From the file: the file's version and its bytes' sha256 (v2: `2`, `84ac1760d59f…`). From the
+  database: `max(id)` of the tenant's rows, history included, and the SHA-256 of the current rows as
+  `[source, bed_id, bed_label]` (v2's rows: `e470d3342025…`; version 13 after the import into a fresh
+  table, then one more for every row a change inserts). `shadow_check.py --table-version/--table-sha`
+  take whichever holds; run it pinned by commit (`git show ade8da8:deploy/infinity/shadow_check.py |
+  ssh …`).
+- **Summary before and after:** `deploy/infinity/esleme_ozet.py` (standard library, piped to the hub's
+  `python3` like `shadow_check.py`, pinned by commit) prints `ESLEME_OZET_<ETIKET> {…}`: the bed
+  cards' `[source, bed_id, bed_label]`, the unassigned devices with their reasons, the `link: one`
+  count, the device total, the table and the stage. `--karsilastir ONCE.txt SONRA.txt` says `AYNI` or
+  `FARKLI`; the table is shown, not judged, since it changes by design at the switch.
+- **Yapı and the table.** A rename in Yapı of a bound bed closes its row and opens the same monitor on
+  the same bed under the new label (`device_bed.relabel`, version + 1, a new sha, the strip follows) —
+  unless the row already carries that label. v2's rows say «BED05» where Yapı may say «bed05»:
+  renaming that Yapı bed to «BED05» writes `structure.rename` only (version and sha unchanged), the
+  clean way to align a bed with its v2 label. A bed with a monitor bound cannot be closed
+  (`bed_has_monitor`). Rename no bound bed during the deploy window: the before and after summaries
+  would differ.
+- **Rollback.** R-1 (fast): the `:pre-esleme` images with a compose override whose `command` is the
+  old image's own CMD without `alembic upgrade head`. The database stays at 0014, the old code reads
+  the file again (`2` / `84ac1760d59f…`), and binds made since stay in the table and return with the
+  next deploy. R-2 (full): `alembic downgrade 0013` with the NEW image (it drops the three triggers and
+  their function before the table; editor rows, relabels included, leave the table, and the dump and
+  the audit keep them), the `devices.map_beds` rows deleted from `group_permissions`, then the old
+  images with their own command. The blocks: `G2B-ESLEME-bloklari.txt`.

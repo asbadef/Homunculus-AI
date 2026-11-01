@@ -47,6 +47,12 @@ import shadow from "./strings/shadow.js";
 // G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
 import kabul from "./strings/kabul.js";
 
+// G2-ESLEME: the monitor→bed editor on «Monitörler» (screens/devices/MappingSection.jsx, MappingDialog.jsx).
+import esleme from "./strings/esleme.js";
+
+// G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
+import sofa from "./strings/sofa.js";
+
 // G2-B1d: Protokol — the protocol number, its label, Yönetim › Protokol ve etiket.
 import protokol from "./strings/protokol.js";
 
@@ -76,6 +82,10 @@ export const NAMESPACES = {
   shadow,
 
   kabul, // G2-B1a
+
+  esleme, // G2-ESLEME
+
+  sofa, // G2-A4
 
   protokol, // G2-B1d
 };

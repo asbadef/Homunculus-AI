@@ -12,12 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
+import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -41,11 +43,12 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    ClinicalEntryError, build_entries, chart_observations, profile_from_payload, profile_to_payload,
+    GCS_NOT_WHOLE, PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
+    profile_to_payload,
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
-from homunculus.api.infinity_device_beds import TableFile
+from homunculus.api.infinity_device_beds import DeviceBedSource, TableFile
 from homunculus.api.infinity_rules import ShadowLane
 from homunculus.api.infinity_shadow import (
     MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
@@ -58,11 +61,13 @@ from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.admission.boardlink import BoardLink    # G2-B1a
 from homunculus.auth.permissions import validate_permissions
+from homunculus.canonical import SignalCode
 from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
-    ScoreSigningError, parse_overrides, sign as sign_score,
+    MIN_REASON_CHARS, Override, ScoreSigningError, SignedScore, form_digest, parse_overrides,
+    sign as sign_score,
 )
 from homunculus.scope import Scope, ScopeReason, apply_scope, normalise_id, scope_report, sees_patient
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
@@ -98,6 +103,51 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
+#: Spec 2026-11-01: the most records one `/audit/verify` reads — one read under the audit's read
+#: bound, re-hashed on the event loop. A larger `limit` is clamped, and the answer says
+#: `complete: false` when the tenant's trail held more, as for any partial run.
+AUDIT_VERIFY_LIMIT_MAX = 50000
+
+#: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE, and one for
+#: MAP, which the door does not need (MAP is not chartable there) but the cardiovascular row's MAP can be
+#: corrected. An engineering slip bound against a slipped digit (9000 for 90) or a unit, far outside any
+#: pressure a monitor reports; never a clinical threshold — the SOFA table stays the only judge of a value.
+CORRECTION_BOUNDS = {**PLAUSIBLE, SignalCode.MAP: (0.0, 300.0)}
+
+#: G2-A4 (D12, X20): the shape of a preview's fingerprint (`scoring/signing.py` `form_digest`) — SHA-256 as
+#: 64 lowercase hex digits. A signature without one is refused before any fingerprint is compared.
+FORM_DIGEST_SHAPE = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class _SofaToSign:
+    """What the SOFA preview and the signature share (G2-A4, X19): who asks, when, the form the record
+    alone fills (`auto`), the form with the clinician's corrections (`rebuilt`), the corrections, and the
+    signature `sign_score` would seal. Built by one helper, so the two routes cannot drift."""
+    hospital: str
+    signed_by: str
+    now: datetime
+    auto: sofa_form.SofaForm
+    rebuilt: sofa_form.SofaForm
+    overrides: list[Override]
+    signed: SignedScore
+
+
+def _refuse_fractional_gcs(payload: object) -> None:
+    """G2-A4 review: a GCS correction is a whole number, as a charted GCS is (api/clinical.py `_value`),
+    refused 400 in the door's sentence. Only a finite number that is not whole is refused here; any other
+    shape or value is left to `parse_overrides`, which refuses it in its own words."""
+    if not isinstance(payload, (list, tuple)):
+        return
+    for entry in payload:
+        if not isinstance(entry, dict) or str(entry.get("code") or "").strip() != SignalCode.GCS.value:
+            continue
+        try:
+            value = float(entry.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value) and not value.is_integer():
+            raise HTTPException(status_code=400, detail=GCS_NOT_WHOLE)
 
 
 def _device_role(value: object) -> str:
@@ -191,6 +241,7 @@ def create_app(
     shadow_clock: Callable[[], float] = time.time,
     shadow_monotonic: Callable[[], float] | None = None,
     samples: SampleStore | None = None,
+    device_beds: DeviceBedSource | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -212,10 +263,16 @@ def create_app(
     `shadow` is Aşama A's monitor strip (`api/infinity_shadow.py`); None is the stage `off`, so
     every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds) and
     `shadow_monotonic` its own spacing-and-silence clock (ShadowStore), both injected by the tests;
-    the engine never reads either. `samples` is Aşama B's monitor-sample table
+    the engine never reads either.
+    `device_beds` is the device→bed table the strip reads (G2-ESLEME, spec D6): `PostgresDeviceBeds`
+    in production; None reads the file at `shadow.table_path` (the lab).
+    `samples` is Aşama B's monitor-sample table
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
-    rows of a `rules` run still expire after a rollback below it."""
+    rows of a `rules` run still expire after a rollback below it.
+    At shutdown the lifespan releases `audit`, `identities`, `samples` and `device_beds`
+    (`dispose`, `close`): an engine's pool reopens on its next use, but SQLite's identity file
+    stays closed."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -252,7 +309,7 @@ def create_app(
     # read right here, so its version and sha256 (or why it failed) are in the start-up log.
     shadow = shadow if shadow is not None else ShadowSettings()
     shadow_store = ShadowStore(clock=shadow_clock, monotonic=shadow_monotonic)
-    shadow_table = TableFile(shadow.table_path, clock=time.monotonic)
+    shadow_table = device_beds if device_beds is not None else TableFile(shadow.table_path, clock=time.monotonic)
     shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
 
     def _occupancy_reset(hospital: str) -> None:
@@ -467,27 +524,33 @@ def create_app(
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
             changed: set[str] = set()
             if newly != store.escalated:
-                added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
-                # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
-                # critical that latches and returns, or an alert that clears and returns within the
-                # delay, is "added" again — but the doctor was told about this chain already. A new
-                # chain pages anew.
-                to_page = added - store.paged
-                if to_page:
-                    store.paged |= to_page
-                    alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
-                    for key in to_page:
-                        audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
-                                                {"at": now.isoformat()}))
-                    for note in notifier.for_escalation(hospital, to_page, alert_by_key):
+            # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
+            # critical that latches and returns, or an alert that clears and returns within the
+            # delay, is escalated again — but the doctor was told about this chain already (`paged`).
+            # A new chain pages anew.
+            # At least once, never lost (spec 2026-11-01, D3): a key joins `paged` only after its
+            # `escalation` row is written and its note published, with that note's row. An append
+            # that fails — a bounded audit times out in seconds now, where it used to wait — stops
+            # the cycle with this key and every one after it still unpaged, and the next cycle pages
+            # them: what is escalated and not yet paged, not only what this cycle escalated, which a
+            # failed cycle has already recorded. The cost after a failure is a second row or page,
+            # never a lost one.
+            to_page = newly - store.paged
+            if to_page:
+                alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
+                for key in sorted(to_page):
+                    audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
+                                            {"at": now.isoformat()}))
+                    for note in notifier.for_escalation(hospital, {key}, alert_by_key):
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+                    store.paged.add(key)
             await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
             freshness_since[hospital] = now                                  # G2-A2 (D5)
 
@@ -574,6 +637,21 @@ def create_app(
                 prune.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
+            # The stores' connection pools go back now rather than at the server's idle timeout
+            # (spec 2026-11-01, D4) — Postgres's `dispose`, the identity store's `close`; a store
+            # with neither holds nothing to return. Each on its own: one that fails is logged and
+            # keeps no other's connections open.
+            for name, store, release in (("audit", audit, "dispose"),
+                                         ("identities", identities, "close"),
+                                         ("samples", samples, "dispose"),
+                                         ("device_beds", device_beds, "dispose")):
+                method = getattr(store, release, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        log.exception("the %s store failed to release its connections at shutdown",
+                                      name)
             if ldap is not None:
                 ldap.close()                 # the directory's own worker threads
 
@@ -608,6 +686,7 @@ def create_app(
     # The device-research window: same origin, permission-gated (`devices.manage`), credential
     # held server-side. Off unless INFINITY_HUB_URL / _VIEWER_TOKEN / _HUB_CA_FILE are all set.
     from homunculus.api.infinity_research import router as infinity_research_router
+    from homunculus.devicebeds.router import router as device_beds_router   # G2-ESLEME
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
@@ -619,6 +698,7 @@ def create_app(
     app.include_router(ldap_admin_router)
     app.include_router(scope_router)
     app.include_router(infinity_research_router)
+    app.include_router(device_beds_router)          # G2-ESLEME: the monitor→bed editor (spec §4.1)
     # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
     from homunculus.protocol.router import router as protocol_router
     app.include_router(protocol_router)
@@ -639,6 +719,12 @@ def create_app(
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_lane = lane
+    # G2-ESLEME (the monitor→bed editor, devicebeds/router.py): the lane's settings and clock, so the
+    # editor answers only while this strip runs for its hospital (spec D15), and the table's
+    # invalidate, so the next read after a change re-reads (§4.4 step 11).
+    app.state.shadow_settings = shadow
+    app.state.shadow_clock = shadow_clock
+    app.state.shadow_table_reset = shadow_table.invalidate
     # Aşama B (T6 review): Lane B's admission (`kabul`) calls this right after its identity write,
     # as its discharge calls `retire_patient` — the strip's occupants are cached for 10 s, and the
     # next readings body must link the bed's new occupant, not the one the cache still holds.
@@ -847,6 +933,23 @@ def create_app(
             return PatientState(patient_id)
         raise HTTPException(status_code=404, detail="hasta bulunamadı")
 
+    def _last_signed(hospital: str, patient_id: str) -> dict | None:
+        """The patient's newest `score_signed` row as the SOFA box prints it (G2-A4, D7), or None.
+
+        This patient's signing rows and nothing else of the trail: the box needs who, when and what
+        total, and a ward doctor reading it holds `board.view`, not `audit.view`. `corrections` is the
+        COUNT of the cells corrected — the reasons stay in the trail, for whoever may read it. Every
+        signing row today is a SOFA form's; when another score signs, this read names the score (O7).
+        """
+        rows = audit.records(tenant=hospital, patient_id=patient_id, event_type="score_signed",
+                             limit=1, newest=True)
+        if not rows:
+            return None
+        signed = rows[-1].payload
+        return {"total": signed.get("total"), "auto_total": signed.get("auto_total"),
+                "signed_by": signed.get("signed_by"), "at": signed.get("at"),
+                "corrections": len(signed.get("overrides") or [])}
+
     def _body_patient_id(body: dict) -> str:
         """The `patient_id` a request body names: a non-blank string of at most PATIENT_ID_MAX
         characters. Anything else is the caller's error (400); a dict used to reach a set
@@ -945,12 +1048,15 @@ def create_app(
         if is_tombstone(record):
             return {"patient_id": patient_id, "dropped": DISCHARGED}
 
-        engine.set_profile(profile)
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
-        # alarms it was written to quieten, without anything looking broken.
+        # alarms it was written to quieten, without anything looking broken. The row first (spec
+        # 2026-11-01, as /ack): an append that fails — a bounded audit times out — answers 500 and
+        # leaves the engine without the profile, rather than quietening alarms on one the trail
+        # does not hold and the clinician was told was not saved.
         audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
                                 {**profile_to_payload(profile),
                                  "charted_by": _charted_by(caller)}))
+        engine.set_profile(profile)
         # Aşama B (D1): the shadow engine judges against the same profile — guarded, and AFTER the
         # audit row (Lane B's review of 457a2bd, M-1): whatever the lane does, the engine's
         # profile has the row a restart replays behind it. BoardLink orders its own the same way.
@@ -1077,16 +1183,22 @@ def create_app(
         now = datetime.now(timezone.utc)
         # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
         # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
-        latched = acknowledge_latched(store, patient_id, kind)
-        if latched is None:
-            if (patient_id, kind) not in live_keys(engine, store):
-                raise HTTPException(status_code=404, detail="no such active alert")
+        latched = (patient_id, kind) in store.resolved          # what `acknowledge_latched` takes
+        if not latched and (patient_id, kind) not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        # The trail before memory (spec 2026-11-01, D3): an append that fails — a bounded audit
+        # times out in seconds — answers 500 with the alert still unacknowledged here as well, so
+        # it still escalates and the screen, the trail and the escalation agree. Applied first, a
+        # failed ack silenced an escalation the ward was told had not been answered, and that a
+        # restart, replaying the trail, would re-arm. Nothing is awaited in between.
+        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
+        if latched:
+            closed = acknowledge_latched(store, patient_id, kind)
+            _audit_cleared(hospital, [closed], now)
+            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
+        else:
             store.acknowledge(patient_id, kind, who["role"], now)
             store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
-        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
-        if latched is not None:
-            _audit_cleared(hospital, [latched], now)
-            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
         board = _card(hospital, patient_id)
         await broadcaster.publish(hospital, board)
         return board
@@ -1175,16 +1287,14 @@ def create_app(
                               now=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
-    def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
-        """Admitted patients per bed, cached 10 s: a `kabul` record (an admission made here, G2-B1a)
-        by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed map
-        — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
+    def _occupants_now(hospital: str) -> dict[str, list[str]]:
+        """Admitted patients per bed, read now (uncached): a `kabul` record (an admission made here,
+        G2-B1a) by its own `bed_id`, the tenant's bed UUID; every other record through the site's bed
+        map — read-only and counting nothing (`BedMap.lookup`). The ONLY bridge between a monitor and
         a patient in Aşama A: an explicit binding the hospital already made (an admission here,
         ADT or set_identity), never a guess from a name (design K3, K5). Discharged identities
-        are not admitted, so never here."""
-        cached = shadow_occupancy.get(hospital)
-        if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
-            return cached[1]
+        are not admitted, so never here. The strip reads it through `_occupants` (cached 10 s); the
+        monitor→bed editor through `app.state.bed_occupants` (fresh: G2-ESLEME §4.4 step 8b)."""
         beds: dict[str, list[str]] = {}
         for patient_id in identities.admitted_ids(hospital):
             record = identities.get(hospital, patient_id)
@@ -1199,8 +1309,18 @@ def create_app(
                 bed_id = ref.bed_id if ref is not None else ""
             if normalise_id(bed_id):
                 beds.setdefault(normalise_id(bed_id), []).append(patient_id)
+        return beds
+
+    def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
+        """`_occupants_now`, cached SHADOW_OCCUPANCY_CACHE_S per hospital (`_occupancy_reset` drops it)."""
+        cached = shadow_occupancy.get(hospital)
+        if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
+            return cached[1]
+        beds = _occupants_now(hospital)
         shadow_occupancy[hospital] = (now, beds)
         return beds
+
+    app.state.bed_occupants = _occupants_now          # G2-ESLEME: the editor's fresh read (§4.9)
 
     @app.post("/infinity-shadow/readings")
     async def shadow_readings(request: Request, authorization: str | None = Header(default=None)):
@@ -1476,12 +1596,80 @@ def create_app(
                                 {"total": form.total, "window_hours": form.window_hours,
                                  "unmeasured": form.unmeasured_organs,
                                  "read_by": _charted_by(caller)}))
-        return form.as_dict()
+        # G2-A4 (D7): the patient's newest signature and the engine's own reason length travel with the
+        # form, under this route's permission — `board.view` and the patient's scope — so the SOFA box can
+        # say «signed by whom, when, to what total» without a ward doctor holding `audit.view`, and the
+        # correction's counter counts against the number the engine enforces, not a copy of it.
+        return {**form.as_dict(), "last_signed": _last_signed(hospital, patient_id),
+                "min_reason_chars": MIN_REASON_CHARS}
+
+    async def _sofa_to_sign(patient_id: str, body: dict, hours: float,
+                            authorization: str | None) -> _SofaToSign:
+        """The steps the SOFA preview and the signature share (G2-A4, D12, X19), in one place so the two
+        routes cannot drift: the permission and the device refusal, the patient's scope, the corrections
+        parsed against the record and held to the slip bounds, the form re-scored with them, and
+        `sign_score` — whose refusal of an unnamed signer therefore holds for a preview too (X3). Nothing
+        here writes to the audit, but for the `scope_denied` row `_require_patient` writes on every route
+        for a patient out of scope.
+
+        A signature names a person, so a device is refused outright: it passes every permission check,
+        and without this the bridge's token could sign a form as "tenant-token".
+        """
+        caller = await _caller(authorization)
+        _require(caller, SCORES_SIGN)
+        if caller.is_device:
+            raise HTTPException(status_code=403,
+                                detail="skor formunu yalnız bir kişi imzalayabilir")
+        hospital = caller.hospital
+        await _require_patient(caller, authorization, patient_id)
+        state = _score_state(hospital, patient_id)
+        now = datetime.now(timezone.utc)
+        window = timedelta(hours=max(1.0, min(float(hours), 168.0)))
+        record = identities.get(hospital, patient_id)
+        admitted = getattr(record, "admitted_at", None)
+
+        # Built twice on purpose: `auto` is what the record alone produced, `rebuilt` is what the
+        # clinician is signing. The difference is the audit trail of the correction.
+        auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
+        _refuse_fractional_gcs(body.get("overrides"))   # G2-A4 review: before the corrections are parsed
+        try:
+            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
+            # preview and a signature alike, both parsed here — and MAP to its own (CORRECTION_BOUNDS).
+            # The dashboard mirrors them (X7); this is the guard.
+            overrides = parse_overrides(body.get("overrides"), auto, bounds=CORRECTION_BOUNDS)
+        except ScoreSigningError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        rebuilt = sofa_form.build(state, now, window=window, admitted_at=admitted,
+                                  overrides={o.code: o.value for o in overrides})
+        try:
+            signed = sign_score(auto, rebuilt, signed_by=caller.actor, overrides=overrides, now=now)
+        except ScoreSigningError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return _SofaToSign(hospital=hospital, signed_by=caller.actor, now=now, auto=auto,
+                           rebuilt=rebuilt, overrides=overrides, signed=signed)
+
+    @app.post("/scores/sofa/{patient_id}/preview")
+    async def preview_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
+                                authorization: str | None = Header(default=None)):
+        """What a signature of this SOFA form WOULD seal, and nothing signed (G2-A4, D6, D12, X19).
+
+        The same helper as the signature — the same permission, device refusal, scope, parsing,
+        re-scoring and refusals — and NO audit row of any kind, because nothing was signed. The screen
+        shows this number; the signature then sends the same corrections with `expect`, this form's
+        fingerprint, and the engine signs only if the form it would seal still has it (X20). The engine
+        stays the only scorer.
+        """
+        s = await _sofa_to_sign(patient_id, body, hours, authorization)
+        return {"preview": True, "signed": False, "total": s.rebuilt.total,
+                "auto_total": s.auto.total, "overrides": [o.as_dict() for o in s.overrides],
+                "form": {**s.rebuilt.as_dict(), "auto_total": s.auto.total},
+                "expect": form_digest(s.rebuilt, s.overrides)}
 
     @app.post("/scores/sofa/{patient_id}")
     async def sign_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
                              authorization: str | None = Header(default=None)):
-        """Sign a SOFA severity form, with the clinician's corrections.
+        """Sign a SOFA severity form, with the clinician's corrections — exactly the form she previewed.
 
         The form arrives pre-filled, which is the product's value and also its risk: a number that
         appeared on its own is a number nobody checked. This is where a person takes responsibility
@@ -1492,51 +1680,47 @@ def create_app(
         pattern of corrections on one parameter is exactly the signal that a feed is wrong, and an
         override that erased the original would destroy the only evidence of it.
 
+        G2-A4 (D12, X20): the body is `{overrides, expect}`, `expect` being the fingerprint the preview
+        answered. The engine rebuilds the form it would seal from the same corrections; if its
+        fingerprint is not the previewed one — another desk charted, the window moved past a reading,
+        other corrections were sent — the answer is 409 and nothing is written: she re-previews and
+        signs what she then sees.
+
         The signature goes into the append-only audit and is sealed into its hash chain, so the
         record of who signed what cannot later be edited quietly.
-
-        A signature names a person, so a device is refused outright: it passes every permission
-        check, and without this the bridge's token could sign a form as "tenant-token".
         """
-        caller = await _caller(authorization)
-        _require(caller, SCORES_SIGN)
-        if caller.is_device:
-            raise HTTPException(status_code=403,
-                                detail="skor formunu yalnız bir kişi imzalayabilir")
-        hospital = caller.hospital
-        await _require_patient(caller, authorization, patient_id)
-        state = _score_state(hospital, patient_id)
-        signed_by = caller.actor
-        now = datetime.now(timezone.utc)
-        window = timedelta(hours=max(1.0, min(float(hours), 168.0)))
-        record = identities.get(hospital, patient_id)
-        admitted = getattr(record, "admitted_at", None)
+        s = await _sofa_to_sign(patient_id, body, hours, authorization)
+        if "preview" in body:
+            # G2-A4 (X19): this route previewed once, on `preview: true`; the preview has its own route
+            # now. A body that still asks for one — any value — is refused, so an older screen asking
+            # this route for a preview can never sign.
+            raise HTTPException(status_code=400,
+                                detail="önizleme imza yolundan istenemez — önizleme yolunu kullanın")
+        expect = body.get("expect")
+        if not isinstance(expect, str) or not FORM_DIGEST_SHAPE.fullmatch(expect):
+            raise HTTPException(status_code=400,
+                                detail="imza bir önizlemenin parmak izini ister — önce önizleyin")
+        if form_digest(s.rebuilt, s.overrides) != expect:
+            # G2-A4 (X20): the form moved since the preview (X11's case, now refused rather than signed) — a
+            # new reading, the window sliding past one, or another window, correction or reason sent (review 3,
+            # M-1, M-5: the sentence says more than "the record changed").
+            raise HTTPException(
+                status_code=409,
+                detail="form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu yeniden önizleyin")
 
-        # Built twice on purpose: `auto` is what the record alone produced, `rebuilt` is what the
-        # clinician is signing. The difference is the audit trail of the correction.
-        auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
-        try:
-            overrides = parse_overrides(body.get("overrides"), auto)
-        except ScoreSigningError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from None
-
-        rebuilt = sofa_form.build(state, now, window=window, admitted_at=admitted,
-                                  overrides={o.code: o.value for o in overrides})
-        try:
-            signed = sign_score(auto, rebuilt, signed_by=signed_by, overrides=overrides, now=now)
-        except ScoreSigningError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from None
-
-        audit.append(AuditEvent(hospital, "score_signed", patient_id, "SOFA", {
-            "total": signed.total,
-            "auto_total": auto.total,
-            "window_hours": rebuilt.window_hours,
-            "unmeasured": rebuilt.unmeasured_organs,
-            "overrides": [o.as_dict() for o in overrides],
-            "signed_by": signed_by,
-            "at": now.isoformat(),
+        audit.append(AuditEvent(s.hospital, "score_signed", patient_id, "SOFA", {
+            "total": s.signed.total,
+            "auto_total": s.auto.total,
+            "window_hours": s.rebuilt.window_hours,
+            "unmeasured": s.rebuilt.unmeasured_organs,
+            "overrides": [o.as_dict() for o in s.overrides],
+            "signed_by": s.signed_by,
+            "at": s.now.isoformat(),
+            # G2-A4 review 3 (M-9): the fingerprint the signature was checked against, sealed with it, so a
+            # signature can later be checked against what its preview showed.
+            "expect": expect,
         }))
-        return signed.as_dict()
+        return s.signed.as_dict()
 
     @app.get("/alarm-quality")
     async def get_alarm_quality(days: int = 7, limit: int = 20000,
@@ -1582,8 +1766,9 @@ def create_app(
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
-        recs = audit.records(tenant=hospital, limit=limit)
+        cap = min(limit, AUDIT_VERIFY_LIMIT_MAX)
+        recs = audit.records(tenant=hospital, limit=cap)
         report = verify_chain(recs)
-        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < limit}
+        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < cap}
 
     return app

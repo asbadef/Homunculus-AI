@@ -385,6 +385,36 @@ export function createBoardStore({
       await refresh();
       return answer;
     },
+    /**
+     * The SOFA severity form of one patient (G2-A4, `GET /scores/sofa/{id}`, permission `board.view`):
+     * the engine's filled form with its `last_signed` and `min_reason_chars` (D7). A read — the engine
+     * writes a `score` row in its audit (spec O4) and nothing on the board — so nothing is applied here.
+     * Through `track`, as every call the board makes; an answer that arrives after `clear()` (the session
+     * ended) is dropped: it resolves to null, as `chart`'s does.
+     */
+    async sofaForm(patientId) {
+      const mine = generation;
+      const form = await track(() => api.severityForm(patientId));
+      return mine === generation ? form : null;
+    },
+    /** The form a signature would seal with these corrections, signed by nobody (D6; the preview route,
+     *  review 2 C1; permission `scores.sign`, no audit row). `overrides` is `[{code, value, reason}]`; the
+     *  answer carries the `expect` a signature of it sends back. Rejects with the API's own error. */
+    async sofaPreview(patientId, overrides) {
+      const mine = generation;
+      const answer = await track(() => api.previewSeverityForm(patientId, { overrides }));
+      return mine === generation ? answer : null;
+    },
+    /** Sign the form with these corrections (D6, permission `scores.sign`): the engine re-scores and seals
+     *  it into the audit chain — only if the record is still the one the preview whose `expect` this is
+     *  scored (review 2, C2; else a 409, nothing signed). Rejects with the API's own error, having changed
+     *  nothing here. The board is not reloaded — a signature changes no card; the SOFA box reads its form
+     *  again for the new line. */
+    async sofaSign(patientId, overrides, expect) {
+      const mine = generation;
+      const answer = await track(() => api.signSeverityForm(patientId, { overrides, expect }));
+      return mine === generation ? answer : null;
+    },
     /** Load, then stream (LIVE once the stream has opened and its reload landed). Resolves once
      *  the first load and the first ticket are done. */
     async start() {

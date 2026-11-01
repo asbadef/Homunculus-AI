@@ -423,6 +423,9 @@ def test_every_other_refusal_has_a_stable_code():
                      "open_admission", "bed_in_use", "has_open_beds", "name_taken",
                      "bed_label_taken", "request_conflict", "board_not_cleared",
                      "transfer_unavailable", "duplicate_open_admission",
+                     # G2-ESLEME (spec 2026-10-28 §4.5): the monitor→bed editor's five
+                     "monitor_lane_off", "device_unknown", "bed_occupied", "mapping_changed",
+                     "bed_has_monitor",
                      # G2-B1d (spec §7)
                      "protocol_not_configured", "protocol_exhausted", "protocol_format",
                      "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",

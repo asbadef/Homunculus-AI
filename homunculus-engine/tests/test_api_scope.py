@@ -292,9 +292,11 @@ class TestFAProbeCreatesNothing:
             _admit_everyone(client)
             read = client.get("/scores/sofa/ghost-5", headers=NURSE)
             signed = client.post("/scores/sofa/ghost-6", headers=NURSE, json={"overrides": []})
+            previewed = client.post("/scores/sofa/ghost-7/preview", headers=NURSE, json={"overrides": []})
             assert _board_ids(client) == EVERYONE
         assert (read.status_code, read.json()["detail"]) == (404, "hasta bulunamadı")
         assert (signed.status_code, signed.json()["detail"]) == (404, "hasta bulunamadı")
+        assert (previewed.status_code, previewed.json()["detail"]) == (404, "hasta bulunamadı")
         assert not _rows(app, "score_signed")
 
     def test_an_in_scope_patient_is_still_admitted(self, adult_nurse):
@@ -445,6 +447,7 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
         ("GET", "/audit?patient_id=p-a1", None, 200),
         ("GET", "/scores/sofa/p-a1", None, 200),
         ("POST", "/scores/sofa/p-a1", {}, 403),          # a device never signs: its own refusal
+        ("POST", "/scores/sofa/p-a1/preview", {}, 403),  # G2-A4 (X19): nor previews
         ("GET", "/audit", None, 200),                    # D13b: the whole trail
         ("GET", "/alarm-quality", None, 200),            # D13b
     ]

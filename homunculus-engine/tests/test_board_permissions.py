@@ -262,6 +262,8 @@ BOARD_EXPECTED = {
     # A device is additionally refused here: a signature names a person
     # (test_a_device_cannot_sign_a_score, below).
     ("POST", "/scores/sofa/{patient_id}"): "scores.sign",
+    # G2-A4 (D12, X19): the preview, the sign route's own permission and device refusal.
+    ("POST", "/scores/sofa/{patient_id}/preview"): "scores.sign",
     ("GET", "/alarm-quality"): "audit.view",
     ("GET", "/audit/verify"): "audit.view",
     # Group 2's trend charts (api/trends.py), read with the board's own right.
@@ -354,6 +356,7 @@ async def test_the_device_token_opens_the_device_only_route():
 async def test_a_device_cannot_sign_a_score():
     """The one permission a device does not get by being a device: a signature must name a
     person, and the bridge's token names nobody."""
-    res = await _call("POST", "/scores/sofa/{patient_id}", "tok")
-    assert res.status_code == 403
-    assert res.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"
+    for path in ("/scores/sofa/{patient_id}", "/scores/sofa/{patient_id}/preview"):   # G2-A4 (X19)
+        res = await _call("POST", path, "tok")
+        assert res.status_code == 403
+        assert res.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"

@@ -45,7 +45,8 @@ import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/
 import { bed, param, strip, unassigned } from "./data/shadow.testutil.js";
 import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
-import { UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
+import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
+import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -213,6 +214,11 @@ async function openAt(path) {
       // sign-off strip and the badge), an admitted patient and a started discharge (Taburcu).
       api.structure.mockResolvedValue(WARD);
       api.admissions.mockResolvedValue(ADMISSIONS);
+
+      // G2-ESLEME: the monitor–bed list on «Monitörler» — a bound, a label-only, another unit's and
+      // an absent monitor, so every row kind and both actions are drawn.
+      api.deviceBeds.mockResolvedValue(MAPPING);
+
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
@@ -223,6 +229,15 @@ async function openAt(path) {
   await act(async () => { mounted.shadow.start(PERMS); await settle(); });
   return mounted;
 }
+
+// G2-ESLEME: the editor's list for every sweep (synthetic monitors on the kabul ward's beds). The absent
+// monitor is what the server sends for one the worker no longer reports: status "unknown", seen false (A-19).
+const MAPPING = mappingList([
+  device("192.0.2.11", { device_bed_label: "BED05", row_id: 1, bed: onBed(1, "1") }),
+  device("192.0.2.12", { device_bed_label: "BED01", row_id: 2 }),
+  device("192.0.2.14", { row_id: 4, editable: false, bed: { id: BED(6), in_scope: false } }),
+  device("192.0.2.20", { row_id: 5, seen: false, status: "unknown", last_seen_at: null }),
+]);
 
 /** The address of a route, with its parameters on the fixture's card. */
 const addressOf = (route) => route.path.replace(/:\w+/g, FIXTURE_ID);
@@ -341,6 +356,22 @@ describe("no screen shows a reader a translation key", () => {
     mounted = await openAt("/admin");
     await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Struktur" })); await settle(); });
     expect(screen.getByText(/Bina, şöbə, otaq və çarpayıları buradan qurun/)).toBeInTheDocument();
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-ESLEME — the same anchor for the monitor–bed editor: «Monitörler» draws its list (bound, label-only,
+  // another unit's and an absent monitor) and the dialog's pick opens only on a click, so the sweep above
+  // never saw it. The texts are the namespace's az values as amendment A-7 fixed them («qoş-», not «bağla»).
+  it("the monitor–bed editor's keys resolve on its list and in its dialog", async () => {
+    const mounted = await openAt("/devices");
+    expect(screen.getByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeInTheDocument(); // esleme.title
+    expect(screen.getByText("başqa şöbədə")).toBeInTheDocument();                                         // esleme.otherUnit
+    expect(screen.getByText("görünmür · son görünmə bilinmir")).toBeInTheDocument();                      // esleme.unseenUnknown
+    expect(screen.getAllByText("qoşulmayıb").length).toBeGreaterThan(0);                                  // esleme.unbound
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Başqa çarpayıya qoş: 192.0.2.11 (BED05)" })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

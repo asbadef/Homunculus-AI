@@ -148,3 +148,44 @@ class TestTheEndpoint:
                         json={"entries": [{"code": "lactate", "value": 2.0}]}, headers=AUTH)
         body = client.get("/audit/verify?limit=2", headers=AUTH).json()
         assert body["complete"] is False
+
+
+class _Asked(InMemoryAuditLog):
+    """Records the `limit` of each read that is not a restart's replay page."""
+
+    def __init__(self):
+        super().__init__()
+        self.limits: list[int] = []
+
+    def records(self, **kwargs):
+        if "after_id" not in kwargs:
+            self.limits.append(kwargs.get("limit"))
+        return super().records(**kwargs)
+
+
+def _verify(audit, limit):
+    for i in range(3):
+        audit.append(AuditEvent("h1", "view", f"bed-{i}", "", {}))
+    with TestClient(create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit)) as c:
+        audit.limits.clear()
+        return c.get(f"/audit/verify?limit={limit}", headers=AUTH).json()
+
+
+def test_verify_reads_at_most_its_cap_however_much_is_asked():
+    """Spec 2026-11-01: one verification is one read of the trail, re-hashed on the event loop; an
+    unbounded `limit` was an unbounded read. Under the cap the whole log is still verified."""
+    import homunculus.api.app as app_module
+    assert app_module.AUDIT_VERIFY_LIMIT_MAX == 50_000
+    audit = _Asked()
+    body = _verify(audit, 10**9)
+    assert audit.limits == [50_000]
+    assert body["records"] == 3 and body["complete"] is True and body["ok"] is True
+
+
+def test_a_verification_clamped_to_the_cap_says_it_is_partial(monkeypatch):
+    import homunculus.api.app as app_module
+    monkeypatch.setattr(app_module, "AUDIT_VERIFY_LIMIT_MAX", 2)
+    audit = _Asked()
+    body = _verify(audit, 10**9)
+    assert audit.limits == [2]
+    assert body["records"] == 2 and body["complete"] is False

@@ -1,9 +1,11 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes THREE things, and says so in as many words (`patient.onlyWrite`), each only for a
+// It writes FOUR things, and says so in as many words (`patient.onlyWrite`), each only for a
 // `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since Group 2 ·
-// slice 1, from the trends box, the patient's own normal ranges; and since G2-A3, from the Meds box
+// slice 1, from the trends box, the patient's own normal ranges; since G2-A3, from the Meds box
 // (`meds/MedsBox.jsx`, D4), the medication and fluid entries — a pressor rate, a bolus, the weight,
-// "antibiotic given". Nothing else here reaches the record.
+// "antibiotic given"; and since G2-A4, from the SOFA form (`sofa/SofaBox.jsx`, D3), the measurements that
+// complete its organ rows. A `scores.sign` holder also SIGNS that form there (D6) — a sealed row in the
+// audit chain, not an observation — and the sentence says so (X6). Nothing else here reaches the record.
 //
 // Four things it shows, and one it refuses to:
 //
@@ -58,6 +60,7 @@ import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
 import { MedsBox } from "./meds/MedsBox.jsx";
+import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
@@ -433,8 +436,9 @@ export function PatientScreen({ params }) {
             <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
               onChart={(entries, at) => board.store.chart(id, entries, at)} />
           </div>
-          {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
-          <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>
+          {/* G2-A4 (D1): the SOFA form's box, where the "forms come later" note stood. It reads the form of the
+              patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
+          <SofaBox patientId={id} bed={bed} nowMs={nowMs} />
 
           <TrendsBox patient={patient} bed={bed} nowMs={nowMs} />
         </>

@@ -17,7 +17,10 @@ Env:
                    unset = off, a problem = off and logged, never a refusal to start. With the stage
                    `rules` (Aşama B; INFINITY_RULES_PARAMETERS, api/infinity_rules.py) the monitor
                    samples go to Postgres's `monitor_samples` (migration 0013), which the API
-                   prunes hourly at every stage on a Postgres deployment
+                   prunes hourly at every stage on a Postgres deployment. With the lane on in
+                   production the API reads the device→bed table from the database
+                   (`PostgresDeviceBeds`), not from INFINITY_DEVICE_BEDS_PATH; the file stays the
+                   lab's source and the import's input
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -42,6 +45,8 @@ from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
 from homunculus.api.infinity_shadow import shadow_settings_from_env
+from homunculus.api.device_beds_postgres import PostgresDeviceBeds
+from homunculus.api.infinity_device_beds import DeviceBedSource
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
 from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import (
@@ -482,6 +487,16 @@ def _samples(url: str) -> SampleStore:
     return InMemorySamples()
 
 
+def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:
+    """G2-ESLEME (spec D6): the device→bed table from the database (migration 0014, seeded by
+    scripts/import_device_beds.py) on a Postgres deployment, for the lane's hospital, with the
+    audit's TLS flag. None — the lab, or no lane hospital — leaves the strip on the file."""
+    if _is_production(url) and hospital:
+        return PostgresDeviceBeds(url, hospital=hospital,
+                                  ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+    return None
+
+
 # Aşama A's monitor strip and Aşama B's shadow engine: INFINITY_CLINICAL_STAGE, off unless set. A
 # problem turns it off and is logged; it never stops the API (api/infinity_shadow.py).
 _shadow = shadow_settings_from_env(os.environ, _tenants)
@@ -497,4 +512,5 @@ app = create_app(
     ldap=_ldap(_database_url()),
     shadow=_shadow,
     samples=_samples(_database_url()),
+    device_beds=_device_beds(_database_url(), _shadow.hospital),
 )
