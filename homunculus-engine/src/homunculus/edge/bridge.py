@@ -22,7 +22,7 @@ from homunculus.canonical import Observation, SignalCode
 from homunculus.edge.adt import identity_to_fhir, is_adt, parse_hl7_adt
 from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.mllp import serve_mllp
-from homunculus.edge.pdq import patient_query_response
+from homunculus.edge.pdq import NOT_FOUND, patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
 from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru, split_segments
@@ -45,6 +45,8 @@ class BridgeStats:
     observations: int = 0
     rejected: int = 0
     queries: int = 0            # QBP^Q22 patient lookups answered (id echoed, nothing invented)
+    queries_not_found: int = 0  # G2-B1d: the API said the number is not ours (QAK NF, D4)
+    queries_api_failed: int = 0  # the API could not answer: the mirror's answer, else the echo (D8)
     adt: int = 0                # ADT messages accepted (identity records, not readings)
     adt_ignored: int = 0        # ADT triggers outside the seven we act on (still ACKed, not NAKed)
     adt_stale: int = 0          # ADTs the mirror refused as older than what it already had
@@ -75,6 +77,9 @@ class EdgeBridge:
     identity: IdentityMirror | None = None
     identity_source: str = "comed"
     stats: BridgeStats = field(default_factory=BridgeStats)
+    #: G2-B1d: who a queried number is, asked of the API first (`PatientQueryClient.ask`); None in
+    #: capture-only mode, where the mirror alone answers, as before.
+    query: Callable[[str], object] | None = None
 
     def handle_message(self, message: str) -> list[Observation]:
         """Parse one HL7 message and forward what it carries.
@@ -166,14 +171,49 @@ class EdgeBridge:
 
         A Welch Allyn NCE asks its patient-query host to validate the id typed on the device
         before it will put that id into the reading's PID-3. Echoing the id back is what makes a
-        manually entered identifier survive into the observation; when Comed has told us who that
-        id is, the answer carries the name too and the device shows the patient.
+        manually entered identifier survive into the observation. G2-B1d (spec §5.2): the API is
+        asked first — a found number is answered with the name (D3), a number it does not know or
+        that has left with QAK NF (D4) —; when it cannot answer, the mirror does, else the id is
+        echoed without a name (D8). Called on a worker thread (edge/mllp.py): it may wait up to
+        the client's 2 s.
         """
-        reply = patient_query_response(
-            message, lookup=self.identity.get if self.identity is not None else None)
+        lookup = self._lookup if (self.query is not None or self.identity is not None) else None
+        reply = patient_query_response(message, lookup=lookup)
         if reply is not None:
             self.stats.queries += 1
         return reply
+
+    def _lookup(self, patient_id: str):
+        """The API's answer — kept by the mirror when found, forgotten by it when not —, else the
+        mirror's. Counted; never logged with the id."""
+        if self.query is not None:
+            try:
+                answer = self.query(patient_id)
+            except Exception as exc:  # noqa: BLE001 — "cannot answer" is the mirror's turn (D8)
+                self.stats.queries_api_failed += 1
+                _log.warning("patient query: the API could not answer (%s); the mirror answers "
+                             "(id not logged)", type(exc).__name__)
+            else:
+                if answer is NOT_FOUND:
+                    self.stats.queries_not_found += 1
+                    self._mirror("forget", patient_id)
+                    return NOT_FOUND
+                self._mirror("upsert", answer)
+                return answer
+        return self.identity.get(patient_id) if self.identity is not None else None
+
+    def _mirror(self, method: str, value: object) -> None:
+        """Write the API's answer into the mirror; a mirror fault costs the next offline answer,
+        never this reply."""
+        if self.identity is None:
+            return
+        try:
+            getattr(self.identity, method)(value)
+        except Exception as exc:  # noqa: BLE001
+            # The class only, no traceback: a store error's words may carry the statement's
+            # parameters — the number (E24, as E14 on the API's side).
+            _log.warning("could not %s in the identity mirror (%s; content not logged)", method,
+                         type(exc).__name__)
 
     async def serve(self, host: str = "0.0.0.0", port: int = 2575) -> asyncio.AbstractServer:
         """Start listening. 2575 is the IANA-registered port for HL7 over MLLP."""
