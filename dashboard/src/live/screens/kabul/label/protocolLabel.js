@@ -77,9 +77,13 @@ export function labelLines(label, t) {
 // ── The layout (A-3) ─────────────────────────────────────────────────────────────────────────────
 // All sizes are millimetres on the 50×30 reference label, times the text scale. A row holds as many
 // characters as its width divides by the character's width; no layout is measured here (this is a pure
-// function), so a character is taken at its WORST case — bold capitals 0.75 em, regular text with
-// capitals and digits 0.7 em. A mixed-case name sets narrower than planned, and the difference is a
-// margin: the plan may expect one row more than the page needs, never one less.
+// function), so a character is taken at a fixed width in em — bold 0.75, regular text with capitals
+// and digits 0.7. These are CONSERVATIVE AVERAGES for real names, not worst-case bounds: Azerbaijani
+// names measured 0.69–0.93 of the model's width, and a run of the widest bold capitals (Arial Bold M
+// and W exceed 0.75 em) can set wider than planned. The plan may therefore expect a row more than the
+// page needs, and rarely a row less. Where it is a row less, the excess falls below the name — the
+// page flows the name first, and the body clips at the label's height — so it takes the last optional
+// line (the unit · bed line, then the birth line) inside that clip, and never the name.
 const EM_BOLD = 0.75;
 const EM_REGULAR = 0.7;
 export const LINE_HEIGHT = 1.15;

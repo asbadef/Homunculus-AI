@@ -88,8 +88,8 @@ describe("the lines", () => {
 // size it takes a third row (and as many more as it needs); whatever then no longer fits the page is
 // dropped WHOLE, the unit · bed line first. The unit · bed line steps down like the name and is never
 // clipped mid-text. The reference label is 50×30: 47 mm of row, text scale 1. The model sets a bold
-// capital at 0.75 em and a regular character at 0.7 em — the worst case, so a mixed-case name sets
-// narrower than planned — which makes a row of the name hold 21 / 25 / 29 / 39 characters at 2.9 / 2.5 /
+// capital at 0.75 em and a regular character at 0.7 em — conservative averages for real names, not
+// bounds (see protocolLabel.js) — which makes a row of the name hold 21 / 25 / 29 / 39 characters at 2.9 / 2.5 /
 // 2.1 / 1.6 mm, and a row of the place 27 / 31 / 37 at 2.4 / 2.1 / 1.8 mm.
 describe("the layout — the name is never cut (A-3)", () => {
   const REF = { widthMm: 50, heightMm: 30 };
