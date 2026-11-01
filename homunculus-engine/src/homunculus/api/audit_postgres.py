@@ -60,10 +60,21 @@ TCP_USER_TIMEOUT_MS = 4000
 # Not libpq's but the pool's (D2): a checkout waits at most 3 s for a free connection, so a pool
 # held by stalled queries fails the next request instead of queueing it behind them.
 POOL_TIMEOUT_S = 3
-# The audit's statement bound is the widest (D2): besides its one-row appends it serves GET /audit,
-# /audit/verify (up to 10 000 records, re-hashed after one read) and the alarm-quality report's
-# reads, which a bound meant for a stalled server must not cut.
+# The audit engine's statement bound (D2), the widest of the engines': each append is two
+# statements (the chain's head, then the insert) on almost every request.
 AUDIT_STATEMENT_TIMEOUT_MS = 10_000
+# Its reads set their own, for their transaction (D2): GET /audit, /audit/verify (up to
+# AUDIT_VERIFY_LIMIT_MAX records in one read, re-hashed after it), the alarm-quality report and a
+# restart's replay are long by nature, and a bound meant for a stalled server must not cut them.
+AUDIT_READ_STATEMENT_TIMEOUT_MS = 30_000
+
+
+def _positive_ms(ms: int) -> int:
+    """A statement timeout as Postgres must be given it: a positive whole number of milliseconds.
+    Postgres reads 0 as no timeout at all, which would quietly lift the bound it was meant to set."""
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms <= 0:
+        raise ValueError(f"a statement timeout must be a positive integer of ms, not {ms!r}")
+    return ms
 
 
 def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> dict:
@@ -71,12 +82,8 @@ def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> di
     statement timeout, and `sslmode=require` when the deployment asks for TLS (DATABASE_SSL).
 
     The statement timeout is the server's to enforce, so it bounds a slow query, not a server that
-    cannot run one (spec D5). It must be a positive whole number of milliseconds: Postgres reads 0
-    as no timeout at all, which would quietly lift the bound this exists to set."""
-    if (isinstance(statement_timeout_ms, bool) or not isinstance(statement_timeout_ms, int)
-            or statement_timeout_ms <= 0):
-        raise ValueError(
-            f"statement_timeout_ms must be a positive integer, not {statement_timeout_ms!r}")
+    cannot run one (spec D5)."""
+    statement_timeout_ms = _positive_ms(statement_timeout_ms)
     args: dict = {
         "connect_timeout": CONNECT_TIMEOUT_S,
         "options": f"-c statement_timeout={statement_timeout_ms}",
@@ -89,6 +96,14 @@ def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> di
     if ssl_required:
         args["sslmode"] = "require"
     return args
+
+
+def set_local_statement_timeout(conn, ms: int) -> None:
+    """This transaction's statement bound in place of the engine's, for a statement that is long by
+    nature. SET LOCAL ends with the transaction, so the pooled connection goes back with the
+    engine's own. SET takes no bound parameter, so the value is written in — checked first to be a
+    positive integer (`_positive_ms`), and only ever a constant, never input."""
+    conn.execute(text(f"SET LOCAL statement_timeout = {_positive_ms(ms)}"))
 
 
 class PostgresAuditLog:
@@ -186,7 +201,8 @@ class PostgresAuditLog:
         # primary key (migration 0004), walked backwards — no new index, no migration.
         order = "DESC" if newest else "ASC"
 
-        with self._engine.connect() as conn:
+        with self._engine.begin() as conn:
+            set_local_statement_timeout(conn, AUDIT_READ_STATEMENT_TIMEOUT_MS)
             rows = conn.execute(
                 text(f"SELECT id, ts, tenant, event_type, patient_id, subject, payload,"
                      f" prev_hash, hash FROM audit {where} ORDER BY id {order} LIMIT :limit"),

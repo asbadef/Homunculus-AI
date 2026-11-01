@@ -98,6 +98,10 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
+#: Spec 2026-11-01: the most records one `/audit/verify` reads — one read under the audit's read
+#: bound, re-hashed on the event loop. A larger `limit` is clamped, and the answer says
+#: `complete: false` when the tenant's trail held more, as for any partial run.
+AUDIT_VERIFY_LIMIT_MAX = 50000
 
 
 def _device_role(value: object) -> str:
@@ -1605,8 +1609,9 @@ def create_app(
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
-        recs = audit.records(tenant=hospital, limit=limit)
+        cap = min(limit, AUDIT_VERIFY_LIMIT_MAX)
+        recs = audit.records(tenant=hospital, limit=cap)
         report = verify_chain(recs)
-        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < limit}
+        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < cap}
 
     return app

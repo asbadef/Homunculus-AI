@@ -15,7 +15,9 @@ from typing import Protocol
 
 from sqlalchemy import create_engine, text
 
-from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
+from homunculus.api.audit_postgres import (
+    POOL_TIMEOUT_S, bounded_connect_args, set_local_statement_timeout, to_sync_url,
+)
 
 RETENTION_DAYS = 30
 # What an install replays (infinity_rules.REPLAY_HOURS is this, D9), and so all a store in memory keeps.
@@ -118,7 +120,7 @@ class PostgresSamples:
 
     def since(self, hospital: str, since: datetime, *, now: datetime) -> list[Sample]:
         with self._engine.begin() as conn:
-            _statement_timeout(conn, REPLAY_STATEMENT_TIMEOUT_MS)
+            set_local_statement_timeout(conn, REPLAY_STATEMENT_TIMEOUT_MS)
             rows = conn.execute(text(
                 "SELECT hospital, patient_id, bed_id, source, code, via, value, unit, captured_at, received_at"
                 " FROM monitor_samples WHERE hospital = :hospital AND captured_at >= :since AND captured_at <= :now"
@@ -128,19 +130,12 @@ class PostgresSamples:
 
     def prune(self, *, before: datetime) -> int:
         with self._engine.begin() as conn:
-            _statement_timeout(conn, PRUNE_STATEMENT_TIMEOUT_MS)
+            set_local_statement_timeout(conn, PRUNE_STATEMENT_TIMEOUT_MS)
             return conn.execute(text("DELETE FROM monitor_samples WHERE received_at < :before"),
                                 {"before": before}).rowcount
 
     def dispose(self) -> None:
         self._engine.dispose()
-
-
-def _statement_timeout(conn, ms: int) -> None:
-    """This transaction's statement bound in place of the engine's. SET LOCAL ends with the
-    transaction, so the pooled connection goes back with the engine's 2 s. SET takes no bound
-    parameter, so the value is written in — one of the integer constants above, never input."""
-    conn.execute(text(f"SET LOCAL statement_timeout = {int(ms)}"))
 
 
 def _utc(value: datetime) -> datetime:

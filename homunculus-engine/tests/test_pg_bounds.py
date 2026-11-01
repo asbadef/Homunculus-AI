@@ -19,7 +19,9 @@ from sqlalchemy.exc import OperationalError
 from homunculus.api import audit_postgres, monitor_samples, patient_identity_postgres
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
-from homunculus.api.audit_postgres import PostgresAuditLog, bounded_connect_args
+from homunculus.api.audit_postgres import (
+    PostgresAuditLog, bounded_connect_args, set_local_statement_timeout,
+)
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, Sample
 from homunculus.api.patient_identity import InMemoryIdentityStore
 from homunculus.api.patient_identity_postgres import PostgresIdentityStore
@@ -189,6 +191,12 @@ class _Result:
     def all(self):
         return []
 
+    def scalar(self):                                    # the audit chain's head: none yet
+        return None
+
+    def scalar_one(self):                                # the new row's id
+        return 1
+
 
 class _Transaction:
     def __init__(self, statements: list[str]):
@@ -244,6 +252,38 @@ def test_the_appends_keep_the_engines_bound(monkeypatch):
                               received_at=T0)])
     ((only,),) = engine.transactions
     assert only.startswith("INSERT INTO monitor_samples")
+
+
+def _recorded_audit(monkeypatch):
+    engine = _RecordingEngine()
+    monkeypatch.setattr(audit_postgres, "create_engine", lambda url, **kwargs: engine)
+    return PostgresAuditLog("postgresql://u:p@db/test_bounds"), engine
+
+
+def test_the_audits_reads_set_their_own_statement_bound_first(monkeypatch):
+    """GET /audit, /audit/verify (up to AUDIT_VERIFY_LIMIT_MAX rows), the alarm-quality report and a
+    restart's replay all read through `records`: 30 s, where the appends keep the engine's 10 s."""
+    log, engine = _recorded_audit(monkeypatch)
+    log.records(tenant="h1", limit=50_000)
+    ((first, second),) = engine.transactions
+    assert first == "SET LOCAL statement_timeout = 30000"
+    assert second.startswith("SELECT id, ts, tenant")
+
+
+def test_an_audit_append_keeps_the_engines_bound(monkeypatch):
+    log, engine = _recorded_audit(monkeypatch)
+    log.append(AuditEvent(tenant="h1", event_type="alert", patient_id="bed-1", subject="news2",
+                          payload={}))
+    ((head, insert),) = engine.transactions
+    assert head.startswith("SELECT hash FROM audit") and insert.startswith("INSERT INTO audit")
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, True, "30000"])
+def test_a_transaction_bound_that_bounds_nothing_is_refused_before_it_is_sent(bad):
+    statements: list[str] = []
+    with pytest.raises(ValueError):
+        set_local_statement_timeout(_Transaction(statements), bad)
+    assert statements == []
 
 
 class _Releasing:
