@@ -7,9 +7,12 @@ that contains ``MSA|AA`` and a ``PID`` segment; anything else — or silence —
 
 The id is always handed straight back: that is the same trust model as a manual id anywhere else
 in the pipeline, a pseudonymous identifier the operator is responsible for, never one we invent.
-An optional `lookup` (typically `IdentityMirror.get`) supplies what the HIS said about that id —
-name, date of birth, sex — so the device can show the clinician the patient and let them confirm
-the bed. Without a hit, or without a `lookup` at all, only the id comes back; nothing is guessed.
+An optional `lookup` answers one of three (G2-B1d, spec §5): a record — name, date of birth, sex,
+what the admission or the HIS said about that id — so the device can show the clinician the
+patient and let them confirm the bed; `NOT_FOUND` — the API said the number is not one of ours,
+or has left (D4): `QAK … NF` and no PID, and the nurse corrects the number at the bedside; or
+None — nobody could say (no lookup, a mirror miss, the API unreachable, D8): only the id comes
+back, as before. Nothing is guessed.
 
 PHI: the id is echoed to the sender only; nothing here logs it.
 """
@@ -29,6 +32,16 @@ _ID_TAGS = ("@PID.3.1", "@PID3.1")
 
 # FHIR AdministrativeGender -> HL7 table 0001, for the answer we hand back to the device.
 _FHIR_SEX_TO_HL7 = {"male": "M", "female": "F", "other": "O", "unknown": "U"}
+
+
+class _NotFound:
+    """The lookup's definite «not one of ours» (G2-B1d D4) — distinct from None, «nobody knows»."""
+
+    def __repr__(self) -> str:
+        return "NOT_FOUND"
+
+
+NOT_FOUND = _NotFound()
 
 
 def _fields(segment: str) -> list[str]:
@@ -80,14 +93,14 @@ def _hl7_date(iso_date: object) -> str:
 
 def patient_query_response(
     message: str,
-    lookup: Callable[[str], "PatientIdentity | None"] | None = None,
+    lookup: Callable[[str], "PatientIdentity | _NotFound | None"] | None = None,
 ) -> str | None:
     """An RSP^K22 for a QBP^Q22 query; None for any other message (the caller's handler runs).
 
-    `lookup` maps a protocol number to what the HIS said about it. With a hit, the device shows
-    the patient's name and the nurse can confirm they are at the right bed; without one, the id
-    is echoed and the reading still flows. A lookup that fails is treated as a miss: a broken
-    mirror must never stop a measurement.
+    `lookup` maps a number to a record (the device shows the patient's name and the nurse can
+    confirm they are at the right bed), to `NOT_FOUND` (`MSA|AA`, `QAK|…|NF`, no PID), or to None
+    (the id is echoed and the reading still flows). A lookup that fails is treated as None: a
+    broken mirror must never stop a measurement.
     """
     segs = split_segments(message)
     if not segs or not segs[0].startswith("MSH|"):
@@ -106,25 +119,30 @@ def patient_query_response(
     # missing field is as capable of breaking the reply as a lookup that raises, and the promise
     # here is the same either way: the device gets an answer, always.
     name = dob = sex = ""
+    not_found = False
     if patient_id and lookup is not None:
         try:
             known = lookup(patient_id)
-            if known is not None:
+            if known is NOT_FOUND:
+                not_found = True
+            elif known is not None:
                 family, given = _safe_text(known.family), _safe_text(known.given)
                 name = f"{family}^{given}" if (family or given) else ""
                 dob = _hl7_date(known.birth_date)
                 sex = _FHIR_SEX_TO_HL7.get(known.sex, "")
         except Exception:                      # a mirror fault degrades, never blocks
             name = dob = sex = ""
+            not_found = False
+    found = bool(patient_id) and not not_found
 
     out = [
         "|".join(["MSH", "^~\\&", _at(msh, 4) or "HOMUNCULUS", _at(msh, 5), _at(msh, 2), _at(msh, 3),
                   stamp, "", "RSP^K22^RSP_K21", stamp, "P", _at(msh, 11) or "2.5"]),
         "|".join(["MSA", "AA" if patient_id else "AE", control_id]),
-        "|".join(["QAK", query_tag, "OK" if patient_id else "NF"]),
+        "|".join(["QAK", query_tag, "OK" if found else "NF"]),
         "|".join(["QPD", _at(qpd, 1), query_tag, f"@PID.3.1^{patient_id}" if patient_id else ""]),
     ]
-    if patient_id:
+    if found:
         # Field-complete like the vendor's sample (PID|||id||name||dob|sex), with unknown
         # demographics present but EMPTY. NCE's transform sheets slice fields with
         # substring-before(…,'|'), which yields "" when no delimiter follows — a PID that ended

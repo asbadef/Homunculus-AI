@@ -14,7 +14,7 @@ import sqlite3
 import pytest
 
 from homunculus.edge.mllp import CR, FS, VT, serve_mllp
-from homunculus.edge.pdq import patient_query_response
+from homunculus.edge.pdq import NOT_FOUND, patient_query_response
 
 # The shape NCE sent on the ward (ids masked): QPD-3 = @PID.3.1^<id>~@PID3.4^X
 QBP = (
@@ -133,6 +133,28 @@ def test_an_unknown_patient_still_gets_the_id_only_answer():
     pid_fields = segments(reply)["PID"]
     assert pid_fields[3] == "123456A"
     assert pid_fields[5:] == ["", "", "", ""]
+
+
+def test_a_number_known_not_to_exist_is_answered_not_found_without_a_pid():
+    """G2-B1d D4: the API said the number is not one of ours, or has left. The device cannot
+    validate it, so the nurse corrects it at the bedside — and no PID means no name to trust."""
+    reply = patient_query_response(QBP, lookup=lambda _pid: NOT_FOUND)
+    seg = segments(reply)
+    assert seg["MSH"][8].startswith("RSP^K22")
+    assert seg["MSA"][1:3] == ["AA", "20260903160900123"]     # the query itself was understood
+    assert seg["QAK"][1:3] == ["20260903160900123", "NF"]
+    assert seg["QPD"][3] == "@PID.3.1^123456A"
+    assert "PID" not in seg
+
+
+def test_not_found_is_the_lookups_answer_only_none_still_echoes_the_id():
+    """Three outcomes, three replies: found (the name), NOT_FOUND (NF), None (unknown: the id
+    echoed with no name, as before G2-B1d — D8's 'we do not know')."""
+    found = segments(patient_query_response(QBP, lookup=known_lookup()))
+    unknown = segments(patient_query_response(QBP, lookup=lambda _pid: None))
+    assert (found["QAK"][2], found["PID"][5]) == ("OK", "YILMAZ^AYSE")
+    assert (unknown["QAK"][2], unknown["PID"][3], unknown["PID"][5]) == ("OK", "123456A", "")
+    assert repr(NOT_FOUND) == "NOT_FOUND"
 
 
 def test_a_lookup_that_raises_degrades_to_the_id_only_answer():

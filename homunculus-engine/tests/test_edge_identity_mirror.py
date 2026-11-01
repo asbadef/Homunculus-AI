@@ -155,3 +155,47 @@ def test_a_refusal_is_logged_without_the_protocol_number(tmp_path, caplog):
         assert mirror.upsert(record(at=WHEN - timedelta(minutes=5))) is False
     assert caplog.records and all("20239121" not in r.getMessage() for r in caplog.records)
     mirror.close()
+
+
+# ---------------------------------------------------------------- G2-B1d
+def test_a_forgotten_number_is_gone_and_forgetting_twice_is_harmless(tmp_path):
+    """Spec §8: an API's 'not found' removes the row, so a discharged patient's name does not
+    stay on the bridge's disk after the next query for that number."""
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record())
+    mirror.upsert(record(patient_id="20239122"))
+    assert mirror.forget("20239121") is True
+    assert mirror.get("20239121") is None
+    assert mirror.forget("20239121") is False
+    assert mirror.get("20239122") is not None and mirror.count() == 1
+    mirror.close()
+
+
+def test_the_mirror_takes_reads_and_writes_from_several_threads_at_once(tmp_path):
+    """E8: the patient query runs on worker threads (edge/mllp.py) while the ADT handler writes on
+    the event loop: one connection, its statements one at a time."""
+    import threading
+
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    failures: list[BaseException] = []
+
+    def work(n: int) -> None:
+        try:
+            for i in range(60):
+                pid = f"9{n}{i:03d}"
+                mirror.upsert(record(patient_id=pid))
+                assert mirror.get(pid) is not None
+                if i % 2:
+                    mirror.forget(pid)
+                mirror.count()
+        except BaseException as exc:  # noqa: BLE001 — collected, asserted below
+            failures.append(exc)
+
+    threads = [threading.Thread(target=work, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert failures == []
+    assert mirror.count() == 4 * 30
+    mirror.close()
