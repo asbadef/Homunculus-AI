@@ -939,7 +939,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     düzeltilirse (enfeksiyon yeniden "var" işaretlenirse) eski pencere geri gelir — düzeltme aynı
     olaydır; 15 dakikadan sonrası yeni bir pencere başlatır (yeni bir enfeksiyon eski pencereyi ve
     o sırada verilmiş dozları devralmaz).
-- *Şüpheli enfeksiyon — ekranın yazdığı üç şeyden biri* (ötekiler hastanın normali, 3.7, ve aşağıdaki vazopressör/sıvı kaydı): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+- *Şüpheli enfeksiyon — ekranın yazdığı dört şeyden biri* (ötekiler hastanın normali, 3.7, aşağıdaki vazopressör/sıvı kaydı ve SOFA formundan girilen ölçümler): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
   sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
@@ -947,8 +947,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   (yargı değişebilir; "var"dan sonra "yok" bir klinik olaydır, geri alma değil) ve basmadan önce
   bunun klinisyenin adıyla ve saatiyle denetim kaydına yazıldığını, geri alınamadığını, yalnız yeni
   bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
-  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
-  doldurup imzalamak sonraki grupta.
+  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır.
 - *Vazopressör / sıvı kaydı — ekranın yazdığı üçüncü şey* (G2-A3): `clinical.chart` yetkisi olan klinisyen İlaç ve
   antibiyotik kutusunda «Kayıt ekle»ye basar; açılan pencerede kilo (kg), vazopressör/inotrop (noradrenalin, adrenalin, dopamin,
   dobutamin) ile hızı (µg/kg/dk), kristaloid bolus (mL), «Antibiyotik verildi» ve «Kayıt saati» vardır; her alan
@@ -966,6 +965,38 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   kiloyu, antibiyotik satırını ve «Son kayıtlar» altında son on girişi (en yenisi üstte) gösterir. Servis duyurusu
   (G1-15) septik şokun vazopressör bilgisi alamadığını söylüyordu; kaydı yapılan vazopressör artık kurala girer —
   kayıt yoksa kural yine bilmez («kimse kaydetmedi» ile «verilmedi» aynı şey değildir).
+- *SOFA formu — ekranın yazdığı dördüncü şey* (G2-A4): İlaç ve antibiyotik kutusunun altındaki **SOFA formu** kutusu
+  formun toplamını, kaç organda ölçüm olmadığını ve son imzayı gösterir («İmzalandı · dr.elif · 14:05 · toplam 7»;
+  düzeltme yapılmışsa sayısı da yazar; bugünden önceki bir imzada saatin önünde gün ve ay yazar) ya da «İmzalanmadı».
+  **Bu sayı Sepsis-3 kutusundaki SOFA değildir:** o, son değerlerle hesaplanan alarm SOFA'sıdır; form son 24 saatin
+  **en kötü** değerleriyle doldurulur — ikisi aynı sayı olmak zorunda değil. «Formu aç» altı organı kaynaktaki sırayla
+  gösterir (solunum, pıhtılaşma, karaciğer, kardiyovasküler, merkezi sinir sistemi, böbrek): her girdinin en kötü
+  değeri, birimi, ölçüm saati, kaynağı ve puanı; ölçümü olmayan organda «ölçülmedi» (skor onu 0 sayar, ekran 0
+  yazmaz); 3 ve üstü puanda «≥3 puan · organ yetmezliği eşiği» işareti. Hasta 24 saatten kısa süredir buradaysa form
+  bunu söyler.
+  **Tamamlama** (`clinical.chart`): trombosit (×10³/µL), bilirubin ve kreatinin (**mg/dL**, laboratuvarın birimi —
+  ekran çevirmez; µmol/L yazılmış normal ya da yüksek bir kreatinin, 44 ve üstü, 40 sınırını aşar ve reddedilir;
+  µmol/L bir bilirubin ise reddedilmeyebilir: birimi alanın yanından okuyun), GCS, PaO₂/FiO₂ ve «solunum desteği»
+  (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz değiştirene kadar şimdidir, en çok
+  24 saat geriye gider, ileri gitmez; kayıttan sonra form yeniden okunur, puanı motor hesaplar. Solunum desteği:
+  formda son 24 saatte bir «evet» varsa PaO₂/FiO₂ destekte sayılır ve pencere içindeki bu «evet»i bir «hayır» geri
+  almaz; pencerede «evet» yoksa son kayıt geçerlidir, pencereden önceki bir kayıt da olsa. Alarm SOFA'sı ise son kaydı
+  okur ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
+  **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere, doğru değer ve en az 20 karakterlik bir gerekçeyle (sayaç
+  gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; kayıt kapısının yazım hatası
+  sınırları düzeltmede de geçerlidir (18000 yazılmış bir trombosit hem önizlemede hem imzada reddedilir).
+  **Önizle, sonra imzala:** «Önizle» motordan imzalanacak formu ister ve hiçbir şey yazmaz; «İmzala» yalnız o
+  önizlemeden sonra ve aynı düzeltmelerle çıkar (bir düzeltme değişirse yeniden önizlenir), çıktıktan sonra kısa bir
+  an basılamaz (hızlı bir çift tıklama imza atmasın diye); imza adınızla denetim zincirine mühürlenir. Önizleme ile
+  imza arasında kayıt değiştiyse (başka biri ölçüm girdiyse ya da 24 saatlik pencere kaydıysa) ekran bunu söyler:
+  toplam değiştiyse farkını, toplam aynı kaldıysa altındaki bir değerin değiştiğini. Önizlemeyi tanımayan eski bir
+  sunucuya karşı form düzeltme, önizleme ve imza sunmaz; önizleme yerine imza dönerse ekran uyarır ve ikinci kez imza
+  sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını söyler. Formu `board.view`
+  yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır. **Yapmadıkları:** alarm, bildirim ya
+  da zil yok; idrar çıkışı böbrek puanına katılmaz (eksik kaydedilmiş bir günün toplamı oligüri gibi okunurdu); MAP
+  formdan girilmez (kayıttan gelir — monitör henüz gerçek motoru beslemediği için çoğu hastada «ölçülmedi»);
+  vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok; APACHE, PRISM
+  ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
   numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
   kaydından çizilir (3.7).
