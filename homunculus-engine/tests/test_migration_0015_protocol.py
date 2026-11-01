@@ -103,7 +103,7 @@ def test_one_protocol_number_per_tenant_and_nulls_never_collide(clean_db):
         _admission(conn, a, bed_a, "H2600002")                      # NULL
         _admission(conn, a, bed_a, "H2600003")                      # NULL again: no collision
         _admission(conn, b, bed_b, "H2600001", protocol_no="202600000001")   # another tenant
-    with pytest.raises(IntegrityError), engine.begin() as conn:
+    with pytest.raises(IntegrityError, match=INDEX), engine.begin() as conn:
         _admission(conn, a, bed_a, "H2600004", protocol_no="202600000001")
 
 
@@ -111,10 +111,13 @@ def test_one_protocol_number_per_tenant_and_nulls_never_collide(clean_db):
     "20260000001",            # eleven digits
     "20260000000A",           # a letter
     "2026 0000001",           # a space
-    "２０２６００００００１",  # twelve full-width digits: digits to Unicode, not to the device
+    "２０２６０００００００１",  # twelve full-width digits: digits to Unicode, not to the device
     "",
 ])
 def test_a_protocol_number_is_twelve_ascii_digits(clean_db, value):
+    if not value.isascii():
+        # exactly twelve characters, so the CHECK's character class refuses it, not its length
+        assert len(value) == 12
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
     with engine.begin() as conn:
