@@ -22,7 +22,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import trail
-from homunculus.admission.errors import PROTOCOL_FORMAT, PROTOCOL_NOT_FORWARD, Refusal
+from homunculus.admission.errors import (
+    LABEL_DPI, LABEL_SIZE, LABEL_TOO_NARROW, PROTOCOL_FORMAT, PROTOCOL_NOT_FORWARD, Refusal,
+)
 from homunculus.auth.dependencies import caller_tenant_id, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
@@ -36,9 +38,9 @@ router = APIRouter(prefix="/admin/protocol-settings", tags=["protocol"])
 #: What a tenant with no row reads: no start number, the default label (spec D6).
 _DEFAULT_LABEL = (50, 30, 203)
 _WORDS = {
-    "label_dpi": "The printer resolution is 203 or 300 dpi.",
-    "label_size": "The label is 30–110 mm wide and 20–80 mm high.",
-    "label_too_narrow": "The barcode does not fit a label this narrow at this resolution.",
+    LABEL_DPI: "The printer resolution is 203 or 300 dpi.",
+    LABEL_SIZE: "The label is 30–110 mm wide and 20–80 mm high.",
+    LABEL_TOO_NARROW: "The barcode does not fit a label this narrow at this resolution.",
 }
 
 

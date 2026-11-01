@@ -38,6 +38,7 @@ def test_every_case_of_the_shared_table(case):
 @pytest.mark.parametrize("case", TABLE["next_no_cases"], ids=lambda c: repr(c["next_no"]))
 def test_every_start_number_case_of_the_shared_table(case):
     """A-1: twelve ASCII digits and not 000000000000 — the number the test label prints."""
+    assert case["answer"] in (None, "protocol_format")     # a wrong non-null answer cannot pass
     expected = None if case["answer"] is None else "protocol_format"
     assert (None if parse_start_no(case["next_no"]) is not None else "protocol_format") == expected
 
