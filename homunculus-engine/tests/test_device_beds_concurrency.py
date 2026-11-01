@@ -27,7 +27,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
-from homunculus.devicebeds import service
+from homunculus.devicebeds import service, writes
 from homunculus.devicebeds.rows import db_time, editor_row
 from tests.conftest import TEST_DATABASE_URL, _sync_engine_url, requires_db
 from tests.esleme_world import TOKEN, UNIT_OF, URL, esleme_client, group_of, readings, seed
@@ -38,12 +38,16 @@ NOW = datetime(2026, 10, 30, 9, 0, tzinfo=timezone.utc)
 X, Y, Z = "192.0.2.11", "192.0.2.12", "192.0.2.13"
 KEPT = "keeps its history"
 
-#: What a request waiting on a lock is running, as `pg_stat_activity.query` shows it.
+#: What a request waiting on a lock is running, as `pg_stat_activity.query` shows it. `query` is cut at
+#: `track_activity_query_size` (1024), so a row lock is matched by the START of its statement, never its tail: a few more
+#: columns on `device_beds` must not break every row-lock race. (`_queued` also requires wait_event_type = 'Lock', which
+#: a plain read never has.) The bed lock's statement is short, and its tail is what says it is a lock.
 BED_LOCK = "%FROM beds%beds.id%FOR NO KEY UPDATE%"       # tenant.router._lock_bed
-ROW_LOCK = "%FROM device_beds%FOR UPDATE%"                # rows.current_rows(lock=True)
+ROW_LOCK = "SELECT device_beds.id,%"                      # rows.current_rows(lock=True)
 INSERT = "INSERT INTO device_beds%"                       # an insert held up by another transaction's uncommitted row
 
 CHANGED, SAME, STALE = "changed", "unchanged", "409 mapping_changed"
+PATCHED, CLOSED_BED, HAS_MONITOR = "patched", "409 bed_closed", "409 bed_has_monitor"       # Yapı's PATCH, and what meets it
 
 
 def replaced(source: str) -> str:
@@ -62,10 +66,13 @@ def _unbind(client, ward, source, device_row, confirm=False):
 
 
 def _said(response) -> str:
-    """A response in one comparable phrase: `changed`, `changed, replaced <source>`, `unchanged`, or `<status> <code>`."""
+    """A response in one comparable phrase: `changed`, `changed, replaced <source>`, `unchanged`, `patched` (Yapı's
+    PATCH of a bed answered 200), or `<status> <code>`."""
     body = response.json()
     if response.status_code != 200:
         return f"{response.status_code} {body['detail']['code']}"
+    if "changed" not in body:
+        return PATCHED
     if not body["changed"]:
         return SAME
     return CHANGED if body["replaced_source"] is None else replaced(body["replaced_source"])
@@ -83,16 +90,19 @@ def _spy_reset(app):
     return calls
 
 
-def _read_rows() -> list[tuple]:
-    """Every row of `device_beds` — (source, bed_id, valid_from, valid_to) in id order — read on a connection of
-    its own, so only what has committed is seen."""
+def _read(sql: str, **params) -> list[tuple]:
+    """A query run on a connection of its own, so only what has committed is seen."""
     engine = create_engine(_sync_engine_url(TEST_DATABASE_URL))
     try:
         with engine.connect() as conn:
-            return [tuple(r) for r in conn.execute(text(
-                "SELECT source, bed_id, valid_from, valid_to FROM device_beds ORDER BY id"))]
+            return [tuple(r) for r in conn.execute(text(sql), params)]
     finally:
         engine.dispose()
+
+
+def _read_rows() -> list[tuple]:
+    """Every row of `device_beds` — (source, bed_id, valid_from, valid_to) in id order."""
+    return _read("SELECT source, bed_id, valid_from, valid_to FROM device_beds ORDER BY id")
 
 
 def _assert_history(ward, expected: list[tuple]) -> None:
@@ -113,18 +123,27 @@ def _assert_history(ward, expected: list[tuple]) -> None:
     assert len(open_beds) == len(set(open_beds)), "a bed is under two open rows"
 
 
-async def _queued(db, pattern: str, second: asyncio.Future, timeout: float = 20.0) -> bool:
+async def _database_now(db) -> datetime:
+    """The database's own clock, `clock_timestamp()` — what `pg_stat_activity.query_start` is compared with."""
+    async with async_sessionmaker(db.bind, expire_on_commit=False)() as session:
+        return (await session.execute(text("SELECT clock_timestamp()"))).scalar_one()
+
+
+async def _queued(db, pattern: str, second: asyncio.Future, started: datetime, timeout: float = 20.0) -> bool:
     """True once a statement like `pattern` is WAITING ON A LOCK in `pg_stat_activity` — `second` is queued. False if
-    `second` finished first (it slipped past: nothing held it). The shared database is under contention, hence the
-    generous timeout; it is reached only when `second` waits on something else than the lock we expect."""
+    `second` finished first (it slipped past: nothing held it). Only statements begun after `started` (the race's
+    own start, read once from the database's clock) can match, so a backend of the pool that waited on a lock for an
+    earlier race or test is never mistaken for this one (`backend_start` would not do: pooled backends predate the
+    test). The shared database is under contention, hence the generous timeout; it is reached only when `second`
+    waits on something else than the lock we expect."""
     sql = text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() "
-               "AND wait_event_type = 'Lock' AND query LIKE :pattern")
+               "AND wait_event_type = 'Lock' AND query_start > :started AND query LIKE :pattern")
     maker = async_sessionmaker(db.bind, expire_on_commit=False)
     try:
         async with asyncio.timeout(timeout):
             while not second.done():
                 async with maker() as session:
-                    if (await session.execute(sql, {"pattern": pattern})).scalar_one():
+                    if (await session.execute(sql, {"pattern": pattern, "started": started})).scalar_one():
                         return True
                 await asyncio.sleep(0.02)
     except TimeoutError:
@@ -133,21 +152,34 @@ async def _queued(db, pattern: str, second: asyncio.Future, timeout: float = 20.
     return False
 
 
-async def _race(db, first, second, *, behind: str = BED_LOCK, at: str = "write", timeout: float = 90.0):
+async def _race(db, first, second, *, behind: str = BED_LOCK, at="write", timeout: float = 90.0):
     """Send `first()` alone, pause it at `at`, start `second()` from there and let `first` go on only once `second` is
     seen queued behind a lock like `behind`. `first` and `second` are zero-argument callables returning the awaitable.
     `at`: "write" - `first` holds every lock it takes and has written nothing; "first_bed_lock" - it holds its first
-    bed lock and has asked for no other; "commit" - its rows are inserted and not committed.
+    bed lock and has asked for no other; "commit" - its rows are inserted and not committed; `(module, name)` - it is
+    about to call that function (the Yapı hooks of `devicebeds.writes`, the first thing `patch_bed` does after its
+    unit and bed locks), which it calls once `second` is queued.
     Returns `first`'s response, `second`'s, and whether `second` was seen queued."""
     tasks, seen = [], []
+    started = await _database_now(db)
 
     async def start_and_wait():
         task = asyncio.ensure_future(second())
         tasks.append(task)
-        seen.append(await _queued(db, behind, task))
+        seen.append(await _queued(db, behind, task, started))
 
     with pytest.MonkeyPatch.context() as patch:
-        if at == "first_bed_lock":
+        if isinstance(at, tuple):
+            module, name = at
+            real_hook = getattr(module, name)
+
+            async def hook(*args, **kwargs):
+                if not tasks:
+                    await start_and_wait()
+                return await real_hook(*args, **kwargs)
+
+            patch.setattr(module, name, hook)
+        elif at == "first_bed_lock":
             real_lock = service._lock_bed
 
             async def lock(session, bed_id):
@@ -187,16 +219,18 @@ async def _race(db, first, second, *, behind: str = BED_LOCK, at: str = "write",
     return one, two, seen[0]
 
 
-async def _run(db, app, ward, first, second, *, said, history, audit, behind=BED_LOCK, at="write"):
+async def _run(db, app, ward, first, second, *, said, history, audit, behind=BED_LOCK, at="write", resets=None):
     """A race, then everything that must hold after it: `second` was queued by the lock; each request said what
-    `said` names; the rows are `history`, soundly; the audit and the strip's reset are the winner's alone."""
-    resets = _spy_reset(app)
+    `said` names; the rows are `history`, soundly; the audit and the strip's reset are the winner's alone. The strip's
+    table is reset once per change that committed: by default the first request's alone; `resets` says otherwise
+    (a Yapı write that relabels a row resets it too)."""
+    calls = _spy_reset(app)
     one, two, queued = await _race(db, first, second, behind=behind, at=at)
     assert queued, "the second request was not queued behind the lock: the order was not the lock's"
     assert (_said(one), _said(two)) == said
     _assert_history(ward, history)
     assert sorted(r.event_type for r in app.state.audit.records()) == sorted(audit)
-    assert len(resets) == (1 if said[0].startswith(CHANGED) else 0)
+    assert len(calls) == (resets if resets is not None else 1 if said[0].startswith(CHANGED) else 0)
 
 
 # --- the task's races, the order forced ---------------------------------------------------------------------------
@@ -373,15 +407,25 @@ async def test_e_the_same_bind_twice_at_once_the_second_finds_its_own_change_mad
 def _slipping_in(db, action):
     """The first request to reach `service._write` - its bed and row locks held, nothing written - is met there by a
     second session that takes no lock: it runs `await action(session)` and commits before the request goes on. That is
-    a writer outside these routes (A-22 f, spec §4.4 step 9). Yields a list that is non-empty once it has run."""
+    a writer outside these routes (A-22 f, spec §4.4 step 9). Yields a list that is non-empty once it has run.
+
+    This is the one place the file waits on a lock while the request is suspended in Python: the outside writer's
+    INSERT carries a foreign key to the bed (FOR KEY SHARE), which the request's FOR NO KEY UPDATE lets through. Were
+    `_lock_bed` strengthened to FOR UPDATE, that insert would wait on a backend that waits for nothing itself, so
+    Postgres would see no deadlock and the run would hang for ever: hence the bound, and a named failure."""
     maker, done, real = async_sessionmaker(db.bind, expire_on_commit=False), [], service._write
 
     async def write(*args, **kwargs):
         if not done:
             done.append(True)
-            async with maker() as other:
-                await action(other)
-                await other.commit()
+            try:
+                async with asyncio.timeout(20):
+                    async with maker() as other:
+                        await action(other)
+                        await other.commit()
+            except TimeoutError:
+                raise AssertionError("the outside writer waited on the paused request's bed lock: the lock is "
+                                     "stronger than FOR NO KEY UPDATE, which this race relies on") from None
         return await real(*args, **kwargs)
 
     with pytest.MonkeyPatch.context() as patch:
@@ -422,6 +466,68 @@ async def test_f_a_writer_outside_the_locks_gives_the_monitor_a_row_first_the_fi
         assert done and _said(response) == STALE
         _assert_history(ward, [(Z, None, "open")])
         assert app.state.audit.records() == [] and resets == []
+
+
+# --- A-22 h: a bind against a Yapı close or rename of the target bed -----------------------------------------------
+#
+# Yapı's PATCH of a bed takes the unit lock and then the bed lock (`tenant.router.patch_bed`), the same bed lock a bind
+# takes (`_lock_bed`), and only then calls its hook in `devicebeds.writes`: `refuse_close_if_bound` for a close,
+# `relabel_bed` for a rename. When Yapı goes first it is paused AT THAT HOOK - the first thing it does after its locks;
+# a pause on `_lock_bed` itself would vanish with the lock, and a missing lock would fail the seam, not the race.
+
+CLOSE_HOOK, RENAME_HOOK = (writes, "refuse_close_if_bound"), (writes, "relabel_bed")
+
+
+def _patch(client, ward, bed_key, **body):
+    return client.patch(f"/tenant/beds/{ward.beds[bed_key].id}", headers=ward.auth["admin"], json=body)
+
+
+def _bed_of_yapi(ward, bed_key) -> tuple:
+    """(is_active, label) of the bed, as the database holds it."""
+    return _read("SELECT is_active, label FROM beds WHERE id = CAST(:i AS uuid)", i=str(ward.beds[bed_key].id))[0]
+
+
+def _open_labels() -> dict[str, str | None]:
+    """The label of each monitor's open row - what the strip shows."""
+    return dict(_read("SELECT source, bed_label FROM device_beds WHERE valid_to IS NULL"))
+
+
+async def test_h_a_close_of_the_bed_goes_first_the_bind_finds_it_closed_and_writes_nothing(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, (Z, None, None))
+        await _run(db_session, app, ward, lambda: _patch(client, ward, "2", is_active=False),
+                   lambda: _bind(client, ward, Z, "2", ids[Z]), at=CLOSE_HOOK, said=(PATCHED, CLOSED_BED),
+                   history=[(Z, None, "open")], audit=["structure.close"], resets=0)
+        assert _bed_of_yapi(ward, "2")[0] is False and _open_labels() == {Z: None}
+
+
+async def test_h_a_bind_goes_first_the_close_of_the_bed_is_refused_because_it_has_a_monitor(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, (Z, None, None))
+        await _run(db_session, app, ward, lambda: _bind(client, ward, Z, "2", ids[Z]),
+                   lambda: _patch(client, ward, "2", is_active=False), said=(CHANGED, HAS_MONITOR),
+                   history=[(Z, None, "closed"), (Z, "2", "open")], audit=["device_bed.bind"])
+        assert _bed_of_yapi(ward, "2")[0] is True and _open_labels() == {Z: "2"}
+
+
+async def test_h_a_rename_goes_first_the_bind_carries_the_new_label(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, (Z, None, None))
+        await _run(db_session, app, ward, lambda: _patch(client, ward, "2", label="Yatak 2"),
+                   lambda: _bind(client, ward, Z, "2", ids[Z]), at=RENAME_HOOK, said=(PATCHED, CHANGED),
+                   history=[(Z, None, "closed"), (Z, "2", "open")], audit=["structure.rename", "device_bed.bind"],
+                   resets=1)                               # the rename found no monitor to relabel: the bind's reset alone
+        assert _bed_of_yapi(ward, "2")[1] == "Yatak 2" and _open_labels() == {Z: "Yatak 2"}
+
+
+async def test_h_a_bind_goes_first_the_rename_relabels_the_row_the_bind_just_wrote(db_session):
+    async with esleme_client(db_session) as (client, app, ward):
+        ids = await seed(db_session, ward, (Z, None, None))
+        await _run(db_session, app, ward, lambda: _bind(client, ward, Z, "2", ids[Z]),
+                   lambda: _patch(client, ward, "2", label="Yatak 2"), said=(CHANGED, PATCHED),
+                   history=[(Z, None, "closed"), (Z, "2", "closed"), (Z, "2", "open")],      # the bind's row, closed, then the relabel's
+                   audit=["device_bed.bind", "device_bed.relabel", "structure.rename"], resets=2)
+        assert _bed_of_yapi(ward, "2")[1] == "Yatak 2" and _open_labels() == {Z: "Yatak 2"}
 
 
 # --- A-22 g: a CHECK (or any other) violation is an error, not a refusal (E31) -------------------------------------
