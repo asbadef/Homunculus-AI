@@ -776,10 +776,14 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      * `overrides` is `[{code, value, reason}]`. A correction replaces the VALUE — the engine
      * re-scores the row from the band table, because a typed point value would enter quality
      * reporting unbanded. The reason is mandatory and the engine enforces its length.
+     *
+     * `preview: true` (G2-A4, D6) asks for the form a signature WOULD seal — the same parsing, re-scoring
+     * and refusals — and signs nothing (no audit row). The key is sent only then: an engine older than
+     * G2-A4 ignores it and would sign, which is why the screen never previews against one (X13).
      */
-    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [], preview = false } = {}) {
       return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`, {
-        method: "POST", body: { overrides },
+        method: "POST", body: { overrides, ...(preview ? { preview: true } : {}) },
       });
     },
 
