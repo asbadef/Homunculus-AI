@@ -6,10 +6,14 @@ echoed without a name. Counted apart; no id ever logged; a broken mirror never c
 No network: a stub in place of PatientQueryClient.ask. Synthetic numbers and names only."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 
 import pytest
+
+from homunculus.edge.mllp import CR, FS, VT
 
 from homunculus.crypto import decrypt_phi
 from homunculus.edge.adt import PatientIdentity
@@ -163,3 +167,147 @@ def test_no_id_is_ever_logged(mirror, caplog):
     assert caplog.records, "the API failure is logged"
     assert not any(NUMBER in rec.getMessage() for rec in caplog.records)
     assert not any("Test Hasta" in rec.getMessage() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------- spec §5.3: no stall
+ORU = ("MSH|^~\\&|NCE|HOSP|EMR|HIS|20261101080100||ORU^R01^ORU_R01|R1|P|2.5\r"
+       f"PID|||{NUMBER}\r"
+       "OBX|1|NM|150456^MDC_PULS_OXIM_SAT_O2^MDC||97|%|||||F\r")
+
+
+def frame(message: str) -> bytes:
+    return VT + message.encode() + FS + CR
+
+
+async def _shut(server, writers, *events: threading.Event) -> None:
+    """Release the stub, close every client, then the server — bounded, so that a red test fails
+    instead of hanging in `wait_closed` (which waits for the open connections)."""
+    for event in events:
+        event.set()
+    for w in writers:
+        w.close()
+    server.close()
+    await asyncio.wait_for(server.wait_closed(), timeout=5)
+
+
+async def test_a_slow_api_holds_its_own_query_and_never_a_reading_on_another_connection(mirror):
+    """The API takes its time (up to the client's 2 s in life; here until the test releases it).
+    Meanwhile a reading arrives on another connection: it is acknowledged at once, and the query
+    is still waiting — the responder runs on a worker thread, not on the event loop."""
+    entered, release = threading.Event(), threading.Event()
+
+    def slow(number: str):
+        entered.set()
+        release.wait(5)
+        return found(number)
+
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror, query=slow)
+    server = await bridge.serve(host="127.0.0.1", port=0)
+    port = server.sockets[0].getsockname()[1]
+    writers: list[asyncio.StreamWriter] = []
+    try:
+        query_reader, query_writer = await asyncio.open_connection("127.0.0.1", port)
+        writers.append(query_writer)
+        query_writer.write(frame(qbp()))
+        await query_writer.drain()
+        assert await asyncio.wait_for(asyncio.to_thread(entered.wait, 5), 6)   # at the API now
+
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writers.append(writer)
+        writer.write(frame(ORU))
+        await writer.drain()
+        ack = await asyncio.wait_for(reader.read(4096), timeout=2)
+        assert b"MSA|AA|R1" in ack
+        with pytest.raises(TimeoutError):                    # the query has no answer yet
+            await asyncio.wait_for(query_reader.read(1), timeout=0.2)
+
+        release.set()
+        reply = (await asyncio.wait_for(query_reader.read(4096), timeout=5))[1:-2].decode()
+        assert f"PID|||{NUMBER}||^Test Hasta" in reply
+        assert (bridge.stats.messages, bridge.stats.queries) == (1, 1)
+    finally:
+        await _shut(server, writers, release)
+
+
+# ------------------------------------------- worker threads: the mirror and the counters (E25)
+async def _ask_over_mllp(bridge: EdgeBridge, number: str = NUMBER) -> dict[str, list[str]]:
+    server = await bridge.serve(host="127.0.0.1", port=0)
+    port = server.sockets[0].getsockname()[1]
+    writers: list[asyncio.StreamWriter] = []
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writers.append(writer)
+        writer.write(frame(qbp(number)))
+        await writer.drain()
+        reply = (await asyncio.wait_for(reader.read(4096), timeout=5))[1:-2].decode()
+        return segments(reply)
+    finally:
+        await _shut(server, writers)
+
+
+async def test_the_mirror_answers_from_the_worker_thread_when_the_api_cannot(mirror, caplog):
+    """The mirror's sqlite connection is opened on the test (loop) thread; the responder reads it
+    on a worker thread. A sqlite ProgrammingError there would surface as «unknown»/the bare echo —
+    not the mirrored name — and as a failed responder in the log."""
+    mirror.upsert(found())                                   # written on this thread
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror,
+                        query=asking(raises=QueryUnavailable("the API answered 503")))
+    caplog.set_level(logging.DEBUG)
+    seg = await _ask_over_mllp(bridge)
+    assert (seg["MSA"][1], seg["QAK"][2], seg["PID"][3], seg["PID"][5]) == (
+        "AA", "OK", NUMBER, "^Test Hasta")                   # the name, not the bare echo
+    assert counts(bridge) == (1, 0, 1)
+    assert not any("responder failed" in rec.getMessage() for rec in caplog.records)
+    assert not any("in the identity mirror" in rec.getMessage() for rec in caplog.records)
+
+
+async def test_the_apis_answer_is_mirrored_and_forgotten_from_the_worker_thread(mirror, caplog):
+    caplog.set_level(logging.DEBUG)
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror, query=asking(found()))
+    seg = await _ask_over_mllp(bridge)
+    assert seg["PID"][5] == "^Test Hasta"
+    assert mirror.get(NUMBER).given == "Test Hasta"          # written on a worker, read here
+
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror, query=asking(NOT_FOUND))
+    seg = await _ask_over_mllp(bridge)
+    assert (seg["QAK"][2], "PID" in seg) == ("NF", False)
+    assert mirror.get(NUMBER) is None                        # forgotten on a worker, seen here
+    assert not any("in the identity mirror" in rec.getMessage() for rec in caplog.records)
+
+
+def test_the_query_counters_lose_no_count_under_worker_threads(mirror):
+    """E25: answer_query runs on worker threads, several at once (one per connection); a plain
+    `+= 1` on a shared counter can lose an update between its read and its write."""
+    import sys
+
+    unavailable = QueryUnavailable("the API answered 503")
+
+    def ask(number: str):
+        if number.endswith("1"):
+            raise unavailable
+        return NOT_FOUND
+
+    bridge = EdgeBridge(send=lambda _p: None, identity=mirror, query=ask)
+    ours, others = qbp(NUMBER), qbp("202600000002")           # …1 fails, …2 is «not found»
+    failures: list[BaseException] = []
+
+    def work() -> None:
+        try:
+            for _ in range(300):
+                bridge.answer_query(ours)
+                bridge.answer_query(others)
+        except BaseException as exc:  # noqa: BLE001 — collected, asserted below
+            failures.append(exc)
+
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)                               # make a lost update likely
+    try:
+        threads = [threading.Thread(target=work) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+    finally:
+        sys.setswitchinterval(previous)
+    assert failures == []
+    assert counts(bridge) == (8 * 600, 8 * 300, 8 * 300)

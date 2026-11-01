@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -51,6 +52,16 @@ class BridgeStats:
     adt_ignored: int = 0        # ADT triggers outside the seven we act on (still ACKed, not NAKed)
     adt_stale: int = 0          # ADTs the mirror refused as older than what it already had
     unmapped: dict[str, int] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False,
+                                  compare=False)
+
+    def bump(self, name: str) -> None:
+        """Add one to the counter `name`, under a lock. The three `queries*` counters are touched
+        from worker threads (edge/mllp.py runs `answer_query` there, one per connection, G2-B1d
+        E25), where a bare `+= 1` is a read and a write another thread can slip between. The rest
+        are counted on the event loop thread alone and stay plain; the report only reads."""
+        with self._lock:
+            setattr(self, name, getattr(self, name) + 1)
 
 
 def _obx_codes(message: str) -> list[str]:
@@ -174,13 +185,15 @@ class EdgeBridge:
         manually entered identifier survive into the observation. G2-B1d (spec §5.2): the API is
         asked first — a found number is answered with the name (D3), a number it does not know or
         that has left with QAK NF (D4) —; when it cannot answer, the mirror does, else the id is
-        echoed without a name (D8). Called on a worker thread (edge/mllp.py): it may wait up to
-        the client's 2 s.
+        echoed without a name (D8). Called on a worker thread (edge/mllp.py, `asyncio.to_thread`;
+        one per connection, so several at once): it may wait up to the client's 2 s, reads and
+        writes the mirror (which locks its own statements, E8) and counts through `stats.bump`
+        (E25).
         """
         lookup = self._lookup if (self.query is not None or self.identity is not None) else None
         reply = patient_query_response(message, lookup=lookup)
         if reply is not None:
-            self.stats.queries += 1
+            self.stats.bump("queries")
         return reply
 
     def _lookup(self, patient_id: str):
@@ -190,12 +203,12 @@ class EdgeBridge:
             try:
                 answer = self.query(patient_id)
             except Exception as exc:  # noqa: BLE001 — "cannot answer" is the mirror's turn (D8)
-                self.stats.queries_api_failed += 1
+                self.stats.bump("queries_api_failed")
                 _log.warning("patient query: the API could not answer (%s); the mirror answers "
                              "(id not logged)", type(exc).__name__)
             else:
                 if answer is NOT_FOUND:
-                    self.stats.queries_not_found += 1
+                    self.stats.bump("queries_not_found")
                     self._mirror("forget", patient_id)
                     return NOT_FOUND
                 self._mirror("upsert", answer)

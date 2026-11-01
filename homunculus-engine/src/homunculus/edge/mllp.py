@@ -113,7 +113,10 @@ async def serve_mllp(
 
     `responder`, when given, sees every message first. If it returns a message, that reply is
     sent instead of an ACK and the handler is not called — this is how a query (a QBP^Q22 patient
-    lookup) gets an RSP rather than being mistaken for a result and rejected.
+    lookup) gets an RSP rather than being mistaken for a result and rejected. It runs on a worker
+    thread (`asyncio.to_thread`, G2-B1d spec §5.3): a query may wait up to 2 s on the API, and the
+    messages of every other connection must not wait with it. One connection's messages stay in
+    order — each is answered before the next is read.
     """
 
     async def on_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -129,7 +132,7 @@ async def serve_mllp(
                     reply = None
                     if responder is not None:
                         try:
-                            reply = responder(message)
+                            reply = await asyncio.to_thread(responder, message)
                         except Exception:                   # a broken reply must not go silent
                             _log.exception("MLLP responder failed for a message from %s", peer)
                     if reply is None:
