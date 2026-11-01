@@ -101,14 +101,17 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.POTASSIUM: (1.0, 10.0),
     SignalCode.HAEMATOCRIT: (5.0, 75.0),
     # G2-A4 (D4): the SOFA form's labs, in the units CHARTABLE fixes. Engineering bounds against a slipped
-    # digit or a unit — a creatinine typed in µmol/L lands far above 30 mg/dL; a PaO2/FiO2 worked out with
-    # FiO2 as a percentage lands far below 20 — never clinical thresholds: the band tables in rules/sofa.py
-    # stay the only place a value is judged. A bilirubin typed in µmol/L can still fall inside 0–60; the
-    # unit printed beside the field is the guard there (D11).
-    SignalCode.PLATELETS: (0.0, 2000.0),          # ×10³/µL
+    # digit or a unit — a normal or raised creatinine typed in µmol/L (≥ 44) lands above 40 mg/dL;
+    # a PaO2/FiO2 worked out with FiO2 as a percentage lands far below 20 — never clinical thresholds: the
+    # band tables in rules/sofa.py stay the only place a value is judged. A bilirubin typed in µmol/L can
+    # still fall inside 0–60; the unit printed beside the field is the guard there (D11). Platelets and
+    # creatinine sit far enough out to keep this header's promise (X18): rare survivable values exist above
+    # 2000 and 30, and past those the points no longer change (0 and 4), so refusing them would only force
+    # a false entry.
+    SignalCode.PLATELETS: (0.0, 5000.0),          # ×10³/µL
     SignalCode.BILIRUBIN: (0.0, 60.0),            # mg/dL
-    SignalCode.CREATININE: (0.0, 30.0),           # mg/dL
-    SignalCode.PAO2_FIO2: (20.0, 700.0),          # mmHg
+    SignalCode.CREATININE: (0.0, 40.0),           # mg/dL
+    SignalCode.PAO2_FIO2: (20.0, 700.0),          # mmHg (CHARTABLE: "ratio")
 }
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.

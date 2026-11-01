@@ -1518,9 +1518,10 @@ def create_app(
         if caller.is_device:
             raise HTTPException(status_code=403,
                                 detail="skor formunu yalnız bir kişi imzalayabilir")
-        # G2-A4 (D6, X2): `preview: true` asks what a signature WOULD seal. Only a real boolean: a "true"
-        # string read as false would sign a form its sender meant only to look at — refused here, after
-        # the permission and the device refusals and before anything is read.
+        # G2-A4 (D6, X2): `preview: true` asks what a signature WOULD seal. Only a real boolean: by
+        # truthiness "false" would preview and 0, "" or null would sign — a flag whose meaning depends on
+        # its spelling is refused, not guessed. Refused here, after the permission and the device
+        # refusals and before anything is read.
         preview = body.get("preview", False)
         if not isinstance(preview, bool):
             raise HTTPException(status_code=400, detail="preview true ya da false olmalı")

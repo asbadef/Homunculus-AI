@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.identity import Caller
 from homunculus.auth.permissions import DEFAULT_GROUPS
 from homunculus.canonical import Observation, SignalCode
@@ -304,13 +305,73 @@ class TestPreviewSignsNothing(_AsPeople):
         assert r.status_code == 403
         assert r.json()["detail"] == "permission required: scores.sign"
 
-    def test_preview_must_be_a_real_yes_or_no(self, client):
-        """X2: a "true" string read as false would SIGN a form its sender meant only to look at."""
+    @pytest.mark.parametrize("flag", ["true", "false", 0, 1, "", None])
+    def test_preview_must_be_a_real_yes_or_no(self, client, flag):
+        """X2: only a real boolean. By truthiness "false" would preview and 0, "" or null would sign — a
+        flag whose meaning depends on its spelling is refused, not guessed."""
         self._chart(client, "yatak-1", "platelets", 45)
-        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": "true"})
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": flag})
         assert r.status_code == 400
         assert "preview" in r.json()["detail"]
         assert self._signed_rows(client) == []
+
+
+class TestThePreviewsPromises(_AsPeople):
+    """G2-A4 review: what the preview promises, pinned against the whole audit log rather than one event
+    type — a preview writes no row of ANY kind, refuses what a signature refuses, and is not a hold on
+    the record: a chart that lands between it and the signature is in what the signature seals (X11)."""
+
+    @pytest.fixture()
+    def log(self):
+        return InMemoryAuditLog()
+
+    @pytest.fixture()
+    def client(self, log):
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve_person, audit=log)
+        with TestClient(app) as c:
+            yield c
+
+    @staticmethod
+    def _all_rows(log):
+        return log.records(limit=1_000_000)
+
+    def test_a_preview_of_no_correction_writes_no_audit_row_of_any_kind(self, client, log):
+        self._chart(client, "yatak-1", "platelets", 45)
+        before = len(self._all_rows(log))
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["signed"] is False and body["overrides"] == []
+        assert body["total"] == body["auto_total"] == 3
+        assert len(self._all_rows(log)) == before
+
+    def test_a_chart_between_the_preview_and_the_signature_is_in_what_is_sealed(self, client, log):
+        """X11, the engine's side: the signature re-scores the record as it is at the press. The screen
+        says so when the totals differ; the engine's number stands."""
+        self._chart(client, "yatak-1", "platelets", 45)                     # coagulation 3
+        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True}).json()
+        self._chart(client, "yatak-1", "creatinine", 2.5, minutes_ago=30)   # another desk: renal 2
+        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={})
+        assert signed.status_code == 200, signed.text
+        assert (previewed["total"], signed.json()["total"]) == (3, 5)
+        [row] = [r for r in self._all_rows(log) if r.event_type == "score_signed"]
+        assert (row.payload["total"], row.payload["auto_total"]) == (5, 5)
+
+    @pytest.mark.parametrize(("overrides", "said"), [
+        ([{"code": "kalp_hizi", "value": 90, "reason": WHY}], "bilinmeyen alan"),
+        ([{"code": "platelets", "value": 38, "reason": WHY},
+          {"code": "platelets", "value": 40, "reason": WHY}], "birden fazla"),
+        ([{"code": "heart_rate", "value": 90, "reason": WHY}], "bu formda yok"),
+    ], ids=["unknown-code", "duplicate-code", "not-on-the-form"])
+    def test_a_preview_refuses_what_a_signature_refuses_and_writes_nothing(self, client, log,
+                                                                           overrides, said):
+        self._chart(client, "yatak-1", "platelets", 45)
+        before = len(self._all_rows(log))
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR,
+                        json={"preview": True, "overrides": overrides})
+        assert r.status_code == 400
+        assert said in r.json()["detail"]
+        assert len(self._all_rows(log)) == before
 
 
 class TestTheServerBoundsACorrection:
@@ -344,7 +405,7 @@ class TestTheRouteBoundsACorrection(_AsPeople):
     and for a signature alike — both go through the same parse — and nothing is signed."""
 
     SLIPPED = [{"code": "platelets", "value": 18000, "reason": WHY}]
-    SAID = "platelets: 18000 beklenen aralığın (0–2000) dışında — birim veya ondalık hatası olabilir"
+    SAID = "platelets: 18000 beklenen aralığın (0–5000) dışında — birim veya ondalık hatası olabilir"
 
     def test_a_slipped_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
         self._chart(client, "yatak-1", "platelets", 45)
@@ -355,8 +416,9 @@ class TestTheRouteBoundsACorrection(_AsPeople):
         assert self._signed_rows(client) == []
 
     def test_a_correction_inside_the_bound_still_previews_and_signs(self, client):
+        """The edge itself is inside: 5000, the door's platelet bound (X18)."""
         self._chart(client, "yatak-1", "platelets", 45)
-        inside = [{"code": "platelets", "value": 2000, "reason": WHY}]
+        inside = [{"code": "platelets", "value": 5000, "reason": WHY}]
         previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True, "overrides": inside})
         assert previewed.status_code == 200 and previewed.json()["total"] == 0
         signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": inside})

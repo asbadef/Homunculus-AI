@@ -363,9 +363,10 @@ class TestTheSofaFormsInputs:
         assert entry.observation.source_device == "clinician"
 
     @pytest.mark.parametrize(("code", "low", "high", "slipped"), [
-        ("platelets", 0.0, 2000.0, 15000),    # 150 typed with two zeros too many
+        ("platelets", 0.0, 5000.0, 15000),    # 150 typed with two zeros too many (X18: edge 5000)
         ("bilirubin", 0.0, 60.0, 120),        # far past any bilirubin in mg/dL
-        ("creatinine", 0.0, 30.0, 177),       # a creatinine typed in µmol/L (D11)
+        ("creatinine", 0.0, 40.0, 177),       # a creatinine typed in µmol/L (D11; X18: edge 40)
+        ("creatinine", 0.0, 40.0, 44),        # even a normal µmol/L creatinine (≥ 44) stays refused
         ("pao2_fio2", 20.0, 700.0, 4),        # a ratio worked out with FiO2 as a percentage
     ])
     def test_the_four_labs_refuse_a_slip_and_take_their_bounds(self, client, code, low, high, slipped):
