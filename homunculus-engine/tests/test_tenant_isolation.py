@@ -235,6 +235,9 @@ BY_ID: dict[str, ById] = {
     "admission patient": ById("GET", lambda s: f"/admissions/{s.admission}/patient"),
     "care-team list": ById("GET", lambda s: f"/admissions/{s.admission}/care-team"),
     "sign-off": ById("POST", lambda s: f"/admissions/{s.admission}/sign-off", control=409),
+    # G2-B1d: the side's admission is a legacy one (made by the service, no protocol) — the
+    # caller's own gets past the tenant and unit checks to the 409 `no_protocol`.
+    "label": ById("POST", lambda s: f"/admissions/{s.admission}/label", lambda a: {"reprint": False}, 409),
     "care-team claim": ById("POST", lambda s: f"/admissions/{s.admission}/care-team/claim"),
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",

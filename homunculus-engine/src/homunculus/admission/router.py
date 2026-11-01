@@ -3,6 +3,7 @@ FastAPI routes for the patient admission workflow (§4, §5).
 
 Permission guards (see auth/permissions.py):
   * admissions.admit           open an admission
+  * admissions.admit           print an admission's protocol label (G2-B1d)
   * admissions.view            list / read admissions, patients and care teams
   * admissions.sign_off        physician sign-off
   * admissions.move.initiate   initiate a transfer or discharge
@@ -54,16 +55,17 @@ from homunculus.admission.models import (
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
     AdmitResponse, AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
-    EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign,
-    NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
+    EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign, LabelAsk,
+    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
     TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, REQUEST_CONFLICT,
+    BED_CLOSED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL, REQUEST_CONFLICT,
     TRANSFER_UNAVAILABLE, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.boardkey import board_key
+from homunculus.protocol.models import ProtocolSettings
 from homunculus.protocol.numbers import next_protocol_no
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
@@ -767,6 +769,56 @@ async def sign_off(
     trail.record(request, hospital, "admission.sign_off", patient_id=number,
                  payload={"admission_id": str(written.id), "actor": actor})
     return written
+
+
+# ---------------------------------------------------------------------------
+# The protocol label (Group 2 · B1d, spec §6)
+# ---------------------------------------------------------------------------
+#: The label a tenant with no settings row prints (spec D6): 50×30 mm, 203 dpi.
+_DEFAULT_LABEL = LabelSettings(width_mm=50, height_mm=30, printer_dpi=203)
+
+
+@router.post("/{admission_id}/label", response_model=LabelResponse)
+async def admission_label(
+    admission_id: uuid.UUID,
+    request: Request,
+    payload: LabelAsk | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("admissions.admit")),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    """G2-B1d (spec §6, D11): the label's fields, for a holder of `admissions.admit` whose units
+    hold the admission's bed (the unit is the bed's room's, A-12). An admission without a protocol
+    (one opened before 0015) has no label: 409 `no_protocol`. A discharged admission's label can
+    still be printed (amendment A-2), audited like any other. Every print is audited
+    `admission.label_print` — who, the admission, its protocol, `reprint` — never the name, after
+    the read (it never raises, A-26). Nothing is written in the database."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    if admission.protocol_no is None:
+        raise Refusal(409, NO_PROTOCOL, "This admission has no protocol number, so no label.").http()
+    name, born, sex, bed_label, unit_name = (await db.execute(
+        select(Patient.display_name, Patient.date_of_birth, Patient.sex, Bed.label, Unit.name)
+        .select_from(Admission)
+        .join(Patient, Patient.id == Admission.patient_id)
+        .join(Bed, Bed.id == Admission.bed_id)
+        .join(Room, Room.id == Bed.room_id)
+        .join(Unit, Unit.id == Room.unit_id)
+        .where(Admission.id == admission.id))).one()
+    settings = await db.get(ProtocolSettings, caller_tenant)
+    label = _DEFAULT_LABEL if settings is None else LabelSettings(
+        width_mm=settings.label_width_mm, height_mm=settings.label_height_mm,
+        printer_dpi=settings.printer_dpi)
+    answer = LabelResponse(protocol_no=admission.protocol_no, display_name=name,
+                           date_of_birth=born, sex=sex, unit_name=unit_name, bed_label=bed_label,
+                           label=label)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    reprint, actor = bool(payload and payload.reprint), user.username
+    await db.commit()
+    trail.record(request, hospital, "admission.label_print", patient_id=answer.protocol_no,
+                 payload={"admission_id": str(admission.id), "protocol_no": answer.protocol_no,
+                          "reprint": reprint, "actor": actor})
+    return answer
 
 
 # ---------------------------------------------------------------------------

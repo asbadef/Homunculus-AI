@@ -83,6 +83,7 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("GET", "/admissions/{admission_id}/patient"): ANY("admissions.view"),
     ("GET", "/admissions/{admission_id}/care-team"): ANY("admissions.view"),
     ("POST", "/admissions/{admission_id}/sign-off"): ANY("admissions.sign_off"),
+    ("POST", "/admissions/{admission_id}/label"): ANY("admissions.admit"),     # G2-B1d
     ("POST", "/admissions/{admission_id}/care-team/claim"): ANY("care_team.claim"),
     ("POST", "/admissions/{admission_id}/care-team"): ANY("care_team.assign"),
     ("POST", "/admissions/{admission_id}/transfer/initiate"):
@@ -216,7 +217,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 61
+    assert len(EXPECTED) == 62
 
 
 def test_no_guarded_route_is_missing_from_the_table():

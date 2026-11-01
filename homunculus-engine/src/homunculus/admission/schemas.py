@@ -296,6 +296,31 @@ class AdmissionDetail(AdmissionResponse):
     board_key: str
 
 
+class LabelAsk(BaseModel):
+    """POST /admissions/{id}/label (G2-B1d, spec §6): a first print or a reprint."""
+    model_config = ConfigDict(extra="forbid")
+
+    reprint: bool = Field(default=False, strict=True)
+
+
+class LabelSettings(BaseModel):
+    width_mm: int
+    height_mm: int
+    printer_dpi: int
+
+
+class LabelResponse(BaseModel):
+    """Exactly what the label prints (spec §6): the protocol, the FULL name — paper is never
+    masked — birth date, sex, the unit and the bed; and the tenant's label settings."""
+    protocol_no: str
+    display_name: str
+    date_of_birth: str
+    sex: str
+    unit_name: str
+    bed_label: str
+    label: LabelSettings
+
+
 #: The patient's retirement from the alert world at a discharge (A-11d, A-25): `ok`; `incomplete`
 #: when the app's door was entered and raised after the tombstone was written — a removal frame
 #: may or may not have gone out, and a read of the board leaves the card off either way; `failed`
