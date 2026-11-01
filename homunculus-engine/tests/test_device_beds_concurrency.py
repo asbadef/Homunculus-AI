@@ -67,11 +67,13 @@ def _unbind(client, ward, source, device_row, confirm=False):
 
 def _said(response) -> str:
     """A response in one comparable phrase: `changed`, `changed, replaced <source>`, `unchanged`, `patched` (Yapı's
-    PATCH of a bed answered 200), or `<status> <code>`."""
+    PATCH of a bed answered 200), or `<status> <code>`. `patched` is a positive test: the body carries the fields every
+    `BedResponse` carries (`tenant.schemas`), so a field a bind's answer or the PATCH's gains later reclassifies nothing;
+    any other 200 body must be a bind's or unbind's, and a body that is neither raises on its missing `changed`."""
     body = response.json()
     if response.status_code != 200:
         return f"{response.status_code} {body['detail']['code']}"
-    if "changed" not in body:
+    if {"id", "room_id", "label", "state"} <= body.keys():
         return PATCHED
     if not body["changed"]:
         return SAME
