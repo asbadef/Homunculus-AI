@@ -254,3 +254,60 @@ class TestTheFormKnowsItsLastSignature(_AsPeople):
         last = client.get("/scores/sofa/yatak-1", headers=NURSE).json()["last_signed"]
         assert last["signed_by"] == "dr.elif"
         assert client.get("/audit?patient_id=yatak-1", headers=NURSE).status_code == 403
+
+
+class TestPreviewSignsNothing(_AsPeople):
+    """G2-A4 (D6): `preview: true` answers with the form a signature would seal — re-scored by the engine
+    from the same corrections — and writes nothing, so a clinician sees the exact number before she puts
+    her name to it and the server stays the only scorer. Every refusal of signing holds for it."""
+
+    def test_the_preview_is_the_rebuilt_form_and_no_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
+            "preview": True, "overrides": [{"code": "platelets", "value": 180, "reason": WHY}]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["preview"] is True and body["signed"] is False
+        assert body["total"] == 0 and body["auto_total"] == 3
+        assert body["overrides"] == [{"code": "platelets", "value": 180, "reason": WHY, "original": 45}]
+        assert body["form"]["auto_total"] == 3 and body["form"]["signed"] is False
+        assert body["form"]["corrected_cells"] == ["platelets"]
+        assert self._signed_rows(client) == []
+
+    def test_signing_the_same_corrections_seals_the_previewed_total(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        overrides = [{"code": "platelets", "value": 80, "reason": WHY}]
+        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR,
+                                json={"preview": True, "overrides": overrides}).json()
+        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": overrides}).json()
+        assert signed["signed"] is True and signed["total"] == previewed["total"] == 2
+        rows = self._signed_rows(client)
+        assert len(rows) == 1 and rows[0]["payload"]["total"] == 2
+
+    def test_a_short_reason_is_refused_for_a_preview_as_for_a_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={
+            "preview": True, "overrides": [{"code": "platelets", "value": 180, "reason": "yanlis"}]})
+        assert r.status_code == 400
+        assert "gerekçe" in r.json()["detail"]
+        assert self._signed_rows(client) == []
+
+    def test_the_bridge_token_cannot_preview(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post("/scores/sofa/yatak-1", headers=AUTH, json={"preview": True})
+        assert r.status_code == 403
+        assert r.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"
+
+    def test_a_nurse_without_scores_sign_cannot_preview(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post("/scores/sofa/yatak-1", headers=NURSE, json={"preview": True})
+        assert r.status_code == 403
+        assert r.json()["detail"] == "permission required: scores.sign"
+
+    def test_preview_must_be_a_real_yes_or_no(self, client):
+        """X2: a "true" string read as false would SIGN a form its sender meant only to look at."""
+        self._chart(client, "yatak-1", "platelets", 45)
+        r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": "true"})
+        assert r.status_code == 400
+        assert "preview" in r.json()["detail"]
+        assert self._signed_rows(client) == []

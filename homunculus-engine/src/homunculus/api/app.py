@@ -1517,6 +1517,12 @@ def create_app(
         if caller.is_device:
             raise HTTPException(status_code=403,
                                 detail="skor formunu yalnız bir kişi imzalayabilir")
+        # G2-A4 (D6, X2): `preview: true` asks what a signature WOULD seal. Only a real boolean: a "true"
+        # string read as false would sign a form its sender meant only to look at — refused here, after
+        # the permission and the device refusals and before anything is read.
+        preview = body.get("preview", False)
+        if not isinstance(preview, bool):
+            raise HTTPException(status_code=400, detail="preview true ya da false olmalı")
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
         state = _score_state(hospital, patient_id)
@@ -1540,6 +1546,15 @@ def create_app(
             signed = sign_score(auto, rebuilt, signed_by=signed_by, overrides=overrides, now=now)
         except ScoreSigningError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        if preview:
+            # G2-A4 (D6, X3): the form a signature would seal — the same parsing, the same re-scoring and
+            # every refusal above, `sign_score`'s unnamed signer included — and NO audit row, because
+            # nothing was signed. The screen shows this number, then signs with the same corrections;
+            # the engine stays the only scorer.
+            return {"preview": True, "signed": False, "total": rebuilt.total,
+                    "auto_total": auto.total, "overrides": [o.as_dict() for o in overrides],
+                    "form": {**rebuilt.as_dict(), "auto_total": auto.total}}
 
         audit.append(AuditEvent(hospital, "score_signed", patient_id, "SOFA", {
             "total": signed.total,
