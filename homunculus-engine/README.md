@@ -15,9 +15,11 @@ No patient data. Synthetic scenarios only.
 
 ## Database time bounds
 
-The audit, the identity store and the monitor samples reach Postgres through a sync driver
-(psycopg2) from the API's event loop, so each engine is bounded (`bounded_connect_args` in
-`src/homunculus/api/audit_postgres.py`; spec `docs/superpowers/specs/2026-11-01-pg-sinirlari-design.md`):
+The audit, the identity store, the monitor samples and the device→bed table (`PostgresDeviceBeds`,
+`src/homunculus/api/device_beds_postgres.py`, which the monitor strip and Aşama B read at most every
+10 s) reach Postgres through a sync driver (psycopg2) from the API's event loop, so each engine is
+bounded (`bounded_connect_args` in `src/homunculus/api/audit_postgres.py`; spec
+`docs/superpowers/specs/2026-11-01-pg-sinirlari-design.md`):
 
 - connect 3 s, pool checkout 3 s;
 - TCP keepalives, the first probe after 10 s idle and then every 5 s, with `tcp_user_timeout` 4 s.
@@ -26,19 +28,21 @@ The audit, the identity store and the monitor samples reach Postgres through a s
   `keepalives_count` (3) has no effect there. Elsewhere `tcp_user_timeout` does not exist, and the
   count applies where the system supports it;
 - a statement timeout per engine: 10 s for the audit's appends (two statements each) and 2 s for the
-  identity store and the samples' appends. The long statements set their own for their transaction
-  (`SET LOCAL`): 30 s for the audit's reads (`/audit`, `/audit/verify`, the alarm-quality report, a
-  restart's replay), 30 s for the samples' replay of up to 24 h of a ward and 60 s for their hourly
-  prune, which runs off the loop. `/audit/verify` reads at most 50 000 records and says
-  `complete: false` when the trail holds more.
+  identity store, the samples' appends and the device→bed table's read. The long statements set
+  their own for their transaction (`SET LOCAL`): 30 s for the audit's reads (`/audit`,
+  `/audit/verify`, the alarm-quality report, a restart's replay), 30 s for the samples' replay of up
+  to 24 h of a ward and 60 s for their hourly prune, which runs off the loop. `/audit/verify` reads
+  at most 50 000 records and says `complete: false` when the trail holds more.
 
 A timeout fails the call like any database error. An audit write that times out answers 500; it is
 never skipped, retried quietly or queued, because an event the trail does not hold must not be
 answered as done. `/ack` and the profile route write their row before they change anything in
 memory, so a failed write leaves the alert unacknowledged (still escalating) and the profile unset.
 An escalation is paged at least once: a key counts as paged only after its row and its note, so a
-failure can cost a second page, never a lost one. At shutdown the API returns every store's
-connections.
+failure can cost a second page, never a lost one. A device→bed read that times out or fails is the
+table's `invalid` state: every monitor shows as unassigned until a later read succeeds (the next
+try comes at most 10 s later), and no last good mapping is kept. At shutdown the API returns every
+store's connections, the device→bed table's included.
 
 **Known limits.**
 
