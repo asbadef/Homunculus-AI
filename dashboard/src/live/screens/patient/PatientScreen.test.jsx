@@ -9,6 +9,7 @@ import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, point, trends } from "./trends/trends.testutil.js";
+import { sofaForm } from "./sofa/sofa.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -55,15 +56,16 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the three things it writes", async () => {
+  it("names the bed and the patient, and says the four things it writes and that the SOFA form is signed too", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/üç şey yazır/);
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması və dərman \/ maye qeydi/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/dörd şey yazır/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi və SOFA formasından daxil edilən ölçmələr/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/scores\.sign/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -354,12 +356,16 @@ describe("the patient screen", () => {
       expect(document.querySelector("[data-trends-box]")).not.toBeNull();
     });
 
-    it("keep the forms seam as one note, which no longer promises the patient's normal", async () => {
-      await open({ payload: board([entry("S-001", [], FULL)]) });
-      const seam = screen.getByText(/növbəti qrupda əlavə olunacaq/).closest("[role='note']");
-      expect(seam).not.toBeNull();
-      expect(seam).toHaveTextContent(/SOFA/);
-      expect(seam).not.toHaveTextContent(/norma/);
+    // G2-A4 (D1): the forms seam is gone; the SOFA box stands where it stood and reads THIS patient's form.
+    it("the SOFA box stands where the forms note stood: after the Sepsis and medication row, before the trends", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), setup: (a) => a.severityForm.mockResolvedValue(sofaForm()) });
+      const sofa = screen.getByRole("heading", { level: 2, name: "SOFA forması" });
+      const meds = screen.getByRole("heading", { level: 2, name: /Dərman/ });
+      const trends = screen.getByRole("heading", { level: 2, name: "Vital qrafikləri" });
+      expect(meds.compareDocumentPosition(sofa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(sofa.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText(/növbəti qrupda əlavə olunacaq/)).toBeNull();
+      expect(api.severityForm).toHaveBeenCalledWith("S-001");
     });
 
     it("read the 24-hour trends of the patient the screen shows", async () => {
