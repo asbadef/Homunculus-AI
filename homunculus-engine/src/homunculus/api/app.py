@@ -41,7 +41,8 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    ClinicalEntryError, build_entries, chart_observations, profile_from_payload, profile_to_payload,
+    PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
+    profile_to_payload,
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -1536,7 +1537,10 @@ def create_app(
         # clinician is signing. The difference is the audit trail of the correction.
         auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
         try:
-            overrides = parse_overrides(body.get("overrides"), auto)
+            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
+            # preview and a signature alike, both parsed here. The dashboard mirrors them (X7); this is
+            # the guard.
+            overrides = parse_overrides(body.get("overrides"), auto, bounds=PLAUSIBLE)
         except ScoreSigningError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 

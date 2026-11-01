@@ -311,3 +311,54 @@ class TestPreviewSignsNothing(_AsPeople):
         assert r.status_code == 400
         assert "preview" in r.json()["detail"]
         assert self._signed_rows(client) == []
+
+
+class TestTheServerBoundsACorrection:
+    """G2-A4 (O6): a corrected value is held to the same slip bounds the charting door holds a charted
+    one to, in the door's words (api/clinical.py `_value`). `scoring` does not import `api`: the bounds
+    are passed in, and without them only a finite number is required, as before."""
+
+    BOUNDS = {SignalCode.PLATELETS: (0.0, 2000.0)}
+
+    def test_without_bounds_any_finite_value_is_a_correction(self):
+        [override] = parse_overrides([{"code": "platelets", "value": 18000, "reason": WHY}], _form())
+        assert override.value == 18000
+
+    def test_a_value_outside_its_bound_is_refused_in_the_doors_words(self):
+        with pytest.raises(ScoreSigningError) as caught:
+            parse_overrides([{"code": "platelets", "value": 18000, "reason": WHY}], _form(),
+                            bounds=self.BOUNDS)
+        assert str(caught.value) == ("platelets: 18000 beklenen aralığın (0–2000) dışında — "
+                                     "birim veya ondalık hatası olabilir")
+
+    def test_a_value_inside_its_bound_and_a_code_with_none_are_corrections(self):
+        form = sofa_form.build(_state([(SignalCode.PLATELETS, 45, 6), (SignalCode.MAP, 60, 2)]), T0)
+        overrides = parse_overrides([{"code": "platelets", "value": 2000, "reason": WHY},
+                                     {"code": "map", "value": 900, "reason": WHY}],
+                                    form, bounds=self.BOUNDS)
+        assert [o.value for o in overrides] == [2000, 900]
+
+
+class TestTheRouteBoundsACorrection(_AsPeople):
+    """G2-A4 (O6): the route passes the door's PLAUSIBLE, so a slipped correction is refused for a preview
+    and for a signature alike — both go through the same parse — and nothing is signed."""
+
+    SLIPPED = [{"code": "platelets", "value": 18000, "reason": WHY}]
+    SAID = "platelets: 18000 beklenen aralığın (0–2000) dışında — birim veya ondalık hatası olabilir"
+
+    def test_a_slipped_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        for body in ({"preview": True, "overrides": self.SLIPPED}, {"overrides": self.SLIPPED}):
+            r = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json=body)
+            assert r.status_code == 400, body
+            assert r.json()["detail"] == self.SAID
+        assert self._signed_rows(client) == []
+
+    def test_a_correction_inside_the_bound_still_previews_and_signs(self, client):
+        self._chart(client, "yatak-1", "platelets", 45)
+        inside = [{"code": "platelets", "value": 2000, "reason": WHY}]
+        previewed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"preview": True, "overrides": inside})
+        assert previewed.status_code == 200 and previewed.json()["total"] == 0
+        signed = client.post("/scores/sofa/yatak-1", headers=DOCTOR, json={"overrides": inside})
+        assert signed.status_code == 200 and signed.json()["total"] == 0
+        assert len(self._signed_rows(client)) == 1

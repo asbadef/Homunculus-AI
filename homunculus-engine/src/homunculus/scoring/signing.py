@@ -30,6 +30,7 @@ signing requires an identified clinician and is recorded as its own event.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -82,12 +83,19 @@ class SignedScore:
         }
 
 
-def parse_overrides(payload: object, form: SofaForm) -> list[Override]:
+def parse_overrides(payload: object, form: SofaForm, *,
+                    bounds: Mapping[SignalCode, tuple[float, float]] | None = None) -> list[Override]:
     """Read the corrections out of a signing request, refusing the ones that are not corrections.
 
     Each entry is `{code, value, reason}`. The original value is looked up from the form rather
     than taken from the caller — a client that could state both would be free to state a false
     "original" and make an override look like agreement.
+
+    `bounds` (G2-A4, O6) are the slip bounds a value of each code is held to, `{code: (low, high)}`.
+    A corrected value is typed by the same hand as a charted one and slips the same way, and the
+    engine is the only scorer, so the bound cannot live only in a browser. The caller passes them —
+    the API passes the charting door's `PLAUSIBLE` — because this module does not import the API.
+    Without them only a finite number is required, as before.
     """
     if payload in (None, "", [], {}):
         return []
@@ -124,6 +132,14 @@ def parse_overrides(payload: object, form: SofaForm) -> list[Override]:
             raise ScoreSigningError(f"{raw_code}: değer sayı olmalı") from None
         if value != value or value in (float("inf"), float("-inf")):
             raise ScoreSigningError(f"{raw_code}: geçersiz sayı")
+        # G2-A4 (O6): the door's slip bound, in the door's words (api/clinical.py `_value`) — a platelet
+        # count corrected to 18000 is the same slipped digit whether it was charted or typed over the record.
+        span = (bounds or {}).get(code)
+        if span is not None and not span[0] <= value <= span[1]:
+            low, high = span
+            raise ScoreSigningError(
+                f"{raw_code}: {value:g} beklenen aralığın ({low:g}–{high:g}) dışında — "
+                f"birim veya ondalık hatası olabilir")
 
         reason = str(entry.get("reason") or "").strip()
         if len(reason) < MIN_REASON_CHARS:
