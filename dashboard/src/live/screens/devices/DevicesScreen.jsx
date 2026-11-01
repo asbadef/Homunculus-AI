@@ -18,6 +18,10 @@ import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf, reasonKey } from "../common/monitor.js";
+// G2-ESLEME: the monitor→bed editor, above the strips (spec §3.1)
+import { useSession } from "../../session/SessionProvider.jsx";
+import { canSeeMapping, verifiedText } from "./deviceMap.js";
+import { MappingSection } from "./MappingSection.jsx";
 
 /** A device with no patient in it: whatever the answer carried about a link is not drawn here. */
 const withoutPatient = (card) => ({ ...card, patient_id: null, link: "hidden", link_reason: null });
@@ -31,7 +35,7 @@ function Device({ card, assigned, view }) {
         <p className="m-0 mt-1 font-data text-11.5 text-mute">{t("monitor.deviceAddress", { source: card.source, group: card.group })}</p>
         {assigned ? (
           <p className="m-0 text-11.5 text-mute">
-            {t("monitor.deviceRow", { method: t(`monitor.method.${card.method}`), verified: card.verified_at ?? "—" })}
+            {t("monitor.deviceRow", { method: t(`monitor.method.${card.method}`), verified: verifiedText(card.verified_at) })}
           </p>
         ) : (
           <p className="m-0 text-11.5 font-semibold text-att-ink">{t(reasonKey(card.reason))}</p>
@@ -89,6 +93,7 @@ function Strip({ shadow }) {
 
 export function DevicesScreen() {
   const { t } = useI18n();
+  const { user } = useSession();
   const shadow = useShadow();
   const { data, phase } = shadow;
   let body = null;
@@ -103,6 +108,7 @@ export function DevicesScreen() {
         <h1 className="m-0 font-display text-23 font-bold">{t("nav.devices")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
+      {canSeeMapping(user?.perms) ? <MappingSection /> : null}
       {body}
     </div>
   );

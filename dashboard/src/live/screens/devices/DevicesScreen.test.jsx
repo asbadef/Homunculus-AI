@@ -19,6 +19,7 @@ async function open(answer, perms = ["devices.manage"]) {
   const mounted = await mount(<DevicesScreen />, {
     access: token({ perms }), me: profile({ perms }),
     setup: (api) => {
+      api.deviceBeds.mockResolvedValue({ stage: "shadow", generated_at: "2026-10-30T09:00:00+00:00", can_bind: false, devices: [] });
       if (answer instanceof Error) api.shadowBoard.mockRejectedValue(answer);
       else api.shadowBoard.mockResolvedValue(answer);
     },
@@ -95,7 +96,11 @@ describe("the monitor screen", () => {
 
   it("heads each device one level under the screen's own heading", async () => {
     await open(WARD);
-    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(4);
+    // The four strips, and (G2-ESLEME) the monitor–bed section above them, which is a level-2 heading too.
+    const [section, ...strips] = screen.getAllByRole("heading", { level: 2 });
+    expect(section).toHaveTextContent("Monitor–çarpayı uyğunlaşdırması");
+    expect(strips).toHaveLength(4);
+    for (const heading of strips) expect(heading.closest("[data-monitor-strip]")).not.toBeNull();
     expect(screen.queryAllByRole("heading", { level: 3 })).toEqual([]);
   });
 
@@ -124,6 +129,34 @@ describe("the monitor screen", () => {
     await open(new Error("down"));
     expect(screen.getByText("Monitor zolağı oxunmur")).toBeInTheDocument();
     expect(screen.queryByText(/Alınan göndəriş/)).toBeNull();
+  });
+
+  it("shows the monitor–bed section to a charge nurse holding devices.map_beds", async () => {
+    await open(WARD, ["devices.map_beds", "board.view"]);
+    expect(screen.getByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeTruthy();
+  });
+
+  it("puts the monitor–bed section above the strips, and leaves it out for a session holding neither key", async () => {
+    await open(WARD);
+    const section = screen.getByRole("region", { name: "Monitor–çarpayı uyğunlaşdırması" });
+    expect(section.compareDocumentPosition(document.querySelector("[data-monitor-strip]")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    const mounted = await open(WARD, ["board.view"]);
+    expect(screen.queryByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeNull();
+    expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
+  });
+
+  it("prints a strip's method line with an editor row's time in local time and a v2 date as written", async () => {
+    await open(strip({ beds: [
+      bed("REA-01 · 2", [], { method: "editor", verified_at: "2026-10-30T09:12:03.120000+00:00" }),
+      bed("REA-01 · 5", [], { method: "central_station_list", verified_at: "2026-09-22" }),
+      bed("REA-01 · 6", [], { method: "both", verified_at: null }),
+    ] }));
+    const lines = screen.getAllByText(/^Cədvəldə: /).map((p) => p.textContent);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/^Cədvəldə: tətbiqdə əl ilə uyğunlaşdırma · yoxlama 2026-10-30 \d{2}:\d{2}$/);
+    expect(lines[1]).toBe("Cədvəldə: mərkəzi stansiya siyahısı · yoxlama 2026-09-22");
+    expect(lines[2]).toBe("Cədvəldə: siyahı və ekran · yoxlama —");
   });
 });
 

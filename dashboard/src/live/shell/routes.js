@@ -77,7 +77,7 @@ export const ROUTES = Object.freeze([
   // Aşama A (Decision 12): the monitors for the people who own the device→bed table — biomedical and
   // the vendor's support group sign in to this alone; it shows no patient.
   route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
-    perms: ["devices.manage"], work: true, nav: "main" }),
+    perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main" }),   // G2-ESLEME: + the editor's key
 
   // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits, confirms a discharge or
   // releases a bed. After the board's screens in the table, so nobody's home moves.
