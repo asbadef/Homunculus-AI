@@ -251,6 +251,8 @@ class AdmissionResponse(BaseModel):
     discharge_reported_by: str | None = None
     discharge_at: datetime | None = None
     discharge_note: str | None = None
+    # Group 2 · B1d: the protocol number, the card key of a new admission; None on a legacy one.
+    protocol_no: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -267,9 +269,11 @@ class EngineWrites(BaseModel):
 
 
 class AdmitResponse(AdmissionResponse):
-    """POST /admissions: the admission, the patient number the nurse enters on the device, and
-    which of the engine writes landed."""
+    """POST /admissions: the admission, its numbers — `board_key` is the card's and what the nurse
+    enters or scans on the device (the protocol number, G2-B1d; `patient_number` is the H-number,
+    issued apart, D2) — and which of the engine writes landed."""
     patient_number: str
+    board_key: str
     engine: EngineWrites
 
 

@@ -42,6 +42,7 @@ from homunculus.admission.models import (
     Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
 from homunculus.admission.numbers import next_patient_number
+from homunculus.protocol.models import ProtocolSettings
 from homunculus.auth.dependencies import caller_tenant_id
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import create_access_token, decode_token
@@ -103,6 +104,8 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     db.add(tenant)
     await db.flush()
     groups = await ensure_default_groups(db, tenant.id)
+    # G2-B1d (spec D5): the controls admit through the route, which needs a start number (E9).
+    db.add(ProtocolSettings(tenant_id=tenant.id, next_no=202600000001))
     admin = await add_user(db, username=f"admin@{slug}.example.com", tenant_id=tenant.id,
                            group=groups["hospital_admin"])
     nurse = await add_user(db, username=f"nurse@{slug}.example.com", tenant_id=tenant.id,

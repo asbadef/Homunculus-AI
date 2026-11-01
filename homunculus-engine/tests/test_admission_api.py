@@ -88,17 +88,19 @@ async def test_an_admission_is_written_numbered_and_put_on_the_board(ward, db_se
     assert all(value.startswith("enc::") for value in raw)        # encrypted at rest
 
     (card,) = (await client.get("/patients", headers=BOARD)).json()["patients"]
-    assert card["patient_id"] == body["patient_number"]
+    assert card["patient_id"] == body["board_key"]
     assert (card["identity"]["bed_id"], card["identity"]["unit_id"]) == (str(bed_id), str(unit_id))
     assert (card["identity"]["bed_label"], card["identity"]["display_name"]) == ("1", "Sentetik Hasta")
     assert card["meds"]["weight_kg"] == 72.5
     engine = app.state.board_link._engine(SLUG)
-    assert engine.profile(body["patient_number"]).comorbidities == frozenset({"copd"})
+    assert engine.profile(body["board_key"]).comorbidities == frozenset({"copd"})
 
     rows = [r for r in app.state.audit.records(tenant=SLUG, limit=50) if r.event_type == "admission.admit"]
-    assert [r.patient_id for r in rows] == [body["patient_number"]]
+    assert [r.patient_id for r in rows] == [body["board_key"]]
     assert rows[0].payload == {"admission_id": body["id"], "bed_id": str(bed_id),
-                               "unit_id": str(unit_id), "actor": "nurse@kabul.example.com"}
+                               "unit_id": str(unit_id), "actor": "nurse@kabul.example.com",
+                               "protocol_no": body["protocol_no"],
+                               "patient_number": body["patient_number"]}
     assert "Sentetik" not in repr([r.payload for r in app.state.audit.records(tenant=SLUG, limit=50)])
 
 
@@ -317,7 +319,7 @@ async def test_an_audit_store_failing_after_the_commit_still_admits_and_logs(war
                  if rec.name == "homunculus.admission.trail" and rec.levelno == logging.ERROR]
     message = logged.getMessage()
     assert "admission.admit" in message and r.json()["id"] in message, message
-    assert r.json()["patient_number"] in message and "nurse@kabul.example.com" in message, message
+    assert r.json()["board_key"] in message and "nurse@kabul.example.com" in message, message
     assert "Sentetik" not in message, message
 
 
@@ -339,10 +341,10 @@ async def test_a_read_back_that_fails_after_the_commit_still_audits_and_admits(
 
     (row,) = [rec for rec in app.state.audit.records(tenant=SLUG, limit=50)
               if rec.event_type == "admission.admit"]
-    assert (row.patient_id, row.payload["admission_id"]) == (r.json()["patient_number"], r.json()["id"])
+    assert (row.patient_id, row.payload["admission_id"]) == (r.json()["board_key"], r.json()["id"])
     stored = await db_session.get(Admission, uuid.UUID(r.json()["id"]))
     assert stored is not None and stored.state.value == r.json()["state"] == "DRAFT"
-    assert any(r.json()["patient_number"] in rec.getMessage() for rec in caplog.records
+    assert any(r.json()["board_key"] in rec.getMessage() for rec in caplog.records
                if rec.levelno == logging.ERROR and rec.name == "homunculus.admission.router")
 
 
@@ -363,7 +365,7 @@ async def test_without_a_board_link_the_asked_parts_are_failed_never_skipped(
     assert r.json()["engine"] == {"weight": "skipped", "profile": "skipped", "board": "failed"}
     errors = [rec.getMessage() for rec in caplog.records
               if rec.levelno == logging.ERROR and rec.name == "homunculus.admission.router"]
-    assert len(errors) == 2 and r.json()["patient_number"] in errors[1], errors
+    assert len(errors) == 2 and r.json()["board_key"] in errors[1], errors
 
 
 # ---------------------------------------------------------------- A-26: the bed lock's strength
@@ -460,12 +462,12 @@ async def test_a_resend_after_a_lost_answer_gives_the_same_number_and_puts_the_c
     with pytest.raises(RuntimeError, match="lost on the way"):
         await client.post("/admissions", json=body, headers=w.auth["nurse"])
     monkeypatch.setattr(admission_router, "_to_board", to_board)
-    (number,) = (await db_session.execute(select(Patient.patient_number))).scalars()
+    (number,) = (await db_session.execute(select(Admission.protocol_no))).scalars()
     assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
 
     again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
     assert again.status_code == 200, again.text
-    assert again.json()["patient_number"] == number
+    assert again.json()["board_key"] == number
     assert again.json()["engine"] == {"weight": "failed", "profile": "ok", "board": "ok"}
     assert (await _count(db_session, Patient), await _count(db_session, Admission)) == (1, 1)
 
@@ -522,7 +524,7 @@ async def test_a_discharge_landing_while_a_resend_writes_the_card_again_keeps_th
     w, client, app = ward
     body = form(w, request_id=uuid.uuid4())
     await _lose_the_first_answer(client, monkeypatch, w, body)
-    (number,) = (await db_session.execute(select(Patient.patient_number))).scalars()
+    (number,) = (await db_session.execute(select(Admission.protocol_no))).scalars()
 
     reached, gate = asyncio.Event(), asyncio.Event()
     attempt = admission_router._attempt
@@ -570,7 +572,7 @@ async def test_the_admission_and_a_resends_retry_reach_the_shadow_lanes_hooks(wa
     assert heard == [("reset", SLUG), ("mirror", SLUG, "weight_kg", 72.5),
                      ("profile", SLUG, frozenset({"copd"}))]
     frame = queue.get_nowait()                                   # the card on its bed
-    assert frame["patient_id"] == r.json()["patient_number"]
+    assert frame["patient_id"] == r.json()["board_key"]
     assert "shadow" in frame and frame["shadow"] is None
 
     heard.clear()
@@ -679,7 +681,7 @@ async def test_a_resend_that_waits_too_long_answers_the_asked_parts_failed_and_s
         first.json()["engine"]                          # the resend recorded nothing over it
     warned = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING
               and rec.name == "homunculus.admission.router"]
-    assert any(first.json()["patient_number"] in m for m in warned), warned
+    assert any(first.json()["board_key"] in m for m in warned), warned
     assert not any("Sentetik" in m for m in warned), warned
 
 
@@ -735,6 +737,8 @@ async def test_a_request_conflict_names_no_admission_outside_the_callers_units(w
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "request_conflict")
     assert "patient_number" not in r.json()["detail"]
     assert first.json()["patient_number"] not in r.text
+    assert first.json()["board_key"] not in r.text
+    assert "board_key" not in r.json()["detail"]
 
 
 async def test_forms_without_a_request_id_or_each_with_its_own_all_admit(ward, db_session):
@@ -873,6 +877,8 @@ async def test_a_duplicate_names_no_admission_outside_the_callers_units(ward, db
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "duplicate_open_admission")
     assert "patient_number" not in r.json()["detail"]
     assert first.json()["patient_number"] not in r.text
+    assert first.json()["board_key"] not in r.text
+    assert "board_key" not in r.json()["detail"]
     assert await _count(db_session, Admission) == 1
 
 

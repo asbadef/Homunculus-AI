@@ -63,6 +63,8 @@ from homunculus.admission.errors import (
     TRANSFER_UNAVAILABLE, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
+from homunculus.admission.boardkey import board_key
+from homunculus.protocol.numbers import next_protocol_no
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
 from homunculus.auth.dependencies import caller_tenant_id, require_permission
@@ -206,10 +208,11 @@ async def _attempt(number: str, what: str, write) -> EngineWrite:
         return "failed"
 
 
-def _card(*, number: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
+def _card(*, key: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
           bed_id: uuid.UUID, unit_id: uuid.UUID) -> IdentityRecord:
-    """The admission's board identity: the card on its bed (`kabul_record`)."""
-    return kabul_record(patient_number=number, display_name=display_name,
+    """The admission's board identity: the card on its bed (`kabul_record`), under its board key
+    (`board_key`: the protocol number; a legacy admission's H-number)."""
+    return kabul_record(patient_number=key, display_name=display_name,
                         birth_date=date.fromisoformat(date_of_birth), sex=sex,
                         bed_label=bed_label, bed_id=str(bed_id), unit_id=str(unit_id),
                         at=datetime.now(timezone.utc))
@@ -221,26 +224,25 @@ async def _to_board(request: Request, hospital: str, *, card: dict, note: Admiss
     each on its own. One that does not land leaves the admission standing and is reported, so the
     screen can say which part to enter by hand (X53). `chart_weight` and `apply_profile` raise on
     any failure, an unwired door included (A-20, A-23, A-25). An app built without its BoardLink
-    reached nothing: the parts asked for are `failed`, logged at ERROR. Logged with the patient
-    number, never a name.
+    reached nothing: the parts asked for are `failed`, logged at ERROR. Logged with the board key,
+    never a name.
 
     `card` is `_card`'s keywords as plain values, taken before the commit: nothing here reads the
     session, which a failure after the commit may have rolled back (and so expired)."""
-    number = card["number"]
+    key = card["key"]
     link = board_link_of(request)
     if link is None:
         log.error("admission %s: this app has no BoardLink; the card, the weight and the "
-                  "comorbidities did not reach the engine", number)
+                  "comorbidities did not reach the engine", key)
         return _not_reached(weight_asked=note.weight_kg is not None,
                             profile_asked=bool(note.comorbidity_codes))
-    board = await _attempt(number, "identity",
+    board = await _attempt(key, "identity",
                            lambda: link.put_identity(hospital, _card(**card)))
     weight = ("skipped" if note.weight_kg is None else await _attempt(
-        number, "weight", lambda: link.chart_weight(hospital, number, note.weight_kg,
-                                                    actor=actor)))
+        key, "weight", lambda: link.chart_weight(hospital, key, note.weight_kg, actor=actor)))
     profile = ("skipped" if not note.comorbidity_codes else await _attempt(
-        number, "profile", lambda: link.apply_profile(hospital, number, note.comorbidity_codes,
-                                                      actor=actor)))
+        key, "profile", lambda: link.apply_profile(hospital, key, note.comorbidity_codes,
+                                                   actor=actor)))
     return EngineWrites(weight=weight, profile=profile, board=board)
 
 
@@ -267,10 +269,10 @@ async def _earlier(db: AsyncSession, tenant_id: uuid.UUID,
 
 
 async def _open_admission_of(db: AsyncSession, tenant_id: uuid.UUID, identity: str):
-    """The patient number, bed and unit (the bed's room's, A-12) of the open admission of the
-    person `identity` names (`form.identity_digest`) in the tenant, if she has one (A-37)."""
+    """The patient number, protocol, bed and unit (the bed's room's, A-12) of the open admission
+    of the person `identity` names (`form.identity_digest`) in the tenant, if she has one (A-37)."""
     return (await db.execute(
-        select(Patient.patient_number, Admission.bed_id, Room.unit_id)
+        select(Patient.patient_number, Admission.protocol_no, Admission.bed_id, Room.unit_id)
         .select_from(Admission)
         .join(Patient, Patient.id == Admission.patient_id)
         .join(Bed, Bed.id == Admission.bed_id)
@@ -290,7 +292,13 @@ def _duplicate(found, reach: Scope) -> Refusal:
                                                     bed_id=found.bed_id)
     return Refusal(409, DUPLICATE_OPEN_ADMISSION, "This person already has an open admission: "
                    "it is discharged before another is opened.",
-                   extra={"patient_number": found.patient_number} if known else None)
+                   extra=_numbers(found.patient_number, found.protocol_no) if known else None)
+
+
+def _numbers(patient_number: str, protocol_no: str | None) -> dict:
+    """What a refusal names an admission by, beside its code (E6): its H-number and its board key
+    — the number the screen sends the nurse to look for. Never a name."""
+    return {"patient_number": patient_number, "board_key": board_key(protocol_no, patient_number)}
 
 
 def _broken_constraint(exc: IntegrityError) -> str | None:
@@ -314,28 +322,29 @@ async def _board_again(db: AsyncSession, request: Request, hospital: str, admiss
     `failed` and the nurse checks it. Only for an admission still open — a discharged or
     transferred one keeps the board it has. The transaction is ended before the writes."""
     row = (await db.execute(
-        select(Admission.state, Admission.comorbidity_codes, Patient.patient_number,
-               Patient.display_name, Patient.date_of_birth, Patient.sex, Bed.id, Bed.label,
-               Room.unit_id)
+        select(Admission.state, Admission.comorbidity_codes, Admission.protocol_no,
+               Patient.patient_number, Patient.display_name, Patient.date_of_birth, Patient.sex,
+               Bed.id, Bed.label, Room.unit_id)
         .join(Patient, Patient.id == Admission.patient_id)
         .join(Bed, Bed.id == Admission.bed_id)
         .join(Room, Room.id == Bed.room_id)
         .where(Admission.id == admission_id))).one()
     await db.commit()
-    state, codes, number, display_name, date_of_birth, sex, bed_id, bed_label, unit_id = row
+    (state, codes, protocol_no, number, display_name, date_of_birth, sex, bed_id, bed_label,
+     unit_id) = row
+    key = board_key(protocol_no, number)
     link = board_link_of(request)
     if state not in OPEN_ADMISSION_STATES or link is None:
         log.error("admission %s (%s): its board writes are not known and are not written again "
-                  "(%s)", number, state.value, "no BoardLink" if link is None else "not open")
+                  "(%s)", key, state.value, "no BoardLink" if link is None else "not open")
         return _not_reached(weight_asked=weight_asked, profile_asked=bool(codes))
     log.warning("admission %s: its first send stopped before the board; the card and the "
-                "comorbidities are written again, the weight is not", number)
-    board = await _attempt(number, "identity (again)", lambda: link.put_identity(hospital, _card(
-        number=number, display_name=display_name, date_of_birth=date_of_birth, sex=sex,
+                "comorbidities are written again, the weight is not", key)
+    board = await _attempt(key, "identity (again)", lambda: link.put_identity(hospital, _card(
+        key=key, display_name=display_name, date_of_birth=date_of_birth, sex=sex,
         bed_label=bed_label, bed_id=bed_id, unit_id=unit_id)))
     profile = ("skipped" if not codes else await _attempt(
-        number, "profile (again)", lambda: link.apply_profile(hospital, number, codes,
-                                                              actor=actor)))
+        key, "profile (again)", lambda: link.apply_profile(hospital, key, codes, actor=actor)))
     return EngineWrites(weight="failed" if weight_asked else "skipped", profile=profile,
                         board=board)
 
@@ -404,16 +413,17 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
                                     .where(Bed.id == earlier.bed_id))).scalar_one()
         known = unitscope.reaches(reach, unit_id=unit_id, bed_id=earlier.bed_id)
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
-                      "form.", extra={"patient_number": number} if known else None).http()
+                      "form.", extra=_numbers(number, earlier.protocol_no) if known else None).http()
     first = AdmissionResponse.model_validate(earlier)
+    key = board_key(earlier.protocol_no, number)
     admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
     profile_asked = bool(earlier.comorbidity_codes)
     await db.commit()                  # no transaction, and no pooled connection, while it waits
-    engine = await _engine_of(db, request, hospital, admission_id, number,
+    engine = await _engine_of(db, request, hospital, admission_id, key,
                               weight_asked=weight_asked, profile_asked=profile_asked, actor=actor)
-    log.info("admission %s: the same form sent again, answered with its admission", number)
+    log.info("admission %s: the same form sent again, answered with its admission", key)
     response.status_code = status.HTTP_200_OK
-    return AdmitResponse(**first.model_dump(), patient_number=number, engine=engine)
+    return AdmitResponse(**first.model_dump(), patient_number=number, board_key=key, engine=engine)
 
 
 @router.post("", response_model=AdmitResponse, status_code=201,
@@ -428,9 +438,11 @@ async def create_admission(
 ):
     """Group 2 · B1a (spec §3.1): one request, one transaction. The form is checked
     (admission/form.py) against the hospital's own date; the bed row is locked and must be in the
-    unit the form names, in the caller's units, open and AVAILABLE; the patient gets a fresh
-    number (admission/numbers.py); the admission is DRAFT and the bed OCCUPIED. After the commit
-    the board gets its card and the engine the weight and the comorbidities (`_to_board`); the
+    unit the form names, in the caller's units, open and AVAILABLE; the admission takes the
+    tenant's next protocol number (protocol/numbers.py — none set: `protocol_not_configured`,
+    G2-B1d D5) and the patient a fresh H-number (admission/numbers.py); the admission is DRAFT and
+    the bed OCCUPIED. After the commit the board gets its card under the admission's board key
+    (the protocol, `board_key`) and the engine the weight and the comorbidities (`_to_board`); the
     answer says which of those landed.
 
     A form sent again under its `request_id` (A-19) is looked for once the bed is locked — a second
@@ -481,6 +493,9 @@ async def create_admission(
             raise _duplicate(found, reach)
         if not (bed.is_active and room.is_active and unit.is_active):
             raise Refusal(409, BED_CLOSED, "The bed, its room or its unit is closed.")
+        # G2-B1d (spec §3, D1, D5): the protocol first, then the H-number — one lock order for
+        # every admission. No start number set: `protocol_not_configured`, nothing written.
+        protocol_no = await next_protocol_no(db, caller_tenant)
         number = await next_patient_number(db, caller_tenant, now=now)
     except Refusal as exc:
         raise exc.http() from None
@@ -509,6 +524,7 @@ async def create_admission(
         admission = await service.create_draft_admission(
             db, tenant_id=caller_tenant, patient=patient, note_fields=note,
             request_id=payload.request_id, request_digest=digest, identity_digest=identity,
+            protocol_no=protocol_no,
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -527,28 +543,31 @@ async def create_admission(
     # Everything the answer, the audit row and the card need is taken before the commit, as plain
     # values: what can still fail after it (reading the row back, the board) loses none of them.
     admission_id, written = admission.id, AdmissionResponse.model_validate(admission)
-    card = {"number": number, "display_name": patient.display_name,
+    key = board_key(protocol_no, number)
+    card = {"key": key, "display_name": patient.display_name,
             "date_of_birth": patient.date_of_birth, "sex": patient.sex, "bed_label": bed.label,
             "bed_id": bed.id, "unit_id": unit.id}
     # Registered before the commit, so a send of the same form that sees this admission sees it.
     answered = _ANSWERING[admission_id] = asyncio.Event()
     try:
         await db.commit()
-        trail.record(request, hospital, "admission.admit", patient_id=number,
+        # E4: the row's patient is the card's key; both numbers stay on record, never a name.
+        trail.record(request, hospital, "admission.admit", patient_id=key,
                      payload={"admission_id": str(admission_id), "bed_id": str(card["bed_id"]),
-                              "unit_id": str(card["unit_id"]), "actor": actor})
+                              "unit_id": str(card["unit_id"]), "actor": actor,
+                              "protocol_no": protocol_no, "patient_number": number})
         try:
             # Read back, so this answer and a resend's (read from the row) are the same body.
             await db.refresh(admission)
             written = AdmissionResponse.model_validate(admission)
             await db.commit()        # no transaction held across the board writes
         except Exception:  # noqa: BLE001 — the admission and its audit row are written already
-            log.exception("admission %s: committed, but not read back; answered as written",
-                          number)
+            log.exception("admission %s: committed, but not read back; answered as written", key)
             with suppress(Exception):
                 await db.rollback()
         engine = await _to_board(request, hospital, card=card, note=payload.note, actor=actor)
-        answer = AdmitResponse(**written.model_dump(), patient_number=number, engine=engine)
+        answer = AdmitResponse(**written.model_dump(), patient_number=number, board_key=key,
+                               engine=engine)
         await _keep_report(db, admission_id, engine)
     finally:
         answered.set()

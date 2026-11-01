@@ -84,6 +84,7 @@ async def create_draft_admission(
     request_id: uuid.UUID | None = None,
     request_digest: str | None = None,
     identity_digest: str | None = None,
+    protocol_no: str | None = None,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
@@ -128,6 +129,7 @@ async def create_draft_admission(
         request_id=request_id,
         request_digest=request_digest,
         identity_digest=identity_digest,
+        protocol_no=protocol_no,             # G2-B1d: issued by the route, in this transaction
         **note_fields,
     )
     if admission.admission_datetime is None:
