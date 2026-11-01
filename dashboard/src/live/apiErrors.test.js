@@ -518,6 +518,16 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
       expect(legacy).toContain("xəstə nömrəsi H2600042");
     });
 
+  // Task 13/14 review F-4 (A-1): the server refuses 000000000000 as a start number with the same code as a
+  // number of the wrong shape, so that one text must say both rules — twelve digits AND at least 000000000001.
+  it.each([
+    ["tr", /12 rakam/], ["az", /12 rəqəm/], ["ru", /12 цифр/], ["en", /12 digits/],
+  ])("protocol_format says twelve digits and at least 000000000001 in %s", (lang, twelve) => {
+    const text = apiErrorText(createTranslator(lang, DICTIONARIES), coded("protocol_format"));
+    expect(text).toMatch(twelve);
+    expect(text).toContain("000000000001");
+  });
+
   // Task 12 review F-2: admissionCodeKey asks WITH_NUMBER `.has(code)` and then WITH_PROTOCOL `.get(code)`;
   // a code in one map alone would answer `key: undefined` for the other kind of number.
   it("the protocol and number refusal maps carry the same codes", () => {
