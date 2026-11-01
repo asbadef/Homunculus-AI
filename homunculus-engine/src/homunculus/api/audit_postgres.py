@@ -41,6 +41,49 @@ def to_sync_url(url: str) -> str:
     return url
 
 
+# Time bounds for every sync engine the API calls on its event loop (spec 2026-11-01, D1). A
+# database that accepts a connection and then says nothing — an overloaded container, a lock held
+# by a migration, a half-open connection — would otherwise hold the loop, and every request of the
+# API with it, until the operating system's TCP timeout: minutes in which nothing reaches the
+# ward's screens. libpq applies each of these; psycopg2 passes them through.
+#
+# A connection not made in 3 s is not coming: the database answers a healthy start in milliseconds.
+CONNECT_TIMEOUT_S = 3
+# An idle pooled connection whose peer has gone is found by keepalives rather than by the next
+# request: the first probe after 10 s of silence, then one every 5 s, dead after 3 unanswered.
+KEEPALIVES_IDLE_S = 10
+KEEPALIVES_INTERVAL_S = 5
+KEEPALIVES_COUNT = 3
+# Data sent and not acknowledged for 4 s drops the connection — the value Lane B's device-bed
+# reader already uses. Linux only; libpq ignores it where the socket option does not exist.
+TCP_USER_TIMEOUT_MS = 4000
+
+
+def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> dict:
+    """libpq's connection arguments for one store's engine: the bounds above, the store's own
+    statement timeout, and `sslmode=require` when the deployment asks for TLS (DATABASE_SSL).
+
+    The statement timeout is the server's to enforce, so it bounds a slow query, not a server that
+    cannot run one (spec D5). It must be a positive whole number of milliseconds: Postgres reads 0
+    as no timeout at all, which would quietly lift the bound this exists to set."""
+    if (isinstance(statement_timeout_ms, bool) or not isinstance(statement_timeout_ms, int)
+            or statement_timeout_ms <= 0):
+        raise ValueError(
+            f"statement_timeout_ms must be a positive integer, not {statement_timeout_ms!r}")
+    args: dict = {
+        "connect_timeout": CONNECT_TIMEOUT_S,
+        "options": f"-c statement_timeout={statement_timeout_ms}",
+        "keepalives": 1,
+        "keepalives_idle": KEEPALIVES_IDLE_S,
+        "keepalives_interval": KEEPALIVES_INTERVAL_S,
+        "keepalives_count": KEEPALIVES_COUNT,
+        "tcp_user_timeout": TCP_USER_TIMEOUT_MS,
+    }
+    if ssl_required:
+        args["sslmode"] = "require"
+    return args
+
+
 class PostgresAuditLog:
     """Durable append-only audit. Same surface as InMemoryAuditLog / SqliteAuditLog."""
 
