@@ -2,15 +2,18 @@
 // a second step naming the patient only as «Ahmet Y.», each time beside the bed's label; unbind; mapping_changed
 // reloads; refusals by code and beside the bed they concern; no UUID, no patient number, no name anywhere
 // but that second step. Synthetic patients only; the screen speaks az (the default).
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { board, entry, identity } from "../../data/board.testutil.js";
-import { BED, expectNoUuid, settle, toasts } from "../kabul/kabul.testutil.js";
+import { BED, UUID_TEXT, expectNoUuid, settle, structure, toasts } from "../kabul/kabul.testutil.js";
 import { device, list, mountMapping, onBed } from "./esleme.testutil.js";
-import { MappingDialog } from "./MappingDialog.jsx";
+import { ARM_MS, MappingDialog } from "./MappingDialog.jsx";
 import { MappingSection } from "./MappingSection.jsx";
 
+// Fake timers throughout: a step's primary button is held for ARM_MS after the step opens (A-21 C1), and the
+// tests move the clock instead of waiting. `settle` and the section's poll work under them (the poll test does too).
+beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); localStorage.clear(); });
 
 const WARD = list([
@@ -47,15 +50,26 @@ async function open(name, setup, patients = [AHMET]) {
   return { ...mounted, dialog: () => screen.getByRole("dialog") };
 }
 
-async function pickAndConfirm(dialog, bed) {
+const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const arm = () => tick(ARM_MS);                         // the step's primary button is armed after this
+
+// Pick a bed and go to the confirmation. `arm` is false for a test about the window itself; the others want the
+// confirmation ready to be confirmed.
+async function pickAndConfirm(dialog, bed, { armed = true } = {}) {
   fireEvent.click(within(dialog()).getByRole("radio", { name: new RegExp(`^${bed}`) }));
   fireEvent.click(within(dialog()).getByRole("button", { name: "Davam" }));
   await settle();
+  if (armed) await arm();
 }
 
-const press = async (dialog, name) => {
-  fireEvent.click(within(dialog()).getByRole("button", { name }));
+// A press as a nurse makes it once she has read the step: the window has passed. `click` is the press alone.
+const click = async (dialog, name, init) => {
+  fireEvent.click(within(dialog()).getByRole("button", { name }), init);
   await settle();
+};
+const press = async (dialog, name) => {
+  await arm();
+  await click(dialog, name);
 };
 
 // The real dialog on its own, as MappingSection mounts it: `onDone(text, fresh)` ends a change, `onClose` leaves it.
@@ -77,9 +91,44 @@ describe("the monitor–bed dialog", () => {
     expect(d.getByRole("heading", { name: "Çarpayı seçin — 192.0.2.13" })).toBeTruthy();
     expect(d.getByRole("radio", { name: /^1 · Otaq 1 · Reanimasiya.*monitor: 192\.0\.2\.11 \(BED05\)/ })).toBeTruthy();
     expect(d.getByRole("radio", { name: /^2 · Otaq 1 · Reanimasiya.*dolu/ })).toBeTruthy();
-    expect(d.getByRole("radio", { name: /^4 · Otaq 1 · Reanimasiya.*bağlı/ }).disabled).toBe(true);
-    expect(d.getByRole("radio", { name: /^N1 · N-1 · Neonatal.*bağlı/ }).disabled).toBe(true);   // its unit is closed
+    expect(d.getByRole("radio", { name: /^4 · Otaq 1 · Reanimasiya.*çarpayı bağlıdır/ }).disabled).toBe(true);
+    expect(d.getByRole("radio", { name: /^N1 · N-1 · Neonatal.*şöbə bağlıdır/ }).disabled).toBe(true);   // its unit is closed
     expectNoUuid();
+  });
+
+  // Spec §3.3: a closed bed, room or unit is dimmed WITH the reason, and the reason says which of the three it is.
+  it("says why a bed cannot be picked: the bed, its room or its unit is closed", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      const closedRoom = structure();
+      closedRoom.sites[0].units[0].rooms[1].is_active = false;                                    // Otaq 2 and its bed 5
+      a.structure.mockResolvedValue(closedRoom);
+    });
+    const d = within(dialog());
+    const name = (re) => d.getByRole("radio", { name: re });
+    expect(name(/^4 · Otaq 1 · Reanimasiya.*çarpayı bağlıdır/).disabled).toBe(true);
+    expect(name(/^5 · Otaq 2 · Reanimasiya.*otaq bağlıdır/).disabled).toBe(true);
+    expect(name(/^N1 · N-1 · Neonatal.*şöbə bağlıdır/).disabled).toBe(true);
+    expect(name(/^4 · Otaq 1/).getAttribute("name")).toBe("esleme-bed");                           // still the one radio group
+    expect(d.getByRole("radio", { name: /^1 · Otaq 1/ }).closest("label").textContent).not.toMatch(/bağlıdır/);   // an open bed says nothing
+    expect(d.getByRole("radio", { name: /^N1/ }).closest("label").textContent).not.toMatch(/çarpayı bağlıdır|otaq bağlıdır/);
+  });
+
+  // «dolu» is the structure's state with a patient on it, pending departures included; a bed that is merely
+  // not free for another reason (housekeeping, maintenance) is not «dolu». Information only: the server decides.
+  it("marks OCCUPIED and both PENDING states «dolu», and no other state", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      const ward = structure();
+      const [first, second] = ward.sites[0].units[0].rooms;
+      first.beds[0].state = "MAINTENANCE";                     // bed 1
+      first.beds[2].state = "PENDING_DISCHARGE";               // bed 3 (was HOUSEKEEPING)
+      second.beds[0].state = "PENDING_TRANSFER_OUT";           // bed 5
+      a.structure.mockResolvedValue(ward);
+    });
+    const d = within(dialog());
+    for (const bed of ["2 · Otaq 1", "3 · Otaq 1", "5 · Otaq 2"]) {
+      expect(d.getByRole("radio", { name: new RegExp(`^${bed}.*dolu`) }), bed).toBeTruthy();
+    }
+    expect(d.getByRole("radio", { name: /^1 · Otaq 1/ }).closest("label").textContent).not.toMatch(/dolu/);
   });
 
   it("holds «Davam» until a bed is picked, and lists the beds in the order a reader sees them", async () => {
@@ -146,8 +195,7 @@ describe("the monitor–bed dialog", () => {
     expect(document.activeElement).toBe(within(dialog()).getByRole("button", { name: "İmtina" }));
     expect(document.body.textContent).not.toMatch(/H2600042|Yılmaz/);
     expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);                  // the second step is its own confirm
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Bəli, davam et" }));
-    await settle();
+    await press(dialog, "Bəli, davam et");
     expect(api.bindDeviceBed).toHaveBeenCalledTimes(2);
     expect(api.bindDeviceBed.mock.calls[1][0]).toEqual({ source: "192.0.2.13", bed_id: BED(2), confirm_occupied: true,
       expected: { device_row_id: null, bed_row_id: null } });
@@ -245,8 +293,7 @@ describe("the monitor–bed dialog", () => {
     });
     expect(within(dialog()).getByText("192.0.2.11 (BED05) ilə 1 · Otaq 1 · Reanimasiya arasındakı bağlantı kəsiləcək.")).toBeTruthy();
     expect(api.unbindDeviceBed).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Təsdiqlə" }));
-    await settle();
+    await press(dialog, "Təsdiqlə");
     expect(api.unbindDeviceBed).toHaveBeenCalledWith({ source: "192.0.2.11", confirm_occupied: false,
       expected: { device_row_id: 1 } });
     expect(toasts().getAllByText("192.0.2.11 (BED05) bağlantısı kəsildi").length).toBeGreaterThan(0);
@@ -272,6 +319,13 @@ describe("the monitor–bed dialog", () => {
     expectNoUuid();
     expect(document.body.textContent).not.toContain("H2600042");
   });
+
+  // Not only the text and the names: a bed's id sat in each radio's `value`, where no reader sees it but the DOM
+  // holds it (Task 18 review, m4).
+  it("holds no UUID anywhere in the page's markup while a bed is being picked", async () => {
+    await open("Çarpayıya qoş: 192.0.2.13");
+    expect(document.body.innerHTML).not.toMatch(UUID_TEXT);
+  });
 });
 
 describe("refusals", () => {
@@ -279,8 +333,7 @@ describe("refusals", () => {
     const { dialog, api } = await open("Bağlantını kəs: 192.0.2.11 (BED05)", (a) => {
       a.unbindDeviceBed.mockRejectedValue(refusal("mapping_changed"));
     });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Təsdiqlə" }));
-    await settle();
+    await press(dialog, "Təsdiqlə");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.deviceBeds.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText(/Bu arada dəyişdi/).length).toBeGreaterThan(0);
@@ -363,14 +416,172 @@ describe("refusals", () => {
   });
 });
 
+// A-21 C1. The footer's primary button keeps its right edge from step to step, so a double-click lands its second
+// click on the button the first click's step has just put there: «Davam» → «Təsdiqlə», «Təsdiqlə» → «Bəli, davam
+// et» (which would skip the explicit confirmation for an admitted patient), and the row's button → the unbind's
+// «Təsdiqlə». Each step's primary is held for ARM_MS after the step opens; a click that is part of a multi-click is
+// ignored whenever it comes. Keyboard use (detail 0) is unaffected once the window has passed.
+describe("the arming window", () => {
+  const held = (dialog, name) => within(dialog()).getByRole("button", { name }).getAttribute("aria-disabled") === "true";
+  const bound = () => ({ changed: true, replaced_source: null, list: WARD });
+  const occupiedAt2 = () => refusal("bed_occupied", { occupied: [{ bed_id: BED(2), patient_id: "H2600042" }] });
+
+  it("is 600 ms", () => {
+    expect(ARM_MS).toBe(600);
+  });
+
+  it("holds «Təsdiqlə» after «Davam»: the second click of a double-click sends nothing; the nurse confirms after the window", async () => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => { a.bindDeviceBed.mockResolvedValue(bound()); });
+    await pickAndConfirm(dialog, "5 · Otaq 2", { armed: false });
+    expect(held(dialog, "Təsdiqlə")).toBe(true);
+    await click(dialog, "Təsdiqlə");                                     // the second click of a double-click
+    expect(api.bindDeviceBed).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await tick(ARM_MS - 1);
+    expect(held(dialog, "Təsdiqlə")).toBe(true);
+    await click(dialog, "Təsdiqlə");
+    expect(api.bindDeviceBed).not.toHaveBeenCalled();
+    await tick(1);
+    expect(held(dialog, "Təsdiqlə")).toBe(false);
+    await click(dialog, "Təsdiqlə");
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds «Bəli, davam et» after the server asks, though «Təsdiqlə» had been armed: no skipping the explicit confirmation", async () => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValueOnce(occupiedAt2()).mockResolvedValueOnce(bound());
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    expect(held(dialog, "Təsdiqlə")).toBe(false);
+    await click(dialog, "Təsdiqlə");                                     // armed: the server asks, the second step opens
+    expect(held(dialog, "Bəli, davam et")).toBe(true);
+    await click(dialog, "Bəli, davam et");                               // the second click of a double-click
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await arm();
+    expect(held(dialog, "Bəli, davam et")).toBe(false);
+    await click(dialog, "Bəli, davam et");
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(2);
+    expect(api.bindDeviceBed.mock.calls[1][0].confirm_occupied).toBe(true);
+  });
+
+  it("starts an unbind's confirmation held: the row's button that opened it is under the same cursor", async () => {
+    const { dialog, api } = await open("Bağlantını kəs: 192.0.2.11 (BED05)", (a) => {
+      a.unbindDeviceBed.mockResolvedValue(bound());
+    });
+    expect(held(dialog, "Təsdiqlə")).toBe(true);
+    await click(dialog, "Təsdiqlə");
+    expect(api.unbindDeviceBed).not.toHaveBeenCalled();
+    await arm();
+    expect(held(dialog, "Təsdiqlə")).toBe(false);
+    await click(dialog, "Təsdiqlə");
+    expect(api.unbindDeviceBed).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a click that is part of a multi-click even when the window has passed, on the confirmation and on the second step", async () => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValueOnce(occupiedAt2()).mockResolvedValueOnce(bound());
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await click(dialog, "Təsdiqlə", { detail: 2 });
+    expect(api.bindDeviceBed).not.toHaveBeenCalled();
+    await click(dialog, "Təsdiqlə", { detail: 1 });                      // a single click goes through
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+    await arm();
+    await click(dialog, "Bəli, davam et", { detail: 3 });
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+    await click(dialog, "Bəli, davam et", { detail: 1 });
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hold «Davam», which only moves on: a bed picked, one press", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13");
+    fireEvent.click(within(dialog()).getByRole("radio", { name: /^5 · Otaq 2/ }));
+    expect(held(dialog, "Davam")).toBe(false);
+  });
+});
+
+// A-21 I1 and I2: what the nurse saw is what is sent (D10), and what a screen reader hears at each step.
+describe("what was shown is what is sent and heard", () => {
+  it("resends the rows the confirmation showed, not the ones the list has become meanwhile", async () => {
+    const meanwhile = list([WARD.devices[0], device("192.0.2.13"), device("192.0.2.15", { row_id: 7, bed: onBed(2, "2") })]);
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValueOnce(refusal("bed_occupied", { occupied: [{ bed_id: BED(2), patient_id: "H2600042" }] }))
+        .mockRejectedValueOnce(refusal("mapping_changed"));
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await click(dialog, "Təsdiqlə");                                     // bed 2 had no monitor on screen: bed_row_id null
+    expect(api.bindDeviceBed.mock.calls[0][0].expected).toEqual({ device_row_id: null, bed_row_id: null });
+    // The second step is open when another editor puts 192.0.2.15 on bed 2 and the poll brings it in.
+    api.deviceBeds.mockResolvedValue(meanwhile);
+    await tick(5000);
+    expect(api.deviceBeds.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const reads = api.deviceBeds.mock.calls.length;
+    await press(dialog, "Bəli, davam et");
+    // What went out is what the confirmation showed (no monitor on bed 2), so the server finds the change (D10)
+    // and no monitor the nurse never saw is unbound.
+    expect(api.bindDeviceBed.mock.calls[1][0].expected).toEqual({ device_row_id: null, bed_row_id: null });
+    expect(api.bindDeviceBed.mock.calls[1][0].confirm_occupied).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.deviceBeds.mock.calls.length).toBeGreaterThan(reads);
+    expect(screen.getAllByText(/Bu arada dəyişdi/).length).toBeGreaterThan(0);
+  });
+
+  it("resends an unbind's row the same way", async () => {
+    const { dialog, api } = await open("Bağlantını kəs: 192.0.2.11 (BED05)", (a) => {
+      a.unbindDeviceBed.mockRejectedValueOnce(refusal("bed_occupied", { occupied: [{ bed_id: BED(1), patient_id: "H2600043" }] }))
+        .mockResolvedValueOnce({ changed: true, replaced_source: null, list: WARD });
+    }, [AHMET, MAMMADOV]);
+    await press(dialog, "Təsdiqlə");
+    await press(dialog, "Bəli, davam et");
+    expect(api.unbindDeviceBed.mock.calls.map((c) => c[0].expected)).toEqual([{ device_row_id: 1 }, { device_row_id: 1 }]);
+  });
+
+  it("describes the confirmation, from the text region that has focus, with the bed and both monitors", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13");
+    await pickAndConfirm(dialog, "1 · Otaq 1");
+    const region = within(dialog()).getByRole("group", { name: "Təsdiqləyin" });
+    expect(document.activeElement).toBe(region);
+    expect(region).toHaveAccessibleDescription(/192\.0\.2\.13 → 1 · Otaq 1 · Reanimasiya/);
+    expect(region).toHaveAccessibleDescription(/192\.0\.2\.11 \(BED05\) bu çarpayıdan ayrılacaq\./);
+    expectNoUuid();
+  });
+
+  it("describes the second step, from the button that has focus, with the bed, the short name and what happens to the card", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValue(refusal("bed_occupied", { occupied: [{ bed_id: BED(2), patient_id: "H2600042" }] }));
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await click(dialog, "Təsdiqlə");
+    const cancel = within(dialog()).getByRole("button", { name: "İmtina" });
+    expect(document.activeElement).toBe(cancel);
+    expect(cancel).toHaveAccessibleDescription(/Çarpayıda: 2 · Otaq 1 · Reanimasiya · Ahmet Y\./);
+    expect(cancel).toHaveAccessibleDescription(/axmağa başlayacaq/);
+    expect(cancel.getAttribute("aria-describedby")).not.toMatch(UUID_TEXT);
+  });
+
+  // The refusal names no bed (an older server, or a board with nothing to show): one plain sentence. There is no
+  // bed to say "starts" or "stops" about, so it says neither (Task 18 review, m1).
+  it.each([["an empty list", { occupied: [] }], ["no list", {}]])("says only that a patient is on the bed, without a direction, for %s", async (_, extra) => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValueOnce(refusal("bed_occupied", extra)).mockResolvedValueOnce({ changed: true, replaced_source: null, list: WARD });
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await click(dialog, "Təsdiqlə");
+    expect(within(dialog()).getByText("Bu çarpayıda xəstə yatır; ikinci təsdiq lazımdır.")).toBeTruthy();
+    expect(within(dialog()).queryByText(/axmağa|axmağı/)).toBeNull();
+    await press(dialog, "Bəli, davam et");
+    expect(api.bindDeviceBed.mock.calls[1][0].confirm_occupied).toBe(true);
+  });
+});
+
 describe("while a request is out", () => {
   it("holds both buttons, ignores a second press and Escape, and ends when the answer lands", async () => {
     const out = deferred();
     const { dialog, api } = await open("Bağlantını kəs: 192.0.2.11 (BED05)", (a) => {
       a.unbindDeviceBed.mockReturnValue(out.promise);
     });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Təsdiqlə" }));
-    await settle();
+    await press(dialog, "Təsdiqlə");
     const ok = within(dialog()).getByRole("button", { name: "Təsdiqlə" });
     expect(ok.getAttribute("aria-busy")).toBe("true");
     expect(within(dialog()).getByRole("button", { name: "İmtina" }).getAttribute("aria-busy")).toBe("true");
@@ -385,16 +596,29 @@ describe("while a request is out", () => {
 });
 
 describe("keyboard and focus", () => {
-  it("cancels on Escape at every step, and sends nothing", async () => {
-    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13");
-    fireEvent.keyDown(document, { key: "Escape" });
+  it("cancels on Escape at every step — the pick, the confirmation and the occupied step — and confirms nothing", async () => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockRejectedValue(refusal("bed_occupied", { occupied: [{ bed_id: BED(2), patient_id: "H2600042" }] }));
+    });
+    fireEvent.keyDown(document, { key: "Escape" });                       // the pick
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Çarpayıya qoş: 192.0.2.13" }));
-    await settle();
-    await pickAndConfirm(dialog, "5 · Otaq 2");
-    fireEvent.keyDown(document, { key: "Escape" });
+    const reopen = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Çarpayıya qoş: 192.0.2.13" }));
+      await settle();
+    };
+    await reopen();
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    fireEvent.keyDown(document, { key: "Escape" });                       // the confirmation
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.bindDeviceBed).not.toHaveBeenCalled();
+    await reopen();
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await press(dialog, "Təsdiqlə");                                      // the server asks: the occupied step
+    expect(within(dialog()).getByRole("heading", { name: "Bu çarpayıda xəstə yatır" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);                   // the one that opened the step
+    expect(api.bindDeviceBed.mock.calls[0][0].confirm_occupied).toBe(false);
   });
 
   it("moves focus off the confirm button when «Davam» is pressed, so Enter twice cannot confirm", async () => {
