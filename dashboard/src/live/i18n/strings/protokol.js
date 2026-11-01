@@ -29,6 +29,7 @@ export default {
     testName: "DENEME ETİKETİ",
     invalid: {
       nextNo: "12 rakam girin.",
+      nextNoZero: "Başlangıç numarası en az 000000000001 olmalı.",
       size: "Genişlik 30–110 mm, yükseklik 20–80 mm olmalı.",
       tooNarrow: "Barkod bu genişliğe sığmaz: en az {min} mm gerekir.",
     },
@@ -81,6 +82,7 @@ export default {
     testName: "SINAQ ETİKETİ",
     invalid: {
       nextNo: "12 rəqəm daxil edin.",
+      nextNoZero: "Başlanğıc nömrəsi ən azı 000000000001 olmalıdır.",
       size: "En 30–110 mm, hündürlük 20–80 mm olmalıdır.",
       tooNarrow: "Barkod bu enə sığmır: ən azı {min} mm lazımdır.",
     },
@@ -133,6 +135,7 @@ export default {
     testName: "ПРОБНАЯ ЭТИКЕТКА",
     invalid: {
       nextNo: "Введите 12 цифр.",
+      nextNoZero: "Начальный номер — не менее 000000000001.",
       size: "Ширина 30–110 мм, высота 20–80 мм.",
       tooNarrow: "Штрихкод не помещается в эту ширину: нужно не менее {min} мм.",
     },
@@ -185,6 +188,7 @@ export default {
     testName: "TEST LABEL",
     invalid: {
       nextNo: "Enter 12 digits.",
+      nextNoZero: "The start number must be at least 000000000001.",
       size: "Width 30–110 mm, height 20–80 mm.",
       tooNarrow: "The barcode does not fit this width: at least {min} mm is needed.",
     },

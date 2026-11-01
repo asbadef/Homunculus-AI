@@ -5,6 +5,7 @@
 //   Roles            G1-13   `groups.manage`                     /admin/groups, /admin/permissions
 //   Sign-in source   G1-14   `users.manage` (reading)            /admin/ldap/*
 //   Structure        G2-B1a  `structure.manage`                  /tenant/structure, /tenant/*
+//   Protocol, label  G2-B1d  `structure.manage`                  /admin/protocol-settings
 //
 // THE TAB IS HELD IN STATE, NOT IN THE ADDRESS. The hash belongs to the router, and a query inside
 // it belongs to the screen (`routes.js hashPath`) — but reading one would need a second
@@ -37,6 +38,8 @@ import { SourceTab } from "./SourceTab.jsx";
 
 import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
 
+import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
+
 const TAB_ID = "admin";
 
 /** Each read's name, for the Alert that says which one failed. Written out, never built from the
@@ -58,6 +61,9 @@ export const TABS = Object.freeze([
 
   // G2-B1a — Yönetim › Yapı: the ward's sites, units, rooms and beds
   Object.freeze({ id: "structure", perm: "structure.manage", labelKey: "kabul.structureTab" }),
+
+  // G2-B1d — Yönetim › Protokol ve etiket: the next protocol number and the label (spec D11)
+  Object.freeze({ id: "protocol", perm: "structure.manage", labelKey: "protokol.tab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -75,6 +81,8 @@ const TAB_SCREENS = Object.freeze({
   source: SourceTab, //   G1-14
 
   structure: StructureTab, // G2-B1a
+
+  protocol: ProtocolTab, // G2-B1d
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */
