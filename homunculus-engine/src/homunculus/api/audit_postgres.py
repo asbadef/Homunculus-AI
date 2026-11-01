@@ -50,12 +50,16 @@ def to_sync_url(url: str) -> str:
 # A connection not made in 3 s is not coming: the database answers a healthy start in milliseconds.
 CONNECT_TIMEOUT_S = 3
 # An idle pooled connection whose peer has gone is found by keepalives rather than by the next
-# request: the first probe after 10 s of silence, then one every 5 s, dead after 3 unanswered.
+# request: the first probe after 10 s of silence, then one every 5 s. On Linux TCP_USER_TIMEOUT
+# (below) overrides the count: the connection is dropped at about idle + interval (≈15 s), after the
+# first unanswered probe, and KEEPALIVES_COUNT has no effect there. Where TCP_USER_TIMEOUT does not
+# exist, the count applies if the system supports it: dead after 3 unanswered.
 KEEPALIVES_IDLE_S = 10
 KEEPALIVES_INTERVAL_S = 5
 KEEPALIVES_COUNT = 3
 # Data sent and not acknowledged for 4 s drops the connection — the value Lane B's device-bed
-# reader already uses. Linux only; libpq ignores it where the socket option does not exist.
+# reader already uses — and on Linux it also decides when keepalive gives up (above). Linux only;
+# libpq ignores it where the socket option does not exist.
 TCP_USER_TIMEOUT_MS = 4000
 # Not libpq's but the pool's (D2): a checkout waits at most 3 s for a free connection, so a pool
 # held by stalled queries fails the next request instead of queueing it behind them.
