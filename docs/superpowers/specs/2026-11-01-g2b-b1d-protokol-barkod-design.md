@@ -97,6 +97,11 @@ for that purpose any more:
   responses, which gain `protocol_no` and `board_key`. The `admission.admit` audit row gains `protocol_no`.
 - **`scope/service.py` `read_own_patient_ids`:** the care team's "own patients" list includes the key.
 - **`scope/resolver.py` `break_glass_in_tenant`:** D9.
+- **Lane B's editor `devicebeds/service.py` `_patient_of`** (not on main yet): it reads the open admission on a bed
+  and returns and audits `patient_id` = `Patient.patient_number`, which the dialog uses to find the card and show
+  «Ahmet Y.». It uses `board_key` after B1d. Whichever of the two slices lands second adapts it, with a test (Lane B,
+  2026-11-01). Lane A's `app.py` `_occupants_now` reads kabul records by `bed_id`. The record's own key is the card
+  key, so it needs no change; the plan confirms this in a test.
 - **Dashboard:** every match between an admission and a card uses `board_key`: `BedsScreen.jsx` `draftNumbers`,
   `DischargeTab.jsx`, `SignOffStrip.jsx`, and `AdmitTab.jsx`'s result box.
 
@@ -127,6 +132,9 @@ Connex Spot ─(typed / scanned id)→ NCE ─QBP^Q22→ bridge :2575 answer_que
    - `None`, `is_tombstone(record)`, or a HIS record in state discharged → `{"found": false}`.
    - Otherwise → `{"found": true, "family", "given", "birth_date", "sex"}`. A Comed-fed record is answered the same way.
    - `id` must be a non-empty string of at most 64 characters (`400`). Exact match only: no list, no prefix, no search.
+   - **Any exception** from `identities.get` or `is_tombstone` → `503`, never `{"found": false}`. After Lane A's bounds
+     slice (`fix/pg-bounds`), the Postgres store raises `OperationalError` within a few seconds on a stalled
+     database. "We cannot answer" must not look like "patient unknown" (Lane A, 2026-11-01).
 2. **Bridge (`edge/bridge.py` `answer_query`).** It asks the API first, through a small client (`edge/pdq_client.py`,
    new; the URL is derived from `--cloud-url` + `/edge/patient-query`, with the `--token` already used for `/ingest`):
    - **found** → `RSP^K22` with `MSA|AA`, `QAK|…|OK` and the field-complete `PID|||id||name||dob|sex`, the name always
