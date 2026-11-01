@@ -422,7 +422,11 @@ def test_every_other_refusal_has_a_stable_code():
                      "patient_number_exhausted", "invalid_transition", "missing_attending",
                      "open_admission", "bed_in_use", "has_open_beds", "name_taken",
                      "bed_label_taken", "request_conflict", "board_not_cleared",
-                     "transfer_unavailable", "duplicate_open_admission"}
+                     "transfer_unavailable", "duplicate_open_admission",
+                     # G2-B1d (spec §7)
+                     "protocol_not_configured", "protocol_exhausted", "protocol_format",
+                     "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",
+                     "no_protocol"}
 
 
 # ---------------------------------------------------------------- the person (A-37)
