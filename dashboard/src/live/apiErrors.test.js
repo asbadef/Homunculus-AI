@@ -67,6 +67,9 @@ function callBody(src, open) {
 }
 
 const APP = py("api/app.py");
+// G2-A4: the charting door's one message the SOFA routes also send by name (`detail=GCS_NOT_WHOLE`).
+// Only that constant: clinical.py's other strings are units and codes, not messages.
+const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => name === "GCS_NOT_WHOLE"));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
 const ADMIN_SCHEMAS = py("admin/schemas.py");
@@ -111,6 +114,7 @@ const SOURCES = [
   // Wave 3's screens (the beds, the alarms, the patient, and the three administration tabs) talk
   // to the board, /admin, /scope and /admin/ldap, so those refusals have to be translated too.
   ...literals(APP, String.raw`detail=\s*${STR}`).map((m) => ["api/app.py detail", m]),
+  ...[...CLINICAL_MESSAGES].map(([name, text]) => [`api/clinical.py ${name}`, text]),
   ...[...pyConstants(ADMIN_SERVICE).values()].map((m) => ["admin/service.py constant", m]),
   ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+,\s*${STR}`).map((m) => ["admin/service.py AdminError", m]),
   ...[...pyConstants(ADMIN_SCHEMAS).values()].map((m) => ["admin/schemas.py constant", m]),
@@ -153,7 +157,7 @@ describe("the auth surface's messages are translated", () => {
 describe("no message site escapes the readers", () => {
   const CONSTANTS = new Set([...pyConstants(DEPS).keys(), ...pyConstants(ROUTER).keys(), ...LDAP.keys(),
     ...pyConstants(ADMIN_SERVICE).keys(), ...pyConstants(ADMIN_SCHEMAS).keys(),
-    ...pyConstants(LDAP_SERVICE).keys()]);
+    ...pyConstants(LDAP_SERVICE).keys(), ...CLINICAL_MESSAGES.keys()]);
   const DYNAMIC = [
     // [file, the first argument, how many sites, why]
     ["auth/dependencies.py", /^detail,/, 1, "_unauthorized's own parameter: every call's literal is read above"],
@@ -253,6 +257,29 @@ describe("no message site escapes the readers", () => {
 describe("apiErrorText", () => {
   const az = createTranslator("az", DICTIONARIES);
   const en = createTranslator("en", DICTIONARIES);
+
+  // G2-A4 review 2 (C1–C2): the SOFA sign route's new refusals, pinned here as well as by the sweep above,
+  // which finds them in api/app.py only once the engine's side of the round is in the same tree.
+  it("says the SOFA preview and signature refusals of the preview route's round, each saying nothing was signed", () => {
+    expect(apiErrorText(en, new Error("önizleme imza yolundan istenemez — önizleme yolunu kullanın")))
+      .toBe("A preview cannot be asked of the signing route; the form was not signed. Use the preview route.");
+    expect(apiErrorText(en, new Error("imza bir önizlemenin parmak izini ister — önce önizleyin")))
+      .toBe("A signature needs a preview's fingerprint; the form was not signed. Preview first.");
+    // Review 3 (M-5): the 409 says what moved — a new entry or the window sliding — not only "the record".
+    const moved = "form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu yeniden önizleyin";
+    expect(apiErrorText(az, Object.assign(new Error(moved), { status: 409 })))
+      .toBe("Forma öncədən baxışdan sonra dəyişib (yeni qeyd və ya pəncərənin sürüşməsi) və imzalanmayıb. Formaya yenidən öncədən baxın.");
+    expect(apiErrorText(en, Object.assign(new Error(moved), { status: 409 })))
+      .toBe("The form changed after the preview (a new entry or the window shifting) and was not signed. Preview the form again.");
+    expect(apiErrorKey(new Error("kayıt önizlemeden sonra değişti — formu yeniden önizleyin"))).toBeNull();   // the old sentence is gone
+  });
+
+  // The charting door's (api/clinical.py, through `str(exc)`, so no sweep reads it): a GCS that is not whole.
+  // The SOFA form holds one back before it is sent (sofaFields); any other client's is said in the reader's words.
+  it("says the charting door's refusal of a GCS that is not a whole number", () => {
+    expect(apiErrorText(en, new Error("GCS tam sayı olmalı"))).toBe("The GCS must be a whole number.");
+    expect(apiErrorText(az, new Error("GCS tam sayı olmalı"))).toBe("GCS tam ədəd olmalıdır.");
+  });
 
   it("translates a known message, whatever whitespace surrounds it", () => {
     expect(apiErrorText(az, new Error("  Invalid credentials \n"))).toBe("İstifadəçi adı və ya şifrə səhvdir.");

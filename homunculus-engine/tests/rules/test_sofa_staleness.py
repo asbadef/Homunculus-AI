@@ -2,7 +2,9 @@
 from datetime import datetime, timedelta, timezone
 
 from homunculus.canonical import Observation, SignalCode
-from homunculus.rules.sofa import DEFAULT_FRESHNESS, stale_inputs, stale_note
+from homunculus.rules.sofa import (
+    DEFAULT_FRESHNESS, respiration_points, stale_input_labels, stale_inputs, stale_note,
+)
 from homunculus.state.timeline import PatientState
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
@@ -50,6 +52,36 @@ def test_stale_note_empty_when_all_fresh():
 def test_stale_note_mentions_recency_and_oldest():
     note = stale_note(_state(CREATININE=30), NOW)
     assert "recency" in note.lower() and "creatinine" in note.lower()
+
+
+# --- a charted respiratory-support flag ages like the reading it qualifies (G2-A4 review) --------
+def test_a_support_flag_charted_9_h_ago_is_stale_and_1_h_ago_is_not():
+    """Since G2-A4 a clinician charts support; a "yes" charted once must not count as current for
+    ever. It is held to the PaO2/FiO2 window (~8 h), the reading it qualifies."""
+    old = _state(ON_RESP_SUPPORT=9)
+    assert SignalCode.ON_RESP_SUPPORT in stale_inputs(old, NOW)
+    assert stale_input_labels(old, NOW) == ["respiratory support"]
+    fresh = _state(ON_RESP_SUPPORT=1)
+    assert stale_inputs(fresh, NOW) == [] and stale_input_labels(fresh, NOW) == []
+
+
+def test_the_support_flag_shares_the_ratio_window():
+    assert DEFAULT_FRESHNESS[SignalCode.ON_RESP_SUPPORT] == DEFAULT_FRESHNESS[SignalCode.PAO2_FIO2]
+
+
+def test_a_stale_support_flag_is_named_in_the_note():
+    note = stale_note(_state(ON_RESP_SUPPORT=9), NOW)
+    assert "recency" in note.lower() and "respiratory support" in note
+
+
+def test_a_stale_support_flag_is_surfaced_not_dropped():
+    """Staleness only flags recency: the ratio of 150 still scores 3 on a support "yes" 9 h old."""
+    st = PatientState("bed-3")
+    st.ingest(Observation("bed-3", SignalCode.PAO2_FIO2, 150.0, "mmHg", NOW - timedelta(hours=1), "lab"))
+    st.ingest(Observation("bed-3", SignalCode.ON_RESP_SUPPORT, 1.0, "bool", NOW - timedelta(hours=9),
+                          "clinician"))
+    assert respiration_points(st) == 3
+    assert stale_input_labels(st, NOW) == ["respiratory support"]
 
 
 # --- staleness surfaced on the sepsis finding ---------------------------------------------------

@@ -170,6 +170,24 @@ class TestARestartDoesNotForget:
         rehydrate(fresh, AckStore(), [bad])   # must not raise
         assert fresh._profiles == {}
 
+    def test_a_profile_whose_row_fails_is_a_500_and_the_engine_does_not_hold_it(self):
+        """The trail before memory (spec 2026-11-01): a profile the trail does not hold is gone at
+        the next restart, so the engine takes it only once its row is written. Before, the 500 left
+        it applied — quietening a patient's alarms the clinician had been told were unchanged."""
+        from homunculus.api.audit import InMemoryAuditLog
+
+        class TimesOut(InMemoryAuditLog):
+            def append(self, event):
+                if event.event_type == "profile":
+                    raise RuntimeError("audit timed out")
+                return super().append(event)
+
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=TimesOut())
+        with TestClient(app, raise_server_exceptions=False) as c:
+            _observe(c, "bed-3", "gcs", 15)
+            assert _profile(c, "bed-3", CHRONIC_AF).status_code == 500
+            assert app.state.board_link._engine("h1").profile("bed-3") is None
+
 
 # --- Baseline SOFA: the number that raises the sepsis bar (K1) -----------------------------------
 # A charted baseline SOFA makes the sepsis alert harder to trigger. That is the whole point — and

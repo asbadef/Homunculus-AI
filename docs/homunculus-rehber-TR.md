@@ -939,7 +939,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     düzeltilirse (enfeksiyon yeniden "var" işaretlenirse) eski pencere geri gelir — düzeltme aynı
     olaydır; 15 dakikadan sonrası yeni bir pencere başlatır (yeni bir enfeksiyon eski pencereyi ve
     o sırada verilmiş dozları devralmaz).
-- *Şüpheli enfeksiyon — ekranın yazdığı üç şeyden biri* (ötekiler hastanın normali, 3.7, ve aşağıdaki vazopressör/sıvı kaydı): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+- *Şüpheli enfeksiyon — ekranın yazdığı dört şeyden biri* (ötekiler hastanın normali, 3.7, aşağıdaki vazopressör/sıvı kaydı ve SOFA formundan girilen ölçümler): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
   sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
@@ -947,8 +947,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   (yargı değişebilir; "var"dan sonra "yok" bir klinik olaydır, geri alma değil) ve basmadan önce
   bunun klinisyenin adıyla ve saatiyle denetim kaydına yazıldığını, geri alınamadığını, yalnız yeni
   bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
-  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
-  doldurup imzalamak sonraki grupta.
+  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır.
 - *Vazopressör / sıvı kaydı — ekranın yazdığı üçüncü şey* (G2-A3): `clinical.chart` yetkisi olan klinisyen İlaç ve
   antibiyotik kutusunda «Kayıt ekle»ye basar; açılan pencerede kilo (kg), vazopressör/inotrop (noradrenalin, adrenalin, dopamin,
   dobutamin) ile hızı (µg/kg/dk), kristaloid bolus (mL), «Antibiyotik verildi» ve «Kayıt saati» vardır; her alan
@@ -966,6 +965,55 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   kiloyu, antibiyotik satırını ve «Son kayıtlar» altında son on girişi (en yenisi üstte) gösterir. Servis duyurusu
   (G1-15) septik şokun vazopressör bilgisi alamadığını söylüyordu; kaydı yapılan vazopressör artık kurala girer —
   kayıt yoksa kural yine bilmez («kimse kaydetmedi» ile «verilmedi» aynı şey değildir).
+- *SOFA formu — ekranın yazdığı dördüncü şey* (G2-A4): İlaç ve antibiyotik kutusunun altındaki **SOFA formu** kutusu
+  formun toplamını, kaç organda ölçüm olmadığını ve son imzayı gösterir («İmzalandı · dr.elif · 14:05 · toplam 7»;
+  düzeltme yapılmışsa sayısı da yazar; bugünden önceki bir imzada saatin önünde gün ve ay yazar) ya da «İmzalanmadı».
+  **Bu sayı Sepsis-3 kutusundaki SOFA değildir:** o, son değerlerle hesaplanan alarm SOFA'sıdır; form son 24 saatin
+  **en kötü** değerleriyle doldurulur — ikisi aynı sayı olmak zorunda değil. «Formu aç» altı organı kaynaktaki sırayla
+  gösterir (solunum, pıhtılaşma, karaciğer, kardiyovasküler, merkezi sinir sistemi, böbrek): her girdinin en kötü
+  değeri, birimi, ölçüm saati, kaynağı ve puanı; ölçümü olmayan organda «ölçülmedi» (skor onu 0 sayar, ekran 0
+  yazmaz); 3 ve üstü puanda «≥3 puan» işareti (hastanenin basılı formunun dipnotundaki organ yetmezliği eşiği;
+  kaynağı henüz bilgi vault'una alınmadı). Hasta 24 saatten kısa süredir buradaysa form bunu söyler.
+  **Tamamlama** (`clinical.chart`): trombosit (×10³/µL), bilirubin ve kreatinin (**mg/dL**, laboratuvarın birimi —
+  ekran çevirmez; µmol/L yazılmış bir kreatinin 40'ın üstündeyse reddedilir, altındaysa reddedilmez; µmol/L bir
+  bilirubin de reddedilmeyebilir: koruma alanın yanında yazan birimdir, birimi oradan okuyun), GCS (tam sayı),
+  PaO₂/FiO₂ ve «solunum desteği» (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz
+  değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez — solunum desteği girilirken ise, satırda
+  ölçülmüş bir PaO₂/FiO₂ varsa, saat o ölçümün saatiyle gelir (alanın altında yazar; değiştirebilirsiniz): oranı
+  girip ardından «evet»i saate dokunmadan kaydetmek o oranı da destekte saydırır; kayıttan sonra form yeniden
+  okunur, puanı motor hesaplar. Solunum desteği: form her PaO₂/FiO₂ ölçümünü **kendi saatinde** geçerli olan destek kaydıyla
+  puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır», 24 saatten eski olsa da; destek kaydı yoksa
+  destekte sayılmaz — ve satıra pencerenin en kötü **puanını** alır (eşit puanda düşük oran, sonra son ölçüm):
+  destekteyken ölçülmüş 180 (3 puan), destek yokken ölçülmüş 150'nin (2 puan) önüne geçer. Ölçümden sonraki bir
+  saate girilen kayıt o ölçümü değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir.
+  Solunum satırı ölçümünün neye göre puanlandığını yazar: «Destekte puanlandı — 07:00 kaydı», «Destek dışı
+  puanlandı — 07:00 kaydı» ya da, ölçümün saatinde veya öncesinde destek kaydı yoksa, «Bu ölçümün saatinde (ya da
+  öncesinde) destek kaydı yok — destek dışı puanlandı (07:30)». Alarm SOFA'sı ise son kaydı okur
+  ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
+  **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere (ölçülmemiş bir değerin düzeltmesini motor da reddeder:
+  «ölçülmemiş bir değer düzeltilemez — ölçümü formdan girin»), doğru değer ve en az 20 karakterlik bir gerekçeyle
+  (sayaç gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
+  de geçerlidir (18000 yazılmış bir trombosit ya da 9000 yazılmış bir MAP hem önizlemede hem imzada reddedilir).
+  **Önizle, sonra imzala:** «Önizle» motorun ayrı önizleme yolundan imzalanacak formu ve onun parmak izini ister,
+  hiçbir şey yazmaz; «İmzala» yalnız o önizlemeden sonra, aynı düzeltmelerle ve o parmak iziyle çıkar (bir düzeltme
+  değişirse yeniden önizlenir; yeniden önizleme reddedilir ya da yanıt alamazsa önceki önizleme de bırakılır),
+  çıktıktan sonra kısa bir an basılamaz (hızlı bir çift tıklama imza atmasın diye);
+  imza adınızla, önizlemenin parmak iziyle birlikte denetim zincirine mühürlenir. Parmak izi şunları kapsar: hasta,
+  pencerenin uzunluğu ve kalış süresinin pencereyi doldurup doldurmadığı, toplam, her organın puanı, her girdinin
+  değeri, ölçüm saati, puanı ve pencereden önceki bir ölçüm olup olmadığı, solunum satırının destek kaydı, her
+  düzeltmenin değeri, kayıttaki değeri ve gerekçesi. Önizleme ile imza arasında bunlardan biri değiştiyse (başka biri
+  ölçüm girdiyse, 24 saatlik pencere bir ölçümün üstünden kaydıysa, imza başka bir gerekçe ya da pencereyle
+  gönderildiyse) motor **imzalamaz**: «form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu
+  yeniden önizleyin» der ve hiçbir şey yazmaz; yeniden önizler, gördüğünüzü imzalarsınız — imzalanan sayı her zaman
+  önizlenen sayıdır. Parmak izine girmeyenler: pencerenin başlangıç ve bitiş saati (her saniye kayar), bir girdinin
+  kaynağı ve pencerede kaç ölçüm bulunduğu (ekranda yazmaz). Önizlemeyi tanımayan eski bir sunucuya karşı form
+  düzeltme, önizleme ve imza sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını
+  söyler. Formu `board.view` yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır.
+  **Yapmadıkları:** Formun kendisi alarm üretmez; buradan girilen bir ölçüm hasta kaydına yazılır ve uyarı kuralları
+  (Sepsis-3 kutusu) da onu okur. İdrar çıkışı böbrek puanına katılmaz (eksik kaydedilmiş bir günün toplamı oligüri
+  gibi okunurdu); MAP formdan girilmez (kayıttan gelir — monitör henüz gerçek motoru beslemediği için çoğu hastada
+  «ölçülmedi»); vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok;
+  APACHE, PRISM ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
   numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
   kaydından çizilir (3.7).
@@ -1364,8 +1412,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     gizlenir. Bu değer hiçbir kurala girmez (gölge motor NBP'yi yalnız saatiyle alır). Hub sürümü R5,
     drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner). VM'de
     30.10.2026'dan beri çalışıyor.
-  - **Gölge öneri · alarm kapalı (Aşama B — kodda, hastanede henüz açık değil):** Aşama B
-    açıldığında şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
+  - **Gölge öneri · alarm kapalı (Aşama B — hastanede 28.10.2026'dan beri açık, aşama `rules`):**
+    Aşama B'de şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
     gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
     (NEWS2, sepsis…) monitörün doğrulanmamış değerleriyle söyleyeceği şeydir. Her yatak için,
     parametre başına dakikada bir örnek alınır (her ölçüm değil); yalnız monitörü yatağa bağlı olan
@@ -1395,6 +1443,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       kullanılır. Manşetin saati şeritteki gibi «≤» ile verilen bir üst sınırdır ve puan o saate göre
       değerlendirilir. Kart hangi kaynaktan okunduğunu yazar; kaynak değişirse (ör. HR kesilip
       PLS'e geçilirse) etiket de değişir.
+    - *HR/PLS düzeltmesi (hub sürümü R6):* 27.10'da, HR ile PLS'in farklı olduğu bir yatakta planlı
+      kayıt ve videoyla doğrulandı ki kod iki adı **ters** veriyordu. R6'ya kadar şeritteki «HR»
+      aslında SpO₂ nabzı, «PLS» EKG nabzıydı; gölge motor da nabzı önce SpO₂ probundan aldı. Çoğu
+      hastada ikisi aynıdır. R6 iki adı yer değiştirir; ondan önceki gölge örnekleri ve bulgular eski
+      adlarla kayıtlı kalır.
     - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
       kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
       basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.

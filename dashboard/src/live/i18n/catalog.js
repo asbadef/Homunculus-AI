@@ -50,6 +50,9 @@ import kabul from "./strings/kabul.js";
 // G2-ESLEME: the monitor→bed editor on «Monitörler» (screens/devices/MappingSection.jsx, MappingDialog.jsx).
 import esleme from "./strings/esleme.js";
 
+// G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
+import sofa from "./strings/sofa.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -78,6 +81,8 @@ export const NAMESPACES = {
   kabul, // G2-B1a
 
   esleme, // G2-ESLEME
+
+  sofa, // G2-A4
 };
 
 function flattenInto(out, prefix, entries) {
