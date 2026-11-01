@@ -332,6 +332,51 @@ describe("StructureTab", () => {
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
+  // Task 19's review: above phone width the name box sat ~10 px higher than the number box and its
+  // caption a row above it. Each caption now stacks directly over its own box, and the boxes, the
+  // checkbox and the button share a bottom line (`items-end`; the caption-less adders stay centred).
+  it("lines each room caption directly over its own box, on one row that shares a bottom line", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const nameBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın adı" });
+    const numberBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)" });
+    const nameCaption = nameBox.parentElement.querySelector("label");
+    expect(nameCaption.textContent).toBe("Otaq adı");
+    expect(nameCaption.getAttribute("for")).toBe(nameBox.id);
+    expect(nameBox).toHaveClass("!w-full");
+    // the name's column and the number's label are siblings on the form's row
+    const row = nameBox.closest("form");
+    expect(numberBox.closest("label").parentElement).toBe(row);
+    expect(nameBox.parentElement.parentElement).toBe(row);
+    expect(row).toHaveClass("items-end");
+    expect(row).not.toHaveClass("items-center");
+    // an adder with no caption keeps the centred row and the box as it was
+    const bedBox = screen.getByRole("textbox", { name: "Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi" });
+    expect(bedBox.closest("form")).toHaveClass("items-center");
+    expect(bedBox.parentElement).toBe(bedBox.closest("form"));
+  });
+
+  // The hint is read with the two room boxes (aria-describedby), merged with the blank-name sentence
+  // once she tries — not instead of it.
+  it("ties the room hint to both room boxes, and keeps the blank-name sentence beside it once she tries", async () => {
+    await mountKabul(<StructureTab />, { perms: ADMIN });
+    const hintText = "Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.";
+    const nameBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın adı" });
+    const numberBox = screen.getByRole("textbox", { name: "Reanimasiya daxilində yeni otağın nömrəsi (məcburi deyil)" });
+    const hint = nameBox.closest("form").parentElement.querySelector(":scope > p");
+    expect(hint.textContent).toBe(hintText);
+    expect(hint.id).toBeTruthy();
+    expect(numberBox.getAttribute("aria-describedby")).toBe(hint.id);
+    expect(nameBox.getAttribute("aria-describedby")).toBe(hint.id);
+    await submitIn("Reanimasiya daxilində yeni otağın adı", "   ");
+    const ids = nameBox.getAttribute("aria-describedby").split(" ");
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(hint.id);
+    const blank = ids.filter((id) => id !== hint.id).map((id) => document.getElementById(id).textContent);
+    expect(blank).toEqual(["Ad boş ola bilməz."]);
+    // no other adder carries the hint
+    expect(screen.getByRole("textbox", { name: "Otaq 1 · Reanimasiya daxilində yeni çarpayının etiketi" }).getAttribute("aria-describedby")).toBeNull();
+  });
+
   // Item 3 (A-4): `kabul.err.bedHasMonitor` has no {bed}, so the toast's own subject — the bed as the
   // tab names it everywhere — says which bed it means. No new code: the pin of a behaviour Task 16 mapped.
   it("says a bed with a monitor is unbound on «Monitorlar» first, named after the bed", async () => {

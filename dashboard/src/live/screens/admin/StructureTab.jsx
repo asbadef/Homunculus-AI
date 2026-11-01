@@ -51,8 +51,11 @@ const PLACEHOLDER = Object.freeze({
 /** One text box and its button: add a child, or rename this node. The button's name is
  *  "<button>: <subject>". It is held — `aria-disabled`, pointing at why — while another write is
  *  out (`held`: the id of the sentence that says so) and while the box is blank (`blankKey`).
- *  `placeholder`: what the box shows it takes, beside its accessible name `label`. */
-function Line({ id, label, caption, placeholder, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
+ *  `placeholder`: what the box shows it takes, beside its accessible name `label`.
+ *  `caption`: a visible label stacked over the box (G2-ESLEME, RoomAdd); the row then lines its
+ *  boxes, checkbox and button up on their bottom edge. `describedBy`: the id of a sentence read
+ *  with the box, merged with the blank-name sentence once she tries. */
+function Line({ id, label, caption, describedBy, placeholder, initial = "", subject, submitKey, blankKey, maxLength, onSubmit, busy, held, autoFocus, children }) {
   const { t } = useI18n();
   const [value, setValue] = useState(initial);
   const [tried, setTried] = useState(false);
@@ -60,8 +63,15 @@ function Line({ id, label, caption, placeholder, initial = "", subject, submitKe
   const inputId = useId();
   const blank = !value.trim();
   const reason = busy ? undefined : held ?? (blank ? blankId : undefined);
+  const input = (
+    <Input id={inputId} aria-label={label} placeholder={placeholder} value={value} readOnly={busy} maxLength={maxLength} autoFocus={autoFocus}
+      aria-invalid={tried && blank ? "true" : undefined}
+      aria-describedby={[tried && blank ? blankId : null, describedBy].filter(Boolean).join(" ") || undefined}
+      onChange={(e) => { setValue(e.target.value); setTried(false); }}
+      className={caption ? "!w-full" : "!w-auto min-w-[160px] flex-1"} />
+  );
   return (
-    <form id={id} className="flex flex-wrap items-center gap-2" onSubmit={async (event) => {
+    <form id={id} className={`flex flex-wrap gap-2 ${caption ? "items-end" : "items-center"}`} onSubmit={async (event) => {
       event.preventDefault();
       if (busy || held) return;
       if (blank) {
@@ -70,12 +80,14 @@ function Line({ id, label, caption, placeholder, initial = "", subject, submitKe
       }
       if (await onSubmit(value.trim())) setValue(initial);
     }}>
-      {/* G2-ESLEME (spec §3.7): a visible label where the accessible one alone was mistaken (RoomAdd). */}
-      {caption ? <label htmlFor={inputId} className="basis-full text-12 font-semibold text-mute">{caption}</label> : null}
-      <Input id={inputId} aria-label={label} placeholder={placeholder} value={value} readOnly={busy} maxLength={maxLength} autoFocus={autoFocus}
-        aria-invalid={tried && blank ? "true" : undefined} aria-describedby={tried && blank ? blankId : undefined}
-        onChange={(e) => { setValue(e.target.value); setTried(false); }}
-        className="!w-auto min-w-[160px] flex-1" />
+      {/* G2-ESLEME (spec §3.7): a visible label where the accessible one alone was mistaken (RoomAdd),
+          in the box's own column so it sits over the box it names, not a row above it. */}
+      {caption ? (
+        <div className="flex min-w-[160px] flex-1 flex-col gap-0.5">
+          <label htmlFor={inputId} className="text-12 font-semibold text-mute">{caption}</label>
+          {input}
+        </div>
+      ) : input}
       {children}
       <Button type="submit" size="sm" busy={busy} aria-label={subject ? `${t(submitKey)}: ${subject}` : undefined}
         aria-disabled={reason ? "true" : undefined} aria-describedby={reason}>{t(submitKey)}</Button>
@@ -113,35 +125,39 @@ function RoomAdd({ unit, busy, held, savingId, onAdd }) {
   const { t } = useI18n();
   const [number, setNumber] = useState("");
   const [isolation, setIsolation] = useState(false);
+  const hintId = useId();
   return (
     <div className="flex flex-col gap-1">
-    <Line label={t("kabul.newRoom", { unit })} caption={t("kabul.roomNameLabel")} placeholder={t(PLACEHOLDER.room)} subject={unit} submitKey="kabul.addRoom"
-      blankKey="kabul.invalid.name" maxLength={MAX.room} busy={busy} held={held}
-      onSubmit={async (name) => {
-        const ok = await onAdd({ name, room_number: number.trim() || null, is_isolation: isolation });
-        if (ok) {
-          setNumber("");
-          setIsolation(false);
-        }
-        return ok;
-      }}>
-      <label className="inline-flex flex-col gap-0.5 text-12 font-semibold text-mute">
-        {t("kabul.roomNumberLabel")}
-        <Input aria-label={t("kabul.newRoomNumber", { unit })} placeholder={t("kabul.roomNumber")}
-          value={number} readOnly={busy} maxLength={MAX.roomNumber} onChange={(e) => setNumber(e.target.value)}
-          className="!w-[120px]" />
-      </label>
-      <label className="inline-flex items-center gap-1.5 text-13">
-        {/* Held, not `disabled`: reachable, and saying why. A no-op onChange keeps it as it was —
-            React puts the prop back after the event (RolesTab's cells, the same way). */}
-        <input type="checkbox" checked={isolation} aria-label={t("kabul.newRoomIsolation", { unit })}
-          aria-disabled={busy ? "true" : undefined} aria-describedby={busy ? savingId : undefined}
-          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
-          onChange={busy ? () => {} : (e) => setIsolation(e.target.checked)} />
-        {t("kabul.isolation")}
-      </label>
-    </Line>
-    <p className="m-0 text-12 text-mute">{t("kabul.roomHint")}</p>
+      <Line label={t("kabul.newRoom", { unit })} caption={t("kabul.roomNameLabel")} describedBy={hintId}
+        placeholder={t(PLACEHOLDER.room)} subject={unit} submitKey="kabul.addRoom"
+        blankKey="kabul.invalid.name" maxLength={MAX.room} busy={busy} held={held}
+        onSubmit={async (name) => {
+          const ok = await onAdd({ name, room_number: number.trim() || null, is_isolation: isolation });
+          if (ok) {
+            setNumber("");
+            setIsolation(false);
+          }
+          return ok;
+        }}>
+        <label className="inline-flex flex-col gap-0.5 text-12 font-semibold text-mute">
+          {t("kabul.roomNumberLabel")}
+          <Input aria-label={t("kabul.newRoomNumber", { unit })} placeholder={t("kabul.roomNumber")} aria-describedby={hintId}
+            value={number} readOnly={busy} maxLength={MAX.roomNumber} onChange={(e) => setNumber(e.target.value)}
+            className="!w-[120px]" />
+        </label>
+        {/* The box's own vertical padding and border (transparent) so, on the row's bottom line, the
+            checkbox sits at the middle of the boxes' height and not at their foot. */}
+        <label className="inline-flex items-center gap-1.5 border border-transparent py-[9px] text-13">
+          {/* Held, not `disabled`: reachable, and saying why. A no-op onChange keeps it as it was —
+              React puts the prop back after the event (RolesTab's cells, the same way). */}
+          <input type="checkbox" checked={isolation} aria-label={t("kabul.newRoomIsolation", { unit })}
+            aria-disabled={busy ? "true" : undefined} aria-describedby={busy ? savingId : undefined}
+            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+            onChange={busy ? () => {} : (e) => setIsolation(e.target.checked)} />
+          {t("kabul.isolation")}
+        </label>
+      </Line>
+      <p id={hintId} className="m-0 text-12 text-mute">{t("kabul.roomHint")}</p>
     </div>
   );
 }
