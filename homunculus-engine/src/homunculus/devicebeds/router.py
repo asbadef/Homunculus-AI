@@ -21,11 +21,15 @@ router = APIRouter(prefix="/infinity-shadow/device-beds", tags=["device-beds"])
 
 
 async def lane_hospital(request: Request, db: AsyncSession, tenant_id: uuid.UUID) -> str:
-    """The caller's hospital key (its tenant's slug), or 409 `monitor_lane_off`."""
+    """The caller's hospital key (its tenant's slug), or 409 `monitor_lane_off`. The free check (the
+    strip runs at all) comes first, so a strip that is off costs no query."""
+    refusal = Refusal(409, MONITOR_LANE_OFF, "The monitor strip is not running for this hospital.")
     settings = getattr(request.app.state, "shadow_settings", None)
+    if settings is None or not settings.on:
+        raise refusal.http()
     hospital = await trail.hospital_of(db, tenant_id)
-    if settings is None or not settings.on or hospital != settings.hospital:
-        raise Refusal(409, MONITOR_LANE_OFF, "The monitor strip is not running for this hospital.").http()
+    if hospital != settings.hospital:
+        raise refusal.http()
     return hospital
 
 

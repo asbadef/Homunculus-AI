@@ -70,8 +70,10 @@ async def seed(db: AsyncSession, ward: Ward, *rows: tuple[str, str | None, str |
 
 
 @asynccontextmanager
-async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: str = SLUG,
-                        sources=SOURCES) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
+async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: str = SLUG, sources=SOURCES,
+                        monotonic=None) -> AsyncIterator[tuple[AsyncClient, object, Ward]]:
+    """`monotonic` is the store's own clock (report ages): a test that moves it makes the worker's
+    devices fall silent without waiting."""
     ward = await build_ward(db)
     groups = await ensure_default_groups(db, ward.tenant.id)
     bio = await add_user(db, username="bio@kabul.example.com", tenant_id=ward.tenant.id, group=groups["biomedical"])
@@ -80,7 +82,8 @@ async def esleme_client(db: AsyncSession, *, stage: str = "shadow", hospital: st
     settings = (ShadowSettings() if stage == "off" else
                 ShadowSettings(stage, stage, None, TOKEN, hospital, parameters=("hr",) if stage == "rules" else ()))
     app = create_app({DEVICE: SLUG}, run_escalation_loop=False, shadow=settings, audit=InMemoryAuditLog(),
-                     device_beds=PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG))
+                     device_beds=PostgresDeviceBeds(TEST_DATABASE_URL, hospital=SLUG),
+                     shadow_monotonic=monotonic)
     maker = async_sessionmaker(db.bind, expire_on_commit=False)
 
     async def _db():

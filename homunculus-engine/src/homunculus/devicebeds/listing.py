@@ -23,8 +23,14 @@ def _iso(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, timezone.utc).isoformat()
 
 
-def _address(source: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in source.split("."))
+def _address(source: str) -> tuple[tuple[int, ...], str]:
+    """The sort key: the octets as numbers (`.9` before `.11` before `.100`). A source that is not
+    dotted decimal (the column is free text; the import and the store check it, nothing else does)
+    sorts last, by its text, rather than turning the whole list into a 500."""
+    parts = source.split(".")
+    if all(part.isascii() and part.isdigit() for part in parts):
+        return tuple(int(part) for part in parts), source
+    return (999,), source
 
 
 async def current_rows(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, DeviceBed]:

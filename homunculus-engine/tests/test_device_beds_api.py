@@ -2,12 +2,16 @@
 """The editor's routes (spec §4): the list (Task 8); bind and unbind (Task 9). Synthetic ward."""
 from __future__ import annotations
 
+import time
+from datetime import datetime
+
 import pytest
 
+from homunculus.admission import trail
 from homunculus.devicebeds.models import DeviceBed
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from tests.conftest import requires_db
-from tests.esleme_world import APPROVED, FROM, URL, esleme_client, group_of, seed
+from tests.esleme_world import APPROVED, FROM, SOURCES, URL, esleme_client, group_of, seed
 from tests.kabul_world import BOARD
 
 pytestmark = [requires_db]
@@ -37,6 +41,54 @@ async def test_the_list_is_the_workers_devices_and_the_tables_rows_in_address_or
     absent = d["192.0.2.20"]                                         # bound, not reported: kept (D9)
     assert (absent["seen"], absent["status"], absent["last_seen_at"]) == (False, None, None)
     assert absent["bed"]["label"] == "3" and absent["group"] == "224.0.2.20"
+
+
+async def test_devices_are_ordered_by_address_as_numbers_not_as_text(db_session):
+    """As text `.100` sorts before `.11` and `.9` last; the octets are compared as numbers.
+    `.9` is a store device, `.100` a row the worker does not report."""
+    async with esleme_client(db_session, sources=("192.0.2.9",) + SOURCES) as (client, _, ward):
+        await seed(db_session, ward, ("192.0.2.100", None, None))
+        body = (await client.get(URL, headers=ward.auth["admin"])).json()
+    sources = [d["source"] for d in body["devices"]]
+    assert sources == ["192.0.2.9", "192.0.2.11", "192.0.2.12", "192.0.2.13", "192.0.2.100"]
+    assert sources != sorted(sources)                              # the test would be blind to a text sort
+
+
+async def test_a_row_whose_source_is_not_an_address_sorts_last_and_is_not_a_500(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        await seed(db_session, ward, ("host.example", None, None), ("a.b", None, None))
+        response = await client.get(URL, headers=ward.auth["admin"])
+    assert response.status_code == 200
+    assert [d["source"] for d in response.json()["devices"]] == [
+        "192.0.2.11", "192.0.2.12", "192.0.2.13", "a.b", "host.example"]
+
+
+async def test_generated_at_is_an_aware_utc_time(db_session):
+    async with esleme_client(db_session) as (client, _, ward):
+        stamp = (await client.get(URL, headers=ward.auth["admin"])).json()["generated_at"]
+    assert stamp.endswith("+00:00") and abs(datetime.fromisoformat(stamp).timestamp() - time.time()) < 60
+
+
+async def test_a_silent_device_is_not_seen_but_still_says_when_it_was_last_seen(db_session):
+    """After 15 s without a report the store shows `unknown`: unseen, yet this process held the device,
+    so `last_seen_at` is set (spec §4.2) — about now minus the silence."""
+    tick = [1000.0]
+    async with esleme_client(db_session, monotonic=lambda: tick[0]) as (client, _, ward):
+        tick[0] += 100.0                                           # the worker's reports stop
+        body = (await client.get(URL, headers=ward.auth["admin"])).json()
+    assert [d["status"] for d in body["devices"]] == ["unknown"] * 3
+    assert [d["seen"] for d in body["devices"]] == [False] * 3
+    gap = datetime.fromisoformat(body["generated_at"]) - datetime.fromisoformat(body["devices"][0]["last_seen_at"])
+    assert abs(gap.total_seconds() - 100.0) < 1
+
+
+async def test_biomedical_with_no_grants_sees_bed_names_under_the_default_unrestricted_scope(db_session, monkeypatch):
+    monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
+    async with esleme_client(db_session) as (client, _, ward):
+        await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        body = (await client.get(URL, headers=ward.auth["bio"])).json()
+    assert _by_source(body)["192.0.2.11"]["bed"] == {
+        "id": str(ward.beds["1"].id), "in_scope": True, "label": "1", "room": "Otaq 1", "unit": "Reanimasiya"}
 
 
 async def test_a_charge_nurse_sees_another_units_monitor_without_names_and_cannot_edit_it(db_session):
@@ -99,6 +151,16 @@ async def test_a_device_token_is_not_a_person(db_session):
 @pytest.mark.parametrize("options", [{"stage": "off"}, {"hospital": "baska-hastane"}])
 async def test_the_list_answers_monitor_lane_off_unless_the_strip_runs_for_this_hospital(db_session, options):
     async with esleme_client(db_session, **options) as (client, _, ward):
+        response = await client.get(URL, headers=ward.auth["admin"])
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "monitor_lane_off"
+
+
+async def test_with_the_strip_off_the_lane_check_asks_the_database_nothing(db_session, monkeypatch):
+    async def must_not_run(*_args, **_kwargs):
+        raise AssertionError("hospital_of ran although the strip is off")
+
+    async with esleme_client(db_session, stage="off") as (client, _, ward):
+        monkeypatch.setattr(trail, "hospital_of", must_not_run)
         response = await client.get(URL, headers=ward.auth["admin"])
     assert response.status_code == 409 and response.json()["detail"]["code"] == "monitor_lane_off"
 
