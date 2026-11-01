@@ -173,7 +173,7 @@ async def test_the_physician_who_signs_a_draft_becomes_its_attending(ward):
     assert r.json()["state"] == "ACTIVE"
     assert r.json()["attending_physician_id"] == r.json()["signed_by"] == str(w.users["doctor"].id)
     (row,) = audited(app, "admission.sign_off")
-    assert (row.patient_id, row.payload) == (admission["patient_number"],
+    assert (row.patient_id, row.payload) == (admission["board_key"],
                                              {"admission_id": admission["id"],
                                               "actor": "doctor@kabul.example.com"})
 
@@ -302,7 +302,7 @@ async def test_an_open_critical_alarm_blocks_the_start_until_it_is_acknowledged(
     """The board's own alerts, as the clinician sees them (BoardLink.open_critical)."""
     w, client, _ = ward
     admission = await signed(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     await septic_shock(client, number)
 
     url = f"/admissions/{admission['id']}/discharge/initiate"
@@ -344,7 +344,7 @@ async def test_a_critical_alarm_after_the_start_holds_the_confirmation_until_ack
     w, client, app = ward
     bed_id = w.beds["1"].id
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     await septic_shock(client, number)
     queue = app.state.broadcaster.subscribe(SLUG)
     url = f"/admissions/{admission['id']}/discharge/confirm"
@@ -375,7 +375,7 @@ async def test_an_alarm_firing_while_an_exitus_is_started_is_caught_at_the_confi
     acknowledges the monitor's last critical alarms before the charge nurse confirms."""
     w, client, _ = ward
     admission = await signed(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     reached, gate = asyncio.Event(), asyncio.Event()
     real = service.initiate_discharge
 
@@ -423,7 +423,7 @@ async def test_two_confirmations_at_once_discharge_once(ward, db_session, monkey
     writes nothing in the database; the step is idempotent, so its removal frame may come twice."""
     w, client, app = ward
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     queue = app.state.broadcaster.subscribe(SLUG)
     drain(queue)
     url = f"/admissions/{admission['id']}/discharge/confirm"
@@ -528,7 +528,7 @@ async def test_a_transfer_can_no_longer_leave_a_card_on_a_bed_freed_for_another_
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "bed_not_available")
     cards = (await client.get("/patients", headers=BOARD)).json()["patients"]
     assert [c["patient_id"] for c in cards if c["identity"]["bed_id"] == str(bed_one)] == \
-        [admission["patient_number"]]
+        [admission["board_key"]]
 
 
 async def test_a_physician_can_no_longer_move_another_units_patient_into_her_own(ward,
@@ -562,7 +562,7 @@ async def test_a_tombstone_the_store_refuses_reports_the_board_failed(ward, db_s
     w, client, app = ward
     bed_id = w.beds["1"].id
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
 
     async def refused(self, tenant, patient_number):
         raise RuntimeError(f"the discharge of {patient_number} was refused")
@@ -592,7 +592,7 @@ async def test_a_retirement_refused_before_its_door_reports_the_board_failed(war
     screens, and the patient's alerts were not ended. Both `failed`, logged with the number."""
     w, client, app = ward
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     link = app.state.board_link
     if why == "no door wired":
         monkeypatch.setattr(link, "_retire", None)
@@ -622,7 +622,7 @@ async def test_a_retirement_failing_inside_its_door_is_a_discharge_with_its_aler
     `finally` still sent the one removal frame; a door failing in its `finally` would not have."""
     w, client, app = ward
     admission = await signed(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     await septic_shock(client, number)
     await acknowledged(client, number)
     r = await client.post(f"/admissions/{admission['id']}/discharge/initiate",
@@ -663,7 +663,7 @@ async def test_a_confirmation_whose_card_did_not_leave_is_retried_by_confirming_
     w, client, app = ward
     bed_id = w.beds["1"].id
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     real, refusals = BoardLink.discharge_identity, []
 
     async def refused_once(self, tenant, patient_number):
@@ -706,7 +706,7 @@ async def test_a_release_heals_a_card_left_standing_or_refuses_and_no_bed_holds_
     w, client, app = ward
     bed_id, next_form = w.beds["1"].id, form(w)
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     release = f"/tenant/beds/{bed_id}/release"
 
     async def on_bed_one() -> list[str]:
@@ -722,7 +722,7 @@ async def test_a_release_heals_a_card_left_standing_or_refuses_and_no_bed_holds_
                               headers=w.auth["charge"])
         assert (r.status_code, r.json()["board"]) == (200, "failed")
         r = await client.post(release, headers=w.auth["nurse"])
-        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) \
+        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["board_key"]) \
             == (409, "board_not_cleared", number)
         r = await client.post("/admissions", json=next_form, headers=w.auth["nurse"])
         assert (r.status_code, r.json()["detail"]["code"]) == (409, "bed_not_available")
@@ -739,7 +739,7 @@ async def test_a_release_heals_a_card_left_standing_or_refuses_and_no_bed_holds_
                                                                              ("bed.release", "ok")]
     nxt = await client.post("/admissions", json=next_form, headers=w.auth["nurse"])
     assert nxt.status_code == 201, nxt.text
-    assert await on_bed_one() == [nxt.json()["patient_number"]]
+    assert await on_bed_one() == [nxt.json()["board_key"]]
 
 
 async def _refused_tombstone(self, tenant, patient_number):
@@ -767,7 +767,7 @@ async def test_a_release_checks_every_discharged_patient_of_the_bed_not_the_last
     assert (r.status_code, r.json()["board"]) == (200, "ok")
     assert (await client.post(release, headers=w.auth["nurse"])).status_code == 200
     second = await started(w, client)                  # the same person, admitted again
-    number = second["patient_number"]
+    number = second["board_key"]
 
     with monkeypatch.context() as patched:
         patched.setattr(BoardLink, "discharge_identity", _refused_tombstone)
@@ -778,7 +778,7 @@ async def test_a_release_checks_every_discharged_patient_of_the_bed_not_the_last
                                  .values(updated_at=datetime.now(timezone.utc) + timedelta(hours=1)))
         await db_session.commit()
         r = await client.post(release, headers=w.auth["nurse"])
-        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) \
+        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["board_key"]) \
             == (409, "board_not_cleared", number), r.text
         assert await _cards_on(client, bed_id) == [number]
 
@@ -816,7 +816,7 @@ async def test_the_raw_transition_frees_no_bed_whose_admission_is_open(ward, db_
         == BedState.MAINTENANCE
     assert (await db_session.execute(select(Admission.state).where(
         Admission.id == uuid.UUID(admission["id"])))).scalar_one() == AdmissionState.ACTIVE
-    assert await _cards_on(client, bed_id) == [admission["patient_number"]]
+    assert await _cards_on(client, bed_id) == [admission["board_key"]]
 
 
 async def test_the_raw_transition_frees_no_bed_under_a_card_left_standing(ward, db_session,
@@ -828,7 +828,7 @@ async def test_the_raw_transition_frees_no_bed_under_a_card_left_standing(ward, 
     w, client, app = ward
     bed_id = w.beds["1"].id
     admission = await started(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
 
     async def move(state: str):
         return await client.post(f"/tenant/beds/{bed_id}/transition", json={"new_state": state},
@@ -843,7 +843,7 @@ async def test_the_raw_transition_frees_no_bed_under_a_card_left_standing(ward, 
             r = await move(state)
             assert r.status_code == answer, (state, r.text)
             if answer == 409:
-                assert (r.json()["detail"]["code"], r.json()["detail"]["patient_number"]) == \
+                assert (r.json()["detail"]["code"], r.json()["detail"]["board_key"]) == \
                     ("board_not_cleared", number)
         assert await _cards_on(client, bed_id) == [number]
 
@@ -869,7 +869,7 @@ async def test_without_a_board_link_the_card_and_the_alerts_are_failed_never_ski
                           headers=w.auth["charge"])
     assert r.status_code == 200, r.text
     assert (r.json()["board"], r.json()["alerts"]) == ("failed", "failed")
-    assert any(admission["patient_number"] in m
+    assert any(admission["board_key"] in m
                for m in errors_of(caplog, "homunculus.admission.router"))
 
 
@@ -881,7 +881,7 @@ async def test_an_audit_store_failing_after_the_commit_still_signs_starts_and_co
     name."""
     w, client, app = ward
     admission = await admit(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     append = app.state.audit.append
 
     def admission_rows_fail(event):
@@ -956,7 +956,7 @@ async def test_a_resend_writing_the_card_again_while_the_patient_is_discharged_l
     assert again.status_code == 200, again.text
     assert again.json()["engine"]["board"] == "failed"
     assert (await client.get("/patients", headers=BOARD)).json()["patients"] == []
-    assert app.state.board_link.is_discharged(SLUG, again.json()["patient_number"])
+    assert app.state.board_link.is_discharged(SLUG, again.json()["board_key"])
 
 
 # ---------------------------------------------------------------- the whole flow (§8)
@@ -968,7 +968,7 @@ async def test_the_whole_flow_from_admission_to_a_free_bed(ward, db_session):
     neo_screen = build_scope("MEMBER", unit_ids=[str(w.units["neo"].id)])
 
     admission = await admit(w, client)
-    number = admission["patient_number"]
+    number = admission["board_key"]
     (card,) = (await client.get("/patients", headers=BOARD)).json()["patients"]
     assert (card["patient_id"], card["identity"]["bed_id"], card["identity"]["unit_id"]) == \
         (number, str(bed_id), str(unit_id))

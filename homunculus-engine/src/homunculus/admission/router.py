@@ -52,8 +52,8 @@ from homunculus.admission.models import (
     DischargeDisposition, Handover, Patient,
 )
 from homunculus.admission.schemas import (
-    AdmissionCreate, AdmissionNoteFields, AdmissionResponse, AdmissionRow, AdmitResponse,
-    AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
+    AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
+    AdmitResponse, AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
     EngineWrite, EngineWrites, HandoverOpen, HandoverResponse, HandoverSign,
     NurseBedAssignmentResponse, PatientResponse, ShiftScheduleCreate, ShiftScheduleResponse,
     TransferInitiate,
@@ -626,18 +626,24 @@ async def list_admissions(
         log.warning("GET /admissions: the list was cut at its cap (%d) for %s in tenant %s; older "
                     "rows were left out", cap, user.username, caller_tenant)
     return [AdmissionRow(**AdmissionResponse.model_validate(a).model_dump(),
-                         patient_number=number, display_name=name, bed_label=label,
-                         room_name=room, unit_name=unit)
+                         patient_number=number, board_key=board_key(a.protocol_no, number),
+                         display_name=name, bed_label=label, room_name=room, unit_name=unit)
             for a, number, name, label, room, unit in rows]
 
 
-@router.get("/{admission_id}", response_model=AdmissionResponse,
+@router.get("/{admission_id}", response_model=AdmissionDetail,
             dependencies=[Depends(require_permission("admissions.view"))])
 async def get_admission(
     admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    return await _get_admission_or_404(db, admission_id, caller_tenant)
+    """The admission, its H-number and its board key (G2-B1d, E5)."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    number = (await db.execute(select(Patient.patient_number)
+                               .where(Patient.id == admission.patient_id))).scalar_one()
+    return AdmissionDetail(**AdmissionResponse.model_validate(admission).model_dump(),
+                           patient_number=number,
+                           board_key=board_key(admission.protocol_no, number))
 
 
 @router.get("/{admission_id}/patient", response_model=PatientResponse,
@@ -707,10 +713,12 @@ def _not_now(exc: ValueError) -> HTTPException:
     return Refusal(409, INVALID_TRANSITION, str(exc)).http()
 
 
-async def _number_of(db: AsyncSession, admission: Admission) -> str:
-    """The admission's patient number: its board key, and the audit row's patient."""
-    return (await db.execute(select(Patient.patient_number)
-                             .where(Patient.id == admission.patient_id))).scalar_one()
+async def _key_of(db: AsyncSession, admission: Admission) -> str:
+    """The admission's board key (`board_key`: its protocol, a legacy admission's H-number) — the
+    card the board steps act on, the number they log, and the audit row's patient (E4)."""
+    number = (await db.execute(select(Patient.patient_number)
+                               .where(Patient.id == admission.patient_id))).scalar_one()
+    return board_key(admission.protocol_no, number)
 
 
 def _open_critical(request: Request, hospital: str, number: str) -> int:
@@ -752,7 +760,7 @@ async def sign_off(
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
-    number = await _number_of(db, admission)
+    number = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     written, actor = AdmissionResponse.model_validate(admission), user.username
     await db.commit()
@@ -904,7 +912,7 @@ async def discharge_initiate(
     except Refusal as exc:
         raise exc.http() from None
     admission = await _locked(db, admission)
-    number = await _number_of(db, admission)
+    number = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     reported_by = _strip(payload.reported_by)
     if payload.disposition == DischargeDisposition.EXITUS and reported_by is None:
@@ -977,7 +985,7 @@ async def discharge_confirm(
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
     admission = await _locked(db, admission)
-    number = await _number_of(db, admission)
+    number = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
     if admission.state == AdmissionState.DISCHARGED:
         written, actor = AdmissionResponse.model_validate(admission), user.username

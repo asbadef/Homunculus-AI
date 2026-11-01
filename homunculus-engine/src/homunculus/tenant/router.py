@@ -53,6 +53,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import trail, unitscope
+from homunculus.admission.boardkey import board_key
 from homunculus.admission.boardlink import board_link_of
 from homunculus.admission.errors import (
     BED_IN_USE, BED_LABEL_TAKEN, BOARD_NOT_CLEARED, HAS_OPEN_BEDS, INVALID_TRANSITION, NAME_TAKEN,
@@ -545,7 +546,7 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     idempotent; it ends the patient's alerts, which no longer hold it), audited
     `admission.discharge_board_retry` with `via` — the release (`bed.release`) or the
     administrator's raw move (`bed.transition`); when one still fails, the bed is refused
-    `board_not_cleared` with that patient's number — the newest such, by `updated_at` — (the
+    `board_not_cleared` with that patient's number and board key — the newest such, by `updated_at` — (the
     caller's units hold this bed, or the caller administers the structure). Called under the
     bed's lock. An app without its BoardLink has no board, so no card can stand.
 
@@ -555,23 +556,24 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     if link is None:
         return
     discharged = (await db.execute(
-        select(Admission.id, Patient.patient_number)
+        select(Admission.id, Admission.protocol_no, Patient.patient_number)
         .join(Patient, Patient.id == Admission.patient_id)
         .where(Admission.bed_id == bed_id, Admission.state == AdmissionState.DISCHARGED)
         .order_by(Admission.updated_at.desc()))).all()
     standing = None
-    for admission_id, number in discharged:
-        if link.is_discharged(hospital, number):
+    for admission_id, protocol_no, number in discharged:
+        key = board_key(protocol_no, number)          # G2-B1d: the card is under its key (E3)
+        if link.is_discharged(hospital, key):
             continue
-        board, alerts = await link.take_off(hospital, number)
-        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=number,
+        board, alerts = await link.take_off(hospital, key)
+        trail.record(request, hospital, "admission.discharge_board_retry", patient_id=key,
                      payload={"admission_id": str(admission_id), "bed_id": str(bed_id),
                               "board": board, "alerts": alerts, "via": via, "actor": actor})
         if board != "ok" and standing is None:
-            standing = number
+            standing = {"patient_number": number, "board_key": key}
     if standing is not None:
         raise Refusal(409, BOARD_NOT_CLEARED, "A patient of this bed is still on the board: the "
-                      "board refused the discharge.", extra={"patient_number": standing})
+                      "board refused the discharge.", extra=standing)
 
 
 @router.post("/beds/{bed_id}/release", response_model=BedResponse,

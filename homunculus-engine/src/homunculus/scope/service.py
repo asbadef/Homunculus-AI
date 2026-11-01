@@ -89,20 +89,22 @@ async def read_own_patient_ids(
     in SQL because it is encrypted at rest, so it is selected and compared in Python; that is
     why this returns a list rather than a subquery.
 
-    Since Group 2 · B1a a patient admitted here is on the board under its Homunculus patient
-    number (`Patient.patient_number`, in the clear), so both identifiers are returned: the number
-    reaches the card a `kabul` admission made, the HIS reference the card the HIS feed made. A
-    patient with both is two identifiers, and `own_patients` counts identifiers.
+    A patient admitted here is on the board under the admission's board key
+    (`admission/boardkey.py`: its protocol number since G2-B1d, a legacy admission's H-number), so
+    both identifiers are returned: the key reaches the card a `kabul` admission made, the HIS
+    reference the card the HIS feed made. A patient with both is two identifiers, and
+    `own_patients` counts identifiers.
 
     An ON-CALL link carries a window (§3.3). A window that has closed is not coverage, so an
     expired row grants nothing; `is_active` alone would keep yesterday's on-call physician
     looking at a patient they handed over.
     """
+    from homunculus.admission.boardkey import board_key
     from homunculus.admission.models import Patient
 
     moment = now or datetime.now(timezone.utc)
     result = await db.execute(
-        select(Patient.his_patient_reference, Patient.patient_number,
+        select(Patient.his_patient_reference, Patient.patient_number, Admission.protocol_no,
                CareTeamMember.window_start, CareTeamMember.window_end)
         .select_from(CareTeamMember)
         .join(Admission, CareTeamMember.admission_id == Admission.id)
@@ -115,9 +117,10 @@ async def read_own_patient_ids(
         )
     )
     own: list[str] = []
-    for his, number, start, end in result.all():
+    for his, number, protocol_no, start, end in result.all():
         if _window_open(start, end, moment):
-            own.extend(ref for ref in (his, number) if ref and ref not in own)
+            key = board_key(protocol_no, number)
+            own.extend(ref for ref in (his, key) if ref and ref not in own)
     return own
 
 

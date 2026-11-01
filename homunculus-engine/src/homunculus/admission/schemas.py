@@ -279,12 +279,21 @@ class AdmitResponse(AdmissionResponse):
 
 class AdmissionRow(AdmissionResponse):
     """GET /admissions: one row of the Taburcu and Yataklar lists, with the names a screen shows
-    (never a UUID). `display_name` is PHI, as on the board, for holders of admissions.view."""
+    (never a UUID). `display_name` is PHI, as on the board, for holders of admissions.view.
+    `board_key` (G2-B1d) is the card's key: what a screen matches the board with."""
     patient_number: str
+    board_key: str
     display_name: str
     bed_label: str
     room_name: str
     unit_name: str
+
+
+class AdmissionDetail(AdmissionResponse):
+    """GET /admissions/{id} (G2-B1d, E5): the admission with its two numbers — never a name (the
+    patient's identity is `/patient`'s)."""
+    patient_number: str
+    board_key: str
 
 
 #: The patient's retirement from the alert world at a discharge (A-11d, A-25): `ok`; `incomplete`
