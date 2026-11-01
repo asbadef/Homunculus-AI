@@ -67,6 +67,9 @@ function callBody(src, open) {
 }
 
 const APP = py("api/app.py");
+// G2-A4: the charting door's one message the SOFA routes also send by name (`detail=GCS_NOT_WHOLE`).
+// Only that constant: clinical.py's other strings are units and codes, not messages.
+const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => name === "GCS_NOT_WHOLE"));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
 const ADMIN_SCHEMAS = py("admin/schemas.py");
@@ -111,6 +114,7 @@ const SOURCES = [
   // Wave 3's screens (the beds, the alarms, the patient, and the three administration tabs) talk
   // to the board, /admin, /scope and /admin/ldap, so those refusals have to be translated too.
   ...literals(APP, String.raw`detail=\s*${STR}`).map((m) => ["api/app.py detail", m]),
+  ...[...CLINICAL_MESSAGES].map(([name, text]) => [`api/clinical.py ${name}`, text]),
   ...[...pyConstants(ADMIN_SERVICE).values()].map((m) => ["admin/service.py constant", m]),
   ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+,\s*${STR}`).map((m) => ["admin/service.py AdminError", m]),
   ...[...pyConstants(ADMIN_SCHEMAS).values()].map((m) => ["admin/schemas.py constant", m]),
@@ -153,7 +157,7 @@ describe("the auth surface's messages are translated", () => {
 describe("no message site escapes the readers", () => {
   const CONSTANTS = new Set([...pyConstants(DEPS).keys(), ...pyConstants(ROUTER).keys(), ...LDAP.keys(),
     ...pyConstants(ADMIN_SERVICE).keys(), ...pyConstants(ADMIN_SCHEMAS).keys(),
-    ...pyConstants(LDAP_SERVICE).keys()]);
+    ...pyConstants(LDAP_SERVICE).keys(), ...CLINICAL_MESSAGES.keys()]);
   const DYNAMIC = [
     // [file, the first argument, how many sites, why]
     ["auth/dependencies.py", /^detail,/, 1, "_unauthorized's own parameter: every call's literal is read above"],
