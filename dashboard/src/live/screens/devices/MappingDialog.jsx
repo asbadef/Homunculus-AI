@@ -53,7 +53,7 @@ function BedChoice({ beds, devices, picked, onPick, self }) {
                   onChange={() => onPick(bed.id)} className={FOCUS_RING} />
                 {/* The spaces keep the accessible name readable where the spans are not laid out as flex items. */}
                 <span>{bed.label} · {bed.roomName} · {bed.unitName}</span>{" "}
-                {!bed.open ? <span className="text-12 text-mute">{bed.why.map((key) => t(key)).join(", ")}</span> : null}{" "}
+                {!bed.open ? <span className="text-12 text-mute">{bed.why ? t(bed.why) : null}</span> : null}{" "}
                 {other ? <span className="text-12 text-mute">{t("esleme.pick.hasMonitor", { monitor: monitorName(other) })}</span> : null}{" "}
                 {FULL.has(bed.state) ? <span className="text-12 font-semibold text-att-ink">{t("esleme.pick.occupied")}</span> : null}
               </label>
@@ -87,29 +87,27 @@ export function MappingDialog({ mode, device, devices, onClose, onDone }) {
   // click of a double-click lands on the button the first click's step has just put there: «Davam» → «Təsdiqlə»,
   // and «Təsdiqlə» → «Bəli, davam et», which would skip the explicit confirmation for an admitted patient. A step's
   // primary (confirm, occupied) is held until ARM_MS after the step opened. `armed` is derived from the step, so it is
-  // false in the very render that swaps the step, not one effect later. The pick's «Davam» only moves on: never held.
-  const [armedStep, setArmedStep] = useState(mode === "bind" ? "pick" : null);
+  // false in the very render that swaps the step, not one effect later. The pick's «Davam» only moves on: it is
+  // never held, and `armed` is never read on that step.
+  const [armedStep, setArmedStep] = useState(null);
   const armed = armedStep === step;
   useEffect(() => {
-    if (step === "pick") {
-      setArmedStep("pick");
-      return undefined;
-    }
     const timer = setTimeout(() => setArmedStep(step), ARM_MS);
     return () => clearTimeout(timer);
   }, [step]);
 
   // By unit, then room, then label, numbers by value: a unit's beds stay together, "9" before "10". A bed that cannot
-  // be picked carries WHY — its bed, its room, its unit (spec §3.3), the outermost first.
+  // be picked carries WHY (spec §3.3): the outermost closed place — its unit, else its room, else the bed itself. A
+  // unit closes only when all its beds are closed (tenant/router.py `HAS_OPEN_BEDS`), so naming each level would
+  // read «şöbə bağlıdır, çarpayı bağlıdır» on every bed of a closed unit.
   const beds = useMemo(() => {
     const cmp = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), lang, { numeric: true });
     return [...index.beds.values()]
       .filter((bed) => normId(bed.id) !== normId(device.bed?.id))
-      .map((bed) => ({ ...bed, why: [
-        index.units.get(normId(bed.unitId))?.isActive === false ? "esleme.pick.closedUnit" : null,
-        index.rooms.get(normId(bed.roomId))?.isActive === false ? "esleme.pick.closedRoom" : null,
-        bed.isActive === false ? "esleme.pick.closedBed" : null,
-      ].filter(Boolean) }))
+      .map((bed) => ({ ...bed, why:
+        index.units.get(normId(bed.unitId))?.isActive === false ? "esleme.pick.closedUnit"
+          : index.rooms.get(normId(bed.roomId))?.isActive === false ? "esleme.pick.closedRoom"
+            : bed.isActive === false ? "esleme.pick.closedBed" : null }))
       .sort((a, b) => cmp(a.unitName, b.unitName) || cmp(a.roomName, b.roomName) || cmp(a.label, b.label));
   }, [index, device, lang]);
   const other = picked ? devices.find((d) => d.source !== device.source && normId(d.bed?.id) === normId(picked)) : null;
@@ -124,6 +122,14 @@ export function MappingDialog({ mode, device, devices, onClose, onDone }) {
     shownStep.current = step;
     (step === "occupied" ? cancel.current : region.current)?.focus();
   }, [step]);
+
+  // An unbind opens straight on its confirmation, so there is no earlier step to move on from: on arrival the Modal
+  // leaves focus on the dialog container (nothing in the body takes it), and a screen reader says only the title.
+  // The confirmation takes focus, and its description is the sentence. This effect runs after the Modal's own (a
+  // child's effects run first), so it wins. (`autoFocus` on a div does nothing in React.)
+  useEffect(() => {
+    if (mode === "unbind") region.current?.focus();
+  }, []);
 
   // The bed a refusal for scope concerns. It can be the target, or the bed the monitor LEAVES (the server checks
   // both and answers the same code): the leaving one when it is the one outside the session's units (A-17).

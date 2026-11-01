@@ -84,9 +84,24 @@ async function standalone({ mode = "bind", on = device("192.0.2.13"), devices = 
   return { ...mounted, onDone, onClose, dialog: () => screen.getByRole("dialog") };
 }
 
+// A place is closed whole: a unit closes only when all its beds are closed, and a room likewise (tenant/router.py
+// `HAS_OPEN_BEDS`). So Neonatal's room and bed are closed with it, and — when asked — Otaq 2 and its bed 5 are. Bed 4
+// is a closed bed alone in an open room. (The shared fixture has an open bed in the closed unit, which cannot be.)
+function closedWard({ room2 = false } = {}) {
+  const ward = structure();
+  const [rea, neo] = ward.sites[0].units;
+  neo.rooms[0].is_active = false;
+  neo.rooms[0].beds[0].is_active = false;
+  if (room2) {
+    rea.rooms[1].is_active = false;
+    rea.rooms[1].beds[0].is_active = false;
+  }
+  return ward;
+}
+
 describe("the monitor–bed dialog", () => {
   it("offers the session's beds, dims a closed one and names a bed's monitor and fullness", async () => {
-    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13");
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => { a.structure.mockResolvedValue(closedWard()); });
     const d = within(dialog());
     expect(d.getByRole("heading", { name: "Çarpayı seçin — 192.0.2.13" })).toBeTruthy();
     expect(d.getByRole("radio", { name: /^1 · Otaq 1 · Reanimasiya.*monitor: 192\.0\.2\.11 \(BED05\)/ })).toBeTruthy();
@@ -96,21 +111,19 @@ describe("the monitor–bed dialog", () => {
     expectNoUuid();
   });
 
-  // Spec §3.3: a closed bed, room or unit is dimmed WITH the reason, and the reason says which of the three it is.
-  it("says why a bed cannot be picked: the bed, its room or its unit is closed", async () => {
-    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
-      const closedRoom = structure();
-      closedRoom.sites[0].units[0].rooms[1].is_active = false;                                    // Otaq 2 and its bed 5
-      a.structure.mockResolvedValue(closedRoom);
-    });
+  // Spec §3.3: a closed bed, room or unit is dimmed WITH the reason, and the reason says which of the three it is —
+  // the outermost one: every bed of a closed unit is closed too, and «şöbə bağlıdır, çarpayı bağlıdır» says it twice.
+  it("says why a bed cannot be picked, naming only the outermost closed place: its unit, else its room, else the bed", async () => {
+    const { dialog } = await open("Çarpayıya qoş: 192.0.2.13", (a) => { a.structure.mockResolvedValue(closedWard({ room2: true })); });
     const d = within(dialog());
-    const name = (re) => d.getByRole("radio", { name: re });
-    expect(name(/^4 · Otaq 1 · Reanimasiya.*çarpayı bağlıdır/).disabled).toBe(true);
-    expect(name(/^5 · Otaq 2 · Reanimasiya.*otaq bağlıdır/).disabled).toBe(true);
-    expect(name(/^N1 · N-1 · Neonatal.*şöbə bağlıdır/).disabled).toBe(true);
-    expect(name(/^4 · Otaq 1/).getAttribute("name")).toBe("esleme-bed");                           // still the one radio group
-    expect(d.getByRole("radio", { name: /^1 · Otaq 1/ }).closest("label").textContent).not.toMatch(/bağlıdır/);   // an open bed says nothing
-    expect(d.getByRole("radio", { name: /^N1/ }).closest("label").textContent).not.toMatch(/çarpayı bağlıdır|otaq bağlıdır/);
+    const radio = (re) => d.getByRole("radio", { name: re });
+    const said = (re) => radio(re).closest("label").textContent.replace(/\s+/g, " ").trim();
+    expect(said(/^4 · Otaq 1/)).toBe("4 · Otaq 1 · Reanimasiya çarpayı bağlıdır");                    // the bed alone
+    expect(said(/^5 · Otaq 2/)).toBe("5 · Otaq 2 · Reanimasiya otaq bağlıdır");                       // its room (and so itself)
+    expect(said(/^N1/)).toBe("N1 · N-1 · Neonatal şöbə bağlıdır");                                    // its unit (and so room and bed)
+    for (const re of [/^4 · Otaq 1/, /^5 · Otaq 2/, /^N1/]) expect(radio(re).disabled).toBe(true);
+    expect(radio(/^4 · Otaq 1/).getAttribute("name")).toBe("esleme-bed");                             // still the one radio group
+    expect(said(/^3 · Otaq 1/)).toBe("3 · Otaq 1 · Reanimasiya");                                     // an open bed says nothing
   });
 
   // «dolu» is the structure's state with a patient on it, pending departures included; a bed that is merely
@@ -494,6 +507,32 @@ describe("the arming window", () => {
     expect(api.bindDeviceBed).toHaveBeenCalledTimes(2);
   });
 
+  // The answer to the confirmation arrives after some latency; the window runs from the moment the second step OPENS,
+  // not from the click that asked. A second press 120 ms into the step — a double-click, a nervous second tap — finds
+  // «Bəli, davam et» held, whatever the latency was.
+  it.each([0, 40, 450])("holds the second step from when it opens, however late the answer comes (%i ms)", async (latency) => {
+    const { dialog, api } = await open("Çarpayıya qoş: 192.0.2.13", (a) => {
+      a.bindDeviceBed.mockImplementationOnce(() => new Promise((_, reject) => {
+        setTimeout(() => reject(occupiedAt2()), latency);
+      })).mockResolvedValueOnce(bound());
+    });
+    await pickAndConfirm(dialog, "2 · Otaq 1");
+    await click(dialog, "Təsdiqlə");                                     // click 1: the request is out
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+    await tick(latency);                                                 // the answer arrives; the second step opens
+    expect(within(dialog()).getByRole("heading", { name: "Bu çarpayıda xəstə yatır" })).toBeTruthy();
+    await tick(120);
+    await click(dialog, "Bəli, davam et");                               // click 2, 120 ms into the step
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);                  // exactly one request so far
+    await tick(ARM_MS - 120 - 1);                                        // 599 ms into the step
+    await click(dialog, "Bəli, davam et");
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(1);
+    await tick(1);                                                       // a further 600 ms from the opening
+    await click(dialog, "Bəli, davam et");
+    expect(api.bindDeviceBed).toHaveBeenCalledTimes(2);
+    expect(api.bindDeviceBed.mock.calls[1][0].confirm_occupied).toBe(true);
+  });
+
   it("does not hold «Davam», which only moves on: a bed picked, one press", async () => {
     const { dialog } = await open("Çarpayıya qoş: 192.0.2.13");
     fireEvent.click(within(dialog()).getByRole("radio", { name: /^5 · Otaq 2/ }));
@@ -545,6 +584,16 @@ describe("what was shown is what is sent and heard", () => {
     expect(region).toHaveAccessibleDescription(/192\.0\.2\.13 → 1 · Otaq 1 · Reanimasiya/);
     expect(region).toHaveAccessibleDescription(/192\.0\.2\.11 \(BED05\) bu çarpayıdan ayrılacaq\./);
     expectNoUuid();
+  });
+
+  // An unbind has no earlier step to move on from, so the confirmation must take focus on arrival: otherwise the
+  // dialog container holds it, with no description, and a screen reader says only the title (Task 18 review, n1).
+  it("takes focus on an unbind's confirmation on arrival, described by the monitor and the bed", async () => {
+    const { dialog } = await open("Bağlantını kəs: 192.0.2.11 (BED05)");
+    const region = within(dialog()).getByRole("group", { name: "Təsdiqləyin" });
+    expect(document.activeElement).toBe(region);
+    expect(region).toHaveAccessibleDescription(/192\.0\.2\.11 \(BED05\) ilə 1 · Otaq 1 · Reanimasiya arasındakı bağlantı kəsiləcək\./);
+    expect(document.activeElement).not.toBe(dialog());
   });
 
   it("describes the second step, from the button that has focus, with the bed, the short name and what happens to the card", async () => {
