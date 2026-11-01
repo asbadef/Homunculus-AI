@@ -65,7 +65,9 @@ describe("the patient screen", () => {
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
     expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/dörd şey yazır/);
     expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi və SOFA formasından daxil edilən ölçmələr/);
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/scores\.sign/);
+    // G2-A4 review 2: signing needs scores.sign only — a right of its own, not one on top of clinical.chart.
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/imzası ayrıca scores\.sign səlahiyyəti tələb edir/);
+    expect(screen.getByText(/heç nə yazılmır/)).not.toHaveTextContent(/əlavə olaraq/);
   });
 
   it("offers the way back to the board it was opened from", async () => {

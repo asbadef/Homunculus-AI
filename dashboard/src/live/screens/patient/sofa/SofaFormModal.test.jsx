@@ -85,9 +85,11 @@ describe("the SOFA form (D2)", () => {
   it("prints the engine's points, «ölçülməyib» — never a 0 — for an organ with no measurement, and the failure mark", async () => {
     await open();
     expect(organ("Laxtalanma")).toHaveTextContent("3 bal");
-    expect(within(organ("Laxtalanma")).getByText("≥3 bal · orqan çatışmazlığı həddi")).toBeInTheDocument();   // a threshold, not a finding
+    // The mark on the engine's `failure` flag says the points only (review 2, S6a): no "organ failure", no "threshold".
+    expect(within(organ("Laxtalanma")).getByText("≥3 bal")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent(/orqan çatışmazlığı|həddi/);
     expect(organ("Tənəffüs")).toHaveTextContent("2 bal");
-    expect(within(organ("Tənəffüs")).queryByText(/orqan çatışmazlığı/)).toBeNull();
+    expect(within(organ("Tənəffüs")).queryByText("≥3 bal")).toBeNull();
     for (const name of ["Qaraciyər", "Ürək-damar", "Mərkəzi sinir sistemi", "Böyrək"]) {
       expect(organ(name)).toHaveTextContent("ölçülməyib");
       expect(organ(name)).not.toHaveTextContent(/\b0 bal/);
@@ -102,6 +104,12 @@ describe("the SOFA form (D2)", () => {
     expect(organ("Laxtalanma")).toHaveTextContent(`Trombosit sayı: 45 ×10³/mkl · ${AT()} · nce`);
     expect(organ("Laxtalanma")).toHaveTextContent("Pəncərədə ölçmə yoxdur: bu, pəncərədən əvvəlki ən yaxın ölçmədir.");
     expect(organ("Tənəffüs")).toHaveTextContent(`PaO₂/FiO₂ nisbəti: 250 mmHg · ${AT()} · klinisist qeydi`);
+  });
+
+  it("says the form itself raises no alert — and that a measurement entered here is in the record the alerting rules read (review 2, S4)", async () => {
+    await open();
+    expect(within(dialog()).getByText(/Formanın özü siqnal yaratmır; buradan daxil edilən ölçmə xəstə qeydinə yazılır və xəbərdarlıq qaydaları \(Sepsis-3 qutusu\) da onu oxuyur\./)).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("Forma siqnal yaratmır;");
   });
 
   it("says the window and a stay shorter than it, and the renal, cardiovascular and respiratory notes (D8, D9)", async () => {

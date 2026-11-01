@@ -4,7 +4,8 @@
 // WHAT IT SHOWS (D2) is the engine's form, word for word: six organ rows in the source table's order, each with
 // the worst value of the window, its unit, when it was measured (the reader's clock, with its day when it is not
 // today's, X5), where it came from and its points; «ölçülmedi» for an organ with no measurement — never a 0,
-// although the score counts it as one; the organ-failure mark where the engine says `failure`; the window, and,
+// although the score counts it as one; the «≥3 points» mark where the engine says `failure` — the points only,
+// no word of organ failure or of a threshold (review 2, S6a); the window, and,
 // when the patient has been here for less than it (`covers_full_window` false), that the form rests on the
 // shorter stay. Under the renal row: urine output is not scored here (D8). Under the cardiovascular row: MAP
 // comes from the record and is not entered here, the pressors come from the Meds box (D9). Under the
@@ -151,8 +152,8 @@ function SupportBasis({ support, nowMs }) {
   return text ? <p data-sofa-support="" className="m-0 mt-1.5 text-12.5">{text}</p> : null;
 }
 
-/** One organ: its name as a heading, the engine's points or «ölçülmedi», and the failure mark where the engine
- *  set it (D2) — never computed here from the points. */
+/** One organ: its name as a heading, the engine's points or «ölçülmedi», and the «≥3 points» mark where the
+ *  engine set its `failure` flag (D2, S6a) — never computed here from the points. */
 function OrganRow({ entry, children }) {
   const { t } = useI18n();
   const { row } = entry;

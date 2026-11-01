@@ -1,7 +1,9 @@
 // src/live/i18n/strings/sofa.js — the patient screen's SOFA box and form (G2-A4, screens/patient/sofa/).
 // What every language must keep: the form is the engine's, filled from the WORST values of 24 hours, and it
 // is not the alerting SOFA of the Sepsis-3 box; an organ with no measurement is «not measured», never a 0;
-// the form raises no alert; completing is a measurement (no reason), correcting replaces a value (a reason
+// the form itself raises no alert, but a measurement entered on it is in the record the alerting rules read
+// (review 2, S4); the ≥3 mark on the engine's `failure` flag says the points only, no "organ failure" and no
+// "threshold" (S6a); completing is a measurement (no reason), correcting replaces a value (a reason
 // of at least {min} characters, the engine's number) and the points are always the engine's; creatinine and
 // bilirubin are mg/dL (D11); urine output is not scored here (D8); MAP is not entered here (D9). A refusal
 // names its subject first, as every write's does (admin/refusal.js). Russian calls the engine «система».
@@ -24,7 +26,7 @@ export default {
     noForm: "Motor bu hasta için SOFA formu göndermedi.",
     retry: "Yeniden dene",
     // SofaFormModal — the form (D2, D8, D9)
-    intro: "Form motorun kaydından doldurulur: her organ penceredeki en kötü değeriyle puanlanır. Ölçümü olmayan organda «ölçülmedi» yazar — skor onu 0 sayar, ama ekran 0 yazmaz. Form alarm üretmez; imzalanana kadar kimsenin onaylamadığı bir sayıdır.",
+    intro: "Form motorun kaydından doldurulur: her organ penceredeki en kötü değeriyle puanlanır. Ölçümü olmayan organda «ölçülmedi» yazar — skor onu 0 sayar, ama ekran 0 yazmaz. Formun kendisi alarm üretmez; buradan girilen bir ölçüm hasta kaydına yazılır ve uyarı kuralları (Sepsis-3 kutusu) da onu okur. Form, imzalanana kadar kimsenin onaylamadığı bir sayıdır.",
     windowFull: "Pencere: son {hours} saat · {from} – {to}",
     windowShort: "Pencere: hasta {hours} saatten kısa süredir burada — form yatıştan bu yana geçen süreye dayanır · {to} itibarıyla",
     total: "Toplam: {total}",
@@ -37,7 +39,7 @@ export default {
     organRenal: "Böbrek",
     points: "{points} puan",
     unmeasured: "ölçülmedi",
-    failure: "≥3 puan · organ yetmezliği eşiği",
+    failure: "≥3 puan",
     // the inputs (D3, D11)
     inPf: "PaO₂/FiO₂ oranı",
     inSupport: "Solunum desteği",
@@ -143,7 +145,7 @@ export default {
     noForm: "Mühərrik bu xəstə üçün SOFA forması göndərmədi.",
     retry: "Yenidən cəhd edin",
     // SofaFormModal — the form (D2, D8, D9)
-    intro: "Forma mühərrikin qeydindən doldurulur: hər orqan pəncərədəki ən pis dəyəri ilə qiymətləndirilir. Ölçməsi olmayan orqanda «ölçülməyib» yazılır — şkala onu 0 sayır, amma ekran 0 yazmır. Forma siqnal yaratmır; imzalanana qədər heç kimin təsdiqləmədiyi bir ədəddir.",
+    intro: "Forma mühərrikin qeydindən doldurulur: hər orqan pəncərədəki ən pis dəyəri ilə qiymətləndirilir. Ölçməsi olmayan orqanda «ölçülməyib» yazılır — şkala onu 0 sayır, amma ekran 0 yazmır. Formanın özü siqnal yaratmır; buradan daxil edilən ölçmə xəstə qeydinə yazılır və xəbərdarlıq qaydaları (Sepsis-3 qutusu) da onu oxuyur. Forma imzalanana qədər heç kimin təsdiqləmədiyi bir ədəddir.",
     windowFull: "Pəncərə: son {hours} saat · {from} – {to}",
     windowShort: "Pəncərə: xəstə {hours} saatdan az müddətdir buradadır — forma qəbuldan bəri keçən müddətə əsaslanır · {to} vəziyyətinə",
     total: "Cəmi: {total}",
@@ -156,7 +158,7 @@ export default {
     organRenal: "Böyrək",
     points: "{points} bal",
     unmeasured: "ölçülməyib",
-    failure: "≥3 bal · orqan çatışmazlığı həddi",
+    failure: "≥3 bal",
     // the inputs (D3, D11)
     inPf: "PaO₂/FiO₂ nisbəti",
     inSupport: "Tənəffüs dəstəyi",
@@ -262,7 +264,7 @@ export default {
     noForm: "Система не передала форму SOFA для этого пациента.",
     retry: "Повторить",
     // SofaFormModal — the form (D2, D8, D9)
-    intro: "Форма заполняется из записи системы: каждый орган оценивается по худшему значению в окне. У органа без измерения написано «не измерено» — шкала считает его за 0, но экран 0 не пишет. Форма не создаёт тревог; пока она не подписана, это число, которое никто не подтвердил.",
+    intro: "Форма заполняется из записи системы: каждый орган оценивается по худшему значению в окне. У органа без измерения написано «не измерено» — шкала считает его за 0, но экран 0 не пишет. Сама форма не создаёт тревог; но измерение, введённое здесь, записывается в карту пациента, и правила оповещения (блок Sepsis-3) тоже его читают. Пока форма не подписана, это число, которое никто не подтвердил.",
     windowFull: "Окно: последние {hours} ч · {from} – {to}",
     windowShort: "Окно: пациент здесь меньше {hours} ч — форма опирается на время с момента поступления · на {to}",
     total: "Сумма: {total}",
@@ -275,7 +277,7 @@ export default {
     organRenal: "Почки",
     points: "баллы: {points}",
     unmeasured: "не измерено",
-    failure: "≥3 балла · порог органной недостаточности",
+    failure: "≥3 балла",
     // the inputs (D3, D11)
     inPf: "Отношение PaO₂/FiO₂",
     inSupport: "Респираторная поддержка",
@@ -381,7 +383,7 @@ export default {
     noForm: "The engine sent no SOFA form for this patient.",
     retry: "Try again",
     // SofaFormModal — the form (D2, D8, D9)
-    intro: "The form is filled from the engine's record: each organ is scored on its worst value in the window. An organ with no measurement reads «not measured» — the score counts it as 0, but the screen does not print a 0. The form raises no alert; until it is signed it is a number nobody has confirmed.",
+    intro: "The form is filled from the engine's record: each organ is scored on its worst value in the window. An organ with no measurement reads «not measured» — the score counts it as 0, but the screen does not print a 0. The form itself raises no alert; a measurement entered here is written to the patient's record, and the alerting rules (the Sepsis-3 box) read it too. Until the form is signed it is a number nobody has confirmed.",
     windowFull: "Window: last {hours} hours · {from} – {to}",
     windowShort: "Window: the patient has been here for less than {hours} hours — the form rests on the time since admission · as of {to}",
     total: "Total: {total}",
@@ -394,7 +396,7 @@ export default {
     organRenal: "Renal",
     points: "score {points}",
     unmeasured: "not measured",
-    failure: "≥3 points · organ-failure threshold",
+    failure: "≥3 points",
     // the inputs (D3, D11)
     inPf: "PaO₂/FiO₂ ratio",
     inSupport: "Respiratory support",
