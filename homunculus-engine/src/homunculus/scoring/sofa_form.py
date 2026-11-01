@@ -188,7 +188,8 @@ def _respiration_row(state: PatientState, now: datetime, window: timedelta,
     scored on its own state; the row is the window's worst SCORE — the most points, then the lower ratio,
     then the later reading — and carries that reading's support basis (`support`). A clinician's
     correction is scored on the support of the reading it corrects; one typed over a cell with no
-    reading has no time to look the support up at and is scored off support. `support` is None when the
+    reading has no time to look the support up at and is scored off support (the API sends none since
+    review 3: `parse_overrides` refuses a correction of an unmeasured cell, M-2). `support` is None when the
     row has no ratio at all. This replaces "any «yes» in the window, else the latest". The alerting
     SOFA (rules/sofa.py) still reads the latest support, as it reads the latest ratio.
     """

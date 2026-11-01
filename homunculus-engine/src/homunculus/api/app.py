@@ -1636,9 +1636,12 @@ def create_app(
             raise HTTPException(status_code=400,
                                 detail="imza bir önizlemenin parmak izini ister — önce önizleyin")
         if form_digest(s.rebuilt, s.overrides) != expect:
-            # G2-A4 (X20): the record moved since the preview (X11's case, now refused rather than signed).
-            raise HTTPException(status_code=409,
-                                detail="kayıt önizlemeden sonra değişti — formu yeniden önizleyin")
+            # G2-A4 (X20): the form moved since the preview (X11's case, now refused rather than signed) — a
+            # new reading, the window sliding past one, or another window, correction or reason sent (review 3,
+            # M-1, M-5: the sentence says more than "the record changed").
+            raise HTTPException(
+                status_code=409,
+                detail="form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu yeniden önizleyin")
 
         audit.append(AuditEvent(s.hospital, "score_signed", patient_id, "SOFA", {
             "total": s.signed.total,
@@ -1648,6 +1651,9 @@ def create_app(
             "overrides": [o.as_dict() for o in s.overrides],
             "signed_by": s.signed_by,
             "at": s.now.isoformat(),
+            # G2-A4 review 3 (M-9): the fingerprint the signature was checked against, sealed with it, so a
+            # signature can later be checked against what its preview showed.
+            "expect": expect,
         }))
         return s.signed.as_dict()
 
