@@ -215,7 +215,9 @@ def create_app(
     the engine never reads either. `samples` is Aşama B's monitor-sample table
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
-    rows of a `rules` run still expire after a rollback below it."""
+    rows of a `rules` run still expire after a rollback below it.
+    At shutdown the lifespan releases `audit`, `identities` and `samples` (`dispose`, `close`):
+    an engine's pool reopens on its next use, but SQLite's identity file stays closed."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -574,6 +576,20 @@ def create_app(
                 prune.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
+            # The stores' connection pools go back now rather than at the server's idle timeout
+            # (spec 2026-11-01, D4) — Postgres's `dispose`, the identity store's `close`; a store
+            # with neither holds nothing to return. Each on its own: one that fails is logged and
+            # keeps no other's connections open.
+            for name, store, release in (("audit", audit, "dispose"),
+                                         ("identities", identities, "close"),
+                                         ("samples", samples, "dispose")):
+                method = getattr(store, release, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        log.exception("the %s store failed to release its connections at shutdown",
+                                      name)
             if ldap is not None:
                 ldap.close()                 # the directory's own worker threads
 

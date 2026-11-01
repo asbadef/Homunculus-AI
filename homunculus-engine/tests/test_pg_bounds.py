@@ -6,18 +6,22 @@ the API, and the ward's screens with it, until the operating system's TCP timeou
 tests needs a database."""
 from __future__ import annotations
 
+import logging
 import socket
 import threading
 import time
 from datetime import datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
 from homunculus.api import audit_postgres, monitor_samples, patient_identity_postgres
-from homunculus.api.audit import AuditEvent
+from homunculus.api.app import create_app
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.audit_postgres import PostgresAuditLog, bounded_connect_args
-from homunculus.api.monitor_samples import PostgresSamples, Sample
+from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, Sample
+from homunculus.api.patient_identity import InMemoryIdentityStore
 from homunculus.api.patient_identity_postgres import PostgresIdentityStore
 
 # How long a store may take to give up on a server that never answers: twice the connect bound.
@@ -174,3 +178,68 @@ def test_a_samples_write_to_a_silent_server_raises_in_time(silent_server):
     finally:
         store.dispose()
     assert isinstance(error, OperationalError)
+
+
+class _Releasing:
+    """Records its release under its name; raises from it when told to — a pool that would not
+    close."""
+
+    def _release(self, name: str) -> None:
+        self.calls.append(name)
+        if self.fail:
+            raise RuntimeError(f"the {name} pool would not close")
+
+
+class _Audit(_Releasing, InMemoryAuditLog):
+    def __init__(self, calls, fail):
+        super().__init__()
+        self.calls, self.fail = calls, fail
+
+    def dispose(self) -> None:                           # PostgresAuditLog's
+        self._release("audit")
+
+
+class _Identities(_Releasing, InMemoryIdentityStore):
+    def __init__(self, calls, fail):
+        super().__init__()
+        self.calls, self.fail = calls, fail
+
+    def close(self) -> None:                             # PostgresIdentityStore's
+        self._release("identities")
+
+
+class _Samples(_Releasing, InMemorySamples):
+    def __init__(self, calls, fail):
+        super().__init__()
+        self.calls, self.fail = calls, fail
+
+    def dispose(self) -> None:                           # PostgresSamples'
+        self._release("samples")
+
+
+def _app_with_stores(failing: str | None = None):
+    calls: list[str] = []
+    app = create_app({"tok-1": "h1"}, run_escalation_loop=False,
+                     audit=_Audit(calls, failing == "audit"),
+                     identities=_Identities(calls, failing == "identities"),
+                     samples=_Samples(calls, failing == "samples"))
+    return app, calls
+
+
+def test_leaving_the_app_releases_each_store_once():
+    """D4: the pools go back at shutdown, not at the server's idle timeout."""
+    app, calls = _app_with_stores()
+    with TestClient(app):
+        assert calls == []                               # nothing is released while it serves
+    assert sorted(calls) == ["audit", "identities", "samples"]
+
+
+@pytest.mark.parametrize("failing", ["audit", "identities", "samples"])
+def test_a_store_that_fails_to_release_is_logged_and_keeps_no_other_open(failing, caplog):
+    app, calls = _app_with_stores(failing)
+    with caplog.at_level(logging.ERROR, logger="homunculus.api.app"):
+        with TestClient(app):
+            pass                                         # leaving does not raise
+    assert sorted(calls) == ["audit", "identities", "samples"]
+    (logged,) = [r for r in caplog.records if r.exc_info is not None]
+    assert logged.levelname == "ERROR" and failing in logged.getMessage()
