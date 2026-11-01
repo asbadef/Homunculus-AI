@@ -26,6 +26,7 @@ async function open({ perms = ALL, setup, ui } = {}) {
 }
 const box = () => screen.getByRole("heading", { level: 2, name: "SOFA forması" }).closest(".rounded-box");
 const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
+const toasted = (text) => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(text);
 
 describe("the SOFA box (D1)", () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -98,6 +99,64 @@ describe("the SOFA box (D1)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.severityForm).toHaveBeenCalledTimes(3);
     expect(box()).toHaveTextContent(`İmzalanıb · dr.elif · ${SIGNED_AT()} · cəmi 4`);
+  });
+
+  it("a read answered with null — the store dropped it after the session ended — is never «no form»: the box stays reading", async () => {
+    await open({ setup: (a) => a.severityForm.mockResolvedValue(null) });
+    expect(box()).toHaveTextContent("SOFA forması oxunur…");
+    expect(box()).not.toHaveTextContent("göndərmədi");
+  });
+
+  it("a measurement or a signature in flight when the patient changes goes to the patient the form was opened for, and its toast names that bed", async () => {
+    let go;
+    function Harness() {
+      const [id, setId] = React.useState("S-001");
+      go = setId;
+      return <SofaBox patientId={id} bed={id === "S-001" ? "REA-01 · 2" : "REA-01 · 3"} nowMs={NOW} />;
+    }
+    let landChart;
+    let landSign;
+    const { api } = await open({
+      ui: <Harness />,
+      setup: (a) => {
+        a.severityForm.mockImplementation((id) => Promise.resolve(sofaForm({ patient_id: id })));
+        a.chart.mockImplementation(() => new Promise((resolve) => { landChart = resolve; }));
+        a.previewSeverityForm.mockResolvedValue(previewAnswer());
+        a.signSeverityForm.mockImplementation(() => new Promise((resolve) => { landSign = resolve; }));
+      },
+    });
+    // A measurement: saved on S-001, the screen moves to S-002 before it answers.
+    await press(within(box()).getByRole("button", { name: "Formanı açın" }));
+    let dialog = screen.getByRole("dialog", { name: "SOFA forması · REA-01 · 2" });
+    await press(within(dialog).getByRole("button", { name: "Ölçmə daxil edin: Bilirubin səviyyəsi" }));
+    const entry = within(dialog).getByRole("form", { name: "Bilirubin səviyyəsi — yeni ölçmə" });
+    fireEvent.change(within(entry).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
+    await press(within(entry).getByRole("button", { name: "Yadda saxla" }));
+    await act(async () => { go("S-002"); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await act(async () => { landChart({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "bilirubin", value: 2.4 }], null);
+    expect(toasted("REA-01 · 2: Bilirubin səviyyəsi qeyd olundu; forma yenidən oxunur.").length).toBeGreaterThan(0);
+    expect(toasted(/REA-01 · 3/)).toHaveLength(0);
+    // A signature: signed on S-002's form now, the screen moves back to S-001 before it answers.
+    await press(within(box()).getByRole("button", { name: "Formanı açın" }));
+    dialog = screen.getByRole("dialog", { name: "SOFA forması · REA-01 · 3" });
+    await press(within(dialog).getByRole("button", { name: "Düzəldin: Trombosit sayı" }));
+    const correction = within(dialog).getByRole("form", { name: "Trombosit sayı — düzəliş" });
+    fireEvent.change(within(correction).getByLabelText(/Düzgün dəyər/), { target: { value: "80" } });
+    fireEvent.change(within(correction).getByLabelText("Əsaslandırma"), { target: { value: WHY } });
+    await press(within(correction).getByRole("button", { name: "Düzəlişi saxlayın" }));
+    await press(within(dialog).getByRole("button", { name: "Öncədən baxın" }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, SIGN_ARM_MS)); });   // «İmzalayın» is armed
+    await press(within(dialog).getByRole("button", { name: "İmzalayın" }));
+    await act(async () => { go("S-001"); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const reads = api.severityForm.mock.calls.length;
+    await act(async () => { landSign(signedAnswer()); await settle(); });
+    expect(api.signSeverityForm).toHaveBeenCalledWith("S-002", { overrides: [{ code: "platelets", value: 80, reason: WHY }], expect: EXPECT });
+    expect(toasted("REA-01 · 3: SOFA forması imzalandı · cəmi 4.").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: SOFA forması imzalandı · cəmi 4.")).toHaveLength(0);
+    expect(api.severityForm.mock.calls.length).toBe(reads);            // S-002's signature is not read back onto S-001's box
   });
 
   it("follows the patient shown: a form open on one is gone on the next, and a late read never lands on it", async () => {

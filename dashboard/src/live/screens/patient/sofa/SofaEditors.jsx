@@ -8,9 +8,10 @@
 // worst reading (review 2, C3), so a «no» back-dated to before that reading is how that state is set right.
 // It is a measurement, not a correction, so it asks for no reason; it goes
 // through the door every charted value goes through (POST /clinical/{id}), and the engine scores it. The time
-// is the Meds form's rule (meds/MedsChartForm.jsx, final review I2; X8): it is NOW until she edits it — the
-// field follows the clock (`useNow`, once a minute) and the press reads the clock again — up to 24 h back,
-// never ahead.
+// field is the Meds form's (meds/MedsChartForm.jsx, final review I2; X8): it shows NOW until she edits it — it
+// follows the clock (`useNow`, once a minute) — and a time she types goes up to 24 h back, never ahead. Unlike
+// the Meds form, an untouched time is not sent (review 2): the server stamps the measurement with its own
+// clock, so a browser clock ahead of the server's cannot chart it in the future, out of the read that follows.
 //
 // CORRECTING (D5) — `CorrectionEntry`, for a `scores.sign` holder and a MEASURED input only: the value it
 // should have been, and why. The reason is counted live against the engine's own `min_reason_chars`, so the
@@ -34,9 +35,10 @@ const PANEL = "mt-2 rounded-ctl border border-line2 bg-card2 px-3 py-2.5";
 /** A label with its unit in brackets (D11: the unit is in the label as well as beside the value). */
 const withUnit = (label, unit) => (unit ? <>{label} <span className="font-normal">({unit})</span></> : label);
 
-/** One new measurement of `code` (D3). `onSave(value, recordedAt)` is the form's write: the form closes this
- *  editor once the write is settled as a save and leaves it open — the draft kept — on a refusal. `busy` is
- *  the form's: a write is in flight, and the fields are held still. */
+/** One new measurement of `code` (D3). `onSave(value, recordedAt)` is the form's write — `recordedAt` the
+ *  time she typed, or null for an untouched time (the server's clock): the form closes this editor once the
+ *  write is settled as a save and leaves it open — the draft kept — on a refusal. `busy` is the form's: a
+ *  request is in flight, a preview's too, and the fields and the Save are held still, visibly. */
 export function ChartEntry({ code, busy, onSave, onCancel }) {
   const { t } = useI18n();
   const { label, unit } = labelOf(t, code);
@@ -58,10 +60,11 @@ export function ChartEntry({ code, busy, onSave, onCancel }) {
   function save(event) {
     event.preventDefault();
     if (busy) return;
-    // Checked again at the press: an untouched time is the moment of saving, not the last render's minute.
-    const pressed = Date.now();
+    // Checked again at the press. An untouched time is sent as none (`null`): the server stamps the
+    // measurement with ITS clock (review 2) — this browser's, if ahead of the server's, would chart it in the
+    // future, missing from the read that follows. A time she typed is hers, and is sent.
     const checked = checkValue(code, value);
-    const timed = checkTime(atTouched ? at : toLocalInput(pressed), pressed);
+    const timed = atTouched ? checkTime(at, Date.now()) : { recordedAt: null };
     if (checked.error || timed.error) {
       // The error is in the DOM, tied to its field, when the focus arrives there.
       flushSync(() => setTried(true));

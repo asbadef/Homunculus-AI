@@ -214,19 +214,28 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     }, SIGN_ARM_MS);
   }
 
+  /** Read the form. A null answer is the store's for one it DROPPED — it came after the session ended
+   *  (boardStore `sofaForm`; the engine answers every read with a form): nothing lands and nothing is said,
+   *  as for a preview or a signature (review 2) — the form shown stays, or the dialog stays reading — and it
+   *  is never «no form», which is said only for an answer that is not one. */
   async function read() {
     const mine = ++reads.current;
     setReading(true);
+    let landed = true;
     try {
       const answer = await api.read();
       if (!mounted.current || mine !== reads.current) return;
+      if (answer === null) {
+        landed = false;
+        return;
+      }
       setForm(answer ?? null);
       setReadError(null);
     } catch (err) {
       if (err?.superseded || !mounted.current || mine !== reads.current) return;
       setReadError(err);
     } finally {
-      if (mounted.current && mine === reads.current) setReading(false);
+      if (landed && mounted.current && mine === reads.current) setReading(false);
     }
   }
   // Read once per opening (X9): the box keys this dialog by its opening, so a new opening is a new read.
@@ -245,8 +254,9 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   // The editor open now, for an answer that lands after she opened another one.
   editingNow.current = editing;
 
-  /** Escape, ✕, the backdrop or «Kapat»: never held up, but corrections held and not signed are dropped with
-   *  the dialog, and the toast says so. */
+  /** Escape, ✕, the backdrop or «Kapat»: held only while a request is in flight (Modal's `busy` — the ✕ and
+   *  «Kapat» say so, and Escape and the backdrop wait too), so a write never loses the dialog that says how it
+   *  ended. Corrections held and not signed are dropped with the dialog, and the toast says so. */
   function close() {
     if (Object.keys(corrections).length > 0) toast(t("sofa.heldDropped", { subject: bed }), "warn");
     onClose(changed.current);
@@ -339,7 +349,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     let done;
     try {
       const answer = await api.preview(overridesOf(asked));
-      if (!answer) return;                             // the session ended: nothing is said into the next one
+      // null: the store dropped the answer, the session ended — nothing is said, nothing closed (as `read`, `signIt`).
+      if (answer === null) return;
       if (answer.signed === true) {
         changed.current = true;
         done = { text: t("sofa.previewSigned", { subject: bed }), tone: "warn", close: true };
@@ -387,6 +398,8 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
     let done;
     try {
       const answer = await api.sign(overridesOf(corrections), asked.expect);
+      // null: the store dropped the answer, the session ended — nothing is said, nothing closed, as for a preview.
+      if (answer === null) return;
       changed.current = true;
       // A total the engine did not send is never claimed: the box's signature line is where it is read.
       const total = Number.isInteger(answer?.total) ? answer.total : null;
@@ -431,7 +444,9 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
 
   /** The controls her rights give her on one cell: «Ölçüm gir» for the six inputs the form takes (D3; MAP and
    *  the pressors are not entered here, D9), «Düzelt» for a measured value (D5), and «Düzeltmeyi kaldır» for a
-   *  correction held. They stay on the row while an editor is open under it, so the focus can come back. */
+   *  correction held. They stay on the row while an editor is open under it, so the focus can come back. An
+   *  editor is held — its Save busy, visibly — while ANY request is in flight (a preview's too, review 2): one
+   *  request at a time, and a Save pressed then is shown held, not dropped without a word. */
   function actionsFor(cell) {
     const { code } = cell;
     const kind = editing?.code === code ? editing.kind : null;
@@ -464,7 +479,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
           </div>
         ) : null}
         {kind === "chart" ? (
-          <ChartEntry code={code} busy={busy === "chart"} onCancel={() => closeEditor("chart", code)}
+          <ChartEntry code={code} busy={busy !== null} onCancel={() => closeEditor("chart", code)}
             onSave={(value, recordedAt) => chartOne(code, value, recordedAt)} />
         ) : null}
         {kind === "correct" ? (
@@ -488,7 +503,7 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
         {t("sofa.supportChart")}
       </Button>
       {supportOpen ? (
-        <ChartEntry code="on_resp_support" busy={busy === "chart"} onCancel={() => closeEditor("chart", "on_resp_support")}
+        <ChartEntry code="on_resp_support" busy={busy !== null} onCancel={() => closeEditor("chart", "on_resp_support")}
           onSave={(value, recordedAt) => chartOne("on_resp_support", value, recordedAt)} />
       ) : null}
     </div>

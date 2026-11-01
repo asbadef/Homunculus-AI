@@ -265,6 +265,13 @@ describe("apiErrorText", () => {
       .toBe("Qeyd öncədən baxışdan sonra dəyişib; forma imzalanmayıb. Formaya yenidən öncədən baxın.");
   });
 
+  // The charting door's (api/clinical.py, through `str(exc)`, so no sweep reads it): a GCS that is not whole.
+  // The SOFA form holds one back before it is sent (sofaFields); any other client's is said in the reader's words.
+  it("says the charting door's refusal of a GCS that is not a whole number", () => {
+    expect(apiErrorText(en, new Error("GCS tam sayı olmalı"))).toBe("The GCS must be a whole number.");
+    expect(apiErrorText(az, new Error("GCS tam sayı olmalı"))).toBe("GCS tam ədəd olmalıdır.");
+  });
+
   it("translates a known message, whatever whitespace surrounds it", () => {
     expect(apiErrorText(az, new Error("  Invalid credentials \n"))).toBe("İstifadəçi adı və ya şifrə səhvdir.");
     expect(apiErrorText(en, "Parola hatalı")).toBe("Incorrect password.");

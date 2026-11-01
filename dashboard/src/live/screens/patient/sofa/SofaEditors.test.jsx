@@ -33,12 +33,26 @@ describe("ChartEntry (D3)", () => {
   const value = (v) => fireEvent.change(within(entry()).getByLabelText(/GCS/), { target: { value: v } });
   const save = () => act(async () => { fireEvent.click(within(entry()).getByRole("button", { name: "Yadda saxla" })); await settle(); });
 
-  it("untouched, the time is the moment of saving: opened at NOW and saved 90 min later, it charts the save time", async () => {
+  // Review 2: an untouched time is the server's to stamp. A browser clock ahead of the server's would chart the
+  // measurement in the future, and the read that follows would not hold it.
+  it("untouched, no time is sent: opened at NOW and saved 90 min later, the server stamps it with its own clock", async () => {
     const { onSave } = await open();
     value("11");
     act(() => { vi.setSystemTime(NOW + 90 * MIN); });          // the clock moved; no tick has run yet
     await save();
-    expect(onSave).toHaveBeenCalledWith(11, new Date(NOW + 90 * MIN).toISOString());
+    expect(onSave).toHaveBeenCalledWith(11, null);
+  });
+
+  it("GCS is a whole number: 14,5 is held with the focus on it, 14 is sent", async () => {
+    const { onSave } = await open();
+    value("14,5");
+    await save();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(within(entry()).getByText("Tam ədəd olmalıdır.")).toBeInTheDocument();
+    expect(document.activeElement).toBe(within(entry()).getByLabelText(/GCS/));
+    value("14");
+    await save();
+    expect(onSave).toHaveBeenCalledWith(14, null);
   });
 
   it("untouched, the field shows the clock's minute as it moves; typed, it is hers and nothing moves it", async () => {

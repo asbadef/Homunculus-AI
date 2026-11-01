@@ -165,7 +165,7 @@ describe("completing a row (clinical.chart, D3)", () => {
     const entry = entryFor("Bilirubin səviyyəsi");
     fireEvent.change(within(entry).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
     await save(entry);
-    expect(api.chart).toHaveBeenCalledWith([{ code: "bilirubin", value: 2.4 }], new Date(NOW).toISOString());
+    expect(api.chart).toHaveBeenCalledWith([{ code: "bilirubin", value: 2.4 }], null);    // untouched: the server's clock (review 2)
     expect(api.read).toHaveBeenCalledTimes(2);
     expect(toasted(`${BED}: Bilirubin səviyyəsi qeyd olundu; forma yenidən oxunur.`).length).toBeGreaterThan(0);
     expect(within(dialog()).queryByRole("form", { name: /yeni ölçmə$/ })).toBeNull();
@@ -184,7 +184,7 @@ describe("completing a row (clinical.chart, D3)", () => {
     expect(within(entry).getByText("Bəli və ya xeyr seçin.")).toBeInTheDocument();
     fireEvent.change(within(entry).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "1" } });
     await save(entry);
-    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 1 }], new Date(NOW).toISOString());
+    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 1 }], null);
   });
 
   it("a «xeyr» back-dated to before the worst reading is charted with its time: the support entry keeps its time field (C3)", async () => {
@@ -669,6 +669,55 @@ describe("the footer, the announcement, the editors and the close (review minors
     expect(toasted(`${BED} üçün imza rədd edildi: Əhatə təyin etmək üçün əhatəsi məhdud olmayan administrator olmalısınız.`).length).toBeGreaterThan(0);
     expect(toasted(/Bu hesabın imza səlahiyyəti yoxdur/)).toHaveLength(0);
     expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it("a Save during a preview is held visibly — «Yadda saxla» says it is busy, nothing is sent — and goes once the preview has landed", async () => {
+    let land;
+    const { api } = await open({ api: { preview: vi.fn(() => new Promise((resolve) => { land = resolve; })) } });
+    await correctPlatelets();
+    await press(within(organ("Qaraciyər")).getByRole("button", { name: "Ölçmə daxil edin: Bilirubin səviyyəsi" }));
+    fireEvent.change(within(chartEntry("Bilirubin səviyyəsi")).getByLabelText(/Bilirubin səviyyəsi/), { target: { value: "2,4" } });
+    await press(button("Öncədən baxın"));
+    const save = within(chartEntry("Bilirubin səviyyəsi")).getByRole("button", { name: "Yadda saxla" });
+    expect(save).toHaveAttribute("aria-busy", "true");
+    await press(save);
+    expect(api.chart).not.toHaveBeenCalled();
+    await act(async () => { land(previewAnswer()); await settle(); });
+    await press(within(chartEntry("Bilirubin səviyyəsi")).getByRole("button", { name: "Yadda saxla" }));
+    expect(api.chart).toHaveBeenCalledTimes(1);
+  });
+
+  it("a null answer — the store dropped it after the session ended — says nothing and closes nothing, for a preview and a signature alike", async () => {
+    let { onClose } = await open({ api: { preview: vi.fn(() => Promise.resolve(null)) } });
+    await correctPlatelets();
+    const before = footer().textContent;
+    await previewed();
+    expect(toastText()).toBe("");
+    expect(footer().textContent).toBe(before);
+    expect(within(dialog()).queryByRole("button", { name: "İmzalayın" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    cleanup();
+    ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.resolve(null)) } }));
+    await correctPlatelets();
+    await previewed();
+    const previewedSaid = footer().textContent;
+    await press(button("İmzalayın"));
+    expect(toastText()).toBe("");
+    expect(footer().textContent).toBe(previewedSaid);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a read answered with null — dropped after the session ended — lands nothing: the form shown stays, and «no form» is never said", async () => {
+    const read = vi.fn().mockResolvedValueOnce(sofaForm()).mockResolvedValueOnce(null);
+    await open({ api: { read } });
+    await chartBilirubin();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(within(dialog()).getByText("Cəmi: 5")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("göndərmədi");
+    cleanup();
+    await open({ api: { read: vi.fn(() => Promise.resolve(null)) } });
+    expect(within(dialog()).getByText("SOFA forması oxunur…")).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent("göndərmədi");
   });
 
   it("a close with corrections held says they were dropped, and closes all the same; a close with none says nothing", async () => {

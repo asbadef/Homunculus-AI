@@ -475,6 +475,19 @@ describe("backendApi — what the work screens call", () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/infinity-shadow/findings?days=1", "/infinity-shadow/findings?days=7"]);
   });
 
+  // G2-A4 review 2: a measurement whose time the clinician did not touch is stamped by the SERVER's clock —
+  // a browser ahead of it would otherwise chart it in the future, missing from the read that follows.
+  it("charts a measurement with its recorded_at when given one, and with none — the server's clock — when not", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ patient_id: "S-001", charted: 1, alerts: [] }));
+    const api = signedIn(fetchMock);
+    await api.chart("S-001", [{ code: "gcs", value: 11 }], "2026-10-08T07:30:00.000Z");
+    await api.chart("S-001", [{ code: "gcs", value: 12 }], null);
+    const [[url, timed], [, untimed]] = fetchMock.mock.calls;
+    expect(url).toBe("/clinical/S-001");
+    expect(JSON.parse(timed.body)).toEqual({ entries: [{ code: "gcs", value: 11 }], recorded_at: "2026-10-08T07:30:00.000Z" });
+    expect(JSON.parse(untimed.body)).toEqual({ entries: [{ code: "gcs", value: 12 }] });
+  });
+
   it("records that a patient was opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);

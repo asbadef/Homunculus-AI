@@ -92,6 +92,10 @@ export const API_MESSAGE_KEYS = new Map([
   ["önizleme imza yolundan istenemez — önizleme yolunu kullanın", "scorePreviewOnSignRoute"],
   ["imza bir önizlemenin parmak izini ister — önce önizleyin", "scoreSignNeedsPreview"],
   ["kayıt önizlemeden sonra değişti — formu yeniden önizleyin", "scoreRecordMoved"],
+  // POST /clinical/{id} (G2-A4 review 2): the charting door refuses a GCS that is not whole. Its refusals reach
+  // the screen through `str(exc)` and are shown as the engine wrote them; this one is a fixed sentence, so it
+  // is said in the reader's words. The SOFA form holds a 14,5 back before it is sent (sofaFields).
+  ["GCS tam sayı olmalı", "gcsNotWhole"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.

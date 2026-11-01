@@ -43,7 +43,7 @@ export const ENTERABLE = Object.freeze({
   on_resp_support: Object.freeze({ labelKey: "sofa.inSupport", flag: true }),
   platelets: Object.freeze({ labelKey: "sofa.inPlatelets", unitKey: "sofa.unitPlatelets", min: 0, max: 5000 }),
   bilirubin: Object.freeze({ labelKey: "sofa.inBilirubin", unitKey: "sofa.unitMgdl", min: 0, max: 60 }),
-  gcs: Object.freeze({ labelKey: "sofa.inGcs", min: 3, max: 15 }),
+  gcs: Object.freeze({ labelKey: "sofa.inGcs", min: 3, max: 15, whole: true }),   // the door takes a whole GCS only (review 2)
   creatinine: Object.freeze({ labelKey: "sofa.inCreatinine", unitKey: "sofa.unitMgdl", min: 0, max: 40 }),
 });
 
@@ -95,13 +95,14 @@ export function recordedOf(form, code) {
 
 /** A typed value for `code`, checked as the door checks it: `{ value }` or `{ error: { key, params? } }`. One
  *  check for completing (D3) and correcting (D5, X7): a slipped digit is the same slip whether it is charted
- *  or typed over a recorded value. The flag takes the select's "1" or "0". */
+ *  or typed over a recorded value. The flag takes the select's "1" or "0"; a GCS is a whole number. */
 export function checkValue(code, raw) {
   const spec = specOf(code);
   if (spec?.flag) return raw === "1" || raw === "0" ? { value: Number(raw) } : { error: { key: "sofa.supportEmpty" } };
   const n = number(raw);
   if (n === "") return { error: { key: "sofa.valueEmpty" } };
   if (Number.isNaN(n)) return { error: { key: "sofa.notNumber" } };
+  if (spec?.whole && !Number.isInteger(n)) return { error: { key: "sofa.notWhole" } };
   if (spec && Number.isFinite(spec.min) && (n < spec.min || n > spec.max)) {
     return { error: { key: "sofa.outOfRange", params: { low: spec.min, high: spec.max } } };
   }
