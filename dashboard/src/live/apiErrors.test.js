@@ -487,7 +487,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // The eleven of Task 2, `bed_label_taken` (A-5, Task 7), `request_conflict` (A-19, Task 8),
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
     // `duplicate_open_admission` (A-37, the final review).
-    expect(CODES).toHaveLength(16);
+    // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
+    // mapping_changed; bed_has_monitor for Yapı).
+    expect(CODES).toHaveLength(21);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -513,7 +515,8 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
 
   it.each(CODES)("%s has a text in the four languages", (code) => {
     const hit = apiErrorKey(coded(code));
-    expect(hit.key).toMatch(/^kabul\.err\./);
+    // G2-ESLEME: the editor's four device codes are said by its own namespace; Yapı's stays kabul.
+    expect(hit.key).toMatch(/^(kabul|esleme)\.err\./);
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
   });
 
