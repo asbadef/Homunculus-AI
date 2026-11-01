@@ -302,7 +302,8 @@ Each item is agreed with the other session before it is changed, and listed in t
 - The "HBYS'den bekleyen" panel (when the ADT feed exists).
 - Matching a readmitted person to an earlier patient row (a readmission gets a new number).
 - The unknown/unidentified patient (admission without a birth date).
-- The device showing the patient's name for a `kabul` patient (the edge PDQ mirror is fed by ADT
-  only).
+- ~~The device showing the patient's name for a `kabul` patient (the edge PDQ mirror is fed by ADT
+  only).~~ Closed by G2-B1d (2026-11-01 spec §5): the bridge asks the API first, which answers
+  from the admission's own identity record.
 - Native reading of the az/ru/en texts.
 - Old free-text scope grants after `0012` (flagged, §9).

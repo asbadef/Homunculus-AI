@@ -796,3 +796,52 @@ MLLP port. Manual arguments can be recorded in shell history, so use synthetic d
 example. Confirm the protocol number, message timestamps/timezone and supported triggers with
 Comed IT before connecting the live feed. Hardware acceptance still requires an actual admission,
 device query and subsequent observation at the hospital.
+
+## The device's patient query: the API first (G2-B1d)
+
+Since G2-B1d the bridge no longer answers a Connex Spot's `QBP^Q22` from the ADT mirror alone. It
+asks the API first — `POST <--cloud-url>/edge/patient-query` with the bridge's own `--token` (the
+device token `/ingest` uses), at most 2 seconds — and answers:
+
+| The API says | The device gets | The mirror |
+|---|---|---|
+| found | `RSP^K22`, `QAK … OK` and a `PID` with the id, name, birth date and sex — always the name | keeps it (encrypted) |
+| not found (unknown, or discharged) | `QAK … NF`, no `PID`: the nurse corrects the number | forgets the number |
+| nothing in time, a non-200, a body it cannot read | the mirror's answer, else the id echoed without a name | unchanged |
+
+The 2 seconds are urllib's socket timeout, which bounds each socket operation (connect, send, each
+read), not the whole request; on the compose network that is enough, the same as for
+`uplink.post_json`.
+
+The `PID` of a found number is `PID|||<id>||<family>^<given>||<birth date>|<sex>`.
+
+The route is reachable on the compose network only (`http://api:8000`): the API publishes no port
+and nginx does not proxy `/edge`. It answers one exact number at a time, from the board's identity
+record (the admission's, or a Comed one). A database the API cannot read is a 503 — "cannot
+answer", never "not found". In capture-only mode (no `--cloud-url`) the bridge answers from the
+mirror as before. Without `PHI_ENCRYPTION_KEY` the bridge has no mirror but still asks the API, so
+a found number is still answered with its name; only the fallback, when the API cannot answer, is
+then the bare echo.
+
+**On the VM, `--cloud-url` must be the compose address `http://api:8000`, never nginx's
+`https://<host>/api`.** Nginx does not proxy `/edge`, so with the nginx address every query would
+fall to the mirror and `sorgu_api_hata` would climb. `deploy/local/docker-compose.yml` passes the
+right address; `deploy/bridge/docker-compose.yml` passes whatever `CLOUD_URL` holds, so check it.
+
+Only a patient query (a `QBP`) takes a worker thread, so a 2-second wait on the API holds its own
+connection only; ORU vitals stay on the event loop and never wait behind a lookup.
+
+The report line gains two counters beside the existing `sorgu` (every query answered):
+`sorgu_NF` (the API said not found; `BridgeStats.queries_not_found`) and `sorgu_api_hata` (the API
+could not answer and the mirror or the echo did; `BridgeStats.queries_api_failed`). No number is
+logged.
+
+A bench check with a synthetic number, from inside the bridge container (it prints whether the
+device would see a name, never the name):
+
+    docker exec homunculus-bridge python scripts/pdq_probe.py --id 000000000000
+
+`000000000000` is never issued: it is the number the test label prints, and the start number must
+be at least `000000000001`. The API therefore answers not found, and the probe prints
+`MSA=AA QAK=NF PID=yok`, which proves the bridge reached the API (a bridge that could not ask
+would answer from its mirror or echo the id, with a `PID`).

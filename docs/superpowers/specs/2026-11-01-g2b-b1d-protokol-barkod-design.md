@@ -300,3 +300,52 @@ cards that an older API would not match, so from then on rollback means a forwar
 - **O4:** how the name appears (`PID-5` = `family^given`; a Homunculus admission has one name field, sent as given).
 - **O5:** the queried value (QPD-3) is exactly the typed or scanned number, with no trailing `_`.
 - **O6:** the Zebra driver has the 50×30 stock at 100 % scale, and the test label's bars print crisp.
+
+**Other open items** (found while building; not part of the owner's session):
+
+- **O7:** a HIS (ADT) identity record with neither family nor given answers `found` with no name. D3
+  makes the name the nurse's only safeguard. A kabul admission always carries a name, so only a
+  PID-5-less HIS record can do this. The owner decides.
+- **O8:** `admission/service.py` `confirm_transfer_arrival` builds the arriving admission without
+  `protocol_no`, so its board key would be the H-number while the card stands under the protocol
+  (E3's split). This is unreachable while transfers are closed (409 `transfer_unavailable`). The
+  transfer slice moves the protocol to the arriving row or issues a new one
+  (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Its test pins that
+  `board_key` equals the card's key.
+- **Elsewhere:** `edge/uplink.py` has the environment-proxy and redirect exposure this slice closed
+  in `edge/pdq_client.py`. It is Lane A's open item, not this slice's.
+
+## As built (plan 2026-11-01-g2b-b1d-protokol-barkod.md)
+
+The plan's departures E1–E15 are what the code does where this spec was silent or the code
+differed: the revision ids are bare numbers (`0015` was cut on `0013`, E1; when the editor's
+`0014_device_beds` reached main, Task 22 repointed it, so `0015` follows `0014`, `a20ad06`); the
+device route is a factory bound to the app's `_caller` (E2); the bed release's card check reads the
+board key too (E3); every admission audit row's `patient_id` is the board key, the admit row
+carrying both numbers (E4); the detail answers `AdmissionDetail` (E5); the refusals name
+`board_key` beside `patient_number` (E6); `/edge` is left out of nginx's drift check by name (E7);
+the bridge mirror takes a lock (E8); both test worlds set a start number (E9); the CHECK is
+Postgres-only in the model (E10); the PUT refuses in the order format, dpi, size, fit, forward —
+the narrowest width is 49 mm at 203 dpi (E11); the dashboard matches by `boardKeyOf` (E12); the fit
+cases are `homunculus-engine/tests/label_fit_cases.json` (E13); the device route logs a store
+failure by class only (E14); the codes' block rebinds `CODES` (E15). The editor's bed occupant
+(`devicebeds/service.py` `_open_admission_number`, §4) reads the board key (`a20ad06`).
+
+Departures found while implementing, E16–E27: the protocol tests' helpers return plain ids, not ORM
+rows, because an expired row's attribute raises `MissingGreenlet` (E16); the protocol tab's strings
+gain `invalid.nextNoZero` in four languages (E17); `rawKeys.test.jsx` stubs `protocolSettings` in
+`openAt` (E18); while no read has answered, the admin tab shows the refusal and a retry, not the
+form (E19); the label's text scale is min(h/30, w/50) (E20); `test_protocol_admission.py` takes
+plain values first, for E16's cause (E21); a third route walk, `test_route_inventory.py`, exempts
+the device route, keyed by module, method and path (E22); `pdq_client.ask` also turns
+`http.client.HTTPException` into «unavailable» (E23); the bridge's mirror logs a fault's exception
+class only (E24); `answer_query` runs on worker threads, several at once, so `BridgeStats` takes a
+lock (`bump`) (E25); the no-stall test closes its writers and waits a bounded time (E26); main
+reached the slice by a merge, not the plan's rebase, so the reviewed hashes stay valid and each
+conflict was resolved once (E27, `fc1b703`).
+
+Three controller amendments of 2026-11-01 also apply: the start number is at least
+`000000000001`, because `000000000000` is the number the test label prints (A-1; the same
+`protocol_format` code); a long name is never cut on the label (A-3); and a discharged admission's
+label can still be printed, audited like any other (A-2; the screens offer the button only for an
+open admission).
