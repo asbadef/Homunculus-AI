@@ -58,7 +58,12 @@ _PRESSORS: dict[str, SignalCode] = {
     "dobutamine": SignalCode.DOBUTAMINE_RATE,
 }
 
-ORGAN_FAILURE_POINTS = 3   # sepsis-3: ">= 3 for a system is organ failure for that system"
+# The organ-failure mark: a system scoring >= 3. This is the convention of the hospital's printed form, in
+# its footnote ("SOFA skoru >=3 olması o sistem için organ yetmezliği olarak tanımlanır"), kept as the
+# engine's `failure` flag. It is NOT a Sepsis-3 statement: neither the vault's Sepsis-3 extract nor its wiki
+# holds it, and its published source is still to be captured (G2-A4 review; plan O14). The screen labels
+# the mark only «≥3 puan».
+ORGAN_FAILURE_POINTS = 3
 
 
 @dataclass

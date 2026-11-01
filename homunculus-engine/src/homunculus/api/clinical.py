@@ -14,7 +14,8 @@ Two rules shape this module:
 
 1. **A clinician may chart only what a clinician observes.** Device channels are not writable
    here. A hand-typed heart rate would be indistinguishable from a monitored one the moment it
-   landed, and the board would have no way to tell a reading from a typo.
+   landed, and the board would have no way to tell a reading from a typo. One device-derived flag
+   is the exception: `ON_RESP_SUPPORT` (G2-A4, X16 — see its `CHARTABLE` entry for why).
 
 2. **Every entry is attributable.** The audit record names the account that charted it. A
    clinical fact with no author is not evidence.
@@ -101,10 +102,11 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.POTASSIUM: (1.0, 10.0),
     SignalCode.HAEMATOCRIT: (5.0, 75.0),
     # G2-A4 (D4): the SOFA form's labs, in the units CHARTABLE fixes. Engineering bounds against a slipped
-    # digit or a unit — a normal or raised creatinine typed in µmol/L (≥ 44) lands above 40 mg/dL;
-    # a PaO2/FiO2 worked out with FiO2 as a percentage lands far below 20 — never clinical thresholds: the
-    # band tables in rules/sofa.py stay the only place a value is judged. A bilirubin typed in µmol/L can
-    # still fall inside 0–60; the unit printed beside the field is the guard there (D11). Platelets and
+    # digit or a unit — a creatinine typed in µmol/L above 40 is refused, one below 40 is not; a PaO2/FiO2
+    # worked out with FiO2 as a percentage lands far below 20 — never clinical thresholds: the band tables
+    # in rules/sofa.py stay the only place a value is judged. A bilirubin typed in µmol/L can still fall
+    # inside 0–60, as a creatinine below 40 can; the unit printed beside the field is the guard there
+    # (D11; plan O12). Platelets and
     # creatinine sit far enough out to keep this header's promise (X18): rare survivable values exist above
     # 2000 and 30, and past those the points no longer change (0 and 4), so refusing them would only force
     # a false entry.
@@ -165,6 +167,10 @@ def _value(code: SignalCode, raw) -> float:
         raise ClinicalEntryError(f"{code.value}: geçersiz sayı")
     if code in _BOOLEAN and value not in (0.0, 1.0):
         raise ClinicalEntryError(f"{code.value}: yalnız 0 veya 1 olabilir")
+    if code is SignalCode.GCS and not value.is_integer():
+        # G2-A4 review: the scale counts whole points, so 14.5 is a slip, not an assessment — and between
+        # two bands of the SOFA table it would be scored as one of them without anyone having said which.
+        raise ClinicalEntryError("GCS tam sayı olmalı")
     low, high = PLAUSIBLE.get(code, (float("-inf"), float("inf")))
     if not (low <= value <= high):
         raise ClinicalEntryError(

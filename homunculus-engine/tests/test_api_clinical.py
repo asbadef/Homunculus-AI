@@ -366,7 +366,8 @@ class TestTheSofaFormsInputs:
         ("platelets", 0.0, 5000.0, 15000),    # 150 typed with two zeros too many (X18: edge 5000)
         ("bilirubin", 0.0, 60.0, 120),        # far past any bilirubin in mg/dL
         ("creatinine", 0.0, 40.0, 177),       # a creatinine typed in µmol/L (D11; X18: edge 40)
-        ("creatinine", 0.0, 40.0, 44),        # even a normal µmol/L creatinine (≥ 44) stays refused
+        ("creatinine", 0.0, 40.0, 44),        # above the bound: refused (a µmol/L value above 40 is; one
+                                              # below 40 is not — the printed unit is the guard, D11)
         ("pao2_fio2", 20.0, 700.0, 4),        # a ratio worked out with FiO2 as a percentage
     ])
     def test_the_four_labs_refuse_a_slip_and_take_their_bounds(self, client, code, low, high, slipped):
@@ -375,6 +376,18 @@ class TestTheSofaFormsInputs:
         r = _chart(client, "bed-3", [{"code": code, "value": slipped}])
         assert r.status_code == 400
         assert "aralığın" in r.json()["detail"]
+
+    def test_a_gcs_is_a_whole_number(self, client):
+        """G2-A4 review: the scale has no half points; 14.5 is a slip, refused at the door."""
+        r = _chart(client, "bed-3", [{"code": "gcs", "value": 14.5}])
+        assert (r.status_code, r.json()["detail"]) == (400, "GCS tam sayı olmalı")
+        assert _chart(client, "bed-3", [{"code": "gcs", "value": 14}]).status_code == 200
+        with pytest.raises(ClinicalEntryError) as caught:
+            build_entries("bed-1", [{"code": "gcs", "value": "14.5"}], charted_by="dr-elif", recorded_at=WHEN)
+        assert str(caught.value) == "GCS tam sayı olmalı"
+        [entry] = build_entries("bed-1", [{"code": "gcs", "value": 14.0}], charted_by="dr-elif",
+                                recorded_at=WHEN)
+        assert entry.observation.value == 14.0
 
     def test_charted_support_reaches_the_alerting_sofa_too(self, client):
         """rules/sofa.py reads the same code: a ratio of 150 scores 2 off support and 3 on it."""

@@ -60,6 +60,7 @@ from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.admission.boardlink import BoardLink    # G2-B1a
 from homunculus.auth.permissions import validate_permissions
+from homunculus.canonical import SignalCode
 from homunculus.gateway.fhir import PATIENT_ID_MAX, GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scoring import sofa_form
@@ -101,6 +102,12 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
+
+#: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE, and one for
+#: MAP, which the door does not need (MAP is not chartable there) but the cardiovascular row's MAP can be
+#: corrected. An engineering slip bound against a slipped digit (9000 for 90) or a unit, far outside any
+#: pressure a monitor reports; never a clinical threshold — the SOFA table stays the only judge of a value.
+CORRECTION_BOUNDS = {**PLAUSIBLE, SignalCode.MAP: (0.0, 300.0)}
 
 #: G2-A4 (D12, X20): the shape of a preview's fingerprint (`scoring/signing.py` `form_digest`) — SHA-256 as
 #: 64 lowercase hex digits. A signature without one is refused before any fingerprint is compared.
@@ -1543,9 +1550,9 @@ def create_app(
         auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
         try:
             # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
-            # preview and a signature alike, both parsed here. The dashboard mirrors them (X7); this is
-            # the guard.
-            overrides = parse_overrides(body.get("overrides"), auto, bounds=PLAUSIBLE)
+            # preview and a signature alike, both parsed here — and MAP to its own (CORRECTION_BOUNDS).
+            # The dashboard mirrors them (X7); this is the guard.
+            overrides = parse_overrides(body.get("overrides"), auto, bounds=CORRECTION_BOUNDS)
         except ScoreSigningError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 

@@ -602,6 +602,23 @@ class TestTheRouteBoundsACorrection(_AsPeople):
             assert r.json()["detail"] == self.SAID
         assert self._signed_rows(client) == []
 
+    def test_a_slipped_map_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
+        """G2-A4 review: MAP has no bound at the door because it is not chartable there, but the
+        cardiovascular row's MAP can be corrected; a correction of 9000 is held to the engineering slip
+        bound the signing helper adds for it (0–300 mmHg). The door still refuses MAP."""
+        self._chart(client, "yatak-1", "platelets", 45)
+        slipped = [{"code": "map", "value": 9000, "reason": WHY}]
+        said = "map: 9000 beklenen aralığın (0–300) dışında — birim veya ondalık hatası olabilir"
+        for path, body in ((PREVIEW, {"overrides": slipped}), (SIGN, {"overrides": slipped, "expect": "0" * 64})):
+            r = client.post(path, headers=DOCTOR, json=body)
+            assert (r.status_code, r.json()["detail"]) == (400, said), path
+        assert self._signed_rows(client) == []
+        inside = client.post(PREVIEW, headers=DOCTOR,
+                             json={"overrides": [{"code": "map", "value": 300, "reason": WHY}]})
+        assert inside.status_code == 200, inside.text
+        door = client.post("/clinical/yatak-1", headers=AUTH, json={"entries": [{"code": "map", "value": 65}]})
+        assert door.status_code == 400 and "elle girilemez" in door.json()["detail"]
+
     def test_a_correction_inside_the_bound_still_previews_and_signs(self, client):
         """The edge itself is inside: 5000, the door's platelet bound (X18)."""
         self._chart(client, "yatak-1", "platelets", 45)
