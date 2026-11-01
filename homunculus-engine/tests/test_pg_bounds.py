@@ -180,6 +180,72 @@ def test_a_samples_write_to_a_silent_server_raises_in_time(silent_server):
     assert isinstance(error, OperationalError)
 
 
+class _Result:
+    rowcount = 0
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return []
+
+
+class _Transaction:
+    def __init__(self, statements: list[str]):
+        self.statements = statements
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, statement, parameters=None):
+        self.statements.append(str(statement))
+        return _Result()
+
+
+class _RecordingEngine:
+    """Records each transaction's SQL in order. Only `begin`: a statement bound set with SET LOCAL
+    lasts to the end of a transaction, so a call that takes one must open one."""
+
+    def __init__(self):
+        self.transactions: list[list[str]] = []
+
+    def begin(self):
+        self.transactions.append([])
+        return _Transaction(self.transactions[-1])
+
+
+def _recorded_samples(monkeypatch):
+    engine = _RecordingEngine()
+    monkeypatch.setattr(monitor_samples, "create_engine", lambda url, **kwargs: engine)
+    return PostgresSamples("postgresql://u:p@db/test_bounds"), engine
+
+
+@pytest.mark.parametrize("call, bound, verb", [
+    pytest.param(lambda store: store.since("h1", T0, now=T0), 30_000, "SELECT", id="replay"),
+    pytest.param(lambda store: store.prune(before=T0), 60_000, "DELETE", id="prune"),
+])
+def test_the_replay_and_the_prune_set_their_own_statement_bound_first(monkeypatch, call, bound, verb):
+    """The install's 24 h replay and the hourly prune are long by nature; the engine's 2 s is
+    for the appends on the loop, and a bound for a stalled server must not cut them."""
+    store, engine = _recorded_samples(monkeypatch)
+    call(store)
+    ((first, second),) = engine.transactions                 # one transaction, two statements
+    assert first == f"SET LOCAL statement_timeout = {bound}"
+    assert second.startswith(verb)
+
+
+def test_the_appends_keep_the_engines_bound(monkeypatch):
+    store, engine = _recorded_samples(monkeypatch)
+    store.append_many([Sample(hospital="h1", patient_id="bed-1", bed_id="b-1", source="10.0.0.5",
+                              code="heart_rate", via="hr", value=72.0, unit="bpm", captured_at=T0,
+                              received_at=T0)])
+    ((only,),) = engine.transactions
+    assert only.startswith("INSERT INTO monitor_samples")
+
+
 class _Releasing:
     """Records its release under its name; raises from it when told to — a pool that would not
     close."""

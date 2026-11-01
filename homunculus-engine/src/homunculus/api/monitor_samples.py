@@ -22,8 +22,14 @@ RETENTION_DAYS = 30
 MEMORY_RETENTION_HOURS = 24
 # Postgres's SQLSTATE for "relation does not exist": the table of migration 0013 is not there.
 UNDEFINED_TABLE = "42P01"
-# The table's statement bound (spec 2026-11-01, D2): 2 s, the bound Lane B's reader uses.
+# The table's statement bound (spec 2026-11-01, D2): 2 s, the bound Lane B's reader uses — for the
+# appends, one sampling pass's rows from the event loop.
 STATEMENT_TIMEOUT_MS = 2000
+# Two statements are long by nature, and a bound meant for a stalled server must not cut them (D2):
+# the install's replay reads up to REPLAY_HOURS of a ward's samples, and the hourly prune deletes an
+# hour's backlog — more after an outage — off the loop. Each sets its own, for its transaction only.
+REPLAY_STATEMENT_TIMEOUT_MS = 30_000
+PRUNE_STATEMENT_TIMEOUT_MS = 60_000
 
 
 @dataclass(frozen=True)
@@ -111,7 +117,8 @@ class PostgresSamples:
             conn.execute(_INSERT, [dict(sample.__dict__) for sample in samples])
 
     def since(self, hospital: str, since: datetime, *, now: datetime) -> list[Sample]:
-        with self._engine.connect() as conn:
+        with self._engine.begin() as conn:
+            _statement_timeout(conn, REPLAY_STATEMENT_TIMEOUT_MS)
             rows = conn.execute(text(
                 "SELECT hospital, patient_id, bed_id, source, code, via, value, unit, captured_at, received_at"
                 " FROM monitor_samples WHERE hospital = :hospital AND captured_at >= :since AND captured_at <= :now"
@@ -121,11 +128,19 @@ class PostgresSamples:
 
     def prune(self, *, before: datetime) -> int:
         with self._engine.begin() as conn:
+            _statement_timeout(conn, PRUNE_STATEMENT_TIMEOUT_MS)
             return conn.execute(text("DELETE FROM monitor_samples WHERE received_at < :before"),
                                 {"before": before}).rowcount
 
     def dispose(self) -> None:
         self._engine.dispose()
+
+
+def _statement_timeout(conn, ms: int) -> None:
+    """This transaction's statement bound in place of the engine's. SET LOCAL ends with the
+    transaction, so the pooled connection goes back with the engine's 2 s. SET takes no bound
+    parameter, so the value is written in — one of the integer constants above, never input."""
+    conn.execute(text(f"SET LOCAL statement_timeout = {int(ms)}"))
 
 
 def _utc(value: datetime) -> datetime:
