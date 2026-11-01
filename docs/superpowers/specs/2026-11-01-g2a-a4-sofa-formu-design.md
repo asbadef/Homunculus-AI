@@ -3,7 +3,8 @@
 **Date:** 2026-11-01 · **Lane:** A (patient & engine) · **Branch:** `feat/g2a-a4-sofa`, off `main` `ec66a57` (NBP-2 +
 HR/PLS fix live on the VM). **Owner decisions (2026-10-31/11-01):** the open organ rows are completed from the form
 (Q1 = 1, «devam et» on the recommended answer); the ten decisions below were presented and accepted the same way
-(«devam et»). Code references were read at `ec66a57`.
+(«devam et»); O1 = 2 (the laboratory reports creatinine and bilirubin in mg/dL, 2026-11-01). Code references were read
+at `ec66a57`.
 
 ## 1. The problem
 
@@ -35,7 +36,7 @@ point bands of PaO₂/FiO₂, `sofa_form.py:131`), and four of the five labs hav
 | D8 | **Urine output stays out of the renal score.** The form says so under the renal row («idrar çıkışı bu formda puana katılmıyor»). | The source's renal limb includes urine output (<500 / <200 mL/day), but a day's sum from partial charting would read as oliguria and overstate failure. Open item O2. |
 | D9 | **MAP is not entered here.** The cardiovascular row takes MAP from the record (unmeasured while no monitor feeds the real engine) and the pressors from A3's charting. | Bedside vitals entry is Group 3's; the shadow engine's monitor values are not the record. Open item O3. |
 | D10 | **Nothing else changes:** no alert, no notification, no bell; the window is 24 h; no «dünden +N» comparison; four languages (az default, tr, ru, en) with the parity and az≠tr rules; labelled inputs, the refusal in text as well as the toast, keyboard-only use, phone width. | SOFA here is prognostic (`sofa_form.py` docstring); the alerting use stays in `rules/septic_shock.py`. |
-| D11 | **Units of creatinine and bilirubin: see O1 (owner question).** The engine records mg/dL. Until O1 is answered the form prints the unit on each input and relies on D4's bounds; a µmol/L creatinine (≥ 30) is refused, a µmol/L bilirubin is not (17 µmol/L would be read as 17 mg/dL, 4 points). | A unit slip on bilirubin is silent; the lab's unit decides the fix. |
+| D11 | **Units: mg/dL, as the laboratory reports (O1 = 2).** Creatinine and bilirubin are entered in mg/dL, the engine's unit; no conversion. The form prints the unit beside each input and in its label, and D4's bounds stay as the guard against a slip (a µmol/L creatinine, ≥ 30, is refused; a µmol/L bilirubin would not be — the printed unit is the guard there). | The owner's answer; one unit end to end is the simplest correct form. |
 
 ## 3. Components
 
@@ -69,9 +70,9 @@ their tables), a lab feed, any VM deploy (with the next deploy, on the owner's w
 
 ## 6. Open items
 
-- **O1 (owner question)** Which unit does the hospital's laboratory report creatinine and bilirubin in — mg/dL or
-  µmol/L? If µmol/L, the form takes µmol/L and converts with the fixed factors (creatinine 88.4, bilirubin 17.1 µmol/L per
-  mg/dL), showing the converted value before it is charted; if both occur, a unit selector per input.
+- **O1 — closed (2026-11-01):** the laboratory reports creatinine and bilirubin in mg/dL (owner's answer 2). If a
+  µmol/L report ever reaches the ward, the fix is a unit selector converting with the fixed factors (creatinine 88.4,
+  bilirubin 17.1 µmol/L per mg/dL), shown before charting.
 - **O2** Urine output in the renal limb needs a complete day of charted output; a rule for "complete" is a clinical
   decision.
 - **O3** MAP from the monitors reaches only the shadow engine; whether the real form may read it is Aşama C's question.
