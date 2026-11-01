@@ -469,27 +469,33 @@ def create_app(
             newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
             changed: set[str] = set()
             if newly != store.escalated:
-                added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
-                # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
-                # critical that latches and returns, or an alert that clears and returns within the
-                # delay, is "added" again — but the doctor was told about this chain already. A new
-                # chain pages anew.
-                to_page = added - store.paged
-                if to_page:
-                    store.paged |= to_page
-                    alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
-                    for key in to_page:
-                        audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
-                                                {"at": now.isoformat()}))
-                    for note in notifier.for_escalation(hospital, to_page, alert_by_key):
+            # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
+            # critical that latches and returns, or an alert that clears and returns within the
+            # delay, is escalated again — but the doctor was told about this chain already (`paged`).
+            # A new chain pages anew.
+            # At least once, never lost (spec 2026-11-01, D3): a key joins `paged` only after its
+            # `escalation` row is written and its note published, with that note's row. An append
+            # that fails — a bounded audit times out in seconds now, where it used to wait — stops
+            # the cycle with this key and every one after it still unpaged, and the next cycle pages
+            # them: what is escalated and not yet paged, not only what this cycle escalated, which a
+            # failed cycle has already recorded. The cost after a failure is a second row or page,
+            # never a lost one.
+            to_page = newly - store.paged
+            if to_page:
+                alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
+                for key in sorted(to_page):
+                    audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
+                                            {"at": now.isoformat()}))
+                    for note in notifier.for_escalation(hospital, {key}, alert_by_key):
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+                    store.paged.add(key)
             await _republish_turned(hospital, engine, store, now, changed)   # G2-A2 (D5)
             freshness_since[hospital] = now                                  # G2-A2 (D5)
 
