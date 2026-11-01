@@ -57,7 +57,7 @@ means "not asked", never "not done").
 Aşama B's shadow engine (api/infinity_rules.py) hears the admission as it hears Lane A's doors,
 through three more of the app's hooks and its two card builders, by reference: the weight charted
 is mirrored to it (`mirror`, handed to the charting door as `/clinical` hands it), the profile set
-is mirrored (`mirror_profile`, right after the audit row of the real `set_profile`), the monitor
+is mirrored (`mirror_profile`, after the audit row and the real `set_profile`), the monitor
 strip's cached occupants are dropped after the identity write (`occupancy_reset`: the next
 readings body links the bed's new occupant at once, not up to 10 s later), and every card is
 built by the app's own builders (`card`, `identity_card`), so a frame carries the `shadow` key a
@@ -66,10 +66,11 @@ The app's hooks do not raise (the two mirrors run inside the lane's `guard`; the
 cache), and the link does not rest on that: each call goes through `_hook`, and one that raises is
 logged (`log.exception`, naming the hook, never a value) and the write stands. The shadow lane
 hears a write; it is never a condition of it. Left unwrapped, a hook that raised between
-`engine.set_profile` and its audit row would leave the engine holding a profile no restart could
-replay, and one raising inside the charting door would skip the `chart` row the door writes after
-its `mirror` (Lane B's review of the merge, M-1). For the same reason `apply_profile` writes its
-audit row BEFORE it calls `mirror_profile`. None is reached for a discharged number, which is
+`engine.set_profile` and its audit row would have left the engine holding a profile no restart
+could replay, and one raising inside the charting door would skip the `chart` row the door writes
+after its `mirror` (Lane B's review of the merge, M-1). For the same reason `apply_profile` writes
+its audit row BEFORE it calls `mirror_profile`, and (A-25) before it gives the engine the profile
+at all: the trail row first, then memory. None is reached for a discharged number, which is
 refused before. A link built without them — a test's — mirrors nothing and builds its cards with
 `patient_board` / `identity_only_board`, as before, save that the second is given the `shadow`
 key the first always carries (None, there being no builder to fill it): every card the link sends
@@ -284,17 +285,20 @@ class BoardLink:
                             actor: str) -> None:
         """The comorbidities merged into the engine's profile, audited as `PUT
         /clinical/{id}/profile` audits them, then the card republished. A discharged number is
-        refused first (`_refuse_discharged`). The audit row is written right after the real
-        `set_profile` and BEFORE the profile is mirrored to the shadow engine (`mirror_profile`),
-        as that route orders them: whatever the lane does, the engine's profile has the row a
-        restart replays behind it. A mirror that raises is logged, and the write stands (M-1)."""
+        refused first (`_refuse_discharged`). The merged profile is built (reading the engine's
+        charted one, changing nothing), then the audit row is written, and only after the append
+        has succeeded is the profile given to the real engine (`set_profile`), and then mirrored
+        to the shadow engine (`mirror_profile`): the trail row first, then memory, so a failed
+        append raises with the engine holding no profile the trail does not have (A-25), and
+        whatever the lane does, the engine's profile has the row a restart replays behind it. A
+        mirror that raises is logged, and the write stands (M-1)."""
         self._refuse_discharged(tenant, patient_number)
         engine = self._engine(tenant)
         profile = profile_from_payload(patient_number, {"comorbidities": list(codes)},
                                        engine.profile(patient_number))
-        engine.set_profile(profile)
         self._audit.append(AuditEvent(tenant, "profile", profile.patient_id, "",
                                       {**profile_to_payload(profile), "charted_by": actor}))
+        engine.set_profile(profile)
         if self._mirror_profile is not None:
             self._hook("mirror_profile", self._mirror_profile, tenant, profile)
         await self._send(tenant, patient_number)
