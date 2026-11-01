@@ -25,8 +25,8 @@ from homunculus.devicebeds import seed
 from homunculus.devicebeds.models import DeviceBed
 from homunculus.devicebeds.rows import to_row
 from homunculus.devicebeds.seed import APPROVED_V2_SHA256, ImportRefused, import_v2
-from tests.conftest import TEST_DATABASE_URL, requires_db
 from homunculus.tenant.models import Site, Tenant
+from tests.conftest import TEST_DATABASE_URL, requires_db
 from tests.esleme_v2 import GRANT_GROUP, GRANT_KEY, V2, V2_DIGEST, tenant_only, v2_ward
 
 pytestmark = [requires_db]
@@ -442,19 +442,21 @@ async def test_the_tenant_lock_is_key_share_so_inserts_that_reference_the_tenant
 
 async def test_a_tenant_row_held_by_someone_else_is_given_up_after_five_seconds(db_session):
     """A-13 4: `SET LOCAL lock_timeout = '5s'`. The import stops with the database's error instead of waiting for
-    ever, and nothing is written."""
+    ever, and nothing is written. The error is the lock timeout itself (SQLSTATE 55P03, `lock_not_available`),
+    not some other database failure that also ended the wait (A-15)."""
     await v2_ward(db_session)
     engine = create_async_engine(TEST_DATABASE_URL)
     try:
         async with engine.connect() as holder:
             await holder.execute(select(Tenant.id).where(Tenant.slug == SLUG).with_for_update())
             started = time.monotonic()
-            with pytest.raises(DBAPIError):
+            with pytest.raises(DBAPIError) as refused:
                 await asyncio.wait_for(import_v2(db_session, tenant_slug=SLUG, data=V2.read_bytes(), audit=None), 30)
             waited = time.monotonic() - started
             await holder.rollback()
     finally:
         await engine.dispose()
     await db_session.rollback()
+    assert refused.value.orig.sqlstate == "55P03"                              # asyncpg's name for pgcode
     assert 4.0 <= waited < 15.0, f"waited {waited:.1f} s"
     assert await _count(db_session) == 0
