@@ -81,8 +81,12 @@ def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
         return False  # unknown signal slug — skip rather than fail the whole replay
     p = rec.payload
     ts = datetime.fromisoformat(p["obs_ts"])
+    # G2-A4 review (S1, X22): a `chart` row carries `charted_by`, never a `device` — the door stamps the
+    # observation "clinician" (api/clinical.py `build_entries`), and the replay must too, or after a restart
+    # every hand-charted value reads as coming from "replay" (the SOFA form prints the source).
+    source = p.get("device") or ("clinician" if rec.event_type == "chart" else "replay")
     obs = Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
-                      unit=p.get("unit", ""), timestamp=ts, source_device=p.get("device", "replay"))
+                      unit=p.get("unit", ""), timestamp=ts, source_device=source)
     engine.ingest(obs, now=min(ts, written))
     return True
 
