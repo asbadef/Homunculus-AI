@@ -189,6 +189,20 @@ describe("completing a row (clinical.chart, D3)", () => {
     expect(api.read).toHaveBeenCalledTimes(1);
   });
 
+  it("a right taken away (403) is said in the form's words, never with the permission key, and the entry closes", async () => {
+    const { api } = await open({ api: { chart: vi.fn(() => Promise.reject(refusal(403, "permission required: clinical.chart"))) } });
+    await press(within(organ("Laxtalanma")).getByRole("button", { name: "Ölçmə daxil edin: Trombosit sayı" }));
+    const entry = entryFor("Trombosit sayı");
+    fireEvent.change(within(entry).getByLabelText(/Trombosit sayı/), { target: { value: "150" } });
+    await save(entry);
+    const said = `${BED} üçün ölçmə rədd edildi: Bu hesabın qeyd etmə səlahiyyəti yoxdur.`;
+    expect(toasted(said).length).toBeGreaterThan(0);
+    expect(footer()).toHaveTextContent(said);
+    expect(toasted(/clinical\.chart/)).toHaveLength(0);
+    expect(within(dialog()).queryByRole("form", { name: /yeni ölçmə$/ })).toBeNull();
+    expect(api.read).toHaveBeenCalledTimes(1);
+  });
+
   it("a measurement with no answer may have landed: said so, and the form is read again", async () => {
     const { api } = await open({ api: { chart: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))) } });
     await press(within(organ("Mərkəzi sinir sistemi")).getByRole("button", { name: "Ölçmə daxil edin: GCS (Qlazqo koma şkalası)" }));
@@ -440,7 +454,8 @@ describe("preview, then sign (D6)", () => {
     await correctPlatelets();
     await previewed();
     await press(button("İmzalayın"));
-    expect(toasted(`${BED} üçün imza rədd edildi: Bu əməliyyat üçün səlahiyyətiniz yoxdur (scores.sign).`).length).toBeGreaterThan(0);
+    expect(toasted(`${BED} üçün imza rədd edildi: Bu hesabın imza səlahiyyəti yoxdur.`).length).toBeGreaterThan(0);
+    expect(toasted(/scores\.sign/)).toHaveLength(0);                            // a permission key is no clinician's word
     expect(onClose).toHaveBeenCalledWith(false);
     cleanup();
     ({ onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))) } }));
@@ -537,6 +552,19 @@ describe("the footer, the announcement, the editors and the close (review minors
     await previewed();
     await press(button("İmzalayın"));
     expect(toasted(`${BED} üçün imza rədd edildi: Bu hesabın imza səlahiyyəti yoxdur.`).length).toBeGreaterThan(0);   // no reason sent: the right
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it("a 403 that is not a missing right — a scope's refusal — is said in the engine's words, not as \"no right\"", async () => {
+    // No SOFA route sends a scope 403 today (a patient out of scope is a 404, an unreadable scope a 503): the
+    // engine's own scope sentence (scope/router.py) stands in for one, as it would arrive.
+    const scope = "kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız";
+    const { onClose } = await open({ api: { sign: vi.fn(() => Promise.reject(refusal(403, scope))) } });
+    await correctPlatelets();
+    await previewed();
+    await press(button("İmzalayın"));
+    expect(toasted(`${BED} üçün imza rədd edildi: Əhatə təyin etmək üçün əhatəsi məhdud olmayan administrator olmalısınız.`).length).toBeGreaterThan(0);
+    expect(toasted(/Bu hesabın imza səlahiyyəti yoxdur/)).toHaveLength(0);
     expect(onClose).toHaveBeenCalledWith(false);
   });
 

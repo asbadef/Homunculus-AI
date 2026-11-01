@@ -29,9 +29,9 @@
 // THE REFUSALS are the house's (admin/refusal.js, meds/MedsChartForm.jsx): on the toast, named after the bed —
 // and, D10, the same sentence in the footer as plain text, which is no live region, so the refusal is announced
 // once (X4). The footer says the last outcome BESIDE the standing note — why a control is absent, or what
-// signing needs first — never instead of it. A 403 is said in the engine's own words when it sent some (a
-// device, a scope, a permission), and only a bare one as "no right"; on a preview or a signature it closes the
-// form. A write with no answer may have landed (`mayHaveLanded`): a measurement reads the form again, a
+// signing needs first — never instead of it. A 403 for a missing right (the engine's permission sentence, or a
+// bare 403) is said as "no right", never with the permission key; any other 403 (a device, a scope) in the
+// engine's own words. On a preview or a signature a 403 closes the form. A write with no answer may have landed (`mayHaveLanded`): a measurement reads the form again, a
 // signature closes the form and the box reads its last signature again. A preview writes nothing, so its failure
 // is a read's (`readErrorText`); a preview that lands is announced, since nothing else says it. Closing with
 // corrections held drops them, and the toast says so. Nothing here alerts, rings or notifies (D10).
@@ -77,13 +77,18 @@ function recordUnder(answer) {
 /** A total as the engine sent it, or a dash: never a number it did not send. */
 const totalOf = (n) => (Number.isInteger(n) ? n : "—");
 
-/** A 403's reason: the engine's own refusal when it sent one — a device's, a scope's, a permission's, in the
- *  reader's words — and `noRightKey` ("this account has no right to …") only for a bare 403, which says
- *  nothing more than its status. Never the second in place of the first. */
+/** The engine's permission refusal, as `_require` writes it (api/app.py): case-sensitive, as written. */
+const PERMISSION_REFUSAL = /^permission required: /;
+
+/** A 403's reason. A missing right, as the engine's permission sentence or a bare 403, is said in the form's
+ *  own words (`noRightKey`, "this account has no right to …"), never as the raw permission key in brackets —
+ *  a key such as "scores.sign" is an administrator's word, not a clinician's. Any other refusal — a scope's,
+ *  a device's ("skor formunu yalnız bir kişi imzalayabilir") — is the engine's, in the reader's words through
+ *  the house mapping: the form's sentence would say less, or something false. */
 function forbiddenReason(t, err, noRightKey) {
   const text = typeof err?.message === "string" ? err.message.trim() : "";
-  const bare = text === "" || apiErrorKey(err)?.key === "errors.requestFailed";
-  return bare ? t(noRightKey) : apiErrorText(t, err);
+  const noRight = text === "" || PERMISSION_REFUSAL.test(text) || apiErrorKey(err)?.key === "errors.requestFailed";
+  return noRight ? t(noRightKey) : apiErrorText(t, err);
 }
 
 /** The window line (D2): the engine's hours and bounds — or, when the patient has been here for less than the
