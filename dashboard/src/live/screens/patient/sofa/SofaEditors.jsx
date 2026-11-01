@@ -4,7 +4,9 @@
 // toast and the read that follows.
 //
 // COMPLETING (D3) — `ChartEntry`, for a `clinical.chart` holder: one new measurement of an input the form
-// takes, with its measurement time. It is a measurement, not a correction, so it asks for no reason; it goes
+// takes, with its measurement time — the support flag too: the ratio is scored on the support state as of its
+// worst reading (review 2, C3), so a «no» back-dated to before that reading is how that state is set right.
+// It is a measurement, not a correction, so it asks for no reason; it goes
 // through the door every charted value goes through (POST /clinical/{id}), and the engine scores it. The time
 // is the Meds form's rule (meds/MedsChartForm.jsx, final review I2; X8): it is NOW until she edits it — the
 // field follows the clock (`useNow`, once a minute) and the press reads the clock again — up to 24 h back,

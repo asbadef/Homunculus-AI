@@ -13,7 +13,7 @@ import { dayStamp } from "../../../i18n/dates.js";
 import { ANNOUNCE_DELAY_MS } from "../../../ui/Alert.jsx";
 import { SIGN_ARM_MS, SofaFormModal } from "./SofaFormModal.jsx";
 import { toLocalInput } from "./sofaFields.js";
-import { EXPECT, MEASURED_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
+import { EXPECT, MEASURED_AT, SUPPORT_AT, WHY, cell, previewAnswer, signedAnswer, sofaForm } from "./sofa.testutil.js";
 
 // The fake-timer recipe of the earlier waves (meds/MedsChartForm.test.jsx): installed BEFORE the mount, `Date`
 // faked with them, nothing advancing on its own — so «İmzalayın»'s arming window is crossed only when a test
@@ -115,6 +115,27 @@ describe("the SOFA form (D2)", () => {
     expect(within(dialog()).getByText(/xəstə 24 saatdan az müddətdir buradadır/)).toBeInTheDocument();
   });
 
+  it("prints the support state the ratio was scored on, from the engine's respiration row — to a reader without clinical.chart too (C3)", async () => {
+    const at = dayStamp(Date.parse(SUPPORT_AT), NOW);
+    const withSupport = (support) => {
+      const form = sofaForm();
+      form.rows[0] = { ...form.rows[0], support };
+      return form;
+    };
+    await open({ canChart: false });
+    expect(organ("Tənəffüs")).toHaveTextContent(`Tənəffüs dəstəyi: bəli (qeyd ${at})`);
+    cleanup();
+    await open({ form: withSupport({ on_support: false, at: SUPPORT_AT }) });
+    expect(organ("Tənəffüs")).toHaveTextContent(`Tənəffüs dəstəyi: xeyr (qeyd ${at})`);
+    cleanup();
+    await open({ form: withSupport({ on_support: false, at: null }) });
+    expect(organ("Tənəffüs")).toHaveTextContent("Tənəffüs dəstəyi qeydi yoxdur");
+    cleanup();
+    await open({ form: withSupport(null) });                                     // a row with no ratio: nothing said
+    expect(organ("Tənəffüs")).not.toHaveTextContent(/Tənəffüs dəstəyi: |Tənəffüs dəstəyi qeydi/);
+    expect(organ("Laxtalanma")).not.toHaveTextContent(/Tənəffüs dəstəyi/);       // only under the respiration row
+  });
+
   it("a form that cannot be read says so, and is asked again", async () => {
     const read = vi.fn().mockRejectedValueOnce(refusal(503, "kapsam şu anda okunamıyor")).mockResolvedValueOnce(sofaForm());
     const { api } = await open({ api: { read } });
@@ -146,15 +167,27 @@ describe("completing a row (clinical.chart, D3)", () => {
     const { api } = await open();
     await press(within(organ("Tənəffüs")).getByRole("button", { name: "Dəstək vəziyyətini qeyd edin" }));
     const entry = entryFor("Tənəffüs dəstəyi");
-    // The engine's rule (X14), its fallback too: an in-window «bəli» stands; without one, the latest state does.
-    expect(entry).toHaveTextContent("«xeyr» onu geri almır");
-    expect(entry).toHaveTextContent("ən son qeyd olunan vəziyyət keçərlidir, pəncərədən əvvəlki qeyd olsa belə");
+    // The engine's rule (review 2, C3): the state as of the worst reading — the latest entry at or before it.
+    expect(entry).toHaveTextContent("PaO₂/FiO₂ ən pis oxunduğu andakı tənəffüs dəstəyi vəziyyəti ilə qiymətləndirilir");
+    expect(entry).toHaveTextContent("qeydi həmin saata geri tarixləyərək daxil edə bilərsiniz");
+    expect(entry).not.toHaveTextContent("«xeyr» onu geri almır");                // the old "any yes in 24 h" rule
     await save(entry);
     expect(api.chart).not.toHaveBeenCalled();
     expect(within(entry).getByText("Bəli və ya xeyr seçin.")).toBeInTheDocument();
     fireEvent.change(within(entry).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "1" } });
     await save(entry);
     expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 1 }], new Date(NOW).toISOString());
+  });
+
+  it("a «xeyr» back-dated to before the worst reading is charted with its time: the support entry keeps its time field (C3)", async () => {
+    const { api } = await open();
+    await press(within(organ("Tənəffüs")).getByRole("button", { name: "Dəstək vəziyyətini qeyd edin" }));
+    const entry = entryFor("Tənəffüs dəstəyi");
+    fireEvent.change(within(entry).getByLabelText("Tənəffüs dəstəyi"), { target: { value: "0" } });
+    const before = Date.parse(MEASURED_AT) - 60 * 60_000;                       // an hour before the ratio's reading
+    fireEvent.change(within(entry).getByLabelText("Ölçmə saatı"), { target: { value: toLocalInput(before) } });
+    await save(entry);
+    expect(api.chart).toHaveBeenCalledWith([{ code: "on_resp_support", value: 0 }], new Date(before).toISOString());
   });
 
   it("holds a slipped digit or a time ahead before anything is sent, and takes the focus there", async () => {

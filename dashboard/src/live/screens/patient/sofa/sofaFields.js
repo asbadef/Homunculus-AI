@@ -152,3 +152,15 @@ export function stampOf(iso, nowMs) {
   const ms = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
   return Number.isFinite(ms) ? dayStamp(ms, nowMs) : "";
 }
+
+/** The support state the PaO₂/FiO₂ was scored on (review 2, C3), as the engine sent it on the respiration row
+ *  (`support`: the latest support entry at or before the worst reading's time): «yes» or «no» with the time of
+ *  that entry, or that no support was charted. "" when the row has no ratio (`support` null), when the engine
+ *  sends no `support` (one before C3), or for a shape this build does not know — nothing is guessed. A «yes»
+ *  without a time is still a yes: the engine scored it on support. */
+export function supportText(t, support, nowMs) {
+  if (support === null || typeof support !== "object" || typeof support.on_support !== "boolean") return "";
+  const time = stampOf(support.at, nowMs);
+  if (support.on_support) return t("sofa.supportBasisYes", { time: time || "—" });
+  return time ? t("sofa.supportBasisNo", { time }) : t("sofa.supportBasisNone");
+}

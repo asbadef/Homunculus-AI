@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { NOW } from "../../../data/board.testutil.js";
 import {
   ORGANS, checkTime, checkValue, correctionsKey, isEnterable, labelOf, overridesOf, reasonCount, recordedOf,
-  rowsInOrder, sourceText, stampOf, toLocalInput,
+  rowsInOrder, sourceText, stampOf, supportText, toLocalInput,
 } from "./sofaFields.js";
 import { WHY, previewAnswer, sofaForm } from "./sofa.testutil.js";
 
@@ -73,6 +73,19 @@ describe("sofaFields", () => {
     expect(overridesOf(held)).toEqual([{ code: "platelets", value: 80, reason: WHY }]);
     expect(correctionsKey(held)).not.toBe(correctionsKey({ platelets: { value: 81, reason: WHY } }));
     expect(correctionsKey({})).toBe("[]");
+  });
+
+  // Review 2 (C3): the support state the ratio was scored on, as the engine sent it on the respiration row.
+  it("says the support basis of the ratio: yes or no with its entry's time, no entry, or nothing at all", () => {
+    const at = "2026-10-08T07:00:00+00:00";
+    const tp = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
+    expect(supportText(tp, { on_support: true, at }, NOW)).toBe(`sofa.supportBasisYes {"time":"${stampOf(at, NOW)}"}`);
+    expect(supportText(tp, { on_support: false, at }, NOW)).toBe(`sofa.supportBasisNo {"time":"${stampOf(at, NOW)}"}`);
+    expect(supportText(tp, { on_support: false, at: null }, NOW)).toBe("sofa.supportBasisNone");
+    expect(supportText(tp, { on_support: true, at: null }, NOW)).toBe(`sofa.supportBasisYes {"time":"—"}`);   // never "no entry" for a yes
+    expect(supportText(tp, null, NOW)).toBe("");                                                       // a row with no ratio
+    expect(supportText(tp, undefined, NOW)).toBe("");                                                  // an engine before C3
+    expect(supportText(tp, { on_support: "yes", at }, NOW)).toBe("");                                  // a shape this build does not know
   });
 
   it("names a source and an input in the reader's words, and an unknown one by the engine's own code", () => {

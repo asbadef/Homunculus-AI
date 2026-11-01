@@ -8,8 +8,9 @@
 // when the patient has been here for less than it (`covers_full_window` false), that the form rests on the
 // shorter stay. Under the renal row: urine output is not scored here (D8). Under the cardiovascular row: MAP
 // comes from the record and is not entered here, the pressors come from the Meds box (D9). Under the
-// respiration row: what charted support changes. The browser scores nothing (Decision 1): every point, total
-// and failure mark is the engine's.
+// respiration row: what charted support changes, and the support state the ratio was scored on — the engine's,
+// as of the worst reading (review 2, C3). The browser scores nothing (Decision 1): every point, total and
+// failure mark is the engine's.
 //
 // WHAT IT WRITES. A `clinical.chart` holder completes a row (D3, SofaEditors.jsx `ChartEntry`): one measurement
 // through POST /clinical/{id}, and the form is read again — the engine re-scores, never this screen. A
@@ -48,7 +49,7 @@ import { Announce, Button, Modal, Note, StatusPill, useToast } from "../../../ui
 import { mayHaveLanded } from "../../admin/refusal.js";
 import { ChartEntry, CorrectionEntry } from "./SofaEditors.jsx";
 import {
-  correctionsKey, isEnterable, labelOf, overridesOf, recordedOf, rowsInOrder, sourceText, stampOf,
+  correctionsKey, isEnterable, labelOf, overridesOf, recordedOf, rowsInOrder, sourceText, stampOf, supportText,
 } from "./sofaFields.js";
 
 /** How long «İmzala» is held after a preview: it appears where «Önizle» stood, and a double click's second press
@@ -140,6 +141,14 @@ function Cell({ cell, nowMs, held, children }) {
       {children}
     </div>
   );
+}
+
+/** The support state the respiration row's ratio was scored on (review 2, C3) — the engine's `support`, said
+ *  as `supportText` says it; nothing when the engine sent none (a row with no ratio, an engine before C3). */
+function SupportBasis({ support, nowMs }) {
+  const { t } = useI18n();
+  const text = supportText(t, support, nowMs);
+  return text ? <p data-sofa-support="" className="m-0 mt-1.5 text-12.5">{text}</p> : null;
 }
 
 /** One organ: its name as a heading, the engine's points or «ölçülmedi», and the failure mark where the engine
@@ -466,7 +475,9 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
   }
 
   // Respiratory support (D4) is no cell of the form — it decides which PaO₂/FiO₂ bands apply — so it is charted
-  // from under the respiration row, by a `clinical.chart` holder only.
+  // from under the respiration row, by a `clinical.chart` holder only. What the ratio was scored ON — the
+  // engine's `support`, the state as of the worst reading (review 2, C3) — is printed there for every reader:
+  // a «no» charted for the right time is what moves it, and she has to see what it stands on now.
   const supportOpen = editing?.code === "on_resp_support";
   const support = canChart ? (
     <div data-sofa-cell="on_resp_support" className="mt-1.5">
@@ -503,7 +514,12 @@ export function SofaFormModal({ bed, nowMs = Date.now(), canChart, canSign, api,
               {(Array.isArray(entry.row.inputs) ? entry.row.inputs : []).map((cell) => (
                 <Cell key={cell.code} cell={cell} nowMs={nowMs} held={heldOf(cell.code)}>{actionsFor(cell)}</Cell>
               ))}
-              {entry.organ === "respiration" ? support : null}
+              {entry.organ === "respiration" ? (
+                <>
+                  <SupportBasis support={entry.row.support} nowMs={nowMs} />
+                  {support}
+                </>
+              ) : null}
               {entry.noteKey ? <p className="m-0 mt-1.5 text-11.5 text-mute">{t(entry.noteKey)}</p> : null}
             </OrganRow>
           ))}
