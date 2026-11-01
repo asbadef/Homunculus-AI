@@ -543,3 +543,52 @@ async def test_a_page_whose_notification_row_fails_is_sent_again_never_lost(wall
     assert _pages(client) == (2, 1)
     await app.state.escalation_cycle(WALL0 + timedelta(minutes=8))
     assert _doctor_pages(doctor) == []
+
+
+@pytest.mark.anyio
+async def test_an_ack_whose_audit_row_fails_is_a_500_and_the_alert_still_escalates(wall):
+    """The trail before memory: before, the ack was applied and escalation silenced while the nurse
+    read a 500 and the trail held no ack — so a restart re-armed what the ward had been told failed."""
+    audit = _TimesOut()
+    app, doctor = _bounded_app(audit)
+    client = TestClient(app, raise_server_exceptions=False)
+    _drive_shock(client)                                             # first seen at WALL0
+    store = app.state.ack_stores["HOSP1"]
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    assert SHOCK not in store.acks and _on_board(client)["acknowledged"] is False
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert SHOCK in store.escalated and _doctor_pages(doctor) == [SHOCK]
+    assert _ack(client).status_code == 200, "the retry is the ack"
+    assert SHOCK in store.acks and SHOCK not in store.escalated
+    assert [event for event, _reason in _trail(client)] == ["first_seen", "ack"]
+
+
+@pytest.mark.anyio
+async def test_an_escalated_alert_whose_ack_fails_to_audit_stays_escalated(wall):
+    audit = _TimesOut()
+    app, _doctor = _bounded_app(audit)
+    client = TestClient(app, raise_server_exceptions=False)
+    _drive_shock(client)
+    store = app.state.ack_stores["HOSP1"]
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    assert SHOCK in store.escalated and _on_board(client)["escalated"] is True
+
+
+def test_an_ack_of_a_latched_critical_whose_audit_row_fails_leaves_it_latched():
+    audit = _TimesOut()
+    client = TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit),
+                        raise_server_exceptions=False)
+    _drive_shock(client)
+    _reading(client, "lactate", 1.5, minute=61)                      # latched
+    audit.fail_on = "ack"
+    assert _ack(client).status_code == 500
+    shock = _on_board(client)
+    assert shock is not None, "a failed ack must not close the latch"
+    assert shock["resolved_at"] is not None and shock["acknowledged"] is False
+    assert _trail(client) == [("first_seen", None), ("alert_cleared", "resolved")]
+    assert _ack(client).status_code == 200 and _on_board(client) is None
+    assert _trail(client) == [("first_seen", None), ("alert_cleared", "resolved"), ("ack", None),
+                              ("alert_cleared", "acked_after_resolve")]

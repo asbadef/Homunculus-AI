@@ -959,12 +959,15 @@ def create_app(
         if is_tombstone(record):
             return {"patient_id": patient_id, "dropped": DISCHARGED}
 
-        engine.set_profile(profile)
         # Audited so a restart can replay it. A profile a deploy forgot would restart the
-        # alarms it was written to quieten, without anything looking broken.
+        # alarms it was written to quieten, without anything looking broken. The row first (spec
+        # 2026-11-01, as /ack): an append that fails — a bounded audit times out — answers 500 and
+        # leaves the engine without the profile, rather than quietening alarms on one the trail
+        # does not hold and the clinician was told was not saved.
         audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
                                 {**profile_to_payload(profile),
                                  "charted_by": _charted_by(caller)}))
+        engine.set_profile(profile)
         # Aşama B (D1): the shadow engine judges against the same profile — guarded, and AFTER the
         # audit row (Lane B's review of 457a2bd, M-1): whatever the lane does, the engine's
         # profile has the row a restart replays behind it. BoardLink orders its own the same way.
@@ -1091,16 +1094,22 @@ def create_app(
         now = datetime.now(timezone.utc)
         # G2-A1, D8: a latched alert — a critical whose rule stopped while nobody had acknowledged
         # it — is removed by the acknowledgement: there is nothing left to answer, only to close.
-        latched = acknowledge_latched(store, patient_id, kind)
-        if latched is None:
-            if (patient_id, kind) not in live_keys(engine, store):
-                raise HTTPException(status_code=404, detail="no such active alert")
+        latched = (patient_id, kind) in store.resolved          # what `acknowledge_latched` takes
+        if not latched and (patient_id, kind) not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        # The trail before memory (spec 2026-11-01, D3): an append that fails — a bounded audit
+        # times out in seconds — answers 500 with the alert still unacknowledged here as well, so
+        # it still escalates and the screen, the trail and the escalation agree. Applied first, a
+        # failed ack silenced an escalation the ward was told had not been answered, and that a
+        # restart, replaying the trail, would re-arm. Nothing is awaited in between.
+        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
+        if latched:
+            closed = acknowledge_latched(store, patient_id, kind)
+            _audit_cleared(hospital, [closed], now)
+            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
+        else:
             store.acknowledge(patient_id, kind, who["role"], now)
             store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
-        audit.append(AuditEvent(hospital, "ack", patient_id, kind, {**who, "at": now.isoformat()}))
-        if latched is not None:
-            _audit_cleared(hospital, [latched], now)
-            notifier.prune(hospital, live_keys(engine, store))   # a return is told again (D5)
         board = _card(hospital, patient_id)
         await broadcaster.publish(hospital, board)
         return board
