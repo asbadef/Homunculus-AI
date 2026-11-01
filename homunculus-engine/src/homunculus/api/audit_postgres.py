@@ -57,6 +57,13 @@ KEEPALIVES_COUNT = 3
 # Data sent and not acknowledged for 4 s drops the connection — the value Lane B's device-bed
 # reader already uses. Linux only; libpq ignores it where the socket option does not exist.
 TCP_USER_TIMEOUT_MS = 4000
+# Not libpq's but the pool's (D2): a checkout waits at most 3 s for a free connection, so a pool
+# held by stalled queries fails the next request instead of queueing it behind them.
+POOL_TIMEOUT_S = 3
+# The audit's statement bound is the widest (D2): besides its one-row appends it serves GET /audit,
+# /audit/verify (up to 10 000 records, re-hashed after one read) and the alarm-quality report's
+# reads, which a bound meant for a stalled server must not cut.
+AUDIT_STATEMENT_TIMEOUT_MS = 10_000
 
 
 def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> dict:
@@ -88,10 +95,15 @@ class PostgresAuditLog:
     """Durable append-only audit. Same surface as InMemoryAuditLog / SqliteAuditLog."""
 
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
-        connect_args = {"sslmode": "require"} if ssl_required else {}
+        # Bounded (spec 2026-11-01). A timeout propagates like any database error: the request
+        # fails, and the record is never skipped, retried quietly or queued — an event the trail
+        # does not hold must not be answered as written (D3).
         self._engine = create_engine(
             to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
-            connect_args=connect_args, future=True
+            pool_timeout=POOL_TIMEOUT_S,
+            connect_args=bounded_connect_args(ssl_required=ssl_required,
+                                              statement_timeout_ms=AUDIT_STATEMENT_TIMEOUT_MS),
+            future=True
         )
 
     def append(self, event: AuditEvent) -> AuditRecord:

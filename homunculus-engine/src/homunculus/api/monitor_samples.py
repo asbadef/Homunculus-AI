@@ -15,13 +15,15 @@ from typing import Protocol
 
 from sqlalchemy import create_engine, text
 
-from homunculus.api.audit_postgres import to_sync_url
+from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
 
 RETENTION_DAYS = 30
 # What an install replays (infinity_rules.REPLAY_HOURS is this, D9), and so all a store in memory keeps.
 MEMORY_RETENTION_HOURS = 24
 # Postgres's SQLSTATE for "relation does not exist": the table of migration 0013 is not there.
 UNDEFINED_TABLE = "42P01"
+# The table's statement bound (spec 2026-11-01, D2): 2 s, the bound Lane B's reader uses.
+STATEMENT_TIMEOUT_MS = 2000
 
 
 @dataclass(frozen=True)
@@ -91,9 +93,13 @@ class PostgresSamples:
     durable = True
 
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
-        connect_args = {"sslmode": "require"} if ssl_required else {}
+        # The lane's appends run on the event loop, so bounded like the audit
+        # (audit_postgres.bounded_connect_args): a silent database fails the pass in seconds.
         self._engine = create_engine(to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
-                                     connect_args=connect_args)
+                                     pool_timeout=POOL_TIMEOUT_S,
+                                     connect_args=bounded_connect_args(
+                                         ssl_required=ssl_required,
+                                         statement_timeout_ms=STATEMENT_TIMEOUT_MS))
 
     def append(self, sample: Sample) -> None:
         self.append_many([sample])
