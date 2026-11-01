@@ -409,7 +409,7 @@ describe("the protocol-keyed card (G2-B1d)", () => {
       perms: ["board.view", "admissions.view"],
       shell: { units: [] },
       setup: (api) => {
-        api.boardPatients.mockResolvedValue(board([kabulCard(PROTOCOL, "2"), kabulCard("H2600001", "1")]));
+        api.boardPatients.mockResolvedValue(board([kabulCard(PROTOCOL, "2"), kabulCard("H2600007", "1")]));
         api.streamTicket.mockResolvedValue({ ticket: "t-1" });
         api.admissions.mockResolvedValue(KEYED);
       },

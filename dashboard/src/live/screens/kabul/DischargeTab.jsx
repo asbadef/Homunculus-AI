@@ -256,7 +256,7 @@ export function DischargeTab() {
                   {row.discharge_at ? ` · ${whenOf(Date.parse(row.discharge_at))}` : ""}
                 </p>
                 {confirms ? (
-                  <RowAction words={t("kabul.confirmLeft")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row),"confirm")}
+                  <RowAction words={t("kabul.confirmLeft")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "confirm")}
                     variant="primary" icon="ok" busy={confirming && leaving?.id === row.id} onPress={() => setLeaving(row)} />
                 ) : null}
               </Row>
@@ -274,7 +274,7 @@ export function DischargeTab() {
               <Row key={row.id} row={row}>
                 {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
                   : starts ? (
-                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row),"start")}
+                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "start")}
                       icon="out" onPress={() => setStarting(row)} />
                   ) : null}
               </Row>
