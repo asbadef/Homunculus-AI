@@ -19,7 +19,7 @@ import { specOf, valueText } from "./vitalsFields.js";
  *  the patient by the host; `nowMs` says which day «today» is for the time. `level` is the heading level of the
  *  box (the page's 2; 3 inside a dialog, under the dialog's own h2), and its list heading sits one below it. */
 export function SavedStep({ bed, saved, nowMs, onRetract, level = 2, children }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [withdrawn, setWithdrawn] = useState(() => new Set());
   const [open, setOpen] = useState(null);   // the row whose «Hatalı giriş» is open
   const rows = useRef(new Map());            // entry -> its <li>, for the focus a struck row takes
@@ -44,7 +44,7 @@ export function SavedStep({ bed, saved, nowMs, onRetract, level = 2, children })
       <ul role="list" className="m-0 mt-1 list-none p-0">
         {saved.rows.map((row) => {
           const struck = row.entry !== null && withdrawn.has(row.entry);
-          const value = valueText(t, row.code, row.value);
+          const value = valueText(t, row.code, row.value, lang);
           const labelId = `${base}-${row.code}`;
           return (
             <li
@@ -72,7 +72,7 @@ export function SavedStep({ bed, saved, nowMs, onRetract, level = 2, children })
       <div className="mt-3 flex flex-wrap justify-end gap-2">{children}</div>
       {open ? (
         <RetractDialog
-          bed={bed} what={{ label: labelOf(open.code), value: valueText(t, open.code, open.value), time }}
+          bed={bed} what={{ label: labelOf(open.code), value: valueText(t, open.code, open.value, lang), time }}
           onRetract={(reason) => onRetract(open.entry, reason)}
           // «Already» is withdrawn too; an uncertain one keeps its button — a second try is answered «already». A
           // refusal that wrote nothing (a discharged patient) sends no outcome at all.

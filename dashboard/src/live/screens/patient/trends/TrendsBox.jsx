@@ -25,7 +25,8 @@ import { TrendCard } from "./TrendCard.jsx";
 import { TrendModal } from "./TrendModal.jsx";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
-export function TrendsBox({ patient, bed, nowMs }) {
+/** `onWritten(patientId)` is told when a withdrawal the engine took has answered (G3-01): the screen's SOFA box reads again. */
+export function TrendsBox({ patient, bed, nowMs, onWritten }) {
   const { t } = useI18n();
   const { user } = useSession();
   const board = useBoard();
@@ -107,7 +108,12 @@ export function TrendsBox({ patient, bed, nowMs }) {
         // moves no measured instant, so the card would keep a delta from it, and its mini chart an axis stretched by
         // it (X16), until the next poll. The store's own promise goes back to the dialog — its answer or its error.
         <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} canRetract={canRetract}
-          onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason).finally(() => trends.reload())} />
+          onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason)
+            .then((answer) => {
+              if (answer !== null) onWritten?.(patient.patient_id);
+              return answer;
+            })
+            .finally(() => trends.reload())} />
       ) : null}
       {editing?.id === patient.patient_id ? (
         <BaselineForm

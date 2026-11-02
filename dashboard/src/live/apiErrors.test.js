@@ -73,7 +73,8 @@ const APP = py("api/app.py");
 // withdrawal route raises by name. Named one by one: clinical.py's other strings are units, codes and one
 // template (NOT_WHOLE, "{code}: tam sayı olmalı", shown as the engine wrote it), not messages.
 const CLINICAL_MESSAGE_NAMES = new Set(["GCS_NOT_WHOLE", "MAP_NOT_BELOW_SBP", "AT_TOO_OLD", "AT_FUTURE",
-  "RETRACT_REASON_SHORT", "RETRACT_REASON_LONG", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED"]);
+  "RETRACT_REASON_SHORT", "RETRACT_REASON_LONG", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED",
+  "RETRACT_NOT_BEDSIDE"]);
 const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => CLINICAL_MESSAGE_NAMES.has(name)));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
@@ -299,6 +300,18 @@ describe("apiErrorText", () => {
 
   // G3-01 (final review, I1): the reason has a ceiling too, since it is written for good into the audit trail.
   // The sentence is the engine's RETRACT_REASON_LONG, byte for byte (the sweep above reads it from clinical.py).
+  // X22: a withdrawal of a value outside the bedside form's set (a lactate) is refused by the engine with a 409.
+  it("says the withdrawal's refusal of a value that is not a bedside measurement, in all four languages", () => {
+    const sentence = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractNotBedside", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
+      .toBe("Yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə səhv qeyd kimi işarələnə bilər.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
+      .toBe("Ошибочной записью можно отметить только прикроватное измерение.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement can be marked as entered in error.");
+  });
+
   it("says the withdrawal's refusal of a reason that is too long, in all four languages", () => {
     const sentence = "gerekçe en çok 200 karakter olabilir";
     expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractReasonLong", vars: {} });

@@ -135,6 +135,18 @@ describe("«hatalı giriş»", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  // X22: the engine's 409 for a value outside the bedside form's set (a lactate, a medication row) wrote nothing either.
+  // «Already» is decided by the exact RETRACT_ALREADY sentence and by nothing else about a 409.
+  it("a 409 that says the value is not a bedside measurement is not «already»: it is said, and marks nothing", async () => {
+    const { onDone, onClose } = await open(() => Promise.reject(refusal(409, "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir")));
+    armed();
+    reason(REASON);
+    await confirm();
+    expect(toasted("REA-01 · 2: işarələnmədi — Yalnız çarpayı başında ölçmə səhv qeyd kimi işarələnə bilər.").length).toBeGreaterThan(0);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("a 403 says she may not, closes the dialog and marks nothing", async () => {
     const { onDone, onClose } = await open(() => Promise.reject(refusal(403, "forbidden")));
     armed();

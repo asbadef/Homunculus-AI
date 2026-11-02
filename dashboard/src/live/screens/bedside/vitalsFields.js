@@ -11,6 +11,7 @@
 // the systolic within one form (D6). A typed time goes up to 24 h back and never ahead; an untouched one is not sent
 // at all, and the server stamps its own clock (X12). The number rule is the Meds form's, imported: one "plain
 // decimal" (a comma read as a point) for every chart the patient screen writes.
+import { numberText } from "../../i18n/numbers.js";
 import { BACKDATE_MS, fromLocalInput, number, toLocalInput } from "../patient/meds/medsFields.js";
 
 export { BACKDATE_MS, toLocalInput } from "../patient/meds/medsFields.js";
@@ -54,6 +55,10 @@ const SPECS = Object.freeze(Object.fromEntries(VITALS.map((s) => [s.code, s])));
 
 /** The input for an engine code, or null — own properties only ("constructor" is not an input). */
 export const specOf = (code) => (Object.prototype.hasOwnProperty.call(SPECS, code) ? SPECS[code] : null);
+
+/** Is this engine code one of the bedside form's eight? Only those can be withdrawn as «hatalı giriş» (the engine
+ *  refuses any other with 409, RETRACT_NOT_BEDSIDE): a lactate or a medication row is not offered the button. */
+export const isBedsideCode = (code) => specOf(code) !== null;
 
 /** One box: `{ skip: true }` when empty (D4), `{ value }`, or `{ error: { key, params? } }`. */
 export function checkVital(spec, raw) {
@@ -129,15 +134,18 @@ export function stepValue(spec, raw, direction) {
   return spec.whole ? String(Math.round(next)) : (Math.round(next * 10) / 10).toFixed(1);
 }
 
-/** A sent value as the clinician reads it: the option's words for a choice, the number and its unit otherwise. */
-export function valueText(t, code, value) {
+/** A sent value as the clinician reads it: the option's words for a choice, the number and its unit otherwise. With
+ *  `lang` the number is written as that language writes it ("36,8" for the nurse who typed «36,8», `numberText`);
+ *  without, as the engine's JSON does. */
+export function valueText(t, code, value, lang = null) {
+  const num = (v) => (lang === null ? String(v) : numberText(lang, v));
   const spec = specOf(code);
-  if (!spec) return String(value);
+  if (!spec) return num(value);
   if (spec.kind === "choice") {
     const option = spec.options.find((o) => Number(o.value) === value);
-    return option ? t(option.labelKey) : String(value);
+    return option ? t(option.labelKey) : num(value);
   }
-  return `${value} ${t(spec.unitKey)}`;
+  return `${num(value)} ${t(spec.unitKey)}`;
 }
 
 /** NEWS2's seven parameters in the score's order (rules/news2.py), with the label the preview names each

@@ -174,6 +174,10 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   const keyed = stops.length > 0 && validWindow(sinceMs, untilMs);
   const truncated = trends.data?.markers_truncated === true;
   const anyWithdrawn = series.some((s) => s.withdrawn.length > 0);
+  // «No measurement for this channel» is said only of a window with nothing in it: no reading AND no hand entry. A
+  // window whose only entries were withdrawn draws a struck mark (and lists a struck row), so it says that instead.
+  const noData = count === 0 && !series.some((s) => s.manual.length > 0);
+  const onlyWithdrawn = count === 0 && anyWithdrawn;
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
   useEffect(() => { controls.current?.querySelector("[aria-pressed='true']")?.focus(); }, []);
@@ -240,8 +244,10 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
       ) : null}
       {trends.data && view === "graph" ? (
         <>
-          {count === 0 ? (
+          {noData ? (
             <p data-no-data="" className="m-0 mt-3 min-h-[1.5em] text-13 text-mute">{t("patient.trendsNoData")}</p>
+          ) : onlyWithdrawn ? (
+            <p data-only-withdrawn="" className="m-0 mt-3 min-h-[1.5em] text-13 text-mute">{t("olcum.onlyWithdrawn")}</p>
           ) : (
             <p data-readout="" aria-hidden="true" className="m-0 mt-3 min-h-[1.5em] font-data text-13 font-semibold text-ink">
               {readout ?? t("patient.trendsReadoutIdle")}
@@ -261,7 +267,8 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
       ) : null}
       {trends.data && view === "table" ? (
         <>
-          {count === 0 ? <p data-no-data="" className="m-0 mt-3 text-13 text-mute">{t("patient.trendsNoData")}</p> : null}
+          {noData ? <p data-no-data="" className="m-0 mt-3 text-13 text-mute">{t("patient.trendsNoData")}</p> : null}
+          {onlyWithdrawn ? <p data-only-withdrawn="" className="m-0 mt-3 text-13 text-mute">{t("olcum.onlyWithdrawn")}</p> : null}
           <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours}
             canRetract={canRetract && typeof onRetract === "function"}
             onWithdraw={(s, entry) => setWithdrawing({ series: s, entry })} />

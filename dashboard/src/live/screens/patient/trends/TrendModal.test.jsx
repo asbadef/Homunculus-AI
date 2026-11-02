@@ -689,6 +689,47 @@ describe("the big chart, by hand", () => {
     expect(withdrawn).toHaveTextContent(`səhv qeyd — yanlış hasta seçilmişti · hem.ayse · ${hhmm(NOW - 20 * 60_000)}`);
   });
 
+  it("keeps «əl ilə» on a withdrawn hand row, beside the reason", async () => {
+    await open("heart_rate", BY_HAND);
+    await choose("Cədvəl");
+    const withdrawn = dialog().querySelector('tr[data-withdrawn="42"]');
+    expect(within(withdrawn).getByText("əl ilə")).toBeInTheDocument();
+    expect(withdrawn.lastElementChild).toHaveTextContent(/^əl ilə səhv qeyd — yanlış hasta seçilmişti/);
+  });
+
+  // Walk-found: «Bu kanal üçün ölçmə yoxdur» stood right above a struck mark and a struck row.
+  describe("a window whose only entries were withdrawn", () => {
+    const ONLY_WITHDRAWN = answering((pid, hours) => trends(pid, [channel("heart_rate", [], {
+      manual: [hand(42, 30, 182, { retracted: { reason: "yanlış hasta seçilmişti", minutesAgo: 20 } })],
+    })], { hours }));
+    const SAYS = "Bu pəncərədə yalnız səhv qeyd kimi işarələnmiş dəyər var.";
+
+    it("does not say there is no measurement above the struck mark: it says what the window holds", async () => {
+      await open("heart_rate", ONLY_WITHDRAWN);
+      expect(dialog().querySelector('[data-withdrawn="42"]')).not.toBeNull();      // the struck mark is drawn
+      expect(dialog().querySelector("[data-no-data]")).toBeNull();
+      expect(dialog().querySelector("[data-only-withdrawn]")).toHaveTextContent(SAYS);
+    });
+
+    it("says the same above the table, whose struck row is listed", async () => {
+      await open("heart_rate", ONLY_WITHDRAWN);
+      await choose("Cədvəl");
+      expect(dialog().querySelector('tr[data-withdrawn="42"]')).not.toBeNull();
+      expect(dialog().querySelector("[data-no-data]")).toBeNull();
+      expect(dialog().querySelector("[data-only-withdrawn]")).toHaveTextContent(SAYS);
+    });
+
+    it("still says there is no measurement when the window holds nothing at all, and says neither when it holds a reading", async () => {
+      await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [])], { hours })));
+      expect(dialog().querySelector("[data-no-data]")).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");
+      expect(dialog().querySelector("[data-only-withdrawn]")).toBeNull();
+      cleanup();
+      await open("heart_rate", BY_HAND);                                       // readings, one hand entry withdrawn
+      expect(dialog().querySelector("[data-no-data]")).toBeNull();
+      expect(dialog().querySelector("[data-only-withdrawn]")).toBeNull();
+    });
+  });
+
   it("draws a withdrawn value crossed in the muted ink — never at an opacity the charts' contrast test cannot see — and says what the cross means", async () => {
     await open("heart_rate", BY_HAND);
     const cross = chart().querySelector('[data-withdrawn="42"]');
@@ -768,6 +809,18 @@ describe("the big chart, withdrawing", () => {
     expect(device).not.toHaveTextContent("əl ilə");
     expect(within(device).queryByRole("button")).toBeNull();
     expect(within(typedRow()).getByRole("button", { name: "Səhv qeyd" })).toBeInTheDocument();
+  });
+
+  // X22: the engine refuses a withdrawal outside the bedside form's set (409), so no button is offered there.
+  it("offers no «Səhv qeyd» on a hand row of a channel the bedside form does not take — a lactate", async () => {
+    await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(120, 1.8), point(60, 4.1)], {
+      manual: [hand(61, 60, 4.1)],
+    })], { hours })), { canRetract: true, onRetract: vi.fn() });
+    await choose("Cədvəl");
+    const lactate = dialog().querySelector(`tr[data-ts="${point(60, 0)[0]}"]`);
+    expect(lactate).toHaveTextContent("əl ilə");                        // it is still said to be by hand
+    expect(within(lactate).queryByRole("button")).toBeNull();
+    expect(within(dialog()).queryByRole("button", { name: "Səhv qeyd" })).toBeNull();
   });
 
   it("describes each «Səhv qeyd» by its row — the time and the value — so a screen reader tells them apart", async () => {
@@ -876,7 +929,8 @@ describe("the big chart, by hand, on the pressure card", () => {
 describe("the trends box, withdrawing", () => {
   it("offers «Səhv qeyd» to a clinical.chart holder, withdraws through the board's store, and reads the box's own 24 hours again", async () => {
     vi.setSystemTime(NOW);
-    const { api } = await mount(<TrendsBox patient={PATIENT} bed="REA-01 · 2" nowMs={NOW} />, {
+    const onWritten = vi.fn();
+    const { api } = await mount(<TrendsBox patient={PATIENT} bed="REA-01 · 2" nowMs={NOW} onWritten={onWritten} />, {
       access: token({ perms: CHARTABLE }), me: profile({ perms: CHARTABLE }),
       setup: (a) => {
         a.patientTrends.mockImplementation(BY_HAND);
@@ -894,5 +948,8 @@ describe("the trends box, withdrawing", () => {
     // The card's delta and mini chart are the box's read: a withdrawn value that was not the latest moves no
     // measured instant, so without this read the card would keep it for up to a minute.
     expect(day()).toBe(before + 1);
+    // And the screen is told a withdrawal landed, for this patient: its SOFA box reads the form again.
+    expect(onWritten).toHaveBeenCalledTimes(1);
+    expect(onWritten).toHaveBeenCalledWith("S-001");
   });
 });

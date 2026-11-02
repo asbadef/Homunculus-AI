@@ -8,7 +8,7 @@ import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
-import { answering, channel, point, trends } from "./trends/trends.testutil.js";
+import { answering, channel, hand, point, trends } from "./trends/trends.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
 import { RETRACT_ARM_MS } from "../common/RetractDialog.jsx";
 import { SAVE_ARM_MS } from "../bedside/VitalsForm.jsx";
@@ -189,6 +189,77 @@ describe("the patient screen", () => {
       expect(screen.queryByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" })).toBeNull();
       expect(row.querySelector("s")).toHaveTextContent("88");
       expect(within(row).queryByRole("button", { name: "Səhv qeyd" })).toBeNull();
+    });
+
+    // Walk-found: the SOFA box kept the old total and the old «oxunuşu» time after a bedside save or a withdrawal, until a
+    // page reload. The box reads the form again when a write it can see landed (one more `score` row in the audit each).
+    const sofaBox = () => screen.getByRole("heading", { level: 2, name: "SOFA forması" }).closest(".rounded-box");
+    const formAt = (total) => sofaForm({ total, window_to: new Date(NOW + total * 60_000).toISOString() });
+
+    it("reads the SOFA box again after a save: its total and its reading time are the new reading's", async () => {
+      let total = 1;
+      const { api } = await saved({
+        setup: (a) => {
+          a.severityForm.mockImplementation(() => Promise.resolve(formAt(total)));
+          a.chart.mockImplementation(() => new Promise((resolve) => setTimeout(() => { total = 2; resolve(ANSWER); }, 30)));
+        },
+      });
+      expect(api.severityForm).toHaveBeenCalledTimes(2);                 // the screen's own read, and the one after the save
+      expect(api.severityForm).toHaveBeenLastCalledWith("S-001");
+      expect(sofaBox()).toHaveTextContent(/Forma cəmi\s*2/);
+      expect(sofaBox()).not.toHaveTextContent(/Forma cəmi\s*1\b/);
+      expect(sofaBox()).toHaveTextContent(hhmm(NOW + 2 * 60_000));
+    });
+
+    it("reads the SOFA box again after a withdrawal from the saved step, and not after one the engine refused", async () => {
+      let total = 2;
+      const { api } = await saved({
+        setup: (a) => {
+          a.severityForm.mockImplementation(() => Promise.resolve(formAt(total)));
+          a.retractEntry.mockImplementationOnce(() => Promise.reject(refusal(409, "taburcu edilmiş bir hastada değer geri alınamaz")));
+          a.retractEntry.mockImplementation(() => { total = 1; return Promise.resolve({ retracted: 41, code: "heart_rate", alerts: [] }); });
+        },
+      });
+      const withdraw = async () => {
+        await press(within(document.querySelector('[data-row="heart_rate"]')).getByRole("button", { name: "Səhv qeyd" }));
+        const retract = screen.getByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" });
+        fireEvent.change(within(retract).getByRole("textbox"), { target: { value: "yazım hatası, 80 idi" } });
+        await wait(RETRACT_ARM_MS + 50);
+        await press(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" }));
+      };
+      const reads = api.severityForm.mock.calls.length;
+      await withdraw();                                                  // refused: nothing changed
+      expect(api.retractEntry).toHaveBeenCalledTimes(1);
+      expect(api.severityForm.mock.calls.length).toBe(reads);
+      await withdraw();                                                  // taken
+      expect(api.retractEntry).toHaveBeenCalledTimes(2);
+      expect(api.severityForm.mock.calls.length).toBe(reads + 1);
+      expect(sofaBox()).toHaveTextContent(/Forma cəmi\s*1/);
+    });
+
+    it("reads the SOFA box again after a withdrawal from the trend chart's table", async () => {
+      let total = 2;
+      const { api } = await open({
+        payload: TWO(), perms: CHART,
+        setup: (a) => {
+          a.severityForm.mockImplementation(() => Promise.resolve(formAt(total)));
+          a.patientTrends.mockImplementation(answering((pid, hours) => trends(pid, [
+            channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)], { manual: [hand(41, 60, 132)] })], { hours })));
+          a.retractEntry.mockImplementation(() => { total = 1; return Promise.resolve({ retracted: 41, code: "heart_rate", alerts: [] }); });
+        },
+      });
+      await press(screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ }));
+      const chartDialog = screen.getByRole("dialog", { name: /Nəbz$/ });
+      await press(within(chartDialog).getByRole("button", { name: "Cədvəl" }));
+      const reads = api.severityForm.mock.calls.length;
+      await press(within(chartDialog).getByRole("button", { name: "Səhv qeyd" }));
+      const retract = screen.getByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" });
+      fireEvent.change(within(retract).getByRole("textbox"), { target: { value: "yazım hatası, 80 idi" } });
+      await wait(RETRACT_ARM_MS + 50);
+      await press(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" }));
+      expect(api.retractEntry).toHaveBeenCalledWith("S-001", 41, "yazım hatası, 80 idi");
+      expect(api.severityForm.mock.calls.length).toBe(reads + 1);
+      expect(sofaBox()).toHaveTextContent(/Forma cəmi\s*1/);
     });
 
     it("takes the focus into the saved step when the form gives way to it, instead of dropping it on the page", async () => {

@@ -18,8 +18,9 @@ import { SavedStep } from "../bedside/SavedStep.jsx";
 import { VitalsForm } from "../bedside/VitalsForm.jsx";
 
 /** `patientId` is the patient shown; `bed` names them in the title and on every toast; `nowMs` is the patient
- *  screen's clock (the server's), as MedsBox and SofaBox take it. */
-export function VitalsEntry({ patientId, bed, nowMs }) {
+ *  screen's clock (the server's), as MedsBox and SofaBox take it. `onWritten(patientId)` is told when a save or a
+ *  withdrawal the engine took has answered, for the patient it was made for — the screen's SOFA box reads again. */
+export function VitalsEntry({ patientId, bed, nowMs, onWritten }) {
   const { t } = useI18n();
   const board = useBoard();
   const [open, setOpen] = useState(null);      // { id, opening, saved? }: whose dialog, which opening, what was saved
@@ -34,6 +35,12 @@ export function VitalsEntry({ patientId, bed, nowMs }) {
   // Once, when the answer to a save first arrives: the form is gone, so is the button that had the focus.
   useEffect(() => { if (saved) savedRef.current?.focus(); }, [saved]);
   const close = () => setOpen((current) => (current?.opening === opening ? null : current));
+  // A write that answered (not a refusal, and not an answer the store dropped: null) changed what the SOFA form reads.
+  // Said from here, not from the form's `onSaved`: that is called only while the form is still shown.
+  const written = (id) => (answer) => {
+    if (answer !== null) onWritten?.(id);
+    return answer;
+  };
   function start() {
     openings.current += 1;
     setBusy(false);
@@ -52,7 +59,7 @@ export function VitalsEntry({ patientId, bed, nowMs }) {
             // tabIndex -1: focusable by the effect above, not a stop of the tab order. Level 3, under the dialog's h2.
             <div ref={savedRef} tabIndex={-1} data-vitals-saved="" className="outline-none">
               <SavedStep bed={bed} saved={saved} nowMs={nowMs} level={3}
-                onRetract={(entry, reason) => board.store.retract(patientId, entry, reason)}>
+                onRetract={(entry, reason) => board.store.retract(patientId, entry, reason).then(written(patientId))}>
                 <Button variant="primary" onClick={close}>{t("common.close")}</Button>
               </SavedStep>
             </div>
@@ -60,7 +67,7 @@ export function VitalsEntry({ patientId, bed, nowMs }) {
             <VitalsForm
               key={mine.opening} bed={bed} nowMs={nowMs} onBusy={onBusy}
               onPreview={(entries, at) => board.store.chartPreview(patientId, entries, at)}
-              onSave={(entries, at) => board.store.chart(patientId, entries, at)}
+              onSave={(entries, at) => board.store.chart(patientId, entries, at).then(written(patientId))}
               onSaved={(result) => setOpen((current) => (current?.opening === opening ? { ...current, saved: result } : current))}
               onCancel={close}
             />

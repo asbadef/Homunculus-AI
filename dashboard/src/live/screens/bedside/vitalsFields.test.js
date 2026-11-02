@@ -2,9 +2,10 @@
 import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { LANG_CODES } from "../../i18n/langs.js";
+import { createTranslator } from "../../i18n/translate.js";
 import {
-  BACKDATE_MS, NEWS2_PARAMETERS, SKEW_MS, VITALS, birthYearOf, checkDraft, checkVital, draftKey, hasErrors, lastMeasuredMs,
-  oldestInput, specOf, stepValue, toLocalInput,
+  BACKDATE_MS, NEWS2_PARAMETERS, SKEW_MS, VITALS, birthYearOf, checkDraft, checkVital, draftKey, hasErrors, isBedsideCode,
+  lastMeasuredMs, oldestInput, specOf, stepValue, toLocalInput, valueText,
 } from "./vitalsFields.js";
 
 const NOW = Date.parse("2026-11-02T10:00:00Z");
@@ -26,6 +27,23 @@ describe("the inputs", () => {
     }
     expect(NEWS2_PARAMETERS.filter((p) => p.missingKey).map((p) => p.name))
       .toEqual(["respiration_rate", "spo2", "systolic_bp", "pulse", "temperature"]);
+  });
+
+  // X22: the engine withdraws only these eight; the trend table offers «hatalı giriş» by this.
+  it("name the bedside set, and no other channel is in it", () => {
+    for (const code of ["resp_rate", "spo2", "supplemental_oxygen", "sbp", "map", "heart_rate", "acvpu", "temperature"]) {
+      expect(isBedsideCode(code), code).toBe(true);
+    }
+    for (const code of ["lactate", "weight_kg", "crystalloid_bolus_ml", "constructor", ""]) expect(isBedsideCode(code), code).toBe(false);
+  });
+
+  it("say a sent value with the language's own decimal separator, and as the engine wrote it with none", () => {
+    const t = createTranslator("tr", DICTIONARIES);
+    expect(valueText(t, "temperature", 36.8, "tr")).toBe("36,8 °C");
+    expect(valueText(t, "temperature", 36.8, "az")).toBe("36,8 °C");
+    expect(valueText(t, "temperature", 36.8, "en")).toBe("36.8 °C");
+    expect(valueText(t, "temperature", 36.8)).toBe("36.8 °C");
+    expect(valueText(t, "spo2", 91, "tr")).toBe("91 %");
   });
 
   it("mirror the door's slip bounds", () => {

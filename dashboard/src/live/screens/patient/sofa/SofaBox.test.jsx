@@ -54,6 +54,32 @@ describe("the SOFA box (D1)", () => {
     expect(box()).not.toHaveTextContent("İmzalanıb");
   });
 
+  // G3-01 (walk): a write made elsewhere on the patient screen is told to the box as `reread`; it reads again for ITS
+  // patient only, once per count, and never on the mount.
+  it("reads again when the screen says a write for its patient landed, and not for another patient's", async () => {
+    function Host() {
+      const [reread, setReread] = React.useState({ id: null, n: 0 });
+      const wrote = (id) => () => setReread((last) => ({ id, n: last.n + 1 }));
+      return (
+        <>
+          <button type="button" onClick={wrote("S-002")}>another wrote</button>
+          <button type="button" onClick={wrote("S-001")}>mine wrote</button>
+          <SofaBox patientId="S-001" bed="REA-01 · 2" nowMs={NOW} reread={reread} />
+        </>
+      );
+    }
+    let total = 5;
+    const { api } = await open({ ui: <Host />, setup: (a) => a.severityForm.mockImplementation(() => Promise.resolve(sofaForm({ total }))) });
+    expect(api.severityForm).toHaveBeenCalledTimes(1);                // the mount's read, and no more
+    await press(screen.getByRole("button", { name: "another wrote" }));
+    expect(api.severityForm).toHaveBeenCalledTimes(1);
+    total = 6;
+    await press(screen.getByRole("button", { name: "mine wrote" }));
+    expect(api.severityForm).toHaveBeenCalledTimes(2);
+    expect(api.severityForm).toHaveBeenLastCalledWith("S-001");
+    expect(box()).toHaveTextContent("Forma cəmi 6");
+  });
+
   it("says when the engine sent no form and when it could not be read, and reads again on «Yenidən cəhd edin»", async () => {
     await open();                                                     // severityForm set up by nobody: it answers nothing
     expect(box()).toHaveTextContent("Mühərrik bu xəstə üçün SOFA forması göndərmədi.");

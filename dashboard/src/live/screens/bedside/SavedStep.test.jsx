@@ -20,12 +20,12 @@ const SAVED = { atMs: NOW, rows: [
   { code: "spo2", value: 91, entry: null },          // an older engine answered no id for it
 ] };
 
-async function open(answer = () => Promise.resolve({ retracted: 41, code: "resp_rate", alerts: [] })) {
+async function open(answer = () => Promise.resolve({ retracted: 41, code: "resp_rate", alerts: [] }), saved = SAVED) {
   vi.useFakeTimers(FAKE_TIMERS);
   vi.setSystemTime(NOW);
   const onRetract = vi.fn(answer);
   await act(async () => {
-    await mount(<SavedStep bed="REA-01 · 2" saved={SAVED} nowMs={NOW} onRetract={onRetract}><button type="button">next</button></SavedStep>,
+    await mount(<SavedStep bed="REA-01 · 2" saved={saved} nowMs={NOW} onRetract={onRetract}><button type="button">next</button></SavedStep>,
       { access: token({ perms: CHARTABLE }), me: profile({ perms: CHARTABLE }) });
     await settle();
   });
@@ -45,6 +45,20 @@ async function withdraw(code) {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("the saved step", () => {
+  // Walk-found: «36,8» was typed and «36.8 °C» came back. The number is written as the active language writes it.
+  describe("writes a decimal with the language's separator", () => {
+    const WARM = { atMs: NOW, rows: [{ code: "temperature", value: 36.8, entry: 43 }] };
+    afterEach(() => localStorage.clear());
+    it.each([["tr", "36,8 °C"], ["az", "36,8 °C"], ["ru", "36,8 °C"], ["en", "36.8 °C"]])("%s: %s", async (lang, text) => {
+      localStorage.setItem("hmc.lang", lang);
+      await open(undefined, WARM);
+      expect(row("temperature")).toHaveTextContent(text);
+      // The withdrawal's dialog names the same value the same way.
+      await press(within(row("temperature")).getByRole("button", { name: /./ }));
+      expect(screen.getByRole("dialog")).toHaveTextContent(text);
+    });
+  });
+
   it("lists what was saved with its time, and a «Səhv qeyd» for each value that has a row", async () => {
     await open();
     expect(screen.getByRole("heading", { level: 2, name: `Yadda saxlanıldı · ${hhmm(NOW)}` })).toBeInTheDocument();

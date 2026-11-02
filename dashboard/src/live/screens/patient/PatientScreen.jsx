@@ -42,7 +42,7 @@
 // four `beds.*` / two `alarms.*` strings they read moved with them, to `board.*`. The two screens
 // still have ONE NEWS2 and one "the HIS's name or the statement that there is none" between them,
 // which is the point: a second copy of either is a second chance to get one of them wrong.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -291,6 +291,10 @@ export function PatientScreen({ params }) {
   const { user } = useSession();
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
+  // G3-01: a bedside save or a «hatalı giriş» moves values the SOFA form reads (its total, its «okuması» time). The
+  // writers say so, with whose it was; the SOFA box reads again for the patient it shows (sofa/SofaBox.jsx `reread`).
+  const [sofaReread, setSofaReread] = useState({ id: null, n: 0 });
+  const sofaMayHaveMoved = useCallback((patientId) => setSofaReread((last) => ({ id: patientId, n: last.n + 1 })), []);
   const id = params?.id ?? "";
   const patient = useMemo(() => board.patients.find((p) => p.patient_id === id) ?? null, [board.patients, id]);
   const alarms = useMemo(() => board.alerts.filter((a) => a.patientId === id), [board.alerts, id]);
@@ -404,7 +408,7 @@ export function PatientScreen({ params }) {
           {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without
               clinical.chart. */}
           <Box title={t("patient.vitals")} icon="activity" level={2}
-            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} /> : null}>
+            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
 
@@ -444,9 +448,9 @@ export function PatientScreen({ params }) {
           </div>
           {/* G2-A4 (D1): the SOFA form's box, where the "forms come later" note stood. It reads the form of the
               patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
-          <SofaBox patientId={id} bed={bed} nowMs={nowMs} />
+          <SofaBox patientId={id} bed={bed} nowMs={nowMs} reread={sofaReread} />
 
-          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} />
+          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} />
         </>
       )}
     </div>

@@ -10,7 +10,9 @@
 //
 // IT READS ONCE (spec O4: every read is a `score` row in the audit): when the patient is shown, after the form
 // closes on a write, and when asked again after a failed read — not on a timer and not on every board frame
-// (O9). The read's time is printed (X12), so an old total is never taken for a fresh one. The signature comes
+// (O9) — and when something on the patient screen writes a value the form reads (`reread`, G3-01: a bedside save
+// or a «hatalı giriş»; one more `score` row in the audit per write, which is the price of a total that is not
+// stale). The read's time is printed (X12), so an old total is never taken for a fresh one. The signature comes
 // with the form (`last_signed`, D7), under the form's own permission: no audit right is needed to see it. An
 // engine older than G2-A4 sends no `last_signed`; then no signature line is printed at all (X15).
 //
@@ -44,8 +46,10 @@ function SignedLine({ last, nowMs }) {
 }
 
 /** `patientId` is whose form this is; `bed` names the patient in the dialog's title and on its toasts (never
- *  the patient's name, Decision 14); `nowMs` is the screen's clock, which says which stamps are today's. */
-export function SofaBox({ patientId, bed, nowMs = Date.now() }) {
+ *  the patient's name, Decision 14); `nowMs` is the screen's clock, which says which stamps are today's.
+ *  `reread` is `{ id, n }`: the screen's word that a write for patient `id` landed (`n` counts them); the box reads
+ *  again when `n` moves and `id` is the patient it shows — not for a write of another one. */
+export function SofaBox({ patientId, bed, nowMs = Date.now(), reread = null }) {
   const { t } = useI18n();
   const board = useBoard();
   const { user } = useSession();
@@ -90,6 +94,16 @@ export function SofaBox({ patientId, bed, nowMs = Date.now() }) {
     setEditing(null);
     load(patientId);
   }, [patientId]);
+
+  // A write made elsewhere on the screen (the bedside form, a withdrawal): the total it moved is read back. Not on
+  // mount, and not for the same count twice.
+  const seenReread = useRef(reread?.n ?? 0);
+  useEffect(() => {
+    const n = reread?.n ?? 0;
+    if (n === seenReread.current) return;
+    seenReread.current = n;
+    if (reread.id === patientId) load(patientId);
+  }, [reread?.n]);
 
   function openForm() {
     openings.current += 1;

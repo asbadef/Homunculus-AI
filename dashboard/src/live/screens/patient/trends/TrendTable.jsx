@@ -5,14 +5,17 @@
 // hold the same numbers by construction; TrendModal.test.jsx holds them equal.
 //
 // G3-01 (D13): a reading typed in by hand says «elle», and to a `clinical.chart` holder offers «Hatalı giriş»
-// (the dialog's host opens it, `onWithdraw`). A withdrawn hand entry is a row of its own, struck through, with its
-// reason, who and when — it is in no score, so it has no points and is on no line. Each «Hatalı giriş» is described
+// (the dialog's host opens it, `onWithdraw`) — but only on a value of the bedside form's set (X22: the engine refuses
+// any other, a lactate for one, so no button is offered). A withdrawn hand entry is a row of its own, struck
+// through, says «elle» as the reading did, and gives its reason, who and when — it is in no score, so it has no
+// points and is on no line. Each «Hatalı giriş» is described
 // by its row's time and value (and series, on the pressure card): the buttons share one name. A struck row says
 // «hatalı giriş olarak işaretlendi» in words beside the <s>, which a screen reader does not read as struck, and can
 // take focus (`tabIndex={-1}`): after a withdrawal the dialog puts focus there, because the button that had it is gone.
 import React, { useId } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Button, FOCUS_RING, Table } from "../../../ui/index.js";
+import { isBedsideCode } from "../../bedside/vitalsFields.js";
 import { cardTitle } from "./cards.js";
 import { handEntryOf } from "./trendGeometry.js";
 import { markText, pointsText, whenText } from "./trendText.js";
@@ -101,6 +104,7 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
             <td>{t(row.series.unitKey)}</td>
             <td />
             <td>
+              <span className="font-semibold">{t("olcum.hand")}</span>{" "}
               {t("olcum.retracted", {
                 reason: row.withdrawn.retracted.reason, who: row.withdrawn.retracted.by,
                 time: row.withdrawn.retracted.ms === null ? "—" : whenText(row.withdrawn.retracted.ms, hours),
@@ -111,7 +115,7 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
           <ReadingRow
             key={row.key} row={row} id={`${base}-${row.key}`} two={two} hours={hours}
             news2={Array.isArray(channels[row.series.key]?.bands?.news2)}
-            offer={Boolean(row.hand) && canRetract} onWithdraw={onWithdraw}
+            offer={Boolean(row.hand) && canRetract && isBedsideCode(row.series.key)} onWithdraw={onWithdraw}
           />
         )))}
       </tbody>
