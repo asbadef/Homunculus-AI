@@ -80,6 +80,9 @@
 - The walk scored RR 26 / SpO₂ 91 / on oxygen as NEWS2 **8**, not 7: the plan's arithmetic was off.
 - The guide's section became **§3.12** after the dalga-2 merge took §3.11; Task 17's block below keeps the number it was written with.
 - The plan's code blocks keep their original strings and names. The code is the authority.
+- **Task 18, the gates** (2026-11-02, at f5707144 = the branch with main 923d158 merged): engine no-DB **3560 passed / 1112 skipped**; Postgres (a private database, dropped after) **76 passed, 0 skipped**; dashboard **132 files / 3679 tests**; build precache **20** entries, no chunk over 500 kB. The plan's arithmetic (3236/1111, 123/3370) predates the review fixes, the walk fixes and the two main merges (abb09b7, 923d158).
+- **Task 18, the reviews**: the final whole-branch review was approved after I1 (the reason's ceiling) and its re-checks; every per-task review was approved after its fixes.
+- **Task 18, the local walk** (stack `-p g3v` on 18100, synthetic accounts and patients): every item of the spec's §6 passed at 48c04d7b; its findings (e, h, a, b, c) were fixed (cc9aae98, 8784e24a), and the re-walk at f5707144 passed all six re-checked items with no new finding. Screenshots stay in the controller's scratchpad, not in the repo.
 
 ## Deploy notes
 
