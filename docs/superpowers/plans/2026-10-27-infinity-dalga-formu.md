@@ -3746,7 +3746,7 @@ cd /c/tmp/inf-dalga && git add dashboard/src/live/screens/common/waveGeometry.js
 **Files:**
 - Create: `dashboard/src/live/i18n/waves.strings.test.js`
 - Create: `dashboard/src/live/i18n/strings/waves.js`
-- Modify: `dashboard/src/live/i18n/catalog.js:41-42, 72-73`
+- Modify: `dashboard/src/live/i18n/catalog.js` (after `sofa`, the last namespace since the main merge 9fae9ec)
 
 - [ ] **Step 1: Write the failing test.** Create `dashboard/src/live/i18n/waves.strings.test.js`:
 
@@ -3917,33 +3917,35 @@ export default {
 };
 ```
 
-- [ ] **Step 4: Register them — each line with blank lines either side, as the file asks.** In `dashboard/src/live/i18n/catalog.js`, replace
+- [ ] **Step 4: Register them — each line with blank lines either side, as the file asks.** The main merge (9fae9ec) brought namespaces after `monitor` (`shadow`, `kabul`, `esleme`, `sofa`), each registered last, with a one-line comment over its import and a trailing tag on its entry; `waves` follows them the same way. In `dashboard/src/live/i18n/catalog.js`, replace
 
 ```js
-import monitor from "./strings/monitor.js";
+import sofa from "./strings/sofa.js";
 ```
 
 with
 
 ```js
-import monitor from "./strings/monitor.js";
+import sofa from "./strings/sofa.js";
 
-// Lane C (dalga): the live waveform panel (screens/common/WavePanel.jsx).
+// Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
 ```
 
 and replace
 
 ```js
-  monitor,
+  sofa, // G2-A4
+};
 ```
 
 with
 
 ```js
-  monitor,
+  sofa, // G2-A4
 
-  waves,
+  waves, // dalga
+};
 ```
 
 - [ ] **Step 5: Run every dictionary test.**
