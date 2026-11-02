@@ -1626,12 +1626,16 @@ gösterir. 3 saniyeden eski kalan paket atılmaz, çözülürken reddedilir: `re
 sayacının `queued` > 0 ile birlikte artması saat farkı değil, çözücünün geride kaldığı anlamına
 gelir.
 
-**Hastanenin sunucusunda henüz yok.** Dilim kendi dalındadır; dağıtım kullanıcının sözüyle
-yapılacak («main'e al», sonra «onay»). Hub için yeni bir sürüm gerekir (R6'dan sonraki; R7 olarak
-planlanıyor, yeni drop-in 97 ile); hub önce ya da API ile birlikte gider. Sıra karışsa da
-güvenlidir: hub dalga yolunu taşımadığı sürece panel «Dalga akışı yok» der. Hub'ı geri almak için
-97 silinir ve hub R6 ile yeniden başlatılır; R4'e ya da R5'e dönmek NBP-2'yi ve HR/PLS düzeltmesini
-de geri alır.
+**Hastanenin sunucusunda bugün kapalı.** Panel 2 Kasım 2026'da hastane sunucusuna çıktı: hub R7
+sürümü, API ile web ve açık `INFINITY_WAVES=on` bayrağı. Aynı gün geri alındı: tek bir açık panel
+bile hastanenin 2 vCPU'lu sunucusunda hub'ın paket yolunu yavaşlattı; şerit, yatak panosu ve
+alarmlar etkilenmedi (sayılar dağıtım kaydındadır). Önce bayrak kapatıldı, sonra hub R6'ya
+döndürüldü. Düzeltme yukarıda anlatılan iki değişikliktir — hub dalga bloklarını paketi
+onayladıktan sonra, paket yolunun dışında ayrı bir iş parçacığında çözer; API hub'a 750 ms'de bir
+yalnız yeni blokları sorar ve tarayıcıları kendi 20 saniyelik halkasından besler — ve hub R8
+sürümüyle, kullanıcının sözüyle («main'e al», sonra «onay») çıkacak. O güne dek sunucuda bayrak
+kapalıdır ve panel gösterilmez: hasta ekranında panel yoktur, «Monitörler»de açılan panel «Dalga
+formu bu kurulumda kapalı» der.
 
 ### 3.12 Yatak başı ölçüm ve «hatalı giriş» (Grup 3 · G3-01)
 
