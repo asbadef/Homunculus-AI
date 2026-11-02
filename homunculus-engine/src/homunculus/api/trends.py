@@ -8,6 +8,10 @@ as bands, and the moments an alarm episode began or an antibiotic dose was chart
 ONE home — `rules/news2.py` `NEWS2_BANDS` — and this module serves that table rather than restating
 it, so a band on a chart and a point in the score cannot disagree.
 
+Since G3-01 (D13, X1) it also lists each channel's HAND entries in the window — the bedside form's and every
+other door's — with their withdrawal («hatalı giriş») when there is one, read from the trail like the marks:
+the drawn `points` are the engine's, a withdrawn value gone from them; `manual` is what was typed, and by whom.
+
 What it deliberately does not do:
   * chart Aşama A's monitor values. That lane keeps no history, binds no patient and is unvalidated
     (spec D7); this module imports nothing of it (tests/test_infinity_shadow_isolation.py).
@@ -26,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from homunculus.api.alarm_quality import _event_time
 from homunculus.api.audit import AuditLog
 from homunculus.api.board import _PUBLISHED_SIGNALS
+from homunculus.api.clinical import BEDSIDE_SKEW, RETRACT
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 from homunculus.rules.news2 import BANDS_SOURCE, NEWS2_BANDS, points_for, score as news2_score
@@ -46,6 +51,11 @@ TRENDS_MAX_POINTS = 2000
 #: asks for one row more than the limit, and `markers_truncated` is true only when that extra row
 #: came back, i.e. when something was actually cut.
 TRENDS_MARKER_LIMIT = 5000
+#: G3-01 (D13, X1): the most hand-entry rows (charted and withdrawn together) one trends read keeps — the
+#: NEWEST ones. A ward charting the bedside set every hour writes about 6 × 72 = 432 `chart` rows in the 3-day
+#: window; this sits far above it, and `manual_truncated` says when a read had to cut. A cut loses the OLDEST
+#: entries: a withdrawal is written after the row it withdraws, so a row that is kept keeps its withdrawal.
+TRENDS_MANUAL_LIMIT = 5000
 
 # The NEWS2 parameter each published channel is — the names `score()` puts in its breakdown and
 # NEWS2_BANDS is keyed by. MAP and lactate are not NEWS2 parameters: no band, no points.
@@ -138,6 +148,72 @@ def _markers(state: PatientState, audit: AuditLog, hospital: str, patient_id: st
     return [marker for _at, marker in found], truncated
 
 
+def _instant(text) -> datetime | None:
+    """An ISO instant that carries a zone, or None."""
+    try:
+        at = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    return at if at.tzinfo is not None else None
+
+
+def _finite_number(value) -> bool:
+    """A JSON number the answer can carry: not a bool, finite, and — an int — small enough to be a float.
+    `math.isfinite` raises OverflowError for an int past the float range, and the read would answer 500 for as
+    long as the row sat in the window."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _manual(audit: AuditLog, hospital: str, patient_id: str, since: datetime,
+            until: datetime) -> tuple[dict[str, list[dict]], bool]:
+    """Each published channel's hand entries measured in [since, until], in the order they were written, each
+    with its withdrawal when there is one (G3-01, D13, X1).
+
+    Read from the trail, as the marks are, so the live door, the admission form's charting and a restart all
+    show one list. One bounded read of the patient's `chart` and `chart_retract` rows is enough, for two reasons
+    that the read's two bounds follow:
+      * the NEWEST rows are kept (`newest=True`, returned oldest first, so `manual` stays in write order). A
+        withdrawal is written after the row it withdraws, so a kept chart row keeps its withdrawal and a cut
+        loses only the oldest entries, `manual_truncated` saying so. Kept the other way (the oldest rows), a
+        withdrawal behind the cut would leave an entry the engine dropped shown as not withdrawn.
+      * a row is written at or after the time it records, except a bedside value the door lets run up to
+        `BEDSIDE_SKEW` ahead of its write. The read therefore starts `BEDSIDE_SKEW` before `since`, and the
+        time filter below keeps the exact bound. A lactate (no future bound at the door) dated ahead and
+        written before the window start is the one hole left.
+    A value the trail cannot read is left out, never shown as 0: not a finite number, or a time with no zone.
+    Who: the `charted_by` the door wrote, the `retracted_by` the withdrawal wrote."""
+    fetched = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", RETRACT},
+                            since=since - BEDSIDE_SKEW, limit=TRENDS_MANUAL_LIMIT + 1, newest=True)
+    truncated = len(fetched) > TRENDS_MANUAL_LIMIT
+    rows = fetched[max(len(fetched) - TRENDS_MANUAL_LIMIT, 0):]    # drop the extra, OLDEST row
+    withdrawn: dict[int, dict] = {}
+    for rec in rows:
+        entry = rec.payload.get("entry")
+        if rec.event_type == RETRACT and isinstance(entry, int) and not isinstance(entry, bool):
+            at = _instant(rec.ts)
+            withdrawn[entry] = {"reason": str(rec.payload.get("reason") or ""),
+                                "by": str(rec.payload.get("retracted_by") or ""),
+                                "at": at.astimezone(timezone.utc).isoformat() if at is not None else None}
+    out: dict[str, list[dict]] = {key: [] for key in _PUBLISHED_SIGNALS}
+    for rec in rows:
+        if rec.event_type != "chart" or rec.subject not in out:
+            continue
+        at = _instant(rec.payload.get("obs_ts"))
+        value = rec.payload.get("value")
+        if at is None or not since <= at <= until or not _finite_number(value):
+            continue
+        out[rec.subject].append({
+            "entry": rec.id, "at": at.astimezone(timezone.utc).isoformat(), "value": value,
+            "by": str(rec.payload.get("charted_by") or ""), "retracted": withdrawn.get(rec.id),
+        })
+    return out, truncated
+
+
 def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id: str,
                    hours: int, now: datetime) -> dict:
     """The trends response for `patient_id` over the `hours` before `now` (spec §4)."""
@@ -154,6 +230,7 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
     breakdown = news2_score(state).breakdown
     since, until = now - timedelta(hours=hours), now
 
+    manual, manual_truncated = _manual(audit, hospital, patient_id, since, until)   # G3-01 (D13, X1)
     channels = []
     for key, code in _PUBLISHED_SIGNALS.items():
         window = _finite(state.window(code, since, until))
@@ -169,6 +246,8 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
                         points_for(parameter, o.value) if parameter is not None else None]
                        for o in kept],
             "thinned": len(window) > TRENDS_MAX_POINTS,
+            # G3-01 (D13): what was typed into this channel in the window, a withdrawn value included and marked.
+            "manual": manual[key],
             "total_points": len(window),
             "latest": _latest(state, key, code, breakdown, baseline),
             "bands": {
@@ -193,4 +272,5 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
         "channels": channels,
         "markers": markers,
         "markers_truncated": markers_truncated,
+        "manual_truncated": manual_truncated,
     }

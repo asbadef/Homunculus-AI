@@ -11,7 +11,9 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import sync_alerts
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog, iter_records_of
 from homunculus.api.clinical import CHARTABLE, RETRACT
-from homunculus.api.rehydrate import REBUILD_EVENTS, rebuild_patient, rehydrate, retracted_entries
+from homunculus.api.rehydrate import (
+    REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
+)
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 from homunculus.state.timeline import PatientState
@@ -223,6 +225,50 @@ class TestRehydrateSkips:
         unskipped = AckStore()
         rehydrate(Engine(), unskipped, log.records(tenant=H, limit=1000))
         assert _keys(unskipped.resolved, "bed-3") == ["septic_shock"]
+
+
+class TestAValueNoFloatCanHoldIsSkipped:
+    """Review of Task 6: an `ingest` or `chart` row whose value is a whole number past the float range
+    (`float(10**400)` raises OverflowError) is an unreadable row, like an unknown signal: the replay and the
+    rebuild skip it, and the restart does not fail for the whole tenant. The door cannot write one (`float()`
+    refuses it first); the trail is what a restart must survive, whoever wrote it."""
+
+    @staticmethod
+    def _trail(kind, value):
+        log = InMemoryAuditLog()
+        _charted(log, "bed-3", "spo2", 95, T0)
+        payload = {"value": value, "unit": "/min", "obs_ts": (T0 + timedelta(minutes=1)).isoformat()}
+        if kind == "ingest":
+            payload["device"] = "mon-7"
+        else:
+            payload["charted_by"] = "hem.ayse"
+        log.append(AuditEvent(H, kind, "bed-3", "heart_rate", payload))
+        _charted(log, "bed-3", "resp_rate", 20, T0 + timedelta(minutes=2))
+        return log.records(tenant=H, limit=100)
+
+    @pytest.mark.parametrize("kind", ["ingest", "chart"])
+    @pytest.mark.parametrize("value", [10**400, -(10**400)], ids=["huge", "minus-huge"])
+    def test_observation_of_reads_it_as_no_observation(self, kind, value):
+        row = self._trail(kind, value)[1]
+        assert observation_of(row) is None
+
+    @pytest.mark.parametrize("kind", ["ingest", "chart"])
+    @pytest.mark.parametrize("value", [10**400, -(10**400)], ids=["huge", "minus-huge"])
+    def test_the_restart_completes_without_that_reading_and_with_the_others(self, kind, value):
+        engine = Engine()
+        rehydrate(engine, AckStore(), self._trail(kind, value))
+        state = engine.state("bed-3")
+        assert state.latest(SignalCode.HEART_RATE) is None
+        assert (state.latest(SignalCode.SPO2).value, state.latest(SignalCode.RESP_RATE).value) == (95, 20)
+
+    @pytest.mark.parametrize("kind", ["ingest", "chart"])
+    @pytest.mark.parametrize("value", [10**400, -(10**400)], ids=["huge", "minus-huge"])
+    def test_the_rebuild_completes_without_that_reading_and_with_the_others(self, kind, value):
+        engine = Engine()
+        rebuild_patient(engine, "bed-3", self._trail(kind, value), skip=frozenset())
+        state = engine.state("bed-3")
+        assert state.latest(SignalCode.HEART_RATE) is None
+        assert (state.latest(SignalCode.SPO2).value, state.latest(SignalCode.RESP_RATE).value) == (95, 20)
 
 
 class TestRestartEqualsTheLiveRebuild:
