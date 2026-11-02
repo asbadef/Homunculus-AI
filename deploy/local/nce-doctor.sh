@@ -79,9 +79,16 @@ PY
 hr "5. api: köprünün /ingest sonucu, son 30 dk"
 # The API's access log is OFF since O10 (uvicorn --no-access-log: a request path can carry a patient
 # key), so `POST /ingest ... 200` no longer appears in `docker logs homunculus-api`. The answer is on
-# the bridge's side: its uplink warnings name the HTTP status of a refusal, or "unavailable".
-docker logs --since 30m homunculus-nce 2>&1 | grep -oE "uplink refused an observation \(HTTP [0-9]+\)|identity resource refused by the uplink \(HTTP [0-9]+\)|uplink unavailable" | sort | uniq -c | tail -5
-[ -z "$(docker logs --since 30m homunculus-nce 2>&1 | grep -E 'uplink (refused|unavailable)|refused by the uplink')" ] && echo "(son 30 dk'da köprüde uplink uyarısı yok: /ingest ret ya da hata görünmüyor; kuyruk= sayacı 4. adımda)"
+# the bridges' side: their uplink warnings name the HTTP status of a refusal, or "unavailable". Both
+# are read: `bridge` (NCE's direct HL7, the live path since 2026-09-04) and `nce` (this file path,
+# stopped on purpose that day as the double-ingest guard; a stopped container prints nothing new).
+for c in homunculus-bridge homunculus-nce; do
+  docker inspect "$c" >/dev/null 2>&1 || { echo "$c: konteyner yok"; continue; }
+  u=$(docker logs --since 30m "$c" 2>&1 | grep -oE "uplink refused an observation \(HTTP [0-9]+\)|identity resource refused by the uplink \(HTTP [0-9]+\)|uplink unavailable")
+  if [ -n "$u" ]; then echo "$c:"; printf '%s\n' "$u" | sort | uniq -c | tail -5
+  else echo "$c: son 30 dk'da uplink uyarısı yok (/ingest ret ya da hata görünmüyor)"; fi
+done
+echo "(kuyruk= sayacı 4. adımda)"
 docker logs --since 30m homunculus-api 2>&1 | grep -E "ERROR|Traceback" | tail -3
 
 hr "5b. en yeni HL7 kopyalarında hasta kimliği var mı? (PID-3 biçimi: rakam->d, harf->a)"

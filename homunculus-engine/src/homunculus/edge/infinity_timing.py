@@ -26,7 +26,7 @@ JOURNAL_NAMES = frozenset({"append_ms", "pending_ms", "ack_ms", "snapshot_ms", "
                            "expire_ms", "capacity_ms", "insert_ms", "commit_ms"})
 WORKER_NAMES = JOURNAL_NAMES | {"connect_ms", "post_ms", "flush_ms", "batch_events"}
 HUB_NAMES = JOURNAL_NAMES | {"packets_ms", "body_ms", "validate_ms", "consume_ms", "lag_ms",
-                             "batch_events", "status_ms"}
+                             "batch_events", "status_ms", "waves_ms", "waves_read_ms"}
 
 
 class Timings:

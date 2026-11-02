@@ -3,7 +3,8 @@
 Mevcut PCAP'taki HR, SpO₂, PLS ve RESP aday alanları artık Homunculus'un
 `?infinityTest=1` ekranına bağlıdır. Bu sürüm **yerel kayıt oynatımıdır**.
 Ubuntu worker ve Homunculus hub üzerindeki çalışan metadata servisleri değiştirilmedi.
-Canlı sayısal aktarım, klinik `/ingest`, hasta eşleştirmesi ve ECG dalga çözümü etkin değildir.
+Canlı sayısal aktarım, klinik `/ingest`, hasta eşleştirmesi ve ECG dalga çözümü bu yerel
+oynatımda etkin değildir. (27.10.2026: canlı dalga paneli için [INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md).)
 
 ## Doğrulanan davranış
 

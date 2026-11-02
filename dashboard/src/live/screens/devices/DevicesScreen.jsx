@@ -18,15 +18,17 @@ import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf, reasonKey } from "../common/monitor.js";
+import { WavePanel } from "../common/WavePanel.jsx";
 // G2-ESLEME: the monitor→bed editor, above the strips (spec §3.1)
 import { useSession } from "../../session/SessionProvider.jsx";
+import { waveFeedFor } from "../../session/feeds.js";
 import { canSeeMapping, verifiedText } from "./deviceMap.js";
 import { MappingSection } from "./MappingSection.jsx";
 
 /** A device with no patient in it: whatever the answer carried about a link is not drawn here. */
 const withoutPatient = (card) => ({ ...card, patient_id: null, link: "hidden", link_reason: null });
 
-function Device({ card, assigned, view }) {
+function Device({ card, assigned, view, feed }) {
   const { t } = useI18n();
   const title = assigned ? card.bed_label : t("monitor.unassignedTitle", { source: card.source });
   return (
@@ -41,11 +43,13 @@ function Device({ card, assigned, view }) {
           <p className="m-0 text-11.5 font-semibold text-att-ink">{t(reasonKey(card.reason))}</p>
         )}
       </MonitorStrip>
+      {/* Lane C (dalga): closed behind «Dalga formunu göster» until pressed, so a list of monitors polls none (R9). */}
+      <WavePanel feed={feed} source={card.source} title={title} collapsible className="mx-2.5 mb-2" />
     </li>
   );
 }
 
-function Strip({ shadow }) {
+function Strip({ shadow, feed }) {
   const { t } = useI18n();
   const { data, phase } = shadow;
   // The server's display limit, never longer than this build's own; a read older than it, or one
@@ -84,8 +88,8 @@ function Strip({ shadow }) {
       ) : null}
       {known && rejected ? <p className="m-0 text-12.5 text-mute">{t("monitor.feedRejected", rejected)}</p> : null}
       <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
-        {(data.beds ?? []).map((card) => <Device key={card.source} card={card} assigned view={view} />)}
-        {(data.unassigned ?? []).map((card) => <Device key={card.source} card={card} assigned={false} view={view} />)}
+        {(data.beds ?? []).map((card) => <Device key={card.source} card={card} assigned view={view} feed={feed} />)}
+        {(data.unassigned ?? []).map((card) => <Device key={card.source} card={card} assigned={false} view={view} feed={feed} />)}
       </ul>
     </>
   );
@@ -93,11 +97,12 @@ function Strip({ shadow }) {
 
 export function DevicesScreen() {
   const { t } = useI18n();
-  const { user } = useSession();
+  const { user, store: session } = useSession();
+  const waveFeed = waveFeedFor(session);       // I1: the waves get this one GET, never the session
   const shadow = useShadow();
   const { data, phase } = shadow;
   let body = null;
-  if (stripOn(data)) body = <Strip shadow={shadow} />;
+  if (stripOn(data)) body = <Strip shadow={shadow} feed={waveFeed} />;
   else if (data) {
     body = <Note tone="info">{data.problem ? t("monitor.offProblem", { problem: data.problem }) : t("monitor.off")}</Note>;
   } else if (phase === SHADOW_PHASE.UNREADABLE) body = <Note>{t("monitor.unreadable")}</Note>;

@@ -46,6 +46,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
+import { waveFeedFor } from "../../session/feeds.js";
 import { apiErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Icon, KV, KVList, Note, RiskPill, StatusPill, riskStyle, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
@@ -58,6 +59,7 @@ import { hasMeasurement } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { WavePanel } from "../common/WavePanel.jsx";
 import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
@@ -288,7 +290,8 @@ function Sepsis({ sepsis, canChart, onChart, pending }) {
 export function PatientScreen({ params }) {
   const { t } = useI18n();
   const board = useBoard();
-  const { user } = useSession();
+  const { user, store: session } = useSession();
+  const waveFeed = waveFeedFor(session);       // I1: the waves get this one GET, never the session
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
   // G3-01: a bedside save or a «hatalı giriş» moves values the SOFA form reads (its total, its «okuması» time). The
@@ -418,6 +421,9 @@ export function PatientScreen({ params }) {
               feedOk={shadow.data.feed?.state === "ok"} stage={shadow.data.stage}
               unreadable={readUnknown(shadow, shadow.nowMs, maxAgeOf(shadow.data))} />
           ) : null}
+          {/* Lane C (dalga): that monitor's live waves, right under its strip and for the same `link === "one"`
+              card only. Nothing is drawn until the first answer, nor when waves are off (WavePanel, R10). */}
+          {monitor ? <WavePanel feed={waveFeed} source={monitor.source} title={monitor.bed_label} className="bg-card" /> : null}
 
           {/* Aşama B (D7): the shadow engine's answer on the monitor's numbers, after the strip it reads and
               before the engine's own findings it must not be mistaken for. Nothing when there is no shadow.

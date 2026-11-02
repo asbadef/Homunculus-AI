@@ -58,6 +58,8 @@ import protokol from "./strings/protokol.js";
 
 // G3-01: the bedside measurement — the «Yatak başı ölçüm» page, «Ölçüm gir», «hatalı giriş».
 import olcum from "./strings/olcum.js";
+// Dalga: the live waveform panel (screens/common/WavePanel.jsx).
+import waves from "./strings/waves.js";
 
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
@@ -93,6 +95,7 @@ export const NAMESPACES = {
   protokol, // G2-B1d
 
   olcum, // G3-01
+  waves, // dalga
 };
 
 function flattenInto(out, prefix, entries) {

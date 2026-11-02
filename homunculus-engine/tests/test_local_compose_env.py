@@ -30,10 +30,11 @@ _MODULES = [
     _SRC / "auth" / "session_policy.py",
     _SRC / "api" / "infinity_shadow.py",
     _SRC / "api" / "infinity_rules.py",
+    _SRC / "api" / "infinity_waves.py",
 ]
 # What the scan must find at least, so a scanner that goes blind cannot pass vacuously.
 _KNOWN = {"SCOPE_ENFORCE_UNASSIGNED", "SCREEN_LOCK_IDLE_MINUTES", "SCREEN_LOCK_SIGNOUT_HOURS",
-          "INFINITY_CLINICAL_STAGE", "INFINITY_RULES_PARAMETERS"}
+          "INFINITY_CLINICAL_STAGE", "INFINITY_RULES_PARAMETERS", "INFINITY_WAVES"}
 
 _ENV_NAME = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
 

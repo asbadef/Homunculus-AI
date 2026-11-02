@@ -8,6 +8,9 @@ import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { DevicesScreen } from "./DevicesScreen.jsx";
+import { fireEvent } from "@testing-library/react";
+import { answer as waveAnswer, bed4 } from "../../data/waves.testutil.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
 import { pinZone } from "./zone.testutil.js";
 
 pinZone();   // the method line prints an editor row's UTC time as local time: pinned (Baku, UTC+4) so a literal can be asserted (A-20)
@@ -217,5 +220,28 @@ describe("the monitor screen — the shadow engine's lane (Aşama B)", () => {
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.queryByText(LANE)).toBeNull();
     expect(screen.getAllByText("Monitor zolağı oxunmur").length).toBeGreaterThan(0);
+  });
+});
+
+// Lane C (dalga): each device's waves wait behind a button — a list of monitors polls none of them
+// by itself. Synthetic blocks only (data/waves.testutil.js).
+describe("the waveform behind each device", () => {
+  it("offers each device's waves behind a button, and asks for one only when it is opened", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const mounted = await open(WARD);
+    const buttons = screen.getAllByRole("button", { name: DICTIONARIES.az["waves.show"] });
+    expect(buttons).toHaveLength(4);
+    // Closed, every one of them: no panel, no stamp, no request.
+    expect(document.querySelector("[data-wave-panel]")).toBeNull();
+    expect(mounted.api.request).not.toHaveBeenCalled();
+    mounted.api.request.mockResolvedValue(waveAnswer(bed4(), { device_id: "192.0.2.2" }));
+    await act(async () => { fireEvent.click(buttons[0]); await settle(); });
+    expect(mounted.api.request).toHaveBeenCalledTimes(1);
+    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0");
+    const panel = screen.getByRole("region", { name: `REA-01 · 2 · ${DICTIONARIES.az["waves.title"]}` });
+    expect(panel).toHaveTextContent(DICTIONARIES.az["waves.stamp"]);
+    // Opened by hand, inside its own device's card; the other three stay closed.
+    expect(panel.closest("li")).toBe(screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" }).closest("li"));
+    expect(screen.getAllByRole("button", { name: DICTIONARIES.az["waves.show"] })).toHaveLength(3);
   });
 });

@@ -34,7 +34,7 @@ physician-entered patient normal.
 | D2 | **Card frame from the engine's NEWS2 points** for that parameter: 0 → none, 1–2 → amber, 3 → red. Beside it a text badge ("NEWS2 +3"). | The user asked for the prototype's red frame; it must be the engine's number, not the browser's. |
 | D3 | **Own-normal pill does not override the frame.** When the latest value sits inside the charted baseline, the pill "Hastanın normalinde" is shown next to the frame; both stay. | Wave 3 decision 5(d): both facts shown, neither silences the other. |
 | D4 | **The baseline form is in this slice**, for `clinical.chart` holders, on the five channels the engine keeps baselines for (`api/clinical.py` `BASELINE_SIGNALS`: heart_rate, resp_rate, spo2, sbp, temperature). MAP and lactate are not offered. | The band is useless without a way to enter it; the backend exists. |
-| D5 | **No waveforms.** The prototype's traces are synthetic and labelled "TEMSİLİ DALGA"; no ECG packet is decoded. Real numbers at 5 s live in the Stage A strip, which stays as it is. | A drawn waveform that is not a measurement is a lie on a clinical screen. |
+| D5 | **No waveforms.** *(Superseded 2026-10-27 by the owner's W1–W6, `2026-10-27-infinity-dalga-formu-design.md`: real decoded waves are drawn in a separate, unvalidated panel; the synthetic traces stay gone.)* The prototype's traces are synthetic and labelled "TEMSİLİ DALGA"; no ECG packet is decoded. Real numbers at 5 s live in the Stage A strip, which stays as it is. | A drawn waveform that is not a measurement is a lie on a clinical screen. |
 | D6 | **Adult NEWS2 bands only**, labelled "NEWS2 · yetişkin", SpO₂ scale 1 only. | The engine computes NEWS2 for every patient (no age group exists in the profile) and scale 2 is an unsourced cell in the vault. The NICU gap is recorded in the vault, not papered over here. |
 | D7 | **Stage A values are not charted.** | Stage A keeps no history by decision (120 s retention, device-keyed, unvalidated). Charting them would contradict that and bind device values to a patient before the bed↔patient binding exists. |
 | D8 | **Thinning at 2 000 points per channel**, first/last/min/max of each bucket kept, flagged. | Today's spot-check data never reaches it; Stage B's 5 s data would be 51 840 points per 72 h. |
@@ -266,7 +266,7 @@ Rules:
 
 ## 10. Not in this slice
 
-Waveforms; the unit board (`grafik.js`); the wall monitor; the "next measurement due" counter
+Waveforms (since 2026-10-27: the dalga slice, a separate panel); the unit board (`grafik.js`); the wall monitor; the "next measurement due" counter
 (nursing tasks, Group 3); non-antibiotic medication markers; device alarm limits (Stage B);
 lactate and MAP baselines (the engine keeps none); neonatal bands; a separate "Trendler" tab;
 charting Stage A values; the `/audit` oldest-N fix beyond `since`.

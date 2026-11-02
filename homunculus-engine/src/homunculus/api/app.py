@@ -674,6 +674,9 @@ def create_app(
                                       name)
             if ldap is not None:
                 ldap.close()                 # the directory's own worker threads
+            feed = getattr(app.state, "wave_feed", None)      # Lane C (dalga): the hub client
+            if feed is not None:
+                await feed.aclose()
 
     app = FastAPI(title="Homunculus", lifespan=lifespan)
 
@@ -718,6 +721,10 @@ def create_app(
     app.include_router(ldap_admin_router)
     app.include_router(scope_router)
     app.include_router(infinity_research_router)
+    # Lane C (dalga): the live waveform panel's GET, behind the strip board's own gates — it calls
+    # `shadow_board` (defined below; looked up when a request comes). Off unless INFINITY_WAVES=on.
+    from homunculus.api.infinity_waves import register as register_waves
+    register_waves(app, board=lambda authorization: shadow_board(authorization))
     app.include_router(device_beds_router)          # G2-ESLEME: the monitor→bed editor (spec §4.1)
     # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
     from homunculus.protocol.router import router as protocol_router

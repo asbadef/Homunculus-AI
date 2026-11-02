@@ -102,6 +102,10 @@ Do not simply raise these limits and label the pilot production-ready.
 8. Treat ECG waveform rendering as a separate deliverable: channel identity,
    sample rate, scaling, timing and gaps need independent validation. Numeric HR
    extraction does not validate a waveform decoder or replacement alarm display.
+   Status 2026-10-27: the structure is answered in `docs/INFINITY-DALGA-FORMU.md` (blocks,
+   ids, rates, the pressure scale, timing, gaps; the live ECG channel differs by bed).
+   Sample-exact alignment with the screen, the ECG gain and the lead names are open, and
+   the panel built on it is display-only, unvalidated, silent and stores nothing.
 
 ## Capacity and acceptance
 

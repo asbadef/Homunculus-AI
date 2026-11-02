@@ -58,11 +58,14 @@ def main():
     try:
         inventory = Inventory.read(args.inventory)
         research_view = None
+        waves = None
         if args.unverified_live_research:
             if args.role != "hub" or not args.capture_payload or args.replay:
                 raise ValueError("Live research requires a hub with explicit payload acceptance.")
             from homunculus.edge.infinity_live import LiveResearchView
+            from homunculus.edge.infinity_waves import WINDOW_S, WaveBuffer
             research_view = LiveResearchView(inventory)
+            waves = WaveBuffer(inventory)
         key = os.environ["INFINITY_STORAGE_KEY"].encode()
         token = os.environ["INFINITY_COLLECTOR_TOKEN"]
         Fernet(key)
@@ -92,7 +95,10 @@ def main():
         print("Infinity research transport; clinical forwarding DISABLED.", flush=True)
         if args.role == "hub":
             app = create_hub(inventory, journal, token, viewer, accept_payload=args.capture_payload,
-                             research_view=research_view, timings=timings)
+                             research_view=research_view, timings=timings, waves=waves)
+            if waves is not None:
+                print(f"Waveform blocks decoded for display only (unvalidated; the last {WINDOW_S:g} s in memory).",
+                      flush=True)
             # Aşama A: display values to the clinical API's shadow lane, only with drop-in 93's
             # environment. Not clinical ingest: the hub's answers keep clinical_forwarding False.
             shadow = shadow_settings_from_env(os.environ)

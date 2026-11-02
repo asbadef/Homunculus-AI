@@ -24,7 +24,9 @@ alan öncesi byte kontrolleri sürer. Profilin PCAP SHA kapsamı yalnız replay 
 kanıttır; canlı kullanım açıkça ayrı `unverified_layout` kanıt düzeyindedir.
 Profilin bilinmeyen yeni cihaz/firmware/paket düzeninde kullanılabilir olduğu
 varsayılmaz. Alan birimi/ölçeği, geçerlilik bayrakları ve cihaz ölçüm zamanı henüz
-doğrulanmadı. Hasta eşleştirmesi, ECG dalgaları ve klinik ingest kapalıdır.
+doğrulanmadı. Hasta eşleştirmesi ve klinik ingest kapalıdır. (27.10.2026: dalga blokları
+çözüldü ve yalnız ayrı, doğrulanmamış bir görüntü panelinde çizilir —
+[INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md), `INFINITY_WAVES`.)
 
 Her alan ayrı eskir. Üç saniyelik eşik worker'ın alım zamanı, hub'a taşınma süresi
 ve monotonik saatle değerlendirilir. Eski kuyruk kayıtları ve tekrarlar güncel

@@ -23,7 +23,10 @@ CALLER_RESOLVED_MODULE = "homunculus.api.app"
 # G2-B1d (E22): the bridge's patient query is built by a factory bound to the app's `_caller`
 # (api/edge_query.py, E2): the device token only, so it too has no JWT principal to reach. Keyed
 # on (module, method, path): a GET or PUT added later to the same path is not exempted by it.
-CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-query")}
+# Dalga: the waveform GET is registered from api/infinity_waves.py, and resolves its caller by
+# calling the strip board's own handler (`shadow_board`: the Caller, board.view/devices.manage).
+CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-query"),
+                          ("homunculus.api.infinity_waves", "GET", "/infinity-waves/{device_id}")}
 
 
 def _calls(dependant) -> set:
