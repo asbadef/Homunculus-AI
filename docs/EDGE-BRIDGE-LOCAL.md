@@ -549,6 +549,26 @@ plan to map them. Every failure says what to ask IT for.
   `LOGIN_FAILURE_FLOOR_S` in `homunculus-engine/src/homunculus/auth/router.py` (a code change;
   keep it far below the dashboard's 15 s).
 
+## Access logs — what they record
+
+The patient screen's routes carry the patient's key in the path (`/patients/<key>/trends`,
+`/scores/sofa/<key>`), so both request logs are kept without it (G2-B1d O10; spec
+`superpowers/specs/2026-11-02-g2b-o10-erisim-logu-design.md`).
+
+- **API:** uvicorn runs with `--no-access-log`. `docker compose logs api` shows the engine's own
+  lines (start-up, LDAP, warnings and errors) and no request lines — `POST /ingest … 200` is gone.
+  How the bridge's posts were answered is on the bridge's side: its `uplink refused … (HTTP <status>)`
+  and `uplink unavailable` warnings (`deploy/local/nce-doctor.sh`, step 5, reads them).
+- **web (nginx):** `docker compose logs web` has one line per request in the `homunculus_redacted`
+  format: client address, time, method, the path with its ids replaced (`/patients/:key/trends`,
+  `/admissions/:id/label`), protocol, status, bytes, seconds, user agent. No query string and no
+  referer. The client address is still the first field (the check above).
+- **Not covered — nginx's error log.** While the API is unreachable (502), nginx writes a line per
+  failed request to the same stream with the request and upstream URL as they were sent:
+  `request: "GET /patients/<key>/trends HTTP/1.1"`, `upstream: "http://…/patients/<key>/trends"`
+  and the page's `referrer:`. Read `docker compose logs web` for such a window as a log that holds
+  patient keys.
+
 ## Backups — your responsibility now
 
 No managed provider is doing this any more. The audit trail is a legal record, and an unbacked-up
