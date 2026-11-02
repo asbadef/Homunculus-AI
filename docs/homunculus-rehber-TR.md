@@ -1181,7 +1181,8 @@ atanmamış hesap (pilot ayarı) ve yönetici her yere ulaşır.
 kabul aynı numarayı asla alamaz; bir yılda 99 999'a ulaşılırsa kabul reddedilir. `H` öneki
 numarayı HBYS protokol numaralarından ayırır — ikisi aynı olsaydı iki hasta tek karta düşerdi.
 HBYS protokol numarası ayrı ve isteğe bağlı bir alandır. Aynı kişi yeniden yatarsa yeni bir numara
-alır.
+alır. (Grup 2 · B1d'den sonra yeni kabullerde başucu cihazına girilen, etikete basılan ve kartın
+anahtarı olan numara Homunculus'un verdiği **protokol numarasıdır**, H-numarası değil; bkz. §3.10.)
 
 **Numara neden başucu cihazına girilir:** monitör ölçümü hastanın numarasıyla gönderir; Homunculus
 ölçümü bu numaraya bakarak karta bağlar. Kabulden sonra ekran numarayı büyük yazar ve "Başucu
@@ -1432,6 +1433,60 @@ düzenlemeyi reddeder.
   bekliyor.
 - **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak («main'e al», sonra
   «onay»); o güne dek sunucudaki eşleme v2 dosyasıdır.
+
+### 3.10 Protokol numarası, etiket ve cihaz sorgusu (Grup 2 · B1d)
+
+Hastanenin kendi numaralandırmasında bir kişinin ömür boyu tek **hasta numarası**, her gelişinin
+(her yatışın) ise yeni bir **protokol numarası** vardır. Homunculus'ta bir kabul bir geliştir: her
+yeni kabul bir protokol numarası alır ve o numara her şeydir — hemşirenin başucu cihazına girdiği,
+etiketin barkodunda basılan ve kartta görünen numara aynıdır. Bu dilim kimin hangi numarayla
+yattığını ve cihazın hangi adı göreceğini düzenler; klinik bir karar vermez, hiçbir klinik değer
+hesaplamaz. Örneklerdeki numaralar uydurmadır.
+
+- **Numara.** On iki rakam, hepsi sıra (`202600000001`, `202600000002` …); kontrol hanesi yok.
+  En küçük başlangıç `000000000001`: `000000000000` deneme etiketinin numarasıdır, hiçbir kabule
+  verilmez. Kontrol hanesi olmadığı için tek hane yanlış yazılırsa komşu hastanın geçerli numarası
+  çıkabilir: cihaz bulunan her numarayı **adıyla** gösterir, ve hemşirenin tek güvencesi o addır.
+  Kabul formundaki isteğe bağlı «HBYS protokol no» ayrı bir alandır; Homunculus'un verdiği protokol
+  numarası değildir.
+- **Başlangıç numarasını yönetici girer** (Yönetim › Protokol ve etiket). Girilene dek **hiçbir
+  kabul yapılamaz** (409 `protocol_not_configured`): Homunculus'un kendi seçtiği bir aralık eski
+  HBYS'nin protokolleriyle çakışabilirdi. Numara yalnız **ileri** alınır: verilen son numaradan
+  büyük olmalı (`protocol_not_forward`).
+- **H-numarası** (`H26…`, B1a) olduğu gibi verilmeye devam eder, ama etikete basılmaz ve yeni
+  kabulün kartının anahtarı değildir. Bu dilimden önce açılmış kabuller H-numarasıyla kalır.
+- **Etiket.** Varsayılan 50×30 mm, Zebra için; genişlik, yükseklik ve yazıcı çözünürlüğü (203 ya da
+  300 dpi) aynı sekmede. Barkod **Code 128-C**: rakam çiftlerini kodlar, 12 hane 121 modül eder
+  (sessiz alanlar dahil); bir modül 203 dpi'de 3, 300 dpi'de 4 yazıcı noktası. 203 dpi'de etiket en
+  az 49 mm, 300 dpi'de en az 44 mm genişlikte olmalı. Satırlar: barkod, protokol (büyük), **tam
+  ad** (kâğıtta ad hiç maskelenmez), doğum tarihi · cinsiyet, birim · yatak; boş satır «—» diye
+  yazılmaz, düşer. Uzun bir ad kesilmez: yazı adın uzunluğuna göre küçülür, gerekirse üçüncü bir
+  satıra iner; yer yetmezse önce «birim · yatak», sonra doğum satırı bütünüyle düşer, ad asla.
+  Kabul kutusu «Etiketi yazdır»ı, hasta ekranı «Etiketi yeniden yazdır»ı gösterir; her basım
+  denetim kaydına düşer (`admission.label_print`, adsız). «Deneme etiketi yazdır» yalnız sentetik
+  `000000000000` ve «DENEME ETİKETİ» basar, sunucuya hiçbir şey sormaz. Zebra sürücüsünde etiket
+  stoku bu boyutta, ölçek %100 olmalı.
+- **Cihaz sorgusu.** Connex Spot'a numara girilince NCE köprüye `QBP^Q22` sorar; köprü önce API'ye
+  sorar (`POST /edge/patient-query`, en çok 2 sn, yalnız cihaz jetonu, nginx dışarı açmaz):
+  - **bulundu** → cevap adı her zaman, doğum tarihini ve cinsiyeti de taşır; cihazın bunları
+    ekranda nasıl gösterdiği sahibin NCE oturumunda doğrulanacak (spec §12, O4);
+  - **bulunamadı** (bilinmeyen ya da taburcu edilmiş numara) → `NF`: tasarım gereği cihaz numarayı
+    doğrulayamaz, hemşire yatak başında düzeltir; cihazın `NF`'de ne gösterdiği ve kaydetmeye izin
+    verip vermediği de aynı oturumda doğrulanacak (spec §12, O3). Yine de kaydederse ölçüm bugünkü gibi
+    adsız «kimlik kaydı yok» kartına düşer;
+  - **API cevap vermedi** → köprü kendi aynasından cevaplar; aynada da yoksa numarayı adsız geri
+    yollar. Ölçüm kaybolmaz; «bilmiyoruz» ile «bulunamadı» ayrı kalır. API konteyneri durmuşsa
+    (örneğin bir kurulum sırasında) cevap yaklaşık 4 sn sürer: 2 sn sınırı ad çözümünü kapsamaz
+    (yerel yürüyüş W-1, açık madde O9); yine de NCE'nin tanıdığı 10 sn'nin içindedir.
+  API'nin kimlik deposunun Postgres süre sınırı vardır (kimlikte 2 sn; Lane A'nın pg-bounds
+  dilimi), bu yüzden takılmış bir veritabanı birkaç saniye içinde 503 verir ve köprü hemen kendi
+  aynasına döner (sunucu süreci tümden donmuşsa sınır yetmez; o durumda cihazı köprünün kendi 2 sn
+  sınırı korur).
+  Köprünün rapor satırı `sorgu`, `sorgu_NF` ve `sorgu_api_hata` sayar; hiçbir numara loglanmaz.
+- **Servisler arası nakil** bugün kapalı (409 `transfer_unavailable`); açıldığında yeni kabul
+  kaydı protokolü taşımalı (açık madde O8, spec §12).
+- **Geri dönüş** yalnız ilk protokollü kabulden önce temizdir: sonrasında açık kabullerin kartları
+  protokolle anahtarlıdır ve eski API onları eşleştiremez — geri dönüş ileri bir düzeltme demektir.
 
 ---
 

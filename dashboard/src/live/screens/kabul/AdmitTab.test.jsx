@@ -5,7 +5,7 @@
 // second admission of the same patient: what it may have left is looked for first. And none of
 // that is the tab's to lose: the form, the hold and the sends with no answer are the session's
 // (A-21) — another tab, another screen and a send answering meanwhile leave them where they were.
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import fs from "node:fs";
 import path from "node:path";
@@ -1069,5 +1069,119 @@ describe("AdmitTab", () => {
       await settle();
       expect(document.activeElement).toBe(doneHeading());
     });
+  });
+});
+
+// G2-B1d — the protocol box (spec §4 Screens, §6): the board key large, what to do with it, the card
+// linked by it, and the label offered; an answer without a protocol keeps B1a's box.
+describe("AdmitTab · the protocol (G2-B1d)", () => {
+  const withProtocol = (over = {}) => ({ ...admitted(), protocol_no: "202600000001", board_key: "202600000001", ...over });
+
+  it("shows the protocol large with what to do with it, links the card by it, and offers its label", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(withProtocol()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText("H2600042")).toBeNull();                       // D2: not the visit's number
+    expect(screen.getByText("Protokol nömrəsi")).toBeTruthy();
+    expect(screen.getByText("Bu nömrəni cihaza daxil edin və ya barkodu oxudun")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
+    expect(toasts().getAllByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`).length).toBeGreaterThan(0);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);              // a blocked window: nothing asked
+    try {
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Etiketi çap et" })); });
+      await settle();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(api.admissionLabel).not.toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+    }
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
+  it("prints the admission's own label, a first print", async () => {
+    const popup = { document: { open() {}, write() {}, close() {} }, focus() {}, print() {}, close() {} };
+    const { api } = await mountKabul(<AdmitTab />, {
+      perms: NURSE,
+      setup: (a) => {
+        a.admit.mockResolvedValue(withProtocol({ id: "a-7" }));
+        a.admissionLabel.mockResolvedValue({ protocol_no: "202600000001", display_name: "Sentetik Hasta",
+          date_of_birth: "1970-05-05", sex: "female", unit_name: "Reanimasiya", bed_label: "1",
+          label: { width_mm: 50, height_mm: 30, printer_dpi: 203 } });
+      },
+    });
+    fillRequired();
+    await press();
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
+    try {
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Etiketi çap et" })); });
+      await settle();
+      expect(api.admissionLabel).toHaveBeenCalledWith("a-7", false);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(admitted()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("H2600042")).toBeTruthy();
+    expect(screen.getByText("Çarpayı yanındakı cihaza bu nömrəni daxil edin.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Etiketi çap et" })).toBeNull();
+    expect(screen.queryByText("Protokol nömrəsi")).toBeNull();
+  });
+
+  // A send that got no answer and is found afterwards (R3): the row carries the protocol and the key.
+  const protocolDraft = () => row({ id: "a-9", state: "DRAFT", bed_id: BED(1), patient_number: "H2600042",
+    protocol_no: "202600000001", board_key: "202600000001" });
+
+  it("a send found after no answer shows the protocol by its key and offers the form's own label", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
+    fillRequired();
+    api.structure.mockResolvedValue(withBed(1, { state: "OCCUPIED" }));
+    api.admissions.mockResolvedValue([protocolDraft()]);
+    await press();
+
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText("H2600042")).toBeNull();
+    expect(screen.getByText(RECORDED)).toBeTruthy();
+    expect(toasts().getAllByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
+    const popup = { document: { open() {}, write() {}, close() {} }, focus() {}, print() {}, close() {} };
+    api.admissionLabel.mockResolvedValue({ protocol_no: "202600000001", display_name: "Sentetik Hasta",
+      date_of_birth: "1970-05-05", sex: "female", unit_name: "Reanimasiya", bed_label: "1",
+      label: { width_mm: 50, height_mm: 30, printer_dpi: 203 } });
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
+    try {
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Etiketi çap et" })); });
+      await settle();
+      expect(api.admissionLabel).toHaveBeenCalledWith("a-9", false);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("an earlier patient's admission found after a send got no answer says protocol, not «xəstə nömrəsi», and offers no label", async () => {
+    const { api } = await mountKabul(<AdmitTab />, {
+      perms: NURSE,
+      setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted(undefined, "H2600099")),
+    });
+    fillRequired();
+    await press();                                                           // no answer for Sentetik Hasta, bed 1
+    fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+    pickBed5();
+    api.admissions.mockResolvedValue([protocolDraft()]);
+    await press();
+
+    expect(api.admit).toHaveBeenCalledTimes(1);                              // the form's patient is not sent
+    expect(screen.getByRole("heading", { level: 2, name: EARLIER_TITLE })).toBeTruthy();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.getByText(EARLIER)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Etiketi çap et" })).toBeNull();   // not the form's patient's label
+    const told = toasts().getAllByText(`${BED1} · əvvəl göndərilən qəbul yazılıb, protokol nömrəsi 202600000001 — formadakı xəstənin deyil`);
+    expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(toasts().queryByText(/xəstə nömrəsi/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
   });
 });

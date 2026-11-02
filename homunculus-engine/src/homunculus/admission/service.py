@@ -84,6 +84,7 @@ async def create_draft_admission(
     request_id: uuid.UUID | None = None,
     request_digest: str | None = None,
     identity_digest: str | None = None,
+    protocol_no: str | None = None,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
@@ -128,6 +129,7 @@ async def create_draft_admission(
         request_id=request_id,
         request_digest=request_digest,
         identity_digest=identity_digest,
+        protocol_no=protocol_no,             # G2-B1d: issued by the route, in this transaction
         **note_fields,
     )
     if admission.admission_datetime is None:
@@ -332,6 +334,10 @@ async def confirm_transfer_arrival(
         source_bed.transition_to(BedState.HOUSEKEEPING)
 
     # Create new ACTIVE admission at target, copying the short note.
+    # F-34 (G2-B1d): the new row carries no `protocol_no`, so its board key would be the H-number while the
+    # card stands under the protocol (E3). Unreachable while transfers are closed (`_transfer_closed` ->
+    # 409 `transfer_unavailable`); the transfer slice must move the protocol to this row or issue a new one
+    # (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Spec §12 O8.
     new_admission = Admission(
         patient_id=admission.patient_id,
         tenant_id=admission.tenant_id,

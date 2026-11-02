@@ -47,6 +47,23 @@ CODES = frozenset({
     MONITOR_LANE_OFF, DEVICE_UNKNOWN, BED_OCCUPIED, MAPPING_CHANGED, BED_HAS_MONITOR,
 })
 
+# G2-B1d — the protocol number and its label (spec 2026-11-01 §7). Its own block AFTER `CODES`,
+# which it widens: the monitor→bed editor's block sits inside `CODES`, and two hunks with untouched
+# lines between them merge without a conflict (E15).
+PROTOCOL_NOT_CONFIGURED = "protocol_not_configured"   # no start number set: no admission (D5)
+PROTOCOL_EXHAUSTED = "protocol_exhausted"             # the sequence passed 999 999 999 999
+PROTOCOL_FORMAT = "protocol_format"                   # a start number that is not twelve digits
+PROTOCOL_NOT_FORWARD = "protocol_not_forward"         # a start number not above the last issued
+LABEL_SIZE = "label_size"                             # width 30–110 mm, height 20–80 mm
+LABEL_TOO_NARROW = "label_too_narrow"                 # the barcode does not fit that width
+LABEL_DPI = "label_dpi"                               # the printer is 203 or 300 dpi
+NO_PROTOCOL = "no_protocol"                           # an admission without a protocol: no label
+
+CODES = CODES | frozenset({
+    PROTOCOL_NOT_CONFIGURED, PROTOCOL_EXHAUSTED, PROTOCOL_FORMAT, PROTOCOL_NOT_FORWARD,
+    LABEL_SIZE, LABEL_TOO_NARROW, LABEL_DPI, NO_PROTOCOL,
+})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen

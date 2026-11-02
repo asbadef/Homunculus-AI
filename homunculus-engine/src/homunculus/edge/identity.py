@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -40,7 +41,10 @@ class IdentityMirror:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         # check_same_thread=False: the runner may write from a worker thread, as the buffer does.
+        # G2-B1d (E8): the patient query runs on worker threads (edge/mllp.py) while the ADT
+        # handler writes on the event loop, so every statement and its commit take this lock.
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS identity ("
             " patient_id TEXT PRIMARY KEY,"
@@ -49,6 +53,18 @@ class IdentityMirror:
             " state TEXT NOT NULL, at TEXT NOT NULL)"
         )
         self._conn.commit()
+
+    def _write(self, sql: str, params: object = ()) -> sqlite3.Cursor:
+        """One statement and its commit, under the lock."""
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            self._conn.commit()
+            return cur
+
+    def _read_one(self, sql: str, params: object = ()) -> tuple | None:
+        """One row of one statement, under the lock."""
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
 
     def upsert(self, identity: PatientIdentity) -> bool:
         """Write the record. Returns False when an OLDER message was refused.
@@ -75,7 +91,7 @@ class IdentityMirror:
             "has_sex": identity.sex not in ("", "unknown"),
             "has_location": bool(identity.unit or identity.room or identity.bed),
         }
-        cur = self._conn.execute(
+        cur = self._write(
             "INSERT INTO identity (patient_id, family, given, birth_date, sex,"
             " unit, room, bed, state, at) VALUES (:patient_id, :family, :given, :birth_date,"
             " :sex, :unit, :room, :bed, :state, :at)"
@@ -92,7 +108,6 @@ class IdentityMirror:
             " WHERE excluded.at >= identity.at",
             params,
         )
-        self._conn.commit()
         if cur.rowcount > 0:
             return True
         # Counted by the caller (adt_stale). The protocol number is an identifier and stays out
@@ -101,9 +116,9 @@ class IdentityMirror:
         return False
 
     def get(self, patient_id: str) -> PatientIdentity | None:
-        row = self._conn.execute(
+        row = self._read_one(
             "SELECT patient_id, family, given, birth_date, sex, unit, room, bed, state, at"
-            " FROM identity WHERE patient_id = ?", (patient_id,)).fetchone()
+            " FROM identity WHERE patient_id = ?", (patient_id,))
         if row is None:
             return None
         return PatientIdentity(
@@ -116,17 +131,23 @@ class IdentityMirror:
             state=row[8], at=datetime.fromisoformat(row[9]),
         )
 
+    def forget(self, patient_id: str) -> bool:
+        """Drop the number's row (G2-B1d, spec §5 point 2, §8): the API answered «not found», so
+        the name it had here — a discharged patient's, a mistyped neighbour's — does not stay on
+        this disk. True when a row went. The number is never logged."""
+        return self._write("DELETE FROM identity WHERE patient_id = ?", (patient_id,)).rowcount > 0
+
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         """Drop discharged rows older than `ttl`. Returns how many went."""
         cutoff = (to_utc(now) - ttl).isoformat()
-        cur = self._conn.execute(
+        cur = self._write(
             "DELETE FROM identity WHERE state = 'discharged' AND at < ?", (cutoff,))
-        self._conn.commit()
         return cur.rowcount
 
     def count(self) -> int:
-        (total,) = self._conn.execute("SELECT count(*) FROM identity").fetchone()
+        (total,) = self._read_one("SELECT count(*) FROM identity")
         return int(total)
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

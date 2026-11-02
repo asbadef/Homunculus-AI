@@ -53,6 +53,9 @@ import esleme from "./strings/esleme.js";
 // G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
 import sofa from "./strings/sofa.js";
 
+// G2-B1d: Protokol — the protocol number, its label, Yönetim › Protokol ve etiket.
+import protokol from "./strings/protokol.js";
+
 // Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
 
@@ -86,6 +89,8 @@ export const NAMESPACES = {
   esleme, // G2-ESLEME
 
   sofa, // G2-A4
+
+  protokol, // G2-B1d
 
   waves, // dalga
 };

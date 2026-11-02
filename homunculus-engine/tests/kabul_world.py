@@ -29,12 +29,16 @@ from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import User
 from homunculus.db import get_db
+from homunculus.protocol.models import ProtocolSettings
 from homunculus.scope.models import StaffScope
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from tests.signed_in import add_user, bearer
 
 SLUG = "kabul-hastane"
 DEVICE = "kabul-device-token"
+#: G2-B1d (spec D5): the ward's start number, set as the administrator sets it — no admission is
+#: possible without one. The first admission's protocol, its card key.
+FIRST_PROTOCOL = "202600000001"
 BOARD = {"Authorization": f"Bearer {DEVICE}"}
 
 
@@ -70,6 +74,7 @@ async def build_ward(db: AsyncSession) -> Ward:
             "10": Bed(room_id=rooms["o1"].id, label="10"), "3": Bed(room_id=rooms["o2"].id, label="3"),
             "N1": Bed(room_id=rooms["n1"].id, label="N1")}
     db.add_all(beds.values())
+    db.add(ProtocolSettings(tenant_id=tenant.id, next_no=int(FIRST_PROTOCOL)))
     await db.flush()
 
     staff = {"admin": ("hospital_admin", None), "nurse": ("nurse", "rea"),

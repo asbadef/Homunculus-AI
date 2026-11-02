@@ -251,6 +251,8 @@ class AdmissionResponse(BaseModel):
     discharge_reported_by: str | None = None
     discharge_at: datetime | None = None
     discharge_note: str | None = None
+    # Group 2 · B1d: the protocol number, the card key of a new admission; None on a legacy one.
+    protocol_no: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -267,20 +269,56 @@ class EngineWrites(BaseModel):
 
 
 class AdmitResponse(AdmissionResponse):
-    """POST /admissions: the admission, the patient number the nurse enters on the device, and
-    which of the engine writes landed."""
+    """POST /admissions: the admission, its numbers — `board_key` is the card's and what the nurse
+    enters or scans on the device (the protocol number, G2-B1d; `patient_number` is the H-number,
+    issued apart, D2) — and which of the engine writes landed."""
     patient_number: str
+    board_key: str
     engine: EngineWrites
 
 
 class AdmissionRow(AdmissionResponse):
     """GET /admissions: one row of the Taburcu and Yataklar lists, with the names a screen shows
-    (never a UUID). `display_name` is PHI, as on the board, for holders of admissions.view."""
+    (never a UUID). `display_name` is PHI, as on the board, for holders of admissions.view.
+    `board_key` (G2-B1d) is the card's key: what a screen matches the board with."""
     patient_number: str
+    board_key: str
     display_name: str
     bed_label: str
     room_name: str
     unit_name: str
+
+
+class AdmissionDetail(AdmissionResponse):
+    """GET /admissions/{id} (G2-B1d, E5): the admission with its two numbers — never a name (the
+    patient's identity is `/patient`'s)."""
+    patient_number: str
+    board_key: str
+
+
+class LabelAsk(BaseModel):
+    """POST /admissions/{id}/label (G2-B1d, spec §6): a first print or a reprint."""
+    model_config = ConfigDict(extra="forbid")
+
+    reprint: bool = Field(default=False, strict=True)
+
+
+class LabelSettings(BaseModel):
+    width_mm: int
+    height_mm: int
+    printer_dpi: int
+
+
+class LabelResponse(BaseModel):
+    """Exactly what the label prints (spec §6): the protocol, the FULL name — paper is never
+    masked — birth date, sex, the unit and the bed; and the tenant's label settings."""
+    protocol_no: str
+    display_name: str
+    date_of_birth: str
+    sex: str
+    unit_name: str
+    bed_label: str
+    label: LabelSettings
 
 
 #: The patient's retirement from the alert world at a discharge (A-11d, A-25): `ok`; `incomplete`

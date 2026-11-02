@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer,
+    Boolean, CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer,
     String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -85,6 +85,12 @@ OPEN_ADMISSION_STATES = {
 OPEN_IDENTITY_INDEX = "uq_admissions_open_identity"
 _OPEN_STATE = text("state IN ({})".format(", ".join(
     f"'{state.value}'" for state in AdmissionState if state in OPEN_ADMISSION_STATES)))
+
+#: G2-B1d (migration 0015): one protocol number per tenant; the admissions before 0015 (NULL) never
+#: collide. Twelve ASCII digits — `[0-9]`, never `\d`, which takes any script's digits.
+PROTOCOL_INDEX = "uq_admissions_tenant_protocol"
+_HAS_PROTOCOL = text("protocol_no IS NOT NULL")
+PROTOCOL_FORMAT_CHECK = "protocol_no ~ '^[0-9]{12}$'"
 
 
 class Sex(str, enum.Enum):
@@ -318,6 +324,11 @@ class Admission(Base):
     # (`OPEN_IDENTITY_INDEX`). NULL on a row written before 0012 or without the form (the service
     # alone, a transfer's arrival) — NULLs never collide, and the refusal does not see them.
     identity_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Group 2 · B1d (spec D1, D7, §3): the protocol number Homunculus issued this admission — the
+    # board key of a new admission (`admission/boardkey.py`), what the nurse enters or scans on the
+    # bedside device, what the label prints. In the clear: it is a key, as `Patient.patient_number`
+    # is. NULL on an admission opened before 0015, which keeps its H-number key until discharge.
+    protocol_no: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
     # --- Workflow bookkeeping ---
     # S-26: reminder emitted once when a DRAFT is unreviewed for 2 hours.
@@ -347,6 +358,12 @@ class Admission(Base):
         UniqueConstraint("tenant_id", "request_id", name="uq_admissions_tenant_request"),
         Index(OPEN_IDENTITY_INDEX, "tenant_id", "identity_digest", unique=True,
               postgresql_where=_OPEN_STATE, sqlite_where=_OPEN_STATE),
+        Index(PROTOCOL_INDEX, "tenant_id", "protocol_no", unique=True,
+              postgresql_where=_HAS_PROTOCOL, sqlite_where=_HAS_PROTOCOL),
+        # Postgres's `~`: scripts/dev_local.py builds these models on SQLite, which cannot parse it
+        # (E10). The migration creates it unconditionally.
+        CheckConstraint(PROTOCOL_FORMAT_CHECK,
+                        name="ck_admissions_protocol_no").ddl_if(dialect="postgresql"),
     )
 
     def transition_to(self, new_state: AdmissionState) -> None:

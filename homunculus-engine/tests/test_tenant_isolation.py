@@ -42,6 +42,7 @@ from homunculus.admission.models import (
     Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
 from homunculus.admission.numbers import next_patient_number
+from homunculus.protocol.models import ProtocolSettings
 from homunculus.auth.dependencies import caller_tenant_id
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import create_access_token, decode_token
@@ -103,6 +104,8 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     db.add(tenant)
     await db.flush()
     groups = await ensure_default_groups(db, tenant.id)
+    # G2-B1d (spec D5): the controls admit through the route, which needs a start number (E9).
+    db.add(ProtocolSettings(tenant_id=tenant.id, next_no=202600000001))
     admin = await add_user(db, username=f"admin@{slug}.example.com", tenant_id=tenant.id,
                            group=groups["hospital_admin"])
     nurse = await add_user(db, username=f"nurse@{slug}.example.com", tenant_id=tenant.id,
@@ -232,6 +235,9 @@ BY_ID: dict[str, ById] = {
     "admission patient": ById("GET", lambda s: f"/admissions/{s.admission}/patient"),
     "care-team list": ById("GET", lambda s: f"/admissions/{s.admission}/care-team"),
     "sign-off": ById("POST", lambda s: f"/admissions/{s.admission}/sign-off", control=409),
+    # G2-B1d: the side's admission is a legacy one (made by the service, no protocol) — the
+    # caller's own gets past the tenant and unit checks to the 409 `no_protocol`.
+    "label": ById("POST", lambda s: f"/admissions/{s.admission}/label", lambda a: {"reprint": False}, 409),
     "care-team claim": ById("POST", lambda s: f"/admissions/{s.admission}/care-team/claim"),
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",
@@ -756,7 +762,10 @@ NOT_THE_BOARD = {
 # Lane C (dalga): the waveform GET lives in api/infinity_waves.py but is the strip board's own gate:
 # it calls `shadow_board` (the Caller, and only a caller of the ONE shadow hospital gets a card).
 CALLER_ELSEWHERE = {("GET", "/infinity-waves/{device_id}")}
-UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | {
+# G2-B1d (spec D12): the bridge's patient query — the device credential's own hospital, through
+# the app's `_caller`, outside `homunculus.api.app` (api/edge_query.py, E2).
+DEVICE_ONLY = {("POST", "/edge/patient-query")}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -813,4 +822,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE - DEVICE_ONLY == board

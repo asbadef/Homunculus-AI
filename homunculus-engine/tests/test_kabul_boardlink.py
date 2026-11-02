@@ -871,6 +871,18 @@ def test_the_monitor_strip_links_a_device_to_the_kabul_patient_on_its_bed(tmp_pa
     assert (beds["B-1"]["link"], beds["B-1"]["patient_id"]) == ("none", None)
 
 
+def test_the_monitor_strip_links_a_device_to_a_protocol_keyed_card(tmp_path):
+    """G2-B1d (spec §4, O74): a new admission's card is keyed by its protocol number. The strip's
+    occupants are the identity store's own keys by `bed_id`, so the monitor on its bed feeds that
+    card with no change to Lane A's code."""
+    identities = InMemoryIdentityStore()
+    identities.apply(SHADOW_HOSPITAL, record(number="202600000001", bed_id="bed-b2", unit_id="unit-2"))
+    client, clock, _ = shadow_app(tmp_path, identities=identities)
+    shadow_post(client, clock)
+    beds = {b["bed_label"]: b for b in shadow_board(client)["beds"]}
+    assert (beds["B-2"]["link"], beds["B-2"]["patient_id"]) == ("one", "202600000001")
+
+
 # Aşama B × B1a: the app's link is handed the shadow lane's hooks and card builders, by reference.
 def test_the_app_hands_its_board_link_the_shadow_lanes_own_hooks_never_copies():
     """The admission reaches the shadow engine through the very callables Lane A's doors use, so

@@ -84,6 +84,10 @@ export function fakeApi(vi, { access = null } = {}) {
     deviceBeds: vi.fn(),
     bindDeviceBed: vi.fn(),
     unbindDeviceBed: vi.fn(),
+    // G2-B1d: Protokol — the admin tab, the label
+    protocolSettings: vi.fn(),
+    saveProtocolSettings: vi.fn(),
+    admissionLabel: vi.fn(),
 
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),

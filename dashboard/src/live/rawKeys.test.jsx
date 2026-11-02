@@ -190,6 +190,10 @@ const ADMISSIONS = [
     discharge_disposition: "EXITUS", discharge_at: "2026-10-08T09:30:00Z" }),
 ];
 
+/** G2-B1d: GET /admin/protocol-settings with no start number set — the tab's warning and its form. */
+const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
+  label_height_mm: 30, printer_dpi: 203, updated_at: null };
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -214,6 +218,10 @@ async function openAt(path) {
       // G2-ESLEME: the monitor–bed list on «Monitörler» — a bound, a label-only, another unit's and
       // an absent monitor, so every row kind and both actions are drawn.
       api.deviceBeds.mockResolvedValue(MAPPING);
+
+      // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
+      // on defaults, and the sweep would not meet the «no start number» note.
+      api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -364,6 +372,18 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getAllByText("qoşulmayıb").length).toBeGreaterThan(0);                                  // esleme.unbound
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Başqa çarpayıya qoş: 192.0.2.11 (BED05)" })); await settle(); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B1d — Yönetim › Protokol ve etiket: the warning while no start number is set, the form's
+  // texts and the fit paragraph, and on none of it a raw key or a UUID.
+  it("the Protokol ve etiket keys resolve on its tab", async () => {
+    const mounted = await openAt("/admin");
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Protokol və etiket" })); await settle(); });
+    expect(screen.getByText(/^Başlanğıc nömrəsi daxil edilməyib/)).toBeInTheDocument();  // protokol.notConfigured
+    expect(screen.getByText(/^Barkod sığır: /)).toBeInTheDocument();                       // protokol.fits
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

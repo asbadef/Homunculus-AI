@@ -20,9 +20,13 @@ PRE_PASSWORD = {"/auth/password"}
 # The board and device routes live in api/app.py and resolve their caller through the separate
 # Caller resolver (tenant token or JWT), not through FastAPI dependencies.
 CALLER_RESOLVED_MODULE = "homunculus.api.app"
-# Lane C (dalga): the waveform GET is registered from api/infinity_waves.py, and resolves its caller
-# by calling the strip board's own handler (`shadow_board`: the Caller, board.view/devices.manage).
-CALLER_RESOLVED_ELSEWHERE = {"/infinity-waves/{device_id}"}
+# G2-B1d (E22): the bridge's patient query is built by a factory bound to the app's `_caller`
+# (api/edge_query.py, E2): the device token only, so it too has no JWT principal to reach. Keyed
+# on (module, method, path): a GET or PUT added later to the same path is not exempted by it.
+# Dalga: the waveform GET is registered from api/infinity_waves.py, and resolves its caller by
+# calling the strip board's own handler (`shadow_board`: the Caller, board.view/devices.manage).
+CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-query"),
+                          ("homunculus.api.infinity_waves", "GET", "/infinity-waves/{device_id}")}
 
 
 def _calls(dependant) -> set:
@@ -39,10 +43,17 @@ def _routes():
     return api_routes(create_app({"t": "HOSP1"}, run_escalation_loop=False))
 
 
+def _caller_resolved(route) -> bool:
+    """Every method of the route is one the exemption names (module, method, path)."""
+    return all((route.endpoint.__module__, method, route.path) in CALLER_RESOLVED_ROUTES
+               for method in route.methods)
+
+
 def test_every_route_is_guarded_or_explicitly_exempt():
     missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
                if r.endpoint.__module__ != CALLER_RESOLVED_MODULE
-               and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD | CALLER_RESOLVED_ELSEWHERE
+               and not _caller_resolved(r)
+               and r.path not in PUBLIC | PRE_MFA | PRE_PASSWORD
                and get_principal not in _calls(r.dependant)]
     assert missing == []
 

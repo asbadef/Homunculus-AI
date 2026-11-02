@@ -26,7 +26,9 @@ pytestmark = [requires_db]
 NOW = datetime(2026, 10, 30, 9, 0, tzinfo=timezone.utc)
 
 
-async def _admit(db, ward, bed_key, number="H2600042", state=AdmissionState.ACTIVE):
+async def _admit(db, ward, bed_key, number="H2600042", state=AdmissionState.ACTIVE, protocol_no=None):
+    """An open admission on the bed. `protocol_no` (G2-B1d): the admission's protocol number, which is its
+    board key; None is a legacy admission, keyed by `number` (the H-number)."""
     patient = Patient(tenant_id=ward.tenant.id, display_name="Ahmet Yılmaz", date_of_birth="1970-01-01",
                       sex="male", patient_number=number)
     db.add(patient)
@@ -34,7 +36,7 @@ async def _admit(db, ward, bed_key, number="H2600042", state=AdmissionState.ACTI
     unit = ward.units["neo" if bed_key == "N1" else "rea"]
     db.add(Admission(tenant_id=ward.tenant.id, patient_id=patient.id, admitting_unit_id=unit.id,
                      bed_id=ward.beds[bed_key].id, admission_datetime=NOW, state=state,
-                     admission_diagnosis_free_text="Sentetik tanı"))
+                     protocol_no=protocol_no, admission_diagnosis_free_text="Sentetik tanı"))
     await db.commit()
 
 
@@ -65,6 +67,39 @@ async def test_binding_to_an_admitted_patients_bed_asks_first_then_audits_the_pa
     assert rec.payload["occupied"] == [{"bed_id": str(ward.beds["2"].id), "patient_id": "H2600042"}]
     everything = json.dumps([refused.json(), done.json(), rec.payload], ensure_ascii=False)
     assert "Ahmet" not in everything and "Yılmaz" not in everything          # given name and family name
+
+
+async def test_a_protocol_admission_on_the_bed_is_named_by_its_protocol_not_its_h_number(db_session):
+    """G2-B1d (O74): an admission made since 0015 is keyed on the board by its protocol number, so the bed's
+    occupant - in the refusal the dialog finds the card by, and in the audit row's `patient_id` - is the
+    protocol, not `Patient.patient_number`. The board shows nothing on the bed here (no identity record), so
+    the answer comes from the open admission itself (`_open_admission_number`)."""
+    async with esleme_client(db_session) as (client, app, ward):
+        await _admit(db_session, ward, "2", number="H2600046", protocol_no="202600000001")
+        refused = await _bind(client, ward, "admin", "192.0.2.13", "2")
+        done = await _bind(client, ward, "admin", "192.0.2.13", "2", confirm=True)
+        [rec] = app.state.audit.records(event_type="device_bed.bind")
+    assert refused.status_code == 409
+    detail = refused.json()["detail"]
+    assert detail["code"] == "bed_occupied"
+    assert detail["occupied"] == [{"bed_id": str(ward.beds["2"].id), "patient_id": "202600000001"}]
+    assert done.status_code == 200
+    assert (rec.patient_id, rec.payload["occupied_confirmed"]) == ("202600000001", True)
+    assert rec.payload["occupied"] == [{"bed_id": str(ward.beds["2"].id), "patient_id": "202600000001"}]
+    everything = json.dumps([refused.json(), done.json(), rec.payload], ensure_ascii=False)
+    assert "H2600046" not in everything                                       # the H-number is not the key
+    assert "Ahmet" not in everything and "Yılmaz" not in everything
+
+
+async def test_a_move_names_a_protocol_admission_by_protocol_and_a_legacy_one_by_h_number(db_session):
+    """One bed with an admission made since 0015 (target), one with a legacy admission (the bed the monitor
+    leaves): each is named by its own board key."""
+    async with esleme_client(db_session) as (client, _, ward):
+        ids = await seed(db_session, ward, ("192.0.2.11", "1", "BED05"))
+        await _admit(db_session, ward, "1", number="H2600044")                                    # legacy
+        await _admit(db_session, ward, "2", number="H2600045", protocol_no="202600000002")        # protocol
+        refused = await _bind(client, ward, "admin", "192.0.2.11", "2", ids["192.0.2.11"])
+    assert [o["patient_id"] for o in refused.json()["detail"]["occupied"]] == ["202600000002", "H2600044"]
 
 
 async def test_a_patient_the_board_puts_on_the_bed_counts_too_when_unbinding(db_session):

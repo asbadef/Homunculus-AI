@@ -56,3 +56,18 @@ def test_a_malformed_phi_key_costs_the_mirror_not_the_bridge(tmp_path, caplog, m
         assert run_bridge.open_identity_mirror(str(tmp_path / "identity.db")) is None
     assert any("ValueError" in r.getMessage() for r in caplog.records)
     assert not any("not-a-fernet-key" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------- G2-B1d
+def test_the_patient_query_asks_the_cloud_url_with_the_bridges_token():
+    args = run_bridge.build_parser().parse_args(
+        ["--db", "/data/bridge.db", "--cloud-url", "http://api:8000/", "--token", "device-token"])
+    ask = run_bridge.query_client(args)
+    client = ask.__self__
+    assert (client.url, client.timeout) == ("http://api:8000/edge/patient-query", 2.0)
+    assert client._token == "device-token"
+
+
+def test_capture_only_asks_no_api():
+    args = run_bridge.build_parser().parse_args(["--db", "/data/bridge.db"])
+    assert run_bridge.query_client(args) is None

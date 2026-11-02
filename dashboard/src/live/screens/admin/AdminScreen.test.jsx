@@ -8,6 +8,7 @@ import { AdminScreen, TABS, onlyTabs, openTabs, resetTabs, tabScreenOf } from ".
 import { READS } from "./useAdminData.js";
 
 import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A list's length, or "null" for a read that has no answer — never 0 for "no answer". */
@@ -66,6 +67,7 @@ describe("which tabs a session sees", () => {
     expect(TABS.map((x) => [x.id, x.perm])).toEqual([
       ["users", "users.manage"], ["roles", "groups.manage"], ["source", "users.manage"],
       ["structure", "structure.manage"], // G2-B1a
+      ["protocol", "structure.manage"], // G2-B1d
     ]);
   });
 
@@ -91,9 +93,15 @@ describe("which tabs a session sees", () => {
 
   // G2-B1a — on this build's own tabs: Yapı is built, and `structure.manage` alone opens it.
   it("offers the structure tab to structure.manage, and to no other right", () => {
-    expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure"]);
+    expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure", "protocol"]);
     expect(tabScreenOf(openTabs(["structure.manage"])[0])).toBe(StructureTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("structure");
+  });
+
+  // G2-B1d — Protokol ve etiket is built, and `structure.manage` alone opens it (spec D11).
+  it("offers the protocol tab to structure.manage, and to no other right", () => {
+    expect(tabScreenOf(openTabs(["structure.manage"])[1])).toBe(ProtocolTab);
+    expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("protocol");
   });
 
   it("the seam refuses outside the test build, and gives the build's tabs back", () => {

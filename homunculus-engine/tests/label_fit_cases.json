@@ -1,0 +1,32 @@
+{
+  "_about": "G2-B1d spec §3 and E13, A-1: the settings cases, read by homunculus-engine/tests/test_protocol_settings.py and by dashboard/src/live/screens/kabul/label/protocolLabel.test.js (and Task 14's ProtocolTab test). cases: the label size. answer null = accepted, else the refusal code, checked in the order label_dpi, label_size, label_too_narrow. The barcode is 121 modules (Code 128-C of 12 digits with its two 10-module quiet zones); a module is 3 dots at 203 dpi and 4 at 300; the width must hold 121 modules and 1.5 mm on each side. next_no_cases: the start number. answer null = accepted, else protocol_format: exactly twelve ASCII digits and at least 000000000001 (A-1: 000000000000 is the number the test label prints, no real protocol may equal it).",
+  "min_width_mm": {"203": 48.4197, "300": 43.9787},
+  "cases": [
+    {"width_mm": 50, "height_mm": 30, "printer_dpi": 203, "answer": null},
+    {"width_mm": 49, "height_mm": 30, "printer_dpi": 203, "answer": null},
+    {"width_mm": 48, "height_mm": 30, "printer_dpi": 203, "answer": "label_too_narrow"},
+    {"width_mm": 44, "height_mm": 30, "printer_dpi": 300, "answer": null},
+    {"width_mm": 43, "height_mm": 30, "printer_dpi": 300, "answer": "label_too_narrow"},
+    {"width_mm": 30, "height_mm": 20, "printer_dpi": 203, "answer": "label_too_narrow"},
+    {"width_mm": 110, "height_mm": 80, "printer_dpi": 300, "answer": null},
+    {"width_mm": 29, "height_mm": 30, "printer_dpi": 203, "answer": "label_size"},
+    {"width_mm": 111, "height_mm": 30, "printer_dpi": 203, "answer": "label_size"},
+    {"width_mm": 50, "height_mm": 19, "printer_dpi": 203, "answer": "label_size"},
+    {"width_mm": 50, "height_mm": 81, "printer_dpi": 203, "answer": "label_size"},
+    {"width_mm": 50, "height_mm": 30, "printer_dpi": 600, "answer": "label_dpi"},
+    {"width_mm": 50, "height_mm": 30, "printer_dpi": 200, "answer": "label_dpi"},
+    {"width_mm": 29, "height_mm": 30, "printer_dpi": 600, "answer": "label_dpi"}
+  ],
+  "next_no_cases": [
+    {"next_no": "202600000001", "answer": null},
+    {"next_no": "000000000001", "answer": null},
+    {"next_no": "999999999999", "answer": null},
+    {"next_no": "000000000000", "answer": "protocol_format"},
+    {"next_no": "20260000001", "answer": "protocol_format"},
+    {"next_no": "2026000000011", "answer": "protocol_format"},
+    {"next_no": "20260000000A", "answer": "protocol_format"},
+    {"next_no": "２０２６０００００００１", "answer": "protocol_format"},
+    {"next_no": "2026000000 1", "answer": "protocol_format"},
+    {"next_no": "", "answer": "protocol_format"}
+  ]
+}
