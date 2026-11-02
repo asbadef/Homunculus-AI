@@ -3970,9 +3970,38 @@ cd /c/tmp/inf-dalga && git add dashboard/src/live/i18n/strings/waves.js dashboar
 *As built after the main merge (9fae9ec), commit `d1993af`.* Three changes from the first draft, each with its test:
 1. **The strip's stage.** `MonitorStrip` now takes the answer's `stage`, and the patient and device screens pass it. At Aşama B's «rules», its whole note is `monitor.fullRules`. The full screen passes `stage={shadow.data.stage}` too, so its numbers carry the strip's note for that stage. `cardOf` already finds a card at «rules» through `stripOn`.
 2. **The strip's labels.** After the HR/PLS swap (70e45e9), `hr` is the ECG rate and `pls` the SpO₂ pulse. The full screen prints the card through `MonitorStrip` itself, so its labels are the strip's. A test pins HR beside its value and PLS beside its own.
-3. **The panel's note in the full screen.** In full screen, the panel and its note sit behind the black overlay. A failed poll (503) or a refusal (404, which drops the blocks) would otherwise leave stalled or empty rows with no reason given. `WavePanel` passes its note text, and `WaveFullscreen` says it under the stamp.
+3. **The panel's note in the full screen.** In full screen, the panel and its note sit behind the black overlay. A failed poll (503) keeps the rows, but they would stall with no reason given. `WavePanel` passes its note text, and `WaveFullscreen` says it under the stamp. (A 403/404 drops the blocks, and since the review, item 7 below, the full screen then closes and the panel says why.)
 
 A mutation check also showed the stamp unpinned on a 403/404 panel. That test now asserts the stamp too (rule 1: the stamp is on screen whenever any of the panel is).
+
+*After its quality review, commit `494f2b5`.* The code blocks below are the reviewed files.
+1. **The drawing is tested per row.** Each canvas has its own mocked 2D context, which records `beginPath`/`moveTo`/`lineTo` in order. Before this, `ctx.lineTo` was satisfied by the ART grid alone, and six mutants passed every test: no trace, every path joined into one stroke, a fixed green stroke, dark ink in full screen, a stalled row blanked, and the canvas's name removed. The tests now check:
+   - a missing block starts a new path, and no segment crosses the gap;
+   - the stroke is the canvas's own computed ink (R11), white in full screen;
+   - a stalled row is still drawn (frozen, not blanked);
+   - every canvas is named "… yalnız görüntü, ölçüm değildir".
+2. **Tests that would pass on a broken implementation, made strict:**
+   - "nothing before the first answer" holds the first request open;
+   - Tab starts from the page behind, and is checked as prevented;
+   - the document listeners are counted out on close and on unmount;
+   - a source change lets the old monitor go;
+   - the browser mock announces entry (`fullscreenchange`), as a browser does, and the view stays open;
+   - the no-sound test also stubs `Audio`, `speechSynthesis` and `navigator.vibrate`, and unstubs in `afterEach`.
+3. **The page's full screen, not the view's (R15 refined).** The view asks for full screen on `document.documentElement` and stays a fixed overlay, at **z-110**. The toasts (z-120), the idle warning (z-200) and the alarm holder (z-210) stay above it and on screen.
+   - It asks only when the page is not in full screen already, so the top bar's own full screen is left alone.
+   - It hands full screen back only if a wave view asked and none is still open. This is module state, so StrictMode's rehearsal makes one request and one exit.
+   - A synchronous throw from `requestFullscreen` or `exitFullscreen` is caught, as `shell/TopBar.jsx` does. The listeners are added after the request.
+   - The rest of the page is not made inert. `ui/Modal.jsx` keeps its inert and scroll-lock stack private, and opening it up is a larger change than this task; Tab is held on × instead.
+4. **The header and the stamp stay in view** (`sticky top-0 z-10 bg-black`, `data-wave-head`).
+5. **Another source is another panel** (`<OpenPanel key={source}>`). The full screen never reopens on the new monitor's first answer.
+6. **The focus never falls to `<body>`.**
+   - On closing, it goes to ⤢, else the hide button, else the panel's heading (`tabIndex={-1}`).
+   - «göster»/«gizle» pass it to the button that replaces them.
+7. **Full screen closes when there are no rows left to show** (`fullOpen = full && hasRows && !quiet`, and the state is reset). A 403/404 drops the blocks, so the panel then says why and takes the focus.
+8. **`cardOf` hands the strip no patient** (`patient_id: null, link: "hidden", link_reason: null`). This is the device screen's `withoutPatient` rule, applied everywhere. `withoutPatient` is not exported, and DevicesScreen.jsx is not this task's file.
+9. **Not done (optional nit).** The canvas colour and size are still read every frame. A cached colour would go stale when the theme changes, and a cached size needs a ResizeObserver.
+
+46 mutants were run against these files, each restored byte for byte. All were killed except two, by design. `key={source}` alone and the watch effect's `[store, source]` alone each survive, because each covers the other, and the reset covers the key for the full screen. Each fails with its partner removed.
 
 **Files:**
 - Create: `dashboard/src/live/screens/common/WavePanel.test.jsx`, `WaveFullscreen.test.jsx`
@@ -3983,7 +4012,8 @@ A mutation check also showed the stamp unpinned on a 403/404 panel. That test no
 ```jsx
 // The live waveform panel (Lane C, dalga): its stamp, its rows, its words for no signal and for a
 // stopped stream, the statuses it shows instead of a trace — and no number and no sound. Drawn on a
-// mocked 2D context with a hand-driven frame clock. Synthetic blocks only (waves.testutil.js).
+// mocked 2D context per canvas (so a row's own drawing can be read) with a hand-driven frame clock.
+// Synthetic blocks only (waves.testutil.js).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -3995,24 +4025,39 @@ import {
 } from "../../data/waves.testutil.js";
 import { WavePanel } from "./WavePanel.jsx";
 
-let ctx;
+/** A 2D context that keeps what it was asked to draw, in order: ["B"] beginPath, ["M", x, y], ["L", x, y]. */
+function mockContext() {
+  const ops = [];
+  return {
+    ops,
+    setTransform: vi.fn(), clearRect: vi.fn(), stroke: vi.fn(), closePath: vi.fn(), fill: vi.fn(),
+    beginPath: vi.fn(() => { ops.push(["B"]); }),
+    moveTo: vi.fn((x, y) => { ops.push(["M", x, y]); }),
+    lineTo: vi.fn((x, y) => { ops.push(["L", x, y]); }),
+  };
+}
+
+let contexts;
 beforeEach(() => {
   localStorage.setItem("hmc.lang", "tr");
-  ctx = {
-    setTransform: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-    stroke: vi.fn(), closePath: vi.fn(), fill: vi.fn(),
-  };
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
+  contexts = new Map();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function getContext() {
+    if (!contexts.has(this)) contexts.set(this, mockContext());
+    return contexts.get(this);
+  });
   vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(600);
   vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(60);
 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  delete navigator.vibrate;
   localStorage.clear();
 });
 
-/** The panel on a wave store whose API answers `reply()`; the store's clock reads 0 at every answer. */
+/** The panel on a wave store whose API answers `reply()`; the store's clock reads 0 at every answer.
+ *  `setSource(next)` draws the same panel for another monitor. */
 async function show({ reply = () => answer(), collapsible = false } = {}) {
   const timers = manualTimers();
   const frames = manualFrames();
@@ -4021,21 +4066,25 @@ async function show({ reply = () => answer(), collapsible = false } = {}) {
     api: { request }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
-  render(
+  const tree = (source) => (
     <I18nProvider>
       <SessionProvider store={sessionStub()}>
-        <WavePanel source={SOURCE} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
+        <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
       </SessionProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
+  const { rerender } = render(tree(SOURCE));
   await act(async () => { await settle(); });
   const frame = (perfMs) => act(() => { frames.run(perfMs); });
-  return { store, timers, frames, request, frame };
+  const setSource = async (next) => { await act(async () => { rerender(tree(next)); await settle(); }); };
+  return { store, timers, frames, request, frame, setSource };
 }
 
 const STAMP = "Dalga · doğrulanmamış · yalnız görüntü — birincil alarm başucu monitörüdür";
 const panel = () => screen.getByRole("region", { name: "REA-01 · 2 · Dalga formu · doğrulanmamış" });
 const rowOf = (kind) => document.querySelector(`[data-wave-row="${kind}"]`);
+const ctxOf = (kind) => contexts.get(rowOf(kind).querySelector("canvas"));
+const lines = (kind) => ctxOf(kind)?.lineTo.mock.calls.length ?? 0;
 
 describe("the waveform panel", () => {
   it("carries the stamp and the delay, and draws a row per wave the monitor sends, in order", async () => {
@@ -4045,7 +4094,46 @@ describe("the waveform panel", () => {
     expect(within(panel()).getByText("≈ 2 sn gecikmeli")).toBeInTheDocument();
     expect([...document.querySelectorAll("[data-wave-row]")].map((li) => li.dataset.waveRow))
       .toEqual(["ecg", "pressure", "pleth", "resp"]);
-    expect(ctx.lineTo).toHaveBeenCalled();
+    // Each row draws its own trace: ECG, pleth and resp have no grid, so a line there is the wave.
+    for (const kind of ["ecg", "pleth", "resp"]) expect(lines(kind), kind).toBeGreaterThan(10);
+    expect(lines("pressure")).toBeGreaterThan(3);                  // more than its three grid lines
+  });
+
+  it("breaks the line at a missing block: a new path after the gap, no segment across it", async () => {
+    // 8 s of ECG with the block at 1003.0 s missing. At frame 0 the row shows 1000.2–1006.2 s on
+    // 600 px (100 px a second), so the gap is x 280–300.
+    const missing = run(259).filter((b) => Math.abs(b.t - 1003) > 1e-9);
+    const { frame } = await show({ reply: () => answer(missing) });
+    frame(0);
+    const { ops } = ctxOf("ecg");
+    expect(ops.filter(([op]) => op === "M").length).toBeGreaterThanOrEqual(2);
+    expect(ops.some(([op, x]) => op === "M" && Math.abs(x - 300) < 1e-6)).toBe(true);   // the path after the gap
+    expect(ops.filter(([op, x]) => op === "L" && x > 280.5 && x < 299.5)).toEqual([]);   // nothing inside it
+    let previous = null;
+    const long = [];
+    for (const [op, x] of ops) {
+      if (op === "L" && previous !== null && x - previous > 5) long.push([previous, x]);
+      if (op === "M" || op === "L") previous = x;
+    }
+    expect(long).toEqual([]);                                        // no stroke bridges it
+  });
+
+  it("draws in plain ink — the canvas's own text colour, never a colour of its own (R11)", async () => {
+    const real = globalThis.getComputedStyle;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation((el, pseudo) => (
+      el instanceof HTMLCanvasElement ? { color: "rgb(1, 2, 3)" } : real(el, pseudo)));
+    const { frame } = await show();
+    frame(0);
+    for (const kind of ["ecg", "pressure", "pleth", "resp"]) {
+      expect(ctxOf(kind).strokeStyle, kind).toBe("rgb(1, 2, 3)");
+      expect(rowOf(kind).querySelector("canvas"), kind).toHaveClass("text-ink");
+    }
+  });
+
+  it("names every canvas as a picture that is not a measurement", async () => {
+    await show();
+    expect(screen.getAllByRole("img", { name: /yalnız görüntü, ölçüm değildir/ })).toHaveLength(4);
+    expect(screen.getByRole("img", { name: "EKG dalgası — yalnız görüntü, ölçüm değildir" })).toBeInTheDocument();
   });
 
   it("calls the ECG row 'EKG', names no lead, and prints the monitor's own labels for the rest", async () => {
@@ -4078,20 +4166,23 @@ describe("the waveform panel", () => {
     const { frame } = await show({ reply: () => answer(run(259, { samples: null })) });
     frame(0);
     expect(within(rowOf("ecg")).getByText("sinyal yok")).toBeInTheDocument();
-    expect(ctx.lineTo).not.toHaveBeenCalled();
+    expect(ctxOf("ecg")).toBeDefined();                              // it was drawn — as nothing
+    expect(lines("ecg")).toBe(0);
   });
 
   it("freezes, fades and says 'akış durdu · N sn' when the stream stops, and clears after 10 s", async () => {
     const { frame } = await show();
     frame(0);
     expect(screen.queryByText(/akış durdu/)).toBeNull();
+    ctxOf("ecg").lineTo.mockClear();
     frame(4000);                                   // 4.2 s after the data's end: past 2 s + 1.5 s
     expect(within(rowOf("ecg")).getByText("akış durdu · 4 sn")).toBeInTheDocument();
     expect(rowOf("ecg").querySelector("canvas")).toHaveClass("opacity-40");
-    ctx.lineTo.mockClear();
+    expect(lines("ecg")).toBeGreaterThan(10);      // frozen, not blanked: the last trace stays drawn
+    ctxOf("ecg").lineTo.mockClear();
     frame(10000);
     expect(within(rowOf("ecg")).getByText("akış durdu · 10 sn · iz kaldırıldı")).toBeInTheDocument();
-    expect(ctx.lineTo).not.toHaveBeenCalled();
+    expect(lines("ecg")).toBe(0);
   });
 
   it("keeps the trace it has and says the stream is missing when a poll fails", async () => {
@@ -4113,10 +4204,30 @@ describe("the waveform panel", () => {
       expect(within(panel()).getByText(STAMP)).toBeInTheDocument();         // rule 1: whenever any of the panel is
     });
 
-  it("draws nothing at all when waves are off here (409), and nothing before the first answer", async () => {
+  it("draws nothing at all when waves are off here (409)", async () => {
     const { store } = await show({ reply: () => { throw refusal(409); } });
     expect(store.get(SOURCE).status).toBe(WAVE_STATUS.OFF);
     expect(document.querySelector("[data-wave-panel]")).toBeNull();
+  });
+
+  it("draws nothing before the first answer, then the panel (R10)", async () => {
+    let release;
+    const first = new Promise((resolve) => { release = resolve; });
+    const { request } = await show({ reply: () => first });
+    expect(request).toHaveBeenCalledTimes(1);                        // asked, and waiting
+    expect(document.querySelector("[data-wave-panel]")).toBeNull();
+    await act(async () => { release(answer()); await settle(); });
+    expect(panel()).toBeInTheDocument();
+  });
+
+  it("watches the new monitor when the source changes, and lets the old one go", async () => {
+    const { request, store, timers, setSource } = await show();
+    expect(request.mock.calls[0][0]).toContain("/infinity-waves/192.0.2.10?");
+    await setSource("192.0.2.11");
+    expect(request.mock.calls.at(-1)[0]).toContain("/infinity-waves/192.0.2.11?");
+    expect(store.get(SOURCE).status).toBe(WAVE_STATUS.IDLE);         // released and forgotten
+    expect(store.get("192.0.2.11").status).toBe(WAVE_STATUS.OK);
+    expect(timers.delays).toHaveLength(1);                           // one monitor polls, not two
   });
 
   it("on the device screen waits behind a button, polls once opened and stops when hidden", async () => {
@@ -4130,21 +4241,38 @@ describe("the waveform panel", () => {
     expect(screen.getByRole("button", { name: "Dalga formunu göster" })).toBeInTheDocument();
   });
 
+  it("gives the focus to the control that replaces the one pressed, on show and on hide", async () => {
+    await show({ collapsible: true });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu göster" })); await settle(); });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dalga formunu gizle" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu gizle" })); await settle(); });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dalga formunu göster" }));
+  });
+
   it("says on the device screen that waves are off, when they are", async () => {
     await show({ reply: () => { throw refusal(409); }, collapsible: true });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu göster" })); await settle(); });
     expect(within(panel()).getByRole("note")).toHaveTextContent("Dalga formu bu kurulumda kapalı");
   });
 
-  it("makes no sound: no audio element, no audio context", async () => {
+  it("makes no sound: no audio element or context, no speech, no vibration", async () => {
     const AudioContext = vi.fn();
+    const Audio = vi.fn();
+    const speak = vi.fn();
+    const vibrate = vi.fn();
     vi.stubGlobal("AudioContext", AudioContext);
+    vi.stubGlobal("Audio", Audio);
+    vi.stubGlobal("speechSynthesis", { speak });
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
     const { frame } = await show();
     frame(0);
-    frame(4000);
+    frame(4000);                                   // stalled
+    frame(10000);                                  // cleared
     expect(AudioContext).not.toHaveBeenCalled();
-    expect(document.querySelector("audio")).toBeNull();
-    vi.unstubAllGlobals();
+    expect(Audio).not.toHaveBeenCalled();
+    expect(speak).not.toHaveBeenCalled();
+    expect(vibrate).not.toHaveBeenCalled();
+    expect(document.querySelector("audio, video")).toBeNull();
   });
 
   it("stops drawing when it is gone", async () => {
@@ -4167,8 +4295,10 @@ describe("the waveform panel", () => {
 
 ```jsx
 // The full-screen single-bed view (Lane C, dalga; spec W5): opened from the panel's ⤢, black, the
-// stamp at full size, the strip's numbers beside the waves; Escape, × or leaving browser full screen
-// close it and give the focus back. Synthetic blocks and strip (waves.testutil.js, shadow.testutil.js).
+// stamp at full size and always in view, the strip's numbers beside the waves; Escape, × or leaving
+// browser full screen close it and give the focus back. The browser's full screen is the page's:
+// asked for only when the page is not in it already, and handed back only by the view that asked.
+// Synthetic blocks and strip (waves.testutil.js, shadow.testutil.js).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -4184,15 +4314,21 @@ import { WavePanel } from "./WavePanel.jsx";
 import { cardOf } from "./WaveFullscreen.jsx";
 
 const STAMP = "Dalga · doğrulanmamış · yalnız görüntü — birincil alarm başucu monitörüdür";
+const TITLE = "REA-01 · 2 · Dalga formu · doğrulanmamış";
 let fullscreenElement = null;
 
+// As a browser does it: the request answers later, and the change is announced after it is made.
+const announce = () => document.dispatchEvent(new Event("fullscreenchange"));
 beforeEach(() => {
   localStorage.setItem("hmc.lang", "tr");
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   fullscreenElement = null;
   Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement });
-  HTMLElement.prototype.requestFullscreen = vi.fn(function request() { fullscreenElement = this; return Promise.resolve(); });
-  document.exitFullscreen = vi.fn(() => { fullscreenElement = null; return Promise.resolve(); });
+  HTMLElement.prototype.requestFullscreen = vi.fn(function request() {
+    const el = this;
+    return Promise.resolve().then(() => { fullscreenElement = el; announce(); });
+  });
+  document.exitFullscreen = vi.fn(() => Promise.resolve().then(() => { fullscreenElement = null; announce(); }));
 });
 afterEach(() => {
   cleanup();
@@ -4209,41 +4345,106 @@ function shadowStub(data = strip({ beds: [stripBed("REA-01 · 2", [param("hr", 7
   return { acquire() {}, release() {}, subscribe: () => () => {}, getState: () => state };
 }
 
-/** `data`: the strip answer the shadow store holds (shadowStub's one HR card when not given).
- *  `reply`: what the wave API answers, read at every poll. */
-async function openFull({ data, reply = () => answer() } = {}) {
+/** The panel, not yet in full screen. `data`: the strip answer the shadow store holds. `reply`: what
+ *  the wave API answers, read at every poll. `collapsible`: the device screen's panel (opened here).
+ *  `wrap`: around the whole tree (StrictMode). */
+async function mount({ data, reply = () => answer(), collapsible = false, wrap = (ui) => ui } = {}) {
   const timers = manualTimers();
   const frames = manualFrames();
   const store = createWaveStore({
     api: { request: vi.fn(async () => reply()) }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
-  render(
+  const shadow = shadowStub(data);
+  const tree = (source) => wrap(
     <I18nProvider>
       <SessionProvider store={sessionStub()}>
-        <ShadowProvider store={shadowStub(data)}>
-          <WavePanel source={SOURCE} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} />
+        <ShadowProvider store={shadow}>
+          <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
         </ShadowProvider>
       </SessionProvider>
     </I18nProvider>,
   );
+  const { rerender } = render(tree(SOURCE));
   await act(async () => { await settle(); });
-  const opener = screen.getByRole("button", { name: "Tam ekran görünüm" });
-  await act(async () => { fireEvent.click(opener); await settle(); });
-  return { opener, timers, dialog: screen.getByRole("dialog", { name: "REA-01 · 2 · Dalga formu · doğrulanmamış" }) };
+  if (collapsible) {
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu göster" })); await settle(); });
+  }
+  const opener = () => screen.getByRole("button", { name: "Tam ekran görünüm" });
+  const open = async () => {
+    await act(async () => { fireEvent.click(opener()); await settle(); });
+    return screen.getByRole("dialog", { name: TITLE });
+  };
+  const setSource = async (next) => { await act(async () => { rerender(tree(next)); await settle(); }); };
+  return { timers, opener, open, setSource };
+}
+
+async function openFull(options) {
+  const view = await mount(options);
+  const opener = view.opener();
+  const dialog = await view.open();
+  return { ...view, opener, dialog };
+}
+
+/** Every document listener added and not yet removed (a capture listener counted apart). */
+function listenerLedger() {
+  const live = [];
+  const add = document.addEventListener;
+  const remove = document.removeEventListener;
+  const capture = (o) => (typeof o === "boolean" ? o : Boolean(o?.capture));
+  vi.spyOn(document, "addEventListener").mockImplementation(function spyAdd(type, fn, o) {
+    live.push({ type, fn, capture: capture(o) });
+    return add.call(this, type, fn, o);
+  });
+  vi.spyOn(document, "removeEventListener").mockImplementation(function spyRemove(type, fn, o) {
+    const at = live.findIndex((l) => l.type === type && l.fn === fn && l.capture === capture(o));
+    if (at !== -1) live.splice(at, 1);
+    return remove.call(this, type, fn, o);
+  });
+  const count = () => ({
+    keydown: live.filter((l) => l.type === "keydown").length,
+    fullscreenchange: live.filter((l) => l.type === "fullscreenchange").length,
+  });
+  return { count };
 }
 
 const numbersIn = (dialog) => within(dialog).getByRole("region", { name: "REA-01 · 2 · Monitör · doğrulanmamış" });
+const closeButton = () => screen.getByRole("button", { name: "Tam ekrandan çık" });
 
 describe("the full-screen view", () => {
-  it("fills the screen on black, asks the browser for full screen, and keeps the stamp at full size", async () => {
+  it("fills the window on black under the app's alarms and warnings, takes the page to full screen, and keeps the stamp at full size", async () => {
     const { dialog } = await openFull();
     expect(dialog).toHaveClass("bg-black", "fixed", "inset-0");
+    // Under the toasts (z-120), the idle warning (z-200) and the alarm holder (z-210): the page's
+    // full screen, not this view's, so they stay on screen while someone watches the waves.
+    expect(dialog).toHaveClass("z-[110]");
     expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledTimes(1);
-    expect(fullscreenElement).toBe(dialog);
+    expect(fullscreenElement).toBe(document.documentElement);
     expect(within(dialog).getByText(STAMP)).toHaveClass("text-17");
     expect(within(dialog).getAllByRole("img")).toHaveLength(4);
     expect(document.querySelector("[data-wave-panel] [data-wave-rows]")).toBeNull();   // the panel's rows wait
+  });
+
+  it("draws its waves in white ink on the black (R11)", async () => {
+    const { dialog } = await openFull();
+    for (const canvas of within(dialog).getAllByRole("img", { name: /ölçüm değildir/ })) {
+      expect(canvas).toHaveClass("text-white");
+      expect(canvas).not.toHaveClass("text-ink");
+    }
+  });
+
+  it("keeps the header and the stamp in view while the rest scrolls", async () => {
+    const { dialog } = await openFull();
+    const head = within(dialog).getByText(STAMP).closest("[data-wave-head]");
+    expect(head).toHaveClass("sticky", "top-0", "z-10", "bg-black");
+    expect(head).toContainElement(closeButton());
+    expect(head).toContainElement(within(dialog).getByRole("heading", { name: TITLE }));
+  });
+
+  it("stays open when the browser announces that it entered full screen", async () => {
+    await openFull();
+    expect(fullscreenElement).toBe(document.documentElement);        // entered, and announced (beforeEach)
+    expect(screen.getByRole("dialog", { name: TITLE })).toBeInTheDocument();
   });
 
   it("shows the strip's own numbers beside the waves", async () => {
@@ -4273,42 +4474,133 @@ describe("the full-screen view", () => {
   });
 
   // The panel, and the note in it, are behind the black: the full screen says what the panel would.
-  it.each([[503, "Dalga akışı yok"], [404, "Bu cihazın dalga formu gösterilemiyor"]])(
-    "says why the stream is missing on a %i while it is open, as the panel does", async (code, words) => {
-      let reply = () => answer();
-      const { dialog, timers } = await openFull({ reply: () => reply() });
-      expect(within(dialog).queryByText(words)).toBeNull();
-      reply = () => { throw refusal(code); };
-      await act(async () => { await timers.fire(); });
-      expect(within(dialog).getByText(words)).toBeInTheDocument();
-      expect(within(dialog).getByText(STAMP)).toBeInTheDocument();
-    });
+  it("says the stream is missing when a poll fails while it is open, and keeps the rows it has", async () => {
+    let reply = () => answer();
+    const { dialog, timers } = await openFull({ reply: () => reply() });
+    expect(within(dialog).queryByText("Dalga akışı yok")).toBeNull();
+    reply = () => { throw refusal(503); };
+    await act(async () => { await timers.fire(); });
+    expect(within(dialog).getByText("Dalga akışı yok")).toBeInTheDocument();
+    expect(within(dialog).getByText(STAMP)).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("img")).toHaveLength(4);
+  });
 
-  it("closes on Escape, leaves browser full screen and gives the focus back to ⤢", async () => {
+  // A refusal drops the blocks: there is nothing left to show in full screen. It closes, the panel
+  // says why, and the focus lands in the panel — ⤢ went with the rows — not on <body>.
+  it.each([
+    [false, () => screen.getByRole("heading", { name: TITLE })],
+    [true, () => screen.getByRole("button", { name: "Dalga formunu gizle" })],
+  ])("closes on a 404 while it is open (device screen: %s), says why in the panel and keeps the focus there", async (collapsible, target) => {
+    let reply = () => answer();
+    const { timers } = await openFull({ reply: () => reply(), collapsible });
+    expect(document.activeElement).toBe(closeButton());
+    reply = () => { throw refusal(404); };
+    await act(async () => { await timers.fire(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("note")).toHaveTextContent("Bu cihazın dalga formu gösterilemiyor");
+    expect(document.activeElement).toBe(target());
+  });
+
+  it("closes on Escape, leaves the full screen it entered and gives the focus back to ⤢", async () => {
     const { opener } = await openFull();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Tam ekrandan çık" }));
+    expect(document.activeElement).toBe(closeButton());
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.exitFullscreen).toHaveBeenCalled();
+    expect(document.exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(fullscreenElement).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("leaves the page in the full screen it was already in (the top bar's), on open and on close", async () => {
+    fullscreenElement = document.documentElement;
+    const { dialog } = await openFull();
+    expect(HTMLElement.prototype.requestFullscreen).not.toHaveBeenCalled();
+    expect(dialog).toBeInTheDocument();
+    await act(async () => { fireEvent.click(closeButton()); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.exitFullscreen).not.toHaveBeenCalled();
+    expect(fullscreenElement).toBe(document.documentElement);
   });
 
   it("closes on ×, and when the browser leaves full screen by itself", async () => {
     await openFull();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Tam ekrandan çık" })); await settle(); });
+    await act(async () => { fireEvent.click(closeButton()); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Tam ekran görünüm" })); await settle(); });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     fullscreenElement = null;
-    await act(async () => { document.dispatchEvent(new Event("fullscreenchange")); await settle(); });
+    await act(async () => { announce(); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("keeps Tab on its one control", async () => {
-    await openFull();
-    const close = screen.getByRole("button", { name: "Tam ekrandan çık" });
-    fireEvent.keyDown(document, { key: "Tab" });
-    expect(document.activeElement).toBe(close);
+  it("brings Tab back to its one control from anywhere, and keeps it from the page behind", async () => {
+    const { opener } = await openFull();
+    opener.focus();                                                  // the panel's ⤢, behind the black
+    expect(document.activeElement).toBe(opener);
+    const passed = fireEvent.keyDown(opener, { key: "Tab" });
+    expect(passed).toBe(false);                                      // defaultPrevented
+    expect(document.activeElement).toBe(closeButton());
+  });
+
+  it("takes its listeners away when it closes, and when the page goes", async () => {
+    const ledger = listenerLedger();
+    const view = await mount();
+    const before = ledger.count();
+    await view.open();
+    expect(ledger.count().keydown).toBe(before.keydown + 1);
+    expect(ledger.count().fullscreenchange).toBe(before.fullscreenchange + 1);
+    await act(async () => { fireEvent.click(closeButton()); await settle(); });
+    expect(ledger.count()).toEqual(before);
+    await view.open();
+    expect(ledger.count()).not.toEqual(before);
+    cleanup();
+    expect(ledger.count()).toEqual({ keydown: 0, fullscreenchange: 0 });
+  });
+
+  it("is a window-filling overlay when the browser throws at the request, and leaks no listener", async () => {
+    HTMLElement.prototype.requestFullscreen = vi.fn(() => { throw new TypeError("refused"); });
+    const ledger = listenerLedger();
+    const view = await mount();
+    const before = ledger.count();
+    const dialog = await view.open();
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(dialog).toHaveClass("fixed", "inset-0");
+    expect(within(dialog).getByText(STAMP)).toBeInTheDocument();
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.exitFullscreen).not.toHaveBeenCalled();
+    expect(ledger.count()).toEqual(before);
+    expect(document.querySelector("[data-wave-panel]")).toBeInTheDocument();
+  });
+
+  it("closes cleanly when the browser throws at leaving full screen", async () => {
+    document.exitFullscreen = vi.fn(() => { throw new TypeError("refused"); });
+    const { opener } = await openFull();
+    await act(async () => { fireEvent.click(closeButton()); await settle(); });
+    expect(document.exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector("[data-wave-panel]")).toBeInTheDocument();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("survives StrictMode's rehearsal: one full screen, kept while open, handed back once", async () => {
+    const { dialog } = await openFull({ wrap: (ui) => <React.StrictMode>{ui}</React.StrictMode> });
+    await act(async () => { await settle(); });
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledTimes(1);   // the rehearsal asks no second time
+    expect(fullscreenElement).toBe(document.documentElement);
+    expect(dialog).toBeInTheDocument();
+    expect(document.exitFullscreen).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(closeButton()); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(fullscreenElement).toBeNull();
+  });
+
+  it("closes when the panel turns to another monitor, and does not come back on its first answer", async () => {
+    const { setSource } = await openFull();
+    await setSource("192.0.2.11");                                   // the store answers at once
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Tam ekran görünüm" })).toBeInTheDocument();   // its rows are drawn
   });
 
   it("finds the strip's card by address, and none while the strip is off", () => {
@@ -4316,6 +4608,18 @@ describe("the full-screen view", () => {
     expect(cardOf(data, SOURCE).bed_label).toBe("REA-01 · 2");
     expect(cardOf(data, "192.0.2.99")).toBeNull();
     expect(cardOf({ stage: "off" }, SOURCE)).toBeNull();
+  });
+
+  // The device screen draws its cards without a patient (DevicesScreen's `withoutPatient`); the full
+  // screen opens from both screens, so it takes the stricter rule everywhere.
+  it("hands the strip no patient: the link and the patient id are dropped", async () => {
+    const data = strip({
+      beds: [stripBed("REA-01 · 2", [param("hr", 72)], { source: SOURCE, link: "one", patient_id: "S-001", link_reason: "admitted" })],
+    });
+    expect(cardOf(data, SOURCE)).toMatchObject({ patient_id: null, link: "hidden", link_reason: null, bed_label: "REA-01 · 2" });
+    expect(data.beds[0].patient_id).toBe("S-001");                  // the strip's own answer is not changed
+    const { dialog } = await openFull({ data });
+    expect(dialog).not.toHaveTextContent("S-001");
   });
 });
 ```
@@ -4507,13 +4811,20 @@ export function WaveRows({ device, tall = false, raf = defaultRaf, caf = default
 
 ```jsx
 // src/live/screens/common/WaveFullscreen.jsx — the full-screen single-bed view (Lane C, dalga; spec
-// W5): the panel's rows, filling the screen on a black ground, with the strip's own numbers beside
-// them. Esc or × closes it; the stamp stays visible at full size. It asks the browser for full
-// screen when it can, and is a window-filling overlay when it cannot. No sound, no number from a
-// wave (spec §5.4, §5.8). The numbers are the strip's card for this monitor drawn by MonitorStrip
-// itself — values, labels (HR is the strip's HR, PLS the strip's PLS), ages, evidence words and the
-// whole note for the answer's stage («rules» at Aşama B), exactly as the strip prints them;
-// MonitorStrip prints no patient.
+// W5): the panel's rows, filling the window on a black ground, with the strip's own numbers beside
+// them. Esc or × closes it; the header and the stamp stay in view, the stamp at full size. No sound,
+// no number from a wave (spec §5.4, §5.8). The numbers are the strip's card for this monitor drawn by
+// MonitorStrip itself — values, labels (HR is the strip's HR, PLS the strip's PLS), ages, evidence
+// words and the whole note for the answer's stage («rules» at Aşama B), exactly as the strip prints
+// them — and the card is handed over without its patient (the device screen's rule, everywhere).
+//
+// The view is a fixed overlay (z-110) inside the page, and the browser's full screen is asked for
+// the PAGE (<html>), not for the overlay: the app's toasts (z-120), idle warning (z-200) and alarm
+// holder (z-210) stay above it and on screen while someone watches the waves. The page's full screen
+// is shared with the top bar's button, so a view asks for it only when the page is not in it
+// already, and hands it back only if a view asked for it, once no view is open. A browser that
+// refuses — or throws — leaves the overlay filling the window. The rest of the page is not made
+// inert (ui/Modal.jsx keeps that mechanism to itself); Tab is held on the one control instead.
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -4523,28 +4834,62 @@ import { MonitorStrip, readUnknown, stripOn } from "./MonitorStrip.jsx";
 import { maxAgeOf } from "./monitor.js";
 import { WaveRows } from "./WaveRows.jsx";
 
-/** The strip's card for this monitor — a bed card or an unassigned one — or null. */
+/** The strip's card for this monitor — a bed card or an unassigned one — without its patient, or
+ *  null. The full screen opens from the device screen too, which never shows who is linked. */
 export function cardOf(data, source) {
   if (!stripOn(data)) return null;
-  return [...(data.beds ?? []), ...(data.unassigned ?? [])].find((card) => card.source === source) ?? null;
+  const card = [...(data.beds ?? []), ...(data.unassigned ?? [])].find((c) => c.source === source);
+  return card ? { ...card, patient_id: null, link: "hidden", link_reason: null } : null;
 }
 
-/** `note`: the panel's own words for why the stream is missing (a failed poll, a refusal), or null —
- *  the panel is behind this view, so a status is said here too, never left as a silent black row. */
+// The page's full screen, as the wave views hold it. Module state, because StrictMode's rehearsal
+// mounts, unmounts and mounts a view again before the browser has answered the first request.
+const page = { views: 0, asked: false, pending: false };
+
+function askForFullScreen() {
+  const root = document.documentElement;
+  if (document.fullscreenElement || page.asked || typeof root.requestFullscreen !== "function") return;
+  page.asked = true;
+  page.pending = true;
+  try {
+    Promise.resolve(root.requestFullscreen()).then(
+      () => { page.pending = false; handBack(); },          // a view closed before the answer: give it back
+      () => { page.pending = false; page.asked = false; },   // refused: the overlay fills the window
+    );
+  } catch {
+    page.pending = false;                                    // refused outright (a policy, an old browser)
+    page.asked = false;
+  }
+}
+
+/** The page's full screen back, if a wave view asked for it and none is open any more. */
+function handBack() {
+  if (page.views > 0 || !page.asked || page.pending) return;
+  page.asked = false;
+  if (!document.fullscreenElement || typeof document.exitFullscreen !== "function") return;
+  try {
+    Promise.resolve(document.exitFullscreen()).catch(() => {});
+  } catch {
+    // refused outright: the page stays in full screen, and the top bar's button still leaves it
+  }
+}
+
+/** `note`: the panel's own words for why the stream is missing (a failed poll), or null — the panel
+ *  is behind this view, so a status is said here too, never left as a silent black row. */
 export function WaveFullscreen({ source, title, device, note = null, onClose, raf, caf }) {
   const { t } = useI18n();
   const shadow = useShadow();
   const card = cardOf(shadow.data, source);
   const titleId = useId();
-  const rootRef = useRef(null);
   const closeRef = useRef(null);
   const closing = useRef(onClose);
   closing.current = onClose;
 
   useEffect(() => {
-    const root = rootRef.current;
+    page.views += 1;
+    askForFullScreen();
     closeRef.current?.focus();
-    // Escape closes, Tab stays on the one control there is; capture, so nothing behind sees either.
+    // Escape closes, Tab comes back to the one control there is; capture, so nothing behind sees either.
     const onKey = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -4556,35 +4901,39 @@ export function WaveFullscreen({ source, title, device, note = null, onClose, ra
       }
     };
     // In browser full screen, Escape leaves full screen without a key event: that closes it too.
-    const onChange = () => { if (!document.fullscreenElement) closing.current(); };
+    // Entering it is announced the same way, and is not a reason to close.
+    const onChange = () => {
+      if (document.fullscreenElement) return;
+      page.asked = false;
+      closing.current();
+    };
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("fullscreenchange", onChange);
-    if (typeof root?.requestFullscreen === "function" && !document.fullscreenElement) {
-      Promise.resolve(root.requestFullscreen()).catch(() => {});   // refused: the overlay fills the window
-    }
     return () => {
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("fullscreenchange", onChange);
-      if (document.fullscreenElement === root && typeof document.exitFullscreen === "function") {
-        Promise.resolve(document.exitFullscreen()).catch(() => {});
-      }
+      page.views -= 1;
+      handBack();
     };
   }, []);
 
   const maxAgeS = maxAgeOf(shadow.data);
   return createPortal(
-    <div ref={rootRef} role="dialog" aria-modal="true" aria-labelledby={titleId} data-wave-fullscreen=""
-      className="fixed inset-0 z-[120] flex flex-col gap-3 overflow-auto bg-black p-4 text-white">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 id={titleId} className="m-0 font-display text-20 font-bold leading-[normal]">
-          {title ? `${title} · ${t("waves.title")}` : t("waves.title")}
-        </h2>
-        <Tag tone="warn">{t("waves.tag")}</Tag>
-        <span className="font-text text-12.5 text-white/70">{t("waves.delay")}</span>
-        <Button ref={closeRef} icon="x" label={t("waves.close")} onClick={() => closing.current()} className="ml-auto" />
+    <div role="dialog" aria-modal="true" aria-labelledby={titleId} data-wave-fullscreen=""
+      className="fixed inset-0 z-[110] flex flex-col gap-3 overflow-auto bg-black p-4 text-white">
+      {/* The header and the stamp stay in view however far the rows and the strip scroll. */}
+      <div data-wave-head="" className="sticky top-0 z-10 -mx-4 -mt-4 flex flex-col gap-3 bg-black px-4 pb-1 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id={titleId} className="m-0 font-display text-20 font-bold leading-[normal]">
+            {title ? `${title} · ${t("waves.title")}` : t("waves.title")}
+          </h2>
+          <Tag tone="warn">{t("waves.tag")}</Tag>
+          <span className="font-text text-12.5 text-white/70">{t("waves.delay")}</span>
+          <Button ref={closeRef} icon="x" label={t("waves.close")} onClick={() => closing.current()} className="ml-auto" />
+        </div>
+        <p data-wave-stamp="" className="m-0 font-text text-17 font-bold text-amber-300">{t("waves.stamp")}</p>
+        {note ? <Note className="self-start">{note}</Note> : null}
       </div>
-      <p data-wave-stamp="" className="m-0 font-text text-17 font-bold text-amber-300">{t("waves.stamp")}</p>
-      {note ? <Note className="self-start">{note}</Note> : null}
       <div className="grid min-h-0 flex-1 gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_340px]">
         <WaveRows device={device} tall raf={raf} caf={caf} />
         {card ? (
@@ -4635,26 +4984,39 @@ const NOTE = {
 };
 const QUIET = new Set([WAVE_STATUS.IDLE, WAVE_STATUS.LOADING, WAVE_STATUS.OFF]);
 
-function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, className }) {
+function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, caf, className }) {
   const { t } = useI18n();
   const id = useId();
   const [full, setFull] = useState(false);
   const fullRef = useRef(null);
+  const headRef = useRef(null);
   useEffect(() => store.watch(source), [store, source]);
   const device = useSyncExternalStore(store.subscribe, () => store.get(source));
   const { status } = device;
-  if (!collapsible && QUIET.has(status)) return null;
+  const quiet = QUIET.has(status);
   const hasRows = Object.keys(device.blocks).length > 0;
+  // Full screen shows rows. With none left to show — a refusal dropped them, the waves went off — it
+  // closes, and stays closed: an answer that comes later never reopens it by itself.
+  const fullOpen = full && hasRows && !quiet;
+  /** The focus back into the panel: ⤢ while there are rows, else the hide button, else the heading. */
+  const focusBack = () => (fullRef.current ?? hideRef?.current ?? headRef.current)?.focus();
+  useEffect(() => {
+    if (!full || fullOpen) return;
+    setFull(false);
+    // The × had the focus, and went with the view: the panel takes it, rather than <body>.
+    if (!document.activeElement || document.activeElement === document.body) focusBack();
+  }, [full, fullOpen]);
+  if (!collapsible && quiet) return null;
   const noteKey = NOTE[status];
   const waiting = status === WAVE_STATUS.LOADING || (status === WAVE_STATUS.OK && !hasRows);
   const closeFull = () => {
     setFull(false);
-    fullRef.current?.focus();
+    focusBack();
   };
   return (
     <section aria-labelledby={id} data-wave-panel="" className={`rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 id={id} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink">
+        <h3 id={id} ref={headRef} tabIndex={-1} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink outline-none">
           {title ? `${title} · ${t("waves.title")}` : t("waves.title")}
         </h3>
         <Tag tone="warn">{t("waves.tag")}</Tag>
@@ -4664,15 +5026,15 @@ function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, classN
             <Button ref={fullRef} variant="ghost" size="sm" icon="fullscreen" label={t("waves.fullscreen")}
               onClick={() => setFull(true)} />
           ) : null}
-          {collapsible ? <Button variant="ghost" size="sm" icon="x" label={t("waves.hide")} onClick={onHide} /> : null}
+          {collapsible ? <Button ref={hideRef} variant="ghost" size="sm" icon="x" label={t("waves.hide")} onClick={onHide} /> : null}
         </span>
       </div>
       <p data-wave-stamp="" className="m-0 mt-1 font-text text-11.5 font-semibold text-att-ink">{t("waves.stamp")}</p>
       {noteKey ? <Note className="mt-1.5">{t(noteKey)}</Note> : null}
       {waiting ? <p className="m-0 mt-1.5 font-text text-12 text-mute">{t("waves.waiting")}</p> : null}
-      {hasRows && !full ? <WaveRows device={device} raf={raf} caf={caf} /> : null}
+      {hasRows && !fullOpen ? <WaveRows device={device} raf={raf} caf={caf} /> : null}
       {/* The panel's note is behind the black while full screen is open: it goes along, said there too. */}
-      {full ? (
+      {fullOpen ? (
         <WaveFullscreen source={source} title={title} device={device} note={noteKey ? t(noteKey) : null}
           onClose={closeFull} raf={raf} caf={caf} />
       ) : null}
@@ -4685,23 +5047,40 @@ function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, classN
  * screen's own title). `collapsible`: closed behind a button until opened (the device screen, so
  * that a list of monitors polls none of them by itself). `store`, `raf`, `caf`: for the tests; the
  * page uses the session's wave store and the browser's frame clock.
+ *
+ * Another `source` is another panel (`key`): the old monitor is let go, the new one watched, and
+ * nothing of the old one's — its full screen least of all — carries over.
  */
 export function WavePanel({ source, title, collapsible = false, store, raf, caf, className = "" }) {
   const { t } = useI18n();
   const { store: session } = useSession();
   const waves = store ?? waveStoreFor(session);
   const [open, setOpen] = useState(!collapsible);
+  const showRef = useRef(null);
+  const hideRef = useRef(null);
+  // A press on «göster» or «gizle» replaces the button pressed: the focus goes to the one that took
+  // its place, rather than to <body>.
+  const pressed = useRef(false);
+  useEffect(() => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    (open ? hideRef : showRef).current?.focus();
+  }, [open]);
+  const toggle = (next) => {
+    pressed.current = true;
+    setOpen(next);
+  };
   if (!source) return null;
   if (!open) {
     return (
       <div className={className}>
-        <Button variant="ghost" size="sm" icon="activity" onClick={() => setOpen(true)}>{t("waves.show")}</Button>
+        <Button ref={showRef} variant="ghost" size="sm" icon="activity" onClick={() => toggle(true)}>{t("waves.show")}</Button>
       </div>
     );
   }
   return (
-    <OpenPanel store={waves} source={source} title={title} collapsible={collapsible} onHide={() => setOpen(false)}
-      raf={raf} caf={caf} className={className} />
+    <OpenPanel key={source} store={waves} source={source} title={title} collapsible={collapsible}
+      onHide={() => toggle(false)} hideRef={hideRef} raf={raf} caf={caf} className={className} />
   );
 }
 ```
@@ -4709,7 +5088,15 @@ export function WavePanel({ source, title, collapsible = false, store, raf, caf,
 - [ ] **Step 7: Run.**
 
 Run: the command of Step 3.
-Expected: `25 passed` (15 + 10). This is 21 in the first draft, plus the full screen's four new tests: HR/PLS, «rules», and the status note on a 503 and a 404. With `src/reachable.test.js` in the same run (its `PENDING` list already names the three modules, from Task 8), it is 29. The whole dashboard was 117 files and 3262 tests at `d1993af`, with Task 8's review fix in. `npx vite build` was green; the page reaches none of these modules before Task 15.
+Expected: `42 passed` (21 + 21).
+- **First draft:** 21.
+- **`d1993af`:** 25. It added the full screen's HR/PLS, «rules», and the status note on a 503 and a 404.
+- **`494f2b5`, after the review:**
+  - The panel has 21 tests. New: the gap, the ink, the canvas's name, nothing before the first answer, a source change, and focus on show/hide.
+  - The full screen has 21. New: white ink, sticky header, entry announced, the 404 that closes it (twice, patient and device screen), the top bar's full screen, Tab, listeners, both throws, StrictMode, a source change in full screen, no patient.
+  - The 404 case of the old status-note pair became the closing test.
+- **With `src/reachable.test.js`:** 46. Its `PENDING` list already names the three modules, from Task 8.
+- **Whole dashboard at `494f2b5`:** 118 files, 3288 tests. `npx vite build` was green; the page reaches none of these modules before Task 15.
 
 - [ ] **Step 8: Commit.**
 
