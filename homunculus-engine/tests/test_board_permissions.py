@@ -257,6 +257,8 @@ BOARD_EXPECTED = {
     ("GET", "/health"): OPEN,
     # Arrived from main; gated here like the rest.
     ("POST", "/clinical/{patient_id}"): "clinical.chart",
+    # G3-01 (D8): the bedside preview scores what the chart door would chart; it needs the door's permission.
+    ("POST", "/clinical/{patient_id}/preview"): "clinical.chart",
     ("PUT", "/clinical/{patient_id}/profile"): "clinical.chart",
     ("GET", "/scores/sofa/{patient_id}"): "board.view",
     # A device is additionally refused here: a signature names a person

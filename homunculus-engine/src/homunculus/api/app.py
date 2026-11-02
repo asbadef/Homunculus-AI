@@ -35,7 +35,7 @@ from homunculus.api.alert_lifecycle import (
 )
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
 from homunculus.api.board import (
-    board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
+    _news2, board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
 )
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, KABUL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
@@ -1037,6 +1037,37 @@ def create_app(
                 "alerts": [a.kind for a in alerts],
                 # G3-01 (D10): each value's `chart` row, the id a «hatalı giriş» names.
                 "entries": [{"code": code, "entry": entry} for code, entry in written]}
+
+    @app.post("/clinical/{patient_id}/preview")
+    async def chart_preview(patient_id: str, body: dict = Body(...),
+                            authorization: str | None = Header(default=None)):
+        """G3-01 (D8, X10): what the chart door would score for these entries — the card's own NEWS2
+        (`api/board.py` `_news2`) of a COPY of the patient's state with the entries added, judged at the
+        request's instant. Parsed by the door's own `_recorded_at` and `build_entries`: the same refusals and
+        the same time bound. Nothing is written: no audit row, no engine change, no frame. A discharged number
+        answers as the door drops it (`dropped`), with nothing scored."""
+        caller = await _caller(authorization)
+        _require(caller, CLINICAL_CHART)
+        hospital = caller.hospital
+        await _require_patient(caller, authorization, patient_id)
+        recorded_at = _recorded_at(body)
+        now = datetime.now(timezone.utc)
+        try:
+            charted = build_entries(patient_id, body.get("entries") or [],
+                                    charted_by=_charted_by(caller),
+                                    recorded_at=recorded_at, now=now)
+        except ClinicalEntryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        if is_tombstone(identities.get(hospital, patient_id)):
+            return {"patient_id": patient_id, "preview": True, "dropped": DISCHARGED}
+        engine = _engine(hospital)
+        # `engine.state()` creates the id it is asked about: a patient the engine has not measured is read from
+        # an empty state, as the trends route reads one — a preview must not put a number on every board.
+        state = (engine.state(patient_id).copy() if patient_id in set(engine.patient_ids())
+                 else PatientState(patient_id))
+        for item in charted:
+            state.ingest(item.observation)
+        return {"patient_id": patient_id, "preview": True, "at": now.isoformat(), "news2": _news2(state, now)}
 
     @app.put("/clinical/{patient_id}/profile")
     async def set_patient_profile(patient_id: str, body: dict = Body(...),

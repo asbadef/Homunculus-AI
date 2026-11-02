@@ -776,6 +776,7 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | DEVICE_ONLY | {
     ("GET", "/audit"),
     # ...and the ones that arrived from main, through the same Caller.
     ("POST", "/clinical/{patient_id}"),
+    ("POST", "/clinical/{patient_id}/preview"),        # G3-01 (D8): the door's helper, its Caller
     ("PUT", "/clinical/{patient_id}/profile"),
     ("GET", "/scores/sofa/{patient_id}"),
     ("POST", "/scores/sofa/{patient_id}"),
