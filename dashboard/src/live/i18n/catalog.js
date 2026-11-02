@@ -53,6 +53,9 @@ import esleme from "./strings/esleme.js";
 // G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
 import sofa from "./strings/sofa.js";
 
+// Dalga: the live waveform panel (screens/common/WavePanel.jsx).
+import waves from "./strings/waves.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -83,6 +86,8 @@ export const NAMESPACES = {
   esleme, // G2-ESLEME
 
   sofa, // G2-A4
+
+  waves, // dalga
 };
 
 function flattenInto(out, prefix, entries) {
