@@ -28,16 +28,21 @@ from homunculus.api.alert_lifecycle import (
     DISCHARGED, acknowledge_latched, live_keys, retire_state, sync_alerts,
 )
 from homunculus.api.audit import AuditRecord
-from homunculus.api.clinical import profile_from_payload
+from homunculus.api.clinical import RETRACT, profile_from_payload
 from homunculus.api.identity import bounded_role
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
 
-def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -> None:
+def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *,
+              skip: frozenset[int] = frozenset()) -> None:
     # Any iterable, read once, in id order (G2-A2, D12): the API hands it `audit.iter_records`,
     # which reads the log a page at a time, so no cap can drop the newest rows.
+    # G3-01 (D12): `skip` is the `chart` rows a «hatalı giriş» withdrew (`retracted_entries`, read first by
+    # the API): they are not replayed, so a restart scores the patient as the live rebuild did.
     for rec in records:
+        if rec.event_type == "chart" and rec.id in skip:
+            continue
         if rec.event_type in ("ingest", "chart"):
             # `chart` is a clinician's observation and replays exactly like a device's. It has
             # to: a charted `suspected_infection` that a restart forgot would take the sepsis,
@@ -54,8 +59,13 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord]) -
             _replay_ack(engine, store, rec)
         elif rec.event_type == "first_seen":
             key = (rec.patient_id, rec.subject)
-            store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
-            store.clock_from.setdefault(key, store.first_seen[key])
+            # G3-01 (D12): a stamp only for an alert the replay has on the board, as `_replay_ack` guards. The
+            # doors stamp what is firing right after the reading that raised it, so on a consistent trail the
+            # key is here; an alert only a withdrawn (skipped) value raised is not, and the live rebuild's
+            # hook pruned its stamp — kept, the next real episode would inherit its first sight and clock.
+            if key in store.firing or key in store.resolved:
+                store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
+                store.clock_from.setdefault(key, store.first_seen[key])
         elif rec.event_type == "alert_cleared" and rec.payload.get("reason") == DISCHARGED:
             # G2-A11 (D7a): a discharge retired the patient live, at this point of the log; the
             # replay retires it here. Every other `alert_cleared` row follows from the rows the
@@ -75,20 +85,29 @@ def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
     clock (X10), with the row's write time standing for that wall clock, to within the request.
     Judged at a stamp in the future, as the replay did, every other input was aged to it — a NEWS2
     the ward saw firing came back held, and the antibiotic anchor moved to the future stamp."""
+    obs = observation_of(rec)
+    if obs is None:
+        return False  # unknown signal slug — skip rather than fail the whole replay
+    engine.ingest(obs, now=min(obs.timestamp, written))
+    return True
+
+
+def observation_of(rec: AuditRecord) -> Observation | None:
+    """The observation an `ingest` or `chart` row recorded, or None for a signal this build does not know.
+    G3-01: the replay builds it so, and so does the withdrawal for the shadow lane (X5) — one reading equals
+    the other, field for field."""
     try:
         code = SignalCode(rec.subject)
     except ValueError:
-        return False  # unknown signal slug — skip rather than fail the whole replay
+        return None
     p = rec.payload
-    ts = datetime.fromisoformat(p["obs_ts"])
     # G2-A4 review (S1, X22): a `chart` row carries `charted_by`, never a `device` — the door stamps the
     # observation "clinician" (api/clinical.py `build_entries`), and the replay must too, or after a restart
     # every hand-charted value reads as coming from "replay" (the SOFA form prints the source).
     source = p.get("device") or ("clinician" if rec.event_type == "chart" else "replay")
-    obs = Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
-                      unit=p.get("unit", ""), timestamp=ts, source_device=source)
-    engine.ingest(obs, now=min(ts, written))
-    return True
+    return Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
+                       unit=p.get("unit", ""), timestamp=datetime.fromisoformat(p["obs_ts"]),
+                       source_device=source)
 
 
 def _written_at(rec: AuditRecord) -> datetime:
@@ -133,3 +152,41 @@ def _replay_ack(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
         return
     at = datetime.fromisoformat(rec.payload["at"])
     store.acknowledge(rec.patient_id, rec.subject, bounded_role(rec.payload.get("role")), at)
+
+
+#: G3-01 (D10): the kinds a patient's ENGINE state is rebuilt from — what `rehydrate` replays into the engine
+#: for one patient. The ack, first-seen and clear rows are the store's, and the store is not rebuilt: an
+#: alert the ward saw stays seen, and the lifecycle hook, run once after the rebuild, ends what no longer fires.
+#: The replay retires a patient at the discharge `alert_cleared` row, which the rebuild never reads: the
+#: withdrawal route refuses a discharged number before any rebuild, or the rebuild would bring its readings back.
+REBUILD_EVENTS = frozenset({"ingest", "chart", "profile"})
+
+
+def retracted_entries(records: Iterable[AuditRecord]) -> frozenset[int]:
+    """The `chart` rows a `chart_retract` row withdrew (G3-01, D12), from any rows: the others are ignored, and
+    a payload whose `entry` is not an integer withdraws nothing."""
+    out: set[int] = set()
+    for rec in records:
+        if rec.event_type != RETRACT:
+            continue
+        entry = rec.payload.get("entry")
+        if isinstance(entry, int) and not isinstance(entry, bool):
+            out.add(entry)
+    return frozenset(out)
+
+
+def rebuild_patient(engine: Engine, patient_id: str, records: Iterable[AuditRecord], *,
+                    skip: frozenset[int]) -> None:
+    """One patient's engine state from the trail, without the `chart` rows in `skip` (G3-01, D10, X4): first
+    everything the engine holds for the patient is dropped (`Engine.forget`), then that patient's `ingest`,
+    `chart` and `profile` rows are replayed in id order with the restart's own helpers — each reading judged
+    where the door judged it. Engine only: no store and no lifecycle hook; the caller runs the hook once, at its
+    own instant. Rows of another patient or kind are passed over, so the caller may hand it a wider read."""
+    engine.forget(patient_id)
+    for rec in records:
+        if rec.patient_id != patient_id or rec.event_type not in REBUILD_EVENTS:
+            continue
+        if rec.event_type == "profile":
+            _replay_profile(engine, rec)
+        elif not (rec.event_type == "chart" and rec.id in skip):
+            _replay_ingest(engine, rec, _written_at(rec))
