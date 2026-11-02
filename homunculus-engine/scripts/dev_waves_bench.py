@@ -38,6 +38,14 @@ measured before any retry, with the same parts and the same reading as the VM:
   tail is at most the old + max(add, 25 % of the old) (add: 0.5 % for the 500 ms tail, 0.25 % for the
   1000 ms tail, floors 1 % and 0.5 %), DİKKAT up to old + max(2 add, 50 %), RED beyond. `--compare
   BEFORE AFTER` compares two saved runs and runs nothing.
+- `--hub-cpus N` (every core): pins the hub process to the lowest N cores this machine offers (Windows'
+  SetProcessAffinityMask on the hub's own pid, Linux' sched_setaffinity) and the bench's own process -
+  monitors, worker, pollers - to the remaining ones, so the load never steals the hub's. The VM's hub has
+  few, slow vCPUs (and the API polling it shares them); on 16 cores here one panel moved packets_ms by
+  3 percent where the VM saw x3.8, so a throttled hub is what brings the bench near the VM's magnitude.
+  Recorded in BENCH as `hub_cpus`, `hub_mask`, `bench_mask`. Since 476feced the decode runs on the hub's
+  own thread after the ack: packets_ms is the handler alone, waves_ms is reported beside it, and the
+  decoder's queue shows as `waves.dropped` (0 expected) and `waves.queued`.
 
 Everything is synthetic (192.0.2.x, formulas of time, random tokens never printed) and everything
 written goes into one scratch folder outside any repository (`--folder`; refused inside one): the
@@ -311,6 +319,97 @@ def cpu_seconds(pid):
     return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK"), "/proc"      # utime, stime
 
 
+# --- the cores: `--hub-cpus` --------------------------------------------------------------------
+# A mask is an int, bit i for core i, as Windows' affinity masks are; Linux' CPU sets are turned into one.
+
+def affinity_mask(n, available):
+    """The lowest `n` cores of `available` (a mask), as a mask; ValueError when it offers fewer."""
+    cores = [i for i in range(available.bit_length()) if available >> i & 1]
+    if not 1 <= n <= len(cores):
+        raise ValueError(f"{n} core(s) asked for, {len(cores)} available.")
+    return sum(1 << i for i in cores[:n])
+
+
+def _mask_of(cores):
+    return sum(1 << i for i in cores)
+
+
+def _cores_of(mask):
+    return {i for i in range(mask.bit_length()) if mask >> i & 1}
+
+
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.GetProcessAffinityMask.restype = wintypes.BOOL
+    kernel32.GetProcessAffinityMask.argtypes = (wintypes.HANDLE, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t))
+    kernel32.SetProcessAffinityMask.restype = wintypes.BOOL
+    kernel32.SetProcessAffinityMask.argtypes = (wintypes.HANDLE, ctypes.c_size_t)
+    return ctypes, kernel32
+
+
+def _with_process(pid, access, call):
+    ctypes, kernel32 = _kernel32()
+    handle = kernel32.OpenProcess(access, False, pid)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), f"OpenProcess({pid}) failed.")
+    try:
+        return call(ctypes, kernel32, handle)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _masks(ctypes, kernel32, handle):
+    process, system = ctypes.c_size_t(), ctypes.c_size_t()
+    if not kernel32.GetProcessAffinityMask(handle, ctypes.byref(process), ctypes.byref(system)):
+        raise OSError(ctypes.get_last_error(), "GetProcessAffinityMask failed.")
+    return process.value, system.value
+
+
+def system_affinity():
+    """The cores this machine offers the bench, as a mask."""
+    if sys.platform == "win32":
+        return _with_process(os.getpid(), 0x1000, _masks)[1]                 # PROCESS_QUERY_LIMITED_INFORMATION
+    return _mask_of(os.sched_getaffinity(0))
+
+
+def process_affinity(pid):
+    """The cores process `pid` may run on, as a mask."""
+    if sys.platform == "win32":
+        return _with_process(pid, 0x1000, _masks)[0]
+    return _mask_of(os.sched_getaffinity(pid))
+
+
+def set_process_affinity(pid, mask):
+    """Pin process `pid` (every thread of it) to the cores of `mask`."""
+    if sys.platform == "win32":
+        def call(ctypes, kernel32, handle):
+            if not kernel32.SetProcessAffinityMask(handle, mask):
+                raise OSError(ctypes.get_last_error(), "SetProcessAffinityMask failed.")
+        _with_process(pid, 0x0200 | 0x0400, call)           # PROCESS_SET_INFORMATION | PROCESS_QUERY_INFORMATION
+    else:
+        os.sched_setaffinity(pid, _cores_of(mask))
+
+
+def pin_hub(pid, n):
+    """Pin the hub process to the lowest `n` cores and this process (the monitors, the worker and the
+    pollers) to the rest, so the load never steals the hub's. Returns (hub mask, bench mask); the bench
+    mask is 0 when no core is left and the bench stays unpinned. OSError when the pin did not take."""
+    system = system_affinity()
+    hub_mask = affinity_mask(n, system)
+    set_process_affinity(pid, hub_mask)
+    if process_affinity(pid) != hub_mask:
+        raise OSError(f"the hub's affinity reads {process_affinity(pid):#x}, not {hub_mask:#x}.")
+    bench_mask = system & ~hub_mask
+    if bench_mask:
+        set_process_affinity(os.getpid(), bench_mask)
+    return hub_mask, bench_mask
+
+
 # --- the window, as hubdurum.py reads it ----------------------------------------------------------
 
 def reading(client, pid):
@@ -405,6 +504,16 @@ def window(a, b):
         m["dalga_imlec"] = grew
         rows.append(("dalga_imlec", "KABUL" if grew > 0 else ("RED" if streaming else "DİKKAT"),
                      "imleç %d -> %d (+%d); akan monitör %d" % (wa.get("cursor", 0), wb.get("cursor", 0), grew, streaming)))
+        if "dropped" in wb:
+            # dalga-perf (476feced): the decoder thread's bounded queue. `dropped` counts the batches it
+            # let go of (0 expected), `queued` what waited in it at the reading (small expected).
+            change = wb.get("dropped", 0) - wa.get("dropped", 0)
+            m["dalga_dropped"] = change
+            rows.append(("dalga_dropped", "KABUL" if change == 0 else "RED",
+                         "waves.dropped: pencerede %+d, açılıştan beri %d (0 beklenir)" % (change, wb.get("dropped", 0))))
+            m["dalga_queued"] = wb.get("queued", 0)
+            rows.append(("dalga_queued", "BİLGİ" if m["dalga_queued"] <= 2 else "DİKKAT",
+                         "waves.queued: okuma anında %d toplu gönderi çözüm bekliyor (küçük beklenir)" % m["dalga_queued"]))
     ra, rb = a.get("research") or {}, b.get("research")
     if rb is None:
         rows.append(("arastirma_hata", "RED", "/v1/status'ta research yok"))
@@ -475,11 +584,14 @@ def _yaz(rows, label):
     return {"KABUL": 0, "DİKKAT": 3}.get(result, 1)
 
 
-def run_record(*, monitors, pollers, poll_interval, poll_since, warmup, bench_seconds, cpu_method):
-    """What the BENCH line says about the run itself."""
+def run_record(*, monitors, pollers, poll_interval, poll_since, warmup, bench_seconds, cpu_method,
+               hub_cpus=None, hub_mask=None, bench_mask=None):
+    """What the BENCH line says about the run itself. `hub_cpus` None: the hub ran on every core."""
     return {"monitors": monitors, "pollers": pollers, "poll_interval": poll_interval, "poll_since": poll_since,
             "warmup_s": warmup, "bench_s": bench_seconds, "batch": list(BATCH), "cpu_method": cpu_method,
-            "cpus": os.cpu_count(), "platform": platform.platform(), "python": platform.python_version(),
+            "cpus": os.cpu_count(), "hub_cpus": hub_cpus,
+            "hub_mask": None if hub_mask is None else f"{hub_mask:#x}", "bench_mask": None if bench_mask is None else f"{bench_mask:#x}",
+            "platform": platform.platform(), "python": platform.python_version(),
             "when": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
 
 
@@ -631,6 +743,16 @@ def run_bench(args):
             return 2
         print(f"Hub process pid {pid} (launched as {child.pid}) serving on https://{args.host}:{args.port}; its output in "
               f"{folder / 'hub.log'}.", flush=True)
+        hub_mask = bench_mask = None
+        if args.hub_cpus is not None:
+            try:
+                hub_mask, bench_mask = pin_hub(pid, args.hub_cpus)
+            except (OSError, ValueError, AttributeError) as error:
+                print(f"Not started: the hub could not be pinned to {args.hub_cpus} core(s): {error}", flush=True)
+                return 2
+            print(f"Hub pinned to {args.hub_cpus} core(s), mask {hub_mask:#x} of {system_affinity():#x}; the bench's own process "
+                  + (f"(monitors, worker, pollers) to the rest, mask {bench_mask:#x}." if bench_mask else "left on every core: none remains."),
+                  flush=True)
         for thread in threads:
             thread.start()
         print(f"Warm-up {args.warmup:g} s, then a {args.bench_seconds:g} s window.", flush=True)
@@ -658,11 +780,11 @@ def run_bench(args):
         metrics.update(summary)
         rows += poll_rows(summary, args.pollers, args.poll_interval, args.poll_since)
         print(f"--- pencere ({metrics['sn']} sn; {args.monitors} monitör, {args.pollers} poller, {args.poll_interval:g} s, "
-              f"since={args.poll_since})", flush=True)
+              f"since={args.poll_since}; hub {args.hub_cpus if args.hub_cpus is not None else 'bütün'} çekirdek)", flush=True)
         code = _yaz(rows, "BENCH")
         run = run_record(monitors=args.monitors, pollers=args.pollers, poll_interval=args.poll_interval,
                          poll_since=args.poll_since, warmup=args.warmup, bench_seconds=args.bench_seconds,
-                         cpu_method=after["cpu_method"])
+                         cpu_method=after["cpu_method"], hub_cpus=args.hub_cpus, hub_mask=hub_mask, bench_mask=bench_mask)
         print(summary_line(run, metrics), flush=True)
         if args.compare:
             earlier = load_bench(args.compare[0])
@@ -705,6 +827,8 @@ def parse_args(argv=None):
                         help=f"the local API's port the strip forwarder posts to (default {replay.API_PORT}; nothing need listen)")
     parser.add_argument("--api", help="the strip forwarder's API (default http://127.0.0.1:<--api-port>)")
     parser.add_argument("--fresh", action="store_true", help="new tokens and a new certificate even if the folder holds a previous run's")
+    parser.add_argument("--hub-cpus", type=int, default=None, metavar="N",
+                        help="pin the hub process to the lowest N cores and the bench's own process to the rest (default: every core)")
     parser.add_argument("--role", choices=("bench", "hub"), default="bench", help="internal: 'hub' is the child process")
     parser.add_argument("--seconds", type=float, default=0.0, help="internal: the hub child's own stop")
     args = parser.parse_args(argv)
@@ -716,6 +840,8 @@ def parse_args(argv=None):
         parser.error("--poll-interval and --bench-seconds must be positive, --warmup zero or more")
     if not 0 < args.port < 65536 or not 0 < args.api_port < 65536:
         parser.error("--port and --api-port must be between 1 and 65535")
+    if args.hub_cpus is not None and args.hub_cpus < 1:
+        parser.error("--hub-cpus must be 1 or more")
     if args.compare is not None and len(args.compare) > 2:
         parser.error("--compare takes one or two files")
     args.api = args.api or f"http://127.0.0.1:{args.api_port}"

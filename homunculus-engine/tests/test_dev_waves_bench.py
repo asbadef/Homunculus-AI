@@ -260,14 +260,17 @@ def test_the_poll_summary_gives_p50_p95_bytes_and_blocks_per_answer():
 
 # --- the window and the lines ---------------------------------------------------------------------
 
-def reading(t, cpu_s, *, lag, packets, waves=None, waves_read=None, refused=0, errors=0, cursor=0, pid=4242):
+def reading(t, cpu_s, *, lag, packets, waves=None, waves_read=None, refused=0, errors=0, cursor=0, pid=4242,
+            dropped=None, queued=None):
     timings = {"lag_ms": lag, "packets_ms": packets}
     if waves is not None:
         timings["waves_ms"] = waves
     if waves_read is not None:
         timings["waves_read_ms"] = waves_read
-    return {"t": t, "pid": pid, "cpu_s": cpu_s, "cpu_method": "test", "timings": timings,
-            "waves": {"cursor": cursor, "refused": refused, "errors": errors, "started": "x"},
+    status_waves = {"cursor": cursor, "refused": refused, "errors": errors, "started": "x"}
+    if dropped is not None:                                   # the hub since 476feced (the decoder thread)
+        status_waves.update(dropped=dropped, queued=queued or 0)
+    return {"t": t, "pid": pid, "cpu_s": cpu_s, "cpu_method": "test", "timings": timings, "waves": status_waves,
             "research": {"errors": 0}, "devices": [[f"192.0.2.{20 + i}", "streaming"] for i in range(13)]}
 
 
@@ -290,6 +293,21 @@ def test_the_window_reads_two_status_readings_as_hubdurum_does():
     assert bench.verdict(rows) == "RED"
 
 
+def test_the_decoder_queues_drops_and_depth_are_shown_when_the_hub_has_them():
+    before = reading(0.0, 1.0, lag=ZERO, packets=ZERO, cursor=10)
+    _m, rows = bench.window(before, reading(60.0, 2.0, lag=[10, 1000, 10, 0, 0, 0, 0, 0, 0, 0], packets=ZERO, cursor=20))
+    assert not {name for name, _v, _t in rows} & {"dalga_dropped", "dalga_queued"}      # the pre-fix hub: no such keys
+    before = reading(0.0, 1.0, lag=ZERO, packets=ZERO, cursor=10, dropped=0, queued=0)
+    m, rows = bench.window(before, reading(60.0, 2.0, lag=[10, 1000, 10, 0, 0, 0, 0, 0, 0, 0], packets=ZERO, cursor=20,
+                                           dropped=0, queued=1))
+    verdicts = {name: verdict for name, verdict, _t in rows}
+    assert (m["dalga_dropped"], m["dalga_queued"]) == (0, 1) and (verdicts["dalga_dropped"], verdicts["dalga_queued"]) == ("KABUL", "BİLGİ")
+    m, rows = bench.window(before, reading(60.0, 2.0, lag=[10, 1000, 10, 0, 0, 0, 0, 0, 0, 0], packets=ZERO, cursor=20,
+                                           dropped=3, queued=40))
+    verdicts = {name: verdict for name, verdict, _t in rows}
+    assert (m["dalga_dropped"], m["dalga_queued"]) == (3, 40) and (verdicts["dalga_dropped"], verdicts["dalga_queued"]) == ("RED", "DİKKAT")
+
+
 def test_a_restarted_hub_or_a_quiet_window_invalidates_it():
     before = reading(0.0, 1.0, lag=ZERO, packets=ZERO)
     _m, rows = bench.window(before, reading(60.0, 2.0, lag=ZERO, packets=ZERO, pid=1))
@@ -309,7 +327,11 @@ def test_the_summary_line_is_one_json_object_with_the_run_and_the_window_and_loa
     loaded = json.loads(line[len("BENCH "):])
     assert loaded["bench"]["monitors"] == 13 and loaded["bench"]["batch"] == [32, 0.25]
     assert {"pollers", "poll_interval", "poll_since", "warmup_s", "bench_s", "cpu_method", "cpus", "platform", "python"} <= set(loaded["bench"])
+    assert (loaded["bench"]["hub_cpus"], loaded["bench"]["hub_mask"], loaded["bench"]["bench_mask"]) == (None, None, None)
     assert {k: v for k, v in loaded.items() if k != "bench"} == metrics
+    pinned = bench.run_record(monitors=13, pollers=1, poll_interval=0.25, poll_since="0", warmup=30.0, bench_seconds=180.0,
+                              cpu_method="GetProcessTimes", hub_cpus=2, hub_mask=0b11, bench_mask=0xfffc)
+    assert (pinned["hub_cpus"], pinned["hub_mask"], pinned["bench_mask"]) == (2, "0x3", "0xfffc")
     assert bench.load_bench_text("--- a table\nKABUL  hub_cpu  x\n" + line + "\n") == loaded
     assert bench.load_bench_text(json.dumps(loaded)) == loaded
 
@@ -394,6 +416,41 @@ def test_the_hub_child_writes_its_own_pid_and_the_parent_reads_that_not_the_laun
     assert bench.PID_FILE == "hub.pid"
     with pytest.raises(OSError):
         bench.hub_pid(tmp_path / "nowhere")
+
+
+def test_hub_cpus_is_parsed_and_the_mask_is_the_lowest_n_cores_offered(tmp_path):
+    assert bench.parse_args(["--folder", str(tmp_path)]).hub_cpus is None
+    assert bench.parse_args(["--folder", str(tmp_path), "--hub-cpus", "2"]).hub_cpus == 2
+    with pytest.raises(SystemExit):
+        bench.parse_args(["--folder", str(tmp_path), "--hub-cpus", "0"])
+    assert bench.affinity_mask(2, 0b1111) == 0b11
+    assert bench.affinity_mask(1, 0b1111) == 0b1
+    assert bench.affinity_mask(2, 0b1010) == 0b1010                 # a machine that offers cores 1 and 3
+    assert bench.affinity_mask(16, (1 << 16) - 1) == (1 << 16) - 1
+    for n, available in ((3, 0b11), (0, 0b11), (1, 0)):
+        with pytest.raises(ValueError):
+            bench.affinity_mask(n, available)
+
+
+def test_the_hub_is_pinned_on_its_real_pid_and_the_bench_takes_the_rest_then_everything_is_restored():
+    system = bench.system_affinity()
+    if bin(system).count("1") < 2:
+        pytest.skip("one core: nothing to pin apart")
+    own = bench.process_affinity(os.getpid())
+    # The interpreter itself, not a venv launcher: the hub's pid is read the same way (hub.pid).
+    child = subprocess.Popen([getattr(sys, "_base_executable", None) or sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        hub_mask, bench_mask = bench.pin_hub(child.pid, 1)
+        assert hub_mask == bench.affinity_mask(1, system) and bench_mask == system & ~hub_mask and bench_mask
+        assert bench.process_affinity(child.pid) == hub_mask
+        assert bench.process_affinity(os.getpid()) == bench_mask
+    finally:
+        child.kill()
+        child.wait(timeout=20)
+        bench.set_process_affinity(os.getpid(), own)
+    assert bench.process_affinity(os.getpid()) == own
+    with pytest.raises(ValueError):
+        bench.pin_hub(os.getpid(), bin(system).count("1") + 1)
 
 
 def test_the_hub_processs_cpu_time_is_read_without_psutil_and_grows():
