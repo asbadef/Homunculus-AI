@@ -1483,8 +1483,9 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
   aynasına döner (sunucu süreci tümden donmuşsa sınır yetmez; o durumda cihazı köprünün kendi 2 sn
   sınırı korur).
   Köprünün rapor satırı `sorgu`, `sorgu_NF` ve `sorgu_api_hata` sayar; hiçbir numara loglanmaz.
-- **Servisler arası nakil** bugün kapalı (409 `transfer_unavailable`); açıldığında yeni kabul
-  kaydı protokolü taşımalı (açık madde O8, spec §12).
+- **Servisler arası nakil** bugün kapalı (409 `transfer_unavailable`). Açıldığında protokol aynı
+  kalır: nakil aynı gelişin içindedir, numara nakledilen kayıttan yeni kabul kaydına taşınır; etiket,
+  cihaza girilen numara ve kart değişmez (O8, kapandı).
 - **Geri dönüş** yalnız ilk protokollü kabulden önce temizdir: sonrasında açık kabullerin kartları
   protokolle anahtarlıdır ve eski API onları eşleştiremez — geri dönüş ileri bir düzeltme demektir.
 

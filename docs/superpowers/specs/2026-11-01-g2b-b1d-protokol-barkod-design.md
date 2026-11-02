@@ -306,12 +306,12 @@ cards that an older API would not match, so from then on rollback means a forwar
 - **O7:** a HIS (ADT) identity record with neither family nor given answers `found` with no name. D3
   makes the name the nurse's only safeguard. A kabul admission always carries a name, so only a
   PID-5-less HIS record can do this. The owner decides.
-- **O8:** `admission/service.py` `confirm_transfer_arrival` builds the arriving admission without
-  `protocol_no`, so its board key would be the H-number while the card stands under the protocol
-  (E3's split). This is unreachable while transfers are closed (409 `transfer_unavailable`). The
-  transfer slice moves the protocol to the arriving row or issues a new one
-  (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Its test pins that
-  `board_key` equals the card's key.
+- **O8 — closed (2026-11-02, [the O8 follow-up](2026-11-02-g2b-o8-nakil-protokol-design.md)):** a
+  transfer keeps the visit's protocol. `confirm_transfer_arrival` moves `protocol_no` from the
+  TRANSFERRED row to the arriving row, clearing and flushing the source first, because
+  `uq_admissions_tenant_protocol` allows one row per number. The card's key does not change
+  (`tests/test_admission_workflow.py`). The transfer routes stay closed (A-37); the slice that reopens
+  them records the moved number in the arrival's audit row.
 - **O9 (local walk W-1):** the bridge's 2 s bound is urllib's socket timeout and does not cover
   name resolution. With the api container stopped, Docker's DNS fails `api` after about 4 s, so the
   device waits about 4 s for the mirror's answer (0.37 s with the API up). That is inside the 10 s
