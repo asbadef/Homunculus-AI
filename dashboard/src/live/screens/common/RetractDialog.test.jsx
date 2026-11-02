@@ -36,6 +36,11 @@ const confirm = () => act(async () => {
   fireEvent.click(within(dialog()).getByRole("button", { name: "Səhv qeyd kimi işarələ" }));
   await settle();
 });
+// Enter in the reason box: the form's submit (user-event is not installed here, and jsdom has no implicit submission).
+const enter = () => act(async () => {
+  fireEvent.submit(within(dialog()).getByRole("textbox").closest("form"));
+  await settle();
+});
 const armed = () => act(() => { vi.advanceTimersByTime(RETRACT_ARM_MS); });
 const toasted = (text) => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(text);
 
@@ -52,6 +57,38 @@ describe("«hatalı giriş»", () => {
     expect(dialog()).toHaveTextContent("4 / 10 simvol");
     await confirm();
     expect(onRetract).not.toHaveBeenCalled();
+  });
+
+  it("counts the ten characters after trimming: nine are held back, ten are sent trimmed", async () => {
+    const { onRetract } = await open();
+    armed();
+    reason("   123456789   ");
+    expect(dialog()).toHaveTextContent("9 / 10 simvol");
+    await confirm();
+    expect(onRetract).not.toHaveBeenCalled();
+    reason("   1234567890   ");
+    expect(dialog()).toHaveTextContent("10 / 10 simvol");
+    await confirm();
+    expect(onRetract).toHaveBeenCalledTimes(1);
+    expect(onRetract).toHaveBeenCalledWith("1234567890");
+  });
+
+  it("Enter in the reason box presses the button: ignored in the arming window, a withdrawal after it", async () => {
+    const { onRetract, onDone } = await open();
+    reason(REASON);
+    await enter();
+    expect(onRetract).not.toHaveBeenCalled();
+    armed();
+    await enter();
+    expect(onRetract).toHaveBeenCalledWith("yazım hatası, 16 idi");
+    expect(onDone).toHaveBeenCalledWith("retracted");
+  });
+
+  // Focus lands on the reason box, so the value and the intro are never read unless the box describes itself by them.
+  it("the reason box is described by the value line and by what a withdrawal does", async () => {
+    await open();
+    expect(within(dialog()).getByRole("textbox")).toHaveAccessibleDescription(
+      /Tənəffüs: 26 \/dəq · ölçmə 10:00.*Əməliyyat audit jurnalına yazılır\./);
   });
 
   it("ignores a press in its first RETRACT_ARM_MS, then withdraws with the trimmed reason", async () => {
@@ -76,6 +113,39 @@ describe("«hatalı giriş»", () => {
     // səhv qeyd kimi işarələnib.»).
     expect(toasted("REA-01 · 2: işarələnmədi — bu değer zaten hatalı giriş olarak işaretlenmiş").length).toBeGreaterThan(0);
     expect(onDone).toHaveBeenCalledWith("already");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  // The engine's RETRACT_DISCHARGED is a 409 too, and it wrote nothing: the value still scores, so the host must
+  // not be told «already» and must not strike the row (D11).
+  it("a 409 that is not «already» — a discharged patient — is said in the engine's words and marks nothing", async () => {
+    const { onDone, onClose } = await open(() => Promise.reject(refusal(409, "taburcu edilmiş bir hastada değer geri alınamaz")));
+    armed();
+    reason(REASON);
+    await confirm();
+    // Task 11 maps this sentence: until then the engine's Turkish is shown as written.
+    expect(toasted("REA-01 · 2: işarələnmədi — taburcu edilmiş bir hastada değer geri alınamaz").length).toBeGreaterThan(0);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("a 403 says she may not, closes the dialog and marks nothing", async () => {
+    const { onDone, onClose } = await open(() => Promise.reject(refusal(403, "forbidden")));
+    armed();
+    reason(REASON);
+    await confirm();
+    expect(toasted("REA-01 · 2: işarələnmədi — ölçmə daxil etmək hüququnuz yoxdur").length).toBeGreaterThan(0);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("a 404 — no such hand entry — closes the dialog and marks nothing", async () => {
+    const { onDone, onClose } = await open(() => Promise.reject(refusal(404, "böyle bir elle girilmiş değer yok")));
+    armed();
+    reason(REASON);
+    await confirm();
+    expect(toasted(/^REA-01 · 2: işarələnmədi — /).length).toBeGreaterThan(0);
+    expect(onDone).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
 

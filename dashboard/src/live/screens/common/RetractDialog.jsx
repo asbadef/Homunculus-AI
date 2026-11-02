@@ -11,8 +11,9 @@
 // double click's second press.
 //
 // THE ENGINE DECIDES (D11), and its refusal is said on the toast, named after the bed, in its own words. «Already
-// withdrawn» (another desk got there first) closes the dialog and the host reads again; «no such hand entry» and
-// «discharged» close it; a reason the engine finds short keeps it open. A 403 closes it. A withdrawal with no
+// withdrawn» (another desk got there first — by its sentence, RETRACT_ALREADY; the engine's other 409, «discharged»,
+// is NOT it) closes the dialog and the host marks the row; «no such hand entry» and «discharged» close it with no
+// outcome, since nothing was written; a reason the engine finds short keeps it open. A 403 closes it. A withdrawal with no
 // answer may have landed (`mayHaveLanded`): she is told to look at the chart, the host reads again, the dialog
 // closes. A store that dropped its answer (null: the session ended) says nothing. `onDone(outcome)` tells the
 // host how it ended: "retracted" | "already" | "uncertain".
@@ -26,6 +27,14 @@ import { mayHaveLanded } from "../admin/refusal.js";
 export const RETRACT_MIN_REASON_CHARS = 10;
 /** How long the confirm button ignores a press after the dialog opened. */
 export const RETRACT_ARM_MS = 600;
+/** The engine's RETRACT_ALREADY (api/clinical.py): the ONE 409 that means another desk withdrew the value first. The
+ *  engine's other 409, RETRACT_DISCHARGED («taburcu edilmiş bir hastada değer geri alınamaz»), wrote nothing — the
+ *  value still scores — so it is not «already» and must not strike a row (D11). */
+export const RETRACT_ALREADY = "bu değer zaten hatalı giriş olarak işaretlenmiş";
+
+/** Did the engine say that another desk withdrew it first? By its sentence, which the error keeps whatever
+ *  `errors.*` text Task 11 later shows for it (the key sweep, rawKeys.test.jsx, forbids naming a key before it exists). */
+const saidAlready = (err) => err?.status === 409 && String(err.message ?? "").trim() === RETRACT_ALREADY;
 
 /** `bed` names the patient in the title and on the toast; `what` is `{ label, value, time }` as the clinician
  *  reads them (the value with its unit, the time with its day when it is not today's). `onRetract(reason)` is
@@ -42,6 +51,8 @@ export function RetractDialog({ bed, what, onRetract, onDone, onClose }) {
   const mounted = useRef(false);
   const formId = useId();
   const countId = useId();
+  const whatId = useId();
+  const introId = useId();
   // The arming window starts when the dialog does. True inside the effect (the house pattern), so StrictMode's
   // rehearsal does not leave it false; the rehearsal's timer is cleared with it.
   useEffect(() => {
@@ -76,7 +87,7 @@ export function RetractDialog({ bed, what, onRetract, onDone, onClose }) {
         const said = forbidden ? t("olcum.noRight") : apiErrorText(t, err);
         done = {
           say: [t("olcum.retractRefused", { subject: bed, reason: said }), "error"],
-          outcome: err?.status === 409 && !forbidden ? "already" : null,
+          outcome: saidAlready(err) ? "already" : null,
           close: err?.status !== 400,
         };
       }
@@ -113,11 +124,14 @@ export function RetractDialog({ bed, what, onRetract, onDone, onClose }) {
     >
       {/* Enter in the reason box presses the button: the same checks, and no `detail`. */}
       <form id={formId} noValidate onSubmit={(event) => { event.preventDefault(); confirm(); }}>
-        <p className="m-0 font-data text-14.5 font-semibold">{t("olcum.retractWhat", what)}</p>
-        <Note tone="warn" icon="alert" className="mt-2">{t("olcum.retractIntro")}</Note>
+        <p id={whatId} className="m-0 font-data text-14.5 font-semibold">{t("olcum.retractWhat", what)}</p>
+        <Note tone="warn" icon="alert" className="mt-2"><span id={introId}>{t("olcum.retractIntro")}</span></Note>
         <div className="mt-3">
+          {/* Focus lands in this box, so a screen reader never meets the value line or the intro above it: the box
+              carries them as its description (Field keeps this and adds its own). */}
           <Field label={t("olcum.retractReason")} layout="col" required>
-            <Input autoFocus autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} readOnly={busy} />
+            <Input autoFocus autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} readOnly={busy}
+              aria-describedby={`${whatId} ${introId}`} />
           </Field>
         </div>
       </form>
