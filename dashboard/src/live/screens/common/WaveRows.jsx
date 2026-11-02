@@ -4,8 +4,9 @@
 // full-screen view.
 //
 // What a row SAYS is DOM text, not pixels, so a screen reader and a test read it: its label, its
-// unit or "göreli", the evidence word and — over the trace — "sinyal yok", "akış durdu · N sn" or
-// "akış durdu · N sn · iz kaldırıldı". No number made from a sample is ever printed (spec §5.4).
+// unit or "göreli", the evidence word and — over the trace, on the row's own ground — "dalga
+// bekleniyor", "sinyal yok", "akış durdu · N sn" or "akış durdu · N sn · iz kaldırıldı". No number
+// made from a sample is ever printed (spec §5.4).
 // A stalled row is drawn frozen and faded; a cleared one is blank. Colours are plain ink (white on
 // the full-screen black): a monitor value is never dressed in a vital's colour (the strip's
 // Decision 14).
@@ -59,8 +60,14 @@ function fit(canvas) {
 function paint(canvas, size, view) {
   const ctx = canvas?.getContext?.("2d");
   if (!ctx) return;
+  // The whole backing store is cleared, in device pixels, before anything is drawn in CSS pixels.
+  // The store is round(CSS size × dpr) pixels, so a clear in CSS pixels under the dpr transform can
+  // stop half a pixel short of its last column (866 × 1.25 = 1082.5 of 1083). A GPU-rastered canvas
+  // then never clears that column, and every stroke that ever touched the right edge piled up there:
+  // a vertical line over the trace's whole height, a line where there is no data (walk 2026-11-02, P3).
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
-  ctx.clearRect(0, 0, size.width, size.height);
   if (view.paths.length === 0 && view.grid.length === 0) return;
   const color = (typeof getComputedStyle === "function" && getComputedStyle(canvas).color) || "#888888";
   ctx.strokeStyle = color;
@@ -131,7 +138,9 @@ export function WaveRows({ device, tall = false, raf = defaultRaf, caf = default
         const size = fit(canvas);
         const view = rowView(d.blocks[row.id] ?? [], row.kind, head, size, ranges.get(row.id) ?? null, dt);
         ranges.set(row.id, view.range ?? null);
-        paint(canvas, size, view);
+        // A canvas measuring 0 (not laid out, or hidden) is not drawn on: fit() has emptied it. Its
+        // row still says its state below.
+        if (size.width > 0 && size.height > 0) paint(canvas, size, view);
         next[row.id] = { state: view.state, seconds: view.silentS === null ? null : Math.floor(view.silentS) };
       }
       setStates((previous) => (sameStates(previous, next) ? previous : next));
@@ -160,8 +169,12 @@ export function WaveRows({ device, tall = false, raf = defaultRaf, caf = default
                 className={`block h-full w-full ${tall ? "text-white" : "text-ink"} ${s?.state === "stalled" ? "opacity-40" : ""}`}
               />
               {text ? (
-                <p className={`pointer-events-none absolute inset-0 m-0 grid place-items-center font-text text-12 font-semibold ${tall ? "text-amber-300" : "text-att-ink"}`}>
-                  {text}
+                <p className="pointer-events-none absolute inset-0 m-0 grid place-items-center font-text text-12 font-semibold">
+                  {/* On the row's own ground (the panel's card, the full screen's black), so a frozen
+                      trace does not run through the words. */}
+                  <span className={`rounded-ctl px-1.5 py-0.5 ${tall ? "bg-black text-amber-300" : "bg-card text-att-ink"}`}>
+                    {text}
+                  </span>
                 </p>
               ) : null}
             </div>

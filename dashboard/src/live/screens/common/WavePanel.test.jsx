@@ -13,12 +13,20 @@ import {
 } from "../../data/waves.testutil.js";
 import { WavePanel } from "./WavePanel.jsx";
 
-/** A 2D context that keeps what it was asked to draw, in order: ["B"] beginPath, ["M", x, y], ["L", x, y]. */
+/** A 2D context that keeps what it was asked to draw, in order: ["B"] beginPath, ["M", x, y], ["L", x, y];
+ *  and, in `cleared`, every clearRect as the device-pixel box [x0, y0, x1, y1] it covered under the
+ *  transform set at the time. */
 function mockContext() {
   const ops = [];
+  const cleared = [];
+  let m = [1, 0, 0, 1, 0, 0];
   return {
-    ops,
-    setTransform: vi.fn(), clearRect: vi.fn(), stroke: vi.fn(), closePath: vi.fn(), fill: vi.fn(),
+    ops, cleared,
+    setTransform: vi.fn((...next) => { m = next; }),
+    clearRect: vi.fn((x, y, w, h) => {
+      cleared.push([m[4] + m[0] * x, m[5] + m[3] * y, m[4] + m[0] * (x + w), m[5] + m[3] * (y + h)]);
+    }),
+    stroke: vi.fn(), closePath: vi.fn(), fill: vi.fn(),
     beginPath: vi.fn(() => { ops.push(["B"]); }),
     moveTo: vi.fn((x, y) => { ops.push(["M", x, y]); }),
     lineTo: vi.fn((x, y) => { ops.push(["L", x, y]); }),
@@ -171,6 +179,60 @@ describe("the waveform panel", () => {
     frame(10000);
     expect(within(rowOf("ecg")).getByText("akış durdu · 10 sn · iz kaldırıldı")).toBeInTheDocument();
     expect(lines("ecg")).toBe(0);
+  });
+
+  it("clears each canvas whole, in device pixels, every frame: its last column too (walk P3)", async () => {
+    // 866 CSS px at a devicePixelRatio of 1.25 is 1082.5 device px, so the backing store is 1083 wide.
+    // A clear in CSS px under the 1.25 transform stops on the centre of that last column, which a
+    // GPU-rastered canvas then never clears: every stroke that touched the right edge piled up there
+    // as a vertical line over the trace's whole height (the walk's shot 06; reproduced in Chrome 156).
+    vi.stubGlobal("devicePixelRatio", 1.25);
+    vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(866);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(56);
+    const { frame } = await show();
+    const kinds = ["ecg", "pressure", "pleth", "resp"];
+    frame(0);
+    for (const perfMs of [16, 33, 50]) {
+      const before = new Map(kinds.map((kind) => [kind, ctxOf(kind).cleared.length]));
+      frame(perfMs);
+      for (const kind of kinds) {
+        const canvas = rowOf(kind).querySelector("canvas");
+        expect([canvas.width, canvas.height], kind).toEqual([1083, 70]);
+        const clears = ctxOf(kind).cleared.slice(before.get(kind));
+        const whole = clears.some(([x0, y0, x1, y1]) => x0 <= 0 && y0 <= 0 && x1 >= canvas.width && y1 >= canvas.height);
+        expect(whole, `${kind} at ${perfMs} ms cleared ${JSON.stringify(clears)}`).toBe(true);
+      }
+    }
+  });
+
+  it("draws nothing on a canvas that measures 0 px, and still says what the row is", async () => {
+    const width = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(0);
+    const { frame } = await show();
+    frame(0);
+    for (const kind of ["ecg", "pressure", "pleth", "resp"]) {
+      expect(ctxOf(kind)?.ops.filter(([op]) => op !== "B") ?? [], kind).toEqual([]);   // no point piled on x 0
+      expect(rowOf(kind).querySelector("canvas").dataset.state, kind).toBe("live");
+    }
+    width.mockReturnValue(600);
+    frame(16);
+    expect(lines("ecg")).toBeGreaterThan(10);
+  });
+
+  it("says 'dalga bekleniyor', not 'akış durdu', and draws nothing until its data reaches the render time (walk P2)", async () => {
+    // A hub restarted 1.4 s ago holds 1006.6–1008.0 s. At frame 0 the head is 1008.2 s, so the render
+    // time (head − 2 s) is 1006.2 s: before the first block, with nothing in the window to draw.
+    const fresh = (id, samples) => run(id, { seconds: 1.4, samples });
+    const { frame } = await show({ reply: () => answer([...fresh(259), ...fresh(769, 4000), ...fresh(6422), ...fresh(513)]) });
+    frame(0);
+    for (const kind of ["ecg", "pressure", "pleth", "resp"]) {
+      expect(within(rowOf(kind)).getByText("dalga bekleniyor"), kind).toBeInTheDocument();
+      expect(rowOf(kind).querySelector("canvas").dataset.state, kind).toBe("waiting");
+      expect(lines(kind), kind).toBe(0);
+    }
+    expect(within(panel()).queryByText(/akış durdu/)).toBeNull();
+    frame(1000);                                   // render time 1007.2: the data is on screen
+    for (const kind of ["ecg", "pleth", "resp"]) expect(lines(kind), kind).toBeGreaterThan(10);
+    expect(within(panel()).queryByText("dalga bekleniyor")).toBeNull();
   });
 
   it("keeps the trace it has and says the stream is missing when a poll fails", async () => {

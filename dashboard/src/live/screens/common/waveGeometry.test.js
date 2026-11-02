@@ -102,6 +102,20 @@ describe("what a row says about its data", () => {
     expect(rowView(ECG, "ecg", T_END + 10, ROW).paths).toEqual([]);
   });
 
+  it("waits, and draws nothing, while its data starts after the render time (a hub ring refilling, walk P2)", () => {
+    const fresh = run(259, { seconds: 1.4 });                           // 1006.6–1008.0: a hub up for 1.4 s
+    expect(rowView(fresh, "ecg", T_END + 0.2, ROW)).toMatchObject({ state: "waiting", paths: [] });  // render time 1006.2
+    expect(rowView(fresh, "ecg", T_END + 0.7, ROW).state).toBe("live");                              // 1006.7: on it
+    // After a gap wider than the window, the old run is off the row and the new one not yet on it.
+    expect(rowView([...run(259, { end: 990 }), ...fresh], "ecg", T_END + 0.2, ROW))
+      .toMatchObject({ state: "waiting", paths: [] });
+    // A gap that leaves the old run's tail on the row is drawn as a gap: live, the tail on screen.
+    const tail = rowView([...run(259, { end: 1003 }), ...fresh], "ecg", T_END + 0.2, ROW);
+    expect(tail.state).toBe("live");
+    expect(tail.paths).toHaveLength(1);
+    expect(rowView(fresh, "pleth", T_END + 0.2, ROW).paths).toEqual([]);
+  });
+
   it("reads the block under the render time, not the newest: a no-signal tail says so only once on screen", () => {
     const tail = ECG.map((b) => (b.t >= 1007 ? { ...b, samples: null } : b));
     expect(rowState(tail, T_END + 0.2).state).toBe("live");           // render time 1006.2: live data
@@ -211,6 +225,33 @@ describe("the trace", () => {
     const eased = easeRange({ lo: 0, hi: 100 }, { lo: 20, hi: 80 }, 2);
     expect(eased.lo).toBeCloseTo(20 * (1 - Math.exp(-1)), 9);           // narrows slowly
     expect(easeRange({ lo: 0, hi: 100 }, { lo: -50, hi: 150 }, 0.016)).toEqual({ lo: -50, hi: 150 });  // widens at once
+  });
+
+  it("puts every point on its row and in time order: x within [0, width], rising along each path (walk P3)", () => {
+    // Whatever the head (live, frozen, stalled), the width, a gap, a no-signal block or a block a
+    // millisecond off its neighbour: never a point past an edge, never two on one x (a vertical stroke).
+    const shifted = ECG.map((b) => (b.t === 1006 ? { ...b, t: 1006.001 } : b));
+    const messy = shifted.filter((b) => b.t !== 1003).map((b) => (b.t === 1005 ? { ...b, samples: null } : b));
+    let checked = 0;
+    for (const width of [600, 866, 1083, 37, 1]) {
+      for (let k = 0; k <= 120; k += 1) {
+        const head = T_END - 3 + k * 0.1;
+        for (const kind of ["ecg", "pleth"]) {
+          for (const path of rowView(messy, kind, head, { width, height: 56 }).paths) {
+            const xs = path.filter((_, i) => i % 2 === 0);
+            expect(xs.every((x) => x >= 0 && x <= width), `${width} px, head ${head}`).toBe(true);
+            expect(xs.every((x, i) => i === 0 || x > xs[i - 1]), `${width} px, head ${head}`).toBe(true);
+            checked += xs.length;
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(100000);
+  });
+
+  it("draws nothing on a row 0 px wide: no pile of points on one x", () => {
+    expect(rowView(ECG, "ecg", T_END + 0.2, { width: 0, height: 60 }).paths).toEqual([]);
+    expect(tracePaths(ECG, { leftS: 1000.2, rightS: 1006.2, width: 0, y: ecgY(60) }).paths).toEqual([]);
   });
 
   it("stops at the data's end when the render time has passed it (frozen), draws nothing once cleared", () => {

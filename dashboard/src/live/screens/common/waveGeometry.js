@@ -8,9 +8,10 @@
 // Time is the MONITOR's clock (`t`, device seconds). `headAt` is where that clock stands now: the
 // store's last sample (the newest block's end plus how long ago the worker received it) carried
 // forward on this browser's monotonic clock, `nextAnchor` smoothing the poll-to-poll jitter. A row
-// draws WINDOW_S of it, ending DELAY_S behind the head; when the data ends before that, the row
-// stops there (frozen), greys after GREY_AFTER_S more, and is cleared CLEAR_AFTER_S after the data's
-// end. Gaps and "no signal" blocks break the line; nothing is ever drawn where there is no sample.
+// draws WINDOW_S of it, ending DELAY_S behind the head; while its data starts after that, it waits;
+// when the data ends before that, the row stops there (frozen), greys after GREY_AFTER_S more, and
+// is cleared CLEAR_AFTER_S after the data's end. Gaps and "no signal" blocks break the line;
+// nothing is ever drawn where there is no sample, and no point lies outside its row.
 import { WAVE_BLOCK_S } from "../../data/waveStore.js";
 
 export const DELAY_S = 2.0;
@@ -89,18 +90,24 @@ export function blockAt(blocks, s) {
   return lo === 0 ? null : blocks[lo - 1];
 }
 
-/** What a row says of its data at head `headS`: waiting (nothing yet), live, nosignal (the block
- *  at its right edge is "no signal"), stalled (the data ended more than GREY_AFTER_S before the
- *  render time) or cleared (no data for CLEAR_AFTER_S). `silentS`: how long since the data's end,
- *  in device seconds — the N of "akış durdu · N sn". `endS`: that end. */
+/** What a row says of its data at head `headS`: waiting (nothing to draw yet: no data, or data that
+ *  starts after the render time), live, nosignal (the block at its right edge is "no signal"),
+ *  stalled (the data ended more than GREY_AFTER_S before the render time) or cleared (no data for
+ *  CLEAR_AFTER_S). `silentS`: how long since the data's end, in device seconds — the N of "akış
+ *  durdu · N sn". `endS`: that end. */
 export function rowState(blocks, headS) {
   if (!blocks?.length || !Number.isFinite(headS)) return { state: "waiting", silentS: null, endS: null };
   const endS = blocks[blocks.length - 1].t + WAVE_BLOCK_S;
   const silentS = Math.max(0, headS - endS);
   if (silentS >= CLEAR_AFTER_S) return { state: "cleared", silentS, endS };
   if (silentS - DELAY_S > GREY_AFTER_S) return { state: "stalled", silentS, endS };
-  const edge = blockAt(blocks, Math.min(headS - DELAY_S, endS - 1e-6));
-  if (edge && edge.samples === null) return { state: "nosignal", silentS, endS };
+  const renderS = Math.min(headS - DELAY_S, endS - 1e-6);
+  const edge = blockAt(blocks, renderS);
+  // The data is all after the render time — a hub ring refilling after a restart, or the far side of
+  // a gap wider than the window: nothing to draw yet, and the row says so rather than stay blank
+  // with no word (walk 2026-11-02, P2). Never a stall: the data runs on past the render time.
+  if (!edge || edge.t + WAVE_BLOCK_S <= renderS - WINDOW_S) return { state: "waiting", silentS, endS };
+  if (edge.samples === null) return { state: "nosignal", silentS, endS };
   return { state: "live", silentS, endS };
 }
 
@@ -188,7 +195,9 @@ export function rangeY(height, range) {
 export function tracePaths(blocks, { leftS, rightS, width, y }) {
   const paths = [];
   const clips = [];
-  const scale = rightS > leftS ? width / (rightS - leftS) : 0;
+  // No width (or no window) is nowhere to put a sample: each would land on x 0, one vertical stroke.
+  if (!(width > 0) || !(rightS > leftS)) return { paths, clips };
+  const scale = width / (rightS - leftS);
   let current = null;
   let lastEnd = null;
   let clipping = null;           // the edge the trace is beyond now, or null
