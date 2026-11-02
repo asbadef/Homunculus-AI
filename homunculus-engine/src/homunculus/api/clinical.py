@@ -12,10 +12,13 @@ because `suspected_infection` had nowhere to come from.
 
 Two rules shape this module:
 
-1. **A clinician may chart only what a clinician observes.** Device channels are not writable
-   here. A hand-typed heart rate would be indistinguishable from a monitored one the moment it
-   landed, and the board would have no way to tell a reading from a typo. One device-derived flag
-   is the exception: `ON_RESP_SUPPORT` (G2-A4, X16 — see its `CHARTABLE` entry for why).
+1. **A typed value is always told from a measured one.** Every observation this door builds is
+   stamped `source_device` "clinician", and the board prints it «elle». Until G3-01 the device
+   channels were not writable here at all. Since then the bedside set — the five vitals and MAP — is
+   (G3-01, D5): the ward's HIS feed that carried a nurse's vitals is silent, and the monitors feed
+   only the shadow engine. A wrong hand entry is withdrawn as «hatalı giriş», never edited
+   (`api/app.py`, the retract route, which rebuilds the patient without it). One device-derived flag
+   was chartable before them: `ON_RESP_SUPPORT` (G2-A4, X16 — see its `CHARTABLE` entry for why).
 
 2. **Every entry is attributable.** The audit record names the account that charted it. A
    clinical fact with no author is not evidence.
@@ -80,6 +83,15 @@ CHARTABLE: dict[SignalCode, str] = {
     SignalCode.POTASSIUM: "mmol/L",
     SignalCode.HAEMATOCRIT: "%",
     SignalCode.WHITE_CELL_COUNT: "10^3/mm3",
+    # G3-01 (D5, X6): the bedside set a nurse measures and types — the five vitals and MAP. Each keeps the
+    # provenance `build_entries` stamps ("clinician"), which the board prints as «elle». The units are the
+    # trend endpoint's (`api/trends.py` `_UNITS`), pinned equal by tests/test_bedside_door.py; no rule reads one.
+    SignalCode.RESP_RATE: "/min",
+    SignalCode.SPO2: "%",
+    SignalCode.SBP: "mmHg",
+    SignalCode.MAP: "mmHg",
+    SignalCode.HEART_RATE: "/min",
+    SignalCode.TEMPERATURE: "°C",
 }
 
 # Bounds that catch a slipped decimal point or a wrong unit, not clinical judgement. They are
@@ -114,11 +126,34 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.BILIRUBIN: (0.0, 60.0),            # mg/dL
     SignalCode.CREATININE: (0.0, 40.0),           # mg/dL
     SignalCode.PAO2_FIO2: (20.0, 700.0),          # mmHg (CHARTABLE: "ratio")
+    # G3-01 (D6): the bedside set's slip bounds — a slipped digit or a unit, never a clinical threshold: NEWS2's
+    # bands live in rules/news2.py alone. MAP's is the SOFA correction's (X7).
+    SignalCode.RESP_RATE: (0.0, 80.0),            # /min
+    SignalCode.SPO2: (0.0, 100.0),                # %
+    SignalCode.SBP: (0.0, 300.0),                 # mmHg
+    SignalCode.MAP: (0.0, 300.0),                 # mmHg
+    SignalCode.HEART_RATE: (0.0, 300.0),          # /min
+    SignalCode.TEMPERATURE: (25.0, 45.0),         # °C
 }
 
 # G2-A4 review: the refusal of a GCS that is not a whole number — at this door, and for a SOFA correction
 # (api/app.py `_sofa_to_sign`), in one sentence.
 GCS_NOT_WHOLE = "GCS tam sayı olmalı"
+
+#: G3-01 (D6): the bedside values counted in whole units, as a monitor shows them and the form asks for them.
+WHOLE_VITALS = frozenset({SignalCode.RESP_RATE, SignalCode.SPO2, SignalCode.SBP, SignalCode.MAP,
+                          SignalCode.HEART_RATE})
+NOT_WHOLE = "{code}: tam sayı olmalı"
+#: G3-01 (D6): within one request — one form — the mean pressure is below the systolic.
+MAP_NOT_BELOW_SBP = "MAP sistolik basınçtan küçük olmalı"
+#: G3-01 (D7, X12): the six codes this slice opened, held to the measurement-time rule when a time is sent:
+#: at most a day back, never ahead (two minutes of clock skew allowed). The other codes keep today's rule.
+BEDSIDE_VITALS = frozenset({SignalCode.RESP_RATE, SignalCode.SPO2, SignalCode.SBP, SignalCode.MAP,
+                            SignalCode.HEART_RATE, SignalCode.TEMPERATURE})
+BEDSIDE_BACKDATE = timedelta(hours=24)
+BEDSIDE_SKEW = timedelta(minutes=2)
+AT_TOO_OLD = "ölçüm saati en çok 24 saat geriye alınabilir"
+AT_FUTURE = "ölçüm saati ileri olamaz"
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,
@@ -175,6 +210,9 @@ def _value(code: SignalCode, raw) -> float:
         # G2-A4 review: the scale counts whole points, so 14.5 is a slip, not an assessment — and between
         # two bands of the SOFA table it would be scored as one of them without anyone having said which.
         raise ClinicalEntryError(GCS_NOT_WHOLE)
+    if code in WHOLE_VITALS and not value.is_integer():
+        # G3-01 (D6): 88.5 beats a minute is a slip, not a reading.
+        raise ClinicalEntryError(NOT_WHOLE.format(code=code.value))
     low, high = PLAUSIBLE.get(code, (float("-inf"), float("inf")))
     if not (low <= value <= high):
         raise ClinicalEntryError(
@@ -184,7 +222,8 @@ def _value(code: SignalCode, raw) -> float:
 
 
 def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
-                  recorded_at: datetime | None = None) -> list[ChartedEntry]:
+                  recorded_at: datetime | None = None,
+                  now: datetime | None = None) -> list[ChartedEntry]:
     """Turn a charting request into observations, or raise with a reason.
 
     All-or-nothing: one bad entry rejects the whole request rather than charting some of it.
@@ -221,7 +260,24 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
             ),
             charted_by=charted_by,
         ))
+    _check_bedside(built, recorded_at, now or datetime.now(timezone.utc))
     return built
+
+
+def _check_bedside(built: list[ChartedEntry], recorded_at: datetime | None, now: datetime) -> None:
+    """G3-01 (D6, D7, X12): the bedside set's two rules that read more than one value. The time is bounded
+    only when one was sent (an untouched time is the server's clock), and only for a request that charts one
+    of the six; MAP is compared with a systolic in the SAME request — one form's two numbers, not an older
+    reading's. Raises with the clinician's sentence; all-or-nothing, as the loop above."""
+    codes = {item.observation.code for item in built}
+    if recorded_at is not None and codes & BEDSIDE_VITALS:
+        if recorded_at < now - BEDSIDE_BACKDATE:
+            raise ClinicalEntryError(AT_TOO_OLD)
+        if recorded_at > now + BEDSIDE_SKEW:
+            raise ClinicalEntryError(AT_FUTURE)
+    values = {item.observation.code: item.observation.value for item in built}
+    if SignalCode.MAP in values and SignalCode.SBP in values and values[SignalCode.MAP] >= values[SignalCode.SBP]:
+        raise ClinicalEntryError(MAP_NOT_BELOW_SBP)
 
 
 def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifier: Notifier,

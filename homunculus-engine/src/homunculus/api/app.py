@@ -108,15 +108,25 @@ REHYDRATE_PAGE = 5000
 #: `complete: false` when the tenant's trail held more, as for any partial run.
 AUDIT_VERIFY_LIMIT_MAX = 50000
 
-#: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE, and one for
-#: MAP, which the door does not need (MAP is not chartable there) but the cardiovascular row's MAP can be
-#: corrected. An engineering slip bound against a slipped digit (9000 for 90) or a unit, far outside any
-#: pressure a monitor reports; never a clinical threshold — the SOFA table stays the only judge of a value.
-CORRECTION_BOUNDS = {**PLAUSIBLE, SignalCode.MAP: (0.0, 300.0)}
+#: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE. G3-01 (X7): MAP,
+#: once an extra bound here (the door did not take it), is in PLAUSIBLE now with the same 0–300 mmHg. An
+#: engineering slip bound against a slipped digit (9000 for 90) or a unit, never a clinical threshold — the
+#: SOFA table stays the only judge of a value.
+CORRECTION_BOUNDS = PLAUSIBLE
 
 #: G2-A4 (D12, X20): the shape of a preview's fingerprint (`scoring/signing.py` `form_digest`) — SHA-256 as
 #: 64 lowercase hex digits. A signature without one is refused before any fingerprint is compared.
 FORM_DIGEST_SHAPE = re.compile(r"[0-9a-f]{64}")
+
+
+def _recorded_at(body: dict) -> datetime | None:
+    """A charting request's measurement time, or None for the server's clock (G3-01: the door and its
+    preview read it alike)."""
+    stamp = body.get("recorded_at")
+    try:
+        return datetime.fromisoformat(stamp) if stamp else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="geçersiz recorded_at") from None
 
 
 @dataclass(frozen=True)
@@ -981,16 +991,14 @@ def create_app(
         _require(caller, CLINICAL_CHART)
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
-        stamp = body.get("recorded_at")
-        try:
-            recorded_at = datetime.fromisoformat(stamp) if stamp else None
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="geçersiz recorded_at") from None
-
+        recorded_at = _recorded_at(body)
+        # One wall-clock instant per request, as in /ingest (G2-A2, X10) — taken before the entries are
+        # built, because the bedside set's time bound is judged at it (G3-01, D7); the loop below runs at it.
+        now = datetime.now(timezone.utc)
         try:
             charted = build_entries(patient_id, body.get("entries") or [],
                                     charted_by=_charted_by(caller),
-                                    recorded_at=recorded_at)
+                                    recorded_at=recorded_at, now=now)
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -1005,9 +1013,8 @@ def create_app(
 
         engine = _engine(hospital)
         store = _store(hospital)
-        # One wall-clock instant per request, as in /ingest (G2-A2, X10); the loop itself is
-        # `chart_observations` (G2-A11, D8 — X62), shared with the admission form.
-        now = datetime.now(timezone.utc)
+        # The loop itself is `chart_observations` (G2-A11, D8 — X62), shared with the admission form, run at
+        # the request's one instant (`now`, above).
         alerts = chart_observations(engine, store, audit, notifier, hospital, patient_id, charted,
                                     now, escalate_after,
                                     mirror=lambda o: app.state.shadow_mirror(hospital, o, now))

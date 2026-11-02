@@ -152,8 +152,11 @@ class TestTheEvaluationInstant:
 
 
 class TestWhatMayNotBeCharted:
-    def test_a_device_channel_cannot_be_typed_in_by_hand(self, client):
-        """A hand-typed heart rate would be indistinguishable from a monitored one."""
+    def test_a_code_outside_the_chartable_set_says_it_comes_from_a_device(self, client, monkeypatch):
+        """G3-01 (X8): since the bedside set opened, every signal is chartable. A typed value is told from a
+        monitored one by its source («elle» on the board), and the refusal stays for the next device-only code."""
+        from homunculus.api import clinical
+        monkeypatch.delitem(clinical.CHARTABLE, SignalCode.HEART_RATE)
         r = _chart(client, "bed-3", [{"code": "heart_rate", "value": 88}])
         assert r.status_code == 400
         assert "cihazdan" in r.json()["detail"]
