@@ -811,7 +811,10 @@ device token `/ingest` uses), at most 2 seconds — and answers:
 
 The 2 seconds are urllib's socket timeout, which bounds each socket operation (connect, send, each
 read), not the whole request; on the compose network that is enough, the same as for
-`uplink.post_json`.
+`uplink.post_json`. It does not cover name resolution: while the api container is stopped (a
+restart during a deploy), Docker's DNS takes about 4 s to say `api` is unknown, so such a query is
+answered from the mirror after about 4 s instead of 2 (walk W-1, spec §12 O9) — still inside the
+10 s NCE gives its patient-query host.
 
 The `PID` of a found number is `PID|||<id>||<family>^<given>||<birth date>|<sex>`.
 

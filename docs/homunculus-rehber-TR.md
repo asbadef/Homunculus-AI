@@ -1475,7 +1475,9 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
     verip vermediği de aynı oturumda doğrulanacak (spec §12, O3). Yine de kaydederse ölçüm bugünkü gibi
     adsız «kimlik kaydı yok» kartına düşer;
   - **API cevap vermedi** → köprü kendi aynasından cevaplar; aynada da yoksa numarayı adsız geri
-    yollar. Ölçüm kaybolmaz; «bilmiyoruz» ile «bulunamadı» ayrı kalır.
+    yollar. Ölçüm kaybolmaz; «bilmiyoruz» ile «bulunamadı» ayrı kalır. API konteyneri durmuşsa
+    (örneğin bir kurulum sırasında) cevap yaklaşık 4 sn sürer: 2 sn sınırı ad çözümünü kapsamaz
+    (yerel yürüyüş W-1, açık madde O9); yine de NCE'nin tanıdığı 10 sn'nin içindedir.
   API'nin kimlik deposunun Postgres süre sınırı vardır (kimlikte 2 sn; Lane A'nın pg-bounds
   dilimi), bu yüzden takılmış bir veritabanı birkaç saniye içinde 503 verir ve köprü hemen kendi
   aynasına döner (sunucu süreci tümden donmuşsa sınır yetmez; o durumda cihazı köprünün kendi 2 sn

@@ -312,6 +312,14 @@ cards that an older API would not match, so from then on rollback means a forwar
   transfer slice moves the protocol to the arriving row or issues a new one
   (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Its test pins that
   `board_key` equals the card's key.
+- **O9 (local walk W-1):** the bridge's 2 s bound is urllib's socket timeout and does not cover
+  name resolution. With the api container stopped, Docker's DNS fails `api` after about 4 s, so the
+  device waits about 4 s for the mirror's answer (0.37 s with the API up). That is inside the 10 s
+  NCE gives its patient-query host; a deadline around the whole ask is a possible later hardening.
+- **O10 (local walk W-2):** uvicorn's access log, and nginx's, write the request path, and the
+  patient screen's routes carry the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`):
+  the protocol number now, the H-number before this slice. The device route carries no number (a
+  POST body). Whether access logs keep patient keys is for the owner and Lane A to decide.
 - **Elsewhere:** `edge/uplink.py` has the environment-proxy and redirect exposure this slice closed
   in `edge/pdq_client.py`. It is Lane A's open item, not this slice's.
 
