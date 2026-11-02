@@ -2,7 +2,7 @@
 """Production ASGI entry. All config comes from environment variables — no hardcoded secrets.
 
 Run (host does this via render.yaml startCommand):
-    alembic upgrade head && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port $PORT
+    alembic upgrade head && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port $PORT --no-access-log
 
 Env:
     TENANTS        "tokenA:slugA,tokenB:slugB" (device bearer tokens; the slug is the tenant
