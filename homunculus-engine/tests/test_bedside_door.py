@@ -201,3 +201,52 @@ class TestTheMeasurementTime:
         before = datetime.now(timezone.utc)
         built = build_entries("bed-3", [{"code": "spo2", "value": 95}], charted_by="hem.ayse")
         assert before <= built[0].observation.timestamp <= datetime.now(timezone.utc)
+
+
+# RR 26, SpO₂ 91, systolic 88: three parameters scoring 3 — NEWS2 9, the engine's immediate band.
+RISKY = [{"code": "resp_rate", "value": 26}, {"code": "spo2", "value": 91}, {"code": "sbp", "value": 88}]
+
+
+def _rows(client, kind):
+    return client.app.state.audit.records(tenant="h1", event_type=kind, limit=100)
+
+
+class TestTheDoorNamesItsRows:
+    def test_the_answer_names_each_values_chart_row_in_request_order(self, client):
+        """D10: the withdrawal is addressed by the `chart` row; the door says which rows it wrote."""
+        r = _chart(client, SET[:2], at=_ago(5))
+        assert r.status_code == 200, r.text
+        entries = r.json()["entries"]
+        assert [e["code"] for e in entries] == ["resp_rate", "spo2"]
+        assert [e["entry"] for e in entries] == [row.id for row in _rows(client, "chart")]
+
+    def test_a_discharged_number_names_no_row(self):
+        """A tombstone's charts are dropped, not written (G2-A11, D3): there is no row to name."""
+        from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
+        store = InMemoryIdentityStore()
+        store.apply("h1", IdentityRecord(patient_id="bed-9", state="discharged", source=KABUL,
+                                         updated_at=datetime.now(timezone.utc)))
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, identities=store)
+        with TestClient(app) as c:
+            r = _chart(c, [{"code": "heart_rate", "value": 80}], pid="bed-9")
+            assert r.status_code == 200, r.text
+            assert r.json().get("entries") in (None, [])
+
+
+class TestTheNurseIsTold:
+    def test_an_immediate_alert_from_hand_vitals_notifies_the_nurse(self, client):
+        """X2: as /ingest does for a device's reading."""
+        r = _chart(client, RISKY, at=_ago(5))
+        assert "news2" in r.json()["alerts"]
+        notes = _rows(client, "notification")
+        assert [(n.patient_id, n.subject, n.payload["audience"], n.payload["trigger"]) for n in notes] == [
+            ("bed-3", "news2", "nurse", "new")]
+
+    def test_the_same_alert_is_not_told_twice(self, client):
+        for _ in range(2):
+            _chart(client, RISKY, at=_ago(5))
+        assert len(_rows(client, "notification")) == 1
+
+    def test_a_routine_entry_tells_nobody(self, client):
+        _chart(client, [{"code": "temperature", "value": 37.0}])
+        assert _rows(client, "notification") == []

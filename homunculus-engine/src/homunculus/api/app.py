@@ -1015,16 +1015,28 @@ def create_app(
         store = _store(hospital)
         # The loop itself is `chart_observations` (G2-A11, D8 — X62), shared with the admission form, run at
         # the request's one instant (`now`, above).
+        written: list[tuple[str, int]] = []
         alerts = chart_observations(engine, store, audit, notifier, hospital, patient_id, charted,
                                     now, escalate_after,
-                                    mirror=lambda o: app.state.shadow_mirror(hospital, o, now))
+                                    mirror=lambda o: app.state.shadow_mirror(hospital, o, now),
+                                    entry_ids=written)
         # A kind charting ended has left the live keys: a nurse is told again if it returns (D5).
         notifier.prune(hospital, live_keys(engine, store))
 
         board = _card(hospital, patient_id, record)
         await broadcaster.publish(hospital, board)
+        # G3-01 (X2): a newly immediate alert from a charted value tells the nurse, as /ingest's reading does —
+        # the hand-entered NEWS2 was designed to alert like a device's (D9). The notifier's dedup sends nothing
+        # for an alert already told.
+        for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
+            await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
+        notifier.prune(hospital, live_keys(engine, store))
         return {"patient_id": patient_id, "charted": len(charted),
-                "alerts": [a.kind for a in alerts]}
+                "alerts": [a.kind for a in alerts],
+                # G3-01 (D10): each value's `chart` row, the id a «hatalı giriş» names.
+                "entries": [{"code": code, "entry": entry} for code, entry in written]}
 
     @app.put("/clinical/{patient_id}/profile")
     async def set_patient_profile(patient_id: str, body: dict = Body(...),

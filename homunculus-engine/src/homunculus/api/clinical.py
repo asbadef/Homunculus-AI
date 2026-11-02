@@ -293,7 +293,8 @@ def _check_bedside(built: list[ChartedEntry], recorded_at: datetime | None, now:
 def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifier: Notifier,
                        hospital: str, patient_id: str, charted: list[ChartedEntry],
                        now: datetime, escalate_after: timedelta,
-                       mirror: Callable[[Observation], None] | None = None) -> list[Alert]:
+                       mirror: Callable[[Observation], None] | None = None,
+                       entry_ids: list[tuple[str, int]] | None = None) -> list[Alert]:
     """Run charted entries through the engine as the `/clinical` door does, and return the last
     evaluation's alerts (G2-A11, D8 — X62). One function so the admission form can chart through
     it too; the door keeps parsing, the discharged-number drop, the final dedup prune, the frame
@@ -310,7 +311,10 @@ def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifie
 
     `mirror(obs)`, when given, hands each entry on after the real evaluation and its lifecycle hook
     — Aşama B's shadow engine (spec D1; the API passes `app.state.shadow_mirror`, which guards
-    itself and never raises)."""
+    itself and never raises).
+
+    `entry_ids`, when given, receives `(code, id)` of each `chart` row as it is written, in request order —
+    the door answers them, and a withdrawal (G3-01, D10) is addressed by that id."""
     alerts: list[Alert] = []
     for item in charted:
         obs = item.observation
@@ -319,10 +323,12 @@ def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifie
         if mirror is not None:
             mirror(obs)
         notifier.prune(hospital, live_keys(engine, store))
-        audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
-                                {"value": obs.value, "unit": obs.unit,
-                                 "obs_ts": obs.timestamp.isoformat(),
-                                 "charted_by": item.charted_by}))
+        written = audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
+                                          {"value": obs.value, "unit": obs.unit,
+                                           "obs_ts": obs.timestamp.isoformat(),
+                                           "charted_by": item.charted_by}))
+        if entry_ids is not None:
+            entry_ids.append((obs.code.value, written.id))
         for ended in cleared:
             audit.append(AuditEvent(hospital, "alert_cleared", ended.patient_id, ended.kind,
                                     ended.payload(now)))
