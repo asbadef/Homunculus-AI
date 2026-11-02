@@ -1497,6 +1497,69 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
 - **Geri dönüş** yalnız ilk protokollü kabulden önce temizdir: sonrasında açık kabullerin kartları
   protokolle anahtarlıdır ve eski API onları eşleştiremez — geri dönüş ileri bir düzeltme demektir.
 
+### 3.11 Yatak başı ölçüm ve «hatalı giriş» (Grup 3 · G3-01)
+
+Hemşirenin yatak başında ölçtüğü vitaller artık elle girilir ve **gerçek motora** gider; eskiden
+bunları HBYS akışı taşıyordu. Değer motora girdiği için NEWS2'yi motor hesaplar ve uyarı, cihazdan
+gelen bir değerdeki gibi davranır: Alarmlar ekranı, hemşire bildirimi, onaylanmazsa hekime
+yükseltme. Bu, servis için yenidir; ilk kurulumdan önce söylenir. Örneklerdeki değerler uydurmadır.
+
+- **Ne girilir.** NEWS2'nin yedisi: solunum sayısı, SpO₂, ek oksijen, sistolik tansiyon, nabız,
+  bilinç (ACVPU), ateş. Bir de isteğe bağlı MAP. Diyastolik yok: MAP okunduğu gibi girilir (arter
+  hattı ya da monitörün NBP ortalaması).
+- **İki giriş, tek form.**
+  - «Yatak başı ölçüm» sayfası (`/olcum`, `clinical.chart` yetkisi; tablet ve telefon için): hasta
+    seçilir, ad soyad ve doğum yılıyla kimlik onaylanır (doğum tarihi kayıtlı değilse ekran bunu
+    söyler ve yine sorar), form doldurulur. «Hayır, eşleşmiyor» seçimi iptal eder ve sorumlu
+    hemşireye bildirmeyi söyler; hiçbir şey kaydedilmez.
+  - Hasta ekranındaki «Ölçüm gir» (yalnız `clinical.chart` yetkisi olana görünür) aynı formu bir
+    pencerede açar. Orada kimlik adımı yoktur, çünkü ekranın başlığı hastayı zaten söyler.
+- **Boş kutu = ölçülmedi**, asla 0. En az bir değer yeter; eksikleri önizleme söyler («Kısmi skor:
+  … girilmedi ya da güncel değil»). Yedisini birden zorlamak hemşireyi eski değeri yeniden yazmaya
+  iterdi, motor da onu taze sanırdı.
+- **Önce önizleme.** «Önizle», motorun NEWS2'sini hastanın bir kopyası üzerinde hesaplar ve hiçbir
+  şey yazmaz (`POST /clinical/{id}/preview`); kapıyla aynı kuralları uygular, yani kaydın reddedeceği
+  değeri önizleme de reddeder. «Kaydet» yalnız tam olarak gönderilecek değerlerin önizlemesinde
+  çıkar: bir kutu ya da saat değişirse önizleme eskir. Puanı motor hesaplar, karar hekimindir.
+- **Sınırlar klinik eşik değildir**, kayan bir haneyi ya da birimi yakalamak içindir (sunucu kapıda
+  denetler; form aynısını yalnız hatayı kutunun altında göstermek için yansıtır):
+  - solunum 0–80, SpO₂ 0–100, sistolik ve MAP 0–300, nabız 0–300; bu beşi **tam sayı** olmalıdır
+    (88,5 atım bir ölçüm değil, yazım hatasıdır);
+  - ateş 25–45 °C; formda en çok bir ondalık girilir («36,8» olur), sunucu yalnız aralığı denetler;
+  - aynı formda MAP sistolikten küçük olmalı (eşit olamaz); ayrı zamanlarda girilen iki değer
+    birbiriyle karşılaştırılmaz.
+
+  Saat değiştirilmezse sunucunun saati yazılır. Değiştirilirse en çok 24 saat geriye gider, ileriye
+  gitmez (sunucu yalnız iki dakikalık saat farkına göz yumar; form bir dakikaya).
+- **«Hatalı giriş».** Elle girilmiş bir değer «Kaydedildi» adımından ya da vital eğrisinin
+  tablosundan, en az 10 karakterlik bir gerekçeyle (baştaki ve sondaki boşluklar sayılmaz) geri
+  alınır (`POST /clinical/{id}/entries/{entry}/retract`). Ek oksijen ve bilincin eğrisi yoktur:
+  onlar yalnız «Kaydedildi» adımından geri alınır. Değer silinmez:
+  - denetim kaydına bir `chart_retract` satırı düşer;
+  - hastanın motor durumu kayıttan, o değer **hiç girilmemiş gibi** yeniden kurulur (NEWS2, SOFA,
+    sepsis, antibiyotik saati, uyarılar), ve yeniden başlatmada da geri gelmez;
+  - büyük grafikte üstü çizili kalır (kartın küçük grafiği yalnız motorun noktalarını çizer);
+    tabloda gerekçesiyle, kimin ve ne zaman geri aldığıyla durur.
+
+  Artık tetiklenmeyen bir uyarı kapanır. Onaylanmamış kritik bir uyarı kilitli kalır (G2-A1); bu
+  kilit yeniden başlatmada korunmaz (plandaki O4). Bir istisna var: geri almadan sonra hastanın hiç
+  değeri kalmazsa — hepsi hatalı giriş, tipik olarak yanlış hastaya girilmiş — kilit de biter ve
+  denetim kaydına `entered_in_error` sebebiyle düşer. Hastanın kartında kilidin duracağı bir değer
+  yoktur; yeniden başlatma da bu kilidi zaten geri getirmezdi. Yanlış değer daha eski bir ölçümü
+  örtüyorsa, geri alma eskisini son ölçüm olarak geri getirir ve o yüzden yeni bir uyarı doğabilir;
+  doğarsa hemşireye bildirilir. Geri alma bir kişinin işidir: cihaz kimliği (köprünün jetonu)
+  yapamaz, cihazdan gelen bir değer de geri alınamaz, taburcu edilmiş bir numarada da yapılmaz.
+- **«elle».** Elle girilen değeri «elle» diye işaretleyenler:
+  - trend kartı (son değer elle girilmişse);
+  - büyük grafiğin okuması (imlecin altındaki ölçüm elle girilmişse);
+  - tablo (her satır).
+
+  Hasta ekranının «Ölçülen değerler» kutusu ve sayfanın listesi işaretlemez: pano değerin
+  kaynağını taşımaz. Listedeki «son ölçüm» hangi kaynaktan olursa olsun son NEWS2 girdisidir.
+- **Geri dönüş**: eski imajlara dönülür, göç yoktur. Ama eski API `chart_retract`'ı bilmez:
+  geri alınmış değerler eski sürümde yeniden sayılır. Geri dönüş bloğu bu yüzden önce kaç geri
+  alma olduğunu basar (planın dağıtım notları).
+
 ---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi
