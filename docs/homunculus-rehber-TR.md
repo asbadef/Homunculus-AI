@@ -1643,7 +1643,7 @@ Hemşirenin yatak başında ölçtüğü vitaller artık elle girilir ve **gerç
 bunları HBYS akışı taşıyordu. NEWS2'yi motor hesaplar; puan alarm bandına çıkarsa alarm, cihazdan
 gelen bir değerdekiyle aynı yolu izler: Alarmlar ekranı, hemşire bildirimi, onaylanmazsa hekime
 yükseltme. Bu, serviste yeni bir davranıştır; hastane sunucusuna çıkmadan önce servise söylenir.
-**Durum:** kod hazır, hastane sunucusunda henüz çalışmıyor (göç yok). Örneklerdeki değerler
+**Durum:** 2 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç yok). Örneklerdeki değerler
 uydurmadır.
 
 - **Ne girilir.** NEWS2'nin yedi parametresi: solunum sayısı, SpO₂, ek oksijen, sistolik tansiyon,
@@ -1730,8 +1730,9 @@ uydurmadır.
   gider (bkz. 5. bölümdeki «Gölge öneri» maddesi); hatalı giriş oradan da kalkar, ama gölge motor
   bunu sonraki dakikalık örnekte yargılar.
 - **Geri dönüş**: eski imajlara dönülür, göç yoktur. Ama eski API `chart_retract`'ı bilmez:
-  geri alınmış değerler eski sürümde yeniden sayılır. Geri dönüş bloğu bu yüzden önce kaç geri
-  alma olduğunu basacak (planın dağıtım notları).
+  geri alınmış değerler eski sürümde yeniden sayılır; yeniden sayılan bir alarm hemşireye yeniden
+  bildirilebilir. Geri dönüş bloğu (R-1) bu yüzden önce kaç geri alma olduğunu sayar; sayı 0 değilse
+  sahibin aynı sayıyı yazdığı bir onay olmadan hiçbir şeye dokunmaz (`G3-BEDSIDE-bloklari.txt`).
 
 ---
 
