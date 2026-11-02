@@ -6,8 +6,9 @@ device in the inventory gets its own state; a payload that carries no records â€
 standby transmits at full rate and carries none â€” is reported as such rather than as silence,
 because "the bed is not being monitored" and "we are not receiving" need different answers.
 
-No patient association, clinical ingest, alarm action or waveform interpretation. The alarm
-limits carried in the records are the device's own settings, reported as context, not acted on.
+No patient association, clinical ingest, alarm action or waveform interpretation (the wave
+blocks are decoded for display only, in infinity_waves.py). The alarm limits carried in the
+records are the device's own settings, reported as context, not acted on.
 """
 from __future__ import annotations
 

@@ -1015,8 +1015,9 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   «ölçülmedi»); vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok;
   APACHE, PRISM ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
-  numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
-  kaydından çizilir (3.7).
+  numarası, simüle (uydurma) monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık
+  motorun kaydından çizilir (3.7). Gerçek monitör dalgası ayrı, «doğrulanmamış» etiketli bir
+  paneldedir (3.11).
 - *Panoda olmayan bir hasta:* Adres panonuzda olmayan bir kimliği gösteriyorsa ekran tek bir şey
   söyler: ya böyle bir kayıt yok ya da kapsamınız dışında — ikisi ayırt edilemez, sunucu ikisine
   de bilerek aynı yanıtı veriyor (farklı bir yanıt hastanın orada yattığını ele verirdi). Pano
@@ -1106,7 +1107,8 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   çıkan değer ayrıca bildirilir. Cihazın (monitörün) kendi alarm sınırları ayrı ve daha sonraki
   bir iştir — buradaki Aşama B'nin (gölge motor) parçası değildir; şimdilik gösterilmez.
 
-**Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; Aşama A'nın monitör
+**Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; gerçek dalga ayrı,
+doğrulanmamış bir paneldedir ve bu eğrilere girmez (3.11); Aşama A'nın monitör
 değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı; Aşama B açılırsa dakikalık
 monitör örnekleri 30 gün saklanır, ama bu eğrilere yine çizilmez); MAP ve laktat için kişisel
 normal (motor tutmuyor).
@@ -1289,7 +1291,8 @@ bildirimde (toast) görünür.
 ### 3.9 «Monitörler» ekranı: monitör–yatak eşleme (Grup 2 · Lane B)
 
 «Monitörler» (sol ray) Aşama A'dan beri cihaz ekranıdır: her monitörün şeridi, hasta bilgisi
-olmadan. Bu dilimle ekranın üstüne **«Monitör–yatak eşleme»** bölümü eklendi ve ekran sorumlu
+olmadan (şeridin altındaki «Dalga formunu göster» düğmesi o monitörün canlı dalgasını açar: 3.11).
+Bu dilimle ekranın üstüne **«Monitör–yatak eşleme»** bölümü eklendi ve ekran sorumlu
 hemşireye de açıldı. Bölüm yalnız eşlemeyi değiştirir; klinik bir karar vermez, hiçbir değer
 hesaplamaz. Örneklerdeki adresler v2 dosyasındaki biçimdedir, hasta adı uydurmadır.
 
@@ -1488,6 +1491,111 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
 - **Geri dönüş** yalnız ilk protokollü kabulden önce temizdir: sonrasında açık kabullerin kartları
   protokolle anahtarlıdır ve eski API onları eşleştiremez — geri dönüş ileri bir düzeltme demektir.
 
+### 3.11 Dalga paneli: monitörün canlı dalgası (cihaz ve hasta ekranı · «dalga» dilimi)
+
+Başucu monitörü ağa yalnız sayıları değil, her 200 ms'lik pakette dalgaların örneklerini de
+yayınlıyor. Bu dilim o örnekleri çözer ve şeridin altında, monitörün yaklaşık **2 saniye
+gerisinden** gelen, sağdan sola kayan bir panelde çizer: EKG, basınç (ART ya da P1), pleth ve
+solunum. Panel **doğrulanmamıştır ve yalnız görüntüdür**: dalgadan hiçbir sayı çıkarmaz, alarm
+vermez, ses çıkarmaz, hiçbir şey saklamaz. **Birincil alarm başucu monitörüdür**; panel ona
+bakmanın yerine geçmez. Paketin yapısı ve doğrulamanın düzeyi: `docs/INFINITY-DALGA-FORMU.md`.
+
+**Nerede?**
+- **Hasta ekranında**, şeridin hemen altında — yalnız şeridin bu hastaya **tek bir** monitörü
+  bağladığı hastada. Bağ belirsizse ya da yoksa panel de yoktur: dalga bir hastaya ancak şeridin
+  açık bağıyla gelir. İlk yanıt gelene dek ve dalga bu kurulumda kapalıyken panel hiç çizilmez:
+  ekran dolduramayacağı bir kutu göstermez.
+- **«Monitörler» ekranında** (3.9), her monitörün şeridinin altında **«Dalga formunu göster»**
+  düğmesi. Panel kendiliğinden açılmaz — bir monitör listesi, kimse bakmadan hiçbir monitörün
+  dalgasını istemez; **«Dalga formunu gizle»** kapatır. Burada elle açılan panel, gösteremediğinde
+  nedenini söyler (aşağıda «Panelin notları»).
+- Paneli şeridi gören görür: aynı yetki (`board.view` ya da `devices.manage`), aynı hastane, aynı
+  kapsam. Göremediğiniz bir monitörün dalgası için sunucu, hiç olmayan bir monitörünkiyle aynı
+  yanıtı verir.
+- Panel yalnız açıkken ve sekme görünürken, 750 ms'de bir sorar; kapanınca o monitör için tuttuğu
+  her şeyi unutur.
+
+**Panelde her zaman yazanlar.** Başlık «‹yatak ya da cihaz› · Dalga formu · doğrulanmamış»,
+yanında «DOĞRULANMAMIŞ» etiketi ve «≈ 2 sn gecikmeli». Altında, panelin herhangi bir parçası
+ekrandayken — tam ekranda da — şu damga: **«Dalga · doğrulanmamış · yalnız görüntü — birincil
+alarm başucu monitörüdür»**.
+
+**Satırlar** (sabit sırayla; yalnız monitörün gönderdiği dalgalar için):
+- **EKG** — en çok iki satır: monitörün o an canlı olan EKG kanalları. Her biri yalnız «EKG» diye
+  yazılır, yanında «derivasyon adı doğrulanmadı»: hangi kanalın canlı olduğu yataktan yatağa
+  değişiyor ve kanal→derivasyon eşlemesi doğrulanmadı, bu yüzden «II» gibi bir ad hiç yazılmaz.
+  Kazanç sabittir (otomatik ölçekleme gürültüyü ritim gibi büyütürdü); satırı aşan tepeler
+  kırpılır ve işaretlenir. EKG genliğinin mV karşılığı bilinmediği için mV ızgarası ve kalibrasyon
+  çubuğu yoktur.
+- **Basınç** — en çok iki satır, monitörün kendi adıyla: «ART» ya da «P1». mmHg cinsinden, sabit
+  0–200 mmHg ekseni (aşılırsa 250), 50/100/150'de soluk çizgiler; yanında «ölçek ekranla
+  doğrulandı».
+- **Pleth** ve **RESP** — birim yok, «göreli»; ölçek son 10 saniyeye yavaşça uyar.
+- Her satır kanıt sözünü yazar: «yapısal», «doğrulanmadı» ya da «ölçek ekranla doğrulandı». İzler
+  düz mürekkeple çizilir (tam ekranda beyaz); monitörün renkleri kullanılmaz.
+
+**Satırdaki sözler**
+- «sinyal yok» — monitör o kanal için "sinyal yok" gönderiyor (derivasyon bağlı değil, kanal
+  kapalı). O kanala **çizgi çizilmez**: düz bir EKG çizgisi asistoli gibi okunurdu. Monitörün
+  gönderdiği ama hiçbir kanalı canlı olmayan bir grup da (örneğin derivasyonları çıkmış EKG) bir
+  satır alır ve «sinyal yok» der — EKG'nin yokluğu boşluk olarak değil, söz olarak görünür.
+- Eksik bir parça çizgiyi böler; boşluk hiçbir zaman doldurulmaz, tahmin edilmez.
+- «akış durdu · N sn» — veri kesildi. Çizim verinin sonuna varınca iz donar; 1,5 saniye sonra
+  soluklaşır ve bu söz çıkar (veri kesildikten yaklaşık 3,5 saniye sonra). N, verinin bitişinden
+  beri geçen saniyedir.
+- «akış durdu · N sn · iz kaldırıldı» — verinin bitişinden 10 saniye sonra iz silinir. Eski bir
+  dalga hiçbir zaman güncel gibi gösterilmez.
+- «dalga bekleniyor» — panel açık, çizilecek dalga henüz gelmedi.
+
+**Panelin notları** (panel çizemediğinde nedenini söyler):
+- «Dalga akışı yok» — sunucu dalgayı hub'dan şu an alamıyor (hub yanıt vermiyor, hub'da dalga yolu
+  yok ya da ayarlar eksik). Ekrandaki izler kalır ve yukarıdaki gibi «akış durdu»ya yaşlanır; panel
+  sormaya devam eder.
+- «Dalga formu bu kurulumda kapalı» — `INFINITY_WAVES` açık değil ya da şerit bu hastane için
+  kapalı. Bu not yalnız «Monitörler»de görünür; hasta ekranında panel hiç çizilmez.
+- «Bu cihazın dalga formunu görme yetkiniz yok» ve «Bu cihazın dalga formu gösterilemiyor» — yetki
+  ya da kapsam; izler hemen kaldırılır.
+
+**Tam ekran.** Panelin ⤢ düğmesi («Tam ekran görünüm») aynı satırları siyah zeminde, ekranı
+doldurarak açar. Damga tam boyda kalır; yanında bu monitörün şerit sayıları, şeritteki adları,
+yaşları ve kanıt sözleriyle durur (hasta bilgisi olmadan). Esc, × («Tam ekrandan çık») ya da
+tarayıcının tam ekranından çıkmak kapatır; odak ⤢'ye döner. Uygulamanın bildirimleri, ekran
+kilidinden önceki geri sayım ve alarm sesini başlatan düğme tam ekranın üstünde, görünür kalır.
+Gösterilecek satır kalmazsa (bir ret geldiyse ya da dalga kapatıldıysa) tam ekran kendiliğinden
+kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel de kalkar.
+
+**Yapmadıkları**
+- **Ses yok.** Nabız sesi (bip), alarm sesi ya da başka hiçbir ses çıkmaz; prototipteki sesler
+  geri gelmedi. Çözülen bir R dalgasından çıkan bip, dalgadan türetilmiş bir sayı olurdu ve ekranı
+  sesli bir monitör taklidine çevirirdi.
+- **Dalgadan sayı yok.** Dalgadan hiçbir nabız, solunum hızı, basınç değeri, ölçüm, kumpas, skor,
+  alarm ya da bildirim üretilmez; ne gerçek motora ne gölge motora bir şey gider. Panelin yanındaki
+  sayılar şeridin sayılarıdır.
+- **Saklama yok.** Dalga hub'ın belleğinde 20 saniye, sunucuda 250 ms, tarayıcıda 20 saniye durur;
+  veritabanına, denetim kaydına, günlüğe ya da dışa aktarıma yazılmaz. (Hub'ın şifreli paket
+  günlüğü ham paketleri bugüne dek nasıl tutuyorsa öyle tutar; bu dilim ona okuyucu eklemez.)
+- Kayıt, yazdırma, dışa aktarma, geriye dönük izleme (full disclosure) ve EKG kalibrasyonu yok.
+
+**Ne doğrulandı, ne doğrulanmadı.** Doğrulanan: paketin ve dalga bloklarının yapısı, zamanlaması
+ve sürekliliği; paketten okunan sayıların ekrandakilerle saniye düzeyinde (yaklaşık 1 sn) aynı
+anda değişmesi; iki basınç dalgasının ölçeği (örnek ÷ 40 = mmHg; P1'de ekrandaki sistolik ve
+diyastolikle 2 mmHg içinde). Doğrulanmayan: dalganın ekranla **örnek düzeyinde** (atım atım)
+hizası, EKG kazancı (mV karşılığı) ve EKG derivasyonlarının adları. Koğuşta ekranla örnek
+düzeyindeki karşılaştırma geçene dek kanıt sözü «yapısal» kalır.
+
+**Açma ve kapatma.** Panel varsayılan olarak **kapalıdır**: API `.env`'deki `INFINITY_WAVES=on`
+ayrı ve açık bir dağıtım adımıdır. Ayrıca şeridin açık olması, araştırma penceresinin hub ayarları
+(`INFINITY_HUB_URL` — https, `INFINITY_VIEWER_TOKEN`, `INFINITY_HUB_CA_FILE`) ve hub'ın dalga yolunu
+taşıyan yeni sürümü gerekir. Bayrak açık ama hub ayarları eksikse panel «Dalga akışı yok» der ve
+sunucu nedeni açılışta bir kez günlüğe yazar. Kapatmak için bayrak kaldırılır ve API yeniden
+başlatılır: hasta ekranından panel kalkar, «Monitörler»de açılan panel «Dalga formu bu kurulumda
+kapalı» der.
+
+**Hastanenin sunucusunda henüz yok.** Dilim kendi dalındadır; dağıtım kullanıcının sözüyle
+yapılacak («main'e al», sonra «onay»). Hub için yeni bir sürüm gerekir (R6'dan sonraki; R7 olarak
+planlanıyor); hub önce ya da API ile birlikte gider. Sıra karışsa da güvenlidir: hub dalga yolunu
+taşımadığı sürece panel «Dalga akışı yok» der.
+
 ---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi
@@ -1654,7 +1762,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       adlarla kayıtlı kalır.
     - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
       kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
-      basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.
+      basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu da kurallara
+      girmez (dalga paneli yalnız görüntüdür, 3.11).
     - *Hasta değişince:* yatağın hastası değişirse eski hastanın monitör değerleri yeni hastaya
       yazılmaz (eski hastanın gölge bulguları kapanır, yeni hasta ilk örneğini bir dakika içinde
       alır); monitör taburcu edilmiş bir numaraya bağlıysa hiçbir şey yazılmaz.
@@ -1665,6 +1774,12 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
       bulgu kapanır, kutu ve etiketler kalkar, gerçek pano değişmez); **G-2** `off` (şerit de
       kalkar). Ayrıntı: `deploy/infinity/README.md`, "Aşama B" bölümü; tasarım:
       `docs/superpowers/specs/2026-10-27-infinity-asama-b-golge-motor-design.md`.
+  - **Dalga paneli (dalga dilimi · doğrulanmamış, yalnız görüntü):** monitörün yayınındaki dalga
+    blokları da çözüldü. EKG, basınç (ART ya da P1), pleth ve solunum, şeridin altında monitörün
+    yaklaşık 2 saniye gerisinden kayan bir panelde çizilir: hasta ekranında yalnız şeridin tek bir
+    monitöre bağladığı hastada, «Monitörler»de «Dalga formunu göster» düğmesiyle. Ses, sayı ya da
+    alarm üretmez, hiçbir şey saklamaz; varsayılan olarak kapalıdır (`INFINITY_WAVES=on`). Henüz
+    hastanenin sunucusunda yok. Ayrıntı: 3.11; protokol: `docs/INFINITY-DALGA-FORMU.md`.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)

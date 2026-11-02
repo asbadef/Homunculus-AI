@@ -21,8 +21,9 @@ Alanlar big-endian uint16 **ham adaylar** olarak okunur. Bunlar üretici paramet
 kimlikleri doğrulanmış eşlemeler değildir; kontrol baytlarının benzerliği tek başına
 semantiği kanıtlamaz. Birim, ölçek, geçerlilik, sentinel ve cihaz zamanı henüz belirsiz.
 PLS, HR yerine yazılmaz. Klinik kayda aktarılmaz. Guard zayıflatılarak HR/RESP uydurulmadı.
-522 baytlık paketlerde çözümleme denenmez; bu paketlerin dalga biçimi olduğu iddia
-edilmez ve bunlar aday sayıların tazeliğini yenilemez.
+522 baytlık paketlerde çözümleme denenmez ve bunlar aday sayıların tazeliğini yenilemez.
+(27.10.2026: bunlar tür `0x03` dalga paketleridir — [INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md);
+bu decoder onlara hâlâ dokunmaz.)
 
 ## Değişiklik
 

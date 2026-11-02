@@ -122,8 +122,10 @@ ofsetleri kayar ve profil sessizce yanlış alan okumaya başlar.
 
 - Zaman damgası alanlarının cihaz saatiyle ilişkisi çözülmedi. Merkezi istasyon saati
   yerel saatten yaklaşık **bir saat geride**; cihaz zamanı hizalama için kullanılmamalıdır.
-- Yatak etiketi bu akışta **yok**. Cihaz adresten tanımlanır; yatak adı ayrı ve
-  doğrulanmış bir kaynaktan gelmelidir.
+- Yatak etiketi bu akışta (`2050`) **yok**. Cihaz adresten tanımlanır; yatak adı ayrı ve
+  doğrulanmış bir kaynaktan gelmelidir. (27.10.2026: aynı cihaz yatak adını ayrı bir yan akışta,
+  `224.127.2.255:2150`'de yayınlıyor; worker o gruba katılmıyor —
+  [INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md), "Yan akışlar".)
 - Cihaz↔yatak eşlemesi ekran karşılaştırmasıyla dört cihazda kuruldu, envanterin
   tamamı için değil. Eşleme protokolden gelmez; doğrulanmış ayrı bir kaynak gerekir.
 - Bir cihazda yalnız `ART_map` okunabildi; o cihazın mesaj düzeni tam çözülmedi.
@@ -173,7 +175,8 @@ tazelik, gelecek-zaman reddi, gecikmiş/tekrar eden outbox kaydının canlı öl
 ve `clinical_*` bayraklarının kapalı kalması. Şema `homunculus.infinity-preview.v3`.
 
 Cihaz durumu **son pakete göre değil, parametrelerin bütününe göre** belirlenir. Bu, saha
-dağıtımında yakalandı: bir yatak araya kayıt taşımayan dalga formu paketleri gönderiyor ve
+dağıtımında yakalandı: bir yatak saniyede dört kez yalnız dalga blokları taşıyan, kayıt
+taşımayan paket (tür `0x03`, [INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md)) gönderiyor ve
 son pakete bakan durum, on parametresi taze olan bir yatağı "parametre yok" diye
 raporluyordu. Test: `test_a_waveform_payload_between_readings_does_not_flip_the_device_status`.
 
@@ -216,13 +219,17 @@ Envanter 13 cihaza çıkarıldı ve journal boyutu buna göre ayarlandı: 256 Mi
 / 900 s tutma. Eski değerlerle (128 MiB / 100.000 / 3600 s) 13 yatak × 5 pps kapasiteye
 yaklaşık 28 dakikada çarpar ve hub 507 döndürürdü.
 
-Gösterilen "diagram", parametre değerlerinin zaman içindeki trend çizgisidir. Monitördeki
-EKG/pleth dalga formu **çizilmez**; dalga formu paketleri (`522/468/346` bayt) çözülmedi ve
-bunların dalga formu olduğu iddia edilmez. Ayrı iştir.
+Gösterilen "diagram", parametre değerlerinin zaman içindeki trend çizgisidir; bu araştırma
+sayfası dalga çizmez. (27.10.2026: "`522/468/346` baytlık dalga formu paketleri" ayrı bir biçim
+değildi — her paket dalga blokları taşır ve bloklar çözüldü,
+[INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md). Canlı çizim, cihaz ve hasta ekranındaki
+"Dalga formu · doğrulanmamış" panelidir (`INFINITY_WAVES=on`); yalnız görüntüdür.)
 
 ## Yatak adları ve bir işletim tuzağı — 22 Eylül 2026, 12:20 UTC
 
-Yatak adı yayında yoktur; envanterdeki `id` alanı taşır ve yalnız merkezi istasyon ekranıyla
+Yatak adı yayında yoktur (27.10.2026: bu yalnız `2050` akışı için doğru; yatak adı `2150` yan
+akışında var, worker ona katılmıyor — [INFINITY-DALGA-FORMU.md](INFINITY-DALGA-FORMU.md), "Yan
+akışlar"); envanterdeki `id` alanı taşır ve yalnız merkezi istasyon ekranıyla
 doğrulanmış eşlemeler için yazılır: `BED06=.29`, `BED07=.28`, `BED08=.37`, `BED09=.26`.
 Diğer dokuz cihaz adres türevli kimlikte kalır ve ekranda "Yatak eşlenmedi" olarak görünür.
 Koğuş envanteri `deploy/infinity/inventory.icu2.json` olarak repodadır.

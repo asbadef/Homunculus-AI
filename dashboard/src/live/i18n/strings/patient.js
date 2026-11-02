@@ -1,7 +1,8 @@
 // The patient screen's summary (G1-11), read-only. The prototype's `patient.js` "Özet" tab, with
 // everything it computed in the browser left out: no BMI or body-surface area, no fabricated
-// hospital or protocol number, no simulated monitor waveform, no deterioration criteria of its
-// own, no nursing-risk scores, no synthetic 24-hour curves.
+// hospital or protocol number, no simulated monitor waveform (real decoded waves are a separate,
+// unvalidated panel: screens/common/WavePanel.jsx), no deterioration criteria of its own, no
+// nursing-risk scores, no synthetic 24-hour curves.
 //
 // Sources: `Özet` / `Trendler` / `Skorlar` / `Nabız` / `Ateş` / `Solunum` / `Değerlendir` /
 // `Kötüleşme kriterleri karşılanıyor` / `Değerlendirme önerilir · karar hekimindir.` come from the

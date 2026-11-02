@@ -261,6 +261,8 @@ def analyze_rows(rows, devices: tuple[str, ...], profile: dict, *, include_serie
                               "Capture timestamps are not device measurement times.",
                               "Duplicate payloads are not necessarily duplicate measurements.",
                               "Patient identity, units, scale, invalidity and stale data are not decoded.",
+                              # True of this report. The wave blocks are decoded elsewhere since
+                              # 2026-10-27, for display only (infinity_waves.py, docs/INFINITY-DALGA-FORMU.md).
                               "No waveform decoding or clinical model integration is performed."]}
     if include_series:
         report["candidate_series"] = series

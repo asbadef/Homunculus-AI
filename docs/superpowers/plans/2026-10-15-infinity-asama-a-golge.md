@@ -165,7 +165,7 @@ The runner starts the thread **only** when it runs as the hub, with `--unverifie
 
 **Thinning: N = 5 s.** Each cycle sends the hub's current value of each parameter of each device once. So at most one value per parameter per device per 5 s, against ~5 packets per second per device that the hub receives: about 25× fewer. Why 5:
 - **It is fast enough to be useful.** The strip is a glance view that a clinician or biomedical engineer compares with the bedside screen. With 5 s cadence and a 5 s dashboard poll, a value is at most 3 + 5 + 5 = **13 s** old when drawn. That is inside the 15 s display limit, so one late cycle does not blank it, and two do.
-- **It is slow enough not to be a monitor.** The strip must not invite anyone to treat it as a live waveform display.
+- **It is slow enough not to be a monitor.** The strip must not invite anyone to treat it as a live waveform display. *(2026-10-27: the owner reversed this for a separate waveform panel — decision W2 of the dalga spec, with its safety rules; the strip itself keeps its 5 s cadence.)*
 - **It costs nothing.** 13 devices × ≤9 parameters every 5 s is ≤ 24 values per second into an in-memory dict, one POST (~15 KB) per 5 s, and nothing durable.
 - **It is not the engine's number.** NEWS2's sampling rate (design §2.3, "clinician approves") is a Stage B decision.
 
