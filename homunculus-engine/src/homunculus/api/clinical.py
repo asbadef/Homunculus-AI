@@ -154,6 +154,9 @@ BEDSIDE_BACKDATE = timedelta(hours=24)
 BEDSIDE_SKEW = timedelta(minutes=2)
 AT_TOO_OLD = "ölçüm saati en çok 24 saat geriye alınabilir"
 AT_FUTURE = "ölçüm saati ileri olamaz"
+#: G3-01 (D10, D12): the audit row a «hatalı giriş» writes — `{entry, value, obs_ts, reason, retracted_by}`,
+#: subject the code; `entry` is the withdrawn `chart` row's id. The replay and the rebuild skip that row.
+RETRACT = "chart_retract"
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,

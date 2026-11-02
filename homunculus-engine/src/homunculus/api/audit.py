@@ -189,6 +189,26 @@ def iter_records(log: AuditLog, *, tenant: str | None = None,
         after = rows[-1].id
 
 
+def iter_records_of(log: AuditLog, *, tenant: str, event_types: Iterable[str], page: int,
+                    patient_id: str | None = None) -> Iterator[AuditRecord]:
+    """The rows of `event_types` — one patient's when `patient_id` is given — oldest first, read `page`
+    rows at a time by id (G3-01, D10, D12): the withdrawal's rebuild read, and the restart's read of the
+    withdrawals. Every matching row, as `iter_records` reads every row: one read capped at N would drop
+    the newest, which are the current state. The kinds are read by the backend (`event_types`), so a row
+    of another kind never takes a place in a page."""
+    if page < 1:
+        raise ValueError("page must be at least 1")
+    kinds = frozenset(event_types)
+    after: int | None = None
+    while True:
+        rows = log.records(tenant=tenant, patient_id=patient_id, event_types=kinds, limit=page,
+                           after_id=after)
+        yield from rows
+        if len(rows) < page:
+            return
+        after = rows[-1].id
+
+
 class InMemoryAuditLog:
     def __init__(self) -> None:
         self._rows: list[AuditRecord] = []

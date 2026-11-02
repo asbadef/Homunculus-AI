@@ -52,6 +52,22 @@ class PatientState:
             else:
                 del self._history[code]
 
+    def remove(self, obs: Observation) -> bool:
+        """Drop ONE reading equal to `obs` — False when there is none (G3-01, X5: the shadow engine
+        forgets a withdrawn hand entry; the real engine is rebuilt instead). An `Observation` is frozen, so
+        equality is the whole reading: code, value, unit, time and source. A code left with no reading is
+        removed, as `drop_source` leaves it."""
+        series = self._history.get(obs.code)
+        if not series:
+            return False
+        try:
+            series.remove(obs)
+        except ValueError:
+            return False
+        if not series:
+            del self._history[obs.code]
+        return True
+
     def latest(self, code: SignalCode) -> Observation | None:
         series = self._history.get(code)
         return series[-1] if series else None
