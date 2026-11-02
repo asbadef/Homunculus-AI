@@ -12,15 +12,26 @@ before). Two access logs wrote that path:
 
 - **uvicorn's** (`docker compose logs api`): the request line, query string included.
 - **nginx's** (`docker compose logs web`): the stock format writes `$request` (the line, query string
-  included) and `$http_referer` (the dashboard page's address, which can hold a key).
+  included) and `$http_referer` (the address of the page that made the request). The dashboard keeps a
+  patient's key in the URL fragment, which no browser sends (§3.3), so the referer should hold none;
+  it is dropped all the same, as defence in depth: it carries the page's query string, and nothing
+  guarantees what a page address will hold.
 
 The bridge's device route, `POST /edge/patient-query`, carries the number in the body and was never in
 either log. Lane A (2026-11-02): "real but not a blocker — own small slice (uvicorn `--no-access-log` +
 nginx log format without id segments), owner's timing."
 
-One more thing the old logs held: `/stream` and `/notifications` accept a tenant token in the query
-(`?token=`, the wall board's) and a one-time ticket (`?ticket=`). Both were in the query string of the
-logged line.
+One more thing the old logs may have held: `/stream` and `/notifications` accept a tenant token in the
+query (`?token=`, the wall board's path) and a one-time ticket (`?ticket=`), and the logged line carried
+the query string. Lane A checked the VM on 2026-11-02 (read-only, counts only, no values printed):
+- `grep -c token=` over `docker logs homunculus-web` and `homunculus-api` gave 0 in both, so the tenant
+  token is not in the current logs and no rotation is needed;
+- the query names present were `/admissions?state=`, `/trends?hours=` and `/stream?ticket=`;
+- the dashboard opens `/stream?ticket=` (`boardStore.js:259`). A ticket lives 60 s and is single-use
+  (`POST /stream-ticket`; `_stream_hospital` consumes it with `tickets.consume`), so the tickets in the
+  logs are spent;
+- `?token=` is the wall board's path. The only caller in the repo is the operator's check in
+  `docs/EDGE-BRIDGE-LOCAL.md:204` (a `curl` of `/stream?token=…` over plain HTTP).
 
 ## 2. Decisions
 
@@ -80,9 +91,11 @@ The task named client-side routes as a second source of keys in nginx's log (a p
 `/patients/<key>`). They are not: the dashboard routes by the URL **fragment** (`#/patients/<key>`;
 `live/shell/routes.js`, `hashPath`), and a browser sends no fragment to a server, nor in a Referer. A
 reload reaches nginx as `/`. `test_the_dashboards_key_routes_never_reach_the_log` pins it three ways:
-the `:param` routes of `routes.js` are exactly `/patients/:id`; no dashboard source calls `pushState` (the
-call that would turn a client route into a request path); and were `/patients/<key>` ever sent as a path,
-the map redacts it.
+the `:param` routes of `routes.js` are exactly `/patients/:id`; the dashboard's own code moves the address
+bar to another path in no way but its two `replaceState` calls (LiveApp.jsx and main.jsx, matched by their
+expression text; both keep `pathname`) — no `pushState`, `location.assign`, `location.href = …` or
+`location.replace` to anything but a `#…` fragment, tests not scanned; and were `/patients/<key>` ever sent
+as a path, the map redacts it.
 
 ### 3.4 Who read the old lines
 
@@ -98,7 +111,7 @@ the map redacts it.
 
 ## 4. Testing
 
-`tests/test_access_log_redaction.py` (12 tests, no database). The map is read from the real file and
+`tests/test_access_log_redaction.py` (13 tests, no database). The map is read from the real file and
 applied as nginx applies it.
 
 - **Drift guard:** every path of the route table with a `{param}` (a `{x:path}` one included) is filled
@@ -123,12 +136,16 @@ Red first: before the change 10 of the 12 failed on the missing map, format, `ac
   `test_infinity_transport.py:149` ("Node and dashboard jsdom required": this worktree has no
   `dashboard/node_modules`), an environment difference and no regression;
 - the 3.14 check of the touched files: 64 passed;
+- after the review's fixes (the widened navigation scan adds its own self-test: 13 tests in the new file):
+  the new file 13 passed, with the same neighbours 80 passed / 6 skipped, the 3.14 check 65 passed. The
+  whole suite was not run again: only that one test was added;
 - the dashboard is untouched, so no dashboard gate (two of its tests read `nginx.conf`: the patterns they
   read — `location ~ ^/(…)` and `location @…_limited { … return 429 '…'; }` — are unchanged).
 
 **Real nginx** (`nginx:alpine`, the file mounted as `conf.d/default.conf`, `--add-host api:127.0.0.1`, a
 throwaway certificate, a synthetic key `202600000001`): `nginx -t` passed ("syntax is ok … test is
-successful"). Requests with a query string and a referer holding the key gave, for example:
+successful"). Requests with a query string and a synthetic referer holding the key (a shape the
+dashboard does not produce) gave, for example:
 
 ```text
 172.17.0.1 [02/Nov/2026:11:42:23 +0000] "GET /patients/:key/trends HTTP/1.1" 502 157 0.002 "o10-check/1.0"
@@ -153,10 +170,16 @@ is logged as `"POST /auth/login HTTP/1.1" 429`.
 
 ## 6. Residual items
 
-- **R1 — nginx's `error_log` still carries the request (owner and Lane A).** When the upstream is
-  unreachable (the API down or restarting: 502) nginx writes one error line per failed request, to the same
-  container stream, with the request line, the upstream URL and the referrer as they were sent. An
-  `error_log` line cannot be formatted. Reproduced in the check above:
+- **R1 — nginx's `error_log` still carries the request (owner and Lane A).** Whenever nginx logs an
+  error or a warning for a request — any upstream failure or timeout, a 413, the sign-in limiter's `warn` —
+  the line ends with the request line, the upstream URL and the referrer as they were sent. nginx:alpine's
+  main configuration logs at `notice`, so every such line is written, to the same container stream. The
+  review reproduced it with the API up: an upstream that answered garbage ("upstream sent no valid
+  HTTP/1.0 header") and one that closed early ("upstream prematurely closed connection"); it applies to a
+  504 timeout, a 413 and a request body buffered to a temp file as well. A healthy-day case: a slow
+  `/patients/<key>/trends` call that outlasts `proxy_read_timeout` (60 s by default). An `error_log` line
+  cannot be formatted. Reproduced in the check above, with the API unreachable (502); the `referrer:` is a
+  synthetic shape (`?live=1&tab=<key>`) that the dashboard does not produce:
 
   ```text
   2026/11/02 11:42:23 [error] 23#23: *1 connect() failed (111: Connection refused) while connecting to
@@ -166,25 +189,24 @@ is logged as `"POST /auth/login HTTP/1.1" 429`.
   ```
 
   (On the VM the upstream shows the API container's address.) The line also holds the query string, so a
-  `/stream?token=` request in such a window puts the tenant token there. The level is left unchanged: raising
+  `/stream?token=` request that fails puts the tenant token there. The level is left unchanged: raising
   it would hide real faults (a failed upstream, a rate-limit warning). The options, none built: treat
-  `docker compose logs web` as holding keys after any API outage or restart and limit who reads it; give
-  the `web` service a `logging:` rotation (it has none, `bridge` and `nce` do) so old lines age out; send
-  the error log to a short-lived file instead of the container stream. The exposure is the length of an
-  API outage or restart, which includes the seconds a deploy takes to start `api` (`up -d --no-build api web`
-  starts both together).
-- **R2 — old lines on the VM.** The running `api` and `web` containers hold the lines written before
-  this change, keys and any `?token=` included. Docker's json-file logs belong to the container: checked
-  here (Docker 29.7.2, `json-file`) — create a container, write a line, `docker rm` it, and its
-  `/var/lib/docker/containers/<id>/<id>-json.log` is gone with its directory. `docker compose up -d`
-  recreates a container by removing the old one, so the deploy that brings this change (both `api` and
-  `web` change) should drop their old logs. Not verified, so to be checked on the VM before relying on it:
-  the daemon's log driver (`docker info --format '{{.LoggingDriver}}'`; a different driver or
-  `daemon.json` option keeps lines elsewhere), that the deploy really recreates both containers
-  (`StartedAt` differs; a plain `restart` keeps the file), and copies outside the containers (a saved
-  `docker logs > file`, a backup of `/var/lib/docker`). `api` and `web` have no `max-size`, so nothing
-  ages those lines out before the recreate. Lane A decides whether a `?token=` seen in them means
-  rotating the tenant token.
+  `docker compose logs web` as a log that can hold patient keys on any day, not only in an outage, and
+  limit who reads it; give the `web` service a `logging:` rotation (it has none, `bridge` and `nce` do) so
+  old lines age out; send the error log to a short-lived file instead of the container stream. The exposure
+  is every such event: an API outage or restart (the seconds a deploy takes to start `api`, with
+  `up -d --no-build api web` starting both together, are one), and on a healthy day the rare timeout or odd
+  response.
+- **R2 — old lines on the VM.** The running `api` and `web` containers hold the lines written since they
+  were last recreated, keys and query strings included. Lane A's read-only check of the VM (2026-11-02,
+  counts only): both use the `json-file` driver with no rotation options (`{}`), so nothing ages the lines
+  out; `token=` is in neither log (§1). The `web` container was recreated at 09:35Z that day by B1d's
+  deploy, so its older lines are already gone: the removal this record checked too (Docker 29.7.2 — create
+  a container, write a line, `docker rm` it, and its `/var/lib/docker/containers/<id>/<id>-json.log` is
+  gone with its directory). The deploy that brings this change recreates `api` and `web` (the command of
+  one, the image of the other, change), which drops the lines in them. Still to be checked on the VM:
+  that the deploy does recreate `api` (`StartedAt` differs; a plain `restart` keeps the file), and copies
+  outside the containers (a saved `docker logs > file`, a backup of `/var/lib/docker`).
 - **R3 — the hub's uvicorn keeps its access log** (`scripts/run_infinity_transport.py` calls
   `uvicorn.run` with the default). Its routes are `/v1/packets`, `/v1/heartbeat`, `/v1/status` and
   `/infinity-research/*`: none has a path parameter, so no key. Left alone.
@@ -194,9 +216,13 @@ is logged as `"POST /auth/login HTTP/1.1" 429`.
   access log back. The O10 deploy block must expect the old command before and the new one after, and its
   own rollback must carry the flag. The B1d plan's "no number in a log" check (`docker logs … | grep -cE
   "2026000000(01|02|99)"`) covers the bridge and the api; adding `homunculus-web` fits it after this slice,
-  outside an API outage (R1).
+  outside an upstream failure (R1).
 - **R5 — the client address stays in the web log** (`$remote_addr`): the ward PCs' addresses are what the
   rate-limit check reads, and the hub's address is what the Aşama A allow-list waits for. It is no patient key.
+- **R6 — the user agent is client-controlled and logged verbatim** (`$http_user_agent`). The review logged
+  a request whose agent was `ua-202600000001`. No browser and not the bridge puts a key there, so it is no
+  leak in practice, but a client that writes one gets it logged. Kept, as the stock format has it; nothing
+  to do unless the owner wants the field gone.
 
 ## 7. Not in this follow-up
 

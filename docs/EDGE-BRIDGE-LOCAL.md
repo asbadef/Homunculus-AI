@@ -563,11 +563,13 @@ The patient screen's routes carry the patient's key in the path (`/patients/<key
   format: client address, time, method, the path with its ids replaced (`/patients/:key/trends`,
   `/admissions/:id/label`), protocol, status, bytes, seconds, user agent. No query string and no
   referer. The client address is still the first field (the check above).
-- **Not covered — nginx's error log.** While the API is unreachable (502), nginx writes a line per
-  failed request to the same stream with the request and upstream URL as they were sent:
+- **Not covered — nginx's error log.** Whenever nginx logs an error or a warning for a request —
+  any upstream failure or timeout (the API down, closing the connection early, answering garbage),
+  a 413, the sign-in limiter — the line names the request as it was sent, query string included:
   `request: "GET /patients/<key>/trends HTTP/1.1"`, `upstream: "http://…/patients/<key>/trends"`
-  and the page's `referrer:`. Read `docker compose logs web` for such a window as a log that holds
-  patient keys.
+  and the page's `referrer:`. (nginx:alpine's main configuration logs at `notice`, so every such
+  line is written.) It happens on a healthy day too: a slow trends call that times out. Read
+  `docker compose logs web` as a log that can hold patient keys.
 
 ## Backups — your responsibility now
 

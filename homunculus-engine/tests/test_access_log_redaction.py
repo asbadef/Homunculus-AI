@@ -10,7 +10,8 @@ uvicorn's, and nginx's. This slice:
 - gives nginx a log format of its own (`homunculus_redacted`) that writes the path through
   `map $uri $homunculus_log_uri`, which replaces each route parameter by a placeholder
   (`/patients/202600000001/trends` -> `/patients/:key/trends`), and writes no query string and no
-  referer (the referer is the dashboard page, which can hold a key).
+  referer (the dashboard keeps a key in the URL fragment, which is never sent, so the referer should
+  hold none; it is dropped as defence in depth).
 
 THE DRIFT GUARD. The map is a hand-written list; the route table is code. A route added later with a
 path parameter fails `test_every_route_parameter_is_redacted_in_the_log_uri` until the map covers it
@@ -227,23 +228,100 @@ def test_an_unrecognised_tail_below_a_parametrized_prefix_is_redacted_whole() ->
     assert _apply(entries, f"/patients/{SENTINEL}") == "/patients/:redacted"
 
 
+#: The calls of the dashboard's own code that move the address bar to another PATH — the only ways a
+#: client route (`#/patients/<key>`) could become a request path nginx logs. The fragment-only ways
+#: (`location.hash = …`, `location.replace("#…")`) are no concern: the browser sends no fragment.
+_NAVIGATION_CALL = re.compile(
+    r"\b(?:window\.)?(?:history\.(?:pushState|replaceState)|(?:window\.)?location\.(?:assign|replace))\s*\(")
+_NAVIGATION_ASSIGN = re.compile(r"\blocation\.href\s*=(?!=)")
+
+#: The two `replaceState` calls the dashboard makes, matched by their expression text (not by line
+#: number). Both keep the page's own path: LiveApp.jsx drops a spent hash and keeps
+#: `pathname + search`; main.jsx rewrites the address `withoutRetired(window.location)` returns, which
+#: starts with the same `pathname`. A new call, or a reformatted one, fails the scan below until
+#: someone has looked at what path it writes.
+ALLOWED_NAVIGATION_CALLS = {
+    'window.history.replaceState(null, "", window.location.pathname + window.location.search)',
+    'window.history.replaceState(window.history.state, "", cleaned)',
+}
+
+
+def _call_text(source: str, start: int) -> str:
+    """The call that starts at `start`, from its name to its closing parenthesis, whitespace squeezed
+    (a string holding a parenthesis is not handled; none of the calls scanned has one)."""
+    depth, i = 0, source.index("(", start)
+    while i < len(source):
+        depth += (source[i] == "(") - (source[i] == ")")
+        if depth == 0:
+            break
+        i += 1
+    return " ".join(source[start:i + 1].split())
+
+
+def _code_lines(path: Path) -> str:
+    """A dashboard source without its whole-line comments, which name these calls in words."""
+    return "\n".join(line for line in path.read_text(encoding="utf-8").splitlines()
+                     if not re.match(r"\s*(//|/\*|\*)", line))
+
+
+def _path_navigations(code: str) -> list[str]:
+    """Every call or assignment in `code` that may move the address bar to another path: all of
+    `_NAVIGATION_CALL` and `location.href = …`, except `location.replace` to a `#…` fragment."""
+    calls = [_call_text(code, m.start()) for m in _NAVIGATION_CALL.finditer(code)]
+    calls += [code[m.start():].split("\n", 1)[0].strip() for m in _NAVIGATION_ASSIGN.finditer(code)]
+    return [call for call in calls
+            if not re.match(r"(?:window\.)?location\.replace\(\s*[`'\"]#", call)]
+
+
+def test_the_navigation_scan_sees_what_it_is_meant_to() -> None:
+    """The scan above is only as good as this: each way to a new path is found, a fragment is not."""
+    code = """
+        window.history.pushState(null, "", `/patients/${id}`);
+        history.replaceState(null, "",
+            "/patients/" + id);
+        window.location.assign("/patients/" + id);
+        location.href = "/patients/" + id;
+        window.location.replace(`/patients/${id}`);
+        window.location.replace(`#${home}`);
+        window.location.hash = "#/settings";
+        if (location.href === x) {}
+    """
+    assert _path_navigations(code) == [
+        'window.history.pushState(null, "", `/patients/${id}`)',
+        'history.replaceState(null, "", "/patients/" + id)',
+        'window.location.assign("/patients/" + id)',
+        'window.location.replace(`/patients/${id}`)',
+        'location.href = "/patients/" + id;',
+    ]
+
+
 def test_the_dashboards_key_routes_never_reach_the_log() -> None:
     """The dashboard's patient screen is `#/patients/:id`. It is routed by the URL FRAGMENT: a browser
     sends no fragment to the server and none in a Referer, so a page reload of that address reaches
     nginx as `/` (served as `/index.html`) and the key is never in a log. Pinned three ways:
     - the table in routes.js has exactly the key routes listed here;
-    - the dashboard never pushes a path onto the history (`pushState`), the one thing that would turn
-      a client route into a request path;
+    - the dashboard's own code moves the address bar to another path in no way but the two
+      `replaceState` calls of ALLOWED_NAVIGATION_CALLS, which keep the page's path: no `pushState`, no
+      `location.assign`, no `location.href = …`, no `location.replace` to anything but a `#…` fragment
+      (tests are not scanned);
     - were such an address ever sent as a path, the map would still redact it."""
     routes = DASHBOARD_ROUTES.read_text(encoding="utf-8")
     assert re.findall(r'path:\s*"(/[^"]*:[^"]*)"', routes) == DASHBOARD_KEY_ROUTES
-    assert DASHBOARD_SRC.is_dir() and any(DASHBOARD_SRC.rglob("*.jsx"))     # the scan is not empty
-    pushers = [str(path.relative_to(ROOT)) for path in DASHBOARD_SRC.rglob("*")
+    sources = [path for path in DASHBOARD_SRC.rglob("*")
                if path.suffix in (".js", ".jsx") and ".test." not in path.name
-               and "testutil" not in path.name
-               and "pushState" in path.read_text(encoding="utf-8")]
-    assert not pushers, (f"{pushers} push a path onto the history: a client route with a key would "
-                         f"reach nginx's log; give the map the dashboard's path before doing that")
+               and "testutil" not in path.name]
+    assert any(path.suffix == ".jsx" for path in sources)                # the scan is not empty
+    seen, found = set(), []
+    for path in sources:
+        for call in _path_navigations(_code_lines(path)):
+            if call in ALLOWED_NAVIGATION_CALLS:
+                seen.add(call)
+            else:
+                found.append(f"{path.relative_to(ROOT)}: {call}")
+    assert not found, (f"{found} may move the address bar to a path: a client route with a key would "
+                       f"reach nginx's log. Check what path it writes; add it to "
+                       f"ALLOWED_NAVIGATION_CALLS only if it keeps the page's own")
+    assert seen == ALLOWED_NAVIGATION_CALLS, ALLOWED_NAVIGATION_CALLS - seen    # the list is not stale
     for route in DASHBOARD_KEY_ROUTES:
         sent = re.sub(r":\w+", SENTINEL, route)
         assert SENTINEL not in _log_uri(sent), sent
