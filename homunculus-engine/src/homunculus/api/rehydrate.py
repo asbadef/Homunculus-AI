@@ -79,7 +79,8 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
 
 
 def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
-    """Replay one observation; False when its signal is unknown and it was skipped.
+    """Replay one observation; False when its signal is unknown or its value unreadable (`observation_of`) and
+    it was skipped.
 
     Judged where the door judged it (G2-A2, X10b): at the reading's own stamp, never past the wall
     clock (X10), with the row's write time standing for that wall clock, to within the request.
@@ -93,19 +94,27 @@ def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
 
 
 def observation_of(rec: AuditRecord) -> Observation | None:
-    """The observation an `ingest` or `chart` row recorded, or None for a signal this build does not know.
-    G3-01: the replay builds it so, and so does the withdrawal for the shadow lane (X5) — one reading equals
-    the other, field for field."""
+    """The observation an `ingest` or `chart` row recorded, or None for a signal this build does not know, or a
+    value no float can hold. G3-01: the replay builds it so, and so does the withdrawal for the shadow lane (X5) —
+    one reading equals the other, field for field."""
     try:
         code = SignalCode(rec.subject)
     except ValueError:
         return None
     p = rec.payload
+    try:
+        value = float(p["value"])
+    except OverflowError:
+        # G3-01 (review of Task 6): a whole number past the float range (`float(10**400)`) is no reading. The door
+        # cannot write one (`float()` refuses it before the row exists), but the trail is what a restart must
+        # survive, whoever wrote it: skipped like an unknown signal, rather than failing the replay of the whole
+        # tenant — and with it every board.
+        return None
     # G2-A4 review (S1, X22): a `chart` row carries `charted_by`, never a `device` — the door stamps the
     # observation "clinician" (api/clinical.py `build_entries`), and the replay must too, or after a restart
     # every hand-charted value reads as coming from "replay" (the SOFA form prints the source).
     source = p.get("device") or ("clinician" if rec.event_type == "chart" else "replay")
-    return Observation(patient_id=rec.patient_id, code=code, value=float(p["value"]),
+    return Observation(patient_id=rec.patient_id, code=code, value=value,
                        unit=p.get("unit", ""), timestamp=datetime.fromisoformat(p["obs_ts"]),
                        source_device=source)
 
