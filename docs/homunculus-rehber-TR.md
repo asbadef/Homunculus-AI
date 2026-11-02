@@ -1654,8 +1654,9 @@ uydurmadır.
 - **Önce önizleme.** «Önizle», motorun NEWS2'sini hastanın bir kopyası üzerinde hesaplar ve hiçbir
   şey yazmaz (`POST /clinical/{id}/preview`); kayıtla (`POST /clinical/{id}`) aynı kuralları uygular,
   yani kaydın reddedeceği değeri önizleme de reddeder. «Kaydet» yalnız tam olarak gönderilecek
-  değerlerin önizlemesinde çıkar: bir kutu ya da saat değişirse önizleme eskir. Puanı motor
-  hesaplar, karar hekimindir.
+  değerlerin önizlemesinde çıkar: bir kutu ya da saat değişirse önizleme eskir; kutular aynı kalsa
+  da 5 dakikadan eski bir önizleme geçersizdir, «Kaydet» gider ve form «Önizleme 5 dakikadan eski;
+  yeniden önizleyin.» der. Puanı motor hesaplar, karar hekimindir.
 - **Sınırlar klinik eşik değildir**, yanlış basılmış bir haneyi ya da yanlış bir birimi yakalamak
   içindir (sunucu kayıt sırasında denetler; form aynısını yalnız hatayı kutunun altında göstermek
   için yansıtır):
@@ -1667,18 +1668,23 @@ uydurmadır.
     birbiriyle karşılaştırılmaz.
 
   Saat değiştirilmezse sunucunun saati yazılır. Değiştirilirse en çok 24 saat geriye gider, ileriye
-  gitmez (sunucu yalnız iki dakikalık saat farkına göz yumar; form bir dakikaya). Sunucu bu saat
-  sınırını yalnız istek solunum, SpO₂, sistolik, MAP, nabız ya da ateşten birini taşıyorsa uygular;
-  yalnız ek oksijen ya da bilinç girilirse sınırı form tutar.
+  gitmez (sunucu yalnız iki dakikalık saat farkına göz yumar; form bir dakikaya, ve tarayıcının
+  kendi saatiyle değil sunucuya göre düzeltilmiş saatle yargılar). Sunucu bu saat sınırını yalnız
+  istek solunum, SpO₂, sistolik, MAP, nabız ya da ateşten birini taşıyorsa uygular; yalnız ek
+  oksijen ya da bilinç girilirse sınırı form tutar.
 - **«Hatalı giriş».** Bu formdan girilmiş bir değer geri alınır; düğme `clinical.chart` yetkisi
   olana görünür: satırdaki «Hatalı giriş» gerekçe penceresini açar, onay düğmesi «Hatalı giriş
   olarak işaretle»dir. İki yer vardır: «Kaydedildi» adımı (yalnız adım açıkken) ve vital eğrisinin
-  tablosu (açık pencerede: 6 saat, 24 saat ya da 3 gün). Gerekçe en az 10 karakter olmalıdır
-  (baştaki ve sondaki boşluklar sayılmaz) (`POST /clinical/{id}/entries/{entry}/retract`). Ek
-  oksijen ve bilincin eğrisi yoktur: onlar yalnız «Kaydedildi» adımından geri alınır; adım
-  kapandıktan sonra ekranda başka yolu yoktur. İlaç / sıvı kaydı (kilo, vazopressör, bolus) için
-  ekranda böyle bir yol yoktur; 3.6'daki «düzeltme yeni kayıttır» kuralı onlar için sürer. Değer
-  silinmez:
+  tablosu (açık pencerede: 6 saat, 24 saat ya da 3 gün). Gerekçe 10–200 karakter olmalıdır (baştaki
+  ve sondaki boşluklar sayılmaz; 200'ü aşarsa sunucu «gerekçe en çok 200 karakter olabilir» der)
+  (`POST /clinical/{id}/entries/{entry}/retract`); pencere «Gerekçeye hasta adı ya da numarası
+  yazmayın.» der, çünkü gerekçe denetim kaydında düz metin olarak kalıcıdır ve eğri her
+  yenilemede onu taşır. Ek oksijen ve bilincin eğrisi yoktur: onlar yalnız «Kaydedildi»
+  adımından geri alınır; adım kapandıktan sonra ekranda başka yolu yoktur. Yalnız yatak başı
+  formunun sekiz değeri geri alınır. Başka bir kayıt — hekimin şüpheli enfeksiyon işareti, SOFA
+  formunun laboratuvar değerleri, ilaç / sıvı / kilo kaydı (vazopressör, bolus) — için ekranda
+  böyle bir yol yoktur ve sunucu da reddeder (409 «yalnız yatak başı ölçümü hatalı giriş olarak
+  işaretlenebilir»); 3.6'daki «düzeltme yeni kayıttır» kuralı onlar için sürer. Değer silinmez:
   - denetim kaydına bir `chart_retract` satırı düşer;
   - hastanın motor durumu denetim kaydından, o değer **hiç girilmemiş gibi** yeniden kurulur
     (NEWS2, canlı SOFA, sepsis, antibiyotik saati, alarmlar); yeniden başlatmada da geri gelmez.
@@ -1688,24 +1694,28 @@ uydurmadır.
   - büyük grafikte üstü çizili kalır (kartın küçük grafiği yalnız motorun noktalarını çizer);
     tabloda gerekçesiyle, kimin ve ne zaman geri aldığıyla durur.
 - **Alarmlara etkisi.**
+  - Kayıt kapısı (`POST /clinical/{id}`) aciliyeti «anında» olan bir alarmı yeni açan HER kayıt
+    için hemşireye bildirim yollar, yalnız elle girilmiş NEWS2 için değil: örneğin şüpheli
+    enfeksiyon işaretinin ya da bir vazopressör kaydının septik şok alarmını açması.
   - Artık tetiklenmeyen alarm kapanır. Kimsenin onaylamadığı kritik bir alarm ise «geçti ·
     onaylanmadı» olarak panoda kalır (G2-A1) ve biri onaylayana dek durur; bu durum yeniden
     başlatmada korunmaz (plandaki O4).
-  - Bir istisna: geri alma hastanın motorda hiçbir ölçümünü bırakmazsa (örneğin bütün değerler
-    yanlış hastaya girilmişse) «geçti · onaylanmadı» durumundaki alarmlar da kalkar; her biri için
-    denetim kaydına, sebebi `entered_in_error` olan bir `alert_cleared` satırı yazılır. Kartta o
-    alarmın dayanacağı bir ölçüm kalmamıştır; yeniden başlatma da onu zaten geri getirmezdi.
+  - Bir koruma: geri alma hastanın motorda hiçbir ölçümünü bırakmazsa «geçti · onaylanmadı»
+    durumundaki alarmlar da kalkar; her biri için denetim kaydına, sebebi `entered_in_error` olan
+    bir `alert_cleared` satırı yazılır (kartta o alarmın dayanacağı bir ölçüm kalmamıştır;
+    yeniden başlatma da onu zaten geri getirmezdi). Ekrandan bugün oluşmaz: kritik bir alarm
+    şüpheli enfeksiyon işareti ister ve o işaret geri alınamaz.
   - Yanlış değer daha eski bir ölçümü gölgeliyorsa, geri alma eskisini son ölçüm olarak geri
     getirir ve yeni bir alarm doğabilir; doğarsa hemşireye bildirilir.
   - Geri alma bir kişinin işidir: cihaz kimliği (köprünün jetonu) yapamaz, cihazdan gelen bir
     değer geri alınamaz, taburcu edilmiş bir numarada da yapılmaz.
 - **«elle».** Elle girilen değeri «elle» diye işaretleyenler: trend kartı (son değer elle
   girilmişse); büyük grafiğin okuması (imlecin altındaki ölçüm elle girilmişse); tablo (elle
-  girilen her satır). Hasta ekranının «Ölçülen değerler» kutusu ve «Yatak başı ölçüm»
-  sayfasındaki hasta listesi işaretlemez: pano değerin kaynağını taşımaz. Listedeki «son ölçüm»
-  hangi kaynaktan olursa olsun son NEWS2 girdisidir. Elle girilen değer gölge motora da gider
-  (bkz. 5. bölümdeki «Gölge öneri» maddesi); hatalı giriş oradan da kalkar, ama gölge motor bunu
-  sonraki dakikalık örnekte yargılar.
+  girilen her satır, üstü çizili olan da). Hasta ekranının «Ölçülen değerler» kutusu ve «Yatak başı
+  ölçüm» sayfasındaki hasta listesi işaretlemez: pano değerin kaynağını taşımaz. Listedeki «son
+  ölçüm» hangi kaynaktan olursa olsun son NEWS2 girdisidir. Elle girilen değer gölge motora da
+  gider (bkz. 5. bölümdeki «Gölge öneri» maddesi); hatalı giriş oradan da kalkar, ama gölge motor
+  bunu sonraki dakikalık örnekte yargılar.
 - **Geri dönüş**: eski imajlara dönülür, göç yoktur. Ama eski API `chart_retract`'ı bilmez:
   geri alınmış değerler eski sürümde yeniden sayılır. Geri dönüş bloğu bu yüzden önce kaç geri
   alma olduğunu basacak (planın dağıtım notları).

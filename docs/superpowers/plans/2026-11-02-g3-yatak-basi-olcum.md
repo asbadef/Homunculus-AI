@@ -48,6 +48,11 @@
 | X15 | **`RetractDialog.jsx` lives in `screens/common/`** (spec §5: `screens/patient/`). | Two screens open it: the bedside saved step and the trend dialog's table. `common/` is where the screens' shared pieces live (`BoardState.jsx`, `MonitorStrip.jsx`). |
 | X16 | **A withdrawn value is drawn on the big chart only**, dimmed and crossed where it was typed, and the big chart's value axis holds it. The card's mini chart draws the engine's points only. | A slipped digit is exactly the value that stretches an axis. On the mini chart, which has no legend and is hidden from assistive technology, it would flatten the real readings with no word of why. The big chart says what the cross means. |
 | X17 | **The door's fixed refusals are translated** (`errors.*`): MAP < sistolik, the two time bounds, and the withdrawal's five. The whole-number refusal ("{code}: tam sayı olmalı") stays as the engine wrote it. | The door's sentences are Turkish (D6), and an Azerbaijani nurse reads the screen in Azerbaijani. A template carries its code, and the form holds it back before it is sent. |
+| X18 | **`dashboard/src/reachable.test.js` was red from Task 10 until Task 14 routed `/olcum`.** Accepted. | The test names every module under `src/` that the page cannot import. The bedside files (Tasks 10–13) land before the page that imports them (Task 14), so the sweep is red in between and goes green with the route. |
+| X19 | **A withdrawal that leaves the patient no reading ends the patient's latches** with an `alert_cleared` row of reason `entered_in_error` (`ENTERED_IN_ERROR`; `entered_in_error_latches` lists them, `_publish_current` writes the rows first, then calls `store.forget_patient`). Restart == live (O4). Since X22 this cannot be reached from the screens and stays as a guard. | Kept, a latch would sit in the store with no card to show it, unacknowledgeable, and come back as «resolved, unacknowledged» with the next real reading; a restart, which skips the withdrawn rows, never builds it. Rows first, then memory, as X4: an append that fails leaves the latch for the retry to end. |
+| X20 | **A withdrawal drops the escalation chain (`store.recent`) of every alert it clears,** so a real alert soon after gets its own clock and its own page to the doctor. This differs from X13 on purpose. Its reach also covers a real episode that a wrong value kept alive. | An episode the withdrawal ended stood on a value that was never real, so its chain is not remembered. A restart forgets every chain anyway (`rehydrate`). |
+| X21 | **A 409 «already» finishes what a failed withdrawal left:** it repairs memory with no second append when the engine holds more copies of the withdrawn reading than a rebuild does; it always republishes the current card; and it stamps (row first) and tells an uncovered alert. | A withdrawal whose `chart_retract` row committed and whose later step raised answered 500 and left memory, the card or the nurse's notification behind. The retry finds the row, so its «already» answer is the one place that can finish the tail; every step is idempotent. |
+| X22 | **Only `RETRACTABLE_CODES` can be withdrawn:** the bedside form's eight (the six `BEDSIDE_VITALS`, supplemental oxygen and ACVPU). Any other chart row is 409 `RETRACT_NOT_BEDSIDE` («yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir»). The trend table offers the button only on bedside hand rows. | Found in the local walk. The physician's suspected-infection mark, the SOFA form's labs and the meds chart are chart rows too, but they are corrected by a new entry; the sepsis panel already says its mark cannot be taken back. |
 
 ## Open items
 
@@ -56,6 +61,25 @@
 - **O4** (spec): a latch created by a withdrawn value does not survive a restart.
 - **O5** (spec): the az/ru/en strings are read by a native reader after the deploy.
 - **O6 (new):** a withdrawal of a value whose rebuild would take longer than the audit read bound (30 s, `SET LOCAL`) answers 500. Nothing is written in that case (X4). Not reachable at today's sizes; O3's index removes it.
+- **O7 (new):** notification ordering — at-least-once against at-most-once — on `/ingest` and the door. `for_new` marks a key as told before the publish and the audit row, so a failure between them loses the notification; and a restart re-tells and re-pages the live immediate alerts (seen in the walk). Also: with row-first stamping (X21), an X3-uncovered alert whose `first_seen` append failed is neither escalated nor told until a retry, and the trend table offers no retry button.
+- **O8 (new):** after a restart, an alert a withdrawal uncovered keeps its original `first_seen` (the replay's T1), while live it is the withdrawal's time (T3). Next to O4.
+- **O9 (new):** the rebuild replays the patient's whole stay on the event loop, and every 409 «already» now rebuilds too (X21). The cost grows with the stay. Next to O3 and O6.
+- **O10 (new):** `alarm_quality` counts an `entered_in_error` episode as unanswered. Whether withdrawn episodes leave the figures is the owner's policy call.
+- **O11 (new):** the decimal comma is used in the saved step only; the trend table, the card, the board and the trend dialog still print a dot.
+- **O12 (new):** walk notes, all for later slices:
+  - (d) the alarm-start marks of alerts that rested only on a withdrawn value stay in the trend tables;
+  - (i) «RİSK: ÖLÇÜLMEDİ» shows beside a KRİTİK latch;
+  - (f) the sepsis panel says «hekim işaretledi» when a nurse marked;
+  - (g) engine texts carry UTC times («Sepsis recognized at 15:53»).
+- **O13 (new):** `SofaEditors.jsx` and `MedsChartForm.jsx` have the same time-box `min` against check gap that Task 12 fixed for the bedside form.
+
+## Record (final review and local walk)
+
+- Task 1's review, item 6 (RR ≤ 80 for a NICU, temperature ≥ 25 °C, and the SOFA form's MAP 69.5 correction against a door that takes whole numbers only) was told to the owner. The recommendation is to keep the bounds as they are.
+- The SOFA correction's reason is also free text, as the withdrawal's is (the G2-A4 precedent).
+- The walk scored RR 26 / SpO₂ 91 / on oxygen as NEWS2 **8**, not 7: the plan's arithmetic was off.
+- The guide's section became **§3.12** after the dalga-2 merge took §3.11; Task 17's block below keeps the number it was written with.
+- The plan's code blocks keep their original strings and names. The code is the authority.
 
 ## Deploy notes
 
