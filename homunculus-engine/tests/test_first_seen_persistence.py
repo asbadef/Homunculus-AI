@@ -29,7 +29,12 @@ def test_stamp_first_seen_returns_true_only_when_newly_stamped():
 
 
 def test_rehydrate_replays_first_seen_events():
+    # The trail as `/ingest` writes it: the readings that raise the shock, then its stamp. G3-01 (D12): the
+    # replay keeps a stamp only for an alert it has on the board, so a bare stamp would be dropped.
     audit = InMemoryAuditLog()
+    for code, value in _SHOCK:
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", code,
+                                {"value": value, "unit": "", "obs_ts": T0.isoformat(), "device": "mon-1"}))
     audit.append(AuditEvent("HOSP1", "first_seen", "bed-3", "septic_shock", {"at": T0.isoformat()}))
     engine, store = Engine(), AckStore()
     rehydrate(engine, store, audit.records(tenant="HOSP1"))

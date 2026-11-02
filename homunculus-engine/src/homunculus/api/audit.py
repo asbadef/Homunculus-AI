@@ -198,6 +198,9 @@ def iter_records_of(log: AuditLog, *, tenant: str, event_types: Iterable[str], p
     of another kind never takes a place in a page."""
     if page < 1:
         raise ValueError("page must be at least 1")
+    if isinstance(event_types, str):
+        # A bare "chart" would be read as the set of its letters, match no row, and pass for "no rows".
+        raise TypeError("event_types is a collection of event types")
     kinds = frozenset(event_types)
     after: int | None = None
     while True:

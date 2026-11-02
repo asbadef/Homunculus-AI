@@ -59,8 +59,13 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
             _replay_ack(engine, store, rec)
         elif rec.event_type == "first_seen":
             key = (rec.patient_id, rec.subject)
-            store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
-            store.clock_from.setdefault(key, store.first_seen[key])
+            # G3-01 (D12): a stamp only for an alert the replay has on the board, as `_replay_ack` guards. The
+            # doors stamp what is firing right after the reading that raised it, so on a consistent trail the
+            # key is here; an alert only a withdrawn (skipped) value raised is not, and the live rebuild's
+            # hook pruned its stamp — kept, the next real episode would inherit its first sight and clock.
+            if key in store.firing or key in store.resolved:
+                store.first_seen.setdefault(key, datetime.fromisoformat(rec.payload["at"]))
+                store.clock_from.setdefault(key, store.first_seen[key])
         elif rec.event_type == "alert_cleared" and rec.payload.get("reason") == DISCHARGED:
             # G2-A11 (D7a): a discharge retired the patient live, at this point of the log; the
             # replay retires it here. Every other `alert_cleared` row follows from the rows the
@@ -152,6 +157,8 @@ def _replay_ack(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
 #: G3-01 (D10): the kinds a patient's ENGINE state is rebuilt from — what `rehydrate` replays into the engine
 #: for one patient. The ack, first-seen and clear rows are the store's, and the store is not rebuilt: an
 #: alert the ward saw stays seen, and the lifecycle hook, run once after the rebuild, ends what no longer fires.
+#: The replay retires a patient at the discharge `alert_cleared` row, which the rebuild never reads: the
+#: withdrawal route refuses a discharged number before any rebuild, or the rebuild would bring its readings back.
 REBUILD_EVENTS = frozenset({"ingest", "chart", "profile"})
 
 
