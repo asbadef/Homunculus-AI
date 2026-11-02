@@ -19,13 +19,24 @@
 //      another hub process — a restarted hub, counting from 0 again — the whole window. That
 //      answer is merged like any other (one block per wave and time, so the overlap adds nothing)
 //      and its cursor and process are taken, even when the cursor went backwards.
+//   6. A CLOCK SET BACK STARTS AFRESH (the hub's R5, mirrored). A block more than WAVE_ANSWER_S
+//      behind the newest held means the monitor's clock went back: the hub has already cleared
+//      its ring and serves the new, earlier stream. What was held is dropped rather than left to
+//      hide it — kept, its newest would hold the head where the new blocks never reach (or floor
+//      them out of the 20 s altogether), and the panel would stay blank for as long as the
+//      set-back. A set-back of WAVE_ANSWER_S or less is not detected, as at the hub.
 // The calls go through the session's `track` and the API client's own `request` (backendApi.js's
 // escape hatch for a route it does not wrap), so a refused refresh ends the session here too.
+// They carry no time limit of their own: backendApi's `timed` honours only one longer than the
+// client's own (15 s), so a hung poll is bounded by that. One poll per monitor is in flight at a
+// time, and meanwhile the rows age into "akış durdu" on their own (R6).
 
 export const WAVE_POLL_MS = 750;
 export const WAVE_KEEP_S = 20;
 export const WAVE_BLOCK_S = 0.2;          // every block is 200 ms of one wave (n = rate / 5)
-export const WAVE_TIMEOUT_MS = 4000;
+// = the API's ANSWER_S (edge/infinity_waves.py): the most one answer carries behind the hub's
+// newest block for a monitor, and the hub's set-back threshold (R5). No block served is older.
+export const WAVE_ANSWER_S = 10;
 export const WAVES_SCHEMA = "homunculus.infinity-waves.v1";
 const RATES = new Set([50, 100, 200, 250, 500]);
 const MAX_STARTED = 40;                   // the API's MAX_TEXT: the hub process's name, at most
@@ -81,13 +92,20 @@ function insertAt(list, t) {
   return lo;
 }
 
+/** How far device time `t` lies behind `newest`, in whole milliseconds. Device times are the hub's
+ *  t_ms / 1000, and their difference in floating point can land a hair off (1024.4 - 10 > 1014.4). */
+const msBehind = (newest, t) => Math.round((newest - t) * 1000);
+
 /** What a monitor holds after an answer: per wave id, ordered by device time, one block per time,
- *  nothing more than WAVE_KEEP_S behind the monitor's newest block. Pure: `held` is not changed. */
+ *  nothing more than WAVE_KEEP_S behind the monitor's newest block — and none of what was held
+ *  when a block arrives more than WAVE_ANSWER_S behind it (rule 6). Pure: `held` is not changed. */
 export function mergeBlocks(held, incoming) {
-  const out = { ...held };
+  const fresh = incoming.filter(isBlock);
+  const was = newestOf(held)?.t ?? -Infinity;
+  const setBack = fresh.some((block) => msBehind(was, block.t) > WAVE_ANSWER_S * 1000);
+  const out = setBack ? {} : { ...held };
   const copied = new Set();
-  for (const block of incoming) {
-    if (!isBlock(block)) continue;
+  for (const block of fresh) {
     const id = String(block.id);
     if (!copied.has(id)) {
       out[id] = [...(out[id] ?? [])];
@@ -176,13 +194,14 @@ export function createWaveStore({
     entry.inFlight = true;
     try {
       const { cursor, started } = entry.state;
-      const answer = await track(() => api.request(wavesPath(source, cursor, started), { timeoutMs: WAVE_TIMEOUT_MS }));
+      const answer = await track(() => api.request(wavesPath(source, cursor, started)));
       if (!live(source, entry)) return;
       if (!isWavesAnswer(answer)) {
         set(entry, { status: WAVE_STATUS.UNAVAILABLE });
         return;
       }
-      // An answer from another hub process (rule 5) is that hub's whole window: merged as usual.
+      // An answer from another hub process (rule 5) is that hub's whole window: merged as usual;
+      // one from a monitor whose clock went back (rule 6) replaces what was held.
       const blocks = mergeBlocks(entry.state.blocks, answer.blocks);
       const newest = newestOf(blocks);
       set(entry, {

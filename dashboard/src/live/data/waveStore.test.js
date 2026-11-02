@@ -3,7 +3,7 @@
 // into an empty trace. Synthetic blocks only (waves.testutil.js), synthetic addresses (192.0.2.x).
 import { describe, it, expect, vi } from "vitest";
 import {
-  IDLE_DEVICE, WAVE_KEEP_S, WAVE_POLL_MS, WAVE_STATUS, WAVE_TIMEOUT_MS, createWaveStore, isWavesAnswer, mergeBlocks,
+  IDLE_DEVICE, WAVE_ANSWER_S, WAVE_KEEP_S, WAVE_POLL_MS, WAVE_STATUS, createWaveStore, isWavesAnswer, mergeBlocks,
   newestOf, sampleOf, statusOf, waveStoreFor, wavesPath,
 } from "./waveStore.js";
 import {
@@ -42,8 +42,9 @@ describe("the wave store's polling", () => {
     expect(api.request).not.toHaveBeenCalled();
     store.watch(SOURCE);
     await settle();
-    expect(api.request).toHaveBeenCalledTimes(1);
-    expect(api.request).toHaveBeenCalledWith(`/infinity-waves/${SOURCE}?since=0`, { timeoutMs: WAVE_TIMEOUT_MS });
+    // the path alone: a hung poll is bounded by the API client's own limit (backendApi's `timed`
+    // honours only a longer one), and the rows age into "akış durdu" meanwhile (R6)
+    expect(api.request.mock.calls).toEqual([[`/infinity-waves/${SOURCE}?since=0`]]);
   });
 
   it("polls every 750 ms with the cursor of the last answer", async () => {
@@ -52,7 +53,7 @@ describe("the wave store's polling", () => {
     await settle();
     expect(timers.delays).toEqual([WAVE_POLL_MS]);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED), { timeoutMs: WAVE_TIMEOUT_MS });
+    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
     expect(store.get(SOURCE).cursor).toBe(41);
   });
 
@@ -92,15 +93,28 @@ describe("the wave store's polling", () => {
     expect(track).toHaveBeenCalledTimes(1);
   });
 
-  it("drops an answer that lands after its monitor was released", async () => {
-    let resolve;
-    const { store } = harness({ reply: () => new Promise((r) => { resolve = r; }) });
+  it.each([
+    ["an answer", (late) => late.resolve(answer(undefined, { cursor: 999, started: RESTARTED }))],
+    ["a refusal", (late) => late.reject(refusal(403))],
+  ])("drops %s that lands after its monitor was released, even once it is watched again", async (_name, land) => {
+    const calls = [];
+    const { store } = harness({ reply: () => new Promise((resolve, reject) => { calls.push({ resolve, reject }); }) });
     const release = store.watch(SOURCE);
     await settle();
     release();
-    resolve(answer());
+    store.watch(SOURCE);                       // a new watch of the same monitor, its own first poll in flight
     await settle();
-    expect(store.get(SOURCE)).toBe(IDLE_DEVICE);
+    expect(calls).toHaveLength(2);
+    const notified = vi.fn();
+    store.subscribe(notified);
+    land(calls[0]);                            // the released watch's poll comes back last
+    await settle();
+    expect(notified).not.toHaveBeenCalled();
+    const device = store.get(SOURCE);
+    expect(device.status).toBe(WAVE_STATUS.LOADING);
+    expect(device.cursor).toBe(0);
+    expect(device.started).toBeNull();
+    expect(device.blocks).toEqual({});
   });
 });
 
@@ -120,9 +134,9 @@ describe("the wave store and the hub process (amendment A4)", () => {
     await settle();
     expect(store.get(SOURCE).started).toBe(STARTED);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED), { timeoutMs: WAVE_TIMEOUT_MS });
+    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(57, STARTED), { timeoutMs: WAVE_TIMEOUT_MS });
+    expect(api.request).toHaveBeenLastCalledWith(pathOf(57, STARTED));
   });
 
   it("takes a restarted hub's cursor and process, and its whole window adds no block twice", async () => {
@@ -140,9 +154,11 @@ describe("the wave store and the hub process (amendment A4)", () => {
     expect(device.started).toBe(RESTARTED);
     expect(device.blocks["259"]).toHaveLength(before["259"].length + 1);
     for (const id of ["513", "769", "6422"]) expect(device.blocks[id]).toHaveLength(before[id].length);
+    // merged, not started afresh: 7.8 s behind is no set-back, so the blocks held are the ones kept
+    for (const id of ["259", "513", "769", "6422"]) expect(device.blocks[id][0]).toBe(before[id][0]);
     for (const list of Object.values(device.blocks)) expect(new Set(list.map((b) => b.t)).size).toBe(list.length);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(12, RESTARTED), { timeoutMs: WAVE_TIMEOUT_MS });
+    expect(api.request).toHaveBeenLastCalledWith(pathOf(12, RESTARTED));
   });
 
   it.each([
@@ -153,15 +169,16 @@ describe("the wave store and the hub process (amendment A4)", () => {
     const { api, store, timers } = harness({ reply: () => reply() });
     store.watch(SOURCE);
     await settle();
+    const before = store.get(SOURCE).blocks;
     reply = () => spoil(answer(undefined, { cursor: 99, started: RESTARTED }));
     await timers.fire();
     const device = store.get(SOURCE);
     expect(device.status).toBe(WAVE_STATUS.UNAVAILABLE);
-    expect(Object.keys(device.blocks)).toHaveLength(4);
+    expect(device.blocks).toBe(before);
     expect(device.cursor).toBe(41);
     expect(device.started).toBe(STARTED);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED), { timeoutMs: WAVE_TIMEOUT_MS });
+    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
   });
 
   it("takes a hub process of 1 to 40 characters, the API's own bound, and nothing else", () => {
@@ -198,15 +215,23 @@ describe("the wave store's statuses", () => {
   });
 
   it.each([[403, WAVE_STATUS.DENIED], [404, WAVE_STATUS.GONE], [409, WAVE_STATUS.OFF]])(
-    "a %i drops the blocks and stops polling (%s)", async (code, status) => {
-      let reply = () => answer();
-      const { store, timers } = harness({ reply: () => reply() });
+    "a %i drops the blocks, the cursor and the process, and stops polling (%s)", async (code, status) => {
+      let reply = () => answer(undefined, { cursor: 41 });
+      const { api, store, timers, show } = harness({ reply: () => reply() });
       store.watch(SOURCE);
       await settle();
       reply = () => { throw refusal(code); };
       await timers.fire();
-      expect(store.get(SOURCE).status).toBe(status);
-      expect(store.get(SOURCE).blocks).toEqual({});
+      const device = store.get(SOURCE);
+      expect(device.status).toBe(status);
+      expect(device.blocks).toEqual({});
+      expect(device.cursor).toBe(0);
+      expect(device.started).toBeNull();
+      expect(timers.delays).toEqual([]);
+      const asked = api.request.mock.calls.length;
+      await show(false);
+      await show(true);                        // the tab shown again does not wake a refused monitor
+      expect(api.request).toHaveBeenCalledTimes(asked);
       expect(timers.delays).toEqual([]);
     });
 
@@ -217,10 +242,11 @@ describe("the wave store's statuses", () => {
       const { store, timers } = harness({ reply: () => reply() });
       store.watch(SOURCE);
       await settle();
+      const before = store.get(SOURCE).blocks;
       reply = failing;
       await timers.fire();
       expect(store.get(SOURCE).status).toBe(WAVE_STATUS.UNAVAILABLE);
-      expect(Object.keys(store.get(SOURCE).blocks)).toHaveLength(4);
+      expect(store.get(SOURCE).blocks).toBe(before);
       expect(timers.delays).toEqual([WAVE_POLL_MS]);
     });
 
@@ -271,5 +297,42 @@ describe("what the wave store holds", () => {
     const store = waveStoreFor(session);
     expect(waveStoreFor(session)).toBe(store);
     expect(waveStoreFor({ api: session.api, track: session.track })).not.toBe(store);
+  });
+});
+
+describe("a monitor clock set back (the hub's R5, in the browser)", () => {
+  it("starts afresh when the new stream is far behind, and dates the head by it", async () => {
+    let reply = () => answer(bed4(), { cursor: 160 });                       // held: up to 1008
+    const { store, timers } = harness({ reply: () => reply() });
+    store.watch(SOURCE);
+    await settle();
+    expect(store.get(SOURCE).newest.t).toBe(1007.8);
+    // The hub cleared its ring and serves the monitor's new, earlier stream: 940 … 948.
+    const back = [...run(259, { end: 948 }), ...run(513, { end: 948 })];
+    reply = () => answer(back, { cursor: 240 });
+    await timers.fire();
+    const device = store.get(SOURCE);
+    expect(device.status).toBe(WAVE_STATUS.OK);
+    expect(Object.keys(device.blocks).sort()).toEqual(["259", "513"]);
+    expect(device.blocks["259"]).toEqual(back.filter((b) => b.id === 259));
+    expect(device.newest.t).toBe(947.8);
+    expect(device.sample.deviceS).toBeCloseTo(948.2, 6);
+  });
+
+  it("starts afresh on a set-back inside the 20 s it keeps, too; a block that is not one resets nothing", () => {
+    const held = mergeBlocks({}, run(259));                                  // 1000.0 … 1007.8
+    expect(mergeBlocks(held, [{ ...wblock(513, 900), rate: 300 }])).toEqual(held);
+    const merged = mergeBlocks(held, run(513, { end: 993 }));                // 15 s back: 985.0 … 992.8
+    expect(Object.keys(merged)).toEqual(["513"]);
+    expect(merged["513"]).toHaveLength(40);
+    expect(newestOf(merged).t).toBe(992.8);
+  });
+
+  it("does not start afresh at exactly 10 s behind, counted in whole milliseconds", () => {
+    expect(WAVE_ANSWER_S).toBe(10);                                          // the API's ANSWER_S
+    const held = mergeBlocks({}, [wblock(259, 1024.4)]);
+    // 1024.4 - 10 in floating point is a hair above 1014.4: compared naively, this would reset.
+    expect(Object.keys(mergeBlocks(held, [wblock(513, 1014.4)])).sort()).toEqual(["259", "513"]);
+    expect(Object.keys(mergeBlocks(held, [wblock(513, 1014.399)]))).toEqual(["513"]);
   });
 });
