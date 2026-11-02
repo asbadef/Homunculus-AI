@@ -1044,8 +1044,8 @@ def create_app(
         """G3-01 (D8, X10): what the chart door would score for these entries — the card's own NEWS2
         (`api/board.py` `_news2`) of a COPY of the patient's state with the entries added, judged at the
         request's instant. Parsed by the door's own `_recorded_at` and `build_entries`: the same refusals and
-        the same time bound. Nothing is written: no audit row, no engine change, no frame. A discharged number
-        answers as the door drops it (`dropped`), with nothing scored."""
+        the same time bound. Nothing is charted: no chart row, no engine change, no frame, no notification.
+        A discharged number answers as the door drops it (`dropped`), with nothing scored."""
         caller = await _caller(authorization)
         _require(caller, CLINICAL_CHART)
         hospital = caller.hospital

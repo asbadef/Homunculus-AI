@@ -73,6 +73,54 @@ class TestThePreview:
         assert len(client.app.state.audit.records(tenant="h1", limit=10_000)) == before
         assert all(p["patient_id"] != "bed-3" for p in _patients(client))
 
+    def test_it_emits_no_frame_and_no_notification(self, client, monkeypatch):
+        """No board frame, no notification published, and the notifier is not even asked: the preview is a
+        question, and a nurse must not be told of an alert a value only MIGHT raise. The same spies are shown
+        to be live by the door, which does emit for RISKY (X2)."""
+        state = client.app.state
+        calls = {"frame": 0, "notification": 0, "for_new": 0}
+
+        def spy(name, original):
+            async def counted_async(*args, **kwargs):
+                calls[name] += 1
+                return await original(*args, **kwargs)
+
+            def counted(*args, **kwargs):
+                calls[name] += 1
+                return original(*args, **kwargs)
+            return counted_async if name != "for_new" else counted
+
+        monkeypatch.setattr(state.broadcaster, "publish", spy("frame", state.broadcaster.publish))
+        monkeypatch.setattr(state.notification_hub, "publish",
+                            spy("notification", state.notification_hub.publish))
+        monkeypatch.setattr(state.notifier, "for_new", spy("for_new", state.notifier.for_new))
+
+        assert _preview(client, RISKY, at=_ago(5)).status_code == 200
+        assert calls == {"frame": 0, "notification": 0, "for_new": 0}
+        assert _chart(client, RISKY, at=_ago(5)).status_code == 200
+        assert calls["frame"] > 0 and calls["for_new"] > 0, "the spies are not wired to the door's path"
+
+    def test_it_answers_the_instant_it_judged_at(self, client):
+        """`at` is the request's one instant, timezone-aware, the instant the NEWS2 was judged at."""
+        before = datetime.now(timezone.utc)
+        body = _preview(client, RISKY, at=_ago(5)).json()
+        stamp = datetime.fromisoformat(body["at"])
+        assert stamp.tzinfo is not None
+        assert before - timedelta(seconds=1) <= stamp <= datetime.now(timezone.utc) + timedelta(seconds=5)
+
+    def test_a_measured_patients_own_readings_are_in_the_preview(self, client):
+        """The preview starts from the patient's own record, not from an empty one: a heart rate charted
+        earlier is scored, and the answer is still the card's after the same entries are saved (D8)."""
+        assert _chart(client, [{"code": "heart_rate", "value": 130}], at=_ago(10)).status_code == 200
+        at = _ago(5)
+        preview = _preview(client, RISKY, at=at).json()["news2"]
+        assert "pulse" not in preview["missing"]
+        assert preview["breakdown"]["pulse"] == points_for("pulse", 130)
+        assert _chart(client, RISKY, at=at).status_code == 200
+        card = _card(client)["latest"]["news2"]
+        for key in preview:
+            assert preview[key] == card[key], key
+
     def test_it_leaves_a_measured_patient_as_it_was(self, client):
         assert _chart(client, [{"code": "heart_rate", "value": 80}], at=_ago(10)).status_code == 200
         card = _card(client)
