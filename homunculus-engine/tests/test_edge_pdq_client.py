@@ -397,6 +397,15 @@ def test_an_exchange_that_ends_in_time_gives_its_slot_back_before_ask_returns():
     assert len(opener.sent) == 25
 
 
+@pytest.mark.parametrize("max_pending", [0, -1])
+def test_a_cap_below_one_is_refused_at_construction(max_pending):
+    """A cap of 0 would build a client that never asks the API — every query «still waiting» —
+    and BoundedSemaphore refuses only a negative one. The constructor refuses both, in its words."""
+    with pytest.raises(ValueError, match="max_pending"):
+        PatientQueryClient(_URL, "device-token", opener=_opener({"found": False}),
+                           max_pending=max_pending)
+
+
 def test_a_thread_that_cannot_be_started_is_unavailable_and_gives_its_slot_back(monkeypatch):
     real_start = threading.Thread.start
 

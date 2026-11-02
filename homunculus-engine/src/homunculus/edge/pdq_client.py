@@ -94,6 +94,9 @@ class PatientQueryClient:
         self.timeout = timeout
         self._open = opener if opener is not None else _direct_opener()
         self._clock = clock
+        if max_pending < 1:
+            # 0 would build a client that never asks the API (every ask «still waiting»).
+            raise ValueError(f"max_pending must be at least 1, not {max_pending}")
         self._slots = threading.BoundedSemaphore(max_pending)
 
     def ask(self, patient_id: str) -> PatientIdentity | object:

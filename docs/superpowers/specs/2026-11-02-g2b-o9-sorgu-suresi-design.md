@@ -37,7 +37,7 @@ reply changes.
 
 ## 4. Testing
 
-`tests/test_edge_pdq_client.py`, no network and no DNS. Every thread a test starts is released in a fixture and joined with a
+`tests/test_edge_pdq_client.py`, no network and no DNS. Every thread a test blocks is released in a fixture and joined with a
 bound; the opener that blocks waits on an `Event` the test sets.
 
 - A **blocking opener** with `timeout=0.2`: `ask` raises «did not answer in time» within 0.2 s + slack, without the id, and the
@@ -50,10 +50,13 @@ bound; the opener that blocks waits on an `Event` the test sets.
 - **A late answer** (found) and **a late failure** (refused): `ask` had already raised; afterwards no log record, no output, no
   unhandled thread exception, and the next ask gets its own answer.
 - Every in-time failure keeps its exact words. The existing tests, including the bridge's no-stall test (B1d E26), are unchanged.
+- **A cap below one** (0, -1) is refused at construction with a `ValueError` naming `max_pending`: 0 would build a client that never
+  asks the API (added after the review).
 
-**Gates (2026-11-02):** `test_edge_pdq_client.py` + `test_edge_bridge_query.py` 53 passed (3.12 and 3.14); the whole engine suite
-without a database 3167 passed / 1110 skipped / 0 failed (main `c72cbe5`: 3153 / 1109 / 0; the 15 new tests, and one
-environment-dependent skip that varies from run to run).
+**Gates (2026-11-02):** at `7639c06`, `test_edge_pdq_client.py` + `test_edge_bridge_query.py` 53 passed (3.12 and 3.14) and the whole
+engine suite without a database 3167 passed / 1110 skipped / 0 failed (main `c72cbe5`: 3153 / 1109 / 0; the 15 new tests, and one
+environment-dependent skip that varies from run to run). With the review's cap guard (two more tests) the pair is 55 passed (3.12
+and 3.14) and the whole suite 3169 / 1110 / 0.
 
 ## 5. Not in this slice
 
