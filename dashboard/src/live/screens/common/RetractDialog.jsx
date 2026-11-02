@@ -33,7 +33,7 @@ export const RETRACT_ARM_MS = 600;
 export const RETRACT_ALREADY = "bu değer zaten hatalı giriş olarak işaretlenmiş";
 
 /** Did the engine say that another desk withdrew it first? By its sentence, which the error keeps whatever
- *  `errors.*` text Task 11 later shows for it (the key sweep, rawKeys.test.jsx, forbids naming a key before it exists). */
+ *  `errors.retractAlready` text apiErrors.js shows for it (G3-01, Task 11, X17). */
 const saidAlready = (err) => err?.status === 409 && String(err.message ?? "").trim() === RETRACT_ALREADY;
 
 /** `bed` names the patient in the title and on the toast; `what` is `{ label, value, time }` as the clinician

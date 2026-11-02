@@ -68,9 +68,13 @@ function callBody(src, open) {
 }
 
 const APP = py("api/app.py");
-// G2-A4: the charting door's one message the SOFA routes also send by name (`detail=GCS_NOT_WHOLE`).
-// Only that constant: clinical.py's other strings are units and codes, not messages.
-const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => name === "GCS_NOT_WHOLE"));
+// G2-A4: the charting door's one message the SOFA routes also send by name (`detail=GCS_NOT_WHOLE`). G3-01:
+// the bedside set's fixed refusals, which the door raises through `str(exc)`, and «hatalı giriş»'s, which the
+// withdrawal route raises by name. Named one by one: clinical.py's other strings are units, codes and one
+// template (NOT_WHOLE, "{code}: tam sayı olmalı", shown as the engine wrote it), not messages.
+const CLINICAL_MESSAGE_NAMES = new Set(["GCS_NOT_WHOLE", "MAP_NOT_BELOW_SBP", "AT_TOO_OLD", "AT_FUTURE",
+  "RETRACT_REASON_SHORT", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED"]);
+const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => CLINICAL_MESSAGE_NAMES.has(name)));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
 const ADMIN_SCHEMAS = py("admin/schemas.py");
@@ -167,7 +171,8 @@ describe("no message site escapes the readers", () => {
     ["auth/router.py", /^str\(exc\)/, 1, "PasswordError's message: its literals are read from service.py"],
     // Wave 3's files.
     ["api/app.py", /^f"permission required:/, 1, "a permission key of the route; the key is not translated, the sentence around it is"],
-    ["api/app.py", /^str\(exc\)/, 6, "ClinicalEntryError / GatewayError / ScoreError: the engine's own validation text, shown as the engine wrote it"],
+    // G3-01 (Task 3): the preview route (POST /clinical/{id}/preview) is the seventh, beside the door's own ClinicalEntryError.
+    ["api/app.py", /^str\(exc\)/, 7, "ClinicalEntryError / GatewayError / ScoreError: the engine's own validation text, shown as the engine wrote it"],
     ["api/app.py", /^\{"reason": "/, 6, "Aşama A's forwarder lane (POST /infinity-shadow/readings), read by the hub by status, and Aşama B's findings list asked at a stage other than «rules» (GET /infinity-shadow/findings, 409 stage_not_rules), which Settings' week list only ever reads as «could not be read»: no screen shows them"],
     ["admin/service.py", /^f"\{BEYOND_OWN_RIGHTS\}/, 1, "the constant plus the keys it lacks; matched by shape (BEYOND_OWN_RIGHTS in apiErrors.js)"],
     ["admin/service.py", /^detail\) from None/, 1, "_flush's own parameter: every caller passes a constant read above"],
@@ -280,6 +285,16 @@ describe("apiErrorText", () => {
   it("says the charting door's refusal of a GCS that is not a whole number", () => {
     expect(apiErrorText(en, new Error("GCS tam sayı olmalı"))).toBe("The GCS must be a whole number.");
     expect(apiErrorText(az, new Error("GCS tam sayı olmalı"))).toBe("GCS tam ədəd olmalıdır.");
+  });
+
+  // G3-01 (D6, D7, D11): the bedside door's and «hatalı giriş»'s refusals, read from api/clinical.py by name
+  // (the sweep above holds every one mapped); a template is shown as the engine wrote it.
+  it("says the bedside door's and the withdrawal's refusals in the reader's words", () => {
+    expect(CLINICAL_MESSAGES.size).toBe(CLINICAL_MESSAGE_NAMES.size);
+    expect(apiErrorText(az, new Error("MAP sistolik basınçtan küçük olmalı"))).toBe("MAP sistolik təzyiqdən kiçik olmalıdır.");
+    expect(apiErrorText(en, Object.assign(new Error("bu değer zaten hatalı giriş olarak işaretlenmiş"), { status: 409 })))
+      .toBe("This value is already marked as entered in error.");
+    expect(apiErrorText(az, new Error("resp_rate: tam sayı olmalı"))).toBe("resp_rate: tam sayı olmalı");
   });
 
   it("translates a known message, whatever whitespace surrounds it", () => {

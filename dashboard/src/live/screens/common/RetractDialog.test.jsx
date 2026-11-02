@@ -109,9 +109,7 @@ describe("«hatalı giriş»", () => {
     armed();
     reason(REASON);
     await confirm();
-    // Task 11 maps this sentence: until then the engine's Turkish is shown as written (the AZ text is «Bu dəyər artıq
-    // səhv qeyd kimi işarələnib.»).
-    expect(toasted("REA-01 · 2: işarələnmədi — bu değer zaten hatalı giriş olarak işaretlenmiş").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: işarələnmədi — Bu dəyər artıq səhv qeyd kimi işarələnib.").length).toBeGreaterThan(0);
     expect(onDone).toHaveBeenCalledWith("already");
     expect(onClose).toHaveBeenCalled();
   });
@@ -123,8 +121,7 @@ describe("«hatalı giriş»", () => {
     armed();
     reason(REASON);
     await confirm();
-    // Task 11 maps this sentence: until then the engine's Turkish is shown as written.
-    expect(toasted("REA-01 · 2: işarələnmədi — taburcu edilmiş bir hastada değer geri alınamaz").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: işarələnmədi — Evə yazılmış xəstədə dəyər geri götürülə bilməz.").length).toBeGreaterThan(0);
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
@@ -154,9 +151,7 @@ describe("«hatalı giriş»", () => {
     armed();
     reason(REASON);
     await confirm();
-    // Task 11 maps this sentence: until then the engine's Turkish is shown as written (the AZ text is «Səbəb ən azı
-    // 10 simvol olmalıdır.»).
-    expect(toasted("REA-01 · 2: işarələnmədi — gerekçe en az 10 karakter olmalı").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: işarələnmədi — Səbəb ən azı 10 simvol olmalıdır.").length).toBeGreaterThan(0);
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });

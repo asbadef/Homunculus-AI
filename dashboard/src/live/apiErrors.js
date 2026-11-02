@@ -95,6 +95,18 @@ export const API_MESSAGE_KEYS = new Map([
   // the screen through `str(exc)` and are shown as the engine wrote them; this one is a fixed sentence, so it
   // is said in the reader's words. The SOFA form holds a 14,5 back before it is sent (sofaFields).
   ["GCS tam sayı olmalı", "gcsNotWhole"],
+  // POST /clinical/{id} and its preview (G3-01, D6, D7): the bedside set's fixed refusals. The form holds each
+  // back before it is sent (bedside/vitalsFields.js); another client's is said in the reader's words. The
+  // whole-number refusal names its code ("resp_rate: tam sayı olmalı") and stays as the engine wrote it.
+  ["MAP sistolik basınçtan küçük olmalı", "vitalsMapAboveSbp"],
+  ["ölçüm saati en çok 24 saat geriye alınabilir", "vitalsAtTooOld"],
+  ["ölçüm saati ileri olamaz", "vitalsAtFuture"],
+  // POST /clinical/{id}/entries/{entry}/retract (G3-01, D11, X11): «hatalı giriş»'s refusals.
+  ["gerekçe en az 10 karakter olmalı", "retractReasonShort"],
+  ["geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz", "retractNeedsPerson"],
+  ["bu hastada böyle bir elle girilmiş değer yok", "retractUnknown"],
+  ["bu değer zaten hatalı giriş olarak işaretlenmiş", "retractAlready"],
+  ["taburcu edilmiş bir hastada değer geri alınamaz", "retractDischarged"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.
