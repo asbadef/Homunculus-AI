@@ -312,10 +312,12 @@ cards that an older API would not match, so from then on rollback means a forwar
   `uq_admissions_tenant_protocol` allows one row per number. The card's key does not change
   (`tests/test_admission_workflow.py`). The transfer routes stay closed (A-37); the slice that reopens
   them records the moved number in the arrival's audit row.
-- **O9 (local walk W-1):** the bridge's 2 s bound is urllib's socket timeout and does not cover
-  name resolution. With the api container stopped, Docker's DNS fails `api` after about 4 s, so the
-  device waits about 4 s for the mirror's answer (0.37 s with the API up). That is inside the 10 s
-  NCE gives its patient-query host; a deadline around the whole ask is a possible later hardening.
+- **O9 (local walk W-1) — closed (2026-11-02, [the O9 follow-up](2026-11-02-g2b-o9-sorgu-suresi-design.md)):**
+  the bridge's 2 s bound was urllib's socket timeout and did not cover name resolution. With the api
+  container stopped, Docker's DNS failed `api` after about 4 s, so the device waited about 4 s for
+  the mirror's answer (0.37 s with the API up). `PatientQueryClient.ask` now runs the exchange on a
+  daemon thread and waits at most 2 s of wall-clock time, DNS and a slow answer included. At most 8
+  exchanges are in flight; past that the mirror answers at once. A late answer is dropped unlogged.
 - **O10 (local walk W-2):** uvicorn's access log, and nginx's, write the request path, and the
   patient screen's routes carry the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`):
   the protocol number now, the H-number before this slice. The device route carries no number (a
