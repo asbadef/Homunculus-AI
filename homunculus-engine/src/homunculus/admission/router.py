@@ -902,7 +902,9 @@ async def list_care_team(
 #   * the confirm bound to the bed named at initiate;
 #   * the card moved with `put_identity`;
 #   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well;
-#   * a transfer UI.
+#   * a transfer UI;
+#   * the arrival's audit row carrying the moved `protocol_no` — the service moves it to the arriving
+#     row (O8), so the TRANSFERRED row no longer holds it, and the card keeps its key across the move.
 # And the arrival's new admission must carry the source's `identity_digest` — flushed once the
 # source has left its open state, as the open-identity index holds one open row per person — or
 # the person's open admission is invisible to the duplicate refusal (A-37).
