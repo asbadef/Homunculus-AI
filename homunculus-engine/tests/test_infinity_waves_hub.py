@@ -258,9 +258,10 @@ def test_the_hub_page_shows_the_wave_counters(hub):
     client, _, _ = hub
     script = client.get("/app.js").text
     assert "s.waves.cursor" in script and "s.waves.refused" in script and "s.waves.dropped" in script
+    assert "s.waves.alive" in script and "canlı" in script
 
 
-IDLE = {"cursor": 0, "refused": 0, "started": STARTED, "errors": 0, "dropped": 0, "queued": 0}
+IDLE = {"cursor": 0, "refused": 0, "started": STARTED, "errors": 0, "dropped": 0, "queued": 0, "alive": True}
 
 
 def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
@@ -386,6 +387,39 @@ def test_a_hook_error_raised_on_several_threads_at_once_is_still_logged_once(wir
     assert status(wired.client)["waves"] == dict(IDLE, errors=count)
 
 
+def test_an_error_hook_that_raises_does_not_end_the_decoder_thread(wired, monkeypatch, caplog):
+    """Review M1. `consume` is guarded, but an exception outside it — `failed` itself raising, the
+    timings — used to end the thread with nothing to say so: `queued` pinned at the bound, `dropped`
+    climbing, the waves dark. The loop survives it: the error is handed to `failed` once more, and
+    when `failed` is what raises it is logged once per type, by type and location, never with the
+    payload. The next batch decodes as if nothing happened."""
+    caplog.set_level(logging.WARNING, logger="homunculus.edge.infinity_hub")
+    decoder = wired.client.app.state.wave_decoder
+    original_consume, original_failed, calls = wired.waves.consume, decoder.failed, []
+
+    def broken(error):
+        calls.append(type(error).__name__)
+        raise RuntimeError(f"the hook is broken on {error}")
+
+    monkeypatch.setattr(wired.waves, "consume", _raises(ValueError))
+    monkeypatch.setattr(decoder, "failed", broken)
+    sent = [event(tick(*at(0)), 1000.0), event(tick(*at(1)), 1000.0)]
+    assert _acknowledged(wired, sent[0])                          # settles: the thread is still draining
+    assert _acknowledged(wired, sent[1])
+    assert decoder.thread.is_alive()
+    assert calls == ["ValueError", "RuntimeError"] * 2            # consume's error, then the hook's own, each batch
+    seen = status(wired.client)
+    assert seen["waves"] == IDLE                                  # uncounted: the counting hook is the broken one
+    records = [r for r in caplog.records if r.name == "homunculus.edge.infinity_hub"]
+    assert len(records) == 1 and "RuntimeError" in records[0].getMessage() and "goes on" in records[0].getMessage()
+    assert records[0].exc_info is None and "cannot read" not in caplog.text and "the hook is broken" not in caplog.text
+    assert not any(item["payload_base64"] in caplog.text for item in sent)
+    monkeypatch.setattr(wired.waves, "consume", original_consume)
+    monkeypatch.setattr(decoder, "failed", original_failed)
+    assert _acknowledged(wired, event(tick(*at(2)), 1000.0))
+    assert status(wired.client)["waves"] == dict(IDLE, cursor=4) and len(read(wired.client, BED).json()["blocks"]) == 4
+
+
 # --- dalga-perf: the decode runs after the ack, on its own thread --------------------------------
 # On the ward's hub the decode cost ≈2 ms per POST inside the handler, and one open panel took the
 # handler from 38 to 146 ms (every read built its answer under the buffer lock the decode waits on).
@@ -471,6 +505,21 @@ def test_an_app_whose_lifespan_runs_twice_decodes_both_times(tmp_path):
         journal.close()
 
 
+def test_status_says_whether_the_decoder_thread_is_alive(tmp_path):
+    """Review M1: `queued` pinned at the bound with `dropped` climbing is what a dead decoder looks
+    like from outside; `alive` says it outright. True under the lifespan, False once it has ended."""
+    journal = Journal(tmp_path / "hub.sqlite", Fernet.generate_key())
+    waves = WaveBuffer(INV)
+    app = create_hub(INV, journal, COLLECTOR, VIEWER, accept_payload=True, waves=waves)
+    try:
+        with TestClient(app) as client:
+            assert status(client)["waves"]["alive"] is True
+        assert not app.state.wave_decoder.thread.is_alive()
+        assert status(TestClient(app))["waves"]["alive"] is False     # no `with`: the lifespan ended and did not rerun
+    finally:
+        journal.close()
+
+
 def test_a_hub_without_waves_has_no_decoder(tmp_path):
     journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
     try:
@@ -543,6 +592,35 @@ def test_start_does_not_run_a_second_consumer_beside_a_thread_that_outlived_clos
     assert decoder.thread is not stuck and decoder.thread.is_alive() and decoder.queued == 0
     decoder.close()
     assert not decoder.thread.is_alive()
+
+
+def test_close_on_a_full_queue_costs_no_batch():
+    """Review M3. `close` used to put its sentinel through `submit`, which on a full queue drops the
+    oldest batch and counts it — a batch paid for a sentinel nobody needs: a full queue has no `get`
+    to wake, and the thread checks `stopping` before every `get`. The sentinel now finds no room and
+    is simply not put; `dropped` stays, the thread ends at the next batch boundary."""
+    gate, entered = threading.Event(), threading.Event()
+
+    def consume(events):
+        entered.set()
+        gate.wait(timeout=10)
+
+    decoder = WaveDecoder(SimpleNamespace(consume=consume), Timings(), lambda error: None, limit=4)
+    try:
+        decoder.start()
+        decoder.submit([0])
+        assert entered.wait(timeout=5)                              # the first is held in `consume`; the queue is empty
+        for k in range(1, 5):
+            decoder.submit([k])                                     # four fill it
+        assert decoder.queued == 4 and decoder.dropped == 0
+        closing = threading.Thread(target=decoder.close)
+        closing.start()
+        assert decoder.stopping.wait(timeout=5)                     # `close` has asked; its sentinel found no room
+    finally:
+        gate.set()
+    closing.join(timeout=5)
+    assert not closing.is_alive() and not decoder.thread.is_alive()
+    assert decoder.dropped == 0 and decoder.queued == 4             # nothing dropped for the sentinel, nothing decoded past `stopping`
 
 
 # The answer, byte for byte, as the route rendered it before dalga-perf (captured at 720e48f with

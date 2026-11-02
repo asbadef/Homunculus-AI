@@ -97,12 +97,13 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   `samples: null` = the all-`0x0001` "no signal" block. A lone `1` inside a live block is data.
   `started` is the hub process's start time (plan R19, added after the Task 2 review): a caller
   that sees it change knows the cursor restarted and re-reads the window. `GET /v1/status` gains
-  `waves: {cursor, refused, started, errors, dropped, queued}` when the buffer exists, so a worker
+  `waves: {cursor, refused, started, errors, dropped, queued, alive}` when the buffer exists, so a worker
   clock ahead of the hub (every packet refused as "future") shows up as a counter instead of a
   silent blackout; `errors` counts batches the buffer raised on (acknowledged all the same, I4),
   `dropped` the acknowledged batches the decoder thread never got to (its queue was full) and
   `queued` its backlog now (dalga-perf). The 3 s rule is judged at decode time, so `refused`
   climbing with `queued` above 0 is a decoder stall, not clock skew.
+  `alive` is the decoder thread itself (review M1): it ends for no exception but SystemExit/KeyboardInterrupt, so `false` under a running hub is a dead decoder — `queued` pinned at the bound, `dropped` climbing — and the hub page says «canlı» beside «atılan».
 - `deploy/infinity/build_transport_release.py` gains `infinity_waves` in `EDGE` (new hub release R7,
   the first after R6; R5 is NBP-2 and R6 the HR/PLS swap — final review I-2).
 - CPU: decoding ≈65 packets/s is a few µs each; acceptance still measures the hub (§8).

@@ -73,7 +73,7 @@ async function poll(g){try{
  el('overview').textContent=s.devices.length+' cihaz · Toplayıcı: '+(s.collector.connected?'erişilebilir':'kalp atışı yok/eski')+
   ' · Bekleyen: '+(q?.rows??'bilinmiyor')+' · Kapasite nedeniyle alınamayan: '+(q?.counters?.queue_full_dropped??0)+
   ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0)+
-  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused+' · atılan '+s.waves.dropped:'');
+  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused+' · atılan '+s.waves.dropped+' · canlı '+(s.waves.alive?'evet':'HAYIR'):'');
  }catch(e){if(g!==generation)return;el('error').textContent=e.message;el('devices').replaceChildren();el('overview').textContent='Güncel durum doğrulanamıyor.';}
  if(g===generation&&key)timer=setTimeout(()=>poll(g),2000);
 }
@@ -94,12 +94,17 @@ class WaveDecoder:
     batch is dropped and counted (`dropped`), so the handler never blocks and never raises. A batch
     the buffer raises on is handed to `failed` (I4: the ack stood before the batch got here) and
     the thread goes on to the next. `start` in the app's lifespan, `close` at its end: what is still
-    queued is dropped, not flushed; the ring dies with the process anyway."""
+    queued is dropped, not flushed; the ring dies with the process anyway. The thread ends for no
+    exception but SystemExit/KeyboardInterrupt (review M1): one raised outside `consume` — by
+    `failed` itself, by the timings — is counted the same way and the loop goes on, and `alive`
+    tells /v1/status whether it is still running."""
 
     def __init__(self, waves, timings, failed, *, limit=MAX_PENDING_BATCHES):
         self.waves, self.timings, self.failed = waves, timings, failed
         self.pending = queue.Queue(limit)
         self.dropped = 0
+        self.lock = threading.Lock()        # M5: one producer at a time through `submit`'s drop-then-put
+        self.hook_broken = set()            # M1: error types `failed` itself raised, logged once each
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._run, name="infinity-wave-decoder", daemon=True)
 
@@ -107,20 +112,28 @@ class WaveDecoder:
     def queued(self) -> int:
         return self.pending.qsize()
 
+    @property
+    def alive(self) -> bool:
+        return self.thread.is_alive()
+
     def submit(self, events) -> None:
         """Queue one acknowledged batch: O(1), never blocks, never raises. A full queue drops its
-        oldest batch first."""
-        while True:
+        oldest batch first. The drop and the put are one step under `lock` (M5): the handler submits
+        from the event loop and `close` puts its sentinel, and a second producer slipping into the slot
+        the drop freed would have cost one batch more than the bound asked for. The decoder thread
+        only takes, so the slot freed under the lock is ours."""
+        with self.lock:
             try:
                 self.pending.put_nowait(events)
-                return
             except queue.Full:
                 try:
                     self.pending.get_nowait()
                 except queue.Empty:
-                    continue
-                self.pending.task_done()
-                self.dropped += 1
+                    pass                                    # the decoder drained it meanwhile: room now
+                else:
+                    self.pending.task_done()
+                    self.dropped += 1
+                self.pending.put_nowait(events)
 
     def start(self) -> None:
         if self.thread.is_alive():
@@ -144,7 +157,15 @@ class WaveDecoder:
     def close(self, timeout=5.0) -> None:
         """Stop the thread: what it is decoding finishes, what is queued is dropped."""
         self.stopping.set()
-        self.submit(None)                                   # wakes a `get` that is waiting on an empty queue
+        # The sentinel wakes a `get` that is waiting on an empty queue. It takes its own path, not
+        # `submit` (M3): on a full queue `submit` would drop a real batch and count it to make room
+        # for a sentinel nobody needs — a full queue has no `get` to wake, and `stopping` is checked
+        # before every `get`, so the thread ends on its own at the next batch boundary.
+        with self.lock:
+            try:
+                self.pending.put_nowait(None)
+            except queue.Full:
+                pass
         self.thread.join(timeout)
 
     def settle(self, timeout=5.0) -> None:
@@ -178,8 +199,29 @@ class WaveDecoder:
                     self.failed(error)
                 else:
                     self.timings.since("waves_ms", decoding)
+            except Exception as error:
+                # M1: an exception outside the guarded `consume` — `failed` raising, the timings —
+                # used to end the thread with nothing to say so: `queued` pinned at the bound and
+                # `dropped` climbing, the waves dark. Only SystemExit/KeyboardInterrupt end the loop.
+                self._survive(error)
             finally:
                 self.pending.task_done()
+
+    def _survive(self, error) -> None:
+        """Count an error the loop body leaked through `failed`, the hook that counts decode errors.
+        When `failed` is what raises, it is logged here instead — once per error type, by type and
+        code location only: an exception's own message may quote the payload — and the loop goes on."""
+        try:
+            self.failed(error)
+        except Exception as again:
+            kind = type(again)
+            if kind in self.hook_broken:
+                return
+            self.hook_broken.add(kind)
+            frames = traceback.extract_tb(again.__traceback__)
+            where = f"{os.path.basename(frames[-1].filename)}:{frames[-1].lineno} in {frames[-1].name}" if frames else "?"
+            log.error("Infinity hub: the wave decoder's error hook raised %s at %s; the thread goes on, "
+                      "uncounted (logged once per error type).", kind.__name__, where)
 
 
 def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payload=False, clock=time.time,
@@ -451,9 +493,11 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             # `errors` counts batches the buffer raised on (I4), acknowledged all the same. `dropped`
             # counts acknowledged batches the decoder thread never got to (its queue was full), and
             # `queued` is its backlog now (dalga-perf): a starved decoder shows here before it shows
-            # as a stalled trace.
+            # as a stalled trace. `alive` is the decoder thread itself (M1): a dead one would show as
+            # `queued` pinned at the bound and `dropped` climbing, and nothing would say why.
             answer["waves"] = {"cursor": waves.cursor, "refused": waves.refused, "started": hub_started,
-                               "errors": hook_errors["waves"], "dropped": decoder.dropped, "queued": decoder.queued}
+                               "errors": hook_errors["waves"], "dropped": decoder.dropped, "queued": decoder.queued,
+                               "alive": decoder.alive}
         return answer
 
     return app
