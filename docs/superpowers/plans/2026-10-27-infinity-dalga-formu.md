@@ -51,7 +51,7 @@
 | R14 | The hub decodes waves whenever it runs live research with payload capture (no separate hub flag); `INFINITY_WAVES` on the API is the switch. | Spec §3.1 hook 1; §5.7. |
 | R15 | Full screen uses the browser Fullscreen API when it can, else a window-filling overlay; Esc, × or leaving browser full screen close it; Tab stays on ×; focus returns to ⤢. | W5; the shell's own full screen (`shell/TopBar.jsx`) uses the same API. |
 | R16 | `INFINITY_WAVES=on` with the hub settings missing or not https → 503 with the reason (`not_configured` / `misconfigured`), logged once at start; flag off → 409 `waves_off`; strip off or another hospital → 409 `stage_off`. Gate order: the board's 401/403 first, then the flag, the stage, the monitor (404 `no_device`), the cursor (400 `bad_since`), the hub process it came from (400 `bad_started`, amendment A3). | §3.2 "status mapping"; a caller without the right learns nothing else. |
-| R17 | The new boundary rule lives in its own file `live/waveBoundaries.test.js` (both directions, plus a ban on audio, speech, vibration, notification, storage and canvas-export APIs in wave modules). `src/reachable.test.js` gets a named, temporary `PENDING` list (Task 8) that Task 15 removes. | `boundaries.test.js` is shared with Lane A; the page reaches the wave modules only after the screen lines. |
+| R17 | The new boundary rule lives in its own file `live/waveBoundaries.test.js` (both directions, plus a ban on audio, speech, vibration, notification, storage and canvas-export APIs in wave modules; as committed, the alarm path also holds the alarms screen, and the alarm actions the session carries are banned too — Task 12, Step 2). `src/reachable.test.js` gets a named, temporary `PENDING` list (Task 8) that Task 15 removes. | `boundaries.test.js` is shared with Lane A; the page reaches the wave modules only after the screen lines. |
 | R18 | `api/app.py` gets one 4-line hunk beside the research router: a local import and `register_waves(app, board=lambda authorization: shadow_board(authorization))` — `shadow_board` is defined later in `create_app` and looked up when a request comes. The two route-inventory tests declare the route as caller-resolved outside `app.py`. | §10: one registration away from the shadow routes; the gates are the board's own, by construction. |
 | R19 | The hub names its process: `create_hub` keeps `hub_started = iso_z(clock())` once, the waves answer carries it as a top-level `"started"` (both shapes), and `GET /v1/status` gains `"waves": {"cursor", "refused", "started"}` — only when the hub has a `WaveBuffer`. Task 5 reads `started`. | (1) `WaveBuffer.refused` (events turned away: not live, over 3 s old, ahead of the hub's clock) was surfaced nowhere, so a worker clock a few hundred ms ahead of the hub's would black out every wave while the journal acknowledged each packet; the status page now shows it. (2) A restarted hub counts its cursor from 0 again, and "a cursor ahead of the hub's counts as 0" is only a heuristic (a cursor can be *behind* the new count and silently skip blocks); a per-process token makes the restart exact for every caller. (Task 2 review.) |
 
@@ -4840,6 +4840,32 @@ describe("the waveform modules", () => {
 
 Run: `cd /c/tmp/inf-dalga/dashboard && npx vitest run src/live/waveBoundaries.test.js src/live/boundaries.test.js`
 Expected: `13 passed` (5 + 8). Then, as a check that is not committed, add `import { useBoard } from "../../data/BoardProvider.jsx";` as the last import of `WavePanel.jsx` and re-run: `reach no signal, shell, lock-screen or board-store module` fails naming `screens/common/WavePanel.jsx -> data/BoardProvider.jsx`; put the line back out (`git diff --stat` shows only the new test file) and re-run: green.
+
+*As committed (5654e5b, Lane B, after the merge of main).* The file holds 9 tests (`17 passed` with `boundaries.test.js`), where the block above has 5. Lane A reads this test first, so it was widened:
+- **The alarm path** gains `screens/alarms/`: the alarms screen acknowledges alarms (`board.store.acknowledge`). One predicate (`isAlarm`) now defines the set, and the guarded roots are computed from it.
+- **The wave modules' walk passes the registry.** A wave module that imported `shell/routes.js` reached every screen and the board behind them, and the block above let that through. The alarm path's own walk still stops there.
+- **The words** (`i18n/strings/waves.js`) are reached from every module through the catalogue. They must import nothing, only `i18n/catalog.js` may import them, and no alarm-path module may name a `waves.` key.
+- **What no import shows.** The panel holds the session store, and the wave store holds its API client. The wave modules may name none of the alarm actions these carry: `acknowledge`, `"/ack"`, `signOut`, `.cancel(` and `.lock(`. They may also send no `method:`, dispatch no event or message, import no package but React, nothing outside `src/live/`, and neither `prefs.js` (the alarm sound's on/off) nor `session/browserState.js`.
+- **The API ban grows** to cover `<audio>`/`<video>`, `.play(`, `OfflineAudioContext`, `showNotification`, `setAppBadge`, `document.title`, `document.cookie`, `caches`, `convertToBlob`, `createObjectURL` and `print(`. A failure now names the file and the kind.
+- **Every module named `wave*`** under `src/live/` must be on the list.
+
+Fourteen mutations were each made in place and restored byte-for-byte (`cmp` and `git diff --quiet`). Each failed exactly the test meant to catch it:
+- an alarm-path import in `WavePanel.jsx`;
+- `signals.js` importing `waveStore.js`;
+- `new Audio(` in `WaveRows.jsx`;
+- `localStorage` in `waveStore.js`;
+- `toDataURL` in `WaveFullscreen.jsx`;
+- `navigator.vibrate` in `waveGeometry.js`;
+- `AlarmsScreen.jsx` importing `WavePanel.jsx`;
+- `WavePanel.jsx` importing `shell/routes.js`;
+- `api.acknowledge` in `waveStore.js`;
+- `prefs.js` imported by `WavePanel.jsx`;
+- `"waves.stalled"` in `TopBar.jsx`;
+- `AlarmSignals.jsx` importing the words;
+- `document.title =` in `WaveRows.jsx`;
+- `dispatchEvent` in `waveStore.js`.
+
+The suite: 118 files, 3271 tests.
 
 - [ ] **Step 3: Commit.**
 
