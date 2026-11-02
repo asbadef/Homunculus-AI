@@ -16,8 +16,9 @@ import { RetractDialog } from "../common/RetractDialog.jsx";
 import { specOf, valueText } from "./vitalsFields.js";
 
 /** `saved` is `{ atMs, rows: [{ code, value, entry }] }`; `onRetract(entry, reason)` is the withdrawal, bound to
- *  the patient by the host; `nowMs` says which day «today» is for the time. */
-export function SavedStep({ bed, saved, nowMs, onRetract, children }) {
+ *  the patient by the host; `nowMs` says which day «today» is for the time. `level` is the heading level of the
+ *  box (the page's 2; 3 inside a dialog, under the dialog's own h2), and its list heading sits one below it. */
+export function SavedStep({ bed, saved, nowMs, onRetract, level = 2, children }) {
   const { t } = useI18n();
   const [withdrawn, setWithdrawn] = useState(() => new Set());
   const [open, setOpen] = useState(null);   // the row whose «Hatalı giriş» is open
@@ -35,9 +36,10 @@ export function SavedStep({ bed, saved, nowMs, onRetract, children }) {
     const spec = specOf(code);
     return spec ? t(spec.labelKey) : code;
   };
+  const ListHeading = `h${level + 1}`;
   return (
-    <Box title={t("olcum.saved", { time })} icon="ok" level={2}>
-      <h3 className="m-0 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("olcum.savedList")}</h3>
+    <Box title={t("olcum.saved", { time })} icon="ok" level={level}>
+      <ListHeading className="m-0 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("olcum.savedList")}</ListHeading>
       {/* role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver. */}
       <ul role="list" className="m-0 mt-1 list-none p-0">
         {saved.rows.map((row) => {

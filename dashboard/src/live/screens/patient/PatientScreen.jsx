@@ -404,7 +404,7 @@ export function PatientScreen({ params }) {
           {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without
               clinical.chart. */}
           <Box title={t("patient.vitals")} icon="activity" level={2}
-            right={canChart ? <VitalsEntry patientId={id} bed={bed} /> : null}>
+            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
 
