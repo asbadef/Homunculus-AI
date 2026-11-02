@@ -6196,6 +6196,20 @@ The walk in a browser (a person, or an agent driving one) at `http://127.0.0.1:2
 
 Tear down: `$C down -v` (with `C` as above), stop the fake hub if still running, `docker ps -a --format '{{.Names}}' | grep -E '^homunculus-(postgres|api|web)$' || echo "no stack containers"` → `no stack containers`; delete `/c/tmp/inf-dalga-stack` (synthetic scratch). Nothing to commit; record the outcome for the lead.
 
+*As walked (2026-11-02, on `2a151b6`; notes and shots in `/c/tmp/homunculus-plans/dalga2/walk/`).* Items 1–5 passed. The gates were 3313 passed / 1109 skipped (engine) and 124 files / 3434 tests (dashboard), with the build green. T1 (Windows' excluded ports) and T3 (credentials kept across a restart) are folded into Step 3 above (`23ee423`, `2dab50e`). The product findings, and what became of them:
+- **P3 (important): a vertical stroke at the right edge of every row**, as tall as the trace's range (shot 06). It was seen only in the headful run, at devicePixelRatio 1.25.
+  - *Cause:* `WaveRows` `paint()` cleared in CSS pixels under the dpr transform, while `fit()` sizes the backing store to `round(CSS width × dpr)`. At 866 px × 1.25 that is 1082.5 of 1083 pixels, so the clear stopped on the centre of the last column. A GPU-rastered canvas never clears that column, and every stroke that touched the right edge piled up there: the newest sample each frame, and the pressure grid.
+  - *Reproduced* in Chrome 156 at device scale 1.25: 62 of 70 pixels were inked in the last column, against 2 with the fix. A software-raster canvas showed no line. The walk's `getImageData` watchers move canvases to software raster, which is why they never saw it; the headless part of the walk ran at dpr 1.
+  - *Fixed in `4b13f54`:* the whole backing store is cleared in device pixels on every frame. A canvas that measures 0 is not drawn on, and `tracePaths` gives no path for a row with no width.
+- **P2 (low): blank rows with no word for ≈ 1.5 s after a hub restart.** The refilled ring starts after the render time, and `rowState` called that "live".
+  - *Fixed in `4b13f54`:* such a row says «dalga bekleniyor» and draws nothing, never «akış durdu». So does a row on the far side of a gap wider than the window.
+  - In Step 3 (4)'s recovery, the rows therefore say «dalga bekleniyor» between the first `200` and the first ink.
+- **P4 (cosmetic): the frozen trace ran through «akış durdu · N sn».** *Fixed in `4b13f54`:* the row's words sit on the row's own ground, `bg-card` in the panel and black in full screen. Their ink is unchanged (R11).
+- **P1 (low, VM acceptance input):** locally, a full-window answer (`since=0`) was the slow one. Its cache-miss p95 was 90–323 ms, against ≈ 49 ms with a cursor. The §8 target is measured on the VM.
+- **P5** (the admission screen kept two refusal toasts beside its success) is outside this slice.
+
+After the fixes there are 6 more tests (3 panel, 3 geometry), and five mutants are killed. Dashboard: 124 files, 3440 tests; the build is green.
+
 - [ ] **Step 4: Acceptance checklist (spec §8), for the lead.**
 
 | Item | Where | State after this plan |
