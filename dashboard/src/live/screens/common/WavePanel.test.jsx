@@ -3,15 +3,29 @@
 // mocked 2D context per canvas (so a row's own drawing can be read) with a hand-driven frame clock.
 // Synthetic blocks only (waves.testutil.js).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import React from "react";
+import React, { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { waveFeedFor } from "../../session/feeds.js";
+import { ShadowProvider } from "../../data/ShadowProvider.jsx";
 import { WAVE_STATUS, createWaveStore } from "../../data/waveStore.js";
+import { bed as stripBed, param, strip } from "../../data/shadow.testutil.js";
 import {
   SOURCE, answer, bed4, bed8, manualFrames, manualTimers, refusal, run, sessionStub, settle,
 } from "../../data/waves.testutil.js";
 import { WavePanel } from "./WavePanel.jsx";
+
+// The geometry as it is, unless a test makes it throw (I3): `rows` in rowsOf, which the rows call
+// while they render, `view` in rowView, which they call inside a frame.
+const fault = vi.hoisted(() => ({ rows: null, view: null }));
+vi.mock("./waveGeometry.js", async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    rowsOf: (...args) => { if (fault.rows) throw fault.rows; return real.rowsOf(...args); },
+    rowView: (...args) => { if (fault.view) throw fault.view; return real.rowView(...args); },
+  };
+});
 
 /** A 2D context that keeps what it was asked to draw, in order: ["B"] beginPath, ["M", x, y], ["L", x, y];
  *  and, in `cleared`, every clearRect as the device-pixel box [x0, y0, x1, y1] it covered under the
@@ -50,29 +64,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete navigator.vibrate;
   localStorage.clear();
+  fault.rows = null;
+  fault.view = null;
 });
 
 /** The panel on a wave store whose feed answers `reply()`; the store's clock reads 0 at every answer.
- *  `setSource(next)` draws the same panel for another monitor. No session context is around it: the
- *  panel takes none (I1). */
-async function show({ reply = () => answer(), collapsible = false } = {}) {
+ *  `setSource(next)` draws the same panel for another monitor (the same one: draws it again). No
+ *  session context is around it: the panel takes none (I1). `beside`: drawn next to the panel.
+ *  `shadow`: a strip store, for the full screen. `raf` counts the frames asked for. */
+async function show({ reply = () => answer(), collapsible = false, beside = null, shadow = null } = {}) {
   const timers = manualTimers();
   const frames = manualFrames();
+  const raf = vi.fn(frames.raf);
   const getWaves = vi.fn(async () => reply());
   const store = createWaveStore({
     getWaves, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
-  const tree = (source) => (
-    <I18nProvider>
-      <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
-    </I18nProvider>
-  );
+  const tree = (source) => {
+    const wave = <WavePanel source={source} title="REA-01 · 2" store={store} raf={raf} caf={frames.caf} collapsible={collapsible} />;
+    return (
+      <I18nProvider>
+        {beside}
+        {shadow ? <ShadowProvider store={shadow}>{wave}</ShadowProvider> : wave}
+      </I18nProvider>
+    );
+  };
   const { rerender } = render(tree(SOURCE));
   await act(async () => { await settle(); });
   const frame = (perfMs) => act(() => { frames.run(perfMs); });
   const setSource = async (next) => { await act(async () => { rerender(tree(next)); await settle(); }); };
-  return { store, timers, frames, getWaves, frame, setSource };
+  return { store, timers, frames, raf, getWaves, frame, setSource };
 }
 
 const STAMP = "Dalga · doğrulanmamış · yalnız görüntü — birincil alarm başucu monitörüdür";
@@ -352,5 +374,96 @@ describe("the waveform panel", () => {
     const { frame } = await show({ reply: () => answer(bed4()) });
     frame(0);
     expect(document.querySelectorAll("canvas")).toHaveLength(4);
+  });
+});
+
+// I3: a wave panel that throws must not take the page down — the alarm sound and notifications sit
+// in the same tree (LiveApp.jsx). The panel carries its own boundary (WaveErrorBoundary.jsx), and a
+// frame callback hands it what it throws.
+describe("the waveform panel when it fails (I3)", () => {
+  const UNAVAILABLE = "Dalga akışı yok";
+  let warn;
+  beforeEach(() => {
+    // React reports a caught error on console.error, and jsdom once more: kept off the output.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  /** The boundary's fallback in the panel's place: the panel's frame and name, the note, no trace. */
+  function failed() {
+    expect(panel()).toHaveAttribute("data-wave-failed");
+    expect(within(panel()).getByRole("note")).toHaveTextContent(UNAVAILABLE);
+    expect(document.querySelector("canvas")).toBeNull();
+  }
+
+  function Beside() {
+    const [count, setCount] = useState(0);
+    return <button type="button" onClick={() => setCount((c) => c + 1)}>{`yan ${count}`}</button>;
+  }
+
+  it("rows that throw while rendering: «Dalga akışı yok» in the panel's frame, no poll after it, and what is beside it stays mounted", async () => {
+    const { frame, timers, setSource } = await show({ beside: <Beside /> });
+    frame(0);
+    expect(document.querySelectorAll("canvas").length).toBeGreaterThan(0);
+    expect(timers.delays).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "yan 0" }));
+    const beside = screen.getByRole("button", { name: "yan 1" });
+    fault.rows = new TypeError("synthetic geometry failure");
+    await setSource(SOURCE);                      // the same monitor drawn again: its rows render and throw
+    failed();
+    expect(timers.delays).toEqual([]);            // a failed panel watches nothing, so polls nothing
+    expect(screen.getByRole("button", { name: "yan 1" })).toBe(beside);   // never remounted
+    fireEvent.click(beside);
+    expect(beside).toHaveTextContent("yan 2");
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["the geometry", () => { fault.view = new RangeError("synthetic geometry failure"); }],
+    ["the drawing", () => {
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => ({
+        ...mockContext(), clearRect: () => { throw new TypeError("synthetic draw failure"); },
+      }));
+    }],
+  ])("%s throwing inside a frame: «Dalga akışı yok», no frame asked for after it, one warning", async (_, arm) => {
+    const { frame, frames, raf } = await show();
+    frame(0);
+    expect(raf).toHaveBeenCalledTimes(2);         // the loop's first frame, and the next one it asked for
+    arm();
+    frame(40);
+    failed();
+    expect(raf).toHaveBeenCalledTimes(2);         // none asked for after the failure
+    expect(frames.waiting).toBe(0);
+    frame(80);
+    expect(raf).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a full screen whose rows throw inside its portal: caught too, the view gone, the panel's place says «Dalga akışı yok»", async () => {
+    const data = strip({ beds: [stripBed("REA-01 · 2", [param("hr", 72)], { source: SOURCE })] });
+    const state = { phase: "ok", stage: data.stage, data, fetchedAtMs: Date.now() };
+    const shadow = { acquire() {}, release() {}, subscribe: () => () => {}, getState: () => state };
+    const { frame, setSource } = await show({ shadow });
+    frame(0);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Tam ekran görünüm" })); await settle(); });
+    expect(screen.getByRole("dialog", { name: "REA-01 · 2 · Dalga formu · doğrulanmamış" })).toBeInTheDocument();
+    fault.rows = new TypeError("synthetic full-screen failure");
+    await setSource(SOURCE);                      // the view drawn again: its rows, in the portal, throw
+    failed();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector("[data-wave-fullscreen]")).toBeNull();
+  });
+
+  it("comes back for another monitor, and never by itself for the same one", async () => {
+    const { setSource } = await show();
+    fault.rows = new TypeError("synthetic geometry failure");
+    await setSource(SOURCE);
+    failed();
+    fault.rows = null;
+    await setSource(SOURCE);
+    failed();                                     // the same monitor: still the note
+    await setSource("192.0.2.11");
+    expect(panel()).not.toHaveAttribute("data-wave-failed");
+    expect(within(panel()).getByText(STAMP)).toBeInTheDocument();
   });
 });

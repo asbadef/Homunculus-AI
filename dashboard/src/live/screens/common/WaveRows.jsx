@@ -124,26 +124,36 @@ export function WaveRows({ device, tall = false, raf = defaultRaf, caf = default
     let lastPerf = null;
     const ranges = new Map();
     const frame = (perfMs) => {
-      const d = latest.current;
-      if (d.sample && d.sample !== seen) {
-        anchor = nextAnchor(anchor, d.sample);
-        seen = d.sample;
+      try {
+        const d = latest.current;
+        if (d.sample && d.sample !== seen) {
+          anchor = nextAnchor(anchor, d.sample);
+          seen = d.sample;
+        }
+        const head = headAt(anchor, perfMs);
+        const dt = lastPerf === null ? 0 : Math.max(0, (perfMs - lastPerf) / 1000);
+        lastPerf = perfMs;
+        const next = {};
+        for (const row of rowsOf(d.blocks, d.catalogue)) {
+          const canvas = canvases.current.get(row.id);
+          const size = fit(canvas);
+          const view = rowView(d.blocks[row.id] ?? [], row.kind, head, size, ranges.get(row.id) ?? null, dt);
+          ranges.set(row.id, view.range ?? null);
+          // A canvas measuring 0 (not laid out, or hidden) is not drawn on: fit() has emptied it. Its
+          // row still says its state below.
+          if (size.width > 0 && size.height > 0) paint(canvas, size, view);
+          next[row.id] = { state: view.state, seconds: view.silentS === null ? null : Math.floor(view.silentS) };
+        }
+        setStates((previous) => (sameStates(previous, next) ? previous : next));
+      } catch (error) {
+        // React hands an error boundary nothing thrown in a frame callback. Escaped from here, it
+        // would end the loop and leave the trace frozen with no «akış durdu» over it (rule 3). Raised
+        // again inside a state update, it reaches the panel's boundary (WaveErrorBoundary.jsx),
+        // which says «Dalga akışı yok» in the panel's place (I3). No frame is asked for after it.
+        handle = null;
+        setStates(() => { throw error; });
+        return;
       }
-      const head = headAt(anchor, perfMs);
-      const dt = lastPerf === null ? 0 : Math.max(0, (perfMs - lastPerf) / 1000);
-      lastPerf = perfMs;
-      const next = {};
-      for (const row of rowsOf(d.blocks, d.catalogue)) {
-        const canvas = canvases.current.get(row.id);
-        const size = fit(canvas);
-        const view = rowView(d.blocks[row.id] ?? [], row.kind, head, size, ranges.get(row.id) ?? null, dt);
-        ranges.set(row.id, view.range ?? null);
-        // A canvas measuring 0 (not laid out, or hidden) is not drawn on: fit() has emptied it. Its
-        // row still says its state below.
-        if (size.width > 0 && size.height > 0) paint(canvas, size, view);
-        next[row.id] = { state: view.state, seconds: view.silentS === null ? null : Math.floor(view.silentS) };
-      }
-      setStates((previous) => (sameStates(previous, next) ? previous : next));
       handle = raf(frame);
     };
     handle = raf(frame);

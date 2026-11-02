@@ -17,12 +17,18 @@
 // draws nothing until the first answer, and nothing when waves are off (409): it does not
 // advertise a panel it cannot fill. On the device screen it is opened by hand (`collapsible`), so
 // there it says why it shows nothing.
+// A panel that throws takes nothing else down (I3). The open panel, its rows and its full screen (a
+// portal child) sit inside the panel's own boundary (WaveErrorBoundary.jsx), so neither screen has
+// to wrap it: a failure leaves the panel's frame saying «Dalga akışı yok» and watching nothing, and
+// the alarm sound and notifications in the same tree (LiveApp.jsx) stand. Only another monitor
+// (`source`) draws it again. The rows hand the boundary what a frame throws too (WaveRows.jsx).
 import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { WAVE_STATUS, waveStoreFor } from "../../data/waveStore.js";
 import { Button, Note, Tag } from "../../ui/index.js";
 import { WaveRows } from "./WaveRows.jsx";
 import { WaveFullscreen } from "./WaveFullscreen.jsx";
+import { WaveErrorBoundary } from "./WaveErrorBoundary.jsx";
 
 const NOTE = {
   [WAVE_STATUS.UNAVAILABLE]: "waves.unavailable",
@@ -128,7 +134,9 @@ export function WavePanel({ source, title, collapsible = false, feed, store, raf
     );
   }
   return (
-    <OpenPanel key={source} store={waves} source={source} title={title} collapsible={collapsible}
-      onHide={() => toggle(false)} hideRef={hideRef} raf={raf} caf={caf} className={className} />
+    <WaveErrorBoundary resetKey={source} title={title} className={className}>
+      <OpenPanel key={source} store={waves} source={source} title={title} collapsible={collapsible}
+        onHide={() => toggle(false)} hideRef={hideRef} raf={raf} caf={caf} className={className} />
+    </WaveErrorBoundary>
   );
 }
