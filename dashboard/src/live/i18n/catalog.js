@@ -56,6 +56,9 @@ import sofa from "./strings/sofa.js";
 // G2-B1d: Protokol — the protocol number, its label, Yönetim › Protokol ve etiket.
 import protokol from "./strings/protokol.js";
 
+// G3-01: the bedside measurement — the «Yatak başı ölçüm» page, «Ölçüm gir», «hatalı giriş».
+import olcum from "./strings/olcum.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -88,6 +91,8 @@ export const NAMESPACES = {
   sofa, // G2-A4
 
   protokol, // G2-B1d
+
+  olcum, // G3-01
 };
 
 function flattenInto(out, prefix, entries) {
