@@ -12,7 +12,12 @@
 // and the preview is old until it is asked again. «Kaydet» appears where «Önizle» stood, so for SAVE_ARM_MS each
 // time it appears (a preview landing, or an edit undone) it ignores a press, and it always ignores a double
 // click's second one (the SOFA form's rule, SIGN_ARM_MS). The preview is the engine's (PreviewPanel.jsx); nothing is scored here (Decision 1). A
-// discharged number previews as `dropped`, and nothing is offered to save.
+// discharged number previews as `dropped`, and nothing is offered to save. A preview is also old after
+// PREVIEW_MAX_AGE_MS whatever the boxes say: «Kaydet» goes and the form says to preview again.
+//
+// THE CLOCK is the server's: every time this form judges, bounds, shows or stamps comes from `nowMs` (the screen's
+// `useBoardNow`), never from the tablet's own clock, which may be minutes off — a time the form passed as «now» would
+// be refused by the door as ahead.
 //
 // THE SERVER IS AUTHORITATIVE (D6). The browser mirrors the door's slip bounds only to hold a slipped digit back,
 // under its box, with the focus taken to the first one. What it lets through is the engine's to refuse, and the
@@ -21,7 +26,7 @@
 // press cannot chart it twice. A 403 leaves the form too. A store that dropped its answer (null: the session
 // ended) says nothing. `busy` holds the buttons (never `disabled`); `sending` ignores a press that beats the
 // re-render.
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { apiErrorText, readErrorText } from "../../apiErrors.js";
@@ -29,7 +34,9 @@ import { Announce, Button, Field, Icon, Input, Seg, useToast } from "../../ui/in
 import { mayHaveLanded } from "../admin/refusal.js";
 import { useNow } from "../common/useNow.js";
 import { PreviewPanel } from "./PreviewPanel.jsx";
-import { VITALS, checkDraft, draftKey, hasErrors, oldestInput, stepValue, toLocalInput } from "./vitalsFields.js";
+import {
+  PREVIEW_MAX_AGE_MS, VITALS, checkDraft, draftKey, hasErrors, oldestInput, stepValue, toLocalInput,
+} from "./vitalsFields.js";
 
 /** How long «Kaydet» ignores a press after it appeared where «Önizle» stood (the SOFA form's 600 ms). */
 export const SAVE_ARM_MS = 600;
@@ -37,6 +44,17 @@ export const SAVE_ARM_MS = 600;
 const CLOCK_MS = 60_000;
 /** The order a held press takes the focus in: the counted boxes, then the time. */
 const ORDER = [...VITALS.filter((s) => s.kind === "number").map((s) => s.code), "at"];
+
+/** The server-corrected clock, read fresh on every call. `nowMs` is the screen's (`useBoardNow`: this browser's clock
+ *  moved onto the server's by the skew the board last stated), but it changes only every 30 s, so what is taken from
+ *  it is its OFFSET from the browser's clock, at the render where it changes; the browser's clock supplies the rest.
+ *  A form mounted between two ticks starts up to a tick behind the server — the safe side of every bound here (the
+ *  future one a little stricter, the past one still inside the server's) — until the next tick corrects it. A
+ *  missing `nowMs` leaves the browser's own clock: a form is not shut for want of a correction. */
+function useServerClock(nowMs) {
+  const offset = useMemo(() => (Number.isFinite(nowMs) ? nowMs - Date.now() : 0), [nowMs]);
+  return () => Date.now() + offset;
+}
 
 /** Is this answer to «Önizle» really a preview? It says so and carries a NEWS2 with a total. */
 const isPreview = (answer) => answer?.preview === true && typeof answer?.news2?.total === "number";
@@ -128,7 +146,8 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
   const [atTouched, setAtTouched] = useState(false);
   const [tried, setTried] = useState(false);           // a press was held: problems are shown from now on
   const [busy, setBusy] = useState(null);              // "preview" | "save": the request in flight
-  const [preview, setPreview] = useState(null);        // { key, answer }: the preview's answer, keyed by what it was asked
+  const [preview, setPreview] = useState(null);        // { key, answer, at }: the answer, keyed by what it was asked, and when
+  const [expired, setExpired] = useState(null);        // the preview whose time ran out (PREVIEW_MAX_AGE_MS)
   const [said, setSaid] = useState("");                // spoken once: a preview landed, and «Kaydet» appeared
   const [arming, setArming] = useState(false);         // «Kaydet» just appeared: held for SAVE_ARM_MS
   const armed = useRef(true);                          // false inside the arming window, read by the press itself
@@ -155,20 +174,37 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
   }, [busy, onBusy]);
   // Re-rendered on the clock while the form is open, so an untouched time shows the minute it is.
   useNow(CLOCK_MS);
-  const now = Date.now();
+  // The SERVER's clock, for every time this form judges, bounds, shows or stamps: a tablet minutes off must not pass
+  // a time the door refuses as ahead (final review, Minor 3).
+  const clock = useServerClock(nowMs);
+  const now = clock();
   const draftAt = (ms) => ({ values, at: atTouched ? at : toLocalInput(ms), atTouched });
   const checked = checkDraft(draftAt(now), now);
   // A held box leaves `checked.entries`, so the key alone would call a preview fresh while a box shows a problem.
-  const fresh = preview !== null && !hasErrors(checked) && preview.key === draftKey(checked);
+  // And a preview of unchanged boxes is still old once PREVIEW_MAX_AGE_MS has passed (Minor 4): the NEWS2 in it is
+  // the engine's for that moment. Read from the clock on every render, and from a timer for the moment it crosses.
+  const keyed = preview !== null && !hasErrors(checked) && preview.key === draftKey(checked);
+  const outdated = keyed && (expired === preview || now - preview.at >= PREVIEW_MAX_AGE_MS);
+  const fresh = keyed && !outdated;
   const dropped = fresh && preview.answer.dropped === true;
   const offerSave = fresh && !dropped;
   const errorOf = (code) => (tried && checked.errors[code] ? t(checked.errors[code].key, checked.errors[code].params) : undefined);
   const formError = tried && checked.errors.form ? t(checked.errors.form.key) : "";
   let say = formError;
-  if (!say && preview !== null && !fresh) say = t("olcum.previewOld");
+  if (!say && outdated) say = t("olcum.previewStale");
+  else if (!say && preview !== null && !fresh) say = t("olcum.previewOld");
   else if (!say && !fresh) say = t("olcum.previewFirst");
   const keep = (code) => (el) => { inputs.current[code] = el; };
   const set = (code) => (value) => setValues((current) => ({ ...current, [code]: value }));
+
+  // The preview's time runs out on its own: render at the limit, without waiting for the clock's next minute. And it
+  // is said once, to the ear, as the preview landing was: «Kaydet» was offered, and is not now.
+  useEffect(() => {
+    if (preview === null) return undefined;
+    const timer = setTimeout(() => { if (mounted.current) setExpired(preview); }, Math.max(0, PREVIEW_MAX_AGE_MS - (clock() - preview.at)));
+    return () => clearTimeout(timer);
+  }, [preview]);
+  useEffect(() => { if (outdated) setSaid(t("olcum.previewStale")); }, [outdated]);
 
   /** Hold «Kaydet» for SAVE_ARM_MS: it has just appeared where «Önizle» stood. */
   function arm() {
@@ -191,7 +227,7 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
    *  boxes and takes the focus to the first (flushSync: the problem must be in the DOM, tied to its box, when
    *  the focus arrives). Returns the checked draft, or null. */
   function pressed() {
-    const ms = Date.now();
+    const ms = clock();
     const result = checkDraft(draftAt(ms), ms);
     if (hasErrors(result)) {
       flushSync(() => setTried(true));
@@ -212,6 +248,7 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
     if (sending.current || busy || dropped) return;
     const asked = pressed();
     if (!asked) return;
+    const askedAt = clock();   // the preview is as old as the engine's state it was scored on: from the press
     sending.current = true;
     setBusy("preview");
     // The earlier preview's sentence goes now: a re-preview that fails must not speak an old NEWS2 again.
@@ -221,10 +258,10 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       const answer = await onPreview(asked.entries, asked.recordedAt);
       if (answer === null || !mounted.current) return;   // the store dropped it: the session ended
       if (answer?.dropped) {
-        setPreview({ key: draftKey(asked), answer: { dropped: true } });
+        setPreview({ key: draftKey(asked), answer: { dropped: true }, at: askedAt });
         setSaid(t("olcum.previewDropped"));
       } else if (isPreview(answer)) {
-        setPreview({ key: draftKey(asked), answer });
+        setPreview({ key: draftKey(asked), answer, at: askedAt });
         setSaid(t("olcum.previewed", { total: answer.news2.total }));
       } else {
         setPreview(null);
@@ -254,9 +291,11 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
     if (sending.current || busy || !offerSave) return;
     const asked = pressed();
     if (!asked || draftKey(asked) !== preview.key) return;
+    // Old since the last render (a tablet that slept through the timer): the press itself asks for a new preview.
+    if (clock() - preview.at >= PREVIEW_MAX_AGE_MS) { setExpired(preview); return; }
     sending.current = true;
     setBusy("save");
-    const pressMs = Date.now();
+    const pressMs = clock();
     let done;          // { say: [text, tone], saved?, leave? } once the write is settled
     try {
       const answer = await onSave(asked.entries, asked.recordedAt);

@@ -103,6 +103,7 @@ export const API_MESSAGE_KEYS = new Map([
   ["ölçüm saati ileri olamaz", "vitalsAtFuture"],
   // POST /clinical/{id}/entries/{entry}/retract (G3-01, D11, X11): «hatalı giriş»'s refusals.
   ["gerekçe en az 10 karakter olmalı", "retractReasonShort"],
+  ["gerekçe en çok 200 karakter olabilir", "retractReasonLong"],
   ["geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz", "retractNeedsPerson"],
   ["bu hastada böyle bir elle girilmiş değer yok", "retractUnknown"],
   ["bu değer zaten hatalı giriş olarak işaretlenmiş", "retractAlready"],

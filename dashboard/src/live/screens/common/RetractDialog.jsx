@@ -5,8 +5,8 @@
 // WHAT IT SAYS before anything is sent: which value (its name, the number as entered, when it was measured) and
 // what the withdrawal does — the value leaves every score and alert, the chart keeps it struck through with the
 // reason, the act is written to the audit trail. The reason is the clinician's: at least
-// RETRACT_MIN_REASON_CHARS characters once trimmed — the server's rule (api/clinical.py), mirrored only so the
-// button can say why it waits. The button ignores a press for RETRACT_ARM_MS after the dialog opens (the second
+// RETRACT_MIN_REASON_CHARS characters once trimmed and at most RETRACT_MAX_REASON_CHARS — the server's rule
+// (api/clinical.py), mirrored only so the button can say why it waits and the box stops at the ceiling. The button ignores a press for RETRACT_ARM_MS after the dialog opens (the second
 // press of the double click that opened it must not withdraw — A4's and ESLEME's rule), and always ignores a
 // double click's second press.
 //
@@ -25,6 +25,9 @@ import { mayHaveLanded } from "../admin/refusal.js";
 
 /** The reason's least length once trimmed — api/clinical.py RETRACT_MIN_REASON_CHARS. */
 export const RETRACT_MIN_REASON_CHARS = 10;
+/** Its greatest length — api/clinical.py's ceiling (RETRACT_REASON_LONG): the reason is written for good into the
+ *  append-only audit trail, so it is kept to a sentence. The box stops there; the engine still refuses more. */
+export const RETRACT_MAX_REASON_CHARS = 200;
 /** How long the confirm button ignores a press after the dialog opened. */
 export const RETRACT_ARM_MS = 600;
 /** The engine's RETRACT_ALREADY (api/clinical.py): the ONE 409 that means another desk withdrew the value first. The
@@ -130,7 +133,8 @@ export function RetractDialog({ bed, what, onRetract, onDone, onClose }) {
           {/* Focus lands in this box, so a screen reader never meets the value line or the intro above it: the box
               carries them as its description (Field keeps this and adds its own). */}
           <Field label={t("olcum.retractReason")} layout="col" required>
-            <Input autoFocus autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} readOnly={busy}
+            <Input autoFocus autoComplete="off" maxLength={RETRACT_MAX_REASON_CHARS} value={reason}
+              onChange={(event) => setReason(event.target.value)} readOnly={busy}
               aria-describedby={`${whatId} ${introId}`} />
           </Field>
         </div>

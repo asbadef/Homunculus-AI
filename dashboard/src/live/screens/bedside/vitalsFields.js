@@ -77,9 +77,10 @@ export function checkVital(spec, raw) {
 }
 
 /** The whole draft: `{ entries, recordedAt, errors }`. `draft` is `{ values: {code: raw}, at, atTouched }`, `at`
- *  the `datetime-local` value in the browser's zone; `now` the browser's clock in ms. `errors` is by code, plus
+ *  the `datetime-local` value in the browser's zone; `now` the SERVER's clock in ms as the screen holds it (the
+ *  board's skew correction): a tablet minutes off must not judge a time the door will judge otherwise. `errors` is by code, plus
  *  `form` (nothing entered) and `at`. `recordedAt` is a UTC instant, or null for an untouched time (X12). With no
- *  `now` it reads the browser's own clock: a missing clock must not switch the time bounds off. */
+ *  `now` it reads the browser's own clock, uncorrected: a missing clock must not switch the time bounds off. */
 export function checkDraft({ values = {}, at = "", atTouched = false } = {}, now = Date.now()) {
   const errors = {};
   const entries = [];
@@ -109,6 +110,11 @@ export const hasErrors = (checked) => Object.keys(checked.errors).length > 0;
 
 /** What a draft would send, as one string: a preview is of THIS key, and a changed box makes it old. */
 export const draftKey = (checked) => JSON.stringify([checked.entries, checked.recordedAt]);
+
+/** How long a preview may be offered for saving. Its key says the BOXES are unchanged, not that the patient is: the
+ *  NEWS2 shown was the engine's for its state at that moment, and a preview left open for hours scores a patient
+ *  who has since moved. Past this the form asks to preview again (final review, Minor 4). */
+export const PREVIEW_MAX_AGE_MS = 5 * 60_000;
 
 /** The value one step up (`direction` 1) or down (-1), inside the bounds, as the box shows it; null from an empty
  *  or unreadable box — a stepper never invents a first value — and from a choice, which has no number to move.

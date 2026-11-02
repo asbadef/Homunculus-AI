@@ -6,7 +6,7 @@ import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
-import { RETRACT_ARM_MS, RetractDialog } from "./RetractDialog.jsx";
+import { RETRACT_ARM_MS, RETRACT_MAX_REASON_CHARS, RetractDialog } from "./RetractDialog.jsx";
 
 const NOW = Date.parse("2026-11-02T10:00:00Z");
 const BED = "REA-01 · 2";
@@ -51,12 +51,21 @@ describe("«hatalı giriş»", () => {
     const { onRetract } = await open();
     expect(dialog()).toHaveTextContent("Tənəffüs: 26 /dəq · ölçmə 10:00");
     expect(dialog()).toHaveTextContent("audit jurnalına yazılır");
+    expect(dialog()).toHaveTextContent("Səbəbə xəstənin adını və ya nömrəsini yazmayın.");   // the audit trail is plaintext and for good
     expect(dialog()).toHaveTextContent("0 / 10 simvol");
     armed();
     reason("  səhv  ");
     expect(dialog()).toHaveTextContent("4 / 10 simvol");
     await confirm();
     expect(onRetract).not.toHaveBeenCalled();
+  });
+
+  // G3-01 (final review, I1): the reason goes into the append-only audit trail for good, so the box stops at the
+  // engine's ceiling, taken from the one constant the dialog also exports.
+  it("stops the reason box at 200 characters, the engine's ceiling", async () => {
+    await open();
+    expect(RETRACT_MAX_REASON_CHARS).toBe(200);
+    expect(within(dialog()).getByRole("textbox")).toHaveAttribute("maxlength", String(RETRACT_MAX_REASON_CHARS));
   });
 
   it("counts the ten characters after trimming: nine are held back, ten are sent trimmed", async () => {

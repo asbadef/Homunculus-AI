@@ -9,7 +9,7 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { news2 } from "../../data/board.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { SAVE_ARM_MS, VitalsForm, savedOf } from "./VitalsForm.jsx";
-import { BACKDATE_MS, toLocalInput } from "./vitalsFields.js";
+import { BACKDATE_MS, PREVIEW_MAX_AGE_MS, toLocalInput } from "./vitalsFields.js";
 
 const NOW = Date.parse("2026-11-02T10:00:00Z");
 const BED = "REA-01 · 2";
@@ -40,9 +40,10 @@ function Host({ onSaved, ...props }) {
   );
 }
 
-async function open({ preview = () => Promise.resolve(PREVIEW), save = () => Promise.resolve(SAVED) } = {}) {
+// `tabletAheadMs`: the tablet's own clock runs that far ahead of the server's (the screen's `nowMs`, which is NOW).
+async function open({ preview = () => Promise.resolve(PREVIEW), save = () => Promise.resolve(SAVED), tabletAheadMs = 0 } = {}) {
   vi.useFakeTimers(FAKE_TIMERS);
-  vi.setSystemTime(NOW);
+  vi.setSystemTime(NOW + tabletAheadMs);
   const onPreview = vi.fn(preview);
   const onSave = vi.fn(save);
   const onSaved = vi.fn();
@@ -183,6 +184,85 @@ describe("the bedside form", () => {
     await preview();
     expect(onPreview).not.toHaveBeenCalled();
     expect(screen.getByText("Ölçmə vaxtı ən çox 24 saat geriyə çəkilə bilər.")).toBeInTheDocument();
+  });
+
+  // Final review, Minor 3: the form is handed the server's clock (`nowMs`) and judges every time by it. A tablet 3
+  // minutes fast reads «now» as the server's +3 min: that time passed the form's own check and the door refused it.
+  it("judges and bounds the time by the server's clock, not the tablet's: a tablet 3 minutes fast", async () => {
+    const { onPreview } = await open({ tabletAheadMs: 3 * 60_000 });
+    const input = screen.getByLabelText("Ölçmə vaxtı");
+    expect(input.getAttribute("max")).toBe(toLocalInput(NOW));
+    expect(input.getAttribute("min")).toBe(toLocalInput(NOW - BACKDATE_MS + 60_000));
+    expect(input.value).toBe(toLocalInput(NOW));                       // the untouched time shows the server's minute
+    type("SpO2", "95");
+    fireEvent.change(input, { target: { value: toLocalInput(NOW + 3 * 60_000) } });   // the tablet's «now»
+    await preview();
+    expect(onPreview).not.toHaveBeenCalled();
+    expect(screen.getByText("Ölçmə vaxtı gələcəkdə ola bilməz.")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: toLocalInput(NOW) } });                // the server's «now»
+    await preview();
+    expect(onPreview).toHaveBeenCalledWith([{ code: "spo2", value: 95 }], new Date(NOW).toISOString());
+  });
+
+  it("stamps the saved step with the server's clock for an untouched time, on a tablet 3 minutes fast", async () => {
+    const { onSaved } = await open({ tabletAheadMs: 3 * 60_000 });
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await press(button("Yadda saxla"));
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ atMs: NOW + SAVE_ARM_MS }));
+  });
+
+  // Final review, Minor 4: a preview of unchanged boxes was the engine's answer for ITS moment. After
+  // PREVIEW_MAX_AGE_MS «Yadda saxla» goes, the form says so, and «Öncədən baxın» asks again.
+  const STALE = "Önizləmə 5 dəqiqədən köhnədir; yenidən önizləyin.";
+  // The page woke (a tablet's screen on again): the clock's own re-read, the one a sleeping device gets.
+  const woke = () => act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+
+  it("offers «Yadda saxla» up to five minutes after the preview, then not: the form says to preview again", async () => {
+    const { onPreview, onSave } = await open();
+    expect(PREVIEW_MAX_AGE_MS).toBe(5 * 60_000);
+    type("SpO2", "95");
+    await preview();
+    armed();
+    act(() => { vi.advanceTimersByTime(PREVIEW_MAX_AGE_MS - 1_000); });
+    woke();                                                            // a render at 4:59, from the clock
+    expect(button("Yadda saxla")).toBeInTheDocument();
+    expect(panel()).not.toBeNull();
+    expect(screen.queryByText(STALE)).toBeNull();
+    act(() => { vi.advanceTimersByTime(2_000); });                     // 5:01
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(panel()).toBeNull();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+    heard();
+    expect(spoken()).toHaveTextContent(STALE);
+    await preview();                                                   // «Öncədən baxın» again
+    expect(onPreview).toHaveBeenCalledTimes(2);
+    armed();
+    expect(button("Yadda saxla")).toBeInTheDocument();
+    expect(screen.queryByText(STALE)).toBeNull();
+    await press(button("Yadda saxla"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("a page that slept past the limit is old at once, and a press of «Yadda saxla» before it re-rendered saves nothing", async () => {
+    const { onSave } = await open();
+    type("SpO2", "95");
+    await preview();
+    armed();
+    vi.setSystemTime(NOW + 6 * 60_000);                                // the clock moved on; no timer ran
+    await press(button("Yadda saxla"));                                // still drawn from the last render
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    // The same through the wake of the page alone: a render from the clock, with nothing pressed.
+    await preview();
+    armed();
+    expect(button("Yadda saxla")).toBeInTheDocument();
+    vi.setSystemTime(NOW + 12 * 60_000);
+    woke();
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
   });
 
   it("a discharged patient previews as dropped, and nothing is offered to save", async () => {

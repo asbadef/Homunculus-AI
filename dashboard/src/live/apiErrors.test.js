@@ -73,7 +73,7 @@ const APP = py("api/app.py");
 // withdrawal route raises by name. Named one by one: clinical.py's other strings are units, codes and one
 // template (NOT_WHOLE, "{code}: tam sayı olmalı", shown as the engine wrote it), not messages.
 const CLINICAL_MESSAGE_NAMES = new Set(["GCS_NOT_WHOLE", "MAP_NOT_BELOW_SBP", "AT_TOO_OLD", "AT_FUTURE",
-  "RETRACT_REASON_SHORT", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED"]);
+  "RETRACT_REASON_SHORT", "RETRACT_REASON_LONG", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED"]);
 const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => CLINICAL_MESSAGE_NAMES.has(name)));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
@@ -295,6 +295,17 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, Object.assign(new Error("bu değer zaten hatalı giriş olarak işaretlenmiş"), { status: 409 })))
       .toBe("This value is already marked as entered in error.");
     expect(apiErrorText(az, new Error("resp_rate: tam sayı olmalı"))).toBe("resp_rate: tam sayı olmalı");
+  });
+
+  // G3-01 (final review, I1): the reason has a ceiling too, since it is written for good into the audit trail.
+  // The sentence is the engine's RETRACT_REASON_LONG, byte for byte (the sweep above reads it from clinical.py).
+  it("says the withdrawal's refusal of a reason that is too long, in all four languages", () => {
+    const sentence = "gerekçe en çok 200 karakter olabilir";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractReasonLong", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence))).toBe("Gerekçe en çok 200 karakter olabilir.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Səbəb ən çoxu 200 simvol ola bilər.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence))).toBe("Причина может содержать не более 200 символов.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("The reason can be at most 200 characters.");
   });
 
   it("translates a known message, whatever whitespace surrounds it", () => {
