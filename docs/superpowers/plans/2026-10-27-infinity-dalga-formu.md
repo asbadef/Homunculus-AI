@@ -4007,6 +4007,29 @@ A mutation check also showed the stamp unpinned on a 403/404 panel. That test no
 
 46 mutants were run against these files, each restored byte for byte. All were killed except two, by design. `key={source}` alone and the watch effect's `[store, source]` alone each survive, because each covers the other, and the reset covers the key for the full screen. Each fails with its partner removed.
 
+*I3 in Task 11 (Lane A review, 2026-11-02; `2ec9af9f`, `66f0491a`).* The panel is drawn inside the tree that carries the alarm sound and the critical-alarm notification: `AlarmSignals` wraps the screens (`LiveApp.jsx`). The only boundary was `main.jsx`'s `LoadBoundary` at the root, so a wave panel that threw unmounted everything under it, and the sound was cut. `WaveErrorBoundary.jsx` is now the panel's own boundary. It is a class behind a function wrapper that reads the catalogue.
+- **What it catches:** render, lifecycle and effect errors of its children, a portal child included.
+- **What it shows instead:** the panel's frame and heading with `waves.unavailable` («Dalga akışı yok»). Never a trace, a blank box or the error text.
+- **Retrying:** never by itself. Only a new `resetKey` renders the children again.
+- **Logging:** one `console.warn` per failure, naming the error's type and never its message.
+
+`WavePanel` wraps the open panel in it, with `resetKey={source}` and the panel's title and className. The rows and the full screen are covered, so the patient and device screens wrap nothing. The collapsed «göster» button stays outside the boundary. A failed panel unmounts `OpenPanel`, so its monitor is no longer watched or polled.
+
+React hands a boundary nothing thrown in an animation-frame callback, so `WaveRows`' frame body now sits in a `try`. Its catch asks for no further frame and raises the error inside a state update (`setStates(() => { throw error; })`). Without that, the loop would have died with the trace frozen and no «akış durdu» over it (rule 3).
+
+`WaveErrorBoundary.test.jsx` has 15 tests. One of them uses the real `AlarmSignals` over a real session and board: after the wave child throws, it goes on sounding, sounds a new critical alarm and notifies it. `WavePanel.test.jsx` gained 5 tests, with the geometry passed through `vi.mock` unless armed:
+- the rows throwing while they render;
+- the geometry throwing inside a frame, and the drawing throwing inside a frame (raf is not called again, one warning);
+- the full screen's rows throwing inside the portal;
+- the same monitor never retried, and another monitor drawn again.
+
+Mutants ran from scratch configs through a resolve alias, so the worktree was never edited:
+- a boundary that rethrows fails 14 of its 15 tests;
+- the panel without the wrap fails all 5 panel tests;
+- the frame without the catch fails the 2 frame tests.
+
+`WaveFullscreen.test.jsx`'s fixture now hands the store `getWaves` (I1, `a31fce30`), and its SessionProvider is gone.
+
 **Files:**
 - Create: `dashboard/src/live/screens/common/WavePanel.test.jsx`, `WaveFullscreen.test.jsx`
 - Create: `dashboard/src/live/screens/common/WaveRows.jsx`, `WaveFullscreen.jsx`, `WavePanel.jsx`
