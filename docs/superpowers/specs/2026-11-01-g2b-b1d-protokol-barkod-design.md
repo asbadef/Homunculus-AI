@@ -318,10 +318,14 @@ cards that an older API would not match, so from then on rollback means a forwar
   the mirror's answer (0.37 s with the API up). `PatientQueryClient.ask` now runs the exchange on a
   daemon thread and waits at most 2 s of wall-clock time, DNS and a slow answer included. At most 8
   exchanges are in flight; past that the mirror answers at once. A late answer is dropped unlogged.
-- **O10 (local walk W-2):** uvicorn's access log, and nginx's, write the request path, and the
-  patient screen's routes carry the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`):
-  the protocol number now, the H-number before this slice. The device route carries no number (a
-  POST body). Whether access logs keep patient keys is for the owner and Lane A to decide.
+- **O10 (local walk W-2) — closed (2026-11-02, [the O10 follow-up](2026-11-02-g2b-o10-erisim-logu-design.md)):**
+  uvicorn's access log, and nginx's, wrote the request path, and the patient screen's routes carry
+  the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`): the protocol number now, the
+  H-number before this slice. The device route carries no number (a POST body). Lane A chose, and
+  the follow-up built, uvicorn `--no-access-log` and an nginx access format that writes the path
+  with its ids replaced (`/patients/:key/trends`) and no query string or referer, pinned by a test
+  that walks the route table. Left open there: nginx's error log still writes the whole request line
+  whenever it logs an error or warning for a request (R1), and the lines already on the VM (R2).
 - **Elsewhere:** `edge/uplink.py` has the environment-proxy and redirect exposure this slice closed
   in `edge/pdq_client.py`. It is Lane A's open item, not this slice's.
 
