@@ -2,15 +2,14 @@
 with its reason, who and when — read from the trail — while the drawn points lose the withdrawn value.
 Synthetic patients and values only (CLAUDE.md rule 6).
 
-Adapted for the branch this task was built on (feat/g3-eng2), which has Task 1 and Task 4 but neither Task 2 (the
-door's `entries` answer) nor Task 5 (the withdrawal route):
-  * `_chart` reads the new `chart` row's audit id from the trail instead of from the door's answer;
-  * `_withdraw` writes the `chart_retract` row the route writes (`{entry, value, obs_ts, reason, retracted_by}`,
-    subject the code — the payload Task 5 pins), because the route does not exist here, and so the engine's memory
-    is NOT rebuilt by it. The route-level version of the points assertion runs once the branches merge:
-    `client.post(f"/clinical/bed-3/entries/{wrong}/retract", json={"reason": WHY}, headers=NURSE)`, then
-    `assert [p[1] for p in hr["points"]] == [82]` on the route's own answer. Until then the points half is pinned
-    below at the seam, with Task 4's rebuild standing in for what the route does."""
+Written on a branch (feat/g3-eng2) that had neither Task 2 (the door's `entries` answer) nor Task 5 (the
+withdrawal route); after the merge:
+  * `_chart` takes the door's answer and checks it against the trail's newest `chart` row;
+  * `_withdraw` still writes the `chart_retract` row the route writes (`{entry, value, obs_ts, reason,
+    retracted_by}`, subject the code — the payload Task 5 pins) straight into the trail, so most tests here read
+    `manual` without the route's rebuild; the engine's memory is NOT rebuilt by it;
+  * the points half runs twice: through the route itself (`_withdraw_by_route`), and at the seam, with Task 4's
+    rebuild standing in for what the route does."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -53,9 +52,9 @@ def _chart(c, code, value, minutes_ago, at=None) -> int:
     r = c.post("/clinical/bed-3", json={"entries": [{"code": code, "value": value}],
                                         "recorded_at": at or _ago(minutes_ago)}, headers=NURSE)
     assert r.status_code == 200, r.text
-    # The merged tree's door answers `entries[0]["entry"]` (Task 2). Here the id is the newest `chart` row's.
+    (answered,) = r.json()["entries"]                                  # the door's answer (Task 2)
     (row,) = c.app.state.audit.records(tenant="h1", patient_id="bed-3", event_type="chart", newest=True, limit=1)
-    assert row.subject == code
+    assert (answered["code"], answered["entry"], row.subject) == (code, row.id, code)
     return row.id
 
 
@@ -67,6 +66,12 @@ def _withdraw(c, entry, reason=WHY, by="hem.ayse") -> None:
     audit.append(AuditEvent("h1", RETRACT, "bed-3", target.subject, {
         "entry": target.id, "value": target.payload["value"], "obs_ts": target.payload["obs_ts"],
         "reason": reason, "retracted_by": by}))
+
+
+def _withdraw_by_route(c, entry, reason=WHY) -> None:
+    """Task 5's route: the trail row, then the engine rebuilt without the entry."""
+    r = c.post(f"/clinical/bed-3/entries/{entry}/retract", json={"reason": reason}, headers=NURSE)
+    assert r.status_code == 200, r.text
 
 
 def _trends(c, hours=6):
@@ -92,9 +97,20 @@ def test_a_hand_entry_and_its_withdrawal_are_listed(client):
     assert body["manual_truncated"] is False
 
 
+def test_a_value_withdrawn_by_the_route_leaves_the_drawn_points_and_stays_listed(client):
+    keep = _chart(client, "heart_rate", 82, 30)
+    wrong = _chart(client, "heart_rate", 182, 20)
+    _withdraw_by_route(client, wrong)
+    hr = _channel(_trends(client), "heart_rate")
+    assert [p[1] for p in hr["points"]] == [82]
+    assert [(m["entry"], m["value"], m["retracted"] is not None) for m in hr["manual"]] == [
+        (keep, 82, False), (wrong, 182, True)]
+    assert (hr["manual"][1]["retracted"]["reason"], hr["manual"][1]["retracted"]["by"]) == (WHY, "hem.ayse")
+
+
 def test_the_drawn_points_lose_a_withdrawn_value_that_manual_still_lists(client):
-    """The points half of the route-level test (see the header): the engine, rebuilt without the withdrawn entry
-    as Task 5's route rebuilds it, draws only the kept value; `manual` still lists both, from the trail."""
+    """The points half at the seam (see the header): the engine, rebuilt without the withdrawn entry as Task 5's
+    route rebuilds it, draws only the kept value; `manual` still lists both, from the trail."""
     keep = _chart(client, "heart_rate", 82, 30)
     wrong = _chart(client, "heart_rate", 182, 20)
     _withdraw(client, wrong)
