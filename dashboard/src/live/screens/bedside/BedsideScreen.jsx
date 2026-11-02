@@ -14,32 +14,58 @@
 // saved step offers «hatalı giriş» per value (`retract`). The choice is held by id: should the card leave a LIVE
 // board while she is on it (discharged, out of scope), the page says so and goes back to the list — a form for a
 // patient who is no longer here is not left open. A board that is reconnecting is not "gone": its list is old,
-// not empty. Each step takes the focus when it opens, so a keyboard and a screen reader follow the page.
+// not empty. Nor is one whose load failed: its list is EMPTY, which says nothing about the patient, and the
+// form needs only the id and the bed to go on (G3-01 review of Task 14), so what she typed is not thrown away
+// with it. The notice lives in the step it was raised for, and is spoken as well as shown. Each step takes the
+// focus when it opens, so a keyboard and a screen reader follow the page.
+//
+// THE ORDER is the beds screen's (`orderBeds`: by unit, a card the bed table does not place last, numbers as
+// numbers). The AGE of an infant is years, months and days (`ageOf`, `kabul.age`), the admission form's: whole
+// years print «0 yaşında» for every baby on a NICU round.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
-import { Box, Button, Note, useToast } from "../../ui/index.js";
+import { Announce, Box, Button, Note, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { BoardStrip, ScopeNote, boardKnown, nameOf, useBoardNow } from "../common/BoardState.jsx";
+import { bedNameOf, orderBeds } from "../beds/order.js";
+import { ageOf } from "../kabul/admitForm.js";
 import { SavedStep } from "./SavedStep.jsx";
 import { VitalsForm } from "./VitalsForm.jsx";
 import { birthYearOf, lastMeasuredMs } from "./vitalsFields.js";
 
 const TICK_MS = 30_000;
-const bedOf = (patient) => patient.bedLabel || patient.patient_id;
-const byBed = (a, b) => String(bedOf(a)).localeCompare(String(bedOf(b)), "tr", { numeric: true });
+const bedOf = bedNameOf;
 
-function PickList({ patients, nowMs, onPick }) {
+/** The board's day (YYYY-MM-DD, local, from the server-corrected clock): what `ageOf` counts to. */
+const dayOf = (ms) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** «56 yaşında»; an infant under a year, «0 yaş 2 ay 5 gün». null for an age the board does not have. */
+function ageLine(t, patient, nowMs) {
+  if (!Number.isInteger(patient.age)) return null;
+  if (patient.age === 0) {
+    const exact = ageOf(String(patient.birthDate ?? "").slice(0, 10), dayOf(nowMs));
+    if (exact) return t("kabul.age", exact);
+  }
+  return t("olcum.pickAge", { years: patient.age });
+}
+
+/** `known`: the board may be spoken of as current (LIVE). An empty list on any other board is no statement
+ *  about the ward — the strip above says why — so «yatan xəstə yoxdur» is not written under it. */
+function PickList({ patients, nowMs, known, onPick }) {
   const { t } = useI18n();
-  if (patients.length === 0) return <Note tone="info" icon="bed">{t("olcum.pickEmpty")}</Note>;
+  if (patients.length === 0) return known ? <Note tone="info" icon="bed">{t("olcum.pickEmpty")}</Note> : null;
   return (
     // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
     <ul role="list" className="m-0 grid list-none gap-2 p-0 min-[640px]:grid-cols-2">
       {patients.map((p) => {
         const last = lastMeasuredMs(p);
         const facts = [
-          Number.isInteger(p.age) ? t("olcum.pickAge", { years: p.age }) : null,
+          ageLine(t, p, nowMs),
           last !== null ? t("olcum.pickLast", { time: dayStamp(last, nowMs) }) : t("olcum.pickNone"),
         ].filter(Boolean);
         return (
@@ -89,30 +115,34 @@ export function BedsideScreen() {
   const board = useBoard();
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
-  // { name: "pick" | "identity" | "form" | "saved", id?, bed?, saved? }: the step, and the patient it is for.
+  // { name: "pick" | "identity" | "form" | "saved", id?, bed?, saved?, gone? }: the step, and the patient it is
+  // for. `gone` belongs to the list step it was raised for: the next step the page takes has none.
   const [step, setStep] = useState({ name: "pick" });
-  const [gone, setGone] = useState(false);
   const stepRef = useRef(null);
-  const moved = useRef(false);
-  const patients = useMemo(() => [...board.patients].sort(byBed), [board.patients]);
+  const seen = useRef(step.name);
+  const patients = useMemo(() => orderBeds(board.patients), [board.patients]);
   const patient = step.id ? board.patients.find((p) => p.patient_id === step.id) ?? null : null;
   const known = boardKnown(board.connection);
   useEffect(() => {
     if ((step.name === "identity" || step.name === "form") && known && !patient) {
-      setGone(true);
-      setStep({ name: "pick" });
+      setStep({ name: "pick", gone: true });
     }
   }, [step.name, known, patient]);
-  // Not on the first render: the page opening is not a step the focus has to follow.
+  // Only a CHANGE of step moves the focus: the page opening is not a step it has to follow (and a rehearsal
+  // run of the effect, as StrictMode makes, finds nothing changed).
   useEffect(() => {
-    if (moved.current) stepRef.current?.focus();
-    moved.current = true;
+    if (seen.current !== step.name) {
+      seen.current = step.name;
+      stepRef.current?.focus();
+    }
   }, [step.name]);
   const { id, bed } = step;
-  const choose = (p) => {
-    setGone(false);
-    setStep({ name: "identity", id: p.patient_id, bed: bedOf(p) });
-  };
+  // The step's own heading, so the group the focus lands on is named for what it holds.
+  const stepLabel = step.name === "identity" ? t("olcum.identityTitle")
+    : step.name === "form" ? t("olcum.formTitle", { bed })
+    : step.name === "saved" ? t("olcum.saved", { time: dayStamp(step.saved.atMs, nowMs) })
+    : t("olcum.pickTitle");
+  const choose = (p) => setStep({ name: "identity", id: p.patient_id, bed: bedOf(p) });
   const refuse = () => {
     toast(t("olcum.identityRefused", { subject: bed }), "warn");
     setStep({ name: "pick" });
@@ -123,18 +153,21 @@ export function BedsideScreen() {
       <p className="m-0 text-13 text-mute">{t("olcum.intro")}</p>
       <BoardStrip connection={board.connection} />
       <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
-      {gone ? <Note tone="warn" icon="alert">{t("olcum.gone")}</Note> : null}
-      <section ref={stepRef} tabIndex={-1} data-step={step.name} className="outline-none">
+      {step.gone ? <Note tone="warn" icon="alert">{t("olcum.gone")}</Note> : null}
+      {/* The Note is a static aside: said here as well, politely, so a screen reader hears why the form closed. */}
+      <Announce text={step.gone ? t("olcum.gone") : ""} />
+      <section ref={stepRef} tabIndex={-1} role="group" aria-label={stepLabel} data-step={step.name} className="outline-none">
         {step.name === "pick" ? (
           <>
             <h2 className="m-0 mb-2 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("olcum.pickTitle")}</h2>
-            <PickList patients={patients} nowMs={nowMs} onPick={choose} />
+            <PickList patients={patients} nowMs={nowMs} known={known} onPick={choose} />
           </>
         ) : null}
         {step.name === "identity" && patient ? (
           <IdentityStep patient={patient} onYes={() => setStep({ name: "form", id, bed })} onNo={refuse} />
         ) : null}
-        {step.name === "form" && patient ? (
+        {/* Not `&& patient`: a board whose load failed has no list, and the form needs only the id and the bed. */}
+        {step.name === "form" ? (
           <Box title={t("olcum.formTitle", { bed })} icon="activity" level={2}>
             <VitalsForm
               key={id} bed={bed} nowMs={nowMs}
