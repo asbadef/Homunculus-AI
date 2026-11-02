@@ -1490,7 +1490,11 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
 - **Erişim kayıtları** (O10). API'nin kendi erişim kaydı kapalıdır (`--no-access-log`). nginx'in
   erişim kaydı yolu numarasız yazar (`/patients/:key/trends`, `/admissions/:id/label`); sorgu
   dizgesini ve Referer'ı hiç yazmaz. Bunu, rota tablosunu dolaşan bir test korur: numara taşıyan yeni
-  bir rota, nginx onu da gizleyene dek testten geçmez. nginx'in **hata kaydı** kapsanmaz: bir istek
+  bir rota, nginx onu da gizleyene dek testten geçmez. Bu tek kaydın dışarıda bıraktığı **tek yol**
+  dalga panelinin sorusudur (`/infinity-waves/…`, 3.11): açık her panel saniyede yaklaşık 1,33 kez
+  sorar, açık bırakılmış tek bir panel günde ~115.000 satır yazardı. Bu yolda hasta numarası yoktur;
+  monitörün ağ adresi (bir cihaz kimliği) vardır. Başka hiçbir yol dışarıda kalamaz; bunu da bir test
+  korur. nginx'in **hata kaydı** kapsanmaz: bir istek
   için hata ya da uyarı yazdığında (API kapalı ya da yeniden başlıyor, zaman aşımı, 413, giriş sınırı)
   isteğin tamamını, sorgu dizgesiyle yazar. Bu yüzden `docker compose logs web`, hasta numarası
   taşıyabilen bir kayıt olarak okunur.
@@ -1593,7 +1597,8 @@ kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel 
   gönderilir ve tarayıcı onları yaşlarına göre «akış durdu» diye gösterir; hiçbir zaman
   güncel/canlı gibi gösterilmez ve hiçbir yere yazılmaz: veritabanına, denetim kaydına, günlüğe ya
   da dışa aktarıma gitmez. (Hub'ın şifreli paket günlüğü ham paketleri bugüne dek nasıl tutuyorsa
-  öyle tutar; bu dilim ona okuyucu eklemez.)
+  öyle tutar; bu dilim ona okuyucu eklemez.) Panelin sorusu erişim kaydına da yazılmaz: sunucunun
+  tek ve numarasız erişim kaydının dışarıda bıraktığı tek yol budur (3.10, «Erişim kayıtları»).
 - Kayıt, yazdırma, dışa aktarma, geriye dönük izleme (full disclosure) ve EKG kalibrasyonu yok.
 
 **Ne doğrulandı, ne doğrulanmadı.** Doğrulanan: paketin ve dalga bloklarının yapısı, zamanlaması

@@ -125,6 +125,10 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   earlier `art`/`ecg_other` kinds are superseded.)
 - Nothing is written: no DB, no audit row, no log line containing samples.
 - nginx API prefix list + `tests/test_nginx_routes.py` + Vite proxy gain `/infinity-waves`.
+  (Added 2026-11-02, final review M-3: the poll is the one path the server's single redacted access
+  log (G2-B1d O10) leaves out, `if=$homunculus_access_logged`, for its volume — about 1.33 requests a
+  second per open panel, ~115,000 lines a day for one left open. Its path carries a monitor's network
+  address, a device id, no patient key; uvicorn's access log is off for every path.)
 
 ### 3.3 Dashboard
 
