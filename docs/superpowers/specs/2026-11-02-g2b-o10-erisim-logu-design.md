@@ -107,6 +107,10 @@ as a path, the map redacts it.
   With the access log off that step would have printed "no /ingest in 30 minutes" for a healthy
   system. It now reads the bridge's uplink warnings (`uplink refused an observation (HTTP <n>)`,
   `uplink unavailable`), which carry the same answer, and the api log for `ERROR|Traceback` only.
+  As first built it read `homunculus-nce` alone, which has been stopped since 2026-09-04 (the
+  double-ingest guard), so it always said "no warning". Lane A's review of the deploy blocks (M-9)
+  caught this. It now reads `homunculus-bridge` (NCE's direct HL7, the live path) and `homunculus-nce`,
+  each under its own name, and says when a container does not exist.
 - `docs/EDGE-BRIDGE-LOCAL.md` gets a short *Access logs* section (what each log records; the error-log
   gap). `docker compose logs api` in its start-up checks reads engine lines, which stay.
 - The VM block files (`/c/tmp/infinity-a-releases/*.txt`) read engine lines of the api log only (the
