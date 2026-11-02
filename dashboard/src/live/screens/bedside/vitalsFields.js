@@ -15,7 +15,8 @@ import { BACKDATE_MS, fromLocalInput, number } from "../patient/meds/medsFields.
 
 export { BACKDATE_MS, toLocalInput } from "../patient/meds/medsFields.js";
 
-/** A minute of skew between this browser's clock and the server's is not "ahead" (the Meds form's minute). */
+/** A minute of skew between this browser's clock and the server's: not "ahead" on the future side (the Meds
+ *  form's minute), and the margin kept inside the 24 h edge on the past side, so the browser is the stricter one. */
 const SKEW_MS = 60_000;
 
 export const VITALS = Object.freeze([
@@ -57,7 +58,10 @@ export function checkVital(spec, raw) {
   if (n === "") return { skip: true };
   if (Number.isNaN(n)) return { error: { key: "olcum.notNumber" } };
   if (spec.whole && !Number.isInteger(n)) return { error: { key: "olcum.notWhole" } };
-  if (!spec.whole && /[.,]\d{2,}$/.test(text)) return { error: { key: "olcum.oneDecimal" } };
+  // One decimal BY VALUE: "36,50" is 36.5 and is taken; "36,85" is a second digit that matters. (`number` has
+  // already refused a second separator, so `text` holds at most one.)
+  const frac = text.split(/[.,]/)[1] ?? "";
+  if (!spec.whole && frac.replace(/0+$/, "").length > 1) return { error: { key: "olcum.oneDecimal" } };
   if (n < spec.min || n > spec.max) {
     return { error: { key: "olcum.outOfRange", params: { low: spec.min, high: spec.max } } };
   }
@@ -66,8 +70,9 @@ export function checkVital(spec, raw) {
 
 /** The whole draft: `{ entries, recordedAt, errors }`. `draft` is `{ values: {code: raw}, at, atTouched }`, `at`
  *  the `datetime-local` value in the browser's zone; `now` the browser's clock in ms. `errors` is by code, plus
- *  `form` (nothing entered) and `at`. `recordedAt` is a UTC instant, or null for an untouched time (X12). */
-export function checkDraft({ values = {}, at = "", atTouched = false } = {}, now) {
+ *  `form` (nothing entered) and `at`. `recordedAt` is a UTC instant, or null for an untouched time (X12). With no
+ *  `now` it reads the browser's own clock: a missing clock must not switch the time bounds off. */
+export function checkDraft({ values = {}, at = "", atTouched = false } = {}, now = Date.now()) {
   const errors = {};
   const entries = [];
   for (const spec of VITALS) {
@@ -84,7 +89,9 @@ export function checkDraft({ values = {}, at = "", atTouched = false } = {}, now
     const ms = fromLocalInput(at);
     if (!Number.isFinite(ms)) errors.at = { key: "olcum.atInvalid" };
     else if (ms > now + SKEW_MS) errors.at = { key: "olcum.atFuture" };
-    else if (ms < now - BACKDATE_MS) errors.at = { key: "olcum.atTooOld" };
+    // A minute INSIDE the day: the server refuses a time older than 24 h by its own clock, and a form that sent
+    // the edge itself could be a second too old on arrival. This side is the stricter one.
+    else if (ms < now - BACKDATE_MS + SKEW_MS) errors.at = { key: "olcum.atTooOld" };
     else recordedAt = new Date(ms).toISOString();
   }
   return { entries, recordedAt, errors };
@@ -96,11 +103,15 @@ export const hasErrors = (checked) => Object.keys(checked.errors).length > 0;
 export const draftKey = (checked) => JSON.stringify([checked.entries, checked.recordedAt]);
 
 /** The value one step up (`direction` 1) or down (-1), inside the bounds, as the box shows it; null from an empty
- *  or unreadable box — a stepper never invents a first value. */
+ *  or unreadable box — a stepper never invents a first value — and from a choice, which has no number to move.
+ *  A whole vital typed with a fraction ("26,5") steps to the next whole number in the direction pressed, never
+ *  past it. */
 export function stepValue(spec, raw, direction) {
+  if (spec.kind !== "number") return null;
   const n = number(String(raw ?? "").trim());
   if (n === "" || Number.isNaN(n)) return null;
-  const next = Math.min(spec.max, Math.max(spec.min, n + direction * spec.step));
+  const moved = spec.whole ? (direction > 0 ? Math.floor(n) + 1 : Math.ceil(n) - 1) : n + direction * spec.step;
+  const next = Math.min(spec.max, Math.max(spec.min, moved));
   return spec.whole ? String(Math.round(next)) : (Math.round(next * 10) / 10).toFixed(1);
 }
 
