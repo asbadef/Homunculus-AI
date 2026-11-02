@@ -1592,8 +1592,10 @@ kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel 
   alarm ya da bildirim üretilmez; ne gerçek motora ne gölge motora bir şey gider. Panelin yanındaki
   sayılar şeridin sayılarıdır.
 - **Saklama yok.** Hub'da ve tarayıcıda en çok son 20 saniyelik dalga (monitörün kendi saatine
-  göre son 20 saniye, duvar saatine göre değil), yalnız bellekte; sunucuda 250 ms. Bir monitör
-  susunca son blokları biri sorana ya da hub yeniden başlayana dek hub belleğinde, panel kapanana
+  göre son 20 saniye, duvar saatine göre değil), yalnız bellekte; sunucuda (API) da izlenen monitör
+  başına son 20 saniyelik bir halka, hub'a 750 ms'de bir yalnız yeni bloklar sorularak doldurulur,
+  kimsenin 20 saniyedir sormadığı monitörünki unutulur (dalga-perf). Bir monitör susunca son
+  blokları biri sorana ya da hub yeniden başlayana dek hub belleğinde, panel kapanana
   dek tarayıcı belleğinde kalabilir — 10–20 saniyedir susan bir monitörün blokları sorulursa yine
   gönderilir ve tarayıcı onları yaşlarına göre «akış durdu» diye gösterir; hiçbir zaman
   güncel/canlı gibi gösterilmez ve hiçbir yere yazılmaz: veritabanına, denetim kaydına, günlüğe ya
@@ -1616,6 +1618,13 @@ taşıyan yeni sürümü gerekir. Bayrak açık ama hub ayarları eksikse panel 
 sunucu nedeni açılışta bir kez günlüğe yazar. Kapatmak için bayrak kaldırılır ve API yeniden
 başlatılır: hasta ekranından panel kalkar, «Monitörler»de açılan panel «Dalga formu bu kurulumda
 kapalı» der.
+
+**Hub'da çözme kuyruğu (dalga-perf).** Hub gelen paketi önce onaylar; dalga bloklarını sonra, ayrı
+bir iş parçacığında çözer (kuyrukta en çok 64 paket; kuyruk dolarsa en eskisi atılır ve sayılır).
+Hub'ın durum sayfası (`/v1/status`, `waves`) bunu `dropped` (atılan) ve `queued` (bekleyen) olarak
+gösterir. 3 saniyeden eski kalan paket atılmaz, çözülürken reddedilir: `refused` (reddedilen)
+sayacının `queued` > 0 ile birlikte artması saat farkı değil, çözücünün geride kaldığı anlamına
+gelir.
 
 **Hastanenin sunucusunda henüz yok.** Dilim kendi dalındadır; dağıtım kullanıcının sözüyle
 yapılacak («main'e al», sonra «onay»). Hub için yeni bir sürüm gerekir (R6'dan sonraki; R7 olarak

@@ -78,8 +78,11 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   only stall the answer), and blocks received more than 20 s ago are forgotten (plan R5, amended
   2026-10-27 after the Task 2 review). Set-backs of 10 s or less are not detected; they stall
   (phase kept) or overlap the old stream (phase shifted) for at most that long and self-heal.
-- Hook 1: the `/v1/packets` handler hands accepted events to `WaveBuffer.consume` next to
-  `research_view.consume` (research mode with payload capture only).
+- Hook 1: the `/v1/packets` handler hands the acknowledged events to the hub's one decoder thread
+  (`WaveDecoder`; dalga-perf, 2026-11-02) after the ack is computed, next to `research_view.consume`
+  (research mode with payload capture only); the thread calls `WaveBuffer.consume` off the event
+  loop through a bounded queue of 64 batches — when it is full the oldest batch is dropped and
+  counted, and the handler never blocks on it.
 - Hook 2: `GET /infinity-research/waves?device=<id>[&device=<id>…]&since=<cursor>` (viewer token;
   409 when research mode is off; 404 when a named device is unknown; at most 16 devices). The cursor
   is one counter for the whole hub, so a single `since` serves any set of devices (the wall, §11).
@@ -94,8 +97,12 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   `samples: null` = the all-`0x0001` "no signal" block. A lone `1` inside a live block is data.
   `started` is the hub process's start time (plan R19, added after the Task 2 review): a caller
   that sees it change knows the cursor restarted and re-reads the window. `GET /v1/status` gains
-  `waves: {cursor, refused, started}` when the buffer exists, so a worker clock ahead of the hub
-  (every packet refused as "future") shows up as a counter instead of a silent blackout.
+  `waves: {cursor, refused, started, errors, dropped, queued}` when the buffer exists, so a worker
+  clock ahead of the hub (every packet refused as "future") shows up as a counter instead of a
+  silent blackout; `errors` counts batches the buffer raised on (acknowledged all the same, I4),
+  `dropped` the acknowledged batches the decoder thread never got to (its queue was full) and
+  `queued` its backlog now (dalga-perf). The 3 s rule is judged at decode time, so `refused`
+  climbing with `queued` above 0 is a decoder stall, not clock skew.
 - `deploy/infinity/build_transport_release.py` gains `infinity_waves` in `EDGE` (new hub release R7,
   the first after R6; R5 is NBP-2 and R6 the HR/PLS swap — final review I-2).
 - CPU: decoding ≈65 packets/s is a few µs each; acceptance still measures the hub (§8).

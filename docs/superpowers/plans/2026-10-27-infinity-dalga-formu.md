@@ -1440,7 +1440,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api import infinity_waves
 from homunculus.api.infinity_waves import (
-    CACHE_S, MAX_BODY, REASONS, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
+    POLL_S, MAX_BODY, REASONS, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
 )
 from homunculus.edge.infinity_waves import SCHEMA
 
