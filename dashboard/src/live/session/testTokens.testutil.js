@@ -63,6 +63,9 @@ export function fakeApi(vi, { access = null } = {}) {
     severityForm: vi.fn(),
     previewSeverityForm: vi.fn(),
     signSeverityForm: vi.fn(),
+    // G3-01: the bedside form's preview and the «hatalı giriş» withdrawal (screens/bedside, trends)
+    previewChart: vi.fn(),
+    retractEntry: vi.fn(),
 
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),

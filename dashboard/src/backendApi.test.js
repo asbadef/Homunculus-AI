@@ -521,6 +521,25 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(flaggedInit.body)).toEqual({ overrides, expect: expectHex });
   });
 
+  // G3-01 (D8, D10): the preview takes the chart's own body on a route of its own; the withdrawal names the
+  // entry the chart answered, and carries the reason.
+  it("previews a chart on its own route and withdraws an entry with its reason", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ preview: true }));
+    const api = signedIn(fetchMock);
+    const entries = [{ code: "resp_rate", value: 26 }];
+    await api.previewChart("S-001", entries, "2026-11-02T08:00:00.000Z");
+    await api.previewChart("S-001", entries);
+    await api.retractEntry("S-001", 41, "yazım hatası — 26 değil 16");
+    const [[previewUrl, previewInit], [, untimedInit], [retractUrl, retractInit]] = fetchMock.mock.calls;
+    expect(previewUrl).toBe("/clinical/S-001/preview");
+    expect(previewInit.method).toBe("POST");
+    expect(JSON.parse(previewInit.body)).toEqual({ entries, recorded_at: "2026-11-02T08:00:00.000Z" });
+    expect(JSON.parse(untimedInit.body)).toEqual({ entries });
+    expect(retractUrl).toBe("/clinical/S-001/entries/41/retract");
+    expect(retractInit.method).toBe("POST");
+    expect(JSON.parse(retractInit.body)).toEqual({ reason: "yazım hatası — 26 değil 16" });
+  });
+
   it("lifts an account's directory sign-in throttle with the administrator's reason", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);
