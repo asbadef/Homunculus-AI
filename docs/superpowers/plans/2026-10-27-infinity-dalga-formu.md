@@ -5919,6 +5919,8 @@ cd /c/tmp/inf-dalga && git fetch origin && git merge --no-edit origin/main
 
 - [ ] **Step 2: Both suites at the merge.** Run Task 0's Steps 3 and 4. Expected: green, both. If `test_tenant_isolation.py` fails, it is a merge of the `UNSCOPED_BY_DESIGN` set: keep Aşama B's new board routes and this branch's `CALLER_ELSEWHERE`. If `test_infinity_waves_api.py` fails at the gates, `shadow_board` changed: follow it in the Task 7 hunk, and nowhere else.
 
+*Steps 1 and 2, as done (Lane B).* The branch merged `main` twice (L-1: 2afa6f2, with Aşama B, NBP-2, the HR/PLS swap, A4's SOFA box, pg-bounds and the monitor→bed editor; then c72cbe5, B1d's protocol number), the last as 9fdaf85. Both suites were green there: the dashboard 3430 tests in 124 files; the engine without a database 3313 passed, 1109 skipped. Re-read before Step 6: `shadow_board` is now `async def shadow_board(authorization: str | None = Header(default=None))` (`api/app.py`, after the merge ≈ `:1410`), and the waves route awaits it (`api/infinity_waves.py`, `shown = await board(authorization)`); `stripOn` is `data?.stage === "shadow" || data?.stage === "rules"` (`MonitorStrip.jsx`).
+
 - [ ] **Step 3: The fake API answers the waves route "off" unless a test says otherwise.** In `dashboard/src/live/session/testTokens.testutil.js`, replace
 
 ```js
@@ -5970,7 +5972,7 @@ describe("the waveform panel on the patient screen", () => {
     expect(panel).toHaveTextContent(DICTIONARIES.az["waves.stamp"]);
     const stripRegion = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
     expect(stripRegion.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0", { timeoutMs: 4000 });
+    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0");
   });
 
   it("draws none for a patient without exactly one monitor, and asks for no waves", async () => {
@@ -6014,7 +6016,7 @@ describe("the waveform behind each device", () => {
     mounted.api.request.mockResolvedValue(waveAnswer(bed4(), { device_id: "192.0.2.2" }));
     await act(async () => { fireEvent.click(buttons[0]); await settle(); });
     expect(mounted.api.request).toHaveBeenCalledTimes(1);
-    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0", { timeoutMs: 4000 });
+    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0");
     const panel = screen.getByRole("region", { name: `REA-01 · 2 · ${DICTIONARIES.az["waves.title"]}` });
     expect(panel).toHaveTextContent(DICTIONARIES.az["waves.stamp"]);
   });
@@ -6027,6 +6029,7 @@ These lean on the files' own helpers (`open`, `board`, `entry`, `FULL`, `strip`,
 
 Run: `cd /c/tmp/inf-dalga/dashboard && npx vitest run src/live/screens/patient/PatientScreen.test.jsx src/live/screens/devices/DevicesScreen.test.jsx`
 Expected: the two "draws it"/"offers" tests fail (no panel region, no button); the "draws none" tests pass.
+*As run (Lane B):* 4 failed, 108 passed. The 409 test fails too before Step 6, because it asserts that the waves were asked for. The fourth failure is the added "nothing while the first answer is on its way" test (see "As committed" below).
 
 - [ ] **Step 6: The two insertions.** In `dashboard/src/live/screens/patient/PatientScreen.jsx`, after the line `import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";` add
 
@@ -6076,6 +6079,30 @@ so that `git diff main -- dashboard/src/reachable.test.js` is empty.
 
 Run: `npx vitest run src/live/screens/patient/PatientScreen.test.jsx src/live/screens/devices/DevicesScreen.test.jsx src/reachable.test.js src/live/boundaries.test.js src/live/waveBoundaries.test.js`
 Expected: all pass. (`boundaries.test.js` lists `screens/devices/` as strip modules: the device screen importing the panel is a strip module importing a wave module, which no rule forbids; neither is reached from an alarm path.)
+
+*As committed (11d0444, Lane B, on the merged main).* The two screens had grown since this task was written. The insertions follow the current code, and nothing else moved:
+- **`PatientScreen.jsx`.** The import sits right after `MonitorStrip`'s (`:59`). The panel follows the strip's `{monitor ? <MonitorStrip … stage={shadow.data.stage} … /> : null}` block (`:412-414`, with a two-line comment) and comes before Aşama B's `ShadowFindingsBox`. `monitor` is still the `link === "one"` card of this patient, and only when `stripOn` (so at the stage `rules` too). A4's `SofaBox`, B1a's `SignOffStrip` and B1d's `LabelReprint` are untouched.
+- **`DevicesScreen.jsx`.** The import sits after `monitor.js`'s (`:21`). In `Device`, the panel sits between `</MonitorStrip>` and `</li>` (`:45-46`, with a one-line comment). The strip gets `withoutPatient(card)`; the panel gets only `card.source` and the strip's `title`. G2-ESLEME's `MappingSection` is untouched.
+- **`testTokens.testutil.js`.** The anchor `shadowBoard: vi.fn(),` was still there; `request` went in as written (`:57-59`).
+- **The store's call.** Task 8's review took `{ timeoutMs: 4000 }` out of `waveStore.js`, and R12 above predates that. The store calls `api.request(path)` alone, and backendApi's own limit bounds a hung poll. Both assertions in Step 4 now expect the path alone.
+- **Tests beyond the block above.**
+  - The patient's first test also asserts that the panel is the strip's next sibling and comes before the engine's findings.
+  - "Draws none" adds `linked("none", "S-001")` and `linked("ambiguous", "S-001")`. These are cards that name this patient without linking them alone. The block's three cases could not tell "the link decides" from "the patient id decides".
+  - A new test: "draws nothing while the first answer is on its way — not even the panel's frame". The request never answers, and there is no `[data-wave-panel]` and no "waiting" line (R10).
+  - The device test also asserts that nothing is open and nothing is asked before the press. After it, the panel sits in its own device's `<li>`, and three buttons are left.
+- **Existing tests.** None needed a change. Off (409) and loading both draw nothing on the patient screen, and on the device screen the closed panel is only a button. So no query found a second text.
+- **`reachable.test.js`.** `PENDING` is gone, and `git diff main -- dashboard/src/reachable.test.js` is empty.
+
+Four mutations were each made in place and reverted, and each failed:
+- **`LOADING` taken out of `WavePanel.jsx`'s `QUIET`** (the panel drawn before the first answer): "draws nothing while the first answer is on its way" failed. The block's own tests pass this mutation.
+- **`collapsible` dropped on the device screen** (opened without its button): "offers each device's waves behind a button" failed.
+- **The patient's panel taken from the card that names the patient, with any `link`**: "draws none for a patient without exactly one monitor" failed on `none · S-001`. The block's three cases pass this mutation.
+- **`PENDING` and its test put back as at 9fdaf85**: "lets a pending module stay pending only while no screen reaches it" failed, naming the five wave modules.
+
+Counts:
+- Step 8's five files: 24 files, 560 tests.
+- The whole dashboard: 124 files, 3434 tests. That is +5 screen tests and −1 reachability test.
+- `npx vite build` (into a scratch `--outDir`; `dashboard/dist/` is gitignored anyway): built, and the bundle carries the panel.
 
 - [ ] **Step 9: Commit.**
 
