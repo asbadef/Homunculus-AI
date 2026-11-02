@@ -249,6 +249,21 @@ def test_pollers_round_robin_over_the_first_monitors():
     assert bench.watched(monitors, 0) == []
 
 
+def test_the_api_pattern_names_the_rolled_back_and_todays_api_from_the_pollers_settings():
+    # The default (0.25 s, since=0) is the ROLLED-BACK API of 2026-11-02, kept as the before/after reference;
+    # today's API (c604685) polls once per POLL_S = 0.75 s with its own cursor.
+    assert bench.API_PATTERNS == {"old": (0.25, "0"), "new": (0.75, "cursor")}
+    assert (bench.POLL_INTERVAL_S, bench.parse_args(["--folder", "x"]).poll_since) == (0.25, "0")
+    assert bench.api_pattern_of(0, 0.25, "0") == "none"
+    assert bench.api_pattern_of(1, 0.25, "0") == "old"
+    assert bench.api_pattern_of(3, 0.75, "cursor") == "new"
+    assert bench.api_pattern_of(1, 0.75, "0") == "custom" and bench.api_pattern_of(1, 0.25, "cursor") == "custom"
+    common = {"monitors": 13, "warmup": 30.0, "bench_seconds": 180.0, "cpu_method": "test"}
+    assert bench.run_record(pollers=1, poll_interval=0.25, poll_since="0", **common)["api_pattern"] == "old"
+    assert bench.run_record(pollers=3, poll_interval=0.75, poll_since="cursor", **common)["api_pattern"] == "new"
+    assert bench.run_record(pollers=0, poll_interval=0.25, poll_since="0", **common)["api_pattern"] == "none"
+
+
 def test_the_poll_summary_gives_p50_p95_bytes_and_blocks_per_answer():
     samples = [(float(ms), 1000 + ms, 10) for ms in range(1, 101)]       # 1..100 ms
     summary = bench.poll_summary(samples, errors=2)
@@ -328,6 +343,7 @@ def test_the_summary_line_is_one_json_object_with_the_run_and_the_window_and_loa
     assert loaded["bench"]["monitors"] == 13 and loaded["bench"]["batch"] == [32, 0.25]
     assert {"pollers", "poll_interval", "poll_since", "warmup_s", "bench_s", "cpu_method", "cpus", "platform", "python"} <= set(loaded["bench"])
     assert (loaded["bench"]["hub_cpus"], loaded["bench"]["hub_mask"], loaded["bench"]["bench_mask"]) == (None, None, None)
+    assert loaded["bench"]["api_pattern"] == "old"                  # 1 poller at 0.25 s, since=0: the rolled-back API
     assert {k: v for k, v in loaded.items() if k != "bench"} == metrics
     pinned = bench.run_record(monitors=13, pollers=1, poll_interval=0.25, poll_since="0", warmup=30.0, bench_seconds=180.0,
                               cpu_method="GetProcessTimes", hub_cpus=2, hub_mask=0b11, bench_mask=0xfffc)
@@ -478,5 +494,8 @@ def test_help_prints_under_a_redirected_cp1252_console():
     done = subprocess.run([sys.executable, str(SCRIPTS / "dev_waves_bench.py"), "--help"], capture_output=True, env=env, timeout=120)
     assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
     text = done.stdout.decode("utf-8", "replace")
-    assert "--monitors" in text and "--pollers" in text and "--poll-since" in text and "--compare" in text
+    assert "--monitors" in text and "--pollers" in text and "--poll-since" in text and "--compare" in text and "--hub-cpus" in text
     assert "D?KKAT" in text or "DİKKAT" in text            # the word is in the help; cp1252 has no İ
+    # Both API presets are printed: the rolled-back one (the default) and today's.
+    assert "--poll-interval 0.25 --poll-since 0" in text and "--poll-interval 0.75 --poll-since cursor" in text
+    assert "CACHE_S" not in text

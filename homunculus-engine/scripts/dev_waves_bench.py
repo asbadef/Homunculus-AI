@@ -21,11 +21,15 @@ measured before any retry, with the same parts and the same reading as the VM:
   hub's `/v1/packets` with the worker's own batching (BATCH): at most MAX_BATCH = 32 events per POST,
   and after a partial batch LINGER = 0.25 s before the next; the heartbeat every 5 s. With 13 monitors
   that is one POST of about 20 to 26 events every 250 ms plus the POST's own time and the outbox's.
-- `--pollers P` (0): P threads, each one browser panel as the API relays it to the hub today: the hub's
-  own `/infinity-research/waves?device=<one monitor>&since=0` every `--poll-interval` s (0.25, the
-  API's CACHE_S: the most often it asks the hub per watched monitor; the browser itself asks the API
-  every 750 ms, waveStore's WAVE_POLL_MS) over one keep-alive connection, poller p on monitor p mod N.
-  `--poll-since cursor` sends the last answer's cursor back instead: what work package 2's API will do.
+- `--pollers P` (0): P threads, each one browser panel as the API relays it to the hub (the hub's own
+  `/infinity-research/waves?device=<one monitor>&since=…`) over one keep-alive connection, poller p on
+  monitor p mod N. Two API patterns (API_PATTERNS): the ROLLED-BACK API of 2026-11-02 asked the hub for
+  the whole 10 s window every 250 ms per watched monitor (`--poll-interval 0.25 --poll-since 0` — the
+  DEFAULT, because it is the pattern the VM's numbers were measured against, the before/after
+  reference); today's API (api/infinity_waves.py since c604685) keeps a 20 s ring per monitor and asks
+  the hub once per POLL_S = 0.75 s tick for the blocks after its own cursor (`--poll-interval 0.75
+  --poll-since cursor`: today's load). BENCH records which as `api_pattern` ("old", "new", "custom",
+  or "none" without pollers), so a run of the old pattern is never read as today's API.
 - `--bench-seconds S` (180): after `--warmup` (30 s), `/v1/status` and the hub process's CPU time are
   read twice, S seconds apart, and the window is reported the way the VM's hubdurum.py reports one
   (the same rows, the same KABUL/DİKKAT/RED rules): the hub's share of a core, the lag over 500 and
@@ -93,7 +97,12 @@ from homunculus.edge.infinity_timing import Timings  # noqa: E402
 
 MONITORS = 13                         # the ward's count
 SAVE_PERIOD_S = 0.1                   # infinity_collector.collect's deadline: the worker's outbox takes what arrived every 100 ms
-POLL_INTERVAL_S = 0.25                # api/infinity_waves.py CACHE_S: the hub is asked at most this often per monitor
+# The DEFAULT models the ROLLED-BACK API of 2026-11-02 (every 250 ms, since=0: its old 250 ms cache), because
+# that is the pattern the VM's numbers were measured against - the before/after reference. Today's API
+# (api/infinity_waves.py since c604685) asks once per POLL_S = 0.75 s with its own cursor: bench today's
+# load with `--poll-interval 0.75 --poll-since cursor` (API_PATTERNS["new"]).
+POLL_INTERVAL_S = 0.25
+API_PATTERNS = {"old": (0.25, "0"), "new": (0.75, "cursor")}    # (--poll-interval, --poll-since) per API
 WARMUP_S = 30.0
 BENCH_S = 180.0
 BATCH = (MAX_BATCH, LINGER)           # the worker's: events per POST at most, and the linger after a partial batch
@@ -179,6 +188,17 @@ def watched(monitors, pollers):
     return [monitors[p % len(monitors)]["source"] for p in range(pollers)]
 
 
+def api_pattern_of(pollers, interval, since):
+    """Which API the pollers model: "old" (the rolled-back 250 ms, since=0), "new" (750 ms with the
+    cursor, api/infinity_waves.py since c604685), "custom", or "none" without pollers."""
+    if not pollers:
+        return "none"
+    for name, (preset_interval, preset_since) in API_PATTERNS.items():
+        if abs(interval - preset_interval) < 1e-9 and since == preset_since:
+            return name
+    return "custom"
+
+
 # --- the hub's client and the pollers -------------------------------------------------------------
 
 class HubClient:
@@ -215,9 +235,10 @@ class HubClient:
 class Poller:
     """One browser panel as the API relays it to the hub: `get({"device": …, "since": …})` every
     `interval` seconds from request start to request start (a slow answer is followed at once, as
-    the API's cache would have expired). `since` "0" asks for the whole window every time (today's
-    API); "cursor" sends the last answer's cursor back. Keeps (ms, bytes, blocks) per good answer
-    and counts the rest as errors, until `window()` reads and resets them."""
+    the API's next tick would already be due). `since` "0" asks for the whole window every time (the
+    rolled-back API of 2026-11-02); "cursor" sends the last answer's cursor back (today's API,
+    c604685). Keeps (ms, bytes, blocks) per good answer and counts the rest as errors, until
+    `window()` reads and resets them."""
 
     def __init__(self, get, device, *, interval=POLL_INTERVAL_S, since="0", clock=time.perf_counter, wait=None):
         # perf_counter, not monotonic: on Windows the latter ticks every 15.6 ms, and a 5 ms answer reads 0.
@@ -586,8 +607,10 @@ def _yaz(rows, label):
 
 def run_record(*, monitors, pollers, poll_interval, poll_since, warmup, bench_seconds, cpu_method,
                hub_cpus=None, hub_mask=None, bench_mask=None):
-    """What the BENCH line says about the run itself. `hub_cpus` None: the hub ran on every core."""
+    """What the BENCH line says about the run itself. `hub_cpus` None: the hub ran on every core.
+    `api_pattern` names the API the pollers modelled (api_pattern_of), so "old" is never read as today's."""
     return {"monitors": monitors, "pollers": pollers, "poll_interval": poll_interval, "poll_since": poll_since,
+            "api_pattern": api_pattern_of(pollers, poll_interval, poll_since),
             "warmup_s": warmup, "bench_s": bench_seconds, "batch": list(BATCH), "cpu_method": cpu_method,
             "cpus": os.cpu_count(), "hub_cpus": hub_cpus,
             "hub_mask": None if hub_mask is None else f"{hub_mask:#x}", "bench_mask": None if bench_mask is None else f"{bench_mask:#x}",
@@ -780,7 +803,8 @@ def run_bench(args):
         metrics.update(summary)
         rows += poll_rows(summary, args.pollers, args.poll_interval, args.poll_since)
         print(f"--- pencere ({metrics['sn']} sn; {args.monitors} monitör, {args.pollers} poller, {args.poll_interval:g} s, "
-              f"since={args.poll_since}; hub {args.hub_cpus if args.hub_cpus is not None else 'bütün'} çekirdek)", flush=True)
+              f"since={args.poll_since}, API deseni {api_pattern_of(args.pollers, args.poll_interval, args.poll_since)}; "
+              f"hub {args.hub_cpus if args.hub_cpus is not None else 'bütün'} çekirdek)", flush=True)
         code = _yaz(rows, "BENCH")
         run = run_record(monitors=args.monitors, pollers=args.pollers, poll_interval=args.poll_interval,
                          poll_since=args.poll_since, warmup=args.warmup, bench_seconds=args.bench_seconds,
@@ -809,14 +833,20 @@ def run_bench(args):
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="API presets (--poll-interval, --poll-since):\n"
+               "  eski API, 2026-11-02'de geri alınan (VARSAYILAN, önce/sonra referansı):  --poll-interval 0.25 --poll-since 0\n"
+               "  bugünkü API (c604685, POLL_S = 0.75 s, kendi imleciyle):                  --poll-interval 0.75 --poll-since cursor")
     parser.add_argument("--folder", type=Path, help="a scratch folder outside any repository (required for a run)")
     parser.add_argument("--monitors", type=int, default=MONITORS, help=f"synthetic monitors, 1 to 100 (default {MONITORS}, the ward's)")
     parser.add_argument("--pollers", type=int, default=0, help="browser panels as the API relays them to the hub (default 0)")
     parser.add_argument("--poll-interval", type=float, default=POLL_INTERVAL_S,
-                        help=f"seconds between a poller's requests (default {POLL_INTERVAL_S:g}, the API's cache; 0.75 is the browser's)")
+                        help=f"seconds between a poller's requests (default {POLL_INTERVAL_S:g}: the rolled-back API's 250 ms, "
+                             "the before/after reference; bugünkü API: --poll-interval 0.75 --poll-since cursor)")
     parser.add_argument("--poll-since", choices=("0", "cursor"), default="0",
-                        help="0: the whole window every time (today's API); cursor: the last answer's cursor (work package 2)")
+                        help="0: the whole window every time (the rolled-back API; the default); "
+                             "cursor: the last answer's cursor (bugünkü API, c604685)")
     parser.add_argument("--warmup", type=float, default=WARMUP_S, help=f"seconds before the first reading (default {WARMUP_S:g})")
     parser.add_argument("--bench-seconds", type=float, default=BENCH_S, help=f"the window between the two readings (default {BENCH_S:g})")
     parser.add_argument("--compare", nargs="+", metavar="BENCH_FILE",
