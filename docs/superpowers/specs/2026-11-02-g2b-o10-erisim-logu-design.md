@@ -81,6 +81,10 @@ Three additions; `map` and `log_format` sit at the file's top level (it is insta
 3. **`access_log /var/log/nginx/access.log homunculus_redacted;`** in `server {}` (nginx:alpine links
    that path to stdout). No `location` declares its own `access_log`, which would replace the server's;
    the test allows exactly one in the file.
+   *Amended by dalga M-3 (34d4484):* the one `access_log` carries `if=$homunculus_access_logged`; a
+   top-level map keyed on `$uri` leaves only the waves poll (`/infinity-waves/<device id>`, ~115k
+   lines/day per open panel, no patient key) unlogged. `test_access_log_redaction.py` has 14 tests,
+   `test_only_the_waves_poll_is_left_out_of_the_access_log` pinning that map to {default 1, waves 0}.
 
 `$uri` is what the log writes after the request has been served, so a path that falls through to the
 single-page app (`try_files … /index.html`) is logged as `/index.html`, key or not.
