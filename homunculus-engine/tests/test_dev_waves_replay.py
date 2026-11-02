@@ -11,6 +11,7 @@ import ipaddress
 import itertools
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -93,6 +94,18 @@ def test_every_tick_saves_one_live_packet_per_monitor_as_the_workers_receiver_do
     assert batches[2][0]["payload_bytes"] == len(replay.build_payload(replay.MONITORS[0], 2))
 
 
+def decoded(client, deadline_s=5.0):
+    """/v1/status once the hub's decoder thread has taken the batch (dalga-perf 476feced: the wave
+    blocks are decoded after the ack, off the event loop, and timed as waves_ms there)."""
+    deadline = time.monotonic() + deadline_s
+    while True:
+        status = client.get("/v1/status", headers={"Authorization": "Bearer " + VIEWER}).json()
+        if "waves_ms" in status["timings"] and status["waves"]["cursor"] > 0:
+            return status
+        assert time.monotonic() < deadline, "the hub never decoded the batch"
+        time.sleep(0.02)
+
+
 def test_the_real_hub_takes_a_tick_through_its_own_route_and_the_strip_reads_hr_and_pls(tmp_path):
     inventory = Inventory.parse(replay.INVENTORY)
     app, view, journal = replay.build_hub(tmp_path, inventory, COLLECTOR, VIEWER, clock=lambda: NOW)
@@ -100,15 +113,16 @@ def test_the_real_hub_takes_a_tick_through_its_own_route_and_the_strip_reads_hr_
         with TestClient(app) as client:
             posted = client.post("/v1/packets", json={"events": replay.events_at(inventory, 0, NOW - 0.1)},
                                  headers={"Authorization": "Bearer " + COLLECTOR})
+            status = decoded(client)
             window = client.get("/infinity-research/waves", params={"device": "192.0.2.22", "since": "0"},
                                 headers={"Authorization": "Bearer " + VIEWER}).json()
-            status = client.get("/v1/status", headers={"Authorization": "Bearer " + VIEWER}).json()
     finally:
         journal.close()
     assert posted.status_code == 200
     assert sorted((b["id"], b["samples"] is None) for b in window["blocks"]) == [
         (0x0102, False), (0x0103, True), (0x0104, True), (0x0201, False), (0x0E01, False), (0x1916, False)]
-    assert {"consume_ms", "waves_ms"} <= set(status["timings"])          # the hub's own hooks ran
+    assert "consume_ms" in status["timings"]                              # the live view's hook ran on the handler
+    assert status["waves"]["cursor"] == 5 + 6 + 2                         # the three monitors' blocks, decoded
     body = thin(view.snapshot(), now=NOW, collector_age=0.0, counters={"sent": 0, "failed": 0})
     strip = {d["source"]: {r["parameter"]: (r["value"], r["valid"]) for r in d["readings"]} for d in body["devices"]}
     assert strip == {"192.0.2.21": {"hr": (75, True), "pls": (73, True), "spo2": (97, True)},

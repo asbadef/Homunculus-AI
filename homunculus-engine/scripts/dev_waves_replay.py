@@ -183,13 +183,15 @@ def events_at(inventory, k, received_at):
                          received_at=received_at, retain_payload=True) for device in inventory.devices]
 
 
-def produce(inventory, save, stop, *, clock=time.time, monotonic=time.monotonic):
-    """Every PERIOD_S, one tick handed to `save` (the worker's outbox), until `stop` is set."""
+def produce(inventory, save, stop, *, clock=time.time, monotonic=time.monotonic, events=events_at, period=PERIOD_S):
+    """Every `period`, one tick handed to `save` (the worker's outbox), until `stop` is set. `events`
+    makes the tick: these three monitors' every PERIOD_S unless told otherwise (scripts/dev_waves_bench.py
+    hands over the worker's 100 ms saves instead)."""
     started, k = monotonic(), 0
     while not stop.is_set():
-        save(events_at(inventory, k, clock()))
+        save(events(inventory, k, clock()))
         k += 1
-        stop.wait(max(0.0, started + k * PERIOD_S - monotonic()))
+        stop.wait(max(0.0, started + k * period - monotonic()))
 
 
 def build_hub(folder, inventory, collector, viewer, *, clock=time.time):
