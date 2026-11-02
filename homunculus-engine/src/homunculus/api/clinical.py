@@ -154,8 +154,8 @@ BEDSIDE_BACKDATE = timedelta(hours=24)
 BEDSIDE_SKEW = timedelta(minutes=2)
 AT_TOO_OLD = "ölçüm saati en çok 24 saat geriye alınabilir"
 AT_FUTURE = "ölçüm saati ileri olamaz"
-#: G3-01 (D10, D12): the audit row a «hatalı giriş» writes — `{entry, value, obs_ts, reason, retracted_by}`,
-#: subject the code; `entry` is the withdrawn `chart` row's id. The replay and the rebuild skip that row.
+#: G3-01 (D10, D12): the audit row a «hatalı giriş» writes — `{entry, code, value, obs_ts, reason, retracted_by}`,
+#: subject the code too; `entry` is the withdrawn `chart` row's id. The replay and the rebuild skip that row.
 RETRACT = "chart_retract"
 #: G3-01 (D10, D11, X11): the withdrawal's reason, after trim, and its refusals in the clinician's words.
 RETRACT_MIN_REASON_CHARS = 10

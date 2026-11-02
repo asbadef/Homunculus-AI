@@ -163,7 +163,9 @@ def build_episodes(records: list[AuditRecord]) -> list[Episode]:
             # G2-A1 (O17), D12 with X4: the episode ends here — unless it is a critical nobody had
             # answered, which latched (api/alert_lifecycle.py): it stays open for the ack that
             # removes it, and that ack is its answer. The reasons and the severity are the ones
-            # alert_lifecycle writes ("resolved", "acked_after_resolve", "critical").
+            # alert_lifecycle writes ("resolved", "acked_after_resolve", "critical"). Any other reason
+            # — "discharged", G3-01's "entered_in_error" — closes the episode as it stands, unanswered
+            # unless an ack came first; the stop the board showed stays its `resolved_at`.
             episode = open_episode.get(key)
             if episode is None:
                 continue

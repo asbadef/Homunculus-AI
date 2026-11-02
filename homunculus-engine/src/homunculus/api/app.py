@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
-    Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, is_tombstone,
+    Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, end_entered_in_error, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import (
@@ -1078,6 +1078,53 @@ def create_app(
             state.ingest(item.observation)
         return {"patient_id": patient_id, "preview": True, "at": now.isoformat(), "news2": _news2(state, now)}
 
+    def _readings_equal(engine: Engine, patient_id: str, observation) -> int:
+        """How many of the patient's readings in `engine` equal `observation` (G3-01, review of Task 5) — read
+        without creating the patient; 0 for no observation (a signal this build does not know)."""
+        if observation is None or patient_id not in set(engine.patient_ids()):
+            return 0
+        return engine.state(patient_id).history(observation.code).count(observation)
+
+    async def _adopt_rebuilt(hospital: str, patient_id: str, record, engine: Engine, store: AckStore,
+                             scratch: Engine, observation, now: datetime) -> None:
+        """«Hatalı giriş»'s memory half (G3-01, D10, X3, X4, X5), after its trail row: the scratch patient handed
+        to the real engine, the lifecycle hook once at `now`, the shadow lane, the card, the nurse. Shared by a
+        withdrawal and by the repair of one whose row committed while its append raised (review of Task 5)."""
+        engine.adopt(scratch, patient_id)
+        cleared = sync_alerts(engine, store, patient_id, now)
+        # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended stood on a value that was never
+        # real, so its escalation chain is not remembered — a real alert of the kind within `escalate_after` gets
+        # its own clock and its own page to the doctor. A restart forgets every chain anyway (rehydrate).
+        for item in cleared:
+            store.recent.pop((item.patient_id, item.kind), None)
+        _audit_cleared(hospital, cleared, now)
+        for a in engine.active_alerts(patient_id):
+            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
+                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
+        if observation is not None:
+            lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
+        # The card as a restart would build it (review of Task 5). `adopt` forgets a patient the scratch engine
+        # never measured — the withdrawn value was the only one — and `_card` (`patient_board`) would create it
+        # again, a NEWS2 0 nobody measured (D1). As /ingest's identity branch chooses: the measured card, the
+        # identity card of an admission, or the removal of an id the board knows only from that value.
+        if patient_id in set(engine.patient_ids()):
+            # Some reading is left: a latch the withdrawal made stays on this card until acknowledged (D10).
+            frame = _card(hospital, patient_id, record)
+        else:
+            # No reading is left: every value the patient's alerts stood on was withdrawn, and there is no card for
+            # a latch to sit on — kept, it would wait in the store, unseen and unacknowledgeable, for the next real
+            # reading to bring it back as «resolved, unacknowledged». A restart never builds it (O4), so the latches
+            # end here with the reason `entered_in_error` (never replayed), and the store forgets the patient.
+            _audit_cleared(hospital, end_entered_in_error(store, patient_id), now)
+            frame = (_identity_card(hospital, record) if record is not None
+                     else {"patient_id": patient_id, "removed": True, "identity": None})
+        await broadcaster.publish(hospital, frame)
+        for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
+            await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
+        notifier.prune(hospital, live_keys(engine, store))
+
     @app.post("/clinical/{patient_id}/entries/{entry}/retract")
     async def retract_entry(patient_id: str, entry: str, body: dict = Body(...),
                             authorization: str | None = Header(default=None)):
@@ -1092,15 +1139,18 @@ def create_app(
         Then the lifecycle hook runs once, at the request's instant. An alert that no longer fires ends — or,
         critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers is a new one, so it
         is stamped and, if immediate, told to the nurse (X3). The notifier's dedup tells nothing already told.
-        The shadow lane drops the reading, guarded (X5), and the card is republished — as never measured when
-        the withdrawn value was the patient's only one: `_card` would create the patient in the engine again.
+        An episode the withdrawal ended leaves no escalation chain. The shadow lane drops the reading, guarded
+        (X5), and the card is republished — as never measured when the withdrawn value was the patient's only
+        one: `_card` would create the patient in the engine again, and the patient's latches end
+        (`entered_in_error`), for there is no card left to show them (`_adopt_rebuilt`).
 
         Refusals:
         - 403 for a device credential (X11): a withdrawal names a person;
         - 400 for a reason shorter than 10 characters after trim;
-        - 409 for a discharged number;
+        - 409 for a discharged number, before anything is read;
         - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
-        - 409 for an entry already withdrawn.
+        - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
+          append raised left the engine still counting the value.
         A refusal writes nothing. The chart row itself is never changed: the trail keeps both."""
         caller = await _caller(authorization)
         _require(caller, CLINICAL_CHART)
@@ -1132,39 +1182,25 @@ def create_app(
         if target is None:
             raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
         withdrawn = retracted_entries(rows)
-        if target.id in withdrawn:
-            raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
+        already = target.id in withdrawn
         scratch = Engine()
         rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id})
-        now = datetime.now(timezone.utc)
-        audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
-            "entry": target.id, "value": target.payload.get("value"), "obs_ts": target.payload.get("obs_ts"),
-            "reason": reason, "retracted_by": caller.actor}))
-        engine.adopt(scratch, patient_id)
-        cleared = sync_alerts(engine, store, patient_id, now)
-        _audit_cleared(hospital, cleared, now)
-        for a in engine.active_alerts(patient_id):
-            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
-                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
         observation = observation_of(target)
-        if observation is not None:
-            lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
-        # The card as a restart would build it (review of Task 5). `adopt` forgets a patient the scratch engine
-        # never measured — the withdrawn value was the only one — and `_card` (`patient_board`) would create it
-        # again, a NEWS2 0 nobody measured (D1). As /ingest's identity branch chooses: the measured card, the
-        # identity card of an admission, or the removal of an id the board knows only from that value.
-        if patient_id in set(engine.patient_ids()):
-            frame = _card(hospital, patient_id, record)
-        elif record is not None:
-            frame = _identity_card(hospital, record)
-        else:
-            frame = {"patient_id": patient_id, "removed": True, "identity": None}
-        await broadcaster.publish(hospital, frame)
-        for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
-            await hub.publish(hospital, note)
-            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
-                                    {"audience": note.audience, "trigger": note.trigger}))
-        notifier.prune(hospital, live_keys(engine, store))
+        now = datetime.now(timezone.utc)
+        if already:
+            # Review of Task 5: an append whose row committed and which still raised (a bounded write that timed
+            # out after its commit) answered 500 and left memory counting the value; the retry finds the row and
+            # is refused here. If the engine holds the reading more often than the trail without it does, memory
+            # is repaired from the scratch engine — the same tail as a withdrawal, with no second row — and the
+            # answer is still «already» (the dashboard tells it by RETRACT_ALREADY's sentence). Counted, not
+            # merely found: an equal value charted twice at one time may rightly stay once.
+            if _readings_equal(engine, patient_id, observation) > _readings_equal(scratch, patient_id, observation):
+                await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
+            raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
+        audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
+            "entry": target.id, "code": target.subject, "value": target.payload.get("value"),
+            "obs_ts": target.payload.get("obs_ts"), "reason": reason, "retracted_by": caller.actor}))
+        await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
         return {"retracted": target.id, "code": target.subject,
                 "alerts": [a.kind for a in engine.active_alerts(patient_id)]}
 
@@ -1782,8 +1818,9 @@ def create_app(
         auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
         _refuse_fractional_gcs(body.get("overrides"))   # G2-A4 review: before the corrections are parsed
         try:
-            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a preview and a signature alike, both parsed here (CORRECTION_BOUNDS, which is PLAUSIBLE since G3-01, X7).
-            # The dashboard mirrors them (X7); this is the guard.
+            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
+            # preview and a signature alike, both parsed here (CORRECTION_BOUNDS, which is PLAUSIBLE since
+            # G3-01, X7). The dashboard mirrors them (X7); this is the guard.
             overrides = parse_overrides(body.get("overrides"), auto, bounds=CORRECTION_BOUNDS)
         except ScoreSigningError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None

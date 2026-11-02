@@ -5,7 +5,7 @@ Synthetic patients and values only (CLAUDE.md rule 6).
 Written on a branch (feat/g3-eng2) that had neither Task 2 (the door's `entries` answer) nor Task 5 (the
 withdrawal route); after the merge:
   * `_chart` takes the door's answer and checks it against the trail's newest `chart` row;
-  * `_withdraw` still writes the `chart_retract` row the route writes (`{entry, value, obs_ts, reason,
+  * `_withdraw` still writes the `chart_retract` row the route writes (`{entry, code, value, obs_ts, reason,
     retracted_by}`, subject the code — the payload Task 5 pins) straight into the trail, so most tests here read
     `manual` without the route's rebuild; the engine's memory is NOT rebuilt by it;
   * the points half runs twice: through the route itself (`_withdraw_by_route`), and at the seam, with Task 4's
@@ -64,8 +64,8 @@ def _withdraw(c, entry, reason=WHY, by="hem.ayse") -> None:
     (target,) = [r for r in audit.records(tenant="h1", patient_id="bed-3", event_type="chart", limit=1000)
                  if r.id == entry]
     audit.append(AuditEvent("h1", RETRACT, "bed-3", target.subject, {
-        "entry": target.id, "value": target.payload["value"], "obs_ts": target.payload["obs_ts"],
-        "reason": reason, "retracted_by": by}))
+        "entry": target.id, "code": target.subject, "value": target.payload["value"],
+        "obs_ts": target.payload["obs_ts"], "reason": reason, "retracted_by": by}))
 
 
 def _withdraw_by_route(c, entry, reason=WHY) -> None:

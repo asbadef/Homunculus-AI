@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.alarm_quality import alarm_quality, build_episodes
+from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditRecord
 
@@ -111,6 +112,21 @@ class TestTheUnitIsTheEpisode:
                    rec("escalation", "bed-1", "septic_shock", 7)]       # no episode is open any more
         (episode,) = build_episodes(records)
         assert (episode.ended_at, episode.escalated) == (_now(2), False)
+
+    def test_a_latch_ended_in_error_closes_unanswered_and_counts_as_it_did_open(self):
+        """G3-01 (review of Task 5): every value a latched critical stood on was withdrawn, and its latch ended
+        with them (`entered_in_error`). The episode closes there, unanswered, at the stop the board showed — the
+        figures are the latch's own, as if the row were not there — and a later episode of the kind is its own."""
+        latched = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical")]
+        ended = latched + [rec("alert_cleared", "bed-1", "septic_shock", 4, reason=ENTERED_IN_ERROR,
+                               severity="critical")]
+        (episode,) = build_episodes(ended)
+        assert (episode.resolved_at, episode.answered_at, episode.ended_at) == (_now(2), None, _now(4))
+        for now in (_now(5), _now(60)):                      # pending, then settled as unanswered
+            assert alarm_quality(ended, now) == alarm_quality(latched, now)
+        later = ended + [rec("first_seen", "bed-1", "septic_shock", 30), rec("ack", "bed-1", "septic_shock", 31)]
+        assert [e.answered_at for e in build_episodes(later)] == [None, _now(31)]
 
     def test_an_ack_for_an_episode_outside_the_window_is_dropped_not_invented(self):
         """Its `first_seen` belongs to the previous window; opening an episode for it here would

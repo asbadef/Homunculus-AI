@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.clinical import (
@@ -34,9 +35,9 @@ async def _resolve(credential: str):
     return PEOPLE.get(credential)
 
 
-def _app(audit=None, identities=None) -> TestClient:
+def _app(audit=None, identities=None, **kw) -> TestClient:
     app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve,
-                     audit=audit if audit is not None else InMemoryAuditLog(), identities=identities)
+                     audit=audit if audit is not None else InMemoryAuditLog(), identities=identities, **kw)
     return TestClient(app)
 
 
@@ -84,6 +85,70 @@ def _rows(c, kind):
     return c.app.state.audit.records(tenant="h1", event_type=kind, limit=100)
 
 
+def _engine(c):
+    """The hospital's real engine, through the handle the admission's BoardLink is given (app.state.board_link)."""
+    return c.app.state.board_link._engine("h1")
+
+
+def _store(c):
+    return c.app.state.ack_stores["h1"]
+
+
+def _frames(queue, pid="bed-3"):
+    """The frames published for `pid` since `queue` subscribed (app.state.broadcaster)."""
+    out = []
+    while not queue.empty():
+        frame = queue.get_nowait()
+        if frame.get("patient_id") == pid:
+            out.append(frame)
+    return out
+
+
+def _internals(c, pid="bed-3"):
+    """Everything the engine keeps for one patient (pipeline.py `_PER_PATIENT` and the readings) — what
+    `Engine.adopt` replaces — read without creating the patient."""
+    e = _engine(c)
+    readings = None
+    if pid in e.patient_ids():
+        st = e.state(pid)
+        readings = sorted((o.code.value, o.value, o.timestamp.isoformat(), o.source_device)
+                          for code in list(st._history) for o in st.history(code))
+    held = e._held_news2_alert.get(pid)
+    return {"readings": readings, "recognized_at": e._recognized_at.get(pid), "dropped": e._dropped_anchor.get(pid),
+            "alerts": sorted((k, a.severity, a.urgency, a.summary) for k, a in e._alerts.get(pid, {}).items()),
+            "held": held and held.summary, "judged": e._news2_judged_at.get(pid), "profile": e._profiles.get(pid)}
+
+
+def _view(card):
+    """What the card says of the patient's scores, the antibiotic clock and the firing alerts."""
+    n = card["latest"]["news2"]
+    return {"news2": n and {k: n[k] for k in ("total", "partial", "missing", "red_param", "breakdown", "stale")},
+            "sofa": card["latest"].get("sofa"), "sepsis": card.get("sepsis"),
+            "clock": card["meds"]["antibiotic_clock"] if card.get("meds") else None, "firing": _firing(card)}
+
+
+def _equal_to_never_charted(script, withdraw, never):
+    """`script` charted in one app — each step (entries, minutes ago) — then `withdraw`'s (step, code) withdrawn
+    by the route; `never` charted in a fresh app. The live engine's patient before the withdrawal, then both
+    engines' patient and both cards, as a pair each."""
+    stamps = {}
+
+    def at(minutes):
+        return stamps.setdefault(minutes, _ago(minutes))     # one instant per step, shared by both apps
+
+    with _app() as live:
+        ids = [_chart(live, entries, at(minutes)) for entries, minutes in script]
+        before = _internals(live)
+        for step, code in withdraw:
+            assert _retract(live, ids[step][code]).status_code == 200
+        got = (_internals(live), _view(_card(live)))
+    with _app() as fresh:
+        for entries, minutes in never:
+            _chart(fresh, entries, at(minutes))
+        want = (_internals(fresh), _view(_card(fresh)))
+    return before, got, want
+
+
 class TestTheWithdrawalScoresAsIfNeverCharted:
     def test_withdrawing_the_value_that_raised_news2(self, client):
         at = _ago(5)
@@ -107,7 +172,8 @@ class TestTheWithdrawalScoresAsIfNeverCharted:
         assert _retract(client, ids["map"]).status_code == 200
         after = _card(client)
         assert after["meds"]["antibiotic_clock"] is None
-        assert all(a["severity"] == "critical" for a in after["alerts"] if a["resolved_at"] is not None)  # only a critical latches
+        # only a critical latches
+        assert all(a["severity"] == "critical" for a in after["alerts"] if a["resolved_at"] is not None)
         with _app() as fresh:
             _chart(fresh, base, at)
             assert _firing(after) == _firing(_card(fresh))
@@ -122,8 +188,8 @@ class TestTheTrailKeepsBoth:
         assert ids["resp_rate"] in [r.id for r in _rows(client, "chart")]
         (row,) = _rows(client, RETRACT)
         assert (row.patient_id, row.subject) == ("bed-3", "resp_rate")
-        assert row.payload == {"entry": ids["resp_rate"], "value": 26, "obs_ts": at, "reason": WHY,
-                               "retracted_by": "hem.ayse"}
+        assert row.payload == {"entry": ids["resp_rate"], "code": "resp_rate", "value": 26, "obs_ts": at,
+                               "reason": WHY, "retracted_by": "hem.ayse"}
 
 
 class TestTheRestartAgrees:
@@ -204,6 +270,18 @@ class TestTheRefusals:
             r = _retract(c, ids["resp_rate"])
             assert (r.status_code, r.json()["detail"]) == (409, RETRACT_DISCHARGED)
 
+    def test_a_discharged_number_is_refused_before_the_trail_is_read(self):
+        """Review of Task 5: the tombstone is checked before any read or rebuild — the rebuild never reads the
+        discharge's row, and `adopt` would bring a retired patient back. With the read failing, still a 409."""
+        log, store = _Faulty(), InMemoryIdentityStore()
+        with _app(audit=log, identities=store) as c:
+            ids = _chart(c, RISKY, _ago(5))
+            store.apply("h1", IdentityRecord(patient_id="bed-3", state="discharged", source=KABUL,
+                                             updated_at=datetime.now(timezone.utc)))
+            log.fail_read = True
+            r = _retract(c, ids["resp_rate"])
+            assert (r.status_code, r.json()["detail"]) == (409, RETRACT_DISCHARGED)
+
     def test_no_refusal_writes_a_row(self, client):
         ids = _chart(client, RISKY, _ago(5))
         for entry, reason, headers in ((ids["spo2"], "kısa", NURSE), ("999999", WHY, NURSE),
@@ -248,6 +326,9 @@ class TestTheLatchHolds:
         assert "septic_shock" not in _firing(after)
         assert _latched(after) == ["septic_shock"]
         assert len(_rows(client, "notification")) == told
+        # Review of Task 5: some reading is left, so the latch stays on this card (D10) — not ended in error.
+        assert ENTERED_IN_ERROR not in {r.payload["reason"] for r in _rows(client, "alert_cleared")}
+        assert ("bed-3", "septic_shock") in _store(client).resolved
 
     def test_an_acknowledged_critical_simply_ends(self, client):
         at = _ago(5)
@@ -306,11 +387,150 @@ class TestTheOnlyReading:
         with _app(identities=store) as c:
             ids = _chart(c, [{"code": "temperature", "value": 38.2}], _ago(5))
             assert _card(c)["latest"]["news2"] is not None
+            queue = c.app.state.broadcaster.subscribe("h1")
             assert _retract(c, ids["temperature"]).status_code == 200
             card = _card(c)
             assert (card["latest"]["news2"], card["alerts"], card["identity"]["patient_id"]) == (None, [], "bed-3")
+            # Review of Task 5: the ward is told so — `/patients` alone would read the same with no frame sent.
+            (frame,) = _frames(queue)
+            assert "removed" not in frame
+            assert (frame["latest"]["news2"], frame["alerts"], frame["identity"]["patient_id"]) == (
+                None, [], "bed-3")
 
     def test_an_id_with_no_identity_leaves_the_board(self, client):
         ids = _chart(client, [{"code": "temperature", "value": 38.2}], _ago(5))
+        queue = client.app.state.broadcaster.subscribe("h1")
         assert _retract(client, ids["temperature"]).status_code == 200
         assert "bed-3" not in [p["patient_id"] for p in client.get("/patients", headers=AUTH).json()["patients"]]
+        assert _frames(queue) == [{"patient_id": "bed-3", "removed": True, "identity": None}]
+
+
+# --- review of Task 5 --------------------------------------------------------------------------------------------
+
+def _admitted(store):
+    store.apply("h1", IdentityRecord(patient_id="bed-3", state="admitted", source=KABUL,
+                                     updated_at=datetime.now(timezone.utc)))
+    return store
+
+
+class TestNoReadingLeftEndsTheLatches:
+    """Decided in review: when every value is withdrawn — the «charted on the wrong patient» case — the patient's
+    latches end (`entered_in_error`). Kept, one would wait in the store with no card to show it, nobody able to
+    acknowledge it, for the next real reading to bring it back; and a restart never builds it (O4)."""
+
+    @pytest.mark.parametrize("admitted", [True, False], ids=["identity card", "removal"])
+    def test_withdrawing_every_value_ends_the_latch_and_a_restart_agrees(self, admitted):
+        log = InMemoryAuditLog()
+        identities = _admitted(InMemoryIdentityStore()) if admitted else InMemoryIdentityStore()
+        key = ("bed-3", "septic_shock")
+        with _app(audit=log, identities=identities) as c:
+            shock = _chart(c, SHOCK, _ago(5))
+            lactate = _chart(c, [{"code": "lactate", "value": 4}], _ago(5))["lactate"]
+            assert _retract(c, lactate).status_code == 200
+            assert _latched(_card(c)) == ["septic_shock"]                  # some reading left: on the card (D10)
+            queue = c.app.state.broadcaster.subscribe("h1")
+            for entry in shock.values():
+                assert _retract(c, entry).status_code == 200
+            acks = _store(c)
+            assert key not in acks.resolved and key not in acks.first_seen and key not in acks.clock_from
+            (ended,) = [r for r in _rows(c, "alert_cleared") if r.payload["reason"] == ENTERED_IN_ERROR]
+            assert (ended.subject, ended.payload["severity"]) == ("septic_shock", "critical")
+            assert ended.payload["first_seen"] is not None                  # the episode's own first sight
+            assert _frames(queue)[-1].get("alerts", []) == []               # the last frame shows none
+            _chart(c, [{"code": "temperature", "value": 37.0}], _ago(1))    # the next real reading
+            live = _card(c)
+            assert live["alerts"] == [], "the latch came back with the next reading"
+        with _app(audit=log, identities=identities) as again:              # the new reason is not replayed
+            assert _card(again)["alerts"] == live["alerts"]
+            acks = _store(again)
+            assert key not in acks.resolved and key not in acks.first_seen
+
+
+class TestTheChainIsNotInherited:
+    def test_a_real_alert_after_a_withdrawn_one_gets_its_own_clock_and_its_own_page(self):
+        """Review of Task 5, unlike X13 on purpose: a NEWS2 raised by wrong values pages the doctor; withdrawn,
+        it ends unanswered. A real NEWS2 within `escalate_after` is a chain of its own — its own clock, and a page
+        after `escalate_after` — not the withdrawn episode's, whose page would have kept it silent for good."""
+        with _app(escalate_after=timedelta(minutes=10)) as c:
+            cycle, key, t0 = c.app.state.escalation_cycle, ("bed-3", "news2"), datetime.now(timezone.utc)
+            _chart(c, [{"code": "heart_rate", "value": 70}], _ago(20))     # a real reading stays on the card
+            ids = _chart(c, RISKY, _ago(3))
+            c.portal.call(cycle, t0 + timedelta(minutes=11))
+            assert len(_rows(c, "escalation")) == 1                         # the doctor is paged
+            for code in ("resp_rate", "spo2", "sbp"):
+                assert _retract(c, ids[code]).status_code == 200
+            assert "news2" not in _firing(_card(c))                         # ended, unanswered
+            _chart(c, RISKY, _ago(1))                                       # a real deterioration
+            acks = _store(c)
+            assert acks.clock_from[key] == acks.first_seen[key], "the withdrawn episode's clock was inherited"
+            t1 = acks.first_seen[key]
+            c.portal.call(cycle, t1 + timedelta(minutes=5))
+            assert len(_rows(c, "escalation")) == 1                         # not yet: its own clock
+            c.portal.call(cycle, t1 + timedelta(minutes=11))
+            assert len(_rows(c, "escalation")) == 2, "the real episode was never paged"
+
+
+class _CommitsThenRaises(InMemoryAuditLog):
+    """A withdrawal's row that commits and whose append then raises — a bounded write timing out after its
+    commit: the caller gets a 500, and the trail holds the row."""
+    armed = False
+
+    def append(self, event):
+        written = super().append(event)
+        if self.armed and event.event_type == RETRACT:
+            self.armed = False
+            raise RuntimeError("the commit's answer timed out")
+        return written
+
+
+class TestARetryRepairsMemory:
+    def test_a_row_that_committed_while_its_append_raised_is_repaired_by_the_retry(self):
+        log, at = _CommitsThenRaises(), _ago(5)
+        with _app(audit=log) as c:
+            ids = _chart(c, RISKY, at)
+            log.armed = True
+            with pytest.raises(RuntimeError):
+                _retract(c, ids["resp_rate"])
+            assert len(_rows(c, RETRACT)) == 1 and _card(c)["latest"]["resp_rate"] == 26   # memory still counts it
+            r = _retract(c, ids["resp_rate"])
+            assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
+            assert len(_rows(c, RETRACT)) == 1                                              # no second row
+            repaired = _card(c)
+            assert repaired["latest"]["resp_rate"] is None
+            with _app() as fresh:
+                _chart(fresh, [e for e in RISKY if e["code"] != "resp_rate"], at)
+                assert (_news2(repaired), _firing(repaired)) == (_news2(_card(fresh)), _firing(_card(fresh)))
+
+    def test_a_409_with_memory_already_right_changes_nothing(self, client):
+        ids = _chart(client, RISKY, _ago(5))
+        assert _retract(client, ids["resp_rate"]).status_code == 200
+        queue = client.app.state.broadcaster.subscribe("h1")
+        written = len(client.app.state.audit.records(tenant="h1", limit=1000))
+        assert _retract(client, ids["resp_rate"]).status_code == 409
+        assert (_frames(queue), len(client.app.state.audit.records(tenant="h1", limit=1000))) == ([], written)
+
+
+# Suspected infection with platelets 120: SOFA 1, no sepsis until a MAP below 70 adds a point.
+BASE = [{"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 120}]
+
+
+class TestEqualToNeverCharted:
+    """Review of Task 5: the engine's whole picture of the patient (`Engine.adopt` replaces it) and the card,
+    against a fresh app charted without the withdrawn value."""
+
+    def test_an_older_value_withdrawn_while_a_newer_one_of_its_code_exists(self):
+        script = [(RISKY, 10), ([{"code": "resp_rate", "value": 16}], 5)]
+        never = [([e for e in RISKY if e["code"] != "resp_rate"], 10), ([{"code": "resp_rate", "value": 16}], 5)]
+        before, got, want = _equal_to_never_charted(script, [(0, "resp_rate")], never)
+        assert ("resp_rate", 26.0) in [(code, value) for code, value, *_ in before["readings"]]
+        assert got == want
+
+    def test_a_map_withdrawn_after_the_anchor_it_set_was_dropped(self):
+        """MAP 60 made it sepsis and set the antibiotic anchor; infection charted absent dropped it, and the dropped
+        anchor is remembered (X12) — withdrawn, the MAP never set one, so nothing is left to restore."""
+        script = [(BASE, 30), ([{"code": "map", "value": 60}], 25),
+                  ([{"code": "suspected_infection", "value": 0}], 20)]
+        never = [(BASE, 30), ([{"code": "suspected_infection", "value": 0}], 20)]
+        before, got, want = _equal_to_never_charted(script, [(1, "map")], never)
+        assert before["dropped"] is not None
+        assert got == want

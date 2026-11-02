@@ -31,6 +31,8 @@ some later reading:
   each latched alert is cleared with the reason `discharged`, the store and the engine forget the
   patient, and the ward is told once with a removal frame (app.py). Readings that still arrive
   for the number are dropped at the doors (D3), so nothing else would ever end these alerts.
+* A «hatalı giriş» that leaves the patient with no reading (G3-01) ends each latch with the reason
+  `entered_in_error` and the store forgets the patient: there is no card left for a latch to sit on.
 
 The hook writes no audit row: it returns what it cleared, the door audits it (`alert_cleared`,
 D6), and the replay, which must write nothing, ignores it (D7).
@@ -54,6 +56,9 @@ LATCHING_SEVERITY = "critical"
 RESOLVED = "resolved"                         # the rule stopped firing (also as a critical latches)
 ACKED_AFTER_RESOLVE = "acked_after_resolve"   # a latched alert was acknowledged, and so removed
 DISCHARGED = "discharged"                     # the patient was discharged here (G2-A11, D1)
+#: G3-01 (review of Task 5): every value the episode stood on was withdrawn as entered in error («hatalı
+#: giriş»), and the patient has no reading left — a latch with no card to sit on. Never replayed (D7).
+ENTERED_IN_ERROR = "entered_in_error"
 
 #: The audit row a reading for a discharged number leaves (G2-A11, D3): subject = the signal code,
 #: payload {patient_id, code}, no value. How the ward learns a monitor still carries the number.
@@ -149,6 +154,21 @@ def retire_state(engine: Engine, store: AckStore, patient_id: str) -> list[Clear
         cleared.append(Cleared(patient_id, key[1], entry["alert"]["severity"], seen, DISCHARGED))
     store.forget_patient(patient_id)
     engine.forget(patient_id)
+    return cleared
+
+
+def end_entered_in_error(store: AckStore, patient_id: str) -> list[Cleared]:
+    """G3-01 (review of Task 5): a «hatalı giriş» left the patient with no reading — every value its alerts stood
+    on was withdrawn — so its latches end, one `Cleared` each with its episode's first-seen and the reason
+    `entered_in_error`, and the store forgets the patient. Kept, a latch would sit in the store with no card to
+    show it, unacknowledgeable, and come back as «resolved, unacknowledged» with the next real reading; a restart
+    (which skips the withdrawn rows) never builds it (O4), so live and restart would differ. The engine is the
+    caller's: it already holds nothing of the patient. Writes no audit row — the door audits what it returns."""
+    cleared: list[Cleared] = []
+    for key, entry in [(k, e) for k, e in store.resolved.items() if k[0] == patient_id]:
+        seen = store.first_seen.get(key, entry.get("first_seen"))
+        cleared.append(Cleared(patient_id, key[1], entry["alert"]["severity"], seen, ENTERED_IN_ERROR))
+    store.forget_patient(patient_id)
     return cleared
 
 
