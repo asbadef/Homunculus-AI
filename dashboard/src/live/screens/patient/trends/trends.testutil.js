@@ -41,6 +41,15 @@ export const point = (minutesAgo, value, points = null) => [ago(minutesAgo * 60)
 export const marker = (minutesAgo, kind = "alarm", label = kind === "alarm" ? "news2" : "antibiotic_administered") => (
   { ts: ago(minutesAgo * 60), kind, label });
 
+/** G3-01 (D13): one hand entry of a channel's `manual`, `minutesAgo` before NOW. `retracted` is
+ *  `{ reason, by?, minutesAgo }` for a withdrawn one. */
+export function hand(entry, minutesAgo, value, { by = "hem.ayse", retracted = null } = {}) {
+  return {
+    entry, at: ago(minutesAgo * 60), value, by,
+    retracted: retracted ? { reason: retracted.reason, by: retracted.by ?? by, at: ago(retracted.minutesAgo * 60) } : null,
+  };
+}
+
 /** One channel. Its `latest` defaults to the last point with no delta and no own-normal judgement;
  *  a test about those states them in `over.latest`. */
 export function channel(key, points = [], over = {}) {
@@ -55,6 +64,7 @@ export function channel(key, points = [], over = {}) {
     total_points: points.length,
     latest: last ? { ts: last[0], value: last[1], delta: null, news2_points: last[2], within_own_normal: null } : null,
     bands: { news2: BANDS[key], own_normal: null, device: null },
+    manual: [],               // G3-01 (D13): the channel's hand entries in the window
     ...over,
   };
 }
@@ -75,6 +85,7 @@ export function trends(patientId = "S-001", channels = [], over = {}) {
     news2_scale: 1,
     channels: KEYS.map((key) => byKey[key] ?? channel(key)),
     markers: [],
+    manual_truncated: false,  // G3-01 (D13)
     ...over,
   };
 }

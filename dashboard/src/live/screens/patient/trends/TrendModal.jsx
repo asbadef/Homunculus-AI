@@ -19,16 +19,23 @@
 //
 // It opens with focus on the pressed window option — what the dialog is showing — not on whichever
 // control happens to come first.
+//
+// G3-01 (D1, D13): a reading typed in by hand says «elle» in the readout and the table; a withdrawn one is drawn
+// crossed (TrendChart) and listed struck through (TrendTable), with a line under the chart saying what the cross
+// means. A `clinical.chart` holder (`canRetract`, the box's) withdraws a hand reading from the table: the shared
+// dialog (common/RetractDialog.jsx) over this one, the write through the box's `onRetract`, then this window is
+// read again — the withdrawal changed the record the chart draws.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { hhmm } from "../../../i18n/dates.js";
+import { dayStamp, hhmm } from "../../../i18n/dates.js";
 import { Announce, Modal, Seg } from "../../../ui/index.js";
 import { nameOf } from "../../common/BoardState.jsx";
+import { RetractDialog } from "../../common/RetractDialog.jsx";
 import { cardTitle, channelsOf } from "./cards.js";
 import { TrendChart } from "./TrendChart.jsx";
 import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
-import { indexAtTime, marksAtTime, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
+import { handEntryOf, indexAtTime, marksAtTime, parseManual, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
 import { markBeside, pointsBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
@@ -89,7 +96,10 @@ function readoutOf(t, card, series, at, marks, hours, msPerPx) {
   });
   const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
   const points = readings[0] === null ? null : pointsBeside(t, at.points);   // no value, no score
-  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...(points ? [points] : []), ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
+  // G3-01 (D1, X13): a reading typed in by hand says so, after its value.
+  const byHand = readings[0] !== null && handEntryOf(series[0].manual, at) ? [t("olcum.hand")] : [];
+  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...byHand, ...(points ? [points] : []),
+    ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
 /** The keyboard's stops: the instants of the readings that can be drawn, in time order — two readings
@@ -114,7 +124,7 @@ function step(key, stops, ms) {
   return null;
 }
 
-export function TrendModal({ card, patient, bed, onClose }) {
+export function TrendModal({ card, patient, bed, onClose, canRetract = false, onRetract }) {
   const { t } = useI18n();
   const hintId = useId();
   const controls = useRef(null);
@@ -122,11 +132,19 @@ export function TrendModal({ card, patient, bed, onClose }) {
   const [view, setView] = useState("graph");
   const [cursor, setCursor] = useState(null);   // { ms, how: "mouse" | "key" } — an instant, see the header
   const [plotWidth, setPlotWidth] = useState(0);
+  const [withdrawing, setWithdrawing] = useState(null);   // G3-01: { series, entry } whose «hatalı giriş» is open
   const trends = useTrends(patient.patient_id, hours, measuredKeyOf(patient.measuredAt));
   // Parsed once per answer, not on every render of a mouse move. The table is handed these very arrays.
   const { channels, series, markers, stops } = useMemo(() => {
     const byKey = channelsOf(trends.data);
-    const drawn = card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points) }));
+    // G3-01 (D13): each series' hand entries, and the withdrawn ones the big chart draws crossed.
+    const drawn = card.series.map((s) => {
+      const manual = parseManual(byKey[s.key]?.manual);
+      return {
+        key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points),
+        manual, withdrawn: manual.filter((m) => m.retracted !== null),
+      };
+    });
     return { channels: byKey, series: drawn, markers: parseMarkers(trends.data?.markers), stops: stopsOf(drawn[0].points) };
   }, [card, trends.data]);
   const primary = channels[card.series[0].key] ?? null;
@@ -144,6 +162,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
   // is drawn: keys that do nothing are a trap, not a control. The cursor follows the card's FIRST series.
   const keyed = stops.length > 0 && validWindow(sinceMs, untilMs);
   const truncated = trends.data?.markers_truncated === true;
+  const anyWithdrawn = series.some((s) => s.withdrawn.length > 0);
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
   useEffect(() => { controls.current?.querySelector("[aria-pressed='true']")?.focus(); }, []);
@@ -206,12 +225,15 @@ export function TrendModal({ card, patient, bed, onClose }) {
           />
           {keyed ? <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p> : null}
           <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={truncated} />
+          {anyWithdrawn ? <p data-withdrawn-legend="" className="m-0 mt-1 text-11 text-mute">{t("olcum.legendWithdrawn")}</p> : null}
         </>
       ) : null}
       {trends.data && view === "table" ? (
         <>
           {count === 0 ? <p data-no-data="" className="m-0 mt-3 text-13 text-mute">{t("patient.trendsNoData")}</p> : null}
-          <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours} />
+          <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours}
+            canRetract={canRetract && typeof onRetract === "function"}
+            onWithdraw={(s, entry) => setWithdrawing({ series: s, entry })} />
           <TrendNotes card={card} channels={channels} truncated={truncated} />
         </>
       ) : null}
@@ -224,6 +246,18 @@ export function TrendModal({ card, patient, bed, onClose }) {
         </>
       ) : null}
       <Announce text={cursor?.how === "key" && readout ? readout : ""} />
+      {withdrawing ? (
+        <RetractDialog
+          bed={bed}
+          what={{
+            label: t(withdrawing.series.labelKey), value: `${withdrawing.entry.value} ${t(withdrawing.series.unitKey)}`,
+            time: dayStamp(withdrawing.entry.ms, Date.now()),
+          }}
+          onRetract={(reason) => onRetract(withdrawing.entry.entry, reason)}
+          onDone={() => trends.reload()}
+          onClose={() => setWithdrawing(null)}
+        />
+      ) : null}
     </Modal>
   );
 }

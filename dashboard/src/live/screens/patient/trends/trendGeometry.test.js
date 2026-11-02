@@ -2,8 +2,8 @@
 // comment beside it, so a change to the arithmetic shows up as a change to a number someone wrote.
 import { describe, it, expect } from "vitest";
 import {
-  bandRects, crisp, indexAtTime, linePath, markerMarks, marksAtTime, nearestIndex, ownNormalRect, parseMarkers,
-  parsePoints, plotFrame, tickLabel, timeLabelPlace, timeScale, timeTicks, validWindow, valueDomain, valueExtent,
+  bandRects, crisp, handEntryOf, indexAtTime, linePath, markerMarks, marksAtTime, nearestIndex, ownNormalRect, parseMarkers,
+  parseManual, parsePoints, plotFrame, tickLabel, timeLabelPlace, timeScale, timeTicks, validWindow, valueDomain, valueExtent,
   valueResolution, valueScale, valueTickStep, valueTicks,
 } from "./trendGeometry.js";
 import { BANDS } from "./trends.testutil.js";
@@ -256,5 +256,24 @@ describe("reading the endpoint's rows", () => {
     expect(parseMarkers([{ ts: "2026-10-19T09:00:00Z", kind: "alarm", label: "news2" }, { ts: "x", kind: "alarm" }])).toEqual([
       { ms: Date.parse("2026-10-19T09:00:00Z"), iso: "2026-10-19T09:00:00Z", kind: "alarm", label: "news2" },
     ]);
+  });
+});
+
+// G3-01 (D13): a channel's hand entries, and which drawn reading is one.
+describe("the hand entries", () => {
+  it("are read with their withdrawal, the unreadable dropped, and found by instant and value", () => {
+    const manual = parseManual([
+      { entry: 41, at: "2026-10-08T09:00:00+00:00", value: 132, by: "hem.ayse", retracted: null },
+      { entry: 42, at: "2026-10-08T09:30:00+00:00", value: 182, by: "hem.ayse",
+        retracted: { reason: "yanlış hasta seçilmişti", by: "hem.ayse", at: "2026-10-08T09:40:00+00:00" } },
+      { entry: 43, at: "not a time", value: 1, by: "", retracted: null },
+      { entry: 44, at: "2026-10-08T09:00:00+00:00", value: "x", by: "", retracted: null },
+    ]);
+    expect(manual.map((m) => m.entry)).toEqual([41, 42]);
+    expect(manual[1].retracted).toEqual({ reason: "yanlış hasta seçilmişti", by: "hem.ayse", ms: Date.parse("2026-10-08T09:40:00Z") });
+    expect(handEntryOf(manual, { ms: Date.parse("2026-10-08T09:00:00Z"), value: 132 })?.entry).toBe(41);
+    expect(handEntryOf(manual, { ms: Date.parse("2026-10-08T09:00:00Z"), value: 131 })).toBeNull();
+    expect(handEntryOf(manual, { ms: Date.parse("2026-10-08T09:30:00Z"), value: 182 })).toBeNull();   // withdrawn
+    expect(parseManual(undefined)).toEqual([]);
   });
 });

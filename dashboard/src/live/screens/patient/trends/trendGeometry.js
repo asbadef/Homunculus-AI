@@ -72,6 +72,31 @@ export function parseMarkers(raw) {
   });
 }
 
+/** G3-01 (D13): a channel's hand entries (`manual`) as `{ entry, ms, iso, value, by, retracted }`, in their order;
+ *  `retracted` is null or `{ reason, by, ms }` (ms null when its instant cannot be read). An entry whose instant,
+ *  value or id cannot be read is dropped: it could be drawn nowhere and listed as nothing true. */
+export function parseManual(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((m) => {
+    const ms = Date.parse(m?.at);
+    if (!Number.isFinite(ms) || typeof m?.value !== "number" || !Number.isFinite(m.value) || !Number.isInteger(m?.entry)) return [];
+    const r = m.retracted && typeof m.retracted === "object" ? m.retracted : null;
+    const rms = r ? Date.parse(r.at) : Number.NaN;
+    return [{
+      entry: m.entry, ms, iso: m.at, value: m.value, by: String(m.by ?? ""),
+      retracted: r ? { reason: String(r.reason ?? ""), by: String(r.by ?? ""), ms: Number.isFinite(rms) ? rms : null } : null,
+    }];
+  });
+}
+
+/** The hand entry a drawn reading is — not withdrawn, at its instant, with its value — or null. The points carry
+ *  no other link to the trail: a device reading at the very same millisecond with the very same number would be
+ *  taken for one, and the door stamps a hand entry with its own instant (the server's clock, or the typed minute). */
+export function handEntryOf(manual, point) {
+  if (!point || !Array.isArray(manual)) return null;
+  return manual.find((m) => m.retracted === null && m.ms === point.ms && m.value === point.value) ?? null;
+}
+
 /** [sinceMs, untilMs] onto [left, right]. */
 export function timeScale(sinceMs, untilMs, left, right) {
   const span = untilMs - sinceMs;

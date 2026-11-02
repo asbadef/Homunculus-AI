@@ -9,7 +9,7 @@ import { ddmm, hhmm } from "../../../i18n/dates.js";
 import { CARDS } from "./cards.js";
 import { TrendModal } from "./TrendModal.jsx";
 import { plotFrame, timeScale } from "./trendGeometry.js";
-import { answering, channel, marker, point, trends } from "./trends.testutil.js";
+import { answering, channel, hand, marker, point, trends } from "./trends.testutil.js";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const PATIENT = { patient_id: "S-001", display_name: "Ayşe Sentetik", measuredAt: {} };
@@ -22,16 +22,16 @@ const HOUR = 3_600_000;
 // The host stands in for the patient screen: a new measurement of the patient changes `measuredAt`,
 // and the dialog re-reads the SAME window (useTrends' own rule).
 let bump;
-function Host({ id, bed, onClose }) {
+function Host({ id, bed, onClose, ...rest }) {
   const [n, setN] = useState(0);
   bump = () => setN((v) => v + 1);
-  return <TrendModal card={card(id)} patient={{ ...PATIENT, measuredAt: { heart_rate: `r${n}` } }} bed={bed} onClose={onClose} />;
+  return <TrendModal card={card(id)} patient={{ ...PATIENT, measuredAt: { heart_rate: `r${n}` } }} bed={bed} onClose={onClose} {...rest} />;
 }
 const reread = () => act(async () => { bump(); await settle(); });
 
-async function open(id = "heart_rate", answer = HR_ANSWER, { bed = "REA-01 · 2", onClose = () => {} } = {}) {
+async function open(id = "heart_rate", answer = HR_ANSWER, { bed = "REA-01 · 2", onClose = () => {}, ...rest } = {}) {
   vi.setSystemTime(NOW);
-  const mounted = await mount(<Host id={id} bed={bed} onClose={onClose} />, {
+  const mounted = await mount(<Host id={id} bed={bed} onClose={onClose} {...rest} />, {
     access: token(), me: profile(), setup: (api) => api.patientTrends.mockImplementation(answer),
   });
   await act(async () => { await settle(); });
@@ -662,5 +662,49 @@ describe("the big chart, opening and reading", () => {
     expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     fireEvent.keyDown(svg, { key: "ArrowRight" });                     // no third stop
     expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
+  });
+});
+
+// G3-01 (D1, D13, X13): what was typed by hand, and what was withdrawn as «hatalı giriş».
+const BY_HAND = answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)], {
+  manual: [hand(41, 60, 132), hand(42, 30, 182, { retracted: { reason: "yanlış hasta seçilmişti", minutesAgo: 20 } })],
+})], { hours }));
+const named = (name) => screen.getByRole("dialog", { name });
+
+describe("the big chart, by hand", () => {
+  it("says «əl ilə» on a hand reading in the readout and the table, and lists a withdrawn one struck through", async () => {
+    await open("heart_rate", BY_HAND);
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · əl ilə · NEWS2 +3`);
+    await choose("Cədvəl");
+    const typed = dialog().querySelector(`tr[data-ts="${point(60, 0)[0]}"]`);
+    expect(typed).toHaveTextContent("əl ilə");
+    expect(within(typed).queryByRole("button")).toBeNull();          // no withdrawal without the right
+    const withdrawn = dialog().querySelector('tr[data-withdrawn="42"]');
+    expect(withdrawn.querySelector("s")).toHaveTextContent("182");
+    expect(withdrawn).toHaveTextContent(`səhv qeyd — yanlış hasta seçilmişti · hem.ayse · ${hhmm(NOW - 20 * 60_000)}`);
+  });
+
+  it("draws a withdrawn value dimmed and crossed, and says what the cross means", async () => {
+    await open("heart_rate", BY_HAND);
+    expect(dialog().querySelector('[data-withdrawn="42"]')).not.toBeNull();
+    expect(dialog()).toHaveTextContent("Üstüxətli nöqtə: səhv qeyd — bala daxil edilmir; səbəbi cədvəldədir.");
+  });
+
+  it("offers «Səhv qeyd» on a hand row to a clinical.chart holder, withdraws through the host and reads again", async () => {
+    const onRetract = vi.fn(() => Promise.resolve({ retracted: 41, code: "heart_rate", alerts: [] }));
+    const { api } = await open("heart_rate", BY_HAND, { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    const reads = api.patientTrends.mock.calls.length;
+    const typed = named("REA-01 · 2 · Ayşe Sentetik · Nəbz").querySelector(`tr[data-ts="${point(60, 0)[0]}"]`);
+    await act(async () => { fireEvent.click(within(typed).getByRole("button", { name: "Səhv qeyd" })); await settle(); });
+    const retract = named("Səhv qeyd · REA-01 · 2");
+    expect(retract).toHaveTextContent("Nəbz: 132 /dəq · ölçmə");
+    fireEvent.change(within(retract).getByRole("textbox"), { target: { value: "monitör başka hastadaydı" } });
+    // The dialog ignores a press for its first RETRACT_ARM_MS (real timers in this file): wait it out.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)); });
+    await act(async () => { fireEvent.click(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" })); await settle(); });
+    expect(onRetract).toHaveBeenCalledWith(41, "monitör başka hastadaydı");
+    expect(api.patientTrends.mock.calls.length).toBeGreaterThan(reads);
   });
 });

@@ -6,6 +6,8 @@
 //     measurement (the legend says so); one measurement is a dot and no line;
 //   * on the big chart, the value and time labels, and ▲ (alarm, `--crit`) and ◆ (antibiotic,
 //     `--pri`) in a lane of their own under the plot, never over a band (tokens.test.js holds both).
+//   * on the big chart, a hand entry withdrawn as «hatalı giriş» where it was typed, dimmed and crossed — in no
+//     score and on no line, and the value axis holds it (G3-01, D13, X16). The mini chart draws the engine's only.
 // The series' colour is its channel's identity colour (`vitals.js`), through `currentColor`; MAP's dots
 // are hollow. Every colour is a token class; none is written here.
 //
@@ -28,6 +30,9 @@ const drawable = (p) => Number.isFinite(p.ms) && Number.isFinite(p.value);
 const DOT_RADIUS = { small: 2.5, big: 3.5 };
 const LINE_WIDTH = 1.5;             // a series' connector, and the ring of a hollow dot
 const HAIRLINE = 1;
+// G3-01 (D13): a withdrawn hand entry, on the big chart only — dimmed, a ring with a cross through it.
+const WITHDRAWN_OPACITY = 0.45;
+const CROSS_HALF = 4.5;
 const CONNECTOR_DASH = "4 3";       // between two measurements: an interval, never a measurement
 const OWN_NORMAL_DASH = "2 3";      // the patient's normal's edges; finer, so the two never read alike
 const VALUE_LABEL_GAP = 5;          // between a value label and the plot's left edge
@@ -77,7 +82,8 @@ export function TrendChart({
   if (!placeable) return null;
   const x = timeScale(sinceMs, untilMs, frame.left, frame.right);
   const own = bands?.own_normal ?? null;
-  const values = series.flatMap((s) => s.points.map((p) => p.value));
+  // G3-01 (D13): the big chart draws a withdrawn value where it was typed, so its axis holds it too.
+  const values = series.flatMap((s) => [...s.points.map((p) => p.value), ...(big ? (s.withdrawn ?? []).map((m) => m.value) : [])]);
   if (own) values.push(own.low, own.high);
   const domain = valueDomain(values);
   const y = domain ? valueScale(domain, frame.top, frame.bottom) : null;
@@ -151,6 +157,19 @@ export function TrendChart({
                   stroke="currentColor" strokeWidth={s.hollow ? LINE_WIDTH : 0}
                 />
               ))}
+              {big ? (s.withdrawn ?? []).map((m) => {
+                const cx = x(m.ms);
+                const cy = y(m.value);
+                return (
+                  <g key={`withdrawn-${m.entry}`} data-withdrawn={m.entry} opacity={WITHDRAWN_OPACITY}>
+                    <circle cx={cx} cy={cy} r={DOT_RADIUS.big} fill="none" stroke="currentColor" strokeWidth={LINE_WIDTH} />
+                    <path
+                      d={`M${cx - CROSS_HALF},${cy - CROSS_HALF}L${cx + CROSS_HALF},${cy + CROSS_HALF}M${cx - CROSS_HALF},${cy + CROSS_HALF}L${cx + CROSS_HALF},${cy - CROSS_HALF}`}
+                      stroke="currentColor" strokeWidth={LINE_WIDTH}
+                    />
+                  </g>
+                );
+              }) : null}
             </g>
           );
         }) : null}
