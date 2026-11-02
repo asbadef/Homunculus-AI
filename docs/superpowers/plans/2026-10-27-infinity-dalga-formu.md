@@ -4853,6 +4853,21 @@ cd /c/tmp/inf-dalga && git add dashboard/src/live/waveBoundaries.test.js && git 
 
 `scripts/dev_waves_replay.py` runs the real hub app (with the live view and the `WaveBuffer`) over TLS on this machine, feeds it made-up packets for three made-up monitors every 200 ms — SYN-1 like BED07 (ECG on `0x0103`, ART), SYN-2 like BED08 (ECG on `0x0102` with `0x0103`/`0x0104` "no signal", P1), SYN-3 with its ECG lead off — and posts the strip's values to a local API the way drop-in 93's forwarder does. Everything it writes goes to one scratch folder outside the repository. No capture, no patient: every value is a formula of time.
 
+*Task 13 as built (the merged main, 2026-11-02).* Four changes. The committed files are the reference, and the code blocks below predate them.
+(1) **The packets go through the hub's own route.** The plan handed each tick to `view.consume` and `waves.consume` directly, which bypasses `POST /v1/packets`. A fake worker built from the worker's own parts now delivers them: `produce` puts one live event per monitor into an outbox `Journal` every 200 ms, and `infinity_collector.forward_loop` with its `Sender` posts the outbox to the hub over its TLS (`https://127.0.0.1:<port>`, trusting `ca.pem`), heartbeat included. This buys three things. The fake hub breaks if the hub's hooks change. `/v1/status` shows `consume_ms`, `waves_ms` and the worker's timings, which is what lead note L-3's CPU and memory check before R7 reads. And the collector age the strip's forwarder sends is the real one, not `lambda: 0.0`. `build_hub` builds the app as the runner does (one `Timings` for the journal and the app). The workers start only once uvicorn listens, so no packet reaches the hub over 3 s old (`waves.refused` stays 0).
+(2) **The numbers carry R7's labels (HR/PLS swap 70e45e9).** The plan's `HR_ID = 0x1905` is PLS now. The records are `HR_ID, PLS_ID, SPO2_ID = 0x0101, 0x1905, 0x190E`, each monitor's are named in `MONITORS[...]["numbers"]`, and PLS is two below HR, so a swapped label shows on the strip:
+   - SYN-1: HR 75, PLS 73, SpO2 97 (a 0.8 s beat);
+   - SYN-2: HR 80, PLS 78, SpO2 95 (0.75 s);
+   - SYN-3: HR only, flagged invalid ("***"; lead off, no pleth).
+   The signal functions take the beat. The test now pins the ids and reads each monitor's numbers back through `parse_payload`.
+(3) **The table on a Postgres stack.** Since the monitor→bed editor (0014), an API with a Postgres `DATABASE_URL` and the lane on reads the table from the database (`PostgresDeviceBeds`, `prodserver._device_beds`). `scripts/import_device_beds.py` takes only the approved v2 file (by sha256). So the scratch table is read only by a lab API (no Postgres). The compose override still mounts it, which keeps `deploy/local/infinity-shadow/` out of the worktree. The test still parses it with `parse_table`, and `api.env` is unchanged (`INFINITY_SHADOW_HOSPITAL` and `INFINITY_DEVICE_BEDS_PATH` come from `docker-compose.yml`). See the note in Task 16 Step 3.
+(4) **Small additions.**
+   - `--seconds N` stops the hub cleanly: a timer sets the stop event, which ends uvicorn's `Server` and the threads, then closes both journals.
+   - `scratch_folder` refuses a folder inside a repository before anything is written (the journal's `external_path`; `main` prints one line and returns 2).
+   - `main` reconfigures stdout and stderr to UTF-8, as `dev_local.py` does. A redirected console is cp1252, and `--help` died on "ş".
+   - Three tests join the seven: a tick saves one live packet per monitor; one tick goes through the real hub's route, reaches `/infinity-research/waves` (SYN-2's ids) and `/v1/status` (`consume_ms`, `waves_ms`), and the forwarder's `thin` reads HR, PLS and SpO2 under their names; a folder inside the repo is refused and not created.
+   Task 16 Step 1's engine sum counts 7 replay tests; it is 10.
+
 **Files:**
 - Create: `homunculus-engine/tests/test_dev_waves_replay.py`
 - Create: `homunculus-engine/scripts/dev_waves_replay.py`
@@ -5200,7 +5215,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run.** Expected: `7 passed`.
+- [ ] **Step 4: Run.** Expected: `10 passed`: the plan's seven, one rewritten for R7's labels, and the three the fold added.
 
 - [ ] **Step 5: A smoke run over real TLS** (a scratch folder outside the repository; the hub stops itself after 30 s):
 
@@ -5229,6 +5244,12 @@ asyncio.run(main())
 EOF
 ```
 Expected: `200 ['0x102', '0x103', '0x104', '0x1916', '0x201', '0xe01'] null: ['0x103', '0x104']` — the API's own client, through the hub's real TLS and route, gets SYN-2's BED08-like waves. Delete `$F` and `$F.log` afterwards (scratch, synthetic).
+
+As built, `--seconds 25` replaces `timeout 30`: the hub stops itself and closes its journals, and `--port` picks the port. The 2026-11-02 run (port 28766, folder in the session's scratchpad, deleted afterwards) printed:
+- the line above, and `hub exit 0`;
+- from `/v1/status`: `collector.connected: true` and `waves.refused: 0`, with `consume_ms`, `packets_ms`, `waves_ms` and `waves_read_ms` among the hub's timings and the worker's timings in the heartbeat;
+- from `/infinity-research/state`: hr 75 / pls 73 / spo2 97 on `192.0.2.21`, hr 80 / pls 78 / spo2 95 on `192.0.2.22`, and hr `device_reports_invalid` on `192.0.2.23`;
+- the forwarder's one line `Aşama A forwarder: starting -> failing_0`, because no API was listening.
 
 - [ ] **Step 6: Commit.**
 
@@ -5682,6 +5703,8 @@ Start the fake hub with the Bash tool's `run_in_background` (it runs until stopp
 cd /c/tmp/inf-dalga/homunculus-engine && PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe scripts/dev_waves_replay.py --folder /c/tmp/inf-dalga-stack
 ```
 Expected in its output: `SYNTHETIC fake hub on https://127.0.0.1:8766 - three made-up monitors, no patient.` and uvicorn's `running on https://127.0.0.1:8766`.
+
+*Since Task 13 was built (the merged main).* This stack's API reads the device→bed table from Postgres (0014), not from the scratch file, so the three monitors arrive on «Monitörler» unassigned ("atanmamış cihaz", listed by address) until someone binds them. Their strips and panels still work for a caller who sees unassigned devices, because the waves route serves the board's `unassigned` cards too. Item 1's `YB-1`, `YB-2`, `YB-3` therefore read as the three addresses unless they are bound first. Item 3 needs SYN-1 bound on «Monitörler» (a user with `devices.map_beds`) to the bed the synthetic patient lies in. Whether a patient placed by the `set_identity.py --bed "YB^1^1"` line below (the G1-15 bed map's `yb-01`) can share a bed with a monitor bound there is to be checked when this task is written. `--seconds N` stops the fake hub by itself, and its `/v1/status` shows `waves_ms` for lead note L-3's check.
 
 ```bash
 grep -v '^INFINITY_' /c/tmp/g115plan/stack/local.env > /c/tmp/inf-dalga-stack/local.env && cat /c/tmp/inf-dalga-stack/api.env >> /c/tmp/inf-dalga-stack/local.env
