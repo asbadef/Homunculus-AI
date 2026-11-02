@@ -2,7 +2,10 @@
 made-up data: its packets decode as the three synthetic monitors, its numbers come out under the
 labels hub release R7 must show (0x0101 = HR, 0x1905 = PLS), the real hub app takes them through its
 own route, its table is one the strip's reader accepts, its certificate is for the names the API
-container uses. Nothing is served or sent here: the hub app is driven in process (TestClient)."""
+container uses. A restart into the same folder keeps the tokens and the certificate a running API
+already holds, `--fresh` replaces them, and no token is ever printed. Nothing is served or sent here:
+the hub app is driven in process (TestClient), and `main` runs with uvicorn's `run` stubbed out."""
+import datetime as dt
 import importlib.util
 import ipaddress
 import itertools
@@ -121,13 +124,147 @@ def test_the_scratch_folder_holds_a_valid_table_the_api_env_and_the_override(tmp
     env = (tmp_path / "api.env").read_text("utf-8")
     assert "INFINITY_WAVES=on" in env and "INFINITY_CLINICAL_STAGE=shadow" in env
     assert "INFINITY_HUB_URL=https://host.docker.internal:8766" in env
-    assert '"127.0.0.1:18000:8000"' in (tmp_path / "compose.dalga.yml").read_text("utf-8")
+    # 28000 by default: 17811-18612 sat in Windows' excluded TCP ranges on the walk's machine (T1).
+    assert '"127.0.0.1:28000:8000"' in (tmp_path / "compose.dalga.yml").read_text("utf-8")
+
+
+def test_the_api_port_sets_the_published_port_and_the_strips_default_url(tmp_path):
+    default = replay.parse_args(["--folder", str(tmp_path)])
+    assert (default.api_port, default.api, default.port, default.fresh) == (28000, "http://127.0.0.1:28000", 8766, False)
+    moved = replay.parse_args(["--folder", str(tmp_path), "--api-port", "29123"])
+    assert moved.api == "http://127.0.0.1:29123"
+    replay.write_scratch(tmp_path, port=8766, api_port=moved.api_port, viewer="v" * 48, shadow="s" * 48)
+    compose = (tmp_path / "compose.dalga.yml").read_text("utf-8")
+    assert '"127.0.0.1:29123:8000"' in compose and "28000" not in compose
+    told = replay.parse_args(["--folder", str(tmp_path), "--api-port", "29123", "--api", "http://127.0.0.1:5000"])
+    assert (told.api_port, told.api) == (29123, "http://127.0.0.1:5000")      # --api still wins for the URL
+    with pytest.raises(SystemExit):
+        replay.parse_args(["--folder", str(tmp_path), "--api-port", "0"])
+
+
+PEMS = ("ca.pem", "hub.pem", "hub-key.pem")
+
+
+def pems(folder):
+    return {name: (folder / name).read_bytes() for name in PEMS}
+
+
+def test_a_second_start_in_the_same_folder_keeps_the_tokens_and_the_certificate(tmp_path):
+    first, same_tokens, same_certificate = replay.credentials(tmp_path)
+    assert (same_tokens, same_certificate) == (False, False)
+    issued = pems(tmp_path)
+    replay.write_scratch(tmp_path, port=8766, viewer=first.viewer, shadow=first.shadow)
+    env = (tmp_path / "api.env").read_text("utf-8")
+    second, same_tokens, same_certificate = replay.credentials(tmp_path)
+    assert (same_tokens, same_certificate) == (True, True)
+    assert second == first and len({first.viewer, first.collector, first.shadow}) == 3
+    assert pems(tmp_path) == issued
+    replay.write_scratch(tmp_path, port=8766, viewer=second.viewer, shadow=second.shadow)
+    assert (tmp_path / "api.env").read_text("utf-8") == env        # what the running API holds, unchanged
+    assert first.viewer not in repr(first) and first.shadow not in repr(first) and first.collector not in repr(first)
+
+
+def test_fresh_issues_new_tokens_and_a_new_certificate_and_keeps_those(tmp_path):
+    first, _, _ = replay.credentials(tmp_path)
+    issued = pems(tmp_path)
+    second, same_tokens, same_certificate = replay.credentials(tmp_path, fresh=True)
+    assert (same_tokens, same_certificate) == (False, False)
+    assert {first.viewer, first.collector, first.shadow}.isdisjoint({second.viewer, second.collector, second.shadow})
+    assert all(pems(tmp_path)[name] != issued[name] for name in PEMS)
+    third, same_tokens, same_certificate = replay.credentials(tmp_path)
+    assert third == second and same_tokens and same_certificate
+
+
+THEN = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+
+
+def expired(folder):
+    return THEN + dt.timedelta(days=31)
+
+
+def about_to_expire(folder):
+    return THEN + dt.timedelta(days=30) - dt.timedelta(hours=1)       # inside the one-day margin
+
+
+def other_names(folder):
+    replay.issue_certificates(folder, hosts=("localhost",), now=THEN)
+    return THEN
+
+
+def no_key(folder):
+    (folder / "hub-key.pem").unlink()
+    return THEN
+
+
+def another_key(folder):
+    elsewhere = folder / "elsewhere"
+    elsewhere.mkdir()
+    replay.issue_certificates(elsewhere, now=THEN)
+    (folder / "hub-key.pem").write_bytes((elsewhere / "hub-key.pem").read_bytes())
+    return THEN
+
+
+def another_ca(folder):
+    elsewhere = folder / "elsewhere"
+    elsewhere.mkdir()
+    replay.issue_certificates(elsewhere, now=THEN)
+    (folder / "ca.pem").write_bytes((elsewhere / "ca.pem").read_bytes())
+    return THEN
+
+
+@pytest.mark.parametrize("spoil", [expired, about_to_expire, other_names, no_key, another_key, another_ca])
+def test_a_certificate_that_no_longer_fits_is_issued_again_and_the_tokens_kept(tmp_path, spoil):
+    first, _, _ = replay.credentials(tmp_path, now=THEN)
+    now = spoil(tmp_path)
+    second, same_tokens, same_certificate = replay.credentials(tmp_path, now=now)
+    assert second == first and same_tokens and not same_certificate
+    ca = x509.load_pem_x509_certificate((tmp_path / "ca.pem").read_bytes())
+    leaf = x509.load_pem_x509_certificate((tmp_path / "hub.pem").read_bytes())
+    leaf.verify_directly_issued_by(ca)
+    assert leaf.not_valid_after_utc > now + dt.timedelta(days=29)
+    names = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert set(names.get_values_for_type(x509.DNSName)) == {"host.docker.internal", "localhost"}
+    assert replay.credentials(tmp_path, now=now)[1:] == (True, True)
+
+
+@pytest.mark.parametrize("saved", [
+    "{",                                                                    # not JSON
+    json.dumps({"viewer": "v" * 48, "shadow": "s" * 48}),                   # one missing
+    json.dumps({"viewer": "v" * 48, "collector": "c" * 48, "shadow": "s" * 20}),   # too short for the hub
+    json.dumps({"viewer": "v" * 48 + "\nINFINITY_WAVES=off", "collector": "c" * 48, "shadow": "s" * 48}),
+], ids=["not-json", "one-missing", "too-short", "a-second-line"])
+def test_a_tokens_file_that_is_not_the_scripts_own_gives_new_tokens(tmp_path, saved):
+    replay.credentials(tmp_path)
+    (tmp_path / replay.TOKENS).write_text(saved, encoding="utf-8")
+    tokens, same_tokens, same_certificate = replay.credentials(tmp_path)
+    assert not same_tokens and same_certificate
+    assert "\n" not in tokens.viewer and "v" * 48 not in tokens.viewer
+    assert json.loads((tmp_path / replay.TOKENS).read_text("utf-8"))["viewer"] == tokens.viewer
+
+
+def test_a_start_prints_no_token_and_says_whether_it_kept_the_credentials(tmp_path, monkeypatch, capsys):
+    import uvicorn
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: None)      # nothing is served
+    seen, outputs = set(), []
+    for argv in ([], [], ["--fresh"]):
+        assert replay.main(["--folder", str(tmp_path), "--api-port", "29123", *argv]) == 0
+        captured = capsys.readouterr()
+        outputs.append(captured.out + captured.err)
+        seen |= set(json.loads((tmp_path / replay.TOKENS).read_text("utf-8")).values())
+    assert len(seen) == 6                     # the first start's three, then --fresh's three
+    assert not [token for token in seen for output in outputs if token in output]
+    assert ["previous run's tokens and certificate" in output for output in outputs] == [False, True, False]
+    assert ["new tokens and a new certificate" in output for output in outputs] == [True, False, True]
+    assert all("http://127.0.0.1:29123/infinity-shadow/readings" in output for output in outputs)
+    assert '"127.0.0.1:29123:8000"' in (tmp_path / "compose.dalga.yml").read_text("utf-8")
 
 
 def test_a_scratch_folder_inside_a_repository_is_refused_and_not_created():
     inside = SCRIPT.parent / "dalga-scratch-that-must-not-exist"
     with pytest.raises(ValueError):
         replay.scratch_folder(inside)
+    with pytest.raises(ValueError):           # the tokens' own writer refuses it too
+        replay.credentials(inside)
     assert not inside.exists()
 
 
