@@ -136,7 +136,14 @@ class WaveBuffer:
     A set-back of ANSWER_S or less is not detected: it stalls (phase kept) or overlaps the old stream
     (phase shifted) for at most that long, then heals (monitor clocks are not NTP-synced, so
     set-backs come from restarts and manual edits).
-    At most MAX_HELD entries are kept per monitor, the oldest dropped first."""
+    At most MAX_HELD entries are kept per monitor, the oldest dropped first.
+
+    A monitor's blocks are pruned only when they are touched: when it sends (`consume`) or when
+    someone asks for it (`since`). So a silent monitor's last ≤ 20 s (WINDOW_S) stays in hub memory,
+    never on disk, until the monitor sends again, someone asks for it, or the hub restarts. `since`
+    prunes before it reads, so a monitor silent for 10–20 s (ANSWER_S to WINDOW_S) is still served
+    blocks up to 20 s old; the browser ages them from `recv` / `hub_now` into «akış durdu». Nothing
+    is served AS LIVE."""
 
     def __init__(self, inventory, *, clock=time.time):
         self.clock = clock
@@ -210,8 +217,9 @@ class WaveBuffer:
 
     def since(self, sources, cursor):
         """(the hub's cursor now, {source: [block, ...]}): per monitor, the blocks added after
-        `cursor` and at most ANSWER_S behind its newest block. A cursor ahead of this hub's (one
-        from before a restart) counts as 0. Every source must be one `knows` accepts."""
+        `cursor` and at most ANSWER_S behind its newest block, pruned to WINDOW_S first (a silent
+        monitor's blocks can be up to WINDOW_S old: the class says why). A cursor ahead of this
+        hub's (one from before a restart) counts as 0. Every source must be one `knows` accepts."""
         now = self.clock()
         with self.lock:
             current = self.cursor
