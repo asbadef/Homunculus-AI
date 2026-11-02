@@ -156,7 +156,7 @@ export default {
     previewNote: "Balı mühərrik hesablayır; qərar həkimindir.",
     previewed: "Öncədən baxış hazırdır: NEWS2 {total}. Yadda saxlamaq üçün «Yadda saxla».",
     previewOld: "Dəyərlər dəyişdi — yenidən öncədən baxın.",
-    previewStale: "Önizləmə 5 dəqiqədən köhnədir; yenidən önizləyin.",
+    previewStale: "Öncədən baxış 5 dəqiqədən köhnədir; yenidən öncədən baxın.",
     previewRefused: "{subject}: öncədən baxış alınmadı — {reason}",
     previewNotPreview: "mühərrikin cavabı öncədən baxış deyildi",
     previewDropped: "Bu xəstə evə yazılıb; ölçmə daxil edilmir.",

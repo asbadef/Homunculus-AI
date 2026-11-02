@@ -215,7 +215,7 @@ describe("the bedside form", () => {
 
   // Final review, Minor 4: a preview of unchanged boxes was the engine's answer for ITS moment. After
   // PREVIEW_MAX_AGE_MS «Yadda saxla» goes, the form says so, and «Öncədən baxın» asks again.
-  const STALE = "Önizləmə 5 dəqiqədən köhnədir; yenidən önizləyin.";
+  const STALE = "Öncədən baxış 5 dəqiqədən köhnədir; yenidən öncədən baxın.";
   // The page woke (a tablet's screen on again): the clock's own re-read, the one a sleeping device gets.
   const woke = () => act(() => { document.dispatchEvent(new Event("visibilitychange")); });
 
