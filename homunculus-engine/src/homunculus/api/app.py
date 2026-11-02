@@ -1640,8 +1640,7 @@ def create_app(
         auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
         _refuse_fractional_gcs(body.get("overrides"))   # G2-A4 review: before the corrections are parsed
         try:
-            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a
-            # preview and a signature alike, both parsed here — and MAP to its own (CORRECTION_BOUNDS).
+            # G2-A4 (O6): a correction is held to the door's slip bounds, as a charted value is — for a preview and a signature alike, both parsed here (CORRECTION_BOUNDS, which is PLAUSIBLE since G3-01, X7).
             # The dashboard mirrors them (X7); this is the guard.
             overrides = parse_overrides(body.get("overrides"), auto, bounds=CORRECTION_BOUNDS)
         except ScoreSigningError as exc:

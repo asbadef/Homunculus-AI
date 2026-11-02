@@ -717,10 +717,7 @@ class TestTheRouteBoundsACorrection(_AsPeople):
         assert self._signed_rows(client) == []
 
     def test_a_slipped_map_correction_is_refused_for_a_preview_and_for_a_signature(self, client):
-        """G2-A4 review: MAP has no bound at the door because it is not chartable there, but the
-        cardiovascular row's MAP can be corrected; a correction of 9000 is held to the engineering slip
-        bound the signing helper adds for it (0–300 mmHg). Since G3-01 the door takes MAP too, inside the same
-        bound (X8); the MAP corrected here is a monitor's reading (review 3, M-2: only a measured value is corrected)."""
+        """G2-A4 review: the cardiovascular row's MAP can be corrected; a correction of 9000 is held to the charting door's slip bound for MAP (0–300 mmHg, PLAUSIBLE — before G3-01 an extra bound the signing helper added, X7). Since G3-01 the door takes MAP too, inside the same bound (X8); the MAP corrected here is a monitor's reading (review 3, M-2: only a measured value is corrected)."""
         self._chart(client, "yatak-1", "platelets", 45)
         self._ingest(client, "yatak-1", "map", 62)
         slipped = [{"code": "map", "value": 9000, "reason": WHY}]

@@ -74,16 +74,31 @@ class TestTheSixAreChartable:
 
 class TestTheSlipBounds:
     @pytest.mark.parametrize("code,value", [("resp_rate", 81), ("spo2", 101), ("sbp", 301), ("map", 301),
-                                            ("heart_rate", 301), ("temperature", 24.9), ("temperature", 45.1)])
+                                            ("heart_rate", 301), ("heart_rate", -1), ("temperature", 24.9),
+                                            ("temperature", 45.1)])
     def test_a_slipped_digit_is_refused(self, client, code, value):
         r = _chart(client, [{"code": code, "value": value}])
         assert r.status_code == 400
         assert "aralığın" in r.json()["detail"]
 
-    @pytest.mark.parametrize("code,value", [("resp_rate", 0), ("spo2", 100), ("sbp", 300), ("heart_rate", 0),
+    @pytest.mark.parametrize("code,value", [("resp_rate", 0), ("spo2", 0), ("spo2", 100), ("sbp", 0),
+                                            ("sbp", 300), ("map", 0), ("map", 300), ("heart_rate", 0),
                                             ("temperature", 25), ("temperature", 45)])
     def test_the_bounds_are_inclusive(self, client, code, value):
         assert _chart(client, [{"code": code, "value": value}]).status_code == 200
+
+    @pytest.mark.parametrize("value", [True, False])
+    @pytest.mark.parametrize("code", sorted(c.value for c in BEDSIDE_VITALS))
+    def test_a_json_boolean_is_not_a_vital(self, client, code, value):
+        """A bool is an int in Python: `true` would chart a heart rate of 1 (a NEWS2 red parameter) and an
+        SpO2 of 1 %, `false` a 0 inside every bound. The module's own idiom (baseline SOFA) refuses it."""
+        r = _chart(client, [{"code": code, "value": value}])
+        assert (r.status_code, r.json()["detail"]) == (400, f"{code}: sayı değil ({value!r})")
+
+    def test_a_flag_still_takes_a_json_boolean(self, client):
+        """The refusal is for the numeric codes: the flags are recorded as 1.0 / 0.0 and callers send true."""
+        r = _chart(client, [{"code": "suspected_infection", "value": True}])
+        assert r.status_code == 200, r.text
 
     @pytest.mark.parametrize("code", ["resp_rate", "spo2", "sbp", "map", "heart_rate"])
     def test_a_counted_vital_is_a_whole_number(self, client, code):
@@ -102,6 +117,20 @@ class TestMapBelowTheSystolic:
 
     def test_map_below_the_systolic_is_charted(self, client):
         assert _chart(client, [{"code": "sbp", "value": 90}, {"code": "map", "value": 65}]).status_code == 200
+
+    @pytest.mark.parametrize("entries", [
+        [("sbp", 70), ("map", 80), ("sbp", 120)],       # the last systolic must not hide the first
+        [("map", 95), ("map", 60), ("sbp", 90)],       # the last MAP must not hide the first
+    ])
+    def test_a_repeated_code_is_compared_at_its_worst(self, client, entries):
+        """One request may name a code twice; every MAP must be below every systolic, not just the last pair."""
+        r = _chart(client, [{"code": c, "value": v} for c, v in entries])
+        assert (r.status_code, r.json()["detail"]) == (400, MAP_NOT_BELOW_SBP)
+
+    def test_repeated_codes_with_every_map_below_every_systolic_are_charted(self, client):
+        r = _chart(client, [{"code": "sbp", "value": 120}, {"code": "map", "value": 80},
+                            {"code": "sbp", "value": 100}, {"code": "map", "value": 70}])
+        assert r.status_code == 200, r.text
 
     def test_a_map_alone_is_not_compared_with_an_older_systolic(self, client):
         """The rule is about one form's two numbers; a MAP charted on its own is a reading of its own."""
@@ -139,3 +168,36 @@ class TestTheMeasurementTime:
         with pytest.raises(ClinicalEntryError, match="24 saat"):
             build_entries("bed-3", [{"code": "spo2", "value": 95}], charted_by="hem.ayse",
                           recorded_at=now - timedelta(hours=25), now=now)
+        with pytest.raises(ClinicalEntryError, match="ileri olamaz"):
+            build_entries("bed-3", [{"code": "spo2", "value": 95}], charted_by="hem.ayse",
+                          recorded_at=now + timedelta(minutes=10), now=now)
+
+    @pytest.mark.parametrize("offset,accepted", [
+        (-timedelta(hours=24), True),                                  # exactly a day back
+        (-timedelta(hours=24) - timedelta(microseconds=1), False),     # one tick past it
+        (timedelta(minutes=2), True),                                  # exactly the skew
+        (timedelta(minutes=2) + timedelta(microseconds=1), False),     # one tick past it
+    ])
+    def test_the_time_bounds_are_inclusive_to_the_microsecond(self, offset, accepted):
+        """The door's two time bounds, judged at an injected `now` so no real clock moves the boundary."""
+        now = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
+        call = lambda: build_entries("bed-3", [{"code": "spo2", "value": 95}], charted_by="hem.ayse",
+                                     recorded_at=now + offset, now=now)
+        if accepted:
+            assert len(call()) == 1
+        else:
+            with pytest.raises(ClinicalEntryError):
+                call()
+
+    def test_a_request_without_a_time_is_stamped_at_the_requests_one_instant(self):
+        """One instant per request: the entry's timestamp is the `now` the caller judges the request at, not a
+        second reading of the clock a few microseconds later."""
+        now = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
+        built = build_entries("bed-3", [{"code": "spo2", "value": 95}, {"code": "heart_rate", "value": 80}],
+                              charted_by="hem.ayse", now=now)
+        assert [item.observation.timestamp for item in built] == [now, now]
+
+    def test_build_entries_without_now_still_reads_the_clock(self):
+        before = datetime.now(timezone.utc)
+        built = build_entries("bed-3", [{"code": "spo2", "value": 95}], charted_by="hem.ayse")
+        assert before <= built[0].observation.timestamp <= datetime.now(timezone.utc)

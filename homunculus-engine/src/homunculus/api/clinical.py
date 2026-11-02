@@ -198,6 +198,10 @@ def _code(raw: str) -> SignalCode:
 
 
 def _value(code: SignalCode, raw) -> float:
+    # G3-01 review: a bool is an int in Python, so a JSON `true` would chart a heart rate of 1 (a NEWS2 red
+    # parameter) and `false` a 0 inside every bound. Only the flags (`_BOOLEAN`) are sent as true / false.
+    if isinstance(raw, bool) and code not in _BOOLEAN:
+        raise ClinicalEntryError(f"{code.value}: sayı değil ({raw!r})")
     try:
         value = float(raw)
     except (TypeError, ValueError):
@@ -230,12 +234,15 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
     A half-applied chart is worse than a refused one, because nobody can tell afterwards which
     half landed.
     """
+    # G3-01 review: one instant per request — an untouched time is stamped at the same `now` the bedside
+    # time bound is judged at, not at a second reading of the clock a few microseconds later.
+    now = now or datetime.now(timezone.utc)
     if not patient_id or not str(patient_id).strip():
         raise ClinicalEntryError("hasta kimliği boş olamaz")
     if not entries:
         raise ClinicalEntryError("boş kayıt gönderilemez")
 
-    when = recorded_at or datetime.now(timezone.utc)
+    when = recorded_at or now
     if when.tzinfo is None:
         # A timestamp with no zone is the failure mode this project has already been bitten by:
         # the NCE server's local clock ran an hour off the UTC stamp in its own filenames.
@@ -260,7 +267,7 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
             ),
             charted_by=charted_by,
         ))
-    _check_bedside(built, recorded_at, now or datetime.now(timezone.utc))
+    _check_bedside(built, recorded_at, now)
     return built
 
 
@@ -275,8 +282,11 @@ def _check_bedside(built: list[ChartedEntry], recorded_at: datetime | None, now:
             raise ClinicalEntryError(AT_TOO_OLD)
         if recorded_at > now + BEDSIDE_SKEW:
             raise ClinicalEntryError(AT_FUTURE)
-    values = {item.observation.code: item.observation.value for item in built}
-    if SignalCode.MAP in values and SignalCode.SBP in values and values[SignalCode.MAP] >= values[SignalCode.SBP]:
+    # A code named twice in one request keeps every value: the highest MAP must be below the lowest systolic,
+    # so neither a later systolic nor a later MAP can hide an earlier impossible pair (G3-01 review).
+    maps = [i.observation.value for i in built if i.observation.code is SignalCode.MAP]
+    sbps = [i.observation.value for i in built if i.observation.code is SignalCode.SBP]
+    if maps and sbps and max(maps) >= min(sbps):
         raise ClinicalEntryError(MAP_NOT_BELOW_SBP)
 
 
