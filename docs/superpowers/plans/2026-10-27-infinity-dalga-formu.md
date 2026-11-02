@@ -5281,6 +5281,37 @@ Fourteen mutations were each made in place and restored byte-for-byte (`cmp` and
 
 The suite: 118 files, 3271 tests.
 
+*Lane A review (I1, I2, M1, M2) in Task 12 (2026-11-02; `07e1cc29`).* The guard had four gaps. A deny-list of hand-written names over objects that could do anything (I1). Text rules that read only the listed wave files, so a helper one of them imported went unread (I2). A comment stripper that cut a line at a `//` inside a string (M1). An alarm path without the root and the session (M2). The block above, and the 9-test file it grew into, predate this; the committed file is the reference.
+- **I1, by import.** Since `366e9f12` the wave modules hold a feed, not the session. So no wave module may reach, through any chain, a module under `session/` (`feeds.js` included: the screens make the feed, never a wave module), `backendApi.js`, or anything outside `src/live/`. The walk now lists a module outside `src/live/` instead of skipping it.
+- **I1, by name.** The banned names are derived from the real code, not written out. The test builds a session store, an API client and a board store from their own factories with stubs and takes their keys: 16, 72 and 12. It also takes every export of `session/`, `backendApi.js`, `boardStore.js` and `BoardProvider.jsx` (useSession, SessionProvider, waveFeedFor, useBoard…). That makes 151 names; a capability added there is banned here at once. A name is caught in five forms: a member (`.lock`, `?.lock`), a key (`lock:`), destructured (`{ lock }`), declared or called (`lock(`), and a string that is the name once its escapes are read (`"lock"`). Also refused: a computed member keyed by a string, template, call or concatenation (`obj["unl" + "ock"]`), a unicode-escaped name, `eval` and `new Function(`. A plain index (`list[i]`, `path[i + 1]`) is not. ALLOW holds three names, each only in the forms the wave code uses:
+  - `subscribe`, the wave store's own, read as `store.subscribe`;
+  - `cancel`, `waveStore.js`'s timer clear, while `.cancel` stays banned;
+  - `view`, WaveRows' local, while `.view` stays banned.
+  ALLOW is pinned, and each entry must still be used. The new network rule bans `fetch`, `XMLHttpRequest`, `sendBeacon`, `WebSocket`, `EventSource`, `importScripts`, workers, `serviceWorker` and `import(`. The old ACTIONS list keeps only the events, `"/ack"` and `method:`.
+- **I2.** Every text rule and the import rule run over every module the wave modules reach. `REACHED` pins that set, 32 modules, each with a reason: i18n (provider, catalogue, langs, translate, dates), `prefs.js`, `theme/ThemeProvider.jsx`, `ShadowProvider.jsx`, `MonitorStrip.jsx`, `monitor.js`, `feedHealth.js`, `useNow.js`, `ui/index.js` and the 19 modules it re-exports. A newly reached module fails until someone reads and lists it. The dictionaries (`i18n/strings/`) are one entry, because whoever adds words adds one. They are held instead to a data-only shape: no import, and nothing but `export default {…}`, keys, words and at most a `const NAME = {…}` (monitor.js's `p`). No call, member, spread, operator or template is allowed. Exemptions are by file, rule and exact text, and each must still be needed. There are 19:
+  - `prefs.js`'s `localStorage`;
+  - the two providers importing `prefs.js`;
+  - `ShadowProvider`'s `.getState`;
+  - `icons.js`'s `chart:` and `lock:` keys;
+  - `Modal`'s `restore`;
+  - `Toast`'s `start`, `dispose`, `.dispose` and `.clear`;
+  - five `aria-*` props read by string key in `Button` and `Field`;
+  - the catalogue's `lock` import, its `{ lock }` and its ``out[`${prefix}${key}`]``.
+  A wave module itself gets none.
+- **M1.** Text is read by a small lexer (`readJs`) that knows `'…'`, `"…"` and `` `…` `` with escapes, a template's `${…}` as code, comments, and a regex as opposed to a division (JSX's `</p>` and `/>` included). A string or regex still open at its line's end, or a template or comment never closed, fails the module rather than misreading it. Tests cover tricky lines directly. The old stripper reduced `const u = "a // b"; session.lock();` to `const u = "a `.
+- **M2.** `LiveApp.jsx`, `session/sessionStore.js`, `session/useIdleLock.js` and `session/IdleWarning.jsx` join the alarm path, and both directions hold. The screens that draw waves reach `feeds.js` and the session; they are not wave modules, and no wave module imports `feeds.js`. `WaveErrorBoundary.jsx` joins the wave modules.
+
+The file has 18 tests, 29 with `boundaries.test.js` and `src/reachable.test.js`; the suite has 126 files and 3514 tests. The rules found no real violation in today's wave code. Twelve mutations were made each in place, by a scratch script that saved the bytes, appended a valid unused export or import, ran the guard and restored the file. A new file was deleted afterwards. Each restore was checked by byte compare and `git diff --quiet`, and each mutation failed:
+- `const { lock } = session; lock()`, `session.lock?.()`, and `session.lock()` with the `c` written as a unicode escape, in `waveGeometry.js`: the capability rule;
+- `obj["unl" + "ock"]()` in `waveGeometry.js`: computed access;
+- `fetch("/x")` and `navigator.sendBeacon(…)` in `waveStore.js`: the network rule;
+- a new `screens/common/zzTraceHelper.js` with `new Audio()`, imported by `waveGeometry.js`: the reached snapshot and the sound rule;
+- `waveGeometry.js` importing `../../session/feeds.js`: session side, snapshot and capability;
+- `useSession()` in `WaveErrorBoundary.jsx`: capability;
+- `const u = "a // b"; session.lock();` in `waveStore.js` (M1): capability;
+- `IdleWarning.jsx` importing `WavePanel.jsx` (M2): "reached by no alarm-path module", 18 chains;
+- `waveGeometry.js` importing `session/useIdleLock.js` (M2): six tests.
+
 - [ ] **Step 3: Commit.**
 
 ```bash
