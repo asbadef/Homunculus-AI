@@ -306,20 +306,26 @@ cards that an older API would not match, so from then on rollback means a forwar
 - **O7:** a HIS (ADT) identity record with neither family nor given answers `found` with no name. D3
   makes the name the nurse's only safeguard. A kabul admission always carries a name, so only a
   PID-5-less HIS record can do this. The owner decides.
-- **O8:** `admission/service.py` `confirm_transfer_arrival` builds the arriving admission without
-  `protocol_no`, so its board key would be the H-number while the card stands under the protocol
-  (E3's split). This is unreachable while transfers are closed (409 `transfer_unavailable`). The
-  transfer slice moves the protocol to the arriving row or issues a new one
-  (`uq_admissions_tenant_protocol` forbids two rows with one protocol). Its test pins that
-  `board_key` equals the card's key.
-- **O9 (local walk W-1):** the bridge's 2 s bound is urllib's socket timeout and does not cover
-  name resolution. With the api container stopped, Docker's DNS fails `api` after about 4 s, so the
-  device waits about 4 s for the mirror's answer (0.37 s with the API up). That is inside the 10 s
-  NCE gives its patient-query host; a deadline around the whole ask is a possible later hardening.
-- **O10 (local walk W-2):** uvicorn's access log, and nginx's, write the request path, and the
-  patient screen's routes carry the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`):
-  the protocol number now, the H-number before this slice. The device route carries no number (a
-  POST body). Whether access logs keep patient keys is for the owner and Lane A to decide.
+- **O8 — closed (2026-11-02, [the O8 follow-up](2026-11-02-g2b-o8-nakil-protokol-design.md)):** a
+  transfer keeps the visit's protocol. `confirm_transfer_arrival` moves `protocol_no` from the
+  TRANSFERRED row to the arriving row, clearing and flushing the source first, because
+  `uq_admissions_tenant_protocol` allows one row per number. The card's key does not change
+  (`tests/test_admission_workflow.py`). The transfer routes stay closed (A-37); the slice that reopens
+  them records the moved number in the arrival's audit row.
+- **O9 (local walk W-1) — closed (2026-11-02, [the O9 follow-up](2026-11-02-g2b-o9-sorgu-suresi-design.md)):**
+  the bridge's 2 s bound was urllib's socket timeout and did not cover name resolution. With the api
+  container stopped, Docker's DNS failed `api` after about 4 s, so the device waited about 4 s for
+  the mirror's answer (0.37 s with the API up). `PatientQueryClient.ask` now runs the exchange on a
+  daemon thread and waits at most 2 s of wall-clock time, DNS and a slow answer included. At most 8
+  exchanges are in flight; past that the mirror answers at once. A late answer is dropped unlogged.
+- **O10 (local walk W-2) — closed (2026-11-02, [the O10 follow-up](2026-11-02-g2b-o10-erisim-logu-design.md)):**
+  uvicorn's access log, and nginx's, wrote the request path, and the patient screen's routes carry
+  the board key (`/patients/<key>/trends`, `/scores/sofa/<key>`): the protocol number now, the
+  H-number before this slice. The device route carries no number (a POST body). Lane A chose, and
+  the follow-up built, uvicorn `--no-access-log` and an nginx access format that writes the path
+  with its ids replaced (`/patients/:key/trends`) and no query string or referer, pinned by a test
+  that walks the route table. Left open there: nginx's error log still writes the whole request line
+  whenever it logs an error or warning for a request (R1), and the lines already on the VM (R2).
 - **Elsewhere:** `edge/uplink.py` has the environment-proxy and redirect exposure this slice closed
   in `edge/pdq_client.py`. It is Lane A's open item, not this slice's.
 

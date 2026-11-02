@@ -549,6 +549,28 @@ plan to map them. Every failure says what to ask IT for.
   `LOGIN_FAILURE_FLOOR_S` in `homunculus-engine/src/homunculus/auth/router.py` (a code change;
   keep it far below the dashboard's 15 s).
 
+## Access logs — what they record
+
+The patient screen's routes carry the patient's key in the path (`/patients/<key>/trends`,
+`/scores/sofa/<key>`), so both request logs are kept without it (G2-B1d O10; spec
+`superpowers/specs/2026-11-02-g2b-o10-erisim-logu-design.md`).
+
+- **API:** uvicorn runs with `--no-access-log`. `docker compose logs api` shows the engine's own
+  lines (start-up, LDAP, warnings and errors) and no request lines — `POST /ingest … 200` is gone.
+  How the bridge's posts were answered is on the bridge's side: its `uplink refused … (HTTP <status>)`
+  and `uplink unavailable` warnings (`deploy/local/nce-doctor.sh`, step 5, reads them).
+- **web (nginx):** `docker compose logs web` has one line per request in the `homunculus_redacted`
+  format: client address, time, method, the path with its ids replaced (`/patients/:key/trends`,
+  `/admissions/:id/label`), protocol, status, bytes, seconds, user agent. No query string and no
+  referer. The client address is still the first field (the check above).
+- **Not covered — nginx's error log.** Whenever nginx logs an error or a warning for a request —
+  any upstream failure or timeout (the API down, closing the connection early, answering garbage),
+  a 413, the sign-in limiter — the line names the request as it was sent, query string included:
+  `request: "GET /patients/<key>/trends HTTP/1.1"`, `upstream: "http://…/patients/<key>/trends"`
+  and the page's `referrer:`. (nginx:alpine's main configuration logs at `notice`, so every such
+  line is written.) It happens on a healthy day too: a slow trends call that times out. Read
+  `docker compose logs web` as a log that can hold patient keys.
+
 ## Backups — your responsibility now
 
 No managed provider is doing this any more. The audit trail is a legal record, and an unbacked-up
@@ -809,12 +831,15 @@ device token `/ingest` uses), at most 2 seconds — and answers:
 | not found (unknown, or discharged) | `QAK … NF`, no `PID`: the nurse corrects the number | forgets the number |
 | nothing in time, a non-200, a body it cannot read | the mirror's answer, else the id echoed without a name | unchanged |
 
-The 2 seconds are urllib's socket timeout, which bounds each socket operation (connect, send, each
-read), not the whole request; on the compose network that is enough, the same as for
-`uplink.post_json`. It does not cover name resolution: while the api container is stopped (a
-restart during a deploy), Docker's DNS takes about 4 s to say `api` is unknown, so such a query is
-answered from the mirror after about 4 s instead of 2 (walk W-1, spec §12 O9) — still inside the
-10 s NCE gives its patient-query host.
+The 2 seconds are one wall-clock bound around the whole ask (O9): name resolution, connect, send and
+a slowly dripped answer included. urllib's own timeout is only per socket operation and never covers
+name resolution — in the local walk (W-1) the api container was stopped, Docker's DNS took about 4 s
+to say `api` is unknown, and the mirror answered after about 4 s instead of 2. The exchange now
+runs on a daemon thread that the ask waits for at most 2 s; past that the mirror answers, about
+2 s after the device asked. An abandoned exchange ends on its own and its late result is dropped,
+unlogged. At most 8 such exchanges are in flight (`MAX_PENDING`): a hung name resolution holds its
+thread until the resolver gives up, and while all 8 are held a new query is answered from the mirror
+at once.
 
 The `PID` of a found number is `PID|||<id>||<family>^<given>||<birth date>|<sex>`.
 
