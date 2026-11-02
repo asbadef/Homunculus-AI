@@ -214,7 +214,10 @@ is logged as `"POST /auth/login HTTP/1.1" 429`.
   gone with its directory). The deploy that brings this change recreates `api` and `web` (the command of
   one, the image of the other, change), which drops the lines in them. Still to be checked on the VM:
   that the deploy does recreate `api` (`StartedAt` differs; a plain `restart` keeps the file), and copies
-  outside the containers (a saved `docker logs > file`, a backup of `/var/lib/docker`).
+  outside the containers (a saved `docker logs > file`, a backup of `/var/lib/docker`). **Closed at the
+  deploy** (G2B-TAKIP, 2026-11-02 16:09–16:31Z, Lane A): E-1 found `api` and `web` recreated (`StartedAt`
+  after the deploy began) and no old log copy outside the containers. During the deploy the error log
+  wrote 3 request lines, none of them "buffered" (R1, measured).
 - **R3 — the hub's uvicorn keeps its access log** (`scripts/run_infinity_transport.py` calls
   `uvicorn.run` with the default). Its routes are `/v1/packets`, `/v1/heartbeat`, `/v1/status` and
   `/infinity-research/*`: none has a path parameter, so no key. Left alone.
