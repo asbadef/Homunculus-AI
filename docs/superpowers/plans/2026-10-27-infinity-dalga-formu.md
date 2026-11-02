@@ -57,7 +57,7 @@
 
 *R19 in Task 5 (lead amendment A2).* `api/infinity_waves.py` requires `started` as a non-empty string on every hub answer (without it the answer is `hub_invalid`, 502), passes it to the browser top-level and unchanged, and `answer(…, started=…)` serves the whole window to a caller whose cursor came from another hub process; the cursor is always the answer's top-level `cursor`, never read from a block (blocks are in device-time order, so `seq` is not monotonic down the list).
 
-*R16 / R19 in Task 7 (lead amendment A3).* The route reads an optional `started` (the hub process the caller's cursor came from; at most `MAX_TEXT` = 40 characters, a longer one is 400 `bad_started`; empty names no process and is served the whole window) and passes it to `answer(…, started=…)`; the five route reasons (`waves_off`, `stage_off`, `no_device`, `bad_since`, `bad_started`) join `REASONS`, each emitted as a literal `{"reason": "…"}` so the scan test stays meaningful; the answer is a `JSONResponse` carrying its own `Cache-Control: no-store` (FastAPI's `jsonable_encoder` on a bare dict measured 7.2 ms against 0.75 ms for a first full window; the injected `Response`'s headers do not reach a returned response); and the app's custom `lifespan` closes `app.state.wave_feed` at teardown (Starlette ignores `add_event_handler("shutdown")` once a lifespan is set).
+*R16 / R19 in Task 7 (lead amendment A3).* The route reads an optional `started` (the hub process the caller's cursor came from; at most `MAX_TEXT` = 40 characters, a longer one is 400 `bad_started`; empty names no process and is served the whole window) and passes it to `answer(…, started=…)`; the five route reasons (`waves_off`, `stage_off`, `no_device`, `bad_since`, `bad_started`) join `REASONS`, each emitted as a literal `{"reason": "…"}` so the scan test stays meaningful; the answer is a `JSONResponse` carrying its own `Cache-Control: no-store` (FastAPI's `jsonable_encoder` on a bare dict measured 7.2 ms against 0.75 ms for a first full window; the injected `Response`'s headers do not reach a returned response); and the app's custom `lifespan` closes `app.state.wave_feed` at teardown (Starlette ignores `add_event_handler("shutdown")` once a lifespan is set). Task 7 review: R16's order (the board's 401/403, the flag, the stage, the monitor, the cursor) is pinned by `test_the_gates_answer_in_r16s_order`, and `checked()` bounds the hub's cursor to `0 <= cursor < MAX_CURSOR` (10**15) so that what the browser sends back as `since` always passes the route's 15-digit `SINCE`.
 
 **Ground rules (every task).**
 - TDD: the failing test first, then the code. Run tests in the **foreground** with a timeout; never background a suite and wait.
@@ -1508,7 +1508,8 @@ def test_httpx_is_a_runtime_dependency_of_the_api_image():
 # --- the window and the browser's copy ------------------------------------------------------------
 
 @pytest.mark.parametrize("raw", [
-    [], {**window(), "cursor": -1}, {**window(), "cursor": True}, {**window(), "hub_now": "x" * 41},
+    [], {**window(), "cursor": -1}, {**window(), "cursor": True}, {**window(), "cursor": 10 ** 15},
+    {**window(), "hub_now": "x" * 41},
     {key: value for key, value in window().items() if key != "started"},      # no hub process named
     {**window(), "started": ""}, {**window(), "started": 7}, {**window(), "started": "x" * 41},
     window([block(5, 1000.0)], cursor=4),                         # a block after the hub's own cursor
@@ -1524,6 +1525,12 @@ def test_checked_refuses_what_is_not_a_window(raw):
 
 def test_checked_takes_an_integer_instant_a_float_holds_exactly():
     assert checked(window([dict(block(1, 1000.0), t=1000)]), BED)["blocks"][0]["t"] == 1000.0
+
+
+def test_the_hubs_cursor_is_bounded_where_the_route_can_take_it_back():
+    # The browser sends the cursor back as `since`, which the route admits to 15 digits.
+    assert checked(window([], cursor=10 ** 15 - 1), BED)["cursor"] == 10 ** 15 - 1
+    assert infinity_waves.SINCE.fullmatch(str(10 ** 15 - 1)) and not infinity_waves.SINCE.fullmatch(str(10 ** 15))
 
 
 def test_checked_drops_a_wave_the_catalogue_does_not_name():
@@ -1836,6 +1843,7 @@ CACHE_S = 0.25
 TIMEOUT_S = 2.0
 MAX_BODY = 1024 * 1024
 MAX_TEXT = 40                         # an ISO instant, with room
+MAX_CURSOR = 10 ** 15                 # the hub's cursor stays below it: the route's SINCE takes 15 digits back
 BLOCK_KEYS = ("t", "recv", "id", "rate", "samples")
 _UPSTREAM = {401: "hub_unauthorized", 404: "hub_no_waves", 409: "research_off"}
 #: Every `reason` this module puts in a settings problem or an error body: one set, so the tests
@@ -1892,7 +1900,7 @@ def checked(raw, device: str) -> dict:
     the hub process's start — must be a non-empty string: an answer without it is invalid. The
     cursor is the answer's own; blocks come in device-time order, so none of them carries it."""
     if (not isinstance(raw, dict) or raw.get("schema") != SCHEMA or raw.get("device_id") != device
-            or type(raw.get("cursor")) is not int or raw["cursor"] < 0
+            or type(raw.get("cursor")) is not int or not 0 <= raw["cursor"] < MAX_CURSOR
             or not isinstance(raw.get("hub_now"), str) or len(raw["hub_now"]) > MAX_TEXT
             or not isinstance(raw.get("started"), str) or not 0 < len(raw["started"]) <= MAX_TEXT
             or not isinstance(raw.get("blocks"), list)):
@@ -2025,7 +2033,7 @@ class HubWaves:
 - [ ] **Step 5: Run the tests and the dependency pins.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`52` in the new file, `4` in the dependency file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
+Expected: all pass (`54` in the new file, `4` in the dependency file). The cache test sleeps 0.35 s on purpose (the entry must be gone after 250 ms of real time).
 
 - [ ] **Step 6: Commit.**
 
@@ -2315,6 +2323,20 @@ def test_the_strip_off_is_409_stage_off(tmp_path):
     assert response.status_code == 409 and response.json()["detail"] == {"reason": "stage_off"}
 
 
+def test_the_gates_answer_in_r16s_order(tmp_path):
+    def refused(response, status, reason=None):
+        assert response.status_code == status and (reason is None or response.json()["detail"] == {"reason": reason})
+
+    with _client(tmp_path, settings=WaveSettings()) as (client, _):                 # waves off
+        refused(_get(client, token=None), 401)                                      # the board before the flag
+        refused(_get(client, token="none-jwt"), 403)
+        refused(_get(client, token="elsewhere-jwt"), 409, "waves_off")              # the flag before the stage
+    with _client(tmp_path, stage=False, settings=WaveSettings()) as (client, _):
+        refused(_get(client), 409, "waves_off")
+    with _client(tmp_path) as (client, _):                                          # waves on
+        refused(_get(client, "192.0.2.99", since="x"), 404, "no_device")            # the monitor before the cursor
+
+
 def test_every_refusal_the_route_makes_names_a_reason_from_the_one_set(tmp_path):
     seen = set()
     with _client(tmp_path) as (client, _):
@@ -2446,7 +2468,7 @@ with
 - [ ] **Step 3: Run them to see them fail.**
 
 Run: `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_api.py tests/test_route_inventory.py tests/test_tenant_isolation.py tests/test_local_compose_env.py`
-Expected: the 19 route tests fail (`404` where 200/401/403/409 are expected; `AttributeError: … 'State' object has no attribute 'wave_feed'` in the environment test; the `started` tests, the reasons test and the lifespan test with them); the tenant test fails on the stale `CALLER_ELSEWHERE` entry; the compose tests fail with `INFINITY_WAVES` missing from compose and `.env.example` — `22 failed, 57 passed, 108 skipped` over the four files.
+Expected: the 20 route tests fail (`404` where 200/401/403/409 are expected; `AttributeError: … 'State' object has no attribute 'wave_feed'` in the environment test; the `started` tests, the gate-order test, the reasons test and the lifespan test with them); the tenant test fails on the stale `CALLER_ELSEWHERE` entry; the compose tests fail with `INFINITY_WAVES` missing from compose and `.env.example` — `23 failed, 59 passed, 108 skipped` over the four files.
 
 - [ ] **Step 4: Write the route.** In `src/homunculus/api/infinity_waves.py`, three import Edits and the reasons — replace
 
@@ -2642,13 +2664,13 @@ with
 
 - [ ] **Step 7: Run the route tests and every route inventory.**
 
-Run: the command of Step 3, then `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_nginx_routes.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_isolation.py tests/test_infinity_research_api.py tests/test_api_image_dependencies.py`
-Expected: all pass (`71` in `test_infinity_waves_api.py` = 52 + 15 + 4 for A3; `4` in the route inventory, `1 passed, 108 skipped` in the tenant file without `TEST_DATABASE_URL`, `3` compose, `44` nginx, `10` research, `45` + `18` shadow, `4` dependencies). Measured at this commit (Tasks 1–7 applied) with the whole engine suite (`--ignore=tests/test_infinity_vm_pilot.py`): `2567 passed, 654 skipped`.
+Run: the command of Step 3, then `cd /c/tmp/inf-dalga/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_waves_hub.py tests/test_nginx_routes.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_isolation.py tests/test_infinity_research_api.py tests/test_api_image_dependencies.py`
+Expected: all pass (`74` in `test_infinity_waves_api.py` = 54 + 15 + 4 for A3 + 1 for the gate order; `26` in `test_infinity_waves_hub.py`; `4` in the route inventory, `1 passed, 108 skipped` in the tenant file without `TEST_DATABASE_URL`, `3` compose, `44` nginx, `10` research, `45` + `18` shadow, `4` dependencies). Measured at this commit (Tasks 1–7 applied) with the whole engine suite (`--ignore=tests/test_infinity_vm_pilot.py`): `2570 passed, 654 skipped`.
 
 - [ ] **Step 8: Commit.**
 
 ```bash
-cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_infinity_waves_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_tenant_isolation.py homunculus-engine/tests/test_local_compose_env.py deploy/local/docker-compose.yml deploy/local/.env.example && git commit -m "feat(api): GET /infinity-waves/{device_id} — a monitor's live waves behind the strip board's own gates" -m "The route calls the strip board's handler for the caller, so board.view or devices.manage, the shadow hospital and the scope are the board's own, and a monitor is served only from a card that board shows this caller; any other address is a 404, the same as none. Off unless INFINITY_WAVES=on (409 waves_off; 503 with the reason when 'on' cannot run); the strip off or another hospital is 409 stage_off. Nothing is written: no row, no audit, no log line carrying a sample. An optional `started` names the hub process a cursor came from (a restarted hub is then served whole; over 40 characters is 400 bad_started), and the answer is a JSONResponse. One hunk in app.py, beside the research router and away from the shadow routes, plus one guarded aclose() in the app's lifespan teardown so the hub client is closed with the app; the two route inventories declare the route as caller-resolved outside app.py; compose and .env.example carry the switch." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_waves.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_infinity_waves_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_tenant_isolation.py homunculus-engine/tests/test_local_compose_env.py deploy/local/docker-compose.yml deploy/local/.env.example && git commit -m "feat(api): GET /infinity-waves/{device_id} — a monitor's live waves behind the strip board's own gates" -m "The route calls the strip board's handler for the caller, so board.view or devices.manage, the shadow hospital and the scope are the board's own, and a monitor is served only from a card that board shows this caller; any other address is a 404, the same as none. Off unless INFINITY_WAVES=on (409 waves_off; 503 with the reason when 'on' cannot run); the strip off or another hospital is 409 stage_off. Nothing is written: no row, no audit, no log line carrying a sample." -m "An optional 'started' names the hub process a cursor came from (a restarted hub is then served whole; over 40 characters is 400 bad_started), the route's five reasons join REASONS as literal dicts, and the answer is a JSONResponse carrying its own no-store header. One hunk in app.py, beside the research router and away from the shadow routes, plus one guarded aclose() in the app's lifespan teardown so the hub client is closed with the app; the two route inventories declare the route as caller-resolved outside app.py; compose and .env.example carry the switch." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
