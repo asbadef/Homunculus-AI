@@ -10,12 +10,11 @@ import { fileURLToPath } from "node:url";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
-import { SessionProvider } from "../../session/SessionProvider.jsx";
 import { ShadowProvider } from "../../data/ShadowProvider.jsx";
 import { createWaveStore } from "../../data/waveStore.js";
 import { bed as stripBed, param, strip } from "../../data/shadow.testutil.js";
 import {
-  SOURCE, answer, manualFrames, manualTimers, refusal, sessionStub, settle,
+  SOURCE, answer, manualFrames, manualTimers, refusal, settle,
 } from "../../data/waves.testutil.js";
 import { WavePanel } from "./WavePanel.jsx";
 import { cardOf } from "./WaveFullscreen.jsx";
@@ -59,17 +58,15 @@ async function mount({ data, reply = () => answer(), collapsible = false, wrap =
   const timers = manualTimers();
   const frames = manualFrames();
   const store = createWaveStore({
-    api: { request: vi.fn(async () => reply()) }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    getWaves: vi.fn(async () => reply()), setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
   const shadow = shadowStub(data);
   const tree = (source) => wrap(
     <I18nProvider>
-      <SessionProvider store={sessionStub()}>
-        <ShadowProvider store={shadow}>
-          <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
-        </ShadowProvider>
-      </SessionProvider>
+      <ShadowProvider store={shadow}>
+        <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
+      </ShadowProvider>
     </I18nProvider>,
   );
   const { rerender } = render(tree(SOURCE));
