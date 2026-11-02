@@ -2,12 +2,14 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import React, { useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { mount } from "../../../session/mount.testutil.jsx";
+import { mount, refusal } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW } from "../../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
+import { RETRACT_ALREADY } from "../../common/RetractDialog.jsx";
 import { CARDS } from "./cards.js";
 import { TrendModal } from "./TrendModal.jsx";
+import { TrendsBox } from "./TrendsBox.jsx";
 import { plotFrame, timeScale } from "./trendGeometry.js";
 import { answering, channel, hand, marker, point, trends } from "./trends.testutil.js";
 
@@ -682,13 +684,29 @@ describe("the big chart, by hand", () => {
     expect(within(typed).queryByRole("button")).toBeNull();          // no withdrawal without the right
     const withdrawn = dialog().querySelector('tr[data-withdrawn="42"]');
     expect(withdrawn.querySelector("s")).toHaveTextContent("182");
+    // A screen reader does not read <s> as struck: the row says it in words beside the number.
+    expect(withdrawn.querySelector("s + .sr-only")).toHaveTextContent("səhv qeyd kimi işarələndi");
     expect(withdrawn).toHaveTextContent(`səhv qeyd — yanlış hasta seçilmişti · hem.ayse · ${hhmm(NOW - 20 * 60_000)}`);
   });
 
-  it("draws a withdrawn value dimmed and crossed, and says what the cross means", async () => {
+  it("draws a withdrawn value crossed in the muted ink — never at an opacity the charts' contrast test cannot see — and says what the cross means", async () => {
     await open("heart_rate", BY_HAND);
-    expect(dialog().querySelector('[data-withdrawn="42"]')).not.toBeNull();
+    const cross = chart().querySelector('[data-withdrawn="42"]');
+    expect(cross).not.toBeNull();
+    expect(cross).toHaveClass("text-mute");
+    expect(cross).not.toHaveAttribute("opacity");
     expect(dialog()).toHaveTextContent("Üstüxətli nöqtə: səhv qeyd — bala daxil edilmir; səbəbi cədvəldədir.");
+  });
+
+  it("holds the withdrawn value on the big chart's value axis (X16)", async () => {
+    await open("heart_rate", BY_HAND);
+    // 84, 132 and the withdrawn 182: domain 69.3–196.7, step 50 → 100, 150. Without the 182 it would be 100, 120.
+    const labels = [...chart().querySelectorAll("[data-tick='value'] text")].map((t) => t.textContent);
+    expect(labels).toEqual(["100", "150"]);
+    const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+    const cy = Number(chart().querySelector('[data-withdrawn="42"] circle').getAttribute("cy"));
+    expect(cy).toBeGreaterThanOrEqual(frame.top);
+    expect(cy).toBeLessThanOrEqual(frame.bottom);
   });
 
   it("offers «Səhv qeyd» on a hand row to a clinical.chart holder, withdraws through the host and reads again", async () => {
@@ -706,5 +724,175 @@ describe("the big chart, by hand", () => {
     await act(async () => { fireEvent.click(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" })); await settle(); });
     expect(onRetract).toHaveBeenCalledWith(41, "monitör başka hastadaydı");
     expect(api.patientTrends.mock.calls.length).toBeGreaterThan(reads);
+  });
+});
+
+// G3-01, review of Task 16: who may withdraw what, the re-read on every ending, where focus goes, and the box's wiring.
+const CHARTABLE = ["board.view", "alerts.ack", "clinical.chart"];
+const REASON = "monitör başka hastadaydı";
+const typedRow = () => named("REA-01 · 2 · Ayşe Sentetik · Nəbz").querySelector(`tr[data-ts="${point(60, 0)[0]}"]`);
+const typedButton = () => within(typedRow()).getByRole("button", { name: "Səhv qeyd" });
+
+/** «Səhv qeyd» on the hand row of 60 minutes ago, pressed as a user does (it takes focus, so the dialog's opener is
+ *  the button), then a reason, the arming window waited out (real timers in this file), the confirm, the re-read. */
+async function withdrawTyped() {
+  const button = typedButton();
+  button.focus();
+  await act(async () => { fireEvent.click(button); await settle(); });
+  const retract = named("Səhv qeyd · REA-01 · 2");
+  fireEvent.change(within(retract).getByRole("textbox"), { target: { value: REASON } });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)); });
+  await act(async () => { fireEvent.click(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" })); await settle(); });
+  await act(async () => { await settle(); });
+}
+
+/** The heart rate with the hand entry 41 at 60 minutes ago — until `state.after` says what the re-read shows:
+ *  "struck" (the engine withdrew it: no point, the entry retracted), "gone" (neither the point nor a struck row). */
+function changing(state) {
+  return answering((pid, hours) => {
+    if (state.after === "struck") {
+      return trends(pid, [channel("heart_rate", [point(120, 84, 0)], {
+        manual: [hand(41, 60, 132, { retracted: { reason: REASON, minutesAgo: 1 } })],
+      })], { hours });
+    }
+    if (state.after === "gone") return trends(pid, [channel("heart_rate", [point(120, 84, 0)])], { hours });
+    return trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)], { manual: [hand(41, 60, 132)] })], { hours });
+  });
+}
+
+describe("the big chart, withdrawing", () => {
+  it("offers no «Səhv qeyd» on a device's reading, even to a clinical.chart holder", async () => {
+    await open("heart_rate", BY_HAND, { canRetract: true, onRetract: vi.fn() });
+    await choose("Cədvəl");
+    const device = dialog().querySelector(`tr[data-ts="${point(120, 0)[0]}"]`);
+    expect(device).not.toHaveTextContent("əl ilə");
+    expect(within(device).queryByRole("button")).toBeNull();
+    expect(within(typedRow()).getByRole("button", { name: "Səhv qeyd" })).toBeInTheDocument();
+  });
+
+  it("describes each «Səhv qeyd» by its row — the time and the value — so a screen reader tells them apart", async () => {
+    await open("heart_rate", BY_HAND, { canRetract: true, onRetract: vi.fn() });
+    await choose("Cədvəl");
+    expect(typedButton()).toHaveAccessibleDescription(`${hhmm(NOW - HOUR)} 132`);
+  });
+
+  it("reads the window again when the engine says another desk withdrew it first («already»)", async () => {
+    const onRetract = vi.fn(() => Promise.reject(refusal(409, RETRACT_ALREADY)));
+    const { api } = await open("heart_rate", BY_HAND, { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    const reads = api.patientTrends.mock.calls.length;
+    await withdrawTyped();
+    expect(onRetract).toHaveBeenCalledWith(41, REASON);
+    expect(api.patientTrends.mock.calls.length).toBe(reads + 1);
+  });
+
+  it("reads the window again when the withdrawal had no answer — it may have landed («uncertain»)", async () => {
+    const onRetract = vi.fn(() => Promise.reject(refusal(503, "down")));
+    const { api } = await open("heart_rate", BY_HAND, { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    const reads = api.patientTrends.mock.calls.length;
+    await withdrawTyped();
+    expect(api.patientTrends.mock.calls.length).toBe(reads + 1);
+  });
+
+  it("gives focus to the struck row once the re-read shows it — the button that had it has left the page", async () => {
+    const state = { after: null };
+    const onRetract = vi.fn(() => {
+      state.after = "struck";
+      return Promise.resolve({ retracted: 41, code: "heart_rate", alerts: [] });
+    });
+    await open("heart_rate", changing(state), { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    await withdrawTyped();
+    const struck = dialog().querySelector('tr[data-withdrawn="41"]');
+    expect(struck).not.toBeNull();
+    expect(struck).toHaveAttribute("tabindex", "-1");
+    expect(document.activeElement).toBe(struck);
+  });
+
+  it("leaves focus on the row's button when the withdrawal had no answer and the value still stands", async () => {
+    const onRetract = vi.fn(() => Promise.reject(refusal(503, "down")));
+    await open("heart_rate", changing({ after: null }), { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    await withdrawTyped();
+    expect(document.activeElement).toBe(typedButton());
+  });
+
+  it("gives focus to the pressed «Cədvəl» when the re-read shows neither the row nor a struck one", async () => {
+    const state = { after: null };
+    const onRetract = vi.fn(() => {
+      state.after = "gone";
+      return Promise.reject(refusal(503, "down"));
+    });
+    await open("heart_rate", changing(state), { canRetract: true, onRetract });
+    await choose("Cədvəl");
+    await withdrawTyped();
+    expect(dialog().querySelector(`tr[data-ts="${point(60, 0)[0]}"]`)).toBeNull();
+    expect(document.activeElement).toBe(within(dialog()).getByRole("button", { name: "Cədvəl" }));
+  });
+
+  it("closes «Səhv qeyd» when the dialog is handed another patient — the withdrawal was opened for the first", async () => {
+    let move;
+    function Moving({ onRetract }) {
+      const [id, setId] = useState("S-001");
+      move = () => setId("S-002");
+      return (
+        <TrendModal card={card("heart_rate")} patient={{ ...PATIENT, patient_id: id }} bed="REA-01 · 2" onClose={() => {}}
+          canRetract onRetract={onRetract} />
+      );
+    }
+    const onRetract = vi.fn();
+    vi.setSystemTime(NOW);
+    await mount(<Moving onRetract={onRetract} />, {
+      access: token(), me: profile(), setup: (api) => api.patientTrends.mockImplementation(BY_HAND),
+    });
+    await act(async () => { await settle(); });
+    await choose("Cədvəl");
+    await act(async () => { fireEvent.click(typedButton()); await settle(); });
+    expect(screen.getByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" })).toBeInTheDocument();
+    await act(async () => { move(); await settle(); });
+    expect(screen.queryByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" })).toBeNull();
+    expect(onRetract).not.toHaveBeenCalled();
+  });
+});
+
+describe("the big chart, by hand, on the pressure card", () => {
+  it("says «əl ilə» after the value that was typed by hand — the MAP's or the systolic's, each its own", async () => {
+    let typed = "map";
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95, 2)], { manual: typed === "sbp" ? [hand(51, 60, 95)] : [] }),
+      channel("map", [point(120, 80), point(60, 64)], { manual: typed === "map" ? [hand(52, 60, 64)] : [] })], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 64 mmHg əl ilə · NEWS2 +2`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });                     // neither by hand: as before
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
+    typed = "sbp";
+    await reread();
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg əl ilə · MAP 64 mmHg · NEWS2 +2`);
+  });
+});
+
+describe("the trends box, withdrawing", () => {
+  it("offers «Səhv qeyd» to a clinical.chart holder, withdraws through the board's store, and reads the box's own 24 hours again", async () => {
+    vi.setSystemTime(NOW);
+    const { api } = await mount(<TrendsBox patient={PATIENT} bed="REA-01 · 2" nowMs={NOW} />, {
+      access: token({ perms: CHARTABLE }), me: profile({ perms: CHARTABLE }),
+      setup: (a) => {
+        a.patientTrends.mockImplementation(BY_HAND);
+        a.retractEntry.mockResolvedValue({ retracted: 41, code: "heart_rate", alerts: [] });
+      },
+    });
+    await act(async () => { await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ })); await settle(); });
+    await choose("6 saat");             // the dialog reads its own window; the box's cards keep reading 24 hours
+    await choose("Cədvəl");
+    const day = () => api.patientTrends.mock.calls.filter(([, hours]) => hours === 24).length;
+    const before = day();
+    await withdrawTyped();
+    expect(api.retractEntry).toHaveBeenCalledWith("S-001", 41, REASON);
+    // The card's delta and mini chart are the box's read: a withdrawn value that was not the latest moves no
+    // measured instant, so without this read the card would keep it for up to a minute.
+    expect(day()).toBe(before + 1);
   });
 });

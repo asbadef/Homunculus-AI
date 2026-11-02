@@ -103,8 +103,11 @@ export function TrendsBox({ patient, bed, nowMs }) {
         ) : null}
       </div>
       {card ? (
+        // The box reads its own 24 hours again after a withdrawal, whatever its ending: a value that was not the latest
+        // moves no measured instant, so the card would keep a delta from it, and its mini chart an axis stretched by
+        // it (X16), until the next poll. The store's own promise goes back to the dialog — its answer or its error.
         <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} canRetract={canRetract}
-          onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason)} />
+          onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason).finally(() => trends.reload())} />
       ) : null}
       {editing?.id === patient.patient_id ? (
         <BaselineForm

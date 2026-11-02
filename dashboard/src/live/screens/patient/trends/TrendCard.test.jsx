@@ -303,4 +303,16 @@ describe("deltaText", () => {
     show(HR, [channel("heart_rate", [point(5, 72, 0)], { latest: latest({ value: 72 }), manual: [hand(41, 5, 73)] })]);
     expect(screen.queryByText("əl ilə")).toBeNull();
   });
+
+  // G3-01 (X16): a slipped digit is exactly the value that stretches an axis, and the mini chart has no legend to
+  // say why: it draws the engine's points only. The big chart draws the withdrawn one (TrendModal.test.jsx).
+  it("draws a withdrawn value nowhere on the mini chart, and its axis does not stretch for it", () => {
+    const withdrawn = hand(42, 30, 182, { retracted: { reason: "yanlış hasta seçilmişti", minutesAgo: 20 } });
+    show(HR, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])]);
+    const plain = [...document.querySelectorAll("circle[data-value]")].map((c) => c.getAttribute("cy"));
+    cleanup();
+    show(HR, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)], { manual: [hand(41, 60, 132), withdrawn] })]);
+    expect(document.querySelector("[data-withdrawn]")).toBeNull();
+    expect([...document.querySelectorAll("circle[data-value]")].map((c) => c.getAttribute("cy"))).toEqual(plain);
+  });
 });

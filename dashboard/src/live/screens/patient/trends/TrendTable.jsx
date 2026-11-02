@@ -6,10 +6,13 @@
 //
 // G3-01 (D13): a reading typed in by hand says «elle», and to a `clinical.chart` holder offers «Hatalı giriş»
 // (the dialog's host opens it, `onWithdraw`). A withdrawn hand entry is a row of its own, struck through, with its
-// reason, who and when — it is in no score, so it has no points and is on no line.
-import React from "react";
+// reason, who and when — it is in no score, so it has no points and is on no line. Each «Hatalı giriş» is described
+// by its row's time and value (and series, on the pressure card): the buttons share one name. A struck row says
+// «hatalı giriş olarak işaretlendi» in words beside the <s>, which a screen reader does not read as struck, and can
+// take focus (`tabIndex={-1}`): after a withdrawal the dialog puts focus there, because the button that had it is gone.
+import React, { useId } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { Button, Table } from "../../../ui/index.js";
+import { Button, FOCUS_RING, Table } from "../../../ui/index.js";
 import { cardTitle } from "./cards.js";
 import { handEntryOf } from "./trendGeometry.js";
 import { markText, pointsText, whenText } from "./trendText.js";
@@ -61,6 +64,7 @@ function PointsCell({ points, news2 }) {
 
 export function TrendTable({ card, channels, series, markers, hours, canRetract = false, onWithdraw }) {
   const { t } = useI18n();
+  const base = useId();
   const two = card.series.length > 1;
   const rows = rowsOf(card, series, markers);
   if (rows.length === 0) return null;      // nothing to list: the dialog says so, not an empty captioned table
@@ -87,10 +91,13 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
             <td>{markText(t, row.mark)}</td>
           </tr>
         ) : row.withdrawn ? (
-          <tr key={row.key} data-withdrawn={row.withdrawn.entry} data-series={row.series.key} className="text-mute">
+          <tr
+            key={row.key} data-withdrawn={row.withdrawn.entry} data-series={row.series.key} tabIndex={-1}
+            className={`text-mute outline-none ${FOCUS_RING}`}
+          >
             <th scope="row" className="font-data font-semibold">{whenText(row.ms, hours)}</th>
             {two ? <td>{t(row.series.labelKey)}</td> : null}
-            <td className="font-data"><s>{row.withdrawn.value}</s></td>
+            <td className="font-data"><s>{row.withdrawn.value}</s><span className="sr-only"> {t("olcum.retractedShort")}</span></td>
             <td>{t(row.series.unitKey)}</td>
             <td />
             <td>
@@ -101,23 +108,40 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
             </td>
           </tr>
         ) : (
-          <tr key={row.key} data-ts={row.p.iso} data-value={row.p.value} data-series={row.series.key}>
-            <th scope="row" className="font-data font-semibold">{whenText(row.ms, hours)}</th>
-            {two ? <td>{t(row.series.labelKey)}</td> : null}
-            <td className="font-data font-bold">{row.p.value}</td>
-            <td>{t(row.series.unitKey)}</td>
-            <PointsCell points={row.p.points} news2={Array.isArray(channels[row.series.key]?.bands?.news2)} />
-            <td>
-              {row.hand ? <span className="font-semibold">{t("olcum.hand")}</span> : null}
-              {row.hand && canRetract ? (
-                <Button size="sm" variant="ghost" icon="x" className="ml-2" onClick={() => onWithdraw(row.series, row.hand)}>
-                  {t("olcum.retract")}
-                </Button>
-              ) : null}
-            </td>
-          </tr>
+          <ReadingRow
+            key={row.key} row={row} id={`${base}-${row.key}`} two={two} hours={hours}
+            news2={Array.isArray(channels[row.series.key]?.bands?.news2)}
+            offer={Boolean(row.hand) && canRetract} onWithdraw={onWithdraw}
+          />
         )))}
       </tbody>
     </Table>
+  );
+}
+
+/** One reading. A hand one says «elle»; offered to a `clinical.chart` holder, its «Hatalı giriş» is described by
+ *  the row's time, its series on the pressure card, and its value (`id` is the row's own prefix for them). */
+function ReadingRow({ row, id, two, hours, news2, offer, onWithdraw }) {
+  const { t } = useI18n();
+  const ids = offer ? { time: `${id}-t`, series: two ? `${id}-s` : undefined, value: `${id}-v` } : {};
+  return (
+    <tr data-ts={row.p.iso} data-value={row.p.value} data-series={row.series.key}>
+      <th scope="row" id={ids.time} className="font-data font-semibold">{whenText(row.ms, hours)}</th>
+      {two ? <td id={ids.series}>{t(row.series.labelKey)}</td> : null}
+      <td id={ids.value} className="font-data font-bold">{row.p.value}</td>
+      <td>{t(row.series.unitKey)}</td>
+      <PointsCell points={row.p.points} news2={news2} />
+      <td>
+        {row.hand ? <span className="font-semibold">{t("olcum.hand")}</span> : null}
+        {offer ? (
+          <Button
+            size="sm" variant="ghost" icon="x" className="ml-2"
+            aria-describedby={[ids.time, ids.series, ids.value].filter(Boolean).join(" ")} onClick={() => onWithdraw(row.series, row.hand)}
+          >
+            {t("olcum.retract")}
+          </Button>
+        ) : null}
+      </td>
+    </tr>
   );
 }

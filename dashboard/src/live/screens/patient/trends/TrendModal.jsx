@@ -87,18 +87,22 @@ function readoutOf(t, card, series, at, marks, hours, msPerPx) {
     return Number.isFinite(reading?.value) ? reading : null;
   });
   const apart = readings.map((r) => r !== null && whenText(r.ms, hours) !== whenText(at.ms, hours));
-  const unitEach = !shared || apart.some(Boolean);
+  // G3-01 (D1, X13): which reading was typed in by hand, each judged on its own series. One series: «elle» after its
+  // value and unit. Two (pressure): after each hand value its own word, and every value then carries its unit — a
+  // unit written once at the end would land after «elle» and part the systolic's word from its number.
+  const byHand = readings.map((r, i) => r !== null && handEntryOf(series[i].manual, r) !== null);
+  const unitEach = !shared || apart.some(Boolean) || (named && byHand.some(Boolean));
   const parts = card.series.map((s, i) => {
     const reading = readings[i];
     if (reading === null) return [named ? t(s.labelKey) : null, NO_VALUE].filter(Boolean).join(" ");
     const value = [String(reading.value), unitEach ? t(s.unitKey) : null].filter(Boolean).join(" ");
-    return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours)].filter(Boolean).join(" ");
+    return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours), named && byHand[i] ? t("olcum.hand") : null]
+      .filter(Boolean).join(" ");
   });
   const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
   const points = readings[0] === null ? null : pointsBeside(t, at.points);   // no value, no score
-  // G3-01 (D1, X13): a reading typed in by hand says so, after its value.
-  const byHand = readings[0] !== null && handEntryOf(series[0].manual, at) ? [t("olcum.hand")] : [];
-  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...byHand, ...(points ? [points] : []),
+  const hand = !named && byHand[0] ? [t("olcum.hand")] : [];
+  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...hand, ...(points ? [points] : []),
     ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
@@ -133,7 +137,14 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   const [cursor, setCursor] = useState(null);   // { ms, how: "mouse" | "key" } — an instant, see the header
   const [plotWidth, setPlotWidth] = useState(0);
   const [withdrawing, setWithdrawing] = useState(null);   // G3-01: { series, entry } whose «hatalı giriş» is open
+  const struck = useRef(null);   // G3-01: { entry, data } — a withdrawal whose focus waits for the re-read
   const trends = useTrends(patient.patient_id, hours, measuredKeyOf(patient.measuredAt));
+  // G3-01 (D10): a withdrawal is the patient's it was opened for. The dialog is handed another (browser Back under
+  // the inert page; TrendsBox keeps `open` across a move): the open «hatalı giriş» closes, and nothing waits for focus.
+  useEffect(() => {
+    setWithdrawing(null);
+    struck.current = null;
+  }, [patient.patient_id]);
   // Parsed once per answer, not on every render of a mouse move. The table is handed these very arrays.
   const { channels, series, markers, stops } = useMemo(() => {
     const byKey = channelsOf(trends.data);
@@ -166,6 +177,26 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
   useEffect(() => { controls.current?.querySelector("[aria-pressed='true']")?.focus(); }, []);
+
+  // G3-01 (D13): focus after a withdrawal (SavedStep's rule). `Modal` gives focus back to the row's «Hatalı giriş»,
+  // then the re-read strikes the row and that button leaves the page: focus would fall to <body>. The struck row
+  // takes it — its words are what she needs to hear next. With no struck row and focus lost (the value gone from the
+  // window), the pressed view option («Tablo») takes it. Focus that is still somewhere (the button of a value that
+  // still stands, after a withdrawal that had no answer) is left where it is. Nothing is done while the withdrawal's
+  // dialog is still over this one; what waits is let go once a new answer is in.
+  useEffect(() => {
+    const pending = struck.current;
+    if (pending === null || withdrawing !== null) return;
+    const active = document.activeElement;
+    const lost = !active || active === document.body || !active.isConnected;
+    if (lost) {
+      const row = controls.current?.closest("[role='dialog']")?.querySelector(`tr[data-withdrawn="${pending.entry}"]`);
+      // The view's Seg is the last of the controls; the withdrawal is offered in the table only.
+      const groups = controls.current?.querySelectorAll("[role='group']") ?? [];
+      (row ?? groups[groups.length - 1]?.querySelector("[aria-pressed='true']"))?.focus();
+    }
+    if (lost || trends.data !== pending.data) struck.current = null;
+  }, [trends.data, withdrawing]);
 
   const choose = (value) => {
     setHours(value);
@@ -254,7 +285,11 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
             time: dayStamp(withdrawing.entry.ms, Date.now()),
           }}
           onRetract={(reason) => onRetract(withdrawing.entry.entry, reason)}
-          onDone={() => trends.reload()}
+          // Every ending re-reads (the record may have changed); focus waits for that answer (the effect above).
+          onDone={() => {
+            struck.current = { entry: withdrawing.entry.entry, data: trends.data };
+            trends.reload();
+          }}
           onClose={() => setWithdrawing(null)}
         />
       ) : null}

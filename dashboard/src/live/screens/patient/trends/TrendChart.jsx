@@ -6,8 +6,10 @@
 //     measurement (the legend says so); one measurement is a dot and no line;
 //   * on the big chart, the value and time labels, and ▲ (alarm, `--crit`) and ◆ (antibiotic,
 //     `--pri`) in a lane of their own under the plot, never over a band (tokens.test.js holds both).
-//   * on the big chart, a hand entry withdrawn as «hatalı giriş» where it was typed, dimmed and crossed — in no
-//     score and on no line, and the value axis holds it (G3-01, D13, X16). The mini chart draws the engine's only.
+//   * on the big chart, a hand entry withdrawn as «hatalı giriş» where it was typed, crossed in the muted ink — in
+//     no score and on no line, and the value axis holds it (G3-01, D13, X16). The mini chart draws the engine's only.
+//     The muted ink, not a reduced opacity: tokens.test.js holds it to 3:1 over every tint, which an `opacity`
+//     attribute would escape (0.45 measured 1.77–2.74:1 in daylight).
 // The series' colour is its channel's identity colour (`vitals.js`), through `currentColor`; MAP's dots
 // are hollow. Every colour is a token class; none is written here.
 //
@@ -30,8 +32,7 @@ const drawable = (p) => Number.isFinite(p.ms) && Number.isFinite(p.value);
 const DOT_RADIUS = { small: 2.5, big: 3.5 };
 const LINE_WIDTH = 1.5;             // a series' connector, and the ring of a hollow dot
 const HAIRLINE = 1;
-// G3-01 (D13): a withdrawn hand entry, on the big chart only — dimmed, a ring with a cross through it.
-const WITHDRAWN_OPACITY = 0.45;
+// G3-01 (D13): a withdrawn hand entry, on the big chart only — a ring with a cross through it, in the muted ink.
 const CROSS_HALF = 4.5;
 const CONNECTOR_DASH = "4 3";       // between two measurements: an interval, never a measurement
 const OWN_NORMAL_DASH = "2 3";      // the patient's normal's edges; finer, so the two never read alike
@@ -161,7 +162,7 @@ export function TrendChart({
                 const cx = x(m.ms);
                 const cy = y(m.value);
                 return (
-                  <g key={`withdrawn-${m.entry}`} data-withdrawn={m.entry} opacity={WITHDRAWN_OPACITY}>
+                  <g key={`withdrawn-${m.entry}`} data-withdrawn={m.entry} className="text-mute">
                     <circle cx={cx} cy={cy} r={DOT_RADIUS.big} fill="none" stroke="currentColor" strokeWidth={LINE_WIDTH} />
                     <path
                       d={`M${cx - CROSS_HALF},${cy - CROSS_HALF}L${cx + CROSS_HALF},${cy + CROSS_HALF}M${cx - CROSS_HALF},${cy + CROSS_HALF}L${cx + CROSS_HALF},${cy - CROSS_HALF}`}
