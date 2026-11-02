@@ -5,11 +5,13 @@ import json
 import logging
 import math
 import os
+import queue
 import re
 import secrets
 import threading
 import time
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -18,6 +20,11 @@ from .infinity_journal import CapacityError, ConflictError
 from .infinity_stream import MAX_BATCH, MAX_REQUEST, UnknownDevice, validate_event
 from .infinity_timing import WORKER_NAMES, Timings, valid_snapshot
 from .infinity_waves import MAX_QUERY_DEVICES, SCHEMA as WAVES_SCHEMA, iso_z
+
+MAX_PENDING_BATCHES = 64   # acknowledged batches the wave decoder may hold back; at a worker's rate
+                           # (≈13 beds, ≈5 POSTs/s) that is seconds of backlog, and a batch older than
+                           # MAX_TRANSPORT_DELAY is refused by the buffer anyway, so a full queue means
+                           # the decoder is starved, and dropping its oldest loses nothing still servable
 
 
 PAGE = """<!doctype html><html lang="tr"><meta charset="utf-8">
@@ -60,7 +67,7 @@ async function poll(g){try{
  el('overview').textContent=s.devices.length+' cihaz · Toplayıcı: '+(s.collector.connected?'erişilebilir':'kalp atışı yok/eski')+
   ' · Bekleyen: '+(q?.rows??'bilinmiyor')+' · Kapasite nedeniyle alınamayan: '+(q?.counters?.queue_full_dropped??0)+
   ' · Süresi dolan: '+(q?.counters?.expired??0)+' · Aktarım hatası: '+(q?.counters?.forward_errors??0)+
-  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused:'');
+  (s.waves?' · Dalga: imleç '+s.waves.cursor+' · reddedilen '+s.waves.refused+' · atılan '+s.waves.dropped:'');
  }catch(e){if(g!==generation)return;el('error').textContent=e.message;el('devices').replaceChildren();el('overview').textContent='Güncel durum doğrulanamıyor.';}
  if(g===generation&&key)timer=setTimeout(()=>poll(g),2000);
 }
@@ -69,6 +76,85 @@ async function poll(g){try{
 
 CURSOR = re.compile(r"[0-9]{1,15}")
 log = logging.getLogger(__name__)
+
+
+class WaveDecoder:
+    """The one thread between `/v1/packets` and the WaveBuffer (dalga-perf).
+
+    The handler used to decode on the event loop, after the ack was computed and before it was
+    sent: ≈2 ms a POST on the ward's hub, and every reader of the buffer made that wait on the lock
+    too. Now the handler hands the acknowledged batch over in O(1) and returns; this thread decodes
+    it and times the decode as waves_ms. The queue is bounded: when it is full the OLDEST waiting
+    batch is dropped and counted (`dropped`), so the handler never blocks and never raises. A batch
+    the buffer raises on is handed to `failed` (I4: the ack stood before the batch got here) and
+    the thread goes on to the next. `start` in the app's lifespan, `close` at its end: what is still
+    queued is dropped, not flushed; the ring dies with the process anyway."""
+
+    def __init__(self, waves, timings, failed, *, limit=MAX_PENDING_BATCHES):
+        self.waves, self.timings, self.failed = waves, timings, failed
+        self.pending = queue.Queue(limit)
+        self.dropped = 0
+        self.stopping = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="infinity-wave-decoder", daemon=True)
+
+    @property
+    def queued(self) -> int:
+        return self.pending.qsize()
+
+    def submit(self, events) -> None:
+        """Queue one acknowledged batch: O(1), never blocks, never raises. A full queue drops its
+        oldest batch first."""
+        while True:
+            try:
+                self.pending.put_nowait(events)
+                return
+            except queue.Full:
+                try:
+                    self.pending.get_nowait()
+                except queue.Empty:
+                    continue
+                self.pending.task_done()
+                self.dropped += 1
+
+    def start(self) -> None:
+        if self.thread.ident is not None:
+            # The lifespan ran before (a test client entered the same app twice): a thread runs once,
+            # so a fresh one, and an empty queue — the old sentinel and what `close` dropped go with it.
+            while True:
+                try:
+                    self.pending.get_nowait()
+                except queue.Empty:
+                    break
+                self.pending.task_done()
+            self.stopping = threading.Event()
+            self.thread = threading.Thread(target=self._run, name=self.thread.name, daemon=True)
+        self.thread.start()
+
+    def close(self, timeout=5.0) -> None:
+        """Stop the thread: what it is decoding finishes, what is queued is dropped."""
+        self.stopping.set()
+        self.submit(None)                                   # wakes a `get` that is waiting on an empty queue
+        self.thread.join(timeout)
+
+    def settle(self) -> None:
+        """Wait until every queued batch has been decoded (tests; the handler never waits)."""
+        self.pending.join()
+
+    def _run(self) -> None:
+        while not self.stopping.is_set():
+            events = self.pending.get()
+            try:
+                if events is None or self.stopping.is_set():
+                    break
+                decoding = self.timings.clock()
+                try:
+                    self.waves.consume(events)
+                except Exception as error:
+                    self.failed(error)
+                else:
+                    self.timings.since("waves_ms", decoding)
+            finally:
+                self.pending.task_done()
 
 
 def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payload=False, clock=time.time,
@@ -83,7 +169,9 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     # start). The wave cursor counts from 0 in every process, so a reader that holds a cursor compares
     # this with the one it saw: a different value is a restarted hub and its cursor means nothing.
     hub_started = iso_z(clock()) if waves is not None else None
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    # Pass the journal's own Timings here too, and /v1/status shows the whole handler,
+    # the journal's phases included, under one key.
+    timings = timings or Timings()
     heartbeat = {"seen": None, "value": None}
     lock = threading.Lock()
     # I4: the live view and the WaveBuffer read a batch the journal already holds, for display only.
@@ -106,6 +194,24 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         log.error("Infinity hub: the %s hook raised %s at %s; the batch stays acknowledged, counted under "
                   "/v1/status %s.errors (logged once per error type).", hook, kind.__name__, where, hook)
 
+    # dalga-perf: the wave decode leaves the event loop. The decoder thread lives as long as the app
+    # does (uvicorn runs the lifespan; so does `with TestClient(app)`), and nothing is flushed at the
+    # end: the ring is display-only memory that dies with the process.
+    decoder = WaveDecoder(waves, timings, lambda error: hook_failed("waves", error)) if waves is not None else None
+
+    @asynccontextmanager
+    async def lifespan(app):
+        if decoder is not None:
+            decoder.start()
+        try:
+            yield
+        finally:
+            if decoder is not None:
+                decoder.close()
+
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.wave_decoder = decoder
+
     def collector_age():
         with lock:
             seen = heartbeat["seen"]
@@ -114,9 +220,6 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     # Aşama A's forwarder reads how long ago the collector last spoke, so the board can say "the
     # collector is not connected" instead of "13 monitors silent". Read-only; no answer changes.
     app.state.collector_age = collector_age
-    # Pass the journal's own Timings here too, and /v1/status shows the whole handler,
-    # the journal's phases included, under one key.
-    timings = timings or Timings()
 
     @app.middleware("http")
     async def response_headers(request, call_next):
@@ -201,15 +304,11 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
                 hook_failed("research", error)
             else:
                 timings.since("consume_ms", consuming)
-        if waves is not None:
-            # Lane C (dalga): the wave blocks of the same acknowledged events, for display only.
-            decoding = timings.clock()
-            try:
-                waves.consume(data["events"])
-            except Exception as error:
-                hook_failed("waves", error)
-            else:
-                timings.since("waves_ms", decoding)
+        if decoder is not None:
+            # Lane C (dalga): the wave blocks of the same acknowledged events, for display only. Not
+            # decoded here (dalga-perf): the decoder thread does that and times it as waves_ms, so
+            # packets_ms is the handler alone. The batch is not touched again after this line.
+            decoder.submit(data["events"])
         timings.add("batch_events", len(data["events"]))
         timings.since("packets_ms", started)
         return {"ack": ack, "clinical_forwarding": False}
@@ -236,7 +335,9 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             raise HTTPException(400, "Name 1 to 16 distinct devices, and a cursor.")
         if not all(waves.knows(name) for name in names):
             raise HTTPException(404, "Unknown device.")
-        cursor, found = waves.since(names, int(since))
+        # waves_lock_ms is the part of waves_read_ms spent inside the buffer lock, which /v1/packets'
+        # decoder waits on: dalga-perf moved the answer's building out of it, and this shows by how much.
+        cursor, found = waves.since(names, int(since), timings=timings)
         now = iso_z(clock())
         timings.since("waves_read_ms", started)
         # JSONResponse, not a bare dict: FastAPI would run its encoder on the event loop, where it
@@ -318,9 +419,12 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             # Lane C (dalga): what the buffer holds back, readable without asking for waves. `refused`
             # counts events the buffer turned away (not live, older than 3 s, ahead of the hub's clock):
             # a worker clock a few hundred ms fast would otherwise black out every wave silently.
-            # `errors` counts batches the buffer raised on (I4), acknowledged all the same.
+            # `errors` counts batches the buffer raised on (I4), acknowledged all the same. `dropped`
+            # counts acknowledged batches the decoder thread never got to (its queue was full), and
+            # `queued` is its backlog now (dalga-perf): a starved decoder shows here before it shows
+            # as a stalled trace.
             answer["waves"] = {"cursor": waves.cursor, "refused": waves.refused, "started": hub_started,
-                               "errors": hook_errors["waves"]}
+                               "errors": hook_errors["waves"], "dropped": decoder.dropped, "queued": decoder.queued}
         return answer
 
     return app

@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from infinity_wave_packets import ECG, at, no_signal, packet, tick
-from homunculus.edge.infinity_hub import create_hub
+from homunculus.edge.infinity_hub import MAX_PENDING_BATCHES, create_hub
 from homunculus.edge.infinity_journal import CapacityError, Journal
 from homunculus.edge.infinity_live import LiveResearchView
 from homunculus.edge.infinity_stream import Inventory, packet_event
@@ -59,8 +59,27 @@ def hub(wired):
     return wired.client, wired.waves, wired.now
 
 
-def post(client, events):
-    return client.post("/v1/packets", json={"events": events}, headers={"Authorization": "Bearer " + COLLECTOR})
+def post(client, events, *, settle=True):
+    """POST a batch and, by default, wait until the decoder thread has taken it into the buffer
+    (dalga-perf: the handler acknowledges before the decode). `settle=False` returns at the ack."""
+    response = client.post("/v1/packets", json={"events": events}, headers={"Authorization": "Bearer " + COLLECTOR})
+    if settle and client.app.state.wave_decoder is not None:
+        client.app.state.wave_decoder.settle()
+    return response
+
+
+def gated(waves, monkeypatch):
+    """Hold the decoder inside `consume` until `gate` is set; `entered` says it got there. Returns
+    (gate, entered). The gate is set at teardown too, so a blocked thread never outlives the test."""
+    original, gate, entered = waves.consume, threading.Event(), threading.Event()
+
+    def consume(events):
+        entered.set()
+        gate.wait(timeout=10)
+        original(events)
+
+    monkeypatch.setattr(waves, "consume", consume)
+    return gate, entered
 
 
 def read(client, *devices, since="0", token=VIEWER):
@@ -201,7 +220,7 @@ def test_the_hub_times_the_decoding_and_the_reads_under_its_closed_names(hub):
     post(client, [event(tick(*at(0)), 1000.0)])
     read(client, BED)
     seen = status(client)["timings"]
-    assert seen["waves_ms"][0] == 1 and seen["waves_read_ms"][0] == 1
+    assert seen["waves_ms"][0] == 1 and seen["waves_read_ms"][0] == 1 and seen["waves_lock_ms"][0] == 1
     assert valid_snapshot(seen, HUB_NAMES)
 
 
@@ -238,18 +257,21 @@ def test_the_answer_is_encoded_on_a_threadpool_thread_not_on_the_event_loop(hub,
 def test_the_hub_page_shows_the_wave_counters(hub):
     client, _, _ = hub
     script = client.get("/app.js").text
-    assert "s.waves.cursor" in script and "s.waves.refused" in script
+    assert "s.waves.cursor" in script and "s.waves.refused" in script and "s.waves.dropped" in script
+
+
+IDLE = {"cursor": 0, "refused": 0, "started": STARTED, "errors": 0, "dropped": 0, "queued": 0}
 
 
 def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
     # A worker clock a few hundred ms ahead of the hub's makes the buffer refuse every packet while the
     # journal acknowledges it: without these numbers the waves go dark and nothing says why.
     client, _, _ = hub
-    assert status(client)["waves"] == {"cursor": 0, "refused": 0, "started": STARTED, "errors": 0}
+    assert status(client)["waves"] == IDLE
     assert post(client, [event(tick(*at(0)), 1000.4)]).status_code == 200      # ahead of the hub's clock
-    assert status(client)["waves"] == {"cursor": 0, "refused": 1, "started": STARTED, "errors": 0}
+    assert status(client)["waves"] == dict(IDLE, refused=1)
     assert post(client, [event(tick(*at(1)), 1000.0)]).status_code == 200
-    assert status(client)["waves"] == {"cursor": 4, "refused": 1, "started": STARTED, "errors": 0}
+    assert status(client)["waves"] == dict(IDLE, cursor=4, refused=1)
     assert read(client, BED).json()["cursor"] == 4
 
 
@@ -286,14 +308,20 @@ def _research_packets(client):
 
 
 def test_a_wave_decoder_that_raises_still_acknowledges_the_journaled_batch(wired, monkeypatch):
+    original = wired.waves.consume
     monkeypatch.setattr(wired.waves, "consume", _raises(ValueError))
     assert _acknowledged(wired, event(tick(*at(0)), 1000.0))
     assert wired.journal.snapshot()["rows"] == 1
     seen = status(wired.client)
-    assert seen["waves"] == {"cursor": 0, "refused": 0, "started": STARTED, "errors": 1}
+    assert seen["waves"] == dict(IDLE, errors=1)
     assert seen["research"] == {"errors": 0}
     assert _research_packets(wired.client) == 1                   # the live view had the events
     assert "waves_ms" not in seen["timings"] and seen["timings"]["consume_ms"][0] == 1
+    # The decoder thread survives its hook raising: the next batch is decoded as if nothing happened.
+    monkeypatch.setattr(wired.waves, "consume", original)
+    assert _acknowledged(wired, event(tick(*at(1)), 1000.0))
+    seen = status(wired.client)
+    assert seen["waves"] == dict(IDLE, cursor=4, errors=1) and seen["timings"]["waves_ms"][0] == 1
 
 
 def test_a_live_view_that_raises_still_acknowledges_and_the_waves_still_decode(wired, monkeypatch):
@@ -302,7 +330,7 @@ def test_a_live_view_that_raises_still_acknowledges_and_the_waves_still_decode(w
     assert wired.journal.snapshot()["rows"] == 1
     seen = status(wired.client)
     assert seen["research"] == {"errors": 1}
-    assert seen["waves"] == {"cursor": 4, "refused": 0, "started": STARTED, "errors": 0}
+    assert seen["waves"] == dict(IDLE, cursor=4)
     assert len(read(wired.client, BED).json()["blocks"]) == 4
     assert "consume_ms" not in seen["timings"] and seen["timings"]["waves_ms"][0] == 1
 
@@ -327,6 +355,164 @@ def test_a_hook_error_is_logged_once_per_type_and_never_with_the_payload(wired, 
     assert all(r.exc_info is None for r in records)               # no traceback: its last line is the message
     assert "cannot read" not in caplog.text                       # the exception's own words never reach the log
     assert not any(item["payload_base64"] in caplog.text for item in sent)
+
+
+# --- dalga-perf: the decode runs after the ack, on its own thread --------------------------------
+# On the ward's hub the decode cost ≈2 ms per POST inside the handler, and one open panel took the
+# handler from 38 to 146 ms (every read built its answer under the buffer lock the decode waits on).
+# The handler now hands the batch to one decoder thread through a bounded queue and returns.
+
+def test_the_ack_returns_before_the_waves_are_decoded(wired, monkeypatch):
+    gate, entered = gated(wired.waves, monkeypatch)
+    try:
+        sent = event(tick(*at(0)), 1000.0)
+        response = post(wired.client, [sent], settle=False)
+        assert response.status_code == 200 and response.json() == {"ack": [sent["id"]], "clinical_forwarding": False}
+        assert entered.wait(timeout=5)
+        seen = status(wired.client)
+        assert wired.waves.cursor == 0 and seen["waves"] == dict(IDLE, queued=0)   # taken off the queue, held in consume
+        assert seen["timings"]["packets_ms"][0] == 1 and "waves_ms" not in seen["timings"]
+        assert read(wired.client, BED).json()["blocks"] == []
+    finally:
+        gate.set()
+    wired.client.app.state.wave_decoder.settle()
+    seen = status(wired.client)
+    assert seen["waves"] == dict(IDLE, cursor=4) and seen["timings"]["waves_ms"][0] == 1
+    assert len(read(wired.client, BED).json()["blocks"]) == 4
+
+
+def test_a_decoder_that_falls_behind_drops_the_oldest_batch_and_counts_it(wired, monkeypatch):
+    gate, entered = gated(wired.waves, monkeypatch)
+    try:
+        batches = [[event(tick(*at(k)), 1000.0)] for k in range(MAX_PENDING_BATCHES + 3)]
+        assert post(wired.client, batches[0], settle=False).status_code == 200
+        assert entered.wait(timeout=5)                              # the first is in `consume`; the queue is empty
+        for batch in batches[1:]:
+            assert post(wired.client, batch, settle=False).status_code == 200
+        seen = status(wired.client)["waves"]
+        assert seen == dict(IDLE, dropped=2, queued=MAX_PENDING_BATCHES)
+    finally:
+        gate.set()
+    wired.client.app.state.wave_decoder.settle()
+    assert status(wired.client)["waves"] == dict(IDLE, cursor=4 * (MAX_PENDING_BATCHES + 1), dropped=2)
+    held = {entry[0] for entry in wired.waves.devices[BED]}
+    # the first batch (held in consume) and the last MAX_PENDING_BATCHES survive; batches 1 and 2 were the oldest queued
+    assert 1000_040 in held and 1000_240 not in held and 1000_440 not in held and 1000_640 in held
+
+
+def test_the_decoder_thread_ends_with_the_apps_lifespan_and_drops_what_was_queued(tmp_path, monkeypatch):
+    now = [1000.0]
+    journal = Journal(tmp_path / "hub.sqlite", Fernet.generate_key(), clock=lambda: now[0])
+    waves = WaveBuffer(INV, clock=lambda: now[0])
+    app = create_hub(INV, journal, COLLECTOR, VIEWER, accept_payload=True, clock=lambda: now[0], waves=waves)
+    assert app.state.wave_decoder is not None and not app.state.wave_decoder.thread.is_alive()
+    gate, entered = gated(waves, monkeypatch)
+    try:
+        with TestClient(app) as client:
+            decoder = client.app.state.wave_decoder
+            assert decoder.thread.is_alive() and decoder.thread.daemon
+            for k in range(3):
+                assert post(client, [event(tick(*at(k)), 1000.0)], settle=False).status_code == 200
+            assert entered.wait(timeout=5) and decoder.queued == 2
+            closing = threading.Thread(target=decoder.close)
+            closing.start()                                         # shutdown while the first batch is still decoding
+            gate.set()
+            closing.join(timeout=5)
+            assert not closing.is_alive() and not decoder.thread.is_alive()
+            assert waves.cursor == 4 and decoder.queued == 3        # the two queued batches are dropped, the sentinel behind them
+    finally:
+        gate.set()
+        journal.close()
+    assert not app.state.wave_decoder.thread.is_alive()
+    assert not any(t.name == decoder.thread.name for t in threading.enumerate())
+
+
+def test_an_app_whose_lifespan_runs_twice_decodes_both_times(tmp_path):
+    now = [1000.0]
+    journal = Journal(tmp_path / "hub.sqlite", Fernet.generate_key(), clock=lambda: now[0])
+    waves = WaveBuffer(INV, clock=lambda: now[0])
+    app = create_hub(INV, journal, COLLECTOR, VIEWER, accept_payload=True, clock=lambda: now[0], waves=waves)
+    try:
+        for k in range(2):
+            with TestClient(app) as client:
+                assert post(client, [event(tick(*at(k)), 1000.0)]).status_code == 200
+                assert status(client)["waves"] == dict(IDLE, cursor=4 * (k + 1))
+            assert not app.state.wave_decoder.thread.is_alive()
+    finally:
+        journal.close()
+
+
+def test_a_hub_without_waves_has_no_decoder(tmp_path):
+    journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
+    try:
+        app = create_hub(INV, journal, COLLECTOR, VIEWER)
+        assert app.state.wave_decoder is None
+        with TestClient(app) as client:
+            assert client.get("/", headers={"Authorization": "Bearer " + VIEWER}).status_code == 200
+    finally:
+        journal.close()
+
+
+# The answer, byte for byte, as the route rendered it before dalga-perf (captured at 720e48f with
+# this very fixture: two monitors, blocks arriving out of device-time order, one no-signal block,
+# a cursor part-way). `since` now builds the answer outside the lock from pre-serialised samples;
+# the wire must not notice.
+ONE_DEVICE = (
+    b'{"schema":"homunculus.infinity-waves.v1","device_id":"192.0.2.1","cursor":13,'
+    b'"hub_now":"1970-01-01T00:16:40.000Z","started":"1970-01-01T00:16:40.000Z","blocks":['
+    b'{"seq":5,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":259,"rate":200,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102,139,176,-188,-151,-114,-77,'
+    b'-40,-3,34,71,108,145,182,-182,-145,-108,-71,-34,3,40]},'
+    b'{"seq":8,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":513,"rate":50,"samples":[-200,-163,-126,'
+    b'-89,-52,-15,22,59,96,133]},'
+    b'{"seq":6,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":769,"rate":100,"samples":[4000,4000,'
+    b'4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000]},'
+    b'{"seq":7,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":6422,"rate":100,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102]},'
+    b'{"seq":1,"t":1000.24,"recv":"1970-01-01T00:16:39.900Z","id":259,"rate":200,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102,139,176,-188,-151,-114,-77,'
+    b'-40,-3,34,71,108,145,182,-182,-145,-108,-71,-34,3,40]},'
+    b'{"seq":4,"t":1000.24,"recv":"1970-01-01T00:16:39.900Z","id":513,"rate":50,"samples":[-200,-163,-126,'
+    b'-89,-52,-15,22,59,96,133]},'
+    b'{"seq":2,"t":1000.24,"recv":"1970-01-01T00:16:39.900Z","id":769,"rate":100,"samples":[4000,4000,'
+    b'4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000]},'
+    b'{"seq":3,"t":1000.24,"recv":"1970-01-01T00:16:39.900Z","id":6422,"rate":100,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102]},'
+    b'{"seq":9,"t":1000.44,"recv":"1970-01-01T00:16:40.000Z","id":259,"rate":200,"samples":null}]}'
+)
+TWO_DEVICES = (
+    b'{"schema":"homunculus.infinity-waves.v1","cursor":13,"hub_now":"1970-01-01T00:16:40.000Z",'
+    b'"started":"1970-01-01T00:16:40.000Z","devices":{"192.0.2.1":{"blocks":['
+    b'{"seq":5,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":259,"rate":200,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102,139,176,-188,-151,-114,-77,'
+    b'-40,-3,34,71,108,145,182,-182,-145,-108,-71,-34,3,40]},'
+    b'{"seq":8,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":513,"rate":50,"samples":[-200,-163,-126,'
+    b'-89,-52,-15,22,59,96,133]},'
+    b'{"seq":6,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":769,"rate":100,"samples":[4000,4000,'
+    b'4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000]},'
+    b'{"seq":7,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":6422,"rate":100,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102]},'
+    b'{"seq":9,"t":1000.44,"recv":"1970-01-01T00:16:40.000Z","id":259,"rate":200,"samples":null}]},'
+    b'"192.0.2.2":{"blocks":['
+    b'{"seq":10,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":259,"rate":200,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102,139,176,-188,-151,-114,-77,'
+    b'-40,-3,34,71,108,145,182,-182,-145,-108,-71,-34,3,40]},'
+    b'{"seq":13,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":513,"rate":50,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133]},'
+    b'{"seq":11,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":769,"rate":100,"samples":[4000,4000,'
+    b'4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000,4000]},'
+    b'{"seq":12,"t":1000.04,"recv":"1970-01-01T00:16:40.000Z","id":6422,"rate":100,"samples":[-200,-163,'
+    b'-126,-89,-52,-15,22,59,96,133,170,-194,-157,-120,-83,-46,-9,28,65,102]}]}}}'
+)
+
+
+def test_the_answer_bytes_are_what_they_were_before_the_answer_moved_outside_the_lock(hub):
+    client, _, _ = hub
+    sent = [event(tick(*at(1)), 999.9), event(tick(*at(0)), 1000.0),
+            event(packet(no_signal(ECG, 200, device_s=1000, ms=440)), 1000.0), event(tick(*at(0)), 1000.0, 1)]
+    assert post(client, sent).status_code == 200
+    assert read(client, BED).content == ONE_DEVICE
+    assert read(client, BED, OTHER, since="4").content == TWO_DEVICES
 
 
 # --- the runner ----------------------------------------------------------------------------------

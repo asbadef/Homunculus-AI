@@ -26,7 +26,6 @@ import bisect
 import struct
 import threading
 import time
-from array import array
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -116,7 +115,11 @@ MAX_TRANSPORT_DELAY = 3.0  # = infinity_live.MAX_TRANSPORT_DELAY: an outbox repl
 MAX_QUERY_DEVICES = 16     # one hub request names at most this many monitors (phase 2's wall)
 MAX_HELD = 1024            # entries per monitor, oldest dropped: a bound against a malformed sender
                            # (a real bed's worst case is ~909: 9 catalogue waves x 101 blocks in the
-                           # inclusive 20 s window)
+                           # inclusive 20 s window). Memory: an entry holds its samples as the tuple of
+                           # ints the answer carries (dalga-perf), ≈36 B a sample outside CPython's
+                           # small-int cache, so ≈1.2 KB for a 200 Hz block and ≈3.9 KB for a 500 Hz
+                           # one: ≈1 MB for a real bed's 20 s, 4 MB at MAX_HELD of the largest blocks,
+                           # ≈52 MB for 13 such monitors (before: array('h'), ≈0.5 KB an entry).
 
 
 def _order(entry):
@@ -127,8 +130,12 @@ class WaveBuffer:
     """The last WINDOW_S of wave blocks per monitor, in memory, and one cursor for the whole hub.
 
     An entry is (t_ms, wave_id, seq, received_at, recv, rate, samples), ordered by device time and
-    one per (t_ms, wave_id). `seq` is the hub-wide cursor value the block was added under, so one
-    `since` serves any set of monitors (phase 2's wall). A packet received more than
+    one per (t_ms, wave_id); `samples` is the decoder's tuple of ints (None for no signal), the very
+    object an answer carries, so a read converts nothing and can corrupt nothing. The lock is held
+    to add, to prune and to copy entry references; `since` builds its answer outside it (dalga-perf:
+    on the ward's hub a read of ≈100 blocks built under the lock stalled `consume`, and with it the
+    packet handler, for milliseconds at a time). `seq` is the hub-wide cursor value the block was
+    added under, so one `since` serves any set of monitors (phase 2's wall). A packet received more than
     MAX_TRANSPORT_DELAY before the hub's now, from the future, or not live, adds nothing: the rule
     `LiveResearchView` applies, so a worker outbox replay after an outage never appears as live.
     A fresh block more than ANSWER_S older than the monitor's newest means the monitor's clock went
@@ -194,8 +201,8 @@ class WaveBuffer:
             held.clear()
             keys.clear()
         self.cursor += 1
-        samples = None if block.samples is None else array("h", block.samples)
-        bisect.insort(held, (block.t_ms, block.wave_id, self.cursor, epoch, recv, block.rate, samples), key=_order)
+        bisect.insort(held, (block.t_ms, block.wave_id, self.cursor, epoch, recv, block.rate, block.samples),
+                      key=_order)
         keys.add(key)
         overflow = len(held) - MAX_HELD
         if overflow > 0:
@@ -215,24 +222,31 @@ class WaveBuffer:
         if cut:
             del held[:cut]
 
-    def since(self, sources, cursor):
+    def since(self, sources, cursor, *, timings=None):
         """(the hub's cursor now, {source: [block, ...]}): per monitor, the blocks added after
         `cursor` and at most ANSWER_S behind its newest block, pruned to WINDOW_S first (a silent
         monitor's blocks can be up to WINDOW_S old: the class says why). A cursor ahead of this
-        hub's (one from before a restart) counts as 0. Every source must be one `knows` accepts."""
+        hub's (one from before a restart) counts as 0. Every source must be one `knows` accepts.
+        `timings`, when given, records the time spent inside the lock as waves_lock_ms."""
         now = self.clock()
+        entered = None if timings is None else timings.clock()
         with self.lock:
             current = self.cursor
             if cursor > current:
                 cursor = 0
-            found = {}
+            # A slice is the whole snapshot: entries are immutable tuples, and nothing after this
+            # line reads the ring. The lists are built below, with the lock released.
+            snapshot = {}
             for source in sources:
                 self._prune(source, now)
-                held = self.devices[source]
-                floor = held[-1][0] - ANSWER_S * 1000 if held else 0
-                found[source] = [
-                    {"seq": seq, "t": t_ms / 1000, "recv": recv, "id": wave, "rate": rate,
-                     "samples": None if samples is None else samples.tolist()}
-                    for t_ms, wave, seq, _epoch, recv, rate, samples in held
-                    if seq > cursor and t_ms >= floor]
+                snapshot[source] = self.devices[source][:]
+        if timings is not None:
+            timings.since("waves_lock_ms", entered)
+        found = {}
+        for source, held in snapshot.items():
+            floor = held[-1][0] - ANSWER_S * 1000 if held else 0
+            found[source] = [
+                {"seq": seq, "t": t_ms / 1000, "recv": recv, "id": wave, "rate": rate, "samples": samples}
+                for t_ms, wave, seq, _epoch, recv, rate, samples in held
+                if seq > cursor and t_ms >= floor]
         return current, found
