@@ -56,7 +56,7 @@ monitor ──multicast──▶ worker ──(already: every payload, TLS)─�
                                                                   │  20 s in-memory ring per device
                                      API  ◀── GET /infinity-research/waves (viewer token, keep-alive)
                                       │  NEW: GET /infinity-waves/{device_id}?since=… (same gates as
-                                      │  the strip; 250 ms per-device cache)
+                                      │  the strip; a 20 s ring per device, polled incrementally)
                                  browser  polls ~750 ms, draws on <canvas> ≈2–3 s behind the monitor
 ```
 
@@ -114,8 +114,8 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
 - One shared `httpx.AsyncClient` to the hub:
   - keep-alive (no TLS handshake per poll); 2 s timeout; 1 MiB cap;
   - no redirects or proxy; the existing CA pinning.
-  - Per-device cache of 250 ms with single-flight, so several viewers of one bed cost one hub
-    request.
+  - A 20 s ring per monitor, polled from the hub incrementally (`since=` the API's own cursor) once per 750 ms tick with single-flight, so several viewers of one bed cost one hub
+    request of only the new blocks (≈ 15 per tick). *(dalga-perf, 2026-11-02: the first release's 250 ms per-device cache asked the hub for the whole 10 s window on every tick — ≈ 100 blocks four times a second per watched monitor — and made the hub's packet handler ≈ 4× slower with one panel open; lead notes L-9/L-10, plan R3. The first poll, a hub restart or a monitor clock set back replace the ring from `since=0`; a failed poll serves the ring stale with `hub_now` moved on, and the ring is dropped after 4 failures in a row or 20 s without a good answer; a monitor nobody asks about for 20 s is forgotten.)*
 - Response passed through an allow-list (the keys above). The API adds a `waves` catalogue:
   ```text
   {id: {kind: ecg|pressure|pleth|resp, label, rate, unit, scale, evidence}}
@@ -192,7 +192,7 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
    rate is computed or shown from the samples. The numbers stay the strip's.
 5. **Patient binding only through the existing explicit link** (the strip's `link === "one"`).
    No waveform on a patient when the binding is ambiguous or absent.
-6. **No storage.** Hub ring 20 s in memory, API cache 250 ms, browser 20 s. Nothing reaches the DB,
+6. **No storage.** Hub ring 20 s in memory, API ring 20 s in memory (dalga-perf; pruned by receipt like the hub's, forgotten 20 s after the last viewer), browser 20 s. Nothing reaches the DB,
    the audit, logs, exports or screenshots made by the app.
    - *Final review M-2 (2026-11-02):* the 20 s is the last 20 s **by the monitor's own clock** (back
      from its newest block), not the wall clock, and it is pruned only when touched. When a monitor
