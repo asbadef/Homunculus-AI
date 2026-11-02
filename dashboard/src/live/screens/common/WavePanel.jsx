@@ -30,26 +30,39 @@ const NOTE = {
 };
 const QUIET = new Set([WAVE_STATUS.IDLE, WAVE_STATUS.LOADING, WAVE_STATUS.OFF]);
 
-function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, className }) {
+function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, caf, className }) {
   const { t } = useI18n();
   const id = useId();
   const [full, setFull] = useState(false);
   const fullRef = useRef(null);
+  const headRef = useRef(null);
   useEffect(() => store.watch(source), [store, source]);
   const device = useSyncExternalStore(store.subscribe, () => store.get(source));
   const { status } = device;
-  if (!collapsible && QUIET.has(status)) return null;
+  const quiet = QUIET.has(status);
   const hasRows = Object.keys(device.blocks).length > 0;
+  // Full screen shows rows. With none left to show — a refusal dropped them, the waves went off — it
+  // closes, and stays closed: an answer that comes later never reopens it by itself.
+  const fullOpen = full && hasRows && !quiet;
+  /** The focus back into the panel: ⤢ while there are rows, else the hide button, else the heading. */
+  const focusBack = () => (fullRef.current ?? hideRef?.current ?? headRef.current)?.focus();
+  useEffect(() => {
+    if (!full || fullOpen) return;
+    setFull(false);
+    // The × had the focus, and went with the view: the panel takes it, rather than <body>.
+    if (!document.activeElement || document.activeElement === document.body) focusBack();
+  }, [full, fullOpen]);
+  if (!collapsible && quiet) return null;
   const noteKey = NOTE[status];
   const waiting = status === WAVE_STATUS.LOADING || (status === WAVE_STATUS.OK && !hasRows);
   const closeFull = () => {
     setFull(false);
-    fullRef.current?.focus();
+    focusBack();
   };
   return (
     <section aria-labelledby={id} data-wave-panel="" className={`rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 id={id} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink">
+        <h3 id={id} ref={headRef} tabIndex={-1} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink outline-none">
           {title ? `${title} · ${t("waves.title")}` : t("waves.title")}
         </h3>
         <Tag tone="warn">{t("waves.tag")}</Tag>
@@ -59,15 +72,15 @@ function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, classN
             <Button ref={fullRef} variant="ghost" size="sm" icon="fullscreen" label={t("waves.fullscreen")}
               onClick={() => setFull(true)} />
           ) : null}
-          {collapsible ? <Button variant="ghost" size="sm" icon="x" label={t("waves.hide")} onClick={onHide} /> : null}
+          {collapsible ? <Button ref={hideRef} variant="ghost" size="sm" icon="x" label={t("waves.hide")} onClick={onHide} /> : null}
         </span>
       </div>
       <p data-wave-stamp="" className="m-0 mt-1 font-text text-11.5 font-semibold text-att-ink">{t("waves.stamp")}</p>
       {noteKey ? <Note className="mt-1.5">{t(noteKey)}</Note> : null}
       {waiting ? <p className="m-0 mt-1.5 font-text text-12 text-mute">{t("waves.waiting")}</p> : null}
-      {hasRows && !full ? <WaveRows device={device} raf={raf} caf={caf} /> : null}
+      {hasRows && !fullOpen ? <WaveRows device={device} raf={raf} caf={caf} /> : null}
       {/* The panel's note is behind the black while full screen is open: it goes along, said there too. */}
-      {full ? (
+      {fullOpen ? (
         <WaveFullscreen source={source} title={title} device={device} note={noteKey ? t(noteKey) : null}
           onClose={closeFull} raf={raf} caf={caf} />
       ) : null}
@@ -80,22 +93,39 @@ function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, classN
  * screen's own title). `collapsible`: closed behind a button until opened (the device screen, so
  * that a list of monitors polls none of them by itself). `store`, `raf`, `caf`: for the tests; the
  * page uses the session's wave store and the browser's frame clock.
+ *
+ * Another `source` is another panel (`key`): the old monitor is let go, the new one watched, and
+ * nothing of the old one's — its full screen least of all — carries over.
  */
 export function WavePanel({ source, title, collapsible = false, store, raf, caf, className = "" }) {
   const { t } = useI18n();
   const { store: session } = useSession();
   const waves = store ?? waveStoreFor(session);
   const [open, setOpen] = useState(!collapsible);
+  const showRef = useRef(null);
+  const hideRef = useRef(null);
+  // A press on «göster» or «gizle» replaces the button pressed: the focus goes to the one that took
+  // its place, rather than to <body>.
+  const pressed = useRef(false);
+  useEffect(() => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    (open ? hideRef : showRef).current?.focus();
+  }, [open]);
+  const toggle = (next) => {
+    pressed.current = true;
+    setOpen(next);
+  };
   if (!source) return null;
   if (!open) {
     return (
       <div className={className}>
-        <Button variant="ghost" size="sm" icon="activity" onClick={() => setOpen(true)}>{t("waves.show")}</Button>
+        <Button ref={showRef} variant="ghost" size="sm" icon="activity" onClick={() => toggle(true)}>{t("waves.show")}</Button>
       </div>
     );
   }
   return (
-    <OpenPanel store={waves} source={source} title={title} collapsible={collapsible} onHide={() => setOpen(false)}
-      raf={raf} caf={caf} className={className} />
+    <OpenPanel key={source} store={waves} source={source} title={title} collapsible={collapsible}
+      onHide={() => toggle(false)} hideRef={hideRef} raf={raf} caf={caf} className={className} />
   );
 }
