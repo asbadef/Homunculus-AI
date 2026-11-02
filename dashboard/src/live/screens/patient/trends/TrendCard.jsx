@@ -38,7 +38,7 @@ import { ageText } from "../ageText.js";
 import { cardTitle } from "./cards.js";
 import { news2Tone } from "./news2Tone.js";
 import { TrendChart } from "./TrendChart.jsx";
-import { parsePoints, validWindow } from "./trendGeometry.js";
+import { handEntryOf, parseManual, parsePoints, validWindow } from "./trendGeometry.js";
 
 const FRAME = { none: "border-2 border-line", mid: "border-2 border-mid", crit: "border-2 border-crit" };
 const BADGE = { mid: "warn", crit: "crit" };
@@ -91,11 +91,14 @@ function Reading({ series, channel, nowMs, named, badge, pill }) {
   const latest = channel?.latest ?? null;
   if (!latest) return null;
   const age = ageText(t, latest.ts, nowMs);
+  // G3-01 (D1, X13): a latest value typed in by hand says so — found in the trends answer's own `manual`.
+  const byHand = handEntryOf(parseManual(channel?.manual), { ms: Date.parse(latest.ts), value: latest.value });
   return (
     <span className="mt-1 block" data-series={series.key}>
       {named ? <><span className="text-11 font-semibold text-mute">{t(series.labelKey)}</span>{" "}</> : null}
       <b className="font-data text-20 font-bold text-ink">{latest.value}</b>{" "}
       <small className="text-11 font-semibold text-mute">{t(series.unitKey)}</small>
+      {byHand ? <>{" "}<Tag>{t("olcum.hand")}</Tag></> : null}
       {/* No previous measurement is `null`; any other non-number is printed as nothing at all. */}
       {latest.delta === null ? (
         <>{" "}<span className="ml-1 font-data text-12 font-semibold text-ink">{t("patient.trendsSingle")}</span></>

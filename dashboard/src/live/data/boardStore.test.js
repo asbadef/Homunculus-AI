@@ -338,6 +338,26 @@ describe("the board store", () => {
     expect(await late).toBeNull();
   });
 
+  // G3-01: a preview changes no card, so nothing reloads; a withdrawal rebuilt the patient, so the board does.
+  it("previews a chart without reloading, withdraws an entry and reloads, and drops an answer after clear()", async () => {
+    const { api, store } = setup();
+    api.previewChart = vi.fn().mockResolvedValue({ preview: true, news2: { total: 9 } });
+    api.retractEntry = vi.fn().mockResolvedValue({ retracted: 41, code: "resp_rate", alerts: [] });
+    const entries = [{ code: "resp_rate", value: 26 }];
+    expect(await store.chartPreview("S-001", entries, null)).toMatchObject({ preview: true });
+    expect(api.previewChart).toHaveBeenLastCalledWith("S-001", entries, null);
+    expect(api.boardPatients).not.toHaveBeenCalled();
+    expect(await store.retract("S-001", 41, "yazım hatası — 26 değil 16")).toMatchObject({ retracted: 41 });
+    expect(api.retractEntry).toHaveBeenLastCalledWith("S-001", 41, "yazım hatası — 26 değil 16");
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);
+    let answer;
+    api.previewChart.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    const late = store.chartPreview("S-001", entries, null);
+    store.clear();
+    answer({ preview: true });
+    expect(await late).toBeNull();
+  });
+
   it("a refused SOFA call rejects with the API's own error, having changed nothing", async () => {
     const { api, store, state } = setup();
     await store.start();

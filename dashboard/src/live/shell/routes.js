@@ -30,6 +30,8 @@ import { DevicesScreen } from "../screens/devices/DevicesScreen.jsx";
 
 import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
 
+import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -49,6 +51,8 @@ const SCREENS = Object.freeze({
   devices: DevicesScreen, // Aşama A — biomedical's monitor screen (devices, beds, values; no patient)
 
   kabul: KabulScreen, // G2-B1a — Hasta Kabul: admission, discharge, beds
+
+  olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
 
   settings: SettingsScreen,
 });
@@ -83,6 +87,11 @@ export const ROUTES = Object.freeze([
   // releases a bed. After the board's screens in the table, so nobody's home moves.
   route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
     perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm", "beds.release"], work: true, nav: "main" }),
+
+  // G3-01 (D3, D14) — Yatak başı ölçüm: for whoever charts (`clinical.chart`). After the ward's other screens,
+  // so nobody's home moves; a session that only charts lands here.
+  route({ id: "olcum", path: "/olcum", icon: "heart", labelKey: "olcum.nav", shortKey: "olcum.navShort",
+    perms: ["clinical.chart"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

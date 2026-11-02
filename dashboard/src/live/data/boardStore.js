@@ -385,6 +385,21 @@ export function createBoardStore({
       await refresh();
       return answer;
     },
+    // G3-01 (D8): what a chart would score — nothing is written, so nothing reloads. Late answers drop.
+    async chartPreview(patientId, entries, recordedAt = null) {
+      const mine = generation;
+      const answer = await track(() => api.previewChart(patientId, entries, recordedAt));
+      return mine === generation ? answer : null;
+    },
+    // G3-01 (D10): «hatalı giriş». The engine rebuilt the patient without the entry: the card changed, so the
+    // board reloads, as after a chart. A refusal rejects with the API's own error; nothing is changed locally.
+    async retract(patientId, entry, reason) {
+      const mine = generation;
+      const answer = await track(() => api.retractEntry(patientId, entry, reason));
+      if (mine !== generation) return null;
+      await refresh();
+      return answer;
+    },
     /**
      * The SOFA severity form of one patient (G2-A4, `GET /scores/sofa/{id}`, permission `board.view`):
      * the engine's filled form with its `last_signed` and `min_reason_chars` (D7). A read — the engine

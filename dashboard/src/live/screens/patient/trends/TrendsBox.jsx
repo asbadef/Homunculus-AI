@@ -17,6 +17,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
 import { useSession } from "../../../session/SessionProvider.jsx";
+import { useBoard } from "../../../data/BoardProvider.jsx"; // G3-01: «hatalı giriş» from the big chart's table
 import { Box, Button, Note } from "../../../ui/index.js";
 import { BASELINE_KEYS, BaselineForm } from "./BaselineForm.jsx";
 import { CARDS, channelsOf } from "./cards.js";
@@ -27,6 +28,9 @@ import { measuredKeyOf, useTrends } from "./useTrends.js";
 export function TrendsBox({ patient, bed, nowMs }) {
   const { t } = useI18n();
   const { user } = useSession();
+  const board = useBoard();
+  // G3-01 (D13, D14): a clinical.chart holder withdraws a hand entry from the big chart's table.
+  const canRetract = user?.perms?.includes("clinical.chart") ?? false;
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
   // The id of the card whose big chart is open. Like `editing` it survives a move to another patient (the
   // shell mounts this screen with no `key`), but the chart is read-only and reads for the patient it is given.
@@ -98,7 +102,13 @@ export function TrendsBox({ patient, bed, nowMs }) {
           </ul>
         ) : null}
       </div>
-      {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
+      {card ? (
+        // The box reads its own 24 hours again after a withdrawal, whatever its ending: a value that was not the latest
+        // moves no measured instant, so the card would keep a delta from it, and its mini chart an axis stretched by
+        // it (X16), until the next poll. The store's own promise goes back to the dialog — its answer or its error.
+        <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} canRetract={canRetract}
+          onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason).finally(() => trends.reload())} />
+      ) : null}
       {editing?.id === patient.patient_id ? (
         <BaselineForm
           key={editing.opening} patient={patient} bed={bed} own={own}

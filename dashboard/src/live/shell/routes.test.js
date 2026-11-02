@@ -165,6 +165,20 @@ describe("the monitor screen's route", () => {
   });
 });
 
+// G3-01 (D3, D14): the bedside page opens with clinical.chart, on the rail after the ward's other screens.
+describe("«Yatak başı ölçüm»", () => {
+  it("is on the rail for a clinical.chart holder, and the home of one who holds nothing else", () => {
+    expect(navRoutes(["clinical.chart"]).main.map((r) => r.id)).toEqual(["olcum"]);
+    expect(homePath(["clinical.chart"])).toBe("/olcum");
+    expect(hasWorkRoute(["clinical.chart"])).toBe(true);
+  });
+
+  it("moves nobody's home, and is not offered without clinical.chart", () => {
+    expect(homePath(["board.view", "clinical.chart"])).toBe("/beds");
+    expect(navRoutes(NURSE).main.map((r) => r.id)).not.toContain("olcum");
+  });
+});
+
 describe("matching an address", () => {
   it("finds a route and its parameters", () => {
     expect(matchRoute("/beds")).toMatchObject({ route: { id: "beds" }, params: {} });

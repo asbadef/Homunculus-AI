@@ -744,6 +744,25 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * G3-01 (D8): what `chart` would score for these entries — the engine's NEWS2 of a copy of the patient,
+     * in the card's own shape (`news2`), or `dropped` for a discharged number. Nothing is written. The
+     * chart's own body; an untouched time is sent as none, as `chart` sends it.
+     */
+    previewChart(patientId, entries, recordedAt = null) {
+      return authed(`/clinical/${seg(patientId)}/preview`, {
+        method: "POST",
+        body: { entries, ...(recordedAt ? { recorded_at: recordedAt } : {}) },
+      });
+    },
+
+    /** G3-01 (D10): «hatalı giriş» — withdraw one hand entry (`entry`, the id `chart` answered) with a reason. */
+    retractEntry(patientId, entry, reason) {
+      return authed(`/clinical/${seg(patientId)}/entries/${seg(entry)}/retract`, {
+        method: "POST", body: { reason },
+      });
+    },
+
+    /**
      * The engine's append-only audit for this hospital.
      *
      * This is the record a KVKK or ministry inspection asks for, and it is deliberately

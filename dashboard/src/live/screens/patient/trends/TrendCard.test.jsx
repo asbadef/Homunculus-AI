@@ -4,12 +4,12 @@
 // shows the engine's, which is the only way to prove a browser did not judge.
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { I18nProvider } from "../../../i18n/I18nProvider.jsx";
 import { NOW, ago } from "../../../data/board.testutil.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard, deltaText } from "./TrendCard.jsx";
-import { BANDS, channel, point, trends } from "./trends.testutil.js";
+import { BANDS, channel, hand, point, trends } from "./trends.testutil.js";
 
 const HR = CARDS.find((c) => c.id === "heart_rate");
 const PRESSURE = CARDS.find((c) => c.id === "pressure");
@@ -293,5 +293,26 @@ describe("deltaText", () => {
   it("writes the engine's number with an arrow for its sign, and nothing for no number", () => {
     expect([6, -3, 0, 0.3].map(deltaText)).toEqual(["↑ +6", "↓ −3", "→ 0", "↑ +0.3"]);
     expect([null, undefined, Number.NaN].map(deltaText)).toEqual([null, null, null]);
+  });
+
+  // G3-01 (D1, X13): a latest value typed in by hand says so, from the trends answer's own `manual`.
+  it("says «əl ilə» beside a latest value entered by hand, and nothing beside a device's", () => {
+    show(HR, [channel("heart_rate", [point(5, 72, 0)], { latest: latest({ value: 72 }), manual: [hand(41, 5, 72)] })]);
+    expect(screen.getByText("əl ilə")).toBeInTheDocument();
+    cleanup();
+    show(HR, [channel("heart_rate", [point(5, 72, 0)], { latest: latest({ value: 72 }), manual: [hand(41, 5, 73)] })]);
+    expect(screen.queryByText("əl ilə")).toBeNull();
+  });
+
+  // G3-01 (X16): a slipped digit is exactly the value that stretches an axis, and the mini chart has no legend to
+  // say why: it draws the engine's points only. The big chart draws the withdrawn one (TrendModal.test.jsx).
+  it("draws a withdrawn value nowhere on the mini chart, and its axis does not stretch for it", () => {
+    const withdrawn = hand(42, 30, 182, { retracted: { reason: "yanlış hasta seçilmişti", minutesAgo: 20 } });
+    show(HR, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])]);
+    const plain = [...document.querySelectorAll("circle[data-value]")].map((c) => c.getAttribute("cy"));
+    cleanup();
+    show(HR, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)], { manual: [hand(41, 60, 132), withdrawn] })]);
+    expect(document.querySelector("[data-withdrawn]")).toBeNull();
+    expect([...document.querySelectorAll("circle[data-value]")].map((c) => c.getAttribute("cy"))).toEqual(plain);
   });
 });

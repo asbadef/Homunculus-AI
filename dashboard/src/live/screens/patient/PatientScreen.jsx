@@ -1,11 +1,13 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes FOUR things, and says so in as many words (`patient.onlyWrite`), each only for a
+// It writes FIVE things, and says so in as many words (`patient.onlyWrite`), each only for a
 // `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since Group 2 ·
 // slice 1, from the trends box, the patient's own normal ranges; since G2-A3, from the Meds box
 // (`meds/MedsBox.jsx`, D4), the medication and fluid entries — a pressor rate, a bolus, the weight,
-// "antibiotic given"; and since G2-A4, from the SOFA form (`sofa/SofaBox.jsx`, D3), the measurements that
-// complete its organ rows. A `scores.sign` holder also SIGNS that form there (D6) — a sealed row in the
-// audit chain, not an observation — and the sentence says so (X6). Nothing else here reaches the record.
+// "antibiotic given"; since G2-A4, from the SOFA form (`sofa/SofaBox.jsx`, D3), the measurements that
+// complete its organ rows; and since G3-01, from «Ölçüm gir» (`VitalsEntry.jsx`, D3b), the bedside set — a
+// value of which can be withdrawn as «hatalı giriş» there or in the trend table (D10). A `scores.sign` holder
+// also SIGNS the SOFA form (D6) — a sealed row in the audit chain, not an observation — and the sentence says
+// so (X6). Nothing else here reaches the record.
 //
 // Four things it shows, and one it refuses to:
 //
@@ -60,6 +62,7 @@ import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
 import { MedsBox } from "./meds/MedsBox.jsx";
+import { VitalsEntry } from "./VitalsEntry.jsx"; // G3-01 (D3b)
 import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
@@ -398,7 +401,10 @@ export function PatientScreen({ params }) {
           <LabelReprint key={`label-${id}`} patientId={id} />{/* G2-B1d (spec §6): an open admission's protocol label, again */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
-          <Box title={t("patient.vitals")} icon="activity" level={2}>
+          {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without
+              clinical.chart. */}
+          <Box title={t("patient.vitals")} icon="activity" level={2}
+            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
 

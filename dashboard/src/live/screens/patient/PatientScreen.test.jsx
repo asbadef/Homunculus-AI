@@ -10,14 +10,29 @@ import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../.
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, point, trends } from "./trends/trends.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
+import { RETRACT_ARM_MS } from "../common/RetractDialog.jsx";
+import { SAVE_ARM_MS } from "../bedside/VitalsForm.jsx";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function open({ payload = board(), id = "S-001", connection = "live", setup,
+// G3-01 (D3b): the shell keeps the patient screen mounted across a move to another patient (no `key`), so a test
+// that is about that move mounts the screen under a host with a button that does it.
+// `then` is one patient to move to, or a list of them (A → B → A): a button for each.
+function MoveOn({ first, then }) {
+  const [id, setId] = React.useState(first);
+  return (
+    <>
+      {[].concat(then).map((to) => <button key={to} type="button" onClick={() => setId(to)}>{`move to ${to}`}</button>)}
+      <PatientScreen params={{ id }} />
+    </>
+  );
+}
+
+async function open({ payload = board(), id = "S-001", connection = "live", setup, moveTo = null,
                       perms = ["board.view", "alerts.ack"] } = {}) {
   onlyScreens({ beds: () => null }, { keep: [] });
-  const mounted = await mount(<PatientScreen params={{ id }} />, {
+  const mounted = await mount(moveTo ? <MoveOn first={id} then={moveTo} /> : <PatientScreen params={{ id }} />, {
     access: token({ perms }),
     me: profile({ perms }),
     setup: (api) => {
@@ -56,18 +71,213 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the four things it writes and that the SOFA form is signed too", async () => {
+  it("names the bed and the patient, and says the five things it writes and that the SOFA form is signed too", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/dörd şey yazır/);
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi və SOFA formasından daxil edilən ölçmələr/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/beş şey yazır/);
+    // G3-01 (D3b): the bedside set, entered with «Ölçmə daxil et», and that a value can be withdrawn.
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi, SOFA formasından daxil edilən ölçmələr və «Ölçmə daxil et» ilə daxil edilən çarpayı başı ölçmələri/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/«səhv qeyd» kimi geri götürülə bilər/);
     // G2-A4 review 2: signing needs scores.sign only — a right of its own, not one on top of clinical.chart.
     expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/imzası ayrıca scores\.sign səlahiyyəti tələb edir/);
     expect(screen.getByText(/heç nə yazılmır/)).not.toHaveTextContent(/əlavə olaraq/);
+  });
+
+  // G3-01 (D3b, D14): the bedside form, from the patient shown, for a clinical.chart holder only.
+  it("does not offer «Ölçmə daxil et» without clinical.chart", async () => {
+    await open({ payload: board([entry("S-001", [], FULL)]) });
+    expect(screen.queryByRole("button", { name: "Ölçmə daxil et" })).toBeNull();
+  });
+
+  it("opens the bedside form for the patient shown, with no identity step, and previews through the store", async () => {
+    const { api } = await open({
+      payload: board([entry("S-001", [], FULL)]), perms: ["board.view", "clinical.chart"],
+      setup: (a) => { a.previewChart.mockResolvedValue({ patient_id: "S-001", preview: true, news2: news2({ total: 3 }) }); },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Ölçmə daxil et" })); await settle(); });
+    const dialog = screen.getByRole("dialog", { name: "Ölçmə daxil et · REA-01 · 2" });
+    expect(within(dialog).queryByText("Ad, soyad və doğum ili xəstəyə uyğundurmu?")).toBeNull();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /^Nəbz/ }), { target: { value: "88" } });
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Öncədən baxın" })); await settle(); });
+    expect(api.previewChart).toHaveBeenCalledWith("S-001", [{ code: "heart_rate", value: 88 }], null);
+    expect(within(dialog).getByText("NEWS2 (öncədən baxış):")).toBeInTheDocument();
+  });
+
+  describe("«Ölçmə daxil et» across a save and a move to another patient (G3-01, D3b)", () => {
+    const CHART = ["board.view", "clinical.chart"];
+    const TWO = () => board([
+      entry("S-001", [], FULL),
+      entry("S-002", [], { ...FULL, identity: identity({ patient_id: "S-002", display_name: "Vüsal Sınaq", bed_label: "REA-02 · 1" }) }),
+    ]);
+    const PREVIEW = { patient_id: "S-001", preview: true, news2: news2({ total: 3 }) };
+    const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
+    const dialog = (bed) => screen.getByRole("dialog", { name: `Ölçmə daxil et · ${bed}` });
+    // The walk to a held «Yadda saxla»: one pulse typed, previewed, and the arming window waited out.
+    async function previewed(bed) {
+      fireEvent.change(within(dialog(bed)).getByRole("textbox", { name: /^Nəbz/ }), { target: { value: "88" } });
+      await press(within(dialog(bed)).getByRole("button", { name: "Öncədən baxın" }));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, SAVE_ARM_MS + 50)); });
+    }
+
+    const ANSWER = { patient_id: "S-001", charted: 1, alerts: [], entries: [{ code: "heart_rate", entry: 41 }] };
+    const wait = (ms) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+    // The whole walk to the saved step of S-001's dialog. The write takes a moment, as on a ward network: the dialog
+    // is rendered busy before it ends (an instant mock never renders the busy form, and hides a stuck ✕).
+    async function saved({ setup } = {}) {
+      const mounted = await open({
+        payload: TWO(), perms: CHART,
+        setup: (a) => {
+          a.previewChart.mockResolvedValue(PREVIEW);
+          a.chart.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(ANSWER), 30)));
+          setup?.(a);
+        },
+      });
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      await previewed("REA-01 · 2");
+      await press(within(dialog("REA-01 · 2")).getByRole("button", { name: "Yadda saxla" }));
+      await wait(80);
+      expect(within(dialog("REA-01 · 2")).getByRole("button", { name: "Səhv qeyd" })).toBeInTheDocument();
+      return mounted;
+    }
+    // A new opening is the empty form again, not the saved step of the last one.
+    async function reopenedEmpty() {
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      expect(within(dialog("REA-01 · 2")).getByRole("textbox", { name: /^Nəbz/ })).toHaveValue("");
+    }
+
+    it("shows the saved step after a save, and the dialog's ✕ closes it (the ✕ is not left held)", async () => {
+      await saved();
+      // Under the dialog's own h2, not beside it.
+      expect(within(dialog("REA-01 · 2")).getByRole("heading", { level: 3, name: /^Yadda saxlanıldı/ })).toBeInTheDocument();
+      // The first «Bağla» is the dialog's ✕ (its header comes first), the last is the saved step's own button.
+      const closers = within(dialog("REA-01 · 2")).getAllByRole("button", { name: "Bağla" });
+      expect(closers).toHaveLength(2);
+      await press(closers[0]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await reopenedEmpty();
+    });
+
+    it("the saved step's own «Bağla» closes the dialog too", async () => {
+      await saved();
+      const closers = within(dialog("REA-01 · 2")).getAllByRole("button", { name: "Bağla" });
+      await press(closers[closers.length - 1]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await reopenedEmpty();
+    });
+
+    it("withdraws a saved value through the store, for the patient shown and the entry the chart answered, and strikes the row", async () => {
+      const reason = "yazım hatası, 80 idi";
+      const { api } = await saved({
+        setup: (a) => { a.retractEntry.mockResolvedValue({ retracted: 41, code: "heart_rate", alerts: [] }); },
+      });
+      const row = document.querySelector('[data-row="heart_rate"]');
+      expect(row.querySelector("s")).toBeNull();
+      await press(within(row).getByRole("button", { name: "Səhv qeyd" }));
+      const retract = screen.getByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" });
+      fireEvent.change(within(retract).getByRole("textbox"), { target: { value: reason } });
+      await wait(RETRACT_ARM_MS + 50);
+      const fetches = api.boardPatients.mock.calls.length;
+      await press(within(retract).getByRole("button", { name: "Səhv qeyd kimi işarələ" }));
+      expect(api.retractEntry).toHaveBeenCalledTimes(1);
+      expect(api.retractEntry).toHaveBeenCalledWith("S-001", 41, reason);
+      // The store reloads the board after a withdrawal, as after a chart.
+      expect(api.boardPatients.mock.calls.length).toBe(fetches + 1);
+      expect(screen.queryByRole("dialog", { name: "Səhv qeyd · REA-01 · 2" })).toBeNull();
+      expect(row.querySelector("s")).toHaveTextContent("88");
+      expect(within(row).queryByRole("button", { name: "Səhv qeyd" })).toBeNull();
+    });
+
+    it("takes the focus into the saved step when the form gives way to it, instead of dropping it on the page", async () => {
+      await saved();
+      // The «Yadda saxla» button that had the focus is gone with the form: without a move, it falls to <body>.
+      expect(document.activeElement).not.toBe(document.body);
+      const step = dialog("REA-01 · 2").querySelector("[data-vitals-saved]");
+      expect(step).not.toBeNull();
+      expect(document.activeElement).toBe(step);
+    });
+
+    it("is bound to the patient it was opened for: a move to another patient closes it, and the next opening is that patient's", async () => {
+      const { api } = await open({
+        payload: TWO(), perms: CHART, moveTo: "S-002",
+        setup: (a) => { a.previewChart.mockResolvedValue({ ...PREVIEW, patient_id: "S-002" }); },
+      });
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      fireEvent.change(within(dialog("REA-01 · 2")).getByRole("textbox", { name: /^Nəbz/ }), { target: { value: "88" } });
+      await press(screen.getByRole("button", { name: "move to S-002" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      // S-002's own form: its title names its bed and the pulse typed for S-001 is not in it.
+      expect(within(dialog("REA-02 · 1")).getByRole("textbox", { name: /^Nəbz/ })).toHaveValue("");
+      fireEvent.change(within(dialog("REA-02 · 1")).getByRole("textbox", { name: /^Nəbz/ }), { target: { value: "90" } });
+      await press(within(dialog("REA-02 · 1")).getByRole("button", { name: "Öncədən baxın" }));
+      expect(api.previewChart).toHaveBeenCalledWith("S-002", [{ code: "heart_rate", value: 90 }], null);
+    });
+
+    it("a move away and back (S-001 → S-002 → S-001) does not bring the first dialog back", async () => {
+      await open({ payload: TWO(), perms: CHART, moveTo: ["S-002", "S-001"] });
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      expect(dialog("REA-01 · 2")).toBeInTheDocument();
+      await press(screen.getByRole("button", { name: "move to S-002" }));
+      await press(screen.getByRole("button", { name: "move to S-001" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await reopenedEmpty();
+    });
+
+    it("a save that answers after the move leaves the next opening an empty form, not the saved step", async () => {
+      // S-001's save is in flight; she moves to S-002 and opens its form. The answer of S-001's request comes
+      // late: S-002's dialog stays the form it was, and S-001's toast still says what happened to S-001.
+      let answer;
+      const { api } = await open({
+        payload: TWO(), perms: CHART, moveTo: "S-002",
+        setup: (a) => {
+          a.previewChart.mockResolvedValue(PREVIEW);
+          a.chart.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+        },
+      });
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      await previewed("REA-01 · 2");
+      await press(within(dialog("REA-01 · 2")).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.chart).toHaveBeenCalledTimes(1);
+      await press(screen.getByRole("button", { name: "move to S-002" }));
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      expect(dialog("REA-02 · 1")).toBeInTheDocument();
+      await act(async () => { answer(ANSWER); await settle(); });
+      expect(within(dialog("REA-02 · 1")).getByRole("textbox", { name: /^Nəbz/ })).toHaveValue("");
+      expect(within(dialog("REA-02 · 1")).queryByRole("button", { name: "Səhv qeyd" })).toBeNull();
+      expect(dialog("REA-02 · 1").querySelector("[data-vitals-saved]")).toBeNull();
+      const toasts = within(screen.getByRole("region", { name: "Bildirişlər" }));
+      expect(toasts.queryAllByText(/REA-01 · 2: ölçmə yadda saxlanıldı/).length).toBeGreaterThan(0);
+    });
+
+    it("a late end of an earlier opening's request closes nothing of a new one", async () => {
+      // S-001's save is in flight (a request with no answer yet); she moves to S-002 and opens its form. When the
+      // old request ends with no answer, the old form says so on the toast — and S-002's dialog is not touched.
+      let fail;
+      const { api } = await open({
+        payload: TWO(), perms: CHART, moveTo: "S-002",
+        setup: (a) => {
+          a.previewChart.mockResolvedValue(PREVIEW);
+          a.chart.mockImplementation(() => new Promise((_, reject) => { fail = reject; }));
+        },
+      });
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      await previewed("REA-01 · 2");
+      await press(within(dialog("REA-01 · 2")).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.chart).toHaveBeenCalledTimes(1);
+      await press(screen.getByRole("button", { name: "move to S-002" }));
+      await press(screen.getByRole("button", { name: "Ölçmə daxil et" }));
+      expect(dialog("REA-02 · 1")).toBeInTheDocument();
+      await act(async () => { fail(refusal(504, "gateway timeout")); await settle(); });
+      // The old form's own word reached the reader, naming S-001's bed ...
+      const toasts = within(screen.getByRole("region", { name: "Bildirişlər" }));
+      expect(toasts.queryAllByText(/REA-01 · 2: cavab gəlmədi/).length).toBeGreaterThan(0);
+      // ... and S-002's dialog is still open.
+      expect(dialog("REA-02 · 1")).toBeInTheDocument();
+    });
   });
 
   it("offers the way back to the board it was opened from", async () => {

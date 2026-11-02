@@ -180,6 +180,16 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     },
   );
 
+  // G3-01 (D13, X16): a hand entry withdrawn as «hatalı giriş» is drawn on the big chart where it was typed — a ring
+  // and a cross in the muted ink (`text-mute`), not at a reduced opacity, which no pair here could measure. It lies
+  // wherever the value lay, so over any tint the plot holds, on the dialog's app ground (Modal.jsx).
+  it.each([...BANDS, ...STACKED])(
+    "chart: a withdrawn entry's cross (mute) clears 3:1 over the %s tint on app",
+    (stack) => {
+      expect(ratio(s("mute"), over(theme, stack.split(" + "), "app"))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
   // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot — on the card in the
   // mini chart, on the dialog's app background in the big one — never over a band.
   it.each(["crit", "pri"].flatMap((name) => ["card", "app"].map((g) => [name, g])))(
