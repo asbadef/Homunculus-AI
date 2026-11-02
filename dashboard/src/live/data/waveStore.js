@@ -25,9 +25,12 @@
 //      hide it — kept, its newest would hold the head where the new blocks never reach (or floor
 //      them out of the 20 s altogether), and the panel would stay blank for as long as the
 //      set-back. A set-back of WAVE_ANSWER_S or less is not detected, as at the hub.
-// The calls go through the session's `track` and the API client's own `request` (backendApi.js's
-// escape hatch for a route it does not wrap), so a refused refresh ends the session here too.
-// They carry no time limit of their own: backendApi's `timed` honours only one longer than the
+//   7. A FEED, NOTHING ELSE (I1). The store's one call is `getWaves(path)`, a wave feed's
+//      (session/feeds.js `waveFeedFor`): a GET of an /infinity-waves/ path and nothing else, made
+//      there inside the session's `track`, so a refused refresh still ends the session. This module
+//      is handed that one function and never the session store or the API client, which could sign
+//      out, lock, unlock or write; `waveStoreFor` keys its stores by the feed.
+// The calls carry no time limit of their own: backendApi's `timed` honours only one longer than the
 // client's own (15 s), so a hung poll is bounded by that. One poll per monitor is in flight at a
 // time, and meanwhile the rows age into "akış durdu" on their own (R6).
 
@@ -63,7 +66,7 @@ export function wavesPath(source, since, started) {
   return typeof started === "string" && started !== "" ? `${path}&started=${encodeURIComponent(started)}` : path;
 }
 
-/** The status a refused call maps to. A 401 is the session's own business (`track` ends it). */
+/** The status a refused call maps to. A 401 is the session's own business (the feed's `track` ends it). */
 export function statusOf(err) {
   if (err?.status === 403) return WAVE_STATUS.DENIED;
   if (err?.status === 404) return WAVE_STATUS.GONE;
@@ -156,15 +159,17 @@ function defaultOnVisibility(fn) {
 }
 
 /**
- * api: the session's API client (`request`). track(call): the session's wrapper for its calls.
- * The rest are injectable for the tests: the timers, the page's visibility, the monotonic clock.
+ * getWaves(path): a wave feed's one capability (session/feeds.js) — the answer to GET `path`, or
+ * the refusal. The rest are injectable for the tests: the timers, the page's visibility, the
+ * monotonic clock.
  */
 export function createWaveStore({
-  api, track = (call) => call(),
+  getWaves,
   setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (id) => clearTimeout(id),
   isVisible = defaultIsVisible, onVisibility = defaultOnVisibility,
   perfNow = () => performance.now(),
 }) {
+  if (typeof getWaves !== "function") throw new TypeError("createWaveStore: getWaves is required");
   const devices = new Map();     // source -> { count, timer, inFlight, state }
   const listeners = new Set();
   let unwatch = null;
@@ -194,7 +199,7 @@ export function createWaveStore({
     entry.inFlight = true;
     try {
       const { cursor, started } = entry.state;
-      const answer = await track(() => api.request(wavesPath(source, cursor, started)));
+      const answer = await getWaves(wavesPath(source, cursor, started));
       if (!live(source, entry)) return;
       if (!isWavesAnswer(answer)) {
         set(entry, { status: WAVE_STATUS.UNAVAILABLE });
@@ -268,15 +273,17 @@ export function createWaveStore({
   };
 }
 
-const perSession = new WeakMap();
+const perFeed = new WeakMap();
 
-/** The session's one wave store, made on first use from its own API client and `track`: a panel
- *  needs nothing from LiveApp, and every panel of a session shares the subscriptions. */
-export function waveStoreFor(session) {
-  let store = perSession.get(session);
+/** The feed's one wave store, made on first use from its `getWaves` alone. A session has one feed
+ *  (session/feeds.js), so every panel of a session shares the subscriptions, and a panel needs
+ *  nothing from LiveApp. */
+export function waveStoreFor(feed) {
+  if (typeof feed?.getWaves !== "function") throw new TypeError("waveStoreFor: a wave feed is required");
+  let store = perFeed.get(feed);
   if (!store) {
-    store = createWaveStore({ api: session.api, track: session.track });
-    perSession.set(session, store);
+    store = createWaveStore({ getWaves: feed.getWaves });
+    perFeed.set(feed, store);
   }
   return store;
 }

@@ -10,13 +10,15 @@
 //   5. The patient binding is the caller's (§5.5): the patient screen mounts this only for the
 //      strip's `link === "one"`.
 //   6. Nothing stored (§5.6) and 8. no sound of any kind (§5.8) — waveBoundaries.test.js.
+// It holds nothing of the session (I1): the screen that draws it hands it the session's wave feed
+// (`feed`, session/feeds.js), whose one capability is a GET of the waves route, and it reaches no
+// session context of its own.
 // It polls only while open, mounted and visible (data/waveStore.js). On the patient screen it
 // draws nothing until the first answer, and nothing when waves are off (409): it does not
 // advertise a panel it cannot fill. On the device screen it is opened by hand (`collapsible`), so
 // there it says why it shows nothing.
 import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { useSession } from "../../session/SessionProvider.jsx";
 import { WAVE_STATUS, waveStoreFor } from "../../data/waveStore.js";
 import { Button, Note, Tag } from "../../ui/index.js";
 import { WaveRows } from "./WaveRows.jsx";
@@ -91,16 +93,17 @@ function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, ca
 /**
  * One monitor's waves. `source`: the strip card's address. `title`: the bed label (or the device
  * screen's own title). `collapsible`: closed behind a button until opened (the device screen, so
- * that a list of monitors polls none of them by itself). `store`, `raf`, `caf`: for the tests; the
- * page uses the session's wave store and the browser's frame clock.
+ * that a list of monitors polls none of them by itself). `feed`: the session's wave feed
+ * (session/feeds.js `waveFeedFor`), from the screen; the panel polls through the feed's wave store.
+ * `store`, `raf`, `caf`: for the tests (a wave store in place of the feed's, and a frame clock in
+ * place of the browser's).
  *
  * Another `source` is another panel (`key`): the old monitor is let go, the new one watched, and
  * nothing of the old one's — its full screen least of all — carries over.
  */
-export function WavePanel({ source, title, collapsible = false, store, raf, caf, className = "" }) {
+export function WavePanel({ source, title, collapsible = false, feed, store, raf, caf, className = "" }) {
   const { t } = useI18n();
-  const { store: session } = useSession();
-  const waves = store ?? waveStoreFor(session);
+  const waves = store ?? waveStoreFor(feed);
   const [open, setOpen] = useState(!collapsible);
   const showRef = useRef(null);
   const hideRef = useRef(null);

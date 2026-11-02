@@ -12,14 +12,14 @@ import {
 
 const RESTARTED = "2026-10-27T10:00:00.500Z";      // another hub process: the hub restarted
 
-function harness({ reply = () => answer(), visible = true, track } = {}) {
+function harness({ reply = () => answer(), visible = true } = {}) {
   const timers = manualTimers();
   let shown = visible;
   const watchers = new Set();
   const clock = { perf: 5000 };
-  const api = { request: vi.fn(async () => reply()) };
+  const getWaves = vi.fn(async () => reply());
   const store = createWaveStore({
-    api, track, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    getWaves, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => shown,
     onVisibility: (fn) => { watchers.add(fn); return () => watchers.delete(fn); },
     perfNow: () => clock.perf,
@@ -29,7 +29,7 @@ function harness({ reply = () => answer(), visible = true, track } = {}) {
     for (const fn of watchers) fn();
     await settle();
   };
-  return { api, store, timers, show, clock, watchers };
+  return { getWaves, store, timers, show, clock, watchers };
 }
 
 const pathOf = (since, started) =>
@@ -37,32 +37,32 @@ const pathOf = (since, started) =>
 
 describe("the wave store's polling", () => {
   it("asks for nothing until a monitor is watched, then for that monitor from cursor 0", async () => {
-    const { api, store } = harness();
+    const { getWaves, store } = harness();
     await settle();
-    expect(api.request).not.toHaveBeenCalled();
+    expect(getWaves).not.toHaveBeenCalled();
     store.watch(SOURCE);
     await settle();
     // the path alone: a hung poll is bounded by the API client's own limit (backendApi's `timed`
     // honours only a longer one), and the rows age into "akış durdu" meanwhile (R6)
-    expect(api.request.mock.calls).toEqual([[`/infinity-waves/${SOURCE}?since=0`]]);
+    expect(getWaves.mock.calls).toEqual([[`/infinity-waves/${SOURCE}?since=0`]]);
   });
 
   it("polls every 750 ms with the cursor of the last answer", async () => {
-    const { api, store, timers } = harness({ reply: () => answer(undefined, { cursor: 41 }) });
+    const { getWaves, store, timers } = harness({ reply: () => answer(undefined, { cursor: 41 }) });
     store.watch(SOURCE);
     await settle();
     expect(timers.delays).toEqual([WAVE_POLL_MS]);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
+    expect(getWaves).toHaveBeenLastCalledWith(pathOf(41, STARTED));
     expect(store.get(SOURCE).cursor).toBe(41);
   });
 
   it("shares one poll between two watchers of a monitor, and the last release forgets it", async () => {
-    const { api, store, timers, watchers } = harness();
+    const { getWaves, store, timers, watchers } = harness();
     const first = store.watch(SOURCE);
     const second = store.watch(SOURCE);
     await settle();
-    expect(api.request).toHaveBeenCalledTimes(1);
+    expect(getWaves).toHaveBeenCalledTimes(1);
     first();
     first();                                   // a release is idempotent
     expect(timers.delays).toEqual([WAVE_POLL_MS]);
@@ -73,24 +73,22 @@ describe("the wave store's polling", () => {
   });
 
   it("does not poll a hidden tab, and catches up at once when it is shown again", async () => {
-    const { api, store, timers, show } = harness({ visible: false });
+    const { getWaves, store, timers, show } = harness({ visible: false });
     store.watch(SOURCE);
     await settle();
-    expect(api.request).not.toHaveBeenCalled();
+    expect(getWaves).not.toHaveBeenCalled();
     expect(timers.delays).toEqual([]);
     await show(true);
-    expect(api.request).toHaveBeenCalledTimes(1);
+    expect(getWaves).toHaveBeenCalledTimes(1);
     expect(timers.delays).toEqual([WAVE_POLL_MS]);
     await show(false);
     expect(timers.delays).toEqual([]);
   });
 
-  it("runs every call through the session's track", async () => {
-    const track = vi.fn((call) => call());
-    const { store } = harness({ track });
-    store.watch(SOURCE);
-    await settle();
-    expect(track).toHaveBeenCalledTimes(1);
+  it("is made of a feed's getWaves alone, and refuses to be made without one (I1)", () => {
+    expect(() => createWaveStore({})).toThrow(TypeError);
+    // The shape it had before I1 — the session's client and `track` — is no longer one it takes.
+    expect(() => createWaveStore({ api: { request: vi.fn() }, track: (call) => call() })).toThrow(TypeError);
   });
 
   it.each([
@@ -120,28 +118,28 @@ describe("the wave store's polling", () => {
 
 describe("the wave store and the hub process (amendment A4)", () => {
   it("names no hub process on its first poll", async () => {
-    const { api, store } = harness();
+    const { getWaves, store } = harness();
     store.watch(SOURCE);
     await settle();
-    expect(api.request.mock.calls[0][0]).toBe(pathOf(0));
-    expect(api.request.mock.calls[0][0]).not.toContain("started");
+    expect(getWaves.mock.calls[0][0]).toBe(pathOf(0));
+    expect(getWaves.mock.calls[0][0]).not.toContain("started");
   });
 
   it("sends back the last answer's cursor and hub process on the next poll", async () => {
     const cursors = [41, 57];
-    const { api, store, timers } = harness({ reply: () => answer(undefined, { cursor: cursors.shift() ?? 57 }) });
+    const { getWaves, store, timers } = harness({ reply: () => answer(undefined, { cursor: cursors.shift() ?? 57 }) });
     store.watch(SOURCE);
     await settle();
     expect(store.get(SOURCE).started).toBe(STARTED);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
+    expect(getWaves).toHaveBeenLastCalledWith(pathOf(41, STARTED));
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(57, STARTED));
+    expect(getWaves).toHaveBeenLastCalledWith(pathOf(57, STARTED));
   });
 
   it("takes a restarted hub's cursor and process, and its whole window adds no block twice", async () => {
     let reply = () => answer(bed4(), { cursor: 400 });
-    const { api, store, timers } = harness({ reply: () => reply() });
+    const { getWaves, store, timers } = harness({ reply: () => reply() });
     store.watch(SOURCE);
     await settle();
     const before = store.get(SOURCE).blocks;
@@ -158,7 +156,7 @@ describe("the wave store and the hub process (amendment A4)", () => {
     for (const id of ["259", "513", "769", "6422"]) expect(device.blocks[id][0]).toBe(before[id][0]);
     for (const list of Object.values(device.blocks)) expect(new Set(list.map((b) => b.t)).size).toBe(list.length);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(12, RESTARTED));
+    expect(getWaves).toHaveBeenLastCalledWith(pathOf(12, RESTARTED));
   });
 
   it.each([
@@ -166,7 +164,7 @@ describe("the wave store and the hub process (amendment A4)", () => {
     ["with an empty hub process", (a) => ({ ...a, started: "" })],
   ])("an answer %s is unavailable, and the blocks, cursor and process held stay", async (_name, spoil) => {
     let reply = () => answer(undefined, { cursor: 41 });
-    const { api, store, timers } = harness({ reply: () => reply() });
+    const { getWaves, store, timers } = harness({ reply: () => reply() });
     store.watch(SOURCE);
     await settle();
     const before = store.get(SOURCE).blocks;
@@ -178,7 +176,7 @@ describe("the wave store and the hub process (amendment A4)", () => {
     expect(device.cursor).toBe(41);
     expect(device.started).toBe(STARTED);
     await timers.fire();
-    expect(api.request).toHaveBeenLastCalledWith(pathOf(41, STARTED));
+    expect(getWaves).toHaveBeenLastCalledWith(pathOf(41, STARTED));
   });
 
   it("takes a hub process of 1 to 40 characters, the API's own bound, and nothing else", () => {
@@ -217,7 +215,7 @@ describe("the wave store's statuses", () => {
   it.each([[403, WAVE_STATUS.DENIED], [404, WAVE_STATUS.GONE], [409, WAVE_STATUS.OFF]])(
     "a %i drops the blocks, the cursor and the process, and stops polling (%s)", async (code, status) => {
       let reply = () => answer(undefined, { cursor: 41 });
-      const { api, store, timers, show } = harness({ reply: () => reply() });
+      const { getWaves, store, timers, show } = harness({ reply: () => reply() });
       store.watch(SOURCE);
       await settle();
       reply = () => { throw refusal(code); };
@@ -228,10 +226,10 @@ describe("the wave store's statuses", () => {
       expect(device.cursor).toBe(0);
       expect(device.started).toBeNull();
       expect(timers.delays).toEqual([]);
-      const asked = api.request.mock.calls.length;
+      const asked = getWaves.mock.calls.length;
       await show(false);
       await show(true);                        // the tab shown again does not wake a refused monitor
-      expect(api.request).toHaveBeenCalledTimes(asked);
+      expect(getWaves).toHaveBeenCalledTimes(asked);
       expect(timers.delays).toEqual([]);
     });
 
@@ -292,11 +290,18 @@ describe("what the wave store holds", () => {
     expect(wavesPath("a/b", 0)).toBe("/infinity-waves/a%2Fb?since=0");
   });
 
-  it("gives a session one store, and another session another", () => {
-    const session = { api: { request: vi.fn() }, track: (call) => call() };
-    const store = waveStoreFor(session);
-    expect(waveStoreFor(session)).toBe(store);
-    expect(waveStoreFor({ api: session.api, track: session.track })).not.toBe(store);
+  it("gives a feed one store, made of its getWaves alone, and another feed another (I1)", async () => {
+    const feed = Object.freeze({ getWaves: vi.fn(async () => answer()) });
+    const store = waveStoreFor(feed);
+    expect(waveStoreFor(feed)).toBe(store);
+    expect(waveStoreFor(Object.freeze({ getWaves: feed.getWaves }))).not.toBe(store);
+    const release = store.watch(SOURCE);
+    await settle();
+    expect(feed.getWaves.mock.calls).toEqual([[`/infinity-waves/${SOURCE}?since=0`]]);
+    release();
+    // Nothing but a feed: not nothing, and not a session's client and `track`.
+    expect(() => waveStoreFor(undefined)).toThrow(TypeError);
+    expect(() => waveStoreFor({ api: { request: vi.fn() }, track: (call) => call() })).toThrow(TypeError);
   });
 });
 

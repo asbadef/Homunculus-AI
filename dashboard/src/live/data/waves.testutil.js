@@ -106,7 +106,9 @@ export function manualFrames() {
 
 const READY = Object.freeze({ phase: "ready", user: null });
 
-/** The least a <SessionProvider> needs for a component that only asks for `store`. */
+/** The least a session needs to make a wave feed of (session/feeds.js `waveFeedFor`): a client
+ *  with `request`, and `track`. It also stands in a <SessionProvider> (`subscribe`, `getState`),
+ *  though no wave module reads one (I1). */
 export function sessionStub(api = {}) {
   return { subscribe: () => () => {}, getState: () => READY, api, track: (call) => call() };
 }

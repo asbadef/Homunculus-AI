@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
-import { SessionProvider } from "../../session/SessionProvider.jsx";
+import { waveFeedFor } from "../../session/feeds.js";
 import { WAVE_STATUS, createWaveStore } from "../../data/waveStore.js";
 import {
   SOURCE, answer, bed4, bed8, manualFrames, manualTimers, refusal, run, sessionStub, settle,
@@ -52,28 +52,27 @@ afterEach(() => {
   localStorage.clear();
 });
 
-/** The panel on a wave store whose API answers `reply()`; the store's clock reads 0 at every answer.
- *  `setSource(next)` draws the same panel for another monitor. */
+/** The panel on a wave store whose feed answers `reply()`; the store's clock reads 0 at every answer.
+ *  `setSource(next)` draws the same panel for another monitor. No session context is around it: the
+ *  panel takes none (I1). */
 async function show({ reply = () => answer(), collapsible = false } = {}) {
   const timers = manualTimers();
   const frames = manualFrames();
-  const request = vi.fn(async () => reply());
+  const getWaves = vi.fn(async () => reply());
   const store = createWaveStore({
-    api: { request }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    getWaves, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
   const tree = (source) => (
     <I18nProvider>
-      <SessionProvider store={sessionStub()}>
-        <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
-      </SessionProvider>
+      <WavePanel source={source} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} collapsible={collapsible} />
     </I18nProvider>
   );
   const { rerender } = render(tree(SOURCE));
   await act(async () => { await settle(); });
   const frame = (perfMs) => act(() => { frames.run(perfMs); });
   const setSource = async (next) => { await act(async () => { rerender(tree(next)); await settle(); }); };
-  return { store, timers, frames, request, frame, setSource };
+  return { store, timers, frames, getWaves, frame, setSource };
 }
 
 const STAMP = "Dalga · doğrulanmamış · yalnız görüntü — birincil alarm başucu monitörüdür";
@@ -263,28 +262,28 @@ describe("the waveform panel", () => {
   it("draws nothing before the first answer, then the panel (R10)", async () => {
     let release;
     const first = new Promise((resolve) => { release = resolve; });
-    const { request } = await show({ reply: () => first });
-    expect(request).toHaveBeenCalledTimes(1);                        // asked, and waiting
+    const { getWaves } = await show({ reply: () => first });
+    expect(getWaves).toHaveBeenCalledTimes(1);                       // asked, and waiting
     expect(document.querySelector("[data-wave-panel]")).toBeNull();
     await act(async () => { release(answer()); await settle(); });
     expect(panel()).toBeInTheDocument();
   });
 
   it("watches the new monitor when the source changes, and lets the old one go", async () => {
-    const { request, store, timers, setSource } = await show();
-    expect(request.mock.calls[0][0]).toContain("/infinity-waves/192.0.2.10?");
+    const { getWaves, store, timers, setSource } = await show();
+    expect(getWaves.mock.calls[0][0]).toContain("/infinity-waves/192.0.2.10?");
     await setSource("192.0.2.11");
-    expect(request.mock.calls.at(-1)[0]).toContain("/infinity-waves/192.0.2.11?");
+    expect(getWaves.mock.calls.at(-1)[0]).toContain("/infinity-waves/192.0.2.11?");
     expect(store.get(SOURCE).status).toBe(WAVE_STATUS.IDLE);         // released and forgotten
     expect(store.get("192.0.2.11").status).toBe(WAVE_STATUS.OK);
     expect(timers.delays).toHaveLength(1);                           // one monitor polls, not two
   });
 
   it("on the device screen waits behind a button, polls once opened and stops when hidden", async () => {
-    const { request, timers } = await show({ collapsible: true });
-    expect(request).not.toHaveBeenCalled();
+    const { getWaves, timers } = await show({ collapsible: true });
+    expect(getWaves).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu göster" })); await settle(); });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(getWaves).toHaveBeenCalledTimes(1);
     expect(timers.delays).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Dalga formunu gizle" }));
     expect(timers.delays).toEqual([]);
@@ -331,6 +330,22 @@ describe("the waveform panel", () => {
     expect(frames.waiting).toBe(1);
     cleanup();
     expect(frames.waiting).toBe(0);
+  });
+
+  it("polls through the session's wave feed alone, with no session context around it (I1)", async () => {
+    // The page's own wiring: the screen's feed, its wave store, the browser's timers and clock.
+    // Without a <SessionProvider> above it a panel that reached for the session would throw.
+    const request = vi.fn(async () => answer());
+    const session = sessionStub({ request });
+    const frames = manualFrames();
+    render(
+      <I18nProvider>
+        <WavePanel feed={waveFeedFor(session)} source={SOURCE} title="REA-01 · 2" raf={frames.raf} caf={frames.caf} />
+      </I18nProvider>,
+    );
+    await act(async () => { await settle(); });
+    expect(panel()).toHaveTextContent(STAMP);
+    expect(request.mock.calls).toEqual([[`/infinity-waves/${SOURCE}?since=0`]]);
   });
 
   it("draws the full set for a BED07-like monitor from four separate runs", async () => {
