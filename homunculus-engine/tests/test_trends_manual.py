@@ -144,20 +144,53 @@ def test_a_read_that_just_fits_does_not_say_it_cut(client, monkeypatch):
     assert len(_channel(body, "heart_rate")["manual"]) == 2
 
 
-@pytest.mark.parametrize("limit", [1, 2, 3])
-def test_a_cut_page_is_a_prefix_so_a_withdrawal_never_stands_without_its_chart_row(client, monkeypatch, limit):
-    """The read is oldest-first by id and a withdrawal is written after the row it withdraws, so a page holding a
-    withdrawal holds that row; what a cut can lose is the NEWEST rows — a withdrawal behind the cut — and then
-    `manual_truncated` is true."""
-    monkeypatch.setattr(trends, "TRENDS_MANUAL_LIMIT", limit)
-    first = _chart(client, "heart_rate", 82, 30)
-    second = _chart(client, "heart_rate", 84, 20)
-    _withdraw(client, first)                       # trail order: first, second, withdraw(first)
+def test_a_cut_keeps_the_newest_rows_so_a_kept_entry_keeps_its_withdrawal(client, monkeypatch):
+    """Review of Task 6: the read keeps the NEWEST rows. A withdrawal is written after the row it withdraws, so
+    any chart row on the page has its withdrawal on it too; a cut loses only the oldest entries. Kept the other
+    way round, the withdrawal fell behind the cut: the engine had dropped the value, the list showed it as
+    not withdrawn, and the dashboard offered a «hatalı giriş» button the engine answers 409."""
+    monkeypatch.setattr(trends, "TRENDS_MANUAL_LIMIT", 2)
+    _chart(client, "heart_rate", 82, 30)
+    wrong = _chart(client, "heart_rate", 182, 20)
+    _withdraw(client, wrong)                       # trail order: first, wrong, withdraw(wrong)
     body = _trends(client)
     manual = _channel(body, "heart_rate")["manual"]
-    assert [m["entry"] for m in manual] == [first, second][:limit]
-    assert [m["retracted"] is not None for m in manual] == ([True, False] if limit == 3 else [False, False][:limit])
-    assert body["manual_truncated"] is (limit < 3)
+    assert [(m["entry"], m["value"]) for m in manual] == [(wrong, 182)]
+    assert manual[0]["retracted"]["reason"] == WHY
+    assert body["manual_truncated"] is True
+
+
+@pytest.mark.parametrize("limit, listed, withdrawn, cut", [
+    (3, ["first", "second"], [True, False], False),    # everything fits: write order, first withdrawn
+    (2, ["second"], [False], True),                    # the oldest chart row went; its withdrawal stays unmatched
+    (1, [], [], True),                                 # only the withdrawal is left, and it names no listed row
+])
+def test_a_cut_loses_the_oldest_entries_and_lists_the_rest_in_write_order(client, monkeypatch, limit, listed,
+                                                                           withdrawn, cut):
+    monkeypatch.setattr(trends, "TRENDS_MANUAL_LIMIT", limit)
+    ids = {"first": _chart(client, "heart_rate", 82, 30), "second": _chart(client, "heart_rate", 84, 20)}
+    _withdraw(client, ids["first"])                # trail order: first, second, withdraw(first)
+    body = _trends(client)
+    manual = _channel(body, "heart_rate")["manual"]
+    assert [m["entry"] for m in manual] == [ids[name] for name in listed]
+    assert [m["retracted"] is not None for m in manual] == withdrawn
+    assert body["manual_truncated"] is cut
+
+
+def test_a_bedside_value_dated_just_ahead_and_written_before_the_window_start_is_listed(client):
+    """The sliver of X1: the door lets a bedside time run up to BEDSIDE_SKEW (2 min) ahead of the write, so the
+    row's write time can be earlier than the window start while the time it records is inside the window. The
+    trail is read from `since - BEDSIDE_SKEW`; the exact bound is kept by the time filter."""
+    ahead = datetime.now(timezone.utc) + timedelta(minutes=1)
+    entry = _chart(client, "heart_rate", 82, 0, at=ahead.isoformat())
+    (row,) = client.app.state.audit.records(tenant="h1", patient_id="bed-3", event_type="chart", limit=10)
+    written = datetime.fromisoformat(row.ts)
+    # A window that starts 30 s after the write and 30 s before the value's own time.
+    now = written + timedelta(hours=6, seconds=30)
+    assert datetime.fromisoformat(row.payload["obs_ts"]) > written + timedelta(seconds=30)
+    body = trends.patient_trends(Engine(), client.app.state.audit, hospital="h1", patient_id="bed-3", hours=6,
+                                 now=now)
+    assert [m["entry"] for m in _channel(body, "heart_rate")["manual"]] == [entry]
 
 
 def test_a_value_the_trail_cannot_read_is_left_out_not_shown_as_zero(client):
@@ -184,3 +217,73 @@ def test_at_is_a_utc_instant_and_the_same_instant_as_the_point(client):
     assert [datetime.fromisoformat(m["at"]) for m in hr["manual"]] == [datetime.fromisoformat(p[0]) for p in hr["points"]]
     assert hr["manual"][0]["at"] == hr["points"][0][0]                 # a UTC sender: the very same text
     assert hr["points"][1][0].endswith("+04:00")                       # the point keeps the sender's offset
+
+
+def _plant(c, value, obs_ts, tenant="h1", subject="heart_rate") -> int:
+    """A `chart` row written straight into the trail, as an older build or another door could have left it."""
+    return c.app.state.audit.append(AuditEvent(tenant, "chart", "bed-3", subject, {
+        "value": value, "unit": "/min", "obs_ts": obs_ts, "charted_by": "hem.ayse"})).id
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "minus-inf"])
+def test_a_value_that_is_not_a_finite_number_is_left_out_and_the_route_answers_200(client, value):
+    good = _chart(client, "heart_rate", 82, 30)
+    _plant(client, value, _ago(10))
+    assert [m["entry"] for m in _channel(_trends(client), "heart_rate")["manual"]] == [good]   # _trends asserts 200
+
+
+@pytest.mark.parametrize("value", [10**400, -(10**400)], ids=["huge", "minus-huge"])
+def test_an_integer_too_large_for_a_float_is_left_out_not_a_500(client, value):
+    """`math.isfinite(10**400)` raises OverflowError: the read would answer 500 for as long as the row sat in the
+    window. A whole number the trail can hold as a float (the door writes floats; an older row may hold an int)
+    still lists.
+
+    The door charts first, so the tenant's engine is built before the row is planted: a restart's replay
+    (`rehydrate.observation_of`, `float(p["value"])`) would meet the same OverflowError on such a row, which is
+    that module's to guard, not this read's."""
+    door = _chart(client, "heart_rate", 82, 40)
+    small = _plant(client, 82, _ago(30))
+    _plant(client, value, _ago(10))
+    assert [(m["entry"], m["value"]) for m in _channel(_trends(client), "heart_rate")["manual"]] == [
+        (door, 82), (small, 82)]
+
+
+def test_a_hand_value_is_the_point_value_on_a_decimal_channel(client):
+    _chart(client, "temperature", 36.6, 15)
+    t = _channel(_trends(client), "temperature")
+    assert [m["value"] for m in t["manual"]] == [36.6]
+    assert [p[1] for p in t["points"]] == [36.6]
+
+
+def test_a_withdrawals_time_is_a_utc_instant_from_the_moment_it_was_written(client):
+    wrong = _chart(client, "heart_rate", 182, 20)
+    before = datetime.now(timezone.utc)
+    _withdraw(client, wrong)
+    after = datetime.now(timezone.utc)
+    at = _channel(_trends(client), "heart_rate")["manual"][0]["retracted"]["at"]
+    assert at.endswith("+00:00")
+    assert before <= datetime.fromisoformat(at) <= after
+
+
+def test_the_window_bounds_are_the_exact_instants_both_inclusive(client):
+    """The time filter is on the time the value records: `since` and `until` themselves are in; a second outside
+    either is out."""
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=6)
+    second = timedelta(seconds=1)
+    planted = {name: _plant(client, 80 + n, stamp.isoformat()) for n, (name, stamp) in enumerate([
+        ("at_until", now), ("after_until", now + second), ("at_since", since), ("before_since", since - second)])}
+    body = trends.patient_trends(Engine(), client.app.state.audit, hospital="h1", patient_id="bed-3", hours=6,
+                                 now=now)
+    assert sorted(m["entry"] for m in _channel(body, "heart_rate")["manual"]) == sorted(
+        [planted["at_until"], planted["at_since"]])
+
+
+def test_another_hospitals_rows_are_never_listed(client):
+    mine = _chart(client, "heart_rate", 82, 30)
+    stamp = _ago(10)
+    _plant(client, 99, stamp, tenant="h2")                               # same patient id, another tenant
+    client.app.state.audit.append(AuditEvent("h2", RETRACT, "bed-3", "heart_rate", {
+        "entry": mine, "value": 82, "obs_ts": stamp, "reason": WHY, "retracted_by": "dr.elif"}))
+    hr = _channel(_trends(client), "heart_rate")
+    assert [(m["entry"], m["retracted"]) for m in hr["manual"]] == [(mine, None)]
