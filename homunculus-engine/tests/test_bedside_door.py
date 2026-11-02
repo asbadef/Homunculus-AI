@@ -235,18 +235,31 @@ class TestTheDoorNamesItsRows:
 
 class TestTheNurseIsTold:
     def test_an_immediate_alert_from_hand_vitals_notifies_the_nurse(self, client):
-        """X2: as /ingest does for a device's reading."""
+        """X2: as /ingest does for a device's reading — the nurse's queue gets the note, and the trail the row.
+        The queue is the hub's (`tests/test_api_notifications.py`): a route that audited the note but never
+        published it would tell no one."""
+        told = client.app.state.notification_hub.subscribe("h1", "nurse")
         r = _chart(client, RISKY, at=_ago(5))
         assert "news2" in r.json()["alerts"]
         notes = _rows(client, "notification")
         assert [(n.patient_id, n.subject, n.payload["audience"], n.payload["trigger"]) for n in notes] == [
             ("bed-3", "news2", "nurse", "new")]
+        assert [(n["patient_id"], n["kind"], n["trigger"]) for n in (told.get_nowait() for _ in range(told.qsize()))
+                ] == [("bed-3", "news2", "new")]
 
     def test_the_same_alert_is_not_told_twice(self, client):
+        told = client.app.state.notification_hub.subscribe("h1", "nurse")
         for _ in range(2):
             _chart(client, RISKY, at=_ago(5))
         assert len(_rows(client, "notification")) == 1
+        assert told.qsize() == 1
 
-    def test_a_routine_entry_tells_nobody(self, client):
-        _chart(client, [{"code": "temperature", "value": 37.0}])
+    def test_an_alert_that_is_not_immediate_tells_nobody(self, client):
+        """The urgency filter: RR 26 alone is NEWS2 3, a «soon» alert on the board — and no note. Charting
+        something that raises nothing at all (a normal temperature) would not exercise the filter."""
+        told = client.app.state.notification_hub.subscribe("h1", "nurse")
+        r = _chart(client, [{"code": "resp_rate", "value": 26}], at=_ago(5))
+        assert r.status_code == 200, r.text
+        assert "news2" in r.json()["alerts"]
         assert _rows(client, "notification") == []
+        assert told.qsize() == 0
