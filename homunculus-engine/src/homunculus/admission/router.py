@@ -901,7 +901,10 @@ async def list_care_team(
 #   * `target_unit_id` taken from the target bed, or refused when it differs;
 #   * the confirm bound to the bed named at initiate;
 #   * the card moved with `put_identity`;
-#   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well;
+#   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well — but it reads the card's key
+#     from the closed row's `protocol_no`, which a TRANSFERRED row no longer holds (O8, below): for a
+#     transfer it must check that the card moved, never take a card off (that card is the patient's,
+#     still admitted at the target bed; taking it off would end that patient's alerts);
 #   * a transfer UI;
 #   * the arrival's audit row carrying the moved `protocol_no` — the service moves it to the arriving
 #     row (O8), so the TRANSFERRED row no longer holds it, and the card keeps its key across the move.

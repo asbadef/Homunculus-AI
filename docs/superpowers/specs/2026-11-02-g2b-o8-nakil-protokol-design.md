@@ -44,8 +44,10 @@ its own slice (B1b). This follow-up only makes the service do the right thing, s
 1. `moved = admission.protocol_no`.
 2. If `moved` is not None: `admission.protocol_no = None`, then **`await db.flush()`**. The
    order matters:
-   - SQLAlchemy may otherwise flush the new row's INSERT before the source's UPDATE, and Postgres
-     checks the unique index per statement;
+   - Postgres checks the unique index per statement, and the order one flush would pick is
+     SQLAlchemy's implementation detail, not a promise. Today it emits a table's UPDATEs before its
+     INSERTs, and `Admission` has no self-relationship to reorder them. The explicit flush states the
+     order instead of relying on that;
    - the same reason makes A-37 ask for `identity_digest` to be flushed once the source has left its
      open state.
 3. The new `Admission(...)` carries `protocol_no=moved`.
@@ -63,14 +65,19 @@ moves before the insert.
   - The label route reads the admission it is given. A reprint for a `TRANSFERRED` row would answer
     `no_protocol`, which is right: the label belongs to the open admission.
 
-**A-37's list** (the comment above `_transfer_closed` in `admission/router.py`) gains two items:
-- the arrival's audit row carries the moved `protocol_no` (the source row no longer has it);
-- the card keeps its key across the transfer (the protocol moved with it).
+**A-37's list** (the comment above `_transfer_closed` in `admission/router.py`) gains one item with two
+facts, and its `_last_card_off` item a warning (from the final review):
+- the arrival's audit row carries the moved `protocol_no` (the source row no longer has it), and the
+  card keeps its key across the transfer (the protocol moved with it);
+- `_last_card_off` reads the card's key from a closed row's `protocol_no`, which a TRANSFERRED row no
+  longer holds: for a transfer it must check that the card moved, never take it off.
 
 ## 4. Errors
 
 None new. A unique-index violation can only mean the flush order was lost. It surfaces as the
-IntegrityError it is, never as a silent second number. The test pins that it does not happen.
+IntegrityError it is, never as a silent second number. The test pins the outcome (one holder of the
+number, no IntegrityError), not the order: removing only the explicit flush would pass today, for the
+reason in §3.
 
 ## 5. Testing
 
