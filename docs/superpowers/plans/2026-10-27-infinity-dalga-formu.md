@@ -3432,7 +3432,7 @@ describe("the trace", () => {
 
   it("holds ECG at a fixed gain and marks where it leaves the row, once per run", () => {
     const y = ecgY(60);
-    expect(y(ECG_SPAN).clip).toBeNull();
+    expect(y(ECG_SPAN)).toEqual({ y: 2, clip: null });                // full scale is the row's edge: the gain is pinned
     expect(y(ECG_SPAN + 1)).toEqual({ y: 2, clip: "top" });
     expect(y(-ECG_SPAN - 1)).toEqual({ y: 58, clip: "bottom" });
     const clipped = tracePaths([wblock(259, 1000, (i) => (i < 3 ? 1500 : i < 6 ? -1500 : 0))],
