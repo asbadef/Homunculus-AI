@@ -33,7 +33,9 @@ from homunculus.api.alert_lifecycle import (
     Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
 )
-from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, iter_records, verify_chain
+from homunculus.api.audit import (
+    AuditEvent, AuditLog, InMemoryAuditLog, iter_records, iter_records_of, verify_chain,
+)
 from homunculus.api.board import (
     _news2, board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
 )
@@ -43,8 +45,9 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    GCS_NOT_WHOLE, PLAUSIBLE, ClinicalEntryError, build_entries, chart_observations, profile_from_payload,
-    profile_to_payload,
+    GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MIN_REASON_CHARS,
+    RETRACT_NEEDS_PERSON, RETRACT_REASON_SHORT, RETRACT_UNKNOWN, ClinicalEntryError, build_entries,
+    chart_observations, profile_from_payload, profile_to_payload,
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -56,7 +59,9 @@ from homunculus.api.infinity_shadow import (
 )
 from homunculus.api.monitor_samples import InMemorySamples, SampleStore, is_missing_table, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
-from homunculus.api.rehydrate import rehydrate
+from homunculus.api.rehydrate import (
+    REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
+)
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.admission.boardlink import BoardLink    # G2-B1a
@@ -380,8 +385,12 @@ def create_app(
             return
         engine = Engine()
         store = AckStore()
+        # G3-01 (D12): the withdrawn hand entries first — one read of the `chart_retract` rows — so the replay
+        # below scores each patient as the live withdrawal's rebuild did.
+        withdrawn = retracted_entries(iter_records_of(audit, tenant=hospital, event_types={RETRACT},
+                                                      page=REHYDRATE_PAGE))
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
-        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE))
+        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn)
         # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
         # was discharged is retired, whether or not the discharge's rows were written (a crash
         # between the tombstone write and the retire call; an audit that failed after the
@@ -1068,6 +1077,96 @@ def create_app(
         for item in charted:
             state.ingest(item.observation)
         return {"patient_id": patient_id, "preview": True, "at": now.isoformat(), "news2": _news2(state, now)}
+
+    @app.post("/clinical/{patient_id}/entries/{entry}/retract")
+    async def retract_entry(patient_id: str, entry: str, body: dict = Body(...),
+                            authorization: str | None = Header(default=None)):
+        """G3-01 (D10, D11, X3, X4, X11): «hatalı giriş» — a hand entry withdrawn from every score.
+
+        `entry` is the value's `chart` row (the door answered it). The patient's rows are read from the trail,
+        then replayed without every withdrawn entry into a SCRATCH engine, with the restart's own helpers
+        (`rebuild_patient`). Only then is the `chart_retract` row appended, and the scratch patient handed to the
+        real engine (`Engine.adopt`). The trail row comes first, then memory, and a read or an append that fails
+        changes nothing (X4).
+
+        Then the lifecycle hook runs once, at the request's instant. An alert that no longer fires ends — or,
+        critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers is a new one, so it
+        is stamped and, if immediate, told to the nurse (X3). The notifier's dedup tells nothing already told.
+        The shadow lane drops the reading, guarded (X5), and the card is republished — as never measured when
+        the withdrawn value was the patient's only one: `_card` would create the patient in the engine again.
+
+        Refusals:
+        - 403 for a device credential (X11): a withdrawal names a person;
+        - 400 for a reason shorter than 10 characters after trim;
+        - 409 for a discharged number;
+        - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
+        - 409 for an entry already withdrawn.
+        A refusal writes nothing. The chart row itself is never changed: the trail keeps both."""
+        caller = await _caller(authorization)
+        _require(caller, CLINICAL_CHART)
+        if caller.is_device:
+            raise HTTPException(status_code=403, detail=RETRACT_NEEDS_PERSON)
+        hospital = caller.hospital
+        await _require_patient(caller, authorization, patient_id)
+        raw_reason = body.get("reason")
+        reason = raw_reason.strip() if isinstance(raw_reason, str) else ""
+        if len(reason) < RETRACT_MIN_REASON_CHARS:
+            raise HTTPException(status_code=400, detail=RETRACT_REASON_SHORT)
+        # Before any read or rebuild (review of Task 5): REBUILD_EVENTS does not carry the discharge's
+        # `alert_cleared` row, so a rebuild and `adopt` for a retired number would bring the discharged patient
+        # back into the engine. A `kabul` tombstone is never pruned, so this check holds for good.
+        record = identities.get(hospital, patient_id)
+        if is_tombstone(record):
+            raise HTTPException(status_code=409, detail=RETRACT_DISCHARGED)
+        # An audit id in plain ASCII digits (review of Task 5): `str.isdigit` alone takes «²», which `int` then
+        # refuses (a 500), and Arabic-Indic «١٢», which `int` reads as 12 — another entry, typed in another
+        # script. Eighteen digits reach past any trail and keep the id inside a 64-bit integer.
+        if not (entry.isascii() and entry.isdigit() and len(entry) <= 18):
+            raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
+        wanted = int(entry)
+        engine = _engine(hospital)             # rehydrated before anything is read or written
+        store = _store(hospital)
+        rows = list(iter_records_of(audit, tenant=hospital, patient_id=patient_id,
+                                    event_types=REBUILD_EVENTS | {RETRACT}, page=REHYDRATE_PAGE))
+        target = next((r for r in rows if r.id == wanted and r.event_type == "chart"), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
+        withdrawn = retracted_entries(rows)
+        if target.id in withdrawn:
+            raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
+        scratch = Engine()
+        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id})
+        now = datetime.now(timezone.utc)
+        audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
+            "entry": target.id, "value": target.payload.get("value"), "obs_ts": target.payload.get("obs_ts"),
+            "reason": reason, "retracted_by": caller.actor}))
+        engine.adopt(scratch, patient_id)
+        cleared = sync_alerts(engine, store, patient_id, now)
+        _audit_cleared(hospital, cleared, now)
+        for a in engine.active_alerts(patient_id):
+            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
+                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
+        observation = observation_of(target)
+        if observation is not None:
+            lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
+        # The card as a restart would build it (review of Task 5). `adopt` forgets a patient the scratch engine
+        # never measured — the withdrawn value was the only one — and `_card` (`patient_board`) would create it
+        # again, a NEWS2 0 nobody measured (D1). As /ingest's identity branch chooses: the measured card, the
+        # identity card of an admission, or the removal of an id the board knows only from that value.
+        if patient_id in set(engine.patient_ids()):
+            frame = _card(hospital, patient_id, record)
+        elif record is not None:
+            frame = _identity_card(hospital, record)
+        else:
+            frame = {"patient_id": patient_id, "removed": True, "identity": None}
+        await broadcaster.publish(hospital, frame)
+        for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
+            await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
+        notifier.prune(hospital, live_keys(engine, store))
+        return {"retracted": target.id, "code": target.subject,
+                "alerts": [a.kind for a in engine.active_alerts(patient_id)]}
 
     @app.put("/clinical/{patient_id}/profile")
     async def set_patient_profile(patient_id: str, body: dict = Body(...),

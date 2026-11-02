@@ -259,6 +259,9 @@ BOARD_EXPECTED = {
     ("POST", "/clinical/{patient_id}"): "clinical.chart",
     # G3-01 (D8): the bedside preview scores what the chart door would chart; it needs the door's permission.
     ("POST", "/clinical/{patient_id}/preview"): "clinical.chart",
+    # G3-01 (D10, X11): «hatalı giriş» withdraws what the door charted — the door's permission; a device is
+    # additionally refused (tests/test_bedside_retract.py).
+    ("POST", "/clinical/{patient_id}/entries/{entry}/retract"): "clinical.chart",
     ("PUT", "/clinical/{patient_id}/profile"): "clinical.chart",
     ("GET", "/scores/sofa/{patient_id}"): "board.view",
     # A device is additionally refused here: a signature names a person

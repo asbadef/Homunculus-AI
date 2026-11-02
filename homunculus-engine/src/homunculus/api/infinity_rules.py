@@ -497,6 +497,17 @@ class ShadowLane:
         if engine is not None:
             engine.set_profile(profile)
 
+    def retract_observation(self, hospital: str, obs: Observation) -> None:
+        """G3-01 (X5): a hand entry withdrawn from the real engine leaves the shadow one too. It is removed from
+        the shadow patient's state, and the lane judges again at its next sample (a linked patient's comes every
+        minute), not here: this lane is not clinical (D1), and its engine judges only on ingest. With the install
+        pending this does nothing (`_installed`): the install, when the next pass runs it, copies a real engine
+        already rebuilt without the entry."""
+        engine = self._installed(hospital)
+        if engine is None or obs.patient_id not in engine.patient_ids():
+            return
+        engine.state(obs.patient_id).remove(obs)
+
     def forget(self, hospital: str, patient_id: str, *, now: datetime | None = None) -> None:
         """A discharge made here (A-11): the shadow engine forgets as the real one does, the link
         and the minute clock go, the open findings close (`discharged`), and the number is held

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from homunculus.api.ackstore import AckStore
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
+from homunculus.api.clinical import RETRACT
 from homunculus.api.rehydrate import rehydrate
 from homunculus.pipeline import Engine
 
@@ -258,8 +259,12 @@ def test_a_restart_replays_every_row_a_page_at_a_time(monkeypatch):
     [card] = client.get("/patients", headers={"Authorization": "Bearer tok"}).json()["patients"]
     assert card["latest"]["heart_rate"] == 140, "the newest row is the board's"
     assert {a["kind"] for a in card["alerts"]} == {"news2"}
-    replay = [r for r in reads if r.get("tenant") == "HOSP1" and "after_id" in r]
+    # The replay's pages are the reads of every kind. G3-01 (D12): the withdrawals are read before it, by kind
+    # and a page at a time too — one short page here, the log holding none.
+    replay = [r for r in reads if r.get("tenant") == "HOSP1" and "after_id" in r and r.get("event_types") is None]
     assert [(r["after_id"], r["limit"]) for r in replay] == [(None, 5), (5, 5), (10, 5)]
+    withdrawals = [r for r in reads if r.get("event_types") == {RETRACT}]
+    assert [(r["after_id"], r["limit"]) for r in withdrawals] == [(None, 5)]
 
 
 def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retries(monkeypatch):
@@ -278,7 +283,9 @@ def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retrie
             self.failed = False
 
         def records(self, **kw):
-            if "after_id" in kw:            # the replay's reads (Aşama B's lane reads its own kinds too)
+            # The replay's reads, of every kind: Aşama B's lane reads its own kinds too, and so does the restart's
+            # read of the withdrawals before the replay (G3-01, D12).
+            if "after_id" in kw and kw.get("event_types") is None:
                 self.after_ids.append(kw["after_id"])
             if kw.get("after_id") == 5 and not self.failed:      # the second page, once
                 self.failed = True

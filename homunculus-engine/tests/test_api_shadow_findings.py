@@ -38,7 +38,11 @@ JWTS = {
     "other-jwt": Caller(hospital=HOSPITAL, actor="zeyneb", groups=("nurse",), perms=frozenset({"board.view"})),
     "tech-jwt": Caller(hospital=HOSPITAL, actor="kamal", groups=("tech",), perms=frozenset({"devices.manage"})),
     "h2-jwt": Caller(hospital="h2", actor="leyla", groups=("nurse",), perms=frozenset({"board.view"})),
+    # G3-01: a named chartist — a withdrawal is a person's (X11).
+    "chart-jwt": Caller(hospital=HOSPITAL, actor="hem.ayse", groups=("nurse",),
+                        perms=frozenset({"board.view", "clinical.chart"})),
 }
+CHART = {"Authorization": "Bearer chart-jwt"}
 SCOPES = {"bed-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-b1"})),
           "other-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-x9"}))}
 
@@ -624,3 +628,23 @@ def test_prodserver_keeps_the_samples_in_postgres_whenever_the_database_is_postg
         durable.dispose()
     assert isinstance(prodserver._samples(""), InMemorySamples)
     assert isinstance(prodserver._samples("sqlite:///x.db"), InMemorySamples)
+
+
+def test_a_withdrawn_hand_entry_leaves_the_shadow_engine_too(tmp_path):
+    """G3-01 (X5): the real engine is rebuilt without it; the shadow one has it removed, and judges again at
+    its next sample. A temperature, which no monitor body here carries."""
+    identities = InMemoryIdentityStore()
+    _kabul(identities, "bed-1")
+    client, _, _, _ = _app(tmp_path, identities=identities)
+    with client:
+        _linked(client)
+        shadow_engine = client.app.state.shadow_lane.engines[HOSPITAL]
+        charted = client.post("/clinical/bed-1", json={"entries": [{"code": "temperature", "value": 39.4}]},
+                              headers=HDR)
+        assert charted.status_code == 200, charted.text
+        entry = charted.json()["entries"][0]["entry"]
+        assert shadow_engine.state("bed-1").latest(SignalCode.TEMPERATURE).value == 39.4
+        r = client.post(f"/clinical/bed-1/entries/{entry}/retract",
+                        json={"reason": "yanlış hasta seçilmişti"}, headers=CHART)
+        assert r.status_code == 200, r.text
+        assert shadow_engine.state("bed-1").latest(SignalCode.TEMPERATURE) is None
