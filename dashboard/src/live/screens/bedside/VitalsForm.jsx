@@ -9,9 +9,9 @@
 // never ahead (D7). Everything in ONE request with one time (D5), through `onSave` — the board store's `chart`.
 //
 // THE PREVIEW FIRST (D8). «Kaydet» is offered only on a preview of exactly what would be sent now: change a box
-// and the preview is old until it is asked again. «Kaydet» appears where «Önizle» stood, so for SAVE_ARM_MS after
-// a preview it ignores a press, and it always ignores a double click's second one (the SOFA form's rule,
-// SIGN_ARM_MS). The preview is the engine's (PreviewPanel.jsx); nothing is scored here (Decision 1). A
+// and the preview is old until it is asked again. «Kaydet» appears where «Önizle» stood, so for SAVE_ARM_MS each
+// time it appears (a preview landing, or an edit undone) it ignores a press, and it always ignores a double
+// click's second one (the SOFA form's rule, SIGN_ARM_MS). The preview is the engine's (PreviewPanel.jsx); nothing is scored here (Decision 1). A
 // discharged number previews as `dropped`, and nothing is offered to save.
 //
 // THE SERVER IS AUTHORITATIVE (D6). The browser mirrors the door's slip bounds only to hold a slipped digit back,
@@ -21,7 +21,7 @@
 // press cannot chart it twice. A 403 leaves the form too. A store that dropped its answer (null: the session
 // ended) says nothing. `busy` holds the buttons (never `disabled`); `sending` ignores a press that beats the
 // re-render.
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { apiErrorText, readErrorText } from "../../apiErrors.js";
@@ -145,13 +145,21 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       clearTimeout(armTimer.current);
     };
   }, []);
-  useEffect(() => { onBusy?.(busy !== null); }, [busy, onBusy]);
+  // A request in flight is said to the host, and its end is said by the cleanup: a save's answer clears `busy` in
+  // the same render in which the host swaps the form for its saved step, and an effect of a form that is gone
+  // never runs, so "no longer busy" must not wait for one.
+  useEffect(() => {
+    if (busy === null || !onBusy) return undefined;
+    onBusy(true);
+    return () => onBusy(false);
+  }, [busy, onBusy]);
   // Re-rendered on the clock while the form is open, so an untouched time shows the minute it is.
   useNow(CLOCK_MS);
   const now = Date.now();
   const draftAt = (ms) => ({ values, at: atTouched ? at : toLocalInput(ms), atTouched });
   const checked = checkDraft(draftAt(now), now);
-  const fresh = preview !== null && preview.key === draftKey(checked);
+  // A held box leaves `checked.entries`, so the key alone would call a preview fresh while a box shows a problem.
+  const fresh = preview !== null && !hasErrors(checked) && preview.key === draftKey(checked);
   const dropped = fresh && preview.answer.dropped === true;
   const offerSave = fresh && !dropped;
   const errorOf = (code) => (tried && checked.errors[code] ? t(checked.errors[code].key, checked.errors[code].params) : undefined);
@@ -172,6 +180,12 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       if (mounted.current) setArming(false);
     }, SAVE_ARM_MS);
   }
+  // Every time «Kaydet» appears, not only when a preview lands: an edit undone ("92" back to "91") makes the
+  // preview fresh again and brings «Kaydet» back where «Önizle» stood. A layout effect, so the hold is in place
+  // before the browser paints the button.
+  useLayoutEffect(() => {
+    if (offerSave) arm();
+  }, [offerSave]);
 
   /** The draft as of the press: an untouched time is the press's own. A held one shows its problems under their
    *  boxes and takes the focus to the first (flushSync: the problem must be in the DOM, tied to its box, when
@@ -183,6 +197,8 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       flushSync(() => setTried(true));
       const first = ORDER.find((code) => result.errors[code]);
       if (first) inputs.current[first]?.focus();
+      // No box to take the focus to (nothing entered): the sentence beside the buttons is spoken instead.
+      else if (result.errors.form) setSaid(t(result.errors.form.key));
       return null;
     }
     setTried(true);
@@ -192,28 +208,33 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
   /** «Önizle» (D8): the preview route, which writes nothing. Its failure is a read's (`readErrorText`): nothing
    *  was written, so nothing "may have landed". Any outcome that is not a preview lets the earlier one go. */
   async function previewIt() {
-    if (sending.current || busy) return;
+    // A dropped preview holds «Önizle» (aria-disabled): the number is discharged, and asking again changes nothing.
+    if (sending.current || busy || dropped) return;
     const asked = pressed();
     if (!asked) return;
     sending.current = true;
     setBusy("preview");
+    // The earlier preview's sentence goes now: a re-preview that fails must not speak an old NEWS2 again.
+    setSaid("");
     let done = null;   // { say: [text, tone], leave } once the request is settled
     try {
       const answer = await onPreview(asked.entries, asked.recordedAt);
       if (answer === null || !mounted.current) return;   // the store dropped it: the session ended
       if (answer?.dropped) {
         setPreview({ key: draftKey(asked), answer: { dropped: true } });
+        setSaid(t("olcum.previewDropped"));
       } else if (isPreview(answer)) {
         setPreview({ key: draftKey(asked), answer });
         setSaid(t("olcum.previewed", { total: answer.news2.total }));
-        arm();
       } else {
         setPreview(null);
         done = { say: [t("olcum.previewRefused", { subject: bed, reason: t("olcum.previewNotPreview") }), "error"], leave: false };
       }
     } catch (err) {
       if (err?.superseded) return;   // a superseded session: nothing is said into the one that replaced it
-      if (mounted.current) setPreview(null);
+      // A form that is gone: a read wrote nothing, and its host has already moved on.
+      if (!mounted.current) return;
+      setPreview(null);
       const forbidden = err?.status === 403;
       const reason = forbidden ? t("olcum.noRight") : readErrorText(t, err);
       done = { say: [t("olcum.previewRefused", { subject: bed, reason }), "error"], leave: forbidden };
@@ -256,8 +277,11 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       sending.current = false;
       if (mounted.current) setBusy(null);
     }
-    // Out of the `try`: a host callback that throws must never turn a write the engine took into "not saved".
+    // Out of the `try`: a host callback that throws must never turn a write the engine took into "not saved". The
+    // toast is said even when the form is gone (a write's outcome outlives the screen); the host is called back
+    // only while it still shows the form.
     toast(...done.say);
+    if (!mounted.current) return;
     if (done.saved) onSaved(done.saved);
     else if (done.leave) onCancel();
   }

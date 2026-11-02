@@ -2,11 +2,12 @@
 // slipped digit back under its box, and says what happened on the toast, named after the bed (G3-01).
 // Synthetic values only.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import React from "react";
+import React, { useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { news2 } from "../../data/board.testutil.js";
+import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { SAVE_ARM_MS, VitalsForm, savedOf } from "./VitalsForm.jsx";
 import { toLocalInput } from "./vitalsFields.js";
 
@@ -26,6 +27,19 @@ const PREVIEW = {
 const SAVED = { patient_id: "S-001", charted: 2, alerts: [],
   entries: [{ code: "resp_rate", entry: 41 }, { code: "spo2", entry: 42 }] };
 
+// A host as the page and the patient screen's dialog are: the saved step takes the form's place on `onSaved`, in
+// the very render that clears the form's busy, and «leave» takes the form away while a request may be in flight.
+function Host({ onSaved, ...props }) {
+  const [step, setStep] = useState("form");
+  if (step !== "form") return <p>{step}</p>;
+  return (
+    <>
+      <VitalsForm bed={BED} nowMs={NOW} {...props} onSaved={(saved) => { onSaved(saved); setStep("saved step"); }} />
+      <button type="button" onClick={() => setStep("left")}>leave</button>
+    </>
+  );
+}
+
 async function open({ preview = () => Promise.resolve(PREVIEW), save = () => Promise.resolve(SAVED) } = {}) {
   vi.useFakeTimers(FAKE_TIMERS);
   vi.setSystemTime(NOW);
@@ -33,13 +47,20 @@ async function open({ preview = () => Promise.resolve(PREVIEW), save = () => Pro
   const onSave = vi.fn(save);
   const onSaved = vi.fn();
   const onCancel = vi.fn();
+  const onBusy = vi.fn();
   await act(async () => {
     await mount(
-      <VitalsForm bed={BED} nowMs={NOW} onPreview={onPreview} onSave={onSave} onSaved={onSaved} onCancel={onCancel} />,
+      <Host onPreview={onPreview} onSave={onSave} onSaved={onSaved} onCancel={onCancel} onBusy={onBusy} />,
       { access: token({ perms: CHARTABLE }), me: profile({ perms: CHARTABLE }) });
     await settle();
   });
-  return { onPreview, onSave, onSaved, onCancel };
+  return { onPreview, onSave, onSaved, onCancel, onBusy };
+}
+/** A request whose answer the test gives, when it says so. */
+function deferred() {
+  const d = {};
+  d.promise = new Promise((resolve, reject) => { d.resolve = resolve; d.reject = reject; });
+  return d;
 }
 // A box by its label: the label carries the unit after the name ("Nəbz (/dəq)"); its − and + are buttons.
 const box = (name) => screen.getByRole("textbox", { name: new RegExp(`^${name}`) });
@@ -50,6 +71,10 @@ const preview = () => press(button("Öncədən baxın"));
 const armed = () => act(() => { vi.advanceTimersByTime(SAVE_ARM_MS); });
 const toasted = (text) => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(text);
 const panel = () => document.querySelector("[data-preview]");
+// The form's own polite live region (the toasts speak from theirs, outside the form), once its delay has passed.
+const heard = () => act(() => { vi.advanceTimersByTime(ANNOUNCE_DELAY_MS); });
+const spoken = () => within(document.querySelector("form")).getByRole("status");
+const answer = (body) => () => Promise.resolve({ patient_id: "S-001", preview: true, at: new Date(NOW).toISOString(), news2: news2(body) });
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
@@ -59,6 +84,8 @@ describe("the bedside form", () => {
     await preview();
     expect(onPreview).not.toHaveBeenCalled();
     expect(screen.getByText("Ən azı bir dəyər daxil edin.")).toBeInTheDocument();
+    heard();                                       // no box to take the focus to: the sentence is spoken instead
+    expect(spoken()).toHaveTextContent("Ən azı bir dəyər daxil edin.");
   });
 
   it("holds a slipped digit under its box, with the bounds, and takes the focus there", async () => {
@@ -141,11 +168,160 @@ describe("the bedside form", () => {
   });
 
   it("a discharged patient previews as dropped, and nothing is offered to save", async () => {
-    await open({ preview: () => Promise.resolve({ patient_id: "S-001", preview: true, dropped: "discharged" }) });
+    const { onPreview } = await open({ preview: () => Promise.resolve({ patient_id: "S-001", preview: true, dropped: "discharged" }) });
     type("SpO2", "95");
     await preview();
-    expect(screen.getByText("Bu xəstə evə yazılıb; ölçmə daxil edilmir.")).toBeInTheDocument();
+    expect(within(document.querySelector("form")).getByRole("note")).toHaveTextContent("Bu xəstə evə yazılıb; ölçmə daxil edilmir.");
     expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    heard();
+    expect(spoken()).toHaveTextContent("Bu xəstə evə yazılıb; ölçmə daxil edilmir.");
+    // «Öncədən baxın» says it is held (aria-disabled), and a press on it sends nothing again.
+    expect(button("Öncədən baxın")).toHaveAttribute("aria-disabled", "true");
+    await preview();
+    expect(onPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("a re-preview that fails does not speak the old NEWS2 again", async () => {
+    let calls = 0;
+    await open({ preview: () => (++calls === 1 ? Promise.resolve(PREVIEW) : Promise.reject(refusal(503, "down"))) });
+    type("SpO2", "91");
+    await preview();
+    heard();
+    expect(spoken()).toHaveTextContent("Öncədən baxış hazırdır: NEWS2 5.");
+    type("SpO2", "92");
+    await preview();
+    heard();
+    expect(spoken()).not.toHaveTextContent("hazırdır");
+    expect(toasted(/^REA-01 · 2: öncədən baxış alınmadı/).length).toBeGreaterThan(0);
+  });
+
+  it("a held box makes the preview old: «Yadda saxla» goes while any box has a problem", async () => {
+    await open();
+    type("SpO2", "91");
+    await preview();
+    type("Tənəffüs", "800");
+    expect(screen.getByText("0–80 aralığında olmalıdır.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(panel()).toBeNull();
+  });
+
+  it("an undone change brings «Yadda saxla» back held, as when it first appeared", async () => {
+    const { onSave } = await open();
+    type("SpO2", "91");
+    await preview();
+    armed();
+    type("SpO2", "92");
+    type("SpO2", "91");                            // the preview is fresh again, and «Yadda saxla» is back
+    await press(button("Yadda saxla"));
+    expect(onSave).not.toHaveBeenCalled();
+    armed();
+    await press(button("Yadda saxla"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a double click's second press on «Yadda saxla», even once armed", async () => {
+    const { onSave } = await open();
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await act(async () => { fireEvent.click(button("Yadda saxla"), { detail: 2 }); await settle(); });
+    expect(onSave).not.toHaveBeenCalled();
+    await press(button("Yadda saxla"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells its host the request is over, even when the save's answer takes the form away", async () => {
+    const save = deferred();
+    const { onBusy } = await open({ save: () => save.promise });
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await press(button("Yadda saxla"));
+    expect(onBusy).toHaveBeenLastCalledWith(true);
+    await act(async () => { save.resolve(SAVED); await settle(); });
+    expect(screen.getByText("saved step")).toBeInTheDocument();
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+  });
+
+  it("a save answered after the form was left still says so on the toast, and calls no host back", async () => {
+    const save = deferred();
+    const { onSaved, onCancel } = await open({ save: () => save.promise });
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await press(button("Yadda saxla"));
+    await press(button("leave"));
+    await act(async () => { save.resolve(SAVED); await settle(); });
+    expect(toasted("REA-01 · 2: ölçmə yadda saxlanıldı.").length).toBeGreaterThan(0);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("a preview refused after the form was left calls no host back and says nothing", async () => {
+    const asked = deferred();
+    const { onCancel } = await open({ preview: () => asked.promise });
+    type("SpO2", "95");
+    await preview();
+    await press(button("leave"));
+    await act(async () => { asked.reject(refusal(403, "Permission required: clinical.chart")); await settle(); });
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(toasted(/^REA-01 · 2:/)).toHaveLength(0);
+  });
+
+  it("a 403 on the preview leaves the form, and says she has no right", async () => {
+    const { onCancel } = await open({ preview: () => Promise.reject(refusal(403, "Permission required: clinical.chart")) });
+    type("SpO2", "95");
+    await preview();
+    expect(toasted("REA-01 · 2: öncədən baxış alınmadı — ölçmə daxil etmək hüququnuz yoxdur").length).toBeGreaterThan(0);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("a 403 on the save leaves the form, and says she has no right", async () => {
+    const { onSaved, onCancel } = await open({ save: () => Promise.reject(refusal(403, "Permission required: clinical.chart")) });
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await press(button("Yadda saxla"));
+    expect(toasted("REA-01 · 2: ölçmə yadda saxlanılmadı — ölçmə daxil etmək hüququnuz yoxdur").length).toBeGreaterThan(0);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("a save the engine answers as dropped says the patient was discharged, and leaves the form", async () => {
+    const { onSaved, onCancel } = await open({ save: () => Promise.resolve({ patient_id: "S-001", dropped: "discharged" }) });
+    type("SpO2", "95");
+    await preview();
+    armed();
+    await press(button("Yadda saxla"));
+    expect(toasted("REA-01 · 2: xəstə evə yazılıb; ölçmə yadda saxlanılmadı.").length).toBeGreaterThan(0);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("an answer that is not a preview is refused on the toast, and nothing is offered to save", async () => {
+    await open({ preview: () => Promise.resolve({ patient_id: "S-001", charted: 1 }) });
+    type("SpO2", "95");
+    await preview();
+    expect(toasted("REA-01 · 2: öncədən baxış alınmadı — mühərrikin cavabı öncədən baxış deyildi").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(panel()).toBeNull();
+  });
+
+  it("names what is past its window with what is missing, in NEWS2's order", async () => {
+    await open({ preview: answer({ total: 1, partial: true, missing: ["pulse"], stale: ["respiration_rate"],
+      breakdown: { spo2: 1 } }) });
+    type("SpO2", "95");
+    await preview();
+    expect(within(panel()).getByText("Qismən bal: tənəffüs tezliyi, nəbz daxil edilməyib və ya cari deyil.")).toBeInTheDocument();
+  });
+
+  it("a complete score that no value brings points to says both", async () => {
+    await open({ preview: answer({ total: 0, breakdown: { respiration_rate: 0, spo2: 0 } }) });
+    type("SpO2", "97");
+    await preview();
+    expect(within(panel()).getByText("Tam bal: çatışmayan ölçmə yoxdur.")).toBeInTheDocument();
+    expect(within(panel()).getByText("Heç bir dəyər bal gətirmir.")).toBeInTheDocument();
+    expect(within(panel()).queryByRole("list")).toBeNull();
   });
 
   it("the engine's refusal of a save is on the toast, named after the bed, and the form stays", async () => {
