@@ -1563,8 +1563,9 @@ olmadan). **Tam ekran hiçbir alarm işaretini örtmez:** uygulamanın üst çub
 sayısıyla alarm zili ve açılan listesi dahil — tam ekranın üstünde görünür ve kullanılabilir kalır
 (tam ekrandaki hemşire başka bir yatağın yeni alarmını zilden görür). Tab tuşu üst çubuğun
 düğmeleriyle tam ekranın × düğmesi arasında dolaşır, siyahın arkasındaki sayfaya gitmez. Esc (odak
-tam ekrandayken), × («Tam ekrandan çık») ya da tarayıcının tam ekranından çıkmak kapatır; odak
-⤢'ye döner. Odak üst çubuktayken Esc çubuğun kendi menüsünü kapatır, tam ekranı değil.
+tam ekrandayken), × («Dalga görünümünü kapat») ya da tarayıcının tam ekranından çıkmak kapatır;
+odak ⤢'ye döner. (Üst çubuğun «Tam ekrandan çık» düğmesi ayrı bir düğmedir: tarayıcının tam
+ekranından çıkar, bu da görünümü kapatır.) Odak üst çubuktayken Esc çubuğun kendi menüsünü kapatır, tam ekranı değil.
 Uygulamanın bildirimleri, ekran kilidinden önceki geri sayım ve alarm sesini başlatan düğme tam
 ekranın üstünde, görünür kalır ve kendi tuşlarını korur. Gösterilecek satır kalmazsa (bir ret geldiyse ya da dalga kapatıldıysa) tam ekran kendiliğinden
 kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel de kalkar.

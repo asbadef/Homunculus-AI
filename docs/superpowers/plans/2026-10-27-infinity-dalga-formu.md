@@ -6268,6 +6268,12 @@ Tear down: `$C down -v` (with `C` as above), stop the fake hub if still running,
 
 After the fixes there are 6 more tests (3 panel, 3 geometry), and five mutants are killed. Dashboard: 124 files, 3440 tests; the build is green.
 
+*After the re-review (2026-11-02; Lane A's minors 1 and 2, walk 2's F2; `17f0e618`).*
+- **Minor 1:** the panel's wave store is made inside `OpenPanel`, so inside `WaveErrorBoundary`. Drawn with no `feed`, the panel says «Dalga akışı yok» in its frame and polls nothing; before, the TypeError unmounted the live app, `AlarmSignals` included. On the device screen, «Dalga formunu göster» still draws without a feed, and opening it gives the same frame.
+- **Minor 2:** `waveBoundaries.test.js` derives the keys of the strip's shadow store (which `useShadow()` hands the full screen) from `createShadowStore`. It bans all of them but the read-only `getState` and `subscribe` (`SHADOW_READ_ONLY`, pinned), which stay banned anyway as the session's and the board's names. `ShadowProvider.jsx` is exempt for its effect's `.acquire`/`.release` pair. A new rule refuses `.click`, `.submit` and `.requestSubmit` in everything the waves reach; `.focus()` stays. The guard's header names what is left: a key taken without its name, a destructured `click`, and a throwing listener added with `.subscribe`.
+- **F2 (cosmetic):** the view's × is «Dalga görünümünü kapat» in place of the top bar's «Tam ekrandan çık» (az «Dalğa görünüşünü bağla», ru «Закрыть вид кривых», en «Close the waveform view»).
+- 4 more tests (2 panel, 1 guard, 1 words), and four mutants are killed. Dashboard: 126 files, 3518 tests; the build is green.
+
 - [ ] **Step 4: Acceptance checklist (spec §8), for the lead.**
 
 | Item | Where | State after this plan |
