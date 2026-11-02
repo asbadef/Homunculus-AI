@@ -519,7 +519,9 @@ def test_the_hubs_public_answers_do_not_change(journal):
                                    research_view=view))
     headers = {"Authorization": "Bearer " + VIEWER}
     status = client.get("/v1/status", headers=headers).json()
-    assert set(status) == {"devices", "collector", "archive", "clinical_forwarding", "kernel_drop_count", "timings"}
+    # `research` is the live view's own error count (dalga, I4), there whenever the hub has a live view.
+    assert set(status) == {"devices", "collector", "archive", "clinical_forwarding", "kernel_drop_count", "timings",
+                           "research"}
     assert status["clinical_forwarding"] is False
     state = client.get("/infinity-research/state", headers=headers).json()
     assert state["clinical_ingest_enabled"] is False and "shadow" not in json.dumps(state)

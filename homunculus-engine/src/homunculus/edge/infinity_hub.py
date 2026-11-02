@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
+import os
 import re
 import secrets
 import threading
 import time
+import traceback
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -65,6 +68,7 @@ async function poll(g){try{
 
 
 CURSOR = re.compile(r"[0-9]{1,15}")
+log = logging.getLogger(__name__)
 
 
 def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payload=False, clock=time.time,
@@ -82,6 +86,25 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     heartbeat = {"seen": None, "value": None}
     lock = threading.Lock()
+    # I4: the live view and the WaveBuffer read a batch the journal already holds, for display only.
+    # One that raises must not turn the batch into a 500: the worker would resend it until its events
+    # were over 3 s old, every packet behind it would arrive old too, and the strip and Aşama B's
+    # shadow lane would go stale over a display bug. So the ack stands, the error is counted under
+    # /v1/status, and it is logged once per hook and error type, by type and code location only:
+    # an exception's own message may quote the payload.
+    hook_errors = {"research": 0, "waves": 0}
+    hook_logged = set()
+
+    def hook_failed(hook, error):
+        hook_errors[hook] += 1
+        kind = type(error)
+        if (hook, kind) in hook_logged:
+            return
+        hook_logged.add((hook, kind))
+        frames = traceback.extract_tb(error.__traceback__)
+        where = f"{os.path.basename(frames[-1].filename)}:{frames[-1].lineno} in {frames[-1].name}" if frames else "?"
+        log.error("Infinity hub: the %s hook raised %s at %s; the batch stays acknowledged, counted under "
+                  "/v1/status %s.errors (logged once per error type).", hook, kind.__name__, where, hook)
 
     def collector_age():
         with lock:
@@ -168,15 +191,25 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             # window judges. A replay carries its capture time, which is not a delay.
             if event["mode"] == "live":
                 timings.add("lag_ms", (now - event["received_at"]) * 1000)
+        # From here on the batch is acknowledged whatever the display hooks do (I4, hook_failed). A hook
+        # that raised is not timed.
         if research_view is not None:
             consuming = timings.clock()
-            research_view.consume(data["events"])
-            timings.since("consume_ms", consuming)
+            try:
+                research_view.consume(data["events"])
+            except Exception as error:
+                hook_failed("research", error)
+            else:
+                timings.since("consume_ms", consuming)
         if waves is not None:
             # Lane C (dalga): the wave blocks of the same acknowledged events, for display only.
             decoding = timings.clock()
-            waves.consume(data["events"])
-            timings.since("waves_ms", decoding)
+            try:
+                waves.consume(data["events"])
+            except Exception as error:
+                hook_failed("waves", error)
+            else:
+                timings.since("waves_ms", decoding)
         timings.add("batch_events", len(data["events"]))
         timings.since("packets_ms", started)
         return {"ack": ack, "clinical_forwarding": False}
@@ -278,11 +311,16 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         timings.since("status_ms", started)
         answer = {"devices": devices, "collector": collector, "archive": archive,
                   "clinical_forwarding": False, "kernel_drop_count": None, "timings": timings.snapshot()}
+        if research_view is not None:
+            # I4: batches the live view raised on; each was acknowledged all the same.
+            answer["research"] = {"errors": hook_errors["research"]}
         if waves is not None:
             # Lane C (dalga): what the buffer holds back, readable without asking for waves. `refused`
             # counts events the buffer turned away (not live, older than 3 s, ahead of the hub's clock):
             # a worker clock a few hundred ms fast would otherwise black out every wave silently.
-            answer["waves"] = {"cursor": waves.cursor, "refused": waves.refused, "started": hub_started}
+            # `errors` counts batches the buffer raised on (I4), acknowledged all the same.
+            answer["waves"] = {"cursor": waves.cursor, "refused": waves.refused, "started": hub_started,
+                               "errors": hook_errors["waves"]}
         return answer
 
     return app

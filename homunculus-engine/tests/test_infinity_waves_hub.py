@@ -1,13 +1,16 @@
 """Lane C (dalga): the hub's two hooks — `/v1/packets` hands acknowledged events to the WaveBuffer,
 `GET /infinity-research/waves` answers the viewer — and the runner that wires them. Synthetic
 payloads only (infinity_wave_packets.py), synthetic tokens, a throwaway journal."""
+import base64
 import contextlib
 import importlib.util
 import io
 import json
+import logging
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
@@ -35,18 +38,25 @@ def event(payload, stamp, index=0):
 
 
 @pytest.fixture
-def hub(tmp_path):
-    """A hub at the hub clock 1000.0 with the live view and the WaveBuffer, as the runner builds it."""
+def wired(tmp_path):
+    """A hub at the hub clock 1000.0 with the live view and the WaveBuffer, as the runner builds it,
+    and its parts in reach."""
     now = [1000.0]
     journal = Journal(tmp_path / "hub.sqlite", Fernet.generate_key(), clock=lambda: now[0])
+    view = LiveResearchView(INV, clock=lambda: now[0], monotonic=lambda: now[0])
     waves = WaveBuffer(INV, clock=lambda: now[0])
     app = create_hub(INV, journal, COLLECTOR, VIEWER, accept_payload=True, clock=lambda: now[0],
-                     research_view=LiveResearchView(INV, clock=lambda: now[0], monotonic=lambda: now[0]), waves=waves)
+                     research_view=view, waves=waves)
     try:
         with TestClient(app) as client:
-            yield client, waves, now
+            yield SimpleNamespace(client=client, journal=journal, view=view, waves=waves, now=now)
     finally:
         journal.close()
+
+
+@pytest.fixture
+def hub(wired):
+    return wired.client, wired.waves, wired.now
 
 
 def post(client, events):
@@ -235,21 +245,88 @@ def test_status_shows_how_many_events_the_buffer_took_and_refused(hub):
     # A worker clock a few hundred ms ahead of the hub's makes the buffer refuse every packet while the
     # journal acknowledges it: without these numbers the waves go dark and nothing says why.
     client, _, _ = hub
-    assert status(client)["waves"] == {"cursor": 0, "refused": 0, "started": STARTED}
+    assert status(client)["waves"] == {"cursor": 0, "refused": 0, "started": STARTED, "errors": 0}
     assert post(client, [event(tick(*at(0)), 1000.4)]).status_code == 200      # ahead of the hub's clock
-    assert status(client)["waves"] == {"cursor": 0, "refused": 1, "started": STARTED}
+    assert status(client)["waves"] == {"cursor": 0, "refused": 1, "started": STARTED, "errors": 0}
     assert post(client, [event(tick(*at(1)), 1000.0)]).status_code == 200
-    assert status(client)["waves"] == {"cursor": 4, "refused": 1, "started": STARTED}
+    assert status(client)["waves"] == {"cursor": 4, "refused": 1, "started": STARTED, "errors": 0}
     assert read(client, BED).json()["cursor"] == 4
 
 
-def test_status_has_no_waves_object_without_a_buffer(tmp_path):
+def test_status_has_no_waves_or_research_object_without_them(tmp_path):
     journal = Journal(tmp_path / "plain.sqlite", Fernet.generate_key())
     try:
         with TestClient(create_hub(INV, journal, COLLECTOR, VIEWER)) as client:
-            assert "waves" not in status(client)
+            assert "waves" not in status(client) and "research" not in status(client)
     finally:
         journal.close()
+
+
+# --- I4: a display hook that raises never refuses a batch the journal holds ----------------------
+# The journal has the batch before either hook runs. A 500 there would make the worker resend it
+# until its events are over 3 s old, and every packet after it would arrive old too: the live view,
+# the strip and Aşama B's shadow feed would go stale over a display-only decoder bug.
+
+def _raises(kind):
+    """A consume that fails the way a decoder bug might: its message quotes the payload."""
+    def consume(events):
+        payload = events[0]["payload_base64"]
+        raise kind(f"cannot read {payload} = {base64.b64decode(payload)!r}")
+    return consume
+
+
+def _acknowledged(wired, item):
+    response = post(wired.client, [item])
+    return response.status_code == 200 and response.json() == {"ack": [item["id"]], "clinical_forwarding": False}
+
+
+def _research_packets(client):
+    state = client.get("/infinity-research/state", headers={"Authorization": "Bearer " + VIEWER}).json()
+    return {d["source_ip"]: d["packets"] for d in state["devices"]}[BED]
+
+
+def test_a_wave_decoder_that_raises_still_acknowledges_the_journaled_batch(wired, monkeypatch):
+    monkeypatch.setattr(wired.waves, "consume", _raises(ValueError))
+    assert _acknowledged(wired, event(tick(*at(0)), 1000.0))
+    assert wired.journal.snapshot()["rows"] == 1
+    seen = status(wired.client)
+    assert seen["waves"] == {"cursor": 0, "refused": 0, "started": STARTED, "errors": 1}
+    assert seen["research"] == {"errors": 0}
+    assert _research_packets(wired.client) == 1                   # the live view had the events
+    assert "waves_ms" not in seen["timings"] and seen["timings"]["consume_ms"][0] == 1
+
+
+def test_a_live_view_that_raises_still_acknowledges_and_the_waves_still_decode(wired, monkeypatch):
+    monkeypatch.setattr(wired.view, "consume", _raises(RuntimeError))
+    assert _acknowledged(wired, event(tick(*at(0)), 1000.0))
+    assert wired.journal.snapshot()["rows"] == 1
+    seen = status(wired.client)
+    assert seen["research"] == {"errors": 1}
+    assert seen["waves"] == {"cursor": 4, "refused": 0, "started": STARTED, "errors": 0}
+    assert len(read(wired.client, BED).json()["blocks"]) == 4
+    assert "consume_ms" not in seen["timings"] and seen["timings"]["waves_ms"][0] == 1
+
+
+def test_a_hook_error_is_logged_once_per_type_and_never_with_the_payload(wired, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="homunculus.edge.infinity_hub")
+    sent = [event(tick(*at(k)), 1000.0) for k in range(4)]
+    monkeypatch.setattr(wired.waves, "consume", _raises(ValueError))
+    assert _acknowledged(wired, sent[0]) and _acknowledged(wired, sent[1])
+    monkeypatch.setattr(wired.waves, "consume", _raises(KeyError))
+    assert _acknowledged(wired, sent[2])
+    monkeypatch.setattr(wired.view, "consume", _raises(ValueError))
+    assert _acknowledged(wired, sent[3])
+    seen = status(wired.client)
+    assert seen["waves"]["errors"] == 4 and seen["research"] == {"errors": 1}
+    records = [r for r in caplog.records if r.name == "homunculus.edge.infinity_hub"]
+    said = [r.getMessage() for r in records]
+    assert len(said) == 3                    # waves ValueError, waves KeyError, research ValueError
+    assert "waves" in said[0] and "ValueError" in said[0]
+    assert "waves" in said[1] and "KeyError" in said[1]
+    assert "research" in said[2] and "ValueError" in said[2]
+    assert all(r.exc_info is None for r in records)               # no traceback: its last line is the message
+    assert "cannot read" not in caplog.text                       # the exception's own words never reach the log
+    assert not any(item["payload_base64"] in caplog.text for item in sent)
 
 
 # --- the runner ----------------------------------------------------------------------------------
