@@ -35,8 +35,9 @@ services:
     rootDir: homunculus-engine
     buildCommand: pip install -e .
     # Migrate, then bootstrap the first admin (idempotent; skips when SEED_ADMIN_PASSWORD is unset,
-    # so restarts keep working after the operator removes it), then serve.
-    startCommand: alembic upgrade head && python scripts/seed_admin.py && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port $PORT
+    # so restarts keep working after the operator removes it), then serve. --no-access-log: the
+    # access log writes request paths, which carry patient keys (G2-B1d O10; Dockerfile.api says why).
+    startCommand: alembic upgrade head && python scripts/seed_admin.py && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port $PORT --no-access-log
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

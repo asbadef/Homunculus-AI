@@ -10,8 +10,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from homunculus.admission import service
+from homunculus.admission.boardkey import board_key
 from homunculus.admission.models import (
     Admission, AdmissionState, CareTeamRole, DischargeDisposition, HandoverStatus, Patient,
 )
@@ -280,6 +282,55 @@ async def test_a_transfer_to_a_bed_that_is_not_available_is_refused_by_its_code(
         await service.confirm_transfer_arrival(
             db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
     assert refused.value.code == "bed_not_available"
+
+
+#: A synthetic protocol number (G2-B1d: twelve digits; each test's tenant is its own, so no clash).
+PROTOCOL = "202600000001"
+
+
+async def test_a_transfer_keeps_the_protocol_it_moves_to_the_arriving_admission(db_session):
+    """O8 (spec 2026-11-02): a transfer is inside one visit, so it keeps the visit's protocol. The
+    number moves to the arriving row — `uq_admissions_tenant_protocol` allows one row per number —
+    and the card's key (`board_key`) does not change: the label and the devices keep their number."""
+    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
+    p = await _new_patient(db_session, tenant)
+    adm = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending),
+        protocol_no=PROTOCOL)
+    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+    number = p.patient_number
+    key_before = board_key(adm.protocol_no, number)
+
+    await service.initiate_transfer(
+        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+    new_adm = await service.confirm_transfer_arrival(
+        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+
+    assert (new_adm.protocol_no, adm.protocol_no) == (PROTOCOL, None)
+    assert board_key(new_adm.protocol_no, number) == key_before == PROTOCOL
+    holders = (await db_session.execute(
+        select(Admission.state, Admission.protocol_no)
+        .where(Admission.tenant_id == tenant.id, Admission.protocol_no.is_not(None)))).all()
+    assert [tuple(row) for row in holders] == [(AdmissionState.ACTIVE, PROTOCOL)]   # the open one
+
+
+async def test_a_transfer_of_a_legacy_admission_keeps_its_h_number_key(db_session):
+    """O8: an admission from before G2-B1d has no protocol — both rows stay without one, and the card's
+    key is the H-number, as before."""
+    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
+    p = await _new_patient(db_session, tenant)
+    adm = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
+    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+    number = p.patient_number
+
+    await service.initiate_transfer(
+        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+    new_adm = await service.confirm_transfer_arrival(
+        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+
+    assert (new_adm.protocol_no, adm.protocol_no) == (None, None)
+    assert board_key(new_adm.protocol_no, number) == number
 
 
 # ---------------------------------------------------------------------------
