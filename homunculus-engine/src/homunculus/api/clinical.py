@@ -165,6 +165,13 @@ RETRACT_REASON_SHORT = "gerekçe en az 10 karakter olmalı"
 #: body limit.
 RETRACT_MAX_REASON_CHARS = 200
 RETRACT_REASON_LONG = "gerekçe en çok 200 karakter olabilir"
+#: G3-01 (X22, the local walk): what «hatalı giriş» may withdraw — the bedside form's set (G3-01 D2): the six
+#: BEDSIDE_VITALS, supplemental oxygen and ACVPU, by the slug a `chart` row carries as its subject. Other chart rows
+#: — a physician's suspected-infection mark, the SOFA form's labs, the meds chart — are corrected by a new entry,
+#: not withdrawn (X22); the sepsis panel says so of its mark.
+RETRACTABLE_CODES = frozenset(code.value for code in
+                              BEDSIDE_VITALS | {SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ACVPU})
+RETRACT_NOT_BEDSIDE = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir"
 RETRACT_NEEDS_PERSON = "geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz"
 RETRACT_UNKNOWN = "bu hastada böyle bir elle girilmiş değer yok"
 #: The dashboard tells «already withdrawn» from the other 409s by this exact sentence (apiErrors.js).

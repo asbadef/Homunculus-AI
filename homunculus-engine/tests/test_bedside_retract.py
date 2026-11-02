@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
-from homunculus.api.audit import InMemoryAuditLog
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.clinical import (
-    RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_NEEDS_PERSON, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
-    RETRACT_UNKNOWN,
+    RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG,
+    RETRACT_REASON_SHORT, RETRACT_UNKNOWN, RETRACTABLE_CODES,
 )
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
@@ -267,6 +267,36 @@ class TestTheRefusals:
         alert = _rows(client, "alert")[0]
         assert _retract(client, alert.id).status_code == 404
 
+    # X22 (the local walk): only the bedside form's values. A nurse with clinical.chart withdrew a physician's
+    # suspected-infection mark and the SOFA form's platelets through the API; they are corrected by a new entry.
+    @pytest.mark.parametrize("code,value", [
+        ("suspected_infection", 1),     # a physician's mark: «geri alınmaz», the sepsis panel says
+        ("platelets", 120),             # the SOFA form's lab
+        ("lactate", 4),                 # a trends channel, but not a value the bedside form charts
+    ])
+    def test_a_value_the_bedside_form_does_not_chart_is_refused_and_nothing_is_written(self, client, code, value):
+        ids = _chart(client, [{"code": code, "value": value}], _ago(5))
+        trail = len(client.app.state.audit.records(tenant="h1", limit=1000))
+        r = _retract(client, ids[code])
+        assert (r.status_code, r.json()["detail"]) == (409, RETRACT_NOT_BEDSIDE)
+        assert RETRACT_NOT_BEDSIDE == "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir"   # mapped so
+        assert len(client.app.state.audit.records(tenant="h1", limit=1000)) == trail
+
+    def test_the_withdrawable_codes_are_the_bedside_forms(self):
+        """The bedside form's own codes (dashboard live/screens/bedside/vitalsFields.js), as a chart row's
+        subject."""
+        assert RETRACTABLE_CODES == {"resp_rate", "spo2", "supplemental_oxygen", "sbp", "map", "heart_rate",
+                                     "acvpu", "temperature"}
+
+    @pytest.mark.parametrize("code,value", [
+        ("resp_rate", 18), ("spo2", 96), ("supplemental_oxygen", 1), ("sbp", 120), ("map", 85), ("heart_rate", 80),
+        ("acvpu", 0), ("temperature", 37.2),
+    ])
+    def test_each_bedside_value_can_be_withdrawn(self, client, code, value):
+        ids = _chart(client, [{"code": code, "value": value}], _ago(5))
+        r = _retract(client, ids[code])
+        assert (r.status_code, r.json()["code"]) == (200, code)
+
     def test_a_second_withdrawal_is_409(self, client):
         ids = _chart(client, RISKY, _ago(5))
         assert _retract(client, ids["resp_rate"]).status_code == 200
@@ -329,39 +359,54 @@ class TestTheRefusals:
 
 # --- the invariants the controller's self-review names, pinned (G3-01 review of Task 5) -----------------------
 
-# Suspected infection, 70 kg, 30 mL/kg of crystalloid, norepinephrine running: with a lactate above 2, septic
-# shock — a critical, immediate alert.
-SHOCK = [{"code": "suspected_infection", "value": 1}, {"code": "weight_kg", "value": 70},
-         {"code": "crystalloid_bolus_ml", "value": 2100}, {"code": "norepinephrine_rate", "value": 0.1}]
+# Suspected infection with platelets 120: SOFA 1, no sepsis until a MAP below 70 adds a point.
+BASE = [{"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 120}]
+OVERDUE = ("bed-3", "antibiotic_overdue")
+
+
+def _overdue(c) -> dict[str, int]:
+    """A critical alert a bedside value stands on (X22: only those can be withdrawn). A bedside MAP 60 makes it
+    sepsis 90 minutes ago (SOFA 2 with BASE), which starts the antibiotic hour; a temperature charted now finds
+    the hour gone with no antibiotic — `antibiotic_overdue`, critical and immediate. Withdrawn, the MAP never made
+    it sepsis, so no hour ran. BASE's mark and lab are not bedside values: no withdrawal reaches them. The entries
+    by code."""
+    ids = _chart(c, BASE, _ago(90)) | _chart(c, [{"code": "map", "value": 60}], _ago(90))
+    ids |= _chart(c, [{"code": "temperature", "value": 37.0}], _ago(5))
+    assert "antibiotic_overdue" in _firing(_card(c))
+    return ids
+
+
+def _withdraw_in_trail(c, entry):
+    """The `chart_retract` row the route writes, straight into the trail — for a value the route refuses (X22): a
+    non-bedside row. The engine's memory is not rebuilt by it; the next withdrawal through the route reads it."""
+    (target,) = [r for r in _rows(c, "chart") if r.id == entry]
+    c.app.state.audit.append(AuditEvent("h1", RETRACT, "bed-3", target.subject, {
+        "entry": target.id, "code": target.subject, "value": target.payload["value"],
+        "obs_ts": target.payload["obs_ts"], "reason": WHY, "retracted_by": "hem.ayse"}))
 
 
 class TestTheLatchHolds:
     def test_an_unacknowledged_critical_the_withdrawal_ends_stays_latched(self, client):
-        """G2-A1 (D3) through the lifecycle hook the withdrawal runs once: the shock nobody acknowledged is a
-        to-do on the board, not gone; and the nurse, told of it once, is not told again."""
-        at = _ago(5)
-        _chart(client, SHOCK, at)
-        ids = _chart(client, [{"code": "lactate", "value": 4}], at)
-        assert "septic_shock" in _firing(_card(client))
+        """G2-A1 (D3) through the lifecycle hook the withdrawal runs once: the overdue antibiotic nobody
+        acknowledged is a to-do on the board, not gone; and the nurse, told of it once, is not told again."""
+        ids = _overdue(client)
         told = len(_rows(client, "notification"))
-        assert _retract(client, ids["lactate"]).status_code == 200
+        assert _retract(client, ids["map"]).status_code == 200
         after = _card(client)
-        assert "septic_shock" not in _firing(after)
-        assert _latched(after) == ["septic_shock"]
+        assert "antibiotic_overdue" not in _firing(after)
+        assert _latched(after) == ["antibiotic_overdue"]
         assert len(_rows(client, "notification")) == told
         # Review of Task 5: some reading is left, so the latch stays on this card (D10) — not ended in error.
         assert ENTERED_IN_ERROR not in {r.payload["reason"] for r in _rows(client, "alert_cleared")}
-        assert ("bed-3", "septic_shock") in _store(client).resolved
+        assert OVERDUE in _store(client).resolved
 
     def test_an_acknowledged_critical_simply_ends(self, client):
-        at = _ago(5)
-        _chart(client, SHOCK, at)
-        ids = _chart(client, [{"code": "lactate", "value": 4}], at)
-        acked = client.post("/ack", json={"patient_id": "bed-3", "kind": "septic_shock", "role": "nurse"},
+        ids = _overdue(client)
+        acked = client.post("/ack", json={"patient_id": "bed-3", "kind": "antibiotic_overdue", "role": "nurse"},
                             headers=AUTH)
         assert acked.status_code == 200, acked.text
-        assert _retract(client, ids["lactate"]).status_code == 200
-        assert "septic_shock" not in [a["kind"] for a in _card(client)["alerts"]]
+        assert _retract(client, ids["map"]).status_code == 200
+        assert "antibiotic_overdue" not in [a["kind"] for a in _card(client)["alerts"]]
 
 
 class _Faulty(InMemoryAuditLog):
@@ -443,30 +488,34 @@ class TestNoReadingLeftEndsTheLatches:
 
     @pytest.mark.parametrize("admitted", [True, False], ids=["identity card", "removal"])
     def test_withdrawing_every_value_ends_the_latch_and_a_restart_agrees(self, admitted):
+        """No critical alert stands on bedside values alone — NEWS2 tops out at «high», and both criticals need a
+        suspected-infection mark — and the route withdraws only those (X22). So BASE's mark and lab are withdrawn
+        straight in the trail (`_withdraw_in_trail`), and the route's last withdrawal, the temperature, rebuilds
+        the patient with no reading left."""
         log = InMemoryAuditLog()
         identities = _admitted(InMemoryIdentityStore()) if admitted else InMemoryIdentityStore()
-        key = ("bed-3", "septic_shock")
         with _app(audit=log, identities=identities) as c:
-            shock = _chart(c, SHOCK, _ago(5))
-            lactate = _chart(c, [{"code": "lactate", "value": 4}], _ago(5))["lactate"]
-            assert _retract(c, lactate).status_code == 200
-            assert _latched(_card(c)) == ["septic_shock"]                  # some reading left: on the card (D10)
+            ids = _overdue(c)
+            assert _retract(c, ids["map"]).status_code == 200
+            assert _latched(_card(c)) == ["antibiotic_overdue"]           # some reading left: on the card (D10)
+            for code in ("suspected_infection", "platelets"):
+                _withdraw_in_trail(c, ids[code])
             queue = c.app.state.broadcaster.subscribe("h1")
-            for entry in shock.values():
-                assert _retract(c, entry).status_code == 200
+            assert _retract(c, ids["temperature"]).status_code == 200      # no reading left
             acks = _store(c)
-            assert key not in acks.resolved and key not in acks.first_seen and key not in acks.clock_from
+            assert OVERDUE not in acks.resolved and OVERDUE not in acks.first_seen
+            assert OVERDUE not in acks.clock_from
             (ended,) = [r for r in _rows(c, "alert_cleared") if r.payload["reason"] == ENTERED_IN_ERROR]
-            assert (ended.subject, ended.payload["severity"]) == ("septic_shock", "critical")
+            assert (ended.subject, ended.payload["severity"]) == ("antibiotic_overdue", "critical")
             assert ended.payload["first_seen"] is not None                  # the episode's own first sight
             assert _frames(queue)[-1].get("alerts", []) == []               # the last frame shows none
-            _chart(c, [{"code": "temperature", "value": 37.0}], _ago(1))    # the next real reading
+            _chart(c, [{"code": "heart_rate", "value": 80}], _ago(1))       # the next real reading
             live = _card(c)
             assert live["alerts"] == [], "the latch came back with the next reading"
         with _app(audit=log, identities=identities) as again:              # the new reason is not replayed
             assert _card(again)["alerts"] == live["alerts"]
             acks = _store(again)
-            assert key not in acks.resolved and key not in acks.first_seen
+            assert OVERDUE not in acks.resolved and OVERDUE not in acks.first_seen
 
 
 class TestTheChainIsNotInherited:
@@ -556,45 +605,68 @@ class TestTheTrailBeforeMemoryToTheEnd:
     answer finishes what a failed one left — the latch it kept, the card it never sent."""
 
     def test_a_failed_entered_in_error_row_keeps_the_latch_and_the_retry_ends_it(self):
+        """BASE's rows are withdrawn straight in the trail — they are not bedside values (X22; `_overdue`)."""
         log = _FailsOnce(lambda e: e.event_type == "alert_cleared" and e.payload.get("reason") == ENTERED_IN_ERROR)
-        key = ("bed-3", "septic_shock")
         with _app(audit=log) as c:
-            *rest, last = _chart(c, SHOCK, _ago(5)).values()
-            lactate = _chart(c, [{"code": "lactate", "value": 4}], _ago(5))["lactate"]
-            for entry in (lactate, *rest):
-                assert _retract(c, entry).status_code == 200
+            ids = _overdue(c)
+            assert _retract(c, ids["map"]).status_code == 200              # the overdue latches, on the card
+            for code in ("suspected_infection", "platelets"):
+                _withdraw_in_trail(c, ids[code])
             log.armed = True
             with pytest.raises(RuntimeError):
-                _retract(c, last)                                    # the last value: no reading left
+                _retract(c, ids["temperature"])                            # the last value: no reading left
             acks = _store(c)
-            assert key in acks.resolved and key in acks.first_seen, "memory forgot before the trail had the row"
+            assert OVERDUE in acks.resolved and OVERDUE in acks.first_seen, \
+                "memory forgot before the trail had the row"
             assert ENTERED_IN_ERROR not in {r.payload["reason"] for r in _rows(c, "alert_cleared")}
-            r = _retract(c, last)
+            r = _retract(c, ids["temperature"])
             assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
-            assert key not in acks.resolved and key not in acks.first_seen
+            assert OVERDUE not in acks.resolved and OVERDUE not in acks.first_seen
             assert [r.payload["reason"] for r in _rows(c, "alert_cleared")].count(ENTERED_IN_ERROR) == 1
 
     def test_a_withdrawal_whose_later_step_raised_has_its_card_sent_by_the_retry(self):
         """The row committed and memory was rebuilt; the `alert_cleared` append that followed raised, so no card
         went out. Memory is right, so there is nothing to repair — the retry sends the card, once."""
-        log, at = _FailsOnce(lambda e: e.event_type == "alert_cleared"), _ago(5)
+        log = _FailsOnce(lambda e: e.event_type == "alert_cleared")
         with _app(audit=log) as c:
-            _chart(c, SHOCK, at)
-            lactate = _chart(c, [{"code": "lactate", "value": 4}], at)["lactate"]
+            ids = _overdue(c)
             queue = c.app.state.broadcaster.subscribe("h1")
             log.armed = True
             with pytest.raises(RuntimeError):
-                _retract(c, lactate)                                 # the shock latches: its row raises
-            assert _frames(queue) == []                              # the card never went out
-            assert _latched(_card(c)) == ["septic_shock"]            # memory is right
-            r = _retract(c, lactate)
+                _retract(c, ids["map"])                                    # the overdue latches: its row raises
+            assert _frames(queue) == []                                    # the card never went out
+            assert _latched(_card(c)) == ["antibiotic_overdue"]            # memory is right
+            r = _retract(c, ids["map"])
             assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
             (frame,) = _frames(queue)
-            assert (_latched(frame), frame["latest"]["lactate"]) == (["septic_shock"], None)
+            assert (_latched(frame), frame["latest"]["map"]) == (["antibiotic_overdue"], None)
 
-
-# Suspected infection with platelets 120: SOFA 1, no sepsis until a MAP below 70 adds a point.
-BASE = [{"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 120}]
+    def test_a_withdrawal_whose_first_seen_row_raised_is_stamped_and_told_by_the_retry(self):
+        """X3 (final review): a wrong RR 16 hid an immediate NEWS2 — RR 26 the one red parameter of a 7 — down to a
+        4, which raises nothing; withdrawn, the NEWS2 is a new episode, to be stamped and told. Its `first_seen`
+        append raised after `adopt`: the retry, memory being right, writes the row and tells the nurse, once each;
+        a second retry writes neither."""
+        log = _FailsOnce(lambda e: e.event_type == "first_seen")
+        with _app(audit=log) as c:
+            # NEWS2 7, immediate; then the wrong RR: NEWS2 4, nothing.
+            _chart(c, [{"code": "resp_rate", "value": 26}, {"code": "spo2", "value": 93},
+                       {"code": "sbp", "value": 95}], _ago(10))
+            wrong = _chart(c, [{"code": "resp_rate", "value": 16}], _ago(5))["resp_rate"]
+            assert "news2" not in _firing(_card(c))
+            seen, told = len(_rows(c, "first_seen")), len(_rows(c, "notification"))
+            log.armed = True
+            with pytest.raises(RuntimeError):
+                _retract(c, wrong)
+            assert "news2" in _firing(_card(c))                                                  # memory is right
+            assert (len(_rows(c, "first_seen")), len(_rows(c, "notification"))) == (seen, told)
+            assert ("bed-3", "news2") not in _store(c).first_seen, "stamped with no row behind the stamp"
+            for _ in range(2):
+                r = _retract(c, wrong)
+                assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
+                assert (len(_rows(c, "first_seen")), len(_rows(c, "notification"))) == (seen + 1, told + 1)
+            row, note = _rows(c, "first_seen")[-1], _rows(c, "notification")[-1]
+            assert (row.subject, note.subject, note.payload["audience"]) == ("news2", "news2", "nurse")
+            assert _store(c).first_seen[("bed-3", "news2")].isoformat() == row.payload["at"]
 
 
 class TestEqualToNeverCharted:

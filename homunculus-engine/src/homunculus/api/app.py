@@ -46,8 +46,8 @@ from homunculus.api.patient_identity import (
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
     GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
-    RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_REASON_LONG, RETRACT_REASON_SHORT, RETRACT_UNKNOWN,
-    ClinicalEntryError, build_entries,
+    RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
+    RETRACT_UNKNOWN, RETRACTABLE_CODES, ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
 )
 from homunculus.api.escalation import escalate
@@ -1125,17 +1125,31 @@ def create_app(
         for item in cleared:
             store.recent.pop((item.patient_id, item.kind), None)
         _audit_cleared(hospital, cleared, now)
-        for a in engine.active_alerts(patient_id):
-            if store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after):
-                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
+        _stamp_uncovered(hospital, patient_id, engine, store, now)
         if observation is not None:
             lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
         await _publish_current(hospital, patient_id, record, engine, store, now)
+        await _tell_uncovered(hospital, patient_id, engine)
+        notifier.prune(hospital, live_keys(engine, store))
+
+    def _stamp_uncovered(hospital: str, patient_id: str, engine: Engine, store: AckStore, now: datetime) -> None:
+        """X3: an alert a withdrawal uncovered is a new one — its first sight is `now`, with its `first_seen` row.
+        The row first, then the stamp (X4; final review): an append that fails leaves the alert unstamped, and the
+        «already» retry stamps it, row and all. Idempotent: a stamped alert is passed over, as
+        `AckStore.stamp_first_seen` itself passes it over."""
+        for a in engine.active_alerts(patient_id):
+            if (patient_id, a.kind) in store.first_seen:
+                continue
+            audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
+            store.stamp_first_seen(patient_id, a.kind, now, chain_gap=escalate_after)
+
+    async def _tell_uncovered(hospital: str, patient_id: str, engine: Engine) -> None:
+        """X3: an immediate alert a withdrawal uncovered is told to the nurse, as /ingest tells one. Idempotent: the
+        notifier's dedup tells nothing already told."""
         for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
             await hub.publish(hospital, note)
             audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                     {"audience": note.audience, "trigger": note.trigger}))
-        notifier.prune(hospital, live_keys(engine, store))
 
     @app.post("/clinical/{patient_id}/entries/{entry}/retract")
     async def retract_entry(patient_id: str, entry: str, body: dict = Body(...),
@@ -1161,6 +1175,7 @@ def create_app(
         - 400 for a reason shorter than 10 or longer than 200 characters after trim;
         - 409 for a discharged number, before anything is read;
         - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
+        - 409 for a chart row of a code the bedside form does not chart (X22: RETRACTABLE_CODES);
         - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
           append raised left the engine still counting the value, and with the current card sent again either
           way (a withdrawal whose later step raised sent none).
@@ -1197,6 +1212,12 @@ def create_app(
         target = next((r for r in rows if r.id == wanted and r.event_type == "chart"), None)
         if target is None:
             raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
+        # X22 (the local walk): only the bedside form's values. A physician's suspected-infection mark, the SOFA
+        # form's labs and the meds chart are chart rows too, but they are corrected by a new entry, not withdrawn —
+        # the sepsis panel tells the user its mark «geri alınmaz». Before the «already» check: no rule of this
+        # route reaches such a row.
+        if target.subject not in RETRACTABLE_CODES:
+            raise HTTPException(status_code=409, detail=RETRACT_NOT_BEDSIDE)
         withdrawn = retracted_entries(rows)
         already = target.id in withdrawn
         scratch = Engine()
@@ -1214,10 +1235,13 @@ def create_app(
                 await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
             else:
                 # Final review (X21): memory is right, but a withdrawal whose row committed and whose later step
-                # raised (an `alert_cleared` append after `adopt`) sent no card — it stayed stale until the next
-                # frame. The current card goes out now, idempotent; with no reading left, this is where a latch a
-                # failed append kept is ended (`_publish_current`).
+                # raised (an `alert_cleared` or `first_seen` append after `adopt`) left its tail undone — the card
+                # stale until the next frame, an uncovered alert unstamped and untold (X3). The tail's idempotent
+                # steps run again, in its order; with no reading left, this is where a latch a failed append kept
+                # is ended (`_publish_current`).
+                _stamp_uncovered(hospital, patient_id, engine, store, now)
                 await _publish_current(hospital, patient_id, record, engine, store, now)
+                await _tell_uncovered(hospital, patient_id, engine)
                 notifier.prune(hospital, live_keys(engine, store))
             raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
         audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
