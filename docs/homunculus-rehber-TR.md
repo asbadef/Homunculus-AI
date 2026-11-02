@@ -1556,12 +1556,17 @@ alarm başucu monitörüdür»**.
 - «Bu cihazın dalga formunu görme yetkiniz yok» ve «Bu cihazın dalga formu gösterilemiyor» — yetki
   ya da kapsam; izler hemen kaldırılır.
 
-**Tam ekran.** Panelin ⤢ düğmesi («Tam ekran görünüm») aynı satırları siyah zeminde, ekranı
-doldurarak açar. Damga tam boyda kalır; yanında bu monitörün şerit sayıları, şeritteki adları,
-yaşları ve kanıt sözleriyle durur (hasta bilgisi olmadan). Esc, × («Tam ekrandan çık») ya da
-tarayıcının tam ekranından çıkmak kapatır; odak ⤢'ye döner. Uygulamanın bildirimleri, ekran
-kilidinden önceki geri sayım ve alarm sesini başlatan düğme tam ekranın üstünde, görünür kalır.
-Gösterilecek satır kalmazsa (bir ret geldiyse ya da dalga kapatıldıysa) tam ekran kendiliğinden
+**Tam ekran.** Panelin ⤢ düğmesi («Tam ekran görünüm») aynı satırları siyah zeminde, uygulamanın
+üst çubuğunun altından ekranın geri kalanını doldurarak açar. Damga tam boyda kalır; yanında bu
+monitörün şerit sayıları, şeritteki adları, yaşları ve kanıt sözleriyle durur (hasta bilgisi
+olmadan). **Tam ekran hiçbir alarm işaretini örtmez:** uygulamanın üst çubuğu — bekleyen alarm
+sayısıyla alarm zili ve açılan listesi dahil — tam ekranın üstünde görünür ve kullanılabilir kalır
+(tam ekrandaki hemşire başka bir yatağın yeni alarmını zilden görür). Tab tuşu üst çubuğun
+düğmeleriyle tam ekranın × düğmesi arasında dolaşır, siyahın arkasındaki sayfaya gitmez. Esc (odak
+tam ekrandayken), × («Tam ekrandan çık») ya da tarayıcının tam ekranından çıkmak kapatır; odak
+⤢'ye döner. Odak üst çubuktayken Esc çubuğun kendi menüsünü kapatır, tam ekranı değil.
+Uygulamanın bildirimleri, ekran kilidinden önceki geri sayım ve alarm sesini başlatan düğme tam
+ekranın üstünde, görünür kalır ve kendi tuşlarını korur. Gösterilecek satır kalmazsa (bir ret geldiyse ya da dalga kapatıldıysa) tam ekran kendiliğinden
 kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel de kalkar.
 
 **Yapmadıkları**
@@ -1571,9 +1576,14 @@ kapanır ve panel nedenini söyler; hasta ekranında dalga kapatıldıysa panel 
 - **Dalgadan sayı yok.** Dalgadan hiçbir nabız, solunum hızı, basınç değeri, ölçüm, kumpas, skor,
   alarm ya da bildirim üretilmez; ne gerçek motora ne gölge motora bir şey gider. Panelin yanındaki
   sayılar şeridin sayılarıdır.
-- **Saklama yok.** Dalga hub'ın belleğinde 20 saniye, sunucuda 250 ms, tarayıcıda 20 saniye durur;
-  veritabanına, denetim kaydına, günlüğe ya da dışa aktarıma yazılmaz. (Hub'ın şifreli paket
-  günlüğü ham paketleri bugüne dek nasıl tutuyorsa öyle tutar; bu dilim ona okuyucu eklemez.)
+- **Saklama yok.** Hub'da ve tarayıcıda en çok son 20 saniyelik dalga (monitörün kendi saatine
+  göre son 20 saniye, duvar saatine göre değil), yalnız bellekte; sunucuda 250 ms. Bir monitör
+  susunca son blokları biri sorana ya da hub yeniden başlayana dek hub belleğinde, panel kapanana
+  dek tarayıcı belleğinde kalabilir — 10–20 saniyedir susan bir monitörün blokları sorulursa yine
+  gönderilir ve tarayıcı onları yaşlarına göre «akış durdu» diye gösterir; hiçbir zaman
+  güncel/canlı gibi gösterilmez ve hiçbir yere yazılmaz: veritabanına, denetim kaydına, günlüğe ya
+  da dışa aktarıma gitmez. (Hub'ın şifreli paket günlüğü ham paketleri bugüne dek nasıl tutuyorsa
+  öyle tutar; bu dilim ona okuyucu eklemez.)
 - Kayıt, yazdırma, dışa aktarma, geriye dönük izleme (full disclosure) ve EKG kalibrasyonu yok.
 
 **Ne doğrulandı, ne doğrulanmadı.** Doğrulanan: paketin ve dalga bloklarının yapısı, zamanlaması
@@ -1593,8 +1603,10 @@ kapalı» der.
 
 **Hastanenin sunucusunda henüz yok.** Dilim kendi dalındadır; dağıtım kullanıcının sözüyle
 yapılacak («main'e al», sonra «onay»). Hub için yeni bir sürüm gerekir (R6'dan sonraki; R7 olarak
-planlanıyor); hub önce ya da API ile birlikte gider. Sıra karışsa da güvenlidir: hub dalga yolunu
-taşımadığı sürece panel «Dalga akışı yok» der.
+planlanıyor, yeni drop-in 97 ile); hub önce ya da API ile birlikte gider. Sıra karışsa da
+güvenlidir: hub dalga yolunu taşımadığı sürece panel «Dalga akışı yok» der. Hub'ı geri almak için
+97 silinir ve hub R6 ile yeniden başlatılır; R4'e ya da R5'e dönmek NBP-2'yi ve HR/PLS düzeltmesini
+de geri alır.
 
 ---
 

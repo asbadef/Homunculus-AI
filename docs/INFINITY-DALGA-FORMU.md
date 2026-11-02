@@ -129,6 +129,8 @@ yalnız doğrudan Ethernet kaydında görüldüler.
 
 ## Sayısal kimlikler: HR ve PLS adları ters — 27 Ekim 2026
 
+*(2026-10-30: R6'da düzeltildi, commit `70e45e9` — bu bölümün sonundaki nota bakın.)*
+
 Dalga kimliklerinde `0x01` öneki EKG'ye, `0x19` öneki SpO₂ modülüne ait; bu, sayısal kayıtlarda
 `0x0101`'in EKG'den gelen **HR**, `0x1905`'in SpO₂'den gelen **nabız (PLS)** olduğunu
 düşündürüyordu. **BED08 kaydı bunu doğruladı:** ekranda HR ile PLS'nin belirgin farklı olduğu
@@ -143,6 +145,9 @@ Sonuçları:
   Düzeltme `infinity_records.py` tablosunda iki satırlık ad değişimidir; karar ve dağıtım
   sahibinindir.
 - Aşama B gölge motoru "hr"ı kurallara (NEWS2 dahil) verecekse, düzeltme ondan önce girmelidir.
+
+*(2026-10-30: R6'da düzeltildi, commit `70e45e9`; şerit ve gölge kuralları artık `0x0101` = HR,
+`0x1905` = PLS okur. Yukarıdaki metin 27 Ekim'deki durumu anlatır ve tarih olarak kalır.)*
 
 ## Yeni sayısal kimlikler (BED08)
 

@@ -96,7 +96,8 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   that sees it change knows the cursor restarted and re-reads the window. `GET /v1/status` gains
   `waves: {cursor, refused, started}` when the buffer exists, so a worker clock ahead of the hub
   (every packet refused as "future") shows up as a counter instead of a silent blackout.
-- `deploy/infinity/build_transport_release.py` gains `infinity_waves` in `EDGE` (new hub release R5).
+- `deploy/infinity/build_transport_release.py` gains `infinity_waves` in `EDGE` (new hub release R7,
+  the first after R6; R5 is NBP-2 and R6 the HR/PLS swap — final review I-2).
 - CPU: decoding ≈65 packets/s is a few µs each; acceptance still measures the hub (§8).
 
 ### 3.2 API — `api/infinity_waves.py` (new) + one registration line in `app.py`
@@ -145,6 +146,9 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
   - A `⤢` button on the panel opens `WaveFullscreen`: the same rows, filling the screen on a black
     ground, with the strip's numbers beside them as the prototype laid them out.
   - Esc or `×` closes it. The stamp stays visible at full size.
+  - *Final review I-1 (2026-11-02):* it fills the screen **below the app's top bar**. The bar —
+    the alarm bell with its waiting count and its list — stays visible and usable above it, and
+    Tab goes round the bar and the view: the full screen never hides an alarm cue.
 - `live/boundaries.test.js`: wave modules may not reach alarm, lock-screen or board-store code.
 - Words in all dashboard languages (new `i18n/strings/waves.js`).
 
@@ -185,7 +189,13 @@ forwarder lane (5 s, ≤1 POST/s, 64 KiB) is not touched and could not carry the
 5. **Patient binding only through the existing explicit link** (the strip's `link === "one"`).
    No waveform on a patient when the binding is ambiguous or absent.
 6. **No storage.** Hub ring 20 s in memory, API cache 250 ms, browser 20 s. Nothing reaches the DB,
-   the audit, logs, exports or screenshots made by the app. (The hub journal keeps encrypted raw
+   the audit, logs, exports or screenshots made by the app.
+   - *Final review M-2 (2026-11-02):* the 20 s is the last 20 s **by the monitor's own clock** (back
+     from its newest block), not the wall clock, and it is pruned only when touched. When a monitor
+     falls silent, its last blocks can stay in hub memory until someone asks for it or the hub
+     restarts, and in browser memory until the panel closes (a `cleared` row's blocks too). A
+     monitor silent for 10–20 s is still served blocks up to 20 s old, and the browser ages them
+     into "akış durdu". They are never shown as current/live, and never written anywhere. (The hub journal keeps encrypted raw
    payloads exactly as it does today; this design adds no reader for it.)
 7. **Feature flag off by default.** `INFINITY_WAVES=on` is an explicit deploy step.
 8. **No sound on any wave screen.** No pulse beep, no alarm tone, no audio of any kind. The
@@ -289,11 +299,13 @@ Checks (results go to the protocol doc, never values):
 - The two screen insertions land **after** Aşama B is on main (rebase), so there is no conflict.
 - Lane A reviews the hub/edge and `app.py` hunks.
 - Deploy (the owner pastes the blocks; one VM deploy at a time, after B1a/Aşama B):
-  1. Hub R5 (new release dir + drop-in).
+  1. Hub R7 (new release dir + drop-in 97; built from a tree with the HR/PLS swap 70e45e9).
   2. API + web images.
   3. `INFINITY_WAVES=on`.
-- Either order is safe: the API answers "dalga akışı yok" while the hub lacks the route.
-- Rollback: the flag off, or the previous drop-in / image tags.
+- Either order is safe: the API answers "dalga akışı yok" while the hub runs a release before R7
+  (a hub without the waves route).
+- Rollback: the flag off, or the previous image tags; on the hub, remove drop-in 97 and restart on
+  R6 — never R4/R5, which would undo NBP-2 and the HR/PLS labels (final review I-2).
 
 ## 11. Phase 2 — the wall monitor (W6)
 

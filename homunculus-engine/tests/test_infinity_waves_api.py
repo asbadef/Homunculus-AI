@@ -265,7 +265,7 @@ async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
 
 
 @pytest.mark.parametrize("hub, status, detail", [
-    (Hub(status=404), 503, {"reason": "hub_no_waves"}),            # a hub without the route (before R5)
+    (Hub(status=404), 503, {"reason": "hub_no_waves"}),            # before R7 (a hub without the waves route)
     (Hub(status=409), 503, {"reason": "research_off"}),
     (Hub(status=401), 503, {"reason": "hub_unauthorized"}),
     (Hub(status=500), 503, {"reason": "hub_error", "status": 500}),
