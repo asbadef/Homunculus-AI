@@ -28,8 +28,7 @@ unusable device tokens: a deploy that fails loudly while an operator watches is 
 service that looks healthy and is not.
 
 Logging: `configure_logging` gives the engine's own loggers (`homunculus.*`) an INFO handler on
-stderr, first thing — uvicorn configures only its own — and keeps the live waveform panel's poll
-(`GET /infinity-waves/…`) out of uvicorn's access log (`WavesPollAccessFilter`), as nginx does.
+stderr, first thing — uvicorn configures only its own.
 """
 from __future__ import annotations
 
@@ -66,45 +65,6 @@ logger = logging.getLogger(__name__)
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
-WAVES_POLL_PREFIX = "/infinity-waves/"
-
-
-class WavesPollAccessFilter(logging.Filter):
-    """Drops uvicorn's access line for the live waveform panel's poll, `GET /infinity-waves/<monitor
-    address>?since=…`; every other access line is kept as it is.
-
-    Every open panel polls about 1.33 times a second, so one panel left open all day would write
-    about 115,000 lines — each with the monitor's address and the query — into the API
-    container's json-file log, which nothing rotates: a disk risk on the hospital VM. nginx
-    already keeps the poll out of its access log (`access_log off`, deploy/local/web/nginx.conf);
-    this is the API's half. The line goes whatever its status, as nginx's does. A poll that
-    raises is still logged: uvicorn writes the exception to `uvicorn.error`, which this does not
-    touch.
-
-    uvicorn logs an access line with `args = (client_addr, method, full_path, http_version,
-    status_code)` (protocols/http/h11_impl.py, httptools_impl.py); `full_path` carries the query,
-    so only its prefix is matched. A record of any other shape is kept, and nothing here raises:
-    an exception in a logger's filter would reach the request that logged the line."""
-
-    homunculus_waves_poll = True        # how `configure_logging` finds one already installed
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        args = record.args
-        if isinstance(args, tuple) and len(args) == 5:
-            path = args[2]
-            if isinstance(path, str) and path.startswith(WAVES_POLL_PREFIX):
-                return False
-        return True
-
-
-def _drop_waves_poll_access_lines() -> None:
-    """Put one `WavesPollAccessFilter` on the `uvicorn.access` LOGGER, not on a handler: uvicorn's
-    dictConfig replaces that logger's handlers and leaves its filters, and the container imports
-    this module after uvicorn has configured its logging. Calling again adds nothing."""
-    access = logging.getLogger("uvicorn.access")
-    if not any(getattr(f, "homunculus_waves_poll", False) for f in access.filters):
-        access.addFilter(WavesPollAccessFilter())
-
 
 def configure_logging() -> logging.Handler:
     """The engine's own log lines (`homunculus.*`), INFO and up, on stderr — where uvicorn
@@ -118,11 +78,7 @@ def configure_logging() -> logging.Handler:
     once; a log configuration that gives the root a handler (`--log-config`) would print them
     twice — configure `homunculus` there instead. Nothing here decides what is logged: the code
     that logs keeps passwords, tokens and patient data out of its messages, and every INFO line
-    the API process has (the LDAP start-up bind) names a host, nothing more.
-
-    Also, once: the waves poll's access line is dropped (`WavesPollAccessFilter`); every other
-    `uvicorn.access` line is unchanged."""
-    _drop_waves_poll_access_lines()
+    the API process has (the LDAP start-up bind) names a host, nothing more."""
     engine = logging.getLogger("homunculus")
     for handler in engine.handlers:
         if getattr(handler, "homunculus_stderr", False):

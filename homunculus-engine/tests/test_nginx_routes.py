@@ -96,31 +96,47 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
 
 
 def test_every_api_location_is_found() -> None:
-    """Seven: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
+    """Six: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
     `/auth/password` blocks, which nginx picks before any regex location so that the routes
-    that check a password carry a per-address limit — the exact block of Aşama A's
-    forwarder POST, which refuses plain HTTP, and the live waves' block, which is not logged."""
-    assert len(_api_locations()) == 7
+    that check a password carry a per-address limit — and the exact block of Aşama A's
+    forwarder POST, which refuses plain HTTP."""
+    assert len(_api_locations()) == 6
 
 
-def test_the_waves_poll_is_proxied_as_the_api_and_never_access_logged() -> None:
+def _condition_map(text: str) -> list[tuple[str, str]]:
+    """(key, value) of `map $uri $homunculus_access_logged { … }` at the file's top level, in
+    file order (tests/test_access_log_redaction.py pins its exact entries)."""
+    block = re.search(r"^map\s+\$uri\s+\$homunculus_access_logged\s*\{(.*?)^\}", text, re.S | re.M)
+    assert block, "no `map $uri $homunculus_access_logged { … }` in nginx.conf"
+    lines = (raw.split("#", 1)[0].strip() for raw in block.group(1).splitlines())
+    return [tuple(line.rstrip(";").split()) for line in lines if line]
+
+
+def _logged(condition: list[tuple[str, str]], path: str) -> str:
+    """The map's value for `path` as nginx picks it: the first regex that matches, else `default`."""
+    for key, value in condition:
+        if key.startswith("~") and re.search(key.lstrip("~*"), path, re.I if key.startswith("~*") else 0):
+            return value
+    return dict(condition)["default"]
+
+
+def test_the_waves_poll_is_proxied_as_the_api_and_is_the_one_path_left_out_of_the_access_log() -> None:
     """Dalga (final review M-3): every open wave panel polls GET /infinity-waves/<monitor>
     about 1.33 times a second, so one panel left open would write ~115,000 access lines a day.
-    The path has a block of its own with `access_log off;` and the prefix block's proxy
-    settings, and it is the only API location that matches the path — the prefix list no
-    longer names it, so the order of the regex locations cannot hand it back to the logged
-    block."""
+    The prefix block proxies it as any API path. The server's one access log (G2-B1d O10)
+    writes a request only `if=$homunculus_access_logged`, and that map's only `0` is the
+    waves: every other API path, and the single-page app's, is still logged."""
     text = CONF.read_text(encoding="utf-8")
     path = "/infinity-waves/192.0.2.10"
     matching = [loc for loc in _api_locations() if loc.search(path)]
-    assert len(matching) == 1, [loc.pattern for loc in matching]
-    assert not matching[0].search("/infinity-wavesx") and not matching[0].search("/infinity-shadow/board")
-    waves = _location(text, f"location ~ {matching[0].pattern}")
-    assert _directives(waves, "access_log") == {"access_log off"}
-    proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
-    assert _directives(waves, *proxy) == _directives(_location(text, "location ~ ^/(auth|"), *proxy)
-    # Only the waves are quiet: no other block, and not the server, turns the access log off.
-    assert len(re.findall(r"^\s*access_log\s", text, re.M)) == 1
+    assert len(matching) == 1 and matching[0].pattern.startswith("^/(auth|"), [loc.pattern for loc in matching]
+    assert not matching[0].search("/infinity-wavesx")
+    assert re.findall(r"^\s*access_log\s+([^;]*);", text, re.M) == [
+        "/var/log/nginx/access.log homunculus_redacted if=$homunculus_access_logged"]
+    condition = _condition_map(text)
+    assert [key for key, value in condition if value == "0"] == ["~^/infinity-waves(/|$)"], condition
+    unlogged = [p for p in API_PATHS + SPA_PATHS if _logged(condition, p) == "0"]
+    assert unlogged == [path], unlogged
 
 
 def _block(text: str, header: str) -> str:

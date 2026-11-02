@@ -66,11 +66,12 @@ def _conf() -> str:
     return CONF.read_text(encoding="utf-8")
 
 
-def _map_entries(text: str) -> list[tuple[str, str]]:
+def _map_entries(text: str, variable: str = "homunculus_log_uri") -> list[tuple[str, str]]:
     """(key, value) of every entry of `map $uri $homunculus_log_uri { … }`, in file order.
-    The block is at the file's top level and ends at the first `}` in column 0."""
-    block = re.search(r"^map\s+\$uri\s+\$homunculus_log_uri\s*\{(.*?)^\}", text, re.S | re.M)
-    assert block, "no `map $uri $homunculus_log_uri { … }` at the top level of nginx.conf"
+    The block is at the file's top level and ends at the first `}` in column 0.
+    dalga: `variable` reads the access log's condition map (`$homunculus_access_logged`) as well."""
+    block = re.search(r"^map\s+\$uri\s+\$" + variable + r"\s*\{(.*?)^\}", text, re.S | re.M)
+    assert block, f"no `map $uri ${variable} {{ … }}` at the top level of nginx.conf"
     entries = []
     for line in block.group(1).splitlines():
         line = line.split("#", 1)[0].strip()
@@ -382,20 +383,50 @@ def _server_block(text: str) -> str:
     raise AssertionError("the server block is not closed")
 
 
+#: dalga: the one condition the server's `access_log` may carry; its map is pinned by
+#: `test_only_the_waves_poll_is_left_out_of_the_access_log`.
+ACCESS_LOG_CONDITION = "if=$homunculus_access_logged"
+
+
 def test_the_servers_access_log_uses_the_redacted_format() -> None:
     """One `access_log` in the whole file, at the server level — none in a `location`, whose own
     `access_log` would replace the server's — written to nginx:alpine's /var/log/nginx/access.log
     (which the image links to stdout, where `docker compose logs web` reads it)."""
     text = _conf()
     directives = re.findall(r"^\s*access_log\s+([^;]*);", text, re.M)
-    assert directives == ["/var/log/nginx/access.log homunculus_redacted"], directives
+    # dalga: the one line may carry the one condition that leaves the waves poll out (the next test);
+    # still one line, still never `off`.
+    assert directives in (["/var/log/nginx/access.log homunculus_redacted"],
+                          [f"/var/log/nginx/access.log homunculus_redacted {ACCESS_LOG_CONDITION}"]), directives
     server = _server_block(text)
-    assert server.count("access_log") == 1
+    # dalga: a whole word, so the condition's `$homunculus_access_logged` is not counted as a second.
+    assert len(re.findall(r"\baccess_log\b", server)) == 1
     before = server[:server.index("access_log")]
     depth = 0
     for ch in re.sub(r"'[^']*'|\"[^\"]*\"", "", before):    # quoted answers hold balanced braces
         depth += (ch == "{") - (ch == "}")
     assert depth == 1, "the access_log is inside a location, not at the server level"
+
+
+#: dalga: the API path the access log leaves out, the only one — the live waveform panel's poll,
+#: about 1.33 requests a second per open panel (final review M-3). Its path carries a monitor's
+#: network address, a device id, never a key; `$homunculus_log_uri` writes it as `:id` all the same.
+UNLOGGED_ROUTES = ["/infinity-waves/{device_id}"]
+
+
+def test_only_the_waves_poll_is_left_out_of_the_access_log() -> None:
+    """dalga: the server's `access_log` writes a request only `if=$homunculus_access_logged`. That map,
+    keyed on `$uri` as `$homunculus_log_uri` is, at the top level before the server, says `1` by
+    default and `0` for one anchored regex alone: the waves poll's. A second `0` would take another
+    route out of the record; a `default 0` would take them all. Applied to every route of the app,
+    only UNLOGGED_ROUTES come out `0`."""
+    text = _conf()
+    declared = re.search(r"^map\s+\$uri\s+\$homunculus_access_logged\s*\{", text, re.M)
+    assert declared and declared.start() < text.index("\nserver {")
+    entries = _map_entries(text, "homunculus_access_logged")
+    assert len(entries) == 2 and dict(entries) == {"default": "1", "~^/infinity-waves(/|$)": "0"}, entries
+    unlogged = [path for path in _app_paths() if _apply(entries, _fill(path)) != "1"]
+    assert unlogged == UNLOGGED_ROUTES, unlogged
 
 
 # ---------------------------------------------------------------------------------------------
