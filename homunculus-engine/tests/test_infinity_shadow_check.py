@@ -65,8 +65,34 @@ def test_a_good_pair_passes_every_criterion():
     assert rows == {name: True for name in ("asama", "tablo", "besleme", "atanmamis", "gecikme", "gonderim")}
 
 
+def test_the_stage_rules_is_the_same_strip_and_is_judged_alike():
+    # Aşama B: the board answers `rules` while the strip runs with the shadow engine beside it.
+    before, after = (board(sent=40, lag=(0,) * 10, stage="rules"), PATIENTS), (board(sent=100, stage="rules"), PATIENTS)
+    assert results(before=before, after=after) == {
+        name: True for name in ("asama", "tablo", "besleme", "atanmamis", "gecikme", "gonderim")}
+    lines = check.report(before, after, window_s=300, **EXPECT)
+    text = "\n".join(lines)
+    assert "KABUL  asama      aşama: rules" in text and "SONUÇ: KABUL" in text
+    assert any(line.startswith("nbp: ") for line in lines) and any(line.startswith("  yatak B-1:") for line in lines)
+
+
+def test_the_board_hash_leaves_out_each_cards_shadow_picture_and_nothing_else():
+    # The shadow picture follows the monitors minute by minute; the engine's own output must still count.
+    card = {"patient_id": "S-SECRET-1", "alerts": [{"kind": "news2", "elapsed_sec": 12}], "latest": {"heart_rate": 91}}
+    one = {"patients": [{**card, "shadow": {"vitals": {"hr": {"value": 88}}, "findings": []}}], "scope": {}}
+    two = {"patients": [{**card, "shadow": {"vitals": {"hr": {"value": 93}}, "findings": [{"kind": "x"}]}}], "scope": {}}
+    plain = {"patients": [card], "scope": {}}
+    assert check.projection(one) == check.projection(two) == check.projection(plain)
+    assert check.summary(one) == check.summary(plain)
+    assert check.projection(one) != check.projection({"patients": [{**card, "alerts": []}], "scope": {}})
+    assert check.projection(one) != check.projection({"patients": [{**card, "latest": {"heart_rate": 90}}], "scope": {}})
+    nested = {"patients": [{**card, "detail": {"shadow": 1}}]}             # only the card's own key is left out
+    assert check.projection(nested) != check.projection(plain)
+
+
 @pytest.mark.parametrize(("after", "over", "failed"), [
     (board(stage="off"), {}, "asama"),
+    (board(stage="alarms"), {}, "asama"),
     (board(version=2), {}, "tablo"),
     (board(sha="ff" * 32), {}, "tablo"),
     (board(table_status="missing"), {}, "tablo"),
@@ -112,12 +138,12 @@ def test_what_it_prints_holds_no_value_no_patient_and_no_token():
     assert "192.0.2.28" in text and "table_unassigned" in text
 
 
-def nbp(state, *, measured=None, changed=None):
-    shown = state == "value"
+def nbp(state, *, measured=None, changed=None, **over):
+    shown = state in ("value", "value_untimed")
     return {"parameter": "nbp", "state": state, "systolic": 211 if shown else None,
             "diastolic": 37 if shown else None, "mean": 95 if shown else None, "unit": "mmHg",
             "age_s": 2.0 if shown else measured, "last_at": changed, "changed_at": changed,
-            "measured_age_s": measured, "evidence": "screen_match", "partial": False}
+            "measured_age_s": measured, "evidence": "screen_match", "partial": False, **over}
 
 
 def test_the_nbp_line_counts_devices_and_the_oldest_change_and_never_prints_a_pressure():
@@ -125,10 +151,11 @@ def test_the_nbp_line_counts_devices_and_the_oldest_change_and_never_prints_a_pr
     after["beds"][0]["parameters"].append(nbp("value", measured=2821.0, changed="2026-10-20T08:13:00+00:00"))
     after["beds"][1]["parameters"].append(nbp("old"))                                   # no change seen yet
     after["unassigned"][0]["parameters"].append(nbp("old", measured=9000.0, changed="2026-10-20T06:30:00+00:00"))
+    after["unassigned"][1]["parameters"].append(nbp("value_untimed", last_at="2026-10-20T09:00:00+00:00"))
     lines = check.report(BEFORE, (after, PATIENTS), window_s=300, **EXPECT)
     readable = "\n".join(lines[:-1])
-    assert ("nbp: 1 cihazda ölçüm saati ≤ ile gösteriliyor (en eski 48 dk önce), 1 cihazda ölçüm bekleniyor, "
-            "1 cihazda gizli (eski)") in readable
+    assert ("nbp: 1 cihazda ölçüm saati ≤ ile gösteriliyor (en eski 48 dk önce), 1 cihazda zamanı bilinmeyen değer, "
+            "1 cihazda ölçüm bekleniyor, 1 cihazda gizli (eski)") in readable
     assert "3 taze değer" in readable                       # a shown NBP is a fresh cell like any other
     for secret in ("211", "37", "95"):
         assert secret not in readable, secret
@@ -142,7 +169,27 @@ def test_the_nbp_line_names_the_oldest_change_among_every_device_showing_one():
     for card, measured in ((after["beds"][0], 300.0), (after["beds"][1], 2821.0), (after["unassigned"][0], 1200.0)):
         card["parameters"].append(nbp("value", measured=measured, changed="2026-10-20T08:13:00+00:00"))
     assert check.nbp_line(after) == ("nbp: 3 cihazda ölçüm saati ≤ ile gösteriliyor (en eski 48 dk önce), "
-                                     "0 cihazda ölçüm bekleniyor, 0 cihazda gizli (eski)")
+                                     "0 cihazda zamanı bilinmeyen değer, 0 cihazda ölçüm bekleniyor, "
+                                     "0 cihazda gizli (eski)")
+
+
+def test_the_nbp_line_counts_untimed_values_apart_and_one_whose_packet_went_old_as_withheld():
+    # NBP-2: an untimed value has no measurement time, so it adds nothing to the oldest change; once
+    # its packet is old it carries the packet's time but no change time — withheld, not "awaiting".
+    after = board()
+    after["beds"][0]["parameters"].append(nbp("value_untimed", last_at="2026-10-20T09:00:00+00:00"))
+    after["beds"][1]["parameters"].append(nbp("old", age_s=40.0, last_at="2026-10-20T08:59:20+00:00"))
+    after["unassigned"][0]["parameters"].append(nbp("value_untimed", last_at="2026-10-20T09:00:00+00:00"))
+    after["unassigned"][1]["parameters"].append(nbp("old"))                             # no time at all
+    assert check.nbp_line(after) == ("nbp: 0 cihazda ölçüm saati ≤ ile gösteriliyor, 2 cihazda zamanı bilinmeyen "
+                                     "değer, 1 cihazda ölçüm bekleniyor, 1 cihazda gizli (eski)")
+    for secret in ("211", "37", "95"):
+        assert secret not in check.nbp_line(after), secret
+    # The per-bed count takes the untimed NBP as the fresh cell it is (its age is the packet's): B-1's
+    # two fresh cells and the cuff; B-2 holds nothing but a packet gone old.
+    lines = check.details(after)
+    assert any(line.startswith("  yatak B-1:") and "3 taze değer" in line for line in lines), lines
+    assert any(line.startswith("  yatak B-2:") and "0 taze değer" in line for line in lines), lines
 
 
 def test_a_missing_endpoint_is_stage_yok_and_the_board_hash_is_still_printed(tmp_path, capsys):

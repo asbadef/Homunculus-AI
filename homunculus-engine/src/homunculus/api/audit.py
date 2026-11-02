@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
@@ -133,10 +133,16 @@ def since_utc(since: datetime | None) -> datetime | None:
     return since.astimezone(timezone.utc)
 
 
-def _matches(rec: AuditRecord, tenant, patient_id, event_type, since=None) -> bool:
+def kinds_of(event_types: Iterable[str] | None) -> frozenset[str] | None:
+    """`records(event_types=…)` read once into a set: None is no filter, an empty set matches no row."""
+    return None if event_types is None else frozenset(event_types)
+
+
+def _matches(rec: AuditRecord, tenant, patient_id, event_type, since=None, kinds=None) -> bool:
     return ((tenant is None or rec.tenant == tenant)
             and (patient_id is None or rec.patient_id == patient_id)
             and (event_type is None or rec.event_type == event_type)
+            and (kinds is None or rec.event_type in kinds)
             and (since is None or datetime.fromisoformat(rec.ts) >= since))
 
 
@@ -154,10 +160,15 @@ class AuditLog(Protocol):
     # rows, still in ascending id order — "what happened lately" (/audit, /alarm-quality, the heat
     # map); `after_id=n` is the rows with `id > n`, oldest first — one page of "every row"
     # (`iter_records`, the replay). Both at once is a ValueError. No other order is promised.
+    # `event_type` keeps one kind; `event_types` (Aşama B, T6 review) keeps the rows whose kind is in
+    # the set — read by the backend, so a row of another kind never takes a place under `limit`
+    # (`/alarm-quality` reads its own kinds, never the shadow lane's). Both at once keep the rows that
+    # satisfy both; an empty set matches nothing.
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
                 event_type: str | None = None, since: datetime | None = None,
                 limit: int = 200, newest: bool = False,
-                after_id: int | None = None) -> list[AuditRecord]: ...
+                after_id: int | None = None,
+                event_types: Iterable[str] | None = None) -> list[AuditRecord]: ...
 
 
 def iter_records(log: AuditLog, *, tenant: str | None = None,
@@ -200,11 +211,11 @@ class InMemoryAuditLog:
         return rec
 
     def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200,
-                newest=False, after_id=None):
+                newest=False, after_id=None, event_types=None):
         _one_order(newest, after_id)
-        bound = since_utc(since)
+        bound, kinds = since_utc(since), kinds_of(event_types)
         hits = [r for r in self._rows if (after_id is None or r.id > after_id)
-                and _matches(r, tenant, patient_id, event_type, bound)]
+                and _matches(r, tenant, patient_id, event_type, bound, kinds)]
         # The newest `limit`, still oldest first (D11) — cut from the end by count: `hits[-0:]`
         # would be every row.
         return hits[max(len(hits) - limit, 0):] if newest else hits[:limit]
@@ -299,13 +310,20 @@ class SqliteAuditLog:
         raise RuntimeError("denetim zinciri yazılamadı — eşzamanlı yazım çözülemedi")
 
     def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200,
-                newest=False, after_id=None):
+                newest=False, after_id=None, event_types=None):
         _one_order(newest, after_id)
+        kinds = kinds_of(event_types)
+        if kinds is not None and not kinds:
+            return []                        # an empty set matches nothing; `IN ()` is not SQL
         clauses, params = [], []
         for col, val in (("tenant", tenant), ("patient_id", patient_id), ("event_type", event_type)):
             if val is not None:
                 clauses.append(f"{col} = ?")
                 params.append(val)
+        if kinds is not None:
+            # One bound parameter per kind, sorted so that one set always reads as one statement.
+            clauses.append(f"event_type IN ({', '.join('?' for _ in kinds)})")
+            params.extend(sorted(kinds))
         bound = since_utc(since)
         if bound is not None:
             # Text against text, which orders instants here and only here: every `ts` is written by

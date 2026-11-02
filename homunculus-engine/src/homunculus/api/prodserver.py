@@ -14,7 +14,13 @@ Env:
                    production LDAP_ALLOW_INSECURE=1 is unusable too
     INFINITY_CLINICAL_STAGE / INFINITY_SHADOW_TOKEN / INFINITY_SHADOW_HOSPITAL / INFINITY_DEVICE_BEDS_PATH
                    Aşama A's monitor strip, read by api/infinity_shadow.py (`shadow_settings_from_env`);
-                   unset = off, a problem = off and logged, never a refusal to start
+                   unset = off, a problem = off and logged, never a refusal to start. With the stage
+                   `rules` (Aşama B; INFINITY_RULES_PARAMETERS, api/infinity_rules.py) the monitor
+                   samples go to Postgres's `monitor_samples` (migration 0013), which the API
+                   prunes hourly at every stage on a Postgres deployment. With the lane on in
+                   production the API reads the device→bed table from the database
+                   (`PostgresDeviceBeds`), not from INFINITY_DEVICE_BEDS_PATH; the file stays the
+                   lab's source and the import's input
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -39,6 +45,9 @@ from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
 from homunculus.api.infinity_shadow import shadow_settings_from_env
+from homunculus.api.device_beds_postgres import PostgresDeviceBeds
+from homunculus.api.infinity_device_beds import DeviceBedSource
+from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
 from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import (
     MEMBERSHIP_INACTIVE, NO_TENANT, PASSWORD_CHANGE_REQUIRED,
@@ -465,6 +474,33 @@ def _scope_resolver():
                                break_glass=break_glass_patient_ids)
 
 
+def _samples(url: str) -> SampleStore:
+    """Aşama B's monitor samples (api/monitor_samples.py): the table of migration 0013, on the
+    audit's database and with its TLS flag, on every Postgres deployment whatever the stage — a
+    stage below `rules` writes none, but the API prunes the table at every stage, so the rows a
+    `rules` run wrote still expire after a rollback to `shadow` or `off` (T6 review). In memory
+    without Postgres: a lab run keeps the last 24 h until it stops (the shadow engine is then
+    rebuilt from nothing)."""
+    if _is_production(url):
+        return PostgresSamples(
+            url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+    return InMemorySamples()
+
+
+def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:
+    """G2-ESLEME (spec D6): the device→bed table from the database (migration 0014, seeded by
+    scripts/import_device_beds.py) on a Postgres deployment, for the lane's hospital, with the
+    audit's TLS flag. None — the lab, or no lane hospital — leaves the strip on the file."""
+    if _is_production(url) and hospital:
+        return PostgresDeviceBeds(url, hospital=hospital,
+                                  ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+    return None
+
+
+# Aşama A's monitor strip and Aşama B's shadow engine: INFINITY_CLINICAL_STAGE, off unless set. A
+# problem turns it off and is logged; it never stops the API (api/infinity_shadow.py).
+_shadow = shadow_settings_from_env(os.environ, _tenants)
+
 app = create_app(
     _tenants,
     audit=_audit(),
@@ -474,7 +510,7 @@ app = create_app(
     resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
     ldap=_ldap(_database_url()),
-    # Aşama A's monitor strip: INFINITY_CLINICAL_STAGE, off unless set. A problem turns it off and
-    # is logged; it never stops the API (api/infinity_shadow.py).
-    shadow=shadow_settings_from_env(os.environ, _tenants),
+    shadow=_shadow,
+    samples=_samples(_database_url()),
+    device_beds=_device_beds(_database_url(), _shadow.hospital),
 )

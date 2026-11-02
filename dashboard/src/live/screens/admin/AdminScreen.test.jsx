@@ -7,6 +7,8 @@ import { resetScreens } from "../../shell/routes.js";
 import { AdminScreen, TABS, onlyTabs, openTabs, resetTabs, tabScreenOf } from "./AdminScreen.jsx";
 import { READS } from "./useAdminData.js";
 
+import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A list's length, or "null" for a read that has no answer — never 0 for "no answer". */
 const len = (list) => (Array.isArray(list) ? list.length : "null");
@@ -60,9 +62,10 @@ async function open({ perms = ["users.manage", "groups.manage"], setup, built = 
 }
 
 describe("which tabs a session sees", () => {
-  it("names the three tabs, each with the right that opens it", () => {
+  it("names the four tabs, each with the right that opens it", () => {
     expect(TABS.map((x) => [x.id, x.perm])).toEqual([
       ["users", "users.manage"], ["roles", "groups.manage"], ["source", "users.manage"],
+      ["structure", "structure.manage"], // G2-B1a
     ]);
   });
 
@@ -84,6 +87,13 @@ describe("which tabs a session sees", () => {
     tabsBuilt(["roles"]);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).toEqual(["roles"]);
     expect(openTabs(["users.manage", "groups.manage"]).every((x) => tabScreenOf(x))).toBe(true);
+  });
+
+  // G2-B1a — on this build's own tabs: Yapı is built, and `structure.manage` alone opens it.
+  it("offers the structure tab to structure.manage, and to no other right", () => {
+    expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure"]);
+    expect(tabScreenOf(openTabs(["structure.manage"])[0])).toBe(StructureTab);
+    expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("structure");
   });
 
   it("the seam refuses outside the test build, and gives the build's tabs back", () => {

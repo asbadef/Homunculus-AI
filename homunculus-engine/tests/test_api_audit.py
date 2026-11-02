@@ -150,6 +150,23 @@ def test_the_alarm_report_asks_the_backend_for_its_window_and_says_when_it_was_c
     assert (body["truncated"], body["episodes"]) == (False, 5)
 
 
+def test_the_alarm_report_reads_only_the_kinds_it_counts():
+    """Aşama B, T6 review: the report read the newest `cap + 1` rows of EVERY kind, so the shadow
+    lane's rows (and any `ingest`, `notification` or `view`) took places under the cap — 91 shadow
+    rows flipped `truncated` and changed the episodes. It asks the backend for its own kinds only."""
+    from homunculus.api.alarm_quality import EPISODE_KINDS
+
+    audit = _Spy()
+    _first_seens(audit, 3)
+    for n in range(10):                                   # newer than every episode, none of them counted
+        audit.append(AuditEvent("HOSP1", "shadow_alert" if n % 2 else "ingest", f"bed-{n}", "news2", {"n": n}))
+    client = TestClient(create_app(TENANTS, run_escalation_loop=False, audit=audit))
+    body = client.get("/alarm-quality", params={"limit": 3}, headers=HDR).json()
+    [read] = [r for r in audit.reads if "since" in r]
+    assert set(read["event_types"]) == EPISODE_KINDS
+    assert (body["truncated"], body["episodes"]) == (False, 3)
+
+
 def test_the_alarm_reports_read_is_capped():
     from homunculus.api.app import ALARM_QUALITY_LIMIT_MAX
     audit = _Spy()

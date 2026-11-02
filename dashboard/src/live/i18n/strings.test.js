@@ -46,6 +46,16 @@ const NEUTRAL = new Set([
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
   "monitor.p.nbp", //              NBP — the Kappa's own label for the cuff pressure
 
+  // shadow (Aşama B) · neutral — the monitor's own labels again, on the shadow box's «monitör · HR»
+  "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // HR, PLS, SpO₂, ART, NBP
+
+  // G2-B1a (kabul) · neutral — ABO and Rh, written the same in every script
+  "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg",
+  "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
+
+  // G2-ESLEME (esleme) · neutral — an arrow between two names the screen fills in
+  "esleme.confirm.bind",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -140,12 +150,36 @@ const AZ_SAME_AS_TR = new Set([
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
   "monitor.p.nbp", //        NBP — the monitor's label, not a word
 
+  // G2-B1a (kabul) · az = tr
+  "kabul.f.name", "kabul.miss.name", // Ad soyad — as admin.fieldFullName (the prototype's AZ dictionary)
+  "kabul.f.fin", //          FİN — the Azerbaijani personal code's own name
+  "kabul.f.phone", //        Telefon — the same word in Azerbaijani
+  "kabul.choose", //         Seçin… — the same imperative in Azerbaijani
+  "kabul.age", //            "{years} yaş {months} ay {days} gün" — yaş, ay, gün are Azerbaijani too
+  "kabul.nat.ir", //         İran — the country's name in Azerbaijani
+  "kabul.freeBeds", //       "{count} boş" — boş is Azerbaijani for empty
+  "kabul.state.AVAILABLE", // Boş — the same
+  "kabul.state.OCCUPIED", // Dolu — the same word in Azerbaijani
+  "kabul.blood.aPos", "kabul.blood.aNeg", "kabul.blood.bPos", "kabul.blood.bNeg", // ABO and Rh: symbols
+  "kabul.blood.abPos", "kabul.blood.abNeg", "kabul.blood.oPos", "kabul.blood.oNeg",
+  "kabul.placeholder.site", // Bina adı — bina and ad are Azerbaijani too (az newSite: "Yeni binanın adı")
+
+  // G2-ESLEME (esleme) · az = tr
+  "esleme.confirm.bind", //  "{monitor} → {bed}" — no word in it
+  "esleme.pick.occupied", // dolu — the same word in Azerbaijani, as kabul.state.OCCUPIED
+  "esleme.col.visibility", // Görünürlük — "visibility" is spelled the same in Azerbaijani (A-7)
+
   // G2-A3 (patient · meds) · az = tr
   "patient.medsBolusUnit", //          mL — a unit symbol, not a word
   "patient.medsDrugNorepinephrine", // noradrenalin — the drug's name, written the same in Azerbaijani
   "patient.medsDrugEpinephrine", //    adrenalin — the same
   "patient.medsDrugDopamine", //       dopamin — the same
   "patient.medsDrugDobutamine", //     dobutamin — the same
+
+  // shadow (Aşama B) · az = tr — the monitor's own labels (HR, PLS, SpO₂, ART, NBP), not words
+  "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // as monitor.p.*
+  "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
+  "shadow.since", //         açılış {time} — "opening {time}", the same noun as colOpened; chosen over "{time}'den beri" / "{time}-dən bəri", whose suffix has to agree with the time's last vowel (reviewed 2026-10-27, Task 10)
 
 ]);
 
@@ -214,23 +248,52 @@ describe("live UI dictionaries", () => {
     }
   });
 
+  // Aşama B: at «rules» the strip's whole note sends the reader to the box the shadow score is shown in,
+  // by that box's own heading and tag — so if either is reworded, the note has to follow, language by
+  // language. It never says the score is NEWS2-free, and it still names the bedside monitor's own alarm.
+  it("the strip's rules-stage note names the shadow box by its own heading and tag, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const note = DICTIONARIES[lang]["monitor.fullRules"];
+      const box = `«${DICTIONARIES[lang]["shadow.title"]} · ${DICTIONARIES[lang]["shadow.tag"]}»`;
+      expect(note, `${lang} fullRules quotes ${box}`).toContain(box);
+      expect(note, lang).not.toMatch(/\(NEWS2/);
+      expect(note.length, lang).toBeGreaterThan(DICTIONARIES[lang]["monitor.full"].length / 2);
+    }
+  });
+
   it("names keys <namespace>.<key>, nested keys joined with dots", () => {
     expect(DICTIONARIES.az["common.close"]).toBe("Bağla");
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");
   });
 
-  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor» — so a
-  // clinician can match the legend to what the cell prints. If the cell's wording changes, the
-  // legend has to change with it: this holds the two together, language by language.
+  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor», «ölçüm
+  // zamanı bilinmiyor» (NBP-2) — so a clinician can match the legend to what the cell prints. If the
+  // cell's wording changes, the legend has to change with it: this holds the two together, language by
+  // language. The untimed note is quoted whole, in «», as the cell prints it.
   it("the NBP legend quotes the words the strip itself prints, in every language", () => {
     for (const lang of LANG_CODES) {
       const legend = DICTIONARIES[lang]["monitor.legendNbp"];
       const waiting = DICTIONARIES[lang]["monitor.nbpWaiting"];
       const measured = DICTIONARIES[lang]["monitor.nbpMeasured"].split("{")[0];
+      const untimed = DICTIONARIES[lang]["monitor.nbpUntimed"];
       expect(waiting.length, `${lang} nbpWaiting`).toBeGreaterThan(0);
       expect(measured.trim().length, `${lang} nbpMeasured, up to its first {`).toBeGreaterThan(0);
       expect(legend, `${lang} legendNbp quotes nbpWaiting "${waiting}"`).toContain(waiting);
       expect(legend, `${lang} legendNbp quotes nbpMeasured "${measured}"`).toContain(measured);
+      expect(legend, `${lang} legendNbp quotes nbpUntimed "${untimed}"`).toContain(`«${untimed}»`);
+    }
+  });
+
+  // NBP-2 (D4): the untimed cell's screen-reader sentence ends in the very words the cell prints, so
+  // what is heard and what is seen say the same thing; and neither carries a time or an age.
+  it("the untimed NBP's sentence says what its note says, and neither has a time or an age", () => {
+    for (const lang of LANG_CODES) {
+      const note = DICTIONARIES[lang]["monitor.nbpUntimed"];
+      const said = DICTIONARIES[lang]["monitor.nbpUntimedSaid"];
+      expect(said.endsWith(`; ${note}`), `${lang} nbpUntimedSaid ends in "; ${note}"`).toBe(true);
+      expect(placeholders(said), lang).toEqual(["diastolic", "mean", "systolic", "unit"]);
+      expect(placeholders(note), lang).toEqual([]);
+      expect(`${note} ${said}`, lang).not.toMatch(/≤/);
     }
   });
 });

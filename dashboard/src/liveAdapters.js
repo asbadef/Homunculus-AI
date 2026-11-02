@@ -74,6 +74,12 @@ export function patientFromBoard(entry) {
     // against: {pressors, on_pressor, antibiotic_given, antibiotic_at, antibiotic_clock,
     // creatinine, weight_kg}. `antibiotic_given: null` means nobody charted it either way.
     meds: entry?.meds ?? null,
+    // Aşama B (D6): the shadow engine's picture of a monitor-linked patient — {news2, vitals,
+    // findings} — and null for a patient with no monitor link. Carried through untouched: it is
+    // the engine's reading of the monitor's UNVALIDATED numbers, never mixed into `vitals`,
+    // `news2` or `alerts` above, and an absent key stays null, never {} (an empty object would
+    // read as «a shadow with nothing in it»).
+    shadow: entry?.shadow ?? null,
     // HIS demographics only; missing fields stay null.
     display_name: identity?.display_name || null,
     // Sex and date of birth come from the HIS when it sent them. They are here so the admission
@@ -115,10 +121,12 @@ export function patientFromBoard(entry) {
   };
 }
 
-/** The whole /patients response -> patient records. */
+/** The whole /patients response -> patient records. An entry marked `removed` is a card that has
+ *  LEFT (a discharged `kabul` patient's board is its removal, G2-B1a): the server omits it, and
+ *  one that arrives all the same is no patient — as a removed stream frame is not (boardStore.js). */
 export function patientsFromBoard(payload) {
   const list = Array.isArray(payload?.patients) ? payload.patients : [];
-  return list.map(patientFromBoard);
+  return list.filter((entry) => entry?.removed !== true).map(patientFromBoard);
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -236,4 +244,29 @@ export function alertsFromPatients(patients) {
     }
   }
   return out;
+}
+
+/** Deep equality of the JSON-shaped values an alert carries (strings, numbers, booleans, null,
+ *  arrays, plain objects). An object's keys are looked up, not walked in order, so two copies that
+ *  list the same fields in another order are equal; an array's order counts. */
+function sameValue(a, b) {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && sameValue(a[key], b[key]));
+}
+
+/** Are these two `alertsFromPatients` lists the same list — as long, in the same order, and each
+ *  alert equal field by field (its arrays and objects compared deeply)? The board store keeps its
+ *  previous `alerts` array when the next one is the same (boardStore.js `withPatients`), so that a
+ *  frame which leaves every alert as it was does not hand the alarm signals a "new" list. Anything
+ *  that differs — another alert, a status, a severity, an escalation, an acknowledgement, a new
+ *  episode, a summary, a bed label — makes them different. */
+export function alertsEqual(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((alert, i) => sameValue(alert, b[i]));
 }

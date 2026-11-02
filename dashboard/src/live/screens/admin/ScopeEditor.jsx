@@ -1,21 +1,47 @@
 // src/live/screens/admin/ScopeEditor.jsx — which units and beds one member of staff may see
 // (G1-12; `PUT /scope/{user_id}`).
 //
-// THERE IS NO ENDPOINT THAT LISTS THE UNITS AND BEDS A SCOPE MAY NAME. The keys are the values in
-// the site's `bed-mapping.json` (`BED_MAPPING_PATH`, a read-only bind mount; `tenant/bedmap.py`
-// `BedRef.unit_id` / `bed_id`), written by an operator from the discovery report. `/tenant/*` does
-// carry a unit and bed tree, but it needs `structure.manage` — which `users.manage` does not imply
-// — and its ids are database UUIDs that nothing forces the mapping file to use. So this editor
-// offers three sources and says in one line which they are:
+// THERE IS STILL NO ENDPOINT THAT LISTS THE KEYS A SCOPE MAY NAME — but since G2-B1a there is one
+// that NAMES them: `GET /tenant/structure`, which `users.manage` opens for exactly this (X52). The
+// shell's StructureProvider (data/StructureProvider.jsx) reads it when the session opens, reads it
+// again when the scope lists a unit the tree lacks, and keeps asking while a read fails (every 2 to
+// 30 s, doubling; every 5 minutes after the server refuses it). Since B1a a scope's keys are the
+// tenant's database UUIDs (spec D9) and no screen shows one: every key is shown by its unit's or
+// bed's name from that tree, in the order of the names. The tree may not name a key yet — it is
+// still being read, or the last read failed (a unit may have been added since), or the read made
+// for that key has not landed: the key is then a numbered placeholder ("Şöbə 1"), never
+// «unknown», which would read as a grant to nothing, and the editor says so whenever it lists one
+// (`placeholders`, of every phase, a partly named list included). A placeholder's number is the
+// shell's own count (the one the top bar shows; it never moves to another key when a grant is
+// removed or one is typed, and is never reused), so an administrator can act on "Şöbə 2" and mean
+// the same unit as a moment ago. A key the tree does not hold, once the last read has succeeded,
+// is «unknown unit 3» / «unknown bed 3» (a caller without `structure.manage` is sent only her own
+// units, so the others read so).
+// An old free-text grant — a key from the site's `bed-mapping.json` (`BED_MAPPING_PATH`,
+// `tenant/bedmap.py` `BedRef.unit_id` / `bed_id`) — survives as typed and is shown as typed. The
+// keys come from three sources, and the editor says in one line which they are:
 //
-//   1. the `identity.unit_id` / `identity.bed_id` of the cards on the board this session already
-//      has (an unrestricted administrator sees them all);
-//   2. the grants this user already holds, which `GET /scope/{id}` reports;
-//   3. a free-text field, for a key with no patient on it right now.
+//   1. the STRUCTURE (G2-B1a walk, I-2): every unit and bed the shell's tree holds, the empty ones
+//      included, a unit by its name and a bed as "label · room · unit", the beds in the tree's own
+//      order (unit by unit, room by room) — the way an empty unit is granted by name;
+//   2. the `identity.unit_id` / `identity.bed_id` of the cards on the board this session already
+//      has — which adds only an old free-text key a HIS-fed card may still carry;
+//   3. the grants this user already holds, which `GET /scope/{id}` reports.
 //
-// An empty unit has no card, so it is not in (1) — which is why (3) exists and why the sentence
-// saying so is not optional. A grant whose key matches no card is not an error either: `/patients`
-// reports it under `scope.unmatched_grants` and the clinician's own board shows that sentence.
+// THERE IS NO BOX FOR TYPING A KEY ANY MORE (walk I-2). It existed for an empty unit, which had no
+// card to offer it; the structure offers it now, by name, and its hint («e.g. REA-01») named a
+// format the structure's keys (UUIDs) do not have. `bed-mapping.json` is STILL free text: spec D9
+// moves its values to the tenant's UUIDs only "later". So a free-text key is offered only when a
+// card on the board or a grant already carries it, and an old free-text grant is still shown and
+// can be removed; an EMPTY unit known only by a free-text key cannot be granted from here (A-43,
+// left to the scope slice). While the structure is not known (still read, or the read failed) the
+// editor says so: only what the board and the grants hold is offered then.
+//
+// A KEY IS COMPARED AS THE ENGINE COMPARES IT (`normId`: trimmed, case-folded; scope
+// `normalise_id`). A grant the server holds in another case than the structure's id is the same
+// place: it shows ticked, the place is offered once, and ticking can never grant it twice (A-43).
+// A grant whose key matches no card is not an error either: `/patients` reports it under
+// `scope.unmatched_unit_ids` / `unmatched_bed_ids`, and the clinician's own board names it.
 //
 // THE WRITE IS A REPLACEMENT, NOT A DIFF (`scope/schemas.ScopeAssignment`): two administrators
 // saving diffs would merge into the union of both, the more permissive outcome, chosen by neither.
@@ -62,11 +88,11 @@ import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
-import { Announce, Button, Field, Input, Modal, Note, Table } from "../../ui/index.js";
-import { boardKnown } from "../common/BoardState.jsx";
-import { FIELD_MAX } from "./limits.js";
+import { Announce, Button, Modal, Note, Table } from "../../ui/index.js";
 import { mayHaveLanded } from "./refusal.js";
 import { scopeKind } from "./rules.js";
+import { useBedNames, useStructure, useUnitNames } from "../../data/StructureProvider.jsx"; // G2-B1a
+import { normId } from "../../data/structure.js"; // G2-B1a walk I-2
 
 /** What an UNASSIGNED account sees until this editor is used — asked only of a scope `scopeKind`
  *  has already called "unassigned". With enforcement off (the pilot) the engine shows her every
@@ -77,26 +103,36 @@ const unassignedNoteKey = (scope) => (scope.unrestricted === true
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });
-const sameGrant = (a, b) => a.unitId === b.unitId && a.bedId === b.bedId;
+/** The same place, its keys compared as the engine compares them (A-43). */
+const sameGrant = (a, b) => normId(a.unitId) === normId(b.unitId) && normId(a.bedId) === normId(b.bedId);
 const keyOf = (g) => `${g.unitId}|${g.bedId}`;
 /** Grants as `PUT /scope/{id}` takes them (`ScopeGrantIn`): one key each, the other left out. */
 const asBody = (list) => list.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId }));
 
-/** The unit and bed keys this board can offer, plus the ones the user already holds. Sorted, with
- *  duplicates removed; a card the bed table did not place carries neither and contributes nothing. */
-export function offeredKeys(patients, grants) {
-  const units = new Set();
-  const beds = new Set();
+/** The unit and bed keys the editor can offer: every unit and bed of the structure's index
+ *  (`data/structure.js` `indexStructure`, in the tree's order — the empty ones included), then the
+ *  keys of the board's cards, then the ones the user already holds; duplicates removed by `normId`
+ *  (A-43), the first spelling kept — the structure's own. A card the
+ *  bed table did not place carries neither and contributes nothing. The editor SHOWS units in the
+ *  order of their names and beds in the tree's order, never in the order of their keys. */
+export function offeredKeys(index, patients, grants) {
+  const units = new Map();
+  const beds = new Map();
+  const add = (into, id) => {
+    const key = normId(id);
+    if (key && !into.has(key)) into.set(key, id);
+  };
+  for (const unit of index?.units?.values() ?? []) add(units, unit.id);
+  for (const bed of index?.beds?.values() ?? []) add(beds, bed.id);
   for (const patient of Array.isArray(patients) ? patients : []) {
-    if (patient?.unitId) units.add(patient.unitId);
-    if (patient?.bedId) beds.add(patient.bedId);
+    if (patient?.unitId) add(units, patient.unitId);
+    if (patient?.bedId) add(beds, patient.bedId);
   }
   for (const grant of Array.isArray(grants) ? grants : []) {
-    if (grant.unitId) units.add(grant.unitId);
-    if (grant.bedId) beds.add(grant.bedId);
+    if (grant.unitId) add(units, grant.unitId);
+    if (grant.bedId) add(beds, grant.bedId);
   }
-  const order = (a, b) => a.localeCompare(b, "en");
-  return { units: [...units].sort(order), beds: [...beds].sort(order) };
+  return { units: [...units.values()], beds: [...beds.values()] };
 }
 
 /** What the editor says about its last save, when it says anything: refused and put back, or no
@@ -119,11 +155,11 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
   const { t } = useI18n();
   const { store } = useSession();
   const board = useBoard();
+  const { index, known: structureKnown } = useStructure();
   /** What the engine last told this editor: the opening read, or the read-back after a save that
    *  got no answer. A refusal puts THIS back — never an older list. */
   const [base, setBase] = useState(scope);
   const [grants, setGrants] = useState(() => scope.grants.map((g) => asGrant(g.unitId, g.bedId)));
-  const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
   /** null, or a key of `OUTCOME_NOTE`. */
   const [outcome, setOutcome] = useState(null);
@@ -134,22 +170,32 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     return () => { mounted.current = false; };
   }, []);
   const kind = scopeKind(base);
-
-  const offered = useMemo(() => offeredKeys(board.patients, grants), [board.patients, grants]);
+  const keys = useMemo(() => offeredKeys(index, board.patients, grants), [index, board.patients, grants]);
+  // G2-B1a: a key by its name from the structure — since B1a the keys are the tenant's UUIDs, and
+  // no screen shows one (spec D9). An old free-text key is no UUID and is shown as typed. A key the
+  // structure cannot name yet is a numbered placeholder under a warning, never «unknown».
+  const unitNames = useUnitNames(keys.units);
+  const bedNames = useBedNames(keys.beds);
+  const unitName = unitNames.nameOf;
+  const bedName = bedNames.nameOf;
+  const namesPending = unitNames.placeholders + bedNames.placeholders > 0;
+  // Units in the order of their names; beds in the tree's order (unit by unit, room by room — a
+  // name order would interleave every unit's bed "1"), then the ones the tree does not hold.
+  const offered = useMemo(() => ({
+    units: unitNames.sorted,
+    beds: [
+      ...keys.beds.filter((id) => index.beds.has(normId(id))),
+      ...bedNames.sorted.filter((id) => !index.beds.has(normId(id))),
+    ],
+  }), [unitNames, bedNames, keys, index]);
   const has = (grant) => grants.some((g) => sameGrant(g, grant));
-  const known = boardKnown(board.connection);
 
   const toggle = (grant, on) => {
     setOutcome(null);
-    setGrants((was) => (on ? [...was, grant] : was.filter((g) => !sameGrant(g, grant))));
-  };
-
-  const addManual = () => {
-    const key = manual.trim();
-    if (!key) return;
-    const grant = asGrant(key, "");
-    if (!has(grant)) toggle(grant, true);
-    setManual("");
+    setGrants((was) => {
+      if (!on) return was.filter((g) => !sameGrant(g, grant));
+      return was.some((g) => sameGrant(g, grant)) ? was : [...was, grant];   // never the same place twice
+    });
   };
 
   async function onSave() {
@@ -215,7 +261,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     );
   }
 
-  const choices = (label, items, make) => (
+  const choices = (label, items, make, nameOf) => (
     <fieldset className="mb-3 border-0 p-0">
       <legend className="mb-1 font-text text-13.5 font-semibold text-mute">{label}</legend>
       {items.length === 0 ? null : items.map((key) => {
@@ -223,7 +269,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
         return (
           <label key={key} className="flex items-center gap-2 py-0.5 font-text text-13.5">
             <input type="checkbox" checked={has(grant)} disabled={busy} onChange={(e) => toggle(grant, e.target.checked)} />
-            <span className="font-data">{key}</span>
+            <span>{nameOf(key)}</span>
           </label>
         );
       })}
@@ -250,33 +296,21 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
       {kind === "unassigned" ? <Note tone="info" icon="shield">{t(unassignedNoteKey(base))}</Note> : null}
 
       {/* Where the list comes from, and what is not in it. Not optional: an administrator who
-          cannot find an empty unit in a list that looks complete concludes it does not exist. */}
-      <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeFromBoard")}</p>
-      {known ? null : <Note tone="warn" icon="plug">{t("admin.scopeBoardUnknown")}</Note>}
+          cannot find a unit in a list that looks complete concludes it does not exist. */}
+      <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeFromStructure")}</p>
+      {/* G2-B1a walk I-2: without the structure only the board's and the grants' keys are offered. */}
+      {structureKnown ? null : <Note tone="warn" icon="plug">{t("admin.scopeStructureUnknown")}</Note>}
+      {/* G2-B1a: say so, once, whenever a name below is a number the structure could not replace. */}
+      {namesPending ? <Note tone="warn" icon="plug">{t("kabul.namesPending")}</Note> : null}
 
       {offered.units.length === 0 && offered.beds.length === 0
-        ? <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeNoKeys")}</p>
+        ? (structureKnown ? <p className="m-0 mb-2 text-12.5 text-mute">{t("admin.scopeNoKeys")}</p> : null)
         : (
           <>
-            {choices(t("admin.scopeUnits"), offered.units, (key) => asGrant(key, ""))}
-            {choices(t("admin.scopeBeds"), offered.beds, (key) => asGrant("", key))}
+            {choices(t("admin.scopeUnits"), offered.units, (key) => asGrant(key, ""), unitName)}
+            {choices(t("admin.scopeBeds"), offered.beds, (key) => asGrant("", key), bedName)}
           </>
         )}
-
-      <Field layout="col" label={t("admin.scopeManual")} hint={t("admin.scopeManualHint")}>
-        <Input
-          value={manual}
-          // Read-only, not disabled, while the save is out: a disabled field drops the focus it has
-          // to <body>, which is where a keyboard user who pressed Enter in it would be left.
-          readOnly={busy}
-          // The column's own limit: `ScopeGrantIn` states none, and a longer key is a database
-          // error rather than a refusal anyone can read (`limits.FIELD_MAX.scope_key`).
-          maxLength={FIELD_MAX.scope_key}
-          onChange={(e) => setManual(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManual(); } }}
-        />
-      </Field>
-      <Button icon="plus" busy={busy} onClick={addManual}>{t("admin.scopeAdd")}</Button>
 
       <Table caption={t("admin.scopeTitle", { name: user.username })} className="mt-3">
         <thead>
@@ -291,15 +325,15 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
             <tr><td colSpan={3}>{t("admin.scopeEmpty")}</td></tr>
           ) : grants.map((grant) => (
             <tr key={keyOf(grant)}>
-              <th scope="row" className="font-data">{grant.unitId || "—"}</th>
-              <td className="font-data">{grant.bedId || "—"}</td>
+              <th scope="row">{grant.unitId ? unitName(grant.unitId) : "—"}</th>
+              <td>{grant.bedId ? bedName(grant.bedId) : "—"}</td>
               <td>
                 <Button
                   size="sm"
                   variant="ghost"
                   icon="trash"
                   busy={busy}
-                  label={`${t("admin.remove")}: ${grant.unitId || grant.bedId}`}
+                  label={`${t("admin.remove")}: ${grant.unitId ? unitName(grant.unitId) : bedName(grant.bedId)}`}
                   onClick={() => toggle(grant, false)}
                 />
               </td>

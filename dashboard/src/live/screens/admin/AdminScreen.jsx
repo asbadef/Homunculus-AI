@@ -1,9 +1,10 @@
-// src/live/screens/admin/AdminScreen.jsx — administration: one screen, three tabs (the
-// prototype's `admin.js`, reduced to the three the API can back in Group 1).
+// src/live/screens/admin/AdminScreen.jsx — administration: one screen, four tabs (the
+// prototype's `admin.js`, reduced to the three the API could back in Group 1, and Group 2's Yapı).
 //
 //   Users            G1-12   `users.manage`                      /admin/users, /scope
 //   Roles            G1-13   `groups.manage`                     /admin/groups, /admin/permissions
 //   Sign-in source   G1-14   `users.manage` (reading)            /admin/ldap/*
+//   Structure        G2-B1a  `structure.manage`                  /tenant/structure, /tenant/*
 //
 // THE TAB IS HELD IN STATE, NOT IN THE ADDRESS. The hash belongs to the router, and a query inside
 // it belongs to the screen (`routes.js hashPath`) — but reading one would need a second
@@ -34,6 +35,8 @@ import { RolesTab } from "./RolesTab.jsx";
 
 import { SourceTab } from "./SourceTab.jsx";
 
+import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+
 const TAB_ID = "admin";
 
 /** Each read's name, for the Alert that says which one failed. Written out, never built from the
@@ -45,13 +48,16 @@ const READ_LABEL = Object.freeze({
   unassigned: "admin.readUnassigned",
 });
 
-/** The three tabs, in order: the id, the right that opens it and its label. Frozen, like the route
+/** The four tabs, in order: the id, the right that opens it and its label. Frozen, like the route
  *  table it is modelled on (`shell/routes.js`): which right opens which tab is the same for every
  *  session and every test, and nothing may widen it at run time. */
 export const TABS = Object.freeze([
   Object.freeze({ id: "users", perm: "users.manage", labelKey: "admin.tabUsers" }),
   Object.freeze({ id: "roles", perm: "groups.manage", labelKey: "admin.tabRoles" }),
   Object.freeze({ id: "source", perm: "users.manage", labelKey: "admin.tabSource" }),
+
+  // G2-B1a — Yönetim › Yapı: the ward's sites, units, rooms and beds
+  Object.freeze({ id: "structure", perm: "structure.manage", labelKey: "kabul.structureTab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -67,6 +73,8 @@ const TAB_SCREENS = Object.freeze({
   roles: RolesTab, //    G1-13
 
   source: SourceTab, //   G1-14
+
+  structure: StructureTab, // G2-B1a
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */

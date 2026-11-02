@@ -17,10 +17,19 @@
 // language-neutral (strings.test.js NEUTRAL, AZ_SAME_AS_TR). `ev.*` restate the design's §4.1 and
 // docs/INFINITY-PARAMETER-RECORDS.md:36-50 — no sample count is recorded for any, and `legendN`
 // says so. NBP is shown with the time its value last CHANGED, an upper bound of the measurement
-// (`nbpMeasured`: "≤", never "at"); before a change has been seen it says it awaits one
-// (`nbpWaiting`); `legendNbp` says what the time means (an upper bound), the 2-hour limit, the
-// waits after a hub restart or an interruption of the monitor's data, and that a changed
-// patient's bed may show the previous patient's NBP.
+// (`nbpMeasured`: "≤", never "at"). Before a change has been seen, the monitor's current value is
+// shown with its measurement time unknown (`nbpUntimed`, NBP-2 D4: no "≤", no age; `nbpUntimedSaid`
+// ends in the same words), and with no complete valid triple it says it awaits one (`nbpWaiting`);
+// `legendNbp` says what the time means (an upper bound), the 2-hour limit, the untimed value after a
+// hub restart or an interruption of the monitor's data (no 2-hour limit can apply to it), and that a
+// changed patient's bed may show the previous patient's NBP — longer when untimed (NBP-2 O2).
+//
+// `fullRules` is `full` at Aşama B's «rules» stage, where the four things change in one place: the
+// shadow engine DOES compute a score from these values — advice with every alarm off, shown in the
+// patient screen's «Gölge öneri · alarm kapalı» box, quoted by that box's own heading and tag
+// (strings.test.js holds the two together) — while still no alarm, notification, sound or count comes
+// from them and the bedside monitor stays the primary alarm. `full` would be false there («no score,
+// NEWS2 included»), so the strip and the Settings legend pick by the board answer's stage.
 const p = {
   hr: "HR", pls: "PLS", spo2: "SpO₂", etco2: "etCO₂", temperature: "Ta",
   art_systolic: "ART S", art_diastolic: "ART D", art_mean: "ART M", respiration: "RESP", nbp: "NBP",
@@ -32,6 +41,7 @@ export default {
     tag: "DOĞRULANMAMIŞ",
     short: "Araştırma çözümlemesi · karar için ölçüm değildir · alarm üretmez",
     full: "Bu değerler başucu monitörünün ağ yayınından araştırma amacıyla çözülüyor ve doğrulanmadı. Karar için başucu monitörüne bakın. Bu değerlerden hiçbir alarm, skor (NEWS2 dahil), bildirim ya da ses üretilmez; birincil alarm başucu monitörünün kendi alarmıdır.",
+    fullRules: "Bu değerler başucu monitörünün ağ yayınından araştırma amacıyla çözülüyor ve doğrulanmadı. Karar için başucu monitörüne bakın. Bu değerlerden hiçbir alarm, bildirim ya da ses üretilmez ve hiçbir sayaca girmez. Onlardan yalnız tavsiye niteliğinde bir gölge skor hesaplanır ve monitöre bağlı hastanın ekranında «Gölge öneri · alarm kapalı» kutusunda gösterilir; birincil alarm başucu monitörünün kendi alarmıdır.",
     noSound: "Bu şerit hiçbir zaman ses çıkarmaz, bildirim göndermez, alarm listesine ve «Yanıt bekleyen alarmlar»a girmez.",
     section: "Monitörler — doğrulanmamış",
     sectionSub: "Bir hasta kartına bağlanmamış monitörler. Değerler hiçbir hastaya yazılmaz.",
@@ -58,6 +68,8 @@ export default {
     nbpMeasured: "ölçüm ≤ {time} ({age})",
     nbpWaiting: "ölçüm bekleniyor",
     nbpSaid: "{systolic} bölü {diastolic}, ortalama {mean} {unit}; ölçüm {time} ya da daha önce, en az {age} önce",
+    nbpUntimed: "ölçüm zamanı bilinmiyor",
+    nbpUntimedSaid: "{systolic} bölü {diastolic}, ortalama {mean} {unit}; ölçüm zamanı bilinmiyor",
     partial: "kısmi",
     partialHint: "kısmi doğrulama — Ayarlar › Ses ve bildirim bölümündeki tabloya bakın",
     chipTitle: "Monitör (doğrulanmamış)",
@@ -74,7 +86,7 @@ export default {
     offProblem: "Monitör şeridi açılamadı: {problem}",
     legendTitle: "Monitör şeridi (doğrulanmamış)",
     legendAges: "Her değerin yanında yaşı yazar. 15 saniyeden eski bir değer gösterilmez; yerine «eski» ve son değerin yaşı yazar.",
-    legendNbp: "NBP, değerinin son değiştiği saatle gösterilir. «ölçüm ≤ 10:42», manşonun en geç 10:42'de ölçtüğü anlamına gelir: değer en az bu kadar eskidir ve aynı sonucu veren yeni bir ölçüm fark edilmez. Değeri 2 saatten uzun süredir değişmeyen NBP gösterilmez. Infinity sunucusu yeniden başladıktan sonra ya da monitörün verisi kesikken değer değiştiyse NBP, değeri değiştiren bir sonraki ölçüme kadar gösterilmez («ölçüm bekleniyor»). Yatakta hasta değiştiyse gösterilen NBP önceki hastanın olabilir (en çok 2 saat).",
+    legendNbp: "NBP, değerinin son değiştiği saatle gösterilir. «ölçüm ≤ 10:42», manşonun en geç 10:42'de ölçtüğü anlamına gelir: değer en az bu kadar eskidir ve aynı sonucu veren yeni bir ölçüm fark edilmez. Saati bilinen ve değeri 2 saatten uzun süredir değişmeyen NBP gösterilmez. Infinity sunucusu yeniden başladıktan sonra ya da monitörün verisi kesikken değer değiştiyse değişim fark edilmemiştir. O zaman NBP, değeri değiştiren bir sonraki manşon ölçümüne kadar «ölçüm zamanı bilinmiyor» notuyla gösterilir: monitörün şu an gösterdiği değerdir, ne zaman ölçüldüğü bilinmez ve 2 saat sınırı ona uygulanamaz; monitörün üç NBP değeri tam ve geçerli değilse NBP hiç gösterilmez («ölçüm bekleniyor»). Yatakta hasta değiştiyse gösterilen NBP önceki hastanın olabilir (en çok 2 saat; ölçüm zamanı bilinmiyorsa daha uzun).",
     legendEvidence: "Parametre başına bugünkü kanıt",
     legendParameter: "Parametre",
     legendN: "Örnek sayısı hiçbir parametre için kayıtlı değil.",
@@ -83,7 +95,7 @@ export default {
     loading: "Monitör şeridi yükleniyor…",
     deviceAddress: "Adres {source} · grup {group}",
     deviceRow: "Tabloda: {method} · doğrulama {verified}",
-    method: { central_station_list: "merkezi istasyon listesi", monitor_screen: "monitör ekranı", both: "liste ve ekran" },
+    method: { central_station_list: "merkezi istasyon listesi", monitor_screen: "monitör ekranı", both: "liste ve ekran", editor: "uygulamada elle eşleme" },
     feedPosts: "Alınan gönderi: {posts} · forwarder: {sent} gönderildi, {failed} başarısız",
     feedRejected: "Reddedilen okumalar — çok eski: {too_old} · saat: {clock} · birim: {unit} · aralık: {range} · bilinmeyen: {unknown_parameter} · yinelenen: {duplicate}",
     ev: {
@@ -101,6 +113,7 @@ export default {
     tag: "TƏSDİQLƏNMƏMİŞ",
     short: "Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır",
     full: "Bu dəyərlər çarpayı yanındakı monitorun şəbəkə yayımından tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib. Qərar üçün çarpayı yanındakı monitora baxın. Bu dəyərlərdən heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır; əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır.",
+    fullRules: "Bu dəyərlər çarpayı yanındakı monitorun şəbəkə yayımından tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib. Qərar üçün çarpayı yanındakı monitora baxın. Bu dəyərlərdən heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur. Onlardan yalnız tövsiyə xarakterli kölgə bal hesablanır və monitora bağlı xəstənin ekranında «Kölgə tövsiyə · siqnal söndürülüb» blokunda göstərilir; əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır.",
     noSound: "Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.",
     section: "Monitorlar — təsdiqlənməmiş",
     sectionSub: "Heç bir xəstə kartına bağlanmamış monitorlar. Dəyərlər heç bir xəstəyə yazılmır.",
@@ -127,6 +140,8 @@ export default {
     nbpMeasured: "ölçmə ≤ {time} ({age})",
     nbpWaiting: "ölçmə gözlənilir",
     nbpSaid: "{systolic} bölü {diastolic}, orta {mean} {unit}; ölçmə {time} və ya daha əvvəl, ən azı {age} əvvəl",
+    nbpUntimed: "ölçmə vaxtı məlum deyil",
+    nbpUntimedSaid: "{systolic} bölü {diastolic}, orta {mean} {unit}; ölçmə vaxtı məlum deyil",
     partial: "qismən",
     partialHint: "qismən yoxlanılıb — Ayarlar › Səs və bildiriş bölməsindəki cədvələ baxın",
     chipTitle: "Monitor (təsdiqlənməmiş)",
@@ -143,7 +158,7 @@ export default {
     offProblem: "Monitor zolağı açıla bilmədi: {problem}",
     legendTitle: "Monitor zolağı (təsdiqlənməmiş)",
     legendAges: "Hər dəyərin yanında onun yaşı yazılır. 15 saniyədən köhnə dəyər göstərilmir; əvəzində «köhnə» və son dəyərin yaşı yazılır.",
-    legendNbp: "NBP dəyərinin son dəyişdiyi saatla göstərilir. «ölçmə ≤ 10:42» manjetin ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı bu qədər köhnədir və eyni nəticəni verən yeni ölçmə fərq edilmir. Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir. Infinity serveri yenidən başladıqdan sonra və ya monitorun məlumatı kəsik ikən dəyər dəyişibsə NBP dəyəri dəyişən növbəti ölçməyə qədər göstərilmir («ölçmə gözlənilir»). Çarpayıda xəstə dəyişibsə göstərilən NBP əvvəlki xəstənin ola bilər (ən çox 2 saat).",
+    legendNbp: "NBP dəyərinin son dəyişdiyi saatla göstərilir. «ölçmə ≤ 10:42» manjetin ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı bu qədər köhnədir və eyni nəticəni verən yeni ölçmə fərq edilmir. Saatı bilinən və dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir. Infinity serveri yenidən başladıqdan sonra və ya monitorun məlumatı kəsik ikən dəyər dəyişibsə dəyişiklik fərq edilməyib. Onda NBP, dəyəri dəyişən növbəti manjet ölçməsinə qədər «ölçmə vaxtı məlum deyil» qeydi ilə göstərilir: bu, monitorun hazırda göstərdiyi dəyərdir, nə vaxt ölçüldüyü məlum deyil və 2 saat həddi ona tətbiq edilə bilməz; monitorun üç NBP dəyəri tam və etibarlı deyilsə NBP heç göstərilmir («ölçmə gözlənilir»). Çarpayıda xəstə dəyişibsə göstərilən NBP əvvəlki xəstənin ola bilər (ən çox 2 saat; ölçmə vaxtı məlum deyilsə daha uzun).",
     legendEvidence: "Hər parametr üzrə bugünkü sübut",
     legendParameter: "Parametr",
     legendN: "Heç bir parametr üçün nümunə sayı qeydə alınmayıb.",
@@ -152,7 +167,7 @@ export default {
     loading: "Monitor zolağı yüklənir…",
     deviceAddress: "Ünvan {source} · qrup {group}",
     deviceRow: "Cədvəldə: {method} · yoxlama {verified}",
-    method: { central_station_list: "mərkəzi stansiya siyahısı", monitor_screen: "monitor ekranı", both: "siyahı və ekran" },
+    method: { central_station_list: "mərkəzi stansiya siyahısı", monitor_screen: "monitor ekranı", both: "siyahı və ekran", editor: "tətbiqdə əl ilə uyğunlaşdırma" },
     feedPosts: "Alınan göndəriş: {posts} · forwarder: {sent} göndərildi, {failed} uğursuz",
     feedRejected: "Rədd edilən oxunuşlar — çox köhnə: {too_old} · saat: {clock} · vahid: {unit} · diapazon: {range} · naməlum: {unknown_parameter} · təkrar: {duplicate}",
     ev: {
@@ -170,6 +185,7 @@ export default {
     tag: "НЕ ВАЛИДИРОВАНО",
     short: "Исследовательское декодирование · не измерение для принятия решений · не создаёт тревог",
     full: "Эти значения в исследовательских целях декодируются из сетевой трансляции прикроватного монитора и не валидированы. Для принятия решений смотрите на прикроватный монитор. Никакие тревоги, шкалы (включая NEWS2), уведомления или звуки из этих значений не создаются; основной сигнал тревоги — собственная тревога прикроватного монитора.",
+    fullRules: "Эти значения в исследовательских целях декодируются из сетевой трансляции прикроватного монитора и не валидированы. Для принятия решений смотрите на прикроватный монитор. Никакие тревоги, уведомления или звуки из этих значений не создаются, и они не попадают ни в какие счётчики. Из них рассчитывается только рекомендательная теневая оценка — она показывается на экране пациента, связанного с монитором, в блоке «Теневая рекомендация · тревога выключена»; основной сигнал тревоги — собственная тревога прикроватного монитора.",
     noSound: "Этот блок никогда не издаёт звук, не отправляет уведомления и не попадает ни в список тревог, ни в «Тревоги без ответа».",
     section: "Мониторы — данные не валидированы",
     sectionSub: "Мониторы, не привязанные к карточке пациента. Значения ни одному пациенту не записываются.",
@@ -196,6 +212,8 @@ export default {
     nbpMeasured: "измерение ≤ {time} ({age})",
     nbpWaiting: "ожидается измерение",
     nbpSaid: "{systolic} на {diastolic}, среднее {mean} {unit}; измерено в {time} или раньше, не менее {age} назад",
+    nbpUntimed: "время измерения неизвестно",
+    nbpUntimedSaid: "{systolic} на {diastolic}, среднее {mean} {unit}; время измерения неизвестно",
     partial: "частично",
     partialHint: "частичная проверка — см. таблицу в разделе Настройки › Звук и уведомления",
     chipTitle: "Монитор (не валидировано)",
@@ -212,7 +230,7 @@ export default {
     offProblem: "Не удалось включить блок монитора: {problem}",
     legendTitle: "Блок монитора (не валидировано)",
     legendAges: "Рядом с каждым значением указан его возраст. Значение старше 15 секунд не показывается; вместо него — «устарело» и возраст последнего значения.",
-    legendNbp: "НИАД показывается со временем последнего изменения значения. «измерение ≤ 10:42» означает, что манжета измерила не позднее 10:42: значение как минимум настолько старое, а повторное измерение с тем же результатом не распознаётся. НИАД, значение которого не менялось более 2 часов, не показывается. После перезапуска сервера Infinity, или если значение изменилось, пока данные монитора были прерваны, НИАД не показывается до следующего измерения, изменяющего значение («ожидается измерение»). Если на койке сменился пациент, показанное НИАД может принадлежать предыдущему (не более 2 ч).",
+    legendNbp: "НИАД показывается со временем последнего изменения значения. «измерение ≤ 10:42» означает, что манжета измерила не позднее 10:42: значение как минимум настолько старое, а повторное измерение с тем же результатом не распознаётся. НИАД с известным временем измерения, значение которого не менялось более 2 часов, не показывается. После перезапуска сервера Infinity, или если значение изменилось, пока данные монитора были прерваны, изменение не замечено. Тогда НИАД до следующего измерения манжетой, изменяющего значение, показывается с пометкой «время измерения неизвестно»: это значение, которое монитор показывает сейчас, время его измерения неизвестно, и предел в 2 часа к нему применить нельзя; если монитор передаёт не все три значения НИАД или они недостоверны, НИАД не показывается вовсе («ожидается измерение»). Если на койке сменился пациент, показанное НИАД может принадлежать предыдущему (не более 2 ч; если время измерения неизвестно — дольше).",
     legendEvidence: "Текущие подтверждения по каждому параметру",
     legendParameter: "Параметр",
     legendN: "Число наблюдений не записано ни для одного параметра.",
@@ -221,7 +239,7 @@ export default {
     loading: "Блок монитора загружается…",
     deviceAddress: "Адрес {source} · группа {group}",
     deviceRow: "В таблице: {method} · проверено {verified}",
-    method: { central_station_list: "список центральной станции", monitor_screen: "экран монитора", both: "список и экран" },
+    method: { central_station_list: "список центральной станции", monitor_screen: "экран монитора", both: "список и экран", editor: "вручную в приложении" },
     feedPosts: "Получено отправок: {posts} · forwarder: отправлено {sent}, неудачно {failed}",
     feedRejected: "Отклонённые показания — слишком старые: {too_old} · часы: {clock} · единица: {unit} · диапазон: {range} · неизвестные: {unknown_parameter} · повтор: {duplicate}",
     ev: {
@@ -239,6 +257,7 @@ export default {
     tag: "UNVALIDATED",
     short: "Research decoding · not a measurement for decisions · raises no alarms",
     full: "These values are decoded, for research, from the bedside monitor's network broadcast and have not been validated. Look at the bedside monitor for decisions. No alarm, score (NEWS2 included), notification or sound is produced from them; the bedside monitor's own alarm remains the primary alarm.",
+    fullRules: "These values are decoded, for research, from the bedside monitor's network broadcast and have not been validated. Look at the bedside monitor for decisions. No alarm, notification or sound is produced from them, and they enter no count. Only an advisory shadow score is computed from them, shown on the screen of the patient linked to the monitor in the «Shadow advice · alarm off» box; the bedside monitor's own alarm remains the primary alarm.",
     noSound: "This strip never sounds, never notifies, and never enters the alarm list or «Alarms awaiting response».",
     section: "Monitors — unvalidated",
     sectionSub: "Monitors not linked to a patient card. Their values are written to no patient.",
@@ -265,6 +284,8 @@ export default {
     nbpMeasured: "measured ≤ {time} ({age})",
     nbpWaiting: "awaiting a measurement",
     nbpSaid: "{systolic} over {diastolic}, mean {mean} {unit}; measured at or before {time}, at least {age} ago",
+    nbpUntimed: "measurement time unknown",
+    nbpUntimedSaid: "{systolic} over {diastolic}, mean {mean} {unit}; measurement time unknown",
     partial: "partial",
     partialHint: "partially checked — see the table under Settings › Sound and notifications",
     chipTitle: "Monitor (unvalidated)",
@@ -281,7 +302,7 @@ export default {
     offProblem: "The monitor strip could not be turned on: {problem}",
     legendTitle: "Monitor strip (unvalidated)",
     legendAges: "Each value shows its age. A value older than 15 seconds is not shown; «old» and the last value's age are shown instead.",
-    legendNbp: "NBP is shown with the time its value last changed. «measured ≤ 10:42» means the cuff measured at 10:42 at the latest: the value is at least that old, and a repeat measurement with the same result is not detected. An NBP whose value has not changed for more than 2 hours is not shown. After the Infinity server restarts, or if the value changed while the monitor's data was interrupted, NBP is not shown until the next measurement that changes the value («awaiting a measurement»). If the bed's patient changed, the shown NBP may be the previous patient's (at most 2 h).",
+    legendNbp: "NBP is shown with the time its value last changed. «measured ≤ 10:42» means the cuff measured at 10:42 at the latest: the value is at least that old, and a repeat measurement with the same result is not detected. A timed NBP whose value has not changed for more than 2 hours is not shown. After the Infinity server restarts, or if the value changed while the monitor's data was interrupted, no change has been seen. NBP is then shown with «measurement time unknown» until the cuff's next measurement that changes the value: it is the value the monitor shows now, when it was measured is unknown, and the 2-hour limit cannot apply to it; if the monitor's three NBP values are not all present and valid, NBP is not shown at all («awaiting a measurement»). If the bed's patient changed, the shown NBP may be the previous patient's (at most 2 h; longer when its measurement time is unknown).",
     legendEvidence: "Today's evidence per parameter",
     legendParameter: "Parameter",
     legendN: "No sample count is recorded for any parameter.",
@@ -290,7 +311,7 @@ export default {
     loading: "Loading the monitor strip…",
     deviceAddress: "Address {source} · group {group}",
     deviceRow: "In the table: {method} · checked {verified}",
-    method: { central_station_list: "central station list", monitor_screen: "monitor screen", both: "list and screen" },
+    method: { central_station_list: "central station list", monitor_screen: "monitor screen", both: "list and screen", editor: "set by hand in the app" },
     feedPosts: "Bodies received: {posts} · forwarder: {sent} sent, {failed} failed",
     feedRejected: "Readings refused — too old: {too_old} · clock: {clock} · unit: {unit} · range: {range} · unknown: {unknown_parameter} · duplicate: {duplicate}",
     ev: {

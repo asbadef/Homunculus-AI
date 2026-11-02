@@ -43,6 +43,20 @@ def test_history_preserves_order():
     assert values == [0.05, 0.10, 0.20]
 
 
+def test_ingest_orders_by_stamp_and_an_equal_stamp_goes_after_the_ones_already_held():
+    # Pinned against the old append + stable sort (Aşama B re-review: ingest is now a binary
+    # insertion): out-of-order arrivals take their place by timestamp, and a reading stamped like
+    # one already held goes after it — so `latest()` is the last of equal stamps to arrive.
+    st = PatientState("bed-3")
+    arrivals = [(70, 10), (60, 0), (65, 5), (66, 5), (71, 10), (55, -5), (67, 5), (80, 20), (61, 0)]
+    for value, minutes in arrivals:
+        st.ingest(_obs(SignalCode.MAP, value, minutes=minutes))
+    assert [o.value for o in st.history(SignalCode.MAP)] == [55, 60, 61, 65, 66, 67, 70, 71, 80]
+    assert st.latest(SignalCode.MAP).value == 80
+    st.ingest(_obs(SignalCode.MAP, 81, minutes=20))
+    assert st.latest(SignalCode.MAP).value == 81
+
+
 def test_sum_since_adds_values_within_window():
     st = PatientState("bed-3")
     st.ingest(_obs(SignalCode.CRYSTALLOID_BOLUS_ML, 500, minutes=0))

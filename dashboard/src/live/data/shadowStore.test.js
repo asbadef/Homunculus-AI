@@ -268,3 +268,83 @@ describe("isolation: the strip never reaches what alarms", () => {
     expect(boardApi.boardPatients).toHaveBeenCalledTimes(2); // its load and the open's reload, nothing more
   });
 });
+
+// Aşama B: the week's list for Settings — one fetch on request, through the same api and the same session
+// wrapper as the poll, and nothing else: it is not polled, it does not touch the strip's state.
+describe("findings(days): the week's shadow list", () => {
+  const WEEK = { days: 7, findings: [{ patient_id: "S-001", kind: "news2", severity: "high", opened_at: "2026-10-26T09:00:00+00:00", cleared_at: null }] };
+
+  function withFindings(answer = async () => WEEK, extra = {}) {
+    const h = harness(extra);
+    h.api.shadowFindings = vi.fn(answer);
+    return h;
+  }
+
+  it("asks for a week by default and returns the parsed body", async () => {
+    const { api, store } = withFindings();
+    expect(await store.findings()).toEqual(WEEK);
+    expect(api.shadowFindings).toHaveBeenCalledTimes(1);
+    expect(api.shadowFindings).toHaveBeenCalledWith(7);
+  });
+
+  it("asks for the days it is given", async () => {
+    const { api, store } = withFindings();
+    await store.findings(3);
+    expect(api.shadowFindings).toHaveBeenCalledWith(3);
+  });
+
+  it("runs inside the session's wrapper, as the poll does", async () => {
+    const calls = [];
+    const track = vi.fn(async (call) => { calls.push("in"); const out = await call(); calls.push("out"); return out; });
+    const { store } = withFindings(undefined, { track });
+    await store.findings();
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["in", "out"]);
+  });
+
+  it("throws what the api threw for a refusal or a server that could not answer, and does not swallow it", async () => {
+    const refused = Object.assign(new Error("forbidden"), { status: 403 });
+    const { store } = withFindings(async () => { throw refused; });
+    await expect(store.findings()).rejects.toBe(refused);
+  });
+
+  it("throws for a body that is not a findings list — the screen then says the list is unavailable", async () => {
+    for (const body of [null, undefined, "x", [], {}, { days: 7 }, { days: 7, findings: "none" }, { findings: null }]) {
+      const { store } = withFindings(async () => body);
+      await expect(store.findings(), JSON.stringify(body)).rejects.toThrow();
+    }
+  });
+
+  it("drops an answer that lands after the session ended or restarted (clear, start)", async () => {
+    let release;
+    const { store } = withFindings(() => new Promise((resolve) => { release = resolve; }));
+    const pending = store.findings();
+    store.clear();
+    release(WEEK);
+    await expect(pending).rejects.toThrow();
+    const again = withFindings(() => new Promise((resolve) => { release = resolve; }));
+    const second = again.store.findings();
+    again.store.start(NURSE);
+    release(WEEK);
+    await expect(second).rejects.toThrow();
+  });
+
+  it("is not part of the poll: it leaves the strip's state the identical object and fetches no board", async () => {
+    const { api, store } = withFindings();
+    store.start(NURSE);
+    store.acquire();
+    await settle();
+    const before = store.getState();
+    const asked = api.shadowBoard.mock.calls.length;
+    await store.findings();
+    expect(store.getState()).toBe(before);
+    expect(api.shadowBoard.mock.calls.length).toBe(asked);
+  });
+
+  it("is read even with nothing on screen: no consumer is needed, no timer is set", async () => {
+    const { api, store, timers } = withFindings();
+    expect(await store.findings()).toEqual(WEEK);
+    expect(timers.delays).toEqual([]);
+    expect(api.shadowBoard).not.toHaveBeenCalled();
+  });
+});

@@ -45,6 +45,8 @@ import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/
 import { bed, param, strip, unassigned } from "./data/shadow.testutil.js";
 import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
+import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
+import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -179,6 +181,15 @@ const TRENDS = trends(FIXTURE_ID, [
   channel("temperature", [point(90, 37.9, 0), point(30, 38.2, 1)], { thinned: true, total_points: 2400 }),
 ], { markers: [marker(45, "alarm"), marker(20, "antibiotic")], markers_truncated: true });
 
+/** G2-B1a: a ward (kabul.testutil.js) and its admissions in each open state. */
+const WARD = wardStructure();
+const ADMISSIONS = [
+  admissionRow({ id: "a-1", patient_number: FIXTURE_ID, state: "DRAFT", bed_label: "1" }),
+  admissionRow({ id: "a-2", patient_number: "H2600002", state: "ACTIVE", bed_label: "2" }),
+  admissionRow({ id: "a-3", patient_number: "H2600003", state: "PENDING_DISCHARGE", bed_label: "5", room_name: "Otaq 2",
+    discharge_disposition: "EXITUS", discharge_at: "2026-10-08T09:30:00Z" }),
+];
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -194,6 +205,15 @@ async function openAt(path) {
       ADMIN_READS(api);
       api.shadowBoard.mockResolvedValue(STRIP);
       api.patientTrends.mockImplementation((pid, hours) => Promise.resolve({ ...TRENDS, patient_id: pid, hours }));
+
+      // G2-B1a: the ward's structure and its open admissions — a DRAFT on the fixture's card (the
+      // sign-off strip and the badge), an admitted patient and a started discharge (Taburcu).
+      api.structure.mockResolvedValue(WARD);
+      api.admissions.mockResolvedValue(ADMISSIONS);
+
+      // G2-ESLEME: the monitor–bed list on «Monitörler» — a bound, a label-only, another unit's and
+      // an absent monitor, so every row kind and both actions are drawn.
+      api.deviceBeds.mockResolvedValue(MAPPING);
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -201,6 +221,15 @@ async function openAt(path) {
   await act(async () => { mounted.shadow.start(PERMS); await settle(); });
   return mounted;
 }
+
+// G2-ESLEME: the editor's list for every sweep (synthetic monitors on the kabul ward's beds). The absent
+// monitor is what the server sends for one the worker no longer reports: status "unknown", seen false (A-19).
+const MAPPING = mappingList([
+  device("192.0.2.11", { device_bed_label: "BED05", row_id: 1, bed: onBed(1, "1") }),
+  device("192.0.2.12", { device_bed_label: "BED01", row_id: 2 }),
+  device("192.0.2.14", { row_id: 4, editable: false, bed: { id: BED(6), in_scope: false } }),
+  device("192.0.2.20", { row_id: 5, seen: false, status: "unknown", last_seen_at: null }),
+]);
 
 /** The address of a route, with its parameters on the fixture's card. */
 const addressOf = (route) => route.path.replace(/:\w+/g, FIXTURE_ID);
@@ -290,6 +319,56 @@ describe("no screen shows a reader a translation key", () => {
 
   // The same anchor for the trend charts: the cards are on the patient screen, but the big chart, its
   // table and the patient's-normal form open only on a click, so the sweep above never saw them.
+  // G2-B1a — the same anchor for Hasta Kabul: the form's panel and the bed picker, both lists of
+  // Taburcu and its dialog (which opens only on a click), Yataklar, the sign-off strip and the
+  // badge, and Yönetim › Yapı — and on none of them a UUID (spec D9).
+  it("the Hasta Kabul keys resolve on its three tabs, the discharge dialog, the strip, the badge and Yapı", async () => {
+    let mounted = await openAt("/kabul");
+    expect(screen.getByText("Çatışmayan sahələr")).toBeInTheDocument();                 // kabul.missingTitle
+    expect(screen.getByRole("button", { name: /^Reanimasiya/ })).toBeInTheDocument();  // the picker, by name
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" })); await settle(); });
+    expect(screen.getByText("Vəfat (exitus)", { exact: false })).toBeInTheDocument();  // kabul.disp.exitus
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Evə yazılmanı başlat: / })); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Çıxış forması");             // kabul.f.disposition
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+    cleanup();
+
+    mounted = await openAt(`/patients/${FIXTURE_ID}`);
+    expect(screen.getByText(/^Həkim imzası gözlənilir —/)).toBeInTheDocument();          // kabul.awaitingSignature
+    act(() => { mounted.board.clear(); });
+    cleanup();
+
+    mounted = await openAt("/beds");
+    expect(screen.getByText("Həkim imzası gözlənilir")).toBeInTheDocument();             // kabul.badgeDraft
+    act(() => { mounted.board.clear(); });
+    cleanup();
+
+    mounted = await openAt("/admin");
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Struktur" })); await settle(); });
+    expect(screen.getByText(/Bina, şöbə, otaq və çarpayıları buradan qurun/)).toBeInTheDocument();
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-ESLEME — the same anchor for the monitor–bed editor: «Monitörler» draws its list (bound, label-only,
+  // another unit's and an absent monitor) and the dialog's pick opens only on a click, so the sweep above
+  // never saw it. The texts are the namespace's az values as amendment A-7 fixed them («qoş-», not «bağla»).
+  it("the monitor–bed editor's keys resolve on its list and in its dialog", async () => {
+    const mounted = await openAt("/devices");
+    expect(screen.getByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeInTheDocument(); // esleme.title
+    expect(screen.getByText("başqa şöbədə")).toBeInTheDocument();                                         // esleme.otherUnit
+    expect(screen.getByText("görünmür · son görünmə bilinmir")).toBeInTheDocument();                      // esleme.unseenUnknown
+    expect(screen.getAllByText("qoşulmayıb").length).toBeGreaterThan(0);                                  // esleme.unbound
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Başqa çarpayıya qoş: 192.0.2.11 (BED05)" })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
   it("the trend charts' keys resolve on the cards, in the big chart, its table and the form", async () => {
     const mounted = await openAt(`/patients/${FIXTURE_ID}`);
     await act(async () => { await settle(); });

@@ -2,11 +2,12 @@
 """Pure builders that turn an Engine's state (+ ack/escalation store) into the dashboard's board JSON."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.patient_identity import IdentityRecord, IdentityStore
+from homunculus.api.patient_identity import IdentityRecord, IdentityStore, is_tombstone
 from homunculus.canonical import SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
@@ -286,6 +287,8 @@ def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dic
 
     The patient is never withheld for want of a match; the card still carries the HIS bed text.
     """
+    if record is not None and record.bed_id:      # G2-B1a: placed by an admission here
+        return _own_bed(record)
     if record is None:
         return {"bed_id": None, "unit_id": None, "bed_matched": False, "bed_key": None}
     key = normalise_key(record.unit, record.room, record.bed)
@@ -300,6 +303,24 @@ def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dic
         "bed_matched": resolution.matched,
         "bed_key": resolution.key,
     }
+
+
+# ---------------------------------------------------------------- G2-B1a (Hasta Kabul)
+def _own_bed(record: IdentityRecord) -> dict:
+    """The bed an admission made HERE placed the patient in: the record's own ids — no bed map,
+    nothing to match. A discharged record's ids are its last place, not its bed: it sits on no
+    bed (and a `kabul` one is not on the board at all, `patient_identity.is_tombstone`)."""
+    if record.state != "admitted":
+        return {"bed_id": None, "unit_id": None, "bed_matched": False, "bed_key": None}
+    return {"bed_id": record.bed_id, "unit_id": record.unit_id or None, "bed_matched": True,
+            "bed_key": None}
+
+
+def tombstone_board(record: IdentityRecord) -> dict:
+    """What a tombstone's patient is on the board: a removal. It carries the last bed and unit
+    and no name, so a scoped screen of that unit is told too (`scope.sees_patient` reads them)."""
+    return {**identity_only_board(record), "removed": True,
+            "identity": {"bed_id": record.bed_id or None, "unit_id": record.unit_id or None}}
 
 
 def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) -> dict:
@@ -321,7 +342,10 @@ def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) ->
 
 def patient_board(engine: Engine, patient_id: str, store: AckStore,
                   identity: IdentityRecord | None = None,
-                  bedmap: BedMap | None = None, now: datetime | None = None) -> dict:
+                  bedmap: BedMap | None = None, now: datetime | None = None,
+                  shadow: dict | None = None) -> dict:
+    if is_tombstone(identity):                    # G2-B1a: the patient left; a removal
+        return tombstone_board(identity)
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
     # One instant for the whole card (G2-A2, D3, X2): NEWS2's freshness and the antibiotic clock
@@ -358,24 +382,31 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
         "sepsis": _sepsis_context(engine, state, patient_id),
         # Infusions, the antibiotic clock, and the two numbers a pharmacist reads them against.
         "meds": _meds(engine, state, patient_id, now),
+        # Aşama B (D6): the shadow engine's picture for a monitor-linked patient; None otherwise and
+        # below the stage `rules`. Built by the lane (api/infinity_rules.py), never here — this
+        # module holds no reference to it.
+        "shadow": shadow,
     }
 
 
 def board_snapshot(engine: Engine, store: AckStore,
                    identities: IdentityStore | None = None, hospital: str = "",
-                   bedmap: BedMap | None = None, now: datetime | None = None) -> list[dict]:
+                   bedmap: BedMap | None = None, now: datetime | None = None,
+                   shadow_for: Callable[[str], dict | None] | None = None) -> list[dict]:
     measured = engine.patient_ids()
     now = now or datetime.now(timezone.utc)      # every card judged at one instant (G2-A2, D3)
     boards = [patient_board(engine, pid, store,
                             identity=identities.get(hospital, pid) if identities else None,
-                            bedmap=bedmap, now=now)
+                            bedmap=bedmap, now=now,
+                            shadow=shadow_for(pid) if shadow_for is not None else None)
               for pid in measured]
+    boards = [b for b in boards if not b.get("removed")]     # G2-B1a: tombstones are not shown
     if identities is not None:
         seen = set(measured)
         # Keep discharged admissions visible until the store's 24-hour retention expires.
         for pid in identities.patient_ids(hospital):
             if pid not in seen:
                 record = identities.get(hospital, pid)
-                if record is not None:
+                if record is not None and not is_tombstone(record):      # G2-B1a
                     boards.append(identity_only_board(record, bedmap))
     return boards

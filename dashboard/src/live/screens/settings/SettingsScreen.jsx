@@ -3,15 +3,16 @@
 // says you are, your password (local accounts) and what the hospital decided about two-step
 // verification and the screen lock. Every signed-in user reaches it; it is the home of a session
 // whose work screens a later wave builds.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { ddmmhhmm } from "../../i18n/dates.js";
 import { useTheme } from "../../theme/ThemeProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { PasswordForm } from "../../auth/PasswordForm.jsx";
 import { useAlarmSignals } from "../../signals/AlarmSignals.jsx";
-import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, useToast } from "../../ui/index.js";
+import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, riskStyle, useToast } from "../../ui/index.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { stripOn } from "../common/MonitorStrip.jsx";
+import { fullNoteKey, stripOn } from "../common/MonitorStrip.jsx";
 import { EVIDENCE, PARAM_ORDER, PARTIAL } from "../common/monitor.js";
 
 const BUILD_SHA = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
@@ -118,14 +119,16 @@ const NOTIFY_NOTE = {
 
 /** Aşama A: what the unvalidated monitor strip is, beside the sound and the notifications it never
  *  makes — shown only while the hospital has it on. The evidence table is every parameter the
- *  strip can show, in the API's order, with the four only partly checked marked. */
+ *  strip can show, in the API's order, with the four only partly checked marked. Its first sentence is
+ *  the strip's own whole note for the stage (`fullNoteKey`): at Aşama B's «rules» the shadow engine
+ *  computes an advisory score from the values, and the legend must not say that nothing does. */
 function MonitorLegend() {
   const { t } = useI18n();
   const { data } = useShadow();
   if (!stripOn(data)) return null;
   return (
     <Box title={t("monitor.legendTitle")} icon="activity" level={2} className="!border-dashed">
-      <p className="m-0 text-13">{t("monitor.full")}</p>
+      <p className="m-0 text-13">{t(fullNoteKey(data.stage))}</p>
       <p className="m-0 mt-2 text-13 font-semibold">{t("monitor.noSound")}</p>
       <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendAges")}</p>
       <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendNbp")}</p>
@@ -155,6 +158,90 @@ function MonitorLegend() {
   );
 }
 
+/** An engine stamp as `dd.MM hh:mm` in the reader's clock, or a dash for one that does not parse — the
+ *  week's list spans days, so every stamp carries its day and month. */
+function whenOf(iso) {
+  const ms = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(ms) ? ddmmhhmm(ms) : "—";
+}
+
+/** Aşama B (D6, D7): «Uyarsaydı — son 7 gün» — the findings the shadow ALONE opened in the last week
+ *  (`relation: "shadow_only"`), with when each cleared: the ones that would not have appeared without the
+ *  monitor's unvalidated inputs. The API's list also carries the findings the real engine had too, or had
+ *  at another level (`same`, `level_differs`); those would not have alerted, and are left out here. It is
+ *  the material of the weekly review, nothing more: no row opens a patient, nothing rings, nothing in it
+ *  is coloured by its severity (the word carries it), and it is read when the reader opens this tab —
+ *  fetched once per opening, never polled, never live. Only while the hospital runs the rules (`stage`
+ *  «rules»): at «shadow» or «off» there is no shadow engine to ask, and nothing is asked — nor for a
+ *  session without `board.view`, the route's own permission (a `devices.manage`-only session reaches this
+ *  tab for the legend and would be refused the list every time). A list that could not be read says so;
+ *  it never reads as an empty week.
+ *
+ *  `min-w-0`: the box is an item of the Signals grid, and a grid item's `min-width: auto` let the
+ *  five-column table widen the page past 390 px instead of scrolling inside the Table's own frame. */
+function ShadowWeek() {
+  const { t } = useI18n();
+  const { user } = useSession();
+  const shadow = useShadow();
+  const { store } = shadow;
+  // Asked, and drawn, only at the rules stage and for a session the route will answer.
+  const ask = shadow.data?.stage === "rules" && Boolean(user?.perms?.includes("board.view"));
+  const [week, setWeek] = useState({ phase: "loading", findings: [] });
+  useEffect(() => {
+    if (!ask) return undefined;
+    let current = true;
+    setWeek({ phase: "loading", findings: [] });
+    store.findings(7).then(
+      (body) => { if (current) setWeek({ phase: "ok", findings: body.findings.filter((f) => f?.relation === "shadow_only") }); },
+      () => { if (current) setWeek({ phase: "failed", findings: [] }); },
+    );
+    return () => { current = false; };
+  }, [ask, store]);
+  if (!ask) return null;
+  return (
+    <div data-shadow-week="" className="min-w-0">
+      <Box title={t("shadow.week")} icon="clock" level={2} className="!border-dashed">
+        <p className="m-0 text-13 text-mute">{t("shadow.weekHelp")}</p>
+        {week.phase === "loading" ? (
+          <p className="m-0 mt-2 text-13 text-mute">{t("shadow.weekLoading")}</p>
+        ) : week.phase === "failed" ? (
+          <Note tone="warn" className="mt-2">{t("shadow.weekUnavailable")}</Note>
+        ) : week.findings.length === 0 ? (
+          <p className="m-0 mt-2 text-13">{t("shadow.weekNone")}</p>
+        ) : (
+          <div className="mt-2">
+            <Table caption={t("shadow.week")}>
+              <thead>
+                <tr>
+                  <th scope="col">{t("shadow.colPatient")}</th>
+                  <th scope="col">{t("shadow.colKind")}</th>
+                  <th scope="col">{t("shadow.colSeverity")}</th>
+                  <th scope="col">{t("shadow.colOpened")}</th>
+                  <th scope="col">{t("shadow.colCleared")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {week.findings.map((f, i) => {
+                  const severity = riskStyle(f.severity, { measured: true });
+                  return (
+                    <tr key={`${f.patient_id}:${f.kind}:${f.opened_at}:${i}`}>
+                      <th scope="row" className="font-data">{f.patient_id}</th>
+                      <td className="font-data">{f.kind}</td>
+                      <td>{t(severity.labelKey, severity.labelVars)}</td>
+                      <td className="whitespace-nowrap">{whenOf(f.opened_at)}</td>
+                      <td className="whitespace-nowrap">{f.cleared_at ? whenOf(f.cleared_at) : t("shadow.weekOpen")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        )}
+      </Box>
+    </div>
+  );
+}
+
 /** The alarm sound and the critical-alarm notification for this browser (signals/AlarmSignals.jsx):
  *  what the previous workspace's two top-bar buttons did, with what each state means said out loud. */
 function Signals() {
@@ -179,6 +266,7 @@ function Signals() {
         {notify === "granted" ? <Button className="mt-2" onClick={testNotify}>{t("signals.notifyTest")}</Button> : null}
       </Box>
       <MonitorLegend />
+      <ShadowWeek />
     </div>
   );
 }

@@ -284,6 +284,44 @@ def test_a_v2_body_puts_nbp_on_the_board_as_one_entry_with_the_time_it_changed(t
     assert "nbp_systolic" not in json.dumps(board)                   # the wire's names stop at the API
 
 
+def test_an_untimed_nbp_is_200_and_the_bed_card_shows_it_as_value_untimed(tmp_path):
+    # NBP-2: the hub holds a complete valid triple but has seen no change since it started.
+    client, clock, _ = _app(tmp_path)
+    response = _post(client, clock, body=_with_nbp(_body(clock.t), changed_at=None))
+    assert response.status_code == 200 and response.json()["accepted"] == 13
+    clock.t += 2.0
+    board = _board(client)
+    one = next(b for b in board["beds"] if b["source"] == "192.0.2.10")
+    assert [p["parameter"] for p in one["parameters"]] == ["hr", "spo2", "nbp"]
+    assert one["parameters"][-1] == {
+        "parameter": "nbp", "state": "value_untimed", "systolic": 118, "diastolic": 79, "mean": 92, "unit": "mmHg",
+        "age_s": 2.4, "last_at": datetime.fromtimestamp(T0 - 0.4, timezone.utc).isoformat(), "changed_at": None,
+        "measured_age_s": None, "evidence": "screen_match", "partial": False}
+    assert "nbp_systolic" not in json.dumps(board)
+
+
+@pytest.mark.parametrize("changed_at", ["12:00", True, -1.0])
+def test_an_nbp_change_time_that_is_neither_a_time_nor_null_refuses_the_body(tmp_path, changed_at):
+    client, clock, _ = _app(tmp_path)
+    response = _post(client, clock, body=_with_nbp(_body(clock.t), changed_at=changed_at))
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+    assert _board(client)["feed"]["state"] == "never"
+
+
+def test_a_v1_body_still_takes_no_nbp_and_refuses_a_change_time_even_a_null_one(tmp_path):
+    client, clock, _ = _app(tmp_path)
+    v1 = {**_with_nbp(_body(clock.t), changed_at=None), "schema": SCHEMA_V1}
+    for reading in v1["devices"][0]["readings"][2:]:
+        del reading["changed_at"]                                    # v1's NBP, as the R3 hub never sent it
+    response = _post(client, clock, body=v1)
+    assert response.status_code == 200
+    assert (response.json()["accepted"], response.json()["rejected"]["unknown_parameter"]) == (10, 3)
+    assert [p["parameter"] for p in _board(client)["beds"][0]["parameters"]] == ["hr", "spo2"]
+    clock.t += 1.5
+    response = _post(client, clock, body={**_with_nbp(_body(clock.t), changed_at=None), "schema": SCHEMA_V1})
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+
+
 def test_a_change_time_on_anything_but_nbp_refuses_the_body(tmp_path):
     client, clock, _ = _app(tmp_path)
     body = _body(clock.t)

@@ -95,7 +95,9 @@ describe("src/live/ stands on its own", () => {
 describe("the monitor strip never reaches an alarm path", () => {
   const STRIP = ["data/shadowStore.js", "data/ShadowProvider.jsx", "screens/common/monitor.js",
     "screens/common/MonitorStrip.jsx", "screens/devices/DevicesScreen.jsx"];
-  const STRIP_PREFIXES = ["screens/devices/"];
+  // Aşama B's shadow box and its naming (screens/patient/shadow/): the shadow engine's findings on the
+  // monitor's numbers are advice with every alarm off, so they are held to the strip's rule.
+  const STRIP_PREFIXES = ["screens/devices/", "screens/patient/shadow/"];
   const STRIP_ALSO = [];
   const REGISTRY = "shell/routes.js";
   const rel = (file) => path.relative(LIVE, file).replace(/\\/g, "/");
@@ -111,6 +113,12 @@ describe("the monitor strip never reaches an alarm path", () => {
 
   it("the strip's own modules exist, so the rule cannot pass by their absence", () => {
     for (const file of STRIP) expect(fs.existsSync(path.join(LIVE, file)), file).toBe(true);
+    // A prefix is a folder of the strip's modules: it must be one, and hold some, or it guards nothing.
+    for (const prefix of STRIP_PREFIXES) {
+      const dir = path.join(LIVE, prefix);
+      expect(fs.existsSync(dir) && fs.statSync(dir).isDirectory(), prefix).toBe(true);
+      expect(sources(dir).length, prefix).toBeGreaterThan(0);
+    }
     expect(guarded.length).toBeGreaterThan(8);
     for (const file of guarded) expect(fs.existsSync(file), rel(file)).toBe(true);
   });
@@ -171,6 +179,9 @@ describe("the monitor strip never reaches an alarm path", () => {
     const target = rel(path.resolve(path.join(LIVE, "shell"), importsOf(leaking).specs[0]));
     expect(isStrip(target)).toBe(true);
     expect(isStrip("screens/devices/DevicesScreen.jsx")).toBe(true);
+    expect(isStrip("screens/patient/shadow/ShadowFindingsBox.jsx")).toBe(true);
+    expect(isStrip("screens/patient/shadow/shadowVitals.js")).toBe(true);
+    expect(isStrip("screens/patient/PatientScreen.jsx")).toBe(false);
     expect(isStrip("data/boardStore.js")).toBe(false);
   });
 });

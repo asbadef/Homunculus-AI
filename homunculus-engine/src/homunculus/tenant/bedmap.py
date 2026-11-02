@@ -134,6 +134,14 @@ class BedMap:
         locations every few seconds (Aşama A's monitor strip) would inflate it into noise."""
         return self._table.get(normalise_key(unit, room, bed))
 
+    def uncounted(self) -> UncountedBedMap:
+        """This table as `patient_board` reads it, its misses NOT counted (`lookup`'s rule for a
+        whole card): for a card built by a reader that is not the board's own traffic — Aşama B's
+        sampler republishes a patient's card after a sample or the end of a link, by which time
+        the patient may lie on a location the table does not cover, and the shadow lane must move
+        no counter (tests/test_infinity_shadow_equivalence.py)."""
+        return UncountedBedMap(self)
+
     def unmatched(self) -> dict[str, int]:
         """Locations this table did not cover, and how often each was seen."""
         return dict(self._unmatched)
@@ -151,3 +159,14 @@ class BedMap:
 
     def __len__(self) -> int:
         return len(self._table)
+
+
+class UncountedBedMap:
+    """A BedMap read through `resolve` without counting a miss (`BedMap.uncounted`). It holds
+    the map, not a copy of its table, so it always reads what the map holds."""
+
+    def __init__(self, source: BedMap) -> None:
+        self._source = source
+
+    def resolve(self, unit: str, room: str, bed: str) -> Resolution:
+        return Resolution(key=normalise_key(unit, room, bed), ref=self._source.lookup(unit, room, bed))

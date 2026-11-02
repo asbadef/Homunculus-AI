@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import logging
 import os
 
@@ -90,6 +91,24 @@ def decrypt_phi(ciphertext: str | None) -> str | None:
     except InvalidToken:
         # Never leak the ciphertext or key material in the error.
         raise ValueError("PHI decryption failed — key mismatch or corrupted value.")
+
+
+# The digest key is derived from the PHI key, never the PHI key itself (a key per purpose).
+_DIGEST_PURPOSE = b"homunculus phi-digest v1"
+_digest_key: bytes | None = None
+
+
+def phi_digest(text: str) -> str:
+    """A keyed digest (HMAC-SHA256, 64 hex characters) of a text that holds PHI, to tell whether
+    two such texts are equal without keeping either (Group 2 · B1a: two sends of one admission
+    form, `admission/router.py`). Fernet ciphertexts cannot be compared — each one is new — and a
+    plain hash of a name, a birth date and a FİN would let a reader of the database check a guess
+    against it. Keyed by the PHI key, the digest is as closed to that reader as the ciphertext.
+    Equal texts give equal digests under one key; a new PHI key gives new digests."""
+    global _digest_key
+    if _digest_key is None:
+        _digest_key = hmac.new(_resolve_key(), _DIGEST_PURPOSE, hashlib.sha256).digest()
+    return hmac.new(_digest_key, text.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 if TypeDecorator is not None:

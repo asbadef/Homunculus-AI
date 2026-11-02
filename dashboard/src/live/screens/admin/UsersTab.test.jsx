@@ -23,6 +23,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import ADMIN_STRINGS from "../../i18n/strings/admin.js";
 import { UsersTab, mfaState } from "./UsersTab.jsx";
 import { splitGroups } from "./UserForm.jsx";
+import { StructureProvider } from "../../data/StructureProvider.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
@@ -132,18 +133,24 @@ function rememberingServer(api) {
   return state;
 }
 
+/** `ui` inside the shell's StructureProvider when a test gives the ward's `structure` (GET
+ *  /tenant/structure's answer) — where the scope editor's units and beds come from since the
+ *  G2-B1a walk (I-2) — else as it is. */
+const withStructure = (ui, structure) => (structure ? <StructureProvider>{ui}</StructureProvider> : ui);
+
 /** The tab inside its FRAME — `AdminScreen` and its loader, so a write's reload really re-reads —
  *  against `rememberingServer`. `tabs` pins this build's tabs (`onlyTabs`). */
-async function openFrame({ tabs = { users: UsersTab }, setup } = {}) {
+async function openFrame({ tabs = { users: UsersTab }, setup, structure } = {}) {
   onlyTabs(tabs);
   let server;
-  const mounted = await mount(<AdminScreen />, {
+  const mounted = await mount(withStructure(<AdminScreen />, structure), {
     access: token({ sub: "u-admin", perms: DESK }),
     me: profile({ id: "u-admin", perms: DESK }),
     setup: (api) => {
       ADMIN_READS(api);
       api.boardPatients.mockResolvedValue(board([]));
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      if (structure) api.structure.mockResolvedValue(structure);
       server = rememberingServer(api);
       setup?.(api);
     },
@@ -159,15 +166,16 @@ function Gate({ admin }) {
 }
 
 /** The tab behind `Gate`, so a test can end the session under a write in flight. */
-async function openGated({ setup } = {}) {
+async function openGated({ setup, structure } = {}) {
   const admin = adminProp();
-  const mounted = await mount(<Gate admin={admin} />, {
+  const mounted = await mount(withStructure(<Gate admin={admin} />, structure), {
     access: token({ sub: "u-admin", perms: DESK }),
     me: profile({ id: "u-admin", perms: DESK }),
     setup: (api) => {
       ADMIN_READS(api);
       api.boardPatients.mockResolvedValue(board([]));
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      if (structure) api.structure.mockResolvedValue(structure);
       setup?.(api);
     },
   });
@@ -791,7 +799,9 @@ describe("the scope editor", () => {
       ],
       setup: (api) => api.userScope.mockResolvedValue(scopeView({ grants: [{ unit_id: "REA-09" }] })),
     });
-    expect(screen.getByText(/Seçimlər panelin hazırkı kartlarından/)).toBeInTheDocument();
+    // The structure first (G2-B1a walk I-2; unitNames.test.jsx offers it), then the board's cards
+    // and the user's grants.
+    expect(screen.getByText(/Seçimlər xəstəxananın strukturundan/)).toBeInTheDocument();
     for (const key of ["REA-01", "NICU-01", "REA-09"]) {
       expect(screen.getByRole("checkbox", { name: key })).toBeInTheDocument();
     }
@@ -799,14 +809,10 @@ describe("the scope editor", () => {
     expect(screen.getByRole("checkbox", { name: "NICU-01" })).not.toBeChecked();
   });
 
-  it("a key with no card on the board can be added by hand, and the screen says what that means", async () => {
+  it("offers no box for typing a key: a unit with no card is offered from the structure (G2-B1a walk I-2)", async () => {
     await openScope({ setup: (api) => api.userScope.mockResolvedValue(scopeView({ grants: [] })) });
-    expect(screen.getByText(/Mühərrikdə bu açarla uyğun kart yoxdursa əhatə heç nə açmır/)).toBeInTheDocument();
-    // The column's own limit: ScopeGrantIn states none, and a longer key is a database error.
-    expect(screen.getByLabelText(/Şöbə və ya çarpayı açarı/)).toHaveAttribute("maxlength", String(FIELD_MAX.scope_key));
-    fireEvent.change(screen.getByLabelText(/Şöbə və ya çarpayı açarı/), { target: { value: "REA-77" } });
-    fireEvent.click(screen.getByRole("button", { name: "Əlavə et" }));
-    expect(screen.getByRole("rowheader", { name: "REA-77" })).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText(/REA-01|Şöbə və ya çarpayı açarı/)).toBeNull();
   });
 
   it("saving sends the WHOLE list, as units and beds, reads it back, and reads as done", async () => {
@@ -1348,17 +1354,20 @@ describe("the final review: a scope save re-reads what it changed", () => {
       await settle(); await settle();
     });
   };
-  const addKey = (key) => {
-    fireEvent.change(screen.getByLabelText(/Şöbə və ya çarpayı açarı/), { target: { value: key } });
-    fireEvent.click(screen.getByRole("button", { name: "Əlavə et" }));
-  };
+  // The units these saves give out, from the ward's structure: since the G2-B1a walk (I-2) the
+  // editor offers a unit from it and has no box for typing a key. Each is named as its key here,
+  // so a save is read against the keys it sends (none is a UUID; real ones are, and are named).
+  const unitOf = (id) => ({ id, name: id, unit_type: "ADULT_ICU", is_active: true, rooms: [] });
+  const WARD = { tenant_id: "t-1", sites: [{ id: "s-1", name: "Ana bina", is_active: true,
+    units: [unitOf("REA-01"), unitOf("REA-02")] }] };
+  const addKey = (key) => fireEvent.click(screen.getByRole("checkbox", { name: key }));
   const saveScope = () => act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" }));
     await settle(); await settle(); await settle();
   });
 
   it("giving the first unit to an unassigned nurse takes her off the counter on screen", async () => {
-    const { server } = await openFrame();
+    const { server } = await openFrame({ structure: WARD });
     expect(screen.getByText(COUNT(3))).toBeInTheDocument();          // the three synthetic accounts
     await openScopeOf("hs\\.aygun");
     addKey("REA-01");
@@ -1370,7 +1379,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   });
 
   it("a scope save with no answer that DID land: the read-back moves the counter too", async () => {
-    const { api } = await openFrame();
+    const { api } = await openFrame({ structure: WARD });
     const take = api.setScope.getMockImplementation();
     api.setScope.mockImplementation(async (...args) => { await take(...args); throw new TypeError("Failed to fetch"); });
     await openScopeOf("hs\\.aygun");
@@ -1381,7 +1390,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   });
 
   it("a scope save whose read-back answers after the session ended reads nothing into the next one", async () => {
-    const { api, admin, store } = await openGated();
+    const { api, admin, store } = await openGated({ structure: WARD });
     let releaseRead;
     api.setScope.mockResolvedValue(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] }));
     await openScopeOf("hs\\.aygun");
@@ -1400,7 +1409,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   const nurseRow = () => screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
 
   it("a save carries the grants the editor opened with, beside the new list", async () => {
-    const { api, server } = await openFrame();
+    const { api, server } = await openFrame({ structure: WARD });
     server.scopes["u-nurse"] = [{ unit_id: "REA-09", bed_id: "" }];
     await openScopeOf("hs\\.aygun");
     addKey("REA-01");
@@ -1411,7 +1420,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   });
 
   it("a scope another desk changed since the editor read it is not overwritten: the editor closes, says why, and the row and the counter show the server's", async () => {
-    const { server } = await openFrame();
+    const { server } = await openFrame({ structure: WARD });
     await openScopeOf("hs\\.aygun");                       // she reads: nothing assigned
     server.scopes["u-nurse"] = [{ unit_id: "NICU-01", bed_id: "" }];   // another desk gives NICU-01
     addKey("REA-01");
@@ -1429,7 +1438,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   });
 
   it("after a save with no answer, the editor rebases on the read-back: the next save expects what the server holds, and lands", async () => {
-    const { api, server } = await openFrame();
+    const { api, server } = await openFrame({ structure: WARD });
     const take = api.setScope.getMockImplementation();
     api.setScope.mockImplementationOnce(async (...args) => { await take(...args); throw new TypeError("Failed to fetch"); });
     await openScopeOf("hs\\.aygun");

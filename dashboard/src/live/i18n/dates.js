@@ -19,5 +19,13 @@ export function ddmmyyyy(ms) {
   return `${ddmm(ms)}.${new Date(ms).getFullYear()}`;
 }
 
+/** `dd.MM hh:mm` — an instant with its day and month, whatever day it is. */
+export const ddmmhhmm = (ms) => `${ddmm(ms)} ${hhmm(ms)}`;
+
+/** An instant as the reader's clock: the time alone for a moment on `nowMs`'s own LOCAL day, with its
+ *  day and month for any other. A time read the morning after, written bare, looks like one from an hour
+ *  ago (the Meds box's rule, final review M1). The two dates are compared as written; nothing is computed. */
+export const dayStamp = (ms, nowMs) => (ddmmyyyy(ms) === ddmmyyyy(nowMs) ? hhmm(ms) : ddmmhhmm(ms));
+
 /** The weekday's key in the `dates` namespace: dates.wd0 (Sunday) … dates.wd6. */
 export const weekdayKey = (ms) => `dates.wd${new Date(ms).getDay()}`;

@@ -31,6 +31,11 @@ DEFAULT_FRESHNESS: dict[SignalCode, timedelta] = {
     SignalCode.DOPAMINE_RATE: _HOUR,
     SignalCode.DOBUTAMINE_RATE: _HOUR,
     SignalCode.PAO2_FIO2: 8 * _HOUR,
+    # G2-A4 review: an operational recency flag like the rest of this table, not a clinical claim. Since
+    # G2-A4 support is charted by hand, and a "yes" charted once must not read as current for ever. The
+    # flag only matters together with a PaO2/FiO2 reading, so it is held to that reading's window.
+    # Staleness surfaces it in the reasoning; nothing is dropped.
+    SignalCode.ON_RESP_SUPPORT: 8 * _HOUR,
     SignalCode.GCS: 8 * _HOUR,
     SignalCode.CREATININE: 26 * _HOUR,
     SignalCode.BILIRUBIN: 26 * _HOUR,
@@ -40,6 +45,7 @@ _INPUT_LABEL: dict[SignalCode, str] = {
     SignalCode.MAP: "MAP", SignalCode.NOREPINEPHRINE_RATE: "norepinephrine",
     SignalCode.EPINEPHRINE_RATE: "epinephrine", SignalCode.DOPAMINE_RATE: "dopamine",
     SignalCode.DOBUTAMINE_RATE: "dobutamine", SignalCode.PAO2_FIO2: "PaO2/FiO2",
+    SignalCode.ON_RESP_SUPPORT: "respiratory support",
     SignalCode.GCS: "GCS", SignalCode.CREATININE: "creatinine",
     SignalCode.BILIRUBIN: "bilirubin", SignalCode.PLATELETS: "platelets",
 }

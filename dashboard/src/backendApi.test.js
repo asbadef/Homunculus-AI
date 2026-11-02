@@ -440,6 +440,54 @@ describe("backendApi — what the work screens call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 
+  it("reads Aşama B's week of shadow findings with an authed GET /infinity-shadow/findings?days=N", async () => {
+    const body = { days: 7, findings: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body));
+    const api = signedIn(fetchMock);
+    expect(await api.shadowFindings()).toEqual(body);
+    expect(await api.shadowFindings(3)).toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/infinity-shadow/findings?days=7");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/infinity-shadow/findings?days=3");
+  });
+
+  it("refuses to put anything but a whole number of days on the address", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ days: 7, findings: [] }));
+    const api = signedIn(fetchMock);
+    for (const days of ["7&x=1", "../board", 1.5, NaN, -1, 0, null]) {
+      expect(() => api.shadowFindings(days), String(days)).toThrow(TypeError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // The route answers 1–7 days (the week's review); a longer window is refused here rather than sent.
+  it("asks for 1 to 7 days and no more", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ days: 1, findings: [] }));
+    const api = signedIn(fetchMock);
+    for (const days of [8, 30, 365, Number.MAX_SAFE_INTEGER]) {
+      expect(() => api.shadowFindings(days), String(days)).toThrow(TypeError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    await api.shadowFindings(1);
+    await api.shadowFindings(7);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/infinity-shadow/findings?days=1", "/infinity-shadow/findings?days=7"]);
+  });
+
+  // G2-A4 review 2: a measurement whose time the clinician did not touch is stamped by the SERVER's clock —
+  // a browser ahead of it would otherwise chart it in the future, missing from the read that follows.
+  it("charts a measurement with its recorded_at when given one, and with none — the server's clock — when not", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ patient_id: "S-001", charted: 1, alerts: [] }));
+    const api = signedIn(fetchMock);
+    await api.chart("S-001", [{ code: "gcs", value: 11 }], "2026-10-08T07:30:00.000Z");
+    await api.chart("S-001", [{ code: "gcs", value: 12 }], null);
+    const [[url, timed], [, untimed]] = fetchMock.mock.calls;
+    expect(url).toBe("/clinical/S-001");
+    expect(JSON.parse(timed.body)).toEqual({ entries: [{ code: "gcs", value: 11 }], recorded_at: "2026-10-08T07:30:00.000Z" });
+    expect(JSON.parse(untimed.body)).toEqual({ entries: [{ code: "gcs", value: 12 }] });
+  });
+
   it("records that a patient was opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);
@@ -447,6 +495,30 @@ describe("backendApi — what the work screens call", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/view");
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001" });
+  });
+
+  // G2-A4 (D6; review 2, C1–C2): the SOFA form is read, previewed on a route of its own — which writes
+  // nothing — and signed with the preview's fingerprint (`expect`): the engine signs only the record that
+  // was previewed. The same corrections both times. The sign route never carries `preview`.
+  it("reads the SOFA form, previews the corrections on the preview route and signs them with its expect", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ total: 3 }));
+    const api = signedIn(fetchMock);
+    const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı, cihaz değil" }];
+    const expectHex = "0123456789abcdef".repeat(4);
+    await api.severityForm("S-001");
+    await api.previewSeverityForm("S-001", { overrides });
+    await api.signSeverityForm("S-001", { overrides, expect: expectHex });
+    await api.signSeverityForm("S-001", { overrides, expect: expectHex, preview: true });   // an old caller's flag
+    const [[readUrl, readInit], [previewUrl, previewInit], [signUrl, signInit], [, flaggedInit]] = fetchMock.mock.calls;
+    expect(readUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(readInit.method || "GET").toBe("GET");
+    expect(previewUrl).toBe("/scores/sofa/S-001/preview?hours=24");
+    expect(previewInit.method).toBe("POST");
+    expect(JSON.parse(previewInit.body)).toEqual({ overrides });
+    expect(signUrl).toBe("/scores/sofa/S-001?hours=24");
+    expect(signInit.method).toBe("POST");
+    expect(JSON.parse(signInit.body)).toEqual({ overrides, expect: expectHex });
+    expect(JSON.parse(flaggedInit.body)).toEqual({ overrides, expect: expectHex });
   });
 
   it("lifts an account's directory sign-in throttle with the administrator's reason", async () => {
@@ -1397,5 +1469,182 @@ describe("backendApi — the trend charts and the patient's own normal (Group 2 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// G2-B1a
+describe("backendApi — Hasta Kabul: admission, discharge, the structure and the bed release", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+  const sent = (fetchMock, at = 0) => {
+    const [url, init] = fetchMock.mock.calls[at];
+    return { url, method: init.method, body: init.body === undefined ? undefined : JSON.parse(init.body) };
+  };
+
+  it("a refusal with a code carries the code beside the server's words", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(
+      { detail: { code: "bed_not_available", message: "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit." } },
+      { ok: false, status: 409 }));
+    await expect(signedIn(fetchMock).admit({ patient: {}, note: {} })).rejects.toMatchObject({
+      status: 409, apiCode: "bed_not_available",
+      message: "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit.",
+    });
+  });
+
+  // A-19, A-29: the earlier admission's number travels beside the code — and nothing else the
+  // detail might hold: a name is never carried onto the error.
+  it("a request_conflict carries the earlier admission's number, and only that, beside its code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "request_conflict", message: "This request id came before with another admission form.",
+      patient_number: "H2600042", display_name: "Sentetik Hasta",
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).admit({ patient: {}, note: {} }).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "request_conflict", patientNumber: "H2600042" });
+    expect(JSON.stringify(Object.entries(err))).not.toContain("Sentetik");
+    // a number that is not a string is not one
+    const odd = vi.fn().mockResolvedValue(jsonResponse({ detail: { code: "request_conflict", message: "x", patient_number: 42 } },
+      { ok: false, status: 409 }));
+    expect((await signedIn(odd).admit({}).catch((e) => e)).patientNumber).toBeUndefined();
+  });
+
+  it("a refusal without a code has none, as before", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: "Admission not found." }, { ok: false, status: 404 }));
+    const err = await signedIn(fetchMock).signOffAdmission("a-1").catch((e) => e);
+    expect(err.message).toBe("Admission not found.");
+    expect(err.apiCode).toBeUndefined();
+  });
+
+  it("reads the structure and the admissions of the named states", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.structure();
+    await api.admissions(["DRAFT", "ACTIVE"]);
+    await api.admissions();
+    expect(sent(fetchMock, 0)).toEqual({ url: "/tenant/structure", method: "GET", body: undefined });
+    expect(sent(fetchMock, 1).url).toBe("/admissions?state=DRAFT&state=ACTIVE");
+    expect(sent(fetchMock, 2).url).toBe("/admissions");
+  });
+
+  // A-30: GET /admissions cut at its cap answers `X-Result-Truncated: 1`. Same-origin on the ward's
+  // VM, so the header is readable; read defensively all the same — absent, or a response with no
+  // headers to read, the rows are simply not marked.
+  it("marks the admissions cut at the server's cap, from X-Result-Truncated — and none when the header is absent or unreadable", async () => {
+    const answer = (headers) => ({ ...jsonResponse([{ id: "a-1" }]), ...(headers ? { headers } : null) });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(answer(new Headers({ "X-Result-Truncated": "1" })))
+      .mockResolvedValueOnce(answer(new Headers()))
+      .mockResolvedValueOnce(answer(new Headers({ "X-Result-Truncated": "0" })))
+      .mockResolvedValueOnce(answer(null));
+    const api = signedIn(fetchMock);
+    const cut = await api.admissions();
+    expect(cut.truncated).toBe(true);
+    expect([...cut]).toEqual([{ id: "a-1" }]);
+    for (let at = 0; at < 3; at += 1) {
+      const whole = await api.admissions();
+      expect(whole.truncated, String(at)).toBeUndefined();
+      expect(whole, String(at)).toEqual([{ id: "a-1" }]);
+    }
+  });
+
+  it("takes one state as a string, and null as no state at all (A-9)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.admissions("DRAFT");
+    await api.admissions(null);
+    expect(sent(fetchMock, 0).url).toBe("/admissions?state=DRAFT");
+    expect(sent(fetchMock, 1).url).toBe("/admissions");
+  });
+
+  it("admits, signs, starts and confirms a discharge, and releases a bed, each by its own route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.admit({ patient: { display_name: "Sentetik" }, note: {} });
+    await api.signOffAdmission("a 1");
+    await api.startDischarge("a-1", { disposition: "HOME" });
+    await api.confirmDischarge("a-1");
+    await api.releaseBed("b/1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["POST", "/admissions"], ["POST", "/admissions/a%201/sign-off"],
+      ["POST", "/admissions/a-1/discharge/initiate"], ["POST", "/admissions/a-1/discharge/confirm"],
+      ["POST", "/tenant/beds/b%2F1/release"],
+    ]);
+    expect(sent(fetchMock, 0).body).toEqual({ patient: { display_name: "Sentetik" }, note: {} });
+    expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
+  });
+
+  it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.createSite("t-1", { name: "Ana bina" });
+    await api.createUnit("s-1", { name: "Reanimasiya", unit_type: "ADULT_ICU" });
+    await api.createRoom("u-1", { name: "Otaq 1" });
+    await api.createBed("r-1", { label: "1" });
+    await api.patchUnit("u-1", { name: "Rea" });
+    await api.patchRoom("r-1", { is_active: false });
+    await api.patchBed("b-1", { is_active: true });
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["POST", "/tenant/tenants/t-1/sites"], ["POST", "/tenant/sites/s-1/units"],
+      ["POST", "/tenant/units/u-1/rooms"], ["POST", "/tenant/rooms/r-1/beds"],
+      ["PATCH", "/tenant/units/u-1"], ["PATCH", "/tenant/rooms/r-1"], ["PATCH", "/tenant/beds/b-1"],
+    ]);
+    // Each write carries its own body, as given (A-9).
+    expect(fetchMock.mock.calls.map((_, at) => sent(fetchMock, at).body)).toEqual([
+      { name: "Ana bina" }, { name: "Reanimasiya", unit_type: "ADULT_ICU" }, { name: "Otaq 1" }, { label: "1" },
+      { name: "Rea" }, { is_active: false }, { is_active: true },
+    ]);
+  });
+});
+
+// G2-ESLEME — the monitor→bed editor (homunculus-engine devicebeds/router.py)
+describe("backendApi — the monitor→bed editor", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+  const sent = (fetchMock, at = 0) => {
+    const [url, init] = fetchMock.mock.calls[at];
+    return { url, method: init.method ?? "GET", body: init.body === undefined ? undefined : JSON.parse(init.body) };
+  };
+
+  it("reads the list and binds and unbinds by their own routes, each body as given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    const bind = { source: "192.0.2.11", bed_id: "b-1", expected: { device_row_id: 3, bed_row_id: null }, confirm_occupied: false };
+    const unbind = { source: "192.0.2.11", expected: { device_row_id: 4 }, confirm_occupied: true };
+    await api.deviceBeds();
+    await api.bindDeviceBed(bind);
+    await api.unbindDeviceBed(unbind);
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/infinity-shadow/device-beds"], ["POST", "/infinity-shadow/device-beds/bind"],
+      ["POST", "/infinity-shadow/device-beds/unbind"],
+    ]);
+    expect([sent(fetchMock, 1).body, sent(fetchMock, 2).body]).toEqual([bind, unbind]);
+  });
+
+  it("a bed_occupied refusal carries the beds and patient ids, and nothing else of the detail", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "bed_occupied", message: "An admitted patient is on this bed; confirm to go on.",
+      occupied: [{ bed_id: "b-2", patient_id: "H2600042", display_name: "Ahmet Yılmaz" }, { bed_id: "b-1" }, { bed_id: 7 },
+        { bed_id: "b-3", patient_id: 42 }],
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).bindDeviceBed({}).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "bed_occupied" });
+    // a patient_id that is not a string is dropped: the entry is {bed_id} only
+    expect(err.occupied).toEqual([{ bed_id: "b-2", patient_id: "H2600042" }, { bed_id: "b-1" }, { bed_id: "b-3" }]);
+    expect(JSON.stringify(Object.entries(err))).not.toContain("Ahmet");
+  });
+
+  it("only a bed_occupied refusal carries err.occupied; any other code leaves it undefined, list or no list", async () => {
+    const refuse = (detail) => signedIn(vi.fn().mockResolvedValue(jsonResponse({ detail }, { ok: false, status: 409 })))
+      .bindDeviceBed({}).catch((e) => e);
+    const without = await refuse({ code: "mapping_changed", message: "The mapping changed." });
+    expect(without).toMatchObject({ status: 409, apiCode: "mapping_changed" });
+    expect(without.occupied).toBeUndefined();
+    const stray = await refuse({ code: "mapping_changed", message: "The mapping changed.", occupied: [{ bed_id: "b-1", patient_id: "H2600042" }] });
+    expect(stray.occupied).toBeUndefined();
   });
 });

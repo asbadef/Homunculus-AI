@@ -328,15 +328,19 @@ describe("the critical-alarm notification", () => {
   });
 
   // Closed from outside — the user, the operating system, another tab closing the same tag as it
-  // went: the page forgets it raised it, so an alarm still waiting is raised again on the board's
-  // next change while the page is in the background.
-  it("raises a notification again on the next change when something else closed it and the alarm still waits", async () => {
+  // went: the page forgets it raised it, so an alarm still waiting is raised again on the next
+  // change of the board's alarms while the page is in the background. A frame that changes no alarm
+  // (here: new readings, the alarm exactly as it was) is not such a change (boardStore.js
+  // `withPatients`); its escalation is.
+  it("raises a notification again on the next change of the alarms when something else closed it and the alarm still waits", async () => {
     const { notes, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { sound: false });
     act(() => { page.setHidden(true); });
     expect(notes.shown).toHaveLength(1);
     act(() => { notes.shown[0].dismiss(); });
     expect(notes.open()).toHaveLength(0);
-    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical")], { risk: "critical" })); });
+    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical")], { risk: "critical", vitals: { heart_rate: 131 } })); });
+    expect(notes.shown).toHaveLength(1);                 // the alarm did not change: not again
+    act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { escalated: true })], { risk: "critical" })); });
     expect(notes.shown).toHaveLength(2);
     expect(notes.open()).toHaveLength(1);
   });

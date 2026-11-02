@@ -47,6 +47,10 @@ function defaultOnVisibility(fn) {
 const isStrip = (answer) => Boolean(answer) && typeof answer === "object" && !Array.isArray(answer)
   && typeof answer.stage === "string";
 
+/** The week's list is an object holding an array of findings; anything else is not a list. */
+const isFindingsList = (answer) => Boolean(answer) && typeof answer === "object" && !Array.isArray(answer)
+  && Array.isArray(answer.findings);
+
 /**
  * api: backendApi (shadowBoard). track(call): the session's wrapper for its API calls.
  * The rest are injectable for the tests: the timers, the page's visibility and the wall clock.
@@ -143,6 +147,19 @@ export function createShadowStore({
     release() {
       consumers = Math.max(0, consumers - 1);
       if (consumers === 0) cancel();
+    },
+    /** Aşama B: the findings the shadow engine opened in the last `days` days (GET
+     *  /infinity-shadow/findings), for Settings' weekly review. One fetch on request, through the same api
+     *  and the same session wrapper as the poll; never polled, never kept, and nothing of the strip's
+     *  state or the board's is touched. It THROWS — the api's error for a refusal or an outage, or a plain
+     *  one for a body that is not a list, or for an answer that lands after the session ended or
+     *  restarted — and the screen says the list is unavailable. */
+    async findings(days = 7) {
+      const mine = generation;
+      const body = await track(() => api.shadowFindings(days));
+      if (mine !== generation) throw new Error("the session changed while the list was on its way");
+      if (!isFindingsList(body)) throw new Error("not a findings list");
+      return body;
     },
     /** The session ended or locked: nothing of it stays, and nothing late comes back. */
     clear() {

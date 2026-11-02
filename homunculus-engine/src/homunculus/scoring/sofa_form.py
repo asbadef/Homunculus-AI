@@ -22,12 +22,15 @@ Three refusals are built in:
 """
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from homunculus.canonical import SignalCode
+from homunculus.canonical import Observation, SignalCode
 from homunculus.rules import sofa as sofa_rules
-from homunculus.scoring.worst import DEFAULT_WINDOW, WorstValue, worst_in_window
+from homunculus.scoring.worst import (
+    DEFAULT_WINDOW, WorstValue, readings_considered, worst_in_window,
+)
 from homunculus.state.timeline import PatientState
 
 # Organ rows scored from a single value. Respiration and cardiovascular are not here: the first
@@ -57,7 +60,12 @@ _PRESSORS: dict[str, SignalCode] = {
     "dobutamine": SignalCode.DOBUTAMINE_RATE,
 }
 
-ORGAN_FAILURE_POINTS = 3   # sepsis-3: ">= 3 for a system is organ failure for that system"
+# The organ-failure mark: a system scoring >= 3. This is the convention of the hospital's printed form, in
+# its footnote ("SOFA skoru >=3 olması o sistem için organ yetmezliği olarak tanımlanır"), kept as the
+# engine's `failure` flag. It is NOT a Sepsis-3 statement: neither the vault's Sepsis-3 extract nor its wiki
+# holds it, and its published source is still to be captured (G2-A4 review; plan O14). The screen labels
+# the mark only «≥3 puan».
+ORGAN_FAILURE_POINTS = 3
 
 
 @dataclass
@@ -78,6 +86,31 @@ class OrganRow:
     def as_dict(self) -> dict:
         return {"organ": self.organ, "points": self.points, "measured": self.measured,
                 "failure": self.failure, "inputs": [i.as_dict() for i in self.inputs]}
+
+
+@dataclass(frozen=True)
+class RespiratorySupport:
+    """The support state a PaO2/FiO2 reading is scored on (G2-A4, D13, X21): whether the patient was on
+    respiratory support when that reading was measured, and the time of the support observation that
+    says so — None when no support observation preceded the reading, which scores it off support. The
+    respiration row prints its own reading's, so whoever signs can see which bands applied and why."""
+    on_support: bool
+    at: datetime | None
+
+    def as_dict(self) -> dict:
+        return {"on_support": self.on_support,
+                "at": self.at.isoformat() if self.at is not None else None}
+
+
+@dataclass
+class RespirationRow(OrganRow):
+    """The respiration row, with the support basis it was scored on; None when the row has no ratio at
+    all, so there was nothing to score on support."""
+    support: RespiratorySupport | None = None
+
+    def as_dict(self) -> dict:
+        return {**super().as_dict(),
+                "support": self.support.as_dict() if self.support is not None else None}
 
 
 @dataclass
@@ -128,30 +161,66 @@ def _apply_override(cell: WorstValue, points_of, corrected: float | None) -> Wor
     )
 
 
+def _support_as_of(supports: list[Observation], at: datetime) -> RespiratorySupport:
+    """The support in force at `at`: the latest of `supports` (the patient's ON_RESP_SUPPORT series, oldest
+    first, over the whole record — a ventilator connected before the window is still running) stamped at
+    or before it, supported when its value is 1. With no such observation, not supported."""
+    upto = bisect.bisect_right(supports, at, key=lambda obs: obs.timestamp)
+    if upto == 0:
+        return RespiratorySupport(on_support=False, at=None)
+    basis = supports[upto - 1]
+    return RespiratorySupport(on_support=basis.value >= 1.0, at=basis.timestamp)
+
+
 def _respiration_row(state: PatientState, now: datetime, window: timedelta,
-                     overrides: dict | None = None) -> OrganRow:
+                     overrides: dict | None = None) -> RespirationRow:
     """Respiration needs two facts, and only one of them is a measurement.
 
-    The PaO2/FiO2 bands at 3 and 4 points apply only on respiratory support, so the worst PF ratio
-    has to be scored against whether the patient was supported. Support is taken as of the worst
-    reading rather than as of now: scoring an eight-hour-old ratio against a ventilator connected
-    since would credit the score for a treatment that was not running at the time.
+    The PaO2/FiO2 bands at 3 and 4 points apply only on respiratory support, so each PF ratio has to
+    be scored against whether the patient was supported when it was measured — not as of now: scoring
+    an eight-hour-old ratio against a ventilator connected since would credit the score for a treatment
+    that was not running at the time.
+
+    G2-A4 (D13, X21) — in order: the readings are the window's, or the fallback before it
+    (`readings_considered`, as for every cell); each carries its own support state, the latest support
+    observation at or before ITS time over the whole record (`_support_as_of`) — so a «no» timed before
+    a reading turns that reading off support, and a «yes» charted after it does not reach back; each is
+    scored on its own state; the row is the window's worst SCORE — the most points, then the lower ratio,
+    then the later reading — and carries that reading's support basis (`support`). A clinician's
+    correction is scored on the support of the reading it corrects; one typed over a cell with no
+    reading has no time to look the support up at and is scored off support (the API sends none since
+    review 3: `parse_overrides` refuses a correction of an unmeasured cell, M-2). `support` is None when the
+    row has no ratio at all. This replaces "any «yes» in the window, else the latest". The alerting
+    SOFA (rules/sofa.py) still reads the latest support, as it reads the latest ratio.
     """
-    since = now - window
-    supported_at = {o.timestamp for o in state.window(SignalCode.ON_RESP_SUPPORT, since, now)
-                    if o.value >= 1.0}
-    latest_support = state.latest(SignalCode.ON_RESP_SUPPORT)
-    fallback_support = bool(latest_support is not None and latest_support.value >= 1.0)
+    readings, outside = readings_considered(state, SignalCode.PAO2_FIO2, now, window)
+    corrected = (overrides or {}).get(SignalCode.PAO2_FIO2)
+    if readings:
+        supports = state.history(SignalCode.ON_RESP_SUPPORT)
+        scored = [(reading, _support_as_of(supports, reading.timestamp)) for reading in readings]
+
+        def rank(item: tuple[Observation, RespiratorySupport]):
+            reading, support_then = item
+            points = sofa_rules.respiration_points_of(reading.value, support_then.on_support)
+            return (points, -reading.value, reading.timestamp)
+
+        reading, support = max(scored, key=rank)
+        worst = WorstValue(
+            code=SignalCode.PAO2_FIO2, value=reading.value, at=reading.timestamp,
+            points=sofa_rules.respiration_points_of(reading.value, support.on_support),
+            source=reading.source_device, considered=0 if outside else len(readings),
+            outside_window=outside)
+    else:
+        worst = WorstValue(code=SignalCode.PAO2_FIO2, value=None, at=None, points=0, considered=0)
+        if corrected is None:
+            return RespirationRow(organ="respiration", points=0, inputs=[worst], support=None)
+        support = RespiratorySupport(on_support=False, at=None)
 
     def points_of(pf: float) -> int:
-        # Supported if any support observation exists in the window, else the last known state.
-        on_support = bool(supported_at) or fallback_support
-        return sofa_rules.respiration_points_of(pf, on_support)
+        return sofa_rules.respiration_points_of(pf, support.on_support)
 
-    worst = worst_in_window(state, SignalCode.PAO2_FIO2, points_of, now, window,
-                            higher_is_worse=False)
-    worst = _apply_override(worst, points_of, (overrides or {}).get(SignalCode.PAO2_FIO2))
-    return OrganRow(organ="respiration", points=worst.points, inputs=[worst])
+    worst = _apply_override(worst, points_of, corrected)
+    return RespirationRow(organ="respiration", points=worst.points, inputs=[worst], support=support)
 
 
 def _cardiovascular_row(state: PatientState, now: datetime, window: timedelta,

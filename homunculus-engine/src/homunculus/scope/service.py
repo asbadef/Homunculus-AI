@@ -89,11 +89,10 @@ async def read_own_patient_ids(
     in SQL because it is encrypted at rest, so it is selected and compared in Python; that is
     why this returns a list rather than a subquery.
 
-    ⚠️ **This rule is only as good as that column.** An admission created without a HIS
-    reference produces no identifier to match, so its care team gets no own-patient exemption
-    and the clinician sees that patient only if their unit or bed grant reaches them. That is a
-    gap in the admission path, not here, and it is silent by nature — which is why the caller
-    publishes `own_patients` as a count the screen can show.
+    Since Group 2 · B1a a patient admitted here is on the board under its Homunculus patient
+    number (`Patient.patient_number`, in the clear), so both identifiers are returned: the number
+    reaches the card a `kabul` admission made, the HIS reference the card the HIS feed made. A
+    patient with both is two identifiers, and `own_patients` counts identifiers.
 
     An ON-CALL link carries a window (§3.3). A window that has closed is not coverage, so an
     expired row grants nothing; `is_active` alone would keep yesterday's on-call physician
@@ -103,7 +102,7 @@ async def read_own_patient_ids(
 
     moment = now or datetime.now(timezone.utc)
     result = await db.execute(
-        select(Patient.his_patient_reference,
+        select(Patient.his_patient_reference, Patient.patient_number,
                CareTeamMember.window_start, CareTeamMember.window_end)
         .select_from(CareTeamMember)
         .join(Admission, CareTeamMember.admission_id == Admission.id)
@@ -115,8 +114,11 @@ async def read_own_patient_ids(
             Patient.tenant_id == tenant_id,
         )
     )
-    return [ref for ref, start, end in result.all()
-            if ref and _window_open(start, end, moment)]
+    own: list[str] = []
+    for his, number, start, end in result.all():
+        if _window_open(start, end, moment):
+            own.extend(ref for ref in (his, number) if ref and ref not in own)
+    return own
 
 
 def _window_open(start: datetime | None, end: datetime | None, now: datetime) -> bool:

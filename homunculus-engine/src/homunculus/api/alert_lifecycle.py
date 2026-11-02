@@ -42,6 +42,9 @@ from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditEvent, AuditLog
+# What a tombstone is — a discharged `kabul` record — is said once, beside `KABUL` (A-25, O1);
+# imported here for the doors and the escalation cycle, which read it from this module.
+from homunculus.api.patient_identity import is_tombstone  # noqa: F401
 from homunculus.pipeline import Engine
 
 #: The one severity that latches (D2, the user's decision of 2026-10-25).
@@ -55,10 +58,6 @@ DISCHARGED = "discharged"                     # the patient was discharged here 
 #: The audit row a reading for a discharged number leaves (G2-A11, D3): subject = the signal code,
 #: payload {patient_id, code}, no value. How the ward learns a monitor still carries the number.
 READING_DROPPED = "reading_dropped_discharged"
-
-#: The identity source of an admission made in Homunculus (Lane B's B1a, `patient_identity.KABUL`
-#: on its branch). Here until the merge unifies the two (spec O1).
-KABUL_SOURCE = "kabul"
 
 Key = tuple[str, str]
 
@@ -75,13 +74,6 @@ class Cleared:
     def payload(self, at: datetime) -> dict:
         return {"first_seen": self.first_seen.isoformat() if self.first_seen is not None else None,
                 "at": at.isoformat(), "reason": self.reason, "severity": self.severity}
-
-
-def is_tombstone(record) -> bool:
-    """A discharged `kabul` record (G2-A11, D4): the patient left, the record stays so that a
-    reading still arriving for the number never brings the patient back. A HIS discharge is not
-    one: its card keeps today's 24-hour retention, and its readings are still evaluated."""
-    return record is not None and record.state == "discharged" and record.source == KABUL_SOURCE
 
 
 def firing_keys(engine: Engine) -> set[Key]:

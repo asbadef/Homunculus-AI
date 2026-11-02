@@ -7,8 +7,9 @@ import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
-import { hhmm } from "../../i18n/dates.js";
+import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, point, trends } from "./trends/trends.testutil.js";
+import { sofaForm } from "./sofa/sofa.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -55,15 +56,18 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the three things it writes", async () => {
+  it("names the bed and the patient, and says the four things it writes and that the SOFA form is signed too", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/üç şey yazır/);
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması və dərman \/ maye qeydi/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/dörd şey yazır/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi və SOFA formasından daxil edilən ölçmələr/);
+    // G2-A4 review 2: signing needs scores.sign only — a right of its own, not one on top of clinical.chart.
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/imzası ayrıca scores\.sign səlahiyyəti tələb edir/);
+    expect(screen.getByText(/heç nə yazılmır/)).not.toHaveTextContent(/əlavə olaraq/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -354,12 +358,16 @@ describe("the patient screen", () => {
       expect(document.querySelector("[data-trends-box]")).not.toBeNull();
     });
 
-    it("keep the forms seam as one note, which no longer promises the patient's normal", async () => {
-      await open({ payload: board([entry("S-001", [], FULL)]) });
-      const seam = screen.getByText(/növbəti qrupda əlavə olunacaq/).closest("[role='note']");
-      expect(seam).not.toBeNull();
-      expect(seam).toHaveTextContent(/SOFA/);
-      expect(seam).not.toHaveTextContent(/norma/);
+    // G2-A4 (D1): the forms seam is gone; the SOFA box stands where it stood and reads THIS patient's form.
+    it("the SOFA box stands where the forms note stood: after the Sepsis and medication row, before the trends", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), setup: (a) => a.severityForm.mockResolvedValue(sofaForm()) });
+      const sofa = screen.getByRole("heading", { level: 2, name: "SOFA forması" });
+      const meds = screen.getByRole("heading", { level: 2, name: /Dərman/ });
+      const trends = screen.getByRole("heading", { level: 2, name: "Vital qrafikləri" });
+      expect(meds.compareDocumentPosition(sofa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(sofa.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText(/növbəti qrupda əlavə olunacaq/)).toBeNull();
+      expect(api.severityForm).toHaveBeenCalledWith("S-001");
     });
 
     it("read the 24-hour trends of the patient the screen shows", async () => {
@@ -982,5 +990,195 @@ describe("the monitor strip on the patient screen", () => {
     mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" })).toHaveTextContent("Monitor zolağı oxunmur");
+  });
+
+  // Aşama B: at «rules» the shadow engine DOES score these values (advice, alarm off). The foot that says
+  // no score comes from them is the «shadow» stage's, and would be false here.
+  it("says at its foot what the stage makes of the values: no score at «shadow», an advisory shadow score at «rules»", async () => {
+    await withStrip(linked());
+    let region = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+    expect(region).not.toHaveTextContent("kölgə bal");
+    cleanup();
+    await withStrip({ ...linked(), stage: "rules" });
+    region = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(region).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(region).toHaveTextContent("«Kölgə tövsiyə · siqnal söndürülüb»");
+    expect(region).toHaveTextContent("əsas siqnal çarpayı yanındakı monitorun öz siqnalıdır");
+    expect(region).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+  });
+});
+
+// Aşama B (D7): the shadow engine's picture of a monitor-linked patient — {news2, vitals, findings}, null
+// without a monitor link. The monitor's inputs it read are cards in the measured-values box, marked as the
+// monitor's and written in plain ink; the box «Gölge öneri» follows the strip. Neither is ever rendered
+// for a patient with no `shadow`, and nothing the engine found is changed by either.
+describe("the shadow on the patient screen", () => {
+  const AT_HR = ago(120);
+  const AT_SBP = ago(60);
+  const SHADOW = {
+    news2: { total: 6, partial: false, missing: [], stale: [], assumed: [], breakdown: { pulse: 2 },
+      red_param: false, measured_at: { pulse: AT_HR, systolic_bp: AT_SBP }, fresh_until: { pulse: ago(-780), systolic_bp: ago(-840) } },
+    vitals: {
+      heart_rate: { value: 140, unit: "bpm", at: AT_HR, source: "monitor", via: "hr" },
+      sbp: { value: 88, unit: "mmHg", at: AT_SBP, source: "monitor", via: "art" },
+    },
+    findings: [{ kind: "news2", severity: "high", urgency: "immediate", summary: "NEWS2 6 on the monitor's inputs",
+      evidence: [], relation: "shadow_only", stale_inputs: [], downgraded: false, since: AT_HR }],
+  };
+  const reasoned = alarm("septic_shock", "critical", { summary: "Septik şok ölçütleri karşılandı",
+    clinical_reasoning: "MAP 58 on a vasopressor with lactate 4.1 mmol/L after fluids." });
+  const withShadow = (shadow, alarms = []) => board([entry("S-001", alarms, { ...FULL, shadow })]);
+  const vitalsBox = () => within(screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" }).closest(".rounded-box"));
+  const cards = () => [...document.querySelectorAll("[data-shadow-vital]")];
+
+  it("shows the box and one card per shadow input", async () => {
+    await open({ payload: withShadow(SHADOW) });
+    expect(document.querySelectorAll("[data-shadow-box]")).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 2, name: "Kölgə tövsiyə" })).toBeInTheDocument();
+    expect(cards()).toHaveLength(2);
+    // The cards sit in the measured-values box, after the engine's own six.
+    const box = screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" }).closest(".rounded-box");
+    for (const card of cards()) expect(box.contains(card)).toBe(true);
+    const names = [...document.querySelectorAll("[data-shadow-vital] dt")].map((el) => el.textContent);
+    expect(names).toEqual(["Nəbz", "Sistolik AT"]);
+  });
+
+  it("writes each input by channel code: the value in plain ink, the screen's unit word, the monitor's label, the stamp and its age", async () => {
+    // The clock is pinned to noon of a LOCAL day and the stamps sit minutes before it, so they are «today»
+    // in whatever zone the suite runs: NOW is a fixed UTC instant, which is just past local midnight at
+    // UTC−10 and at UTC+14, where two minutes earlier is yesterday.
+    const noon = new Date(2026, 9, 8, 12, 0, 0).getTime();
+    vi.setSystemTime(noon);
+    const atHr = new Date(noon - 180_000).toISOString();
+    const atSbp = new Date(noon - 120_000).toISOString();
+    await open({ payload: withShadow({ ...SHADOW, vitals: {
+      heart_rate: { ...SHADOW.vitals.heart_rate, at: atHr }, sbp: { ...SHADOW.vitals.sbp, at: atSbp },
+    } }) });
+    const [hr, sbp] = cards();
+    expect(hr).toHaveTextContent("140");
+    expect(hr).toHaveTextContent("/dəq");                      // board.unitBpm, never the wire's "bpm"
+    expect(hr).not.toHaveTextContent("bpm");
+    // The measured cards' «hh:mm · age», mirrored: a monitor number with no age cannot be told from one
+    // that stopped arriving an hour ago.
+    expect(hr).toHaveTextContent(`monitor · HR · ${hhmm(Date.parse(atHr))} · 3 dəq əvvəl`);
+    expect(sbp).toHaveTextContent("88");
+    expect(sbp).toHaveTextContent("mmHg");
+    expect(sbp).toHaveTextContent(`monitor · ART · ${hhmm(Date.parse(atSbp))} · 2 dəq əvvəl`);
+    expect(hr.querySelector("small:last-child")).toHaveTextContent(/^monitor · HR/);
+  });
+
+  it("ages the shadow box's NEWS2 by its newest input, on the screen's clock", async () => {
+    await open({ payload: withShadow(SHADOW) });
+    const line = document.querySelector("[data-shadow-box] [data-shadow-news2]");
+    expect(line).toHaveTextContent(/^Kölgə NEWS2:\s*6/);
+    expect(line).toHaveTextContent("60 san əvvəl");            // AT_SBP, the newer of the two
+  });
+
+  it("says the shadow has no finding only from a live board; off it, that it cannot know", async () => {
+    const none = withShadow({ ...SHADOW, findings: [] });
+    await open({ payload: none });
+    let note = within(document.querySelector("[data-shadow-box]")).getByRole("note");
+    expect(note).toHaveTextContent("Monitor girişləri ilə açıq tapıntı yoxdur.");
+    expect(note).toHaveAttribute("data-tone", "info");
+    cleanup();
+    await open({ payload: none, connection: "degraded" });
+    note = within(document.querySelector("[data-shadow-box]")).getByRole("note");
+    expect(note).toHaveTextContent("Panel güncəl deyil; kölgə tapıntının olub-olmadığı bilinmir.");
+    expect(note).toHaveAttribute("data-tone", "warn");
+    expect(document.querySelector("[data-shadow-box]")).not.toHaveTextContent("açıq tapıntı yoxdur");
+  });
+
+  it("never dresses a monitor value as one of the engine's: no vital identity colour on any shadow card", async () => {
+    await open({ payload: withShadow(SHADOW) });
+    expect(cards()).toHaveLength(2);
+    for (const card of cards()) {
+      expect(card.outerHTML).not.toMatch(/text-v-/);
+      expect(card.querySelector("b")).toHaveClass("text-ink");
+    }
+    // …while the engine's own heart-rate card still carries its colour.
+    const box = screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" }).closest(".rounded-box");
+    const mine = [...box.querySelectorAll("dt")].filter((el) => el.textContent === "Nəbz" && !el.closest("[data-shadow-vital]"));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toHaveClass("text-v-hr");
+  });
+
+  it("writes the day and month of an input that is not from today (the Meds box's rule)", async () => {
+    const yesterday = new Date(NOW - 24 * 3600_000).toISOString();
+    await open({ payload: withShadow({ ...SHADOW, vitals: { heart_rate: { ...SHADOW.vitals.heart_rate, at: yesterday } } }) });
+    expect(cards()[0]).toHaveTextContent(`monitor · HR · ${ddmm(Date.parse(yesterday))} ${hhmm(Date.parse(yesterday))}`);
+  });
+
+  it("puts the box after the monitor strip and before the engine's findings", async () => {
+    const mounted = await open({ payload: withShadow(SHADOW) });
+    mounted.api.shadowBoard.mockResolvedValue({
+      ...strip({ beds: [monitorBed("REA-01 · 2", [monitorParam("hr", 72)], { link: "one", patient_id: "S-001" })] }), stage: "rules",
+    });
+    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); await settle(); });
+    const monitorStrip = document.querySelector("[data-monitor-strip]");
+    const shadowBox = document.querySelector("[data-shadow-box]");
+    const findings = screen.getByRole("heading", { level: 2, name: "Mühərrikin tapıntıları" });
+    expect(monitorStrip).not.toBeNull();                       // the strip draws at the rules stage too
+    expect(monitorStrip.compareDocumentPosition(shadowBox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shadowBox.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows neither box nor cards for a patient without a shadow", async () => {
+    for (const shadow of [null, undefined]) {
+      await open({ payload: board([entry("S-001", [], { ...FULL, ...(shadow === null ? { shadow } : {}) })]) });
+      expect(document.querySelector("[data-shadow-box]")).toBeNull();
+      expect(cards()).toEqual([]);
+      expect(screen.queryByText("Kölgə tövsiyə")).toBeNull();
+      // The engine's six measured cards are all there is.
+      expect(vitalsBox().getByText("118")).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it("leaves the engine's findings and the risk pill exactly as they are, with or without a shadow", async () => {
+    const read = () => ({
+      header: screen.getByRole("heading", { level: 1 }).closest("header").textContent,
+      findings: screen.getByRole("heading", { level: 2, name: "Mühərrikin tapıntıları" }).closest("section").textContent,
+      cards: screen.getAllByRole("heading", { level: 3, name: "Septik şok ölçütleri karşılandı" }).length,
+    });
+    await open({ payload: withShadow(null, [reasoned]) });
+    const without = read();
+    cleanup();
+    await open({ payload: withShadow(SHADOW, [reasoned]) });
+    expect(document.querySelector("[data-shadow-box]")).not.toBeNull();
+    expect(read()).toEqual(without);
+    expect(without.cards).toBe(1);
+    expect(without.header).toContain("Kritik");
+    // The shadow's own finding is not among the engine's: it is the box's, with the box's words.
+    expect(screen.queryByRole("heading", { level: 3, name: /NEWS2 6 on the monitor's inputs/ })).toBeNull();
+  });
+
+  it("a patient with a shadow and no measurement of its own still says no measurement arrived, above the cards", async () => {
+    await open({ payload: board([entry("S-001", [], { identity: identity(), shadow: SHADOW })]) });
+    expect(vitalsBox().getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
+    expect(cards()).toHaveLength(2);
+  });
+
+  it("prints an input it has no word for as the engine sent it, never as a guess", async () => {
+    await open({ payload: withShadow({ ...SHADOW, vitals: {
+      etco2: { value: 31, unit: "mmHg", at: AT_HR, source: "monitor", via: "capno" },
+      constructor: { value: 1, unit: "x", at: AT_HR, source: "monitor", via: "toString" },
+    } }) });
+    const [a, b] = cards();
+    expect(a.querySelector("dt")).toHaveTextContent("etco2");
+    expect(a).toHaveTextContent("31");
+    expect(a).toHaveTextContent("mmHg");                       // no code, no screen unit word: the engine's
+    expect(a).toHaveTextContent("monitor · capno");            // not «HR»
+    expect(b.querySelector("dt")).toHaveTextContent("constructor");
+    expect(b).toHaveTextContent("monitor · toString");
+  });
+
+  it("has no live region for the shadow: values and findings are read when the reader goes there", async () => {
+    await open({ payload: withShadow(SHADOW) });
+    for (const el of [document.querySelector("[data-shadow-box]"), ...cards()]) {
+      expect(el.matches("[aria-live], [role='alert'], [role='status']")).toBe(false);
+      expect(el.querySelector("[aria-live], [role='alert'], [role='status']")).toBeNull();
+    }
   });
 });

@@ -23,7 +23,7 @@
 // HEARTBEAT_MS of silence (api/app.py `sse_board_frames`); a stream that says nothing — no frame,
 // no heartbeat — for STREAM_SILENCE_MS is dropped like a failed one: DEGRADED, a reconnect, and
 // LIVE again only through its open and that open's reload.
-import { patientFromBoard, patientsFromBoard, alertsFromPatients } from "../../liveAdapters.js";
+import { patientFromBoard, patientsFromBoard, alertsFromPatients, alertsEqual } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
 
 export const RECONNECT_DELAY_MS = 5000;
@@ -97,8 +97,24 @@ export function createBoardStore({
   // the engine timestamps a reading by ITS clock, so an age measured by a ward tablet's clock is
   // wrong by however wrong that tablet is — and wrong in the reassuring direction half the time.
   const skewNow = () => (typeof api?.serverClockSkewMs === "function" ? api.serverClockSkewMs() : null);
-  const withPatients = (patients, patch = {}) =>
-    set({ patients, alerts: alertsFromPatients(patients), clockSkewMs: skewNow(), ...patch });
+  // `alerts` is derived from the patients on every change, and would be a fresh array each time.
+  // When it comes out the same as the one held — every alert equal field by field
+  // (liveAdapters.js `alertsEqual`) — the held ARRAY is kept, so its identity changes only when an
+  // alert does. The critical-alarm notification re-runs on that identity (AlarmSignals.jsx), and
+  // re-raises there a notification somebody dismissed for an alarm still waiting. Since Aşama B
+  // the API republishes a monitor-linked patient's real card about once a minute (the sampler,
+  // engine `_sample_and_publish`) with only its `shadow` picture new — which never reaches
+  // `alerts` — so without this a dismissed critical came back within the minute on a background
+  // tab or a phone, vibrating. It also stops that on any real frame or reload that changes no
+  // alert (new readings, NEWS2 stamps, the antibiotic clock). An alert that CHANGES — a new one,
+  // its status, severity, escalation, acknowledgement, a new episode — still gives a new array,
+  // and so still raises again what was dismissed. The patients themselves are always the new ones:
+  // the card shows the frame it was sent.
+  const withPatients = (patients, patch = {}) => {
+    const next = alertsFromPatients(patients);
+    const alerts = alertsEqual(state.alerts, next) ? state.alerts : next;
+    set({ patients, alerts, clockSkewMs: skewNow(), ...patch });
+  };
   const applyFrame = (patients, frame) => (frame.removed
     ? patients.filter((p) => p.patient_id !== frame.patient.patient_id)
     : upsert(patients, frame.patient));
@@ -368,6 +384,36 @@ export function createBoardStore({
       if (mine !== generation) return null;
       await refresh();
       return answer;
+    },
+    /**
+     * The SOFA severity form of one patient (G2-A4, `GET /scores/sofa/{id}`, permission `board.view`):
+     * the engine's filled form with its `last_signed` and `min_reason_chars` (D7). A read — the engine
+     * writes a `score` row in its audit (spec O4) and nothing on the board — so nothing is applied here.
+     * Through `track`, as every call the board makes; an answer that arrives after `clear()` (the session
+     * ended) is dropped: it resolves to null, as `chart`'s does.
+     */
+    async sofaForm(patientId) {
+      const mine = generation;
+      const form = await track(() => api.severityForm(patientId));
+      return mine === generation ? form : null;
+    },
+    /** The form a signature would seal with these corrections, signed by nobody (D6; the preview route,
+     *  review 2 C1; permission `scores.sign`, no audit row). `overrides` is `[{code, value, reason}]`; the
+     *  answer carries the `expect` a signature of it sends back. Rejects with the API's own error. */
+    async sofaPreview(patientId, overrides) {
+      const mine = generation;
+      const answer = await track(() => api.previewSeverityForm(patientId, { overrides }));
+      return mine === generation ? answer : null;
+    },
+    /** Sign the form with these corrections (D6, permission `scores.sign`): the engine re-scores and seals
+     *  it into the audit chain — only if the record is still the one the preview whose `expect` this is
+     *  scored (review 2, C2; else a 409, nothing signed). Rejects with the API's own error, having changed
+     *  nothing here. The board is not reloaded — a signature changes no card; the SOFA box reads its form
+     *  again for the new line. */
+    async sofaSign(patientId, overrides, expect) {
+      const mine = generation;
+      const answer = await track(() => api.signSeverityForm(patientId, { overrides, expect }));
+      return mine === generation ? answer : null;
     },
     /** Load, then stream (LIVE once the stream has opened and its reload landed). Resolves once
      *  the first load and the first ticket are done. */

@@ -14,9 +14,10 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
-import { NOW, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
+import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { alarmCounts, alarmsToSignal, lockSummary, waitingAlarms } from "../../data/boardStore.js";
+import { CONNECTION } from "../../../liveConnection.js";
 import { ShellProvider } from "../../shell/ShellContext.jsx";
 import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
@@ -43,8 +44,9 @@ function Probe() {
   return <p data-testid="signals">{`${sound} ${notify}`}</p>;
 }
 
-const reaBed = (id, bedLabel, alarms) => entry(id, alarms, {
+const reaBed = (id, bedLabel, alarms, shadow) => entry(id, alarms, {
   identity: identity({ patient_id: id, bed_label: bedLabel, bed_id: bedLabel.replace(" · ", "-") }), at: measured(30),
+  ...(shadow === undefined ? {} : { shadow }),
 });
 const WARD = [
   reaBed("S-001", "REA-01 · 1", [alarm("septic_shock", "critical")]),
@@ -60,6 +62,28 @@ const ALARMING = strip({
   ],
   unassigned: [unassigned("192.0.2.28", "table_unassigned", [param("hr", 180)])],
 });
+
+// Aşama B: the shadow engine's picture of a monitor-linked patient, as alarming as it gets — a NEWS2 of
+// 13 and two CRITICAL findings that only the shadow opened, on the monitor's HR 180 / SpO2 70. It is
+// advice with every alarm off: none of it may reach the sound, the notification, the bell or the lock.
+const SHADOW_FINDING = (kind) => ({
+  kind, severity: "critical", urgency: "immediate", summary: `${kind} on the monitor's inputs`, evidence: [],
+  relation: "shadow_only", stale_inputs: [], downgraded: false, since: ago(120),
+});
+const ALARMING_SHADOW = {
+  news2: { total: 13, partial: true, missing: ["respiration_rate", "temperature"], stale: [], assumed: ["air_or_oxygen", "consciousness"],
+    breakdown: { pulse: 3, spo2: 3 }, red_param: true, measured_at: { pulse: ago(5), spo2: ago(5) }, fresh_until: {} },
+  vitals: {
+    heart_rate: { value: 180, unit: "bpm", at: ago(5), source: "monitor", via: "hr" },
+    spo2: { value: 70, unit: "%", at: ago(5), source: "monitor", via: "spo2" },
+  },
+  findings: [SHADOW_FINDING("septic_shock"), SHADOW_FINDING("news2")],
+};
+const SHADOWED_WARD = [
+  reaBed("S-001", "REA-01 · 1", [alarm("septic_shock", "critical")], ALARMING_SHADOW),
+  reaBed("S-002", "REA-01 · 2", [alarm("news2", "high")]),
+  reaBed("S-003", "REA-01 · 3", [], ALARMING_SHADOW),
+];
 
 /** One run of the ward. Returns everything the alarm path reads or says. */
 async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
@@ -123,6 +147,13 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
     alarmCounts: alarmCounts(state),
     lockSummary: lockSummary(state),
     board: JSON.stringify({ patients: state.patients, alerts: state.alerts, connection: state.connection, loaded: state.loaded }),
+    // The board with each card's shadow taken out: what the alarm path could read besides it.
+    boardSansShadow: JSON.stringify({
+      patients: state.patients.map(({ shadow: _shadow, ...rest }) => rest),
+      alerts: state.alerts, connection: state.connection, loaded: state.loaded,
+    }),
+    shadowCards: state.patients.filter((p) => p.shadow).length,
+    shadowTags: document.querySelectorAll("[data-shadow-tag]").length,
     boardUntouchedByPolls: state === boardBefore,
     cardsInOrder,
     cards,
@@ -161,6 +192,27 @@ describe("the monitor strip never reaches the alarm path", () => {
     expect(on.cards[0]).toMatch(/data-rail=/);                 // the comparison holds the rail and the pill
   });
 
+  it("gives the alarm path identical inputs and outputs with or without the shadow engine's critical shadow-only findings", async () => {
+    const plain = await run({ shadow: STAGE_OFF });
+    const shadowed = await run({ patients: SHADOWED_WARD, shadow: { ...ALARMING, stage: "rules" } });
+    // Not vacuous: the shadow reached the board's cards and was drawn on two beds, beside a strip that
+    // was polled at the rules stage.
+    expect(plain.shadowCards).toBe(0);
+    expect(shadowed.shadowCards).toBe(2);
+    expect(plain.shadowTags).toBe(0);
+    expect(shadowed.shadowTags).toBe(2);
+    expect(shadowed.shadowAsked).toBe(10);
+    expect(plain.pulses.length).toBeGreaterThan(0);
+    expect(plain.notifications.length).toBeGreaterThan(0);
+    expect(plain.waitingAlarms.items).toHaveLength(2);
+    for (const key of ["pulses", "audible", "notifications", "signals", "alarmsToSignal", "waitingAlarms", "alarmCounts",
+      "lockSummary", "boardSansShadow", "cardsInOrder", "cards", "waitingLine"]) {
+      expect(shadowed[key], key).toEqual(plain[key]);
+    }
+    expect(shadowed.board).not.toEqual(plain.board);            // the harness does see the shadow on the board
+    expect(shadowed.boardUntouchedByPolls).toBe(true);
+  });
+
   it("the harness sees a real difference: one more critical alarm changes what the alarm path says", async () => {
     const off = await run({ shadow: STAGE_OFF });
     const more = await run({
@@ -171,5 +223,110 @@ describe("the monitor strip never reaches the alarm path", () => {
     expect(more.alarmCounts).not.toEqual(off.alarmCounts);
     expect(more.notifications).not.toEqual(off.notifications);
     expect(more.cardsInOrder).not.toEqual(off.cardsInOrder);
+  });
+});
+
+// Aşama B (D1/D7): at the stage `rules` the API republishes a monitor-linked patient's REAL card about
+// once a minute (engine `_sample_and_publish`) — the real alarms exactly as they were, the shadow
+// picture, the NEWS2 stamps, the readings and the antibiotic clock new. Those republishes are not a
+// change of any alarm, so a critical notification somebody dismissed on a background tab or a phone
+// stays dismissed through them (boardStore.js `withPatients` keeps the `alerts` array); and it is
+// raised again the moment an alarm really changes — its escalation, or a new critical.
+describe("the sampler's republishes never bring back a dismissed critical notification", () => {
+  const at = (seconds) => new Date(NOW + seconds * 1000).toISOString();
+  /** Minute `m` of the sampler: one linked card again, its real alarms as given, everything else new. */
+  const republished = (id, bedLabel, alarms, m) => {
+    const card = reaBed(id, bedLabel, alarms, {
+      ...ALARMING_SHADOW,
+      news2: { ...ALARMING_SHADOW.news2, total: 11 + (m % 3), measured_at: { pulse: at(m * 60), spo2: at(m * 60) } },
+      vitals: { ...ALARMING_SHADOW.vitals, heart_rate: { ...ALARMING_SHADOW.vitals.heart_rate, value: 170 + m, at: at(m * 60) } },
+      findings: ALARMING_SHADOW.findings.map((f) => ({ ...f, summary: `${f.summary} (${m})` })),
+    });
+    return {
+      ...card,
+      latest: { ...card.latest, heart_rate: 118 + m, news2: news2({ total: 5, measured_at: { pulse: at(m * 60) } }) },
+      meds: { pressors: {}, on_pressor: false, antibiotic_given: false, antibiotic_at: null, creatinine: null, weight_kg: null,
+        antibiotic_clock: { recognized_at: ago(600), deadline: at(3000), remaining_sec: 3000 - m * 60, elapsed_sec: 600 + m * 60, met: null } },
+    };
+  };
+  const minuteOfTheSampler = (m, s001 = [alarm("septic_shock", "critical")], s003 = []) => [
+    republished("S-001", "REA-01 · 1", s001, m), republished("S-003", "REA-01 · 3", s003, m),
+  ];
+
+  it("does not raise again what was dismissed while only the shadow, the stamps and the clock change, and does once an alarm changes", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(NOW);
+    localStorage.setItem("hmc.alarmSound", "on");
+    const audio = fakeAudio();
+    const notes = fakeNotifications("granted");
+    page = onPage({ AudioContext: audio.AudioContext, Notification: notes.Notification });
+    onlyScreens({}, { keep: [] });
+    const view = await mount(
+      <>
+        <Probe />
+        <ShellProvider units={[]} scope="known"><BedsScreen /></ShellProvider>
+      </>,
+      { setup: (api) => {
+        api.boardPatients.mockResolvedValue(board(SHADOWED_WARD));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        api.shadowBoard.mockResolvedValue({ ...ALARMING, stage: "rules" });
+      } },
+    );
+    await act(async () => { view.board.start(); });
+    await flush();
+    await act(async () => { view.stream.open(); });
+    await flush();
+    await act(async () => { view.shadow.start(PERMS); });
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Risk sırası" }));
+    await flush();
+
+    act(() => { page.setHidden(true); });
+    await flush();
+    expect(notes.shown).toHaveLength(1);                           // S-001's critical, on a background tab
+    expect(notes.shown[0].body).toMatch(/REA-01 · 1/);
+    act(() => { notes.shown[0].dismiss(); });                      // the user swipes it away
+    expect(notes.open()).toHaveLength(0);
+
+    // Five minutes of the sampler: each minute both linked cards again (heartbeats in between, so the
+    // stream stays LIVE), the real alarms as they were, the shadow picture and every stamp new.
+    for (let m = 1; m <= 5; m += 1) {
+      for (let beat = 0; beat < 4; beat += 1) {
+        act(() => { vi.advanceTimersByTime(15_000); view.stream.heartbeat(); });
+        await flush();
+      }
+      for (const card of minuteOfTheSampler(m)) act(() => { view.stream.frame(card); });
+      await flush();
+    }
+    const state = view.board.getState();
+    // Not vacuous: the republishes landed — the cards show minute 5's shadow, readings and clock — on a
+    // LIVE board whose critical still waits.
+    expect(state.connection).toBe(CONNECTION.LIVE);
+    expect(state.patients.find((p) => p.patient_id === "S-001").shadow.news2.total).toBe(11 + (5 % 3));
+    expect(state.patients.find((p) => p.patient_id === "S-001").vitals.hr).toBe(123);
+    expect(state.patients.find((p) => p.patient_id === "S-003").meds.antibiotic_clock.remaining_sec).toBe(2700);
+    expect(document.querySelectorAll("[data-shadow-tag]")).toHaveLength(2);
+    expect(waitingAlarms(state).items.map((a) => a.id)).toEqual(["S-001::septic_shock", "S-002::news2"]);
+    // …and the dismissed notification was never raised again.
+    expect(notes.shown).toHaveLength(1);
+    expect(notes.open()).toHaveLength(0);
+
+    // An alarm that CHANGES raises it again: S-001's critical escalates.
+    act(() => { view.stream.frame(republished("S-001", "REA-01 · 1", [alarm("septic_shock", "critical", { escalated: true })], 6)); });
+    await flush();
+    expect(notes.shown).toHaveLength(2);
+    expect(notes.open().map((n) => n.body)).toEqual([notes.shown[0].body]);
+    // A new critical — on the shadow's own bed, S-003 — raises its own; a republish after it, none.
+    act(() => { view.stream.frame(republished("S-003", "REA-01 · 3", [alarm("septic_shock", "critical")], 6)); });
+    await flush();
+    expect(notes.shown).toHaveLength(3);
+    expect(notes.shown[2].body).toMatch(/REA-01 · 3/);
+    act(() => { notes.shown[2].dismiss(); });
+    for (const card of minuteOfTheSampler(7, [alarm("septic_shock", "critical", { escalated: true })], [alarm("septic_shock", "critical")])) {
+      act(() => { view.stream.frame(card); });
+    }
+    await flush();
+    expect(notes.shown).toHaveLength(3);
+    expect(notes.open()).toHaveLength(1);
   });
 });

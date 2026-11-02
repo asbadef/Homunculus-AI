@@ -18,13 +18,14 @@ is a durable queue, not a fire-and-forget one.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
 from homunculus.api.audit import (
-    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, since_utc)
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, kinds_of, since_utc)
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -40,13 +41,88 @@ def to_sync_url(url: str) -> str:
     return url
 
 
+# Time bounds for every sync engine the API calls on its event loop (spec 2026-11-01, D1). A
+# database that accepts a connection and then says nothing — an overloaded container, a lock held
+# by a migration, a half-open connection — would otherwise hold the loop, and every request of the
+# API with it, until the operating system's TCP timeout: minutes in which nothing reaches the
+# ward's screens. libpq applies each of these; psycopg2 passes them through.
+#
+# A connection not made in 3 s is not coming: the database answers a healthy start in milliseconds.
+CONNECT_TIMEOUT_S = 3
+# An idle pooled connection whose peer has gone is found by keepalives rather than by the next
+# request: the first probe after 10 s of silence, then one every 5 s. On Linux TCP_USER_TIMEOUT
+# (below) overrides the count: the connection is dropped at about idle + interval (≈15 s), after the
+# first unanswered probe, and KEEPALIVES_COUNT has no effect there. Where TCP_USER_TIMEOUT does not
+# exist, the count applies if the system supports it: dead after 3 unanswered.
+KEEPALIVES_IDLE_S = 10
+KEEPALIVES_INTERVAL_S = 5
+KEEPALIVES_COUNT = 3
+# Data sent and not acknowledged for 4 s drops the connection — the value Lane B's device-bed
+# reader already uses — and on Linux it also decides when keepalive gives up (above). Linux only;
+# libpq ignores it where the socket option does not exist.
+TCP_USER_TIMEOUT_MS = 4000
+# Not libpq's but the pool's (D2): a checkout waits at most 3 s for a free connection, so a pool
+# held by stalled queries fails the next request instead of queueing it behind them.
+POOL_TIMEOUT_S = 3
+# The audit engine's statement bound (D2), the widest of the engines': each append is two
+# statements (the chain's head, then the insert) on almost every request.
+AUDIT_STATEMENT_TIMEOUT_MS = 10_000
+# Its reads set their own, for their transaction (D2): GET /audit, /audit/verify (up to
+# AUDIT_VERIFY_LIMIT_MAX records in one read, re-hashed after it), the alarm-quality report and a
+# restart's replay are long by nature, and a bound meant for a stalled server must not cut them.
+AUDIT_READ_STATEMENT_TIMEOUT_MS = 30_000
+
+
+def _positive_ms(ms: int) -> int:
+    """A statement timeout as Postgres must be given it: a positive whole number of milliseconds.
+    Postgres reads 0 as no timeout at all, which would quietly lift the bound it was meant to set."""
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms <= 0:
+        raise ValueError(f"a statement timeout must be a positive integer of ms, not {ms!r}")
+    return ms
+
+
+def bounded_connect_args(*, ssl_required: bool, statement_timeout_ms: int) -> dict:
+    """libpq's connection arguments for one store's engine: the bounds above, the store's own
+    statement timeout, and `sslmode=require` when the deployment asks for TLS (DATABASE_SSL).
+
+    The statement timeout is the server's to enforce, so it bounds a slow query, not a server that
+    cannot run one (spec D5)."""
+    statement_timeout_ms = _positive_ms(statement_timeout_ms)
+    args: dict = {
+        "connect_timeout": CONNECT_TIMEOUT_S,
+        "options": f"-c statement_timeout={statement_timeout_ms}",
+        "keepalives": 1,
+        "keepalives_idle": KEEPALIVES_IDLE_S,
+        "keepalives_interval": KEEPALIVES_INTERVAL_S,
+        "keepalives_count": KEEPALIVES_COUNT,
+        "tcp_user_timeout": TCP_USER_TIMEOUT_MS,
+    }
+    if ssl_required:
+        args["sslmode"] = "require"
+    return args
+
+
+def set_local_statement_timeout(conn, ms: int) -> None:
+    """This transaction's statement bound in place of the engine's, for a statement that is long by
+    nature. SET LOCAL ends with the transaction, so the pooled connection goes back with the
+    engine's own. SET takes no bound parameter, so the value is written in — checked first to be a
+    positive integer (`_positive_ms`), and only ever a constant, never input."""
+    conn.execute(text(f"SET LOCAL statement_timeout = {_positive_ms(ms)}"))
+
+
 class PostgresAuditLog:
     """Durable append-only audit. Same surface as InMemoryAuditLog / SqliteAuditLog."""
 
     def __init__(self, url: str, *, ssl_required: bool = False) -> None:
-        connect_args = {"sslmode": "require"} if ssl_required else {}
+        # Bounded (spec 2026-11-01). A timeout propagates like any database error: the request
+        # fails, and the record is never skipped, retried quietly or queued — an event the trail
+        # does not hold must not be answered as written (D3).
         self._engine = create_engine(
-            to_sync_url(url), pool_pre_ping=True, connect_args=connect_args, future=True
+            to_sync_url(url), pool_pre_ping=True, hide_parameters=True,
+            pool_timeout=POOL_TIMEOUT_S,
+            connect_args=bounded_connect_args(ssl_required=ssl_required,
+                                              statement_timeout_ms=AUDIT_STATEMENT_TIMEOUT_MS),
+            future=True
         )
 
     def append(self, event: AuditEvent) -> AuditRecord:
@@ -97,14 +173,23 @@ class PostgresAuditLog:
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
                 event_type: str | None = None, since: datetime | None = None,
                 limit: int = 200, newest: bool = False,
-                after_id: int | None = None) -> list[AuditRecord]:
+                after_id: int | None = None,
+                event_types: Iterable[str] | None = None) -> list[AuditRecord]:
         _one_order(newest, after_id)
+        kinds = kinds_of(event_types)
+        if kinds is not None and not kinds:
+            return []                        # an empty set matches nothing; `IN ()` is not SQL
         clauses, params = [], {"limit": limit}
         for column, value in (("tenant", tenant), ("patient_id", patient_id),
                               ("event_type", event_type)):
             if value is not None:
                 clauses.append(f"{column} = :{column}")
                 params[column] = value
+        if kinds is not None:
+            # One bound parameter per kind (`:kind_0`, …), sorted: the kinds are values, never SQL.
+            names = [f"kind_{n}" for n in range(len(kinds))]
+            clauses.append(f"event_type IN ({', '.join(':' + name for name in names)})")
+            params.update(zip(names, sorted(kinds)))
         bound = since_utc(since)
         if bound is not None:
             # `ts` is TEXT (migration 0004). Compared as text it would follow the database's
@@ -120,7 +205,8 @@ class PostgresAuditLog:
         # primary key (migration 0004), walked backwards — no new index, no migration.
         order = "DESC" if newest else "ASC"
 
-        with self._engine.connect() as conn:
+        with self._engine.begin() as conn:
+            set_local_statement_timeout(conn, AUDIT_READ_STATEMENT_TIMEOUT_MS)
             rows = conn.execute(
                 text(f"SELECT id, ts, tenant, event_type, patient_id, subject, payload,"
                      f" prev_hash, hash FROM audit {where} ORDER BY id {order} LIMIT :limit"),

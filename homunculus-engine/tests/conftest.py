@@ -24,6 +24,26 @@ import homunculus.admission.models  # noqa: E402,F401
 import homunculus.escalation.models  # noqa: E402,F401
 from homunculus.db import Base  # noqa: E402
 
+# ... and every other `models` module of the package, found rather than listed: `db_session` drops what
+# `Base.metadata` knows, and a table whose model nothing had imported yet (`device_beds`, `staff_scopes`)
+# survived a killed run and made the next `drop_all` fail on the table it points at (A-22 I2).
+import importlib  # noqa: E402
+import pkgutil  # noqa: E402
+import sys  # noqa: E402
+
+import homunculus  # noqa: E402
+
+
+def raise_on_package_error(name: str) -> None:
+    """`walk_packages`' `onerror`: by default a package whose `__init__` fails to import is skipped, and
+    its models with it, silently. Here it is the run that fails, naming the package."""
+    raise ImportError(f"package {name} did not import; the models under it would be skipped silently") from sys.exception()
+
+
+for _module in pkgutil.walk_packages(homunculus.__path__, "homunculus.", onerror=raise_on_package_error):
+    if _module.name.rsplit(".", 1)[-1] == "models":
+        importlib.import_module(_module.name)
+
 requires_db = pytest.mark.skipif(
     TEST_DATABASE_URL is None,
     reason="TEST_DATABASE_URL not set; skipping DB-backed tests.",

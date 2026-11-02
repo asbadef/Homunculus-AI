@@ -223,7 +223,7 @@ async def test_break_glass_in_another_tenant_does_not_reach_this_one(db_session,
     a, b = world["tenant"], world["other_tenant"]
     nurse = world["nurse"]
     patient = Patient(tenant_id=b.id, display_name="Sentetik Hasta", date_of_birth="2000-01-01",
-                      sex="U", his_patient_reference="MRN-B-1")
+                      sex="U", his_patient_reference="MRN-B-1", patient_number="H9900001")
     db_session.add(patient)
     await db_session.flush()
     db_session.add(BreakGlassSession(

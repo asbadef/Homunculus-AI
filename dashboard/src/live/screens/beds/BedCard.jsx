@@ -26,7 +26,7 @@
 //     and word.
 import React from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { Icon, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
+import { Icon, RiskPill, StatusPill, Tag, riskStyle } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
@@ -34,6 +34,8 @@ import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
 import { MonitorStrip } from "../common/MonitorStrip.jsx";
+import { ageText } from "../patient/ageText.js";
+import { newestInputAt } from "../patient/shadow/shadowVitals.js";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -76,6 +78,15 @@ function Vitals({ patient }) {
   );
 }
 
+/** The shadow tag's words: the score with its newest input's age, «none» from a live board only. */
+function shadowTagText(t, shadow, known, nowMs) {
+  if (!shadow.findings?.length) return t(known ? "shadow.cardNone" : "shadow.cardUnknown");
+  const total = shadow.news2?.total ?? "—";
+  const newest = newestInputAt(shadow);
+  const age = newest ? ageText(t, newest, nowMs) : null;
+  return age ? t("shadow.cardTag", { total, age }) : t("shadow.cardTagNoAge", { total });
+}
+
 /**
  * `patient`: one record from `liveAdapters.patientsFromBoard`.
  * `alerts`: that patient's alarms from `boardStore`'s `alerts` (already flattened).
@@ -91,8 +102,23 @@ function Vitals({ patient }) {
  *   patient's bed to one monitor (`link: "one"`), as `{entry, nowMs, fetchedAtMs, maxAgeS, feedOk}`.
  *   Drawn after the card's link, outside it: a monitor value is never part of what opening the
  *   patient reads out, and nothing on the card above it (risk, alarms, NEWS2) reads it.
+ * `draft` (G2-B1a, X61): the admission behind this card waits for the physician's signature — a
+ *   badge under the name, and the same words in the link's accessible name, after the bed it
+ *   names: the link's `aria-label` replaces what is inside it, so a badge only drawn would be
+ *   silent to a screen reader.
+ *
+ * `patient.shadow` (Aşama B, D7): the shadow engine's picture of a monitor-linked patient, or null.
+ *   When there is one, the slot carries one amber tag under the strip — «gölge öneri · NEWS2 n · 3 dk
+ *   önce» when the shadow has a finding (the age of the newest input it read, on the card's clock: the
+ *   API republishes a patient only when a sample is taken or a link ends, so a held score would otherwise
+ *   stand undated; no input, no age), «gölge öneri yok» when it has none — said only from a LIVE board,
+ *   the rule `connection` already carries for the overdue count: off it the tag reads «gölge öneri ·
+ *   bilinmiyor», never «none». It is a tag and nothing more: no risk pill, no rail, no alarm row, nothing
+ *   in the link; the card's risk, alarms and NEWS2 above read none of it. The slot is drawn for the
+ *   shadow alone too (the strip may be momentarily unreadable), the strip part staying conditional on
+ *   its own entry.
  */
-export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -107,7 +133,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
       <span aria-hidden="true" data-rail={style.tone} className={`absolute inset-y-0 left-0 w-1 ${railOf(style.tone)}`} />
       <a
         href={`#/patients/${encodeURIComponent(patient?.patient_id ?? "")}`}
-        aria-label={t("beds.openPatient", { bed })}
+        aria-label={draft ? `${t("beds.openPatient", { bed })} · ${t("kabul.badgeDraft")}` : t("beds.openPatient", { bed })}
         className={`block pb-3 pl-[18px] pr-3.5 pt-3 ${FOCUS_RING}`}
       >
         <div className="flex items-start gap-2.5">
@@ -116,6 +142,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
             <span className={`block truncate font-display text-14.5 font-bold ${patient?.display_name ? "text-ink" : "italic text-mute"}`}>
               {nameOf(patient, t)}
             </span>
+            {draft ? <Tag tone="warn" icon="edit" className="mt-1">{t("kabul.badgeDraft")}</Tag> : null}
           </div>
           <RiskPill risk={patient?.risk} measured={measured} />
         </div>
@@ -161,10 +188,20 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
           </p>
         ) : null}
       </a>
-      {monitor?.entry ? (
+      {monitor?.entry || patient?.shadow ? (
         <div data-monitor-slot="" className="pb-3 pl-[18px] pr-3.5">
-          <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-            maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
+          {monitor?.entry ? (
+            <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+              maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
+          ) : null}
+          {patient?.shadow ? (
+            <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
+              {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
+              <Tag tone="warn" className="!whitespace-normal">
+                {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
+              </Tag>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </li>

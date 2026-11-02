@@ -490,3 +490,58 @@ def test_two_devices_keep_their_own_run():
     view.consume([event(1006., nbp(131, 85, 100), index=1)])         # device 1's next change, seen live
     assert changed_at(view, 0) == dict.fromkeys(NBP_NAMES, 1001.)
     assert changed_at(view, 1) == dict.fromkeys(NBP_NAMES, 1006.)
+
+
+# --- NBP-2: the snapshot names the triple the hub holds --------------------------------------------
+#
+# The forwarder sends an untimed NBP only as the complete valid triple the monitor repeats now. To
+# tell that from a partial packet's lone newer component (X38) it needs the triple the hub holds, so
+# the snapshot names it per device: a list, or None while no complete valid triple has been seen.
+
+def nbp_triple(view, index=0):
+    return device(view.snapshot(), index)["nbp_triple"]
+
+
+def test_the_snapshot_names_the_held_triple_and_none_before_one():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    assert nbp_triple(view) is None                                  # nothing heard
+    view.consume([event(1000., PAYLOAD + record(NBP_SYS, 120) + record(NBP_MEAN, 93))])
+    assert nbp_triple(view) is None                                  # two of the three: no triple
+    now[0] = 1000.5
+    view.consume([event(1000.5, nbp(120, 4, 93, valid=(True, False, True)))])
+    assert nbp_triple(view) is None                                  # one flagged: no valid triple
+    now[0] = 1001.
+    view.consume([event(1001., nbp(120, 80, 93))])
+    assert nbp_triple(view) == [120, 80, 93]                         # held, its time unknown
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1002.
+    view.consume([event(1002., nbp(118, 79, 92))])
+    assert nbp_triple(view) == [118, 79, 92] and changed_at(view) == dict.fromkeys(NBP_NAMES, 1002.)
+
+
+def test_a_lone_newer_component_leaves_the_held_triple_in_the_snapshot():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., record(NBP_SYS, 105))])               # a partial packet's newer systolic
+    state = device(view.snapshot())
+    assert state["parameters"]["nbp_systolic"]["value"] == 105
+    assert state["nbp_triple"] == [120, 80, 93]                      # what the forwarder compares it with
+    now[0] = 1010.
+    state = device(view.snapshot())                                  # stale: the readings say so, the triple stays
+    assert state["parameters"]["nbp_systolic"]["status"] == "stale" and state["nbp_triple"] == [120, 80, 93]
+    view.consume([dict(event(1009.9), payload_base64="!")])          # undecodable: the readings go, the triple stays
+    state = device(view.snapshot())
+    assert state["parameters"] == {} and state["nbp_triple"] == [120, 80, 93]
+
+
+def test_each_device_names_its_own_triple_as_a_new_list():
+    now = [1000.]
+    view = LiveResearchView(inventory(2), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93), index=0), event(1000., PAYLOAD, index=1)])
+    first = nbp_triple(view, 0)
+    assert (first, nbp_triple(view, 1)) == ([120, 80, 93], None) and type(first) is list
+    first.append(0)                                                  # a caller's list, not the hub's state
+    assert nbp_triple(view, 0) == [120, 80, 93]

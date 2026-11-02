@@ -270,3 +270,30 @@ class TestChartingRaisesRealEpisodes:
         body = client.get("/alarm-quality", headers=AUTH).json()
         assert body["answered"] >= 1
         assert body["answered_rate"] == 1.0
+
+
+# --- the kinds the report reads (Aşama B, T6 review) ----------------------------------------------
+
+def test_the_report_reads_exactly_the_kinds_build_episodes_counts():
+    """`/alarm-quality` asks the audit for EPISODE_KINDS only, so a kind `build_episodes` reads and
+    the set leaves out would vanish from the report without a word. The set is the source's own."""
+    import inspect
+    import re
+
+    from homunculus.api import alarm_quality as module
+
+    read = set(re.findall(r'rec\.event_type == "(\w+)"', inspect.getsource(module.build_episodes)))
+    assert read and module.EPISODE_KINDS == frozenset(read)
+    assert not {"shadow_alert", "shadow_alert_cleared", "ingest", "notification"} & module.EPISODE_KINDS
+
+
+def test_rows_of_other_kinds_change_no_episode():
+    rows = [rec("first_seen", "bed-1", "news2", 0), rec("alert", "bed-1", "news2", 1),
+            rec("shadow_alert", "bed-1", "news2", 1, severity="high"), rec("ingest", "bed-1", "heart_rate", 2),
+            rec("ack", "bed-1", "news2", 3, role="NURSE"), rec("shadow_alert_cleared", "bed-1", "news2", 4),
+            rec("alert_cleared", "bed-1", "news2", 5, reason="resolved")]
+    from homunculus.api.alarm_quality import EPISODE_KINDS
+
+    now = T0 + timedelta(hours=1)
+    assert (alarm_quality(rows, now).as_dict()
+            == alarm_quality([r for r in rows if r.event_type in EPISODE_KINDS], now).as_dict())

@@ -41,6 +41,18 @@ import signals from "./strings/signals.js";
 // Aşama A: the unvalidated monitor strip (screens/common/MonitorStrip.jsx).
 import monitor from "./strings/monitor.js";
 
+// Aşama B: the shadow engine's findings, «Gölge öneri · alarm kapalı» (screens/patient/shadow/).
+import shadow from "./strings/shadow.js";
+
+// G2-B1a: Hasta Kabul (screens/kabul, the admin's Yapı tab, the unit names, the coded refusals).
+import kabul from "./strings/kabul.js";
+
+// G2-ESLEME: the monitor→bed editor on «Monitörler» (screens/devices/MappingSection.jsx, MappingDialog.jsx).
+import esleme from "./strings/esleme.js";
+
+// G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
+import sofa from "./strings/sofa.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -63,6 +75,14 @@ export const NAMESPACES = {
   signals,
 
   monitor,
+
+  shadow,
+
+  kabul, // G2-B1a
+
+  esleme, // G2-ESLEME
+
+  sofa, // G2-A4
 };
 
 function flattenInto(out, prefix, entries) {

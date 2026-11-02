@@ -24,19 +24,17 @@
 // keyboard user.
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { ddmm, ddmmyyyy, hhmm } from "../../../i18n/dates.js";
+import { dayStamp, hhmm } from "../../../i18n/dates.js";
 import { Box, Button } from "../../../ui/index.js";
 import { MedsChartForm } from "./MedsChartForm.jsx";
 import { ANTIBIOTIC, BOLUS, PRESSORS, WEIGHT } from "./medsFields.js";
 
-/** An instant (ms) as the reader's clock time — with its day and month when its LOCAL date is not
- *  `nowMs`'s — formatted, never computed (Decision 1): the two dates are compared as written. */
-const stampOf = (ms, nowMs) => (ddmmyyyy(ms) === ddmmyyyy(nowMs) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`);
-
-/** An engine stamp as `stampOf` writes it, or a dash for one that does not parse. */
+/** An engine stamp as `dayStamp` writes it (i18n/dates.js: the reader's clock time, with its day and
+ *  month when its LOCAL date is not `nowMs`'s — formatted, never computed, Decision 1), or a dash for one
+ *  that does not parse. */
 const timeOf = (ts, nowMs) => {
   const ms = ts ? Date.parse(ts) : Number.NaN;
-  return Number.isFinite(ms) ? stampOf(ms, nowMs) : "—";
+  return Number.isFinite(ms) ? dayStamp(ms, nowMs) : "—";
 };
 
 /** One history row's name and value, by the engine's code. The value is printed as the engine sent it,
@@ -67,7 +65,7 @@ function pressorLines(t, meds, nowMs) {
       unstamped.push(`${p.key} ${rate}`);
       continue;
     }
-    lines.push(t(rate === 0 ? "patient.medsStopped" : "patient.medsRunning", { drug: t(p.labelKey), rate, time: stampOf(ms, nowMs) }));
+    lines.push(t(rate === 0 ? "patient.medsStopped" : "patient.medsRunning", { drug: t(p.labelKey), rate, time: dayStamp(ms, nowMs) }));
   }
   if (unstamped.length) lines.push(t("patient.pressors", { list: unstamped.join(", ") }));
   return lines;

@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { createTranslator } from "../../i18n/translate.js";
-import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
+import { doneFor, mayHaveLanded, reasonOf, refusedFor } from "./refusal.js";
 
 const az = createTranslator("az", DICTIONARIES);
 const en = createTranslator("en", DICTIONARIES);
@@ -115,6 +115,33 @@ describe("refusedFor", () => {
     expect(refusedFor(en, "sintetik", en("errors.network"))).toBe(en("admin.refusedFor", {
       subject: "sintetik", reason: en("errors.network"),
     }));
+  });
+});
+
+describe("reasonOf", () => {
+  it("says a 404 no map knows by its status, in the reader's words — never the server's English (A-14)", () => {
+    // "Bed not found.", "Admission not found.", "Room not found": a place gone from under the screen.
+    for (const words of ["Bed not found.", "Admission not found.", "Room not found"]) {
+      expect(reasonOf(az, refusal(404, words))).toBe(az("errors.requestFailed", { status: 404 }));
+      expect(refusedFor(az, "3 · Otaq 1 · Reanimasiya", reasonOf(az, refusal(404, words))))
+        .toBe("3 · Otaq 1 · Reanimasiya: Sorğu uğursuz oldu (404).");
+    }
+  });
+
+  it("leaves a 404 that a code or a known message already names to refusedFor", () => {
+    const coded = refusal(404, "English words", { apiCode: "invalid_transition" });
+    expect(reasonOf(az, coded)).toBe(coded);
+    // Words a map knows say more than the status does: "kullanıcı bulunamadı" (apiErrors.js).
+    const known = refusal(404, "kullanıcı bulunamadı");
+    expect(reasonOf(az, known)).toBe(known);
+    expect(refusedFor(az, "Ayşe Sentetik", reasonOf(az, known))).toContain(az("errors.userNotFound"));
+  });
+
+  it("passes every other failure, words already said and nothing at all through as they are", () => {
+    for (const err of [refusal(409, "Bed not found."), timedOut(), dropped()]) expect(reasonOf(az, err)).toBe(err);
+    expect(reasonOf(az, "Bir dəfəyə ən çoxu 50 ədəd.")).toBe("Bir dəfəyə ən çoxu 50 ədəd.");
+    expect(reasonOf(az, null)).toBeNull();
+    expect(reasonOf(az, undefined)).toBeUndefined();
   });
 });
 

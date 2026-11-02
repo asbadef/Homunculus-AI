@@ -13,7 +13,7 @@ import pytest_asyncio
 
 from homunculus.admission import service
 from homunculus.admission.models import (
-    AdmissionState, CareTeamRole, HandoverStatus, Patient,
+    Admission, AdmissionState, CareTeamRole, DischargeDisposition, HandoverStatus, Patient,
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.auth.models import User
@@ -60,9 +60,14 @@ async def _fixture_env(db, *, max_beds_per_nurse=2, n_beds=2):
     return tenant, unit, beds, attending, nurse
 
 
+# Patient numbers are unique per tenant (migration 0012). A fixture's are `H99…`, outside the live
+# range (`H` + the year's two digits), so they never take a number the generator will give.
+_NUMBERS = iter(range(1, 100_000))
+
+
 async def _new_patient(db, tenant):
     p = Patient(tenant_id=tenant.id, display_name="Synthetic Patient",
-                date_of_birth="1980-01-01", sex="male")
+                date_of_birth="1980-01-01", sex="male", patient_number=f"H99{next(_NUMBERS):05d}")
     db.add(p)
     await db.flush()
     return p
@@ -102,9 +107,27 @@ async def test_single_open_admission_per_patient(db_session):
     p = await _new_patient(db_session, tenant)
     await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
-    with pytest.raises(WorkflowError, match="only one active admission"):
+    with pytest.raises(WorkflowError, match="only one active admission") as refused:
         await service.create_draft_admission(
             db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[1], attending))
+    assert refused.value.code == "open_admission"
+
+
+async def test_a_second_draft_cannot_be_signed_while_the_first_is_active(db_session):
+    """The re-check at sign-off (two DRAFTs of one patient, written past the service) answers the
+    same code as the check at admission."""
+    tenant, unit, beds, attending, nurse = await _fixture_env(db_session)
+    p = await _new_patient(db_session, tenant)
+    first = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
+    second = Admission(patient_id=p.id, tenant_id=tenant.id, state=AdmissionState.DRAFT,
+                       **_note(unit, beds[1], attending))
+    db_session.add(second)
+    await db_session.flush()
+    await service.sign_off_admission(db_session, first, signing_user_id=attending.id)
+    with pytest.raises(WorkflowError, match="already has an ACTIVE admission") as refused:
+        await service.sign_off_admission(db_session, second, signing_user_id=attending.id)
+    assert refused.value.code == "open_admission"
 
 
 async def test_bed_must_be_available(db_session):
@@ -112,9 +135,10 @@ async def test_bed_must_be_available(db_session):
     beds[0].state = BedState.MAINTENANCE
     await db_session.flush()
     p = await _new_patient(db_session, tenant)
-    with pytest.raises(WorkflowError, match="not AVAILABLE"):
+    with pytest.raises(WorkflowError, match="not AVAILABLE") as refused:
         await service.create_draft_admission(
             db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
+    assert refused.value.code == "bed_not_available"
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +160,9 @@ async def test_sign_off_requires_attending(db_session):
     p = await _new_patient(db_session, tenant)
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending=None))
-    with pytest.raises(WorkflowError, match="attending_physician_id"):
+    with pytest.raises(WorkflowError, match="attending_physician_id") as refused:
         await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+    assert refused.value.code == "missing_attending"      # G2-B1a: the code a screen maps
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +254,34 @@ async def test_transfer_creates_new_active_and_closes_source(db_session):
     assert len(copied) == 1
 
 
+async def test_a_transfer_to_a_bed_that_is_not_available_is_refused_by_its_code(db_session):
+    """Both checks — when the transfer starts and when the arrival is confirmed — answer
+    `bed_not_available`, the code the admission's own bed check answers."""
+    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
+    p = await _new_patient(db_session, tenant)
+    adm = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
+    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+
+    beds[1].state = BedState.MAINTENANCE
+    await db_session.flush()
+    with pytest.raises(WorkflowError, match="not AVAILABLE") as refused:
+        await service.initiate_transfer(
+            db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+    assert refused.value.code == "bed_not_available"
+
+    beds[1].state = BedState.AVAILABLE
+    await db_session.flush()
+    await service.initiate_transfer(
+        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+    beds[1].state = BedState.MAINTENANCE            # taken out of service before the arrival
+    await db_session.flush()
+    with pytest.raises(WorkflowError, match="no longer AVAILABLE") as refused:
+        await service.confirm_transfer_arrival(
+            db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
+    assert refused.value.code == "bed_not_available"
+
+
 # ---------------------------------------------------------------------------
 # Discharge (§4.7)
 # ---------------------------------------------------------------------------
@@ -238,9 +291,11 @@ async def test_discharge_blocked_by_unacked_critical(db_session):
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
     await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    with pytest.raises(WorkflowError, match="CRITICAL"):
+    with pytest.raises(WorkflowError, match="CRITICAL") as refused:
         await service.initiate_discharge(
-            db_session, adm, discharge_summary="Taburcu özeti", unacknowledged_critical_count=1)
+            db_session, adm, disposition=DischargeDisposition.HOME, note="Taburcu özeti",
+            unacknowledged_critical_count=1)
+    assert refused.value.code == "critical_alarm_open"
 
 
 async def test_discharge_happy_path(db_session):
@@ -249,9 +304,14 @@ async def test_discharge_happy_path(db_session):
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
     await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    await service.initiate_discharge(db_session, adm, discharge_summary="Taburcu özeti")
+    await service.initiate_discharge(
+        db_session, adm, disposition=DischargeDisposition.OTHER_INSTITUTION,
+        institution="Sentetik Klinika", note="Taburcu özeti")
     assert adm.state == AdmissionState.PENDING_DISCHARGE
     assert beds[0].state == BedState.PENDING_DISCHARGE
+    assert (adm.discharge_disposition, adm.discharge_institution, adm.discharge_note) == \
+        (DischargeDisposition.OTHER_INSTITUTION, "Sentetik Klinika", "Taburcu özeti")
+    assert adm.discharge_at is not None
     await service.confirm_discharge(db_session, adm)
     assert adm.state == AdmissionState.DISCHARGED
     assert beds[0].state == BedState.HOUSEKEEPING
@@ -280,10 +340,11 @@ async def test_handover_blocked_by_unacked_critical(db_session):
     h = await service.open_handover(
         db_session, unit_id=unit.id, outgoing_user_id=attending.id,
         incoming_user_id=nurse.id, admission_ids=[])
-    with pytest.raises(WorkflowError, match="CRITICAL"):
+    with pytest.raises(WorkflowError, match="CRITICAL") as refused:
         await service.sign_handover_outgoing(
             db_session, h, user_id=attending.id, narrative_note="x",
             unacknowledged_critical_count=2)
+    assert refused.value.code == "critical_alarm_open"      # the discharge's block answers it too
 
 
 async def test_handover_bridge_expiry_blocks_signature(db_session):

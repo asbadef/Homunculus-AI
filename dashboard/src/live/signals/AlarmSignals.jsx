@@ -222,8 +222,11 @@ export function AlarmSignals({ children }) {
     const open = raised.current;
     const close = (key) => { open.get(key)?.close?.(); open.delete(key); };
     // One closed from OUTSIDE — the user, the operating system, another tab closing the same tag —
-    // is forgotten, so an alarm still waiting is raised again on the board's next change. Only that
-    // same notification: a later one under the key is not.
+    // is forgotten, so an alarm still waiting is raised again on the next change of the board's
+    // alarms (or of the page: hidden again, a lock, the permission). Only that same notification: a
+    // later one under the key is not. A frame that changes no alarm — the sampler's republish of a
+    // linked patient with a new shadow picture (Aşama B), new readings — keeps `alerts` the same
+    // array (boardStore.js `withPatients`), so it does not bring a dismissed notification back.
     const keep = (key, notification) => {
       if (notification) notification.onclose = () => { if (open.get(key) === notification) open.delete(key); };
       open.set(key, notification);

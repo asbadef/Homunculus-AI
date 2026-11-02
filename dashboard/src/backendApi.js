@@ -292,6 +292,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason.
     let detail = fallback;
     let fieldErrors;
+    let apiCode;
+    let patientNumber;
+    let occupied;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -302,6 +305,22 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
           .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
           .filter(Boolean).join("; ");
         if (text) detail = text;
+      } else if (typeof body?.detail?.code === "string" && typeof body.detail.message === "string") {
+        // A refusal with a stable code beside its words (homunculus-engine admission/errors.py,
+        // Group 2 · B1a): the words are the message, the code is what a screen maps.
+        detail = body.detail.message;
+        apiCode = body.detail.code;
+        // `request_conflict` names the earlier admission's number, `board_not_cleared` the bed's last
+        // patient's (admission/errors.py `Refusal.extra`): the one extra a screen shows. Nothing else
+        // of the detail is kept — never a name.
+        if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
+        // G2-ESLEME: `bed_occupied` names the occupied beds and, to a board.view holder, the patients'
+        // board ids (devicebeds/service.py step 8; spec §4.5's "Extra" column). Read for that code only,
+        // and only those two keys are kept — never a name.
+        if (body.detail.code === "bed_occupied" && Array.isArray(body.detail.occupied)) {
+          occupied = body.detail.occupied.filter((o) => typeof o?.bed_id === "string")
+            .map((o) => (typeof o.patient_id === "string" ? { bed_id: o.bed_id, patient_id: o.patient_id } : { bed_id: o.bed_id }));
+        }
       } else if (body?.detail) {
         detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
       }
@@ -310,6 +329,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     // that could not answer (5xx) without parsing text. A network failure has no status at all.
     const err = new Error(detail);
     err.status = res.status;
+    if (apiCode) err.apiCode = apiCode;
+    if (patientNumber !== undefined) err.patientNumber = patientNumber;
+    if (occupied !== undefined) err.occupied = occupied;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
@@ -376,8 +398,14 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     return a !== null && a === subOf(stored);
   }
 
-  async function authedOnce(doFetch, path, { method = "GET", body, credential = false } = {}) {
+  async function authedOnce(doFetch, path, { method = "GET", body, credential = false, read } = {}) {
     const gen = generation;
+    // The answer's body — and, for a call that needs more of the response than its body (a header),
+    // whatever its own `read(body, res)` makes of the two.
+    const answered = async (res) => {
+      const data = res.status === 204 ? null : await res.json();     // DELETE answers with no body
+      return read ? read(data, res) : data;
+    };
     let sentAccess = null;
     const send = () => {
       sentAccess = accessToken();
@@ -424,7 +452,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         forget();
         res = await send();
         if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-        return res.status === 204 ? null : res.json();
+        return answered(res);
       }
       if (refreshed.status >= 500) {
         throw await failure(refreshed,
@@ -446,8 +474,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       res = await send();
     }
     if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
-    if (res.status === 204) return null;     // DELETE answers with no body
-    return res.json();
+    return answered(res);
   }
 
   /** A path segment from an id: an id can name a record, never another route. */
@@ -524,6 +551,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  the bell, the sound, the notifications or the lock screen (live/boundaries.test.js). */
     shadowBoard() {
       return authed("/infinity-shadow/board");
+    },
+
+    /** Aşama B: the findings the shadow engine OPENED in the last `days` days (each with its clearing, if any), newest first
+     *  (GET /infinity-shadow/findings?days=N → `{days, findings: [{patient_id, kind, severity, opened_at,
+     *  cleared_at}]}`) — Settings' weekly review. Read by the shadow store only, with the board poll's
+     *  own bearer and refresh-and-retry. A whole number of days from 1 to 7 — the route's own window, the
+     *  week's review — and nothing else goes on the address. */
+    shadowFindings(days = 7) {
+      if (!Number.isInteger(days) || days < 1 || days > 7) throw new TypeError("shadowFindings(days): a whole number of days, 1 to 7");
+      return authed(`/infinity-shadow/findings?days=${days}`);
     },
 
     /** What the caller may see, and why. The administration screen reads it for one thing it
@@ -743,15 +780,33 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * What a signature of the form with these corrections WOULD seal — the same parsing, re-scoring and
+     * refusals as the signature — signed by nobody and written nowhere (G2-A4, D6).
+     *
+     * A route of its own (review 2, C1): the sign route no longer takes a `preview` flag, so no answer
+     * here can ever be a signature. An engine older than the route answers 404 or 405 and signs nothing.
+     * The answer carries `expect`, the fingerprint of the record it scored, which the signature sends back.
+     */
+    previewSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}/preview?hours=${hours}`, {
+        method: "POST", body: { overrides },
+      });
+    },
+
+    /**
      * Sign the form, with the clinician's corrections.
      *
      * `overrides` is `[{code, value, reason}]`. A correction replaces the VALUE — the engine
      * re-scores the row from the band table, because a typed point value would enter quality
      * reporting unbanded. The reason is mandatory and the engine enforces its length.
+     *
+     * `expect` is the preview's fingerprint (review 2, C2): the engine signs only the record that was
+     * previewed — if anything under the form moved since, it answers 409 and signs nothing. Nothing else
+     * is sent, whatever else a caller passes: a `preview` key on this route is refused.
      */
-    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [], expect } = {}) {
       return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`, {
-        method: "POST", body: { overrides },
+        method: "POST", body: { overrides, expect },
       });
     },
 
@@ -815,9 +870,73 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
     },
 
+    // ---- G2-B1a: Hasta Kabul (homunculus-engine admission/router.py, tenant/router.py) ----
+    // Their refusals carry `err.apiCode` (admission/errors.py): `bed_not_available`,
+    // `out_of_scope`, `critical_alarm_open`, `field_invalid:<field>` … — screens map the code.
+
+    /** The caller's units, rooms and beds with names, states and `is_active`
+     *  ({tenant_id, sites: [{id, name, units: [{id, name, rooms: [{id, name, beds: [...]}]}]}]}). */
+    structure() { return authed("/tenant/structure"); },
+    /** Admission rows of the caller's units, newest first; `states` narrows them — a list, one
+     *  state as a string, or null/undefined for every state. A list the server cut at its cap is
+     *  marked `rows.truncated === true` (`X-Result-Truncated: 1`, A-30); a whole one is not marked. */
+    admissions(states = []) {
+      const query = new URLSearchParams();
+      for (const state of [].concat(states ?? [])) query.append("state", state);
+      const suffix = query.toString();
+      return authed(`/admissions${suffix ? `?${suffix}` : ""}`, { read: markTruncated });
+    },
+    /** One admission ({patient, note}): {…admission, patient_number, engine: {weight, profile, board}}. */
+    admit(body) { return authed("/admissions", { method: "POST", body }); },
+    signOffAdmission(id) { return authed(`/admissions/${seg(id)}/sign-off`, { method: "POST" }); },
+    /** {disposition, institution?, reported_by?, discharge_at?, note?} */
+    startDischarge(id, body) {
+      return authed(`/admissions/${seg(id)}/discharge/initiate`, { method: "POST", body });
+    },
+    /** {…admission, board: ok|failed, alerts: ok|incomplete|failed} — whether the card left the board,
+     *  and how the patient's alarms were retired. Sent again for a DISCHARGED admission, it takes a
+     *  card that did not leave the board off it again (A-32). */
+    confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
+    releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // The administrator's structure tab: add under a parent, rename / close / reopen.
+    createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },
+    createUnit(siteId, body) { return authed(`/tenant/sites/${seg(siteId)}/units`, { method: "POST", body }); },
+    createRoom(unitId, body) { return authed(`/tenant/units/${seg(unitId)}/rooms`, { method: "POST", body }); },
+    createBed(roomId, body) { return authed(`/tenant/rooms/${seg(roomId)}/beds`, { method: "POST", body }); },
+    patchUnit(id, body) { return authed(`/tenant/units/${seg(id)}`, { method: "PATCH", body }); },
+    patchRoom(id, body) { return authed(`/tenant/rooms/${seg(id)}`, { method: "PATCH", body }); },
+    patchBed(id, body) { return authed(`/tenant/beds/${seg(id)}`, { method: "PATCH", body }); },
+
+    // ---- G2-ESLEME: the monitor→bed editor (homunculus-engine devicebeds/router.py) ----
+    // Refusals carry `err.apiCode` (`monitor_lane_off`, `device_unknown`, `bed_occupied` with
+    // `err.occupied`, `mapping_changed`, `out_of_scope`, `bed_closed`).
+    /** {stage, generated_at, can_bind, devices: [{source, group, port, device_bed_label, seen, status,
+     *  last_seen_at, row_id, bed: null | {id, in_scope, label?, room?, unit?}, editable}]} */
+    deviceBeds() { return authed("/infinity-shadow/device-beds"); },
+    /** {source, bed_id, expected: {device_row_id, bed_row_id}, confirm_occupied} → {changed, replaced_source, list} */
+    bindDeviceBed(body) { return authed("/infinity-shadow/device-beds/bind", { method: "POST", body }); },
+    /** {source, expected: {device_row_id}, confirm_occupied} → {changed, replaced_source, list} */
+    unbindDeviceBed(body) { return authed("/infinity-shadow/device-beds/unbind", { method: "POST", body }); },
+
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };
+}
+
+/** The header a list cut at its cap carries (homunculus-engine admission/router.py TRUNCATED_HEADER). */
+const TRUNCATED_HEADER = "X-Result-Truncated";
+
+/** `rows`, marked `truncated` when the response says the server cut them at its cap. Read
+ *  defensively: same-origin on the ward's VM the header is readable, but a response with no headers
+ *  to read, or another origin whose CORS does not expose it, leaves the rows unmarked — as a whole
+ *  list, which is what the screen showed before it could tell. */
+function markTruncated(rows, res) {
+  let cut = false;
+  try {
+    cut = res?.headers?.get?.(TRUNCATED_HEADER) === "1";
+  } catch { /* an unreadable header is an absent one */ }
+  if (cut && Array.isArray(rows)) rows.truncated = true;
+  return rows;
 }
 
 /** The items of a FastAPI validation error as {field, type, message[, ctx]}: the field is the `loc`

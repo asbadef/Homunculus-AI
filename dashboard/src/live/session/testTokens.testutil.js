@@ -54,9 +54,37 @@ export function fakeApi(vi, { access = null } = {}) {
     serverClockSkewMs: vi.fn(() => null),
     // Aşama A's unvalidated monitor strip (data/shadowStore.js)
     shadowBoard: vi.fn(),
+    // Aşama B: Settings' «Uyarsaydı — son 7 gün» list (shadowStore.findings)
+    shadowFindings: vi.fn(),
     // Group 2 · slice 1: the patient screen's trend charts and the patient's own normal
     patientTrends: vi.fn(),
     putPatientProfile: vi.fn(),
+    // G2-A4: the patient screen's SOFA box and form (screens/patient/sofa)
+    severityForm: vi.fn(),
+    previewSeverityForm: vi.fn(),
+    signSeverityForm: vi.fn(),
+
+    // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
+    structure: vi.fn(),
+    admissions: vi.fn(),
+    admit: vi.fn(),
+    signOffAdmission: vi.fn(),
+    startDischarge: vi.fn(),
+    confirmDischarge: vi.fn(),
+    releaseBed: vi.fn(),
+    createSite: vi.fn(),
+    createUnit: vi.fn(),
+    createRoom: vi.fn(),
+    createBed: vi.fn(),
+    patchUnit: vi.fn(),
+    patchRoom: vi.fn(),
+    patchBed: vi.fn(),
+
+    // G2-ESLEME: the monitor→bed editor
+    deviceBeds: vi.fn(),
+    bindDeviceBed: vi.fn(),
+    unbindDeviceBed: vi.fn(),
+
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

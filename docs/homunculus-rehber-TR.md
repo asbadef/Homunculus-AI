@@ -353,7 +353,7 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 21 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
+- *Homunculus'ta:* 22 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -680,7 +680,8 @@ Dalga 3'te geldi: 3.6.
 **Yönetim ekranı (Kullanıcılar · Roller ve yetkiler · Giriş kaynağı)**
 - *Basit:* Hastanenin kendi hesaplarını, gruplarını ve kurumsal (AD) girişini yönettiği sayfa.
   Sol menüde "Yönetim" (Azerbaycanca arayüzde "İdarə"); içinde üç sekme var: Kullanıcılar, Roller
-  ve yetkiler, Giriş kaynağı ("İstifadəçilər", "Rollar və səlahiyyətlər", "Giriş mənbəyi").
+  ve yetkiler, Giriş kaynağı ("İstifadəçilər", "Rollar və səlahiyyətlər", "Giriş mənbəyi"); G2-B1a
+  dördüncüsünü ekledi: Yapı ("Struktur", `structure.manage`; aşağıda 3.8).
   Sayfanın başlığı her değişikliğin denetim kaydına yazıldığını söyler.
 - *Kim açabilir:* Sayfa `users.manage` ya da `groups.manage` izni olana açılır, her sekme de
   kendi iznine bakar: Kullanıcılar ve Giriş kaynağı `users.manage`, Roller ve yetkiler
@@ -699,10 +700,11 @@ Dalga 3'te geldi: 3.6.
   - **Birimler (birim kapsamı):** kişinin panoda hangi birimlerin ve yatakların hastalarını
     gördüğü. Bütün kullanıcıların kapsamını birden okuyan bir uç yok, bu yüzden "Birimler" sütunu
     bir kişinin kapsamı okunana dek "Okunmadı" der; birimler penceresi açılınca okunur. Penceredeki
-    seçenekler panodaki kartlardan, kişinin mevcut atamalarından ve elle yazılan bir anahtardan
-    gelir (hastası olmayan boş bir birim panoda görünmez, anahtarı elle yazılır). Kapsamı yalnız
-    kendi kapsamı **rolü gereği** sınırsız olan yönetici (Sistem Yöneticisi ya da platform
-    operatörü) kaydedebilir; `users.manage` tek başına yetmez. Ataması olmayan bir hesap bugün
+    seçenekler G2-B1a'dan beri koğuşun yapısından gelir — her birim adıyla, her yatak "etiket ·
+    oda · birim" olarak, hastası olmayan boş bir birim de — ve ayrıca panodaki kartlardan ve
+    kişinin mevcut atamalarından; elle anahtar yazma kutusu kalktı, aynı yer iki kez verilemez
+    (3.8). Kapsamı yalnız kendi kapsamı **rolü gereği** sınırsız olan yönetici (Sistem Yöneticisi
+    ya da platform operatörü) kaydedebilir; `users.manage` tek başına yetmez. Ataması olmayan bir hesap bugün
     bütün hastaları görür; sunucu ataması olmayanları kısıtlayacak biçimde ayarlanırsa
     (`SCOPE_ENFORCE_UNASSIGNED`) yalnız bakım ekibinde adı geçtiği ya da acil erişimle açtığı
     hastaları görür. Ekran hangisinin geçerli olduğunu sunucudan okuyup yazar. Sekmedeki "Hiç
@@ -937,7 +939,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
     düzeltilirse (enfeksiyon yeniden "var" işaretlenirse) eski pencere geri gelir — düzeltme aynı
     olaydır; 15 dakikadan sonrası yeni bir pencere başlatır (yeni bir enfeksiyon eski pencereyi ve
     o sırada verilmiş dozları devralmaz).
-- *Şüpheli enfeksiyon — ekranın yazdığı üç şeyden biri* (ötekiler hastanın normali, 3.7, ve aşağıdaki vazopressör/sıvı kaydı): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+- *Şüpheli enfeksiyon — ekranın yazdığı dört şeyden biri* (ötekiler hastanın normali, 3.7, aşağıdaki vazopressör/sıvı kaydı ve SOFA formundan girilen ölçümler): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
   sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
@@ -945,8 +947,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   (yargı değişebilir; "var"dan sonra "yok" bir klinik olaydır, geri alma değil) ve basmadan önce
   bunun klinisyenin adıyla ve saatiyle denetim kaydına yazıldığını, geri alınamadığını, yalnız yeni
   bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
-  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
-  doldurup imzalamak sonraki grupta.
+  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır.
 - *Vazopressör / sıvı kaydı — ekranın yazdığı üçüncü şey* (G2-A3): `clinical.chart` yetkisi olan klinisyen İlaç ve
   antibiyotik kutusunda «Kayıt ekle»ye basar; açılan pencerede kilo (kg), vazopressör/inotrop (noradrenalin, adrenalin, dopamin,
   dobutamin) ile hızı (µg/kg/dk), kristaloid bolus (mL), «Antibiyotik verildi» ve «Kayıt saati» vardır; her alan
@@ -964,6 +965,55 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   kiloyu, antibiyotik satırını ve «Son kayıtlar» altında son on girişi (en yenisi üstte) gösterir. Servis duyurusu
   (G1-15) septik şokun vazopressör bilgisi alamadığını söylüyordu; kaydı yapılan vazopressör artık kurala girer —
   kayıt yoksa kural yine bilmez («kimse kaydetmedi» ile «verilmedi» aynı şey değildir).
+- *SOFA formu — ekranın yazdığı dördüncü şey* (G2-A4): İlaç ve antibiyotik kutusunun altındaki **SOFA formu** kutusu
+  formun toplamını, kaç organda ölçüm olmadığını ve son imzayı gösterir («İmzalandı · dr.elif · 14:05 · toplam 7»;
+  düzeltme yapılmışsa sayısı da yazar; bugünden önceki bir imzada saatin önünde gün ve ay yazar) ya da «İmzalanmadı».
+  **Bu sayı Sepsis-3 kutusundaki SOFA değildir:** o, son değerlerle hesaplanan alarm SOFA'sıdır; form son 24 saatin
+  **en kötü** değerleriyle doldurulur — ikisi aynı sayı olmak zorunda değil. «Formu aç» altı organı kaynaktaki sırayla
+  gösterir (solunum, pıhtılaşma, karaciğer, kardiyovasküler, merkezi sinir sistemi, böbrek): her girdinin en kötü
+  değeri, birimi, ölçüm saati, kaynağı ve puanı; ölçümü olmayan organda «ölçülmedi» (skor onu 0 sayar, ekran 0
+  yazmaz); 3 ve üstü puanda «≥3 puan» işareti (hastanenin basılı formunun dipnotundaki organ yetmezliği eşiği;
+  kaynağı henüz bilgi vault'una alınmadı). Hasta 24 saatten kısa süredir buradaysa form bunu söyler.
+  **Tamamlama** (`clinical.chart`): trombosit (×10³/µL), bilirubin ve kreatinin (**mg/dL**, laboratuvarın birimi —
+  ekran çevirmez; µmol/L yazılmış bir kreatinin 40'ın üstündeyse reddedilir, altındaysa reddedilmez; µmol/L bir
+  bilirubin de reddedilmeyebilir: koruma alanın yanında yazan birimdir, birimi oradan okuyun), GCS (tam sayı),
+  PaO₂/FiO₂ ve «solunum desteği» (evet/hayır) formdan girilir. Bu bir ölçümdür, gerekçe istemez; ölçüm saati siz
+  değiştirene kadar şimdidir, en çok 24 saat geriye gider, ileri gitmez — solunum desteği girilirken ise, satırda
+  ölçülmüş bir PaO₂/FiO₂ varsa, saat o ölçümün saatiyle gelir (alanın altında yazar; değiştirebilirsiniz): oranı
+  girip ardından «evet»i saate dokunmadan kaydetmek o oranı da destekte saydırır; kayıttan sonra form yeniden
+  okunur, puanı motor hesaplar. Solunum desteği: form her PaO₂/FiO₂ ölçümünü **kendi saatinde** geçerli olan destek kaydıyla
+  puanlar — ölçümden önceki ya da aynı saatteki son «evet»/«hayır», 24 saatten eski olsa da; destek kaydı yoksa
+  destekte sayılmaz — ve satıra pencerenin en kötü **puanını** alır (eşit puanda düşük oran, sonra son ölçüm):
+  destekteyken ölçülmüş 180 (3 puan), destek yokken ölçülmüş 150'nin (2 puan) önüne geçer. Ölçümden sonraki bir
+  saate girilen kayıt o ölçümü değiştirmez; ölçümden önceki bir saate sonradan girilen bir «hayır» ise geçerlidir.
+  Solunum satırı ölçümünün neye göre puanlandığını yazar: «Destekte puanlandı — 07:00 kaydı», «Destek dışı
+  puanlandı — 07:00 kaydı» ya da, ölçümün saatinde veya öncesinde destek kaydı yoksa, «Bu ölçümün saatinde (ya da
+  öncesinde) destek kaydı yok — destek dışı puanlandı (07:30)». Alarm SOFA'sı ise son kaydı okur
+  ve 8 saatten eski bir destek kaydını gerekçesinde «eski» diye belirtir (puanı değiştirmez).
+  **Düzeltme** (`scores.sign`): yalnız ölçülmüş bir değere (ölçülmemiş bir değerin düzeltmesini motor da reddeder:
+  «ölçülmemiş bir değer düzeltilemez — ölçümü formdan girin»), doğru değer ve en az 20 karakterlik bir gerekçeyle
+  (sayaç gösterir); puan yazılmaz, motor yeniden hesaplar, kayıttaki değer de saklanır; yazım hatası sınırları düzeltmede
+  de geçerlidir (18000 yazılmış bir trombosit ya da 9000 yazılmış bir MAP hem önizlemede hem imzada reddedilir).
+  **Önizle, sonra imzala:** «Önizle» motorun ayrı önizleme yolundan imzalanacak formu ve onun parmak izini ister,
+  hiçbir şey yazmaz; «İmzala» yalnız o önizlemeden sonra, aynı düzeltmelerle ve o parmak iziyle çıkar (bir düzeltme
+  değişirse yeniden önizlenir; yeniden önizleme reddedilir ya da yanıt alamazsa önceki önizleme de bırakılır),
+  çıktıktan sonra kısa bir an basılamaz (hızlı bir çift tıklama imza atmasın diye);
+  imza adınızla, önizlemenin parmak iziyle birlikte denetim zincirine mühürlenir. Parmak izi şunları kapsar: hasta,
+  pencerenin uzunluğu ve kalış süresinin pencereyi doldurup doldurmadığı, toplam, her organın puanı, her girdinin
+  değeri, ölçüm saati, puanı ve pencereden önceki bir ölçüm olup olmadığı, solunum satırının destek kaydı, her
+  düzeltmenin değeri, kayıttaki değeri ve gerekçesi. Önizleme ile imza arasında bunlardan biri değiştiyse (başka biri
+  ölçüm girdiyse, 24 saatlik pencere bir ölçümün üstünden kaydıysa, imza başka bir gerekçe ya da pencereyle
+  gönderildiyse) motor **imzalamaz**: «form önizlemeden sonra değişti (yeni kayıt ya da pencere kayması) — formu
+  yeniden önizleyin» der ve hiçbir şey yazmaz; yeniden önizler, gördüğünüzü imzalarsınız — imzalanan sayı her zaman
+  önizlenen sayıdır. Parmak izine girmeyenler: pencerenin başlangıç ve bitiş saati (her saniye kayar), bir girdinin
+  kaynağı ve pencerede kaç ölçüm bulunduğu (ekranda yazmaz). Önizlemeyi tanımayan eski bir sunucuya karşı form
+  düzeltme, önizleme ve imza sunmaz. İmzalanmamış düzeltmelerle form kapatılırsa ekran düzeltmelerin bırakıldığını
+  söyler. Formu `board.view` yetkisi olan herkes açabilir; yetkisi olmayana düğme çizilmez, nedeni yazılır.
+  **Yapmadıkları:** Formun kendisi alarm üretmez; buradan girilen bir ölçüm hasta kaydına yazılır ve uyarı kuralları
+  (Sepsis-3 kutusu) da onu okur. İdrar çıkışı böbrek puanına katılmaz (eksik kaydedilmiş bir günün toplamı oligüri
+  gibi okunurdu); MAP formdan girilmez (kayıttan gelir — monitör henüz gerçek motoru beslemediği için çoğu hastada
+  «ölçülmedi»); vazopressörler İlaç kutusundan girilir; pencere 24 saattir; dünle karşılaştırma ve skor geçmişi yok;
+  APACHE, PRISM ve SNAP tabloları kaynağıyla gelene kadar yok. Formun her okunuşu denetim kaydına bir satır düşer.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
   numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
   kaydından çizilir (3.7).
@@ -1053,12 +1103,13 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   bir bant yoktur — bu boşluk kasada kayıtlı, ekranda başka bir bantla kapatılmaz.
 - "Hastanın normali", `clinical.chart` yetkisi olan birinin bu hasta için girdiği aralıktır. NEWS2
   puanı alan bütün değerler bu aralıklardaysa bulgu gösterilir ama alarm vermez; aralığın dışına
-  çıkan değer ayrıca bildirilir. Cihazın kendi alarm sınırları Aşama B'de
-  doğrulanınca eklenecek; şimdilik yoktur.
+  çıkan değer ayrıca bildirilir. Cihazın (monitörün) kendi alarm sınırları ayrı ve daha sonraki
+  bir iştir — buradaki Aşama B'nin (gölge motor) parçası değildir; şimdilik gösterilmez.
 
 **Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; Aşama A'nın monitör
-değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı); MAP ve laktat için kişisel normal
-(motor tutmuyor).
+değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı; Aşama B açılırsa dakikalık
+monitör örnekleri 30 gün saklanır, ama bu eğrilere yine çizilmez); MAP ve laktat için kişisel
+normal (motor tutmuyor).
 
 **Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa motor seyreltir — eşit
 zaman dilimlerinin her birinde ilk, son, en düşük ve en yüksek ölçüm kalır, yani en kötü değer
@@ -1082,6 +1133,305 @@ Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
+
+### 3.8 Hasta Kabul (Grup 2 · B1a)
+
+Bu dilimden önce hiçbir ekran "bu hasta bu yatakta yatıyor" diyemiyordu: kabul kayıtları ile
+pano iki ayrı dünyaydı ve hiçbir şey onları bağlamıyordu. **Artık Homunculus'ta yapılan kabul,
+hangi hastanın hangi yatakta yattığının asıl kaydıdır** (kullanıcı kararı D1); HBYS akışı
+geldiğinde yalnız formu önceden dolduracak. Bu ekranlar kimin hangi yatakta yattığını ve hastanın
+nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesaplamaz. Örneklerdeki
+numaralar ve yerler uydurmadır.
+
+**Üç sekme** — menüde "Hasta Kabul":
+- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* ad soyad\*, baba adı, cinsiyet\*, doğum
+  tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
+  *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
+  "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
+  onam:* yakını, refakatçi, onam\* ("Kişisel veri onayı imzalandı" ya da "Bilinci kapalı — onam
+  sonra alınacak"), SMS izni. *Yatak\*:* önce birim, sonra oda ve yatak; yalnız boş ve açık yatak
+  seçilir, dolu, temizlikteki ve kapalı yataklar soluk ve nedeniyle görünür. Sağdaki "Eksik
+  alanlar" paneli eksik her zorunlu alanı adıyla söyler; panel boşalmadan kabul gönderilmez.
+  Form yarıda bırakılıp başka bir sekmeye ya da ekrana geçilse de kaybolmaz; onu "Yeni kabul" ya
+  da oturumun kapanması temizler.
+- **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
+  "Yatan hastalar".
+- **Yataklar:** birimlerinizin yatakları oda oda, durumlarıyla (Boş, Dolu, Taburcu bekliyor,
+  Temizlikte, Kapatılmış…); temizlikteki yatakta "Temizlik bitti · boş" düğmesi.
+
+**Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
+değiştirilebilir):
+
+| İş | Kim | İzin |
+|---|---|---|
+| Kabul et | Hemşire, Sorumlu Hemşire | `admissions.admit` |
+| Kabulü imzala (hasta ekranından) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
+| Taburcuyu başlat | Sorumlu Hekim, Ünite Hekimi | `admissions.move.initiate` |
+| Hasta çıktı · onayla | Sorumlu Hemşire | `admissions.discharge.confirm` |
+| Temizlik bitti · boş | Hemşire, Sorumlu Hemşire | `beds.release` |
+| Yönetim › Yapı | Sistem Yöneticisi | `structure.manage` |
+
+Sistem Yöneticisi bütün izinleri taşır. Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
+salt okunur bir notla görür. "Hekim" grubu kabul kayıtlarını görür ama imzalamaz ve taburcu
+başlatmaz. Herkes yalnız kendi birimlerinin yataklarında işlem yapar (birim kapsamı); birimi
+atanmamış hesap (pilot ayarı) ve yönetici her yere ulaşır.
+
+**Hasta numarası:** Homunculus her kabule bir numara verir: `H` + yılın iki hanesi + beş hane
+(ör. `H2600001`). Kurum ve takvim yılı başına sıralıdır (yıl UTC'dir), her yıl 1'den başlar; iki
+kabul aynı numarayı asla alamaz; bir yılda 99 999'a ulaşılırsa kabul reddedilir. `H` öneki
+numarayı HBYS protokol numaralarından ayırır — ikisi aynı olsaydı iki hasta tek karta düşerdi.
+HBYS protokol numarası ayrı ve isteğe bağlı bir alandır. Aynı kişi yeniden yatarsa yeni bir numara
+alır.
+
+**Numara neden başucu cihazına girilir:** monitör ölçümü hastanın numarasıyla gönderir; Homunculus
+ölçümü bu numaraya bakarak karta bağlar. Kabulden sonra ekran numarayı büyük yazar ve "Başucu
+cihazına bu numarayı girin" der. Numara cihaza girilmezse ya da yanlış girilirse ölçümler bu karta
+ulaşmaz. (Aşama A'nın Infinity Kappa şeridi karta numarayla değil yatakla bağlanır: cihaz→yatak
+tablosu yatağın kimliğini taşıdığında şerit o yataktaki kartta görünür — hastanenin sunucusunda
+bunun için tablonun yeni sürümü gerekir.)
+
+**Kart hemen, hekim imzası sonra:** "Kabul et"ten sonra kart hemen seçilen yatağa ve birime düşer
+ve izlem başlar ("Panoda gör" onu gösterir). Kilo ve işaretlenen eşlik eden hastalıklar (KOAH,
+kronik solunum yetmezliği, evde oksijen, demans / kronik konfüzyon) motora yazılır; motor hastayı
+kendi bazaline göre değerlendirirken bunları kullanır. "Diğer eşlik eden hastalıklar" kaydedilir
+ama motora kod olarak gitmez. Biri motora ulaşmazsa kabul yine durur ve ekran hangisinin
+ulaşmadığını söyler. Hekim imzası sonraki adımdır (D3): imzalanmamış kabulde hasta ekranında
+"Hekim imzası bekliyor — kart ve izlem imzayı beklemez" şeridi, yatak kartında küçük bir rozet
+görünür. İmza yetkisi olan hekim şeritten "Kabulü imzala" der ve kabulün sorumlu hekimi olur.
+İmzalanmamış kabul taburcu edilemez; Taburcu listesinde "Önce kabul imzalanmalı (hasta ekranı)"
+yazar. Sunucunun yanıtı gelmezse ekran kabulün kaydedilip kaydedilmediğini bilmediğini söyler ve
+yeniden göndermeden önce listeye bakmanızı ister; aynı form yeniden gönderilse de sunucu ikinci
+bir hasta ya da numara açmaz.
+
+**Taburcu iki adımdır** (D7):
+1. **Hekim başlatır:** "Taburcuyu başlat" der ve çıkış şeklini seçer — Eve taburcu, Başka kuruma
+   sevk (kurumun adıyla) ya da Vefat (exitus; bildiren hekim, boş bırakılırsa kendisi) — çıkış
+   zamanı (gelecekte ya da kabulden önce olamaz) ve not. Hasta "Taburcusu başlatılan" listesine
+   geçer, yatak "Taburcu bekliyor" olur.
+2. **Sorumlu hemşire onaylar:** hasta servisten çıkınca "Hasta çıktı · onayla". Bu geri alınamaz:
+   kart bütün ekranlardan kalkar, yatak temizliğe alınır.
+
+**Kritik alarm tutması — başlatmada da, onayda da:** hastanın onaylanmamış kritik bir alarmı
+varsa (kuralı susmuş ama kimsenin "Gördüm" demediği kritik alarm dahil, G2-A1) taburcu ne
+başlatılabilir ne onaylanabilir. Düğme tutulur ve nedenini söyler; ekran görmese bile sunucu
+kendisi reddeder. **Vefatta da istisna yoktur:** önce monitörün son kritik alarmları onaylanır,
+sonra taburcu. Amaç, hasta servisten çıkmadan her kritik olayın birinin gözünden geçmiş olmasıdır
+(kullanıcı kararı 26.10: onayda da denetle).
+
+**Taburcudan sonra kart ve ölçümler:** kart her ekrandan kalkar — Yataklar, Alarmlar, hasta
+ekranı; birimle sınırlı ekranlar da. Hastanın bilgileri silinmez, saklanır (kullanıcı kararı);
+eski kabullere bakma ekranı sonraki dilimde gelecek. O numaraya sonradan gelen ölçümler motordan
+önce düşer: alarm, çağrı ya da kart doğmaz, yalnız denetim kaydına bir satır yazılır (G2-A11).
+**Bu yüzden taburcudan sonra numarayı başucu cihazından silin:** yeni hastanın ölçümleri eski
+numarayla gelirse hiçbir ekranda görünmez ve alarm vermez. Yeni hastaya kendi yeni numarası girilir.
+
+**Yatağın boşaltılması:** onaydan sonra yatak "Temizlikte"dir. Temizlik bitince hemşire ya da
+sorumlu hemşire Yataklar sekmesinde "Temizlik bitti · boş" der — gece yönetici olmadan da yatak
+dönebilsin diye (D8). Yatak, son hastasının kartı panodan kalkmadan boşalmaz: sunucu kartı bir kez
+daha kaldırmayı dener, olmazsa "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı"
+der. Neden: eski kart dururken yatağa yeni hasta yatırılırsa aynı yatakta iki kart olur ve monitör
+hangisine bağlanacağını bilemez. Taburcu onayında kart panodan kaldırılamadıysa Taburcu sekmesi
+"Panodan yeniden kaldır" düğmesini gösterir.
+
+**Yönetim › Yapı:** sistem yöneticisi koğuşu kurar: bina → birim (türüyle: Erişkin YBÜ, Yenidoğan
+YBÜ…) → oda (numarası ve izolasyon isteğe bağlı) → yatak (etiketiyle). Adını değiştirir, kapatır,
+yeniden açar. **Hiçbir şey silinmez;** kapatılan yer kalır ve kabule sunulmaz. Hastası olan yatak
+kapatılamaz; altında açık yatak olan oda ya da birim de. **Bir birimde iki yatak aynı etiketi
+taşıyamaz** — oda farklı olsa da, kapalı yataklar dahil; büyük/küçük harf ve baştaki/sondaki
+boşluk fark etmez — böylece bir etiket birimde tek bir yeri gösterir. Aynı birimde iki oda da aynı
+adı taşıyamaz. Her yapı değişikliği denetim kaydına yazılır. **Ekranlar yerleri hep adıyla
+söyler, asla iç kodla:** yatak "etiket · oda · birim" diye yazılır (ör. "3 · Otaq 1 ·
+Reanimasiya"). Ad henüz okunamadıysa yer tutucu bir numara ("Birim 1") ve bunun yalnız yer tutucu
+olduğunu söyleyen bir not görünür; yapı okunmuş ama yeri tanımıyorsa ekran "Bilinmeyen birim 1"
+der.
+
+**Kapsam düzenleyicisi:** Yönetim › Kullanıcılar'da bir çalışanın birimleri düzenlenirken seçenekler
+artık yapıdan gelir: her birim adıyla, her yatak "etiket · oda · birim" olarak, boş bir birim de.
+Kod yazma kutusu yoktur ve aynı yer iki kez verilemez. Eski, serbest metinle verilmiş atamalar
+yazıldığı gibi görünür ve kaldırılabilir; yalnız eski anahtarıyla bilinen boş bir birim ise buradan
+verilemez (kapsam dilimine kaldı). Panodaki kapsam notu da atanmış ama kartı olmayan birim ve
+yatakları okuyanın dilinde, adlarıyla söyler.
+
+**Kişi başına tek açık kabul:** aynı ad soyad ve doğum tarihiyle açık bir kabul (imza bekleyen,
+yatan ya da taburcusu başlatılmış) varken ikinci kabul reddedilir: "Bu hastanın açık bir kabulü
+zaten var; önce taburcu edilmeli." Açık kabulün yatağı sizin birimlerinizdeyse numarası da yazılır.
+Karşılaştırmada büyük/küçük harf, aksan ve fazla boşluk fark etmez (İ/ı dahil); "ə" ise
+ayrışmaz: "Məmmədov" ile "Memmedov" iki ayrı addır. Neden: bir sayfa yenilemesi, ikinci bir sekme
+ya da yeniden giriş aynı hastayı iki yatağa yatıramasın.
+
+**Transfer henüz yok:** hastayı başka bir yatağa ya da birime taşımak bu dilimde yapılamaz;
+transfer kapalıdır ("Transfer henüz kullanılamıyor."). Eski transfer yolu kartı eski yatakta
+bırakıyordu (aynı yatakta iki kart, bozulan monitör bağlantısı) ve bir birimin hekimi başka bir
+birimin hastasını kendi birimine taşıyabiliyordu; bu yüzden kullanıcı kararıyla kapatıldı.
+Transfer kendi diliminde (B1b), birim denetimleri ve ekranıyla gelecek.
+
+**Reddedilen işlem:** sunucu her reddi değişmez bir kodla verir; ekran onu okuyanın dilinde
+söyler, sunucunun İngilizce sözcüklerini göstermez. Ret, işlemin konusu olan yatakla birlikte
+bildirimde (toast) görünür.
+
+**Bu dilimin henüz yapmadıkları**
+- Transfer (B1b), bakım ekibi (B1c), protokol ve hasta etiketi, barkod (B1d).
+- HBYS'den bekleyen hastalar paneli ve formun HBYS'den önceden dolması (ADT akışı gelince).
+- Yeniden yatan bir kişiyi eski kaydıyla eşleştirme (her yatış yeni numara alır); kimliği
+  bilinmeyen hastanın (doğum tarihsiz) kabulü; başucu cihazında hastanın adının görünmesi.
+- Taburcu edilmiş bir hastanın eski kabullerine ve bilgilerine bakma (kimin bakabileceği,
+  denetimli — sonraki dilim).
+- Taburcu sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
+  (rozet yalnız kartta).
+- İmza, imzalayan hekimi bakım ekibine eklemez (B1c).
+- Kabul, Taburcu, Yataklar ve Yapı'nın Azerbaycanca, Rusça ve İngilizce metinleri yerel bir
+  okuyucunun okumasını bekliyor.
+- **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak; orada önce
+  Yönetim › Yapı'da koğuş kurulur, sonra monitörlerin cihaz→yatak tablosu yeni yatak kimlikleriyle
+  onaylanır.
+
+### 3.9 «Monitörler» ekranı: monitör–yatak eşleme (Grup 2 · Lane B)
+
+«Monitörler» (sol ray) Aşama A'dan beri cihaz ekranıdır: her monitörün şeridi, hasta bilgisi
+olmadan. Bu dilimle ekranın üstüne **«Monitör–yatak eşleme»** bölümü eklendi ve ekran sorumlu
+hemşireye de açıldı. Bölüm yalnız eşlemeyi değiştirir; klinik bir karar vermez, hiçbir değer
+hesaplamaz. Örneklerdeki adresler v2 dosyasındaki biçimdedir, hasta adı uydurmadır.
+
+**Ne?** Hangi başucu monitörünün hangi yatakta durduğu. Monitör şeridi ve Aşama B'nin gölge motoru
+bir monitörün değerlerini yalnız bu eşlemeyle bir yatağa, oradan da o yatakta yatan hastanın kartına
+bağlar. Eşleme eskiden onaylı bir dosyaydı (`device-beds.icu2.json`, sürüm 2); bu dilimle
+veritabanında, hastane başına bir tablo olur (`device_beds`, göç 0014) ve değişiklik bu ekrandan
+yapılır. Tablo dağıtımda dosyadan bir kez aktarılır; dosya tarihçe olarak kalır ve hastanenin
+sunucusunda onu düzenlemek artık hiçbir monitörü taşımaz.
+
+**Kim?** Bölümü `devices.map_beds` ya da `devices.manage` yetkisi olan görür; eşlemeyi yalnız
+`devices.map_beds` taşıyan değiştirir:
+
+| Kim | Ne yapar |
+|---|---|
+| Sistem Yöneticisi | Görür, bağlar, çözer (bütün izinleri taşır) |
+| Sorumlu Hemşire | Görür; **yalnız kendi birimlerinin** yataklarında bağlar ve çözer |
+| Biyomedikal Teknisyen | Listeyi görür, değiştiremez (`devices.manage`) |
+
+Sorumlu hemşire başka bir birimdeki yatağa monitör bağlayamaz, oradaki bir monitörü taşıyamaz ya da
+çözemez. Yetki yeni bir hastanede Sorumlu Hemşire grubunda varsayılan olarak gelir; bugünkü
+hastanede onu, tabloyu dosyadan aktaran tek seferlik içe aktarma verir. Yönetici yetkiyi Yönetim ›
+Roller ve yetkiler'de başka gruplara da verebilir ya da geri alabilir; içe aktarmanın yeniden
+çalışması geri alınmış yetkiyi geri koymaz. İçe aktarmadan önce açılmış bir oturum yetkiyi oturum
+yenilenince alır. Bölüm yalnız monitör şeridi bu hastane için çalışırken çalışır; değilse «Monitör
+şeridi bu hastane için çalışmıyor; eşleme şu an değiştirilemez.» der.
+
+**Liste.** Ağ toplayıcısının bildirdiği ve tablonun tuttuğu her monitör bir satırdır, adres
+sırasıyla. Sütunlar: **Monitör** (IP ve port, ör. `10.10.203.37 · 2050`; altında soluk yazıyla
+grubu), **Merkezi istasyon adı** (merkezi monitörün ona verdiği ad, ör. `BED08`; yoksa «—»; bu ad
+elle yazılmaz), **Görünürlük**, **Yatak** («bed08 · Otaq 08 · Reanimasiya» — yatağın Yapı'daki
+etiketi, odası, birimi) ve **İşlem**. Liste ekran açıkken 5 saniyede bir ve her değişiklikten hemen
+sonra yeniden okunur. Listede hiçbir yerde hasta yoktur.
+
+**Satırdaki sözler**
+- «görünüyor» — ağ toplayıcısı monitörü bildiriyor.
+- «görünmüyor · son görülme 13:42» — 15 saniyeden uzun süredir bildirmiyor (saat bu tarayıcının
+  yerel saatidir).
+  Bağlıysa bağlı kalır: **hiçbir şey kendiliğinden çözülmez.**
+- «görünmüyor · son görülme bilinmiyor» — API yeniden başladığından beri hiç bildirilmedi (son
+  görülme yalnız bellekte tutulur).
+- «bağlı değil» — monitör hiçbir yatakta değil. Ağ toplayıcısının yeni bildirdiği bir monitör de
+  böyle görünür; onu görmek tabloya hiçbir şey yazmaz. v2'de yatağı olmayan tek satır (merkezi
+  istasyon adı `BED01`) da «bağlı değil» okunur.
+- «başka birimde» — monitörün yatağı sizin birimlerinizden birinde değil; yatağın adı gösterilmez,
+  satırda düğme yoktur.
+
+**Yatağa bağlama.** Satırdaki **«Yatağa bağla»** (monitör bağlıysa **«Başka yatağa bağla»**):
+1. **Yatak seçilir, asla yazılmaz.** Pencere («Yatak seçin — 10.10.203.37 (BED08)») Yapı'daki
+   yataklarınızı birim, oda ve etiket sırasıyla tek bir listede verir; her yatak «etiket · oda ·
+   birim» diye yazılır. Kapalı yataklar soluktur, seçilemez ve nedenini söyler: «birim kapalı», «oda
+   kapalı» ya da «yatak kapalı». Yatakta başka bir monitör varsa «monitör: 10.10.203.24 (BED11)»,
+   yatakta hasta varsa «dolu» yazar — bu yalnız bilgidir, kararı sunucu verir. Monitörün şu anki
+   yatağı listede yoktur. Seçip **«Devam»**.
+2. **Tek cümlelik onay** («Onaylayın»): «10.10.203.37 (BED08) → bed08 · Otaq 08 · Reanimasiya».
+   Yatakta başka bir monitör varsa «10.10.203.24 (BED11) bu yataktan ayrılacak.» da yazılır: o
+   monitör aynı işlemde çözülür, bir yatakta hiçbir an iki monitör olmaz. Monitör başka bir yataktan
+   geliyorsa «Monitör şu yataktan ayrılacak: …» der. **«Onayla»**.
+3. **Yatakta yatan hasta varsa ikinci onay** («Bu yatakta yatan hasta var»). Hedef yatakta ya da
+   monitörün ayrıldığı yatakta yatan bir hasta varsa — burada açılmış bir kabul ya da panonun o
+   yatağa koyduğu bir hasta, HBYS'den gelenler dahil — sunucu değişikliği yapmaz ve bu adımı açtırır.
+   Her yatak için bir satır: «Yatakta: bed08 · Ahmet Y.» ve altında «Monitörün değerleri bu hastanın
+   kartına akmaya başlayacak.» (gidilen yatak) ya da «Monitörün değerleri bu hastanın kartına akmayı
+   bırakacak.» (ayrılan yatak). Hasta yalnız kısa adıyla görünür; numara, doğum tarihi, kimlik
+   görünmez. Oturumun panosunda o hastanın kartı yoksa satır yalnız «bed08: Bu yatakta yatan bir
+   hasta var.» der. İlk odak **«Vazgeç»**tedir: Enter onaylamaz, vazgeçer. Onay **«Evet, devam et»**.
+
+**Son onaydan önce hiçbir şey değişmez.** «Onayla» ve «Evet, devam et» düğmeleri adımları
+açıldıktan sonra 600 ms soluk durur ve bir çift tıklamanın ikinci tıklaması sayılmaz: hızlı bir çift
+tıklama bir adımı, özellikle hasta onayını atlayamaz. İkinci onay, ilk onayda gösterilen eşlemeyi yeniden gönderir; arada başka
+biri eşlemeyi değiştirdiyse sunucu reddeder ve gösterilmemiş bir monitör çözülmez. Sonuç ekranda ve
+bildirimde söylenir («10.10.203.37 (BED08) bağlandı: bed08 · Otaq 08 · Reanimasiya»; zaten öyleyse
+«Değişiklik yok: zaten böyle.») ve liste yenilenir.
+
+**Kısa ad nasıl kurulur.** Adın ilk sözcüğü tam, sonraki her sözcüğün ilk harfi ve nokta (en çok
+üç); sondaki baba adı eki («oğlu», «qızı», «kızı»; «oglu», «qizi», «оглы», «кызы») düşer: «Ahmet
+Yılmaz» → «Ahmet Y.», «Məmmədov Əli Həsən oğlu» → «Məmmədov Ə. H.». Harf yazıldığı gibi alınır,
+büyütülmez. Ad kabulde tek bir serbest metin kutusudur ve sözcük sırası yazanınkidir: kısa ad bir
+**tanıma yardımıdır, kimlik doğrulaması değildir.** Yalnız bu adımda, yatağın etiketinin yanında
+görünür; bildirimde, günlükte ya da sunucuya giden istekte yoktur.
+
+**Bağlantıyı çözme.** **«Bağlantıyı çöz»** yalnız bağlı bir monitörde görünür. Tek onay:
+«10.10.203.37 (BED08) ile bed08 · Otaq 08 · Reanimasiya arasındaki bağlantı çözülecek.» Yatakta yatan
+hasta varsa aynı ikinci onay gelir, bu kez «… akmayı bırakacak.» der. Sonra monitör listede «bağlı
+değil» okunur; listeden ve tablodan silinmez.
+
+**Değişiklikten sonra şerit.** Şerit değişikliği en geç bir sonraki okumasında (≤ 5 sn) gösterir:
+- Bağlanan monitör yeni yatağının kartında görünür. Yatağın adı artık **Yapı'daki etiketidir**:
+  v2'den gelen satırlar merkezi istasyonun yazımını taşır («BED05»), ekrandan yapılan her bağlama ise
+  yatağı Yapı'daki adıyla yazar («bed05»). Cihaz satırı «Tabloda: uygulamada elle eşleme · doğrulama
+  2026-11-01 14:05» der (saat bu tarayıcının yerel saatidir).
+- Çözülen ya da yerinden edilen monitör «Atanmamış cihaz · 10.10.203.37» olur; değerleri hiçbir
+  hastaya ait gösterilmez.
+- Aşama B açıksa (aşama `rules`) gölge motor bir sonraki monitör paketinde yeni bağlantıya geçer:
+  değerler yeni yatağın hastasına akar; biten bağlantıda eski hastanın açık gölge bulguları kapanır.
+
+**Ret mesajları** (sunucu her reddi bir kodla verir, ekran okuyanın dilinde söyler):
+- «Bu arada değişti — liste yenilendi; yeniden bakın.» — siz bakarken başka biri eşlemeyi değiştirdi.
+  Pencere kapanır, liste yeniden okunur; yeniden bakıp yeniden deneyin.
+- «Bu yatak sizin birimlerinizden birinde değil.» — hedef yatak ya da monitörün ayrıldığı yatak
+  sizin birimlerinizde değil; ret hangi yatak içinse onun adıyla gelir.
+- «Bu yatak, odası ya da birimi kapalı.» — yatak siz seçerken kapatıldı.
+- «Bu monitörü ağ toplayıcısı bildirmiyor.» — ne tabloda ne ağ toplayıcısının listesinde.
+- «Monitör şeridi bu hastane için çalışmıyor; eşleme şu an değiştirilemez.»
+
+Bu retlerde hiçbir şey değişmemiştir. Sunucudan hiç yanıt gelmezse değişiklik yapılmış olabilir:
+pencere kapanır ve liste yeniden okunur — tekrar denemeden önce listeye bakın.
+
+**Yönetim › Yapı ile ilişkisi.** Şerit monitörün yatağını eşleme satırındaki etiketle adlandırır,
+liste ise Yapı'daki adıyla. Bugünkü tablonun v2'den gelen satırları «BED05» der; Yapı'daki yatak
+«bed05» olabilir. Monitörü bağlı bir yatakta:
+1. **Etiket değişmiyorsa** (yalnız kapatma ya da açma, ya da aynı etiket) eşleme satırına dokunulmaz.
+2. **Yapı etiketi, satırın zaten taşıdığı etikete çevrilirse** (Yapı'da «bed05» → «BED05») yalnız
+   yapı değişikliği kaydedilir: eşlemede yeni satır yoktur, tablonun sürümü ve özeti aynı kalır,
+   şerit «BED05» okumaya devam eder. Bir yatağı v2 etiketine hizalamanın temiz yolu budur.
+3. **Başka herhangi bir etikete çevrilirse** (ör. «Yatak 5»; büyük/küçük harf farkı da sayılır) eski
+   satır kapanır, aynı monitör aynı yatakta yeni etiketle açılır (`device_bed.relabel`): tablonun
+   sürümü bir artar, özeti değişir, şerit yeni etiketi gösterir.
+
+**Monitörü bağlı bir yatak kapatılamaz.** Yapı «Bu yatağa bir monitör bağlı — önce «Monitörler»
+ekranında bağlantıyı çözün.» der (bildirim yatağın adıyla başlar): önce «Monitörler»de bağlantıyı
+çözün, sonra kapatın. Oda ve birim ancak bütün yatakları kapalıyken kapandığı için onlar da buna
+bağlıdır. Aynı dilimde Yapı'da iki düzeltme (B1a dağıtımının dersleri): boş bir kutunun düğmesi (ör.
+«Yatak ekle») neden tutulduğunu artık kutunun altında görünür biçimde söyler, basıldıktan sonra hata
+renginde; oda ekleme kutularının görünür etiketleri vardır («Oda adı», «Oda numarası (isteğe bağlı,
+örn. 05)») ve altlarında «Yatak, oda eklendikten sonra odanın altında «Yatak ekle» ile eklenir.»
+ipucu.
+
+**Kayıt.** Her değişiklik denetim kaydına eski ve yeni satırıyla, yapanın kullanıcı adıyla yazılır:
+`device_bed.bind`, `device_bed.unbind` (yerinden edilen monitör için de, «replaced» nedeniyle),
+`device_bed.relabel` (Yapı'daki ad değişikliği) ve ilk aktarım için `device_bed.import`. Hastası olan
+yatakta onaylanmış bir değişiklik o hastanın pano numarasını taşır, adını asla. Tablo geçmişi silmez:
+bir değişiklik eski satırı kapatır, yenisini açar; veritabanı satır silmeyi ve kapatmadan başka her
+düzenlemeyi reddeder.
+
+**Bu dilimin henüz yapmadıkları**
+- Ekranda eşleme geçmişi (geçmiş tabloda ve denetim kaydında durur, ekranı yok); merkezi istasyon
+  adını düzenlemek (kimlik elle yazılmaz); doğru yatağı kendiliğinden önermek; ağ toplayıcısının
+  göremediği ağlardaki monitörler; mobil; bir cihazı kalıcı olarak silmek.
+- Eşleme bölümünün Azerbaycanca, Rusça ve İngilizce metinleri yerel bir okuyucunun okumasını
+  bekliyor.
+- **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak («main'e al», sonra
+  «onay»); o güne dek sunucudaki eşleme v2 dosyasıdır.
 
 ---
 
@@ -1172,8 +1522,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     seri protokolü (MS28819, X5 konektörü — MEDIBUS'tan farklı) bir sonraki seçenek olur.
   - **Aşama A şeridi (19 Ekim 2026'dan beri canlı):** Gateway beklenmeden, kendi çözücümüzün
     okuduğu 13 Kappa monitörünün değerleri klinik panoda "Monitör · doğrulanmamış" başlıklı kesik
-    çizgili bir şeritte görünür. Yalnız görüntüdür: alarm, skor, bildirim, ses üretmez; motor bu
-    değerleri hiç görmez (kabulde pano özeti değişmedi, denetim kaydına 0 satır düştü). Bütün
+    çizgili bir şeritte görünür. Aşama A'da yalnız görüntüdür: alarm, skor, bildirim, ses
+    üretmez; motor bu değerleri hiç görmez (kabulde pano özeti değişmedi, denetim kaydına 0 satır
+    düştü). Aşama B açılırsa (aşağıdaki «Gölge öneri» maddesi) bu değerlerden *gölge* bir skor
+    (NEWS2 dahil) hesaplanır — alarm kapalı, yalnız tavsiye; gerçek motor yine hiçbir şey
+    görmez. Bütün
     klinisyenler görür; biyomedikal ayrıca "Monitörler" ekranında cihazları hasta bilgisi olmadan
     görür. Kapatma üç kademe: **G-1** forwarder kapalı (hub'da drop-in 93 silinir; saniyeler
     sürer; şerit "Monitör verisi gelmiyor" der), **G-2** aşama kapalı (API `.env`'de
@@ -1181,7 +1534,8 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     tablosu (`deploy/local/infinity-shadow/device-beds.json`, sürüm 1, sha `ac5ce1c9549c`)
     19.10'da proje sahibince merkezi monitörün yatak listesinden onaylandı; değişiklik yeni bir
     sürüm olarak aynı yolla onaylanır. Ayrıntı ve kabul ölçümleri: `deploy/infinity/README.md`,
-    "Aşama A" bölümü.
+    "Aşama A" bölümü. (Monitör–yatak eşleme dilimi sunucuya dağıtılınca tablo veritabanına taşınır
+    ve «Monitörler» ekranından değiştirilir; dosya tarihçe olarak kalır — 3.9.)
   - **Şeritte NBP (NBP dilimi):** cihaz NBP'nin ne zaman ölçüldüğünü pakette söylemiyor (son
     değeri her pakette yineliyor), bu yüzden şerit NBP'yi **değerinin son değiştiği saatle**
     gösterir: "NBP 118/79 (92) mmHg · ölçüm ≤ 10:42 (12 dk)". "≤" bir **üst sınırdır**: manşon en
@@ -1190,12 +1544,72 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     saat, hub saatine göre, gerçeğinden en çok 3 saniye yeni olur (işçi ile API arasındaki en çok
     2 sn'lik saat kayması şeritteki her yaş için aynıdır). Hub yeniden başladıktan sonra, ya da
     değer bir kesinti ya da tam üçlüler arasında 3 saniyeden uzun bir boşluk sırasında değiştiyse,
-    NBP değeri değiştiren bir sonraki ölçüme kadar "— ölçüm bekleniyor" yazar (aynı değer geri
-    gelirse eski saatiyle hemen görünür). Değeri 2 saatten uzun süredir değişmemiş NBP gösterilmez
-    ("— eski · 3 sa"; API 2 saatten 15 sn önce keser ki hiçbir ekranda 2 saati geçmesin). Aynı
+    NBP'nin saati bilinmez: R4'te değeri değiştiren bir sonraki ölçüme kadar "— ölçüm bekleniyor"
+    yazardı; NBP-2 (R5) ile değer «ölçüm zamanı bilinmiyor» notuyla gösterilir (bir sonraki madde).
+    Aynı değer geri gelirse eski saatiyle hemen görünür. Saati bilinen ve değeri 2 saatten uzun
+    süredir değişmemiş NBP gösterilmez ("— eski · 3 sa"; API 2 saatten 15 sn önce keser ki hiçbir
+    ekranda 2 saati geçmesin). Aynı
     değerle yinelenen ölçüm fark edilmez (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4,
     drop-in 94; geri alma: önce 94 silinir (hub R3'e, NBP'siz şeride döner), API/web ancak ondan
     sonra. Dağıtımda sıra tersidir: önce API ve web, sonra hub.
+  - **Şeritte zamanı bilinmeyen NBP (NBP-2, 28.10 kararı «son değeri göstersin»):** hub açıldığından
+    beri değeri değişmemiş bir NBP'nin saati bilinmez; şerit onu artık gizlemez, monitörün o an
+    gösterdiği değeri **«ölçüm zamanı bilinmiyor»** notuyla gösterir: "NBP 118/79 (92) mmHg · ölçüm
+    zamanı bilinmiyor". Not dikkat renginde, "≤" ve ölçüm yaşı yok: değer monitörün gösterdiğidir,
+    ne zaman ölçüldüğü bilinmez. İlk değişiklik görülünce saatli biçime döner. Yalnız tam ve geçerli
+    üçlü gösterilir (`***` ya da eksik parça varsa gösterilmez); paket eskiyince diğer değerler gibi
+    gizlenir. Bu değer hiçbir kurala girmez (gölge motor NBP'yi yalnız saatiyle alır). Hub sürümü R5,
+    drop-in 95; geri alma: 95 silinir (R4'e, zamansız manşet «ölçüm bekleniyor»a döner). VM'de
+    30.10.2026'dan beri çalışıyor.
+  - **Gölge öneri · alarm kapalı (Aşama B — hastanede 28.10.2026'dan beri açık, aşama `rules`):**
+    Aşama B'de şeritteki değerler yalnız gösterilmekle kalmaz, kuralların girdisi de olur — ama
+    gerçek motora değil, ona hiç dokunmayan ikinci bir "gölge" motora. **Gölge öneri**, kuralların
+    (NEWS2, sepsis…) monitörün doğrulanmamış değerleriyle söyleyeceği şeydir. Her yatak için,
+    parametre başına dakikada bir örnek alınır (her ölçüm değil); yalnız monitörü yatağa bağlı olan
+    ve o yatakta tam bir hasta kayıtlı bulunan yataklarda. İki hasta ya da iki monitör varsa hiçbir
+    şey yazılmaz.
+    - *Ne değildir:* **alarm değildir.** Zil çalmaz, bildirim gitmez, eskalasyon olmaz, Alarmlar
+      ekranına girmez, hiçbir alarm sayacına girmez; bu değerler gerçek motorun hiçbir kaydına
+      yazılmaz. Başucu monitörü birincil alarmdır — gölge öneri onun yerine geçmez ve ona bakmayı
+      bırakmak için gerekçe değildir. Tanı da koymaz: kuralların hangi girdilerle ne söyleyeceğini
+      gösterir, kararı klinisyen verir.
+    - *Nerede görünür:* (1) Hasta ekranında «Ölçülen değerler» bölümünde, kayıtlı değerlerin
+      yanında (yerlerine geçmeden) «monitör · HR», «monitör · PLS», «monitör · SpO₂»,
+      «monitör · ART» ya da «monitör · NBP» etiketli, saatli kartlar; ve ekranın aşağısında
+      «Gölge öneri · alarm kapalı» kutusu: gölge NEWS2 puanı ve girdileri (eksik ya da varsayılan
+      girdi uyarıları gerçek NEWS2'dekiyle aynı biçimde yazılır; gölge puan çoğunlukla kısmidir,
+      çünkü solunum ve sıcaklık monitörden okunmaz), gölge bulgular ve her birinin gerçek motorun
+      bulgusuyla ilişkisi: «gerçek bulguyla aynı», «yalnız gölgede», «düzey farklı». (2) Yatak
+      kartında şeridin altında kehribar bir etiket: gölge bir bulgu varsa «gölge öneri · NEWS2 7 ·
+      3 dk önce» (puan ve son girdinin yaşı), yoksa «gölge öneri yok»; pano güncel değilse «gölge
+      öneri · bilinmiyor». (3) Ayarlar'da «Uyarsaydı — son 7 gün»: yalnız gölgede açılan bulgular,
+      yani monitör girdileri olmasaydı görünmeyecek olanlar; haftalık değerlendirme içindir. Haftada
+      kaç tanesinin kabul edilebilir olduğu için kasada bir kaynak yok; bu rakamı klinisyen
+      belirleyecek.
+    - *Kaynak etiketleri:* **HR** EKG'den nabız; **PLS** SpO₂ probundan nabız (yalnız HR yoksa
+      kullanılır); **SpO₂** monitörün SpO₂'si; **ART** arter hattının sistolik ve ortalama basıncı;
+      **NBP** manşet basıncı — yalnız arter hattı değeri yoksa ve ölçüm en çok 1 saat önceyse
+      kullanılır. Manşetin saati şeritteki gibi «≤» ile verilen bir üst sınırdır ve puan o saate göre
+      değerlendirilir. Kart hangi kaynaktan okunduğunu yazar; kaynak değişirse (ör. HR kesilip
+      PLS'e geçilirse) etiket de değişir.
+    - *HR/PLS düzeltmesi (hub sürümü R6):* 27.10'da, HR ile PLS'in farklı olduğu bir yatakta planlı
+      kayıt ve videoyla doğrulandı ki kod iki adı **ters** veriyordu. R6'ya kadar şeritteki «HR»
+      aslında SpO₂ nabzı, «PLS» EKG nabzıydı; gölge motor da nabzı önce SpO₂ probundan aldı. Çoğu
+      hastada ikisi aynıdır. R6 iki adı yer değiştirir; ondan önceki gölge örnekleri ve bulgular eski
+      adlarla kayıtlı kalır.
+    - *Bilerek dışarıda:* solunum sayısı (RESP) ve vücut sıcaklığı kurallara girmez — izin listesinde
+      kapalıdır (RESP ekrandan doğrulanmadı; sıcaklığın ölçüm yeri belli değil); arter diyastolik
+      basınç ve etCO₂ de girmez. Şerit bunları göstermeye devam eder. Dalga formu yoktur.
+    - *Hasta değişince:* yatağın hastası değişirse eski hastanın monitör değerleri yeni hastaya
+      yazılmaz (eski hastanın gölge bulguları kapanır, yeni hasta ilk örneğini bir dakika içinde
+      alır); monitör taburcu edilmiş bir numaraya bağlıysa hiçbir şey yazılmaz.
+    - *Açma ve kapatma:* hastanenin yazılı onayı olmadan sahada açılmaz. Kapatma kademeleri:
+      **G-1** forwarder kapalı (örnekleme geçişi hiç çalışmaz, bağlantı da bitmez: açık gölge
+      bulgular yaşlarıyla gösterilerek forwarder dönene ya da aşama değişene dek açık kalır);
+      **G-2b** API `.env`'de `INFINITY_CLINICAL_STAGE=shadow` (örnekleme durur, açık her gölge
+      bulgu kapanır, kutu ve etiketler kalkar, gerçek pano değişmez); **G-2** `off` (şerit de
+      kalkar). Ayrıntı: `deploy/infinity/README.md`, "Aşama B" bölümü; tasarım:
+      `docs/superpowers/specs/2026-10-27-infinity-asama-b-golge-motor-design.md`.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)

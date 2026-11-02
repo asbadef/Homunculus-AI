@@ -399,6 +399,43 @@ plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
   regular 3.00–3.01 s gap between complete valid triples about every 45 s and none longer; the user
   chose to deploy as is and to widen `NBP_CONTINUITY_S` with a day's evidence (O38).
 
+**R5 — the untimed NBP** (spec `docs/superpowers/specs/2026-10-28-infinity-nbp2-zamansiz-deger-design.md`;
+owner decision 2026-10-28 «son degeri gostersin»):
+
+- Release R5 `/opt/homunculus-infinity/transport-c51afb1059de3a08`: R4 plus one rule in the forwarder — when a device's
+  three NBP components are present, valid, fresh and the complete valid triple the hub holds, but no
+  change has been seen since the hub started (X38/X46), the three travel with `changed_at: null`
+  (`_untimed_nbp`). A `***`, stale or missing part, or a partial packet's lone newer value, still
+  sends nothing. The live view's snapshot carries `nbp_triple`. The schema stays v2.
+- The API takes `changed_at: null` on a v2 NBP reading and shows the triple as `value_untimed`: the
+  numbers with the packet's age, no measurement time, hidden by packet age like every parameter
+  (15 s) and forgotten after 120 s; the 2-hour rule needs a time and does not apply. A `***` part is
+  `invalid` (the API's own rule — an R5 hub sends no untimed triple with a `***` part), a mixed
+  triple is «ölçüm bekleniyor». **Never a rule input:** the rules lane feeds NBP only with a
+  `changed_at` (`api/infinity_rules.py` `pick`); Aşama B's gates are unchanged.
+- The strip draws it apart: «S/D (M) mmHg · ölçüm zamanı bilinmiyor» (the note in the attention
+  tone, no «≤», no measured age); the first seen change turns it into «ölçüm ≤ HH:MM (N dk)». The
+  Settings legend says so. `shadow_check.py`'s `nbp:` line counts «M cihazda zamanı bilinmeyen değer».
+- `95-nbp2.conf` — `94-nbp.conf` with the release path changed to R5, checked by `diff` before it is
+  installed. 93 stays. **Order: the API and web first, then the hub** — an R5 hub posting null to the
+  older API is refused whole (400). **Rollback — the hub first:** delete `95-nbp2.conf`, `daemon-reload`,
+  restart the hub (R4: untimed cuffs back to «ölçüm bekleniyor»); the API/web by image tag only after
+  that. No migration.
+
+**R6 — HR and PLS named as the screen shows them** (finding of 2026-10-27, a planned bedside capture
+with video on a bed where the two rates differed): record `0x0101` is the screen's HR (ECG) and `0x1905`
+the screen's PLS (SpO₂ pulse) — the reverse of `infinity_records.py`'s table up to R5. Until R6 the
+strip showed the SpO₂ pulse under "HR" and the ECG rate under "PLS" (equal on most patients; about
+20/min apart on that bed that day), and Aşama B's rules lane, which takes `HEART_RATE` from `hr`
+before `pls` (spec D3), was fed the SpO₂ pulse first. Shadow samples, findings and audit rows written
+before R6 keep the old names; nothing rewrites them.
+
+- Release R6 `/opt/homunculus-infinity/transport-107b84b09fb7caab`: R5 with the two names swapped in `PARAMETERS`, nothing
+  else. The wire schema (v2), the API, the web and the worker do not change.
+- `96-hr-pls.conf` — `95-nbp2.conf` with the release path changed to R6, checked by `diff` before it
+  is installed. 93 and 94 stay. **Hub only.** Rollback: delete `96-hr-pls.conf`, `daemon-reload`,
+  restart the hub (R5, the old names). No migration.
+
 **Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
 
 - `shadow-forwarder.env` (root:root 0600) holds `INFINITY_SHADOW_URL`
@@ -413,7 +450,9 @@ plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
 token. `infinity-shadow/device-beds.json` is the device→bed table: version 1, sha256
 `ac5ce1c9549c…`, 13 devices on 13 beds, 0 unassigned, approved by the project owner on
 2026-10-19 from the central station's bed list (commit `a2c1257`). A change to the table is a
-new version approved the same way, never an edit in place.
+new version approved the same way, never an edit in place. (Superseded by the monitor→bed editor
+once it is deployed: the table then lives in the database and is changed on «Monitörler» — see
+"The device→bed table in the database" at the end of this file.)
 
 **Rollback, three tiers** (blocks in the plan; each stops on its first error, and a line saying
 "durdum" means nothing changed):
@@ -439,7 +478,11 @@ It reads `TENANT_TOKEN` from the API's `.env` (never printing it), asks the API 
 and the board twice, `--window` seconds apart, and prints one KABUL/RED row per criterion, each
 device's status with its fresh-value count and oldest age, and `PANO_OZET` — the sha256 of
 `/patients` with the self-ageing keys removed, so two readings of an unchanged board hash
-alike. It never prints a physiological value, a patient id or a token.
+alike. It never prints a physiological value, a patient id or a token. It judges the stage
+`shadow` and the stage `rules` (Aşama B) alike; at `rules` the hash leaves out each card's
+`shadow` picture, which follows the monitors minute by minute and is not the engine's output.
+(Before 2026-10-30 the check knew only `shadow`: at `rules` it stopped at its stage row, and its
+hash moved with the shadow picture. Hashes from before and after that change are not comparable.)
 
 **Acceptance as measured on 2026-10-19** (Kabul K0–K9 of the plan; engineering thresholds,
 none clinical):
@@ -457,3 +500,207 @@ none clinical):
 | K9 biomedical / nurse | a biomedical-only account reaches Monitörler (13 devices, bed labels and addresses, no patient name or number) and nothing else; a nurse-only account has no Monitörler. A first attempt with both "Ek görev" boxes ticked gave the biomedical account `board.view` — the account was wrong, not the screen. |
 
 The pending rows (K7, the bedside comparison) are filled in here when they are taken.
+
+# Aşama B — `rules`: the shadow engine (spec 2026-10-27)
+
+Stage B is the parent design's `rules` stage: the monitor strip's values reach the rules, and every
+alarm stays off. The API keeps a second, **shadow** engine per hospital beside the real one; a
+sampler feeds it the linked beds' monitor values, and feeds nothing else. The ward sees what the
+rules would have said, dressed as advice that cannot be mistaken for an alarm; nothing rings, pages,
+escalates or counts. **State: code on `feat/infinity-asama-b`, not on `main`, not on the VM.** Spec
+`docs/superpowers/specs/2026-10-27-infinity-asama-b-golge-motor-design.md` (decisions D1–D13), plan
+`docs/superpowers/plans/2026-10-27-infinity-asama-b-golge-motor.md`. The deploy blocks are written
+when the user gives the word; the hub and the worker do not change (the forwarder already sends every
+parameter the lane needs).
+
+**The hospital's written acceptance comes first.** The parent design's decision 12 (§8.12) puts the
+hospital's written acceptance before the stage is switched on in the ward. At stage `shadow` the new
+code is inert (no sampler, no mirror, no `shadow` key on the board), so the code and the migration can
+sit on the VM before that; `rules` is the switch the acceptance gates.
+
+**Prerequisite.** Stage B runs on Lane B's B1a (main `ff5348a`, merged into this branch): admissions
+with their own bed id (migration 0012) and the device→bed table v2 with bed UUIDs. A device feeds a
+patient only when the approved table puts it on a bed and exactly one admitted patient is there; two
+monitors on a bed, two patients on a bed, a bed without a bed id and a discharged number feed nothing
+(spec D5). Lane B's admission (`admission/boardlink.py`) reaches the lane through the same hooks Lane
+A's doors use, handed to its `BoardLink` by `create_app`: the weight it charts through
+`app.state.shadow_mirror` (given to its chart, as `/clinical` gives it), its profile through
+`app.state.shadow_profile` after its `set_profile`, `app.state.shadow_occupancy_reset` after its
+identity write (the admission and a resend's retry), and its cards are built by the same `_card` /
+`_identity_card`, so they carry the `shadow` key. Each is pinned in `tests/test_kabul_boardlink.py`;
+without them an admission's charted values and profile would not reach the shadow engine, its bed
+would link the old occupant for up to 10 s, and its cards would carry no shadow picture.
+
+**The switch.** `INFINITY_CLINICAL_STAGE=rules` in `deploy/local/.env`, then
+`docker compose up -d --no-build api` (a plain restart keeps the container's old environment). The
+token, hospital and device→bed table are the ones Aşama A uses; a problem with any of them, or with
+the allowlist below, turns the stage off and the device screen says why. `alarms` is still
+`stage_not_implemented`. At each start with `rules` the shadow engine is built as a copy of the real
+one plus the last 24 hours of stored samples; findings are recomputed before the first frame and
+nothing is audited again for them.
+
+**The allowlist.** `INFINITY_RULES_PARAMETERS` (passed by `deploy/local/docker-compose.yml`, explained
+in `.env.example`): comma-separated strip parameter names. Unset or empty is the default,
+`hr,pls,spo2,art_systolic,art_mean,nbp`. `respiration`, `temperature`, `art_diastolic` and `etco2` are
+not in it (RESP is not screen-verified, the temperature site is unknown); naming one is accepted but
+this build has no engine code for it, so it feeds nothing and the log says so. A name that is not a
+strip parameter turns the stage off with the problem `parameters_unknown`. Changing the list is an
+`.env` edit plus `up -d --no-build api`, not a deploy. Which cell feeds which engine signal (spec D3):
+heart rate from `hr`, else `pls`; SpO₂ from `spo2`; systolic and mean pressure from the arterial line,
+else from NBP when it was measured at most an hour ago, stamped at its `changed_at`. At most one sample
+a minute per patient and signal, taken when a forwarder body arrives; there is no timer, so a silent
+forwarder stops the sampling by itself.
+
+**Migration 0013** (`homunculus-engine/alembic/versions/0013_monitor_samples.py`, after B1a's
+0012). A new table, `monitor_samples` (hospital,
+patient, bed, source, code, via, value, unit, captured and received times), kept 30 days: an hourly
+task deletes older rows — at every stage on a Postgres deployment, so after a rollback to `shadow` or
+`off` the rows a `rules` run wrote still expire; until the table exists that task logs one WARNING an
+hour («monitor_samples tablosu yok (göç 0013 uygulanmamış)») and skips. Without Postgres (a lab run)
+the samples stay in memory for 24 hours only, all a restart replays. Each sampling pass writes its rows
+in one transaction. The deploy blocks run `alembic upgrade head` as they do for 0012, and the API
+image's start command (`Dockerfile.api`) runs it too, so the table exists once the API is recreated on
+an image that contains the migration. An image rolled back later leaves the table in place; the older
+images do not read it. The table lives in the VM's database only. The same migration adds the audit
+index `ix_audit_tenant_event_id` on `(tenant, event_type, id)`: the lane reads its two kinds
+newest-first and `/alarm-quality` reads its five, and without it each read walks the tenant's rows
+by id. It is built inside the migration's transaction, so writes to the audit wait while it builds —
+at the API's start, before it serves. `alembic downgrade 0012` drops the table, its rows and the
+index.
+
+**What the ward sees** (only at `rules`, only for a patient whose bed is linked):
+
+- The patient screen: under «Ölçülen değerler», cards from the monitor tagged `monitör · HR`, `PLS`,
+  `SpO₂`, `ART` or `NBP` with their time, beside the charted ones and never replacing them; and the
+  box **«Gölge öneri · alarm kapalı»** — the «Gölge NEWS2» with its inputs and the same caveats the
+  real NEWS2 prints, then the shadow findings, each marked «gerçek bulguyla aynı», «yalnız gölgede»
+  or «düzey farklı» against the real engine's.
+- The bed card: one amber tag under the strip, «gölge öneri · NEWS2 N · yaş» when the shadow has a
+  finding, «gölge öneri yok» when it has none on a live board, «gölge öneri · bilinmiyor» when the
+  board is stale.
+- Settings: **«Uyarsaydı — son 7 gün»**, read from `GET /infinity-shadow/findings?days=7` — only the
+  findings that opened in the shadow alone, for the weekly review. Its acceptance figure is open (spec
+  O2).
+- The strip's foot sentence (and Settings' legend) changes. Below `rules` it says no alarm, score
+  (NEWS2 included), notification or sound comes from the values; at `rules` it says no alarm,
+  notification or sound comes from them and they enter no counter, that only an advisory shadow score
+  is computed from them and shown in «Gölge öneri · alarm kapalı», and that the bedside monitor stays
+  the primary alarm.
+- The device screen shows `gölge motor: hata` when the lane is in an error state (the clinical
+  request that triggered it still answered 200).
+
+**What does not change.** The real engine, the ack store, the alert lifecycle, the notifier,
+escalation, the alarm-quality counters, the Alarmlar screen and the bell; the audit's `ingest`,
+`alert` and first-seen rows (a monitor sample is no `ingest` row, so the real engine's replay never
+sees one). The only new audit rows are `shadow_alert` and `shadow_alert_cleared`. The gate is
+`tests/test_infinity_shadow_equivalence.py`, whose **third run** (stage `rules`, lane fed) must give
+every clinical output — the board's keys other than `shadow`, the audit rows other than `shadow_*`,
+notifications, acknowledgements, escalation, the bed map's discovery counters — identical to the
+stage-`off` run, both runs going through a restart mid-run, a charted profile and a link end;
+`tests/test_infinity_shadow_isolation.py` holds `api/infinity_rules.py` to importing, directly or
+through its imports, none of the notifier, the ack store, the alert lifecycle, the alarm-quality
+module, escalation, the broadcaster, the audit replay, the clinical door, the board or the app.
+
+**The audit's windows at `rules`.** The shadow rows are in the same audit log as the real ones.
+`/alarm-quality` reads only the kinds it counts (`first_seen`, `alert`, `ack`, `escalation`,
+`alert_cleared`), so no shadow row takes a place under its cap or moves a counter — the gate's three
+runs compare that report too. That filter is new with this code and applies at **every** stage, `off`
+included, from the deploy that brings it: before it every kind of row (each reading's `ingest` row
+among them) took a place under the cap, so after the deploy the report's `truncated` flag and its
+counters may read differently for the same window even at `off` — more accurate, but expect
+different figures than before the deploy. `/audit` and `/audit/verify` read every kind: `/audit`
+answers the newest `limit` rows (default 200, at most 1000; fewer of them real at `rules`; pass
+`event_type=` to read one kind), and `/audit/verify` checks the first 10 000 rows, so it reports
+`complete: false` sooner. Nothing is lost or altered — the chain covers the shadow rows like any
+other — only these two fixed windows hold fewer real rows.
+
+**Rollback, tiers for B** (each stops on its first error):
+
+1. **G-1 — forwarder off** (hub; unchanged from Aşama A): delete `93-asama-a-golge.conf`,
+   `systemctl daemon-reload`, restart the hub. The posts stop, so the samples stop (the sampler runs
+   only when a body arrives); the strip says "Monitör verisi gelmiyor" within 15–20 s. With no body
+   no sampling pass runs, so no link ends either: shadow findings already open stay open — shown
+   with their ages — until the forwarder returns or the stage changes (a discharge made here still
+   closes that patient's).
+2. **G-2b — back to `shadow`** (API): `INFINITY_CLINICAL_STAGE=shadow` in `.env`, then
+   `docker compose up -d --no-build api`. The sampling and the mirror stop, every open shadow finding
+   gets one `shadow_alert_cleared` row with `reason: stage`, the `shadow` key, the box, the tags and
+   the 7-day list disappear, the findings route answers 409, and the Aşama A strip is as it was. The
+   real board, alarms and counters are unchanged.
+3. **G-2 — stage off** (API): `INFINITY_CLINICAL_STAGE=off`, as for Aşama A: the strip goes too.
+4. **Code back:** API and web to the previous images, only after the stage is `shadow` or `off`. B
+   changes nothing on the hub, so there is no hub step; the `monitor_samples` table stays.
+
+For a problem on the shadow box alone: G-2b, then G-2 if the strip must go as well. Acceptance
+measurements for B are filled in here when they are taken; none exist yet.
+
+# The device→bed table in the database (G2-ESLEME, the monitor→bed editor)
+
+From the editor's deploy on, the strip and Aşama B read the device→bed table from the database
+(`device_beds`, migration 0014), not from `device-beds.json`, and the administrator or the charge
+nurse (`devices.map_beds`) changes it on «Monitörler». Spec
+`docs/superpowers/specs/2026-10-28-g2b-monitor-yatak-esleme-design.md`, plan
+`docs/superpowers/plans/2026-10-30-g2b-monitor-yatak-esleme.md`. **State:** code on
+`feat/g2b-monitor-esleme`, merged with main `5f733d3`; not on the VM. The deploy waits for the user's
+word, and it never touches the hub or the worker.
+
+- **What the API reads.** In production (a Postgres `DATABASE_URL`) with the lane on, the API reads
+  the table through `PostgresDeviceBeds` (`homunculus-engine/src/homunculus/api/device_beds_postgres.py`)
+  and no longer reads `INFINITY_DEVICE_BEDS_PATH`. The file stays on the VM and in the repo as
+  read-only history, the lab's source (no Postgres) and the import's input. **Editing it on the VM
+  moves nothing:** a change is made on «Monitörler».
+- **The read** is one statement, at most every 10 s and again at the first read after a change, on
+  the event loop, bounded like every sync store (`bounded_connect_args`: connect 3 s, statement 2000 ms, pool checkout
+  3 s, keepalives, TCP user timeout 4000 ms; `homunculus-engine/README.md`, "Database time bounds") and
+  released at shutdown. It fails closed: no rows for the hospital is `missing`, an unreadable database
+  or a broken current set is `invalid`, and either puts every monitor among the unassigned devices
+  until the next good read. No last good mapping is kept, so a monitor just moved never shows on the
+  previous bed's patient. The API image's libpq must be 12 or later (`tcp_user_timeout`): `docker
+  compose exec -T api python -c "import psycopg2; print(psycopg2.__libpq_version__)" </dev/null`
+  prints at least 120000.
+- **Order at the deploy:** `alembic upgrade head` in a one-off container of the NEW api image (0014 is
+  purely additive; the old API keeps serving), then the import, then the new API. The import comes
+  before the new API starts, so the strip never reads an empty table.
+- **Seed, once:** `docker compose run --rm --no-deps -T api python scripts/import_device_beds.py --tenant <slug> </dev/null`
+  checks the file's sha256 against the approved v2 (`84ac1760d59f…`), parses it with the strip's own
+  reader, checks every bed and unit against the tenant's structure, writes its 13 rows (12 on a bed,
+  1 without), grants `devices.map_beds` to the tenant's `charge_nurse` group in the same transaction,
+  audits `device_bed.import`, and prints one line on stdout: `ESLEME_ICE_AKTARIM {"tenant",
+  "file_sha256", "rows", "with_bed", "without_bed", "granted", "version", "sha256", "already",
+  "dry_run"}`. `--file` defaults to `/etc/homunculus/infinity-shadow/device-beds.json` (the path
+  compose mounts read-only), `--tenant` to `INFINITY_SHADOW_HOSPITAL`; `--dry-run` checks everything
+  and writes nothing.
+- **Its exit codes.** 0: imported, or — run again over untouched rows — `"already": true` with
+  nothing written, not even the grant, which an administrator may have taken away since. 2: a check
+  refused, nothing written (no tenant, no `DATABASE_URL`, an unreadable file, a sha that is not v2's,
+  a bed or unit that is not this tenant's). 3: the tenant's table holds other rows than the file's
+  (the editor has been used since), nothing written. 1: an unexpected failure (a lock timeout, the
+  database down); stderr says `ESLEME_ICE_AKTARIM_RED 1 <Class>[ <SQLSTATE>] — <note>`, rows may have
+  been written, and the same command run again says `"already": true` if they were. Every note and
+  refusal goes to stderr; stdout carries the one line or nothing.
+- **`version` and `sha256`** in `GET /infinity-shadow/board`'s `table` change meaning at the switch.
+  From the file: the file's version and its bytes' sha256 (v2: `2`, `84ac1760d59f…`). From the
+  database: `max(id)` of the tenant's rows, history included, and the SHA-256 of the current rows as
+  `[source, bed_id, bed_label]` (v2's rows: `e470d3342025…`; version 13 after the import into a fresh
+  table, then one more for every row a change inserts). `shadow_check.py --table-version/--table-sha`
+  take whichever holds; run it pinned by commit (`git show ade8da8:deploy/infinity/shadow_check.py |
+  ssh …`).
+- **Summary before and after:** `deploy/infinity/esleme_ozet.py` (standard library, piped to the hub's
+  `python3` like `shadow_check.py`, pinned by commit) prints `ESLEME_OZET_<ETIKET> {…}`: the bed
+  cards' `[source, bed_id, bed_label]`, the unassigned devices with their reasons, the `link: one`
+  count, the device total, the table and the stage. `--karsilastir ONCE.txt SONRA.txt` says `AYNI` or
+  `FARKLI`; the table is shown, not judged, since it changes by design at the switch.
+- **Yapı and the table.** A rename in Yapı of a bound bed closes its row and opens the same monitor on
+  the same bed under the new label (`device_bed.relabel`, version + 1, a new sha, the strip follows) —
+  unless the row already carries that label. v2's rows say «BED05» where Yapı may say «bed05»:
+  renaming that Yapı bed to «BED05» writes `structure.rename` only (version and sha unchanged), the
+  clean way to align a bed with its v2 label. A bed with a monitor bound cannot be closed
+  (`bed_has_monitor`). Rename no bound bed during the deploy window: the before and after summaries
+  would differ.
+- **Rollback.** R-1 (fast): the `:pre-esleme` images with a compose override whose `command` is the
+  old image's own CMD without `alembic upgrade head`. The database stays at 0014, the old code reads
+  the file again (`2` / `84ac1760d59f…`), and binds made since stay in the table and return with the
+  next deploy. R-2 (full): `alembic downgrade 0013` with the NEW image (it drops the three triggers and
+  their function before the table; editor rows, relabels included, leave the table, and the dump and
+  the audit keep them), the `devices.map_beds` rows deleted from `group_permissions`, then the old
+  images with their own command. The blocks: `G2B-ESLEME-bloklari.txt`.

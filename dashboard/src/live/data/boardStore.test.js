@@ -157,6 +157,61 @@ describe("the board store", () => {
     expect(state().patients).toHaveLength(2);
   });
 
+  // Aşama B: the API republishes a monitor-linked patient's real card about once a minute with only
+  // its shadow picture new. `alerts` is kept as the SAME array while no alert changes, so the
+  // critical-alarm notification, which re-runs on it (AlarmSignals.jsx), does not bring back one
+  // somebody dismissed; it is a new array the moment an alert changes. The card is always the frame's.
+  it("keeps the alerts array while a frame or a reload changes no alert, and gives a new one when an alert changes", async () => {
+    const { store, handlers, state } = setup();
+    await store.start();
+    handlers[0].onopen();
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    const held = state().alerts;
+    const card = state().patients[0];
+    const shadow = (total) => ({ news2: { total }, vitals: {}, findings: [{ kind: "septic_shock", severity: "critical" }] });
+    const send = (e) => handlers[0].onmessage({ data: JSON.stringify(e) });
+
+    send(entry("P-001", [alert("news2", "high")], { shadow: shadow(9), vitals: { heart_rate: 131 } }));
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0]).not.toBe(card);                      // the card shows the frame
+    expect(state().patients[0].shadow.news2.total).toBe(9);
+    expect(state().patients[0].vitals.hr).toBe(131);
+    send(entry("P-001", [alert("news2", "high")], { shadow: shadow(11), vitals: { heart_rate: 134 } }));
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0].shadow.news2.total).toBe(11);
+    await store.refresh();                                            // a whole reload, same alarms
+    expect(state().alerts).toBe(held);
+    expect(state().patients[0].shadow).toBeNull();
+
+    send(entry("P-001", [alert("news2", "high", { escalated: true })]));
+    expect(state().alerts).not.toBe(held);
+    expect(state().alerts[0].escalated).toBe(true);
+    const escalated = state().alerts;
+    send(entry("P-001", [alert("news2", "high", { escalated: true, acknowledged: true, acknowledged_by: "ayse" })]));
+    expect(state().alerts).not.toBe(escalated);
+    expect(state().alerts[0].status).toBe("ACKNOWLEDGED");
+    const acknowledged = state().alerts;
+    send(entry("P-002", [alert("sepsis", "critical")]));
+    expect(state().alerts).not.toBe(acknowledged);
+    expect(state().alerts.map((a) => a.id)).toEqual(["P-001::news2", "P-002::sepsis"]);
+  });
+
+  // A discharged `kabul` patient's board is its removal (G2-B1a, X54): the server omits it from
+  // `/patients`, and should one arrive there all the same, it is a card that has LEFT — never a
+  // nameless, readingless card on the ward, nor an alarm of a patient who is gone (A-14, Lane A's
+  // note D). The same rule the stream's frames keep, above.
+  it("takes a snapshot's removed entry as a card that has left, as it takes a removed frame", async () => {
+    const gone = { ...entry("P-009", [alert("septic_shock", "critical")]), removed: true };
+    const { store, handlers, state } = setup({ board: board([...BOARD.patients, gone], { scope: BOARD.scope }) });
+    await store.start();
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    expect(state().alerts.map((a) => a.patientId)).toEqual(["P-001"]);
+    handlers[0].onopen();                                              // the open's reload: the same snapshot
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    expect(patientsFromBoard({ patients: [gone] })).toEqual([]);
+  });
+
   it("closes a dropped stream and reconnects ONCE, with a fresh ticket", async () => {
     const { api, store, handlers, closes, due, fire, state } = setup();
     await store.start();
@@ -255,6 +310,43 @@ describe("the board store", () => {
     expect(api.chart).toHaveBeenLastCalledWith("S-001", [{ code: "weight_kg", value: 80 }], "2026-10-26T05:00:00.000Z");
     await store.chart("S-001", [{ code: "weight_kg", value: 81 }]);
     expect(api.chart).toHaveBeenLastCalledWith("S-001", [{ code: "weight_kg", value: 81 }], null);
+  });
+
+  // G2-A4: the SOFA box and form read, preview and sign through the store, the only door to the API.
+  // A signature changes no card, so nothing reloads the board; an answer after clear() is dropped.
+  // Review 2 (C1–C2): the preview asks its own route, and the signature carries the preview's `expect`.
+  it("reads the SOFA form, previews corrections and signs them, and drops an answer that lands after clear()", async () => {
+    const { api, store } = setup();
+    const overrides = [{ code: "platelets", value: 38, reason: "Laboratuvar sonucu esas alındı" }];
+    const expectHex = "0123456789abcdef".repeat(4);
+    api.severityForm = vi.fn().mockResolvedValue({ total: 3, last_signed: null });
+    api.previewSeverityForm = vi.fn().mockResolvedValue({ preview: true, signed: false, total: 2, expect: expectHex });
+    api.signSeverityForm = vi.fn().mockResolvedValue({ signed: true, total: 2 });
+    expect(await store.sofaForm("S-001")).toEqual({ total: 3, last_signed: null });
+    expect(api.severityForm).toHaveBeenCalledWith("S-001");
+    expect(await store.sofaPreview("S-001", overrides)).toMatchObject({ preview: true, total: 2, expect: expectHex });
+    expect(api.previewSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides });
+    expect(api.signSeverityForm).not.toHaveBeenCalled();               // a preview never asks the sign route
+    await store.sofaSign("S-001", overrides, expectHex);
+    expect(api.signSeverityForm).toHaveBeenLastCalledWith("S-001", { overrides, expect: expectHex });
+    expect(api.boardPatients).not.toHaveBeenCalled();
+    let answer;
+    api.severityForm.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    const late = store.sofaForm("S-001");
+    store.clear();
+    answer({ total: 9 });
+    expect(await late).toBeNull();
+  });
+
+  it("a refused SOFA call rejects with the API's own error, having changed nothing", async () => {
+    const { api, store, state } = setup();
+    await store.start();
+    const loaded = state().patients;
+    expect(loaded.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    api.signSeverityForm = vi.fn().mockRejectedValue(Object.assign(new Error("permission required: scores.sign"), { status: 403 }));
+    await expect(store.sofaSign("S-001", [])).rejects.toMatchObject({ status: 403 });
+    expect(state().patients).toBe(loaded);                             // the board it held, untouched
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // the start's load, and no reload
   });
 });
 

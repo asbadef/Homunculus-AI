@@ -1,9 +1,11 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes THREE things, and says so in as many words (`patient.onlyWrite`), each only for a
+// It writes FOUR things, and says so in as many words (`patient.onlyWrite`), each only for a
 // `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since Group 2 ·
-// slice 1, from the trends box, the patient's own normal ranges; and since G2-A3, from the Meds box
+// slice 1, from the trends box, the patient's own normal ranges; since G2-A3, from the Meds box
 // (`meds/MedsBox.jsx`, D4), the medication and fluid entries — a pressor rate, a bolus, the weight,
-// "antibiotic given". Nothing else here reaches the record.
+// "antibiotic given"; and since G2-A4, from the SOFA form (`sofa/SofaBox.jsx`, D3), the measurements that
+// complete its organ rows. A `scores.sign` holder also SIGNS that form there (D6) — a sealed row in the
+// audit chain, not an observation — and the sentence says so (X6). Nothing else here reaches the record.
 //
 // Four things it shows, and one it refuses to:
 //
@@ -45,7 +47,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Icon, KV, KVList, Note, RiskPill, StatusPill, riskStyle, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
-import { hhmm } from "../../i18n/dates.js";
+import { dayStamp, hhmm } from "../../i18n/dates.js";
 import {
   BoardStrip, News2, RAIL_LEFT, ScopeNote, boardKnown, nameOf, pillRisk, railOf, summaryOf,
   useBoardNow,
@@ -58,35 +60,79 @@ import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
 import { MedsBox } from "./meds/MedsBox.jsx";
+import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
+import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
+import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
+import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 
 const TICK_MS = 30_000;
 
+/** One input of the shadow engine (Aşama B): the bedside monitor's UNVALIDATED number as the rules read
+ *  it, in the shape of the engine's own cards and marked as the monitor's. Three things keep it from
+ *  being taken for a measurement: the value is in plain ink (never the vital's identity colour, which
+ *  says «the engine measured this»), the border is dashed (the house's «this screen cannot vouch for
+ *  it»), and the line under it names the source — «monitor · ART» — with the stamp. The channel and the
+ *  unit are written BY CODE with the words the measured cards use; a code or a source this build does
+ *  not know prints as the engine sent it (shadowVitals.js). The stamp is the engine's, in the reader's
+ *  clock, with its day and month when it is not today's — and beside it its age on the screen's clock,
+ *  as the measured cards write theirs («hh:mm · 3 dk önce»): a monitor number with no age cannot be told
+ *  from one that stopped arriving an hour ago. */
+function ShadowVital({ code, input, nowMs }) {
+  const { t } = useI18n();
+  const label = own(CODE_LABEL, code);
+  const unit = own(CODE_UNIT, code);
+  const via = own(VIA_KEY, input?.via);
+  const ms = typeof input?.at === "string" ? Date.parse(input.at) : Number.NaN;
+  const age = Number.isFinite(ms) ? ageText(t, input.at, nowMs) : null;
+  return (
+    <div data-shadow-vital="" className="rounded-ctl border border-dashed border-line2 bg-card px-2.5 py-2">
+      <dt className="text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] text-mute">{label ? t(label) : code}</dt>
+      <dd className="m-0">
+        <b className="font-data text-20 font-bold text-ink">{input?.value ?? "—"}</b>
+        <small className="ml-1 font-text text-11 font-semibold text-mute">{unit ? t(unit) : input?.unit}</small>
+        <small className="mt-0.5 block font-text text-11 text-mute">
+          {t("shadow.via", { via: via ? t(via) : String(input?.via ?? "—") })} · {Number.isFinite(ms) ? dayStamp(ms, nowMs) : "—"}
+          {age ? ` · ${age}` : null}
+        </small>
+      </dd>
+    </div>
+  );
+}
+
 /** Every channel the engine has a value for, with the instant and the age of each. A channel with
- *  no value is left out — not printed as a dash five times over (the wall board's rule). */
-function Vitals({ patient, nowMs }) {
+ *  no value is left out — not printed as a dash five times over (the wall board's rule). After the
+ *  engine's own cards, one card for each input the shadow engine read from the monitor (`shadow`,
+ *  Aşama B): they are NOT measurements — they never enter `measuredVitals`, and a patient with only
+ *  those still gets the sentence that no measurement has arrived. */
+function Vitals({ patient, shadow, nowMs }) {
   const { t } = useI18n();
   const shown = measuredVitals(patient);
-  if (shown.length === 0) return <p className="m-0 text-13 text-mute">{t("patient.vitalsNone")}</p>;
+  const inputs = Object.entries(shadow?.vitals ?? {});
+  if (shown.length === 0 && inputs.length === 0) return <p className="m-0 text-13 text-mute">{t("patient.vitalsNone")}</p>;
   return (
-    <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
-      {shown.map((v) => {
-        const age = ageText(t, v.at_, nowMs);
-        return (
-          <div key={v.at} className="rounded-ctl border border-line bg-card px-2.5 py-2">
-            <dt className={`text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${v.color}`}>{t(v.labelKey)}</dt>
-            <dd className="m-0">
-              <b className="font-data text-20 font-bold text-ink">{v.value}</b>
-              <small className="ml-1 font-text text-11 font-semibold text-mute">{t(v.unitKey)}</small>
-              {/* The age of the value, always — a number with no age cannot be told from one that
-                  stopped arriving an hour ago. */}
-              <span className="mt-0.5 block text-11 text-mute">
-                {v.at_ ? `${hhmm(Date.parse(v.at_))}${age ? ` · ${age}` : ""}` : t("board.notMeasured")}
-              </span>
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
+    <>
+      {shown.length === 0 ? <p className="m-0 mb-2 text-13 text-mute">{t("patient.vitalsNone")}</p> : null}
+      <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
+        {shown.map((v) => {
+          const age = ageText(t, v.at_, nowMs);
+          return (
+            <div key={v.at} className="rounded-ctl border border-line bg-card px-2.5 py-2">
+              <dt className={`text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${v.color}`}>{t(v.labelKey)}</dt>
+              <dd className="m-0">
+                <b className="font-data text-20 font-bold text-ink">{v.value}</b>
+                <small className="ml-1 font-text text-11 font-semibold text-mute">{t(v.unitKey)}</small>
+                {/* The age of the value, always — a number with no age cannot be told from one that
+                    stopped arriving an hour ago. */}
+                <span className="mt-0.5 block text-11 text-mute">
+                  {v.at_ ? `${hhmm(Date.parse(v.at_))}${age ? ` · ${age}` : ""}` : t("board.notMeasured")}
+                </span>
+              </dd>
+            </div>
+          );
+        })}
+        {inputs.map(([code, input]) => <ShadowVital key={`shadow:${code}`} code={code} input={input} nowMs={nowMs} />)}
+      </dl>
+    </>
   );
 }
 
@@ -347,18 +393,25 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} nowMs={nowMs} />
             </div>
           </header>
+          <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>
-            <Vitals patient={patient} nowMs={nowMs} />
+            <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
 
           {monitor ? (
             <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}
               fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeOf(shadow.data)}
-              feedOk={shadow.data.feed?.state === "ok"}
+              feedOk={shadow.data.feed?.state === "ok"} stage={shadow.data.stage}
               unreadable={readUnknown(shadow, shadow.nowMs, maxAgeOf(shadow.data))} />
           ) : null}
+
+          {/* Aşama B (D7): the shadow engine's answer on the monitor's numbers, after the strip it reads and
+              before the engine's own findings it must not be mistaken for. Nothing when there is no shadow.
+              The screen's clock, and whether the board is live: «no shadow finding» is said only from a
+              live read, as the engine's own «no finding» below. */}
+          <ShadowFindingsBox shadow={patient.shadow} known={known} nowMs={nowMs} />
 
           <section className="grid gap-2">
             <h2 className="m-0 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">{t("patient.reco")}</h2>
@@ -381,8 +434,9 @@ export function PatientScreen({ params }) {
             <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
               onChart={(entries, at) => board.store.chart(id, entries, at)} />
           </div>
-          {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
-          <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>
+          {/* G2-A4 (D1): the SOFA form's box, where the "forms come later" note stood. It reads the form of the
+              patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
+          <SofaBox patientId={id} bed={bed} nowMs={nowMs} />
 
           <TrendsBox patient={patient} bed={bed} nowMs={nowMs} />
         </>

@@ -8,7 +8,9 @@
 //     is never dressed as an engine vital; no risk pill, no rail, no green, nothing coloured by a
 //     value;
 //   * every value with its age; an old one is a dash and "eski", never a number; NBP with the time
-//     its value last changed, written "≤" because the cuff measured then or earlier;
+//     its value last changed, written "≤" because the cuff measured then or earlier — or, while no
+//     change has been seen, the monitor's current NBP with «ölçüm zamanı bilinmiyor» in amber, and
+//     no "≤" and no age (NBP-2, D4);
 //   * NO live region and no alert: values change every 5 s and a live region would talk over
 //     everything. The feed's trouble is a static `Note`, as BoardStrip's DEGRADED is.
 // The lock screen never shows any of this (boundaries.test.js).
@@ -42,6 +44,23 @@ function NbpValue({ cell, unit }) {
   );
 }
 
+/** NBP the monitor shows now, whose change the hub has not seen (NBP-2, D4): the numbers and the unit
+ *  as the timed form draws them, and «ölçüm zamanı bilinmiyor» in the attention tone — this interface's
+ *  "cannot vouch" (Decision 14) — rather than the muted one. No "≤", no time and no age: there is no
+ *  measurement time to bound, and the packet's age would read as the measurement's. */
+function NbpUntimedValue({ cell, unit }) {
+  const { t } = useI18n();
+  const { systolic, diastolic, mean } = cell;
+  return (
+    <>
+      <span aria-hidden="true" className="whitespace-nowrap">{`${systolic}/${diastolic} (${mean})`}</span>
+      <small aria-hidden="true" className="ml-0.5 whitespace-nowrap font-text text-10.5 font-semibold text-mute">{unit}</small>
+      <small aria-hidden="true" className="ml-1 font-text text-10.5 font-semibold text-att-ink">{t("monitor.nbpUntimed")}</small>
+      <span className="sr-only">{t("monitor.nbpUntimedSaid", { systolic, diastolic, mean, unit })}</span>
+    </>
+  );
+}
+
 function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   const { t } = useI18n();
   const cell = cellOf(param, { nowMs, fetchedAtMs, maxAgeS, feedOk });
@@ -60,6 +79,8 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
       <dd className="m-0 font-data text-14 font-bold text-ink">
         {cell.kind === "nbp" ? (
           <NbpValue cell={cell} unit={unit} />
+        ) : cell.kind === "nbp_untimed" ? (
+          <NbpUntimedValue cell={cell} unit={unit} />
         ) : cell.kind === "value" ? (
           <>
             {cell.value}
@@ -112,10 +133,13 @@ function statusSentence(t, entry) {
  * `title` replaces the heading ("{bed} · monitor"), which always carries the "unvalidated" word.
  * `unreadable`: the strip's last poll failed or its answer is too old — said in words on the strip
  * itself, while the values it still holds age out.
+ * `stage`: the board answer's stage. At Aşama B's «rules» the whole note is `monitor.fullRules` — the
+ * shadow engine computes an advisory score from these values, so «no score is produced» would be false;
+ * at any other stage (and when it is not given) it is `monitor.full`. The short note does not change.
  */
 export function MonitorStrip({
   entry, variant = "compact", nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, feedOk = true, title, level = 3,
-  unreadable = false, className = "", children,
+  unreadable = false, stage, className = "", children,
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -146,13 +170,19 @@ export function MonitorStrip({
       ) : (
         <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{t("monitor.noValues")}</p>
       )}
-      <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? "monitor.full" : "monitor.short")}</p>
+      <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? fullNoteKey(stage) : "monitor.short")}</p>
     </section>
   );
 }
 
-/** Whether a board answer is a strip that is on — the only one a screen draws anything for. */
-export const stripOn = (data) => data?.stage === "shadow";
+/** The whole note's key for a board answer's stage: at «rules» the shadow engine scores the values (advice,
+ *  alarm off), and the note says so; anywhere else, that nothing is scored. The Settings legend reads it too. */
+export const fullNoteKey = (stage) => (stage === "rules" ? "monitor.fullRules" : "monitor.full");
+
+/** Whether a board answer is a strip that is on — the only one a screen draws anything for. `rules` is
+ *  Aşama B's running stage (the route overwrites board_view's "shadow" with it): the same strip, plus
+ *  the shadow engine's answer on the patient cards. */
+export const stripOn = (data) => data?.stage === "shadow" || data?.stage === "rules";
 
 /** Whether the strip's state cannot be vouched for now: the last poll failed, or the answer it
  *  holds is older than the display limit (a poll that hangs, a hidden tab, a sleeping PC), or its

@@ -278,7 +278,8 @@ def test_a_replay_that_fails_midway_installs_nothing_and_the_next_request_retrie
             self.failed = False
 
         def records(self, **kw):
-            self.after_ids.append(kw.get("after_id"))
+            if "after_id" in kw:            # the replay's reads (Aşama B's lane reads its own kinds too)
+                self.after_ids.append(kw["after_id"])
             if kw.get("after_id") == 5 and not self.failed:      # the second page, once
                 self.failed = True
                 raise RuntimeError("page read failed")
@@ -376,3 +377,41 @@ def test_other_alert_cleared_rows_are_still_ignored_by_the_replay():
     engine, store = Engine(), AckStore()
     rehydrate(engine, store, audit.records(tenant="HOSP1", limit=1000))
     assert engine.active_alerts("bed-3"), "a `resolved` row follows from the readings and is not applied"
+
+
+# --- a replayed chart keeps its source (G2-A4 review, S1, X22) ----------------------------------
+def test_a_replayed_row_keeps_its_source_a_chart_the_clinicians():
+    """A `chart` row carries no `device` (api/clinical.py writes `charted_by`), and the replay used to
+    name every such value "replay" — after a restart the SOFA form said a hand-charted value came from no
+    one in particular. An `ingest` row keeps its device; one written without a device is still "replay"."""
+    from homunculus.canonical import SignalCode
+    audit = InMemoryAuditLog()
+    audit.append(AuditEvent("HOSP1", "chart", "bed-3", "platelets",
+                            {"value": 45.0, "unit": "10^3/uL", "obs_ts": T0, "charted_by": "dr.elif"}))
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "spo2",
+                            {"value": 95.0, "unit": "%", "obs_ts": T0, "device": "mon-7"}))
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "heart_rate",
+                            {"value": 80.0, "unit": "bpm", "obs_ts": T0}))
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1", limit=1000))
+    state = engine.state("bed-3")
+    assert state.latest(SignalCode.PLATELETS).source_device == "clinician"
+    assert state.latest(SignalCode.SPO2).source_device == "mon-7"
+    assert state.latest(SignalCode.HEART_RATE).source_device == "replay"
+
+
+def test_a_charted_value_is_still_the_clinicians_on_the_sofa_form_after_a_restart():
+    audit = InMemoryAuditLog()
+    hdr = {"Authorization": "Bearer tok"}
+
+    def platelet_source(client):
+        rows = client.get("/scores/sofa/bed-3", headers=hdr).json()["rows"]
+        return next(c for r in rows for c in r["inputs"] if c["code"] == "platelets")["source"]
+
+    at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    with TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)) as live:
+        assert live.post("/clinical/bed-3", headers=hdr, json={
+            "entries": [{"code": "platelets", "value": 45}], "recorded_at": at}).status_code == 200
+        assert platelet_source(live) == "clinician"
+    with TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)) as restarted:
+        assert platelet_source(restarted) == "clinician"

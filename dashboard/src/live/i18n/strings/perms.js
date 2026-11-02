@@ -10,7 +10,7 @@
 // the roles arm's test holds this file to the catalogue so that fallback is never silently the
 // rule.
 //
-// Twenty-one short, static sentences keyed by a stable identifier are ordinary dashboard strings,
+// Twenty-three short, static sentences keyed by a stable identifier are ordinary dashboard strings,
 // not product copy: the same mechanism every other string uses. The keys are NOT translated —
 // `alerts.ack` is printed beside each description, because it is what a support call quotes.
 // AZ/RU/EN await a native speaker's review before the pilot.
@@ -40,9 +40,13 @@ export default {
     users: { manage: "Kullanıcıları yönetir: oluşturma, düzenleme, etkinleştirme, şifre ve 2FA sıfırlama, dizin girişini açma, grup atama; bir kullanıcının birim ve yatak kapsamını okur, hiç ataması olmayanları sayar ve kapsam atar (atamayı yalnız kendi kapsamı rolü gereği sınırsız olan biri yapabilir); AD hesaplarını arayıp aktarır, AD grup eşlemesini okur (eşlemeyi değiştirmek her yetkiyi gerektirir)" },
     groups: { manage: "Grupları ve yetki kümelerini yönetir" },
     structure: { manage: "Kurum, tesis, birim, oda ve yatak yapılandırması" },
-    devices: { manage: "Cihaz ekranını ve araştırma penceresini açar: başucu monitörlerinin trafiğinden çözülen, cihaz başına canlı değerler — DOĞRULANMAMIŞ. Aşama A bunları klinisyenlere «doğrulanmamış» etiketli bir şerit olarak gösterir; hiçbir zaman gözlem değildir ve bunlardan kural, skor, alarm, bildirim ya da denetim kaydı üretilmez. Hasta göstermez. Varsayılan olarak biyomedikal grubunda ve üreticinin destek grubunda vardır" },
+    devices: { manage: "Cihaz ekranını ve araştırma penceresini açar: başucu monitörlerinin trafiğinden çözülen, cihaz başına canlı değerler — DOĞRULANMAMIŞ. Aşama A bunları klinisyenlere «doğrulanmamış» etiketli bir şerit olarak gösterir; hiçbir zaman gözlem değildir ve bunlardan kural, skor, alarm, bildirim ya da denetim kaydı üretilmez. Hasta göstermez. Varsayılan olarak biyomedikal grubunda ve üreticinin destek grubunda vardır",
+      map_beds: "«Monitörler» ekranında bir başucu monitörünü bir yatağa bağlar ya da bağlantısını çözer — yalnız kendi birimlerindeki yataklar; yatan hastası olan yatak ikinci bir onay ister" },
     clinical: { chart: "Klinisyenin gözlemlediği girdileri (enfeksiyon şüphesi, vazopresör, sıvı, GKS…) ve hastanın kendi bazalını kaydeder" },
     scores: { sign: "Ağırlık skoru formunu (SOFA) düzeltmelerle imzalar" },
+
+    // G2-B1a
+    beds: { release: "Temizliği biten yatağı yeniden boş olarak işaretler (temizlik → boş), kendi birimlerinde" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -69,9 +73,13 @@ export default {
     users: { manage: "İstifadəçiləri idarə edir: yaratma, redaktə, aktivləşdirmə, şifrə və 2FA sıfırlama, kataloq girişini açma, qrup təyin etmə; istifadəçinin şöbə və çarpayı əhatəsini oxuyur, heç bir təyinatı olmayanları sayır və əhatə təyin edir (təyin edənin öz əhatəsi də roluna görə məhdudiyyətsiz olmalıdır); AD hesablarını axtarıb idxal edir, AD qrup uyğunlaşdırmasını oxuyur (uyğunlaşdırmanı dəyişmək hər səlahiyyəti tələb edir)" },
     groups: { manage: "Qrupları və səlahiyyət dəstlərini idarə edir" },
     structure: { manage: "Təşkilat, bina, şöbə, otaq və çarpayı konfiqurasiyası" },
-    devices: { manage: "Cihaz ekranını və tədqiqat pəncərəsini açır: çarpayı yanındakı monitorların trafikindən deşifrə olunan, hər cihaz üzrə canlı dəyərlər — TƏSDİQLƏNMƏMİŞ. Mərhələ A onları klinik heyətə «təsdiqlənməmiş» işarəli zolaq kimi göstərir; heç vaxt müşahidə deyil və onlardan qayda, bal, siqnal, bildiriş və ya audit qeydi yaradılmır. Xəstə göstərmir. Standart olaraq biotibbi texniklər qrupunda və istehsalçının dəstək qrupunda var" },
+    devices: { manage: "Cihaz ekranını və tədqiqat pəncərəsini açır: çarpayı yanındakı monitorların trafikindən deşifrə olunan, hər cihaz üzrə canlı dəyərlər — TƏSDİQLƏNMƏMİŞ. Mərhələ A onları klinik heyətə «təsdiqlənməmiş» işarəli zolaq kimi göstərir; heç vaxt müşahidə deyil və onlardan qayda, bal, siqnal, bildiriş və ya audit qeydi yaradılmır. Xəstə göstərmir. Standart olaraq biotibbi texniklər qrupunda və istehsalçının dəstək qrupunda var",
+      map_beds: "«Monitorlar» ekranında çarpayı yanındakı monitoru çarpayıya qoşur və ya bağlantısını kəsir — yalnız öz şöbələrindəki çarpayılar; xəstəsi yatan çarpayı ikinci təsdiq istəyir" },
     clinical: { chart: "Klinisistin müşahidə etdiyi məlumatları (infeksiya şübhəsi, vazopressor, maye, QKŞ…) və xəstənin öz bazal dəyərlərini qeyd edir" },
     scores: { sign: "Ağırlıq balı formasını (SOFA) düzəlişlərlə imzalayır" },
+
+    // G2-B1a
+    beds: { release: "Təmizlənmiş çarpayını yenidən boş kimi qeyd edir (təmizlik → boş), öz şöbələrində" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -98,9 +106,13 @@ export default {
     users: { manage: "Управляет пользователями: создание, изменение, активация, сброс пароля и 2FA, открытие входа через каталог, назначение групп; читает область отделений и коек пользователя, считает пользователей без назначений и назначает область (назначать может только тот, чья собственная область не ограничена в силу его роли); ищет и импортирует записи AD, читает сопоставление групп AD (изменение сопоставления требует всех прав)" },
     groups: { manage: "Управляет группами и их наборами прав" },
     structure: { manage: "Настройка организации, корпусов, отделений, палат и коек" },
-    devices: { manage: "Открывает экран устройств и окно исследования: значения по каждому устройству в реальном времени, декодированные из трафика прикроватных мониторов, — НЕ ВАЛИДИРОВАНЫ. На этапе A они показываются клиницистам как блок с пометкой «не валидировано»; это никогда не наблюдение, и из них не создаются ни правила, ни шкалы, ни тревоги, ни уведомления, ни записи аудита. Пациентов не показывает. По умолчанию это право есть у группы биомедицинских техников и у группы поддержки производителя" },
+    devices: { manage: "Открывает экран устройств и окно исследования: значения по каждому устройству в реальном времени, декодированные из трафика прикроватных мониторов, — НЕ ВАЛИДИРОВАНЫ. На этапе A они показываются клиницистам как блок с пометкой «не валидировано»; это никогда не наблюдение, и из них не создаются ни правила, ни шкалы, ни тревоги, ни уведомления, ни записи аудита. Пациентов не показывает. По умолчанию это право есть у группы биомедицинских техников и у группы поддержки производителя",
+      map_beds: "Привязывает прикроватный монитор к койке или отвязывает его на экране «Мониторы» — только койки своих отделений; для койки с госпитализированным пациентом нужно второе подтверждение" },
     clinical: { chart: "Вносит наблюдения клинициста (подозрение на инфекцию, вазопрессор, инфузии, ШКГ…) и собственную базовую линию пациента" },
     scores: { sign: "Подписывает форму оценки тяжести (SOFA) с исправлениями" },
+
+    // G2-B1a
+    beds: { release: "Отмечает убранную койку снова свободной (уборка → свободна) в своих отделениях" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -127,8 +139,12 @@ export default {
     users: { manage: "Manage users: create, edit, activate, reset a password or 2FA, lift a directory sign-in throttle, set groups; read a user's unit and bed scope, count the users with none, and assign one (only someone whose own scope is unrestricted by role may assign it); search and import AD accounts and read the AD group mapping (changing the mapping needs every permission)" },
     groups: { manage: "Manage groups and their permission sets" },
     structure: { manage: "Configure the tenant, sites, units, rooms and beds" },
-    devices: { manage: "Open the device screen and the research window: live per-device values decoded from bedside-monitor traffic — UNVALIDATED. Stage A shows them to clinicians as a strip labelled unvalidated; they are never an observation, and no rule, score, alert, notification or audit row is made from them. Shows no patient. By default the biomedical group and the vendor's support group hold it" },
+    devices: { manage: "Open the device screen and the research window: live per-device values decoded from bedside-monitor traffic — UNVALIDATED. Stage A shows them to clinicians as a strip labelled unvalidated; they are never an observation, and no rule, score, alert, notification or audit row is made from them. Shows no patient. By default the biomedical group and the vendor's support group hold it",
+      map_beds: "Assign a bedside monitor to a bed, or unassign it, on the Monitors screen — beds in their own units only; a bed with an admitted patient asks for a second confirmation" },
     clinical: { chart: "Chart clinician-observed inputs (suspected infection, pressor, fluids, GCS…) and the patient's own baseline" },
     scores: { sign: "Sign a severity-score form (SOFA) with corrections" },
+
+    // G2-B1a
+    beds: { release: "Mark a cleaned bed free again (housekeeping → available), in their own units" },
   },
 };

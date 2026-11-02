@@ -129,3 +129,16 @@ class TestALookupThatCountsNothing:
             bedmap.lookup("", "", "")
         assert bedmap.unmatched() == before == {"YB^999^9": 1}
         assert bedmap.discovery_report() == "Eşlenmemiş yataklar: YB^999^9 (1)"
+
+    def test_a_card_built_uncounted_resolves_as_the_board_does_and_counts_nothing(self):
+        """Aşama B's sampler republishes a card after a sample or a link's end (final review): the
+        same bed keys as the board's own card, and no miss counted for the patient's location."""
+        raw = {"beds": {"YB^304^2": {"bed_id": "bed-a1", "unit_id": "unit-adult"}}}
+        bedmap, board_own = BedMap.from_dict(raw), BedMap.from_dict(raw)
+        quiet = bedmap.uncounted()
+        for unit, room, bed in (("YB", "304", "2"), ("YB", "999", "9")):
+            record = IdentityRecord(patient_id="p1", unit=unit, room=room, bed=bed)
+            assert identity_only_board(record, quiet) == identity_only_board(record, board_own)
+        assert bedmap.unmatched() == {} and board_own.unmatched() == {"YB^999^9": 1}
+        assert quiet.resolve("YB", "999", "9") == bedmap.resolve("YB", "999", "9")
+        assert bedmap.unmatched() == {"YB^999^9": 1}                 # the board's own resolve counted, once

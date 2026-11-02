@@ -126,6 +126,20 @@ class TestATheBoard:
         assert body["scope"]["blind"] is True
         assert "GELMEZ" in body["scope_note"]
 
+    def test_a_grant_with_no_card_is_sent_as_data_and_never_written_into_a_sentence(self):
+        """G2-B1a walk (I-1): a grant key is a UUID since B1a, and the Turkish sentence that listed
+        the keys printed one on a nurse's board. They travel as data, units apart from beds; the
+        screen names each from the structure, in its reader's language."""
+        app = app_with(build_scope("NURSE", unit_ids=["unit-adult", "unit-ghost"],
+                                   bed_ids=["bed-ghost"]))
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            body = client.get("/patients", headers=NURSE).json()
+        assert sorted(p["patient_id"] for p in body["patients"]) == ["p-a1", "p-a2"]
+        assert body["scope"]["unmatched_unit_ids"] == ["unit-ghost"]
+        assert body["scope"]["unmatched_bed_ids"] == ["bed-ghost"]
+        assert body["scope_note"] is None
+
 
 class TestBTheRoutesThatNameAPatient:
     """Filtering the list alone is theatre: the list is a list of ids, and a caller who has one
@@ -278,9 +292,11 @@ class TestFAProbeCreatesNothing:
             _admit_everyone(client)
             read = client.get("/scores/sofa/ghost-5", headers=NURSE)
             signed = client.post("/scores/sofa/ghost-6", headers=NURSE, json={"overrides": []})
+            previewed = client.post("/scores/sofa/ghost-7/preview", headers=NURSE, json={"overrides": []})
             assert _board_ids(client) == EVERYONE
         assert (read.status_code, read.json()["detail"]) == (404, "hasta bulunamadı")
         assert (signed.status_code, signed.json()["detail"]) == (404, "hasta bulunamadı")
+        assert (previewed.status_code, previewed.json()["detail"]) == (404, "hasta bulunamadı")
         assert not _rows(app, "score_signed")
 
     def test_an_in_scope_patient_is_still_admitted(self, adult_nurse):
@@ -431,6 +447,7 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
         ("GET", "/audit?patient_id=p-a1", None, 200),
         ("GET", "/scores/sofa/p-a1", None, 200),
         ("POST", "/scores/sofa/p-a1", {}, 403),          # a device never signs: its own refusal
+        ("POST", "/scores/sofa/p-a1/preview", {}, 403),  # G2-A4 (X19): nor previews
         ("GET", "/audit", None, 200),                    # D13b: the whole trail
         ("GET", "/alarm-quality", None, 200),            # D13b
     ]

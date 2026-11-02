@@ -8,7 +8,9 @@ import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { DevicesScreen } from "./DevicesScreen.jsx";
+import { pinZone } from "./zone.testutil.js";
 
+pinZone();   // the method line prints an editor row's UTC time as local time: pinned (Baku, UTC+4) so a literal can be asserted (A-20)
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,6 +21,7 @@ async function open(answer, perms = ["devices.manage"]) {
   const mounted = await mount(<DevicesScreen />, {
     access: token({ perms }), me: profile({ perms }),
     setup: (api) => {
+      api.deviceBeds.mockResolvedValue({ stage: "shadow", generated_at: "2026-10-30T09:00:00+00:00", can_bind: false, devices: [] });
       if (answer instanceof Error) api.shadowBoard.mockRejectedValue(answer);
       else api.shadowBoard.mockResolvedValue(answer);
     },
@@ -95,7 +98,11 @@ describe("the monitor screen", () => {
 
   it("heads each device one level under the screen's own heading", async () => {
     await open(WARD);
-    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(4);
+    // The four strips, and (G2-ESLEME) the monitor–bed section above them, which is a level-2 heading too.
+    const [section, ...strips] = screen.getAllByRole("heading", { level: 2 });
+    expect(section).toHaveTextContent("Monitor–çarpayı uyğunlaşdırması");
+    expect(strips).toHaveLength(4);
+    for (const heading of strips) expect(heading.closest("[data-monitor-strip]")).not.toBeNull();
     expect(screen.queryAllByRole("heading", { level: 3 })).toEqual([]);
   });
 
@@ -124,5 +131,91 @@ describe("the monitor screen", () => {
     await open(new Error("down"));
     expect(screen.getByText("Monitor zolağı oxunmur")).toBeInTheDocument();
     expect(screen.queryByText(/Alınan göndəriş/)).toBeNull();
+  });
+
+  it("shows the monitor–bed section to a charge nurse holding devices.map_beds", async () => {
+    await open(WARD, ["devices.map_beds", "board.view"]);
+    expect(screen.getByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeTruthy();
+  });
+
+  it("puts the monitor–bed section above the strips, and leaves it out for a session holding neither key", async () => {
+    await open(WARD);
+    const section = screen.getByRole("region", { name: "Monitor–çarpayı uyğunlaşdırması" });
+    expect(section.compareDocumentPosition(document.querySelector("[data-monitor-strip]")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    const mounted = await open(WARD, ["board.view"]);
+    expect(screen.queryByRole("heading", { name: "Monitor–çarpayı uyğunlaşdırması" })).toBeNull();
+    expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
+  });
+
+  it("prints a strip's method line with an editor row's time in local time, a v2 value as written, and «—» only for none", async () => {
+    const local = "2026-10-30 13:12";       // 09:12Z in the pinned zone (Baku, UTC+4), so UTC printing fails in any CI
+    await open(strip({ beds: [
+      bed("REA-01 · 2", [], { method: "editor", verified_at: "2026-10-30T09:12:03.120000+00:00" }),
+      bed("REA-01 · 5", [], { method: "central_station_list", verified_at: "2026-09-22" }),
+      bed("REA-01 · 6", [], { method: "both", verified_at: null }),
+      bed("REA-01 · 7", [], { method: "monitor_screen", verified_at: "elle doğrulandı" }),
+    ] }));
+    const lines = screen.getAllByText(/^Cədvəldə: /).map((p) => p.textContent);
+    expect(lines).toEqual([
+      `Cədvəldə: tətbiqdə əl ilə uyğunlaşdırma · yoxlama ${local}`,
+      "Cədvəldə: mərkəzi stansiya siyahısı · yoxlama 2026-09-22",
+      "Cədvəldə: siyahı və ekran · yoxlama —",
+      "Cədvəldə: monitor ekranı · yoxlama elle doğrulandı",
+    ]);
+  });
+});
+
+// Aşama B: with the rules on the stage reads «rules», and a lane that has failed says so beside the
+// feed's own state — a static note, never an alarm. Absent or «ok», it says nothing.
+describe("the monitor screen — the shadow engine's lane (Aşama B)", () => {
+  const rules = (feed = {}) => ({ ...strip({ beds: [bed("REA-01 · 2", [param("hr", 72)])], feed }), stage: "rules" });
+  const LANE = "kölgə mühərrik: xəta";
+
+  it("draws the strip at the rules stage as at the shadow one", async () => {
+    await open(rules());
+    expect(screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" })).toHaveTextContent("72");
+    expect(screen.getByText("Cədvəl versiyası 1 · ab12cd34ef56")).toBeInTheDocument();
+  });
+
+  it("says at each strip's foot what the stage makes of the values: an advisory shadow score at «rules», none at «shadow»", async () => {
+    await open(rules());
+    let region = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("yalnız tövsiyə xarakterli kölgə bal hesablanır");
+    expect(region).toHaveTextContent("heç bir siqnal, bildiriş və ya səs yaradılmır və heç bir sayğaca daxil olmur");
+    expect(region).not.toHaveTextContent("bal (NEWS2 daxil olmaqla)");
+    cleanup();
+    await open(strip({ beds: [bed("REA-01 · 2", [param("hr", 72)])] }));
+    region = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
+    expect(region).toHaveTextContent("heç bir siqnal, bal (NEWS2 daxil olmaqla), bildiriş və ya səs yaradılmır");
+    expect(region).not.toHaveTextContent("kölgə bal");
+  });
+
+  it("says the shadow engine's lane is in error, as an amber note beside the feed state", async () => {
+    await open(rules({ rules_state: "error" }));
+    const note = screen.getByText(LANE).closest("[role='note']");
+    expect(note).not.toBeNull();
+    expect(note).toHaveAttribute("data-tone", "warn");
+    expect(note.querySelector("[aria-live], [role='alert'], [role='status']")).toBeNull();
+    // Beside the feed's chip, in the same row, not further down the screen.
+    expect(note.parentElement).toBe(screen.getByText(/məlumat göndərir/).closest("div"));
+  });
+
+  it("says nothing when the key is absent or the lane is ok", async () => {
+    await open(rules());
+    expect(screen.queryByText(LANE)).toBeNull();
+    cleanup();
+    await open(rules({ rules_state: "ok" }));
+    expect(screen.queryByText(LANE)).toBeNull();
+  });
+
+  it("does not repeat a lane error from a read it cannot vouch for", async () => {
+    const mounted = await open(rules({ rules_state: "error" }));
+    expect(screen.getByText(LANE)).toBeInTheDocument();
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 18_000);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.queryByText(LANE)).toBeNull();
+    expect(screen.getAllByText("Monitor zolağı oxunmur").length).toBeGreaterThan(0);
   });
 });
