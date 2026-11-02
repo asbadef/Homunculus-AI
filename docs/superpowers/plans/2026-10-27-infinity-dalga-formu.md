@@ -2687,6 +2687,8 @@ cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_wav
 
 *R19 in Task 8 (lead amendment A4).* The browser sends the hub process back with its cursor. `waves.testutil.js` exports `STARTED`, and `answer()` carries `started` (an option, like `cursor`). `wavesPath(source, since, started)` appends `&started=…` only for a non-empty string, so the first poll names no process. `isWavesAnswer` also requires `started` to be a string of 1–40 characters (the API's `MAX_TEXT`): an answer without one is "unavailable" and keeps the blocks, cursor and process held. `IDLE_DEVICE` gains `started: null`; each answer's `started` is kept and sent back with its cursor on the next poll. An answer that names another process is a restarted hub's whole window: it is merged like any other (`mergeBlocks` keeps one block per wave and time, so the overlap adds nothing), and its cursor and process are taken even when the cursor went backwards. The store's header carries this as rule 5. Seven tests join the plan's twenty, under "the wave store and the hub process (amendment A4)", and "polls every 750 ms" now expects `&started=` on its second poll. The code blocks below predate the amendment; the committed files are the reference.
 
+*Task 8 review (R5 and R12 in the browser).* Three changes, each with its tests. (1) A monitor clock set back by more than 10 s blanked open panels. The hub (R5) clears its ring and serves the new, earlier stream; `mergeBlocks` then either floored those blocks out (a set-back over 20 s) or kept them under the old newest, which held the head where they never reached (10–20 s). `mergeBlocks` now mirrors R5 and stays pure: if any valid incoming block is more than `WAVE_ANSWER_S` (= the API's `ANSWER_S`, 10 s) behind the newest held, it starts from `{}`. "More than" is strict, because the API never serves a block older than its own newest − 10 s, and it is counted in whole milliseconds (in floating point, 1024.4 − 10 > 1014.4). The store's header carries this as rule 6. (2) R12's `{ timeoutMs: 4000 }` had no effect: backendApi's `timed` honours only a limit longer than the client's own 15 s ("a caller cannot make a route impatient, only patient"). `WAVE_TIMEOUT_MS` is gone and the store calls `api.request(path)`; a hung poll is bounded by the client's 15 s, and the rows age into "akış durdu" meanwhile (R6). R12's row otherwise stands, and Task 15's two `toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0", { timeoutMs: 4000 })` lose the option. (3) Tests that could not fail now can: a late answer or refusal is dropped even after the monitor is watched again, with no notify; "unavailable" keeps the very same blocks object; a refusal resets the cursor and process, and showing the tab again does not wake it. Thirty-one tests.
+
 - [ ] **Step 1: The synthetic fixtures.** Create `dashboard/src/live/data/waves.testutil.js`:
 
 ```js
@@ -3257,7 +3259,7 @@ export function waveStoreFor(session) {
 }
 ```
 
-- [ ] **Step 5: Run the store tests.** Expected: `27 passed` (20 + A4's 7).
+- [ ] **Step 5: Run the store tests.** Expected: `31 passed` (20 + A4's 7 + the review's 4).
 
 - [ ] **Step 6: Let the wave modules be unreached — by name, until Task 15.** Run `npx vitest run src/reachable.test.js` first: it fails with `live/data/waveStore.js` unreached. In `dashboard/src/reachable.test.js`, replace
 
