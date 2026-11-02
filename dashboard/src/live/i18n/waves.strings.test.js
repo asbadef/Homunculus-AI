@@ -30,6 +30,18 @@ describe("the waveform panel's words", () => {
     }
   });
 
+  it("name the full-screen view's × apart from the top bar's full-screen toggle, in every language (walk 2, F2)", () => {
+    expect(DICTIONARIES.tr["waves.close"]).toBe("Dalga görünümünü kapat");
+    for (const lang of LANG_CODES) {
+      const close = DICTIONARIES[lang]["waves.close"];
+      expect(close, lang).toBeTruthy();
+      for (const key of ["shell.fullscreen", "shell.exitFullscreen"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+        expect(close.toLowerCase(), `${lang} ${key}`).not.toBe(DICTIONARIES[lang][key].toLowerCase());
+      }
+    }
+  });
+
   it("name no ECG lead (BED08: the live channel is not fixed by id)", () => {
     for (const lang of LANG_CODES) {
       const words = Object.entries(DICTIONARIES[lang]).filter(([key]) => key.startsWith("waves.")).map(([, v]) => v);

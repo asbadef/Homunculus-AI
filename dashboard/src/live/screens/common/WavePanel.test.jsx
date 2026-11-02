@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { waveFeedFor } from "../../session/feeds.js";
 import { ShadowProvider } from "../../data/ShadowProvider.jsx";
-import { WAVE_STATUS, createWaveStore } from "../../data/waveStore.js";
+import { WAVE_POLL_MS, WAVE_STATUS, createWaveStore } from "../../data/waveStore.js";
 import { bed as stripBed, param, strip } from "../../data/shadow.testutil.js";
 import {
   SOURCE, answer, bed4, bed8, manualFrames, manualTimers, refusal, run, sessionStub, settle,
@@ -452,6 +452,49 @@ describe("the waveform panel when it fails (I3)", () => {
     failed();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.querySelector("[data-wave-fullscreen]")).toBeNull();
+  });
+
+  // Lane A, minor 1: the store is made inside the boundary, so a screen that draws the panel with no
+  // feed loses the panel, never the page.
+  /** A panel with neither `feed` nor `store`, `Beside` drawn next to it; what it could poll by. */
+  function feedless({ collapsible = false } = {}) {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const timeouts = vi.spyOn(globalThis, "setTimeout");
+    const frames = manualFrames();
+    const raf = vi.fn(frames.raf);
+    render(
+      <I18nProvider>
+        <Beside />
+        <WavePanel source={SOURCE} title="REA-01 · 2" collapsible={collapsible} raf={raf} caf={frames.caf} />
+      </I18nProvider>,
+    );
+    const polled = () => fetch.mock.calls.length + raf.mock.calls.length
+      + timeouts.mock.calls.filter(([, ms]) => ms === WAVE_POLL_MS).length;
+    return { polled };
+  }
+
+  it("with no feed and no store: «Dalga akışı yok» in the panel's frame, nothing polled, and what is beside it stays mounted", async () => {
+    const { polled } = feedless();
+    const beside = screen.getByRole("button", { name: "yan 0" });
+    await act(async () => { await settle(); });
+    failed();
+    expect(polled()).toBe(0);
+    fireEvent.click(beside);
+    expect(screen.getByRole("button", { name: "yan 1" })).toBe(beside);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("on the device screen with no feed: «Dalga formunu göster» still draws, and opening it gives «Dalga akışı yok», not a crash", async () => {
+    const { polled } = feedless({ collapsible: true });
+    const beside = screen.getByRole("button", { name: "yan 0" });
+    expect(warn).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Dalga formunu göster" })); await settle(); });
+    failed();
+    expect(polled()).toBe(0);
+    fireEvent.click(beside);
+    expect(screen.getByRole("button", { name: "yan 1" })).toBe(beside);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("comes back for another monitor, and never by itself for the same one", async () => {

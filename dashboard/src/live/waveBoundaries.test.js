@@ -39,13 +39,13 @@
 //     included: the screens build the feed, never a wave module), backendApi.js, or anything
 //     outside src/live/.
 //   * By name. Neither the wave modules nor anything they reach names a capability of the session
-//     store, the API client or the board store, or anything the session side, backendApi.js or the
-//     board exports (useSession, SessionProvider, useBoard, waveFeedFor, createSessionStore…). The
-//     names are DERIVED, not written out: the three objects are built here from their real
-//     factories with stubs and their keys taken, and the modules' exports read, so a capability
-//     added there is banned here at once. A name is caught as a member (`.lock`, `?.lock`), a key
-//     (`lock:`), destructured (`{ lock }`), declared or called (`lock(`), and as a string of its own
-//     ("lock"). A computed member whose key is a string, a template, a call or a concatenation
+//     store, the API client, the board store or the strip's shadow store (below), or anything the
+//     session side, backendApi.js or the board exports (useSession, SessionProvider, useBoard,
+//     waveFeedFor, createSessionStore…). The names are DERIVED, not written out: the four objects
+//     are built here from their real factories with stubs and their keys taken, and the modules'
+//     exports read, so a capability added there is banned here at once. A name is caught as a
+//     member (`.lock`, `?.lock`), a key (`lock:`), destructured (`{ lock }`), declared or called
+//     (`lock(`), and as a string of its own ("lock"). A computed member whose key is a string, a template, a call or a concatenation
 //     (`obj["unl" + "ock"]`) is refused outright; a plain index (`list[i]`, `path[i + 1]`) is not.
 //     ALLOW names the few generic names the wave code defines itself, and in which forms; it is
 //     pinned, and each entry must still be used.
@@ -54,9 +54,32 @@
 //   * no browser storage, and no way to save a picture of the canvas (§5.6);
 //   * no request of their own (fetch, XMLHttpRequest, sendBeacon, WebSocket, EventSource, a worker,
 //     a dynamic import), no `method:`, no "/ack";
-//   * no event or message to a listener they do not import (AlarmSignals listens on `window`).
+//   * no event or message to a listener they do not import (AlarmSignals listens on `window`);
+//   * no press on a control of the page, read in the code alone: no `.click`, `.submit` or
+//     `.requestSubmit` member, called or not (an acknowledge button is one `.click()` away).
+//     `.focus()` is not one: it is how the full screen hands the focus back.
 // They also import no package but React, nothing outside src/live/, and neither of the browser's
 // stores (prefs.js, which holds the alarm sound's on/off; session/browserState.js).
+//
+// THE STRIP'S STORE (Lane A, minor 2). The full screen draws the strip's card for its monitor, read
+// through `useShadow()` (data/ShadowProvider.jsx). The hook answers with the strip's state AND its
+// shadow store (Settings' weekly review calls `store.findings` through it), so a wave module can
+// hold that store. Its keys are derived like the others (`createShadowStore`), and every one is
+// banned — `acquire`, `release`, `findings`, `start`, `clear` — but the read-only ones in
+// SHADOW_READ_ONLY (`getState`, `subscribe`; pinned, each still a key of the store). Those two stay
+// banned anyway, as the session's and the board's names. The full screen names none of them: it
+// reads `data`, `nowMs`, `fetchedAtMs` and `phase` off the hook's answer. ShadowProvider.jsx is
+// EXEMPT for what the hook does with its own store: it reads it (`.getState`; `.subscribe` is
+// ALLOW's) and counts itself a consumer (`.acquire` on mount, `.release` in the same effect's
+// cleanup).
+//
+// WHAT IS LEFT, said plainly. These are rules about names and text, and the shadow store itself is
+// in a wave module's reach. A key taken without its name (`Object.values(store)`, a `for…in` with a
+// plain index) is not seen, nor is a press by a destructured `click`. `.subscribe` is allowed
+// everywhere (it is the wave store's own): a listener added to the strip runs inside its poll, and
+// one that threw would stop the poll from scheduling the next (shadowStore.js `tick`). No module
+// the waves reach does any of this today, and REACHED is pinned, so a new one is read before it is
+// listed.
 //
 // WHAT THEY REACH (Lane A, I2). Every rule above that reads text, and the import rule, runs over
 // EVERY module the wave modules reach, not only the wave modules: a helper a wave module imports is
@@ -77,6 +100,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { importsOf } from "./imports.testutil.js";
 import { createSessionStore } from "./session/sessionStore.js";
 import { createBoardStore } from "./data/boardStore.js";
+import { createShadowStore } from "./data/shadowStore.js";
 import { createBackendApi } from "../backendApi.js";
 
 const LIVE = path.dirname(fileURLToPath(import.meta.url));
@@ -298,10 +322,18 @@ const bracketsOnly = (text) => rebuilt(text, (kind, part) => {
 // The capabilities no wave module may name (I1), derived from the real code.
 
 const refuse = () => Promise.reject(new Error("waveBoundaries.test.js asks nothing"));
+// The strip's shadow store (minor 2): useShadow() hands it to the full screen with the strip's state.
+// Its read-only keys are not banned as its own; pinned, each must still be a key of the real store.
+const SHADOW_KEYS = Object.keys(createShadowStore({ api: {} }));
+const SHADOW_READ_ONLY = new Map([
+  ["getState", "read-only: hands back the strip's state (useShadow reads it with useSyncExternalStore)"],
+  ["subscribe", "read-only: tells a listener the state changed (useShadow's useSyncExternalStore)"],
+]);
 const OBJECTS = {
   "the session store": Object.keys(createSessionStore({ api: {}, events: null })),
   "the API client": Object.keys(createBackendApi({ baseUrl: "", fetchImpl: refuse })),
   "the board store": Object.keys(createBoardStore({ api: {}, openStream: () => () => {} })),
+  "the shadow store": SHADOW_KEYS.filter((name) => !SHADOW_READ_ONLY.has(name)),
 };
 const EXPORTERS = [...sources(path.join(LIVE, "session")), path.join(SRC, "backendApi.js"),
   path.join(LIVE, "data", "boardStore.js"), path.join(LIVE, "data", "BoardProvider.jsx")];
@@ -320,7 +352,9 @@ for (const [where, names] of [...Object.entries(OBJECTS), ...Object.entries(EXPO
 // must still be used by a wave module.
 const ALLOW = new Map([
   // The wave store's own `subscribe(fn)` (data/waveStore.js), read by the panel as `store.subscribe`.
-  // It adds a listener to the wave store and nothing else.
+  // It adds a listener to the wave store and nothing else. The form is allowed in every module read,
+  // so useShadow (ShadowProvider.jsx) listens to the strip's store by it too: read-only, and the one
+  // residual named in the header (WHAT IS LEFT).
   ["subscribe", ["subscribe", ".subscribe"]],
   // waveStore.js's own `cancel(entry)`, which clears a poll timer. `.cancel` stays banned: the
   // session's `cancel` ends the session.
@@ -404,6 +438,10 @@ const FORBIDDEN = [
 ];
 // A request of their own. Read in the code alone: a word in a string asks nothing.
 const NETWORK = /\b(fetch|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|serviceWorker)\b|\b(?:Shared)?Worker\s*\(|\bimport\s*\(/g;
+// A press on a control of the page — an acknowledge button is one `.click()` away (minor 2). As a
+// member, called or not (`.click()`, `?.click?.()`, `.click.call(el)`). `.focus()` is not one: it
+// is how the full screen hands the focus back. In the code alone.
+const PRESS = /\.\s*(?:click|submit|requestSubmit)\b/g;
 // What would get past the names: code made from text (`eval`, `new Function("…")`), and a name
 // spelt with a unicode escape, which the language reads as the letter it stands for (the test
 // below spells `lock` so). In the code alone.
@@ -416,6 +454,7 @@ function brokenIn(text) {
   for (const [kind, pattern] of FORBIDDEN) for (const m of prose.matchAll(pattern)) broken.push(`${kind}: ${m[0]}`);
   const code = codeOnly(text);
   for (const m of code.matchAll(NETWORK)) broken.push(`network: ${m[0]}`);
+  for (const m of code.matchAll(PRESS)) broken.push(`press: ${m[0].replace(/\s+/g, "")}`);
   for (const m of code.matchAll(UNNAMED)) broken.push(`capability: ${m[0]}`);
   for (const what of capabilitiesIn(text)) broken.push(`capability: ${what}`);
   for (const what of computedIn(text)) broken.push(`computed access: ${what}`);
@@ -454,6 +493,8 @@ const DICTIONARIES = "i18n/strings/";
 const EXEMPT = {
   "prefs.js: storage: localStorage": "it IS the browser's preference store; only the i18n and theme providers import it",
   "data/ShadowProvider.jsx: capability: .getState": "it reads its own shadow store (`store.getState`), the one LiveApp hands it",
+  "data/ShadowProvider.jsx: capability: .acquire": "useShadow's own effect: a component that shows the strip asks for it on mount",
+  "data/ShadowProvider.jsx: capability: .release": "... and lets it go on unmount, in the same effect's cleanup: one pair",
   "ui/icons.js: capability: chart:": "an icon's name, a key of the icon table",
   "ui/icons.js: capability: lock:": "an icon's name, a key of the icon table",
   "ui/Modal.jsx: capability: restore": "its own `restore`, which puts the focus back",
@@ -604,7 +645,11 @@ describe("the waveform modules", () => {
     expect(unexempted(broken.filter((entry) => /: (network|event or write): /.test(entry)))).toEqual([]);
   });
 
-  it("hold no capability of the session, the API client or the board, with all they reach", () => {
+  it("press no control of the page, with all they reach: no .click(), .submit() or .requestSubmit()", () => {
+    expect(unexempted(broken.filter((entry) => entry.includes(": press: ")))).toEqual([]);
+  });
+
+  it("hold no capability of the session, the API client, the board or the strip's shadow store, with all they reach", () => {
     expect(unexempted(broken.filter((entry) => entry.includes(": capability: ")))).toEqual([]);
   });
 
@@ -643,7 +688,7 @@ describe("the waveform modules", () => {
     for (const name of ALLOW.keys()) expect(BANNED.has(name), `${name} is not banned: drop it`).toBe(true);
   });
 
-  it("ban names derived from the real session store, API client and board store, and their modules' exports", () => {
+  it("ban names derived from the real session store, API client, board store and shadow store, and their modules' exports", () => {
     expect(OBJECTS["the session store"]).toEqual(expect.arrayContaining(["lock", "unlock", "dispose", "changePassword",
       "track", "api", "cancel", "signOut", "restore"]));
     expect(OBJECTS["the API client"]).toEqual(expect.arrayContaining(["logout", "admit", "chart", "confirmDischarge",
@@ -659,6 +704,18 @@ describe("the waveform modules", () => {
     expect(BANNED.get("releaseBed")).toBe("the API client");
     expect(BANNED.get("waveFeedFor")).toBe("session/feeds.js");
     expect(BANNED.get("useBoard")).toBe("data/BoardProvider.jsx");
+    // The strip's shadow store, which useShadow() hands the full screen (Lane A, minor 2): every key
+    // but the read-only ones is banned as the shadow store's, and those stay banned as the session's
+    // and the board's.
+    for (const name of ["acquire", "release", "findings"]) expect(BANNED.get(name), name).toBe("the shadow store");
+    for (const name of ["start", "clear"]) expect(OBJECTS["the shadow store"], name).toContain(name);
+    for (const name of ["getState", "subscribe"]) {
+      expect(OBJECTS["the shadow store"], name).not.toContain(name);
+      expect(BANNED.has(name), name).toBe(true);
+    }
+    // The read-only list is pinned, and names only keys the real store still has.
+    expect([...SHADOW_READ_ONLY.keys()]).toEqual(["getState", "subscribe"]);
+    expect(SHADOW_KEYS).toEqual(expect.arrayContaining([...SHADOW_READ_ONLY.keys()]));
     // What the wave code legitimately calls is not banned.
     for (const name of ["get", "watch", "getWaves", "waveStoreFor", "createWaveStore", "useI18n", "useShadow"]) {
       expect(BANNED.has(name), name).toBe(false);
@@ -759,6 +816,18 @@ describe("the waveform modules", () => {
     expect(named('eval(text); new Function("return 1");')).toEqual(["capability: eval", "capability: Function("]);
     expect(named('const s = "lo\\u0063k is a word";')).toEqual([]);
     expect(named('Reflect.get(session, "\\u006cock");')).toEqual(['capability: "lock"']);
+    // The strip's shadow store, reached through useShadow() (minor 2).
+    expect(named("useShadow().acquire();")).toEqual(["capability: .acquire"]);
+    expect(named("useShadow().store.acquire(); shadow.store.release();")).toEqual(["capability: .acquire", "capability: .release"]);
+    expect(named("const { findings } = useShadow().store;")).toEqual(["capability: { findings }"]);
+    expect(named("store.start(perms); store.clear();")).toEqual(["capability: .start", "capability: .clear"]);
+    expect(named("const { data, nowMs, fetchedAtMs } = useShadow();")).toEqual([]);
+    // A press on a control of the page (minor 2); `.focus()` is how the full screen hands the focus back.
+    for (const line of ["button.click();", "ack?.click?.();", "HTMLElement.prototype.click.call(el);", "form.submit();",
+      'document.querySelector("form")?.requestSubmit();']) {
+      expect(kindsIn(line), line).toEqual(["press"]);
+    }
+    expect(kindsIn('closeRef.current?.focus(); <Button onClick={go} />; t("waves.click"); const clicks = 1;')).toEqual([]);
     // ... and not what the wave code is: its own names, ALLOW's forms, a word in a string or comment.
     expect(named("getWaves(wavesPath(source, cursor, started)); cancel(entry); store.subscribe; const view = 1;")).toEqual([]);
     expect(named('t("lock.title"); // session.lock()\nconst clearLock2 = relock;')).toEqual([]);

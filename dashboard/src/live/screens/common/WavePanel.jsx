@@ -21,7 +21,10 @@
 // portal child) sit inside the panel's own boundary (WaveErrorBoundary.jsx), so neither screen has
 // to wrap it: a failure leaves the panel's frame saying «Dalga akışı yok» and watching nothing, and
 // the alarm sound and notifications in the same tree (LiveApp.jsx) stand. Only another monitor
-// (`source`) draws it again. The rows hand the boundary what a frame throws too (WaveRows.jsx).
+// (`source`) draws it again. The rows hand the boundary what a frame throws too (WaveRows.jsx). The
+// wave store is made inside the boundary as well (Lane A, minor 1): a screen that draws the panel
+// without a `feed` gets that frame, never a crash, and nothing polls. The device screen's closed
+// panel needs no store, so its «Dalga formunu göster» still draws; opening it gives the frame.
 import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { WAVE_STATUS, waveStoreFor } from "../../data/waveStore.js";
@@ -38,8 +41,11 @@ const NOTE = {
 };
 const QUIET = new Set([WAVE_STATUS.IDLE, WAVE_STATUS.LOADING, WAVE_STATUS.OFF]);
 
-function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, caf, className }) {
+function OpenPanel({ feed, store: given, source, title, collapsible, onHide, hideRef, raf, caf, className }) {
   const { t } = useI18n();
+  // Made here, inside the panel's boundary: drawn with no feed, the panel fails as a wave panel
+  // («Dalga akışı yok»), never as the page (Lane A, minor 1).
+  const store = given ?? waveStoreFor(feed);
   const id = useId();
   const [full, setFull] = useState(false);
   const fullRef = useRef(null);
@@ -100,7 +106,8 @@ function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, ca
  * One monitor's waves. `source`: the strip card's address. `title`: the bed label (or the device
  * screen's own title). `collapsible`: closed behind a button until opened (the device screen, so
  * that a list of monitors polls none of them by itself). `feed`: the session's wave feed
- * (session/feeds.js `waveFeedFor`), from the screen; the panel polls through the feed's wave store.
+ * (session/feeds.js `waveFeedFor`), from the screen; the panel polls through the feed's wave store,
+ * made when the panel opens. Without one the open panel says «Dalga akışı yok».
  * `store`, `raf`, `caf`: for the tests (a wave store in place of the feed's, and a frame clock in
  * place of the browser's).
  *
@@ -109,7 +116,6 @@ function OpenPanel({ store, source, title, collapsible, onHide, hideRef, raf, ca
  */
 export function WavePanel({ source, title, collapsible = false, feed, store, raf, caf, className = "" }) {
   const { t } = useI18n();
-  const waves = store ?? waveStoreFor(feed);
   const [open, setOpen] = useState(!collapsible);
   const showRef = useRef(null);
   const hideRef = useRef(null);
@@ -135,7 +141,7 @@ export function WavePanel({ source, title, collapsible = false, feed, store, raf
   }
   return (
     <WaveErrorBoundary resetKey={source} title={title} className={className}>
-      <OpenPanel key={source} store={waves} source={source} title={title} collapsible={collapsible}
+      <OpenPanel key={source} feed={feed} store={store} source={source} title={title} collapsible={collapsible}
         onHide={() => toggle(false)} hideRef={hideRef} raf={raf} caf={caf} className={className} />
     </WaveErrorBoundary>
   );

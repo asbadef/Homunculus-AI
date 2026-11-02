@@ -113,7 +113,7 @@ function listenerLedger() {
 }
 
 const numbersIn = (dialog) => within(dialog).getByRole("region", { name: "REA-01 · 2 · Monitör · doğrulanmamış" });
-const closeButton = () => screen.getByRole("button", { name: "Tam ekrandan çık" });
+const closeButton = () => screen.getByRole("button", { name: "Dalga görünümünü kapat" });
 
 const LIVE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
