@@ -14,7 +14,7 @@
 #   3 host mount -> nce container      (does the container see the same files?)
 #   4 bridge scan/parse                (dosya= counters, rejections, ledger)
 #   5 buffer -> api                    (kuyruk depth; the bridge's uplink warnings = the /ingest status)
-#   6 api -> board                     (patient count on /patients)
+#   6 api -> board                     (aggregate counts on /patients: no ids, names or values)
 set -u
 
 hr() { printf '\n== %s\n' "$1"; }
@@ -100,12 +100,51 @@ done
 
 hr "6. pano: /patients"
 # nginx yalnızca WEB_LISTEN_ADDR'a bağlanır; 127.0.0.1 çoğu kurulumda reddeder.
+# Yalnızca TOPLAMLAR basılır: hasta kimliği/protokol numarası, ad ve ölçüm değeri terminale çıkmaz
+# (yapıştırılan çıktıya sızmasın). Yanıt diske de yazılmaz: curl'ün gövdesi doğrudan konteynerdeki
+# okuyucuya borulanır; durum kodu gövdenin ardından son satır olarak gelir (-w '\n%{http_code}').
 ADDR="$(getenv WEB_LISTEN_ADDR)"; ADDR="${ADDR:-127.0.0.1}"
+rm -f /tmp/nce-doctor-p.json   # eski sürüm yanıtı buraya yazardı; yarıda kesildiyse artık kalmasın
 if [ -n "$TOKEN" ]; then
-  code=$(curl -s -m 5 -o /tmp/nce-doctor-p.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://${ADDR}:${WEB_PORT}/patients")
-  echo "GET http://${ADDR}:${WEB_PORT}/patients -> http $code"
-  [ -s /tmp/nce-doctor-p.json ] && docker exec -i homunculus-api python -c 'import sys,json; d=json.load(sys.stdin)["patients"]; print("hasta sayısı:", len(d)); [print("  ", p["patient_id"], "risk=", p["risk"], "uyarı=", len(p["alerts"]), "dolu alan=", [k for k,v in p["latest"].items() if v is not None]) for p in d]' < /tmp/nce-doctor-p.json
-  rm -f /tmp/nce-doctor-p.json
+  IFS= read -r -d '' P6 <<'PY' || true
+import sys, json
+from collections import Counter
+raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+body, _, code = raw.rpartition("\n")
+code = code.strip() or "yok"
+print("GET " + sys.argv[1] + " -> http " + code)
+if code != "200":
+    print("  yanıt 200 değil; sayılamadı (401: TENANT_TOKEN geçersiz, 000: bağlanılamadı)")
+    sys.exit(0)
+try:
+    d = json.loads(body)["patients"]
+    n = len(d)
+    risk = Counter(str(p.get("risk")) for p in d)
+    uyarili = sum(1 for p in d if p.get("alerts"))
+    toplam = sum(len(p.get("alerts") or []) for p in d)
+    dolu = Counter()
+    alanlar = []
+    for p in d:
+        for k, v in (p.get("latest") or {}).items():
+            if k == "at":
+                continue
+            if k not in alanlar:
+                alanlar.append(k)
+            if v is not None:
+                dolu[k] += 1
+except Exception:
+    print("  yanıt JSON değil ya da beklenen biçimde değil; sayılamadı")
+    sys.exit(0)
+print("hasta sayısı:", n)
+if n:
+    print("risk dağılımı:", "  ".join(k + "=" + str(c) for k, c in sorted(risk.items())))
+    print("uyarı: toplam=" + str(toplam) + "  uyarısı olan hasta=" + str(uyarili) + "/" + str(n))
+    print("dolu alan (değeri olan hasta/toplam):")
+    for k in alanlar:
+        print("   " + k + " " + str(dolu[k]) + "/" + str(n))
+PY
+  curl -s -m 5 -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" "http://${ADDR}:${WEB_PORT}/patients" \
+    | docker exec -i homunculus-api python -c "$P6" "http://${ADDR}:${WEB_PORT}/patients"
 else
   echo "(.env'de TENANT_TOKEN bulunamadı, atlandı)"
 fi
