@@ -9,7 +9,7 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { news2 } from "../../data/board.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { SAVE_ARM_MS, VitalsForm, savedOf } from "./VitalsForm.jsx";
-import { toLocalInput } from "./vitalsFields.js";
+import { BACKDATE_MS, toLocalInput } from "./vitalsFields.js";
 
 const NOW = Date.parse("2026-11-02T10:00:00Z");
 const BED = "REA-01 · 2";
@@ -161,10 +161,28 @@ describe("the bedside form", () => {
     fireEvent.change(screen.getByLabelText("Ölçmə vaxtı"), { target: { value: toLocalInput(NOW + 10 * 60_000) } });
     await preview();
     expect(onPreview).not.toHaveBeenCalled();
-    expect(screen.getByText("Ölçmə vaxtı irəlidə ola bilməz.")).toBeInTheDocument();
+    expect(screen.getByText("Ölçmə vaxtı gələcəkdə ola bilməz.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Ölçmə vaxtı"), { target: { value: toLocalInput(NOW - 60 * 60_000) } });
     await preview();
     expect(onPreview).toHaveBeenCalledWith([{ code: "spo2", value: 95 }], new Date(NOW - 60 * 60_000).toISOString());
+  });
+
+  // G3-01, review of Task 12: the picker's `min` is checkDraft's own edge (a day back plus the minute of skew), so the
+  // oldest time the box offers is one the form takes, and the minute below it is the first the form refuses.
+  it("the time box's minimum is the edge the form's own check holds, not the day itself", async () => {
+    const { onPreview } = await open();
+    const input = screen.getByLabelText("Ölçmə vaxtı");
+    expect(input.getAttribute("min")).toBe(toLocalInput(NOW - BACKDATE_MS + 60_000));
+    expect(input.getAttribute("max")).toBe(toLocalInput(NOW));
+    type("SpO2", "95");
+    fireEvent.change(input, { target: { value: input.getAttribute("min") } });
+    await preview();
+    expect(onPreview).toHaveBeenCalledWith([{ code: "spo2", value: 95 }], new Date(NOW - BACKDATE_MS + 60_000).toISOString());
+    onPreview.mockClear();
+    fireEvent.change(input, { target: { value: toLocalInput(NOW - BACKDATE_MS) } });
+    await preview();
+    expect(onPreview).not.toHaveBeenCalled();
+    expect(screen.getByText("Ölçmə vaxtı ən çox 24 saat geriyə çəkilə bilər.")).toBeInTheDocument();
   });
 
   it("a discharged patient previews as dropped, and nothing is offered to save", async () => {

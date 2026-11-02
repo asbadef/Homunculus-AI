@@ -3,8 +3,8 @@ import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { LANG_CODES } from "../../i18n/langs.js";
 import {
-  BACKDATE_MS, NEWS2_PARAMETERS, VITALS, birthYearOf, checkDraft, checkVital, draftKey, hasErrors, lastMeasuredMs,
-  specOf, stepValue, toLocalInput,
+  BACKDATE_MS, NEWS2_PARAMETERS, SKEW_MS, VITALS, birthYearOf, checkDraft, checkVital, draftKey, hasErrors, lastMeasuredMs,
+  oldestInput, specOf, stepValue, toLocalInput,
 } from "./vitalsFields.js";
 
 const NOW = Date.parse("2026-11-02T10:00:00Z");
@@ -135,6 +135,21 @@ describe("the draft", () => {
     expect(oldest.errors).toEqual({});
     expect(oldest.recordedAt).toBe(new Date(NOW - BACKDATE_MS + SKEW).toISOString());
     expect(checkDraft(at(NOW - BACKDATE_MS), NOW).errors.at).toEqual({ key: "olcum.atTooOld" });
+  });
+
+  // Review of Task 12: the time box's native `min` and checkDraft's edge are one line. On a clock that is on a minute
+  // the box's minimum IS the edge; between two minutes it is the first minute the check takes (the one below is refused).
+  it("offers the time box a minimum that checkDraft takes, and a minute below it is refused (D7)", () => {
+    expect(SKEW_MS).toBe(SKEW);
+    expect(oldestInput(NOW)).toBe(toLocalInput(NOW - BACKDATE_MS + SKEW));
+    for (const now of [NOW, NOW + 1_000, NOW + 30_000, NOW + 59_999]) {
+      const min = oldestInput(now);
+      const minMs = new Date(min).getTime();                  // a `datetime-local` value is read as the zone's own time
+      expect(minMs).toBeGreaterThanOrEqual(now - BACKDATE_MS + SKEW);
+      expect(minMs - (now - BACKDATE_MS + SKEW)).toBeLessThan(60_000);
+      expect(checkDraft({ values: { spo2: "95" }, at: min, atTouched: true }, now).errors, `${min} at ${now}`).toEqual({});
+      expect(checkDraft(at(minMs - 60_000), now).errors.at, `${min} at ${now}`).toEqual({ key: "olcum.atTooOld" });
+    }
   });
 
   it("reads the browser's own clock when no `now` is given", () => {

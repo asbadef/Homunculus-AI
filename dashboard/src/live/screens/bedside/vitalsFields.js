@@ -11,13 +11,21 @@
 // the systolic within one form (D6). A typed time goes up to 24 h back and never ahead; an untouched one is not sent
 // at all, and the server stamps its own clock (X12). The number rule is the Meds form's, imported: one "plain
 // decimal" (a comma read as a point) for every chart the patient screen writes.
-import { BACKDATE_MS, fromLocalInput, number } from "../patient/meds/medsFields.js";
+import { BACKDATE_MS, fromLocalInput, number, toLocalInput } from "../patient/meds/medsFields.js";
 
 export { BACKDATE_MS, toLocalInput } from "../patient/meds/medsFields.js";
 
 /** A minute of skew between this browser's clock and the server's: not "ahead" on the future side (the Meds
  *  form's minute), and the margin kept inside the 24 h edge on the past side, so the browser is the stricter one. */
-const SKEW_MS = 60_000;
+export const SKEW_MS = 60_000;
+
+/** The oldest instant `checkDraft` takes: a day back plus the skew, never the day itself. */
+const oldestMs = (now) => now - BACKDATE_MS + SKEW_MS;
+
+/** The time box's native `min`: the first whole minute `checkDraft` takes, so the picker offers nothing the check
+ *  then refuses. The box holds whole minutes, and a clock that is not on a minute puts the edge between two of them:
+ *  the minute below it is refused, so this rounds up. */
+export const oldestInput = (now) => toLocalInput(Math.ceil(oldestMs(now) / 60_000) * 60_000);
 
 export const VITALS = Object.freeze([
   Object.freeze({ code: "resp_rate", kind: "number", labelKey: "board.chRr", unitKey: "board.unitBpm",
@@ -91,7 +99,7 @@ export function checkDraft({ values = {}, at = "", atTouched = false } = {}, now
     else if (ms > now + SKEW_MS) errors.at = { key: "olcum.atFuture" };
     // A minute INSIDE the day: the server refuses a time older than 24 h by its own clock, and a form that sent
     // the edge itself could be a second too old on arrival. This side is the stricter one.
-    else if (ms < now - BACKDATE_MS + SKEW_MS) errors.at = { key: "olcum.atTooOld" };
+    else if (ms < oldestMs(now)) errors.at = { key: "olcum.atTooOld" };
     else recordedAt = new Date(ms).toISOString();
   }
   return { entries, recordedAt, errors };

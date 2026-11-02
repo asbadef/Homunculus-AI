@@ -358,6 +358,20 @@ describe("the board store", () => {
     expect(await late).toBeNull();
   });
 
+  // G3-01 (D10), review of Task 8: the engine's refusal of a withdrawal (here «already withdrawn», a 409) reaches the
+  // caller as the API's own error, and the board is not read again — the engine rebuilt nothing, so no card changed.
+  it("a refused withdrawal rejects with the API's own error and does not reload the board", async () => {
+    const { api, store, state } = setup();
+    await store.start();
+    const loaded = state().patients;
+    const refused = Object.assign(new Error("bu değer zaten hatalı giriş olarak işaretlenmiş"), { status: 409 });
+    api.retractEntry = vi.fn().mockRejectedValue(refused);
+    await expect(store.retract("S-001", 41, "yazım hatası — 26 değil 16")).rejects.toBe(refused);
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // the start's load, and no reload after the refusal
+    expect(state().patients).toBe(loaded);                             // the board it held, untouched
+  });
+
   it("a refused SOFA call rejects with the API's own error, having changed nothing", async () => {
     const { api, store, state } = setup();
     await store.start();

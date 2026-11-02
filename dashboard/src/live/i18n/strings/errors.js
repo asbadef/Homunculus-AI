@@ -173,7 +173,7 @@ export default {
     gcsNotWhole: "GCS tam ədəd olmalıdır.",
     vitalsMapAboveSbp: "MAP sistolik təzyiqdən kiçik olmalıdır.",
     vitalsAtTooOld: "Ölçmə vaxtı ən çox 24 saat geriyə çəkilə bilər.",
-    vitalsAtFuture: "Ölçmə vaxtı irəlidə ola bilməz.",
+    vitalsAtFuture: "Ölçmə vaxtı gələcəkdə ola bilməz.",
     retractReasonShort: "Səbəb ən azı 10 simvol olmalıdır.",
     retractNeedsPerson: "Səhv qeyd işarəsini bir şəxs qoyur; cihaz kimliyi ilə edilə bilməz.",
     retractUnknown: "Bu xəstədə belə bir əl ilə daxil edilmiş dəyər yoxdur.",

@@ -29,7 +29,7 @@ import { Announce, Button, Field, Icon, Input, Seg, useToast } from "../../ui/in
 import { mayHaveLanded } from "../admin/refusal.js";
 import { useNow } from "../common/useNow.js";
 import { PreviewPanel } from "./PreviewPanel.jsx";
-import { BACKDATE_MS, VITALS, checkDraft, draftKey, hasErrors, stepValue, toLocalInput } from "./vitalsFields.js";
+import { VITALS, checkDraft, draftKey, hasErrors, oldestInput, stepValue, toLocalInput } from "./vitalsFields.js";
 
 /** How long «Kaydet» ignores a press after it appeared where «Önizle» stood (the SOFA form's 600 ms). */
 export const SAVE_ARM_MS = 600;
@@ -298,7 +298,7 @@ export function VitalsForm({ bed, nowMs, onPreview, onSave, onSaved, onCancel, o
       </div>
       <Field label={t("olcum.at")} hint={t("olcum.atHint")} layout="col" error={errorOf("at")}>
         <Input
-          ref={keep("at")} type="datetime-local" min={toLocalInput(now - BACKDATE_MS)} max={toLocalInput(now)}
+          ref={keep("at")} type="datetime-local" min={oldestInput(now)} max={toLocalInput(now)}
           value={atTouched ? at : toLocalInput(now)} readOnly={busy !== null}
           onChange={(event) => { setAtTouched(true); setAt(event.target.value); }}
         />

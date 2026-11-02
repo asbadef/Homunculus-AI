@@ -62,7 +62,7 @@ describe("the bedside page", () => {
     expect(screen.getByText("Ayşe Sentetik")).toBeInTheDocument();
     expect(screen.getByText("1970")).toBeInTheDocument();
     await press(button("Xeyr, uyğun deyil"));
-    expect(toasted("REA-01 · 2: şəxsiyyət uyğun gəlmədi, seçim ləğv edildi. Məsul tibb bacısına bildirin.").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: şəxsiyyət uyğun gəlmədi, seçim ləğv edildi. Baş tibb bacısına bildirin.").length).toBeGreaterThan(0);
     expect(picks()).toHaveLength(2);
     expect(api.previewChart).not.toHaveBeenCalled();
   });
