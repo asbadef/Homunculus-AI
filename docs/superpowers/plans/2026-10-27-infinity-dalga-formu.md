@@ -3967,6 +3967,13 @@ cd /c/tmp/inf-dalga && git add dashboard/src/live/i18n/strings/waves.js dashboar
 
 `WaveRows.jsx` (one `<canvas>` per row, a `requestAnimationFrame` loop; the row's label, unit and evidence and its state as DOM text, never pixels; faded when stalled, blank when cleared), `WavePanel.jsx` (the header, the always-visible stamp, the statuses of R10, the ⤢ button; on the device screen closed behind "Dalga formunu göster", R9) and `WaveFullscreen.jsx` (W5, R15: black, the stamp at full size, the strip's own numbers beside the waves through `MonitorStrip`; Esc, × or leaving browser full screen close it, focus back to ⤢). Tested on a mocked 2D context with a hand-driven frame clock (`manualFrames`): jsdom has no canvas.
 
+*As built after the main merge (9fae9ec), commit `d1993af`.* Three changes from the first draft, each with its test:
+1. **The strip's stage.** `MonitorStrip` now takes the answer's `stage`, and the patient and device screens pass it. At Aşama B's «rules», its whole note is `monitor.fullRules`. The full screen passes `stage={shadow.data.stage}` too, so its numbers carry the strip's note for that stage. `cardOf` already finds a card at «rules» through `stripOn`.
+2. **The strip's labels.** After the HR/PLS swap (70e45e9), `hr` is the ECG rate and `pls` the SpO₂ pulse. The full screen prints the card through `MonitorStrip` itself, so its labels are the strip's. A test pins HR beside its value and PLS beside its own.
+3. **The panel's note in the full screen.** In full screen, the panel and its note sit behind the black overlay. A failed poll (503) or a refusal (404, which drops the blocks) would otherwise leave stalled or empty rows with no reason given. `WavePanel` passes its note text, and `WaveFullscreen` says it under the stamp.
+
+A mutation check also showed the stamp unpinned on a 403/404 panel. That test now asserts the stamp too (rule 1: the stamp is on screen whenever any of the panel is).
+
 **Files:**
 - Create: `dashboard/src/live/screens/common/WavePanel.test.jsx`, `WaveFullscreen.test.jsx`
 - Create: `dashboard/src/live/screens/common/WaveRows.jsx`, `WaveFullscreen.jsx`, `WavePanel.jsx`
@@ -4099,10 +4106,11 @@ describe("the waveform panel", () => {
   });
 
   it.each([[404, "Bu cihazın dalga formu gösterilemiyor"], [403, "Bu cihazın dalga formunu görme yetkiniz yok"]])(
-    "says why it shows no waves on a %i, never an empty trace", async (code, words) => {
+    "says why it shows no waves on a %i, never an empty trace — under the stamp", async (code, words) => {
       await show({ reply: () => { throw refusal(code); } });
       expect(within(panel()).getByRole("note")).toHaveTextContent(words);
       expect(document.querySelector("[data-wave-rows]")).toBeNull();
+      expect(within(panel()).getByText(STAMP)).toBeInTheDocument();         // rule 1: whenever any of the panel is
     });
 
   it("draws nothing at all when waves are off here (409), and nothing before the first answer", async () => {
@@ -4169,7 +4177,9 @@ import { SessionProvider } from "../../session/SessionProvider.jsx";
 import { ShadowProvider } from "../../data/ShadowProvider.jsx";
 import { createWaveStore } from "../../data/waveStore.js";
 import { bed as stripBed, param, strip } from "../../data/shadow.testutil.js";
-import { SOURCE, answer, manualFrames, manualTimers, sessionStub, settle } from "../../data/waves.testutil.js";
+import {
+  SOURCE, answer, manualFrames, manualTimers, refusal, sessionStub, settle,
+} from "../../data/waves.testutil.js";
 import { WavePanel } from "./WavePanel.jsx";
 import { cardOf } from "./WaveFullscreen.jsx";
 
@@ -4199,17 +4209,19 @@ function shadowStub(data = strip({ beds: [stripBed("REA-01 · 2", [param("hr", 7
   return { acquire() {}, release() {}, subscribe: () => () => {}, getState: () => state };
 }
 
-async function openFull() {
+/** `data`: the strip answer the shadow store holds (shadowStub's one HR card when not given).
+ *  `reply`: what the wave API answers, read at every poll. */
+async function openFull({ data, reply = () => answer() } = {}) {
   const timers = manualTimers();
   const frames = manualFrames();
   const store = createWaveStore({
-    api: { request: vi.fn(async () => answer()) }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    api: { request: vi.fn(async () => reply()) }, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     isVisible: () => true, onVisibility: () => () => {}, perfNow: () => 0,
   });
   render(
     <I18nProvider>
       <SessionProvider store={sessionStub()}>
-        <ShadowProvider store={shadowStub()}>
+        <ShadowProvider store={shadowStub(data)}>
           <WavePanel source={SOURCE} title="REA-01 · 2" store={store} raf={frames.raf} caf={frames.caf} />
         </ShadowProvider>
       </SessionProvider>
@@ -4218,8 +4230,10 @@ async function openFull() {
   await act(async () => { await settle(); });
   const opener = screen.getByRole("button", { name: "Tam ekran görünüm" });
   await act(async () => { fireEvent.click(opener); await settle(); });
-  return { opener, dialog: screen.getByRole("dialog", { name: "REA-01 · 2 · Dalga formu · doğrulanmamış" }) };
+  return { opener, timers, dialog: screen.getByRole("dialog", { name: "REA-01 · 2 · Dalga formu · doğrulanmamış" }) };
 }
+
+const numbersIn = (dialog) => within(dialog).getByRole("region", { name: "REA-01 · 2 · Monitör · doğrulanmamış" });
 
 describe("the full-screen view", () => {
   it("fills the screen on black, asks the browser for full screen, and keeps the stamp at full size", async () => {
@@ -4234,9 +4248,41 @@ describe("the full-screen view", () => {
 
   it("shows the strip's own numbers beside the waves", async () => {
     const { dialog } = await openFull();
-    const numbers = within(dialog).getByRole("region", { name: "REA-01 · 2 · Monitör · doğrulanmamış" });
-    expect(numbers).toHaveTextContent("72");
+    expect(numbersIn(dialog)).toHaveTextContent("72");
   });
+
+  // After the HR/PLS swap on main (70e45e9) the strip's `hr` is the ECG rate and `pls` the SpO₂
+  // pulse. The full screen prints the strip's card through the strip itself, so its labels are the
+  // strip's — never words of its own beside a wave.
+  it("labels each number as the strip does: HR is the strip's HR, PLS the strip's PLS", async () => {
+    const { dialog } = await openFull({ data: strip({
+      beds: [stripBed("REA-01 · 2", [param("hr", 72), param("pls", 71)], { source: SOURCE })],
+    }) });
+    const numbers = numbersIn(dialog);
+    expect(within(numbers).getByText("HR").parentElement).toHaveTextContent(/^HR72/);
+    expect(within(numbers).getByText("PLS").parentElement).toHaveTextContent(/^PLS71/);
+  });
+
+  // Aşama B: at «rules» it is the same strip, and its whole note says the shadow engine scores
+  // these values — the strip's own note for its own stage, as the patient and device screens pass it.
+  it("finds the card at Aşama B's «rules» too, and carries the strip's note for that stage", async () => {
+    const data = { ...strip({ beds: [stripBed("REA-01 · 2", [param("hr", 72)], { source: SOURCE })] }), stage: "rules" };
+    expect(cardOf(data, SOURCE).bed_label).toBe("REA-01 · 2");
+    const { dialog } = await openFull({ data });
+    expect(numbersIn(dialog)).toHaveTextContent("tavsiye niteliğinde bir gölge skor");
+  });
+
+  // The panel, and the note in it, are behind the black: the full screen says what the panel would.
+  it.each([[503, "Dalga akışı yok"], [404, "Bu cihazın dalga formu gösterilemiyor"]])(
+    "says why the stream is missing on a %i while it is open, as the panel does", async (code, words) => {
+      let reply = () => answer();
+      const { dialog, timers } = await openFull({ reply: () => reply() });
+      expect(within(dialog).queryByText(words)).toBeNull();
+      reply = () => { throw refusal(code); };
+      await act(async () => { await timers.fire(); });
+      expect(within(dialog).getByText(words)).toBeInTheDocument();
+      expect(within(dialog).getByText(STAMP)).toBeInTheDocument();
+    });
 
   it("closes on Escape, leaves browser full screen and gives the focus back to ⤢", async () => {
     const { opener } = await openFull();
@@ -4464,13 +4510,15 @@ export function WaveRows({ device, tall = false, raf = defaultRaf, caf = default
 // W5): the panel's rows, filling the screen on a black ground, with the strip's own numbers beside
 // them. Esc or × closes it; the stamp stays visible at full size. It asks the browser for full
 // screen when it can, and is a window-filling overlay when it cannot. No sound, no number from a
-// wave (spec §5.4, §5.8). The numbers are the strip's card for this monitor — values, ages and
-// evidence words exactly as the strip prints them; MonitorStrip prints no patient.
+// wave (spec §5.4, §5.8). The numbers are the strip's card for this monitor drawn by MonitorStrip
+// itself — values, labels (HR is the strip's HR, PLS the strip's PLS), ages, evidence words and the
+// whole note for the answer's stage («rules» at Aşama B), exactly as the strip prints them;
+// MonitorStrip prints no patient.
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { Button, Tag } from "../../ui/index.js";
+import { Button, Note, Tag } from "../../ui/index.js";
 import { MonitorStrip, readUnknown, stripOn } from "./MonitorStrip.jsx";
 import { maxAgeOf } from "./monitor.js";
 import { WaveRows } from "./WaveRows.jsx";
@@ -4481,7 +4529,9 @@ export function cardOf(data, source) {
   return [...(data.beds ?? []), ...(data.unassigned ?? [])].find((card) => card.source === source) ?? null;
 }
 
-export function WaveFullscreen({ source, title, device, onClose, raf, caf }) {
+/** `note`: the panel's own words for why the stream is missing (a failed poll, a refusal), or null —
+ *  the panel is behind this view, so a status is said here too, never left as a silent black row. */
+export function WaveFullscreen({ source, title, device, note = null, onClose, raf, caf }) {
   const { t } = useI18n();
   const shadow = useShadow();
   const card = cardOf(shadow.data, source);
@@ -4534,12 +4584,14 @@ export function WaveFullscreen({ source, title, device, onClose, raf, caf }) {
         <Button ref={closeRef} icon="x" label={t("waves.close")} onClick={() => closing.current()} className="ml-auto" />
       </div>
       <p data-wave-stamp="" className="m-0 font-text text-17 font-bold text-amber-300">{t("waves.stamp")}</p>
+      {note ? <Note className="self-start">{note}</Note> : null}
       <div className="grid min-h-0 flex-1 gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_340px]">
         <WaveRows device={device} tall raf={raf} caf={caf} />
         {card ? (
           <MonitorStrip entry={card} variant="full" title={title} level={3} className="self-start bg-card text-ink"
             nowMs={shadow.nowMs} fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS}
-            feedOk={shadow.data.feed?.state === "ok"} unreadable={readUnknown(shadow, shadow.nowMs, maxAgeS)} />
+            feedOk={shadow.data.feed?.state === "ok"} stage={shadow.data.stage}
+            unreadable={readUnknown(shadow, shadow.nowMs, maxAgeS)} />
         ) : null}
       </div>
     </div>,
@@ -4619,7 +4671,11 @@ function OpenPanel({ store, source, title, collapsible, onHide, raf, caf, classN
       {noteKey ? <Note className="mt-1.5">{t(noteKey)}</Note> : null}
       {waiting ? <p className="m-0 mt-1.5 font-text text-12 text-mute">{t("waves.waiting")}</p> : null}
       {hasRows && !full ? <WaveRows device={device} raf={raf} caf={caf} /> : null}
-      {full ? <WaveFullscreen source={source} title={title} device={device} onClose={closeFull} raf={raf} caf={caf} /> : null}
+      {/* The panel's note is behind the black while full screen is open: it goes along, said there too. */}
+      {full ? (
+        <WaveFullscreen source={source} title={title} device={device} note={noteKey ? t(noteKey) : null}
+          onClose={closeFull} raf={raf} caf={caf} />
+      ) : null}
     </section>
   );
 }
@@ -4653,7 +4709,7 @@ export function WavePanel({ source, title, collapsible = false, store, raf, caf,
 - [ ] **Step 7: Run.**
 
 Run: the command of Step 3.
-Expected: `21 passed` (15 + 6).
+Expected: `25 passed` (15 + 10). This is 21 in the first draft, plus the full screen's four new tests: HR/PLS, «rules», and the status note on a 503 and a 404. With `src/reachable.test.js` in the same run (its `PENDING` list already names the three modules, from Task 8), it is 29. The whole dashboard was 117 files and 3262 tests at `d1993af`, with Task 8's review fix in. `npx vite build` was green; the page reaches none of these modules before Task 15.
 
 - [ ] **Step 8: Commit.**
 
