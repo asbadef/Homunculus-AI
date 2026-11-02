@@ -18,11 +18,11 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from infinity_wave_packets import ECG, at, no_signal, packet, tick
-from homunculus.edge.infinity_hub import MAX_PENDING_BATCHES, create_hub
+from homunculus.edge.infinity_hub import MAX_PENDING_BATCHES, WaveDecoder, create_hub
 from homunculus.edge.infinity_journal import CapacityError, Journal
 from homunculus.edge.infinity_live import LiveResearchView
 from homunculus.edge.infinity_stream import Inventory, packet_event
-from homunculus.edge.infinity_timing import HUB_NAMES, valid_snapshot
+from homunculus.edge.infinity_timing import HUB_NAMES, Timings, valid_snapshot
 from homunculus.edge.infinity_waves import SCHEMA, WaveBuffer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -357,6 +357,35 @@ def test_a_hook_error_is_logged_once_per_type_and_never_with_the_payload(wired, 
     assert not any(item["payload_base64"] in caplog.text for item in sent)
 
 
+def test_a_hook_error_raised_on_several_threads_at_once_is_still_logged_once(wired, caplog):
+    """`hook_failed` runs on the event loop (the research hook) and on the decoder thread (the waves
+    hook): its check-then-add on the logged set, and its counters, are under one lock, so one error
+    type is never logged twice and no count is lost. (The race is a window of a few bytecodes: this
+    test pins the behaviour under contention, it cannot reproduce the double log on demand.)"""
+    caplog.set_level(logging.WARNING, logger="homunculus.edge.infinity_hub")
+    failed = wired.client.app.state.wave_decoder.failed            # the decoder's hook_failed("waves", error)
+    try:
+        raise ValueError("synthetic")
+    except ValueError as caught:
+        error = caught
+    count = 8
+    barrier = threading.Barrier(count)
+
+    def race():
+        barrier.wait(timeout=5)
+        failed(error)
+
+    threads = [threading.Thread(target=race) for _ in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert not any(t.is_alive() for t in threads)
+    records = [r for r in caplog.records if r.name == "homunculus.edge.infinity_hub"]
+    assert len(records) == 1 and "waves" in records[0].getMessage() and "ValueError" in records[0].getMessage()
+    assert status(wired.client)["waves"] == dict(IDLE, errors=count)
+
+
 # --- dalga-perf: the decode runs after the ack, on its own thread --------------------------------
 # On the ward's hub the decode cost ≈2 ms per POST inside the handler, and one open panel took the
 # handler from 38 to 146 ms (every read built its answer under the buffer lock the decode waits on).
@@ -451,6 +480,69 @@ def test_a_hub_without_waves_has_no_decoder(tmp_path):
             assert client.get("/", headers={"Authorization": "Bearer " + VIEWER}).status_code == 200
     finally:
         journal.close()
+
+
+def test_settle_raises_instead_of_hanging_when_no_thread_drains_the_queue(tmp_path, monkeypatch):
+    """`post()` settles by default. A test client that never ran the lifespan (no `with`) has no
+    decoder thread, and neither has one whose lifespan ended: a bare `queue.join()` there would wait
+    forever. A thread that runs but does not drain the queue within `timeout` raises too."""
+    now = [1000.0]
+    journal = Journal(tmp_path / "hub.sqlite", Fernet.generate_key(), clock=lambda: now[0])
+    waves = WaveBuffer(INV, clock=lambda: now[0])
+    app = create_hub(INV, journal, COLLECTOR, VIEWER, accept_payload=True, clock=lambda: now[0], waves=waves)
+    decoder = app.state.wave_decoder
+    gate, entered = gated(waves, monkeypatch)
+    try:
+        client = TestClient(app)                                    # no `with`: the lifespan never runs
+        with pytest.raises(RuntimeError, match="not running"):
+            post(client, [event(tick(*at(0)), 1000.0)])
+        assert decoder.queued == 1 and not decoder.thread.is_alive()   # acknowledged and queued; nobody decoding
+        with TestClient(app) as client:
+            assert post(client, [event(tick(*at(1)), 1000.0)], settle=False).status_code == 200
+            assert entered.wait(timeout=5)                          # the thread is in `consume`, held at the gate
+            with pytest.raises(RuntimeError, match="did not settle"):
+                decoder.settle(timeout=0.1)
+            gate.set()
+            decoder.settle()
+            assert waves.cursor == 8                                # the batch queued before the lifespan, then the second
+        with pytest.raises(RuntimeError, match="not running"):      # the lifespan ended: the thread is gone
+            decoder.settle()
+    finally:
+        gate.set()
+        journal.close()
+
+
+def test_start_does_not_run_a_second_consumer_beside_a_thread_that_outlived_close():
+    """A `close` that timed out left the thread inside `consume` (a buffer lock never released, a
+    hook that hangs). A later `start` on that decoder — a second lifespan on the same app — must not
+    start a second consumer beside it: two would race on the buffer, and a thread that did not
+    answer in 5 s is not one to hand the queue back to. It raises; once the thread has ended, the
+    next `start` gets a fresh one."""
+    gate, entered = threading.Event(), threading.Event()
+
+    def consume(events):
+        entered.set()
+        gate.wait(timeout=10)
+
+    decoder = WaveDecoder(SimpleNamespace(consume=consume), Timings(), lambda error: None)
+    try:
+        decoder.start()
+        decoder.submit([object()])
+        assert entered.wait(timeout=5)
+        decoder.close(timeout=0.05)                                 # times out: the thread is still in `consume`
+        stuck = decoder.thread
+        assert stuck.is_alive()
+        with pytest.raises(RuntimeError, match="still running"):
+            decoder.start()
+        assert decoder.thread is stuck and sum(t.name == stuck.name for t in threading.enumerate()) == 1
+    finally:
+        gate.set()
+    stuck.join(timeout=5)
+    assert not stuck.is_alive()
+    decoder.start()                                                 # the thread ended: a fresh one, an empty queue
+    assert decoder.thread is not stuck and decoder.thread.is_alive() and decoder.queued == 0
+    decoder.close()
+    assert not decoder.thread.is_alive()
 
 
 # The answer, byte for byte, as the route rendered it before dalga-perf (captured at 720e48f with

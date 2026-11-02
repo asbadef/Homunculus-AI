@@ -74,7 +74,13 @@ class RingHub(Hub):
     cursor ahead of its own counts as 0), at most ANSWER_S behind the monitor's newest, in device-time
     order, under one hub-wide cursor; `started` names its process. `add` is a block's arrival (a
     block more than ANSWER_S older than the newest held clears the ring — the hub's R5), `restart` a
-    new process (the ring lost, the cursor from 0), `fail` a status to answer with instead."""
+    new process (the ring lost, the cursor from 0), `fail` a status to answer with instead.
+
+    Known difference from the hub: this fake prunes by device time only (WINDOW_S behind the newest
+    held), never by receipt time, which `WaveBuffer._prune` also does. So the byte-for-byte test
+    (`test_the_browser_sees_what_a_whole_window_per_poll_would_have_shown_it`) does not cover a
+    silent monitor's blocks ageing out of the hub on its clock; the ring-bounds test covers the
+    API's own side of that edge by emptying `held`."""
 
     def __init__(self, *, started=STARTED, hub_now="2027-01-15T07:00:00.500Z"):
         super().__init__()
@@ -252,16 +258,18 @@ async def test_an_answer_is_reused_for_a_tick_then_the_hub_is_asked_after_the_ap
 
 
 async def test_a_monitor_nobody_asks_about_for_idle_s_is_forgotten_and_never_fetched_again(monkeypatch):
-    monkeypatch.setattr(infinity_waves, "IDLE_S", 0.2)
+    # The forget timer runs on the loop's own clock, so this test sleeps for real: IDLE_S and the
+    # sleeps are sized so that every margin is at least 0.2 s, the overshoot of a loaded box.
+    monkeypatch.setattr(infinity_waves, "IDLE_S", 0.5)
     hub = Hub()
     feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: 0.0)
     await feed.window(BED)
     assert BED in feed._monitors
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.25)
     await feed.window(BED)                                           # asked again: the clock starts over
-    await asyncio.sleep(0.15)
+    await asyncio.sleep(0.3)                                         # 0.55 s after the first ask, 0.3 s after the second
     assert BED in feed._monitors and len(hub.requests) == 1
-    await asyncio.sleep(0.15)
+    await asyncio.sleep(0.45)                                        # 0.75 s after the second ask
     assert feed._monitors == {} and len(hub.requests) == 1           # forgotten; nothing polls it on its own
     await feed.window(BED)
     assert since_asked(hub) == ["0", "0"]                            # and it starts afresh when asked
@@ -466,6 +474,9 @@ async def test_a_failed_poll_serves_the_ring_stale_with_the_hubs_clock_moved_on_
 
 
 async def test_stale_s_without_a_good_answer_drops_the_ring_before_the_failure_count_does():
+    # A caller that polls rarely (5–20 s apart: still known under IDLE_S) would need 4× as long to
+    # reach DROP_FAILURES; STALE_S bounds what it can be served stale. At the browser's 750 ms
+    # cadence DROP_FAILURES always decides first (the test above).
     now = [0.0]
     hub = _ring_hub()
     feed = _feed(hub, now)

@@ -50,7 +50,11 @@ log = logging.getLogger(__name__)
 POLL_S = 0.75                         # the browser's cadence (waveStore.js WAVE_POLL_MS): one hub fetch per monitor per tick
 IDLE_S = 20.0                         # nobody asked about a monitor for this long: it is forgotten
 DROP_FAILURES = 4                     # this many failed polls in a row, or ...
-STALE_S = WINDOW_S                    # ... this long without a good answer: the ring is dropped, the failure served
+STALE_S = WINDOW_S                    # ... this long without a good answer: the ring is dropped, the failure served.
+                                      # At the browser's cadence DROP_FAILURES decides (4 ticks, ≈3 s) and STALE_S is
+                                      # never reached; it is the belt-and-braces bound for a caller that polls rarely
+                                      # (5–20 s apart: still known under IDLE_S, yet DROP_FAILURES would take 4× as
+                                      # long), so nothing is served stale past WINDOW_S whatever the cadence.
 TIMEOUT_S = 2.0
 MAX_BODY = 1024 * 1024
 MAX_TEXT = 40                         # an ISO instant, with room
@@ -220,9 +224,16 @@ class HubWaves:
     since the hub last answered (the browser ages the newest block from it) and retries at the
     next tick; after DROP_FAILURES failures in a row or STALE_S without a good answer the ring is
     dropped and the failure is served, so a browser sees "unavailable" rather than a frozen window
-    dressed as current. A monitor nobody asks about for IDLE_S is forgotten with its ring; nothing
-    here polls on its own. Phase 2's wall can share one hub request across monitors (the hub's
-    cursor is hub-wide) and fill the same rings.
+    dressed as current (at the browser's cadence DROP_FAILURES decides, in ≈3 s; STALE_S is the
+    belt-and-braces bound for a caller that polls rarely, 5–20 s apart, so nothing is served stale
+    past WINDOW_S whatever the cadence). A monitor nobody asks about for IDLE_S is forgotten with
+    its ring; nothing here polls on its own. Phase 2's wall can share one hub request across
+    monitors (the hub's cursor is hub-wide) and fill the same rings.
+
+    The rings are this process's memory, and Dockerfile.api runs ONE uvicorn worker (its CMD says
+    why; this is one more reason): with several, a viewer's polls would land on different workers,
+    each with its own ring and cursor, so the viewer's cursor would leapfrog another worker's ring
+    and that worker would serve the whole 10 s window on every switch.
 
     It trusts its caller to ask `window()` only about a device on the caller's board (which bounds
     the rings' keys) and only when `settings.on`. `aclose()` ends the client: the app's lifespan

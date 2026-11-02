@@ -22,9 +22,15 @@ from .infinity_timing import WORKER_NAMES, Timings, valid_snapshot
 from .infinity_waves import MAX_QUERY_DEVICES, SCHEMA as WAVES_SCHEMA, iso_z
 
 MAX_PENDING_BATCHES = 64   # acknowledged batches the wave decoder may hold back; at a worker's rate
-                           # (≈13 beds, ≈5 POSTs/s) that is seconds of backlog, and a batch older than
-                           # MAX_TRANSPORT_DELAY is refused by the buffer anyway, so a full queue means
-                           # the decoder is starved, and dropping its oldest loses nothing still servable
+                           # (≈13 beds, ≈5 POSTs/s) that is seconds of backlog. Memory: each is one
+                           # parsed batch, up to MAX_REQUEST (3 MB) of it, so 64 × 3 MB = 192 MB at the
+                           # very worst while the decoder stalls, ≈64 × 100 KB ≈ 6 MB for the ward's
+                           # POSTs — bounded, and visible as `dropped` once the bound is hit. A batch
+                           # older than MAX_TRANSPORT_DELAY (3 s) is not dropped but REFUSED by the
+                           # buffer at decode time (WaveBuffer.consume), so a backlog of more than 3 s
+                           # shows as waves.refused climbing WITH waves.queued > 0: a starved decoder,
+                           # not a worker clock ahead of the hub's. Dropping the oldest batch of a full
+                           # queue therefore loses nothing still servable.
 
 
 PAGE = """<!doctype html><html lang="tr"><meta charset="utf-8">
@@ -117,6 +123,11 @@ class WaveDecoder:
                 self.dropped += 1
 
     def start(self) -> None:
+        if self.thread.is_alive():
+            # A `close` that timed out: the thread is still inside `consume` (a lock never released,
+            # a hook that hangs). A second consumer beside it would race it on the buffer, and a
+            # thread that did not answer in `close`'s timeout is not one to hand the queue back to.
+            raise RuntimeError("the wave decoder's previous thread is still running")
         if self.thread.ident is not None:
             # The lifespan ran before (a test client entered the same app twice): a thread runs once,
             # so a fresh one, and an empty queue — the old sentinel and what `close` dropped go with it.
@@ -136,9 +147,23 @@ class WaveDecoder:
         self.submit(None)                                   # wakes a `get` that is waiting on an empty queue
         self.thread.join(timeout)
 
-    def settle(self) -> None:
-        """Wait until every queued batch has been decoded (tests; the handler never waits)."""
-        self.pending.join()
+    def settle(self, timeout=5.0) -> None:
+        """Wait until every queued batch has been decoded (tests; the handler never waits). Bounded:
+        RuntimeError at once when no thread drains the queue — the lifespan never ran (a TestClient
+        used without `with`) or `close` ended it — and at `timeout` when the thread is stuck; a bare
+        `queue.join()` would wait forever in either case."""
+        if not self.thread.is_alive():
+            raise RuntimeError("the wave decoder is not running")
+        deadline = time.monotonic() + timeout
+        with self.pending.all_tasks_done:
+            while self.pending.unfinished_tasks:
+                if not self.thread.is_alive():
+                    raise RuntimeError("the wave decoder is not running")
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise RuntimeError(f"the wave decoder did not settle within {timeout} s "
+                                       f"({self.pending.unfinished_tasks} batches pending)")
+                self.pending.all_tasks_done.wait(min(left, 0.05))
 
     def _run(self) -> None:
         while not self.stopping.is_set():
@@ -179,16 +204,20 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     # were over 3 s old, every packet behind it would arrive old too, and the strip and Aşama B's
     # shadow lane would go stale over a display bug. So the ack stands, the error is counted under
     # /v1/status, and it is logged once per hook and error type, by type and code location only:
-    # an exception's own message may quote the payload.
+    # an exception's own message may quote the payload. The research hook fails on the event loop
+    # and the waves hook on the decoder thread (dalga-perf): the counters and the check-then-add on
+    # the logged set are under one lock, so no count is lost and no type is logged twice.
     hook_errors = {"research": 0, "waves": 0}
     hook_logged = set()
+    hook_lock = threading.Lock()
 
     def hook_failed(hook, error):
-        hook_errors[hook] += 1
         kind = type(error)
-        if (hook, kind) in hook_logged:
-            return
-        hook_logged.add((hook, kind))
+        with hook_lock:
+            hook_errors[hook] += 1
+            if (hook, kind) in hook_logged:
+                return
+            hook_logged.add((hook, kind))
         frames = traceback.extract_tb(error.__traceback__)
         where = f"{os.path.basename(frames[-1].filename)}:{frames[-1].lineno} in {frames[-1].name}" if frames else "?"
         log.error("Infinity hub: the %s hook raised %s at %s; the batch stays acknowledged, counted under "

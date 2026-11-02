@@ -164,6 +164,11 @@ class WaveBuffer:
         return source in self.devices
 
     def consume(self, events) -> None:
+        """Add the wave blocks of a batch of acknowledged events. The 3 s rule (MAX_TRANSPORT_DELAY)
+        is judged against the clock NOW — at decode time, not at receipt — so a batch that waited
+        longer than that in the hub's decoder queue (infinity_hub.WaveDecoder) is refused here, event
+        by event, and counted under `refused`: `refused` climbing while the hub's `waves.queued` is
+        above 0 is a decoder stall, not a worker clock ahead of the hub's."""
         now = self.clock()
         with self.lock:
             for event in events:
