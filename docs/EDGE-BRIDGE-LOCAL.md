@@ -809,12 +809,15 @@ device token `/ingest` uses), at most 2 seconds — and answers:
 | not found (unknown, or discharged) | `QAK … NF`, no `PID`: the nurse corrects the number | forgets the number |
 | nothing in time, a non-200, a body it cannot read | the mirror's answer, else the id echoed without a name | unchanged |
 
-The 2 seconds are urllib's socket timeout, which bounds each socket operation (connect, send, each
-read), not the whole request; on the compose network that is enough, the same as for
-`uplink.post_json`. It does not cover name resolution: while the api container is stopped (a
-restart during a deploy), Docker's DNS takes about 4 s to say `api` is unknown, so such a query is
-answered from the mirror after about 4 s instead of 2 (walk W-1, spec §12 O9) — still inside the
-10 s NCE gives its patient-query host.
+The 2 seconds are one wall-clock bound around the whole ask (O9): name resolution, connect, send and
+a slowly dripped answer included. urllib's own timeout is only per socket operation and never covers
+name resolution — in the local walk (W-1) the api container was stopped, Docker's DNS took about 4 s
+to say `api` is unknown, and the mirror answered after about 4 s instead of 2. The exchange now
+runs on a daemon thread that the ask waits for at most 2 s; past that the mirror answers, about
+2 s after the device asked. An abandoned exchange ends on its own and its late result is dropped,
+unlogged. At most 8 such exchanges are in flight (`MAX_PENDING`): a hung name resolution holds its
+thread until the resolver gives up, and while all 8 are held a new query is answered from the mirror
+at once.
 
 The `PID` of a found number is `PID|||<id>||<family>^<given>||<birth date>|<sex>`.
 
