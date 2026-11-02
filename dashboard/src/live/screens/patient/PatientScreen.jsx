@@ -56,6 +56,7 @@ import { hasMeasurement } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { WavePanel } from "../common/WavePanel.jsx";
 import { maxAgeOf } from "../common/monitor.js";
 import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
@@ -408,6 +409,9 @@ export function PatientScreen({ params }) {
               feedOk={shadow.data.feed?.state === "ok"} stage={shadow.data.stage}
               unreadable={readUnknown(shadow, shadow.nowMs, maxAgeOf(shadow.data))} />
           ) : null}
+          {/* Lane C (dalga): that monitor's live waves, right under its strip and for the same `link === "one"`
+              card only. Nothing is drawn until the first answer, nor when waves are off (WavePanel, R10). */}
+          {monitor ? <WavePanel source={monitor.source} title={monitor.bed_label} className="bg-card" /> : null}
 
           {/* Aşama B (D7): the shadow engine's answer on the monitor's numbers, after the strip it reads and
               before the engine's own findings it must not be mistaken for. Nothing when there is no shadow.

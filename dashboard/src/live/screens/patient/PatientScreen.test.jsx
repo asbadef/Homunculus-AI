@@ -11,6 +11,8 @@ import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, point, trends } from "./trends/trends.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
+import { answer as waveAnswer, bed4 } from "../../data/waves.testutil.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1180,5 +1182,68 @@ describe("the shadow on the patient screen", () => {
       expect(el.matches("[aria-live], [role='alert'], [role='status']")).toBe(false);
       expect(el.querySelector("[aria-live], [role='alert'], [role='status']")).toBeNull();
     }
+  });
+});
+
+// Lane C (dalga): the live waveform panel, under the strip, for a patient linked to ONE monitor and
+// for no one else (spec §5.5). Synthetic blocks only (data/waves.testutil.js).
+describe("the waveform panel on the patient screen", () => {
+  beforeEach(() => { vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  async function withWaves(answer, waves) {
+    const mounted = await open({ payload: board([entry("S-001", [], FULL)]) });
+    mounted.api.shadowBoard.mockResolvedValue(answer);
+    if (waves) mounted.api.request.mockResolvedValue(waves);
+    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); await settle(); });
+    await act(async () => { await settle(); });
+    return mounted;
+  }
+  const linked = (link = "one", patientId = "S-001") => strip({
+    beds: [monitorBed("REA-01 · 2", [monitorParam("hr", 72)], { link, patient_id: patientId })],
+  });
+  const PANEL = `REA-01 · 2 · ${DICTIONARIES.az["waves.title"]}`;
+
+  it("draws it right under the strip for a patient linked to one monitor, asking for that monitor", async () => {
+    const mounted = await withWaves(linked(), waveAnswer(bed4(), { device_id: "192.0.2.2" }));
+    const panel = screen.getByRole("region", { name: PANEL });
+    expect(panel).toHaveTextContent(DICTIONARIES.az["waves.stamp"]);
+    const stripRegion = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
+    expect(stripRegion.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Right under it: nothing between the strip and its waves, and the engine's findings after both.
+    expect(stripRegion.nextElementSibling).toBe(panel);
+    const findings = screen.getByRole("heading", { level: 2, name: "Mühərrikin tapıntıları" });
+    expect(panel.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The store asks with the path alone (Task 8's review took the time limit out: backendApi's own bounds it).
+    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0");
+  });
+
+  it("draws none for a patient without exactly one monitor, and asks for no waves", async () => {
+    // The last two name this patient on a card the API does NOT link to them alone: the link decides, not the id.
+    for (const answer of [linked("none", null), linked("ambiguous", null), linked("one", "S-999"),
+      linked("none", "S-001"), linked("ambiguous", "S-001")]) {
+      const mounted = await withWaves(answer, waveAnswer());
+      const why = `${answer.beds[0].link} · ${answer.beds[0].patient_id}`;
+      expect(document.querySelector("[data-wave-panel]"), why).toBeNull();
+      expect(mounted.api.request, why).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("draws nothing while the first answer is on its way — not even the panel's frame", async () => {
+    const mounted = await open({ payload: board([entry("S-001", [], FULL)]) });
+    mounted.api.shadowBoard.mockResolvedValue(linked());
+    mounted.api.request.mockReturnValue(new Promise(() => {}));          // the first answer never comes
+    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); await settle(); });
+    await act(async () => { await settle(); });
+    expect(mounted.api.request).toHaveBeenCalledWith("/infinity-waves/192.0.2.2?since=0");
+    expect(document.querySelector("[data-wave-panel]")).toBeNull();
+    expect(screen.queryByText(DICTIONARIES.az["waves.waiting"])).toBeNull();
+  });
+
+  it("draws none when waves are off here (the API's 409)", async () => {
+    const mounted = await withWaves(linked());
+    expect(mounted.api.request).toHaveBeenCalled();
+    expect(document.querySelector("[data-wave-panel]")).toBeNull();
   });
 });

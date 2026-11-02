@@ -21,17 +21,6 @@ import { importsOf } from "./live/imports.testutil.js";
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY = path.join(SRC, "main.jsx");
 const rel = (file) => path.relative(SRC, file).split(path.sep).join("/");
-// Lane C (dalga): the waveform panel's modules are written before their two screen lines, which
-// wait for Aşama B on main (docs/superpowers/plans/2026-10-27-infinity-dalga-formu.md, Task 15).
-// Until then these, and only these, may be unreached; the last test below fails the moment a
-// screen reaches one, so the list is removed with the insertion and cannot outlive it.
-const PENDING = new Set([
-  "live/data/waveStore.js",
-  "live/screens/common/waveGeometry.js",
-  "live/screens/common/WaveRows.jsx",
-  "live/screens/common/WavePanel.jsx",
-  "live/screens/common/WaveFullscreen.jsx",
-]);
 const isProduct = (name) => /\.(js|jsx)$/.test(name) && !/\.test\.|\.testutil\./.test(name) && name !== "setupTests.js";
 
 function sources(dir) {
@@ -77,10 +66,6 @@ describe("the page reaches every module under src/", () => {
   });
 
   it("keeps no module the page cannot reach", () => {
-    expect(sources(SRC).filter((file) => !reached.has(file) && !PENDING.has(rel(file))).map(rel).sort()).toEqual([]);
-  });
-
-  it("lets a pending module stay pending only while no screen reaches it", () => {
-    expect([...reached].map(rel).filter((name) => PENDING.has(name))).toEqual([]);
+    expect(sources(SRC).filter((file) => !reached.has(file)).map(rel).sort()).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf, reasonKey } from "../common/monitor.js";
+import { WavePanel } from "../common/WavePanel.jsx";
 // G2-ESLEME: the monitor→bed editor, above the strips (spec §3.1)
 import { useSession } from "../../session/SessionProvider.jsx";
 import { canSeeMapping, verifiedText } from "./deviceMap.js";
@@ -41,6 +42,8 @@ function Device({ card, assigned, view }) {
           <p className="m-0 text-11.5 font-semibold text-att-ink">{t(reasonKey(card.reason))}</p>
         )}
       </MonitorStrip>
+      {/* Lane C (dalga): closed behind «Dalga formunu göster» until pressed, so a list of monitors polls none (R9). */}
+      <WavePanel source={card.source} title={title} collapsible className="mx-2.5 mb-2" />
     </li>
   );
 }
