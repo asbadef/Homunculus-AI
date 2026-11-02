@@ -157,18 +157,20 @@ def retire_state(engine: Engine, store: AckStore, patient_id: str) -> list[Clear
     return cleared
 
 
-def end_entered_in_error(store: AckStore, patient_id: str) -> list[Cleared]:
+def entered_in_error_latches(store: AckStore, patient_id: str) -> list[Cleared]:
     """G3-01 (review of Task 5): a «hatalı giriş» left the patient with no reading — every value its alerts stood
-    on was withdrawn — so its latches end, one `Cleared` each with its episode's first-seen and the reason
-    `entered_in_error`, and the store forgets the patient. Kept, a latch would sit in the store with no card to
-    show it, unacknowledgeable, and come back as «resolved, unacknowledged» with the next real reading; a restart
-    (which skips the withdrawn rows) never builds it (O4), so live and restart would differ. The engine is the
-    caller's: it already holds nothing of the patient. Writes no audit row — the door audits what it returns."""
+    on was withdrawn — so its latches end: one `Cleared` each, with its episode's first-seen and the reason
+    `entered_in_error`. Kept, a latch would sit in the store with no card to show it, unacknowledgeable, and come
+    back as «resolved, unacknowledged» with the next real reading; a restart (which skips the withdrawn rows)
+    never builds it (O4), so live and restart would differ.
+
+    Reads the store and changes nothing (final review, X19): the door audits what it returns, THEN has the store
+    forget the patient (`AckStore.forget_patient`) — the trail first, then memory, so an append that fails leaves
+    the latch for the retry to end. Writes no audit row itself."""
     cleared: list[Cleared] = []
     for key, entry in [(k, e) for k, e in store.resolved.items() if k[0] == patient_id]:
         seen = store.first_seen.get(key, entry.get("first_seen"))
         cleared.append(Cleared(patient_id, key[1], entry["alert"]["severity"], seen, ENTERED_IN_ERROR))
-    store.forget_patient(patient_id)
     return cleared
 
 

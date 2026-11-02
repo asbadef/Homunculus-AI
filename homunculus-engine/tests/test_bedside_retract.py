@@ -12,7 +12,8 @@ from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.clinical import (
-    RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_NEEDS_PERSON, RETRACT_REASON_SHORT, RETRACT_UNKNOWN,
+    RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_NEEDS_PERSON, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
+    RETRACT_UNKNOWN,
 )
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
@@ -226,6 +227,28 @@ class TestTheRefusals:
         ids = _chart(client, RISKY, _ago(5))
         r = _retract(client, ids["resp_rate"], reason="   kısa   ")
         assert (r.status_code, r.json()["detail"]) == (400, RETRACT_REASON_SHORT)
+
+    # Final review (I1): the reason is plaintext in the append-only trail and in every trends answer for days — at
+    # most 200 characters, counted after the trim and in characters, not bytes («ğ» is two in UTF-8).
+    def test_a_reason_of_200_characters_is_taken(self, client):
+        ids = _chart(client, RISKY, _ago(5))
+        assert _retract(client, ids["resp_rate"], reason="ğ" * 200).status_code == 200
+        (row,) = _rows(client, RETRACT)
+        assert row.payload["reason"] == "ğ" * 200
+
+    def test_a_reason_of_201_characters_is_refused_and_writes_nothing(self, client):
+        ids = _chart(client, RISKY, _ago(5))
+        r = _retract(client, ids["resp_rate"], reason="ğ" * 201)
+        assert (r.status_code, r.json()["detail"]) == (400, RETRACT_REASON_LONG)
+        assert RETRACT_REASON_LONG == "gerekçe en çok 200 karakter olabilir"      # the dashboard maps it so
+        assert _rows(client, RETRACT) == []
+        assert _card(client)["latest"]["resp_rate"] == 26
+
+    def test_201_characters_that_trim_to_200_are_taken(self, client):
+        ids = _chart(client, RISKY, _ago(5))
+        assert _retract(client, ids["resp_rate"], reason=" " + "ğ" * 200).status_code == 200
+        (row,) = _rows(client, RETRACT)
+        assert row.payload["reason"] == "ğ" * 200
 
     @pytest.mark.parametrize("entry", ["999999", "abc", "-1"])
     def test_an_unknown_entry_is_404(self, client, entry):
@@ -501,13 +524,73 @@ class TestARetryRepairsMemory:
                 _chart(fresh, [e for e in RISKY if e["code"] != "resp_rate"], at)
                 assert (_news2(repaired), _firing(repaired)) == (_news2(_card(fresh)), _firing(_card(fresh)))
 
-    def test_a_409_with_memory_already_right_changes_nothing(self, client):
+    def test_a_409_with_memory_already_right_writes_nothing_and_sends_the_card_again(self, client):
+        """No repair (the counts agree), no row; the current card goes out once more (final review, X21)."""
         ids = _chart(client, RISKY, _ago(5))
         assert _retract(client, ids["resp_rate"]).status_code == 200
         queue = client.app.state.broadcaster.subscribe("h1")
         written = len(client.app.state.audit.records(tenant="h1", limit=1000))
         assert _retract(client, ids["resp_rate"]).status_code == 409
-        assert (_frames(queue), len(client.app.state.audit.records(tenant="h1", limit=1000))) == ([], written)
+        assert len(client.app.state.audit.records(tenant="h1", limit=1000)) == written
+        (frame,) = _frames(queue)
+        assert _view(frame) == _view(_card(client))
+
+
+class _FailsOnce(InMemoryAuditLog):
+    """An append that raises once, for the first row `when` accepts after `armed` — a bounded write timing out —
+    and writes nothing for it."""
+
+    def __init__(self, when):
+        super().__init__()
+        self.when, self.armed = when, False
+
+    def append(self, event):
+        if self.armed and self.when(event):
+            self.armed = False
+            raise RuntimeError("the trail write timed out")
+        return super().append(event)
+
+
+class TestTheTrailBeforeMemoryToTheEnd:
+    """Final review (X19, X21): the withdrawal's tail writes its rows before memory forgets, and an «already»
+    answer finishes what a failed one left — the latch it kept, the card it never sent."""
+
+    def test_a_failed_entered_in_error_row_keeps_the_latch_and_the_retry_ends_it(self):
+        log = _FailsOnce(lambda e: e.event_type == "alert_cleared" and e.payload.get("reason") == ENTERED_IN_ERROR)
+        key = ("bed-3", "septic_shock")
+        with _app(audit=log) as c:
+            *rest, last = _chart(c, SHOCK, _ago(5)).values()
+            lactate = _chart(c, [{"code": "lactate", "value": 4}], _ago(5))["lactate"]
+            for entry in (lactate, *rest):
+                assert _retract(c, entry).status_code == 200
+            log.armed = True
+            with pytest.raises(RuntimeError):
+                _retract(c, last)                                    # the last value: no reading left
+            acks = _store(c)
+            assert key in acks.resolved and key in acks.first_seen, "memory forgot before the trail had the row"
+            assert ENTERED_IN_ERROR not in {r.payload["reason"] for r in _rows(c, "alert_cleared")}
+            r = _retract(c, last)
+            assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
+            assert key not in acks.resolved and key not in acks.first_seen
+            assert [r.payload["reason"] for r in _rows(c, "alert_cleared")].count(ENTERED_IN_ERROR) == 1
+
+    def test_a_withdrawal_whose_later_step_raised_has_its_card_sent_by_the_retry(self):
+        """The row committed and memory was rebuilt; the `alert_cleared` append that followed raised, so no card
+        went out. Memory is right, so there is nothing to repair — the retry sends the card, once."""
+        log, at = _FailsOnce(lambda e: e.event_type == "alert_cleared"), _ago(5)
+        with _app(audit=log) as c:
+            _chart(c, SHOCK, at)
+            lactate = _chart(c, [{"code": "lactate", "value": 4}], at)["lactate"]
+            queue = c.app.state.broadcaster.subscribe("h1")
+            log.armed = True
+            with pytest.raises(RuntimeError):
+                _retract(c, lactate)                                 # the shock latches: its row raises
+            assert _frames(queue) == []                              # the card never went out
+            assert _latched(_card(c)) == ["septic_shock"]            # memory is right
+            r = _retract(c, lactate)
+            assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
+            (frame,) = _frames(queue)
+            assert (_latched(frame), frame["latest"]["lactate"]) == (["septic_shock"], None)
 
 
 # Suspected infection with platelets 120: SOFA 1, no sepsis until a MAP below 70 adds a point.

@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
-    Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, end_entered_in_error, is_tombstone,
+    Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, entered_in_error_latches, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import (
@@ -45,8 +45,9 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MIN_REASON_CHARS,
-    RETRACT_NEEDS_PERSON, RETRACT_REASON_SHORT, RETRACT_UNKNOWN, ClinicalEntryError, build_entries,
+    GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
+    RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_REASON_LONG, RETRACT_REASON_SHORT, RETRACT_UNKNOWN,
+    ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
 )
 from homunculus.api.escalation import escalate
@@ -1085,6 +1086,32 @@ def create_app(
             return 0
         return engine.state(patient_id).history(observation.code).count(observation)
 
+    async def _publish_current(hospital: str, patient_id: str, record, engine: Engine, store: AckStore,
+                               now: datetime) -> None:
+        """The patient's card after a «hatalı giriş», as a restart would build it (G3-01, review of Task 5): sent by
+        a withdrawal, and by every «already» answer (final review, X21) — a withdrawal whose row committed and
+        whose later step raised sent none, and a frame is idempotent.
+
+        `adopt` forgets a patient the scratch engine never measured — the withdrawn value was the only one — and
+        `_card` (`patient_board`) would create it again, a NEWS2 0 nobody measured (D1). As /ingest's identity
+        branch chooses: the measured card, the identity card of an admission, or the removal of an id the board
+        knows only from that value."""
+        if patient_id in set(engine.patient_ids()):
+            # Some reading is left: a latch the withdrawal made stays on this card until acknowledged (D10).
+            frame = _card(hospital, patient_id, record)
+        else:
+            # No reading is left: every value the patient's alerts stood on was withdrawn, and there is no card for
+            # a latch to sit on — kept, it would wait in the store, unseen and unacknowledgeable, for the next real
+            # reading to bring it back as «resolved, unacknowledged». A restart never builds it (O4), so the latches
+            # end here with the reason `entered_in_error` (never replayed), and the store forgets the patient. The
+            # rows first, then memory (X4; final review, X19): an append that fails leaves the latch in the store,
+            # and the retry's «already» answer, which comes through here, ends it.
+            _audit_cleared(hospital, entered_in_error_latches(store, patient_id), now)
+            store.forget_patient(patient_id)
+            frame = (_identity_card(hospital, record) if record is not None
+                     else {"patient_id": patient_id, "removed": True, "identity": None})
+        await broadcaster.publish(hospital, frame)
+
     async def _adopt_rebuilt(hospital: str, patient_id: str, record, engine: Engine, store: AckStore,
                              scratch: Engine, observation, now: datetime) -> None:
         """«Hatalı giriş»'s memory half (G3-01, D10, X3, X4, X5), after its trail row: the scratch patient handed
@@ -1103,22 +1130,7 @@ def create_app(
                 audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": now.isoformat()}))
         if observation is not None:
             lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
-        # The card as a restart would build it (review of Task 5). `adopt` forgets a patient the scratch engine
-        # never measured — the withdrawn value was the only one — and `_card` (`patient_board`) would create it
-        # again, a NEWS2 0 nobody measured (D1). As /ingest's identity branch chooses: the measured card, the
-        # identity card of an admission, or the removal of an id the board knows only from that value.
-        if patient_id in set(engine.patient_ids()):
-            # Some reading is left: a latch the withdrawal made stays on this card until acknowledged (D10).
-            frame = _card(hospital, patient_id, record)
-        else:
-            # No reading is left: every value the patient's alerts stood on was withdrawn, and there is no card for
-            # a latch to sit on — kept, it would wait in the store, unseen and unacknowledgeable, for the next real
-            # reading to bring it back as «resolved, unacknowledged». A restart never builds it (O4), so the latches
-            # end here with the reason `entered_in_error` (never replayed), and the store forgets the patient.
-            _audit_cleared(hospital, end_entered_in_error(store, patient_id), now)
-            frame = (_identity_card(hospital, record) if record is not None
-                     else {"patient_id": patient_id, "removed": True, "identity": None})
-        await broadcaster.publish(hospital, frame)
+        await _publish_current(hospital, patient_id, record, engine, store, now)
         for note in notifier.for_new(hospital, engine.active_alerts(patient_id)):
             await hub.publish(hospital, note)
             audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
@@ -1142,16 +1154,18 @@ def create_app(
         An episode the withdrawal ended leaves no escalation chain. The shadow lane drops the reading, guarded
         (X5), and the card is republished — as never measured when the withdrawn value was the patient's only
         one: `_card` would create the patient in the engine again, and the patient's latches end
-        (`entered_in_error`), for there is no card left to show them (`_adopt_rebuilt`).
+        (`entered_in_error`), for there is no card left to show them (`_publish_current`).
 
         Refusals:
         - 403 for a device credential (X11): a withdrawal names a person;
-        - 400 for a reason shorter than 10 characters after trim;
+        - 400 for a reason shorter than 10 or longer than 200 characters after trim;
         - 409 for a discharged number, before anything is read;
         - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
         - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
-          append raised left the engine still counting the value.
-        A refusal writes nothing. The chart row itself is never changed: the trail keeps both."""
+          append raised left the engine still counting the value, and with the current card sent again either
+          way (a withdrawal whose later step raised sent none).
+        A refusal writes no row — except an «already» answer finishing what a failed withdrawal left: the rows
+        its tail would have written. The chart row itself is never changed: the trail keeps both."""
         caller = await _caller(authorization)
         _require(caller, CLINICAL_CHART)
         if caller.is_device:
@@ -1162,6 +1176,8 @@ def create_app(
         reason = raw_reason.strip() if isinstance(raw_reason, str) else ""
         if len(reason) < RETRACT_MIN_REASON_CHARS:
             raise HTTPException(status_code=400, detail=RETRACT_REASON_SHORT)
+        if len(reason) > RETRACT_MAX_REASON_CHARS:
+            raise HTTPException(status_code=400, detail=RETRACT_REASON_LONG)
         # Before any read or rebuild (review of Task 5): REBUILD_EVENTS does not carry the discharge's
         # `alert_cleared` row, so a rebuild and `adopt` for a retired number would bring the discharged patient
         # back into the engine. A `kabul` tombstone is never pruned, so this check holds for good.
@@ -1196,6 +1212,13 @@ def create_app(
             # merely found: an equal value charted twice at one time may rightly stay once.
             if _readings_equal(engine, patient_id, observation) > _readings_equal(scratch, patient_id, observation):
                 await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
+            else:
+                # Final review (X21): memory is right, but a withdrawal whose row committed and whose later step
+                # raised (an `alert_cleared` append after `adopt`) sent no card — it stayed stale until the next
+                # frame. The current card goes out now, idempotent; with no reading left, this is where a latch a
+                # failed append kept is ended (`_publish_current`).
+                await _publish_current(hospital, patient_id, record, engine, store, now)
+                notifier.prune(hospital, live_keys(engine, store))
             raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
         audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
             "entry": target.id, "code": target.subject, "value": target.payload.get("value"),

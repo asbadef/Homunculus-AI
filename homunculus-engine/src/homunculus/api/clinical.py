@@ -160,6 +160,11 @@ RETRACT = "chart_retract"
 #: G3-01 (D10, D11, X11): the withdrawal's reason, after trim, and its refusals in the clinician's words.
 RETRACT_MIN_REASON_CHARS = 10
 RETRACT_REASON_SHORT = "gerekçe en az 10 karakter olmalı"
+#: Review of G3-01: as admin/schemas.py `_REASON_MAX` — the reason is plaintext in the append-only trail, kept for
+#: good, and the trends answer carries it on every poll for the window; unbounded, a body could fill it to nginx's
+#: body limit.
+RETRACT_MAX_REASON_CHARS = 200
+RETRACT_REASON_LONG = "gerekçe en çok 200 karakter olabilir"
 RETRACT_NEEDS_PERSON = "geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz"
 RETRACT_UNKNOWN = "bu hastada böyle bir elle girilmiş değer yok"
 #: The dashboard tells «already withdrawn» from the other 409s by this exact sentence (apiErrors.js).

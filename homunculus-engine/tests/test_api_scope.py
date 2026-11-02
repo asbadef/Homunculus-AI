@@ -168,6 +168,25 @@ class TestBTheRoutesThatNameAPatient:
         _app, client = adult_nurse
         assert client.get("/scores/sofa/p-n1", headers=NURSE).status_code == 404
 
+    def test_the_bedside_preview_is_guarded_too(self, adult_nurse):
+        """G3-01 (D8): the preview scores the patient's own readings — out of scope, it reads none."""
+        _app, client = adult_nurse
+        r = client.post("/clinical/p-n1/preview", headers=NURSE,
+                        json={"entries": [{"code": "resp_rate", "value": 18}]})
+        assert (r.status_code, r.json()["detail"]) == (404, "hasta bulunamadı")
+
+    def test_a_withdrawal_on_an_out_of_scope_patient_is_refused(self, adult_nurse):
+        """G3-01 (D10): the patient's real entry, named by a caller whose scope does not reach the patient."""
+        app, client = adult_nurse
+        charted = client.post("/clinical/p-n1", headers=TOKEN,
+                              json={"entries": [{"code": "temperature", "value": 38.0}]})
+        assert charted.status_code == 200, charted.text
+        (entry,) = charted.json()["entries"]
+        r = client.post(f"/clinical/p-n1/entries/{entry['entry']}/retract", headers=NURSE,
+                        json={"reason": "yanlış hasta seçilmişti"})
+        assert (r.status_code, r.json()["detail"]) == (404, "hasta bulunamadı")
+        assert not _rows(app, "chart_retract")
+
     def test_recording_a_view_of_an_out_of_scope_patient_is_refused(self, adult_nurse):
         """Otherwise a caller can write a false line into the one record an inspection trusts."""
         _app, client = adult_nurse
@@ -440,6 +459,9 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
     PERMS = NURSE_PERMS | {"audit.view", "scores.sign"}
     ROUTES = [
         ("POST", "/clinical/p-a1", {"entries": [{"code": "suspected_infection", "value": 1}]}, 200),
+        # G3-01: the bedside preview (D8), and «hatalı giriş» (D10), which a device never makes (X11).
+        ("POST", "/clinical/p-a1/preview", {"entries": [{"code": "resp_rate", "value": 18}]}, 200),
+        ("POST", "/clinical/p-a1/entries/1/retract", {"reason": "yanlış hasta seçilmişti"}, 403),
         ("PUT", "/clinical/p-a1/profile", {"comorbidities": ["copd"]}, 200),
         ("POST", "/ack", {"patient_id": "p-a1", "kind": "news2"}, 200),
         ("POST", "/view", {"patient_id": "p-a1"}, 200),
