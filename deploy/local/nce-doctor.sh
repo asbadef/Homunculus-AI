@@ -13,7 +13,7 @@
 #   2 SavedCopies -> host CIFS mount   (does the host still see the share?)
 #   3 host mount -> nce container      (does the container see the same files?)
 #   4 bridge scan/parse                (dosya= counters, rejections, ledger)
-#   5 buffer -> api                    (kuyruk depth, POST /ingest status)
+#   5 buffer -> api                    (kuyruk depth; the bridge's uplink warnings = the /ingest status)
 #   6 api -> board                     (patient count on /patients)
 set -u
 
@@ -76,10 +76,13 @@ except Exception as e:
     print('buffer okunamadı:', e)
 PY
 
-hr "5. api: /ingest son 30 dk"
-docker logs --since 30m homunculus-api 2>&1 | grep -E "POST /ingest" | awk '{print $NF, $(NF-1)}' | sort | uniq -c | tail -5
-[ -z "$(docker logs --since 30m homunculus-api 2>&1 | grep -E 'POST /ingest')" ] && echo "(son 30 dk'da hiç /ingest yok)"
-docker logs --since 30m homunculus-api 2>&1 | grep -E "ERROR|Traceback|401|400 " | tail -3
+hr "5. api: köprünün /ingest sonucu, son 30 dk"
+# The API's access log is OFF since O10 (uvicorn --no-access-log: a request path can carry a patient
+# key), so `POST /ingest ... 200` no longer appears in `docker logs homunculus-api`. The answer is on
+# the bridge's side: its uplink warnings name the HTTP status of a refusal, or "unavailable".
+docker logs --since 30m homunculus-nce 2>&1 | grep -oE "uplink refused an observation \(HTTP [0-9]+\)|identity resource refused by the uplink \(HTTP [0-9]+\)|uplink unavailable" | sort | uniq -c | tail -5
+[ -z "$(docker logs --since 30m homunculus-nce 2>&1 | grep -E 'uplink (refused|unavailable)|refused by the uplink')" ] && echo "(son 30 dk'da köprüde uplink uyarısı yok: /ingest ret ya da hata görünmüyor; kuyruk= sayacı 4. adımda)"
+docker logs --since 30m homunculus-api 2>&1 | grep -E "ERROR|Traceback" | tail -3
 
 hr "5b. en yeni HL7 kopyalarında hasta kimliği var mı? (PID-3 biçimi: rakam->d, harf->a)"
 # ^^^X^PI = cihazda hasta kimliği GİRİLMEDEN kaydedilmiş ölçüm: CX.1-3 boş, X = kurum, PI = tip.
