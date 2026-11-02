@@ -96,11 +96,31 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
 
 
 def test_every_api_location_is_found() -> None:
-    """Six: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
+    """Seven: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
     `/auth/password` blocks, which nginx picks before any regex location so that the routes
-    that check a password carry a per-address limit — and the exact block of Aşama A's
-    forwarder POST, which refuses plain HTTP."""
-    assert len(_api_locations()) == 6
+    that check a password carry a per-address limit — the exact block of Aşama A's
+    forwarder POST, which refuses plain HTTP, and the live waves' block, which is not logged."""
+    assert len(_api_locations()) == 7
+
+
+def test_the_waves_poll_is_proxied_as_the_api_and_never_access_logged() -> None:
+    """Dalga (final review M-3): every open wave panel polls GET /infinity-waves/<monitor>
+    about 1.33 times a second, so one panel left open would write ~115,000 access lines a day.
+    The path has a block of its own with `access_log off;` and the prefix block's proxy
+    settings, and it is the only API location that matches the path — the prefix list no
+    longer names it, so the order of the regex locations cannot hand it back to the logged
+    block."""
+    text = CONF.read_text(encoding="utf-8")
+    path = "/infinity-waves/192.0.2.10"
+    matching = [loc for loc in _api_locations() if loc.search(path)]
+    assert len(matching) == 1, [loc.pattern for loc in matching]
+    assert not matching[0].search("/infinity-wavesx") and not matching[0].search("/infinity-shadow/board")
+    waves = _location(text, f"location ~ {matching[0].pattern}")
+    assert _directives(waves, "access_log") == {"access_log off"}
+    proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
+    assert _directives(waves, *proxy) == _directives(_location(text, "location ~ ^/(auth|"), *proxy)
+    # Only the waves are quiet: no other block, and not the server, turns the access log off.
+    assert len(re.findall(r"^\s*access_log\s", text, re.M)) == 1
 
 
 def _block(text: str, header: str) -> str:

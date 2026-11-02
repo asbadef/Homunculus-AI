@@ -4,6 +4,9 @@
 // asked for only when the page is not in it already, and handed back only by the view that asked.
 // Synthetic blocks and strip (waves.testutil.js, shadow.testutil.js).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
@@ -115,13 +118,50 @@ function listenerLedger() {
 const numbersIn = (dialog) => within(dialog).getByRole("region", { name: "REA-01 · 2 · Monitör · doğrulanmamış" });
 const closeButton = () => screen.getByRole("button", { name: "Tam ekrandan çık" });
 
+const LIVE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+/** The z-index a module's source gives a layer: the first `z-[N]` in the class string `pick` finds.
+ *  Read as text, so this test imports nothing from the shell or the alarm path (waveBoundaries). */
+function zIn(file, pick) {
+  const source = fs.readFileSync(path.resolve(LIVE, file), "utf8");
+  const classes = pick.exec(source)?.[1] ?? "";
+  const z = /(?:^|\s)z-\[(\d+)\]/.exec(classes);
+  if (!z) throw new Error(`no z-index found in ${file}`);
+  return Number(z[1]);
+}
+const zOf = (el) => Number(/(?:^|\s)z-\[(\d+)\]/.exec(el.className)?.[1]);
+
+/** A stand-in for the app's top bar (shell/TopBar.jsx): the page's banner, 58 px tall, with a
+ *  language button and the alarm bell. jsdom lays nothing out, so the boxes are given here. */
+function TopBarStandIn({ onBell = () => {} }) {
+  return (
+    <header>
+      <button type="button">Dil</button>
+      <button type="button" data-bell="" onClick={onBell}>Zil · 2</button>
+    </header>
+  );
+}
+function layOut() {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function box() {
+    const [top, bottom] = this.tagName === "HEADER" ? [0, 58] : this.hasAttribute("data-bell") ? [11, 47] : [0, 0];
+    return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON() {} };
+  });
+}
+const withTopBar = (onBell) => (ui) => <><TopBarStandIn onBell={onBell} />{ui}</>;
+
 describe("the full-screen view", () => {
-  it("fills the window on black under the app's alarms and warnings, takes the page to full screen, and keeps the stamp at full size", async () => {
+  it("fills the window on black under the top bar's menus and the app's alarms and warnings, takes the page to full screen, and keeps the stamp at full size", async () => {
     const { dialog } = await openFull();
-    expect(dialog).toHaveClass("bg-black", "fixed", "inset-0");
-    // Under the toasts (z-120), the idle warning (z-200) and the alarm holder (z-210): the page's
-    // full screen, not this view's, so they stay on screen while someone watches the waves.
-    expect(dialog).toHaveClass("z-[110]");
+    expect(dialog).toHaveClass("bg-black", "fixed", "inset-x-0", "bottom-0");
+    expect(dialog.style.top).toBe("0px");                           // no top bar on this page: the whole window
+    // Under the top bar's drop-downs (the bell's list hangs below the bar, over where the view
+    // starts), the toasts, the idle warning and the alarm holder: the page's full screen, not this
+    // view's, so they stay on screen while someone watches the waves.
+    const z = zOf(dialog);
+    expect(z).toBeLessThan(zIn("shell/Menu.jsx", /const PANEL = "([^"]+)"/));
+    expect(z).toBeLessThan(zIn("ui/Toast.jsx", /className="(pointer-events-none fixed[^"]+)"/));
+    expect(z).toBeLessThan(zIn("session/IdleWarning.jsx", /className="(fixed[^"]+)"/));
+    expect(z).toBeLessThan(zIn("signals/AlarmSignals.jsx", /ref=\{holder\} className="([^"]+)"/));
     expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledTimes(1);
     expect(fullscreenElement).toBe(document.documentElement);
     expect(within(dialog).getByText(STAMP)).toHaveClass("text-17");
@@ -237,13 +277,36 @@ describe("the full-screen view", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("brings Tab back to its one control from anywhere, and keeps it from the page behind", async () => {
-    const { opener } = await openFull();
-    opener.focus();                                                  // the panel's ⤢, behind the black
-    expect(document.activeElement).toBe(opener);
-    const passed = fireEvent.keyDown(opener, { key: "Tab" });
-    expect(passed).toBe(false);                                      // defaultPrevented
+  it("keeps Tab on its one control when the page has no top bar: nothing behind the black is reached", async () => {
+    await openFull();
     expect(document.activeElement).toBe(closeButton());
+    expect(fireEvent.keyDown(closeButton(), { key: "Tab" })).toBe(false);              // defaultPrevented
+    expect(document.activeElement).toBe(closeButton());
+    expect(fireEvent.keyDown(closeButton(), { key: "Tab", shiftKey: true })).toBe(false);
+    expect(document.activeElement).toBe(closeButton());
+  });
+
+  it("brings a lost focus back: Tab from the page's body lands on ×, and Escape there closes", async () => {
+    await openFull();
+    closeButton().blur();
+    expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(closeButton());
+    closeButton().blur();
+    await act(async () => { fireEvent.keyDown(document.body, { key: "Escape" }); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Lane A's review (M3): the view's keys are its own, not the whole page's. A layer above it — the
+  // idle warning's «stay» (z-200), the alarm holder (z-210) — keeps its own Tab and Escape.
+  it("leaves the keys of a layer above it alone: Tab and Escape on a button outside it pass, and it stays open", async () => {
+    const { dialog } = await openFull({ wrap: (ui) => <>{ui}<button type="button">Davam et</button></> });
+    const stay = screen.getByRole("button", { name: "Davam et" });
+    stay.focus();
+    expect(fireEvent.keyDown(stay, { key: "Tab" })).toBe(true);                       // not prevented
+    expect(document.activeElement).toBe(stay);
+    await act(async () => { expect(fireEvent.keyDown(stay, { key: "Escape" })).toBe(true); await settle(); });
+    expect(screen.getByRole("dialog", { name: TITLE })).toBe(dialog);
   });
 
   it("takes its listeners away when it closes, and when the page goes", async () => {
@@ -268,7 +331,8 @@ describe("the full-screen view", () => {
     const before = ledger.count();
     const dialog = await view.open();
     expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledTimes(1);
-    expect(dialog).toHaveClass("fixed", "inset-0");
+    expect(dialog).toHaveClass("fixed", "inset-x-0", "bottom-0");
+    expect(dialog.style.top).toBe("0px");
     expect(within(dialog).getByText(STAMP)).toBeInTheDocument();
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -324,5 +388,54 @@ describe("the full-screen view", () => {
     expect(data.beds[0].patient_id).toBe("S-001");                  // the strip's own answer is not changed
     const { dialog } = await openFull({ data });
     expect(dialog).not.toHaveTextContent("S-001");
+  });
+});
+
+// The full screen never hides an alarm cue (final review I-1): the app's top bar — the bell with
+// the waiting count and its list — stays in view above the black, and in reach of the mouse and Tab.
+describe("the full-screen view and the app's top bar", () => {
+  it("starts below the top bar: the bell is never covered, and it can be pressed while the view is open", async () => {
+    layOut();
+    const onBell = vi.fn();
+    const { dialog } = await openFull({ wrap: withTopBar(onBell) });
+    const bell = screen.getByRole("button", { name: "Zil · 2" });
+    expect(dialog.style.top).toBe("58px");
+    expect(dialog).not.toHaveClass("inset-0");
+    expect(dialog).not.toHaveClass("top-0");
+    expect(dialog).not.toContainElement(bell);
+    expect(bell.getBoundingClientRect().bottom).toBeLessThanOrEqual(Number.parseFloat(dialog.style.top));
+    // Not modal over the page: aria-modal would take the bar from a screen reader.
+    expect(dialog).not.toHaveAttribute("aria-modal", "true");
+    fireEvent.click(bell);
+    expect(onBell).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog", { name: TITLE })).toBe(dialog);
+  });
+
+  it("takes Tab from × to the top bar and back — never to the page behind — and Shift+Tab the other way", async () => {
+    const { dialog } = await openFull({ wrap: withTopBar() });
+    const [language, bell] = within(screen.getByRole("banner")).getAllByRole("button");
+    const tab = (shiftKey = false) => fireEvent.keyDown(document.activeElement, { key: "Tab", shiftKey });
+    expect(document.activeElement).toBe(closeButton());
+    expect(tab()).toBe(false);                                       // defaultPrevented
+    expect(document.activeElement).toBe(language);
+    expect(tab()).toBe(false);
+    expect(document.activeElement).toBe(bell);
+    expect(tab()).toBe(false);                                       // not on to the page behind
+    expect(document.activeElement).toBe(closeButton());
+    expect(tab(true)).toBe(false);
+    expect(document.activeElement).toBe(bell);
+    expect(tab(true)).toBe(false);
+    expect(document.activeElement).toBe(language);
+    expect(tab(true)).toBe(false);
+    expect(document.activeElement).toBe(closeButton());
+    expect(screen.getByRole("dialog", { name: TITLE })).toBe(dialog);
+  });
+
+  it("leaves Escape in the top bar to the bar's own menus, and stays open", async () => {
+    const { dialog } = await openFull({ wrap: withTopBar() });
+    const bell = screen.getByRole("button", { name: "Zil · 2" });
+    bell.focus();
+    await act(async () => { expect(fireEvent.keyDown(bell, { key: "Escape" })).toBe(true); await settle(); });
+    expect(screen.getByRole("dialog", { name: TITLE })).toBe(dialog);
   });
 });

@@ -6,14 +6,25 @@
 // words and the whole note for the answer's stage («rules» at Aşama B), exactly as the strip prints
 // them — and the card is handed over without its patient (the device screen's rule, everywhere).
 //
-// The view is a fixed overlay (z-110) inside the page, and the browser's full screen is asked for
+// The view is a fixed overlay (z-80) inside the page, and the browser's full screen is asked for
 // the PAGE (<html>), not for the overlay: the app's toasts (z-120), idle warning (z-200) and alarm
 // holder (z-210) stay above it and on screen while someone watches the waves. The page's full screen
 // is shared with the top bar's button, so a view asks for it only when the page is not in it
 // already, and hands it back only if a view asked for it, once no view is open. A browser that
-// refuses — or throws — leaves the overlay filling the window. The rest of the page is not made
-// inert (ui/Modal.jsx keeps that mechanism to itself); Tab is held on the one control instead.
-import React, { useEffect, useId, useRef } from "react";
+// refuses — or throws — leaves the overlay filling the window below the top bar.
+//
+// The full screen never hides an alarm cue (final review I-1). New alarms raise no toast, the
+// notification fires only for a hidden page and the sound starts off, so the app's top bar — the
+// bell with its waiting count — stays in view: the overlay starts at the bar's bottom edge, measured
+// when it opens (the bar is found by its landmark, the page's banner: a wave module imports nothing
+// from shell/), and sits under the bar's drop-downs (z-90), so the bell's list opens over the black.
+// The bar is in reach of Tab too: Tab and Shift+Tab go round the bar's controls and the view's,
+// never to the page behind. The view is therefore not aria-modal. Its keys are its own (Lane A's
+// review, M3): it answers Tab and Escape only for a key pressed inside it or with the focus lost to
+// the page's body, and Tab in the bar; a layer above it (the idle warning, the alarm holder) and the
+// bar's own menus keep their Escape. The rest of the page is not made inert (ui/Modal.jsx keeps that
+// mechanism to itself).
+import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
@@ -62,6 +73,41 @@ function handBack() {
   }
 }
 
+/** The app's top bar: the page's banner landmark — an explicit one, or a <header> outside any
+ *  sectioning element (HTML-AAM) — or null on a page without one. */
+function topBar() {
+  return [...document.querySelectorAll("header, [role='banner']")].find((el) => el.getAttribute("role") === "banner"
+    || !el.parentElement?.closest("main, article, aside, nav, section, [role='dialog'], [role='alertdialog']")) ?? null;
+}
+
+/** Where the view starts: the top bar's bottom edge, or the window's top on a page without a bar. */
+function topOf(bar) {
+  const bottom = bar ? bar.getBoundingClientRect().bottom : 0;
+  return Number.isFinite(bottom) && bottom > 0 ? Math.round(bottom) : 0;
+}
+
+const TABBABLE = "a[href], button, input, select, textarea, [tabindex]";
+/** The controls Tab goes round while the view is open, in page order: the bar's, then the view's. */
+function tabbable(...roots) {
+  return roots.filter(Boolean)
+    .flatMap((root) => [...root.querySelectorAll(TABBABLE)])
+    .filter((el) => el.tabIndex >= 0 && !el.disabled && !el.closest("[inert]"))
+    .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+}
+
+/** Focus the next control after `from` (or before it, `back`), round the end; one the browser will
+ *  not focus (hidden at this width) is passed over. */
+function step(ring, from, back) {
+  const after = ring.filter((el) => from.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const before = ring.filter((el) => el !== from && !after.includes(el));
+  const order = back ? [...before.reverse(), ...after.reverse()] : [...after, ...before];
+  for (const el of order) {
+    el.focus();
+    if (document.activeElement === el) return true;
+  }
+  return false;
+}
+
 /** `note`: the panel's own words for why the stream is missing (a failed poll), or null — the panel
  *  is behind this view, so a status is said here too, never left as a silent black row. */
 export function WaveFullscreen({ source, title, device, note = null, onClose, raf, caf }) {
@@ -69,24 +115,38 @@ export function WaveFullscreen({ source, title, device, note = null, onClose, ra
   const shadow = useShadow();
   const card = cardOf(shadow.data, source);
   const titleId = useId();
+  const viewRef = useRef(null);
   const closeRef = useRef(null);
   const closing = useRef(onClose);
   closing.current = onClose;
+  // Measured once, as it opens: the bar is 58 px at every width and does not move while the view is up.
+  const [top] = useState(() => topOf(topBar()));
 
   useEffect(() => {
     page.views += 1;
     askForFullScreen();
     closeRef.current?.focus();
-    // Escape closes, Tab comes back to the one control there is; capture, so nothing behind sees either.
+    // Capture, so a key the view answers reaches nothing behind it. Only a key pressed in the view, or
+    // with the focus lost to the page (on <body>), is the view's; Tab in the top bar goes round the bar
+    // and the view; any other key, and every key of a layer above (the idle warning, the alarm
+    // holder), is left alone (M3).
     const onKey = (event) => {
+      if (event.key !== "Escape" && event.key !== "Tab") return;
+      const target = event.target;
+      const lost = target === document || target === document.body || target === document.documentElement;
+      const inView = lost || Boolean(viewRef.current?.contains(target));
+      const bar = topBar();
       if (event.key === "Escape") {
+        if (!inView) return;                                 // the bar's menus and the layers above keep theirs
         event.preventDefault();
         event.stopPropagation();
         closing.current();
-      } else if (event.key === "Tab") {
-        event.preventDefault();
-        closeRef.current?.focus();
+        return;
       }
+      if (!inView && !bar?.contains(target)) return;
+      event.preventDefault();
+      const moved = !lost && step(tabbable(bar, viewRef.current), target, event.shiftKey);
+      if (!moved) closeRef.current?.focus();
     };
     // In browser full screen, Escape leaves full screen without a key event: that closes it too.
     // Entering it is announced the same way, and is not a reason to close.
@@ -107,8 +167,8 @@ export function WaveFullscreen({ source, title, device, note = null, onClose, ra
 
   const maxAgeS = maxAgeOf(shadow.data);
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-labelledby={titleId} data-wave-fullscreen=""
-      className="fixed inset-0 z-[110] flex flex-col gap-3 overflow-auto bg-black p-4 text-white">
+    <div ref={viewRef} role="dialog" aria-labelledby={titleId} data-wave-fullscreen="" style={{ top: `${top}px` }}
+      className="fixed inset-x-0 bottom-0 z-[80] flex flex-col gap-3 overflow-auto bg-black p-4 text-white">
       {/* The header and the stamp stay in view however far the rows and the strip scroll. */}
       <div data-wave-head="" className="sticky top-0 z-10 -mx-4 -mt-4 flex flex-col gap-3 bg-black px-4 pb-1 pt-4">
         <div className="flex flex-wrap items-center gap-2">

@@ -334,6 +334,15 @@ describe("the top bar", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · NICU");
   });
 
+  // The wave full screen (screens/common/WaveFullscreen.jsx) finds this bar by its landmark — it may
+  // import nothing from shell/ — and starts below it, so the bell is never covered.
+  it("is the page's one banner landmark, and the bell is in it", async () => {
+    await renderShell();
+    const [banner, ...others] = screen.getAllByRole("banner");
+    expect(others).toHaveLength(0);
+    expect(within(banner).getByRole("button", { name: /Cavab gözləyən siqnal|Siqnal məlumatı/ })).toBeInTheDocument();
+  });
+
   it("has no unit chip for an unrestricted scope", async () => {
     await renderShell();
     expect(screen.queryByRole("button", { name: "Göstərilən bölmə" })).toBeNull();
