@@ -1,5 +1,6 @@
-"""Lane C (dalga): GET /infinity-waves/{device_id} — the hub behind one keep-alive client with a
-250 ms single-flight cache, the allow-list, the strip board's gates, and nothing written.
+"""Lane C (dalga): GET /infinity-waves/{device_id} — the hub behind one keep-alive client, a 20 s
+ring per monitor polled incrementally on a 750 ms single-flight tick (dalga-perf), the allow-list,
+the strip board's gates, and nothing written.
 
 The hub is never contacted: `HubWaves` gets an httpx.MockTransport. Synthetic addresses (TEST-NET
 192.0.2.x), synthetic sample patterns, no patient anywhere."""
@@ -22,9 +23,10 @@ from fastapi.testclient import TestClient
 
 from homunculus.api import infinity_waves
 from homunculus.api.infinity_waves import (
-    CACHE_S, MAX_BODY, REASONS, HubWaves, WaveSettings, answer, checked, wave_settings_from_env,
+    DROP_FAILURES, MAX_BODY, POLL_S, REASONS, STALE_S, HubWaves, WaveSettings, answer, checked,
+    wave_settings_from_env,
 )
-from homunculus.edge.infinity_waves import SCHEMA
+from homunculus.edge.infinity_waves import ANSWER_S, MAX_HELD, SCHEMA, WINDOW_S
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -65,6 +67,65 @@ class Hub:
             return httpx.Response(self.status, content=self.content)
         return httpx.Response(self.status, json=self.payload if self.payload is not None
                               else window(device=request.url.params["device"]))
+
+
+class RingHub(Hub):
+    """A fake hub that answers like the hub's `WaveBuffer.since`: the blocks added after `since` (a
+    cursor ahead of its own counts as 0), at most ANSWER_S behind the monitor's newest, in device-time
+    order, under one hub-wide cursor; `started` names its process. `add` is a block's arrival (a
+    block more than ANSWER_S older than the newest held clears the ring — the hub's R5), `restart` a
+    new process (the ring lost, the cursor from 0), `fail` a status to answer with instead."""
+
+    def __init__(self, *, started=STARTED, hub_now="2027-01-15T07:00:00.500Z"):
+        super().__init__()
+        self.started, self.hub_now, self.cursor, self.held = started, hub_now, 0, []    # held: (t, id, block)
+        self.fail = None
+        self.sent = 0                                                 # blocks answered, all requests
+
+    def add(self, t, wave=0x0103, rate=200):
+        if self.held and t < self.held[-1][0] - ANSWER_S:
+            self.held.clear()
+        self.cursor += 1
+        self.held.append((t, wave, block(self.cursor, t, wave, rate)))
+        self.held.sort(key=lambda e: (e[0], e[1]))
+        floor = self.held[-1][0] - WINDOW_S
+        self.held = [e for e in self.held if e[0] >= floor][-MAX_HELD:]
+        return self.cursor
+
+    def restart(self, started):
+        self.started, self.cursor, self.held = started, 0, []
+
+    def window(self, since=0):
+        if since > self.cursor:
+            since = 0
+        newest = self.held[-1][0] if self.held else 0
+        blocks = [b for t, _, b in self.held if b["seq"] > since and round((newest - t) * 1000) <= ANSWER_S * 1000]
+        return {"schema": SCHEMA, "device_id": BED, "hub_now": self.hub_now, "started": self.started,
+                "cursor": self.cursor, "blocks": blocks}
+
+    async def __call__(self, request):
+        self.requests.append(request)
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.fail is not None:
+            return httpx.Response(self.fail)
+        found = self.window(int(request.url.params["since"]))
+        self.sent += len(found["blocks"])
+        return httpx.Response(200, json=found)
+
+
+def since_asked(hub):
+    return [r.url.params["since"] for r in hub.requests]
+
+
+def browser(feed, since=0, started=None):
+    """A viewer's poll as the route makes it: the window served, through `answer` with its own cursor."""
+    async def poll():
+        outcome = await feed.window(BED)
+        if outcome.status != 200:
+            return outcome
+        return answer(BED, outcome.body, since, started=started)
+    return poll()
 
 
 # --- the settings ---------------------------------------------------------------------------------
@@ -171,22 +232,39 @@ async def test_two_viewers_of_one_bed_cost_one_hub_request_and_two_beds_two():
     assert sorted(calls) == [BED, OTHER_UNIT]
 
 
-async def test_an_answer_is_reused_for_250_ms_then_asked_for_again_and_forgotten():
+async def test_an_answer_is_reused_for_a_tick_then_the_hub_is_asked_after_the_apis_own_cursor():
+    # dalga-perf: the tick is the browser's cadence (750 ms), and the second request asks the hub
+    # for what came after the API's cursor — not the whole window again.
     now = [0.0]
     hub = Hub()
     feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
     await feed.window(BED)
+    now[0] = POLL_S - 0.05
     await feed.window(BED)
     assert len(hub.requests) == 1
     request = hub.requests[0]
     assert request.url.path == "/infinity-research/waves"
     assert request.url.params.get_list("device") == [BED] and request.url.params["since"] == "0"
     assert request.headers["authorization"] == "Bearer " + VIEWER
-    now[0] = CACHE_S + 0.05
+    now[0] = POLL_S + 0.05
     await feed.window(BED)
-    assert len(hub.requests) == 2
-    await asyncio.sleep(CACHE_S + 0.1)
-    assert feed._cache == {}                                         # nothing outlives its 250 ms
+    assert since_asked(hub) == ["0", "4"]                            # the window's cursor was 4
+
+
+async def test_a_monitor_nobody_asks_about_for_idle_s_is_forgotten_and_never_fetched_again(monkeypatch):
+    monkeypatch.setattr(infinity_waves, "IDLE_S", 0.2)
+    hub = Hub()
+    feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: 0.0)
+    await feed.window(BED)
+    assert BED in feed._monitors
+    await asyncio.sleep(0.1)
+    await feed.window(BED)                                           # asked again: the clock starts over
+    await asyncio.sleep(0.15)
+    assert BED in feed._monitors and len(hub.requests) == 1
+    await asyncio.sleep(0.15)
+    assert feed._monitors == {} and len(hub.requests) == 1           # forgotten; nothing polls it on its own
+    await feed.window(BED)
+    assert since_asked(hub) == ["0", "0"]                            # and it starts afresh when asked
 
 
 async def test_a_failure_is_cached_too_so_a_dead_hub_is_not_hammered():
@@ -214,20 +292,20 @@ async def test_every_waiter_leaving_does_not_cancel_the_flight():
     await asyncio.gather(*waiters, return_exceptions=True)
     gate.set()
     await asyncio.sleep(0.01)                                        # the flight finishes with nobody waiting
-    assert feed._flights == {} and BED in feed._cache
+    assert feed._flights == {} and BED in feed._monitors
     assert (await feed.window(BED)).status == 200 and len(calls) == 1
 
 
-async def test_ten_polls_across_cache_expiry_use_one_client_and_one_hub_request_per_expiry():
+async def test_ten_polls_across_ticks_use_one_client_and_one_hub_request_per_tick():
     now = [0.0]
     hub = Hub()
     feed = HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
     await feed.window(BED)
     client = feed._client
     for n in range(1, 11):
-        now[0] = n * (CACHE_S + 0.05)
+        now[0] = n * (POLL_S + 0.05)
         await feed.window(BED)
-        await feed.window(BED)                                       # inside the 250 ms: the cache
+        await feed.window(BED)                                       # inside the tick: the ring
         assert len(hub.requests) == n + 1 and feed._client is client
 
 
@@ -241,7 +319,7 @@ async def test_aclose_ends_the_client_and_a_later_request_makes_a_fresh_one():
     await feed.aclose()
     await feed.aclose()                                              # twice is fine
     assert client.is_closed and feed._client is None
-    now[0] = CACHE_S + 0.05
+    now[0] = POLL_S + 0.05
     assert (await feed.window(BED)).status == 200
     assert feed._client is not client and not feed._client.is_closed and len(hub.requests) == 2
     await feed.aclose()
@@ -255,13 +333,281 @@ async def test_a_restarted_hub_is_served_whole_not_filtered_by_the_old_cursor():
     assert (before["started"], before["cursor"]) == (STARTED, 4)
     # The hub restarts: its cursor counts from 0 again and has already passed the viewer's 4.
     hub.payload = window([block(i, 2000.0 + i / 5) for i in range(1, 7)], cursor=6, started=RESTARTED)
-    now[0] = CACHE_S + 0.05
+    now[0] = POLL_S + 0.05
     after = await feed.window(BED)
-    assert len(hub.requests) == 2 and after.body["started"] == RESTARTED
+    # dalga-perf: the tick's incremental request met another hub process, so the API asked that
+    # process for its whole window at once and replaced its ring with it (three requests, not two).
+    assert since_asked(hub) == ["0", "4", "0"] and after.body["started"] == RESTARTED
     assert len(answer(BED, after.body, 4)["blocks"]) == 2            # a cursor alone cannot tell: blocks 1-4 are lost
     whole = answer(BED, after.body, before["cursor"], started=before["started"])
     assert whole["started"] == RESTARTED and len(whole["blocks"]) == 6
     assert len(answer(BED, after.body, 4, started=RESTARTED)["blocks"]) == 2    # the same process: the cursor filters
+
+
+# --- dalga-perf: the ring per monitor, polled incrementally on the browser's tick --------------------
+
+def _feed(hub, now):
+    return HubWaves(ON, transport=httpx.MockTransport(hub), clock=lambda: now[0])
+
+
+def _ring_hub(*, n=4, t0=1000.0):
+    hub = RingHub()
+    for i in range(n):
+        hub.add(round(t0 + i / 5, 1))
+    return hub
+
+
+async def test_the_hub_is_asked_only_for_what_is_new_and_each_viewer_gets_the_blocks_after_its_own_cursor():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    first = await browser(feed)                                      # a viewer's first poll: since=0
+    assert since_asked(hub) == ["0"] and first["cursor"] == 4 and len(first["blocks"]) == 4
+    hub.add(1000.8)                                                  # two blocks arrive at the hub
+    hub.add(1001.0)
+    now[0] = 0.3
+    inside = await browser(feed, 4, STARTED)                         # inside the tick: the ring, nothing new
+    assert since_asked(hub) == ["0"] and inside["cursor"] == 4 and inside["blocks"] == []
+    now[0] = POLL_S + 0.05
+    second = await browser(feed, 4, STARTED)                         # the next tick: the hub is asked after 4
+    assert since_asked(hub) == ["0", "4"] and hub.sent == 6          # 4 + 2, not 4 + 6
+    assert second["cursor"] == 6 and [b["t"] for b in second["blocks"]] == [1000.8, 1001.0]
+    late = await browser(feed, 2, STARTED)                           # another viewer, behind: from the ring
+    assert since_asked(hub) == ["0", "4"]
+    assert [b["t"] for b in late["blocks"]] == [1000.4, 1000.6, 1000.8, 1001.0]
+    fresh = await browser(feed)                                      # a viewer's first poll, same tick
+    assert len(fresh["blocks"]) == 6 and all("seq" not in b for b in fresh["blocks"])
+
+
+async def test_two_viewers_of_one_monitor_cost_one_hub_fetch_per_tick():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    for tick in range(4):
+        hub.add(1001.0 + tick / 5)
+        for phase in (0.0, 0.2, 0.5):                                # two viewers' polls, and one more
+            now[0] = tick * (POLL_S + 0.01) + phase
+            await feed.window(BED)
+    assert len(hub.requests) == 4 and since_asked(hub) == ["0", "5", "6", "7"]
+    assert hub.sent == 5 + 1 + 1 + 1
+
+
+async def test_a_hub_restart_is_asked_from_zero_and_replaces_the_ring_even_inside_the_window():
+    now = [0.0]
+    hub = _ring_hub()                                                # t 1000.0–1000.6, seq 1–4, STARTED
+    feed = _feed(hub, now)
+    assert len((await browser(feed))["blocks"]) == 4
+    # The hub restarts, the monitor's clock runs on: the new process holds t 1001.0–1002.0 as seq 1–6,
+    # inside 20 s of the old blocks — only a replacement keeps the old process's blocks out.
+    hub.restart(RESTARTED)
+    for i in range(1, 7):
+        hub.add(round(1001.0 + i / 5, 1))
+    now[0] = POLL_S + 0.05
+    whole = await browser(feed, 4, STARTED)
+    assert since_asked(hub) == ["0", "4", "0"]
+    assert whole["started"] == RESTARTED and whole["cursor"] == 6
+    assert [b["t"] for b in whole["blocks"]] == [1001.2, 1001.4, 1001.6, 1001.8, 1002.0, 1002.2]
+    assert len(feed._monitors[BED].entries) == 6                    # the old process's four are gone
+    same = await browser(feed, 4, RESTARTED)                         # a viewer of the new process: filtered
+    assert [b["t"] for b in same["blocks"]] == [1002.0, 1002.2]
+    # One more tick: the ring follows the new process's cursor.
+    hub.add(1002.4)
+    now[0] = 2 * POLL_S + 0.1
+    assert [b["t"] for b in (await browser(feed, 6, RESTARTED))["blocks"]] == [1002.4]
+    assert since_asked(hub) == ["0", "4", "0", "6"]
+
+
+async def test_a_monitor_clock_set_back_by_more_than_answer_s_replaces_the_ring():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    assert len((await browser(feed))["blocks"]) == 4
+    hub.add(985.0)                                                   # the monitor's clock went back 15 s:
+    hub.add(985.2)                                                   # the hub cleared its ring (R5)
+    now[0] = POLL_S + 0.05
+    served = await browser(feed, 4, STARTED)
+    assert [b["t"] for b in served["blocks"]] == [985.0, 985.2] and served["cursor"] == 6
+    assert [b["t"] for b in (await browser(feed))["blocks"]] == [985.0, 985.2]     # a fresh viewer: the same
+    assert len(feed._monitors[BED].entries) == 2
+    # A set-back of ANSWER_S or less is not detected here either: the block joins the ring in order.
+    hub.add(980.0)                                                   # 5.2 s behind the newest held (985.2)
+    now[0] = 2 * POLL_S + 0.1
+    assert [b["t"] for b in (await browser(feed))["blocks"]] == [980.0, 985.0, 985.2]
+
+
+async def test_a_failed_poll_serves_the_ring_stale_with_the_hubs_clock_moved_on_then_drops_it():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    first = await browser(feed, 0)
+    assert first["hub_now"] == "2027-01-15T07:00:00.500Z"
+    hub.fail = 500
+    ticks = []
+    for n in range(1, DROP_FAILURES):
+        now[0] = n * (POLL_S + 0.05)
+        ticks.append(await feed.window(BED))
+    assert since_asked(hub) == ["0"] + ["4"] * (DROP_FAILURES - 1)  # retried at every tick, incrementally
+    assert all(o.status == 200 for o in ticks)
+    stale = answer(BED, ticks[-1].body, 4, STARTED)
+    assert stale["blocks"] == [] and stale["cursor"] == 4 and stale["started"] == STARTED
+    assert len(answer(BED, ticks[-1].body, 0)["blocks"]) == 4       # the ring, whole, for a new viewer
+    # hub_now is the hub's last clock moved on by the time since: the newest block ages on screen
+    # (waveStore.sampleOf) instead of the head being held where the hub's clock stopped.
+    assert ticks[0].body["hub_now"] == "2027-01-15T07:00:01.300Z"   # 0.5 + 0.8
+    now[0] = DROP_FAILURES * (POLL_S + 0.05)
+    dropped = await feed.window(BED)                                 # the DROP_FAILURESth failure in a row
+    assert (dropped.status, dropped.body) == (503, {"reason": "hub_error", "status": 500})
+    assert BED in feed._monitors and feed._monitors[BED].entries == []
+    hub.fail = None                                                  # the hub is back: a fresh start
+    now[0] = (DROP_FAILURES + 1) * (POLL_S + 0.05)
+    back = await browser(feed, 0)
+    assert since_asked(hub)[-1] == "0" and len(back["blocks"]) == 4
+    assert (await browser(feed, 4, STARTED))["blocks"] == []         # the viewer's cursor still holds
+
+
+async def test_stale_s_without_a_good_answer_drops_the_ring_before_the_failure_count_does():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    await feed.window(BED)
+    hub.fail = 503
+    now[0] = POLL_S + 0.05
+    assert (await feed.window(BED)).status == 200                    # one failure: the ring, stale
+    now[0] = STALE_S + 0.1
+    assert (await feed.window(BED)).status == 503                    # two failures, but 20 s without the hub
+    assert feed.stats()["drops"] == 1
+
+
+async def test_a_failed_first_poll_is_the_failure_and_a_hub_timeout_is_served_the_same_way(monkeypatch):
+    monkeypatch.setattr(infinity_waves, "TIMEOUT_S", 0.05)
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    hub.delay = 1.0
+    assert (await feed.window(BED)).status == 503                    # nothing held yet: the failure itself
+    hub.delay = 0.0
+    now[0] = POLL_S + 0.05
+    assert (await feed.window(BED)).status == 200
+    hub.delay = 1.0
+    now[0] = 2 * (POLL_S + 0.05)
+    assert (await feed.window(BED)).status == 200                    # held: served stale through a timeout
+
+
+async def test_the_ring_keeps_window_s_by_device_time_and_by_receipt_and_at_most_max_held():
+    now = [0.0]
+    hub = RingHub()
+    feed = _feed(hub, now)
+
+    def arrive(seconds, t0):
+        for i in range(round(seconds / 0.2)):
+            hub.add(round(t0 + i / 5, 1))
+
+    arrive(12.0, 1000.0)                                             # 12 s of one wave on the hub
+    served = await browser(feed)
+    assert len(served["blocks"]) == 51                               # the answer: 10 s behind the newest, inclusive
+    assert len(feed._monitors[BED].entries) == 51                    # the ring starts with the hub's answer
+    arrive(8.0, 1012.0)
+    now[0] = POLL_S + 0.05
+    assert len((await browser(feed))["blocks"]) == 51 and len(feed._monitors[BED].entries) == 91
+    arrive(8.0, 1020.0)
+    now[0] = 2 * (POLL_S + 0.05)
+    assert len((await browser(feed))["blocks"]) == 51 and len(feed._monitors[BED].entries) == 101   # 20 s, inclusive
+    assert feed._monitors[BED].entries[0][0] == 1007.8
+    # The monitor falls silent. The hub answers (nothing new); the ring empties by receipt time, as
+    # the hub's does (so the API holds nothing a silent monitor sent more than WINDOW_S ago).
+    hub.held.clear()
+    now[0] += WINDOW_S + 0.5
+    assert (await browser(feed))["blocks"] == [] and feed._monitors[BED].entries == []
+    # More entries than MAX_HELD inside 20 s of device time: the oldest go.
+    wide = RingHub()
+    waves = (0x0102, 0x0103, 0x0104, 0x0122, 0x0124, 0x0201, 0x0301, 0x0e01, 0x1916)
+    for i in range(120):
+        for wave in waves:
+            wide.add(round(2000.0 + i / 10, 1), wave, 100 if wave >= 0x0201 else 200)
+    now = [0.0]
+    feed = _feed(wide, now)
+    await feed.window(BED)
+    assert len(feed._monitors[BED].entries) == 909                   # the hub's 10 s answer: 101 x 9
+    for i in range(120, 140):
+        for wave in waves:
+            wide.add(round(2000.0 + i / 10, 1), wave, 100 if wave >= 0x0201 else 200)
+    now[0] = POLL_S + 0.05
+    await feed.window(BED)
+    entries = feed._monitors[BED].entries
+    assert len(entries) == MAX_HELD and entries[0][0] == 2002.6      # 909 + 180 - 1024 = 65 oldest dropped
+
+
+async def test_the_counters_say_what_the_hub_cost():
+    now = [0.0]
+    hub = _ring_hub()
+    feed = _feed(hub, now)
+    await feed.window(BED)
+    hub.add(1000.8)
+    now[0] = POLL_S + 0.05
+    await feed.window(BED)
+    hub.restart(RESTARTED)
+    hub.add(1001.0)
+    now[0] = 2 * (POLL_S + 0.05)
+    await feed.window(BED)
+    stats = feed.stats()
+    assert stats["monitors"] == 1 and stats["requests"] == 4 and stats["blocks"] == 4 + 1 + 1 + 1
+    assert stats["resets"] == 1 and stats["drops"] == 0 and stats["failures"] == 0
+    assert stats["per_monitor"][BED] == {"requests": 4, "blocks": 7, "resets": 1, "failures": 0}
+    hub.fail = 404
+    for n in range(3, 3 + DROP_FAILURES):
+        now[0] = n * (POLL_S + 0.05)
+        await feed.window(BED)
+    stats = feed.stats()
+    assert stats["drops"] == 1 and stats["failures"] == DROP_FAILURES
+    assert feed.requests == stats["requests"] == 4 + DROP_FAILURES
+
+
+async def test_the_browser_sees_what_a_whole_window_per_poll_would_have_shown_it():
+    """Byte for byte: a scripted sequence of hub states, two viewers (one joining late, one from
+    before a restart), a restart and a clock set back — every answer served equals what the old
+    implementation (the whole window from the hub on every tick, `answer` over it) produced, while
+    the hub answered a fraction of the blocks."""
+    now = [0.0]
+    hub = RingHub()
+    feed = _feed(hub, now)
+    waves = ((0x0103, 200), (0x0301, 100), (0x1916, 100))
+    t, step = 1000.0, 0
+
+    def arrive(seconds):
+        nonlocal t
+        for _ in range(round(seconds / 0.2)):
+            for wave, rate in waves:
+                hub.add(round(t, 1), wave, rate)
+            t = round(t + 0.2, 1)
+
+    async def poll(viewer):
+        old = answer(BED, checked(hub.window(0), BED), viewer["since"], started=viewer["started"])
+        new = await browser(feed, viewer["since"], viewer["started"])
+        assert new == old, step
+        viewer["since"], viewer["started"] = new["cursor"], new["started"]
+
+    arrive(12.0)                                                     # 12 s on the hub before anyone looks
+    a, b = {"since": 0, "started": None}, {"since": 0, "started": None}
+    old_blocks = 0
+    for step in range(40):
+        now[0] = step * (POLL_S + 0.01)
+        if step == 7:
+            arrive(0.0)
+        elif step == 15:                                             # the hub restarts, 3 s of a new process
+            hub.restart(RESTARTED)
+            arrive(3.0)
+        elif step == 25:                                             # the monitor's clock set back 30 s
+            t -= 30.0
+            arrive(0.6)
+        else:
+            arrive(0.8)
+        await poll(a)
+        if step >= 5:
+            await poll(b)
+        old_blocks += len(hub.window(0)["blocks"])
+    assert a["started"] == b["started"] == RESTARTED
+    assert since_asked(hub).count("0") == 2                          # the first poll and the restart's re-ask
+    assert len(hub.requests) == 41 and hub.sent < old_blocks / 4     # one request per tick, a fraction of the blocks
 
 
 @pytest.mark.parametrize("hub, status, detail", [
