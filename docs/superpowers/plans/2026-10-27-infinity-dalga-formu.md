@@ -3731,7 +3731,7 @@ export function rowView(blocks, kind, headS, size, previousRange = null, dtS = 0
 }
 ```
 
-- [ ] **Step 4: Run.** Expected: `19 passed`.
+- [ ] **Step 4: Run.** Expected: `19 passed` for the block above; the committed file has `28 passed` (the Task 9 review, 3069912, pins the ECG gain, rowView's time base, the stall and widening switches and the pleth/resp rows in literals; 21 mutants killed).
 
 - [ ] **Step 5: Commit.**
 
