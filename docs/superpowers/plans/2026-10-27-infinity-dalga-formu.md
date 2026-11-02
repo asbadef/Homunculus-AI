@@ -2685,6 +2685,8 @@ cd /c/tmp/inf-dalga && git add homunculus-engine/src/homunculus/api/infinity_wav
 - Create: `dashboard/src/live/data/waveStore.js`
 - Modify: `dashboard/src/reachable.test.js:23-24, 68-70`
 
+*R19 in Task 8 (lead amendment A4).* The browser sends the hub process back with its cursor. `waves.testutil.js` exports `STARTED`, and `answer()` carries `started` (an option, like `cursor`). `wavesPath(source, since, started)` appends `&started=…` only for a non-empty string, so the first poll names no process. `isWavesAnswer` also requires `started` to be a string of 1–40 characters (the API's `MAX_TEXT`): an answer without one is "unavailable" and keeps the blocks, cursor and process held. `IDLE_DEVICE` gains `started: null`; each answer's `started` is kept and sent back with its cursor on the next poll. An answer that names another process is a restarted hub's whole window: it is merged like any other (`mergeBlocks` keeps one block per wave and time, so the overlap adds nothing), and its cursor and process are taken even when the cursor went backwards. The store's header carries this as rule 5. Seven tests join the plan's twenty, under "the wave store and the hub process (amendment A4)", and "polls every 750 ms" now expects `&started=` on its second poll. The code blocks below predate the amendment; the committed files are the reference.
+
 - [ ] **Step 1: The synthetic fixtures.** Create `dashboard/src/live/data/waves.testutil.js`:
 
 ```js
@@ -3255,7 +3257,7 @@ export function waveStoreFor(session) {
 }
 ```
 
-- [ ] **Step 5: Run the store tests.** Expected: `20 passed`.
+- [ ] **Step 5: Run the store tests.** Expected: `27 passed` (20 + A4's 7).
 
 - [ ] **Step 6: Let the wave modules be unreached — by name, until Task 15.** Run `npx vitest run src/reachable.test.js` first: it fails with `live/data/waveStore.js` unreached. In `dashboard/src/reachable.test.js`, replace
 
