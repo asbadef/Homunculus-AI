@@ -26,13 +26,15 @@ import { Announce, Button, Icon, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { useAdmissions } from "./useAdmissions.js";
+import { boardKeyOf } from "./boardKey.js"; // G2-B1d
 
 const DRAFT = ["DRAFT"];
 const EVERY_MS = 60_000;
 /** The bed as the slice names it (DischargeTab's `bedOf`, BedsTab's subject). */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
 
-/** `patientId`: the board's key — for a `kabul` patient, the patient number. */
+/** `patientId`: the board's key — for a `kabul` patient, its admission's `board_key` (the protocol
+ *  since G2-B1d; a legacy admission's H-number). */
 export function SignOffStrip({ patientId }) {
   const { t } = useI18n();
   const { user, store } = useSession();
@@ -41,7 +43,7 @@ export function SignOffStrip({ patientId }) {
   const [busy, setBusy] = useState(false);
   const [signed, setSigned] = useState(null);       // the bed of the admission signed here
   const said = useRef(null);
-  const row = rows?.find((r) => r.patient_number === patientId) ?? null;
+  const row = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
   const gone = signed !== null && row === null;     // signed, and the list no longer holds it
   useEffect(() => {
     if (!gone) return;

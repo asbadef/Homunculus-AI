@@ -390,3 +390,34 @@ describe("the bed board's read of the DRAFT admissions", () => {
     }
   });
 });
+
+// G2-B1d (spec §4, E12): an admission made since 0015 is on the board under its protocol number.
+describe("the protocol-keyed card (G2-B1d)", () => {
+  const PROTOCOL = "202600000007";
+  const KEYED = [row({ id: "a-7", patient_number: "H2600007", protocol_no: PROTOCOL, board_key: PROTOCOL, state: "DRAFT" })];
+
+  it("finds its admission under the protocol, never under the H-number", async () => {
+    await mountKabul(<SignOffStrip patientId={PROTOCOL} />, { perms: NURSE, setup: (a) => a.admissions.mockResolvedValue(KEYED) });
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    cleanup();
+    await mountKabul(<SignOffStrip patientId="H2600007" />, { perms: NURSE, setup: (a) => a.admissions.mockResolvedValue(KEYED) });
+    expect(screen.queryByText(WAITS)).toBeNull();
+  });
+
+  it("marks the protocol-keyed card on the bed board, and no other", async () => {
+    const mounted = await mountKabul(<BedsScreen />, {
+      perms: ["board.view", "admissions.view"],
+      shell: { units: [] },
+      setup: (api) => {
+        api.boardPatients.mockResolvedValue(board([kabulCard(PROTOCOL, "2"), kabulCard("H2600007", "1")]));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        api.admissions.mockResolvedValue(KEYED);
+      },
+    });
+    await act(async () => { await mounted.board.start(); mounted.stream.open(); });
+    await settle();
+    expect(screen.getByRole("link", { name: `2 xəstəsini aç · ${BADGE}` })).toBeTruthy();
+    expect(screen.getAllByText(BADGE)).toHaveLength(1);
+    expectNoUuid();
+  });
+});

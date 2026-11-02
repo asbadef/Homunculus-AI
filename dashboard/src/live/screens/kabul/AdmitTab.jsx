@@ -4,8 +4,9 @@
 // disabled: it keeps its focus, and pressed it says why — the first missing field takes the focus,
 // its error under it) until that panel is empty.
 //
-// One request writes the admission (POST /admissions). The answer's patient number is shown large,
-// with what the nurse does with it — she enters it on the bedside device — and any part of the
+// One request writes the admission (POST /admissions). The answer's card number is shown large — the
+// protocol since G2-B1d, with «Etiketi yazdır» beside it; the H-number of an answer without one —
+// with what the nurse does with it — she enters or scans it on the bedside device — and any part of the
 // engine write that did not land, named; the number box takes the focus and says those parts
 // aloud. A refusal goes on the toast, named after the bed (amendments (a), (f)), and the structure
 // is read again; a bed any re-read shows taken, closed or gone stops being the form's choice, so the
@@ -72,6 +73,8 @@ import {
 } from "./admitForm.js";
 import { freshForm, newRequestId, sameName, useAdmitDraft } from "./admitDraft.js";
 import { BedPicker } from "./BedPicker.jsx";
+import { boardKeyOf } from "./boardKey.js"; //                    G2-B1d: the card key (E12)
+import { PrintLabelButton } from "./label/PrintLabelButton.jsx"; // G2-B1d: the protocol label (§6)
 
 const localToday = () => {
   const d = new Date();
@@ -132,6 +135,7 @@ function NumberBox({ done, onNext, headingRef }) {
   const { t } = useI18n();
   const failed = PARTS.filter((part) => done.engine?.[part] === "failed");
   const whose = done.earlier ? t("kabul.earlierSend", { name: done.earlier, bed: done.bed }) : null;
+  const protocol = Boolean(done.protocolNo);
   const notes = [
     ...(done.recovered ? [t("kabul.recordedNoAnswer")] : []),
     ...failed.map((part) => t(ENGINE_FAILED[part])),
@@ -145,8 +149,11 @@ function NumberBox({ done, onNext, headingRef }) {
       </h2>
       {whose ? <Note tone="warn" icon="alert" className="mb-2">{whose}</Note> : null}
       <p className="m-0 text-13 text-mute">{t("kabul.doneBed", { bed: done.bed })}</p>
+      {/* G2-B1d: the number is the card's — the protocol of an admission made since 0015 (D7), the
+          one the nurse enters or scans; an answer without one keeps B1a's H-number and words. */}
+      {protocol ? <p className="m-0 mt-2 text-12 font-semibold uppercase tracking-[.08em] text-mute">{t("protokol.protocolNo")}</p> : null}
       <p className="m-0 my-2 font-data text-34 font-bold tracking-[.06em] text-ink">{done.number}</p>
-      <p className="m-0 text-14 font-semibold">{t("kabul.enterOnDevice")}</p>
+      <p className="m-0 text-14 font-semibold">{t(protocol ? "protokol.enterOrScan" : "kabul.enterOnDevice")}</p>
       {notes.map((text) => (
         <Note key={text} tone="warn" icon="alert" className="mt-2">{text}</Note>
       ))}
@@ -158,6 +165,8 @@ function NumberBox({ done, onNext, headingRef }) {
             {t("kabul.seeOnBoard")}
           </a>
         )}
+        {/* G2-B1d (§6): the first print — the form's own admission only, never an earlier patient's. */}
+        {protocol && !done.earlier && done.admissionId ? <PrintLabelButton admissionId={done.admissionId} /> : null}
         <Button onClick={onNext}>{done.earlier ? t("kabul.backToForm") : t("kabul.next")}</Button>
       </div>
       <Announce text={[...(whose ? [whose] : []), ...notes].join(" ")} />
@@ -252,7 +261,7 @@ export function AdmitTab() {
       held: null,
       unanswered: s.unanswered.filter((x) => !sameName(x.name, name)),
     }));
-    toast(doneFor(t, next.bed, t("kabul.admitted", { number: next.number })));
+    toast(doneFor(t, next.bed, t(next.protocolNo ? "protokol.admitted" : "kabul.admitted", { number: next.number })));
   }
 
   /** "Kabul et" waits; the reason names the unanswered send's bed. A hold is reached after an await,
@@ -288,7 +297,8 @@ export function AdmitTab() {
    *  it, else it keeps its own, which a send of its own still unanswered may carry (A-24 I-1).
    *  Answers whether it was the form's. */
   function landedFound({ row, send }, name) {
-    const next = { number: row.patient_number, bed: send.bed, engine: null, recovered: true };
+    const next = { number: boardKeyOf(row), protocolNo: row.protocol_no ?? null, admissionId: row.id ?? null,
+      bed: send.bed, engine: null, recovered: true };
     if (sameName(send.name, name)) {
       admitted(next, name);
       return true;
@@ -299,7 +309,8 @@ export function AdmitTab() {
       ...(send.requestId === s.requestId ? { requestId: newRequestId() } : null),
     }));
     // Said as what it is: an earlier send's admission, a warning — not the form's own success (m-1).
-    toast(doneFor(t, send.bed, t("kabul.earlierAdmitted", { number: row.patient_number })), "warn");
+    toast(doneFor(t, send.bed, t(row.protocol_no ? "protokol.earlierAdmitted" : "kabul.earlierAdmitted",
+      { number: boardKeyOf(row) })), "warn");
     return false;
   }
 
@@ -410,7 +421,8 @@ export function AdmitTab() {
       }
       const answer = await store.track(() => store.api.admit(body));
       if (!draft.live) return;
-      admitted({ number: answer.patient_number, bed: sent.bed, engine: answer.engine }, sent.name);
+      admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null, admissionId: answer.id ?? null,
+        bed: sent.bed, engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
       if (draft.live) await failed(err, sent);

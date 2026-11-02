@@ -23,6 +23,7 @@ import homunculus.tenant.models  # noqa: F401
 import homunculus.admission.models  # noqa: F401
 import homunculus.escalation.models  # noqa: F401
 import homunculus.scope.models  # noqa: F401
+import homunculus.protocol.models  # noqa: F401  (G2-B1d, migration 0015)
 
 config = context.config
 

@@ -45,6 +45,7 @@ import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./o
 import { BedCard } from "./BedCard.jsx";
 import { useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
 import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
+import { boardKeyOf } from "../kabul/boardKey.js";                  // G2-B1d: the card key
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { linkSentenceKey, maxAgeOf, reasonKey } from "../common/monitor.js";
@@ -225,7 +226,7 @@ export function BedsScreen() {
   const names = useUnitNames(units);
   const unitName = names.nameOf;
   const drafts = useAdmissions(DRAFT, { every: DRAFT_EVERY_MS });   // G2-B1a: the badge
-  const draftNumbers = useMemo(() => new Set((drafts.rows ?? []).map((r) => r.patient_number)), [drafts.rows]);
+  const draftNumbers = useMemo(() => new Set((drafts.rows ?? []).map(boardKeyOf)), [drafts.rows]);
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
   const [order, setOrder] = useState(() => readPref("bedOrder", ORDERS, "yatak"));

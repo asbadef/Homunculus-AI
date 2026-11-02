@@ -53,6 +53,9 @@ import esleme from "./strings/esleme.js";
 // G2-A4: the patient screen's SOFA box and form (screens/patient/sofa).
 import sofa from "./strings/sofa.js";
 
+// G2-B1d: Protokol — the protocol number, its label, Yönetim › Protokol ve etiket.
+import protokol from "./strings/protokol.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -83,6 +86,8 @@ export const NAMESPACES = {
   esleme, // G2-ESLEME
 
   sofa, // G2-A4
+
+  protokol, // G2-B1d
 };
 
 function flattenInto(out, prefix, entries) {

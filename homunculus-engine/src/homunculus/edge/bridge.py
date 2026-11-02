@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -22,7 +23,7 @@ from homunculus.canonical import Observation, SignalCode
 from homunculus.edge.adt import identity_to_fhir, is_adt, parse_hl7_adt
 from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.mllp import serve_mllp
-from homunculus.edge.pdq import patient_query_response
+from homunculus.edge.pdq import NOT_FOUND, is_patient_query, patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
 from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru, split_segments
@@ -45,10 +46,22 @@ class BridgeStats:
     observations: int = 0
     rejected: int = 0
     queries: int = 0            # QBP^Q22 patient lookups answered (id echoed, nothing invented)
+    queries_not_found: int = 0  # G2-B1d: the API said the number is not ours (QAK NF, D4)
+    queries_api_failed: int = 0  # the API could not answer: the mirror's answer, else the echo (D8)
     adt: int = 0                # ADT messages accepted (identity records, not readings)
     adt_ignored: int = 0        # ADT triggers outside the seven we act on (still ACKed, not NAKed)
     adt_stale: int = 0          # ADTs the mirror refused as older than what it already had
     unmapped: dict[str, int] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False,
+                                  compare=False)
+
+    def bump(self, name: str) -> None:
+        """Add one to the counter `name`, under a lock. The three `queries*` counters are touched
+        from worker threads (edge/mllp.py runs `answer_query` there, one per connection, G2-B1d
+        E25), where a bare `+= 1` is a read and a write another thread can slip between. The rest
+        are counted on the event loop thread alone and stay plain; the report only reads."""
+        with self._lock:
+            setattr(self, name, getattr(self, name) + 1)
 
 
 def _obx_codes(message: str) -> list[str]:
@@ -75,6 +88,9 @@ class EdgeBridge:
     identity: IdentityMirror | None = None
     identity_source: str = "comed"
     stats: BridgeStats = field(default_factory=BridgeStats)
+    #: G2-B1d: who a queried number is, asked of the API first (`PatientQueryClient.ask`); None in
+    #: capture-only mode, where the mirror alone answers, as before.
+    query: Callable[[str], object] | None = None
 
     def handle_message(self, message: str) -> list[Observation]:
         """Parse one HL7 message and forward what it carries.
@@ -166,16 +182,56 @@ class EdgeBridge:
 
         A Welch Allyn NCE asks its patient-query host to validate the id typed on the device
         before it will put that id into the reading's PID-3. Echoing the id back is what makes a
-        manually entered identifier survive into the observation; when Comed has told us who that
-        id is, the answer carries the name too and the device shows the patient.
+        manually entered identifier survive into the observation. G2-B1d (spec §5.2): the API is
+        asked first — a found number is answered with the name (D3), a number it does not know or
+        that has left with QAK NF (D4) —; when it cannot answer, the mirror does, else the id is
+        echoed without a name (D8). Called on a worker thread (edge/mllp.py, `asyncio.to_thread`;
+        one per connection, so several at once): it may wait up to the client's 2 s, reads and
+        writes the mirror (which locks its own statements, E8) and counts through `stats.bump`
+        (E25).
         """
-        reply = patient_query_response(
-            message, lookup=self.identity.get if self.identity is not None else None)
+        lookup = self._lookup if (self.query is not None or self.identity is not None) else None
+        reply = patient_query_response(message, lookup=lookup)
         if reply is not None:
-            self.stats.queries += 1
+            self.stats.bump("queries")
         return reply
+
+    def _lookup(self, patient_id: str):
+        """The API's answer — kept by the mirror when found, forgotten by it when not —, else the
+        mirror's. Counted; never logged with the id."""
+        if self.query is not None:
+            try:
+                answer = self.query(patient_id)
+            except Exception as exc:  # noqa: BLE001 — "cannot answer" is the mirror's turn (D8)
+                self.stats.bump("queries_api_failed")
+                _log.warning("patient query: the API could not answer (%s); the mirror answers "
+                             "(id not logged)", type(exc).__name__)
+            else:
+                if answer is NOT_FOUND:
+                    self.stats.bump("queries_not_found")
+                    self._mirror("forget", patient_id)
+                    return NOT_FOUND
+                self._mirror("upsert", answer)
+                return answer
+        return self.identity.get(patient_id) if self.identity is not None else None
+
+    def _mirror(self, method: str, value: object) -> None:
+        """Write the API's answer into the mirror; a mirror fault costs the next offline answer,
+        never this reply."""
+        if self.identity is None:
+            return
+        try:
+            getattr(self.identity, method)(value)
+        except Exception as exc:  # noqa: BLE001
+            # The class only, no traceback: a store error's words may carry the statement's
+            # parameters — the number (E24, as E14 on the API's side).
+            _log.warning("could not %s in the identity mirror (%s; content not logged)", method,
+                         type(exc).__name__)
 
     async def serve(self, host: str = "0.0.0.0", port: int = 2575) -> asyncio.AbstractServer:
         """Start listening. 2575 is the IANA-registered port for HL7 over MLLP."""
         _log.info("edge bridge listening for MLLP on %s:%s", host, port)
-        return await serve_mllp(host, port, handler=self.handle_message, responder=self.answer_query)
+        # Only a patient query takes a worker thread (it may wait 2 s on the API); a reading is
+        # handled on the loop and never queues behind a slow lookup (F-32).
+        return await serve_mllp(host, port, handler=self.handle_message,
+                                responder=self.answer_query, responds_to=is_patient_query)

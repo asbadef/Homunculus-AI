@@ -134,19 +134,26 @@ async def read_scope_for_user(
 
 
 async def break_glass_in_tenant(session, user_id, tenant_id) -> list[str]:
-    """Open break-glass patients of this user, restricted to one tenant (session and patient)."""
+    """Open break-glass patients of this user, restricted to one tenant (session and patient), in
+    the identifiers the board uses: the HIS reference, and the board key of each of the patient's
+    admissions here (G2-B1d D9: the protocol, a legacy admission's H-number) — without the key a
+    session about a patient admitted in Homunculus granted nothing."""
     from datetime import datetime, timezone
 
     from sqlalchemy import select
 
-    from homunculus.admission.models import Patient
+    from homunculus.admission.boardkey import board_key
+    from homunculus.admission.models import Admission, Patient
     from homunculus.escalation.models import BreakGlassSession
 
     now = datetime.now(timezone.utc)
     result = await session.execute(
-        select(Patient.his_patient_reference)
+        select(Patient.his_patient_reference, Patient.patient_number, Admission.protocol_no,
+               Admission.id)
         .select_from(BreakGlassSession)
         .join(Patient, BreakGlassSession.patient_id == Patient.id)
+        .outerjoin(Admission, (Admission.patient_id == Patient.id)
+                   & (Admission.tenant_id == tenant_id))
         .where(
             BreakGlassSession.user_id == user_id,
             BreakGlassSession.tenant_id == tenant_id,
@@ -155,7 +162,11 @@ async def break_glass_in_tenant(session, user_id, tenant_id) -> list[str]:
             BreakGlassSession.closed_at.is_(None),
         )
     )
-    return [row[0] for row in result.all() if row[0]]
+    out: list[str] = []
+    for his, number, protocol_no, admission_id in result.all():
+        key = board_key(protocol_no, number) if admission_id is not None else None
+        out.extend(ref for ref in (his, key) if ref and ref not in out)
+    return out
 
 
 async def break_glass_patient_ids(user_id: str, tenant_slug: str) -> list[str]:

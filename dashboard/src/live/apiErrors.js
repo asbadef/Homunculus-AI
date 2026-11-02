@@ -186,10 +186,30 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["bed_occupied", "esleme.err.bedOccupied"],
   ["mapping_changed", "esleme.err.mappingChanged"],
   ["bed_has_monitor", "kabul.err.bedHasMonitor"],      // Yapı: unbind the monitor first, on «Monitörler»
+
+  // G2-B1d — the protocol number and its label (admission/errors.py's own block, spec §7).
+  ["protocol_not_configured", "protokol.err.notConfigured"],
+  ["protocol_exhausted", "protokol.err.exhausted"],
+  ["protocol_format", "protokol.err.format"],
+  ["protocol_not_forward", "protokol.err.notForward"],
+  ["label_size", "protokol.err.size"],
+  ["label_too_narrow", "protokol.err.tooNarrow"],
+  ["label_dpi", "protokol.err.dpi"],
+  ["no_protocol", "protokol.err.noProtocol"],
 ]);
+
+/** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card
+ *  key of an admission made since migration 0015 — so a protocol is never called a patient number. */
+export const WITH_PROTOCOL = new Map([
+  ["request_conflict", "protokol.err.requestConflictNumber"],
+  ["board_not_cleared", "protokol.err.boardNotClearedNumber"],
+  ["duplicate_open_admission", "protokol.err.duplicateOpenAdmissionNumber"],
+]);
+const PROTOCOL_NO = /^[0-9]{12}$/;
+
 /** The coded refusals whose detail names a patient's number, each with the sentence that says it.
  *  A number beside any other code is not shown. */
-const WITH_NUMBER = new Map([
+export const WITH_NUMBER = new Map([
   ["request_conflict", "kabul.err.requestConflictNumber"],
   ["board_not_cleared", "kabul.err.boardNotClearedNumber"],
   // A-37: the person's open admission, by its number when the caller's units hold its bed.
@@ -253,7 +273,9 @@ const FIELD_INVALID = "field_invalid:";
 function admissionCodeKey(err) {
   const code = typeof err?.apiCode === "string" ? err.apiCode : "";
   const number = typeof err?.patientNumber === "string" ? err.patientNumber.trim() : "";
-  if (number && WITH_NUMBER.has(code)) return { key: WITH_NUMBER.get(code), vars: { number } };
+  if (number && WITH_NUMBER.has(code)) {
+    return { key: (PROTOCOL_NO.test(number) ? WITH_PROTOCOL : WITH_NUMBER).get(code), vars: { number } };
+  }
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };

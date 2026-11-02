@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from homunculus.crypto import validate_key
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
 from homunculus.edge.identity import IdentityMirror
+from homunculus.edge.pdq_client import PatientQueryClient, query_url
 from homunculus.edge.uplink import UplinkStats, flush_loop
 
 _log = logging.getLogger("bridge")
@@ -85,6 +87,15 @@ def open_identity_mirror(path: str | None) -> IdentityMirror | None:
         return None
 
 
+def query_client(args: argparse.Namespace) -> Callable[[str], object] | None:
+    """G2-B1d (spec §5.2): who a queried number is, asked of the API at `--cloud-url` +
+    /edge/patient-query with the `--token` /ingest uses, 2 s at most. None in capture-only mode:
+    the mirror alone answers, as before."""
+    if not args.cloud_url:
+        return None
+    return PatientQueryClient(query_url(args.cloud_url), args.token).ask
+
+
 async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float,
                       uplink: UplinkStats | None = None) -> None:
     """Periodic operator report: throughput, buffer depth, and unmapped identifiers."""
@@ -93,9 +104,11 @@ async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float,
         stats = bridge.stats
         kimlik = bridge.identity.count() if bridge.identity is not None else 0
         up = uplink or UplinkStats()
-        _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s adt=%s yoksayılan=%s bayat=%s "
-                  "kimlik=%s kimlik_düşen=%s kimlik_bekleyen=%s kuyruk=%s",
+        _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s sorgu_NF=%s sorgu_api_hata=%s "
+                  "adt=%s yoksayılan=%s bayat=%s kimlik=%s kimlik_düşen=%s kimlik_bekleyen=%s "
+                  "kuyruk=%s",
                   stats.messages, stats.observations, stats.rejected, stats.queries,
+                  stats.queries_not_found, stats.queries_api_failed,
                   stats.adt, stats.adt_ignored, stats.adt_stale, kimlik,
                   up.identity_dropped, up.identity_held, buffer.depth())
         if bridge.identity is not None:
@@ -114,7 +127,8 @@ async def main_async(args: argparse.Namespace) -> None:
             buffer.append(payload)
 
     identity = open_identity_mirror(identity_path(args))
-    bridge = EdgeBridge(send=send, mapping=load_mapping(args.mapping), identity=identity)
+    bridge = EdgeBridge(send=send, mapping=load_mapping(args.mapping), identity=identity,
+                        query=query_client(args))
     server = await bridge.serve(host=args.listen_host, port=args.listen_port)
 
     if capture_only:

@@ -32,6 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import trail, unitscope
+from homunculus.admission.boardkey import board_key
 from homunculus.admission.errors import (
     BED_CLOSED, BED_OCCUPIED, DEVICE_UNKNOWN, MAPPING_CHANGED, Refusal, field_invalid,
 )
@@ -201,15 +202,18 @@ async def _lock_and_check(db: AsyncSession, tenant_id: uuid.UUID, principal: Pri
 
 
 async def _open_admission_number(db: AsyncSession, bed_id: uuid.UUID) -> str | None:
-    """The patient number of an open admission on the bed, or None when there is none — exactly
-    `tenant.router._holds_open_admission`'s condition (`Admission.bed_id`, `OPEN_ADMISSION_STATES`), but it
-    returns the number (E9): the audit and the refusal need it, and the helper answers a bool. A column, not
-    an entity, so a row committed after an earlier load is seen. `patient_number` is NOT NULL: None here is
-    never an admission without a number."""
-    return (await db.execute(
-        select(Patient.patient_number).join(Admission, Admission.patient_id == Patient.id)
+    """The board key of an open admission on the bed (G2-B1d: its protocol number; a legacy admission's
+    H-number), or None when there is none — exactly `tenant.router._holds_open_admission`'s condition
+    (`Admission.bed_id`, `OPEN_ADMISSION_STATES`), but it returns the key (E9): the audit and the refusal need
+    it - it is the id the board's card, and so the dialog, finds the patient by - and the helper answers a
+    bool. Columns, not an entity, so a row committed after an earlier load is seen. `patient_number` is NOT
+    NULL: None here is never an admission without a key."""
+    row = (await db.execute(
+        select(Patient.patient_number, Admission.protocol_no)
+        .join(Admission, Admission.patient_id == Patient.id)
         .where(Admission.bed_id == bed_id, Admission.state.in_(list(OPEN_ADMISSION_STATES))).limit(1)
-    )).scalar_one_or_none()
+    )).first()
+    return None if row is None else board_key(row.protocol_no, row.patient_number)
 
 
 async def _occupancy(state, db: AsyncSession, principal: Principal, hospital: str, ask: Ask,

@@ -80,6 +80,7 @@ async def _create_schema() -> int:
     import homunculus.admission.models          # noqa: F401
     import homunculus.auth.models               # noqa: F401
     import homunculus.escalation.models         # noqa: F401
+    import homunculus.protocol.models           # noqa: F401  (G2-B1d: protocol_settings)
     import homunculus.tenant.models             # noqa: F401
 
     async with engine.begin() as conn:

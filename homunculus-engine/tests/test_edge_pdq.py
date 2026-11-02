@@ -14,7 +14,7 @@ import sqlite3
 import pytest
 
 from homunculus.edge.mllp import CR, FS, VT, serve_mllp
-from homunculus.edge.pdq import patient_query_response
+from homunculus.edge.pdq import NOT_FOUND, patient_query_response
 
 # The shape NCE sent on the ward (ids masked): QPD-3 = @PID.3.1^<id>~@PID3.4^X
 QBP = (
@@ -68,6 +68,19 @@ def test_a_query_without_an_id_is_answered_not_found():
 def test_anything_that_is_not_a_pdq_query_is_left_to_the_handler():
     assert patient_query_response(ORU) is None
     assert patient_query_response("garbage") is None
+
+
+def test_is_patient_query_says_what_patient_query_response_would_answer():
+    """F-32: the MLLP server asks this cheap predicate before it spends a worker thread on a
+    message, so it must agree with the responder on every message — a query it called «no» would
+    be handled as a result and rejected."""
+    from homunculus.edge.pdq import is_patient_query
+
+    adt = "MSH|^~\\&|HIS|HOSP|EMR|HIS|20260903160000||ADT^A01|A1|P|2.5\rPID|||123456A\r"
+    for message in (QBP, QBP.replace("\r", "\n"), QBP.replace("\r", "\r\n"), ORU, adt, "garbage", "",
+                    "\r\r", QBP.replace("QBP^Q22", "QBP^Q21"), "QPD|IHE PDQ Query|1|@PID.3.1^1\r"):
+        assert is_patient_query(message) == (patient_query_response(message) is not None), message
+    assert is_patient_query(QBP) and not is_patient_query(ORU)
 
 
 def frame(message: str) -> bytes:
@@ -133,6 +146,28 @@ def test_an_unknown_patient_still_gets_the_id_only_answer():
     pid_fields = segments(reply)["PID"]
     assert pid_fields[3] == "123456A"
     assert pid_fields[5:] == ["", "", "", ""]
+
+
+def test_a_number_known_not_to_exist_is_answered_not_found_without_a_pid():
+    """G2-B1d D4: the API said the number is not one of ours, or has left. The device cannot
+    validate it, so the nurse corrects it at the bedside — and no PID means no name to trust."""
+    reply = patient_query_response(QBP, lookup=lambda _pid: NOT_FOUND)
+    seg = segments(reply)
+    assert seg["MSH"][8].startswith("RSP^K22")
+    assert seg["MSA"][1:3] == ["AA", "20260903160900123"]     # the query itself was understood
+    assert seg["QAK"][1:3] == ["20260903160900123", "NF"]
+    assert seg["QPD"][3] == "@PID.3.1^123456A"
+    assert "PID" not in seg
+
+
+def test_not_found_is_the_lookups_answer_only_none_still_echoes_the_id():
+    """Three outcomes, three replies: found (the name), NOT_FOUND (NF), None (unknown: the id
+    echoed with no name, as before G2-B1d — D8's 'we do not know')."""
+    found = segments(patient_query_response(QBP, lookup=known_lookup()))
+    unknown = segments(patient_query_response(QBP, lookup=lambda _pid: None))
+    assert (found["QAK"][2], found["PID"][5]) == ("OK", "YILMAZ^AYSE")
+    assert (unknown["QAK"][2], unknown["PID"][3], unknown["PID"][5]) == ("OK", "123456A", "")
+    assert repr(NOT_FOUND) == "NOT_FOUND"
 
 
 def test_a_lookup_that_raises_degrades_to_the_id_only_answer():
