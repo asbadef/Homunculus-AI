@@ -1626,16 +1626,25 @@ gösterir. 3 saniyeden eski kalan paket atılmaz, çözülürken reddedilir: `re
 sayacının `queued` > 0 ile birlikte artması saat farkı değil, çözücünün geride kaldığı anlamına
 gelir.
 
-**Hastanenin sunucusunda bugün kapalı.** Panel 2 Kasım 2026'da hastane sunucusuna çıktı: hub R7
-sürümü, API ile web ve açık `INFINITY_WAVES=on` bayrağı. Aynı gün geri alındı: tek bir açık panel
-bile hastanenin 2 vCPU'lu sunucusunda hub'ın paket yolunu yavaşlattı; şerit, yatak panosu ve
-alarmlar etkilenmedi (sayılar dağıtım kaydındadır). Önce bayrak kapatıldı, sonra hub R6'ya
-döndürüldü. Düzeltme yukarıda anlatılan iki değişikliktir — hub dalga bloklarını paketi
+**Hastanenin sunucusunda 3 Kasım 2026'dan beri açık — sahibin kararıyla.** Panel ilk kez 2 Kasım
+2026'da çıktı: hub R7 sürümü, API ile web ve açık `INFINITY_WAVES=on` bayrağı. Aynı gün geri
+alındı: tek bir açık panel bile hastanenin 2 vCPU'lu sunucusunda hub'ın paket yolunu yavaşlattı
+(500 ms'den geç gelen paket payı %27, çözücü 172 bloğu reddetti); şerit, yatak panosu ve alarmlar
+etkilenmedi. Düzeltme yukarıda anlatılan iki değişikliktir — hub dalga bloklarını paketi
 onayladıktan sonra, paket yolunun dışında ayrı bir iş parçacığında çözer; API hub'a 750 ms'de bir
-yalnız yeni blokları sorar ve tarayıcıları kendi 20 saniyelik halkasından besler — ve hub R8
-sürümüyle, kullanıcının sözüyle («main'e al», sonra «onay») çıkacak. O güne dek sunucuda bayrak
-kapalıdır ve panel gösterilmez: hasta ekranında panel yoktur, «Monitörler»de açılan panel «Dalga
-formu bu kurulumda kapalı» der.
+yalnız yeni blokları sorar ve tarayıcıları kendi 20 saniyelik halkasından besler. Hub R8 sürümüyle
+3 Kasım 2026'da ölçülü bir deneme olarak yeniden çıktı (sahibin «onay»ı; blokları ve kaydı
+`DALGA2-bloklari.txt`'te). Ölçümler: panel kapalıyken hub'ın paket yolu R6 tabanından daha temiz
+(500 ms üstü %1,02); tek bir açık panelle sunucu bir kez sınırın içinde (paket başına 48 ms, %2,1),
+bir kez dışında (63,9 ms > 60 ms; %3,44 > %3) ölçüldü — iki ölçüm aynı yükte sunucunun diskiyle
+ayrıştı (hub'ın kayıt commit süresi 23 → 43 ms, disk beklemesi %5,8): çözücü artık darboğaz
+değil, her yoklamadaki dokuz yetki sorgusu (≈30 ms işlemci) ve hub'ın diske duyarlı kayıt yolu
+öyle. Kural gereği bayrak kapatıldı; sahip paneli aynı gece yeniden açtırdı («dalgaları geri
+getir, işlemci ekleyeceğim»). Panel yalnız görüntüdür: alarmlar, kartlar ve 3 saniye sınırı
+etkilenmez; panel açıkken şeridin paket gecikme kuyruğu ≈%3–4 olur. Sunucuya işlemci ya da disk
+eklendikten sonra ölçümler yeni bir tabanla yinelenir; sonraki adımlar (sunucuyu büyütmek, yetki
+sorgularını birleştirmek, hub kaydının commit maliyeti) sahibin kararıdır — Lane A'nın kapasite
+planında.
 
 ### 3.12 Yatak başı ölçüm ve «hatalı giriş» (Grup 3 · G3-01)
 
