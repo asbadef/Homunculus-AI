@@ -1959,6 +1959,9 @@
     "Total bilirubin":{adult:[0.3,1.2,"mg/dL"], neonate:[0,12,"mg/dL"]}, "Albumin":[3.5,5.2,"g/dL"], "INR":[0.8,1.2,""], "Laktat":[0.5,2.2,"mmol/L"],
     "Troponin":[0,0.04,"ng/mL"], "D-dimer":[0,0.5,"mg/L"], "Prokalsitonin":[0,0.5,"ng/mL"], "HbA1c":[4,5.7,"%"], "TSH":{adult:[0.4,4,"mIU/L"], neonate:[1,39,"mIU/L"]}, "Ferritin":[30,400,"ng/mL"]
   };
+  // Admin'in düzenlediği referans aralıkları (kalıcı: labRef) varsayılanın üstüne biner. Canlı sorgu bu birleşik tabloyu kullanır.
+  H.LABREF_DEFAULT = JSON.parse(JSON.stringify(H.LABREF));   // varsayılana dönüş için kopya
+  if (H.data && H.data.labRef) Object.assign(H.LABREF, H.data.labRef);
   H.labAge = (p) => { if (!p) return "adult"; if (p.ageGroup === "neonate" || p.ageDays != null) return "neonate"; const a = p.age != null ? p.age : 99; return (p.ageGroup === "child" || p.ageGroup === "infant" || a <= 12) ? "child" : "adult"; };
   H.labRange = (entry, ageGroup) => Array.isArray(entry) ? entry : (entry[ageGroup] || entry.adult || entry[Object.keys(entry)[0]]);
   H.labFlag = (ad, deger, ageGroup) => { const n = parseFloat(String(deger).replace(",", ".")); if (isNaN(n)) return { ref:"", birim:"", dir:"norm", sym:"" };

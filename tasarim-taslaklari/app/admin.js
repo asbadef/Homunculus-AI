@@ -722,6 +722,7 @@
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
     ["ilacliste", "İlaç Listesi", "admin_system", "pill"],   // ilaç.xlsx'ten türetilmiş ilaç kataloğu (ara + ekle); doktor İstem/reçetede, hemşire uygulamada seçer
+    ["labref", "Lab Referansları", "admin_system", "activity"],   // yaşa göre lab referans aralıkları (yetişkin/çocuk/yenidoğan); lab sonuç yorumunda kullanılır
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
     ["cihazliste", "Cihaz Listesi", "admin_system", "activity"],   // RIS/yazar kasa/hasta çağrı ekranı; IP/MAC/port tanımı
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
@@ -739,7 +740,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "guvenlik", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "ilacliste", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "guvenlik", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "ilacliste", "labref", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "parametre", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -765,7 +766,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, ilacliste:tabIlac, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, ilacliste:tabIlac, labref:tabLabRef, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          parametre:tabParametre, guvenlik:tabGuvenlik,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
@@ -921,6 +922,47 @@
         const row = [kod, ad, g("grup"), g("form"), +g("fiyat") || 0, g("flags")];
         if (existing) { const i = add.indexOf(existing); if (i >= 0) add[i] = row; } else add.unshift(row);
         H.saveData && H.saveData(); H.log(existing ? "İlaç düzenlendi" : "İlaç eklendi", ad); H.closeModal(); H.toast("Kaydedildi: " + ad); redraw(); }; } });
+  }
+
+  // Lab referans aralıkları (H.LABREF): yaşa göre (yetişkin/çocuk/yenidoğan) düzenle. Override H.data.labRef'e, canlı H.LABREF'e yazılır.
+  function tabLabRef(body) {
+    const over = (H.data.labRef = H.data.labRef || {});
+    const keys = () => Object.keys(H.LABREF || {});
+    const rng = (k, g) => { const e = H.LABREF[k]; return Array.isArray(e) ? (g === "adult" ? e : null) : (e[g] || null); };
+    const birimOf = (k) => { const e = H.LABREF[k]; return Array.isArray(e) ? (e[2] || "") : ((e.adult || Object.values(e)[0] || [])[2] || ""); };
+    const cell = (r) => r ? `${r[0]}–${r[1]}` : `<span class="adm-sub">—</span>`;
+    body.innerHTML = `<div class="adm-bar"><input data-lrq placeholder="Analit ara (ör. Glukoz)" value="${esc(AD.lrq || "")}"><span class="spacer"></span><span class="adm-sub">${keys().length} analit</span></div><div data-lrlist></div>
+      <p class="adm-sub" style="margin-top:10px">Yaşa göre referans aralıkları (yetişkin / çocuk / yenidoğan–NICU). Düzenlenen değerler laboratuvar sonuç yorumunda (anormal ↑/↓) anında kullanılır. Değiştirilen analit <b>özel</b> işaretlenir; varsayılana döndürülebilir.</p>`;
+    const list = body.querySelector("[data-lrlist]");
+    const draw = () => {
+      const q = norm(AD.lrq || ""), ks = q ? keys().filter(k => norm(k).includes(q)) : keys();
+      list.innerHTML = `<div class="tw"><table class="t"><thead><tr><th>Analit</th><th style="width:120px">Yetişkin</th><th style="width:120px">Çocuk</th><th style="width:130px">Yenidoğan</th><th style="width:90px">Birim</th><th style="width:160px"></th></tr></thead><tbody>${ks.map(k => `<tr data-lredit="${esc(k)}" style="cursor:pointer" title="Düzenle"><td><b>${esc(k)}</b>${over[k] ? ` <span class="tag">özel</span>` : ""}</td><td>${cell(rng(k, "adult"))}</td><td>${cell(rng(k, "child"))}</td><td>${cell(rng(k, "neonate"))}</td><td class="adm-sub">${esc(birimOf(k))}</td><td>${over[k] ? `<button class="btn g sm" data-lrreset="${esc(k)}">Varsayılana dön</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+    };
+    draw();
+    body.querySelector("[data-lrq]").addEventListener("input", e => { AD.lrq = e.target.value; draw(); });
+    list.addEventListener("click", e => {
+      const rs = e.target.closest("[data-lrreset]"); if (rs) { const k = rs.dataset.lrreset; if (H.LABREF_DEFAULT && H.LABREF_DEFAULT[k]) H.LABREF[k] = JSON.parse(JSON.stringify(H.LABREF_DEFAULT[k])); delete over[k]; H.saveData && H.saveData(); H.log("Lab referansı varsayılana döndü", k); H.toast("Varsayılana döndü: " + k); draw(); return; }
+      const tr = e.target.closest("[data-lredit]"); if (tr) labRefForm(tr.dataset.lredit, draw);
+    });
+  }
+  function labRefForm(key, redraw) {
+    const e = H.LABREF[key], g = (grp) => (Array.isArray(e) ? (grp === "adult" ? e : null) : (e[grp] || null));
+    const birim = Array.isArray(e) ? (e[2] || "") : ((e.adult || Object.values(e)[0] || [])[2] || "");
+    const fld = (grp, lbl) => { const r = g(grp); return `<div class="fr"><label>${lbl} – alt</label><input type="number" step="any" data-lf="${grp}min" value="${r ? r[0] : ""}" placeholder="—"></div><div class="fr"><label>${lbl} – üst</label><input type="number" step="any" data-lf="${grp}max" value="${r ? r[1] : ""}" placeholder="—"></div>`; };
+    H.modal({ title:"Referans aralığı · " + esc(key), wide:true,
+      body:`<div class="icd-form">${fld("adult", "Yetişkin")}${fld("child", "Çocuk")}${fld("neonate", "Yenidoğan")}<div class="fr"><label>Birim</label><input data-lf="birim" value="${esc(birim)}" placeholder="ör. mg/dL"></div></div>
+        <p class="adm-sub" style="margin-top:6px">Yetişkin aralığı gerekli. Çocuk/yenidoğan boş bırakılırsa yaşa göre o grup için yetişkin aralığı kullanılır.</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const v = (k) => { const el = m.querySelector(`[data-lf="${k}"]`); const s = (el.value || "").trim(); return s === "" ? null : s; };
+        const birimV = (m.querySelector('[data-lf="birim"]').value || "").trim();
+        const grp = (p) => { const lo = v(p + "min"), hi = v(p + "max"); return (lo != null && hi != null) ? [+lo, +hi, birimV] : null; };
+        const a = grp("adult"); if (!a) { H.toast("Yetişkin alt/üst gerekli.", "w"); return; }
+        const c = grp("child"), n = grp("neonate");
+        const entry = (c || n) ? Object.assign({ adult:a }, c ? { child:c } : {}, n ? { neonate:n } : {}) : a;
+        (H.data.labRef = H.data.labRef || {})[key] = entry; H.LABREF[key] = entry;
+        H.saveData && H.saveData(); H.log("Lab referansı düzenlendi", key + " · yetişkin " + a[0] + "–" + a[1] + " " + birimV);
+        H.closeModal(); H.toast("Kaydedildi: " + key); redraw(); }; } });
   }
 
   // Tanı ekle/düzenle formu (modal): çekirdek alanlar + ICD Özellikleri. Kronik/Bulaşıcı özelliklerden türetilir.
