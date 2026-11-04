@@ -67,6 +67,14 @@ Her rol için **yapıldı** (ana hatlar) ve **eksik/derinleşmesi gereken** sür
 
 ---
 
+## YENİ SÜREÇLER (04.11.2026 · uçtan uca tarama sonrası eklendi)
+- 🟢 **Taburcu ön-kontrol**: açık fatura + sonuçlanmamış istem uyarısı, yetkili onayı olmadan kapatma engellenir ✅
+- 🟢 **Sonuç → hekim bildirim**: lab/rad sonucu çıkınca isteyen hekime bildirim (anormalde yüksek öncelik) ✅
+- 🟢 **Ameliyathane programı**: günlük pano, oda/saat atama, durum stepper (Beklemede→Bitti) · perm `ameliyathane` ✅
+- 🟢 **Kan bankası**: stok + çapraz uygunluk + rezervasyon/teslim · perm `lab_islem` ✅
+- 🟢 **Nöbet/vardiya çizelgesi**: haftalık hemşire nöbeti (G/A/N/İ) · perm `nobet` ✅
+- 🟢 **Poliklinik sıra/çağrı panosu**: çağır→muayene→tamam · perm `admission` ✅
+
 ## ÇAPRAZ / GENEL (tüm roller)
 - 🟢 **Rol×ekran yetki taraması** `qa/yetki-audit.py` ile otomatik: NAV sızıntısı yok, her ekran kasıtlı yetkiye dayanıyor ✅. Buton-buton (ekran içi aksiyon) hâlâ sahibin testiyle en isabetli.
 - 🔴 **Tek backend / canlı veri akışı (M1)** — en büyük iş; panel + mobil app'ler tek kaynaktan beslenecek.
