@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Pressable } from "react-native";
 import { demoAlert } from "../../src/ui/demo";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card, SectionTitle } from "../../src/ui/widgets";
 import { HomeHero, SummaryCards, NextAppointmentCard, Shortcuts, QuickServices, NewsStrip } from "../../src/components/home";
@@ -13,6 +13,7 @@ import { transport } from "../../src/demo/transport";
 import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/config/features";
 import { Appointment, Invoice, NewsItem, Result, Story } from "../../src/demo/types";
 import { askNotificationPermissionOnce } from "../../src/notifications/ask";
+import { unreadCount } from "../../src/demo/notifications";
 import { useSession } from "../../src/session/SessionProvider";
 import { MenuDrawer } from "../../src/components/MenuDrawer";
 
@@ -27,6 +28,9 @@ export default function HomeScreen() {
   const [unpaid, setUnpaid] = useState<Invoice | null>(null);
   const [lastResult, setLastResult] = useState<Result | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  useFocusEffect(useCallback(() => { unreadCount().then(setUnread); }, []));
 
   useEffect(() => {
     askNotificationPermissionOnce();
@@ -38,7 +42,6 @@ export default function HomeScreen() {
   }, []);
 
   const label = (f: Feature) => tr(f.titleKey);
-  const unread = (next ? 1 : 0) + (unpaid ? 1 : 0) + (lastResult ? 1 : 0);
 
   const summary = [
     { key: "appt", title: tr("feat.appointments"), value: next ? `${next.date} · ${next.time}` : tr("appointments.empty"), icon: "calendar" as const, image: bannerImages[0], route: "/randevu" },
