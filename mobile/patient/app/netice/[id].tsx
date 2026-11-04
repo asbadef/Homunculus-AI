@@ -10,18 +10,37 @@ import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { Result } from "../../src/demo/types";
 import { useScreenGuard } from "../../src/security/useScreenGuard";
+import { useSession } from "../../src/session/SessionProvider";
+import { getEmail } from "../../src/profile/email";
+import { exportResultPdf, emailResult } from "../../src/export/resultExport";
 
 export default function ResultDetail() {
   useScreenGuard();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTheme();
   const { t: tr } = useI18n();
+  const { user } = useSession();
   const [r, setR] = useState<Result | null>(null);
   const [explain, setExplain] = useState(false);
+  const [needEmail, setNeedEmail] = useState(false);
 
   useEffect(() => {
     transport.getResults().then((rows) => setR(rows.find((x) => x.id === id) ?? null));
   }, [id]);
+
+  async function onShare() {
+    if (r) await exportResultPdf(r, user?.name ?? "").catch(() => {});
+  }
+  async function onEmail() {
+    if (!r) return;
+    const email = await getEmail();
+    if (!email) {
+      setNeedEmail(true);
+      return;
+    }
+    setNeedEmail(false);
+    await emailResult(r, user?.name ?? "", email).catch(() => {});
+  }
 
   if (!r) return <Screen />;
 
@@ -75,7 +94,23 @@ export default function ResultDetail() {
         })
       )}
 
-      <Pressable onPress={() => setExplain((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 8 }}>
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+        <Pressable onPress={onShare} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 13 }}>
+          <Ionicons name="download-outline" size={17} color={t.brand} />
+          <AppText weight="semibold" style={{ fontSize: 13 }}>{tr("res.share")}</AppText>
+        </Pressable>
+        <Pressable onPress={onEmail} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 13 }}>
+          <Ionicons name="mail-outline" size={17} color={t.brand} />
+          <AppText weight="semibold" style={{ fontSize: 13 }}>{tr("res.email")}</AppText>
+        </Pressable>
+      </View>
+      {needEmail ? (
+        <Pressable onPress={() => router.push("/profil")} style={{ marginTop: 8 }}>
+          <AppText color={t.wait} style={{ fontSize: 12 }}>{tr("res.needEmail")} →</AppText>
+        </Pressable>
+      ) : null}
+
+      <Pressable onPress={() => setExplain((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, marginBottom: 8 }}>
         <Ionicons name="sparkles" size={16} color={t.brand} />
         <AppText weight="bold" color={t.brand}>
           {tr("results.explain")}

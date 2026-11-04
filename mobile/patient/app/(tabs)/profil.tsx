@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Pressable, StyleSheet, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted, Title } from "../../src/ui/base";
@@ -8,6 +8,8 @@ import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { LANGS } from "../../src/i18n/core";
 import { useSession } from "../../src/session/SessionProvider";
+import { getEmail, setEmail as persistEmail } from "../../src/profile/email";
+import { layout } from "../../src/theme/tokens";
 
 function Row({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
   const { t } = useTheme();
@@ -26,10 +28,23 @@ export default function ProfileTab() {
   const { t, mode, toggle } = useTheme();
   const { t: tr, lang, setLang } = useI18n();
   const { user, signOut } = useSession();
+  const [email, setEmailState] = useState("");
+  const [editEmail, setEditEmail] = useState(false);
+  const [draftEmail, setDraftEmail] = useState("");
+
+  useEffect(() => {
+    getEmail().then(setEmailState);
+  }, []);
 
   function cycleLang() {
     const i = LANGS.indexOf(lang);
     setLang(LANGS[(i + 1) % LANGS.length]);
+  }
+  function saveEmail() {
+    const v = draftEmail.trim();
+    setEmailState(v);
+    persistEmail(v);
+    setEditEmail(false);
   }
 
   return (
@@ -59,6 +74,7 @@ export default function ProfileTab() {
       <Row icon="person-add-outline" label={tr("pf.addFamily")} />
 
       <View style={{ height: 10 }} />
+      <Row icon="mail-outline" label={tr("pf.email")} value={email || tr("pf.emailAdd")} onPress={() => { setDraftEmail(email); setEditEmail(true); }} />
       <Row icon="globe-outline" label={tr("pf.lang")} value={tr("lang.code")} onPress={cycleLang} />
       <Row icon="moon-outline" label={tr("pf.theme")} value={mode === "dark" ? tr("pf.on") : tr("pf.off")} onPress={toggle} />
       <Row icon="notifications-outline" label={tr("pf.notif")} onPress={() => router.push("/bildirisler")} />
@@ -70,6 +86,27 @@ export default function ProfileTab() {
         </AppText>
       </Pressable>
       <View style={{ height: 16 }} />
+
+      <Modal visible={editEmail} transparent animationType="fade" onRequestClose={() => setEditEmail(false)}>
+        <Pressable onPress={() => setEditEmail(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "center", padding: 24 }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderRadius: 18, padding: 18 }}>
+            <AppText weight="bold" style={{ fontSize: 16, marginBottom: 12 }}>{tr("pf.email")}</AppText>
+            <TextInput
+              value={draftEmail}
+              onChangeText={setDraftEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoFocus
+              placeholder="ad@example.com"
+              placeholderTextColor={t.faint}
+              style={{ backgroundColor: t.surface2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: t.fg, fontFamily: layout.fontMedium, fontSize: 15 }}
+            />
+            <Pressable onPress={saveEmail} style={{ marginTop: 14, backgroundColor: t.brand, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}>
+              <AppText weight="bold" color="#ffffff">{tr("pf.save")}</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
