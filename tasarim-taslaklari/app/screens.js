@@ -2928,6 +2928,76 @@
     };
   } });
 
+  /* ================= CİHAZ RANDEVUSU ================= */
+  // Cihaz (görüntüleme/tanı) randevu takvimi: kolonlar=cihazlar, satırlar=saatler, süre kadar blok. Sonuç labislem'de.
+  H.addT && H.addT({ m_cihazrnd:{ TR:"Cihaz randevusu", AZ:"Cihaz növbəsi", RU:"Запись на аппарат", EN:"Device appointment" } });
+  const CIHAZ_LIST = ["ANJİO 1", "ANJİO 2", "ECG", "MR", "BT", "USG"];
+  const CIHAZ_DURUM = [["Bekliyor", "var(--mid)"], ["Geldi", "var(--ok)"], ["Çekim Başladı", "#2f6fed"], ["Çekim Bitti", "#8b5cf6"], ["Bitti", "var(--line)"], ["Gelmedi", "var(--crit)"], ["İptal", "var(--mute)"]];
+  const cihazRnd = () => (H.data.cihazRnd = H.data.cihazRnd || []);
+  function cihazRndSeed() {
+    if (cihazRnd().length) return; const today = new Date().toISOString().slice(0, 10);
+    const ps = (H.data.patients || []).slice(0, 3);
+    [["ANJİO 1", "09:00", 60, "Koroner anjiyografi"], ["ECG", "10:00", 15, "Elektrokardiyogram (EKG)"], ["MR", "11:30", 45, "Beyin MR"]].forEach((d, i) => { const p = ps[i];
+      cihazRnd().push({ id:"cr" + i + Date.now(), hasta:p ? p.name : "Hasta " + (i + 1), cihaz:d[0], tetkik:d[3], tarih:today + "T" + d[1], sure:d[2], durum:"Bekliyor" }); });
+    H.saveData && H.saveData();
+  }
+  H.register("cihazrnd", { title:() => H.t("m_cihazrnd"), perm:["admission", "admission_view", "lab_islem"], render(root, params = {}) {
+    cihazRndSeed();
+    const pad = (n) => String(n).padStart(2, "0"), SAAT = []; for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
+    const toMin = (s) => { const p = (s || "0:0").split(":"); return (+p[0] || 0) * 60 + (+p[1] || 0); }, toHHMM = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+    const gun = params.gun || new Date().toISOString().slice(0, 10), all = cihazRnd();
+    const col = (d) => (CIHAZ_DURUM.find(x => x[0] === d) || [, "var(--mid)"])[1];
+    const cover = (cihaz, saat) => { const sm = toMin(saat);
+      for (const r of all) { if (r.cihaz !== cihaz || r.durum === "İptal") continue; if ((r.tarih || "").slice(0, 10) !== gun) continue;
+        const s = toMin((r.tarih || "").slice(11, 16)), e = s + (+r.sure || 15); if (sm >= s && sm < e) return { r, first:s >= sm && s < sm + 30, s, e }; } return null; };
+    const lej = `<div class="durum-lej" style="margin:8px 0">${CIHAZ_DURUM.filter(d => d[0] !== "İptal").map(([d, c]) => `<span><i style="background:${c}"></i>${d}</span>`).join("")}</div>`;
+    const cell = (cihaz, saat) => { const cv = cover(cihaz, saat);
+      if (cv) { const c = col(cv.r.durum), bg = `background:color-mix(in srgb,${c} 22%,transparent);border-left:3px solid ${c}`;
+        if (!cv.first) return `<td data-cropen="${cv.r.id}" style="cursor:pointer;${bg}"></td>`;
+        return `<td data-cropen="${cv.r.id}" style="cursor:pointer;${bg}"><b style="font-size:11px">${toHHMM(cv.s)}-${toHHMM(cv.e)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(cv.r.hasta)} · ${H.esc(cv.r.tetkik || "")} · ${H.esc(cv.r.durum)}</div></td>`; }
+      return `<td data-crcell="${cihaz}|${saat}" style="cursor:pointer" title="Boş · tıkla cihaz randevusu ver"></td>`; };
+    const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_cihazrnd")}</h2><p>Cihaz randevu takvimi · ${gun} · ${dayAppts.length} randevu</p></div><div class="r"><button class="btn p" data-crnew>${I("plus")} Yeni cihaz randevusu</button></div></div>
+      <div class="r" style="gap:8px;margin-bottom:6px;align-items:center"><button class="btn sm" data-crgun="-1">${I("left") || "‹"}</button><input type="date" data-crgunset value="${gun}"><button class="btn sm" data-crgun="1">${I("right") || "›"}</button></div>
+      ${lej}
+      <div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${CIHAZ_LIST.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${CIHAZ_LIST.map(c => cell(c, s)).join("")}</tr>`).join("")}
+      </tbody></table></div><p class="adm-sub" style="margin-top:8px">Cihaz randevusu süresi kadar blok kaplar. Doluysa tıkla (durum/sil) · boşsa tıkla (randevu ver). Çekim bitince sonuç laboratuvar/görüntüleme ekranında işlenir.</p>`;
+    root.onchange = (e) => { const gs = e.target.closest("[data-crgunset]"); if (gs) return H.go("cihazrnd", { gun:gs.value }); };
+    const crForm = (pre) => { const hastaAdlari = (H.data.patients || []).map(p => p.name);
+      H.modal({ title:"Cihaz randevusu", body:`<div class="icd-form">
+        <div class="fr" style="grid-column:1/-1"><label>Hasta</label><input data-f="hasta" list="cr-hasta" placeholder="Hasta adı" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="cr-hasta">${hastaAdlari.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
+        <div class="fr"><label>Cihaz</label><select data-f="cihaz">${CIHAZ_LIST.map(c => `<option${pre && pre.cihaz === c ? " selected" : ""}>${H.esc(c)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Tetkik</label><input data-f="tetkik" placeholder="ör. Beyin MR"></div>
+        <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${(pre && pre.tarih) || gun + "T09:00"}"></div>
+        <div class="fr"><label>Süre (dk)</label><input type="number" data-f="sure" min="5" step="5" value="30"></div></div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
+          const cihaz = g("cihaz"), tarih = g("tarih"), sure = +g("sure") || 30, sm = toMin((tarih || "").slice(11, 16)), em = sm + sure, day = (tarih || "").slice(0, 10);
+          const cf = all.find(r => r.cihaz === cihaz && r.durum !== "İptal" && (r.tarih || "").slice(0, 10) === day && (() => { const rs = toMin((r.tarih || "").slice(11, 16)), re = rs + (+r.sure || 15); return sm < re && rs < em; })());
+          if (cf) { H.toast("Çakışma: " + cihaz + " " + ((cf.tarih || "").slice(11, 16)) + " dolu (" + (cf.hasta || "") + ")", "e"); return; }
+          all.unshift({ id:"cr" + Date.now(), hasta:g("hasta"), cihaz, tetkik:g("tetkik"), tarih, sure, durum:"Bekliyor" });
+          H.saveData && H.saveData(); H.log("Cihaz randevusu", g("hasta") + " · " + cihaz); H.toast("Cihaz randevusu eklendi"); H.closeModal(); H.go("cihazrnd", { gun:day }); }; } });
+    };
+    const crDetay = (r) => { H.modal({ title:"Cihaz randevusu · " + H.esc(r.hasta), body:`<div class="icd-form">
+        <div class="fr"><label>Hasta</label><input value="${H.esc(r.hasta)}" readonly></div>
+        <div class="fr"><label>Cihaz</label><input value="${H.esc(r.cihaz)}" readonly></div>
+        <div class="fr"><label>Tetkik</label><input value="${H.esc(r.tetkik || "")}" readonly></div>
+        <div class="fr"><label>Tarih / saat</label><input value="${H.esc((r.tarih || "").replace("T", " "))}" readonly></div>
+        <div class="fr"><label>Durum</label><select data-f="durum">${CIHAZ_DURUM.map(([d]) => `<option${r.durum === d ? " selected" : ""}>${d}</option>`).join("")}</select></div></div>`,
+        actions:`<button class="btn g" data-crdel>${I("trash") || ""} Sil</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; H.saveData && H.saveData(); H.log("Cihaz randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("cihazrnd", { gun:(r.tarih || "").slice(0, 10) }); };
+          m.querySelector("[data-crdel]").onclick = () => { if (!confirm("Bu cihaz randevusu silinsin mi?")) return; const i = all.findIndex(x => x.id === r.id); if (i >= 0) all.splice(i, 1); H.saveData && H.saveData(); H.closeModal(); H.toast("Silindi", "w"); H.go("cihazrnd", { gun:(r.tarih || "").slice(0, 10) }); }; } });
+    };
+    root.onclick = (e) => {
+      const cg = e.target.closest("[data-crgun]"); if (cg) { const d = new Date(gun); d.setDate(d.getDate() + (+cg.dataset.crgun)); return H.go("cihazrnd", { gun:d.toISOString().slice(0, 10) }); }
+      if (e.target.closest("[data-crnew]")) return crForm();
+      const cc = e.target.closest("[data-crcell]"); if (cc) { const [cihaz, saat] = cc.dataset.crcell.split("|"); return crForm({ cihaz, tarih:gun + "T" + saat }); }
+      const co = e.target.closest("[data-cropen]"); if (co) { const r = all.find(x => x.id === co.dataset.cropen); if (r) return crDetay(r); }
+    };
+  } });
+
   /* ================= AYARLAR ================= */
   /* Ayarlar ve Profil: ayarlar.js (24.09, 3. oturum). */
 })();
