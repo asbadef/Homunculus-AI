@@ -8,6 +8,7 @@ import { TrendSparkline } from "../../src/components/TrendSparkline";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
+import { getUserDocs } from "../../src/demo/userDocs";
 import { Result } from "../../src/demo/types";
 import { useScreenGuard } from "../../src/security/useScreenGuard";
 import { useSession } from "../../src/session/SessionProvider";
@@ -25,7 +26,7 @@ export default function ResultDetail() {
   const [needEmail, setNeedEmail] = useState(false);
 
   useEffect(() => {
-    transport.getResults().then((rows) => setR(rows.find((x) => x.id === id) ?? null));
+    Promise.all([transport.getResults(), getUserDocs()]).then(([rows, docs]) => setR([...rows, ...docs].find((x) => x.id === id) ?? null));
   }, [id]);
 
   async function onShare() {
@@ -60,7 +61,12 @@ export default function ResultDetail() {
 
       {r.values.length === 0 ? (
         <Card>
-          <Muted>{r.status === "pending" ? tr("results.empty") : r.doctor}</Muted>
+          {r.body ? (
+            <AppText style={{ fontSize: 14, lineHeight: 21 }}>{r.body}</AppText>
+          ) : (
+            <Muted>{r.status === "pending" ? tr("results.empty") : r.doctor}</Muted>
+          )}
+          {r.body && r.doctor !== "—" ? <Muted style={{ marginTop: 10 }}>{r.doctor}</Muted> : null}
         </Card>
       ) : (
         r.values.map((v, i) => {

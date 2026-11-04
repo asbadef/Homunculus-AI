@@ -1,7 +1,7 @@
 // Shared demo data shapes. Every screen reads these so a real endpoint can later
 // return the same shape and swap in behind `transport`.
 
-export type ResultType = "lab" | "radiology" | "pathology";
+export type ResultType = "lab" | "radiology" | "pathology" | "epicrisis" | "document";
 export type ResultStatus = "ready" | "pending";
 
 export type ResultValue = {
@@ -23,6 +23,8 @@ export type Result = {
   hospital: string;
   doctor: string;
   values: ResultValue[];
+  body?: string;       // epikriz / doküman metni (sayısal değer olmayan kayıtlar)
+  userAdded?: boolean; // hasta tarafından eklenen doküman
 };
 
 export type Doctor = {

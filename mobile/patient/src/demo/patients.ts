@@ -44,6 +44,16 @@ const ozan: DemoPatient = {
     },
     { id: "r2", type: "radiology", title: "Döş qəfəsi rentgeni", date: "22 Noyabr 2026", status: "ready", protocol: "50828624", hospital: "Mərkəzi Klinika Bakı", doctor: "Dr. Pərvanə Əsgərova", values: [] },
     { id: "r3", type: "lab", title: "Vitamin D", date: "5 Dekabr 2026", status: "pending", protocol: "—", hospital: "Mərkəzi Klinika Bakı", doctor: "Dr. Elçin Əliyev", values: [] },
+    {
+      id: "r4", type: "pathology", title: "Biopsiya nəticəsi", date: "18 Noyabr 2026", status: "ready", protocol: "50830211",
+      hospital: "Mərkəzi Klinika Bakı", doctor: "Dr. Nigar Əlizadə", values: [],
+      body: "Makroskopik: 1.2 sm ölçüdə toxuma nümunəsi. Mikroskopik: xoşxassəli dəyişikliklər, bədxassəli hüceyrə aşkar edilmədi. Nəticə: benign.",
+    },
+    {
+      id: "r5", type: "epicrisis", title: "Kardioloji epikriz", date: "24 Noyabr 2026", status: "ready", protocol: "50900540",
+      hospital: "Mərkəzi Klinika Bakı", doctor: "Dr. Elçin Əliyev", values: [],
+      body: "Şikayət: döş qəfəsində təzyiq hissi. Müayinə: EKQ normal, LDL yüksək (142 mg/dL). Diaqnoz: hiperlipidemiya. Müalicə: Atorvastatin 20 mq, axşam. İzləmə: 1 ay sonra lipid profili təkrar.",
+    },
   ],
   prescriptions: [
     { id: "p1", name: "Atorvastatin 20 mq", date: "24 Noyabr 2026", drug: { barcode: "8699546334455", usage: "Gündə 1 dəfə, axşam", withFood: "Yeməkdən asılı deyil", warnings: ["30 gün istifadə.", "Kolesterol dərmanıdır.", "Həkim nəzarətində davam edin."] } },
