@@ -19,6 +19,7 @@ export const FEATURES: Feature[] = [
   { key: "prescriptions", titleKey: "feat.prescriptions", icon: "medical", route: "/reseptler", group: "shortcut", enabled: true, order: 3 },
   { key: "invoices", titleKey: "feat.invoices", icon: "card", route: "/faturalar", group: "shortcut", enabled: true, order: 4 },
 
+  { key: "myhealth", titleKey: "saglik.my", icon: "pulse", route: "/saglik", group: "service", enabled: true, order: 0 },
   { key: "healthcard", titleKey: "feat.healthcard", icon: "shield-checkmark", route: "/saglik-karti", group: "service", enabled: true, order: 1 },
   { key: "followup", titleKey: "feat.followup", icon: "heart-circle", route: "/yakin-takip", group: "service", enabled: true, order: 2 },
   { key: "vaccine", titleKey: "feat.vaccine", icon: "bandage", route: "/asi-karti", group: "service", enabled: true, order: 3 },
