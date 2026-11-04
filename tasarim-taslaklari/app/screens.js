@@ -458,7 +458,8 @@
   ]);
   // Bankolar tercihen admin "Kayıt Seçenekleri" > banko listesinden; yoksa yedek.
   const BANKOLAR = () => (H.data.secenekler && H.data.secenekler.banko && H.data.secenekler.banko.length ? H.data.secenekler.banko : (H.data.bankolar = H.data.bankolar || ["Yatan Kasası", "Estetik Kasası", "Pediatri Kasası", "Preop Kasası", "Eczane Kasası", "Ofis Kasası", "Acil Kasası"]));
-  const ODEME_TIP = ["Kart", "Nakit", "Havale"];
+  const ODEME_TIP = ["Nakit", "Kredi kartı", "Havale/EFT", "Çek", "Senet", "Avans mahsup", "Cari", "Maaş kesintisi"];
+  const POS_BANKA = ["Kapital Bank", "PAŞA Bank", "ABB (Azərbaycan Beynəlxalq Bankı)", "Unibank", "Bank Respublika", "Diğer"];
   const GFK_DURUM = ["Hasta faturası kesilmiş", "Kurum faturası kesilmiş", "Provizyonu alınmamış", "Hasta faturası kesilmemiş"];
   const gfkRows = () => (H.data.gfk = H.data.gfk || [
     { proto:"50873355", hasta:"Elvin Hüseynov", gelis:"Ayaktan", ptip:"Genel muayene", bolum:"Kardiologiya", kurum:"İcbari Tibbi Sığorta (SAMHI)", provizyon:"Alınmadı", durum:"Hasta faturası kesilmiş" },
@@ -1447,10 +1448,18 @@
           <div class="fr"><label>Tahsil edilecek</label><input type="number" data-f="tutar" value="${nextTut}" min="0" max="${kalan}"></div>
           <div class="fr"><label>Ödeme tipi</label><select data-f="odeme">${ODEME_TIP.map(o => `<option>${o}</option>`).join("")}</select></div>
           ${plan ? "" : `<div class="fr"><label>Taksit sayısı (1 = peşin)</label><input type="number" data-f="taksit" value="1" min="1" max="12"></div>`}
+          <div class="fr" style="grid-column:1/-1;display:none" data-kartdetay><div class="box" style="padding:10px"><div class="adm-sub" style="font-weight:600;margin-bottom:6px">Kart / POS bilgisi</div><div class="icd-form" style="grid-template-columns:1fr 1fr">
+            <div class="fr"><label>Banka (POS)</label><select data-f="kbanka">${POS_BANKA.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+            <div class="fr"><label>Kart son 4 hane</label><input data-f="kson4" maxlength="4" inputmode="numeric" placeholder="1234"></div>
+            <div class="fr"><label>Onay (provizyon) kodu</label><input data-f="konay" placeholder="otomatik/elle"></div>
+            <div class="fr"><label>Taksit (kart)</label><input data-f="ktaksit" type="number" min="1" max="12" value="1"></div>
+          </div></div></div>
           <div class="fr"><label>Banko</label><input value="${H.esc(banko)}" readonly></div></div>
           <p class="adm-sub" style="margin-top:6px">${plan ? "Sıradaki taksit tahsil edilir; tümü ödenince fatura kapanır." : "Kısmi tutar girilebilir. Taksit sayısı >1 ise kalan tutar aylık taksit planına bölünür."}</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Tahsil et</button>`,
-          onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+          onMount(m) { const odEl = m.querySelector('[data-f="odeme"]'), kd = m.querySelector("[data-kartdetay]");
+            const toggleKart = () => { kd.style.display = odEl.value === "Kredi kartı" ? "" : "none"; }; odEl.onchange = toggleKart; toggleKart();
+            m.querySelector("[data-ok]").onclick = () => {
             const nEl = m.querySelector('[data-f="taksit"]'), n = nEl ? Math.max(1, Math.min(12, +nEl.value || 1)) : 1;
             if (n > 1) { if (kalan <= 0) { H.toast("Kalan tutar yok.", "w"); return; }
               const now = new Date(), each = Math.floor((kalan / n) * 100) / 100;
@@ -1459,7 +1468,8 @@
               x.durum = "Taksitli"; H.saveData && H.saveData(); H.log("Taksit planı", x.hasta + " · " + n + " taksit · " + kalan + " ₼"); H.closeModal();
               H.toast(n + " taksitlik plan oluşturuldu.", ""); H.go("vezne", params); return; }
             let t = +m.querySelector('[data-f="tutar"]').value || 0; if (t <= 0) { H.toast("Tutar girin.", "w"); return; } if (t > kalan) t = kalan;
-            x.odenen = (x.odenen || 0) + t; x.odemeTipi = m.querySelector('[data-f="odeme"]').value; x.banko = banko; x.donem = donemNo;
+            x.odenen = (x.odenen || 0) + t; x.odemeTipi = odEl.value; x.banko = banko; x.donem = donemNo;
+            if (odEl.value === "Kredi kartı") x.kartDetay = { banka:m.querySelector('[data-f="kbanka"]').value, son4:(m.querySelector('[data-f="kson4"]').value || "").trim(), onay:(m.querySelector('[data-f="konay"]').value || "").trim() || "AUTO" + Math.floor(Math.random() * 900000 + 100000), taksit:+m.querySelector('[data-f="ktaksit"]').value || 1 };
             const bitti = x.odenen >= x.katilim; x.durum = bitti ? "Ödendi" : (x.taksitPlan ? "Taksitli" : "Bekliyor");
             H.saveData && H.saveData(); H.log("Tahsilat" + (bitti ? "" : x.taksitPlan ? " (taksit)" : " (kısmi)"), x.hasta + " · " + t + " ₼ · " + x.odemeTipi + " · " + banko); H.closeModal();
             H.toast(bitti ? "Tam tahsil edildi: " + t + " ₼" : "Tahsilat: " + t + " ₼ · kalan " + (x.katilim - x.odenen) + " ₼", bitti ? "" : "w"); H.go("vezne", params); }; } });
