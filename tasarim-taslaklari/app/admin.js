@@ -888,7 +888,7 @@
     const ALL = () => (H.ILAC || []).concat(add);
     body.innerHTML = `<div class="adm-bar"><input data-ilq placeholder="İlaç adı / kod / grup ara (ör. seftriakson)" value="${esc(AD.ilq || "")}"><span class="spacer"></span><span class="adm-sub" data-ilcount></span><button class="btn p" data-ilnew>+ Yeni ilaç</button></div>
       <div data-illist></div>
-      <p class="adm-sub" style="margin-top:10px">İlaç kataloğu — ilaç.xlsx'ten türetilmiş ${(H.ILAC || []).length} temsili ilaç (tam liste 23.866 kalem). Admin yeni ilaç ekler; doktor İstem/reçetede, hemşire ilaç uygulamada bu listeden seçer. Katalog ilaçları salt-görünür; eklenenler düzenlenir/silinir.</p>`;
+      <p class="adm-sub" style="margin-top:10px">İlaç kataloğu — ilaç.xlsx'ten aktarılmış ${(H.ILAC || []).length.toLocaleString("tr")} aktif ilaç. Admin yeni ilaç ekler; doktor İstem/reçetede, hemşire ilaç uygulamada bu listeden seçer. Katalog ilaçları salt-görünür; eklenenler düzenlenir/silinir.</p>`;
     const list = body.querySelector("[data-illist]");
     const draw = () => {
       const q = norm(AD.ilq || ""), a = ALL();
