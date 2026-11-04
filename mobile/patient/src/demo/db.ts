@@ -2,6 +2,7 @@
 import {
   Appointment,
   Banner,
+  Branch,
   Department,
   Doctor,
   Hospital,
@@ -28,6 +29,17 @@ export const departments: Department[] = [
   { id: "kem", name: "Kimya Terapiyası", icon: "flask-outline" },
   { id: "gun", name: "Günübirlik Xidmət", icon: "sunny-outline" },
   { id: "ivf", name: "IVF Günübirlik Xidmət", icon: "heart-circle-outline" },
+];
+
+// Patient-facing branches: what a patient actually chooses when booking. Each maps to a
+// doctor specialty (for filtering) and to an HBYS unit (`unitId`, kept for M1). Only
+// patient-bookable outpatient branches appear here — anaesthesia/emergency are excluded.
+export const branches: Branch[] = [
+  { id: "b-kardioloji", name: "Kardiologiya", specialty: "Kardiologiya", unitId: "pol", icon: "heart-outline" },
+  { id: "b-daxili", name: "Daxili xəstəliklər", specialty: "Daxili xəstəliklər", unitId: "dax", icon: "medkit-outline" },
+  { id: "b-usaq", name: "Uşaq xəstəlikləri", specialty: "Pediatriya", unitId: "usq", icon: "happy-outline" },
+  { id: "b-cerrahiyye", name: "Cərrahiyyə", specialty: "Cərrahiyyə", unitId: "cer", icon: "cut-outline" },
+  { id: "b-neonatoloji", name: "Neonatologiya (yenidoğan)", specialty: "Neonatologiya", unitId: "usq", icon: "heart-circle-outline" },
 ];
 
 // Doctors with department assignments. The 4 real HBYS doctors (per panel) plus demo

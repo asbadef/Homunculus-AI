@@ -20,10 +20,10 @@ export default function StepSummary() {
   const [names, setNames] = useState({ doctor: "", dept: "", hospital: "" });
 
   useEffect(() => {
-    Promise.all([transport.getDoctors(), transport.getDepartments(), transport.getHospitals()]).then(([ds, deps, hs]) => {
+    Promise.all([transport.getDoctors(), transport.getBranches(), transport.getHospitals()]).then(([ds, brs, hs]) => {
       setNames({
         doctor: ds.find((x) => x.id === state.doctorId)?.name ?? "",
-        dept: deps.find((x) => x.id === state.departmentId)?.name ?? "",
+        dept: brs.find((x) => x.id === state.departmentId)?.name ?? "",
         hospital: state.hospitalId === "skip" ? "—" : hs.find((x) => x.id === state.hospitalId)?.name ?? "",
       });
     });

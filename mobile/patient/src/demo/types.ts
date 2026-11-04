@@ -42,6 +42,11 @@ export type Doctor = {
 };
 
 export type Department = { id: string; name: string; icon: string };
+
+// Patient-facing medical branch. Patients pick a branch (e.g. "Kardiologiya"), not an
+// internal HBYS service unit. `specialty` matches Doctor.specialty for filtering;
+// `unitId` keeps the link to the HBYS unit for the future shared backend (M1).
+export type Branch = { id: string; name: string; specialty: string; unitId: string; icon: string };
 export type Hospital = { id: string; name: string; distanceKm: number };
 
 export type Drug = { barcode: string; usage: string; withFood: string; warnings: string[] };

@@ -9,7 +9,7 @@ import { useWizard, canContinue } from "../../src/appointment/useWizard";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
-import { Doctor } from "../../src/demo/types";
+import { Branch, Doctor } from "../../src/demo/types";
 import { layout } from "../../src/theme/tokens";
 
 function DoctorCard({ d, selected, onSelect }: { d: Doctor; selected: boolean; onSelect: () => void }) {
@@ -72,14 +72,17 @@ export default function StepDoctor() {
   const { t } = useI18n();
   const { t: th } = useTheme();
   const [all, setAll] = useState<Doctor[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [q, setQ] = useState("");
 
   useEffect(() => {
     transport.getDoctors().then(setAll);
+    transport.getBranches().then(setBranches);
   }, []);
 
-  // Only doctors assigned to the chosen department.
-  const inDept = all.filter((d) => !state.departmentId || d.departmentIds.includes(state.departmentId));
+  // Only doctors of the chosen branch's specialty.
+  const branch = branches.find((b) => b.id === state.departmentId);
+  const inDept = all.filter((d) => !branch || d.specialty === branch.specialty);
   const list = q ? inDept.filter((d) => d.name.toLowerCase().includes(q.toLowerCase())) : inDept;
 
   return (
