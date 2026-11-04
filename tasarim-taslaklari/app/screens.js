@@ -243,6 +243,8 @@
     const toHHMM = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
     const rndLejant = () => `<div class="durum-lej" style="margin:8px 0">${RND_DURUM.filter(d => d !== "İptal").map(d => `<span><i style="background:${SEVC[d]}"></i>${d}</span>`).join("")}<span><i style="background:var(--line)"></i>Kapalı</span><span><i style="background:#8b5cf6"></i>Ameliyat</span></div>`;
     const kapali = H.data.slotKapali = H.data.slotKapali || [];          // "YYYY-MM-DDTHH:MM|Doktor" biçiminde kapalı slotlar
+    const kapaliTip = H.data.slotKapaliTip = H.data.slotKapaliTip || {}; // key → "Toplantı/Eğitim/Ameliyat/İzin/Nöbet/Kapalı" (video: tipli kapalı)
+    const KAPALI_TIP = ["Kapalı", "Toplantı", "Eğitim", "Ameliyat", "İzin", "Nöbet"];
     const slotKey = (t, d) => t + "|" + d;
     // Ameliyat istemleri (cerrahı atanmış) randevu takviminde süre bloğu olarak görünür (tur:"Ameliyat"). Tarih = bugün (pano günlük).
     const RND_TODAY = new Date().toISOString().slice(0, 10);
@@ -269,7 +271,7 @@
       if (cov) { const col = cov.r.tur === "Ameliyat" ? "#8b5cf6" : (SEVC[cov.r.durum] || "var(--mid)"), bg = `background:color-mix(in srgb,${col} 22%,transparent);border-left:3px solid ${col}`;
         if (!cov.first) return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"></td>`;
         return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"><b style="font-size:11px">${toHHMM(cov.start)}-${toHHMM(cov.end)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(cov.r.hasta)} · ${H.esc(cov.r.tur || cov.r.bolum || "")} · ${H.esc(cov.r.durum)}</div></td>`; }
-      if (kapali.includes(slotKey(tarih, dr))) return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="Kapalı · açmak için tıkla">Kapalı</td>`;
+      if (kapali.includes(slotKey(tarih, dr))) { const tp = kapaliTip[slotKey(tarih, dr)] || "Kapalı"; return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="${H.esc(tp)} · açmak için tıkla">${H.esc(tp)}</td>`; }
       return `<td data-rndcell="${tarih}|${H.esc(dr)}" style="cursor:pointer" title="Boş · tıkla randevu ver, sağ tık slot kapat"></td>`; };
     const takvimHtml = () => { const allDocs = randevuDoktorlari(), sel = H.data.rndSelDocs;
       const drs = (sel && sel.length) ? allDocs.filter(d => sel.includes(d)) : allDocs;
@@ -296,7 +298,13 @@
       const gs = e.target.closest("[data-rndgunset]"); if (gs) return H.go("randevu", { view:view === "hafta" ? "hafta" : "takvim", gun:gs.value, dr:params.dr });
       const dd = e.target.closest("[data-rnddr]"); if (dd) return H.go("randevu", { view:"hafta", gun, dr:dd.value }); };
     root.oncontextmenu = (e) => { const rc = e.target.closest("[data-rndcell]"); if (!rc) return; e.preventDefault();
-      const key = rc.dataset.rndcell; if (!kapali.includes(key)) { kapali.push(key); H.saveData && H.saveData(); H.toast("Slot kapatıldı"); H.go("randevu", params); } };
+      const key = rc.dataset.rndcell; if (kapali.includes(key)) return;
+      H.modal({ title:"Slot kapat", body:`<div class="icd-form"><div class="fr"><label>Kapatma tipi</label><select data-f="tip">${KAPALI_TIP.map(t => `<option>${t}</option>`).join("")}</select></div>
+          <div class="fr"><label>Açıklama (ops.)</label><input data-f="ack" placeholder="ör. Bölüm toplantısı"></div></div>
+          <p class="adm-sub" style="margin-top:6px">Bu slota randevu verilemez. Toplantı/Eğitim/Ameliyat/İzin/Nöbet olarak işaretlenebilir.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kapat</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const tip = m.querySelector('[data-f="tip"]').value, ack = (m.querySelector('[data-f="ack"]').value || "").trim();
+          kapali.push(key); kapaliTip[key] = ack ? tip + " · " + ack : tip; H.saveData && H.saveData(); H.log("Slot kapatıldı", key + " · " + tip); H.closeModal(); H.toast(tip + " olarak kapatıldı"); H.go("randevu", params); }; } }); };
     root.onclick = (e) => {
       const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f, dr:params.dr });
       const rg = e.target.closest("[data-rndgun]"); if (rg) { const n = +rg.dataset.rndgun; if (n === 0) return H.go("randevu", { view:"takvim", gun:new Date().toISOString().slice(0, 10) }); const dd = new Date(gun); dd.setDate(dd.getDate() + n); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
@@ -304,7 +312,7 @@
       const ds = e.target.closest("[data-rnddocsel]"); if (ds) { const nm = ds.dataset.rnddocsel, allD = randevuDoktorlari(); let s = (H.data.rndSelDocs && H.data.rndSelDocs.length) ? H.data.rndSelDocs.slice() : allD.slice();
         s = s.includes(nm) ? s.filter(x => x !== nm) : s.concat(nm); if (!s.length) s = [nm]; H.data.rndSelDocs = s.length === allD.length ? null : s; return H.go("randevu", params); }
       const rh = e.target.closest("[data-rndhaftagun]"); if (rh) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rh.dataset.rndhaftagun)); return H.go("randevu", { view:"hafta", gun:dd.toISOString().slice(0, 10), dr:params.dr }); }
-      const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
+      const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); delete kapaliTip[ru.dataset.rndunblock]; H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
       const ro = e.target.closest("[data-rndopen]"); if (ro) { if (ro.dataset.rndopen.indexOf("amel:") === 0) return H.can("ameliyathane") ? H.go("ameliyathane") : H.toast("Ameliyat bloğu · ameliyathane programında yönetilir."); const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
       const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
@@ -331,8 +339,16 @@
           <div class="fr"><label>Durum</label><select data-f="durum">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></div>
           <div class="fr"><label>Kabul saati / gecikme</label><input value="${r.kabulTarih ? (r.kabulTarih.replace("T", " ") + (rndGecikme(r) != null ? "  ·  " + (rndGecikme(r) > 0 ? "+" + rndGecikme(r) + " dk gecikme" : rndGecikme(r) < 0 ? -rndGecikme(r) + " dk erken" : "zamanında") : "")) : "— (hasta henüz gelmedi)"}" readonly></div>
           <div class="fr" style="grid-column:1/-1"><label>Not</label><input value="${H.esc(r.not || "")}" readonly></div></div>`,
-        actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><button class="btn p" data-rdkabul>${I("ok") || ""} Kabul et (protokol aç)</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
+        actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><button class="btn" data-rduyari>${I("alert") || "⚠"} Uyarı ekle</button><button class="btn p" data-rdkabul>${I("ok") || ""} Kabul et (protokol aç)</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
         onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; if (r.durum === "Geldi") rndGeldi(r); H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); };
+          m.querySelector("[data-rduyari]").onclick = () => { H.closeModal();
+            H.modal({ title:"Hasta uyarısı ekle · " + H.esc(r.hasta), body:`<div class="icd-form"><div class="fr"><label>Uyarı tipi</label><select data-f="tip">${(H.UYARI_TIP || ["Özel durum"]).map(t => `<option>${H.esc(t)}</option>`).join("")}</select></div>
+                <div class="fr"><label>Açıklama</label><input data-f="ack" placeholder="ör. Penisilin alerjisi"></div></div>
+                ${(H.hastaUyarilar ? H.hastaUyarilar(r.hasta) : []).length ? `<p class="adm-sub" style="margin-top:6px">Mevcut: ${H.hastaUyarilar(r.hasta).map(x => H.esc(x.tip)).join(" · ")}</p>` : ""}
+                <p class="adm-sub" style="margin-top:4px">Bu uyarı, hasta randevu/kabulde açılınca kırmızı banner olarak çıkar.</p>`,
+              actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Ekle</button>`,
+              onMount(mm) { mm.querySelector("[data-ok]").onclick = () => { const tip = mm.querySelector('[data-f="tip"]').value, ack = (mm.querySelector('[data-f="ack"]').value || "").trim();
+                H.hastaUyariEkle && H.hastaUyariEkle(r.hasta, tip, ack); H.log("Hasta uyarısı", r.hasta + " · " + tip); H.closeModal(); H.toast("Uyarı eklendi · hasta açılınca gösterilir"); }; } }); };
           m.querySelector("[data-rdkabul]").onclick = () => { H.closeModal(); rndKabul(r); };
           m.querySelector("[data-rddel]").onclick = () => { if (!confirm("Bu randevu silinsin mi?")) return; const i = all.findIndex(x => x.id === r.id); if (i >= 0) all.splice(i, 1); H.saveData && H.saveData(); H.closeModal(); H.toast("Randevu silindi", "w"); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); }; } });
     }
@@ -351,6 +367,7 @@
       const preDoc = pre && pre.doktor ? docAll.find(d => d.name === pre.doktor) : null;
       H.modal({ title:"Randevu kaydı", wide:true, body:`<div class="icd-form">
           <div class="fr" style="grid-column:1/-1"><label>Hasta (ad veya FİN ile ara)</label><input data-f="hasta" list="rnd-hasta" placeholder="Ad yazın ya da FİN girin — bilgiler otomatik dolar" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="rnd-hasta">${dir.map(x => `<option value="${H.esc(x.tam)}">${x.fin ? "FİN " + H.esc(x.fin) : ""}</option>`).join("")}</datalist></div>
+          <div class="fr" style="grid-column:1/-1;display:none" data-rnduyari></div>
           <div class="fr" style="grid-column:1/-1;display:none" data-rndwarn></div>
           <div class="fr" style="grid-column:1/-1;display:none" data-rndhist></div></div>
         <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px">
@@ -394,17 +411,20 @@
           // Hasta otomatik doldurma (ad veya FİN).
           const fillPatient = (r) => { if (!r) return; const set = (f, v) => { const el = gel(f); if (el && v) el.value = v; };
             if (r.tam) hi.value = r.tam; set("ad", r.ad); set("soyad", r.soyad); set("fin", r.fin); set("cep", r.tel); set("dogum", r.dob);
-            const cs = gel("cinsiyet"); if (cs) cs.value = r.sex === "E" ? "Kişi (E)" : r.sex === "K" ? "Qadın (K)" : "—"; checkNoShow(); checkHist(); };
+            const cs = gel("cinsiyet"); if (cs) cs.value = r.sex === "E" ? "Kişi (E)" : r.sex === "K" ? "Qadın (K)" : "—"; checkNoShow(); checkHist(); checkUyari(); };
           function checkNoShow() { const nm = (hi.value || "").trim(); const ns = nm ? all.filter(r => r.hasta === nm && r.durum === "Gelmedi").length : 0;
             if (ns > 0) { warn.style.display = ""; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else { warn.style.display = "none"; warn.innerHTML = ""; } }
           function checkHist() { const nm = (hi.value || "").trim(); const past = nm ? all.filter(r => r.hasta === nm).sort((a, z) => (z.tarih || "").localeCompare(a.tarih || "")) : [];
             if (!past.length) { hist.style.display = "none"; hist.innerHTML = ""; return; } hist.style.display = "";
             const son = past[0]; const kisa = (t) => (t || "").slice(8, 10) + "." + (t || "").slice(5, 7) + "." + (t || "").slice(0, 4);
             hist.innerHTML = `<div class="note i" style="font-size:12px;padding:5px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${I("clock") || ""} Bu hastanın <b>${past.length}</b> randevusu var · son: ${kisa(son.tarih)} ${H.esc(son.durum)}</div>`; }
-          hi.oninput = () => { checkNoShow(); checkHist(); };
-          hi.onchange = () => { const r = H.hastaBul && H.hastaBul(hi.value); if (r) fillPatient(r); };
+          const uyEl = m.querySelector("[data-rnduyari]");
+          function checkUyari() { const nm = (hi.value || "").trim(); const u = H.hastaUyarilar ? H.hastaUyarilar(nm) : []; if (!u.length) { uyEl.style.display = "none"; uyEl.innerHTML = ""; return; }
+            uyEl.style.display = ""; uyEl.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 10%,transparent);border:1px solid var(--crit);color:var(--crit);font-size:12px">${I("alert") || "⚠"} <b>Hasta uyarısı:</b> ${u.map(x => H.esc(x.tip) + (x.aciklama ? " (" + H.esc(x.aciklama) + ")" : "")).join(" · ")}</div>`; }
+          hi.oninput = () => { checkNoShow(); checkHist(); checkUyari(); };
+          hi.onchange = () => { const r = H.hastaBul && H.hastaBul(hi.value); if (r) fillPatient(r); checkUyari(); };
           gel("fin").onchange = () => { const r = H.hastaBul && H.hastaBul(gel("fin").value); if (r) fillPatient(r); };
-          if (pre && pre.hasta) { const r0 = H.hastaBul && H.hastaBul(pre.hasta); if (r0) fillPatient(r0); } else { checkNoShow(); checkHist(); }
+          if (pre && pre.hasta) { const r0 = H.hastaBul && H.hastaBul(pre.hasta); if (r0) fillPatient(r0); else checkUyari(); } else { checkNoShow(); checkHist(); checkUyari(); }
           const per = m.querySelector('[data-f="per"]'); per.onchange = () => { const d = per.checked ? "" : "none"; m.querySelector("[data-perrow]").style.display = d; m.querySelector("[data-perrow2]").style.display = d; };
           const nb = m.querySelector("[data-rndnext]"); if (nb) nb.onclick = () => { const dr = gel("doktor").value, sure = +gel("sure").value || 15;
             if (!dr) { H.toast("Önce doktor seçin.", "w"); return; } const slot = nextFreeSlot(dr, sure);

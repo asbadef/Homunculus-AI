@@ -223,6 +223,11 @@
   // FİN veya tam ad ile tek hasta bul.
   H.hastaBul = (key) => { const k = (key || "").trim().toLocaleLowerCase("tr"); if (!k) return null; const dir = H.hastaDir();
     return dir.find(x => x.fin && x.fin.toLocaleLowerCase("tr") === k) || dir.find(x => x.tam.toLocaleLowerCase("tr") === k) || null; };
+  // Hasta uyarı notları (sticky): hasta açılınca gösterilen uyarılar (düşme riski, alerji, ödeme, izolasyon vb.). Ad ya da FİN ile.
+  H.UYARI_TIP = ["Düşme riski", "Alerji", "İzolasyon (Temas)", "İzolasyon (Damlacık)", "İzolasyon (Solunum)", "Bası yarası riski", "Ödeme/borç", "Özel durum", "Diğer"];
+  H.hastaUyarilar = (key) => { const k = (key || "").trim(); return (k && H.data.hastaUyari && H.data.hastaUyari[k]) || []; };
+  H.hastaUyariEkle = (key, tip, aciklama) => { key = (key || "").trim(); if (!key) return; H.data.hastaUyari = H.data.hastaUyari || {}; (H.data.hastaUyari[key] = H.data.hastaUyari[key] || []).push({ tip, aciklama:aciklama || "", tarih:H.nowFull ? H.nowFull() : H.now() }); H.saveData && H.saveData(); };
+  H.hastaUyariSil = (key, i) => { key = (key || "").trim(); if (H.data.hastaUyari && H.data.hastaUyari[key]) { H.data.hastaUyari[key].splice(i, 1); H.saveData && H.saveData(); } };
 
   /* ================= hasta oluşturma ================= */
   let gSeq = 0;
