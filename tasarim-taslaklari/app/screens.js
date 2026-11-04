@@ -2202,7 +2202,8 @@
                 o.radRapor = { teknik:g("teknik"), bulgular:g("bulgular"), sonuc:g("sonuc"), oneri:g("oneri"), kritik:g("kritik") };
                 o.sonuc = o.radRapor.sonuc || o.radRapor.bulgular || "Rapor girildi"; o.sonuclar = null;
                 if (/İstendi|İşlemde|Numune alındı|Çalışılıyor/.test(o.durum || "")) o.durum = "Sonuç onaylandı";
-                if (o.radRapor.kritik && H.pushNotif) H.pushNotif({ at:H.now ? H.now() : "", to:["hekim"], sev:"crit", title:"Kritik radyoloji bulgusu", body:(o.ad || "") + " · " + (o.radRapor.sonuc || ""), pid:o.pid });
+                // Rapor çıkınca isteyen hekime bildirim (lab ile tutarlı); kritik bulguda yüksek öncelik.
+                if (H.pushNotif) H.pushNotif({ at:H.now ? H.now() : "", to:["hekim"], sev:o.radRapor.kritik ? "crit" : "", title:(o.radRapor.kritik ? "Kritik radyoloji bulgusu" : "Radyoloji raporu çıktı") + " · " + (o.ad || ""), body:(o.ad || "") + " · " + (o.radRapor.sonuc || "rapor girildi"), go:["patient", { pid:o.pid, tab:"ozet" }], pid:o.pid });
                 H.saveData && H.saveData(); H.log("Radyoloji raporu girildi", (o.ad || "") + (o.radRapor.kritik ? " · KRİTİK" : "")); H.closeModal(); H.toast("Radyoloji raporu kaydedildi" + (o.radRapor.kritik ? " · kritik uyarı gönderildi" : "")); H.go("labislem", { tur }); }; } });
           return; }
         H.modal({ title:"Sonuç gir · " + H.esc(o.ad || ""), wide:true,
@@ -2795,7 +2796,7 @@
           ${staff.map(s => `<tr><td><b>${H.esc(s.ad)}</b></td><td class="adm-sub">${H.esc(s.bolum || "—")}</td>
             ${days.map(d => { const c = codeOf(s.id, d.key); return `<td class="n" style="cursor:pointer;user-select:none" data-nob="${s.id}|${d.key}"><span class="tag ${cls(c)}" style="min-width:22px;display:inline-block">${c || "·"}</span></td>`; }).join("")}</tr>`).join("")}
         </tbody></table></div>
-        <p class="adm-sub" style="margin-top:8px">Vardiya kodları: <b>G</b> gündüz (08–16) · <b>A</b> akşam (16–24) · <b>N</b> gece (24–08) · <b>İ</b> izin. Çizelge hemşire-yatak atamasıyla aynı birim üzerinden eşleşir.</p>`;
+        <p class="adm-sub" style="margin-top:8px">Vardiya kodları: <b>G</b> gündüz (08–16) · <b>A</b> akşam (16–24) · <b>N</b> gece (24–08) · <b>İ</b> izin. Çizelge, hemşire-yatak ataması ile aynı birim üzerinden eşleştirilebilir (ortak kayıt M1 ile bağlanır).</p>`;
     };
     draw();
     root.onclick = (e) => { const c = e.target.closest("[data-nob]"); if (!c) return; const [id, k] = c.dataset.nob.split("|");
@@ -2824,12 +2825,14 @@
       ? siraQueue().map((p, i) => ({ id:p.id, name:p.name, dr:docName(p.attending), no:i + 1 }))
       : (H.data.siraDemo || []).map((d, i) => ({ id:d.id, name:d.name, dr:d.dr, no:i + 1 }));
     const draw = () => {
-      const q = items().map(it => { S[it.id] = S[it.id] || { durum:"Bekliyor" }; return Object.assign(it, { durum:S[it.id].durum }); });
+      const all = items().map(it => { S[it.id] = S[it.id] || { durum:"Bekliyor" }; return Object.assign(it, { durum:S[it.id].durum }); });
+      const q = all.filter(x => x.durum !== "Tamamlandı");   // tamamlananlar sıradan düşer (bekleme salonundan ayrıldı)
+      const bitti = all.length - q.length;
       const son = H.data.siraSon;
       const bekle = q.filter(x => x.durum === "Bekliyor" || x.durum === "Çağrıldı").length;
       const cls = (d) => (SIRA_DURUM.find(x => x[0] === d) || [, ""])[1];
       const nm = (n) => H.vzName ? H.vzName(n) : n;
-      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_sira")}</h2><p>Bekleme salonu sıra panosu · ${bekle} hasta bekliyor</p></div></div>
+      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_sira")}</h2><p>Bekleme salonu sıra panosu · ${bekle} hasta bekliyor${bitti ? ` · bugün ${bitti} tamamlandı` : ""}</p></div></div>
         <div class="box" style="text-align:center;margin-bottom:14px;background:var(--card2)">
           ${son ? `<div class="adm-sub">ÇAĞRILAN</div><div style="font-size:30px;font-weight:800;margin:4px 0">${son.no} · ${H.esc(nm(son.name))}</div><div class="adm-sub">${H.esc(son.dr || "")} · ${H.esc(son.at || "")}</div>` : `<div class="adm-sub" style="padding:10px">Henüz çağrı yapılmadı.</div>`}</div>
         ${H.durumLejant ? H.durumLejant(SIRA_DURUM.map(([d, c]) => [d, c])) : ""}
