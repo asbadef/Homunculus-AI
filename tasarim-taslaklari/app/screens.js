@@ -2653,6 +2653,58 @@
     root.addEventListener("click", e => { const q = e.target.closest("[data-qr] button"); if (q) { QD.range = q.dataset.v; return H.renderApp(); } if (e.target.closest("[data-rep]")) { H.log("Kalite raporu alındı", QD.range + " gün"); H.toast("Kalite raporu hazırlanıyor (örnek)."); } });
   } });
 
+  /* ================= AMELİYATHANE PROGRAMI ================= */
+  // Günlük ameliyat panosu: ameliyat istemlerinden (cat:"Ameliyat") türer; oda/saat/durum ekranda atanır ve order'a yazılır (persist).
+  H.addT && H.addT({ m_ameliyathane:{ TR:"Ameliyathane programı", AZ:"Əməliyyat proqramı", RU:"Операционная программа", EN:"OR schedule" } });
+  const AMEL_ODA = ["Ameliyathane 1", "Ameliyathane 2", "Ameliyathane 3"];
+  const AMEL_DURUM = [["Beklemede", "w"], ["Hazırlık", "info"], ["Ameliyatta", "crit"], ["Derlenme", "info"], ["Bitti", "ok"]];
+  const amelList = () => (H.data.orders || []).filter(o => o.cat === "Ameliyat");
+  function amelSeed() {   // demo: hiç ameliyat istemi yoksa panonun boş kalmaması için birkaç örnek üret
+    if (amelList().length) return;
+    const ps = (H.data.patients || []).filter(p => p.bed).slice(0, 3);
+    const demo = [["Laparoskopik kolesistektomi", "Dr. Samir Quliyev", "09:00", "Ameliyathane 1"], ["Total kalça protezi", "Dr. Kamran Rzayev", "10:30", "Ameliyathane 2"], ["Apendektomi", "Dr. Emil Nəsirov", "13:00", "Ameliyathane 1"]];
+    ps.forEach((p, i) => { const d = demo[i]; if (!d) return; (H.data.orders = H.data.orders || []).push({ id:"amel" + i + Date.now(), pid:p.id, cat:"Ameliyat", ad:d[0], by:d[1], at:H.now(), durum:"İstendi", amelProg:{ oda:d[3], saat:d[2], durum:"Beklemede" } }); });
+    H.saveData && H.saveData();
+  }
+  H.register("ameliyathane", { title:() => H.t("m_ameliyathane"), perm:"ameliyathane", render(root) {
+    amelSeed();
+    const draw = () => {
+      const list = amelList().map(o => { o.amelProg = o.amelProg || { oda:AMEL_ODA[0], saat:"—", durum:"Beklemede" }; return o; })
+        .sort((a, b) => (a.amelProg.saat || "").localeCompare(b.amelProg.saat || ""));
+      const say = {}; AMEL_DURUM.forEach(([d]) => say[d] = 0); list.forEach(o => say[o.amelProg.durum] = (say[o.amelProg.durum] || 0) + 1);
+      const durTag = (d) => { const c = (AMEL_DURUM.find(x => x[0] === d) || [, ""])[1]; return `<span class="tag ${c}">${H.esc(d)}</span>`; };
+      const odaSel = (o) => `<select data-amoda="${o.id}">${AMEL_ODA.map(r => `<option${r === o.amelProg.oda ? " selected" : ""}>${H.esc(r)}</option>`).join("")}</select>`;
+      const hasta = (o) => { const p = H.pt(o.pid); return p ? (H.vzName ? H.vzName(p.name) : p.name) : "—"; };
+      const ozel = (o) => [o.amelProg.oda, o.kesiTipi, o.ameliyatGrubu].filter(Boolean);   // not: özellik bayrakları istemde opsiyonel
+      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ameliyathane")}</h2><p>Günlük ameliyat panosu · ${list.length} ameliyat · süreç durumu renklerle</p></div></div>
+        <div class="att"><div class="ac"><div class="i">${I("activity")}</div><b>${list.length}</b><span>bugünkü ameliyat</span></div>
+          <div class="ac"><div class="i">${I("clock")}</div><b>${say["Beklemede"] + say["Hazırlık"]}</b><span>bekleyen / hazırlık</span></div>
+          <div class="ac crit"><div class="i">${I("alert")}</div><b>${say["Ameliyatta"]}</b><span>ameliyatta</span></div>
+          <div class="ac"><div class="i">${I("ok")}</div><b>${say["Bitti"]}</b><span>biten</span></div></div>
+        ${H.durumLejant ? H.durumLejant(AMEL_DURUM.map(([d, c]) => [d, c])) : ""}
+        <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th style="width:90px">Saat</th><th style="width:160px">Oda</th><th>Hasta</th><th>Ameliyat</th><th>Cerrah</th><th style="width:150px">Durum</th><th style="width:170px"></th></tr></thead><tbody>
+        ${list.length ? list.map(o => { const di = AMEL_DURUM.findIndex(x => x[0] === o.amelProg.durum);
+          const ileri = di < AMEL_DURUM.length - 1 ? `<button class="btn p sm" data-amnext="${o.id}">${I("chevR") || "→"} ${H.esc(AMEL_DURUM[di + 1][0])}</button>` : `<span class="adm-sub">tamam</span>`;
+          const geri = di > 0 ? ` <button class="btn g sm" data-amprev="${o.id}" title="Geri al">↩</button>` : "";
+          return `<tr><td><input data-amsaat="${o.id}" value="${H.esc(o.amelProg.saat || "")}" style="width:72px" placeholder="--:--"></td><td>${odaSel(o)}</td><td><b>${H.esc(hasta(o))}</b></td><td>${H.esc(o.ad || "—")}${o.kanrez || (ozel(o).join(" ").includes("rez")) ? ` <span class="tag info">kan rez.</span>` : ""}</td><td class="adm-sub">${H.esc(typeof o.by === "object" ? (o.by.name || "") : (o.by || "—"))}</td><td>${durTag(o.amelProg.durum)}</td><td>${ileri}${geri}</td></tr>`;
+        }).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bugün ameliyat istemi yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Ameliyat istemleri hekimin "Ameliyat / yatış istemi"nden gelir. Oda ve saat burada atanır; durum ilerledikçe (Beklemede→Hazırlık→Ameliyatta→Derlenme→Bitti) renk değişir.</p>`;
+    };
+    draw();
+    root.onchange = (e) => {
+      const os = e.target.closest("[data-amoda]"); if (os) { const o = amelList().find(x => x.id === os.dataset.amoda); if (o) { o.amelProg.oda = os.value; H.saveData && H.saveData(); H.log("Ameliyat oda", (o.ad || "") + " · " + os.value); } return; }
+      const sa = e.target.closest("[data-amsaat]"); if (sa) { const o = amelList().find(x => x.id === sa.dataset.amsaat); if (o) { o.amelProg.saat = sa.value.trim(); H.saveData && H.saveData(); } return; }
+    };
+    root.onclick = (e) => {
+      const nx = e.target.closest("[data-amnext]"), pv = e.target.closest("[data-amprev]"), btn = nx || pv; if (!btn) return;
+      const o = amelList().find(x => x.id === (btn.dataset.amnext || btn.dataset.amprev)); if (!o) return;
+      const di = AMEL_DURUM.findIndex(x => x[0] === o.amelProg.durum);
+      const ni = nx ? Math.min(AMEL_DURUM.length - 1, di + 1) : Math.max(0, di - 1);
+      o.amelProg.durum = AMEL_DURUM[ni][0]; if (o.amelProg.durum === "Bitti") o.durum = "Tamamlandı";
+      H.saveData && H.saveData(); H.log("Ameliyat durum", (o.ad || "") + " · " + o.amelProg.durum); draw();
+    };
+  } });
+
   /* ================= AYARLAR ================= */
   /* Ayarlar ve Profil: ayarlar.js (24.09, 3. oturum). */
 })();
