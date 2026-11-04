@@ -9,8 +9,10 @@ import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { Result } from "../../src/demo/types";
+import { useScreenGuard } from "../../src/security/useScreenGuard";
 
 export default function ResultDetail() {
+  useScreenGuard();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTheme();
   const { t: tr } = useI18n();

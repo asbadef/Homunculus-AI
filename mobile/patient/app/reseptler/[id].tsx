@@ -9,6 +9,7 @@ import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { addReminder } from "../../src/reminder/reminders";
 import { Prescription } from "../../src/demo/types";
+import { useScreenGuard } from "../../src/security/useScreenGuard";
 
 function Field({ label, value }: { label: string; value: string }) {
   const { t } = useTheme();
@@ -23,6 +24,7 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 export default function DrugDetail() {
+  useScreenGuard();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTheme();
   const { t: tr } = useI18n();
