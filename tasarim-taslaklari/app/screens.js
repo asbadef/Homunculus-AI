@@ -806,6 +806,7 @@
           <p class="adm-sub" style="margin-top:8px">Protokol başına hasta katılım payları (tahsil edilen / bekleyen).</p>`; }
       const f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
       return subSeg + `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        ${H.durumLejant([["Tahsil edildi", "ok"], ["Bekliyor", "w"], ["Hukuksal takip", "crit"]])}
         <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Protokol</th><th>Kurum / sigorta</th><th style="width:80px">Toplam</th><th style="width:100px">Katılım payı</th><th style="width:160px">Durum / ödeme</th><th style="width:160px"></th></tr></thead><tbody>
         ${list.length ? list.map(x => { const hukBtn = `<button class="btn sm" data-huk="${x.id}">${x.hukuksal ? "Hukuksal ✓" : "Hukuksal"}</button>`;
           const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}`;

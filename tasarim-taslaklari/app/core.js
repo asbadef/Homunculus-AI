@@ -628,6 +628,21 @@
     const t = document.createElement("div"); t.className = "toast " + kind; t.textContent = msg; box.appendChild(t); setTimeout(() => t.remove(), 3600); };
   H.audit = []; H.log = (action, detail = "") => H.audit.unshift({ at:H.clockDate(), user:H.state.user ? H.state.user.u : "—", action, detail });
   H.esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]);
+  /* Durum renk sistemi: bir durum metnini tutarlı renk sınıfına eşler. ok=olumlu/kapandı, w=bekleme/işlem, crit=sorun/red, info=açık/aktif, off=pasif.
+   * Sıra önemli (önce en kesin eşleşme). Yeni kodda durum rozetleri için H.durum(metin) kullanılır; eski kodda sınıflar artık CSS'te tanımlı. */
+  H.DURUM_RENK = [
+    [/redded|iptal|silind|gecik(ti|me)|aşıld|kritik|borç|alacak| fark|geçti|zayi|hukuksal|ret\b|başarısız|hata/i, "crit"],
+    [/ödendi|tahsil|onayland|kapand|tamamland|karşıland|serbest|uygun|kabul|teslim edildi|bitti|hazır\b|verildi|uyguland(ı|ı )/i, "ok"],
+    [/bekl|onay bekl|işlemde|çalışıl|numune|planlı|hazırlan|gözden|transfer|istendi|alınmad|provizyon|taslak/i, "w"],
+    [/aktif|açık|devam|yatıyor|yatan|izlemde|takipte/i, "info"],
+    [/pasif|kapalı|kapat|arşiv|edilmedi|yok\b/i, "off"],
+  ];
+  H.durumClass = (s) => { s = String(s || ""); for (const [re, c] of H.DURUM_RENK) if (re.test(s)) return c; return ""; };
+  H.durum = (s) => `<span class="tag ${H.durumClass(s)}">${H.esc(s)}</span>`;
+  // Küçük renk lejantı. items verilmezse genel durum lejantı. items = [[etiket, sınıf], ...].
+  H.DURUM_LEJANT = [["Olumlu / kapandı", "ok"], ["Bekliyor / işlemde", "w"], ["Açık / aktif", "info"], ["Sorun / red", "crit"], ["Pasif / kapalı", "off"]];
+  H.durumLejant = (items) => { const TAGV = { ok:"var(--ok)", w:"var(--mid)", crit:"var(--crit)", info:"var(--low)", off:"var(--mute)" };
+    return `<div class="durum-lej">${(items || H.DURUM_LEJANT).map(([l, c]) => `<span><i style="background:${TAGV[c] || "var(--mute)"}"></i>${H.esc(l)}</span>`).join("")}</div>`; };
 
   /* 30.09 · son GERÇEK kayıt (kontrol-2026-09-30 §4-6): ekranlardaki sabit "20:00 / 21:00" yazıları yerine.
    * Önce hemşirelik form kaydı (H.data.nursing.records, nursing.js), yoksa Görevlerim'de tamamlanmış aynı formun işi.
