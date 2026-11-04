@@ -100,6 +100,7 @@ const tr: Record<string, string> = {
   "wiz.booked": "Randevun oluşturuldu (örnek)",
   "wiz.smsSent": "Onay SMS'i kayıtlı numarana gönderildi",
   "wiz.demoBooking": "Demo: HBYS bağlanınca onay SMS'i gelecek",
+  "wiz.goMyAppointments": "Randevularıma git",
 
   "res.filter.all": "Tümü",
   "res.filter.lab": "Laboratuvar",

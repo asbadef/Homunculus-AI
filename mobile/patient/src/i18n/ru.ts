@@ -100,6 +100,7 @@ const ru: Record<string, string> = {
   "wiz.booked": "Запись создана (демо)",
   "wiz.smsSent": "SMS-подтверждение отправлено на ваш номер",
   "wiz.demoBooking": "Демо: SMS придёт после подключения HBYS",
+  "wiz.goMyAppointments": "К моим записям",
 
   "res.filter.all": "Все",
   "res.filter.lab": "Лаборатория",

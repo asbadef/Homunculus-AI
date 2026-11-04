@@ -102,6 +102,7 @@ const az: Record<string, string> = {
   "wiz.booked": "Randevun yaradıldı (nümunə)",
   "wiz.smsSent": "Təsdiq SMS-i qeydli nömrənə göndərildi",
   "wiz.demoBooking": "Demo: HBYS qoşulanda təsdiq SMS-i gələcək",
+  "wiz.goMyAppointments": "Randevularıma get",
 
   "res.filter.all": "Hamısı",
   "res.filter.lab": "Laboratoriya",

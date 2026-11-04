@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
@@ -11,7 +11,10 @@ import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { api } from "../../src/api/client";
+import { openDirections, addToCalendar } from "../../src/appointment/apptActions";
 import { useSession } from "../../src/session/SessionProvider";
+import { LinearGradient } from "expo-linear-gradient";
+import { Appointment } from "../../src/demo/types";
 
 export default function StepSummary() {
   const { state, reset } = useWizard();
@@ -58,22 +61,40 @@ export default function StepSummary() {
   }
 
   if (done) {
+    const appt: Appointment = {
+      id: "new", doctor: names.doctor, specialty: names.dept,
+      date: state.date ?? "", time: state.time ?? "",
+      hospital: names.hospital === "—" ? "Mərkəzi Klinika Bakı" : names.hospital, status: "confirmed",
+    };
+    const row = { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, paddingVertical: 8 };
+    const actionChip = { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: th.border, borderRadius: 12, paddingVertical: 12, flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const, gap: 6 };
     return (
-      <Screen>
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 14 }}>
-          <Ionicons name="checkmark-circle" size={64} color={th.ok} />
-          <AppText weight="bold" style={{ fontSize: 18, textAlign: "center" }}>
-            {t("wiz.booked")}
-          </AppText>
-          <Muted style={{ textAlign: "center" }}>
-            {names.doctor} · {state.date} · {state.time}
-          </Muted>
-          <Muted style={{ textAlign: "center", fontSize: 12 }}>
+      <Screen scroll>
+        <LinearGradient colors={[th.brand, th.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 22, paddingVertical: 30, paddingHorizontal: 20, alignItems: "center", marginTop: 12 }}>
+          <View style={{ width: 76, height: 76, borderRadius: 99, backgroundColor: "#ffffff22", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="checkmark-circle" size={56} color="#ffffff" />
+          </View>
+          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 20, marginTop: 14, textAlign: "center" }}>{t("wiz.booked")}</AppText>
+          <AppText color="#ffffff" style={{ fontSize: 13, opacity: 0.95, marginTop: 6, textAlign: "center" }}>
             {smsSent ? t("wiz.smsSent") : t("wiz.demoBooking")}
-          </Muted>
-          <View style={{ height: 8 }} />
-          <BottomButton label="Tamam" onPress={finish} />
+          </AppText>
+        </LinearGradient>
+
+        <Card style={{ marginTop: 16, paddingHorizontal: 16 }}>
+          <View style={row}><Ionicons name="person-outline" size={18} color={th.brand} /><AppText weight="semibold" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>{names.doctor}</AppText></View>
+          <View style={row}><Ionicons name="medkit-outline" size={18} color={th.brand} /><Muted style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>{names.dept}</Muted></View>
+          <View style={row}><Ionicons name="business-outline" size={18} color={th.brand} /><Muted style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>{names.hospital}</Muted></View>
+          <View style={row}><Ionicons name="calendar-outline" size={18} color={th.brand} /><AppText weight="semibold" color={th.brand} style={{ flex: 1, minWidth: 0 }}>{state.date} · {state.time}</AppText></View>
+        </Card>
+
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+          <Pressable onPress={() => addToCalendar(appt)} style={actionChip}><Ionicons name="calendar-outline" size={16} color={th.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{t("appt.calendar")}</AppText></Pressable>
+          {names.hospital !== "—" ? (
+            <Pressable onPress={() => openDirections(names.hospital)} style={actionChip}><Ionicons name="navigate-outline" size={16} color={th.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{t("appt.directions")}</AppText></Pressable>
+          ) : null}
         </View>
+
+        <BottomButton label={t("wiz.goMyAppointments")} onPress={finish} />
       </Screen>
     );
   }

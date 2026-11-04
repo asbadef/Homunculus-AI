@@ -100,6 +100,7 @@ const en: Record<string, string> = {
   "wiz.booked": "Appointment created (demo)",
   "wiz.smsSent": "A confirmation SMS was sent to your number",
   "wiz.demoBooking": "Demo: a confirmation SMS will arrive once HBYS is connected",
+  "wiz.goMyAppointments": "Go to my appointments",
 
   "res.filter.all": "All",
   "res.filter.lab": "Laboratory",
