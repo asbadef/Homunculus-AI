@@ -43,3 +43,5 @@ Kaynak: `C:\Dev\Projeler\Homunculus\{Doktor,Hemşirelik,Vezne} Eğitimleri` (ffm
 ---
 ## UYGULANANLAR (bu oturum)
 ✅ Kabul saati+gecikme · FİN autofill (randevu+kabul) · Randevu→Kabul köprüsü · Hasta uyarı notu (sticky) · Tipli kapalı slot · Gün doktor seçimi
+✅ **Net eksik liste tamam:** Vezne çoklu ödeme+kart · akıllı indirim (3 mod) · fatura türü (e-Qaimə/Fiş)+KDV muaf · **kasa el hareketleri + kasalar arası transfer** · **ödemesi alınamayan fatura listesi/işareti** · Doktor hesaplanmış doz (kg/VYA)+infüzyon akış · Hemşire **ilaç uygulama imzası** (uygulayan görünür+onaylı) · **toplu ilaç uygulama**.
+Kalan (düşük öncelik, isteğe bağlı): GFK toplu müstehaklık/provizyon · izlem/trend matrisi derinleştirme · sıvı izlem kalem kırılımı.
