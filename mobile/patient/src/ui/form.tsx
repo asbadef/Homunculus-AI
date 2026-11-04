@@ -108,15 +108,17 @@ export function DateField({ label, value, onChange }: { label: string; value: Da
         <Pressable onPress={() => setOpen(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "flex-end" }}>
           <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8, paddingBottom: 30 }}>
             <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 99, backgroundColor: t.border, marginBottom: 4 }} />
-            <DateTimePicker
-              value={temp}
-              mode="date"
-              display="spinner"
-              maximumDate={new Date()}
-              themeVariant={undefined}
-              onChange={(_e, d) => { if (d) setTemp(d); }}
-              style={{ alignSelf: "stretch" }}
-            />
+            <View style={{ height: 220, justifyContent: "center" }}>
+              <DateTimePicker
+                value={temp}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                textColor={t.fg}
+                onChange={(_e, d) => { if (d) setTemp(d); }}
+                style={{ height: 220 }}
+              />
+            </View>
             <Pressable onPress={() => { onChange(temp); setOpen(false); }} style={{ marginHorizontal: 16, marginTop: 6, backgroundColor: t.brand, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
               <AppText weight="bold" color="#ffffff">Hazır</AppText>
             </Pressable>

@@ -17,8 +17,8 @@ export default function Sms() {
   const { draft } = useAuthDraft();
   const [code, setCode] = useState("");
   // Phone comes from HBYS by FİN — shown masked; the code "goes" there.
-  const phone = resolvePatientByFin(draft.id).phone;
-  const maskedPhone = phone.replace(/.(?=.{2})/g, "•");
+  const phone = resolvePatientByFin(draft.id)?.phone ?? "";
+  const maskedPhone = phone ? phone.replace(/.(?=.{2})/g, "•") : "";
   return (
     <FormScreen>
       <View style={{ height: 40 }} />
@@ -29,9 +29,8 @@ export default function Sms() {
         <AppText weight="bold" style={{ fontSize: 21, textAlign: "center" }}>
           {tr("auth.sms.title")}
         </AppText>
-        <Muted style={{ textAlign: "center", paddingHorizontal: 20 }}>{tr("auth.smsAuto")}</Muted>
-        <AppText weight="semibold" style={{ fontSize: 14 }}>{maskedPhone}</AppText>
-        <Muted style={{ textAlign: "center", fontSize: 11, paddingHorizontal: 30 }}>{tr("auth.sms.hint")}</Muted>
+        {maskedPhone ? <AppText weight="semibold" style={{ fontSize: 15 }}>{maskedPhone}</AppText> : null}
+        <Muted style={{ textAlign: "center", fontSize: 12, paddingHorizontal: 30 }}>{tr("auth.sms.hint")}</Muted>
         <TextInput
           nativeID="sms"
           value={code}

@@ -16,7 +16,12 @@ export default function Onboarding() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
-  const slides = [tr("onb.1"), tr("onb.2"), tr("onb.3"), tr("onb.4")];
+  const slides = [
+    { title: tr("onb.1"), sub: tr("onb.1sub") },
+    { title: tr("onb.2"), sub: tr("onb.2sub") },
+    { title: tr("onb.3"), sub: tr("onb.3sub") },
+    { title: tr("onb.4"), sub: tr("onb.4sub") },
+  ];
 
   function cycleLang() {
     const i = LANGS.indexOf(lang);
@@ -45,10 +50,13 @@ export default function Onboarding() {
           onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / (width - 32)))}
         >
           {slides.map((s, i) => (
-            <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 16, gap: 22 }}>
-              <Image source={onboardingImages[i]} style={{ width: width - 110, height: width - 110, maxWidth: 300, maxHeight: 300, borderRadius: 28 }} resizeMode="cover" />
-              <AppText weight="bold" style={{ fontSize: 21, textAlign: "center" }}>
-                {s}
+            <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 20, gap: 18 }}>
+              <Image source={onboardingImages[i]} style={{ width: width - 96, height: width - 96, maxWidth: 320, maxHeight: 320, borderRadius: 30 }} resizeMode="cover" />
+              <AppText weight="extrabold" style={{ fontSize: 23, textAlign: "center" }}>
+                {s.title}
+              </AppText>
+              <AppText style={{ fontSize: 15, textAlign: "center", color: t.muted, lineHeight: 22, paddingHorizontal: 10 }}>
+                {s.sub}
               </AppText>
             </View>
           ))}

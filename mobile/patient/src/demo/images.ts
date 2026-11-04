@@ -1,5 +1,6 @@
 // Bundled generated imagery (Gemini / Nano Banana). Static requires so Metro bundles them.
 export const logo = require("../../assets/gen/logo.png");
+export const loginHero = require("../../assets/gen/login-hero.png");
 
 export const bannerImages = [
   require("../../assets/gen/banner-randevu.png"),

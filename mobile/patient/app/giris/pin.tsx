@@ -20,9 +20,13 @@ export default function Pin() {
   const [pin, setPin] = useState("");
 
   function finish() {
-    const p = resolvePatientByFin(draft.id); // FİN → demo patient (falls back to default)
+    const p = resolvePatientByFin(draft.id); // registered patient (gated at login)
+    if (!p) {
+      router.replace("/giris/giris");
+      return;
+    }
     setCurrentPatient(p.id);
-    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), phone: p.phone });
+    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), phone: p.phone }, draft.remember);
     router.replace("/(tabs)");
   }
 

@@ -7,7 +7,7 @@ type SessionCtx = {
   ready: boolean;
   signedIn: boolean;
   user: SessionUser | null;
-  signIn: (user: SessionUser) => void;
+  signIn: (user: SessionUser, persist?: boolean) => void;
   signOut: () => void;
 };
 
@@ -27,9 +27,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setReady(true));
   }, []);
 
-  function signIn(u: SessionUser) {
+  function signIn(u: SessionUser, persist: boolean = true) {
     setUser(u);
-    SecureStore.setItemAsync(KEY, JSON.stringify(u)).catch(() => {});
+    // "Remember me": only persist across restarts when asked; otherwise keep in memory only.
+    if (persist) SecureStore.setItemAsync(KEY, JSON.stringify(u)).catch(() => {});
+    else SecureStore.deleteItemAsync(KEY).catch(() => {});
   }
   function signOut() {
     setUser(null);

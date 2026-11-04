@@ -11,10 +11,13 @@ import { transport } from "../../src/demo/transport";
 import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/config/features";
 import { Appointment, Banner, Invoice, NewsItem, Story } from "../../src/demo/types";
 import { askNotificationPermissionOnce } from "../../src/notifications/ask";
+import { useSession } from "../../src/session/SessionProvider";
 
 export default function HomeScreen() {
   const { t } = useTheme();
   const { t: tr } = useI18n();
+  const { user } = useSession();
+  const firstName = (user?.name ?? "").split(" ")[0];
   const [stories, setStories] = useState<Story[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -36,10 +39,9 @@ export default function HomeScreen() {
     <Screen scroll>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 6, paddingBottom: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <AppText weight="extrabold" style={{ fontSize: 19 }}>
-            {tr("greeting")}, Aysel 👋
+          <AppText weight="extrabold" style={{ fontSize: 19 }} numberOfLines={1}>
+            {tr("greeting")}, {firstName} 👋
           </AppText>
-          <Muted>Bakı · Mərkəzi Klinika</Muted>
         </View>
         <LangThemeControls />
       </View>
@@ -95,7 +97,7 @@ export default function HomeScreen() {
       <SectionTitle>{tr("home.services")}</SectionTitle>
       <QuickServices items={visibleFeatures(FEATURE_LIST, "service")} label={label} />
 
-      <SectionTitle>📰 {tr("home.news")}</SectionTitle>
+      <SectionTitle>{tr("home.news")}</SectionTitle>
       <NewsStrip data={news} />
       <View style={{ height: 16 }} />
     </Screen>

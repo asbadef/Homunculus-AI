@@ -66,9 +66,14 @@ export const patients: DemoPatient[] = [ozan, aysel];
 // Default to Ozan so the app opens on the owner's test patient even before login.
 let currentId = ozan.id;
 
-export function resolvePatientByFin(fin: string): DemoPatient {
+// Returns the registered patient for this FİN, or null when nobody matches —
+// only registered patients can sign in.
+export function resolvePatientByFin(fin: string): DemoPatient | null {
   const f = (fin || "").trim().toUpperCase();
-  return patients.find((p) => p.fin.toUpperCase() === f) ?? ozan; // fallback to Ozan (never empty)
+  return patients.find((p) => p.fin.toUpperCase() === f) ?? null;
+}
+export function isRegistered(fin: string): boolean {
+  return resolvePatientByFin(fin) !== null;
 }
 export function setCurrentPatient(id: string) {
   if (patients.some((p) => p.id === id)) currentId = id;
