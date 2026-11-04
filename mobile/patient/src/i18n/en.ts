@@ -17,6 +17,7 @@ const en: Record<string, string> = {
   "home.search": "Search doctor, test or service",
   "home.seeAll": "See all",
   "search.title": "Search",
+  "sc.hint": "Tap the star to pick your shortcuts; they appear in the menu.",
   "search.hint": "Type a doctor, department or screen name",
   "search.empty": "No results found",
   "action.pay": "Pay",

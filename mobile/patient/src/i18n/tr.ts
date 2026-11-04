@@ -17,6 +17,7 @@ const tr: Record<string, string> = {
   "home.search": "Doktor, analiz veya hizmet ara",
   "home.seeAll": "Tümü",
   "search.title": "Arama",
+  "sc.hint": "Yıldıza dokunarak kısayollarını seç; menüde görünür.",
   "search.hint": "Doktor, bölüm veya ekran adı yaz",
   "search.empty": "Sonuç bulunamadı",
   "action.pay": "Öde",

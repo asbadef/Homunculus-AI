@@ -8,6 +8,8 @@ import { useI18n } from "../i18n";
 import { LANGS } from "../i18n/core";
 import { useSession } from "../session/SessionProvider";
 import { getAvatar } from "../profile/avatar";
+import { FEATURES } from "../config/features";
+import { getShortcutKeys } from "../demo/shortcuts";
 
 type Item = { icon: any; label: string; route?: string; action?: () => void };
 
@@ -16,8 +18,10 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
   const { t: tr, lang, setLang } = useI18n();
   const { user, signOut } = useSession();
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [scKeys, setScKeys] = useState<string[]>([]);
 
-  useEffect(() => { if (visible) getAvatar().then(setAvatar); }, [visible]);
+  useEffect(() => { if (visible) { getAvatar().then(setAvatar); getShortcutKeys().then(setScKeys); } }, [visible]);
+  const shortcuts = FEATURES.filter((f) => scKeys.includes(f.key));
 
   function cycleLang() {
     const i = LANGS.indexOf(lang);
@@ -64,7 +68,23 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
             </Pressable>
           ))}
 
-          <View style={{ flexDirection: "row", gap: 10, paddingVertical: 10, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+          {shortcuts.length > 0 ? (
+            <View style={{ paddingTop: 12, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <Muted style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>{tr("menu.shortcuts")}</Muted>
+                <Pressable onPress={() => go("/kisa-yollar")} hitSlop={8}><Ionicons name="create-outline" size={17} color={t.brand} /></Pressable>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {shortcuts.map((f) => (
+                  <Pressable key={f.key} onPress={() => go(f.route)} style={{ backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingHorizontal: 12, paddingVertical: 9 }}>
+                    <AppText weight="semibold" style={{ fontSize: 12.5 }}>{tr(f.titleKey)}</AppText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: "row", gap: 10, paddingVertical: 10, marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
             <Pressable onPress={cycleLang} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingVertical: 11 }}>
               <Ionicons name="globe-outline" size={17} color={t.brand} />
               <AppText weight="semibold" style={{ fontSize: 13 }}>{tr("lang.code")}</AppText>

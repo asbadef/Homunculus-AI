@@ -19,6 +19,7 @@ const az: Record<string, string> = {
   "home.search": "Həkim, analiz və ya xidmət axtar",
   "home.seeAll": "Hamısı",
   "search.title": "Axtarış",
+  "sc.hint": "Ulduza toxunaraq qısayollarını seç; menyuda görünəcək.",
   "search.hint": "Həkim, şöbə və ya ekran adı yaz",
   "search.empty": "Nəticə tapılmadı",
   "action.pay": "Ödə",
