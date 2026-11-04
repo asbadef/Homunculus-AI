@@ -89,6 +89,8 @@ const ru: Record<string, string> = {
   "wiz.confirm": "Подтвердить",
   "wiz.km": "км",
   "wiz.booked": "Запись создана (демо)",
+  "wiz.smsSent": "SMS-подтверждение отправлено на ваш номер",
+  "wiz.demoBooking": "Демо: SMS придёт после подключения HBYS",
 
   "res.filter.all": "Все",
   "res.filter.lab": "Лаборатория",

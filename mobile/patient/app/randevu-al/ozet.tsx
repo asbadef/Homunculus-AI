@@ -10,26 +10,45 @@ import { useWizard } from "../../src/appointment/useWizard";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
+import { api } from "../../src/api/client";
+import { useSession } from "../../src/session/SessionProvider";
 
 export default function StepSummary() {
   const { state, reset } = useWizard();
   const { t } = useI18n();
   const { t: th } = useTheme();
+  const { user } = useSession();
   const [insurance, setInsurance] = useState("cari");
   const [done, setDone] = useState(false);
+  const [smsSent, setSmsSent] = useState(false);
   const [names, setNames] = useState({ doctor: "", dept: "", hospital: "" });
+  const unitId = React.useRef("");
 
   useEffect(() => {
     Promise.all([transport.getDoctors(), transport.getBranches(), transport.getHospitals()]).then(([ds, brs, hs]) => {
+      const br = brs.find((x) => x.id === state.departmentId);
+      unitId.current = br?.unitId ?? "";
       setNames({
         doctor: ds.find((x) => x.id === state.doctorId)?.name ?? "",
-        dept: brs.find((x) => x.id === state.departmentId)?.name ?? "",
+        dept: br?.name ?? "",
         hospital: state.hospitalId === "skip" ? "—" : hs.find((x) => x.id === state.hospitalId)?.name ?? "",
       });
     });
   }, []);
 
-  function confirm() {
+  // Randevu onayı M1 köprüsünden geçer (demo modda yerelde onaylanır, SMS yok).
+  async function confirm() {
+    const res = await api.createBooking({
+      patientFin: user?.finMasked ?? "",
+      branchId: state.departmentId ?? "",
+      unitId: unitId.current,
+      doctorId: state.doctorId ?? "",
+      hospitalId: state.hospitalId === "skip" ? null : state.hospitalId,
+      date: state.date ?? "",
+      time: state.time ?? "",
+      insurance,
+    }).catch(() => ({ ok: true, confirmSms: false }));
+    setSmsSent(!!res.confirmSms);
     setDone(true);
   }
   function finish() {
@@ -48,6 +67,9 @@ export default function StepSummary() {
           </AppText>
           <Muted style={{ textAlign: "center" }}>
             {names.doctor} · {state.date} · {state.time}
+          </Muted>
+          <Muted style={{ textAlign: "center", fontSize: 12 }}>
+            {smsSent ? t("wiz.smsSent") : t("wiz.demoBooking")}
           </Muted>
           <View style={{ height: 8 }} />
           <BottomButton label="Tamam" onPress={finish} />

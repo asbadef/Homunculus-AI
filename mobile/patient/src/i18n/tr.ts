@@ -89,6 +89,8 @@ const tr: Record<string, string> = {
   "wiz.confirm": "Onayla",
   "wiz.km": "km",
   "wiz.booked": "Randevun oluşturuldu (örnek)",
+  "wiz.smsSent": "Onay SMS'i kayıtlı numarana gönderildi",
+  "wiz.demoBooking": "Demo: HBYS bağlanınca onay SMS'i gelecek",
 
   "res.filter.all": "Tümü",
   "res.filter.lab": "Laboratuvar",
