@@ -9,8 +9,8 @@ import { useI18n } from "../i18n";
 import { layout } from "../theme/tokens";
 
 const STORAGE = "hm-health";
-type Metrics = { height: string; weight: string; bp: string; pulse: string; glucose: string; steps: string };
-const EMPTY: Metrics = { height: "", weight: "", bp: "", pulse: "", glucose: "", steps: "" };
+type Metrics = { height: string; weight: string; bp: string; pulse: string; glucose: string; steps: string; sleep: string; water: string };
+const EMPTY: Metrics = { height: "", weight: "", bp: "", pulse: "", glucose: "", steps: "", sleep: "", water: "" };
 
 type Item = { key: keyof Metrics; labelKey: string; unit: string; icon: string; keyboard?: "default" | "number-pad" };
 const ITEMS: Item[] = [
@@ -20,6 +20,8 @@ const ITEMS: Item[] = [
   { key: "pulse", labelKey: "m.pulse", unit: "bpm", icon: "heart-outline", keyboard: "number-pad" },
   { key: "glucose", labelKey: "m.glucose", unit: "mg/dL", icon: "water-outline", keyboard: "number-pad" },
   { key: "steps", labelKey: "m.steps", unit: "", icon: "walk-outline", keyboard: "number-pad" },
+  { key: "sleep", labelKey: "m.sleep", unit: "saat", icon: "bed-outline", keyboard: "number-pad" },
+  { key: "water", labelKey: "m.water", unit: "stəkan", icon: "cafe-outline", keyboard: "number-pad" },
 ];
 
 function bmi(m: Metrics): string {
@@ -73,6 +75,7 @@ export function HealthMetrics() {
               <AppText weight="bold" style={{ fontSize: 18 }}>
                 {c.value || "—"}{c.value && c.unit ? <AppText style={{ fontSize: 12, color: t.muted }}> {c.unit}</AppText> : null}
               </AppText>
+              <Muted style={{ fontSize: 10.5 }}>{tr("m.source")}: {c.value ? tr("m.manual") : "—"}</Muted>
             </Card>
           </Pressable>
         ))}
