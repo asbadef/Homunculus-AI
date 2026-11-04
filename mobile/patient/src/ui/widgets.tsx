@@ -1,11 +1,27 @@
 import React from "react";
 import { View, ViewProps, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { useI18n } from "../i18n";
 import { LANGS } from "../i18n/core";
 import { AppText } from "./base";
+
+// Back + title header for stack (non-tab) screens.
+export function StackHeader({ title }: { title: string }) {
+  const { t } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 14 }}>
+      <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Ionicons name="chevron-back" size={24} color={t.fg} />
+      </Pressable>
+      <AppText weight="bold" style={{ fontSize: 18, flex: 1, minWidth: 0 }} numberOfLines={1}>
+        {title}
+      </AppText>
+    </View>
+  );
+}
 
 // Elevated surface card.
 export function Card({ style, children, ...rest }: ViewProps) {

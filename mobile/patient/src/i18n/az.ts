@@ -121,5 +121,20 @@ const az: Record<string, string> = {
   "pf.logout": "Çıxış",
   "pf.on": "Açıq",
   "pf.off": "Bağlı",
+
+  "inv.addCard": "Kart əlavə et",
+  "inv.unpaid": "Ödənilməmiş",
+  "inv.paid": "Ödənilib",
+  "hc.blood": "Qan qrupu",
+  "hc.allergies": "Allergiyalar",
+  "hc.chronic": "Xroniki xəstəliklər",
+  "hc.edit": "Düzəlt",
+  "ft.consent": "Bu məlumat yalnız razılıq verilmiş yaxınlara göstərilir. Adlar məxfilik üçün gizlədilir.",
+  "ft.status": "Vəziyyət",
+  "ft.stable": "Sabit",
+  "doc.upload": "Sənəd yüklə",
+  "chk.buy": "Al",
+  "notif.title": "Bildirişlər",
+  "saglik.soon": "Sağlığım (addım, nəbz, yuxu) tezliklə — məlumatı özün daxil edəcəksən.",
 };
 export default az;

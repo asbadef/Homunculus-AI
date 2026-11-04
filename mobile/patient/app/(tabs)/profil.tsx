@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { Screen, AppText, Muted, Title } from "../../src/ui/base";
 import { Card } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
@@ -60,7 +61,7 @@ export default function ProfileTab() {
       <View style={{ height: 10 }} />
       <Row icon="globe-outline" label={tr("pf.lang")} value={tr("lang.code")} onPress={cycleLang} />
       <Row icon="moon-outline" label={tr("pf.theme")} value={mode === "dark" ? tr("pf.on") : tr("pf.off")} onPress={toggle} />
-      <Row icon="notifications-outline" label={tr("pf.notif")} value={tr("pf.on")} />
+      <Row icon="notifications-outline" label={tr("pf.notif")} onPress={() => router.push("/bildirisler")} />
 
       <View style={{ height: 8 }} />
       <Pressable onPress={signOut} style={{ borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>

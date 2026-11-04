@@ -119,5 +119,20 @@ const tr: Record<string, string> = {
   "pf.logout": "Çıkış",
   "pf.on": "Açık",
   "pf.off": "Kapalı",
+
+  "inv.addCard": "Kart ekle",
+  "inv.unpaid": "Ödenmemiş",
+  "inv.paid": "Ödendi",
+  "hc.blood": "Kan grubu",
+  "hc.allergies": "Alerjiler",
+  "hc.chronic": "Kronik hastalıklar",
+  "hc.edit": "Düzenle",
+  "ft.consent": "Bu bilgi yalnızca izin verilmiş yakınlara gösterilir. İsimler gizlilik için gizlenir.",
+  "ft.status": "Durum",
+  "ft.stable": "Stabil",
+  "doc.upload": "Belge yükle",
+  "chk.buy": "Al",
+  "notif.title": "Bildirimler",
+  "saglik.soon": "Sağlığım (adım, nabız, uyku) yakında — veriyi kendin gireceksin.",
 };
 export default tr;
