@@ -231,18 +231,22 @@
     const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Muayenede":"#2f6fed", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
     const toMin = (hhmm) => { const p = (hhmm || "0:0").split(":"); return (+p[0] || 0) * 60 + (+p[1] || 0); };
     const toHHMM = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
-    const rndLejant = () => `<div class="durum-lej" style="margin:8px 0">${RND_DURUM.filter(d => d !== "İptal").map(d => `<span><i style="background:${SEVC[d]}"></i>${d}</span>`).join("")}<span><i style="background:var(--line)"></i>Kapalı</span></div>`;
+    const rndLejant = () => `<div class="durum-lej" style="margin:8px 0">${RND_DURUM.filter(d => d !== "İptal").map(d => `<span><i style="background:${SEVC[d]}"></i>${d}</span>`).join("")}<span><i style="background:var(--line)"></i>Kapalı</span><span><i style="background:#8b5cf6"></i>Ameliyat</span></div>`;
     const kapali = H.data.slotKapali = H.data.slotKapali || [];          // "YYYY-MM-DDTHH:MM|Doktor" biçiminde kapalı slotlar
     const slotKey = (t, d) => t + "|" + d;
+    // Ameliyat istemleri (cerrahı atanmış) randevu takviminde süre bloğu olarak görünür (tur:"Ameliyat"). Tarih = bugün (pano günlük).
+    const RND_TODAY = new Date().toISOString().slice(0, 10);
+    const surgeryAppts = () => (H.data.orders || []).filter(o => o.cat === "Ameliyat" && o.amelProg && o.amelProg.cerrah && o.amelProg.saat && o.amelProg.saat !== "—")
+      .map(o => { const p = H.pt(o.pid); return { id:"amel:" + o.id, hasta:p ? p.name : (o.hasta || "—"), tur:"Ameliyat", bolum:o.ad || "", doktor:o.amelProg.cerrah, tarih:RND_TODAY + "T" + o.amelProg.saat, sure:+o.amelProg.sure || 90, durum:o.amelProg.durum || "Beklemede" }; });
     // Bir slotu kaplayan randevu (süre kadar blok): başlangıç ≤ slot < başlangıç+süre. first = başlangıcın düştüğü slot.
     const apptCover = (iso, saat, dr) => { const slotMin = toMin(saat);
-      for (const r of all) { if (r.doktor !== dr || r.durum === "İptal") continue; if ((r.tarih || "").slice(0, 10) !== iso) continue;
+      for (const r of all.concat(surgeryAppts())) { if (r.doktor !== dr || r.durum === "İptal") continue; if ((r.tarih || "").slice(0, 10) !== iso) continue;
         const start = toMin((r.tarih || "").slice(11, 16)), end = start + (+r.sure || 15);
         if (slotMin >= start && slotMin < end) return { r, first:start >= slotMin && start < slotMin + 30, start, end }; }
       return null; };
     // hücre: randevu süresi kadar renkli blok (ilk slotta etiket, devam slotlarında boş renk) · kapalı → gri · boş → randevu ver
     const cellHtml = (iso, saat, dr) => { const tarih = iso + "T" + saat, cov = apptCover(iso, saat, dr);
-      if (cov) { const col = SEVC[cov.r.durum] || "var(--mid)", bg = `background:color-mix(in srgb,${col} 22%,transparent);border-left:3px solid ${col}`;
+      if (cov) { const col = cov.r.tur === "Ameliyat" ? "#8b5cf6" : (SEVC[cov.r.durum] || "var(--mid)"), bg = `background:color-mix(in srgb,${col} 22%,transparent);border-left:3px solid ${col}`;
         if (!cov.first) return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"></td>`;
         return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"><b style="font-size:11px">${toHHMM(cov.start)}-${toHHMM(cov.end)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(cov.r.hasta)} · ${H.esc(cov.r.tur || cov.r.bolum || "")} · ${H.esc(cov.r.durum)}</div></td>`; }
       if (kapali.includes(slotKey(tarih, dr))) return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="Kapalı · açmak için tıkla">Kapalı</td>`;
@@ -276,7 +280,7 @@
       const rh = e.target.closest("[data-rndhaftagun]"); if (rh) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rh.dataset.rndhaftagun)); return H.go("randevu", { view:"hafta", gun:dd.toISOString().slice(0, 10), dr:params.dr }); }
       const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
-      const ro = e.target.closest("[data-rndopen]"); if (ro) { const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
+      const ro = e.target.closest("[data-rndopen]"); if (ro) { if (ro.dataset.rndopen.indexOf("amel:") === 0) return H.can("ameliyathane") ? H.go("ameliyathane") : H.toast("Ameliyat bloğu · ameliyathane programında yönetilir."); const r = all.find(x => x.id === ro.dataset.rndopen); if (r) return rndDetay(r); }
       const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
       const rk = e.target.closest("[data-rndkabul]"); if (rk) { const r = all.find(x => x.id === rk.dataset.rndkabul); if (r) rndKabul(r); return; }
       const del = e.target.closest("[data-rnddel]"); if (del) { const i = all.findIndex(x => x.id === del.dataset.rnddel); if (i >= 0 && confirm("Bu randevu silinsin mi?")) { all.splice(i, 1); H.toast("Randevu silindi", "w"); H.go("randevu", params); } return; }
@@ -2673,12 +2677,14 @@
   const amelList = () => (H.data.orders || []).filter(o => o.cat === "Ameliyat");
   function amelSeed() {   // demo: hiç ameliyat istemi yoksa panonun boş kalmaması için birkaç örnek üret
     if (amelList().length) return;
-    const ps = (H.data.patients || []).filter(p => p.bed).slice(0, 3);
-    const demo = [["Laparoskopik kolesistektomi", "Dr. Samir Quliyev", "09:00", "Ameliyathane 1"], ["Total kalça protezi", "Dr. Kamran Rzayev", "10:30", "Ameliyathane 2"], ["Apendektomi", "Dr. Emil Nəsirov", "13:00", "Ameliyathane 1"]];
-    ps.forEach((p, i) => { const d = demo[i]; if (!d) return; (H.data.orders = H.data.orders || []).push({ id:"amel" + i + Date.now(), pid:p.id, cat:"Ameliyat", ad:d[0], by:d[1], at:H.now(), durum:"İstendi", amelProg:{ oda:d[3], saat:d[2], durum:"Beklemede" } }); });
+    const ps = (H.data.patients || []).filter(p => p.bed).slice(0, 3), drs = randevuDoktorlari();
+    // cerrah gerçek takvim doktoruna bağlanır → randevu takviminde süre bloğu görünür.
+    const demo = [["Laparoskopik kolesistektomi", "09:00", "Ameliyathane 1", 90], ["Total kalça protezi", "10:30", "Ameliyathane 2", 120], ["Apendektomi", "13:00", "Ameliyathane 1", 60]];
+    ps.forEach((p, i) => { const d = demo[i]; if (!d) return; (H.data.orders = H.data.orders || []).push({ id:"amel" + i + Date.now(), pid:p.id, cat:"Ameliyat", ad:d[0], by:drs[i % Math.max(1, drs.length)] || "Dr. Samir Quliyev", at:H.now(), durum:"İstendi", amelProg:{ oda:d[2], saat:d[1], sure:d[3], cerrah:drs[i % Math.max(1, drs.length)] || "", durum:"Beklemede" } }); });
     H.saveData && H.saveData();
   }
   H.register("ameliyathane", { title:() => H.t("m_ameliyathane"), perm:"ameliyathane", render(root) {
+    randevuDoktorSeed();   // takvim doktorları hazır olsun (cerrah seçimi randevu takvimiyle eşleşsin)
     amelSeed();
     const draw = () => {
       const list = amelList().map(o => { o.amelProg = o.amelProg || { oda:AMEL_ODA[0], saat:"—", durum:"Beklemede" }; return o; })
@@ -2686,6 +2692,8 @@
       const say = {}; AMEL_DURUM.forEach(([d]) => say[d] = 0); list.forEach(o => say[o.amelProg.durum] = (say[o.amelProg.durum] || 0) + 1);
       const durTag = (d) => { const c = (AMEL_DURUM.find(x => x[0] === d) || [, ""])[1]; return `<span class="tag ${c}">${H.esc(d)}</span>`; };
       const odaSel = (o) => `<select data-amoda="${o.id}">${AMEL_ODA.map(r => `<option${r === o.amelProg.oda ? " selected" : ""}>${H.esc(r)}</option>`).join("")}</select>`;
+      const drs = randevuDoktorlari();
+      const cerSel = (o) => `<select data-amcerrah="${o.id}"><option value="">—</option>${drs.map(d => `<option${d === o.amelProg.cerrah ? " selected" : ""}>${H.esc(d)}</option>`).join("")}</select>`;
       const hasta = (o) => { const p = H.pt(o.pid); return p ? (H.vzName ? H.vzName(p.name) : p.name) : "—"; };
       const ozel = (o) => [o.amelProg.oda, o.kesiTipi, o.ameliyatGrubu].filter(Boolean);   // not: özellik bayrakları istemde opsiyonel
       root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ameliyathane")}</h2><p>Günlük ameliyat panosu · ${list.length} ameliyat · süreç durumu renklerle</p></div></div>
@@ -2694,18 +2702,20 @@
           <div class="ac crit"><div class="i">${I("alert")}</div><b>${say["Ameliyatta"]}</b><span>ameliyatta</span></div>
           <div class="ac"><div class="i">${I("ok")}</div><b>${say["Bitti"]}</b><span>biten</span></div></div>
         ${H.durumLejant ? H.durumLejant(AMEL_DURUM.map(([d, c]) => [d, c])) : ""}
-        <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th style="width:90px">Saat</th><th style="width:160px">Oda</th><th>Hasta</th><th>Ameliyat</th><th>Cerrah</th><th style="width:150px">Durum</th><th style="width:170px"></th></tr></thead><tbody>
+        <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th style="width:72px">Saat</th><th style="width:66px">Süre</th><th style="width:150px">Oda</th><th>Hasta</th><th>Ameliyat</th><th style="width:150px">Cerrah</th><th style="width:140px">Durum</th><th style="width:170px"></th></tr></thead><tbody>
         ${list.length ? list.map(o => { const di = AMEL_DURUM.findIndex(x => x[0] === o.amelProg.durum);
           const ileri = di < AMEL_DURUM.length - 1 ? `<button class="btn p sm" data-amnext="${o.id}">${I("chevR") || "→"} ${H.esc(AMEL_DURUM[di + 1][0])}</button>` : `<span class="adm-sub">tamam</span>`;
           const geri = di > 0 ? ` <button class="btn g sm" data-amprev="${o.id}" title="Geri al">↩</button>` : "";
-          return `<tr><td><input data-amsaat="${o.id}" value="${H.esc(o.amelProg.saat || "")}" style="width:72px" placeholder="--:--"></td><td>${odaSel(o)}</td><td><b>${H.esc(hasta(o))}</b></td><td>${H.esc(o.ad || "—")}${o.kanrez || (ozel(o).join(" ").includes("rez")) ? ` <span class="tag info">kan rez.</span>` : ""}</td><td class="adm-sub">${H.esc(typeof o.by === "object" ? (o.by.name || "") : (o.by || "—"))}</td><td>${durTag(o.amelProg.durum)}</td><td>${ileri}${geri}</td></tr>`;
-        }).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bugün ameliyat istemi yok.</td></tr>`}</tbody></table></div>
-        <p class="adm-sub" style="margin-top:8px">Ameliyat istemleri hekimin "Ameliyat / yatış istemi"nden gelir. Oda ve saat burada atanır; durum ilerledikçe (Beklemede→Hazırlık→Ameliyatta→Derlenme→Bitti) renk değişir.</p>`;
+          return `<tr><td><input data-amsaat="${o.id}" value="${H.esc(o.amelProg.saat || "")}" style="width:60px" placeholder="--:--"></td><td><input data-amsure="${o.id}" type="number" min="15" step="15" value="${+o.amelProg.sure || 90}" style="width:56px"></td><td>${odaSel(o)}</td><td><b>${H.esc(hasta(o))}</b></td><td>${H.esc(o.ad || "—")}${o.kanrez || (ozel(o).join(" ").includes("rez")) ? ` <span class="tag info">kan rez.</span>` : ""}</td><td>${cerSel(o)}</td><td>${durTag(o.amelProg.durum)}</td><td>${ileri}${geri}</td></tr>`;
+        }).join("") : `<tr><td colspan="8" class="mute" style="padding:20px;text-align:center">Bugün ameliyat istemi yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Ameliyat istemleri hekimin "Ameliyat / yatış istemi"nden gelir. Oda, saat, süre ve cerrah burada atanır — cerrah seçilince ameliyat, o cerrahın <b>randevu takviminde</b> süre bloğu olarak görünür. Durum ilerledikçe renk değişir.</p>`;
     };
     draw();
     root.onchange = (e) => {
       const os = e.target.closest("[data-amoda]"); if (os) { const o = amelList().find(x => x.id === os.dataset.amoda); if (o) { o.amelProg.oda = os.value; H.saveData && H.saveData(); H.log("Ameliyat oda", (o.ad || "") + " · " + os.value); } return; }
       const sa = e.target.closest("[data-amsaat]"); if (sa) { const o = amelList().find(x => x.id === sa.dataset.amsaat); if (o) { o.amelProg.saat = sa.value.trim(); H.saveData && H.saveData(); } return; }
+      const su = e.target.closest("[data-amsure]"); if (su) { const o = amelList().find(x => x.id === su.dataset.amsure); if (o) { o.amelProg.sure = +su.value || 90; H.saveData && H.saveData(); } return; }
+      const ce = e.target.closest("[data-amcerrah]"); if (ce) { const o = amelList().find(x => x.id === ce.dataset.amcerrah); if (o) { o.amelProg.cerrah = ce.value; H.saveData && H.saveData(); H.log("Ameliyat cerrah", (o.ad || "") + " · " + ce.value); } return; }
     };
     root.onclick = (e) => {
       const nx = e.target.closest("[data-amnext]"), pv = e.target.closest("[data-amprev]"), btn = nx || pv; if (!btn) return;
