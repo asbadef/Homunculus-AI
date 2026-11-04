@@ -160,11 +160,6 @@
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Ekle</button>`,
       onMount(m) { m.querySelector("[data-ok]").onclick = () => { const o = build(m); if (!o) return; addOrder(p, o); H.toast("İstem eklendi: " + (o.ad || o.cat)); H.closeModal(); rerender(); }; } });
 
-    if (type === "ilac") return simple("İlaç istemi",
-      `<div class="fr"><label>İlaç</label><input data-f="ad" list="istem-ilac" placeholder="İlaç ara (katalogdan)"><datalist id="istem-ilac">${((H.ILAC || []).concat(H.data.ilacEk || [])).map(d => `<option value="${esc(d[1])}">`).join("")}</datalist></div>
-       <div class="fr"><label>Doz / yol</label><input data-f="doz" placeholder="ör. 2x1 IV"></div>
-       <div class="fr"><label>Süre</label><input data-f="sure" placeholder="ör. 7 gün"></div>`,
-      (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("İlaç gerekli.", "w"); return null; } return { cat:"İlaç", ad, detay:[val(m, "doz"), val(m, "sure")].filter(Boolean).join(" · ") }; });
     if (type === "kan") return simple("Kan ürünü istemi",
       `<div class="fr"><label>Ürün</label><select data-f="ad">${KAN.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
        <div class="fr"><label>Miktar (torba)</label><input data-f="mik" type="number" value="1" min="1"></div>
@@ -369,9 +364,50 @@
       } });
   }
 
+  /* ---------- İlaç istemi (katalogdan aranır, dozlu) ---------- */
+  const ILAC_SIKLIK = ["1x1", "2x1", "3x1", "4x1", "1x2", "Tek doz (stat)", "Gerektiğinde (PRN)", "Sürekli infüzyon"];
+  const ilacPool = () => (H.ILAC || []).concat(H.data.ilacEk || []);   // kurum ilaç listesi + admin'in eklediği ilaçlar
+  function openIlac(p, rerender) {
+    const body = `<div class="icd-form amf">
+      <div class="fr"><label>İlaç</label><div class="amel-cb"><input data-f="ad" placeholder="İlaç ara (ad veya barkod · katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-ilac-dd></div></div><div class="adm-sub" data-ilac-info style="margin-top:4px"></div></div>
+      <div class="fg2">
+        <div class="fr"><label>Doz / miktar</label><input data-f="doz" placeholder="ör. 500 mg"></div>
+        <div class="fr"><label>Sıklık</label><input data-f="siklik" list="ilac-siklik" placeholder="ör. 2x1"><datalist id="ilac-siklik">${ILAC_SIKLIK.map(x => `<option value="${esc(x)}">`).join("")}</datalist></div>
+        <div class="fr"><label>Veriliş yolu</label><select data-f="yol">${RECETE_YOL.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Süre</label><input data-f="sure" placeholder="ör. 7 gün"></div>
+        <div class="fr"><label>Başlangıç</label><input type="date" data-f="bas" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <div class="fr"><label>İstem miktarı (adet)</label><input type="number" data-f="adet" value="1" min="1"></div>
+      </div>
+      <div class="fr"><label>Özellikli istekler</label><div class="amf-opts"><label class="hc-ac"><input type="checkbox" data-opt="acil"> Acil (STAT)</label><label class="hc-ac"><input type="checkbox" data-opt="prn"> Gerektiğinde (PRN)</label></div></div>
+      <div class="fr"><label>İstem notu</label><input data-f="not" placeholder="Not"></div>
+      <p class="adm-sub">İlaç istemi eczaneye iletilir; eczacı karşılar. Doz/etkileşim denetimi eczane karşılamada yapılır.</p></div>`;
+    H.modal({ title:"İlaç istemi", wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
+      onMount(m) {
+        const v = (s) => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
+        const pool = ilacPool();
+        const adEl = m.querySelector('[data-f="ad"]'), dd = m.querySelector("[data-ilac-dd]"), info = m.querySelector("[data-ilac-info]");
+        // Katalogdan arama: ad veya barkod. Seçilen ilacın grubu/formu/fiyatı altında gösterilir.
+        adEl.oninput = () => { adEl.dataset.code = ""; info.textContent = ""; const q = adEl.value.trim().toLowerCase(); if (q.length < 2) { dd.classList.add("hidden"); return; }
+          const hits = pool.filter(r => (r[1] && r[1].toLowerCase().includes(q)) || (r[0] && String(r[0]).includes(q))).slice(0, 40);
+          dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${esc(String(r[0]))}"><b>${esc(r[1])}</b> <span class="adm-sub">${esc([r[2], r[3]].filter(Boolean).join(" · "))}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen ilaç yok</div>`;
+          dd.classList.remove("hidden"); };
+        dd.onclick = (e) => { const o = e.target.closest("[data-code]"); if (!o) return; const r = pool.find(x => String(x[0]) === o.dataset.code); if (r) { adEl.value = r[1]; adEl.dataset.code = String(r[0]); info.textContent = [r[2], r[3], +r[4] ? (+r[4]).toFixed(2) + " ₼" : ""].filter(Boolean).join(" · "); } dd.classList.add("hidden"); };
+        document.addEventListener("click", (e) => { if (!m.querySelector(".amel-cb") || !m.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
+        m.querySelector("[data-ok]").onclick = () => {
+          const ad = v("ad"); if (!ad) { H.toast("İlaç gerekli.", "w"); return; }
+          const opts = [m.querySelector('[data-opt="acil"]').checked ? "Acil (STAT)" : "", m.querySelector('[data-opt="prn"]').checked ? "PRN" : ""].filter(Boolean);
+          const detay = [v("doz"), v("siklik"), v("yol"), v("sure"), v("bas") ? "Başl. " + v("bas") : "", +v("adet") > 1 ? v("adet") + " adet" : "", ...opts, v("not")].filter(Boolean).join(" · ");
+          addOrder(p, { cat:"İlaç", ad, kod:adEl.dataset.code || "", detay });
+          H.toast("İlaç istemi eklendi: " + ad); H.closeModal(); rerender();
+        };
+      } });
+  }
+
   function dispatch(p, key, rerender) {
     if (!H.protoOpen(p)) { H.toast("Protokol kapalı / fatura kesildi · işlem eklenemez.", "e"); return; }
     if (!H.ozelOnay(p)) { H.toast("Özel onay yok (ödeme alınmadı) · işlem eklenemez.", "e"); return; }
+    if (key === "ilac") return openIlac(p, rerender);
     if (key === "recete") return openRecete(p, rerender);
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
