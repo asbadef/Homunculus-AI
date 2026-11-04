@@ -329,36 +329,43 @@
       const KUR_L = ["Seçiniz", ...((sec.kurum || ["Anlaşmalı kurum"]).filter(k => !/Özel ödeme|İcbari|SAMHI/i.test(k)))];
       const PER_ARALIK = [["Haftalık", 7], ["15 günde bir", 15], ["Aylık", 30], ["3 ayda bir", 90]];
       const opt = (arr, cur) => arr.map(x => `<option${x === cur ? " selected" : ""}>${H.esc(x)}</option>`).join("");
+      const secH = (t) => `<div class="adm-sub" style="font-weight:700;color:var(--mute);letter-spacing:.3px;margin:2px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px">${t}</div>`;
       H.modal({ title:"Randevu kaydı", wide:true, body:`<div class="icd-form">
-        <div class="fr" style="grid-column:1/-1"><label>Hasta</label><input data-f="hasta" list="rnd-hasta" placeholder="Hasta adı — yazın ya da seçin" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="rnd-hasta">${hastaAdlari.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
-        <div class="fr" style="grid-column:1/-1" data-rndwarn hidden></div>
-        <div class="fr" style="grid-column:1/-1" data-rndhist hidden></div>
-        <div class="fr"><label>Randevu türü</label><select data-f="tur">${opt(RND_TUR)}</select></div>
-        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
-        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
-        <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"><button class="btn sm" data-rndnext type="button" style="margin-top:4px">${I("clock") || ""} En yakın uygun saat</button></div>
-        <div class="fr"><label>Süre (dk)</label><input data-f="sure" type="number" min="5" step="5" value="15"></div>
-        <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div>
-        <div class="fr" style="grid-column:1/-1"><label style="font-weight:600;color:var(--mute)">Hasta bilgileri</label></div>
-        <div class="fr"><label>Hasta tipi</label><select data-f="hastaTipi">${opt(HTIP)}</select></div>
-        <div class="fr"><label>FİN No</label><input data-f="fin" placeholder="FİN / kimlik no"></div>
-        <div class="fr"><label>SGK (SAMHI)</label><select data-f="sgk">${opt(SGK_L)}</select></div>
-        <div class="fr"><label>Özel sigorta</label><select data-f="ozelSig">${opt(SIG_L)}</select></div>
-        <div class="fr"><label>İndirim grubu</label><select data-f="indirim">${opt(IND_L)}</select></div>
-        <div class="fr"><label>Anlaşmalı kurum</label><select data-f="anlasmaliKurum">${opt(KUR_L)}</select></div>
-        <div class="fr" style="grid-column:1/-1"><label class="dc-chk"><input type="checkbox" data-f="per"> Periyodik randevu (seri oluştur)</label></div>
-        <div class="fr" data-perrow hidden><label>Aralık</label><select data-f="peraralik">${PER_ARALIK.map(([l, v]) => `<option value="${v}">${H.esc(l)}</option>`).join("")}</select></div>
-        <div class="fr" data-perrow2 hidden><label>Tekrar (adet)</label><input data-f="pertekrar" type="number" min="2" max="52" value="4"></div>
-        <div class="fr" style="grid-column:1/-1"><label>Hatırlatma</label><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div></div>`,
+          <div class="fr" style="grid-column:1/-1"><label>Hasta</label><input data-f="hasta" list="rnd-hasta" placeholder="Hasta adı — yazın ya da seçin" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="rnd-hasta">${hastaAdlari.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
+          <div class="fr" style="grid-column:1/-1;display:none" data-rndwarn></div>
+          <div class="fr" style="grid-column:1/-1;display:none" data-rndhist></div></div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px">
+          <div style="flex:1;min-width:260px">${secH("Randevu bilgileri")}<div class="icd-form" style="grid-template-columns:1fr 1fr">
+            <div class="fr"><label>Randevu türü</label><select data-f="tur">${opt(RND_TUR)}</select></div>
+            <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
+            <div class="fr" style="grid-column:1/-1"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel → "Poliklinik/Web randevusu verilebilir".</div>`}</div>
+            <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"></div>
+            <div class="fr"><label>Süre (dk)</label><input data-f="sure" type="number" min="5" step="5" value="15"></div>
+            <div class="fr" style="grid-column:1/-1"><button class="btn sm" data-rndnext type="button">${I("clock") || ""} En yakın uygun saat</button></div>
+            <div class="fr" style="grid-column:1/-1"><label>Not / geliş nedeni</label><input data-f="not" placeholder="Geliş nedeni"></div>
+            <div class="fr" style="grid-column:1/-1"><label class="dc-chk"><input type="checkbox" data-f="per"> Periyodik randevu (seri oluştur)</label></div>
+            <div class="fr" data-perrow style="display:none"><label>Aralık</label><select data-f="peraralik">${PER_ARALIK.map(([l, v]) => `<option value="${v}">${H.esc(l)}</option>`).join("")}</select></div>
+            <div class="fr" data-perrow2 style="display:none"><label>Tekrar (adet)</label><input data-f="pertekrar" type="number" min="2" max="52" value="4"></div>
+            <div class="fr" style="grid-column:1/-1"><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div>
+          </div></div>
+          <div style="flex:1;min-width:260px">${secH("Hasta bilgileri")}<div class="icd-form" style="grid-template-columns:1fr 1fr">
+            <div class="fr"><label>Hasta tipi</label><select data-f="hastaTipi">${opt(HTIP)}</select></div>
+            <div class="fr"><label>FİN No</label><input data-f="fin" placeholder="FİN / kimlik no"></div>
+            <div class="fr"><label>SGK (SAMHI)</label><select data-f="sgk">${opt(SGK_L)}</select></div>
+            <div class="fr"><label>Özel sigorta</label><select data-f="ozelSig">${opt(SIG_L)}</select></div>
+            <div class="fr"><label>İndirim grubu</label><select data-f="indirim">${opt(IND_L)}</select></div>
+            <div class="fr"><label>Anlaşmalı kurum</label><select data-f="anlasmaliKurum">${opt(KUR_L)}</select></div>
+          </div></div>
+        </div>`,
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
         onMount(m) { const hi = m.querySelector('[data-f="hasta"]'), warn = m.querySelector("[data-rndwarn]"), hist = m.querySelector("[data-rndhist]");
           const checkNoShow = () => { const nm = (hi.value || "").trim(); const ns = nm ? all.filter(r => r.hasta === nm && r.durum === "Gelmedi").length : 0;
-            if (ns > 0) { warn.hidden = false; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else warn.hidden = true; };
+            if (ns > 0) { warn.style.display = ""; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else { warn.style.display = "none"; warn.innerHTML = ""; } };
           const checkHist = () => { const nm = (hi.value || "").trim(); const past = nm ? all.filter(r => r.hasta === nm).sort((a, z) => (z.tarih || "").localeCompare(a.tarih || "")) : [];
-            if (!past.length) { hist.hidden = true; return; } hist.hidden = false;
+            if (!past.length) { hist.style.display = "none"; hist.innerHTML = ""; return; } hist.style.display = "";
             hist.innerHTML = `<div class="note i" style="font-size:12px">${I("clock") || ""} Bu hastanın <b>${past.length}</b> randevusu var · son: ${past.slice(0, 3).map(r => (r.tarih || "").replace("T", " ").slice(0, 16) + " " + H.esc(r.durum)).join(" · ")}</div>`; };
           hi.oninput = () => { checkNoShow(); checkHist(); }; checkNoShow(); checkHist();
-          const per = m.querySelector('[data-f="per"]'); per.onchange = () => { m.querySelector("[data-perrow]").hidden = !per.checked; m.querySelector("[data-perrow2]").hidden = !per.checked; };
+          const per = m.querySelector('[data-f="per"]'); per.onchange = () => { const d = per.checked ? "" : "none"; m.querySelector("[data-perrow]").style.display = d; m.querySelector("[data-perrow2]").style.display = d; };
           const nb = m.querySelector("[data-rndnext]"); if (nb) nb.onclick = () => { const dr = m.querySelector('[data-f="doktor"]').value, sure = +m.querySelector('[data-f="sure"]').value || 15;
             if (!dr) { H.toast("Önce doktor seçin.", "w"); return; } const slot = nextFreeSlot(dr, sure);
             if (!slot) { H.toast("14 gün içinde uygun slot bulunamadı.", "w"); return; } m.querySelector('[data-f="tarih"]').value = slot; H.toast("En yakın uygun saat: " + slot.replace("T", " ")); };
