@@ -705,8 +705,26 @@
         m.querySelector("[data-hall]").onchange = (e) => { m.querySelectorAll("[data-hsel]:not(:disabled)").forEach(c => c.checked = e.target.checked); recompute(); };
         m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } faturaKesinlestirModal(p, s, "Fatura kesildi"); };
         m.querySelector("[data-hindirim]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
-          const top = s.reduce((a, o) => a + fiyatOf(o), 0); (H.data.indirimOnay = indirimRows()).unshift({ id:"io" + Date.now(), tarih:H.nowFull ? H.nowFull() : H.now(), hasta:p.name, isteyen:(H.state.user || {}).name || "Vezne", islem:s.map(o => o.ad).join(", ").slice(0, 60), tutar:top, oran:0, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) });
-          H.log("İndirime gönderildi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("İndirim onayına gönderildi (" + s.length + " işlem)"); H.closeModal(); };
+          const top = Math.round(s.reduce((a, o) => a + fiyatOf(o), 0) * 100) / 100;
+          const GEREKCE = ["Başhekim onayı", "Personel / yakını", "Sosyal yardım", "Kampanya", "Anlaşmalı kurum indirimi", "Diğer"];
+          H.modal({ title:"İndirim talebi · " + H.esc(vzName(p.name)), body:`<div class="icd-form">
+              <div class="fr"><label>Protokol tutarı</label><input value="${top} ₼" readonly></div>
+              <div class="fr"><label>İndirim şekli</label><select data-f="sekil"><option value="oran">Oran (%)</option><option value="tutar">İndirim tutarı (₼)</option><option value="alinacak">Alınacak tutar (₼)</option></select></div>
+              <div class="fr"><label>Değer</label><input type="number" data-f="deger" min="0" value="0"></div>
+              <div class="fr"><label>İndirim sonrası</label><input data-f="sonuc" readonly></div>
+              <div class="fr"><label>Gerekçe</label><select data-f="gerekce">${GEREKCE.map(g => `<option>${H.esc(g)}</option>`).join("")}</select></div>
+              <div class="fr"><label>Açıklama</label><input data-f="not" placeholder="Serbest açıklama"></div></div>
+              <p class="adm-sub" style="margin-top:6px">İndirim yetkili rol (İndirim onayla) tarafından onaylanır. Onaylanmayan indirim fatura/tahsilatta uygulanmaz.</p>`,
+            actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Onaya gönder</button>`,
+            onMount(mm) { const g = (f) => mm.querySelector(`[data-f="${f}"]`);
+              const hesap = () => { const sekil = g("sekil").value, d = +g("deger").value || 0; let ind = 0;
+                if (sekil === "oran") ind = top * Math.min(100, d) / 100; else if (sekil === "tutar") ind = Math.min(top, d); else ind = Math.max(0, top - d);
+                ind = Math.round(ind * 100) / 100; const sonra = Math.round((top - ind) * 100) / 100; g("sonuc").value = sonra + " ₼  (indirim " + ind + " ₼ · %" + (top ? Math.round(ind / top * 100) : 0) + ")"; return { ind, sonra, oran:top ? Math.round(ind / top * 10000) / 100 : 0 }; };
+              g("sekil").onchange = hesap; g("deger").oninput = hesap; hesap();
+              mm.querySelector("[data-ok]").onclick = () => { const h = hesap(); if (h.ind <= 0) { H.toast("Geçerli bir indirim girin.", "w"); return; }
+                (H.data.indirimOnay = indirimRows()).unshift({ id:"io" + Date.now(), tarih:H.nowFull ? H.nowFull() : H.now(), hasta:p.name, isteyen:(H.state.user || {}).name || "Vezne", islem:s.map(o => o.ad).join(", ").slice(0, 60), tutar:h.ind, oran:h.oran, durum:"Onay bekliyor", grup:g("gerekce").value, not:(g("not").value || "").trim(), zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) });
+                H.saveData && H.saveData(); H.log("İndirim talebi", p.name + " · " + h.ind + " ₼ · " + g("gerekce").value); H.closeModal(); H.toast("İndirim onaya gönderildi: " + h.ind + " ₼"); H.go("vezne", params); }; } });
+          return; };
         m.querySelector("[data-hbekle]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } s.forEach(o => o.durum = "Bekliyor"); H.toast("Bekleyene atıldı (" + s.length + ")", "w"); draw(); };
       } });
   }
