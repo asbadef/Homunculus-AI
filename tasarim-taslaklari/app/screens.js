@@ -2075,8 +2075,9 @@
     const tur = params.tur || "lab";
     const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
     const pn = (pid) => { const p = H.pt(pid), b = p && H.bed(p.bed); return p ? (H.showNames() ? p.name : (b ? b.no : pid)) : pid; };
-    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma</p></div><div class="r"><button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma</p></div><div class="r"><button class="btn" data-subeler>${I("building") || ""} Diğer şubeler</button><button class="btn" data-lbexp>${I("save") || ""} Excel</button><button class="btn" data-lbyaz>${I("print") || ""} Yazdır</button></div></div>
       <div class="seg" style="margin-bottom:8px">${[["lab", "Laboratuvar"], ["rad", "Radyoloji"], ["kan", "Kan ürünü"]].map(([k, l]) => `<button data-lt="${k}" class="${tur === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${H.durumLejant([["Serbest bırakıldı / onaylandı", "ok"], ["İşlemde / çalışılıyor", "w"], ["İstendi", "info"]])}
       <div class="adm-bar" style="margin-bottom:10px">${H.filterBox("Hasta / istem / isteyen ara…")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th><th>Sonuç</th><th style="width:90px"></th></tr></thead><tbody>
       ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td>${H.labResultHtml(o)}</td><td><button class="btn g sm" data-labres="${o.id}">${I("edit") || "Sonuç"} Sonuç</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
@@ -2085,6 +2086,19 @@
     root.onchange = (e) => { const st = e.target.closest("[data-labst]"); if (st) { const o = (H.data.orders || []).find(x => x.id === st.dataset.labst); if (o) { o.durum = st.value; H.saveData && H.saveData(); H.log("Lab/Rad durumu", (o.ad || "") + " · " + st.value); H.toast("Durum: " + st.value); } } };
     const lbData = () => ({ cols:["Saat", "Hasta", "İstem", "İsteyen", "Durum"], rows:ord.map(o => [o.at || "", pn(o.pid), o.ad || "", o.by || "", o.durum || "İstendi"]) });
     root.onclick = (e) => { const lt = e.target.closest("[data-lt]"); if (lt) return H.go("labislem", { tur:lt.dataset.lt });
+      if (e.target.closest("[data-subeler]")) {
+        const SUBE = ["Gəncə Şöbəsi", "Sumqayıt Şöbəsi", "Naxçıvan Şöbəsi", "Bakı 2 Şöbəsi"];
+        const DEMO = [["Qlükoza", "102 mg/dL", "70–100", "yuk"], ["HbA1c", "5.4 %", "4–5.7", "norm"], ["Kreatinin", "0.9 mg/dL", "0.6–1.2", "norm"], ["TSH", "3.8 mIU/L", "0.4–4.0", "norm"], ["Toraks rentgeni", "Normal", "", "norm"], ["Hemoglobin", "11.8 g/dL", "13.5–17.5", "dus"]];
+        const pts = H.myPatients().slice(0, 6);
+        const rows = pts.map((p, i) => { const s = SUBE[i % SUBE.length], d = DEMO[i % DEMO.length], dt = new Date(); dt.setMonth(dt.getMonth() - (i + 1));
+          const c = d[3] === "yuk" ? "crit" : d[3] === "dus" ? "info" : "ok";
+          return `<tr><td><b>${H.esc(H.showNames() ? p.name : (H.bed(p.bed) ? H.bed(p.bed).no : "—"))}</b></td><td class="adm-sub">${H.esc(s)}</td><td>${H.esc(d[0])}</td><td class="mono"><span class="tag ${c}">${H.esc(d[1])}</span></td><td class="adm-sub mono">${d[2] ? H.esc(d[2]) : "—"}</td><td class="adm-sub">${dt.toLocaleDateString("az")}</td></tr>`; }).join("");
+        H.modal({ title:"Diğer şubelerden sonuçlar", wide:true,
+          body:`<p class="adm-sub" style="margin:0 0 10px">Hastane grubunun diğer şubelerinde yapılmış (HBYS entegrasyonuyla getirilen) geçmiş lab/radyoloji sonuçları — mükerrer tetkiki önlemek için. ${pts.length ? "" : "Kapsamınızda hasta yok."}</p>
+            ${pts.length ? `<div class="tw"><table class="t"><thead><tr><th>Hasta</th><th style="width:140px">Şube</th><th>Tetkik</th><th style="width:120px">Sonuç</th><th style="width:110px">Referans</th><th style="width:110px">Tarih</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+            <p class="adm-sub" style="margin-top:8px">Gerçek sistemde şube/HBYS bağlantısıyla hastanın FİN'inden tüm grup sonuçları çekilir. Demo veridir.</p>`,
+          actions:`<button class="btn p" data-x>Kapat</button>` });
+        return; }
       const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return;
         const isRad = tur === "rad" || /Radyoloji/i.test(o.cat || "");
         if (isRad) { const r = o.radRapor || {};
