@@ -199,7 +199,7 @@
       { id:"rnd5", hasta:"Nərgiz Əliyeva", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(8, 30), durum:"Gelmedi", not:"" },
     ];
   }
-  const RND_DURUM = ["Bekliyor", "Geldi", "Tamamlandı", "Gelmedi", "İptal"];
+  const RND_DURUM = ["Bekliyor", "Geldi", "Muayenede", "Tamamlandı", "Gelmedi", "İptal"];
   const RND_TUR = ["Poliklinik", "Cihaz", "Video klinik", "Check-up", "Kemoterapi"];
   // Randevu verilebilir doktorlar: İK personel kartında HAFTALIK ÇALIŞMA TAKVİMİ dolu VE
   // "Poliklinik/Web randevusu verilebilir" işaretli olanlar. Takvimi olmayan doktor randevu listelerinde çıkmaz.
@@ -228,30 +228,41 @@
       </tbody></table></div>`;
     const pad = (n) => String(n).padStart(2, "0"), SAAT = [];
     for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
-    const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
+    const SEVC = { "Bekliyor":"var(--mid)", "Geldi":"var(--ok)", "Muayenede":"#2f6fed", "Tamamlandı":"var(--line)", "Gelmedi":"var(--crit)", "İptal":"var(--mute)" };
+    const toMin = (hhmm) => { const p = (hhmm || "0:0").split(":"); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+    const toHHMM = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+    const rndLejant = () => `<div class="durum-lej" style="margin:8px 0">${RND_DURUM.filter(d => d !== "İptal").map(d => `<span><i style="background:${SEVC[d]}"></i>${d}</span>`).join("")}<span><i style="background:var(--line)"></i>Kapalı</span></div>`;
     const kapali = H.data.slotKapali = H.data.slotKapali || [];          // "YYYY-MM-DDTHH:MM|Doktor" biçiminde kapalı slotlar
     const slotKey = (t, d) => t + "|" + d;
-    // hücre: dolu randevu → renkli, kapalıysa → gri "Kapalı", boşsa → randevu ver
-    const cellHtml = (tarih, saat, dr) => { const a = all.find(r => (r.tarih || "").slice(0, 16) === tarih && r.doktor === dr);
-      if (a) return `<td data-rndopen="${a.id}" style="cursor:pointer;background:color-mix(in srgb,${SEVC[a.durum] || "var(--mid)"} 20%,transparent);border-left:3px solid ${SEVC[a.durum] || "var(--mid)"}"><b>${H.esc(a.hasta)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(a.tur || a.bolum || "")} · ${H.esc(a.durum)}</div></td>`;
+    // Bir slotu kaplayan randevu (süre kadar blok): başlangıç ≤ slot < başlangıç+süre. first = başlangıcın düştüğü slot.
+    const apptCover = (iso, saat, dr) => { const slotMin = toMin(saat);
+      for (const r of all) { if (r.doktor !== dr || r.durum === "İptal") continue; if ((r.tarih || "").slice(0, 10) !== iso) continue;
+        const start = toMin((r.tarih || "").slice(11, 16)), end = start + (+r.sure || 15);
+        if (slotMin >= start && slotMin < end) return { r, first:start >= slotMin && start < slotMin + 30, start, end }; }
+      return null; };
+    // hücre: randevu süresi kadar renkli blok (ilk slotta etiket, devam slotlarında boş renk) · kapalı → gri · boş → randevu ver
+    const cellHtml = (iso, saat, dr) => { const tarih = iso + "T" + saat, cov = apptCover(iso, saat, dr);
+      if (cov) { const col = SEVC[cov.r.durum] || "var(--mid)", bg = `background:color-mix(in srgb,${col} 22%,transparent);border-left:3px solid ${col}`;
+        if (!cov.first) return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"></td>`;
+        return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"><b style="font-size:11px">${toHHMM(cov.start)}-${toHHMM(cov.end)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(cov.r.hasta)} · ${H.esc(cov.r.tur || cov.r.bolum || "")} · ${H.esc(cov.r.durum)}</div></td>`; }
       if (kapali.includes(slotKey(tarih, dr))) return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="Kapalı · açmak için tıkla">Kapalı</td>`;
       return `<td data-rndcell="${tarih}|${H.esc(dr)}" style="cursor:pointer" title="Boş · tıkla randevu ver, sağ tık slot kapat"></td>`; };
     const takvimHtml = () => { const drs = randevuDoktorlari();
       const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
       const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center"><button class="btn sm" data-rndgun="-1">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndgun="1">${I("right") || "›"}</button><span class="adm-sub">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
       if (!drs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
-      return bar + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
-        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => cellHtml(gun + "T" + s, s, d)).join("")}</tr>`).join("")}
-        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Doluysa tıkla (randevu detayı) · boşsa tıkla (randevu ver) · boşa sağ tık (slot kapat). Renk = durum.</p>`; };
+      return bar + rndLejant() + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => cellHtml(gun, s, d)).join("")}</tr>`).join("")}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Randevu, süresi kadar blok kaplar. Doluysa tıkla (detay / durum) · boşsa tıkla (randevu ver) · boşa sağ tık (slot kapat).</p>`; };
     const haftaHtml = () => { const drs = randevuDoktorlari(); if (!drs.length) return `<div class="empty">Randevu takvimi tanımlı doktor yok.</div>`;
       const dr = params.dr && drs.includes(params.dr) ? params.dr : drs[0];
       const g0 = new Date(gun), gunler = []; for (let i = 0; i < 7; i++) { const d = new Date(g0); d.setDate(g0.getDate() + i); gunler.push(d.toISOString().slice(0, 10)); }
       const GAD = ["Baz", "Çər", "Cüm", "Şən", "Baz", "B.e", "Ç.a"];                 // azerice gün kısaltmaları (gösterim)
       const dgun = (iso) => { const d = new Date(iso); return GAD[d.getDay()] + " " + pad(d.getDate()) + "." + pad(d.getMonth() + 1); };
       const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndhaftagun="-7">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndhaftagun="7">${I("right") || "›"}</button><select data-rnddr>${drs.map(d => `<option${d === dr ? " selected" : ""}>${H.esc(d)}</option>`).join("")}</select><span class="adm-sub">Hafta görünümü · ${H.esc(dr)}</span></div>`;
-      return bar + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${gunler.map(iso => `<th>${dgun(iso)}</th>`).join("")}</tr></thead><tbody>
-        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${gunler.map(iso => cellHtml(iso + "T" + s, s, dr)).join("")}</tr>`).join("")}
-        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bir doktorun haftası. Boşa tıkla (randevu ver) · boşa sağ tık (slot kapat) · kapalıya tıkla (aç).</p>`; };
+      return bar + rndLejant() + `<div class="tw"><table class="t" style="font-size:12px"><thead><tr><th style="width:64px">Saat</th>${gunler.map(iso => `<th>${dgun(iso)}</th>`).join("")}</tr></thead><tbody>
+        ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${gunler.map(iso => cellHtml(iso, s, dr)).join("")}</tr>`).join("")}
+        </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bir doktorun haftası · randevu süresi kadar blok. Boşa tıkla (randevu ver) · boşa sağ tık (slot kapat) · kapalıya tıkla (aç).</p>`; };
     root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" && view === "liste" ? " geçmişi" : ""}</h2><p>${view === "takvim" ? "Gün takvimi · " + gun : view === "hafta" ? "Hafta takvimi · " + gun : list.length + " randevu"} · poliklinik / bölüm</p></div><div class="r"><button class="btn ${view === "liste" ? "p" : ""}" data-rndview="liste">Liste</button><button class="btn ${view === "takvim" ? "p" : ""}" data-rndview="takvim">Gün</button><button class="btn ${view === "hafta" ? "p" : ""}" data-rndview="hafta">Hafta</button><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
       ${view === "takvim" ? takvimHtml() : view === "hafta" ? haftaHtml() : listeHtml()}`;
     root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + st.value); } return; }
