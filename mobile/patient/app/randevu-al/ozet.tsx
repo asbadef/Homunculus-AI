@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet, Modal, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
@@ -14,6 +14,7 @@ import { api } from "../../src/api/client";
 import { openDirections, addToCalendar } from "../../src/appointment/apptActions";
 import { useSession } from "../../src/session/SessionProvider";
 import { LinearGradient } from "expo-linear-gradient";
+import { doctorImages } from "../../src/demo/images";
 import { Appointment } from "../../src/demo/types";
 
 export default function StepSummary() {
@@ -22,6 +23,7 @@ export default function StepSummary() {
   const { t: th } = useTheme();
   const { user } = useSession();
   const [insurance, setInsurance] = useState("cari");
+  const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
   const [smsSent, setSmsSent] = useState(false);
   const [names, setNames] = useState({ doctor: "", dept: "", hospital: "" });
@@ -40,7 +42,8 @@ export default function StepSummary() {
   }, []);
 
   // Randevu onayı M1 köprüsünden geçer (demo modda yerelde onaylanır, SMS yok).
-  async function confirm() {
+  async function doBook() {
+    setConfirming(false);
     const res = await api.createBooking({
       patientFin: user?.fin ?? "",
       branchId: state.departmentId ?? "",
@@ -133,7 +136,43 @@ export default function StepSummary() {
         />
       </View>
 
-      <BottomButton label={t("wiz.confirm")} onPress={confirm} />
+      <BottomButton label={t("wiz.confirm")} onPress={() => setConfirming(true)} />
+
+      <Modal visible={confirming} transparent animationType="fade" onRequestClose={() => setConfirming(false)}>
+        <Pressable onPress={() => setConfirming(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "center", padding: 24 }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: th.surface, borderRadius: 22, overflow: "hidden" }}>
+            <View style={{ backgroundColor: th.surface2, alignItems: "center", paddingTop: 18, paddingBottom: 16, paddingHorizontal: 20 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", width: "100%" }}>
+                <AppText weight="bold" style={{ fontSize: 16 }}>{t("wiz.summary.title")}</AppText>
+                <Pressable onPress={() => setConfirming(false)} hitSlop={10} style={{ position: "absolute", right: 0 }}>
+                  <Ionicons name="close" size={22} color={th.muted} />
+                </Pressable>
+              </View>
+              {state.doctorId && doctorImages[state.doctorId] ? (
+                <Image source={doctorImages[state.doctorId]} style={{ width: 92, height: 92, borderRadius: 18, marginTop: 14 }} />
+              ) : (
+                <View style={{ width: 92, height: 92, borderRadius: 18, backgroundColor: th.brandSoft, alignItems: "center", justifyContent: "center", marginTop: 14 }}>
+                  <AppText weight="bold" color={th.brand} style={{ fontSize: 34 }}>{names.doctor.replace(/^(Dr|Dyt|Uzm\.Dr)\.\s*/, "").slice(0, 1)}</AppText>
+                </View>
+              )}
+              <AppText weight="bold" style={{ fontSize: 17, marginTop: 12, textAlign: "center" }} numberOfLines={2}>{names.doctor}</AppText>
+              <Muted style={{ marginTop: 2 }}>{names.dept}</Muted>
+              <AppText weight="semibold" style={{ marginTop: 8 }}>{t("ins." + insurance)}</AppText>
+            </View>
+            <View style={{ alignItems: "center", paddingVertical: 18 }}>
+              <AppText weight="extrabold" style={{ fontSize: 26 }}>{state.time}</AppText>
+              <View style={{ width: 40, height: 3, borderRadius: 99, backgroundColor: th.brand, marginVertical: 8 }} />
+              <AppText weight="semibold">{state.date}</AppText>
+              <Muted style={{ marginTop: 2 }}>{names.hospital}</Muted>
+            </View>
+            <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
+              <Pressable onPress={doBook} style={{ backgroundColor: th.brand, borderRadius: 14, paddingVertical: 15, alignItems: "center" }}>
+                <AppText weight="bold" color="#ffffff" style={{ fontSize: 15 }}>{t("wiz.confirm")}</AppText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }

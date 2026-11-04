@@ -43,7 +43,7 @@ export function TabBar({ state }: any) {
         accessibilityRole="button"
       >
         <Ionicons name={(focused ? meta.icon : (meta.icon + "-outline")) as IconName} size={24} color={focused ? t.brand : t.faint} />
-        <AppText weight={focused ? "bold" : "medium"} style={{ fontSize: 11.5 }} color={focused ? t.brand : t.faint} numberOfLines={1}>
+        <AppText weight={focused ? "bold" : "semibold"} style={{ fontSize: 13 }} color={focused ? t.brand : t.faint} numberOfLines={1}>
           {tr(meta.labelKey)}
         </AppText>
       </Pressable>
@@ -55,7 +55,7 @@ export function TabBar({ state }: any) {
       {LEFT.map((n) => <Item key={n} name={n} />)}
 
       {/* Centered raised "Randevu al" button */}
-      <View style={{ width: 72, alignItems: "center" }}>
+      <View style={{ width: 62, alignItems: "center" }}>
         <Pressable onPress={() => router.push("/randevu-al/tip")} style={{ marginTop: -22 }} accessibilityRole="button" accessibilityLabel={tr("appointments.new")}>
           <LinearGradient
             colors={[t.brand, t.brandGrad2]}
