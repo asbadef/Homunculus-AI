@@ -29,5 +29,16 @@ const tr: Record<string, string> = {
 
   "health.title": "Sağlık",
   "profile.title": "Profil",
+
+  "feat.appointments": "Randevu",
+  "feat.results": "Sonuçlar",
+  "feat.prescriptions": "Reçeteler",
+  "feat.invoices": "Faturalar",
+  "feat.healthcard": "Sağlık kartı",
+  "feat.followup": "Yakın takibi",
+  "feat.vaccine": "Aşı kartı",
+  "feat.checkup": "Check-up",
+  "feat.documents": "Belgeler",
+  "feat.nearby": "Yakın klinikler",
 };
 export default tr;

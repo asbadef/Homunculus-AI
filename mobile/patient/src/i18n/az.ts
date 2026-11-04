@@ -31,5 +31,16 @@ const az: Record<string, string> = {
 
   "health.title": "Sağlıq",
   "profile.title": "Profil",
+
+  "feat.appointments": "Randevu",
+  "feat.results": "Nəticələr",
+  "feat.prescriptions": "Reseptlər",
+  "feat.invoices": "Faturalar",
+  "feat.healthcard": "Sağlıq kartı",
+  "feat.followup": "Yaxın izləmə",
+  "feat.vaccine": "Peyvənd kartı",
+  "feat.checkup": "Check-up",
+  "feat.documents": "Sənədlər",
+  "feat.nearby": "Yaxın klinikalar",
 };
 export default az;
