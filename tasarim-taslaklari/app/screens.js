@@ -226,11 +226,15 @@
   H.register("randevu", { title:() => "Randevu", perm:["admission", "admission_view"], render(root, params = {}) {
     randevuDoktorSeed();
     const all = randevular(), f = params.durum || "hepsi", GECMIS = ["Tamamlandı", "Gelmedi", "İptal"];
+    // Kabul saati + gecikme: hasta "Geldi" olunca kabul saati kaydedilir, randevu saatiyle farkı (dk) gecikmedir (ref Pusula).
+    const rndGeldi = (r) => { if (!r.kabulTarih) { r.kabulTarih = new Date().toISOString().slice(0, 16); H.saveData && H.saveData(); } };
+    const rndGecikme = (r) => { if (!r.kabulTarih || !r.tarih) return null; const rz = new Date(r.tarih).getTime(), kb = new Date(r.kabulTarih).getTime(); return (isNaN(rz) || isNaN(kb)) ? null : Math.round((kb - rz) / 60000); };
+    const gecikmeTag = (r) => { const g = rndGecikme(r); if (g == null) return ""; return g > 5 ? ` <span class="tag w" title="Randevu ${(r.tarih || "").slice(11, 16)} · kabul ${(r.kabulTarih || "").slice(11, 16)}">+${g} dk gecikme</span>` : g < -5 ? ` <span class="tag info">${-g} dk erken</span>` : ` <span class="tag ok">zamanında</span>`; };
     const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
     const view = params.view || "liste", gun = params.gun || new Date().toISOString().slice(0, 10);
     const listeHtml = () => `<div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:130px"></th></tr></thead><tbody>
-      ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td>${["Tamamlandı", "İptal"].includes(r.durum) ? "" : `<button class="btn p sm" data-rndkabul="${r.id}" title="Hasta kabul (protokol aç)">Kabul</button> `}<button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
+      ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select>${gecikmeTag(r)}</td><td>${["Tamamlandı", "İptal"].includes(r.durum) ? "" : `<button class="btn p sm" data-rndkabul="${r.id}" title="Hasta kabul (protokol aç)">Kabul</button> `}<button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
       </tbody></table></div>`;
     const pad = (n) => String(n).padStart(2, "0"), SAAT = [];
     for (let h = 8; h < 18; h++) { SAAT.push(pad(h) + ":00"); SAAT.push(pad(h) + ":30"); }
@@ -288,7 +292,7 @@
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bir doktorun haftası · randevu süresi kadar blok. Boşa tıkla (randevu ver) · boşa sağ tık (slot kapat) · kapalıya tıkla (aç).</p>`; };
     root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" && view === "liste" ? " geçmişi" : ""}</h2><p>${view === "takvim" ? "Gün takvimi · " + gun : view === "hafta" ? "Hafta takvimi · " + gun : list.length + " randevu"} · poliklinik / bölüm</p></div><div class="r"><button class="btn ${view === "liste" ? "p" : ""}" data-rndview="liste">Liste</button><button class="btn ${view === "takvim" ? "p" : ""}" data-rndview="takvim">Gün</button><button class="btn ${view === "hafta" ? "p" : ""}" data-rndview="hafta">Hafta</button><button class="btn" data-rndexp>${I("save") || ""} Excel</button><button class="btn" data-rndyaz>${I("print") || ""} Yazdır</button><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
       ${view === "takvim" ? takvimHtml() : view === "hafta" ? haftaHtml() : listeHtml()}`;
-    root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + st.value); } return; }
+    root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; if (st.value === "Geldi") rndGeldi(r); H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + st.value); H.go("randevu", params); } return; }
       const gs = e.target.closest("[data-rndgunset]"); if (gs) return H.go("randevu", { view:view === "hafta" ? "hafta" : "takvim", gun:gs.value, dr:params.dr });
       const dd = e.target.closest("[data-rnddr]"); if (dd) return H.go("randevu", { view:"hafta", gun, dr:dd.value }); };
     root.oncontextmenu = (e) => { const rc = e.target.closest("[data-rndcell]"); if (!rc) return; e.preventDefault();
@@ -312,7 +316,7 @@
     };
     // Randevudan hasta kabul: kayıtlı hastaya protokol açar (→ dosyası), kayıt yoksa ayaktan kayda (önden dolu) gider.
     function rndKabul(r) {
-      r.durum = "Geldi"; H.saveData && H.saveData();
+      r.durum = "Geldi"; rndGeldi(r); H.saveData && H.saveData();
       const pat = (H.data.patients || []).find(p => p.name === r.hasta);
       if (pat) { if (H.proto) { const att = H.userBy(pat.attending); H.proto.create(pat.id, { bolum:r.bolum || "—", doktor:r.doktor || (att && att.name) || "—", gelisTipi:"Ayaktan", ptip:r.tur || "Genel muayene" }); }
         H.log("Randevudan kabul", r.hasta + " · protokol açıldı"); H.toast("Kabul edildi · protokol açıldı"); H.go("hasta360", { pid:pat.id }); }
@@ -325,9 +329,10 @@
           <div class="fr"><label>Bölüm</label><input value="${H.esc(r.bolum || "")}" readonly></div>
           <div class="fr"><label>Doktor</label><input value="${H.esc(r.doktor || "")}" readonly></div>
           <div class="fr"><label>Durum</label><select data-f="durum">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></div>
-          <div class="fr"><label>Not</label><input value="${H.esc(r.not || "")}" readonly></div></div>`,
+          <div class="fr"><label>Kabul saati / gecikme</label><input value="${r.kabulTarih ? (r.kabulTarih.replace("T", " ") + (rndGecikme(r) != null ? "  ·  " + (rndGecikme(r) > 0 ? "+" + rndGecikme(r) + " dk gecikme" : rndGecikme(r) < 0 ? -rndGecikme(r) + " dk erken" : "zamanında") : "")) : "— (hasta henüz gelmedi)"}" readonly></div>
+          <div class="fr" style="grid-column:1/-1"><label>Not</label><input value="${H.esc(r.not || "")}" readonly></div></div>`,
         actions:`<button class="btn g" data-rddel>${I("trash") || ""} Sil</button><button class="btn p" data-rdkabul>${I("ok") || ""} Kabul et (protokol aç)</button><span class="spacer"></span><button class="btn" data-x>Kapat</button><button class="btn p" data-ok>Kaydet</button>`,
-        onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); };
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { r.durum = m.querySelector('[data-f="durum"]').value; if (r.durum === "Geldi") rndGeldi(r); H.saveData && H.saveData(); H.log("Randevu durumu", r.hasta + " · " + r.durum); H.closeModal(); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); };
           m.querySelector("[data-rdkabul]").onclick = () => { H.closeModal(); rndKabul(r); };
           m.querySelector("[data-rddel]").onclick = () => { if (!confirm("Bu randevu silinsin mi?")) return; const i = all.findIndex(x => x.id === r.id); if (i >= 0) all.splice(i, 1); H.saveData && H.saveData(); H.closeModal(); H.toast("Randevu silindi", "w"); H.go("randevu", { view:"takvim", gun:(r.tarih || "").slice(0, 10) }); }; } });
     }
