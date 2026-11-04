@@ -3035,16 +3035,21 @@
       const m = hakMaliyet(tip, brut), net = brut - m.toplam, oran = +oranlar[tip] || 0, hakedis = Math.round(net * oran) / 100;
       const p = H.pt(o.pid); return { ad:o.ad || tip, tip, hasta:p ? p.name : "—", brut, maliyet:m.toplam, kalemler:m.kalemler, net, oran, hakedis, tahsil };
     }).filter(Boolean); }
-  function hakOzet(anlasma, satirlar) { const brut = satirlar.reduce((a, x) => a + x.brut, 0), maliyet = satirlar.reduce((a, x) => a + x.maliyet, 0), net = brut - maliyet, uretilen = Math.round(satirlar.reduce((a, x) => a + x.hakedis, 0) * 100) / 100;
+  function hakOzet(anlasma, satirlar, giderToplam) { const brut = satirlar.reduce((a, x) => a + x.brut, 0), maliyet = satirlar.reduce((a, x) => a + x.maliyet, 0), net = brut - maliyet, uretilen = Math.round(satirlar.reduce((a, x) => a + x.hakedis, 0) * 100) / 100;
     const taban = +anlasma.tabanMaas || 0; let odenecek = uretilen, subvansiyon = 0, aciklama = "";
     if (anlasma.model === "yuzde") { odenecek = uretilen; aciklama = "Saf yüzde: net ciro × oran doğrudan ödenir."; }
     else if (anlasma.model === "sabit_perf") { odenecek = Math.max(taban, uretilen); aciklama = uretilen > taban ? ("Performans tabanı aştı → " + uretilen.toFixed(2) + " ₼ ödenir.") : ("Üretilen taban altında → garanti taban " + taban + " ₼ ödenir."); }
     else if (anlasma.model === "eriyen") { if (uretilen >= taban) { odenecek = uretilen; aciklama = "Üretilen fiksi aştı → fiks eridi, üretilen ödenir."; } else { odenecek = taban; subvansiyon = Math.round((taban - uretilen) * 100) / 100; aciklama = "Üretilen fiks altında → fiks " + taban + " ₼ ödenir; fark " + subvansiyon + " ₼ sübvanse edilir (sonraki dönemde mahsup)."; } }
-    return { brut:Math.round(brut * 100) / 100, maliyet:Math.round(maliyet * 100) / 100, net:Math.round(net * 100) / 100, uretilen, taban, odenecek:Math.round(odenecek * 100) / 100, subvansiyon, aciklama }; }
+    // Vergi/stopaj + gider → doktorun eline geçen net. Tahsil edilen / bekleyen kırılımı (fatura takip).
+    const vergiOran = +anlasma.vergiOran || 0, gider = Math.round((giderToplam || 0) * 100) / 100;
+    const vergi = Math.round(odenecek * vergiOran) / 100;   // odenecek*vergiOran/100
+    const netOdeme = Math.round((odenecek - vergi - gider) * 100) / 100;
+    const tahsilEdilen = Math.round(satirlar.filter(x => x.tahsil).reduce((a, x) => a + x.hakedis, 0) * 100) / 100, bekleyen = Math.round((uretilen - tahsilEdilen) * 100) / 100;
+    return { brut:Math.round(brut * 100) / 100, maliyet:Math.round(maliyet * 100) / 100, net:Math.round(net * 100) / 100, uretilen, taban, odenecek:Math.round(odenecek * 100) / 100, subvansiyon, aciklama, vergiOran, vergi, gider, netOdeme, tahsilEdilen, bekleyen }; }
   H.hakSatirlar = hakSatirlar; H.hakOzet = hakOzet;   // rapor/diğer modüller kullanabilir
   function hakSeed() { if (anlasmalar().length) return; const drs = hakDoktorlari(); if (!drs.length) return;
-    anlasmalar().push({ id:"anl1", doktor:drs[0], ad:drs[0] + " · Cerrahi sözleşme", model:"sabit_perf", tabanMaas:3000, oranlar:Object.assign({}, HAK_ORAN_DEF), bolum:"Cərrahiyyə", baslangic:"2026-01-01", bitis:"2026-12-31", kilit:false });
-    if (drs[1]) anlasmalar().push({ id:"anl2", doktor:drs[1], ad:drs[1] + " · Yüzde sözleşme", model:"yuzde", tabanMaas:0, oranlar:Object.assign({}, HAK_ORAN_DEF, { Muayene:40 }), bolum:"Daxili", baslangic:"2026-01-01", bitis:"2026-12-31", kilit:false });
+    anlasmalar().push({ id:"anl1", doktor:drs[0], ad:drs[0] + " · Cerrahi sözleşme", model:"sabit_perf", tabanMaas:3000, vergiOran:14, referansOran:10, oranlar:Object.assign({}, HAK_ORAN_DEF), bolum:"Cərrahiyyə", baslangic:"2026-01-01", bitis:"2026-12-31", kilit:false });
+    if (drs[1]) anlasmalar().push({ id:"anl2", doktor:drs[1], ad:drs[1] + " · Yüzde sözleşme", model:"yuzde", tabanMaas:0, vergiOran:14, referansOran:0, oranlar:Object.assign({}, HAK_ORAN_DEF, { Muayene:40 }), bolum:"Daxili", baslangic:"2026-01-01", bitis:"2026-12-31", kilit:false });
     // Demo: sözleşmeli doktorlara fiyatlı işlemler (hakediş hesabı boş kalmasın). Gerçekte bunlar günlük istem/fatura akışından gelir.
     const ps = (H.data.patients || []), pid = (i) => ps[i % Math.max(1, ps.length)] ? ps[i % Math.max(1, ps.length)].id : null, ord = (H.data.orders = H.data.orders || []);
     const addH = (dr, cat, ad, fiyat, i) => ord.push({ id:"hakord" + dr.length + cat + i + Date.now(), pid:pid(i), cat, ad, by:dr, fiyat, at:H.now(), durum:"Tamamlandı" });
@@ -3066,6 +3071,8 @@
           <div class="fr"><label>Model</label><select data-f="model">${HAK_MODEL.map(([k, l]) => `<option value="${k}"${k === o.model ? " selected" : ""}>${l}</option>`).join("")}</select></div>
           <div class="fr"><label>Taban / fiks maaş (₼)</label><input type="number" data-f="tabanMaas" value="${o.tabanMaas}" min="0"><div class="adm-sub" style="margin-top:3px">Saf Yüzde'de 0; Sabit+Performans'ta garanti taban; Eriyen'de başlangıç fiksi.</div></div>
           <div class="fr"><label>Bölüm</label><input data-f="bolum" value="${H.esc(o.bolum)}"></div>
+          <div class="fr"><label>Vergi / stopaj (%)</label><input type="number" data-f="vergiOran" value="${o.vergiOran != null ? o.vergiOran : 14}" min="0" max="60"><div class="adm-sub" style="margin-top:3px">Hakedişten düşülüp doktorun eline geçen net hesaplanır.</div></div>
+          <div class="fr"><label>Referans oranı (%)</label><input type="number" data-f="referansOran" value="${o.referansOran != null ? o.referansOran : 0}" min="0" max="50"><div class="adm-sub" style="margin-top:3px">Sevk eden/yönlendiren doktora, bu doktorun hakedişinden ayrılan pay.</div></div>
           <div class="fr"><label>Başlangıç</label><input type="date" data-f="baslangic" value="${o.baslangic || ""}"></div>
           <div class="fr"><label>Bitiş</label><input type="date" data-f="bitis" value="${o.bitis || ""}"></div>
           <div class="fr" style="grid-column:1/-1"><label style="font-weight:600;color:var(--mute)">Oran matrisi (%) — işlem tipine göre hakediş oranı</label></div>
@@ -3073,7 +3080,7 @@
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
         onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           const oranlar = {}; HAK_TIP.forEach(t => oranlar[t] = +m.querySelector(`[data-oran="${t}"]`).value || 0);
-          const rec = { doktor:g("doktor"), ad:g("ad") || (g("doktor") + " · " + HAK_MODEL_AD(g("model"))), model:g("model"), tabanMaas:+g("tabanMaas") || 0, oranlar, bolum:g("bolum"), baslangic:g("baslangic"), bitis:g("bitis") };
+          const rec = { doktor:g("doktor"), ad:g("ad") || (g("doktor") + " · " + HAK_MODEL_AD(g("model"))), model:g("model"), tabanMaas:+g("tabanMaas") || 0, vergiOran:+g("vergiOran") || 0, referansOran:+g("referansOran") || 0, oranlar, bolum:g("bolum"), baslangic:g("baslangic"), bitis:g("bitis") };
           if (ex) { Object.assign(ex, rec); } else { anlasmalar().push(Object.assign({ id:"anl" + Date.now(), kilit:false }, rec)); }
           H.saveData && H.saveData(); H.log(ex ? "Anlaşma güncellendi" : "Anlaşma eklendi", rec.doktor); H.closeModal(); H.toast("Anlaşma kaydedildi"); H.go("hakedis", { htab:"anlasmalar" }); }; } });
     }
@@ -3086,16 +3093,28 @@
     /* ---- Dönem detay ---- */
     function donemDetay(d) { const a = anlById(d.anlasmaId); if (!a) return; const sat = d.satirlar || [];
       const kalemHtml = (k) => k && k.length ? k.map(x => `${x[0]}: ${x[1]}`).join(" · ") : "—";
+      const oz = d.ozet, kilitli = d.durum === "kilitli" || d.durum === "odendi";
       H.modal({ title:"Hakediş detayı · " + H.esc(a.doktor) + " · " + d.ay, wide:true,
-        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Model</span><b>${HAK_MODEL_AD(a.model)}</b></div><div><span>Baz</span><b>${d.baz === "tahsilat" ? "Tahsil edilen" : "Tahakkuk"}</b></div><div><span>Brüt ciro</span><b>${d.ozet.brut} ₼</b></div><div><span>Üretim maliyeti</span><b>${d.ozet.maliyet} ₼</b></div><div><span>Net ciro</span><b>${d.ozet.net} ₼</b></div><div><span>Üretilen hakediş</span><b>${d.ozet.uretilen} ₼</b></div><div><span>Ödenecek</span><b>${d.ozet.odenecek} ₼</b></div>${d.ozet.subvansiyon ? `<div><span>Sübvansiyon</span><b>${d.ozet.subvansiyon} ₼</b></div>` : ""}</div>
-          <div class="note i" style="margin-bottom:10px">${H.esc(d.ozet.aciklama)}</div>
+        body:`<div class="h360-meta" style="margin-bottom:12px"><div><span>Model</span><b>${HAK_MODEL_AD(a.model)}</b></div><div><span>Baz</span><b>${d.baz === "tahsilat" ? "Tahsil edilen" : "Tahakkuk"}</b></div><div><span>Brüt ciro</span><b>${oz.brut} ₼</b></div><div><span>Üretim maliyeti</span><b>${oz.maliyet} ₼</b></div><div><span>Net ciro</span><b>${oz.net} ₼</b></div><div><span>Üretilen hakediş</span><b>${oz.uretilen} ₼</b></div><div><span>Ödenecek (brüt)</span><b>${oz.odenecek} ₼</b></div>${oz.subvansiyon ? `<div><span>Sübvansiyon</span><b>${oz.subvansiyon} ₼</b></div>` : ""}
+          <div><span>Vergi / stopaj (%${oz.vergiOran})</span><b>−${oz.vergi} ₼</b></div>${oz.gider ? `<div><span>Giderler</span><b>−${oz.gider} ₼</b></div>` : ""}<div><span>Net ödeme (ele geçen)</span><b style="color:var(--ok)">${oz.netOdeme} ₼</b></div><div><span>Tahsil edilen / bekleyen</span><b>${oz.tahsilEdilen} / ${oz.bekleyen} ₼</b></div></div>
+          <div class="note i" style="margin-bottom:10px">${H.esc(oz.aciklama)} · Net ödeme = ödenecek − vergi/stopaj − giderler.</div>
+          <div class="box" style="margin-bottom:12px"><div class="r" style="justify-content:space-between;align-items:center"><h6 style="margin:0">Gider kalemleri</h6>${kilitli ? "" : `<button class="btn sm" data-gider-ekle="${d.id}">+ Gider ekle</button>`}</div>
+            ${(d.giderler && d.giderler.length) ? `<div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Gider</th><th class="n" style="width:120px">Tutar ₼</th>${kilitli ? "" : `<th style="width:50px"></th>`}</tr></thead><tbody>${d.giderler.map((g, i) => `<tr><td>${H.esc(g.ad)}</td><td class="n">${g.tutar}</td>${kilitli ? "" : `<td><button class="btn g sm" data-gider-sil="${d.id}|${i}">×</button></td>`}</tr>`).join("")}</tbody></table></div>` : `<p class="adm-sub" style="margin:6px 0 0">Gider yok (reklam/komisyon vb. buradan eklenir, net ödemeden düşülür).</p>`}</div>
           <div class="tw"><table class="t" style="font-size:12px"><thead><tr><th>İşlem</th><th>Tip</th><th>Hasta</th><th class="n">Brüt</th><th>Maliyet kalemleri</th><th class="n">Maliyet</th><th class="n">Net</th><th class="n">Oran</th><th class="n">Hakediş</th><th>Tahsil</th></tr></thead><tbody>
           ${sat.length ? sat.map(s => `<tr><td>${H.esc(s.ad)}</td><td>${s.tip}</td><td class="adm-sub">${H.esc(s.hasta)}</td><td class="n">${s.brut}</td><td class="adm-sub" style="font-size:11px">${kalemHtml(s.kalemler)}</td><td class="n">${s.maliyet}</td><td class="n">${s.net}</td><td class="n">%${s.oran}</td><td class="n"><b>${s.hakedis}</b></td><td>${s.tahsil ? `<span class="tag ok">tahsil</span>` : `<span class="tag w">bekliyor</span>`}</td></tr>`).join("") : `<tr><td colspan="10" class="mute" style="padding:16px;text-align:center">Bu dönemde hesaplanmış işlem yok.</td></tr>`}
           </tbody></table></div>`,
         actions:`<button class="btn" data-exp>${I("save") || ""} Excel</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
-        onMount(m) { const e = m.querySelector("[data-exp]"); if (e) e.onclick = () => { H.exportCsv && H.exportCsv("Hakedis_" + a.doktor + "_" + d.ay, ["İşlem", "Tip", "Hasta", "Brüt", "Maliyet", "Net", "Oran", "Hakediş", "Tahsil"], sat.map(s => [s.ad, s.tip, s.hasta, s.brut, s.maliyet, s.net, "%" + s.oran, s.hakedis, s.tahsil ? "tahsil" : "bekliyor"])); H.toast("Excel indirildi"); }; } });
+        onMount(m) { const e = m.querySelector("[data-exp]"); if (e) e.onclick = () => { H.exportCsv && H.exportCsv("Hakedis_" + a.doktor + "_" + d.ay, ["İşlem", "Tip", "Hasta", "Brüt", "Maliyet", "Net", "Oran", "Hakediş", "Tahsil"], sat.map(s => [s.ad, s.tip, s.hasta, s.brut, s.maliyet, s.net, "%" + s.oran, s.hakedis, s.tahsil ? "tahsil" : "bekliyor"])); H.toast("Excel indirildi"); };
+          const recalc = () => { d.ozet = hakOzet(a, d.satirlar || hakSatirlar(a, d.baz), giderT(d)); H.saveData && H.saveData(); };
+          const ge = m.querySelector("[data-gider-ekle]"); if (ge) ge.onclick = () => { H.closeModal();
+            H.modal({ title:"Gider ekle", body:`<div class="icd-form"><div class="fr"><label>Gider adı</label><input data-f="gad" placeholder="ör. Reklam payı, komisyon"></div><div class="fr"><label>Tutar ₼</label><input type="number" data-f="gtut" min="0" value="0"></div></div>`,
+              actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Ekle</button>`,
+              onMount(mm) { mm.querySelector("[data-ok]").onclick = () => { const ad = (mm.querySelector('[data-f="gad"]').value || "").trim(), tut = +mm.querySelector('[data-f="gtut"]').value || 0;
+                if (!ad || tut <= 0) { H.toast("Gider adı ve tutar girin.", "w"); return; } (d.giderler = d.giderler || []).push({ ad, tutar:tut }); recalc(); H.closeModal(); H.toast("Gider eklendi"); donemDetay(d); }; } }); };
+          m.querySelectorAll("[data-gider-sil]").forEach(btn => btn.onclick = () => { const [, i] = btn.dataset.giderSil.split("|"); (d.giderler || []).splice(+i, 1); recalc(); H.closeModal(); donemDetay(d); }); } });
     }
-    function donemHesapla(d) { const a = anlById(d.anlasmaId); if (!a) return; const sat = hakSatirlar(a, d.baz); d.satirlar = sat; d.ozet = hakOzet(a, sat); d.durum = "hesaplandi"; H.saveData && H.saveData(); H.log("Hakediş hesaplandı", a.doktor + " · " + d.ay + " · " + sat.length + " işlem · " + d.ozet.odenecek + " ₼"); }
+    const giderT = (d) => (d.giderler || []).reduce((s, g) => s + (+g.tutar || 0), 0);
+    function donemHesapla(d) { const a = anlById(d.anlasmaId); if (!a) return; const sat = hakSatirlar(a, d.baz); d.satirlar = sat; d.ozet = hakOzet(a, sat, giderT(d)); d.durum = "hesaplandi"; H.saveData && H.saveData(); H.log("Hakediş hesaplandı", a.doktor + " · " + d.ay + " · " + sat.length + " işlem · net " + d.ozet.netOdeme + " ₼"); }
     function donemForm() { const a = anlasmalar(); if (!a.length) { H.toast("Önce anlaşma tanımlayın.", "w"); return; }
       H.modal({ title:"Yeni dönem", body:`<div class="icd-form">
           <div class="fr" style="grid-column:1/-1"><label>Anlaşma (doktor)</label><select data-f="anl">${a.map(x => `<option value="${x.id}">${H.esc(x.doktor)} · ${HAK_MODEL_AD(x.model)}</option>`).join("")}</select></div>
@@ -3109,14 +3128,14 @@
     }
     const tabDonemler = () => { const ds = hakDonemler();
       return `<div class="r" style="margin-bottom:10px"><button class="btn p" data-dnmnew>${I("plus")} Yeni dönem</button></div>
-        <div class="tw"><table class="t"><thead><tr><th>Dönem</th><th>Doktor</th><th>Ay</th><th>Baz</th><th style="width:170px">Durum</th><th class="n" style="width:110px">Üretilen</th><th class="n" style="width:110px">Ödenecek</th><th style="width:260px"></th></tr></thead><tbody>
+        <div class="tw"><table class="t"><thead><tr><th>Dönem</th><th>Doktor</th><th>Ay</th><th>Baz</th><th style="width:170px">Durum</th><th class="n" style="width:110px">Üretilen</th><th class="n" style="width:120px">Net ödeme</th><th style="width:260px"></th></tr></thead><tbody>
         ${ds.length ? ds.map(d => { const a = anlById(d.anlasmaId); const oz = d.ozet || {};
           const act = [`<button class="btn sm" data-dnmhesapla="${d.id}">Hesapla</button>`, `<button class="btn sm" data-dnmdetay="${d.id}">Detay</button>`];
           if (d.durum === "hesaplandi") act.push(`<button class="btn sm" data-dnmgonder="${d.id}">Doktora gönder</button>`);
           if (d.durum === "doktor_onay") act.push(`<button class="btn p sm" data-dnmonay="${d.id}">Doktor onayı</button>`);
           if (d.durum === "onayli") act.push(`<button class="btn sm" data-dnmkilit="${d.id}">Kilitle</button>`);
           if (d.durum === "kilitli") act.push(`<button class="btn p sm" data-dnmode="${d.id}">Ödendi</button>`);
-          return `<tr><td class="adm-sub">${H.esc(a ? a.ad : "—")}</td><td><b>${H.esc(a ? a.doktor : "—")}</b></td><td>${H.esc(d.ay)}</td><td class="adm-sub">${d.baz === "tahsilat" ? "Tahsilat" : "Tahakkuk"}</td><td>${H.durum ? H.durum(HAK_DURUM[d.durum] || d.durum) : (HAK_DURUM[d.durum] || d.durum)}</td><td class="n">${oz.uretilen != null ? oz.uretilen + " ₼" : "—"}</td><td class="n"><b>${oz.odenecek != null ? oz.odenecek + " ₼" : "—"}</b></td><td>${act.join(" ")}</td></tr>`;
+          return `<tr><td class="adm-sub">${H.esc(a ? a.ad : "—")}</td><td><b>${H.esc(a ? a.doktor : "—")}</b></td><td>${H.esc(d.ay)}</td><td class="adm-sub">${d.baz === "tahsilat" ? "Tahsilat" : "Tahakkuk"}</td><td>${H.durum ? H.durum(HAK_DURUM[d.durum] || d.durum) : (HAK_DURUM[d.durum] || d.durum)}</td><td class="n">${oz.uretilen != null ? oz.uretilen + " ₼" : "—"}</td><td class="n"><b>${oz.netOdeme != null ? oz.netOdeme + " ₼" : "—"}</b>${oz.odenecek != null ? `<div class="adm-sub" style="font-size:10.5px">brüt ${oz.odenecek}</div>` : ""}</td><td>${act.join(" ")}</td></tr>`;
         }).join("") : `<tr><td colspan="8" class="mute" style="padding:20px;text-align:center">Dönem yok. "Yeni dönem" ile oluşturun.</td></tr>`}
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Akış: Hesapla → Doktora gönder → Doktor onayı → Kilitle → Ödendi. Kilitli dönem değişmez; ödeme sonrası bordroya gider.</p>`; };
     /* ---- Doktor raporu ---- */
@@ -3127,7 +3146,7 @@
           <div class="fr"><label>Baz</label><select data-rbaz><option value="tahsilat"${baz === "tahsilat" ? " selected" : ""}>Tahsil edilen</option><option value="tahakkuk"${baz === "tahakkuk" ? " selected" : ""}>Tahakkuk</option></select></div>
           ${a ? `<div class="fr"><label>Model</label><input value="${HAK_MODEL_AD(a.model)}" readonly></div>` : ""}</div>
         ${!a ? `<div class="empty">Bu doktorun tanımlı anlaşması yok. Anlaşmalar sekmesinden ekleyin.</div>`
-          : `<div class="h360-meta" style="margin-bottom:12px"><div><span>Brüt ciro</span><b>${oz.brut} ₼</b></div><div><span>Maliyet</span><b>${oz.maliyet} ₼</b></div><div><span>Net ciro</span><b>${oz.net} ₼</b></div><div><span>Üretilen hakediş</span><b>${oz.uretilen} ₼</b></div><div><span>Ödenecek</span><b>${oz.odenecek} ₼</b></div></div>
+          : `<div class="h360-meta" style="margin-bottom:12px"><div><span>Brüt ciro</span><b>${oz.brut} ₼</b></div><div><span>Maliyet</span><b>${oz.maliyet} ₼</b></div><div><span>Net ciro</span><b>${oz.net} ₼</b></div><div><span>Üretilen hakediş</span><b>${oz.uretilen} ₼</b></div><div><span>Ödenecek (brüt)</span><b>${oz.odenecek} ₼</b></div><div><span>Vergi/stopaj (%${oz.vergiOran})</span><b>−${oz.vergi} ₼</b></div><div><span>Net ödeme (ele geçen)</span><b style="color:var(--ok)">${oz.netOdeme} ₼</b></div><div><span>Tahsil / bekleyen</span><b>${oz.tahsilEdilen} / ${oz.bekleyen} ₼</b></div></div>
           <div class="note i" style="margin-bottom:10px">${H.esc(oz.aciklama)}</div>
           <div class="tw"><table class="t" style="font-size:12px"><thead><tr><th>İşlem</th><th>Tip</th><th>Hasta</th><th class="n">Brüt</th><th class="n">Maliyet</th><th class="n">Net</th><th class="n">Oran</th><th class="n">Hakediş</th><th>Tahsil</th></tr></thead><tbody>
           ${sat.length ? sat.map(s => `<tr><td>${H.esc(s.ad)}</td><td>${s.tip}</td><td class="adm-sub">${H.esc(s.hasta)}</td><td class="n">${s.brut}</td><td class="n">${s.maliyet}</td><td class="n">${s.net}</td><td class="n">%${s.oran}</td><td class="n"><b>${s.hakedis}</b></td><td>${s.tahsil ? `<span class="tag ok">tahsil</span>` : `<span class="tag w">bekliyor</span>`}</td></tr>`).join("") : `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">İşlem yok.</td></tr>`}
