@@ -106,10 +106,11 @@
     const muaTag = (pid) => { const d = muaDoc(pid); return d ? `<span class="tag ${muaSigned(d) ? "ok" : "w"}">${muaSigned(d) ? "İmzalı" : "Taslak"}</span>` : `<span class="tag">—</span>`; };
     const imzaBek = myPts.reduce((a, p) => { const d = muaDoc(p.id); return a + (d && !muaSigned(d) ? 1 : 0); }, 0);
     const epiBek = myPts.reduce((a, p) => a + (H.data.docs || []).filter(x => x.pid === p.id && x.type === "epikriz" && x.status !== "muhur").length, 0);
+    const konsBek = (H.data.orders || []).filter(o => o.cat === "Konsültasyon" && o.durum !== "Cevaplandı" && o.durum !== "İptal").length;
     const kutu = (n, l, key) => `<div class="box" ${key && n ? `data-drq="${key}" role="button" tabindex="0" title="Kuyruğu aç"` : ""} style="text-align:center;min-width:110px;flex:1${key && n ? ";cursor:pointer" : ""}"><div style="font-size:24px;font-weight:800;color:var(--pri)">${n}</div><div class="adm-sub">${l}${key && n ? ` ${I("chevR") || "›"}` : ""}</div></div>`;
     const muaIco = I("stethoscope") || I("activity") || "";
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_drislem")}</h2><p>${H.esc(myName || "Hekim")} · bugünkü muayene kuyruğu ve hastalarınız</p></div></div>
-      <div class="r" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">${kutu(myPts.length, "İş listesi (hastam)")}${kutu(bekRand.length, "Randevular")}${kutu(imzaBek, "Muayene imza bekleyen", "imza")}${kutu(epiBek, "Epikriz işlem", "epi")}${kutu(sonucBek, "Sonuç bekleyen", "sonuc")}</div>
+      <div class="r" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">${kutu(myPts.length, "İş listesi (hastam)")}${kutu(bekRand.length, "Randevular")}${kutu(imzaBek, "Muayene imza bekleyen", "imza")}${kutu(epiBek, "Epikriz işlem", "epi")}${kutu(sonucBek, "Sonuç bekleyen", "sonuc")}${kutu(konsBek, "Konsültasyon cevap", "kons")}</div>
       <div class="ist-sec ist-hd"><h5>Bugünün randevuları — muayene bekleyen${fallback ? ` <span class="adm-sub">(demo: tüm bölümler)</span>` : ""}</h5></div>
       <div class="tw"><table class="t"><thead><tr><th style="width:70px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th style="width:100px">Durum</th><th style="width:140px"></th></tr></thead><tbody>
       ${bekRand.length ? bekRand.slice().sort((a, z) => (a.tarih || "").localeCompare(z.tarih || "")).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").slice(11, 16))}</td><td><b>${H.esc(vzName(r.hasta))}</b></td><td class="adm-sub">${H.esc(r.bolum || "")}</td><td class="adm-sub">${H.esc(r.doktor || "")}</td><td><span class="tag ${r.durum === "Geldi" ? "ok" : "w"}">${H.esc(r.durum)}</span></td><td><button class="btn p sm" data-muarand="${r.id}">${muaIco} Muayeneye al</button></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Bugün muayene bekleyen randevu yok.</td></tr>`}
@@ -131,8 +132,28 @@
         actions:`<button class="btn" data-x>Kapat</button>`,
         onMount(m) { const tb = m.querySelector("tbody"); if (tb) tb.addEventListener("click", ev => { const g = ev.target.closest("[data-drqgo]"); if (g) { const p = H.pt(g.dataset.drqgo); H.closeModal(); if (p) go(p); } }); } });
     }
+    // Konsültasyon cevap kuyruğu: bekleyen konsültasyon istemleri → konsültan hekim cevabını yazar; isteyen hekim görür.
+    function konsQueueModal() {
+      const list = (H.data.orders || []).filter(o => o.cat === "Konsültasyon" && o.durum !== "Cevaplandı" && o.durum !== "İptal");
+      H.modal({ title:"Konsültasyon cevap kuyruğu (" + list.length + ")", wide:true,
+        body:list.length ? `<div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>İstenen bölüm/dr</th><th>Neden</th><th>İsteyen · tarih</th><th style="width:100px"></th></tr></thead><tbody>${list.map(o => { const p = H.pt(o.pid) || {}; return `<tr><td><b>${H.esc(H.showNames() ? (p.name || "—") : (H.bed(p.bed) ? H.bed(p.bed).no : "—"))}</b></td><td>${H.esc(o.ad || "")}</td><td class="adm-sub">${H.esc((o.detay || "").replace(/İsteyen:.*/, "").trim() || "—")}</td><td class="adm-sub">${H.esc(((o.detay || "").match(/İsteyen: ([^·]+)/) || [,"—"])[1])} · ${H.esc(o.at || "")}</td><td><button class="btn p sm" data-konsyanit="${o.id}">Cevapla</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Bekleyen konsültasyon yok.</div>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { const tb = m.querySelector("tbody"); if (tb) tb.addEventListener("click", ev => { const b = ev.target.closest("[data-konsyanit]"); if (b) { const o = (H.data.orders || []).find(x => x.id === b.dataset.konsyanit); if (o) { H.closeModal(); konsYanitla(o); } } }); } });
+    }
+    function konsYanitla(o) {
+      const p = H.pt(o.pid) || {};
+      H.modal({ title:"Konsültasyon cevabı · " + H.esc(o.ad || ""), wide:true,
+        body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag">${H.esc(H.showNames() ? (p.name || "") : (H.bed(p.bed) ? H.bed(p.bed).no : ""))}</span><span class="adm-sub">${H.esc(p.dx || "")}</span></div>
+          <div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Değerlendirme / cevap</label><textarea data-f="metin" rows="5" placeholder="Konsültan hekim değerlendirmesi…">${H.esc((o.cevap && o.cevap.metin) || "")}</textarea></div>
+          <div class="fr" style="grid-column:1/-1"><label>Görüş / öneri</label><input data-f="oneri" value="${H.esc((o.cevap && o.cevap.oneri) || "")}" placeholder="ör. Tedaviye X eklenmesi önerilir"></div></div>
+          <p class="adm-sub">Cevap kaydedilince isteyen hekimin hastanın istem/tedavi ekranında görünür.</p>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Cevabı kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const metin = (m.querySelector('[data-f="metin"]').value || "").trim(); if (!metin) { H.toast("Cevap metni gerekli.", "w"); return; }
+          o.cevap = { metin, oneri:(m.querySelector('[data-f="oneri"]').value || "").trim(), by:myName || "Konsültan", at:H.nowFull ? H.nowFull() : "" }; o.durum = "Cevaplandı";
+          H.saveData && H.saveData(); H.log("Konsültasyon cevaplandı", (o.ad || "") + " · " + (p.name || "")); H.closeModal(); H.toast("Konsültasyon cevabı kaydedildi"); H.go("drislem", {}); }; } });
+    }
     root.onclick = (e) => {
-      const q = e.target.closest("[data-drq]"); if (q) { drQueueModal(q.dataset.drq); return; }
+      const q = e.target.closest("[data-drq]"); if (q) { if (q.dataset.drq === "kons") konsQueueModal(); else drQueueModal(q.dataset.drq); return; }
       const mr = e.target.closest("[data-muarand]"); if (mr) { const r = all.find(x => x.id === mr.dataset.muarand); if (!r) return;
         const pid = pidByName(r.hasta); if (!pid) { H.toast("Hasta kaydı yok · kabule gidiliyor.", "w"); return H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum } }); }
         const p = H.pt(pid); let pno = H.proto ? H.proto.activeNo(pid) : null;
