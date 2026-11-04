@@ -3,6 +3,15 @@
  * Sayfa yenilenince demo verisi başa döner (tercihler hariç). */
 (function () {
   const H = (window.H = {});
+  // Ülke listesi (uyruk/milliyet ve ülke seçimi): bölgedekiler önce, sonra alfabetik. Hasta app'i de aynı listeyi kullanmalı.
+  H.ULKELER = ["Azərbaycan", "Türkiyə", "Rusiya", "Gürcüstan", "İran", "Qazaxıstan", "Özbəkistan", "Türkmənistan", "Ukrayna", "Belarus",
+    "ABŞ", "Almaniya", "Avstraliya", "Avstriya", "Argentina", "Belçika", "Birləşmiş Ərəb Əmirlikləri", "Böyük Britaniya", "Braziliya", "Bolqarıstan",
+    "Cənubi Koreya", "Çexiya", "Çin", "Danimarka", "Əfqanıstan", "Estoniya", "Finlandiya", "Fələstin", "Fransa", "Filippin",
+    "Hindistan", "Xorvatiya", "Hollandiya", "İndoneziya", "İraq", "İrlandiya", "İspaniya", "İsrail", "İsveç", "İsveçrə",
+    "İtaliya", "Yaponiya", "Kanada", "Qətər", "Qırğızıstan", "Kolumbiya", "Küveyt", "Latviya", "Litva", "Livan",
+    "Macarıstan", "Malayziya", "Meksika", "Misir", "Monqolustan", "Norveç", "Pakistan", "Polşa", "Portuqaliya", "Rumıniya",
+    "Səudiyyə Ərəbistanı", "Serbiya", "Sinqapur", "Slovakiya", "Sloveniya", "Suriya", "Tacikistan", "Tayland", "Tunis", "Vyetnam",
+    "Yunanıstan", "Ürdün", "Yəmən", "Cənubi Afrika", "Nigeriya", "Mərakeş", "Əlcəzair", "Kenya", "Efiopiya", "Digər"];
 
   /* ================= simgeler ================= */
   const P = {

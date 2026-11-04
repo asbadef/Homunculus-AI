@@ -116,7 +116,7 @@
   const BST = { bos:"Boş", dolu:"Dolu", temizlik:"Temizlik", bloke:"Bloke", rezerve:"Rezerve" };
   const ADM_T = { medikal:"Medikal yatış", ameliyat:"Ameliyat", yb:"Yoğun bakım", mudahale:"Müdahale" };
   const BLOOD = ["Bilinmiyor", "0 Rh(+)", "0 Rh(-)", "A Rh(+)", "A Rh(-)", "B Rh(+)", "B Rh(-)", "AB Rh(+)", "AB Rh(-)"];
-  const NAT = ["Azərbaycan", "Türkiyə", "Rusiya", "Gürcüstan", "İran", "Digər"];
+  const NAT = H.ULKELER || ["Azərbaycan", "Türkiyə", "Rusiya", "Gürcüstan", "İran", "Digər"];
   const KURUM = ["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması", "Özel sigorta"];   // Azerbaycan: SAMHI = zorunlu sığorta
   const RULES = ["NEWS2", "SOFA + NEWS2", "PEWS", "nSOFA"];
   const unitKind = (u) => (H.KIND && H.KIND[u.kind]) || (u.type === "nicu" ? "Yenidoğan yoğun bakım" : u.type === "icu" ? "Yoğun bakım" : "Servis");

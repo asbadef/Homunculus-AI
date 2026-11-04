@@ -1507,7 +1507,7 @@
       <div class="box"><h5>Kimlik belgesi ve adres</h5><div class="icd-form">
         ${selF("belgeTip", "Kimlik belgesi", ["Şəxsiyyət vəsiqəsi", "Pasaport", "Sürücülük vəsiqəsi"])}${fld("sehir", "Şəhər")}${fld("rayon", "Rayon")}${fld("dogumYeri", "Doğum yeri")}
         ${selF("aile", "Ailə vəziyyəti", ["Subay", "Evli", "Bilinmir"])}${selF("erisim", "Erişim kanalı", secArr("erisim", ["Web", "Telefon", "Tövsiyə", "Digər"]))}
-        ${selF("ulke", "Ölkə", ["Azərbaycan", "Digər"], p.ulke)}${fld("adres", "Ünvan")}${fld("postaKodu", "Poçt kodu")}</div></div>
+        ${selF("ulke", "Ölkə", H.ULKELER || ["Azərbaycan", "Digər"], p.ulke)}${fld("adres", "Ünvan")}${fld("postaKodu", "Poçt kodu")}</div></div>
       <div class="box"><h5>İletişim</h5><div class="icd-form">
         ${fld("phone", "Mobil tel")}${fld("evTel", "Ev / iş tel")}${fld("eposta", "E-posta")}${fld("fax", "Faks")}
         ${selF("smsOnay", "SMS bilgilendirme", ["Bəli", "Xeyr"])}${selF("mailOnay", "E-posta bilgilendirme", ["Bəli", "Xeyr"])}</div></div>
