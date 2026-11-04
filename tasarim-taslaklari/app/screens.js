@@ -238,6 +238,16 @@
     const RND_TODAY = new Date().toISOString().slice(0, 10);
     const surgeryAppts = () => (H.data.orders || []).filter(o => o.cat === "Ameliyat" && o.amelProg && o.amelProg.cerrah && o.amelProg.saat && o.amelProg.saat !== "—")
       .map(o => { const p = H.pt(o.pid); return { id:"amel:" + o.id, hasta:p ? p.name : (o.hasta || "—"), tur:"Ameliyat", bolum:o.ad || "", doktor:o.amelProg.cerrah, tarih:RND_TODAY + "T" + o.amelProg.saat, sure:+o.amelProg.sure || 90, durum:o.amelProg.durum || "Beklemede" }; });
+    // Çakışma: aynı doktorun [start,start+süre) aralığıyla kesişen başka randevu/ameliyat (kurallar kontrolü).
+    const rndConflict = (doktor, tarih, sure, exceptId) => { if (!doktor) return null;
+      const day = (tarih || "").slice(0, 10), s = toMin((tarih || "").slice(11, 16)), e = s + (+sure || 15);
+      return all.concat(surgeryAppts()).find(r => r.id !== exceptId && r.doktor === doktor && r.durum !== "İptal" && (r.tarih || "").slice(0, 10) === day
+        && (() => { const rs = toMin((r.tarih || "").slice(11, 16)), re = rs + (+r.sure || 15); return s < re && rs < e; })()) || null; };
+    // En yakın uygun saat: bugünden başlayıp 08:00–17:30 arası, çakışmayan ve kapalı olmayan ilk 30 dk hizalı slot (14 gün tara).
+    const nextFreeSlot = (doktor, sure) => { if (!doktor) return null;
+      for (let gd = 0; gd < 14; gd++) { const d = new Date(); d.setDate(d.getDate() + gd); const iso = d.toISOString().slice(0, 10);
+        for (const s of SAAT) { const tarih = iso + "T" + s; if (kapali.includes(slotKey(tarih, doktor))) continue; if (!rndConflict(doktor, tarih, sure)) return tarih; } }
+      return null; };
     // Bir slotu kaplayan randevu (süre kadar blok): başlangıç ≤ slot < başlangıç+süre. first = başlangıcın düştüğü slot.
     const apptCover = (iso, saat, dr) => { const slotMin = toMin(saat);
       for (const r of all.concat(surgeryAppts())) { if (r.doktor !== dr || r.durum === "İptal") continue; if ((r.tarih || "").slice(0, 10) !== iso) continue;
@@ -319,7 +329,7 @@
         <div class="fr"><label>Randevu türü</label><select data-f="tur">${RND_TUR.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
         <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
-        <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"></div>
+        <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"><button class="btn sm" data-rndnext type="button" style="margin-top:4px">${I("clock") || ""} En yakın uygun saat</button></div>
         <div class="fr"><label>Süre (dk)</label><input data-f="sure" type="number" min="5" step="5" value="15"></div>
         <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div>
         <div class="fr"><label>Hatırlatma</label><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div></div>`,
@@ -328,10 +338,15 @@
           const checkNoShow = () => { const nm = (hi.value || "").trim(); const ns = nm ? all.filter(r => r.hasta === nm && r.durum === "Gelmedi").length : 0;
             if (ns > 0) { warn.hidden = false; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else warn.hidden = true; };
           hi.oninput = checkNoShow; checkNoShow();
+          const nb = m.querySelector("[data-rndnext]"); if (nb) nb.onclick = () => { const dr = m.querySelector('[data-f="doktor"]').value, sure = +m.querySelector('[data-f="sure"]').value || 15;
+            if (!dr) { H.toast("Önce doktor seçin.", "w"); return; } const slot = nextFreeSlot(dr, sure);
+            if (!slot) { H.toast("14 gün içinde uygun slot bulunamadı.", "w"); return; } m.querySelector('[data-f="tarih"]').value = slot; H.toast("En yakın uygun saat: " + slot.replace("T", " ")); };
           m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
+          const doktor = m.querySelector('[data-f="doktor"]').value, tarih = m.querySelector('[data-f="tarih"]').value, sure = +g("sure") || 15;
+          const cf = rndConflict(doktor, tarih, sure); if (cf) { H.toast("Çakışma: " + (cf.doktor || "") + " " + ((cf.tarih || "").slice(11, 16)) + " dolu · " + (cf.tur === "Ameliyat" ? "ameliyat" : "randevu") + " (" + (cf.hasta || "") + ")", "e"); return; }
           const sms = m.querySelector('[data-f="sms"]').checked;
-          all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), tur:m.querySelector('[data-f="tur"]').value, bolum:g("bolum"), doktor:m.querySelector('[data-f="doktor"]').value, tarih:m.querySelector('[data-f="tarih"]').value, sure:+g("sure") || 15, durum:"Bekliyor", not:g("not"), sms });
+          all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), tur:m.querySelector('[data-f="tur"]').value, bolum:g("bolum"), doktor, tarih, sure, durum:"Bekliyor", not:g("not"), sms });
           H.saveData && H.saveData(); H.log("Randevu oluşturuldu", g("hasta")); H.toast("Randevu eklendi" + (sms ? " · SMS hatırlatma açık" : "")); H.closeModal(); H.go("randevu", params); }; } });
     }
   } });
