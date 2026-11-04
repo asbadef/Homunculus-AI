@@ -11,6 +11,7 @@ export type ThemeColors = {
   faint: string;
   border: string;
   brand: string;
+  brandGrad2: string;
   brandInk: string;
   brandSoft: string;
   ok: string;
@@ -29,6 +30,7 @@ export const tokens: { light: ThemeColors; dark: ThemeColors } = {
     faint: "#94a3b8",
     border: "#e2e8f0",
     brand: "#0891b2",
+    brandGrad2: "#0e7490",
     brandInk: "#ffffff",
     brandSoft: "#e0f4f8",
     ok: "#10b981",
@@ -45,6 +47,7 @@ export const tokens: { light: ThemeColors; dark: ThemeColors } = {
     faint: "#64748b",
     border: "#1e293b",
     brand: "#22d3ee",
+    brandGrad2: "#0891b2",
     brandInk: "#04232b",
     brandSoft: "#0e2a33",
     ok: "#34d399",

@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ViewProps, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
@@ -47,6 +48,16 @@ export function Card({ style, children, ...rest }: ViewProps) {
     >
       {children}
     </View>
+  );
+}
+
+// Brand-colored gradient surface (banners, hero cards).
+export function BrandGradient({ style, children }: ViewProps & { children?: React.ReactNode }) {
+  const { t } = useTheme();
+  return (
+    <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={style as any}>
+      {children}
+    </LinearGradient>
   );
 }
 

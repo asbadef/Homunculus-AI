@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
@@ -17,9 +18,9 @@ export function Stories({ data }: { data: Story[] }) {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 4 }}>
       {data.map((s) => (
         <View key={s.id} style={{ alignItems: "center", width: 72 }}>
-          <View style={{ width: 62, height: 62, borderRadius: 99, borderWidth: 2, borderColor: s.tint, alignItems: "center", justifyContent: "center", backgroundColor: s.tint + "1f" }}>
-            <Ionicons name="sparkles" size={22} color={s.tint} />
-          </View>
+          <LinearGradient colors={[s.tint, s.tint + "aa"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 62, height: 62, borderRadius: 99, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="sparkles" size={22} color="#ffffff" />
+          </LinearGradient>
           <AppText numberOfLines={2} style={{ fontSize: 10, textAlign: "center", marginTop: 5, color: t.muted }}>
             {s.title}
           </AppText>
@@ -33,14 +34,14 @@ export function BannerCarousel({ data }: { data: Banner[] }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
       {data.map((b) => (
-        <View key={b.id} style={{ width: 300, borderRadius: layout.radius, padding: 16, backgroundColor: b.tint, justifyContent: "center" }}>
+        <LinearGradient key={b.id} colors={[b.tint, "#06495a"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 300, borderRadius: layout.radius, padding: 16, justifyContent: "center", minHeight: 96 }}>
           <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 17 }}>
             {b.title}
           </AppText>
-          <AppText color="#ffffff" style={{ opacity: 0.9, marginTop: 6, fontSize: 12 }}>
+          <AppText color="#ffffff" style={{ opacity: 0.92, marginTop: 6, fontSize: 12 }}>
             {b.subtitle}
           </AppText>
-        </View>
+        </LinearGradient>
       ))}
     </ScrollView>
   );

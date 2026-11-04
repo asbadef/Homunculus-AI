@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen, AppText, Muted } from "../../src/ui/base";
-import { Card, SectionTitle, LangThemeControls } from "../../src/ui/widgets";
+import { Card, SectionTitle, LangThemeControls, BrandGradient } from "../../src/ui/widgets";
+import { layout } from "../../src/theme/tokens";
 import { Stories, BannerCarousel, Shortcuts, QuickServices, NewsStrip } from "../../src/components/home";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
@@ -49,7 +50,7 @@ export default function HomeScreen() {
       <Shortcuts items={visibleFeatures(FEATURE_LIST, "shortcut")} label={label} />
 
       <SectionTitle>{tr("home.nextAppointment")}</SectionTitle>
-      <Card style={{ backgroundColor: t.brand, borderWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <BrandGradient style={{ borderRadius: layout.radius, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           {next ? (
             <>
@@ -68,7 +69,7 @@ export default function HomeScreen() {
           )}
         </View>
         <Ionicons name="calendar" size={30} color="#ffffff" style={{ opacity: 0.9 }} />
-      </Card>
+      </BrandGradient>
 
       {unpaid ? (
         <>
