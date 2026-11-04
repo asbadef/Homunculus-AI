@@ -832,6 +832,18 @@
           H.closeModal(); H.toast("Tanı eklendi: " + code); rerender(); }; } });
   }
 
+  /* Onam kütüphanesi: admin Doküman Tanımları'ndaki onam/rıza formlarından seçtirip onam belgesini o formla açar. */
+  function openOnamLib(p, root, rerender) {
+    const lib = (H.data.dokumanlar || []).filter(x => x.aktif !== false && /onam|rıza|riza|taahüt|aydınlat|güvenlik|rıza/i.test(x.ad || ""));
+    const start = (form) => { const d = newDoc(p, "onam"); prefill(p, d); if (form) { d.onamForm = form.ad; setSec(d, "islem", form.ad); if (form.alanlar && form.alanlar.length) d.onamAlanlar = form.alanlar; } ui(p.id).sel = d.id; ui(p.id).page = false; H.log("Onam başlatıldı", bedNo(p) + (form ? " · " + form.ad : " · serbest")); rerender(); };
+    H.modal({ title:"Onam formu seç (kütüphane)", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 10px">Kütüphaneden onam/rıza formu seçin; onam belgesi o formla açılır. Yeni form: Yönetim → Doküman Tanımları.</p>
+        <div class="al-grid">${lib.map(x => `<button type="button" class="al-t" data-onamlib="${esc(x.id)}" style="--c:var(--pri)">${H.icon("file")}<span>${esc(x.ad)}${(x.alanlar || []).length ? ` <small style="display:block;color:var(--mute)">${x.alanlar.length} alan</small>` : ""}</span></button>`).join("") || `<div class="adm-sub">Kütüphanede onam formu yok. Yönetim → Doküman Tanımları'ndan ekleyin.</div>`}</div>
+        <div style="margin-top:10px"><button type="button" class="btn" data-onamlib="">Boş onam (serbest)</button></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button>`,
+      onMount(m) { m.addEventListener("click", e => { const b = e.target.closest("[data-onamlib]"); if (!b) return; const id = b.dataset.onamlib; const form = id ? lib.find(x => x.id === id) : null; H.closeModal(); start(form); }); } });
+  }
+
   /* ================= olaylar ================= */
   function after(el, p) {
     const root = el && (el.matches && el.matches(".dc-root") ? el : el.querySelector(".dc-root"));
@@ -842,6 +854,7 @@
       const T = e.target;
       const op = T.closest("[data-dc-open]"); if (op) { ui(p.id).sel = op.dataset.dcOpen; rerender(); return; }
       const nw = T.closest("[data-dc-new]"); if (nw) { const t = nw.dataset.dcNew; if (t === "hemsire" ? !isNurse() : !isDoc()) return;
+        if (t === "onam") { openOnamLib(p, root, rerender); return; }
         const d = newDoc(p, t); prefill(p, d); ui(p.id).sel = d.id; ui(p.id).page = false; H.log(`${TYPES[t].name} başlatıldı`, bedNo(p)); rerender(); return; }
       if (T.closest("[data-dc-hist]")) { docHistory(p, false); return; }
       const d = cur(); if (!d) return;
