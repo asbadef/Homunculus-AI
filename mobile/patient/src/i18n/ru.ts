@@ -35,6 +35,8 @@ const ru: Record<string, string> = {
   "appointments.title": "Записи",
   "appointments.new": "Новая запись",
   "appointments.empty": "Записей пока нет",
+  "empty.apptNote": "Запишитесь на первый приём за секунды кнопкой выше.",
+  "empty.resNote": "Новые анализы и снимки появятся здесь, когда будут готовы.",
   "status.confirmed": "Подтверждено",
   "status.pending": "Ожидает",
   "status.completed": "Завершено",

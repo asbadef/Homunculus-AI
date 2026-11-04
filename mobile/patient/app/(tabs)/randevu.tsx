@@ -3,7 +3,7 @@ import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card } from "../../src/ui/widgets";
+import { Card, EmptyState } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
@@ -80,10 +80,7 @@ export default function AppointmentsTab() {
       </Pressable>
 
       {list && upcoming.length === 0 && past.length === 0 ? (
-        <View style={{ alignItems: "center", paddingVertical: 50, gap: 8 }}>
-          <Ionicons name="calendar-outline" size={40} color={t.faint} />
-          <Muted>{tr("appointments.empty")}</Muted>
-        </View>
+        <EmptyState icon="calendar-outline" title={tr("appointments.empty")} note={tr("empty.apptNote")} />
       ) : null}
 
       {upcoming.map((a) => (

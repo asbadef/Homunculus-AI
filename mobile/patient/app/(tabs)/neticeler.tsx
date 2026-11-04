@@ -3,7 +3,7 @@ import { View, Pressable, ScrollView, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card, StatusPill, Chip } from "../../src/ui/widgets";
+import { Card, StatusPill, Chip, EmptyState } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { layout } from "../../src/theme/tokens";
@@ -63,10 +63,7 @@ export default function ResultsTab() {
       </ScrollView>
 
       {list && filtered.length === 0 ? (
-        <View style={{ alignItems: "center", paddingVertical: 50, gap: 8 }}>
-          <Ionicons name="document-text-outline" size={40} color={t.faint} />
-          <Muted>{tr("results.empty")}</Muted>
-        </View>
+        <EmptyState icon="document-text-outline" title={tr("results.empty")} note={tr("empty.resNote")} />
       ) : (
         filtered.map((r) => (
           <Pressable key={r.id} onPress={() => router.push(`/netice/${r.id}`)}>

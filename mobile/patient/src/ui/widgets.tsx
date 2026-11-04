@@ -73,6 +73,20 @@ export function StatusPill({ kind, label }: { kind: "ok" | "wait"; label: string
   );
 }
 
+// Warm empty state: soft icon badge + title + optional note, centered.
+export function EmptyState({ icon, title, note }: { icon: any; title: string; note?: string }) {
+  const { t } = useTheme();
+  return (
+    <View style={{ alignItems: "center", paddingVertical: 46, gap: 10 }}>
+      <View style={{ width: 72, height: 72, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name={icon} size={34} color={t.brand} />
+      </View>
+      <AppText weight="bold" style={{ fontSize: 15, textAlign: "center", marginTop: 2 }}>{title}</AppText>
+      {note ? <AppText style={{ fontSize: 13, color: t.muted, textAlign: "center", lineHeight: 19, paddingHorizontal: 20 }}>{note}</AppText> : null}
+    </View>
+  );
+}
+
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
   return (
