@@ -1956,7 +1956,7 @@
   const PERMS = [
     ["Klinik", [["beds", "Yatak paneli (vital, skor)"], ["patient", "Hasta ekranı"], ["tasks", "Görevlerim"], ["bedside", "Yatak başı ölçüm"], ["alarms", "Alarmlar"], ["hand", "Vardiya devri"],
       ["results", "Sonuçlar (lab, radyoloji)"], ["orders", "Order'lar"], ["scores_sign", "Skor onayı (imza)"], ["forms", "Hemşirelik formları"], ["camera", "Kamera izleme"]]],
-    ["Kabul ve yatak", [["admission", "Hasta kabul (kayıt açar)"], ["admission_view", "Hasta kabul (görüntüler)"], ["occupancy", "Yatak doluluğu (klinik bilgi yok)"], ["staff_view", "Personel görünümü"], ["protokol_duzenle", "Protokol düzenle/sil (bölüm/doktor/tarih, hizmet tarihi)"]]],
+    ["Kabul ve yatak", [["admission", "Hasta kabul (kayıt açar)"], ["admission_view", "Hasta kabul (görüntüler)"], ["occupancy", "Yatak doluluğu (klinik bilgi yok)"], ["staff_view", "Personel görünümü"], ["nobet", "Nöbet / vardiya çizelgesi"], ["protokol_duzenle", "Protokol düzenle/sil (bölüm/doktor/tarih, hizmet tarihi)"]]],
     ["Ekipler", [["rrt", "Hızlı yanıt ekibi"], ["pharmacy", "Eczane"], ["devices", "Cihaz envanteri"], ["maintenance", "Bakım ve kalibrasyon takvimi"], ["ameliyathane", "Ameliyathane programı"]]],
     ["Yönetim", [["summary", "Yönetici özeti"], ["quality", "Kalite göstergeleri"], ["audit", "Denetim kaydı"], ["admin_users", "Kullanıcı yönetimi"], ["admin_structure", "Hastane yapısı"], ["admin_roles", "Roller ve yetkiler"],
       ["admin_system", "Sistem ayarları"], ["admin_integrations", "Entegrasyonlar"], ["admin_camera", "Kamera bağlantısı"]]],
@@ -1979,6 +1979,8 @@
   { const r = H.data.roles.kabul; if (r) r.perms = r.perms.filter(p => p !== "steril"); }
   // Ameliyathane programı: cerrah (hekim), ameliyathane hemşiresi (hemsire) ve yönetim görür.
   ["hekim", "hemsire", "yonetici", "sistem"].forEach(k => { const r = H.data.roles[k]; if (r && !r.perms.includes("ameliyathane")) r.perms.push("ameliyathane"); });
+  // Nöbet / vardiya çizelgesi: sorumlu hemşire (hemsire), yönetim ve sistem.
+  ["hemsire", "yonetici", "sistem"].forEach(k => { const r = H.data.roles[k]; if (r && !r.perms.includes("nobet")) r.perms.push("nobet"); });
   H.saveRoles = () => { try { localStorage.setItem("hmc.roles", JSON.stringify(Object.fromEntries(Object.entries(H.data.roles).map(([k, r]) => [k, { perms:r.perms }])))); } catch {} };
   const protectedPerm = (r, p) => p.startsWith("admin_") && (r === me().role || (r === "sistem" && (p === "admin_roles" || p === "admin_users")));
   const permLabel = (p) => (PERMS.flatMap(g => g[1]).find(x => x[0] === p) || [p, p])[1];

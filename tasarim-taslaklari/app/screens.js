@@ -2769,6 +2769,41 @@
     };
   } });
 
+  /* ================= NÖBET / VARDİYA ÇİZELGESİ ================= */
+  // Haftalık hemşire nöbet çizelgesi. Hücreye tıkla → vardiya kodu döner (G/A/N/İ/boş). Persist: H.data.nobet.
+  H.addT && H.addT({ m_nobet:{ TR:"Nöbet çizelgesi", AZ:"Növbə cədvəli", RU:"График дежурств", EN:"Shift roster" } });
+  const NOB_KOD = [["", "—", ""], ["G", "Gündüz 08–16", "ok"], ["A", "Akşam 16–24", "info"], ["N", "Gece 24–08", "w"], ["İ", "İzin", "off"]];
+  const nobStaff = () => { const real = (H.data.personel || []).filter(pp => /hemşire|tibb bac/i.test((pp.unvan || "") + (pp.tip || "") + (pp.meslek || ""))).map(pp => ({ id:pp.id || ("per_" + pp.ad), ad:((pp.ad || "") + " " + (pp.soyad || "")).trim(), bolum:pp.bolum || "" }));
+    if (real.length) return real;
+    return [["Aysel Məmmədova", "Daxili"], ["Günel Əliyeva", "Cərrahiyyə"], ["Rəşad Hüseynov", "Reanimasiya"], ["Nigar Qasımova", "Uşaq"], ["Elçin Vəliyev", "Təcili Yardım"]].map(([ad, bolum], i) => ({ id:"nobdemo" + i, ad, bolum })); };
+  function nobDays() { const out = [], t = new Date(); for (let i = 0; i < 7; i++) { const d = new Date(t.getFullYear(), t.getMonth(), t.getDate() + i); out.push({ key:d.toISOString().slice(0, 10), gun:["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][d.getDay()], lbl:("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2) }); } return out; }
+  H.register("nobet", { title:() => H.t("m_nobet"), perm:"nobet", render(root) {
+    const N = H.data.nobet = H.data.nobet || {};
+    const draw = () => {
+      const staff = nobStaff(), days = nobDays(), today = days[0].key;
+      const codeOf = (id, k) => (N[id] && N[id][k]) || "";
+      const cls = (c) => (NOB_KOD.find(x => x[0] === c) || [, , ""])[2];
+      const bugun = { G:0, A:0, N:0 }; staff.forEach(s => { const c = codeOf(s.id, today); if (bugun[c] != null) bugun[c]++; });
+      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_nobet")}</h2><p>Haftalık hemşire nöbeti · hücreye tıkla vardiyayı değiştir · bugün ${days[0].gun} ${days[0].lbl}</p></div></div>
+        <div class="att"><div class="ac ok"><div class="i">${I("clock")}</div><b>${bugun.G}</b><span>bugün gündüz (G)</span></div>
+          <div class="ac info"><div class="i">${I("clock")}</div><b>${bugun.A}</b><span>bugün akşam (A)</span></div>
+          <div class="ac"><div class="i">${I("clock")}</div><b>${bugun.N}</b><span>bugün gece (N)</span></div>
+          <div class="ac"><div class="i">${I("users")}</div><b>${staff.length}</b><span>hemşire</span></div></div>
+        ${H.durumLejant ? H.durumLejant([["Gündüz (G)", "ok"], ["Akşam (A)", "info"], ["Gece (N)", "w"], ["İzin (İ)", "off"]]) : ""}
+        <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th style="min-width:160px">Hemşire</th><th>Bölüm</th>
+          ${days.map(d => `<th class="n" style="width:56px">${d.gun}<div class="adm-sub" style="font-weight:normal">${d.lbl}</div></th>`).join("")}</tr></thead><tbody>
+          ${staff.map(s => `<tr><td><b>${H.esc(s.ad)}</b></td><td class="adm-sub">${H.esc(s.bolum || "—")}</td>
+            ${days.map(d => { const c = codeOf(s.id, d.key); return `<td class="n" style="cursor:pointer;user-select:none" data-nob="${s.id}|${d.key}"><span class="tag ${cls(c)}" style="min-width:22px;display:inline-block">${c || "·"}</span></td>`; }).join("")}</tr>`).join("")}
+        </tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Vardiya kodları: <b>G</b> gündüz (08–16) · <b>A</b> akşam (16–24) · <b>N</b> gece (24–08) · <b>İ</b> izin. Çizelge hemşire-yatak atamasıyla aynı birim üzerinden eşleşir.</p>`;
+    };
+    draw();
+    root.onclick = (e) => { const c = e.target.closest("[data-nob]"); if (!c) return; const [id, k] = c.dataset.nob.split("|");
+      const cur = (N[id] && N[id][k]) || ""; const idx = NOB_KOD.findIndex(x => x[0] === cur); const next = NOB_KOD[(idx + 1) % NOB_KOD.length][0];
+      N[id] = N[id] || {}; if (next) N[id][k] = next; else delete N[id][k];
+      H.saveData && H.saveData(); draw(); };
+  } });
+
   /* ================= AYARLAR ================= */
   /* Ayarlar ve Profil: ayarlar.js (24.09, 3. oturum). */
 })();
