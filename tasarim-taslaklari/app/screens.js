@@ -2804,6 +2804,57 @@
       H.saveData && H.saveData(); draw(); };
   } });
 
+  /* ================= POLİKLİNİK SIRA / ÇAĞRI ================= */
+  // Bekleme salonu sıra panosu: ayaktan hastalar sıraya girer, "Çağır" ile çağrılır (büyük pano), muayene→tamam.
+  H.addT && H.addT({ m_sira:{ TR:"Poliklinik sıra", AZ:"Poliklinika növbəsi", RU:"Очередь поликлиники", EN:"Clinic queue" } });
+  const SIRA_DURUM = [["Bekliyor", "w"], ["Çağrıldı", "info"], ["Muayenede", "crit"], ["Tamamlandı", "ok"]];
+  function siraQueue() {
+    const ay = (H.data.patients || []).filter(p => (H.encOf ? H.encOf(p) : "") === "ayaktan");
+    const list = ay.length ? ay : null;
+    if (!list) return [];   // ayaktan hasta yoksa demo seed aşağıda
+    return list;
+  }
+  H.register("sira", { title:() => H.t("m_sira"), perm:["admission", "admission_view"], render(root) {
+    const S = H.data.sira = H.data.sira || {};
+    // Demo: ayaktan hasta yoksa küçük bir sentetik kuyruk üret (pano boş kalmasın).
+    let demo = H.data.siraDemo;
+    if (!siraQueue().length && !demo) { demo = H.data.siraDemo = [["Elvin Hüseynov", "Dr. Kamran Rzayev"], ["Günay Məlikova", "Dr. Aynur Cəfərli"], ["Rəşad Məmmədov", "Dr. Emil Nəsirov"], ["Aysu Rəhimova", "Dr. Kamran Rzayev"]].map((x, i) => ({ id:"sdemo" + i, name:x[0], dr:x[1] })); }
+    const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };
+    const items = () => siraQueue().length
+      ? siraQueue().map((p, i) => ({ id:p.id, name:p.name, dr:docName(p.attending), no:i + 1 }))
+      : (H.data.siraDemo || []).map((d, i) => ({ id:d.id, name:d.name, dr:d.dr, no:i + 1 }));
+    const draw = () => {
+      const q = items().map(it => { S[it.id] = S[it.id] || { durum:"Bekliyor" }; return Object.assign(it, { durum:S[it.id].durum }); });
+      const son = H.data.siraSon;
+      const bekle = q.filter(x => x.durum === "Bekliyor" || x.durum === "Çağrıldı").length;
+      const cls = (d) => (SIRA_DURUM.find(x => x[0] === d) || [, ""])[1];
+      const nm = (n) => H.vzName ? H.vzName(n) : n;
+      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_sira")}</h2><p>Bekleme salonu sıra panosu · ${bekle} hasta bekliyor</p></div></div>
+        <div class="box" style="text-align:center;margin-bottom:14px;background:var(--card2)">
+          ${son ? `<div class="adm-sub">ÇAĞRILAN</div><div style="font-size:30px;font-weight:800;margin:4px 0">${son.no} · ${H.esc(nm(son.name))}</div><div class="adm-sub">${H.esc(son.dr || "")} · ${H.esc(son.at || "")}</div>` : `<div class="adm-sub" style="padding:10px">Henüz çağrı yapılmadı.</div>`}</div>
+        ${H.durumLejant ? H.durumLejant(SIRA_DURUM.map(([d, c]) => [d, c])) : ""}
+        <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th style="width:60px">Sıra</th><th>Hasta</th><th>Doktor</th><th style="width:130px">Durum</th><th style="width:220px"></th></tr></thead><tbody>
+        ${q.length ? q.map(it => { const act = it.durum === "Bekliyor" ? `<button class="btn p sm" data-siracagir="${it.id}">${I("bell") || ""} Çağır</button>`
+            : it.durum === "Çağrıldı" ? `<button class="btn sm" data-siramua="${it.id}">Muayeneye al</button> <button class="btn g sm" data-siracagir="${it.id}">Tekrar çağır</button>`
+            : it.durum === "Muayenede" ? `<button class="btn sm" data-sirabitir="${it.id}">Muayene bitti</button>`
+            : `<span class="adm-sub">—</span>`;
+          return `<tr><td class="n"><b>${it.no}</b></td><td><b>${H.esc(nm(it.name))}</b></td><td class="adm-sub">${H.esc(it.dr || "—")}</td><td><span class="tag ${cls(it.durum)}">${H.esc(it.durum)}</span></td><td>${act}</td></tr>`;
+        }).join("") : `<tr><td colspan="5" class="mute" style="padding:18px;text-align:center">Sırada hasta yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Sıra ayaktan (poliklinik) başvurulardan oluşur. "Çağır" panoda büyük gösterilir; muayeneye alınınca doktora, bitince sıradan düşer.</p>`;
+    };
+    draw();
+    root.onclick = (e) => {
+      const cg = e.target.closest("[data-siracagir]"), mu = e.target.closest("[data-siramua]"), bt = e.target.closest("[data-sirabitir]");
+      const btn = cg || mu || bt; if (!btn) return;
+      const id = btn.dataset.siracagir || btn.dataset.siramua || btn.dataset.sirabitir;
+      const it = items().find(x => x.id === id); if (!it) return; S[id] = S[id] || { durum:"Bekliyor" };
+      if (cg) { S[id].durum = "Çağrıldı"; H.data.siraSon = { no:it.no, name:it.name, dr:it.dr, at:H.now() }; H.log("Sıra çağrı", it.no + " · " + it.name); }
+      else if (mu) { S[id].durum = "Muayenede"; }
+      else if (bt) { S[id].durum = "Tamamlandı"; }
+      H.saveData && H.saveData(); draw();
+    };
+  } });
+
   /* ================= AYARLAR ================= */
   /* Ayarlar ve Profil: ayarlar.js (24.09, 3. oturum). */
 })();
