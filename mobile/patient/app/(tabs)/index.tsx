@@ -55,7 +55,7 @@ export default function HomeScreen() {
         stories={stories}
         onMenu={() => setMenuOpen(true)}
         onBell={() => router.push("/bildirisler")}
-        onSearch={() => demoAlert(tr)}
+        onSearch={() => router.push("/axtaris")}
       />
       <MenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
