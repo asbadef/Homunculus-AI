@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet, Image } from "react-native";
+import { doctorImages } from "../../src/demo/images";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText } from "../../src/ui/base";
@@ -20,11 +21,15 @@ function DoctorCard({ d, selected, onSelect }: { d: Doctor; selected: boolean; o
       style={{ backgroundColor: t.surface, borderRadius: 14, borderWidth: selected ? 2 : StyleSheet.hairlineWidth, borderColor: selected ? t.brand : t.border, padding: 14, marginBottom: 10 }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <View style={{ width: 46, height: 46, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-          <AppText weight="bold" color={t.brand} style={{ fontSize: 18 }}>
-            {initials}
-          </AppText>
-        </View>
+        {doctorImages[d.id] ? (
+          <Image source={doctorImages[d.id]} style={{ width: 46, height: 46, borderRadius: 99 }} resizeMode="cover" />
+        ) : (
+          <View style={{ width: 46, height: 46, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+            <AppText weight="bold" color={t.brand} style={{ fontSize: 18 }}>
+              {initials}
+            </AppText>
+          </View>
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText weight="semibold" numberOfLines={1}>
             {d.name}

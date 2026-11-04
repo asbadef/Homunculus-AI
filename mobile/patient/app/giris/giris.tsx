@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View } from "react-native";
+import { View, Image, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -9,40 +9,51 @@ import { FormScreen, TextField, Dropdown, DateField, ToggleRow } from "../../src
 import { BottomButton } from "../../src/appointment/parts";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
+import { LANGS } from "../../src/i18n/core";
 import { useAuthDraft } from "./_layout";
 import { validateIdentity } from "../../src/session/validate";
+import { COUNTRIES, isLocal } from "../../src/data/countries";
+import { logo } from "../../src/demo/images";
 
 export default function Login() {
   const { t } = useTheme();
-  const { t: tr } = useI18n();
+  const { t: tr, lang, setLang } = useI18n();
   const insets = useSafeAreaInsets();
   const { draft, set } = useAuthDraft();
   const [idv, setIdv] = useState(draft.id);
   const [birth, setBirth] = useState<Date | null>(draft.birthdate ? new Date(draft.birthdate) : null);
-  const [phone, setPhone] = useState(draft.phone);
+  const local = isLocal(draft.country);
 
-  const input = {
-    country: draft.country,
-    fin: draft.country === "az" ? idv : undefined,
-    passport: draft.country === "foreign" ? idv : undefined,
+  const res = validateIdentity({
+    country: local ? "az" : "foreign",
+    fin: local ? idv : undefined,
+    passport: local ? undefined : idv,
     birthdate: birth ? String(birth.getFullYear()) : "",
-    phone,
-  };
-  const res = validateIdentity(input);
+  });
 
+  function cycleLang() {
+    const i = LANGS.indexOf(lang);
+    setLang(LANGS[(i + 1) % LANGS.length]);
+  }
   function next() {
-    set({ id: idv, birthdate: birth ? birth.toISOString() : "", phone });
+    set({ id: idv, birthdate: birth ? birth.toISOString() : "" });
     router.push("/giris/sms");
   }
 
   return (
     <FormScreen>
-      {/* Hero */}
-      <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ marginHorizontal: -16, paddingHorizontal: 20, paddingTop: insets.top + 24, paddingBottom: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}>
-        <View style={{ width: 54, height: 54, borderRadius: 16, backgroundColor: "#ffffff22", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-          <Ionicons name="medkit" size={28} color="#ffffff" />
+      {/* Hero with logo, language switch, own tagline */}
+      <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ marginHorizontal: -16, paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 26, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, alignItems: "center" }}>
+        <Pressable onPress={cycleLang} style={{ position: "absolute", top: insets.top + 12, right: 18, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#ffffff2e", borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6 }}>
+          <Ionicons name="globe-outline" size={14} color="#ffffff" />
+          <AppText weight="semibold" color="#ffffff" style={{ fontSize: 12 }}>
+            {tr("lang.code")}
+          </AppText>
+        </Pressable>
+        <View style={{ width: 76, height: 76, borderRadius: 22, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center", marginTop: 10, marginBottom: 12 }}>
+          <Image source={logo} style={{ width: 62, height: 62 }} resizeMode="contain" />
         </View>
-        <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 24 }}>
+        <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 23 }}>
           {tr("auth.login.title")}
         </AppText>
         <AppText color="#ffffff" style={{ opacity: 0.92, marginTop: 4, fontSize: 14 }}>
@@ -52,29 +63,23 @@ export default function Login() {
 
       <View style={{ height: 22 }} />
 
-      <Dropdown
-        label={tr("auth.country.az") + " / " + tr("auth.country.foreign")}
-        options={[
-          { key: "az", label: tr("auth.country.az") },
-          { key: "foreign", label: tr("auth.country.foreign") },
-        ]}
-        value={draft.country}
-        onChange={(k) => set({ country: k as "az" | "foreign" })}
-      />
-
-      <TextField id="idv" label={draft.country === "az" ? tr("auth.fin") : tr("auth.passport")} value={idv} onChange={setIdv} autoCap="characters" />
+      <Dropdown label={tr("auth.country")} options={COUNTRIES} value={draft.country} onChange={(k) => set({ country: k })} search />
+      <TextField id="idv" label={local ? tr("auth.fin") : tr("auth.passport")} value={idv} onChange={setIdv} autoCap="characters" />
       <DateField label={tr("auth.birthdate")} value={birth} onChange={setBirth} />
-      <TextField id="phone" label={tr("auth.phone")} value={phone} onChange={setPhone} keyboard="phone-pad" placeholder="+994 ..." />
+
+      <AppText style={{ fontSize: 12, color: t.muted, marginBottom: 14, marginTop: -4 }}>
+        {tr("auth.smsAuto")}
+      </AppText>
 
       <ToggleRow label={tr("auth.remember")} value={draft.remember} onChange={(v) => set({ remember: v })} />
 
-      {!res.ok && (idv.length > 0 || phone.length > 0 || birth) ? (
+      {!res.ok && (idv.length > 0 || birth) ? (
         <AppText color={t.wait} style={{ fontSize: 12, marginBottom: 6 }}>
           {res.hint}
         </AppText>
       ) : null}
 
-      <View style={{ flex: 1 }} />
+      <View style={{ flex: 1, minHeight: 16 }} />
       <BottomButton label={tr("auth.continue")} disabled={!res.ok} onPress={next} />
     </FormScreen>
   );

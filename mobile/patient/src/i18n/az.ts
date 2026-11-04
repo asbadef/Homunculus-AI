@@ -91,8 +91,10 @@ const az: Record<string, string> = {
 
   "auth.continue": "Davam et",
   "auth.start": "Başla",
-  "auth.hero": "Sağlam qalmağın ən asan yolu",
+  "auth.hero": "Sağlığın artıq cibində",
   "auth.remember": "Məni xatırla",
+  "auth.country": "Ölkə",
+  "auth.smsAuto": "Təsdiq kodu HBYS-də qeydli nömrənə göndəriləcək",
   "onb.app": "Sağlıq cibində",
   "onb.1": "Bütün sağlığını tək tətbiqdə idarə et",
   "onb.2": "Randevunu saniyələr içində al",

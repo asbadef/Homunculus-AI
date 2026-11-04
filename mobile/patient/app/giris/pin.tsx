@@ -22,7 +22,7 @@ export default function Pin() {
   function finish() {
     const p = resolvePatientByFin(draft.id); // FİN → demo patient (falls back to default)
     setCurrentPatient(p.id);
-    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), phone: draft.phone || p.phone });
+    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), phone: p.phone });
     router.replace("/(tabs)");
   }
 

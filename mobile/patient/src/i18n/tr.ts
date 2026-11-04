@@ -89,8 +89,10 @@ const tr: Record<string, string> = {
 
   "auth.continue": "Devam et",
   "auth.start": "Başla",
-  "auth.hero": "Sağlıklı kalmanın en kolay yolu",
+  "auth.hero": "Sağlığın artık cebinde",
   "auth.remember": "Beni hatırla",
+  "auth.country": "Ülke",
+  "auth.smsAuto": "Doğrulama kodu HBYS'de kayıtlı numarana gönderilecek",
   "onb.app": "Sağlık cebinde",
   "onb.1": "Tüm sağlığını tek uygulamadan yönet",
   "onb.2": "Randevunu saniyeler içinde al",

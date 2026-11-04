@@ -89,8 +89,10 @@ const en: Record<string, string> = {
 
   "auth.continue": "Continue",
   "auth.start": "Start",
-  "auth.hero": "The easiest way to stay healthy",
+  "auth.hero": "Your health, now in your pocket",
   "auth.remember": "Remember me",
+  "auth.country": "Country",
+  "auth.smsAuto": "A verification code will be sent to your number registered in HBYS",
   "onb.app": "Health in your pocket",
   "onb.1": "Manage all your health in one app",
   "onb.2": "Book an appointment in seconds",

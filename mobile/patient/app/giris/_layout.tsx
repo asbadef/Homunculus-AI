@@ -2,9 +2,9 @@ import React, { createContext, useContext, useState } from "react";
 import { Stack } from "expo-router";
 import { useTheme } from "../../src/theme/ThemeProvider";
 
-export type AuthDraft = { country: "az" | "foreign"; id: string; birthdate: string; phone: string; remember: boolean };
+export type AuthDraft = { country: string; id: string; birthdate: string; remember: boolean };
 type Ctx = { draft: AuthDraft; set: (p: Partial<AuthDraft>) => void };
-const INITIAL: AuthDraft = { country: "az", id: "", birthdate: "", phone: "", remember: true };
+const INITIAL: AuthDraft = { country: "AZ", id: "", birthdate: "", remember: true };
 const AuthCtx = createContext<Ctx>({ draft: INITIAL, set: () => {} });
 export const useAuthDraft = () => useContext(AuthCtx);
 

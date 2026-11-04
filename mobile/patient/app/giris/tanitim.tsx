@@ -1,28 +1,43 @@
 import React, { useState } from "react";
-import { View, ScrollView, useWindowDimensions } from "react-native";
+import { View, ScrollView, Image, Pressable, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen, AppText } from "../../src/ui/base";
 import { BottomButton } from "../../src/appointment/parts";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
-
-const ICONS: any[] = ["shield-checkmark", "calendar", "document-text", "medical"];
+import { LANGS } from "../../src/i18n/core";
+import { onboardingImages } from "../../src/demo/images";
 
 export default function Onboarding() {
   const { t } = useTheme();
-  const { t: tr } = useI18n();
+  const { t: tr, lang, setLang } = useI18n();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const slides = [tr("onb.1"), tr("onb.2"), tr("onb.3"), tr("onb.4")];
 
+  function cycleLang() {
+    const i = LANGS.indexOf(lang);
+    setLang(LANGS[(i + 1) % LANGS.length]);
+  }
+
   return (
     <Screen>
-      <View style={{ flex: 1, justifyContent: "center" }}>
-        <AppText weight="extrabold" color={t.brand} style={{ fontSize: 15, textAlign: "center", marginBottom: 12 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 6 }}>
+        <AppText weight="extrabold" color={t.brand} style={{ fontSize: 15 }}>
           {tr("onb.app")}
         </AppText>
+        <Pressable onPress={cycleLang} style={{ flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderColor: t.border, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6 }}>
+          <Ionicons name="globe-outline" size={14} color={t.fg} />
+          <AppText weight="semibold" style={{ fontSize: 12 }}>
+            {tr("lang.code")}
+          </AppText>
+        </Pressable>
+      </View>
+
+      <View style={{ flex: 1, justifyContent: "center" }}>
         <ScrollView
           horizontal
           pagingEnabled
@@ -30,23 +45,23 @@ export default function Onboarding() {
           onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / (width - 32)))}
         >
           {slides.map((s, i) => (
-            <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 20, gap: 20 }}>
-              <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 128, height: 128, borderRadius: 36, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name={ICONS[i]} size={60} color="#ffffff" />
-              </LinearGradient>
-              <AppText weight="bold" style={{ fontSize: 20, textAlign: "center" }}>
+            <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 16, gap: 22 }}>
+              <Image source={onboardingImages[i]} style={{ width: width - 110, height: width - 110, maxWidth: 300, maxHeight: 300, borderRadius: 28 }} resizeMode="cover" />
+              <AppText weight="bold" style={{ fontSize: 21, textAlign: "center" }}>
                 {s}
               </AppText>
             </View>
           ))}
         </ScrollView>
-        <View style={{ flexDirection: "row", gap: 7, justifyContent: "center", marginTop: 24 }}>
+        <View style={{ flexDirection: "row", gap: 7, justifyContent: "center", marginTop: 22 }}>
           {slides.map((_, i) => (
             <View key={i} style={{ width: i === page ? 20 : 7, height: 7, borderRadius: 99, backgroundColor: i === page ? t.brand : t.border }} />
           ))}
         </View>
       </View>
-      <BottomButton label={tr("auth.start")} onPress={() => router.push("/giris/riza")} />
+      <View style={{ paddingBottom: insets.bottom }}>
+        <BottomButton label={tr("auth.start")} onPress={() => router.push("/giris/riza")} />
+      </View>
     </Screen>
   );
 }

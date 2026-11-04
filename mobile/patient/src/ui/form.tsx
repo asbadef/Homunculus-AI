@@ -48,27 +48,34 @@ export function TextField({ id, label, value, onChange, keyboard, placeholder, a
   );
 }
 
-// Dropdown select backed by a bottom-sheet-style modal.
-export function Dropdown<T extends { key: string; label: string }>({ label, options, value, onChange }: { label: string; options: T[]; value: string; onChange: (key: string) => void }) {
+// Dropdown select backed by a bottom-sheet modal, with optional search.
+export function Dropdown<T extends { key: string; label: string }>({ label, options, value, onChange, search, placeholder }: { label: string; options: T[]; value: string; onChange: (key: string) => void; search?: boolean; placeholder?: string }) {
   const { t } = useTheme();
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const selected = options.find((o) => o.key === value);
+  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase())) : options;
   return (
     <View style={{ marginBottom: 14 }}>
       <Muted style={{ fontSize: 12, marginBottom: 6 }}>{label}</Muted>
-      <Pressable onPress={() => setOpen(true)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13 }}>
-        <AppText weight="medium" style={{ fontSize: 15 }}>
-          {selected?.label ?? "—"}
+      <Pressable onPress={() => { setQ(""); setOpen(true); }} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13 }}>
+        <AppText weight="medium" color={selected ? t.fg : t.faint} style={{ fontSize: 15 }}>
+          {selected?.label ?? placeholder ?? "—"}
         </AppText>
         <Ionicons name="chevron-down" size={18} color={t.muted} />
       </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <Pressable onPress={() => setOpen(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30, paddingTop: 10 }}>
-            <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 99, backgroundColor: t.border, marginBottom: 8 }} />
-            <ScrollView style={{ maxHeight: 320 }}>
-              {options.map((o) => (
-                <Pressable key={o.key} onPress={() => { onChange(o.key); setOpen(false); }} style={{ paddingHorizontal: 20, paddingVertical: 15, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30, paddingTop: 10, maxHeight: "72%" }}>
+            <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 99, backgroundColor: t.border, marginBottom: 10 }} />
+            {search ? (
+              <View style={{ paddingHorizontal: 16, marginBottom: 6 }}>
+                <TextInput value={q} onChangeText={setQ} placeholder="Axtar…" placeholderTextColor={t.faint} autoFocus style={{ backgroundColor: t.surface2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, color: t.fg, fontSize: 15 }} />
+              </View>
+            ) : null}
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {filtered.map((o) => (
+                <Pressable key={o.key} onPress={() => { onChange(o.key); setOpen(false); }} style={{ paddingHorizontal: 20, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                   <AppText weight={o.key === value ? "bold" : "regular"} color={o.key === value ? t.brand : t.fg} style={{ fontSize: 15 }}>
                     {o.label}
                   </AppText>
@@ -76,38 +83,46 @@ export function Dropdown<T extends { key: string; label: string }>({ label, opti
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
   );
 }
 
-// Date picker field (native spinner/dialog).
+// Date field that opens a panel (modal) to pick, instead of an inline wheel.
 export function DateField({ label, value, onChange }: { label: string; value: Date | null; onChange: (d: Date) => void }) {
   const { t } = useTheme();
-  const [show, setShow] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [temp, setTemp] = useState<Date>(value ?? new Date(2000, 0, 1));
   return (
     <View style={{ marginBottom: 14 }}>
       <Muted style={{ fontSize: 12, marginBottom: 6 }}>{label}</Muted>
-      <Pressable onPress={() => setShow(true)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13 }}>
+      <Pressable onPress={() => { setTemp(value ?? new Date(2000, 0, 1)); setOpen(true); }} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13 }}>
         <AppText weight="medium" color={value ? t.fg : t.faint} style={{ fontSize: 15 }}>
           {value ? value.toLocaleDateString() : "—"}
         </AppText>
         <Ionicons name="calendar-outline" size={18} color={t.muted} />
       </Pressable>
-      {show ? (
-        <DateTimePicker
-          value={value ?? new Date(1990, 0, 1)}
-          mode="date"
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          maximumDate={new Date()}
-          onChange={(_e, d) => {
-            setShow(Platform.OS === "ios");
-            if (d) onChange(d);
-          }}
-        />
-      ) : null}
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable onPress={() => setOpen(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "flex-end" }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8, paddingBottom: 30 }}>
+            <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 99, backgroundColor: t.border, marginBottom: 4 }} />
+            <DateTimePicker
+              value={temp}
+              mode="date"
+              display="spinner"
+              maximumDate={new Date()}
+              themeVariant={undefined}
+              onChange={(_e, d) => { if (d) setTemp(d); }}
+              style={{ alignSelf: "stretch" }}
+            />
+            <Pressable onPress={() => { onChange(temp); setOpen(false); }} style={{ marginHorizontal: 16, marginTop: 6, backgroundColor: t.brand, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
+              <AppText weight="bold" color="#ffffff">Hazır</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
