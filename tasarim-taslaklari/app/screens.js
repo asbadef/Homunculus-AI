@@ -2211,7 +2211,10 @@
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
           onMount(m) { m.querySelector("[data-ok]").onclick = () => { const r = H.parseLabResult(m.querySelector('[data-f="s"]').value, H.labAge(H.pt(o.pid)));
             o.sonuclar = r.sonuclar; o.sonuc = r.ozet; if (o.sonuc && /İstendi|İşlemde|Numune alındı|Çalışılıyor/.test(o.durum || "")) o.durum = "Sonuç onaylandı";
-            H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", o.ad || ""); H.closeModal(); H.toast("Sonuç kaydedildi."); H.go("labislem", { tur }); }; } });
+            // Sonuç çıkınca isteyen hekime bildirim (referans dışı değer varsa yüksek öncelik).
+            const abn = (r.sonuclar || []).some(x => x.dir && x.dir !== "norm");
+            if (H.pushNotif) H.pushNotif({ at:H.now ? H.now() : "", to:["hekim"], sev:abn ? "high" : "", title:"Sonuç çıktı · " + (o.ad || ""), body:(o.ad || "") + (abn ? " · referans dışı değer var" : " · sonuç onaylandı"), go:["patient", { pid:o.pid, tab:"ozet" }], pid:o.pid });
+            H.saveData && H.saveData(); H.log("Lab/Rad sonuç girildi", o.ad || ""); H.closeModal(); H.toast("Sonuç kaydedildi · hekime bildirim gönderildi."); H.go("labislem", { tur }); }; } });
         return; }
       if (e.target.closest("[data-lbexp]")) { const d = lbData(); H.exportCsv ? (H.exportCsv("Lab_Rad_" + tur, d.cols, d.rows), H.toast("Excel indirildi")) : H.toast("yok", "w"); return; }
       if (e.target.closest("[data-lbyaz]")) { const d = lbData(); H.printTable ? H.printTable("Laboratuvar / Radyoloji", d.cols, d.rows) : H.toast("yok", "w"); return; } };
