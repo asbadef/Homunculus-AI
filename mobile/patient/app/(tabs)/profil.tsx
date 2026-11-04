@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, Modal, TextInput, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card, GradientHeader } from "../../src/ui/widgets";
@@ -34,6 +35,14 @@ export default function ProfileTab() {
   const [editEmail, setEditEmail] = useState(false);
   const [draftEmail, setDraftEmail] = useState("");
   const [avatar, setAvatarState] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteAccount() {
+    // Demo: wipe all local data on this device, then sign out.
+    await AsyncStorage.clear().catch(() => {});
+    setDeleting(false);
+    signOut();
+  }
 
   useEffect(() => {
     getEmail().then(setEmailState);
@@ -102,6 +111,30 @@ export default function ProfileTab() {
           {tr("pf.logout")}
         </AppText>
       </Pressable>
+      <Pressable onPress={() => setDeleting(true)} style={{ paddingVertical: 16, alignItems: "center" }}>
+        <AppText style={{ fontSize: 13, color: t.danger }}>{tr("pf.deleteAccount")}</AppText>
+      </Pressable>
+      <View style={{ height: 8 }} />
+
+      <Modal visible={deleting} transparent animationType="fade" onRequestClose={() => setDeleting(false)}>
+        <Pressable onPress={() => setDeleting(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "center", padding: 24 }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderRadius: 18, padding: 20 }}>
+            <View style={{ alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <View style={{ width: 54, height: 54, borderRadius: 99, backgroundColor: t.danger + "22", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="trash-outline" size={26} color={t.danger} />
+              </View>
+              <AppText weight="bold" style={{ fontSize: 16 }}>{tr("pf.deleteAccount")}</AppText>
+              <Muted style={{ textAlign: "center", fontSize: 13, lineHeight: 19 }}>{tr("pf.deleteWarn")}</Muted>
+            </View>
+            <Pressable onPress={deleteAccount} style={{ backgroundColor: t.danger, borderRadius: 12, paddingVertical: 13, alignItems: "center", marginBottom: 10 }}>
+              <AppText weight="bold" color="#ffffff">{tr("pf.deleteYes")}</AppText>
+            </Pressable>
+            <Pressable onPress={() => setDeleting(false)} style={{ paddingVertical: 11, alignItems: "center" }}>
+              <AppText weight="semibold" color={t.muted}>{tr("action.cancel")}</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <View style={{ height: 16 }} />
 
       <Modal visible={editEmail} transparent animationType="fade" onRequestClose={() => setEditEmail(false)}>
