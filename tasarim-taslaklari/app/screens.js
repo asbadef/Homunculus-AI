@@ -2417,7 +2417,9 @@
     const FMAP = { YR:["Yüksek riskli", "crit"], SZ:["Soğuk zincir", "info"], PD:["Pediatrik", "w"], MJ:["Majistral", "off"], ID:["Işığa duyarlı", "w"] };
     const ilacCat = (H.ILAC || []).concat(H.data.ilacEk || []);
     const ilacBayrak = (ad, kod) => { const out = [], s = String(ad || "").toLocaleLowerCase("tr"); BAYRAK.forEach(([re, l, c]) => { if (re.test(s)) out.push([l, c]); });
-      const drug = kod && ilacCat.find(d => String(d[0]) === String(kod)); String((drug && drug[5]) || "").split(/[\s,]+/).forEach(f => { if (FMAP[f] && !out.some(x => x[0] === FMAP[f][0])) out.push(FMAP[f]); }); return out; };
+      const drug = kod && ilacCat.find(d => String(d[0]) === String(kod));
+      if (drug && /narkotik/i.test(drug[2] || "") && !out.some(x => x[0] === "Narkotik")) out.push(["Narkotik", "crit"]);   // katalog grubu NARKOTİK
+      String((drug && drug[5]) || "").split(/[\s,]+/).forEach(f => { if (FMAP[f] && !out.some(x => x[0] === FMAP[f][0])) out.push(FMAP[f]); }); return out; };
     const bayrakHtml = (o) => ilacBayrak(o.ad, o.kod).map(([l, c]) => `<span class="tag ${c}" style="font-size:10px;padding:1px 6px">${l}</span>`).join(" ");
     root.innerHTML = `<div class="ph"><div><h2>Eczane</h2><p>Order'lar hastane kaydından gelir. Bu ekran izleme içindir, doz önerisi yapmaz.</p></div></div>
       <div class="att"><div class="ac"><div class="i">${I("pill")}</div><b>${ab.length}</b><span>antibiyotik kullanan hasta</span></div><div class="ac ${ab.some(p => p.antibioticDay >= 3) ? "" : "ok"}"><div class="i">${I("clock")}</div><b>${ab.filter(p => p.antibioticDay >= 3).length}</b><span>3. günü geçen, gözden geçirme zamanı</span></div><div class="ac crit"><div class="i">${I("alert")}</div><b>${crit.length}</b><span>yüksek riskli ilaç (vazopressör) alan</span></div><div class="ac"><div class="i">${I("shield")}</div><b>${H.myPatients().filter(p => p.allergies.length).length}</b><span>kayıtlı alerjisi olan hasta</span></div></div>
