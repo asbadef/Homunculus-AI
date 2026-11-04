@@ -55,6 +55,28 @@ export function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Pill-style selectable chip (filters, choices).
+export function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress: () => void }) {
+  const { t } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 99,
+        backgroundColor: selected ? t.brand : t.surface,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: selected ? t.brand : t.border,
+      }}
+    >
+      <AppText weight="semibold" color={selected ? "#ffffff" : t.fg} style={{ fontSize: 13 }}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
 // Language cycle + theme toggle chips for the home top bar.
 export function LangThemeControls() {
   const { t, mode, toggle } = useTheme();

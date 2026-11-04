@@ -63,5 +63,28 @@ const tr: Record<string, string> = {
   "wiz.confirm": "Onayla",
   "wiz.km": "km",
   "wiz.booked": "Randevun oluşturuldu (örnek)",
+
+  "res.filter.all": "Tümü",
+  "res.filter.lab": "Laboratuvar",
+  "res.filter.radiology": "Radyoloji",
+  "res.filter.pathology": "Patoloji",
+  "res.protocol": "Protokol",
+  "res.ref": "Normal aralık",
+  "res.normal": "Normal",
+  "res.abnormal": "Aralık dışı",
+  "res.trend": "Zaman içinde",
+  "res.explainTitle": "Sade dille açıklama",
+  "res.explainBody": "Bu değer genel durum hakkında fikir verir. Sonucu tek başına tanı gibi kabul etme.",
+  "res.consult": "Kesin yorum için doktoruna danış.",
+
+  "rx.title": "Reçeteler",
+  "rx.empty": "Henüz reçete yok",
+  "rx.barcode": "Barkod",
+  "rx.usage": "Kullanım şekli",
+  "rx.withFood": "Aç / Tok",
+  "rx.warnings": "Uyarılar",
+  "rx.prospectus": "Prospektüsü aç",
+  "rx.remind": "Hatırlatma kur",
+  "rx.reminded": "Hatırlatma kuruldu",
 };
 export default tr;

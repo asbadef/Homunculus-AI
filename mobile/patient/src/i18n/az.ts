@@ -65,5 +65,28 @@ const az: Record<string, string> = {
   "wiz.confirm": "Təsdiqlə",
   "wiz.km": "km",
   "wiz.booked": "Randevun yaradıldı (nümunə)",
+
+  "res.filter.all": "Hamısı",
+  "res.filter.lab": "Laboratoriya",
+  "res.filter.radiology": "Radiologiya",
+  "res.filter.pathology": "Patologiya",
+  "res.protocol": "Protokol",
+  "res.ref": "Normal aralıq",
+  "res.normal": "Normal",
+  "res.abnormal": "Aralıqdan kənar",
+  "res.trend": "Zaman içində",
+  "res.explainTitle": "Sadə dildə izah",
+  "res.explainBody": "Bu dəyər ümumi vəziyyət haqqında fikir verir. Nəticəni tək başına diaqnoz kimi qəbul etmə.",
+  "res.consult": "Dəqiq şərh üçün həkiminlə danış.",
+
+  "rx.title": "Reseptlər",
+  "rx.empty": "Hələ resept yoxdur",
+  "rx.barcode": "Barkod",
+  "rx.usage": "İstifadə qaydası",
+  "rx.withFood": "Ac / Tox",
+  "rx.warnings": "Xəbərdarlıq",
+  "rx.prospectus": "Təlimatı aç",
+  "rx.remind": "Xatırlatma qur",
+  "rx.reminded": "Xatırlatma quruldu",
 };
 export default az;
