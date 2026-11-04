@@ -680,21 +680,34 @@
 
     function dischargeModal(p) {
       if (!p) return; const b = H.bed(p.bed); const o = { reason:"ev", inst:"", doc:p.attending || "", time:H.now(), note:"" };
+      // Taburcu ön-kontrolü: açık fatura ve sonuçlanmamış istem (gerçek HBYS taburcu öncesi bunları uyarır).
+      const DONE_ORD = ["Cevaplandı", "Sonuçlandı", "Tamamlandı", "Onaylandı", "Kapatıldı", "İptal"];
+      const openOrders = (H.data.orders || []).filter(x => x.pid === p.id && !DONE_ORD.includes(x.durum));
+      const openBills = (H.data.faturalar || []).filter(x => x.hasta === p.name && x.durum !== "Ödendi" && x.durum !== "İptal");
+      const openSum = openBills.reduce((a, x) => a + ((x.katilim || 0) - (x.odenen || 0)), 0);
+      const blockers = openBills.length + openOrders.length;
+      const chk = (ok, txt) => `<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><span class="tag ${ok ? "ok" : "w"}">${ok ? "✓" : "!"}</span><span>${txt}</span></div>`;
+      const readyHtml = () => o.reason === "exitus" ? "" : `<div class="box" style="margin-bottom:12px"><h6 style="margin:0 0 6px">Taburcu ön-kontrol</h6>
+          ${chk(!openBills.length, openBills.length ? `Açık fatura: ${openBills.length} · ${openSum} ₼ tahsil bekliyor` : "Açık fatura yok")}
+          ${chk(!openOrders.length, openOrders.length ? `Sonuçlanmamış istem: ${openOrders.length}` : "Bekleyen istem/sonuç yok")}
+          ${blockers ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer"><input type="checkbox" data-dcack style="margin-top:3px"><span class="adm-sub">Açık kalemlere rağmen kaydı kapat (yetkili onayı — fatura/sonuç taburcu sonrası takip edilir).</span></label>` : ""}</div>`;
       const extra = () => o.reason === "kurum" ? fld("inst", "Sevk edilen kurum", inp("inst", o.inst, 'placeholder="Kurum adı"'), 1)
         : o.reason === "exitus" ? `<div class="note" style="margin-bottom:10px">Kayıt "vefat" olarak kapanır. Yakınlara bildirim ve ölüm belgesi hekimin sürecidir; bu ekran yalnız kaydı ve yatağı kapatır.</div>${fld("doc", "Bildiren hekim", sel("doc", docOpts(), o.doc), 1)}` : "";
       H.modal({ title:"Taburcu · " + esc(p.name),
         body:`<div class="adm-sub" style="margin-bottom:12px">${esc(bedLabel(p.bed))}${p.temp ? ` · <span class="tag w">GEÇİCİ · ${esc(p.proto)}</span>` : ""}</div>
           ${fld("reason", "Çıkış şekli", opts("reason", [["ev", "Eve taburcu"], ["kurum", "Başka kuruma sevk"], ["exitus", "Vefat (exitus)"]], o.reason), 1)}
+          <div data-ready>${readyHtml()}</div>
           <div data-extra>${extra()}</div>
           ${fld("time", "Saat", inp("time", o.time, 'type="time"'), 1)}
           ${fld("note", "Not", inp("note", "", 'placeholder="İsteğe bağlı"'))}
           <p class="adm-sub" style="margin:4px 0 0">Bağlantı gelince kuyruktan bildirilir. Yatak "temizlik" durumuna geçer.</p>`,
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>${I("ok")}Kaydı kapat</button>`,
         onMount(m) {
-          bindForm(m, o, k => { if (k === "reason") { m.querySelector("[data-extra]").innerHTML = extra(); } });
+          bindForm(m, o, k => { if (k === "reason") { m.querySelector("[data-extra]").innerHTML = extra(); m.querySelector("[data-ready]").innerHTML = readyHtml(); } });
           m.querySelector("[data-ok]").onclick = () => {
             const miss = []; if (o.reason === "kurum" && !o.inst.trim()) miss.push("inst"); if (o.reason === "exitus" && !o.doc) miss.push("doc"); if (!o.time) miss.push("time");
             markErr(m, miss); if (miss.length) { H.toast("Zorunlu alanları doldurun", "e"); return; }
+            if (blockers && o.reason !== "exitus") { const ack = m.querySelector("[data-dcack]"); if (!ack || !ack.checked) { H.toast("Açık fatura/istem var · yetkili onay kutusunu işaretleyin", "e"); return; } }
             const lbl = { ev:"Eve taburcu", kurum:"Başka kuruma sevk · " + o.inst.trim(), exitus:"Vefat" }[o.reason];
             b.status = "temizlik"; delete b.pid;
             const i = H.data.patients.indexOf(p); if (i >= 0) H.data.patients.splice(i, 1);
