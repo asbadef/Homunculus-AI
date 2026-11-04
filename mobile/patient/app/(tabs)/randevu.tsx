@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card, EmptyState, GradientHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
@@ -59,9 +59,9 @@ export default function AppointmentsTab() {
   const { t } = useTheme();
   const { t: tr } = useI18n();
   const [list, setList] = useState<Appointment[] | null>(null);
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     transport.getAppointments().then(setList);
-  }, []);
+  }, []));
 
   const upcoming = (list ?? []).filter((a) => a.status === "confirmed" || a.status === "pending");
   const past = (list ?? []).filter((a) => a.status === "completed" || a.status === "cancelled");

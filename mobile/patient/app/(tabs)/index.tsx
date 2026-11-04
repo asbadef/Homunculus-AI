@@ -41,10 +41,14 @@ export default function HomeScreen() {
     askNotificationPermissionOnce();
     transport.getStories().then(setStories);
     transport.getNews().then(setNews);
+  }, []);
+
+  // Patient-scoped data reloads on focus so a family-account switch is reflected.
+  useFocusEffect(useCallback(() => {
     transport.getAppointments().then((a) => setNext(a.find((x) => x.status !== "completed" && x.status !== "cancelled") ?? a[0] ?? null));
     transport.getInvoices().then((i) => setUnpaid(i.find((x) => x.status === "unpaid") ?? null));
     transport.getResults().then((r) => setLastResult(r.find((x) => x.status === "ready") ?? null));
-  }, []);
+  }, []));
 
   const label = (f: Feature) => tr(f.titleKey);
 

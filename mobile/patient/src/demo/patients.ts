@@ -73,7 +73,22 @@ const aysel: DemoPatient = {
   invoices: [{ id: "i1", title: "Pediatriya müayinəsi", amount: 35, currency: "AZN", status: "unpaid", date: "20 Noyabr 2026" }],
 };
 
-export const patients: DemoPatient[] = [ozan, aysel];
+// Child account linked to Ozan's family (viewed via "family member switch").
+const nurlan: DemoPatient = {
+  id: "p-nurlan", fin: "CHILD-NURLAN", name: "Nurlan Sunkur", birthYear: "2022", phone: "+994 51 207 60 41",
+  appointments: [
+    { id: "a1", doctor: "Dr. Günel Məmmədova", specialty: "Pediatriya", date: "6 Dekabr 2026", time: "11:30", hospital: "Mərkəzi Klinika Bakı", status: "confirmed" },
+  ],
+  results: [
+    { id: "r1", type: "lab", title: "Tam qan sayımı", date: "20 Noyabr 2026", status: "ready", protocol: "50900771", hospital: "Mərkəzi Klinika Bakı", doctor: "Dr. Günel Məmmədova", values: [{ name: "Hemoglobin", value: 12.4, unit: "g/dL", refLow: 11, refHigh: 14, series: [11.8, 12.0, 12.2, 12.4] }] },
+  ],
+  prescriptions: [
+    { id: "p1", name: "D3 vitamini 400 BV", date: "20 Noyabr 2026", drug: { barcode: "8699123456789", usage: "Gündə 1 damcı", withFood: "Yeməkdən sonra", warnings: ["Uşaq dozası.", "Təyin olunan dozanı aşmayın."] } },
+  ],
+  invoices: [],
+};
+
+export const patients: DemoPatient[] = [ozan, aysel, nurlan];
 
 // Default to Ozan so the app opens on the owner's test patient even before login.
 let currentId = ozan.id;

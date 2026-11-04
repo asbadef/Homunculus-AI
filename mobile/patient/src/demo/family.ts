@@ -2,12 +2,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY = "hm-family";
-export type FamilyMember = { id: string; name: string; relation: string; birthYear: string };
+// `patientId` links a member to a demo account so you can switch and see their records;
+// members without it have no linked HBYS record yet (M1).
+export type FamilyMember = { id: string; name: string; relation: string; birthYear: string; patientId?: string };
 
 // Relation keys (i18n: rel.<key>).
 export const RELATIONS = ["parent", "child", "spouse", "sibling", "other"] as const;
 
-const SEED: FamilyMember[] = [{ id: "f-seed", name: "Nurlan Sunkur", relation: "child", birthYear: "2022" }];
+const SEED: FamilyMember[] = [{ id: "f-seed", name: "Nurlan Sunkur", relation: "child", birthYear: "2022", patientId: "p-nurlan" }];
 
 export async function getFamily(): Promise<FamilyMember[]> {
   try {

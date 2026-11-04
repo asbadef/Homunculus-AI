@@ -7,7 +7,10 @@ import { Dropdown } from "../src/ui/form";
 import { useTheme } from "../src/theme/ThemeProvider";
 import { useI18n } from "../src/i18n";
 import { layout } from "../src/theme/tokens";
+import { router } from "expo-router";
 import { getFamily, addFamily, removeFamily, RELATIONS, FamilyMember } from "../src/demo/family";
+import { viewAs } from "../src/demo/viewing";
+import { demoAlert } from "../src/ui/demo";
 
 export default function Family() {
   const { t } = useTheme();
@@ -28,6 +31,10 @@ export default function Family() {
     setName(""); setYear(""); setRelation("child"); setAdding(false);
   }
   async function remove(id: string) { setList(await removeFamily(id)); }
+  function open(m: FamilyMember) {
+    if (m.patientId) { viewAs(m.patientId, m.name); router.replace("/"); }
+    else demoAlert(tr); // record not linked yet (M1)
+  }
 
   const input = { backgroundColor: t.surface2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: t.fg, fontFamily: layout.fontMedium, fontSize: 15 } as const;
 
@@ -39,18 +46,20 @@ export default function Family() {
         <EmptyState icon="people-outline" title={tr("fam.empty")} />
       ) : (
         list.map((m) => (
-          <Card key={m.id} style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-              <AppText weight="bold" color={t.brand} style={{ fontSize: 18 }}>{m.name.slice(0, 1)}</AppText>
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <AppText weight="semibold" numberOfLines={1}>{m.name}{age(m.birthYear)}</AppText>
-              <Muted style={{ fontSize: 12 }}>{tr("rel." + m.relation)}</Muted>
-            </View>
-            <Pressable onPress={() => remove(m.id)} hitSlop={8}>
-              <Ionicons name="trash-outline" size={19} color={t.danger} />
-            </Pressable>
-          </Card>
+          <Pressable key={m.id} onPress={() => open(m)}>
+            <Card style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+                <AppText weight="bold" color={t.brand} style={{ fontSize: 18 }}>{m.name.slice(0, 1)}</AppText>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText weight="semibold" numberOfLines={1}>{m.name}{age(m.birthYear)}</AppText>
+                <Muted style={{ fontSize: 12 }}>{tr("rel." + m.relation)}{m.patientId ? " · " + tr("fam.view") : ""}</Muted>
+              </View>
+              <Pressable onPress={() => remove(m.id)} hitSlop={8}>
+                <Ionicons name="trash-outline" size={19} color={t.danger} />
+              </Pressable>
+            </Card>
+          </Pressable>
         ))
       )}
 

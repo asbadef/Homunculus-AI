@@ -13,16 +13,16 @@ type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
 // Tabs shown in the bar (saglik is reachable from Home, not the bar) + the centered
 // "book appointment" FAB between randevu and neticeler.
-const META: Record<string, { icon: IconName; labelKey: string }> = {
-  index: { icon: "home", labelKey: "tab.home" },
-  randevu: { icon: "calendar", labelKey: "tab.appointments" },
-  neticeler: { icon: "document-text", labelKey: "tab.results" },
-  profil: { icon: "person", labelKey: "tab.profile" },
+const META: Record<string, { icon: IconName; labelKey: string; path: string }> = {
+  index: { icon: "home", labelKey: "tab.home", path: "/" },
+  randevu: { icon: "calendar", labelKey: "tab.appointments", path: "/randevu" },
+  neticeler: { icon: "document-text", labelKey: "tab.results", path: "/neticeler" },
+  profil: { icon: "person", labelKey: "tab.profile", path: "/profil" },
 };
 const LEFT = ["index", "randevu"];
 const RIGHT = ["neticeler", "profil"];
 
-export function TabBar({ state, navigation }: any) {
+export function TabBar({ state }: any) {
   const { t } = useTheme();
   const { t: tr } = useI18n();
   const insets = useSafeAreaInsets();
@@ -38,10 +38,7 @@ export function TabBar({ state, navigation }: any) {
     const focused = state.index === entry.index;
     return (
       <Pressable
-        onPress={() => {
-          const ev = navigation.emit({ type: "tabPress", target: entry.route.key, canPreventDefault: true });
-          if (!focused && !ev.defaultPrevented) navigation.navigate(entry.route.name as never);
-        }}
+        onPress={() => { if (!focused) router.navigate(meta.path as any); }}
         style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 3, paddingTop: 2 }}
         accessibilityRole="button"
       >
