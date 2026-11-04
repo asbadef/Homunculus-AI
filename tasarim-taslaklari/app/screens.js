@@ -1332,7 +1332,7 @@
   // Rapor adları sahibin verdiği referans ekranla birebir (6 grup). Medula yok (Azerbaycan). İçerikler örnek veriyle sırayla dolar.
   const RAPOR_GRUP = [
     ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi"]],
-    ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log"]],
+    ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log", "Doktor Hakediş Analizi"]],
     ["İndirim ve İade", ["Hasta İndirim Analizi", "Onay Bekleyen İndirimler", "İade Talepleri (Avans/Fatura)"]],
     ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi"]],
     ["İptal Analizleri", ["Protokol İptal Analizi", "Fatura İptal Analizi", "Vezne İşlem İptal Analizi", "Protokol İşlem İptal Analizi"]],
@@ -1383,6 +1383,13 @@
   // Öncelikli raporların örnek/özet verisi (gerçek veriden türetilir)
   function reportData(name) {
     const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };
+    if (name === "Doktor Hakediş Analizi") {
+      const byDoc = {};
+      (H.data.orders || []).forEach(o => { const dr = o.by; if (!dr) return; const t = o.fiyat != null ? (+o.fiyat || 0) : ((o.kod && H.fiyatOf) ? (+H.fiyatOf(o.kod, "Özel ödeme") || 0) : (+o.tutar || 0)); const d = byDoc[dr] = byDoc[dr] || { n:0, tutar:0 }; d.n++; d.tutar += t; });
+      const ORAN = 0.15;   // demo hakediş oranı; gerçekte doktor sözleşmesine göre admin'de tanımlanır
+      const rows = Object.entries(byDoc).sort((a, z) => z[1].tutar - a[1].tutar).map(([dr, v]) => [dr, v.n, v.tutar.toFixed(2) + " ₼", "%" + (ORAN * 100), (v.tutar * ORAN).toFixed(2) + " ₼"]);
+      return { cols:["Doktor / isteyen", "İşlem sayısı", "Toplam tutar", "Hakediş oranı", "Hakediş tutarı"], rows, note:"Doktor hakedişi = işlem tutarının anlaşmalı oranı (demo %15). Gerçek oran doktor sözleşmesine göre admin'de tanımlanır; tutar istem order'larından (fiyatOf) hesaplanır." };
+    }
     if (name === "Hasta Geliş Analizi") { const g = {}; (H.data.patients || []).forEach(p => { const e = (H.ENC[H.encOf(p)] || {}).label || H.encOf(p); g[e] = (g[e] || 0) + 1; });
       return { cols:["Geliş tipi", "Hasta sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"Yatan hastalar birimlerinden, ayaktan hastalar başvuru tipinden sayılır." }; }
     if (name === "Fatura Analizi") { const f = faturalar(), g = {}; f.forEach(x => { g[x.durum] = g[x.durum] || { a:0, t:0, k:0 }; g[x.durum].a++; g[x.durum].t += x.toplam; g[x.durum].k += x.katilim; });
