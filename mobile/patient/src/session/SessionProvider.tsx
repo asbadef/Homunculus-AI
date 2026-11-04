@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 
-export type SessionUser = { name: string; finMasked: string; phone: string };
+export type SessionUser = { name: string; finMasked: string; fin: string; phone: string };
 
 type SessionCtx = {
   ready: boolean;

@@ -9,6 +9,7 @@ import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { doctorImages } from "../../src/demo/images";
+import { getFavIds, toggleFav } from "../../src/demo/favorites";
 import { Doctor } from "../../src/demo/types";
 
 function Section({ title, items }: { title: string; items: string[] }) {
@@ -34,9 +35,11 @@ export default function DoctorProfile() {
   const { t } = useTheme();
   const { t: tr } = useI18n();
   const [d, setD] = useState<Doctor | null>(null);
+  const [fav, setFav] = useState(false);
 
   useEffect(() => {
     transport.getDoctors().then((rows) => setD(rows.find((x) => x.id === id) ?? null));
+    getFavIds().then((ids) => setFav(ids.includes(String(id))));
   }, [id]);
 
   if (!d) return <Screen />;
@@ -59,9 +62,12 @@ export default function DoctorProfile() {
           <AppText color="#ffffff" style={{ fontSize: 13, opacity: 0.95, marginTop: 2 }}>{d.specialty}</AppText>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
             <Ionicons name="time-outline" size={14} color="#ffffff" />
-            <AppText color="#ffffff" style={{ fontSize: 12, opacity: 0.95 }}>{tr("wiz.doctor.title")}: {d.nextSlot}</AppText>
+            <AppText color="#ffffff" style={{ fontSize: 12, opacity: 0.95 }}>{d.nextSlot}</AppText>
           </View>
         </View>
+        <Pressable onPress={async () => setFav((await toggleFav(d.id)).includes(d.id))} hitSlop={8} style={{ width: 38, height: 38, borderRadius: 99, backgroundColor: "#ffffff2e", alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name={fav ? "heart" : "heart-outline"} size={20} color="#ffffff" />
+        </Pressable>
       </LinearGradient>
 
       <Section title={tr("doc.education")} items={d.education} />

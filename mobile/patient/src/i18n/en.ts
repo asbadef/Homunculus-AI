@@ -74,6 +74,12 @@ const en: Record<string, string> = {
   "feat.checkup": "Check-up",
   "feat.documents": "Documents",
   "feat.nearby": "Nearby clinics",
+  "feat.favdocs": "My favourite doctors",
+  "feat.cards": "My cards",
+  "feat.pharmacy": "On-duty pharmacies",
+  "fav.empty": "No favourite doctors yet",
+  "fav.note": "Tap the heart on a doctor profile to add a favourite.",
+  "pharm.hint": "On-duty pharmacies nearest you.",
 
   "wiz.continue": "Continue",
   "wiz.type.title": "Choose appointment type",

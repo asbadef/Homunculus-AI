@@ -74,6 +74,12 @@ const ru: Record<string, string> = {
   "feat.checkup": "Чек-ап",
   "feat.documents": "Документы",
   "feat.nearby": "Ближайшие клиники",
+  "feat.favdocs": "Избранные врачи",
+  "feat.cards": "Мои карты",
+  "feat.pharmacy": "Дежурные аптеки",
+  "fav.empty": "Пока нет избранных врачей",
+  "fav.note": "Нажмите сердечко в профиле врача, чтобы добавить в избранное.",
+  "pharm.hint": "Ближайшие дежурные аптеки.",
 
   "wiz.continue": "Продолжить",
   "wiz.type.title": "Выберите тип записи",

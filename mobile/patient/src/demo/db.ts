@@ -35,11 +35,18 @@ export const departments: Department[] = [
 // doctor specialty (for filtering) and to an HBYS unit (`unitId`, kept for M1). Only
 // patient-bookable outpatient branches appear here — anaesthesia/emergency are excluded.
 export const branches: Branch[] = [
-  { id: "b-kardioloji", name: "Kardiologiya", specialty: "Kardiologiya", unitId: "pol", icon: "heart-outline" },
-  { id: "b-daxili", name: "Daxili xəstəliklər", specialty: "Daxili xəstəliklər", unitId: "dax", icon: "medkit-outline" },
-  { id: "b-usaq", name: "Uşaq xəstəlikləri", specialty: "Pediatriya", unitId: "usq", icon: "happy-outline" },
+  { id: "b-alqologiya", name: "Alqologiya", specialty: "Anesteziologiya-reanimatologiya", unitId: "gun", icon: "body-outline" },
   { id: "b-cerrahiyye", name: "Cərrahiyyə", specialty: "Cərrahiyyə", unitId: "cer", icon: "cut-outline" },
-  { id: "b-neonatoloji", name: "Neonatologiya (yenidoğan)", specialty: "Neonatologiya", unitId: "usq", icon: "heart-circle-outline" },
+  { id: "b-daxili", name: "Daxili xəstəliklər", specialty: "Daxili xəstəliklər", unitId: "dax", icon: "medkit-outline" },
+  { id: "b-dermatologiya", name: "Dermatologiya", specialty: "Dermatologiya", unitId: "pol", icon: "hand-left-outline" },
+  { id: "b-dietologiya", name: "Dietologiya", specialty: "Dietologiya", unitId: "pol", icon: "nutrition-outline" },
+  { id: "b-endokrinologiya", name: "Endokrinologiya", specialty: "Endokrinologiya", unitId: "dax", icon: "flask-outline" },
+  { id: "b-kardioloji", name: "Kardiologiya", specialty: "Kardiologiya", unitId: "pol", icon: "heart-outline" },
+  { id: "b-neonatoloji", name: "Neonatologiya", specialty: "Neonatologiya", unitId: "usq", icon: "heart-circle-outline" },
+  { id: "b-nevrologiya", name: "Nevrologiya", specialty: "Nevrologiya", unitId: "dax", icon: "pulse-outline" },
+  { id: "b-oftalmologiya", name: "Oftalmologiya (Göz)", specialty: "Oftalmologiya", unitId: "pol", icon: "eye-outline" },
+  { id: "b-stomatologiya", name: "Stomatologiya (Diş)", specialty: "Stomatologiya", unitId: "pol", icon: "happy-outline" },
+  { id: "b-usaq", name: "Uşaq xəstəlikləri", specialty: "Pediatriya", unitId: "usq", icon: "balloon-outline" },
 ];
 
 // Doctors with department assignments. The 4 real HBYS doctors (per panel) plus demo
@@ -101,6 +108,48 @@ export const doctors: Doctor[] = [
     experience: ["2013–bu gün Yenidoğan (YBŞ)"],
     memberships: ["Neonatologiya Cəmiyyəti"], publications: ["Erkən doğulanların qidalanması, 2021"],
     nextSlot: "Bu gün", times: ["09:30", "10:00", "10:30"],
+  },
+  {
+    id: "dr9", name: "Dr. Leyla Hüseynova", specialty: "Dermatologiya", departmentIds: ["pol"],
+    education: ["Azərbaycan Tibb Universiteti, 2009–2015", "Rezidentura: Dermatologiya, 2015–2018"],
+    experience: ["2018–bu gün Dermatoloq, estetik dermatologiya"],
+    memberships: ["Dermatologiya Assosiasiyası"], publications: [],
+    nextSlot: "Bu gün", times: ["11:00", "11:30", "12:00", "15:00"],
+  },
+  {
+    id: "dr10", name: "Dr. Rəşad Məmmədli", specialty: "Endokrinologiya", departmentIds: ["dax"],
+    education: ["Azərbaycan Tibb Universiteti, 2006–2012"],
+    experience: ["2012–bu gün Endokrinoloq (diabet, tiroid)"],
+    memberships: ["Endokrinologiya Cəmiyyəti"], publications: ["Tip 2 diabetdə müasir müalicə, 2022"],
+    nextSlot: "Sabah", times: ["09:00", "09:40", "10:20"],
+  },
+  {
+    id: "dr11", name: "Dyt. Aysel Rəhimova", specialty: "Dietologiya", departmentIds: ["pol"],
+    education: ["Qida və Dietologiya, 2011–2015"],
+    experience: ["2015–bu gün Klinik dietoloq"],
+    memberships: [], publications: [],
+    nextSlot: "Bu gün", times: ["13:00", "13:30", "14:00"],
+  },
+  {
+    id: "dr12", name: "Dr. Elvin Qədirov", specialty: "Nevrologiya", departmentIds: ["dax"],
+    education: ["Azərbaycan Tibb Universiteti, 2005–2011", "Rezidentura: Nevrologiya, 2011–2014"],
+    experience: ["2014–bu gün Nevroloq"],
+    memberships: ["Nevrologiya Cəmiyyəti"], publications: [],
+    nextSlot: "4 Dekabr", times: ["10:00", "10:30", "11:00"],
+  },
+  {
+    id: "dr13", name: "Dr. Nərmin Əsgərova", specialty: "Oftalmologiya", departmentIds: ["pol"],
+    education: ["Azərbaycan Tibb Universiteti, 2008–2014"],
+    experience: ["2014–bu gün Göz həkimi"],
+    memberships: ["Oftalmologiya Assosiasiyası"], publications: [],
+    nextSlot: "Sabah", times: ["09:30", "10:00", "10:30", "11:30"],
+  },
+  {
+    id: "dr14", name: "Dr. Tural Babayev", specialty: "Stomatologiya", departmentIds: ["pol"],
+    education: ["Diş Həkimliyi Fakültəsi, 2010–2015"],
+    experience: ["2015–bu gün Stomatoloq (ağız-diş sağlamlığı)"],
+    memberships: ["Diş Həkimləri Birliyi"], publications: [],
+    nextSlot: "Bu gün", times: ["09:00", "09:30", "10:00", "14:00"],
   },
 ];
 

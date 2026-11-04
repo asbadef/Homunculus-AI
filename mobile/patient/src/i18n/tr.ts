@@ -74,6 +74,12 @@ const tr: Record<string, string> = {
   "feat.checkup": "Check-up",
   "feat.documents": "Belgeler",
   "feat.nearby": "Yakın klinikler",
+  "feat.favdocs": "Favori Doktorlarım",
+  "feat.cards": "Kartlarım",
+  "feat.pharmacy": "Nöbetçi Eczaneler",
+  "fav.empty": "Henüz favori doktorun yok",
+  "fav.note": "Doktor profilinde kalbe dokunarak favorine ekle.",
+  "pharm.hint": "Sana en yakın nöbetçi eczaneler.",
 
   "wiz.continue": "Devam et",
   "wiz.type.title": "Randevu türünü seç",

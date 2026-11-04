@@ -42,7 +42,7 @@ export default function StepSummary() {
   // Randevu onayı M1 köprüsünden geçer (demo modda yerelde onaylanır, SMS yok).
   async function confirm() {
     const res = await api.createBooking({
-      patientFin: user?.finMasked ?? "",
+      patientFin: user?.fin ?? "",
       branchId: state.departmentId ?? "",
       unitId: unitId.current,
       doctorId: state.doctorId ?? "",

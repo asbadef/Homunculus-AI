@@ -37,4 +37,10 @@ export const doctorImages: Record<string, any> = {
   dr6: require("../../assets/gen/doktor-1.png"), // Günel (f)
   dr7: require("../../assets/gen/doktor-1.png"), // Nigar (f)
   dr8: require("../../assets/gen/doktor-1.png"), // Validə (f)
+  dr9: require("../../assets/gen/doktor-1.png"), // Leyla (f)
+  dr10: require("../../assets/gen/doktor-2.png"), // Rəşad (m)
+  dr11: require("../../assets/gen/doktor-1.png"), // Aysel (f)
+  dr12: require("../../assets/gen/doktor-3.png"), // Elvin (m)
+  dr13: require("../../assets/gen/doktor-1.png"), // Nərmin (f)
+  dr14: require("../../assets/gen/doktor-2.png"), // Tural (m)
 };

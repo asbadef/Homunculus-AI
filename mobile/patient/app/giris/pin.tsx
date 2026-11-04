@@ -26,7 +26,7 @@ export default function Pin() {
       return;
     }
     setCurrentPatient(p.id);
-    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), phone: p.phone }, draft.remember);
+    signIn({ name: p.name, finMasked: maskFin(draft.id || p.fin), fin: draft.id || p.fin, phone: p.phone }, draft.remember);
     router.replace("/(tabs)");
   }
 

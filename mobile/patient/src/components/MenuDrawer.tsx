@@ -44,7 +44,7 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText weight="bold" numberOfLines={1}>{user?.name ?? "—"}</AppText>
-              <Muted style={{ fontSize: 12 }}>FİN: {user?.finMasked ?? "—"}</Muted>
+              <Muted style={{ fontSize: 12 }}>FİN: {user?.fin ?? "—"}</Muted>
             </View>
           </View>
 

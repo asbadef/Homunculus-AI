@@ -63,7 +63,7 @@ export default function HealthCard() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <AppText color="#ffffff" style={{ fontSize: 11, opacity: 0.9 }}>{tr("feat.healthcard")}</AppText>
             <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 20, marginTop: 2 }} numberOfLines={1}>{user?.name ?? "—"}</AppText>
-            <AppText color="#ffffff" style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>FİN: {user?.finMasked ?? "—"}</AppText>
+            <AppText color="#ffffff" style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>FİN: {user?.fin ?? "—"}</AppText>
           </View>
           <View style={{ alignItems: "center", backgroundColor: "#ffffff22", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
             <Ionicons name="water" size={20} color="#ffffff" />

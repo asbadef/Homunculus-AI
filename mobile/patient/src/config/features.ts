@@ -25,7 +25,11 @@ export const FEATURES: Feature[] = [
   { key: "vaccine", titleKey: "feat.vaccine", icon: "bandage", route: "/asi-karti", group: "service", enabled: true, order: 3 },
   { key: "checkup", titleKey: "feat.checkup", icon: "fitness", route: "/check-up", group: "service", enabled: true, order: 4 },
   { key: "documents", titleKey: "feat.documents", icon: "folder", route: "/dokumanlar", group: "service", enabled: true, order: 5 },
-  { key: "nearby", titleKey: "feat.nearby", icon: "location", route: "/yakin-hastaneler", group: "service", enabled: true, order: 6 },
+  { key: "favdocs", titleKey: "feat.favdocs", icon: "star", route: "/favori-doktorlar", group: "service", enabled: true, order: 6 },
+  { key: "cards", titleKey: "feat.cards", icon: "wallet", route: "/kart-ekle", group: "service", enabled: true, order: 7 },
+  { key: "pharmacy", titleKey: "feat.pharmacy", icon: "medkit", route: "/nobetci-eczane", group: "service", enabled: true, order: 8 },
+  { key: "nearby", titleKey: "feat.nearby", icon: "location", route: "/yakin-hastaneler", group: "service", enabled: true, order: 9 },
+  { key: "addfamily", titleKey: "pf.addFamily", icon: "person-add", route: "/aile", group: "service", enabled: true, order: 10 },
 ];
 
 export function visibleFeatures(list: Feature[], group?: FeatureGroup): Feature[] {

@@ -76,6 +76,12 @@ const az: Record<string, string> = {
   "feat.checkup": "Check-up",
   "feat.documents": "Sənədlər",
   "feat.nearby": "Yaxın klinikalar",
+  "feat.favdocs": "Favori həkimlərim",
+  "feat.cards": "Kartlarım",
+  "feat.pharmacy": "Növbətçi apteklər",
+  "fav.empty": "Hələ favori həkimin yoxdur",
+  "fav.note": "Həkim profilində ürəyə toxunaraq favorinə əlavə et.",
+  "pharm.hint": "Sənə ən yaxın növbətçi apteklər.",
 
   "wiz.continue": "Davam et",
   "wiz.type.title": "Randevu növünü seç",
