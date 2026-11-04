@@ -30,10 +30,9 @@ Her rol için **yapıldı** (ana hatlar) ve **eksik/derinleşmesi gereken** sür
 - ⚪ ITS/karekod (Azerbaycan muadili netleşince).
 
 ## HASTA KABUL / VEZNE
-**Yapıldı:** Kabul (tek ekran), randevu, protokol, fatura (satır-kalem/kurum payı/KDV + iptal/kilit), indirim onay, GFK takip, evrak takip, iade, tam ülke listesi.
+**Yapıldı:** Kabul (tek ekran), randevu, protokol, fatura (satır-kalem/kurum payı/KDV + iptal/kilit), indirim onay, GFK takip, evrak takip, iade, tam ülke listesi, **avans/depozit alma + taksit planı (aylık eşit bölme, sıradaki taksit tahsili)** ✅.
 **Eksik:**
 - 🔴 **Vezne/admin-yetki DETAY ekranları referansla kıyaslanmadı** (bu ekran görüntüleri sette yoktu — sahipten görsel bekliyorum).
-- 🟡 **Avans/depozit** yönetimi derinliği + taksit/parçalı ödeme.
 - 🟡 **POS / online ödeme** entegrasyonu (şu an stub).
 - 🟡 Kurum faturası (toplu/dönem) — medmuhasebe'de var, derinlik/kıyas gerek.
 
@@ -61,15 +60,15 @@ Her rol için **yapıldı** (ana hatlar) ve **eksik/derinleşmesi gereken** sür
 
 ## BİYOMED / STERİLİZASYON / SİSTEM (admin)
 **Yapıldı:** Cihaz yönetimi, sterilizasyon (set/yük/araba/parametrik), admin (kullanıcı/rol/yetki/güvenlik/katalog: ICD/ilaç/lab ref/hizmet/doküman/ptip/fiyat/bölüm/cihaz).
+**Yapıldı (ek):** Cihaz **bakım/kalibrasyon takvimi + süresi gelen bildirimi** (biyomed bildirim merkezine düşer) ✅.
 **Eksik:**
-- 🟡 Cihaz **bakım/kalibrasyon takvimi** + süresi gelen bildirimi.
 - 🟡 **yetki.xls tam ağacı** (957 madde) içe aktarma + buton-buton eşleme.
 - ⚪ **Kurulum sihirbazı** (yeni hastane kurulumu).
 
 ---
 
 ## ÇAPRAZ / GENEL (tüm roller)
-- 🔴 **Buton-buton tam yetki taraması** (40 ekran × 12 rol) — sahibin testiyle en isabetli.
+- 🟢 **Rol×ekran yetki taraması** `qa/yetki-audit.py` ile otomatik: NAV sızıntısı yok, her ekran kasıtlı yetkiye dayanıyor ✅. Buton-buton (ekran içi aksiyon) hâlâ sahibin testiyle en isabetli.
 - 🔴 **Tek backend / canlı veri akışı (M1)** — en büyük iş; panel + mobil app'ler tek kaynaktan beslenecek.
 - 🟡 Bildirim merkezi rol bazlı derinlik · durum renk sistemi tüm ekranlara tam yayılım.
 - ⚪ Mobil (panel-telefon ya da native) derinliği · tanıtım/landing sayfası · hakediş · kurulum sihirbazı.
