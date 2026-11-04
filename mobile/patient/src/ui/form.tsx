@@ -95,6 +95,23 @@ export function DateField({ label, value, onChange }: { label: string; value: Da
   const { t } = useTheme();
   const [open, setOpen] = useState(false);
   const [temp, setTemp] = useState<Date>(value ?? new Date(2000, 0, 1));
+
+  // Web has no native date wheel — use a real HTML date input (also helps testing).
+  if (Platform.OS === "web") {
+    return (
+      <View style={{ marginBottom: 14 }}>
+        <Muted style={{ fontSize: 12, marginBottom: 6 }}>{label}</Muted>
+        {React.createElement("input", {
+          type: "date",
+          value: value ? value.toISOString().slice(0, 10) : "",
+          max: new Date().toISOString().slice(0, 10),
+          onChange: (e: any) => { if (e.target.value) onChange(new Date(e.target.value)); },
+          style: { backgroundColor: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: "13px 14px", color: t.fg, fontSize: 15, width: "100%", boxSizing: "border-box" },
+        })}
+      </View>
+    );
+  }
+
   return (
     <View style={{ marginBottom: 14 }}>
       <Muted style={{ fontSize: 12, marginBottom: 6 }}>{label}</Muted>
