@@ -2130,6 +2130,28 @@
         return; }
       const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return;
         const isRad = tur === "rad" || /Radyoloji/i.test(o.cat || "");
+        const isKan = tur === "kan" || /Kan ürünü/i.test(o.cat || "");
+        if (isKan) { const r = o.transfuzyon || {}; const p = H.pt(o.pid) || {};
+          H.modal({ title:"Transfüzyon takibi · " + H.esc(o.ad || ""), wide:true,
+            body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag">${H.esc(H.showNames() ? (p.name || "") : (H.bed(p.bed) ? H.bed(p.bed).no : ""))}</span><span class="adm-sub">Kan grubu: <b>${H.esc(p.blood || "—")}</b></span></div>
+              <div class="icd-form">
+                <div class="fr"><label>Ürün no / torba</label><input data-f="urunNo" value="${H.esc(r.urunNo || "")}" placeholder="ör. ES-2026-0471"></div>
+                <div class="fr"><label>Ürün kan grubu</label><input data-f="urunGrup" value="${H.esc(r.urunGrup || p.blood || "")}"></div>
+                <div class="fr" style="grid-column:1/-1"><label>Uygunluk kontrolü</label><label style="font-weight:400"><input type="checkbox" data-f="capraz"${r.capraz ? " checked" : ""}> Çapraz karşılaştırma uygun · 2 hemşire kimlik doğruladı</label></div>
+                <div class="fr"><label>Başlangıç</label><input data-f="bas" value="${H.esc(r.bas || (H.now ? H.now() : ""))}"></div>
+                <div class="fr"><label>Bitiş</label><input data-f="bit" value="${H.esc(r.bit || "")}" placeholder="bitince"></div>
+                <div class="fr" style="grid-column:1/-1"><label>Vital izlem (0/15/30/60 dk)</label><input data-f="vital" value="${H.esc(r.vital || "")}" placeholder="ör. 0dk: 36.8°C 80/min · 15dk: 37.0°C"></div>
+                <div class="fr"><label>Reaksiyon</label><select data-f="reak"><option${r.reak === "Yok" || !r.reak ? " selected" : ""}>Yok</option><option${r.reak === "Hafif (ateş/ürtiker)" ? " selected" : ""}>Hafif (ateş/ürtiker)</option><option${r.reak === "Ciddi · durduruldu" ? " selected" : ""}>Ciddi · durduruldu</option></select></div>
+              </div><p class="adm-sub">Kimlik+çapraz doğrulanmadan transfüzyon başlatılmaz. Reaksiyonda transfüzyon durdurulur, hekime bildirilir.</p>`,
+            actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+            onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = (k) => { const el = m.querySelector(`[data-f="${k}"]`); return el ? (el.type === "checkbox" ? el.checked : (el.value || "").trim()) : ""; };
+              if (!g("capraz")) { H.toast("Çapraz/kimlik doğrulaması işaretlenmeden kaydedilemez.", "e"); return; }
+              const reak = m.querySelector('[data-f="reak"]').value;
+              o.transfuzyon = { urunNo:g("urunNo"), urunGrup:g("urunGrup"), capraz:true, bas:g("bas"), bit:g("bit"), vital:g("vital"), reak, by:(H.state.user || {}).name || "Hemşire", at:H.nowFull ? H.nowFull() : "" };
+              o.sonuc = "Transfüzyon " + (g("bit") ? "tamamlandı" : "başladı") + " · reaksiyon: " + reak; if (g("bit")) o.durum = "Serbest bırakıldı"; else if (/İstendi|İşlemde/.test(o.durum || "")) o.durum = "Çalışılıyor";
+              if (/Ciddi/.test(reak) && H.pushNotif) H.pushNotif({ at:H.now ? H.now() : "", to:["hekim"], sev:"crit", title:"Transfüzyon reaksiyonu", body:(o.ad || "") + " · transfüzyon durduruldu", pid:o.pid });
+              H.saveData && H.saveData(); H.log("Transfüzyon takibi", (o.ad || "") + " · " + reak); H.closeModal(); H.toast("Transfüzyon takibi kaydedildi" + (/Ciddi/.test(reak) ? " · reaksiyon uyarısı gönderildi" : "")); H.go("labislem", { tur }); }; } });
+          return; }
         if (isRad) { const r = o.radRapor || {};
           H.modal({ title:"Radyoloji raporu · " + H.esc(o.ad || ""), wide:true,
             body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag info">PACS görüntü</span><button class="btn sm" data-pacs>${I("eye") || ""} Görüntüleri aç (PACS)</button><span class="adm-sub">${o.pacsAcilis ? "Açıldı · " + H.esc(o.pacsAcilis) : "demo · gerçek PACS/DICOM ileri faz"}</span></div>
