@@ -49,26 +49,26 @@ export default function DoctorProfile() {
     <Screen scroll>
       <StackHeader title={tr("wiz.doctor.title")} />
 
-      <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 20, padding: 18, flexDirection: "row", alignItems: "center", gap: 14 }}>
+      <Card style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
         {doctorImages[d.id] ? (
-          <Image source={doctorImages[d.id]} style={{ width: 64, height: 64, borderRadius: 99, borderWidth: 2, borderColor: "#ffffff" }} resizeMode="cover" />
+          <Image source={doctorImages[d.id]} style={{ width: 64, height: 64, borderRadius: 99, borderWidth: 2, borderColor: t.brandSoft }} resizeMode="cover" />
         ) : (
-          <View style={{ width: 64, height: 64, borderRadius: 99, backgroundColor: "#ffffff33", alignItems: "center", justifyContent: "center" }}>
-            <AppText weight="bold" color="#ffffff" style={{ fontSize: 26 }}>{initials}</AppText>
+          <View style={{ width: 64, height: 64, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+            <AppText weight="bold" color={t.brand} style={{ fontSize: 26 }}>{initials}</AppText>
           </View>
         )}
         <View style={{ flex: 1, minWidth: 0 }}>
-          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 18 }} numberOfLines={1}>{d.name}</AppText>
-          <AppText color="#ffffff" style={{ fontSize: 13, opacity: 0.95, marginTop: 2 }}>{d.specialty}</AppText>
+          <AppText weight="extrabold" style={{ fontSize: 17 }} numberOfLines={1}>{d.name}</AppText>
+          <AppText style={{ fontSize: 13, color: t.muted, marginTop: 2 }}>{d.specialty}</AppText>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
-            <Ionicons name="time-outline" size={14} color="#ffffff" />
-            <AppText color="#ffffff" style={{ fontSize: 12, opacity: 0.95 }}>{d.nextSlot}</AppText>
+            <Ionicons name="time-outline" size={14} color={t.brand} />
+            <AppText weight="semibold" color={t.brand} style={{ fontSize: 12 }}>{d.nextSlot}</AppText>
           </View>
         </View>
-        <Pressable onPress={async () => setFav((await toggleFav(d.id)).includes(d.id))} hitSlop={8} style={{ width: 38, height: 38, borderRadius: 99, backgroundColor: "#ffffff2e", alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name={fav ? "heart" : "heart-outline"} size={20} color="#ffffff" />
+        <Pressable onPress={async () => setFav((await toggleFav(d.id)).includes(d.id))} hitSlop={8}>
+          <Ionicons name={fav ? "heart" : "heart-outline"} size={24} color={t.brand} />
         </Pressable>
-      </LinearGradient>
+      </Card>
 
       <Section title={tr("doc.education")} items={d.education} />
       <Section title={tr("doc.experience")} items={d.experience} />

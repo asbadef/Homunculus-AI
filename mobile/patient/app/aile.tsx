@@ -10,7 +10,7 @@ import { layout } from "../src/theme/tokens";
 import { router } from "expo-router";
 import { getFamily, addFamily, removeFamily, RELATIONS, FamilyMember } from "../src/demo/family";
 import { viewAs } from "../src/demo/viewing";
-import { demoAlert } from "../src/ui/demo";
+import { Alert } from "react-native";
 
 export default function Family() {
   const { t } = useTheme();
@@ -20,20 +20,22 @@ export default function Family() {
   const [name, setName] = useState("");
   const [relation, setRelation] = useState<string>("child");
   const [year, setYear] = useState("");
+  const [country, setCountry] = useState<string>("az");
+  const [fin, setFin] = useState("");
 
   useEffect(() => { getFamily().then(setList); }, []);
 
   const age = (y: string) => { const n = parseInt(y, 10); return n ? ` (${new Date().getFullYear() - n} ${tr("fam.age")})` : ""; };
 
   async function save() {
-    if (!name.trim()) return;
-    setList(await addFamily(name, relation, year));
-    setName(""); setYear(""); setRelation("child"); setAdding(false);
+    if (!name.trim() || !fin.trim()) return;
+    setList(await addFamily(name, relation, year, fin));
+    setName(""); setYear(""); setRelation("child"); setFin(""); setCountry("az"); setAdding(false);
   }
   async function remove(id: string) { setList(await removeFamily(id)); }
   function open(m: FamilyMember) {
     if (m.patientId) { viewAs(m.patientId, m.name); router.replace("/"); }
-    else demoAlert(tr); // record not linked yet (M1)
+    else Alert.alert(m.name, tr("fam.notLinked")); // FİN not registered in HBYS yet
   }
 
   const input = { backgroundColor: t.surface2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: t.fg, fontFamily: layout.fontMedium, fontSize: 15 } as const;
@@ -73,8 +75,11 @@ export default function Family() {
           <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderRadius: 18, padding: 18, gap: 12 }}>
             <AppText weight="bold" style={{ fontSize: 16 }}>{tr("pf.addFamily")}</AppText>
             <TextInput value={name} onChangeText={setName} placeholder={tr("fam.name")} placeholderTextColor={t.faint} style={input} />
+            <Dropdown label={tr("auth.country")} value={country} onChange={setCountry} options={[{ key: "az", label: tr("auth.country.az") }, { key: "foreign", label: tr("auth.country.foreign") }]} />
+            <TextInput value={fin} onChangeText={setFin} autoCapitalize="characters" placeholder={country === "az" ? tr("auth.fin") : tr("auth.passport")} placeholderTextColor={t.faint} style={input} />
             <Dropdown label={tr("fam.relation")} value={relation} onChange={setRelation} options={RELATIONS.map((r) => ({ key: r, label: tr("rel." + r) }))} />
             <TextInput value={year} onChangeText={setYear} keyboardType="number-pad" placeholder={tr("fam.birthYear")} placeholderTextColor={t.faint} style={input} />
+            <Muted style={{ fontSize: 11, lineHeight: 16 }}>{tr("fam.finNote")}</Muted>
             <Pressable onPress={save} style={{ backgroundColor: t.brand, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}>
               <AppText weight="bold" color="#ffffff">{tr("doc.save")}</AppText>
             </Pressable>

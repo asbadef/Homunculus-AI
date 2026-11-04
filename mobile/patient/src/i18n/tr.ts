@@ -111,9 +111,9 @@ const tr: Record<string, string> = {
   "wiz.pay.uninsured": "Sigortasız",
   "wiz.confirm": "Onayla",
   "wiz.km": "km",
-  "wiz.booked": "Randevun oluşturuldu (örnek)",
+  "wiz.booked": "Randevun oluşturuldu",
   "wiz.smsSent": "Onay SMS'i kayıtlı numarana gönderildi",
-  "wiz.demoBooking": "Demo: HBYS bağlanınca onay SMS'i gelecek",
+  "wiz.demoBooking": "Randevu bilgilerin Randevularım bölümünde görünür",
   "wiz.goMyAppointments": "Randevularıma git",
 
   "res.filter.all": "Tümü",
@@ -193,6 +193,8 @@ const tr: Record<string, string> = {
   "fam.birthYear": "Doğum yılı",
   "fam.empty": "Henüz aile üyesi yok",
   "fam.view": "görmek için dokun",
+  "fam.notLinked": "Bu üyenin FİN'i HBYS'de kayıtlı değil. Kayıt olunca hesabı otomatik bağlanır.",
+  "fam.finNote": "FİN HBYS'de kayıtlıysa bu üyenin bilgilerine geçebilirsin.",
   "view.viewing": "hesabına bakıyorsunuz",
   "view.returnSelf": "Kendime dön",
   "fam.age": "yaş",
@@ -289,6 +291,6 @@ const tr: Record<string, string> = {
   "m.add": "Gir",
   "m.save": "Kaydet",
   "demo.title": "Örnek",
-  "demo.msg": "Bu işlem tam sürümde aktif olacak.",
+  "demo.msg": "Bu hizmet yakında aktif olacak.",
 };
 export default tr;

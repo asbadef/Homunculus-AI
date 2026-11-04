@@ -111,9 +111,9 @@ const ru: Record<string, string> = {
   "wiz.pay.uninsured": "Без страховки",
   "wiz.confirm": "Подтвердить",
   "wiz.km": "км",
-  "wiz.booked": "Запись создана (демо)",
+  "wiz.booked": "Запись создана",
   "wiz.smsSent": "SMS-подтверждение отправлено на ваш номер",
-  "wiz.demoBooking": "Демо: SMS придёт после подключения HBYS",
+  "wiz.demoBooking": "Детали записи — в разделе Мои записи",
   "wiz.goMyAppointments": "К моим записям",
 
   "res.filter.all": "Все",
@@ -193,6 +193,8 @@ const ru: Record<string, string> = {
   "fam.birthYear": "Год рождения",
   "fam.empty": "Пока нет членов семьи",
   "fam.view": "нажмите, чтобы открыть",
+  "fam.notLinked": "FİN этого члена не зарегистрирован в HBYS. После регистрации привяжется автоматически.",
+  "fam.finNote": "Если FİN зарегистрирован в HBYS, вы сможете переключиться на его данные.",
   "view.viewing": "— просмотр аккаунта",
   "view.returnSelf": "Ко мне",
   "fam.age": "лет",
@@ -289,6 +291,6 @@ const ru: Record<string, string> = {
   "m.add": "Ввести",
   "m.save": "Сохранить",
   "demo.title": "Демо",
-  "demo.msg": "Это действие будет доступно в полной версии.",
+  "demo.msg": "Эта услуга скоро будет доступна.",
 };
 export default ru;

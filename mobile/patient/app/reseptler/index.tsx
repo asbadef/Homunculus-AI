@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card } from "../../src/ui/widgets";
+import { Screen, AppText, Muted } from "../../src/ui/base";
+import { Card, StackHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
@@ -19,12 +19,7 @@ export default function PrescriptionsList() {
 
   return (
     <Screen scroll>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 14 }}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={24} color={t.fg} />
-        </Pressable>
-        <Title>{tr("rx.title")}</Title>
-      </View>
+      <StackHeader title={tr("rx.title")} />
 
       {list && list.length === 0 ? (
         <View style={{ alignItems: "center", paddingVertical: 50, gap: 8 }}>

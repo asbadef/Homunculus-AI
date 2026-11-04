@@ -87,7 +87,7 @@ export default function ProfileTab() {
             {user?.name ?? "—"}
           </AppText>
           <Muted style={{ marginTop: 2 }}>
-            FİN: {user?.fin ?? "—"}
+            FİN: {user?.fin || user?.finMasked || "—"}
           </Muted>
           <Pressable onPress={changePhoto}><AppText color={t.brand} style={{ fontSize: 12, marginTop: 3 }}>{tr("pf.changePhoto")}</AppText></Pressable>
         </View>

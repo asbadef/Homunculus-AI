@@ -31,18 +31,26 @@ export function GradientHeader({ title, subtitle, right }: { title: string; subt
   );
 }
 
-// Back + title header for stack (non-tab) screens.
-export function StackHeader({ title }: { title: string }) {
+// Branded blue header bar for stack (non-tab) screens — matches GradientHeader so every
+// screen has the same blue top. `right` renders an optional trailing action.
+export function StackHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   const { t } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 14 }}>
-      <Pressable onPress={() => router.back()} hitSlop={10}>
-        <Ionicons name="chevron-back" size={24} color={t.fg} />
+    <LinearGradient
+      colors={[t.brand, t.brandGrad2]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ marginHorizontal: -layout.pad, marginTop: -insets.top, paddingTop: insets.top + 10, paddingHorizontal: layout.pad, paddingBottom: 14, borderBottomLeftRadius: 22, borderBottomRightRadius: 22, marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 6 }}
+    >
+      <Pressable onPress={() => router.back()} hitSlop={10} style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name="chevron-back" size={24} color="#ffffff" />
       </Pressable>
-      <AppText weight="bold" style={{ fontSize: 18, flex: 1, minWidth: 0 }} numberOfLines={1}>
+      <AppText weight="bold" color="#ffffff" style={{ fontSize: 18, flex: 1, minWidth: 0 }} numberOfLines={1}>
         {title}
       </AppText>
-    </View>
+      {right}
+    </LinearGradient>
   );
 }
 

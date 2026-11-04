@@ -98,7 +98,7 @@ export default function HomeScreen() {
                 </AppText>
               </View>
             </View>
-            <Pressable onPress={() => demoAlert(tr)} style={{ backgroundColor: t.wait, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 10 }}>
+            <Pressable onPress={() => router.push("/kart-ekle")} style={{ backgroundColor: t.wait, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 10 }}>
               <AppText weight="bold" color="#ffffff">{tr("action.pay")}</AppText>
             </Pressable>
           </Card>

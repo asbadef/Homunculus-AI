@@ -3,14 +3,14 @@ import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
-import { Card } from "../../src/ui/widgets";
+import { Card, StackHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { addReminder } from "../../src/reminder/reminders";
 import { Prescription } from "../../src/demo/types";
 import { useScreenGuard } from "../../src/security/useScreenGuard";
-import { demoAlert } from "../../src/ui/demo";
+import { Linking } from "react-native";
 
 function Field({ label, value }: { label: string; value: string }) {
   const { t } = useTheme();
@@ -40,14 +40,7 @@ export default function DrugDetail() {
 
   return (
     <Screen scroll>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 14 }}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={24} color={t.fg} />
-        </Pressable>
-        <AppText weight="bold" style={{ fontSize: 17, flex: 1, minWidth: 0 }} numberOfLines={2}>
-          {p.name}
-        </AppText>
-      </View>
+      <StackHeader title={p.name} />
 
       <Card>
         <Field label={tr("rx.barcode")} value={p.drug.barcode} />
@@ -68,7 +61,7 @@ export default function DrugDetail() {
         </AppText>
       </Pressable>
 
-      <Pressable onPress={() => demoAlert(tr)} style={{ marginTop: 10, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
+      <Pressable onPress={() => Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(p.name + " prospektüs")}`).catch(() => {})} style={{ marginTop: 10, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
         <AppText weight="semibold">{tr("rx.prospectus")}</AppText>
       </Pressable>
       <View style={{ height: 16 }} />

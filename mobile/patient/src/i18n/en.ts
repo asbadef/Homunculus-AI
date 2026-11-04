@@ -111,9 +111,9 @@ const en: Record<string, string> = {
   "wiz.pay.uninsured": "Uninsured",
   "wiz.confirm": "Confirm",
   "wiz.km": "km",
-  "wiz.booked": "Appointment created (demo)",
+  "wiz.booked": "Appointment created",
   "wiz.smsSent": "A confirmation SMS was sent to your number",
-  "wiz.demoBooking": "Demo: a confirmation SMS will arrive once HBYS is connected",
+  "wiz.demoBooking": "Your appointment details appear under My appointments",
   "wiz.goMyAppointments": "Go to my appointments",
 
   "res.filter.all": "All",
@@ -193,6 +193,8 @@ const en: Record<string, string> = {
   "fam.birthYear": "Birth year",
   "fam.empty": "No family members yet",
   "fam.view": "tap to view",
+  "fam.notLinked": "This member's FİN is not registered in HBYS. It links automatically once registered.",
+  "fam.finNote": "If the FİN is registered in HBYS, you can switch to this member's records.",
   "view.viewing": "account (viewing)",
   "view.returnSelf": "Back to me",
   "fam.age": "yrs",
@@ -289,6 +291,6 @@ const en: Record<string, string> = {
   "m.add": "Enter",
   "m.save": "Save",
   "demo.title": "Demo",
-  "demo.msg": "This action will be active in the full version.",
+  "demo.msg": "This service will be available soon.",
 };
 export default en;

@@ -3,7 +3,7 @@ import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
-import { Card } from "../../src/ui/widgets";
+import { Card, StackHeader } from "../../src/ui/widgets";
 import { TrendSparkline } from "../../src/components/TrendSparkline";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
@@ -47,14 +47,7 @@ export default function ResultDetail() {
 
   return (
     <Screen scroll>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 12 }}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={24} color={t.fg} />
-        </Pressable>
-        <AppText weight="bold" style={{ fontSize: 18, flex: 1, minWidth: 0 }} numberOfLines={1}>
-          {r.title}
-        </AppText>
-      </View>
+      <StackHeader title={r.title} />
       <Muted style={{ marginBottom: 14 }}>
         {r.date} · {tr("res.protocol")}: {r.protocol} · {r.hospital}
       </Muted>

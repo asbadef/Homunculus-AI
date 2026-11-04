@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Pressable, Modal, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Pressable, Modal, StyleSheet, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { AppText, Muted } from "../ui/base";
@@ -7,6 +7,7 @@ import { useTheme } from "../theme/ThemeProvider";
 import { useI18n } from "../i18n";
 import { LANGS } from "../i18n/core";
 import { useSession } from "../session/SessionProvider";
+import { getAvatar } from "../profile/avatar";
 
 type Item = { icon: any; label: string; route?: string; action?: () => void };
 
@@ -14,6 +15,9 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
   const { t, mode, toggle } = useTheme();
   const { t: tr, lang, setLang } = useI18n();
   const { user, signOut } = useSession();
+  const [avatar, setAvatar] = useState<string | null>(null);
+
+  useEffect(() => { if (visible) getAvatar().then(setAvatar); }, [visible]);
 
   function cycleLang() {
     const i = LANGS.indexOf(lang);
@@ -39,12 +43,16 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
       <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: "#0006", flexDirection: "row" }}>
         <Pressable onPress={() => {}} style={{ width: "82%", maxWidth: 340, backgroundColor: t.bg, paddingTop: 54, paddingHorizontal: 18 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingBottom: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border, marginBottom: 14 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-              <AppText weight="bold" color={t.brand} style={{ fontSize: 20 }}>{(user?.name ?? "A").slice(0, 1)}</AppText>
-            </View>
+            {avatar ? (
+              <Image source={{ uri: avatar }} style={{ width: 48, height: 48, borderRadius: 99 }} />
+            ) : (
+              <View style={{ width: 48, height: 48, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+                <AppText weight="bold" color={t.brand} style={{ fontSize: 20 }}>{(user?.name ?? "A").slice(0, 1)}</AppText>
+              </View>
+            )}
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText weight="bold" numberOfLines={1}>{user?.name ?? "—"}</AppText>
-              <Muted style={{ fontSize: 12 }}>FİN: {user?.fin ?? "—"}</Muted>
+              <Muted style={{ fontSize: 12 }}>FİN: {user?.fin || user?.finMasked || "—"}</Muted>
             </View>
           </View>
 

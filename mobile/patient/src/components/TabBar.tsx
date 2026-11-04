@@ -42,8 +42,8 @@ export function TabBar({ state }: any) {
         style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 3, paddingTop: 2 }}
         accessibilityRole="button"
       >
-        <Ionicons name={(focused ? meta.icon : (meta.icon + "-outline")) as IconName} size={23} color={focused ? t.brand : t.faint} />
-        <AppText weight={focused ? "semibold" : "regular"} style={{ fontSize: 10 }} color={focused ? t.brand : t.faint}>
+        <Ionicons name={(focused ? meta.icon : (meta.icon + "-outline")) as IconName} size={24} color={focused ? t.brand : t.faint} />
+        <AppText weight={focused ? "bold" : "medium"} style={{ fontSize: 11.5 }} color={focused ? t.brand : t.faint} numberOfLines={1}>
           {tr(meta.labelKey)}
         </AppText>
       </Pressable>
