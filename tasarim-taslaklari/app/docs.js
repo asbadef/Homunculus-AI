@@ -649,7 +649,7 @@
     }).join("");
     const dxList = d.dx || [];
     const taniW = (edit && isDoc() && d.type !== "transfer") ? `<div class="dc-sec dc-tani"><div class="dc-sh"><b>Tanı (ICD)</b><span class="r"><button class="btn g sm" data-dc-dxadd>${H.icon("plus")}Tanı ekle</button></span></div>
-      <div class="dc-dxw">${dxList.length ? dxList.map((x, i) => `<span class="dc-dxchip${x[3] ? " ana" : ""}"><b class="mono">${esc(x[0])}</b> ${esc(x[1])}${x[2] ? ` <small class="dc-dxtip">${esc(x[2])}</small>` : ""}${x[3] ? ` <small class="dc-dxana">Ana tanı</small>` : ""}<button data-dc-dxrm="${i}" title="Kaldır" aria-label="Kaldır">×</button></span>`).join("") : `<span class="mute" style="font-size:12px">Henüz tanı seçilmedi. “Tanı ekle” ile ICD listesinden arayıp seçin.</span>`}</div></div>` : "";
+      <div class="dc-dxw">${dxList.length ? dxList.map((x, i) => `<span class="dc-dxchip${x[3] ? " ana" : ""}"><b class="mono">${esc(x[0])}</b> ${esc(x[1])}${x[2] ? ` <small class="dc-dxtip">${esc(x[2])}</small>` : ""}${x[4] ? ` <small class="dc-dxtip">${esc(x[4])}</small>` : ""}${x[5] ? ` <small class="dc-dxtip">${esc(x[5])}</small>` : ""}${x[3] ? ` <small class="dc-dxana">Ana tanı</small>` : ""}<button data-dc-dxrm="${i}" title="Kaldır" aria-label="Kaldır">×</button></span>`).join("") : `<span class="mute" style="font-size:12px">Henüz tanı seçilmedi. “Tanı ekle” ile ICD listesinden arayıp seçin.</span>`}</div></div>` : "";
     // Muayene yapısal alanları (referans ekran): psikolojik durum · ağrı · tedavi tipi · ameliyat planı · kontrol.
     const M = d.mua || {};
     const seg = (field, opts) => opts.map(o => `<button class="dc-seg${M[field] === o ? " on" : ""}" data-dc-mua="${field}" data-mv="${esc(o)}">${esc(o)}</button>`).join("");
@@ -810,7 +810,7 @@
   function openDxPicker(p, d, root, rerender) {
     const ALL = H.ICD || [];
     H.modal({ title:"Tanı ekle (ICD)", wide:true,
-      body:`<div class="dc-dxtop"><label>Tanı tipi <select data-dx-tip><option>Ön Tanı</option><option>Kesin Tanı</option><option>Ayırıcı Tanı</option></select></label><label style="margin-left:14px"><input type="checkbox" data-dx-ana> Ana tanı</label></div>
+      body:`<div class="dc-dxtop" style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center"><label>Tanı tipi <select data-dx-tip><option>Ön Tanı</option><option>Kesin Tanı</option><option>Ayırıcı Tanı</option></select></label><label>Taraf <select data-dx-taraf><option value="">—</option><option>Sağ</option><option>Sol</option><option>Bilateral</option><option>Orta hat</option></select></label><label>Evre <input data-dx-evre placeholder="ör. Evre II / T2N1M0" style="width:150px"></label><label><input type="checkbox" data-dx-ana> Ana tanı</label></div>
         <input data-dx-q placeholder="Kod ya da tanı adı ara (ör. J18 veya pnevmoniya)" style="width:100%;margin-top:8px">
         <div data-dx-res style="margin-top:10px;max-height:46vh;overflow:auto"></div>
         <p class="mute" style="font-size:12px;margin-top:8px">Önce tipi/ana tanıyı seçin, sonra listeden tanıya tıklayın. Seçtiğiniz tanı belgeye ve hastanın başlığına işlenir.</p>`,
@@ -823,11 +823,12 @@
         res.onclick = (e) => { const b = e.target.closest("[data-pick]"); if (!b) return;
           const code = b.dataset.pick, row = ALL.find(x => x[0] === code); if (!row) return;
           const tip = m.querySelector("[data-dx-tip]").value, ana = m.querySelector("[data-dx-ana]").checked;
+          const taraf = m.querySelector("[data-dx-taraf]").value, evre = (m.querySelector("[data-dx-evre]").value || "").trim();
           d.dx = d.dx || [];
           if (ana) d.dx.forEach(x => x[3] = false);   // tek ana tanı olur
-          const ex = d.dx.find(x => x[0] === code); if (ex) { ex[2] = tip; ex[3] = ana; } else d.dx.push([row[0], row[1], tip, ana]);
+          const ex = d.dx.find(x => x[0] === code); if (ex) { ex[2] = tip; ex[3] = ana; ex[4] = taraf; ex[5] = evre; } else d.dx.push([row[0], row[1], tip, ana, taraf, evre]);
           if (ana || d.dx.length === 1) { p.dx = row[1]; p.icd = row[0]; }
-          markDirty(root, d); H.log("Tanı eklendi (ICD)", bedNo(p) + " · " + code + " · " + tip + (ana ? " · Ana" : ""));
+          markDirty(root, d); H.log("Tanı eklendi (ICD)", bedNo(p) + " · " + code + " · " + tip + (taraf ? " · " + taraf : "") + (evre ? " · " + evre : "") + (ana ? " · Ana" : ""));
           H.closeModal(); H.toast("Tanı eklendi: " + code); rerender(); }; } });
   }
 
