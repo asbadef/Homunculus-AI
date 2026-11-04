@@ -2705,6 +2705,70 @@
     };
   } });
 
+  /* ================= KAN BANKASI ================= */
+  // Stok + çapraz uygunluk + rezervasyon/teslim. Transfüzyon İZLEMİ ayrı (labislem "Kan ürünü" sekmesi, bedside).
+  H.addT && H.addT({ m_kanbank:{ TR:"Kan bankası", AZ:"Qan bankası", RU:"Банк крови", EN:"Blood bank" } });
+  const KAN_GRUP = ["0 Rh(+)", "0 Rh(-)", "A Rh(+)", "A Rh(-)", "B Rh(+)", "B Rh(-)", "AB Rh(+)", "AB Rh(-)"];
+  const KAN_PROD = [["er", "Eritrosit süspansiyonu"], ["tdp", "Taze donmuş plazma"], ["tr", "Trombosit süspansiyonu"]];
+  const KAN_ESIK = 3;   // bu sayının altı kritik stok
+  function kanStok() {
+    if (!H.data.kanStok) { const s = {}; KAN_GRUP.forEach((g, i) => { s[g] = { er:4 + (i * 3) % 9, tdp:3 + (i * 2) % 6, tr:1 + i % 4 }; }); H.data.kanStok = s; H.saveData && H.saveData(); }
+    return H.data.kanStok;
+  }
+  const kanTalepler = () => (H.data.orders || []).filter(o => /Kan ürünü/i.test(o.cat || ""));
+  function kanSeed() {   // demo: hiç kan istemi yoksa rezervasyon listesi boş kalmasın
+    if (kanTalepler().length) return; const p = (H.data.patients || []).find(x => x.bed && x.blood && x.blood !== "Bilinmiyor"); if (!p) return;
+    (H.data.orders = H.data.orders || []).push({ id:"kan" + Date.now(), pid:p.id, cat:"Kan ürünü", ad:"Eritrosit süspansiyonu", detay:"2 torba · transfüzyon", by:"Dr. Kamran Rzayev", at:H.now(), durum:"İstendi" });
+    H.saveData && H.saveData();
+  }
+  H.register("kanbank", { title:() => H.t("m_kanbank"), perm:"lab_islem", render(root) {
+    kanStok(); kanSeed();
+    const draw = () => {
+      const s = kanStok(), talepler = kanTalepler();
+      const krit = []; KAN_GRUP.forEach(g => KAN_PROD.forEach(([k, l]) => { if ((s[g][k] || 0) < KAN_ESIK) krit.push(g + " · " + l); }));
+      const hasta = (o) => { const p = H.pt(o.pid); return p ? (H.vzName ? H.vzName(p.name) : p.name) : "—"; };
+      const bloodOf = (o) => { const p = H.pt(o.pid); return p && p.blood && p.blood !== "Bilinmiyor" ? p.blood : ""; };
+      const stokHtml = `<div class="tw"><table class="t"><thead><tr><th>Kan grubu</th>${KAN_PROD.map(([, l]) => `<th class="n" style="width:150px">${l}</th>`).join("")}</tr></thead><tbody>
+        ${KAN_GRUP.map(g => `<tr><td><b>${g}</b></td>${KAN_PROD.map(([k]) => { const v = s[g][k] || 0; return `<td class="n"><span class="tag ${v < KAN_ESIK ? "crit" : v < KAN_ESIK * 2 ? "w" : "ok"}">${v}</span></td>`; }).join("")}</tr>`).join("")}
+        </tbody></table></div>`;
+      const talepRows = talepler.map(o => { const kb = o.kanBank; const grp = bloodOf(o);
+        const act = !kb ? `<button class="btn p sm" data-kanrez="${o.id}"${grp ? "" : " disabled title='Hasta kan grubu bilinmiyor'"}>Çapraz + Rezerve</button>`
+          : kb.durum === "Rezerve" ? `<span class="tag info">Rezerve · ${H.esc(kb.grup)} · ${kb.adet} ad.</span> <button class="btn sm" data-kanteslim="${o.id}">Teslim et</button>`
+          : `<span class="tag ok">Teslim edildi · ${H.esc(kb.grup || "")} · ${kb.adet} ad.</span>`;
+        return `<tr><td><b>${H.esc(hasta(o))}</b></td><td>${H.esc(o.ad || "—")}</td><td class="adm-sub">${H.esc(o.detay || "")}</td><td>${grp ? H.esc(grp) : "<span class='tag w'>grup yok</span>"}</td><td>${act}</td></tr>`; }).join("");
+      root.innerHTML = `<div class="ph"><div><h2>${H.t("m_kanbank")}</h2><p>Stok · çapraz uygunluk · rezervasyon / teslim · transfüzyon izlemi hemşirede</p></div></div>
+        ${krit.length ? `<div class="note" style="margin-bottom:12px">${I("alert")} Kritik stok (${KAN_ESIK} altı): ${krit.map(x => H.esc(x)).join(" · ")}</div>` : `<div class="note i" style="margin-bottom:12px">${I("ok")} Tüm kan ürünleri eşik üstünde.</div>`}
+        <div class="sec">Stok</div>${stokHtml}
+        <div class="sec" style="margin-top:14px">Rezervasyon / çapraz talepleri <small>kan istemlerinden</small></div>
+        <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Ürün</th><th>Ayrıntı</th><th style="width:110px">Kan grubu</th><th style="width:230px"></th></tr></thead><tbody>
+        ${talepler.length ? talepRows : `<tr><td colspan="5" class="mute" style="padding:18px;text-align:center">Bekleyen kan ürünü istemi yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Çapraz uygunluk doğrulanıp rezerve edilince ilgili kan grubundan stok düşer. Teslim sonrası hasta başında transfüzyon takibi (hemşire) başlar.</p>`;
+    };
+    draw();
+    root.onclick = (e) => {
+      const rz = e.target.closest("[data-kanrez]"); if (rz) { const o = kanTalepler().find(x => x.id === rz.dataset.kanrez); if (!o) return; const p = H.pt(o.pid), grp = p && p.blood;
+        const prodKey = /plazma|tdp/i.test(o.ad || "") ? "tdp" : /trombosit/i.test(o.ad || "") ? "tr" : "er";
+        H.modal({ title:"Çapraz uygunluk + rezerve", body:`<div class="icd-form">
+            <div class="fr"><label>Hasta</label><input value="${H.esc((H.vzName ? H.vzName(p.name) : p.name))}" readonly></div>
+            <div class="fr"><label>Kan grubu</label><select data-f="grup">${KAN_GRUP.map(g => `<option${g === grp ? " selected" : ""}>${g}</option>`).join("")}</select></div>
+            <div class="fr"><label>Ürün</label><select data-f="urun">${KAN_PROD.map(([k, l]) => `<option value="${k}"${k === prodKey ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+            <div class="fr"><label>Ünite (torba)</label><input type="number" data-f="adet" value="1" min="1" max="6"></div>
+            <div class="fr"><label>Çapraz sonucu</label><select data-f="capraz"><option>Uyumlu</option><option>Uyumsuz</option></select></div></div>
+          <p class="adm-sub" style="margin-top:6px">Uyumlu ise seçilen gruptan stok düşer ve ünite hastaya rezerve edilir.</p>`,
+          actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Rezerve et</button>`,
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => { const grup = m.querySelector('[data-f="grup"]').value, uk = m.querySelector('[data-f="urun"]').value, adet = Math.max(1, +m.querySelector('[data-f="adet"]').value || 1), capraz = m.querySelector('[data-f="capraz"]').value;
+            if (capraz === "Uyumsuz") { H.toast("Çapraz uyumsuz · rezervasyon yapılamaz.", "e"); return; }
+            const s = kanStok(); if ((s[grup][uk] || 0) < adet) { H.toast("Stok yetersiz: " + grup + " · " + (s[grup][uk] || 0) + " ünite var.", "e"); return; }
+            s[grup][uk] -= adet; o.kanBank = { durum:"Rezerve", grup, urun:uk, adet, capraz }; o.durum = "Rezerve edildi";
+            H.saveData && H.saveData(); H.log("Kan rezerve", (H.pt(o.pid) || {}).name + " · " + grup + " · " + adet + " ünite"); H.closeModal(); H.toast("Rezerve edildi · stok güncellendi"); draw(); }; } });
+        return; }
+      const ts = e.target.closest("[data-kanteslim]"); if (ts) { const o = kanTalepler().find(x => x.id === ts.dataset.kanteslim); if (!o || !o.kanBank) return;
+        o.kanBank.durum = "Teslim edildi"; o.durum = "Teslim edildi"; H.saveData && H.saveData(); H.log("Kan teslim", (H.pt(o.pid) || {}).name + " · " + o.kanBank.grup);
+        if (H.pushNotif) H.pushNotif({ at:H.now(), to:["hemsire"], sev:"", title:"Kan ürünü teslim edildi", body:(o.ad || "") + " · " + o.kanBank.grup + " · transfüzyon takibi başlatın", pid:o.pid });
+        H.toast("Teslim edildi · hemşireye bildirim gönderildi"); draw(); return; }
+    };
+  } });
+
   /* ================= AYARLAR ================= */
   /* Ayarlar ve Profil: ayarlar.js (24.09, 3. oturum). */
 })();
