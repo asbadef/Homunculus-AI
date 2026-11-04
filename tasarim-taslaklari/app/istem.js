@@ -43,7 +43,7 @@
   // İstem başlatıcı grupları. Katalogdan seçilenler "kat" ile işaretli; ötekiler kendi kısa formunu açar.
   const GROUPS = [
     ["Tetkik ve görüntüleme", [["lab", "Laboratuvar tetkiki"], ["rad", "Görüntüleme (radyoloji)"]]],
-    ["Hizmet ve işlem", [["hizmet", "Hizmet / işlem"], ["kons", "Konsültasyon"], ["diyet", "Diyet istemi"], ["bakim", "Bakım istemi"]]],
+    ["Hizmet ve işlem", [["hizmet", "Hizmet / işlem"], ["kons", "Konsültasyon"], ["diyet", "Diyet istemi"], ["bakim", "Bakım istemi"], ["periyodik", "Periyodik takip"]]],
     ["İlaç ve kan", [["ilac", "İlaç istemi"], ["recete", "İlaç reçetesi"], ["kan", "Kan ürünü"]]],
     ["Ameliyat / yatış", [["ameliyat", "Ameliyat / yatış istemi"]]],
   ];
@@ -404,9 +404,40 @@
       } });
   }
 
+  /* ---------- Periyodik takip: kronik hasta için otomatik tekrarlayan kontrol/tetkik randevuları ---------- */
+  const PERIYOT = [["Haftalık", 7], ["15 günde bir", 15], ["Aylık", 30], ["3 ayda bir", 90], ["6 ayda bir", 180], ["Yıllık", 365]];
+  function openPeriyodik(p, rerender) {
+    const units = H.units ? H.units() : [], today = new Date().toISOString().slice(0, 10);
+    const doktor = (H.userBy && H.userBy(p.attending) ? H.userBy(p.attending).name : "") || me();
+    H.modal({ title:"Periyodik takip planı · " + esc(p.name),
+      body:`<div class="icd-form">
+        <div class="fr"><label>Takip türü</label><select data-f="tur"><option>Kontrol muayenesi</option><option>Laboratuvar tetkiki</option><option>Görüntüleme (radyoloji)</option><option>Diğer</option></select></div>
+        <div class="fr"><label>Açıklama</label><input data-f="ad" placeholder="ör. HbA1c + açlık glukozu"></div>
+        <div class="fr"><label>Sıklık</label><select data-f="sik">${PERIYOT.map(([l, d]) => `<option value="${d}">${esc(l)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Kaç kez</label><input type="number" data-f="adet" value="6" min="1" max="24"></div>
+        <div class="fr"><label>Başlangıç</label><input type="date" data-f="bas" value="${today}"></div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="per-bol" value="${esc(p.bolum || "")}"><datalist id="per-bol">${units.map(u => `<option>${esc(u.tr)}</option>`).join("")}</datalist></div>
+      </div><p class="adm-sub">Seçilen sıklıkta ileri tarihli kontrol randevuları otomatik oluşur (hastaya ve doktorun randevu listesine düşer).</p>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Planı oluştur</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const g = (k) => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
+        const tur = m.querySelector('[data-f="tur"]').value, ad = g("ad"), sik = +m.querySelector('[data-f="sik"]').value || 30, adet = Math.max(1, Math.min(24, +g("adet") || 6)), bolum = g("bolum") || "—";
+        const bas = new Date(g("bas") || today); if (isNaN(bas.getTime())) { H.toast("Başlangıç tarihi geçersiz.", "w"); return; }
+        const rand = (H.data.randevular = H.data.randevular || []), planId = "per" + Date.now();
+        for (let i = 1; i <= adet; i++) { const t = new Date(bas); t.setDate(t.getDate() + sik * i);
+          rand.unshift({ id:planId + "_" + i, hasta:p.name, bolum, doktor, tarih:t.toISOString().slice(0, 16), durum:"Bekliyor", not:"Periyodik takip: " + tur + (ad ? " · " + ad : ""), periyodik:planId, sira:i + "/" + adet }); }
+        (H.data.periyodikTakip = H.data.periyodikTakip || []).unshift({ id:planId, pid:p.id, hasta:p.name, tur, ad, sik, adet, bolum, doktor, bas:g("bas") || today, at:now() });
+        const sikL = (PERIYOT.find(x => x[1] === sik) || ["", ""])[0];
+        addOrder(p, { cat:"Periyodik takip", ad:(ad || tur), detay:adet + " kez · " + sikL + " · " + bolum });   // istem listesinde işaret
+        H.saveData && H.saveData(); H.log("Periyodik takip oluşturuldu", bedNo(p) + " · " + tur + " · " + adet + " kez / " + sik + " gün");
+        H.closeModal(); H.toast(adet + " kontrol randevusu oluşturuldu (periyodik takip)"); rerender();
+      }; } });
+  }
+
   function dispatch(p, key, rerender) {
     if (!H.protoOpen(p)) { H.toast("Protokol kapalı / fatura kesildi · işlem eklenemez.", "e"); return; }
     if (!H.ozelOnay(p)) { H.toast("Özel onay yok (ödeme alınmadı) · işlem eklenemez.", "e"); return; }
+    if (key === "periyodik") return openPeriyodik(p, rerender);
     if (key === "ilac") return openIlac(p, rerender);
     if (key === "recete") return openRecete(p, rerender);
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
