@@ -2,6 +2,7 @@ import React from "react";
 import { View, ScrollView, Pressable, StyleSheet, ImageBackground, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { bannerImages, newsImages, storyImages } from "../demo/images";
 import { useI18n } from "../i18n";
@@ -10,27 +11,106 @@ import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
 import { Card } from "../ui/widgets";
-import { Banner, NewsItem, Story } from "../demo/types";
+import { greetKey } from "../ui/greeting";
+import { Appointment, Banner, NewsItem, Story } from "../demo/types";
 import { Feature } from "../config/features";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
-export function Stories({ data }: { data: Story[] }) {
+export function Stories({ data, light }: { data: Story[]; light?: boolean }) {
   const { t } = useTheme();
   const { t: tr } = useI18n();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 4 }}>
       {data.map((s, i) => (
         <Pressable key={s.id} onPress={() => demoAlert(tr)} style={{ alignItems: "center", width: 74 }}>
-          <View style={{ width: 66, height: 66, borderRadius: 99, borderWidth: 2, borderColor: s.tint, padding: 2 }}>
+          <View style={{ width: 66, height: 66, borderRadius: 99, borderWidth: 2, borderColor: light ? "#ffffffcc" : s.tint, padding: 2 }}>
             <Image source={storyImages[i % storyImages.length]} style={{ width: "100%", height: "100%", borderRadius: 99 }} resizeMode="cover" />
           </View>
-          <AppText numberOfLines={2} style={{ fontSize: 10, textAlign: "center", marginTop: 5, color: t.muted }}>
+          <AppText numberOfLines={2} style={{ fontSize: 10, textAlign: "center", marginTop: 5, color: light ? "#ffffff" : t.muted }}>
             {s.title}
           </AppText>
         </Pressable>
       ))}
     </ScrollView>
+  );
+}
+
+// Branded gradient header: time-aware greeting, avatar (opens menu), notification bell
+// with unread badge, search bar, and the stories row — all on one turquoise band.
+export function HomeHero({ name, unread, stories, onMenu, onBell, onSearch }: {
+  name: string; unread: number; stories: Story[]; onMenu: () => void; onBell: () => void; onSearch: () => void;
+}) {
+  const { t } = useTheme();
+  const { t: tr } = useI18n();
+  const insets = useSafeAreaInsets();
+  const initial = (name || "?").trim().slice(0, 1).toUpperCase();
+  return (
+    <LinearGradient
+      colors={[t.brand, t.brandGrad2]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ marginHorizontal: -layout.pad, marginTop: -insets.top, paddingTop: insets.top + 12, paddingHorizontal: layout.pad, paddingBottom: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 11 }}>
+        <Pressable onPress={onMenu} hitSlop={8} style={{ width: 42, height: 42, borderRadius: 99, backgroundColor: "#ffffff33", alignItems: "center", justifyContent: "center" }}>
+          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 18 }}>{initial}</AppText>
+        </Pressable>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <AppText color="#ffffff" style={{ fontSize: 11, opacity: 0.9 }} numberOfLines={1}>{tr(greetKey())} 👋</AppText>
+          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 17 }} numberOfLines={1}>{name}</AppText>
+        </View>
+        <Pressable onPress={onBell} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: "#ffffff2e", alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name="notifications-outline" size={20} color="#ffffff" />
+          {unread > 0 ? (
+            <View style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 99, backgroundColor: t.danger, borderWidth: 2, borderColor: t.brand, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+              <AppText weight="bold" color="#ffffff" style={{ fontSize: 10 }}>{unread}</AppText>
+            </View>
+          ) : null}
+        </Pressable>
+      </View>
+
+      <Pressable onPress={onSearch} style={{ marginTop: 14, backgroundColor: "#ffffff", borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 9 }}>
+        <Ionicons name="search" size={17} color={t.brand} />
+        <AppText style={{ fontSize: 13, color: t.faint, flex: 1, minWidth: 0 }} numberOfLines={1}>{tr("home.search")}</AppText>
+      </Pressable>
+
+      <View style={{ marginTop: 14 }}>
+        <Stories data={stories} light />
+      </View>
+    </LinearGradient>
+  );
+}
+
+// Next-appointment card: doctor avatar, name/specialty/time, quick actions.
+export function NextAppointmentCard({ appt, onDirections, onRemind, onPostpone }: {
+  appt: Appointment; onDirections: () => void; onRemind: () => void; onPostpone: () => void;
+}) {
+  const { t } = useTheme();
+  const { t: tr } = useI18n();
+  const initials = appt.doctor.replace(/^Dr\.\s*/, "").slice(0, 1);
+  const chip = { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingVertical: 9, flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const, gap: 5 };
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <LinearGradient colors={[t.brand, t.brandGrad2]} style={{ width: 46, height: 46, borderRadius: 99, alignItems: "center", justifyContent: "center" }}>
+          <AppText weight="bold" color="#ffffff" style={{ fontSize: 18 }}>{initials}</AppText>
+        </LinearGradient>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <AppText weight="bold" numberOfLines={1}>{appt.doctor}</AppText>
+          <AppText style={{ fontSize: 12, color: t.muted }} numberOfLines={1}>{appt.specialty} · {appt.hospital}</AppText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+            <Ionicons name="time-outline" size={13} color={t.brand} />
+            <AppText weight="semibold" color={t.brand} style={{ fontSize: 12 }}>{appt.date}, {appt.time}</AppText>
+          </View>
+        </View>
+      </View>
+      <View style={{ flexDirection: "row", gap: 9, marginTop: 12 }}>
+        <Pressable onPress={onDirections} style={chip}><Ionicons name="navigate-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.directions")}</AppText></Pressable>
+        <Pressable onPress={onRemind} style={chip}><Ionicons name="alarm-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.remindMe")}</AppText></Pressable>
+        <Pressable onPress={onPostpone} style={chip}><Ionicons name="repeat-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.postpone")}</AppText></Pressable>
+      </View>
+    </Card>
   );
 }
 

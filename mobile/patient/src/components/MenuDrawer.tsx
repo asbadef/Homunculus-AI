@@ -5,14 +5,20 @@ import { router } from "expo-router";
 import { AppText, Muted } from "../ui/base";
 import { useTheme } from "../theme/ThemeProvider";
 import { useI18n } from "../i18n";
+import { LANGS } from "../i18n/core";
 import { useSession } from "../session/SessionProvider";
 
 type Item = { icon: any; label: string; route?: string; action?: () => void };
 
 export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { t } = useTheme();
-  const { t: tr } = useI18n();
+  const { t, mode, toggle } = useTheme();
+  const { t: tr, lang, setLang } = useI18n();
   const { user, signOut } = useSession();
+
+  function cycleLang() {
+    const i = LANGS.indexOf(lang);
+    setLang(LANGS[(i + 1) % LANGS.length]);
+  }
 
   function go(route: string) {
     onClose();
@@ -50,7 +56,18 @@ export function MenuDrawer({ visible, onClose }: { visible: boolean; onClose: ()
             </Pressable>
           ))}
 
-          <Pressable onPress={() => { onClose(); signOut(); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, marginTop: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+          <View style={{ flexDirection: "row", gap: 10, paddingVertical: 10, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+            <Pressable onPress={cycleLang} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingVertical: 11 }}>
+              <Ionicons name="globe-outline" size={17} color={t.brand} />
+              <AppText weight="semibold" style={{ fontSize: 13 }}>{tr("lang.code")}</AppText>
+            </Pressable>
+            <Pressable onPress={toggle} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingVertical: 11 }}>
+              <Ionicons name={mode === "dark" ? "moon" : "sunny"} size={17} color={t.brand} />
+              <AppText weight="semibold" style={{ fontSize: 13 }}>{mode === "dark" ? tr("pf.on") : tr("pf.off")}</AppText>
+            </Pressable>
+          </View>
+
+          <Pressable onPress={() => { onClose(); signOut(); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }}>
             <Ionicons name="log-out-outline" size={21} color={t.danger} />
             <AppText weight="semibold" color={t.danger}>{tr("pf.logout")}</AppText>
           </Pressable>
