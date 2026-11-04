@@ -26,7 +26,7 @@ function Row({ icon, label, value, onPress }: { icon: any; label: string; value?
 }
 
 export default function ProfileTab() {
-  const { t, mode, toggle } = useTheme();
+  const { t, mode, toggle, bigText, contrast, toggleBigText, toggleContrast } = useTheme();
   const { t: tr, lang, setLang } = useI18n();
   const { user, signOut } = useSession();
   const [email, setEmailState] = useState("");
@@ -78,6 +78,8 @@ export default function ProfileTab() {
       <Row icon="mail-outline" label={tr("pf.email")} value={email || tr("pf.emailAdd")} onPress={() => { setDraftEmail(email); setEditEmail(true); }} />
       <Row icon="globe-outline" label={tr("pf.lang")} value={tr("lang.code")} onPress={cycleLang} />
       <Row icon="moon-outline" label={tr("pf.theme")} value={mode === "dark" ? tr("pf.on") : tr("pf.off")} onPress={toggle} />
+      <Row icon="text-outline" label={tr("pf.bigText")} value={bigText ? tr("pf.on") : tr("pf.off")} onPress={toggleBigText} />
+      <Row icon="contrast-outline" label={tr("pf.contrast")} value={contrast ? tr("pf.on") : tr("pf.off")} onPress={toggleContrast} />
       <Row icon="notifications-outline" label={tr("pf.notif")} onPress={() => router.push("/bildirisler")} />
       <Row icon="options-outline" label={tr("pf.perms")} onPress={() => router.push("/iletisim-izinleri")} />
 

@@ -169,6 +169,8 @@ const ru: Record<string, string> = {
   "pf.addFamily": "Добавить члена семьи",
   "pf.lang": "Язык",
   "pf.theme": "Тёмная тема",
+  "pf.bigText": "Крупный текст",
+  "pf.contrast": "Высокий контраст",
   "pf.notif": "Уведомления",
   "pf.logout": "Выйти",
   "pf.on": "Вкл",

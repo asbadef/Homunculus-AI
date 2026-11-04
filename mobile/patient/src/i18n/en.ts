@@ -169,6 +169,8 @@ const en: Record<string, string> = {
   "pf.addFamily": "Add family member",
   "pf.lang": "Language",
   "pf.theme": "Dark mode",
+  "pf.bigText": "Large text",
+  "pf.contrast": "High contrast",
   "pf.notif": "Notifications",
   "pf.logout": "Sign out",
   "pf.on": "On",

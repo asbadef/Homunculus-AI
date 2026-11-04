@@ -169,6 +169,8 @@ const tr: Record<string, string> = {
   "pf.addFamily": "Aile üyesi ekle",
   "pf.lang": "Dil",
   "pf.theme": "Gece modu",
+  "pf.bigText": "Büyük yazı",
+  "pf.contrast": "Yüksek kontrast",
   "pf.notif": "Bildirimler",
   "pf.logout": "Çıkış",
   "pf.on": "Açık",

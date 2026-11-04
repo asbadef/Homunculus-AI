@@ -6,7 +6,7 @@ import { layout } from "../theme/tokens";
 
 // Themed text. Figtree with a system fallback (fallback kicks in if fonts fail to load).
 export function AppText({ style, weight, color, ...rest }: TextProps & { weight?: "regular" | "medium" | "semibold" | "bold" | "extrabold"; color?: string }) {
-  const { t } = useTheme();
+  const { t, scale } = useTheme();
   const family = {
     regular: layout.fontFamily,
     medium: layout.fontMedium,
@@ -14,7 +14,10 @@ export function AppText({ style, weight, color, ...rest }: TextProps & { weight?
     bold: layout.fontBold,
     extrabold: layout.fontExtraBold,
   }[weight ?? "regular"];
-  return <Text {...rest} style={[{ color: color ?? t.fg, fontFamily: family }, style]} />;
+  // Apply the accessibility text-size multiplier to whatever fontSize the caller set.
+  const flat = StyleSheet.flatten(style) as { fontSize?: number } | undefined;
+  const fontSize = (flat?.fontSize ?? 14) * scale;
+  return <Text {...rest} style={[{ color: color ?? t.fg, fontFamily: family }, style, { fontSize }]} />;
 }
 
 export function Title({ style, ...rest }: TextProps) {

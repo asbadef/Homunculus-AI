@@ -171,6 +171,8 @@ const az: Record<string, string> = {
   "pf.addFamily": "Ailə üzvü əlavə et",
   "pf.lang": "Dil",
   "pf.theme": "Gecə rejimi",
+  "pf.bigText": "Böyük yazı",
+  "pf.contrast": "Yüksək kontrast",
   "pf.notif": "Bildirişlər",
   "pf.logout": "Çıxış",
   "pf.on": "Açıq",
