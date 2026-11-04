@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -51,7 +51,7 @@ export function TabBar({ state }: any) {
   }
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", backgroundColor: t.surface, borderTopWidth: 1, borderTopColor: t.border, height: 60 + insets.bottom, paddingBottom: insets.bottom, paddingTop: 7 }}>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", backgroundColor: t.surface, height: 62 + insets.bottom, paddingBottom: insets.bottom, paddingTop: 9, borderTopLeftRadius: 22, borderTopRightRadius: 22, shadowColor: "#0f172a", shadowOpacity: 0.09, shadowRadius: 14, shadowOffset: { width: 0, height: -4 }, elevation: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.border }}>
       {LEFT.map((n) => <Item key={n} name={n} />)}
 
       {/* Centered raised "Randevu al" button */}
