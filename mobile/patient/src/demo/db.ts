@@ -197,14 +197,14 @@ export const news: NewsItem[] = [
 ];
 
 export const stories: Story[] = [
-  { id: "s1", title: "Anında həkim", tint: "#0891b2" },
-  { id: "s2", title: "Beynəlxalq keyfiyyət", tint: "#6366f1" },
-  { id: "s3", title: "Sağlıq kartı", tint: "#10b981" },
-  { id: "s4", title: "Check-up həftəsi", tint: "#f59e0b" },
-  { id: "s5", title: "Ürək sağlamlığı", tint: "#ef4444" },
-  { id: "s6", title: "Peyvənd təqvimi", tint: "#0ea5e9" },
-  { id: "s7", title: "Qış kampaniyası", tint: "#8b5cf6" },
-  { id: "s8", title: "Yenidoğan mərkəzi", tint: "#14b8a6" },
+  { id: "s1", title: "Anında həkim", tint: "#0891b2", route: "/randevu-al/tip" },
+  { id: "s2", title: "Beynəlxalq keyfiyyət", tint: "#6366f1", route: "/kampanyalar" },
+  { id: "s3", title: "Sağlıq kartı", tint: "#10b981", route: "/saglik-karti" },
+  { id: "s4", title: "Check-up həftəsi", tint: "#f59e0b", route: "/check-up" },
+  { id: "s5", title: "Ürək sağlamlığı", tint: "#ef4444", route: "/haber/n2" },
+  { id: "s6", title: "Peyvənd təqvimi", tint: "#0ea5e9", route: "/asi-karti" },
+  { id: "s7", title: "Qış kampaniyası", tint: "#8b5cf6", route: "/kampanyalar" },
+  { id: "s8", title: "Yenidoğan mərkəzi", tint: "#14b8a6", route: "/haber/n1" },
 ];
 
 export const banners: Banner[] = [

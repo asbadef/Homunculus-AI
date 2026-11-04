@@ -23,7 +23,7 @@ export function Stories({ data, light }: { data: Story[]; light?: boolean }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 4 }}>
       {data.map((s, i) => (
-        <Pressable key={s.id} onPress={() => router.push("/kampanyalar")} style={{ alignItems: "center", width: 74 }}>
+        <Pressable key={s.id} onPress={() => router.push((s.route ?? "/kampanyalar") as any)} style={{ alignItems: "center", width: 74 }}>
           <View style={{ width: 66, height: 66, borderRadius: 99, borderWidth: 2, borderColor: light ? "#ffffffcc" : s.tint, padding: 2 }}>
             <Image source={storyImages[i % storyImages.length]} style={{ width: "100%", height: "100%", borderRadius: 99 }} resizeMode="cover" />
           </View>
@@ -234,25 +234,30 @@ export function QuickServices({ items, label }: { items: Feature[]; label: (f: F
 
 export function NewsStrip({ data }: { data: NewsItem[] }) {
   const { t } = useTheme();
-  const { t: tr } = useI18n();
   return (
-    <Card style={{ padding: 0, overflow: "hidden" }}>
-      {data.map((n, i) => (
-        <Pressable key={n.id} onPress={() => router.push(`/haber/${n.id}`)} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
-          {newsImages[n.id] ? (
-            <Image source={newsImages[n.id]} style={{ width: 56, height: 56, borderRadius: 12 }} resizeMode="cover" />
-          ) : (
-            <View style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: n.tint + "33" }} />
-          )}
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText weight="semibold" style={{ fontSize: 13 }} numberOfLines={2}>
-              {n.title}
-            </AppText>
-            <AppText style={{ fontSize: 11, color: t.muted, marginTop: 2 }} numberOfLines={1}>{n.summary}</AppText>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={t.faint} />
+    <View style={{ gap: 12 }}>
+      {data.map((n) => (
+        <Pressable key={n.id} onPress={() => router.push(`/haber/${n.id}`)}>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            {newsImages[n.id] ? (
+              <Image source={newsImages[n.id]} style={{ width: "100%", height: 128 }} resizeMode="cover" />
+            ) : (
+              <View style={{ width: "100%", height: 90, backgroundColor: n.tint + "22" }} />
+            )}
+            <View style={{ padding: 13 }}>
+              {n.date ? (
+                <View style={{ flexDirection: "row" }}>
+                  <View style={{ backgroundColor: n.tint + "1f", borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }}>
+                    <AppText weight="semibold" style={{ fontSize: 10.5, color: n.tint }}>{n.date}</AppText>
+                  </View>
+                </View>
+              ) : null}
+              <AppText weight="bold" style={{ fontSize: 15, marginTop: 8 }} numberOfLines={2}>{n.title}</AppText>
+              <AppText style={{ fontSize: 12.5, color: t.muted, marginTop: 4, lineHeight: 18 }} numberOfLines={2}>{n.summary}</AppText>
+            </View>
+          </Card>
         </Pressable>
       ))}
-    </Card>
+    </View>
   );
 }
