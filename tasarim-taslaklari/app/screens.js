@@ -2086,6 +2086,26 @@
     const lbData = () => ({ cols:["Saat", "Hasta", "İstem", "İsteyen", "Durum"], rows:ord.map(o => [o.at || "", pn(o.pid), o.ad || "", o.by || "", o.durum || "İstendi"]) });
     root.onclick = (e) => { const lt = e.target.closest("[data-lt]"); if (lt) return H.go("labislem", { tur:lt.dataset.lt });
       const lr = e.target.closest("[data-labres]"); if (lr) { const o = (H.data.orders || []).find(x => x.id === lr.dataset.labres); if (!o) return;
+        const isRad = tur === "rad" || /Radyoloji/i.test(o.cat || "");
+        if (isRad) { const r = o.radRapor || {};
+          H.modal({ title:"Radyoloji raporu · " + H.esc(o.ad || ""), wide:true,
+            body:`<div class="adm-bar" style="margin-bottom:8px"><span class="tag info">PACS görüntü</span><button class="btn sm" data-pacs>${I("eye") || ""} Görüntüleri aç (PACS)</button><span class="adm-sub">${o.pacsAcilis ? "Açıldı · " + H.esc(o.pacsAcilis) : "demo · gerçek PACS/DICOM ileri faz"}</span></div>
+              <div class="icd-form">
+                <div class="fr" style="grid-column:1/-1"><label>Teknik / çekim</label><input data-f="teknik" value="${H.esc(r.teknik || "")}" placeholder="ör. Kontrastsız, 5 mm kesit"></div>
+                <div class="fr" style="grid-column:1/-1"><label>Bulgular</label><textarea data-f="bulgular" rows="5" placeholder="Anatomik bulgular…">${H.esc(r.bulgular || "")}</textarea></div>
+                <div class="fr" style="grid-column:1/-1"><label>Sonuç / İzlenim</label><textarea data-f="sonuc" rows="2" placeholder="Tanısal izlenim">${H.esc(r.sonuc || "")}</textarea></div>
+                <div class="fr" style="grid-column:1/-1"><label>Öneri</label><input data-f="oneri" value="${H.esc(r.oneri || "")}" placeholder="ör. 6 ay sonra kontrol"></div>
+                <div class="fr"><label>Kritik bulgu</label><label style="font-weight:400"><input type="checkbox" data-f="kritik"${r.kritik ? " checked" : ""}> Var · hekime acil bildir</label></div>
+              </div><p class="adm-sub" style="margin-top:4px">Rapor imzalanıp "Serbest bırakıldı" olunca hekime görünür. Kritik bulgu işaretlenirse ayrıca uyarı düşer.</p>`,
+            actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Raporu kaydet</button>`,
+            onMount(m) { m.querySelector("[data-pacs]").onclick = () => { o.pacsAcilis = (H.nowFull ? H.nowFull() : H.now()); H.log("PACS görüntü açıldı", o.ad || ""); H.toast("PACS görüntüleri açıldı (demo)."); };
+              m.querySelector("[data-ok]").onclick = () => { const g = (k) => { const el = m.querySelector(`[data-f="${k}"]`); return el ? (el.type === "checkbox" ? el.checked : (el.value || "").trim()) : ""; };
+                o.radRapor = { teknik:g("teknik"), bulgular:g("bulgular"), sonuc:g("sonuc"), oneri:g("oneri"), kritik:g("kritik") };
+                o.sonuc = o.radRapor.sonuc || o.radRapor.bulgular || "Rapor girildi"; o.sonuclar = null;
+                if (/İstendi|İşlemde|Numune alındı|Çalışılıyor/.test(o.durum || "")) o.durum = "Sonuç onaylandı";
+                if (o.radRapor.kritik && H.pushNotif) H.pushNotif({ at:H.now ? H.now() : "", to:["hekim"], sev:"crit", title:"Kritik radyoloji bulgusu", body:(o.ad || "") + " · " + (o.radRapor.sonuc || ""), pid:o.pid });
+                H.saveData && H.saveData(); H.log("Radyoloji raporu girildi", (o.ad || "") + (o.radRapor.kritik ? " · KRİTİK" : "")); H.closeModal(); H.toast("Radyoloji raporu kaydedildi" + (o.radRapor.kritik ? " · kritik uyarı gönderildi" : "")); H.go("labislem", { tur }); }; } });
+          return; }
         H.modal({ title:"Sonuç gir · " + H.esc(o.ad || ""), wide:true,
           body:`<div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Sonuçlar — her satır: <b>Analit: değer</b></label><textarea data-f="s" rows="6" placeholder="WBC: 12.5&#10;CRP: 8&#10;Sodyum: 134&#10;(radyoloji/patoloji için serbest rapor da yazılabilir)">${H.esc((o.sonuclar || []).map(x => x.ad + (x.deger ? ": " + x.deger : "")).join("\n") || o.sonuc || "")}</textarea></div></div>
             <p class="adm-sub" style="margin-top:4px">Analit referans listesinde tanınırsa anormal <b style="color:var(--crit)">↑ yüksek</b> / <b style="color:var(--low)">↓ düşük</b> otomatik işaretlenir.</p>`,
