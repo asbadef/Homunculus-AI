@@ -24,6 +24,10 @@ const ru: Record<string, string> = {
   "appt.directions": "Маршрут",
   "appt.remindMe": "Напомнить",
   "appt.postpone": "Отложить",
+  "appt.calendar": "В календарь",
+  "appt.remindTitle": "Напоминание о записи",
+  "appt.reminderSet": "Напоминание установлено (за 24 ч)",
+  "appt.remOnPhone": "Напоминание работает в приложении",
 
   "appointments.title": "Записи",
   "appointments.new": "Новая запись",

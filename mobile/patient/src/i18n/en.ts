@@ -24,6 +24,10 @@ const en: Record<string, string> = {
   "appt.directions": "Directions",
   "appt.remindMe": "Remind me",
   "appt.postpone": "Postpone",
+  "appt.calendar": "Calendar",
+  "appt.remindTitle": "Appointment reminder",
+  "appt.reminderSet": "Reminder set (24h before)",
+  "appt.remOnPhone": "Reminder works on the phone app",
 
   "appointments.title": "Appointments",
   "appointments.new": "Book appointment",

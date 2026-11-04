@@ -64,7 +64,7 @@ export default function HomeScreen() {
 
       <SectionTitle>{tr("home.nextAppointment")}</SectionTitle>
       {next ? (
-        <NextAppointmentCard appt={next} onDirections={() => demoAlert(tr)} onRemind={() => demoAlert(tr)} onPostpone={() => demoAlert(tr)} />
+        <NextAppointmentCard appt={next} />
       ) : (
         <Card><Muted>{tr("appointments.empty")}</Muted></Card>
       )}

@@ -12,6 +12,7 @@ import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
 import { Card } from "../ui/widgets";
 import { greetKey } from "../ui/greeting";
+import { openDirections, addToCalendar, scheduleReminder } from "../appointment/apptActions";
 import { Appointment, Banner, NewsItem, Story } from "../demo/types";
 import { Feature } from "../config/features";
 
@@ -82,14 +83,20 @@ export function HomeHero({ name, unread, stories, onMenu, onBell, onSearch }: {
   );
 }
 
-// Next-appointment card: doctor avatar, name/specialty/time, quick actions.
-export function NextAppointmentCard({ appt, onDirections, onRemind, onPostpone }: {
-  appt: Appointment; onDirections: () => void; onRemind: () => void; onPostpone: () => void;
-}) {
+// Next-appointment card: doctor avatar, name/specialty/time, real quick actions
+// (open maps, add to calendar, schedule a local reminder).
+export function NextAppointmentCard({ appt }: { appt: Appointment }) {
   const { t } = useTheme();
   const { t: tr } = useI18n();
+  const [msg, setMsg] = React.useState("");
   const initials = appt.doctor.replace(/^Dr\.\s*/, "").slice(0, 1);
   const chip = { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, borderRadius: 11, paddingVertical: 9, flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const, gap: 5 };
+
+  async function remind() {
+    const ok = await scheduleReminder(appt, tr("appt.remindTitle"), `${appt.doctor} · ${appt.date}, ${appt.time}`);
+    setMsg(ok ? tr("appt.reminderSet") : tr("appt.remOnPhone"));
+  }
+
   return (
     <Card>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -106,10 +113,16 @@ export function NextAppointmentCard({ appt, onDirections, onRemind, onPostpone }
         </View>
       </View>
       <View style={{ flexDirection: "row", gap: 9, marginTop: 12 }}>
-        <Pressable onPress={onDirections} style={chip}><Ionicons name="navigate-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.directions")}</AppText></Pressable>
-        <Pressable onPress={onRemind} style={chip}><Ionicons name="alarm-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.remindMe")}</AppText></Pressable>
-        <Pressable onPress={onPostpone} style={chip}><Ionicons name="repeat-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.postpone")}</AppText></Pressable>
+        <Pressable onPress={() => openDirections(appt.hospital)} style={chip}><Ionicons name="navigate-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.directions")}</AppText></Pressable>
+        <Pressable onPress={remind} style={chip}><Ionicons name="alarm-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.remindMe")}</AppText></Pressable>
+        <Pressable onPress={() => addToCalendar(appt)} style={chip}><Ionicons name="calendar-outline" size={15} color={t.brand} /><AppText weight="semibold" style={{ fontSize: 12 }}>{tr("appt.calendar")}</AppText></Pressable>
       </View>
+      {msg ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+          <Ionicons name="checkmark-circle" size={15} color={t.ok} />
+          <AppText color={t.ok} style={{ fontSize: 12 }}>{msg}</AppText>
+        </View>
+      ) : null}
     </Card>
   );
 }

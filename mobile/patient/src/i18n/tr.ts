@@ -24,6 +24,10 @@ const tr: Record<string, string> = {
   "appt.directions": "Yol tarifi",
   "appt.remindMe": "Hatırlat",
   "appt.postpone": "Ertele",
+  "appt.calendar": "Takvime",
+  "appt.remindTitle": "Randevu hatırlatması",
+  "appt.reminderSet": "Hatırlatma kuruldu (24 saat önce)",
+  "appt.remOnPhone": "Hatırlatma telefonda çalışır",
 
   "appointments.title": "Randevular",
   "appointments.new": "Yeni randevu al",
