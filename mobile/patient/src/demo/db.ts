@@ -179,9 +179,21 @@ export const invoices: Invoice[] = [
 ];
 
 export const news: NewsItem[] = [
-  { id: "n1", title: "Yeni yenidoğan mərkəzi açıldı", summary: "Müasir YBŞ xidməti indi klinikamızda", tint: "#0891b2" },
-  { id: "n2", title: "Qış qripindən qorunma", summary: "5 sadə tövsiyə", tint: "#10b981" },
-  { id: "n3", title: "Pulsuz check-up həftəsi", summary: "1–7 Dekabr", tint: "#f59e0b" },
+  {
+    id: "n1", title: "Yeni yenidoğan mərkəzi açıldı", summary: "Müasir YBŞ xidməti indi klinikamızda", tint: "#0891b2",
+    date: "2 Noyabr 2026",
+    body: "Klinikamızda müasir avadanlıqla təchiz olunmuş yeni Yenidoğan İntensiv Baxış şöbəsi (YBŞ) fəaliyyətə başladı. Şöbə 24/7 neonatoloq nəzarəti, inkubator dəstəyi və erkən doğulmuş körpələr üçün xüsusi baxış imkanları təklif edir. Randevu üçün tətbiq üzərindən Neonatologiya bölməsini seçə bilərsiniz.",
+  },
+  {
+    id: "n2", title: "Qış qripindən qorunma", summary: "5 sadə tövsiyə", tint: "#10b981",
+    date: "28 Oktyabr 2026",
+    body: "Qış aylarında qripdən qorunmaq üçün: 1) Əllərinizi tez-tez yuyun. 2) İl mövsümündə qrip peyvəndini vurdurun. 3) Çox su için və balanslı qidalanın. 4) İzdihamlı yerlərdə maska taxın. 5) Simptom varsa evdə qalın və həkimlə əlaqə saxlayın. Peyvənd üçün tətbiqdən randevu ala bilərsiniz.",
+  },
+  {
+    id: "n3", title: "Pulsuz check-up həftəsi", summary: "1–7 Dekabr", tint: "#f59e0b",
+    date: "1 Dekabr 2026",
+    body: "1–7 Dekabr tarixlərində əsas check-up paketləri pulsuzdur: qan təzyiqi, qan şəkəri, xolesterol və ümumi müayinə. Kampaniyadan yararlanmaq üçün tətbiqdən Check-up bölməsini seçib randevu alın. Yerlər məhduddur.",
+  },
 ];
 
 export const stories: Story[] = [

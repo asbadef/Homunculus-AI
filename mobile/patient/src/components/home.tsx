@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { bannerImages, newsImages, storyImages } from "../demo/images";
 import { useI18n } from "../i18n";
-import { demoAlert } from "../ui/demo";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
@@ -24,7 +23,7 @@ export function Stories({ data, light }: { data: Story[]; light?: boolean }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 4 }}>
       {data.map((s, i) => (
-        <Pressable key={s.id} onPress={() => demoAlert(tr)} style={{ alignItems: "center", width: 74 }}>
+        <Pressable key={s.id} onPress={() => router.push("/kampanyalar")} style={{ alignItems: "center", width: 74 }}>
           <View style={{ width: 66, height: 66, borderRadius: 99, borderWidth: 2, borderColor: light ? "#ffffffcc" : s.tint, padding: 2 }}>
             <Image source={storyImages[i % storyImages.length]} style={{ width: "100%", height: "100%", borderRadius: 99 }} resizeMode="cover" />
           </View>
@@ -58,8 +57,8 @@ export function HomeHero({ name, unread, stories, onMenu, onBell, onSearch }: {
           <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 18 }}>{initial}</AppText>
         </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <AppText color="#ffffff" style={{ fontSize: 11, opacity: 0.9 }} numberOfLines={1}>{tr(greetKey())} 👋</AppText>
-          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 17 }} numberOfLines={1}>{name}</AppText>
+          <AppText color="#ffffff" style={{ fontSize: 12.5, opacity: 0.92 }} numberOfLines={1}>{tr(greetKey())} 👋</AppText>
+          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 21 }} numberOfLines={1}>{name}</AppText>
         </View>
         <Pressable onPress={onBell} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: "#ffffff2e", alignItems: "center", justifyContent: "center" }}>
           <Ionicons name="notifications-outline" size={20} color="#ffffff" />
@@ -239,7 +238,7 @@ export function NewsStrip({ data }: { data: NewsItem[] }) {
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {data.map((n, i) => (
-        <Pressable key={n.id} onPress={() => demoAlert(tr)} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+        <Pressable key={n.id} onPress={() => router.push(`/haber/${n.id}`)} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
           {newsImages[n.id] ? (
             <Image source={newsImages[n.id]} style={{ width: 56, height: 56, borderRadius: 12 }} resizeMode="cover" />
           ) : (

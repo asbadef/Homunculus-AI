@@ -63,6 +63,6 @@ export type Appointment = {
 };
 
 export type Invoice = { id: string; title: string; amount: number; currency: string; status: "unpaid" | "paid"; date: string };
-export type NewsItem = { id: string; title: string; summary: string; tint: string };
+export type NewsItem = { id: string; title: string; summary: string; tint: string; date?: string; body?: string };
 export type Story = { id: string; title: string; tint: string };
 export type Banner = { id: string; title: string; subtitle: string; tint: string };
