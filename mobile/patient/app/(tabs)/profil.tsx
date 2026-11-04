@@ -10,6 +10,7 @@ import { LANGS } from "../../src/i18n/core";
 import { useSession } from "../../src/session/SessionProvider";
 import { getEmail, setEmail as persistEmail } from "../../src/profile/email";
 import { layout } from "../../src/theme/tokens";
+import { demoAlert } from "../../src/ui/demo";
 
 function Row({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
   const { t } = useTheme();
@@ -70,8 +71,8 @@ export default function ProfileTab() {
       </Card>
 
       <Muted style={{ marginLeft: 2, marginBottom: 8, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>{tr("pf.family")}</Muted>
-      <Row icon="people-outline" label="Nurlan (4 yaş)" value={tr("auth.continue")} />
-      <Row icon="person-add-outline" label={tr("pf.addFamily")} />
+      <Row icon="people-outline" label="Nurlan (4 yaş)" value={tr("auth.continue")} onPress={() => demoAlert(tr)} />
+      <Row icon="person-add-outline" label={tr("pf.addFamily")} onPress={() => demoAlert(tr)} />
 
       <View style={{ height: 10 }} />
       <Row icon="mail-outline" label={tr("pf.email")} value={email || tr("pf.emailAdd")} onPress={() => { setDraftEmail(email); setEditEmail(true); }} />

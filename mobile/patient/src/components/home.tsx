@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { bannerImages, newsImages, storyImages } from "../demo/images";
+import { useI18n } from "../i18n";
+import { demoAlert } from "../ui/demo";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
@@ -98,10 +100,11 @@ export function QuickServices({ items, label }: { items: Feature[]; label: (f: F
 
 export function NewsStrip({ data }: { data: NewsItem[] }) {
   const { t } = useTheme();
+  const { t: tr } = useI18n();
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {data.map((n, i) => (
-        <View key={n.id} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+        <Pressable key={n.id} onPress={() => demoAlert(tr)} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
           {newsImages[n.id] ? (
             <Image source={newsImages[n.id]} style={{ width: 56, height: 56, borderRadius: 12 }} resizeMode="cover" />
           ) : (
@@ -114,7 +117,7 @@ export function NewsStrip({ data }: { data: NewsItem[] }) {
             <AppText style={{ fontSize: 11, color: t.muted, marginTop: 2 }} numberOfLines={1}>{n.summary}</AppText>
           </View>
           <Ionicons name="chevron-forward" size={16} color={t.faint} />
-        </View>
+        </Pressable>
       ))}
     </Card>
   );
