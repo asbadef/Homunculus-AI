@@ -111,6 +111,9 @@ const en: Record<string, string> = {
   "wiz.goMyAppointments": "Go to my appointments",
 
   "res.filter.all": "All",
+  "res.sumTotal": "Results",
+  "res.sumReady": "Ready",
+  "res.sumPending": "Pending",
   "res.filter.lab": "Laboratory",
   "res.filter.radiology": "Radiology",
   "res.filter.pathology": "Pathology",

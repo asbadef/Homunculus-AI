@@ -111,6 +111,9 @@ const tr: Record<string, string> = {
   "wiz.goMyAppointments": "Randevularıma git",
 
   "res.filter.all": "Tümü",
+  "res.sumTotal": "Sonuç",
+  "res.sumReady": "Hazır",
+  "res.sumPending": "Bekliyor",
   "res.filter.lab": "Laboratuvar",
   "res.filter.radiology": "Radyoloji",
   "res.filter.pathology": "Patoloji",

@@ -18,6 +18,16 @@ const TYPE_ICON: Record<ResultType, any> = {
   epicrisis: "reader-outline",
   document: "document-attach-outline",
 };
+const TYPE_TINT: Record<ResultType, string> = {
+  lab: "#0891b2",
+  radiology: "#6366f1",
+  pathology: "#8b5cf6",
+  epicrisis: "#10b981",
+  document: "#f59e0b",
+};
+function hasAbnormal(r: Result): boolean {
+  return r.values.some((v) => v.value < v.refLow || v.value > v.refHigh);
+}
 type Filter = "all" | ResultType;
 const FILTERS: Filter[] = ["all", "lab", "radiology", "pathology", "epicrisis", "document"];
 
@@ -58,6 +68,21 @@ export default function ResultsTab() {
         }
       />
 
+      {list ? (
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
+          {([
+            { n: list.length, labelKey: "res.sumTotal", color: t.brand },
+            { n: list.filter((r) => r.status === "ready").length, labelKey: "res.sumReady", color: t.ok },
+            { n: list.filter((r) => r.status === "pending").length, labelKey: "res.sumPending", color: t.wait },
+          ]).map((s) => (
+            <Card key={s.labelKey} style={{ flex: 1, alignItems: "center", paddingVertical: 12 }}>
+              <AppText weight="extrabold" color={s.color} style={{ fontSize: 20 }}>{s.n}</AppText>
+              <Muted style={{ fontSize: 11, marginTop: 2 }}>{tr(s.labelKey)}</Muted>
+            </Card>
+          ))}
+        </View>
+      ) : null}
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
         {FILTERS.map((f) => (
           <Chip key={f} label={tr(`res.filter.${f}`)} selected={filter === f} onPress={() => setFilter(f)} />
@@ -67,22 +92,32 @@ export default function ResultsTab() {
       {list && filtered.length === 0 ? (
         <EmptyState icon="document-text-outline" title={tr("results.empty")} note={tr("empty.resNote")} />
       ) : (
-        filtered.map((r) => (
-          <Pressable key={r.id} onPress={() => router.push(`/netice/${r.id}`)}>
-            <Card style={{ marginBottom: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name={TYPE_ICON[r.type]} size={20} color={t.brand} />
-                <AppText weight="semibold" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
-                  {r.title}
-                </AppText>
-                <StatusPill kind={r.status === "ready" ? "ok" : "wait"} label={r.status === "ready" ? tr("status.confirmed") : tr("status.pending")} />
-              </View>
-              <Muted style={{ marginTop: 8 }}>
-                {r.date} · {tr("res.protocol")}: {r.protocol}
-              </Muted>
-            </Card>
-          </Pressable>
-        ))
+        filtered.map((r) => {
+          const tint = TYPE_TINT[r.type];
+          const abnormal = hasAbnormal(r);
+          return (
+            <Pressable key={r.id} onPress={() => router.push(`/netice/${r.id}`)}>
+              <Card style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: tint + "1f", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name={TYPE_ICON[r.type]} size={22} color={tint} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText weight="semibold" numberOfLines={1}>{r.title}</AppText>
+                  <Muted style={{ fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+                    {tr(`res.filter.${r.type}`)} · {r.date}
+                  </Muted>
+                  {abnormal ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
+                      <Ionicons name="alert-circle" size={13} color={t.wait} />
+                      <AppText weight="semibold" color={t.wait} style={{ fontSize: 11 }}>{tr("res.abnormal")}</AppText>
+                    </View>
+                  ) : null}
+                </View>
+                <StatusPill kind={r.status === "ready" ? "ok" : "wait"} label={r.status === "ready" ? tr("status.completed") : tr("status.pending")} />
+              </Card>
+            </Pressable>
+          );
+        })
       )}
 
       <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>

@@ -111,6 +111,9 @@ const ru: Record<string, string> = {
   "wiz.goMyAppointments": "К моим записям",
 
   "res.filter.all": "Все",
+  "res.sumTotal": "Результаты",
+  "res.sumReady": "Готово",
+  "res.sumPending": "Ожидает",
   "res.filter.lab": "Лаборатория",
   "res.filter.radiology": "Радиология",
   "res.filter.pathology": "Патология",
