@@ -1439,7 +1439,9 @@
       return { cols:["Durum", "Adet", "Tutar ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen tahakkuk", bk.length, bk.reduce((a, x) => a + x.katilim, 0)]] }; }
     if (name === "Provizyon Takip Analizi") { const g = {}; gfkRows().forEach(x => { g[x.durum] = (g[x.durum] || 0) + 1; });
       return { cols:["Provizyon / fatura durumu", "Protokol sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"GFK takipteki protokollerin provizyon/fatura durumu." }; }
-    if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Aysu Rəhimova", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Nərgiz Əliyeva", 100, "Kısmi iade"]], note:"Örnek veri." };
+    if (name === "Bekleyen Avans Listesi") { const av = (H.data.avanslar || []);
+      const rows = av.length ? av.map(a => [a.hasta || "—", a.tutar, a.odemeTipi || "—", a.tarih || "—", a.banko || "—"]) : [["Aysu Rəhimova", 500, "Nakit", "—", "Yatan Kasası"], ["Nurgül Süleymanova", 300, "Kart", "—", "Yatan Kasası"]];
+      return { cols:["Hasta / protokol", "Avans ₼", "Ödeme tipi", "Tarih", "Banko"], rows, note:av.length ? "Vezne 'Avans / depozit al' ile alınan avanslardan. Fatura kesilince mahsup edilir." : "Örnek veri (henüz avans alınmadı)." }; }
     if (name === "Tahsilat Analizi") { const f = faturalar(), od = f.filter(x => x.durum === "Ödendi");
       return { cols:["Durum", "Adet", "Katılım ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen", f.length - od.length, f.filter(x => x.durum !== "Ödendi").reduce((a, x) => a + x.katilim, 0)]], note:"Vezne faturalarından türetilmiştir." }; }
     if (name === "Ciro") { const f = faturalar(), top = f.reduce((a, x) => a + x.toplam, 0), kat = f.reduce((a, x) => a + x.katilim, 0);

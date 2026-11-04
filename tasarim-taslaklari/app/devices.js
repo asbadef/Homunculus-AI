@@ -588,6 +588,10 @@
     if (params && params.tab && TABS.some(t => t[0] === params.tab)) DV.tab = params.tab;
     const draw = () => {
       const nLate = lateItems().length, nWo = openWO().length;
+      // Süresi gelen bakım/kalibrasyon bildirimi (oturumda tek sefer, spam etmesin).
+      if (nLate && H.pushNotif && !(H.data.notifs || []).some(x => x.key === "dev-late")) {
+        H.pushNotif({ at:H.now(), to:["biyomed"], sev:"", key:"dev-late", title:"Bakım / kalibrasyon süresi geçti", body:nLate + " cihazın periyodik bakım/kalibrasyon tarihi gecikti · takvimde gör", go:["devices", { tab:"takvim" }] });
+      }
       root.innerHTML = `<div class="ph"><div><h2>${H.t("m_devices")}</h2><p>${devTpl("dev_page_sub_tpl", { date:fmt(TODAY), n:H.data.devices.length })}</p></div>
           <div class="r"><button class="btn p" data-newwo>${I("plus")} ${H.t("dev_btn_newwo")}</button></div></div>
         <div class="note i">${I("plug")} ${H.t("dev_conn_note")}</div>
