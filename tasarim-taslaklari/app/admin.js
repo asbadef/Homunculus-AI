@@ -211,11 +211,14 @@
   /* Birleşik hasta dizini (randevu/kabul otomatik doldurma + FİN/ad ile arama). Zengin kayıtlar HBYS_Q/HBYS_DIR/userPatients; klinik hastalar yalnız ad+cinsiyet. */
   H.hastaDir = () => { const out = [], seen = new Set();
     const splitAd = (full) => { const t = (full || "").trim().split(/\s+/); return t.length > 1 ? { ad:t.slice(0, -1).join(" "), soyad:t[t.length - 1] } : { ad:full || "", soyad:"" }; };
-    const telOf = (p) => (p.cep || p.tel || p.telefon || ((p.comp || "").match(/\+?\d[\d \-*]{6,}\d/) || [])[0] || "").trim();
-    const add = (o) => { const tam = (o.soyad ? (o.ad + " " + o.soyad) : o.ad).trim(); if (!tam || seen.has(tam.toLocaleLowerCase("tr") + "|" + (o.fin || ""))) return; seen.add(tam.toLocaleLowerCase("tr") + "|" + (o.fin || "")); out.push({ tam, ad:o.ad || "", soyad:o.soyad || "", fin:o.fin && o.fin !== "—" ? o.fin : "", sex:o.sex || "", dob:o.dob || "", tel:o.tel || "" }); };
-    [...HBYS_Q, ...HBYS_DIR].forEach(p => add({ ad:p.name, soyad:p.surname, fin:p.fin, sex:p.sex, dob:p.dob, tel:telOf(p) }));
-    (H.data.userPatients || []).forEach(p => { const s = p.surname ? { ad:p.name, soyad:p.surname } : splitAd(p.name); add({ ad:s.ad, soyad:s.soyad, fin:p.fin, sex:p.sex, dob:p.dob || p.dogum, tel:telOf(p) }); });
-    (H.data.patients || []).forEach(p => { const s = p.surname ? { ad:p.name, soyad:p.surname } : splitAd(p.name); add({ ad:s.ad, soyad:s.soyad, fin:p.fin, sex:p.sex, dob:p.dob, tel:telOf(p) }); });
+    // ISO tarihe çevir (date input YYYY-MM-DD ister; kayıtlar DD.MM.YYYY de olabilir).
+    const isoDate = (d) => { d = (d || "").trim(); if (!d) return ""; if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10); const m = d.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/); return m ? m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0") : ""; };
+    const telOf = (p) => (p.cep || p.tel || p.telefon || p.phone || ((p.comp || "").match(/\+?\d[\d \-*]{6,}\d/) || [])[0] || "").trim();
+    // Kayıtlı hastalarda FİN/doğum/telefon p.meta içinde; üst seviye + meta birlikte okunur.
+    const rich = (p) => { const m = p.meta || {}; return { fin:p.fin || m.fin, dob:p.dob || p.dogum || m.dob || m.dogum, sex:p.sex || m.sex, tel:telOf(p) || telOf(m) }; };
+    const add = (o) => { const tam = (o.soyad ? (o.ad + " " + o.soyad) : o.ad).trim(); if (!tam || seen.has(tam.toLocaleLowerCase("tr") + "|" + (o.fin || ""))) return; seen.add(tam.toLocaleLowerCase("tr") + "|" + (o.fin || "")); out.push({ tam, ad:o.ad || "", soyad:o.soyad || "", fin:o.fin && o.fin !== "—" ? o.fin : "", sex:o.sex || "", dob:isoDate(o.dob), tel:o.tel || "" }); };
+    [...HBYS_Q, ...HBYS_DIR].forEach(p => { const r = rich(p); add({ ad:p.name, soyad:p.surname, fin:r.fin, sex:r.sex, dob:r.dob, tel:r.tel }); });
+    [...(H.data.userPatients || []), ...(H.data.patients || [])].forEach(p => { const s = p.surname ? { ad:p.name, soyad:p.surname } : splitAd(p.name), r = rich(p); add({ ad:s.ad, soyad:s.soyad, fin:r.fin, sex:r.sex, dob:r.dob, tel:r.tel }); });
     return out; };
   // FİN veya tam ad ile tek hasta bul.
   H.hastaBul = (key) => { const k = (key || "").trim().toLocaleLowerCase("tr"); if (!k) return null; const dir = H.hastaDir();

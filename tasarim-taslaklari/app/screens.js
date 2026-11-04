@@ -216,6 +216,10 @@
     const names = new Set(H.data.personel.map(p => (p.ad + " " + (p.soyad || "")).trim()));
     [mk("Kamran", "Rzayev", "Kardiologiya", true, ["Poliklinik randevusu verilebilir", "Web randevusu verilebilir"]),
      mk("Əhməd", "Abdullayev", "Oftalmologiya", true, ["Poliklinik randevusu verilebilir"]),
+     mk("Aygün", "Həmidova", "Mamalıq-Ginekologiya", true, ["Poliklinik randevusu verilebilir", "Web randevusu verilebilir"]),
+     mk("Günel", "Ziyadova", "Daxili Xəstəliklər", true, ["Poliklinik randevusu verilebilir"]),
+     mk("İlhamə", "Eldarova", "Uşaq Xəstəlikləri", true, ["Poliklinik randevusu verilebilir", "Web randevusu verilebilir"]),
+     mk("İranə", "Qorçiyeva", "Nevrologiya", true, ["Poliklinik randevusu verilebilir"]),
      mk("Rauf", "Abbasov", "Ümumi Cərrahiyyə", false, ["Poliklinik randevusu verilebilir"])  // takvim YOK → randevu listesinde çıkmaz
     ].forEach(p => { if (!names.has((p.ad + " " + p.soyad).trim())) H.data.personel.push(p); });
   }
@@ -263,11 +267,14 @@
         return `<td data-rndopen="${cov.r.id}" style="cursor:pointer;${bg}"><b style="font-size:11px">${toHHMM(cov.start)}-${toHHMM(cov.end)}</b><div class="adm-sub" style="font-size:10.5px">${H.esc(cov.r.hasta)} · ${H.esc(cov.r.tur || cov.r.bolum || "")} · ${H.esc(cov.r.durum)}</div></td>`; }
       if (kapali.includes(slotKey(tarih, dr))) return `<td data-rndunblock="${H.esc(slotKey(tarih, dr))}" style="cursor:pointer;background:var(--line);color:var(--mute)" title="Kapalı · açmak için tıkla">Kapalı</td>`;
       return `<td data-rndcell="${tarih}|${H.esc(dr)}" style="cursor:pointer" title="Boş · tıkla randevu ver, sağ tık slot kapat"></td>`; };
-    const takvimHtml = () => { const drs = randevuDoktorlari();
-      const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
-      const bar = `<div class="r" style="gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndgun="-1" title="Önceki gün">‹ Önceki</button><button class="btn sm" data-rndgun="0" title="Bugüne git">Bugün</button><button class="btn sm" data-rndgun="1" title="Sonraki gün">Sonraki ›</button><input type="date" data-rndgunset value="${gun}" style="width:160px"><span class="adm-sub" style="margin-left:6px">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
-      if (!drs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
-      return bar + rndLejant() + `<div class="tw"><table class="t rnd-cal" style="font-size:12px"><colgroup><col class="rc-saat">${drs.map(() => `<col class="rc-dr">`).join("")}</colgroup><thead><tr><th>Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
+    const takvimHtml = () => { const allDocs = randevuDoktorlari(), sel = H.data.rndSelDocs;
+      const drs = (sel && sel.length) ? allDocs.filter(d => sel.includes(d)) : allDocs;
+      const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun && (!drs.length || drs.includes(r.doktor)));
+      const bar = `<div class="r" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndgun="-1" title="Önceki gün">‹ Önceki</button><button class="btn sm" data-rndgun="0" title="Bugüne git">Bugün</button><button class="btn sm" data-rndgun="1" title="Sonraki gün">Sonraki ›</button><input type="date" data-rndgunset value="${gun}" style="width:160px"><span class="adm-sub" style="margin-left:6px">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
+      if (!allDocs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
+      // Referanstaki "Doktorlar" paneli: hangi doktorların kolonda görüneceğini seç.
+      const docBar = `<div class="r" style="gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center"><span class="adm-sub" style="font-weight:600;margin-right:2px">Doktorlar:</span><button class="btn sm${!sel || !sel.length ? " p" : ""}" data-rnddocall>Tümü (${allDocs.length})</button>${allDocs.map(d => `<button class="btn sm${drs.includes(d) ? " p" : ""}" data-rnddocsel="${H.esc(d)}">${H.esc(d)}</button>`).join("")}</div>`;
+      return bar + docBar + rndLejant() + `<div class="tw"><table class="t rnd-cal" style="font-size:12px"><colgroup><col class="rc-saat">${drs.map(() => `<col class="rc-dr">`).join("")}</colgroup><thead><tr><th>Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
         ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => cellHtml(gun, s, d)).join("")}</tr>`).join("")}
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Randevu, süresi kadar blok kaplar. Doluysa tıkla (detay / durum) · boşsa tıkla (randevu ver) · boşa sağ tık (slot kapat).</p>`; };
     const haftaHtml = () => { const drs = randevuDoktorlari(); if (!drs.length) return `<div class="empty">Randevu takvimi tanımlı doktor yok.</div>`;
@@ -289,6 +296,9 @@
     root.onclick = (e) => {
       const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f, dr:params.dr });
       const rg = e.target.closest("[data-rndgun]"); if (rg) { const n = +rg.dataset.rndgun; if (n === 0) return H.go("randevu", { view:"takvim", gun:new Date().toISOString().slice(0, 10) }); const dd = new Date(gun); dd.setDate(dd.getDate() + n); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
+      if (e.target.closest("[data-rnddocall]")) { H.data.rndSelDocs = null; return H.go("randevu", params); }
+      const ds = e.target.closest("[data-rnddocsel]"); if (ds) { const nm = ds.dataset.rnddocsel, allD = randevuDoktorlari(); let s = (H.data.rndSelDocs && H.data.rndSelDocs.length) ? H.data.rndSelDocs.slice() : allD.slice();
+        s = s.includes(nm) ? s.filter(x => x !== nm) : s.concat(nm); if (!s.length) s = [nm]; H.data.rndSelDocs = s.length === allD.length ? null : s; return H.go("randevu", params); }
       const rh = e.target.closest("[data-rndhaftagun]"); if (rh) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rh.dataset.rndhaftagun)); return H.go("randevu", { view:"hafta", gun:dd.toISOString().slice(0, 10), dr:params.dr }); }
       const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }
@@ -384,7 +394,8 @@
             if (ns > 0) { warn.style.display = ""; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else { warn.style.display = "none"; warn.innerHTML = ""; } }
           function checkHist() { const nm = (hi.value || "").trim(); const past = nm ? all.filter(r => r.hasta === nm).sort((a, z) => (z.tarih || "").localeCompare(a.tarih || "")) : [];
             if (!past.length) { hist.style.display = "none"; hist.innerHTML = ""; return; } hist.style.display = "";
-            hist.innerHTML = `<div class="note i" style="font-size:12px">${I("clock") || ""} Bu hastanın <b>${past.length}</b> randevusu var · son: ${past.slice(0, 3).map(r => (r.tarih || "").replace("T", " ").slice(0, 16) + " " + H.esc(r.durum)).join(" · ")}</div>`; }
+            const son = past[0]; const kisa = (t) => (t || "").slice(8, 10) + "." + (t || "").slice(5, 7) + "." + (t || "").slice(0, 4);
+            hist.innerHTML = `<div class="note i" style="font-size:12px;padding:5px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${I("clock") || ""} Bu hastanın <b>${past.length}</b> randevusu var · son: ${kisa(son.tarih)} ${H.esc(son.durum)}</div>`; }
           hi.oninput = () => { checkNoShow(); checkHist(); };
           hi.onchange = () => { const r = H.hastaBul && H.hastaBul(hi.value); if (r) fillPatient(r); };
           gel("fin").onchange = () => { const r = H.hastaBul && H.hastaBul(gel("fin").value); if (r) fillPatient(r); };
