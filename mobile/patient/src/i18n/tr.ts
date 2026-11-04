@@ -177,6 +177,7 @@ const tr: Record<string, string> = {
   "auth.finish": "Tamamla",
 
   "pf.family": "Aile üyeleri",
+  "pf.changePhoto": "Fotoğrafı değiştir",
   "pf.addFamily": "Aile üyesi ekle",
   "fam.name": "Ad soyad",
   "fam.relation": "Yakınlık",
@@ -245,6 +246,7 @@ const tr: Record<string, string> = {
   "contact.address": "Adres",
   "contact.hours": "Çalışma saatleri",
   "fb.subject": "Konu",
+  "fb.attach": "Görsel/belge ekle",
   "fb.message": "Mesajınız",
   "fb.send": "Gönder",
   "fb.sent": "Mesajınız alındı. Teşekkürler!",

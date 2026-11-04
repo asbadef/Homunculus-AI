@@ -179,6 +179,7 @@ const az: Record<string, string> = {
   "auth.finish": "Tamamla",
 
   "pf.family": "Ailə üzvləri",
+  "pf.changePhoto": "Şəkli dəyiş",
   "pf.addFamily": "Ailə üzvü əlavə et",
   "fam.name": "Ad və soyad",
   "fam.relation": "Yaxınlıq",
@@ -247,6 +248,7 @@ const az: Record<string, string> = {
   "contact.address": "Ünvan",
   "contact.hours": "İş saatları",
   "fb.subject": "Mövzu",
+  "fb.attach": "Görsel/sənəd əlavə et",
   "fb.message": "Mesajınız",
   "fb.send": "Göndər",
   "fb.sent": "Mesajınız alındı. Təşəkkür edirik!",

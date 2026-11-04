@@ -14,6 +14,7 @@ import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/co
 import { Appointment, Invoice, NewsItem, Result, Story } from "../../src/demo/types";
 import { askNotificationPermissionOnce } from "../../src/notifications/ask";
 import { unreadCount } from "../../src/demo/notifications";
+import { getAvatar } from "../../src/profile/avatar";
 import { useSession } from "../../src/session/SessionProvider";
 import { MenuDrawer } from "../../src/components/MenuDrawer";
 
@@ -29,8 +30,12 @@ export default function HomeScreen() {
   const [lastResult, setLastResult] = useState<Result | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
 
-  useFocusEffect(useCallback(() => { unreadCount().then(setUnread); }, []));
+  useFocusEffect(useCallback(() => {
+    unreadCount().then(setUnread);
+    getAvatar().then(setAvatarUri);
+  }, []));
 
   useEffect(() => {
     askNotificationPermissionOnce();
@@ -54,6 +59,7 @@ export default function HomeScreen() {
         name={firstName}
         unread={unread}
         stories={stories}
+        avatarUri={avatarUri}
         onMenu={() => setMenuOpen(true)}
         onBell={() => router.push("/bildirisler")}
         onSearch={() => router.push("/axtaris")}

@@ -177,6 +177,7 @@ const en: Record<string, string> = {
   "auth.finish": "Finish",
 
   "pf.family": "Family members",
+  "pf.changePhoto": "Change photo",
   "pf.addFamily": "Add family member",
   "fam.name": "Full name",
   "fam.relation": "Relation",
@@ -245,6 +246,7 @@ const en: Record<string, string> = {
   "contact.address": "Address",
   "contact.hours": "Working hours",
   "fb.subject": "Subject",
+  "fb.attach": "Attach image/document",
   "fb.message": "Your message",
   "fb.send": "Send",
   "fb.sent": "Your message was received. Thank you!",

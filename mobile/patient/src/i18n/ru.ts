@@ -177,6 +177,7 @@ const ru: Record<string, string> = {
   "auth.finish": "Готово",
 
   "pf.family": "Члены семьи",
+  "pf.changePhoto": "Изменить фото",
   "pf.addFamily": "Добавить члена семьи",
   "fam.name": "Имя и фамилия",
   "fam.relation": "Родство",
@@ -245,6 +246,7 @@ const ru: Record<string, string> = {
   "contact.address": "Адрес",
   "contact.hours": "Часы работы",
   "fb.subject": "Тема",
+  "fb.attach": "Прикрепить фото/документ",
   "fb.message": "Ваше сообщение",
   "fb.send": "Отправить",
   "fb.sent": "Ваше сообщение получено. Спасибо!",

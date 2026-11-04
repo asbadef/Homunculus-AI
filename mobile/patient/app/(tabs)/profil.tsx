@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Pressable, StyleSheet, Modal, TextInput } from "react-native";
+import { View, Pressable, StyleSheet, Modal, TextInput, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
@@ -9,6 +9,8 @@ import { useI18n } from "../../src/i18n";
 import { LANGS } from "../../src/i18n/core";
 import { useSession } from "../../src/session/SessionProvider";
 import { getEmail, setEmail as persistEmail } from "../../src/profile/email";
+import { getAvatar, setAvatar as persistAvatar } from "../../src/profile/avatar";
+import { pickImage } from "../../src/ui/pickImage";
 import { layout } from "../../src/theme/tokens";
 
 function Row({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
@@ -31,10 +33,17 @@ export default function ProfileTab() {
   const [email, setEmailState] = useState("");
   const [editEmail, setEditEmail] = useState(false);
   const [draftEmail, setDraftEmail] = useState("");
+  const [avatar, setAvatarState] = useState<string | null>(null);
 
   useEffect(() => {
     getEmail().then(setEmailState);
+    getAvatar().then(setAvatarState);
   }, []);
+
+  async function changePhoto() {
+    const uri = await pickImage(true);
+    if (uri) { setAvatarState(uri); persistAvatar(uri); }
+  }
 
   function cycleLang() {
     const i = LANGS.indexOf(lang);
@@ -52,11 +61,18 @@ export default function ProfileTab() {
       <GradientHeader title={tr("profile.title")} />
 
       <Card style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 18 }}>
-        <View style={{ width: 58, height: 58, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-          <AppText weight="bold" color={t.brand} style={{ fontSize: 24 }}>
-            {(user?.name ?? "A").slice(0, 1)}
-          </AppText>
-        </View>
+        <Pressable onPress={changePhoto}>
+          {avatar ? (
+            <Image source={{ uri: avatar }} style={{ width: 58, height: 58, borderRadius: 99 }} />
+          ) : (
+            <View style={{ width: 58, height: 58, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+              <AppText weight="bold" color={t.brand} style={{ fontSize: 24 }}>{(user?.name ?? "A").slice(0, 1)}</AppText>
+            </View>
+          )}
+          <View style={{ position: "absolute", right: -2, bottom: -2, width: 22, height: 22, borderRadius: 99, backgroundColor: t.brand, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: t.surface }}>
+            <Ionicons name="camera" size={12} color="#ffffff" />
+          </View>
+        </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText weight="bold" style={{ fontSize: 16 }}>
             {user?.name ?? "—"}
@@ -64,6 +80,7 @@ export default function ProfileTab() {
           <Muted style={{ marginTop: 2 }}>
             FİN: {user?.finMasked ?? "—"}
           </Muted>
+          <Pressable onPress={changePhoto}><AppText color={t.brand} style={{ fontSize: 12, marginTop: 3 }}>{tr("pf.changePhoto")}</AppText></Pressable>
         </View>
       </Card>
 

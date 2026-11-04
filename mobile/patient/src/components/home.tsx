@@ -38,8 +38,8 @@ export function Stories({ data, light }: { data: Story[]; light?: boolean }) {
 
 // Branded gradient header: time-aware greeting, avatar (opens menu), notification bell
 // with unread badge, search bar, and the stories row — all on one turquoise band.
-export function HomeHero({ name, unread, stories, onMenu, onBell, onSearch }: {
-  name: string; unread: number; stories: Story[]; onMenu: () => void; onBell: () => void; onSearch: () => void;
+export function HomeHero({ name, unread, stories, avatarUri, onMenu, onBell, onSearch }: {
+  name: string; unread: number; stories: Story[]; avatarUri?: string | null; onMenu: () => void; onBell: () => void; onSearch: () => void;
 }) {
   const { t } = useTheme();
   const { t: tr } = useI18n();
@@ -53,8 +53,12 @@ export function HomeHero({ name, unread, stories, onMenu, onBell, onSearch }: {
       style={{ marginHorizontal: -layout.pad, marginTop: -insets.top, paddingTop: insets.top + 12, paddingHorizontal: layout.pad, paddingBottom: 18, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 11 }}>
-        <Pressable onPress={onMenu} hitSlop={8} style={{ width: 42, height: 42, borderRadius: 99, backgroundColor: "#ffffff33", alignItems: "center", justifyContent: "center" }}>
-          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 18 }}>{initial}</AppText>
+        <Pressable onPress={onMenu} hitSlop={8} style={{ width: 42, height: 42, borderRadius: 99, backgroundColor: "#ffffff33", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={{ width: 42, height: 42, borderRadius: 99 }} />
+          ) : (
+            <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 18 }}>{initial}</AppText>
+          )}
         </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText color="#ffffff" style={{ fontSize: 12.5, opacity: 0.92 }} numberOfLines={1}>{tr(greetKey())} 👋</AppText>
