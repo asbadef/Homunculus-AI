@@ -265,7 +265,7 @@
       return `<td data-rndcell="${tarih}|${H.esc(dr)}" style="cursor:pointer" title="Boş · tıkla randevu ver, sağ tık slot kapat"></td>`; };
     const takvimHtml = () => { const drs = randevuDoktorlari();
       const dayAppts = all.filter(r => (r.tarih || "").slice(0, 10) === gun);
-      const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center"><button class="btn sm" data-rndgun="-1">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndgun="1">${I("right") || "›"}</button><span class="adm-sub">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
+      const bar = `<div class="r" style="gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndgun="-1" title="Önceki gün">‹ Önceki</button><button class="btn sm" data-rndgun="0" title="Bugüne git">Bugün</button><button class="btn sm" data-rndgun="1" title="Sonraki gün">Sonraki ›</button><input type="date" data-rndgunset value="${gun}" style="width:160px"><span class="adm-sub" style="margin-left:6px">${dayAppts.length} randevu · ${drs.length} doktor</span></div>`;
       if (!drs.length) return bar + `<div class="empty">Randevu takvimi tanımlı doktor yok. İK → personel → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir".</div>`;
       return bar + rndLejant() + `<div class="tw"><table class="t rnd-cal" style="font-size:12px"><colgroup><col class="rc-saat">${drs.map(() => `<col class="rc-dr">`).join("")}</colgroup><thead><tr><th>Saat</th>${drs.map(d => `<th>${H.esc(d)}</th>`).join("")}</tr></thead><tbody>
         ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${drs.map(d => cellHtml(gun, s, d)).join("")}</tr>`).join("")}
@@ -275,7 +275,7 @@
       const g0 = new Date(gun), gunler = []; for (let i = 0; i < 7; i++) { const d = new Date(g0); d.setDate(g0.getDate() + i); gunler.push(d.toISOString().slice(0, 10)); }
       const GAD = ["Baz", "Çər", "Cüm", "Şən", "Baz", "B.e", "Ç.a"];                 // azerice gün kısaltmaları (gösterim)
       const dgun = (iso) => { const d = new Date(iso); return GAD[d.getDay()] + " " + pad(d.getDate()) + "." + pad(d.getMonth() + 1); };
-      const bar = `<div class="r" style="gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndhaftagun="-7">${I("left") || "‹"}</button><input type="date" data-rndgunset value="${gun}"><button class="btn sm" data-rndhaftagun="7">${I("right") || "›"}</button><select data-rnddr>${drs.map(d => `<option${d === dr ? " selected" : ""}>${H.esc(d)}</option>`).join("")}</select><span class="adm-sub">Hafta görünümü · ${H.esc(dr)}</span></div>`;
+      const bar = `<div class="r" style="gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><button class="btn sm" data-rndhaftagun="-7" title="Önceki hafta">‹ Önceki hafta</button><button class="btn sm" data-rndhaftagun="7" title="Sonraki hafta">Sonraki hafta ›</button><input type="date" data-rndgunset value="${gun}" style="width:160px"><select data-rnddr style="width:180px">${drs.map(d => `<option${d === dr ? " selected" : ""}>${H.esc(d)}</option>`).join("")}</select></div>`;
       return bar + rndLejant() + `<div class="tw"><table class="t rnd-cal" style="font-size:12px"><colgroup><col class="rc-saat">${gunler.map(() => `<col class="rc-dr">`).join("")}</colgroup><thead><tr><th>Saat</th>${gunler.map(iso => `<th>${dgun(iso)}</th>`).join("")}</tr></thead><tbody>
         ${SAAT.map(s => `<tr><td class="mono adm-sub">${s}</td>${gunler.map(iso => cellHtml(iso, s, dr)).join("")}</tr>`).join("")}
         </tbody></table></div><p class="adm-sub" style="margin-top:8px">Bir doktorun haftası · randevu süresi kadar blok. Boşa tıkla (randevu ver) · boşa sağ tık (slot kapat) · kapalıya tıkla (aç).</p>`; };
@@ -288,7 +288,7 @@
       const key = rc.dataset.rndcell; if (!kapali.includes(key)) { kapali.push(key); H.saveData && H.saveData(); H.toast("Slot kapatıldı"); H.go("randevu", params); } };
     root.onclick = (e) => {
       const rv = e.target.closest("[data-rndview]"); if (rv) return H.go("randevu", { view:rv.dataset.rndview, gun, durum:f, dr:params.dr });
-      const rg = e.target.closest("[data-rndgun]"); if (rg) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rg.dataset.rndgun)); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
+      const rg = e.target.closest("[data-rndgun]"); if (rg) { const n = +rg.dataset.rndgun; if (n === 0) return H.go("randevu", { view:"takvim", gun:new Date().toISOString().slice(0, 10) }); const dd = new Date(gun); dd.setDate(dd.getDate() + n); return H.go("randevu", { view:"takvim", gun:dd.toISOString().slice(0, 10) }); }
       const rh = e.target.closest("[data-rndhaftagun]"); if (rh) { const dd = new Date(gun); dd.setDate(dd.getDate() + (+rh.dataset.rndhaftagun)); return H.go("randevu", { view:"hafta", gun:dd.toISOString().slice(0, 10), dr:params.dr }); }
       const ru = e.target.closest("[data-rndunblock]"); if (ru) { const i = kapali.indexOf(ru.dataset.rndunblock); if (i >= 0) { kapali.splice(i, 1); H.saveData && H.saveData(); H.toast("Slot açıldı"); H.go("randevu", params); } return; }
       const rc = e.target.closest("[data-rndcell]"); if (rc) { const [tarih, dr] = rc.dataset.rndcell.split("|"); return rndForm({ tarih, doktor:dr }); }

@@ -162,7 +162,7 @@ td.n { font:700 13.5px "JetBrains Mono"; }
 /* Randevu/cihaz takvimi: sütunlar sabit dar, tablo içeriğe göre (tüm genişliğe yayılmaz), satırlar sıkı. */
 table.t.rnd-cal { width:auto; table-layout:fixed; }
 table.t.rnd-cal th, table.t.rnd-cal td { padding:4px 8px; }
-table.t.rnd-cal col.rc-saat { width:58px; } table.t.rnd-cal col.rc-dr { width:188px; }
+table.t.rnd-cal col.rc-saat { width:58px; } table.t.rnd-cal col.rc-dr { width:264px; }
 
 /* ---------- form ---------- */
 .fld { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; align-items:center; margin-bottom:10px; font-size:13.5px; }
