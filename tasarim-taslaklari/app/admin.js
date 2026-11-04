@@ -1367,6 +1367,7 @@
       D("Hasta Dokümanları", "Tanımlama Formları", "Hasta ve Ailesi Eğitim Formu - Genel"),
     ];
   }
+  dokSeed();   // açılışta tohumla: onam/doküman kütüphanesi admin açılmadan da dolu olsun (doktor onam seçerken boş kalmasın)
   function tabDokuman(body) {
     dokSeed(); const ALL = H.data.dokumanlar, fa = AD.dokAna || "", fk = AD.dokKat || "";
     body.innerHTML = `<div class="adm-bar"><input data-dq placeholder="Doküman ara" value="${esc(AD.dq || "")}">
@@ -1387,7 +1388,7 @@
     body.querySelector("[data-dfkat]").addEventListener("change", e => { AD.dokKat = e.target.value; tabDokuman(body); });
     body.querySelector("[data-dnew]").addEventListener("click", () => dokForm(null, draw));
     list.addEventListener("click", e => {
-      const del = e.target.closest("[data-ddel]"); if (del) { e.stopPropagation(); if (confirm("Bu doküman silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.ddel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const del = e.target.closest("[data-ddel]"); if (del) { e.stopPropagation(); if (confirm("Bu doküman silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.ddel); if (i >= 0) ALL.splice(i, 1); H.saveData && H.saveData(); H.toast("Silindi", "w"); draw(); } return; }
       const oz = e.target.closest("[data-donz]"); if (oz) { e.stopPropagation(); const row = ALL.find(x => x.id === oz.dataset.donz); if (row) dokPreview(row); return; }
       const tr = e.target.closest("[data-dedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.dedit); if (row) dokForm(row, draw); }
     });
@@ -1433,7 +1434,7 @@
           const ad = g("ad"); if (!ad) { H.toast("Doküman adı gerekli.", "w"); return; }
           if (existing) Object.assign(existing, { ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif"), alanlar });
           else ALL.push({ id:"dk" + Date.now(), ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif"), alanlar });
-          H.log(existing ? "Doküman güncellendi" : "Doküman tanımlandı", ad + " · " + alanlar.length + " alan"); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+          H.saveData && H.saveData(); H.log(existing ? "Doküman güncellendi" : "Doküman tanımlandı", ad + " · " + alanlar.length + " alan"); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
         }; } });
   }
 
