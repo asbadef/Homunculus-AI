@@ -1344,7 +1344,8 @@
       ${p.allergies && p.allergies.length ? `<div class="note" style="margin:10px 0">Alerji kaydı: <b>${E(p.allergies.join(", "))}</b>. Bu ilaçla ilişkisini değerlendirmek hekimin kararıdır.</div>` : ""}
       <label class="nfChk"><input type="checkbox" data-m-scan${S.scan ? " checked" : ""}>Hasta bilekliği ve ilaç barkodu okutuldu (eşleşti)</label>
       <div class="fld col"><label>Sonuç <span class="req">●</span></label><div class="opts">${["Uygulandı", "Uygulanmadı"].map(x => `<i data-m-res="${x}" class="${S.res === x ? "on" : ""}">${x}</i>`).join("")}</div></div>
-      ${S.res === "Uygulanmadı" ? `<div class="fld col"><label>Neden <span class="req">●</span></label><div class="opts">${["Hasta reddetti", "Hasta serviste değil", "Aç / NPO", "İlaç eczaneden gelmedi", "Hekim durdurdu", "Damar yolu yok", "Diğer"].map(x => `<i data-m-why="${x}" class="${S.why === x ? "on" : ""}">${x}</i>`).join("")}</div></div>` : ""}
+      ${S.res === "Uygulanmadı" ? `<div class="fld col"><label>Neden <span class="req">●</span></label><div class="opts">${["Hasta reddetti", "Hasta serviste değil", "Aç / NPO", "İlaç eczaneden gelmedi", "Hekim durdurdu", "Damar yolu yok", "Diğer"].map(x => `<i data-m-why="${x}" class="${S.why === x ? "on" : ""}">${x}</i>`).join("")}</div></div>
+      <label class="nfChk"><input type="checkbox" data-m-iade${S.iade ? " checked" : ""}>Kullanılmayan ilacı eczaneye iade gönder</label>` : ""}
       <div class="fld col"><label>Not</label><input data-m-note value="${E(S.note)}" placeholder="İsteğe bağlı"></div>
       <div class="nfNote">Sistem doz ya da ilaç önermez; yalnız order'daki uygulamayı kaydeder.</div></div>`;
     const m = H.modal({ title:"İlaç uygulama", body:body(), actions:`<button class="btn g" data-mx="c">İptal</button>${t.prn ? "" : `<button class="btn" data-mx="later">Ertele · 30 dk</button>`}<button class="btn p" data-mx="s">${I("ok")}Kaydet</button>`,
@@ -1356,9 +1357,10 @@
           if (S.res === "Uygulandı" && !S.scan) return H.toast("Önce bileklik ve ilaç barkodunu okutun.", "e");
           t.state = S.res === "Uygulandı" ? "done" : "miss"; t.reason = S.why; t.note = S.note; t.doneAt = H.now(); t.by = uname();
           if (S.res === "Uygulandı") t.given = true; else t.given = false;
+          if (S.res === "Uygulanmadı" && S.iade) { const ord = (H.data.orders || []).find(x => x.id === t.orderId); (H.data.ilacIade = H.data.ilacIade || []).unshift({ id:"iade" + Date.now(), kod:(ord && ord.kod) || "", ad:t.label, miktar:1, hasta:p.name, saat:H.now(), yer:"Hemşire · " + H.bed(p.bed).no, durum:"Bekliyor" }); H.log("İlaç iade gönderildi (hemşire)", `${H.bed(p.bed).no} · ${t.label} · ${S.why}`); H.toast("Kullanılmayan ilaç eczaneye iade gönderildi", "w"); }
           H.log(S.res === "Uygulandı" ? "İlaç uygulandı" : "İlaç uygulanmadı", `${H.bed(p.bed).no} · ${t.label} · ${hhmm(t.t)}${S.why ? " · " + S.why : ""}`); H.closeModal(); H.toast(`${t.label} · ${S.res.toLowerCase()}${S.why ? " · " + S.why : ""}`, S.res === "Uygulandı" ? "" : "w");
           if (opt.onDone) opt.onDone(t); rerender(); });
-        el.addEventListener("change", (e) => { if (e.target.matches("[data-m-scan]")) S.scan = e.target.checked; });
+        el.addEventListener("change", (e) => { if (e.target.matches("[data-m-scan]")) S.scan = e.target.checked; if (e.target.matches("[data-m-iade]")) S.iade = e.target.checked; });
         el.addEventListener("input", (e) => { if (e.target.matches("[data-m-note]")) S.note = e.target.value; }); } });
     return m;
   }
