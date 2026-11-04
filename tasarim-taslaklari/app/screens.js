@@ -322,31 +322,62 @@
     function rndForm(pre) {
       const drs = randevuDoktorlari(), bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
       const now = (pre && pre.tarih) ? pre.tarih : new Date().toISOString().slice(0, 16);
-      const hastaAdlari = (H.data.patients || []).map(p => p.name);
-      H.modal({ title:"Yeni randevu", body:`<div class="icd-form">
+      const hastaAdlari = (H.data.patients || []).map(p => p.name), sec = H.data.secenekler || {};
+      const HTIP = ["Normal", "Ücretli", "Kurumlu", "VIP"], SGK_L = ["Seçiniz", "SAMHI (İcbari Tibbi Sığorta)", "Yok"];
+      const SIG_L = ["Seçiniz", ...(sec.ozelSigorta || ["Paşa Sığorta", "Atəşgah Sığorta", "Qala Həyat"])];
+      const IND_L = ["Seçiniz", "Personel", "60+", "Öğrenci", "Aile"];
+      const KUR_L = ["Seçiniz", ...((sec.kurum || ["Anlaşmalı kurum"]).filter(k => !/Özel ödeme|İcbari|SAMHI/i.test(k)))];
+      const PER_ARALIK = [["Haftalık", 7], ["15 günde bir", 15], ["Aylık", 30], ["3 ayda bir", 90]];
+      const opt = (arr, cur) => arr.map(x => `<option${x === cur ? " selected" : ""}>${H.esc(x)}</option>`).join("");
+      H.modal({ title:"Randevu kaydı", wide:true, body:`<div class="icd-form">
         <div class="fr" style="grid-column:1/-1"><label>Hasta</label><input data-f="hasta" list="rnd-hasta" placeholder="Hasta adı — yazın ya da seçin" value="${H.esc((pre && pre.hasta) || "")}"><datalist id="rnd-hasta">${hastaAdlari.map(n => `<option>${H.esc(n)}</option>`).join("")}</datalist></div>
         <div class="fr" style="grid-column:1/-1" data-rndwarn hidden></div>
-        <div class="fr"><label>Randevu türü</label><select data-f="tur">${RND_TUR.map(x => `<option>${H.esc(x)}</option>`).join("")}</select></div>
+        <div class="fr" style="grid-column:1/-1" data-rndhist hidden></div>
+        <div class="fr"><label>Randevu türü</label><select data-f="tur">${opt(RND_TUR)}</select></div>
         <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm" value="${H.esc((pre && pre.bolum) || "")}"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
         <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${drs.map(n => `<option${pre && pre.doktor === n ? " selected" : ""}>${H.esc(n)}</option>`).join("")}</select>${drs.length ? "" : `<div class="adm-sub" style="margin-top:4px">Randevu takvimi tanımlı doktor yok. İK → personel kartı → Çalışma takvimi + "Poliklinik/Web randevusu verilebilir" işaretleyin.</div>`}</div>
         <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"><button class="btn sm" data-rndnext type="button" style="margin-top:4px">${I("clock") || ""} En yakın uygun saat</button></div>
         <div class="fr"><label>Süre (dk)</label><input data-f="sure" type="number" min="5" step="5" value="15"></div>
         <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div>
-        <div class="fr"><label>Hatırlatma</label><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div></div>`,
+        <div class="fr" style="grid-column:1/-1"><label style="font-weight:600;color:var(--mute)">Hasta bilgileri</label></div>
+        <div class="fr"><label>Hasta tipi</label><select data-f="hastaTipi">${opt(HTIP)}</select></div>
+        <div class="fr"><label>FİN No</label><input data-f="fin" placeholder="FİN / kimlik no"></div>
+        <div class="fr"><label>SGK (SAMHI)</label><select data-f="sgk">${opt(SGK_L)}</select></div>
+        <div class="fr"><label>Özel sigorta</label><select data-f="ozelSig">${opt(SIG_L)}</select></div>
+        <div class="fr"><label>İndirim grubu</label><select data-f="indirim">${opt(IND_L)}</select></div>
+        <div class="fr"><label>Anlaşmalı kurum</label><select data-f="anlasmaliKurum">${opt(KUR_L)}</select></div>
+        <div class="fr" style="grid-column:1/-1"><label class="dc-chk"><input type="checkbox" data-f="per"> Periyodik randevu (seri oluştur)</label></div>
+        <div class="fr" data-perrow hidden><label>Aralık</label><select data-f="peraralik">${PER_ARALIK.map(([l, v]) => `<option value="${v}">${H.esc(l)}</option>`).join("")}</select></div>
+        <div class="fr" data-perrow2 hidden><label>Tekrar (adet)</label><input data-f="pertekrar" type="number" min="2" max="52" value="4"></div>
+        <div class="fr" style="grid-column:1/-1"><label>Hatırlatma</label><label class="dc-chk"><input type="checkbox" data-f="sms" checked> SMS ile hatırlatma gönder</label></div></div>`,
         actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-        onMount(m) { const hi = m.querySelector('[data-f="hasta"]'), warn = m.querySelector("[data-rndwarn]");
+        onMount(m) { const hi = m.querySelector('[data-f="hasta"]'), warn = m.querySelector("[data-rndwarn]"), hist = m.querySelector("[data-rndhist]");
           const checkNoShow = () => { const nm = (hi.value || "").trim(); const ns = nm ? all.filter(r => r.hasta === nm && r.durum === "Gelmedi").length : 0;
             if (ns > 0) { warn.hidden = false; warn.innerHTML = `<div class="note" style="background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);color:var(--crit)">${I("alert") || "⚠"} Bu hasta <b>${ns}</b> randevusuna gelmemiş.</div>`; } else warn.hidden = true; };
-          hi.oninput = checkNoShow; checkNoShow();
+          const checkHist = () => { const nm = (hi.value || "").trim(); const past = nm ? all.filter(r => r.hasta === nm).sort((a, z) => (z.tarih || "").localeCompare(a.tarih || "")) : [];
+            if (!past.length) { hist.hidden = true; return; } hist.hidden = false;
+            hist.innerHTML = `<div class="note i" style="font-size:12px">${I("clock") || ""} Bu hastanın <b>${past.length}</b> randevusu var · son: ${past.slice(0, 3).map(r => (r.tarih || "").replace("T", " ").slice(0, 16) + " " + H.esc(r.durum)).join(" · ")}</div>`; };
+          hi.oninput = () => { checkNoShow(); checkHist(); }; checkNoShow(); checkHist();
+          const per = m.querySelector('[data-f="per"]'); per.onchange = () => { m.querySelector("[data-perrow]").hidden = !per.checked; m.querySelector("[data-perrow2]").hidden = !per.checked; };
           const nb = m.querySelector("[data-rndnext]"); if (nb) nb.onclick = () => { const dr = m.querySelector('[data-f="doktor"]').value, sure = +m.querySelector('[data-f="sure"]').value || 15;
             if (!dr) { H.toast("Önce doktor seçin.", "w"); return; } const slot = nextFreeSlot(dr, sure);
             if (!slot) { H.toast("14 gün içinde uygun slot bulunamadı.", "w"); return; } m.querySelector('[data-f="tarih"]').value = slot; H.toast("En yakın uygun saat: " + slot.replace("T", " ")); };
           m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
           const doktor = m.querySelector('[data-f="doktor"]').value, tarih = m.querySelector('[data-f="tarih"]').value, sure = +g("sure") || 15;
-          const cf = rndConflict(doktor, tarih, sure); if (cf) { H.toast("Çakışma: " + (cf.doktor || "") + " " + ((cf.tarih || "").slice(11, 16)) + " dolu · " + (cf.tur === "Ameliyat" ? "ameliyat" : "randevu") + " (" + (cf.hasta || "") + ")", "e"); return; }
           const sms = m.querySelector('[data-f="sms"]').checked;
-          all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), tur:m.querySelector('[data-f="tur"]').value, bolum:g("bolum"), doktor, tarih, sure, durum:"Bekliyor", not:g("not"), sms });
+          const base = { hasta:g("hasta"), tur:g("tur"), bolum:g("bolum"), doktor, sure, durum:"Bekliyor", not:g("not"), sms,
+            hastaTipi:g("hastaTipi"), fin:g("fin"), sgk:g("sgk"), ozelSig:g("ozelSig"), indirim:g("indirim"), anlasmaliKurum:g("anlasmaliKurum") };
+          if (m.querySelector('[data-f="per"]').checked) {
+            const aralik = +m.querySelector('[data-f="peraralik"]').value || 7, tekrar = Math.max(2, Math.min(52, +m.querySelector('[data-f="pertekrar"]').value || 4));
+            const [dPart, tPart] = tarih.split("T"), d0 = new Date(dPart + "T00:00"); let created = 0, skipped = 0;
+            for (let i = 0; i < tekrar; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i * aralik);
+              const ti = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + tPart;
+              if (rndConflict(doktor, ti, sure)) { skipped++; continue; } all.unshift(Object.assign({ id:"rnd" + Date.now() + "_" + i, periyodik:true }, base, { tarih:ti })); created++; }
+            H.saveData && H.saveData(); H.log("Periyodik randevu", g("hasta") + " · " + created + " adet"); H.closeModal();
+            H.toast(created + " randevu oluşturuldu" + (skipped ? " · " + skipped + " çakışma atlandı" : ""), skipped ? "w" : ""); H.go("randevu", params); return; }
+          const cf = rndConflict(doktor, tarih, sure); if (cf) { H.toast("Çakışma: " + (cf.doktor || "") + " " + ((cf.tarih || "").slice(11, 16)) + " dolu · " + (cf.tur === "Ameliyat" ? "ameliyat" : "randevu") + " (" + (cf.hasta || "") + ")", "e"); return; }
+          all.unshift(Object.assign({ id:"rnd" + Date.now() }, base, { tarih }));
           H.saveData && H.saveData(); H.log("Randevu oluşturuldu", g("hasta")); H.toast("Randevu eklendi" + (sms ? " · SMS hatırlatma açık" : "")); H.closeModal(); H.go("randevu", params); }; } });
     }
   } });
@@ -1393,7 +1424,7 @@
   /* ================= YÖNETİM RAPORLARI (başlık kataloğu · içerik yapım aşamasında) ================= */
   // Rapor adları sahibin verdiği referans ekranla birebir (6 grup). Medula yok (Azerbaycan). İçerikler örnek veriyle sırayla dolar.
   const RAPOR_GRUP = [
-    ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi"]],
+    ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi", "Randevu Takip Raporu"]],
     ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log", "Doktor Hakediş Analizi"]],
     ["İndirim ve İade", ["Hasta İndirim Analizi", "Onay Bekleyen İndirimler", "İade Talepleri (Avans/Fatura)"]],
     ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi"]],
@@ -1452,6 +1483,9 @@
       const rows = Object.entries(byDoc).sort((a, z) => z[1].tutar - a[1].tutar).map(([dr, v]) => [dr, v.n, v.tutar.toFixed(2) + " ₼", "%" + (ORAN * 100), (v.tutar * ORAN).toFixed(2) + " ₼"]);
       return { cols:["Doktor / isteyen", "İşlem sayısı", "Toplam tutar", "Hakediş oranı", "Hakediş tutarı"], rows, note:"Doktor hakedişi = işlem tutarının anlaşmalı oranı (demo %15). Gerçek oran doktor sözleşmesine göre admin'de tanımlanır; tutar istem order'larından (fiyatOf) hesaplanır." };
     }
+    if (name === "Randevu Takip Raporu") { const rs = (H.data.randevular || []).slice().sort((a, z) => (z.tarih || "").localeCompare(a.tarih || ""));
+      const rows = rs.map(r => [(r.tarih || "").replace("T", " "), r.hasta, r.tur || "Poliklinik", r.bolum || "—", r.doktor || "—", (r.sure || 15) + " dk", r.durum || "—", r.sms ? "Açık" : "—", r.not || ""]);
+      return { cols:["Tarih / saat", "Hasta", "Tür", "Bölüm", "Doktor", "Süre", "Durum", "SMS", "Not"], rows, note:"Tüm randevular (poliklinik/cihaz). Durum: Bekliyor/Geldi/Muayenede/Tamamlandı/Gelmedi/İptal. Filtre/ihraç için Excel'e aktarın." }; }
     if (name === "Hasta Geliş Analizi") { const g = {}; (H.data.patients || []).forEach(p => { const e = (H.ENC[H.encOf(p)] || {}).label || H.encOf(p); g[e] = (g[e] || 0) + 1; });
       return { cols:["Geliş tipi", "Hasta sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"Yatan hastalar birimlerinden, ayaktan hastalar başvuru tipinden sayılır." }; }
     if (name === "Fatura Analizi") { const f = faturalar(), g = {}; f.forEach(x => { g[x.durum] = g[x.durum] || { a:0, t:0, k:0 }; g[x.durum].a++; g[x.durum].t += x.toplam; g[x.durum].k += x.katilim; });
