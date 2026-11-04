@@ -106,10 +106,10 @@
     const muaTag = (pid) => { const d = muaDoc(pid); return d ? `<span class="tag ${muaSigned(d) ? "ok" : "w"}">${muaSigned(d) ? "İmzalı" : "Taslak"}</span>` : `<span class="tag">—</span>`; };
     const imzaBek = myPts.reduce((a, p) => { const d = muaDoc(p.id); return a + (d && !muaSigned(d) ? 1 : 0); }, 0);
     const epiBek = myPts.reduce((a, p) => a + (H.data.docs || []).filter(x => x.pid === p.id && x.type === "epikriz" && x.status !== "muhur").length, 0);
-    const kutu = (n, l) => `<div class="box" style="text-align:center;min-width:110px;flex:1"><div style="font-size:24px;font-weight:800;color:var(--pri)">${n}</div><div class="adm-sub">${l}</div></div>`;
+    const kutu = (n, l, key) => `<div class="box" ${key && n ? `data-drq="${key}" role="button" tabindex="0" title="Kuyruğu aç"` : ""} style="text-align:center;min-width:110px;flex:1${key && n ? ";cursor:pointer" : ""}"><div style="font-size:24px;font-weight:800;color:var(--pri)">${n}</div><div class="adm-sub">${l}${key && n ? ` ${I("chevR") || "›"}` : ""}</div></div>`;
     const muaIco = I("stethoscope") || I("activity") || "";
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_drislem")}</h2><p>${H.esc(myName || "Hekim")} · bugünkü muayene kuyruğu ve hastalarınız</p></div></div>
-      <div class="r" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">${kutu(myPts.length, "İş listesi (hastam)")}${kutu(bekRand.length, "Randevular")}${kutu(imzaBek, "Muayene imza bekleyen")}${kutu(epiBek, "Epikriz işlem")}${kutu(sonucBek, "Sonuç bekleyen")}</div>
+      <div class="r" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">${kutu(myPts.length, "İş listesi (hastam)")}${kutu(bekRand.length, "Randevular")}${kutu(imzaBek, "Muayene imza bekleyen", "imza")}${kutu(epiBek, "Epikriz işlem", "epi")}${kutu(sonucBek, "Sonuç bekleyen", "sonuc")}</div>
       <div class="ist-sec ist-hd"><h5>Bugünün randevuları — muayene bekleyen${fallback ? ` <span class="adm-sub">(demo: tüm bölümler)</span>` : ""}</h5></div>
       <div class="tw"><table class="t"><thead><tr><th style="width:70px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th style="width:100px">Durum</th><th style="width:140px"></th></tr></thead><tbody>
       ${bekRand.length ? bekRand.slice().sort((a, z) => (a.tarih || "").localeCompare(z.tarih || "")).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").slice(11, 16))}</td><td><b>${H.esc(vzName(r.hasta))}</b></td><td class="adm-sub">${H.esc(r.bolum || "")}</td><td class="adm-sub">${H.esc(r.doktor || "")}</td><td><span class="tag ${r.durum === "Geldi" ? "ok" : "w"}">${H.esc(r.durum)}</span></td><td><button class="btn p sm" data-muarand="${r.id}">${muaIco} Muayeneye al</button></td></tr>`).join("") : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Bugün muayene bekleyen randevu yok.</td></tr>`}
@@ -120,7 +120,19 @@
       ${myPts.length ? myPts.map(p => { const b = H.bed(p.bed), e = H.encOf(p), ei = H.ENC[e] || {}, un = b && H.unit(b.unitId);
         return `<tr class="row"><td><b>${H.esc(H.showNames() ? p.name : (b ? b.no : "—"))}</b><div class="mute" style="font-size:11.5px">${H.ageText(p)} ${p.sex}</div></td><td>${H.encIcon(p)} <span class="tag">${H.esc(ei.label || e)}</span> ${H.protoLock(p)}</td><td>${H.esc(p.dx || "")} ${p.icd ? `<span class="mono mute">${H.esc(p.icd)}</span>` : ""}</td><td class="n">${xy(cnt(p.id, "Laboratuvar"))}</td><td class="n">${xy(cnt(p.id, "Radyoloji"))}</td><td><span class="tag ok">Uygun</span></td><td>${muaTag(p.id)}</td><td class="mute" style="font-size:12px">${un ? H.esc(un.tr) : "—"}</td><td><button class="btn p sm" data-muapt="${p.id}">${muaIco} Muayene</button></td></tr>`; }).join("") : `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Birimlerinizde hasta yok.</td></tr>`}
       </tbody></table></div>`;
+    // Tıklanabilir iş kuyrukları: Muayene imza / Epikriz / Sonuç bekleyen → hasta listesi → Aç.
+    function drQueueModal(key) {
+      let title, rows, go;
+      if (key === "imza") { title = "Muayene imza bekleyen"; rows = myPts.filter(p => { const d = muaDoc(p.id); return d && !muaSigned(d); }); go = (p) => H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene" }); }
+      else if (key === "epi") { title = "Epikriz işlem bekleyen"; rows = myPts.filter(p => (H.data.docs || []).some(x => x.pid === p.id && x.type === "epikriz" && x.status !== "muhur")); go = (p) => H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"muayene" }); }
+      else { title = "Sonuç bekleyen"; rows = myPts.filter(p => pend(p.id, "Laboratuvar") + pend(p.id, "Radyoloji") > 0); go = (p) => H.go("hasta360", { pid:p.id, atab:"tedavi", ttab:"laboratuvar" }); }
+      H.modal({ title:title + " (" + rows.length + ")", wide:true,
+        body:rows.length ? `<div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Tanı</th><th>Birim</th><th style="width:100px"></th></tr></thead><tbody>${rows.map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return `<tr><td><b>${H.esc(H.showNames() ? p.name : (b ? b.no : "—"))}</b></td><td class="adm-sub">${H.esc(p.dx || "")}</td><td class="adm-sub">${u ? H.esc(u.tr) : "—"}</td><td><button class="btn p sm" data-drqgo="${p.id}">${muaIco} Aç</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Kuyruk boş.</div>`,
+        actions:`<button class="btn" data-x>Kapat</button>`,
+        onMount(m) { const tb = m.querySelector("tbody"); if (tb) tb.addEventListener("click", ev => { const g = ev.target.closest("[data-drqgo]"); if (g) { const p = H.pt(g.dataset.drqgo); H.closeModal(); if (p) go(p); } }); } });
+    }
     root.onclick = (e) => {
+      const q = e.target.closest("[data-drq]"); if (q) { drQueueModal(q.dataset.drq); return; }
       const mr = e.target.closest("[data-muarand]"); if (mr) { const r = all.find(x => x.id === mr.dataset.muarand); if (!r) return;
         const pid = pidByName(r.hasta); if (!pid) { H.toast("Hasta kaydı yok · kabule gidiliyor.", "w"); return H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum } }); }
         const p = H.pt(pid); let pno = H.proto ? H.proto.activeNo(pid) : null;
