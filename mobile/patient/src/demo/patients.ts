@@ -21,10 +21,10 @@ export type DemoPatient = {
 // adult lab references). NOT real PHI — the owner's own name for demo testing.
 const ozan: DemoPatient = {
   id: "p-ozan",
-  fin: "5AB12CD",
+  fin: "6449004", // panel test hastasıyla eşleşir (yalnız kimlik: FİN/ad/yıl/telefon tutulur)
   name: "Ozan Sunkur",
-  birthYear: "1988",
-  phone: "+994 50 123 45 67",
+  birthYear: "1996",
+  phone: "+994 51 207 60 41",
   appointments: [
     { id: "a1", doctor: "Dr. Elçin Əliyev", specialty: "Kardiologiya", date: "28 Noyabr 2026", time: "14:30", hospital: "Mərkəzi Klinika Bakı", status: "confirmed" },
     { id: "a2", doctor: "Dr. Günel Məmmədova", specialty: "Daxili Xəstəliklər", date: "5 Dekabr 2026", time: "10:00", hospital: "Mərkəzi Klinika Bakı", status: "pending" },
