@@ -844,10 +844,11 @@
         ${H.durumLejant([["Tahsil edildi", "ok"], ["Bekliyor", "w"], ["Hukuksal takip", "crit"]])}
         <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Protokol</th><th>Kurum / sigorta</th><th style="width:80px">Toplam</th><th style="width:100px">Katılım payı</th><th style="width:160px">Durum / ödeme</th><th style="width:160px"></th></tr></thead><tbody>
         ${list.length ? list.map(x => { const hukBtn = `<button class="btn sm" data-huk="${x.id}">${x.hukuksal ? "Hukuksal ✓" : "Hukuksal"}</button>`;
-          const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}`;
+          const tkTxt = x.taksitPlan ? (() => { let c = 0, p = x.odenen || 0, d = 0; x.taksitPlan.forEach(tk => { c += tk.tutar; if (p >= c - 0.001) d++; }); return ` <span class="tag info">${d}/${x.taksitPlan.length} taksit</span>`; })() : "";
+          const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${tkTxt}${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}`;
           const dokBtn = `<button class="btn sm" data-fdetay="${x.id}">Döküm</button>`;
           const ipBtn = (x.durum !== "İptal" && x.durum !== "Ödendi" && H.canAct("fatura_iptal")) ? ` <button class="btn g sm" data-fiptal="${x.id}">İptal</button>` : "";
-          const act = (x.durum === "İptal" ? `<span class="adm-sub">İptal: ${H.esc(x.iptalNeden || "")}</span>` : x.durum === "Bekliyor" ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` : `<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`) + " " + dokBtn + ipBtn;
+          const act = (x.durum === "İptal" ? `<span class="adm-sub">İptal: ${H.esc(x.iptalNeden || "")}</span>` : (x.durum === "Bekliyor" || x.durum === "Taksitli") ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` :`<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`) + " " + dokBtn + ipBtn;
           return `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.protokol)}</td><td>${H.esc(x.kurum)}</td><td class="n">${x.toplam} ₼</td><td class="n">${x.katilim} ₼</td><td>${durHtml}</td><td>${act}</td></tr>`; }).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Fatura yok.</td></tr>`}</tbody></table></div>`; };
     const panFiyat = () => { const rows = H.data.vFiyat = H.data.vFiyat || [], kurum = params.kurum || "Özel ödeme", samhi = kurum.includes("SAMHI");
       const kamps = (H.data.kampanyalar || []).filter(k => k.aktif), kamp = kamps.find(k => k.id === params.kamp);
@@ -1289,19 +1290,35 @@
       const fa = e.target.closest("[data-fadd]"); if (fa) { const el = root.querySelector("[data-fhiz]"), ad = (el.value || "").trim(), kod = el.dataset.kod || "", fy = +root.querySelector("[data-ffiyat]").value || (kod ? H.fiyatOf(kod, params.kurum || "Özel ödeme") : 0); if (!ad) { H.toast("Katalogdan hizmet seçin.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, kod, fiyat:fy }); H.go("vezne", params); return; }
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
       const th = e.target.closest("[data-tahsil]"); if (th) { const x = faturalar().find(y => y.id === th.dataset.tahsil); if (!x) return;
-        const kalan = x.katilim - (x.odenen || 0);
+        const kalan = x.katilim - (x.odenen || 0), plan = x.taksitPlan;
+        // Taksit planı varsa: sıradaki ödenmemiş taksitin tutarı önerilir (kümülatif - ödenen).
+        let planHtml = "", nextTut = kalan;
+        if (plan) { let cum = 0, paid = x.odenen || 0, found = false;
+          planHtml = `<div class="tw" style="margin:4px 0 8px"><table class="t"><thead><tr><th>Taksit</th><th>Tarih</th><th class="n">Tutar ₼</th><th>Durum</th></tr></thead><tbody>` +
+            plan.map(tk => { cum += tk.tutar; const odendi = paid >= cum - 0.001; let nx = ""; if (!odendi && !found) { found = true; nextTut = +(cum - paid).toFixed(2); nx = " (sıradaki)"; }
+              return `<tr><td>${tk.no}</td><td class="adm-sub">${tk.tarih}</td><td class="n">${tk.tutar}</td><td><span class="tag ${odendi ? "ok" : "w"}">${odendi ? "Ödendi" : "Bekliyor" + nx}</span></td></tr>`; }).join("") + `</tbody></table></div>`; }
         H.modal({ title:"Tahsilat · " + H.esc(vzName(x.hasta)), body:`<div class="icd-form"><div class="fr"><label>Fatura tutarı</label><input value="${x.katilim} ₼" readonly></div>
           <div class="fr"><label>Kalan</label><input value="${kalan} ₼" readonly></div>
-          <div class="fr"><label>Tahsil edilecek</label><input type="number" data-f="tutar" value="${kalan}" min="0" max="${kalan}"></div>
+          ${planHtml}
+          <div class="fr"><label>Tahsil edilecek</label><input type="number" data-f="tutar" value="${nextTut}" min="0" max="${kalan}"></div>
           <div class="fr"><label>Ödeme tipi</label><select data-f="odeme">${ODEME_TIP.map(o => `<option>${o}</option>`).join("")}</select></div>
+          ${plan ? "" : `<div class="fr"><label>Taksit sayısı (1 = peşin)</label><input type="number" data-f="taksit" value="1" min="1" max="12"></div>`}
           <div class="fr"><label>Banko</label><input value="${H.esc(banko)}" readonly></div></div>
-          <p class="adm-sub" style="margin-top:6px">Kısmi tutar girilebilir; kalan kadar ödenince fatura "Ödendi" olur.</p>`,
+          <p class="adm-sub" style="margin-top:6px">${plan ? "Sıradaki taksit tahsil edilir; tümü ödenince fatura kapanır." : "Kısmi tutar girilebilir. Taksit sayısı >1 ise kalan tutar aylık taksit planına bölünür."}</p>`,
           actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Tahsil et</button>`,
-          onMount(m) { m.querySelector("[data-ok]").onclick = () => { let t = +m.querySelector('[data-f="tutar"]').value || 0; if (t <= 0) { H.toast("Tutar girin.", "w"); return; } if (t > kalan) t = kalan;
+          onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+            const nEl = m.querySelector('[data-f="taksit"]'), n = nEl ? Math.max(1, Math.min(12, +nEl.value || 1)) : 1;
+            if (n > 1) { if (kalan <= 0) { H.toast("Kalan tutar yok.", "w"); return; }
+              const now = new Date(), each = Math.floor((kalan / n) * 100) / 100;
+              x.taksitPlan = Array.from({ length:n }, (_, i) => { const d = new Date(now.getFullYear(), now.getMonth() + i + 1, now.getDate());
+                return { no:i + 1, tarih:("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + d.getFullYear(), tutar:i === n - 1 ? +(kalan - each * (n - 1)).toFixed(2) : each }; });
+              x.durum = "Taksitli"; H.saveData && H.saveData(); H.log("Taksit planı", x.hasta + " · " + n + " taksit · " + kalan + " ₼"); H.closeModal();
+              H.toast(n + " taksitlik plan oluşturuldu.", ""); H.go("vezne", params); return; }
+            let t = +m.querySelector('[data-f="tutar"]').value || 0; if (t <= 0) { H.toast("Tutar girin.", "w"); return; } if (t > kalan) t = kalan;
             x.odenen = (x.odenen || 0) + t; x.odemeTipi = m.querySelector('[data-f="odeme"]').value; x.banko = banko; x.donem = donemNo;
-            const bitti = x.odenen >= x.katilim; x.durum = bitti ? "Ödendi" : "Bekliyor";
-            H.saveData && H.saveData(); H.log("Tahsilat" + (bitti ? "" : " (kısmi)"), x.hasta + " · " + t + " ₼ · " + x.odemeTipi + " · " + banko); H.closeModal();
-            H.toast(bitti ? "Tam tahsil edildi: " + t + " ₼" : "Kısmi tahsilat: " + t + " ₼ · kalan " + (x.katilim - x.odenen) + " ₼", bitti ? "" : "w"); H.go("vezne", params); }; } });
+            const bitti = x.odenen >= x.katilim; x.durum = bitti ? "Ödendi" : (x.taksitPlan ? "Taksitli" : "Bekliyor");
+            H.saveData && H.saveData(); H.log("Tahsilat" + (bitti ? "" : x.taksitPlan ? " (taksit)" : " (kısmi)"), x.hasta + " · " + t + " ₼ · " + x.odemeTipi + " · " + banko); H.closeModal();
+            H.toast(bitti ? "Tam tahsil edildi: " + t + " ₼" : "Tahsilat: " + t + " ₼ · kalan " + (x.katilim - x.odenen) + " ₼", bitti ? "" : "w"); H.go("vezne", params); }; } });
       }
     };
   } });
