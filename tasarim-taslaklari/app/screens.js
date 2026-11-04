@@ -1,6 +1,6 @@
 /* Homunculus prototip v1 — ana ekranlar: yatak paneli, alarmlar, devir, hızlı yanıt, eczane, cihazlar, yönetici özeti, ayarlar, profil. */
 (function () {
-  const H = window.H, I = H.icon;
+  const H = window.H, I = H.icon, esc = H.esc;
   const unitsInView = () => (H.state.unitId ? [H.unit(H.state.unitId)] : H.state.user.units.map(H.unit)).filter(u => u && u.live !== false);
   const nm = (u) => (H.userBy(u) || {}).name || u;
   const lateTasks = (pid) => H.data.tasks.filter(t => (!pid || t.pid === pid) && t.state === "late" && H.inScope(t.pid));
@@ -522,7 +522,7 @@
         m.querySelectorAll("[data-hf2]").forEach(b => b.onclick = () => { f2 = b.dataset.hf2; m.querySelectorAll("[data-hf2]").forEach(x => x.classList.toggle("on", x === b)); draw(); });
         const hp = m.querySelector("[data-hproto]"); if (hp) hp.onchange = () => { hproto = hp.value; draw(); };
         m.querySelector("[data-hproviz]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } s.forEach(o => o.durum = "Provizyon istendi"); H.log("Provizyon istendi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("Provizyon istendi (" + s.length + ")"); draw(); };
-        m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } cutInvoice(s, "Parçalı fatura"); };
+        m.querySelector("[data-hparcali]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } faturaKesinlestirModal(p, s, "Parçalı fatura"); };
         m.querySelector("[data-hpaket]").onclick = () => H.toast("Panel paket için paket tanımı gerekir (admin → Hizmet Kartı · Paketler).", "w");
         body.oncontextmenu = (e) => { const tr = e.target.closest("[data-hrow]"); if (!tr) return; e.preventDefault(); const o = (H.data.orders || []).find(x => x.id === tr.dataset.hrow); if (!o) return;
           const needP = (perm, fn) => () => { if (!H.canAct(perm)) { H.toast("Yetkiniz yok (" + perm + ").", "e"); return; } fn(); };
@@ -536,23 +536,10 @@
           ]); };
         const selected = () => [...m.querySelectorAll("[data-hsel]:checked")].map(c => (H.data.orders || []).find(o => o.id === c.dataset.hsel)).filter(Boolean);
         const recompute = () => { topEl.textContent = selected().reduce((a, o) => a + fiyatOf(o), 0); };
-        // Adım 3 · zincir: fatura kesilince işlemler "Faturalandı" + protokol fatura durumu + Faturalar + GFK + evrak otomatik oluşur.
-        const cutInvoice = (s, label) => {
-          const top = s.reduce((a, o) => a + fiyatOf(o), 0), kurum = p.kurum || "Özel ödeme";
-          s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
-          const protos = [...new Set(s.map(o => o.protokolNo).filter(Boolean))], fno = "FTR-" + (Date.now() % 1000000);
-          protos.forEach(no => { const pr = H.proto && H.proto.get(p.id, no); if (pr) pr.fatura = { durum:"Kesildi", tutar:Math.round(((pr.fatura && pr.fatura.tutar) || 0) + top / protos.length), kurum }; });
-          (H.data.faturalar = faturalar()).unshift({ id:"fat" + Date.now(), hasta:p.name, protokol:(protos[0] || p.proto || "—") + (p.dx ? " · " + p.dx : ""), kurum, toplam:top, katilim:top, durum:"Bekliyor", protokolNo:protos[0], no:fno });
-          H.data.gfk = gfkRows(); protos.forEach(no => { const ex = H.data.gfk.find(g => g.proto === no); if (ex) ex.durum = "Hasta faturası kesilmiş"; else { const pr = H.proto && H.proto.get(p.id, no); H.data.gfk.unshift({ proto:no, hasta:p.name, gelis:(pr && pr.gelisTipi) || "Ayaktan", ptip:(pr && pr.ptip) || "Normal", bolum:(pr && pr.bolum) || "—", durum:"Hasta faturası kesilmiş" }); } });
-          (H.data.evrak = evrakRows()).unshift({ no:fno, matbu:"", kurum, durum:"Veznede" });
-          H.saveData && H.saveData();
-          H.log(label, vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼" + (protos.length ? " · prot " + protos.join(",") : ""));
-          H.toast(label + ": " + top + " ₼ (" + s.length + " işlem) · fatura + GFK + evrak oluştu"); draw();
-        };
         draw();
         body.addEventListener("change", recompute);
         m.querySelector("[data-hall]").onchange = (e) => { m.querySelectorAll("[data-hsel]:not(:disabled)").forEach(c => c.checked = e.target.checked); recompute(); };
-        m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } cutInvoice(s, "Fatura kesildi (işlem havuzu)"); };
+        m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } faturaKesinlestirModal(p, s, "Fatura kesildi"); };
         m.querySelector("[data-hindirim]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
           const top = s.reduce((a, o) => a + fiyatOf(o), 0); (H.data.indirimOnay = indirimRows()).unshift({ id:"io" + Date.now(), tarih:H.nowFull ? H.nowFull() : H.now(), hasta:p.name, isteyen:(H.state.user || {}).name || "Vezne", islem:s.map(o => o.ad).join(", ").slice(0, 60), tutar:top, oran:0, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) });
           H.log("İndirime gönderildi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("İndirim onayına gönderildi (" + s.length + " işlem)"); H.closeModal(); };
@@ -647,6 +634,79 @@
       onMount(m) { draw(m);
         m.querySelector(".seg").onclick = (e) => { const b = e.target.closest("[data-onseg]"); if (b) { f = b.dataset.onseg; draw(m); } };
         m.querySelector("[data-onbody]").onclick = (e) => { const b = e.target.closest("[data-onyukle]"); if (!b) return; const x = onamStore().find(y => y.id === b.dataset.onyukle); if (x) { x.durum = "Tamamlandı"; x.yukleyen = (H.state.user || {}).name || "Vezne"; H.saveData && H.saveData(); H.log("Onam/dosya tamamlandı", x.ad + " · " + x.hasta); H.toast(x.ad + " yüklendi · tamamlandı"); draw(m); } }; } });
+  }
+  /* ---------- Fatura kesinleştirme: satır-kalem + kurum payı + indirim + KDV ---------- */
+  // Kurum payı oranı (demo): SAMHI %70, özel sigorta/anlaşmalı %60, özel ödeme %0 (hasta hepsini öder).
+  const kurumPayOrani = (k) => samhiKurum(k) ? 0.70 : ozelSigorta(k) ? 0.60 : 0;
+  // Fatura kesme zinciri: order'lar "Faturalandı" + protokol fatura durumu + Faturalar + GFK + evrak. bd = kesim dökümü.
+  function cutInvoice(p, s, label, bd) {
+    const kurum = p.kurum || "Özel ödeme";
+    s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
+    const protos = [...new Set(s.map(o => o.protokolNo).filter(Boolean))], fno = "FTR-" + (Date.now() % 1000000);
+    protos.forEach(no => { const pr = H.proto && H.proto.get(p.id, no); if (pr) pr.fatura = { durum:"Kesildi", tutar:Math.round(((pr.fatura && pr.fatura.tutar) || 0) + bd.hastaPayi / protos.length), kurum }; });
+    (H.data.faturalar = faturalar()).unshift({ id:"fat" + Date.now(), hasta:p.name, protokol:(protos[0] || p.proto || "—") + (p.dx ? " · " + p.dx : ""), kurum, toplam:bd.brut, katilim:bd.hastaPayi, kurumPayi:bd.kurumPayi, indirim:bd.indirim, kdv:bd.kdvTutar, kdvOran:bd.kdvOran, kalemler:bd.kalem, kesin:true, durum:"Bekliyor", protokolNo:protos[0], no:fno, tarih:(H.nowFull ? H.nowFull() : "") });
+    H.data.gfk = gfkRows(); protos.forEach(no => { const ex = H.data.gfk.find(g => g.proto === no); if (ex) ex.durum = "Hasta faturası kesilmiş"; else { const pr = H.proto && H.proto.get(p.id, no); H.data.gfk.unshift({ proto:no, hasta:p.name, gelis:(pr && pr.gelisTipi) || "Ayaktan", ptip:(pr && pr.ptip) || "Normal", bolum:(pr && pr.bolum) || "—", durum:"Hasta faturası kesilmiş" }); } });
+    (H.data.evrak = evrakRows()).unshift({ no:fno, matbu:"", kurum, durum:"Veznede" });
+    H.saveData && H.saveData();
+    H.log(label, vzName(p.name) + " · " + s.length + " işlem · brüt " + bd.brut + " ₼ · hasta payı " + bd.hastaPayi + " ₼" + (protos.length ? " · prot " + protos.join(",") : ""));
+    H.toast(label + ": hasta payı " + bd.hastaPayi + " ₼ · fatura + GFK + evrak oluştu");
+    H.closeModal();
+  }
+  // Kesinleştirme modalı: kalem dökümü + düzenlenebilir kurum payı %, indirim ₼, KDV %. Net hasta payı canlı hesaplanır.
+  function faturaKesinlestirModal(p, s, label) {
+    if (!s || !s.length) { H.toast("İşlem seçin.", "w"); return; }
+    const kurum = p.kurum || "Özel ödeme";
+    const fiyatOf = (o) => o.fiyat != null ? +o.fiyat : (o.kod ? (+H.fiyatOf(o.kod, kurum) || 0) : (+o.tutar || 0));
+    const kalem = s.map(o => ({ ad:o.ad || o.cat || "—", kod:o.kod || "", cat:o.cat || "", birim:+fiyatOf(o) || 0 }));
+    const brut = kalem.reduce((a, k) => a + k.birim, 0);
+    const kpOran0 = Math.round(kurumPayOrani(kurum) * 100), kdvMuaf = !!p.kdvMuaf;
+    const body = `<div class="adm-bar" style="margin-bottom:8px"><span class="tag">Kurum: ${esc(kurum)}</span>${kdvMuaf ? `<span class="tag w">KDV'den muaf hasta</span>` : ""}<span class="spacer"></span><span class="adm-sub">${s.length} kalem</span></div>
+      <div class="tw"><table class="t"><thead><tr><th>İşlem / kalem</th><th style="width:140px">Tür</th><th style="width:120px">Kod</th><th style="width:100px">Tutar</th></tr></thead><tbody>
+      ${kalem.map(k => `<tr><td><b>${esc(k.ad)}</b></td><td class="adm-sub">${esc(k.cat)}</td><td class="mono adm-sub">${esc(k.kod || "—")}</td><td class="n">${k.birim.toFixed(2)} ₼</td></tr>`).join("")}
+      </tbody><tfoot><tr><td colspan="3"><b>Brüt toplam</b></td><td class="n"><b data-fkbrut>${brut.toFixed(2)} ₼</b></td></tr></tfoot></table></div>
+      <div class="rc-head" style="margin-top:12px">
+        <div class="fr"><label>Kurum payı (%)</label><input type="number" data-fk="kp" value="${kpOran0}" min="0" max="100"></div>
+        <div class="fr"><label>İndirim (₼)</label><input type="number" data-fk="ind" value="0" min="0"></div>
+        <div class="fr"><label>KDV (%)</label><input type="number" data-fk="kdv" value="0" min="0" max="18"${kdvMuaf ? " disabled" : ""}></div>
+      </div>
+      <div class="tw" style="margin-top:10px"><table class="t"><tbody data-fkhesap></tbody></table></div>
+      <p class="adm-sub" style="margin-top:6px">Kurum payı sigorta/kurum tarafından karşılanır; kalanı hasta öder. İndirim onaylı olmalıdır. Tıbbi hizmet çoğunlukla KDV'den muaftır (hasta kartında işaretliyse kilitli). Değerler örnektir, gerçek oranlar kurum anlaşmasına göre.</p>`;
+    H.modal({ title:(label || "Fatura kes") + " · " + esc(vzName(p.name)), wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-fkok>Kesinleştir ve fatura kes</button>`,
+      onMount(m) {
+        const g = (k) => { const el = m.querySelector(`[data-fk="${k}"]`); return Math.max(0, +(el && el.value) || 0); };
+        const calc = () => {
+          const kp = Math.min(100, g("kp")), kdv = kdvMuaf ? 0 : Math.min(100, g("kdv"));
+          const kurumPayi = Math.round(brut * kp / 100 * 100) / 100;
+          const afterKurum = brut - kurumPayi;
+          const indirim = Math.min(afterKurum, g("ind"));
+          const netHasta = Math.max(0, afterKurum - indirim);
+          const kdvTutar = Math.round(netHasta * kdv / 100 * 100) / 100;
+          const hastaPayi = Math.round((netHasta + kdvTutar) * 100) / 100;
+          return { brut, kalem, kurumPayi, indirim, netHasta, kdvOran:kdv, kdvTutar, hastaPayi };
+        };
+        const drawHesap = () => { const b = calc();
+          m.querySelector("[data-fkhesap]").innerHTML = [
+            ["Brüt toplam", b.brut], ["Kurum payı (−)", -b.kurumPayi], ["İndirim (−)", -b.indirim],
+            ["Ara toplam (hasta)", b.netHasta], [`KDV (%${b.kdvOran})`, b.kdvTutar],
+          ].map(([l, v]) => `<tr><td class="adm-sub">${l}</td><td class="n adm-sub">${v.toFixed(2)} ₼</td></tr>`).join("") +
+          `<tr><td><b>Hasta ödeyecek</b></td><td class="n"><b>${b.hastaPayi.toFixed(2)} ₼</b></td></tr>`;
+        };
+        drawHesap();
+        m.querySelectorAll("[data-fk]").forEach(el => el.addEventListener("input", drawHesap));
+        m.querySelector("[data-fkok]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } cutInvoice(p, s, label || "Fatura kesildi", calc()); };
+      } });
+  }
+  // Fatura dökümü (satır-kalem + kesim): kesinleşmiş faturanın kalem ve kırılım görünümü, yazdırılabilir.
+  function faturaDetayModal(f) {
+    const kalem = f.kalemler || [];
+    const brk = [["Brüt toplam", f.toplam], ["Kurum payı (−)", -(f.kurumPayi || 0)], ["İndirim (−)", -(f.indirim || 0)], [`KDV (%${f.kdvOran || 0})`, f.kdv || 0], ["Hasta ödeyecek", f.katilim]];
+    const body = `<div class="adm-bar" style="margin-bottom:8px"><span class="tag">${esc(f.no || f.id)}</span><span class="tag ${f.durum === "Ödendi" ? "ok" : "w"}">${esc(f.durum)}</span><span class="spacer"></span><span class="adm-sub">${esc(f.kurum || "")} · ${esc(f.tarih || "")}</span></div>
+      ${kalem.length ? `<div class="tw"><table class="t"><thead><tr><th>Kalem</th><th style="width:140px">Tür</th><th style="width:120px">Kod</th><th style="width:100px">Tutar</th></tr></thead><tbody>${kalem.map(k => `<tr><td><b>${esc(k.ad)}</b></td><td class="adm-sub">${esc(k.cat || "")}</td><td class="mono adm-sub">${esc(k.kod || "—")}</td><td class="n">${(+k.birim || 0).toFixed(2)} ₼</td></tr>`).join("")}</tbody></table></div>` : `<div class="adm-sub" style="margin-bottom:8px">Bu fatura kalem dökümü olmadan oluşturulmuş (eski kayıt).</div>`}
+      <div class="tw" style="margin-top:10px"><table class="t"><tbody>${brk.map(([l, v], i) => `<tr><td class="${i === brk.length - 1 ? "" : "adm-sub"}">${i === brk.length - 1 ? "<b>" + l + "</b>" : l}</td><td class="n ${i === brk.length - 1 ? "" : "adm-sub"}">${i === brk.length - 1 ? "<b>" + (+v || 0).toFixed(2) + " ₼</b>" : (+v || 0).toFixed(2) + " ₼"}</td></tr>`).join("")}</tbody></table></div>`;
+    H.modal({ title:"Fatura dökümü · " + esc(vzName(f.hasta)), wide:true, body,
+      actions:`<button class="btn" data-fkyaz>${I("print") || ""} Yazdır</button><span class="spacer"></span><button class="btn p" data-x>Kapat</button>`,
+      onMount(m) { m.querySelector("[data-fkyaz]").onclick = () => H.printTable ? H.printTable("Fatura · " + (f.no || f.id), ["Kalem", "Kod", "Tutar ₼"], kalem.map(k => [k.ad, k.kod || "—", (+k.birim || 0).toFixed(2)]).concat(brk.map(([l, v]) => [l, "", (+v || 0).toFixed(2)])), { sub:esc(f.kurum || "") + " · " + esc(f.tarih || "") }) : H.toast("Yazdırma yok", "w"); } });
   }
   // Toplu fatura işlemleri: fatura kesilmemiş protokolleri seçip toplu faturala.
   function topluFaturaModal() {
@@ -749,7 +809,8 @@
         <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Protokol</th><th>Kurum / sigorta</th><th style="width:80px">Toplam</th><th style="width:100px">Katılım payı</th><th style="width:160px">Durum / ödeme</th><th style="width:160px"></th></tr></thead><tbody>
         ${list.length ? list.map(x => { const hukBtn = `<button class="btn sm" data-huk="${x.id}">${x.hukuksal ? "Hukuksal ✓" : "Hukuksal"}</button>`;
           const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}`;
-          const act = x.durum === "Bekliyor" ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` : `<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`;
+          const dokBtn = `<button class="btn sm" data-fdetay="${x.id}">Döküm</button>`;
+          const act = (x.durum === "Bekliyor" ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` : `<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`) + " " + dokBtn;
           return `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.protokol)}</td><td>${H.esc(x.kurum)}</td><td class="n">${x.toplam} ₼</td><td class="n">${x.katilim} ₼</td><td>${durHtml}</td><td>${act}</td></tr>`; }).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Fatura yok.</td></tr>`}</tbody></table></div>`; };
     const panFiyat = () => { const rows = H.data.vFiyat = H.data.vFiyat || [], kurum = params.kurum || "Özel ödeme", samhi = kurum.includes("SAMHI");
       const kamps = (H.data.kampanyalar || []).filter(k => k.aktif), kamp = kamps.find(k => k.id === params.kamp);
@@ -1149,6 +1210,7 @@
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
       const evd = e.target.closest("[data-evdetay]"); if (evd) { const x = evrakRows().find(y => y.no === evd.dataset.evdetay); if (x) evrakDetayModal(x); return; }
       const fsub = e.target.closest("[data-fsub]"); if (fsub) return H.go("vezne", { tab:"fatura", fsub:fsub.dataset.fsub });
+      const fd = e.target.closest("[data-fdetay]"); if (fd) { const x = faturalar().find(y => y.id === fd.dataset.fdetay); if (x) faturaDetayModal(x); return; }
       const huk = e.target.closest("[data-huk]"); if (huk) { const x = faturalar().find(y => y.id === huk.dataset.huk); if (x) hukuksalModal(x); return; }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
