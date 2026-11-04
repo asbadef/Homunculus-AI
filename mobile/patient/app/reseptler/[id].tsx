@@ -10,6 +10,7 @@ import { transport } from "../../src/demo/transport";
 import { addReminder } from "../../src/reminder/reminders";
 import { Prescription } from "../../src/demo/types";
 import { useScreenGuard } from "../../src/security/useScreenGuard";
+import { demoAlert } from "../../src/ui/demo";
 
 function Field({ label, value }: { label: string; value: string }) {
   const { t } = useTheme();
@@ -67,7 +68,7 @@ export default function DrugDetail() {
         </AppText>
       </Pressable>
 
-      <Pressable style={{ marginTop: 10, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
+      <Pressable onPress={() => demoAlert(tr)} style={{ marginTop: 10, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>
         <AppText weight="semibold">{tr("rx.prospectus")}</AppText>
       </Pressable>
       <View style={{ height: 16 }} />

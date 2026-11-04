@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { View, Pressable } from "react-native";
+import { demoAlert } from "../../src/ui/demo";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card, SectionTitle, LangThemeControls, BrandGradient } from "../../src/ui/widgets";
@@ -85,11 +86,11 @@ export default function HomeScreen() {
                 {unpaid.amount} {unpaid.currency}
               </AppText>
             </View>
-            <View style={{ backgroundColor: t.brand, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 }}>
+            <Pressable onPress={() => demoAlert(tr)} style={{ backgroundColor: t.brand, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 }}>
               <AppText weight="bold" color="#ffffff">
                 {tr("action.pay")}
               </AppText>
-            </View>
+            </Pressable>
           </Card>
         </>
       ) : null}

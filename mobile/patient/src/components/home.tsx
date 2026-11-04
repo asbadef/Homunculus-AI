@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable, StyleSheet, ImageBackground, Image } from 
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { bannerImages, newsImages } from "../demo/images";
+import { bannerImages, newsImages, storyImages } from "../demo/images";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
@@ -17,11 +17,11 @@ export function Stories({ data }: { data: Story[] }) {
   const { t } = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 4 }}>
-      {data.map((s) => (
-        <View key={s.id} style={{ alignItems: "center", width: 72 }}>
-          <LinearGradient colors={[s.tint, s.tint + "aa"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 62, height: 62, borderRadius: 99, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="sparkles" size={22} color="#ffffff" />
-          </LinearGradient>
+      {data.map((s, i) => (
+        <View key={s.id} style={{ alignItems: "center", width: 74 }}>
+          <View style={{ width: 66, height: 66, borderRadius: 99, borderWidth: 2, borderColor: t.brand, padding: 2 }}>
+            <Image source={storyImages[i % storyImages.length]} style={{ width: "100%", height: "100%", borderRadius: 99 }} resizeMode="cover" />
+          </View>
           <AppText numberOfLines={2} style={{ fontSize: 10, textAlign: "center", marginTop: 5, color: t.muted }}>
             {s.title}
           </AppText>
@@ -64,11 +64,11 @@ export function Shortcuts({ items, label }: { items: Feature[]; label: (f: Featu
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}>
       {items.map((f) => (
         <Pressable key={f.key} onPress={() => go(f.route)} style={{ width: "48%" }}>
-          <Card style={{ padding: 15, gap: 9 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name={(f.icon + "-outline") as IconName} size={22} color={t.brand} />
-            </View>
-            <AppText weight="semibold" numberOfLines={2} style={{ fontSize: 14 }}>
+          <Card style={{ padding: 15, flexDirection: "row", alignItems: "center", gap: 11 }}>
+            <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name={(f.icon + "-outline") as IconName} size={22} color="#ffffff" />
+            </LinearGradient>
+            <AppText weight="semibold" numberOfLines={2} style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
               {label(f)}
             </AppText>
           </Card>
@@ -84,10 +84,10 @@ export function QuickServices({ items, label }: { items: Feature[]; label: (f: F
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}>
       {items.map((f) => (
         <Pressable key={f.key} onPress={() => go(f.route)} style={{ width: "31%", alignItems: "center" }}>
-          <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={(f.icon + "-outline") as IconName} size={24} color={t.brand} />
+          <View style={{ width: 58, height: 58, borderRadius: 18, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={(f.icon + "-outline") as IconName} size={26} color={t.brand} />
           </View>
-          <AppText numberOfLines={2} style={{ fontSize: 11, textAlign: "center", marginTop: 6, color: t.muted }}>
+          <AppText numberOfLines={2} style={{ fontSize: 11, textAlign: "center", marginTop: 7, color: t.muted }}>
             {label(f)}
           </AppText>
         </Pressable>

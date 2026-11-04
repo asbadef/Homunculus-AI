@@ -157,5 +157,7 @@ const ru: Record<string, string> = {
   "chk.buy": "Купить",
   "notif.title": "Уведомления",
   "saglik.soon": "Моё здоровье (шаги, пульс, сон) скоро — данные вы вводите сами.",
+  "demo.title": "Демо",
+  "demo.msg": "Это действие будет доступно в полной версии.",
 };
 export default ru;

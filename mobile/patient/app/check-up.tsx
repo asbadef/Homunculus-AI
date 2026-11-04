@@ -4,6 +4,7 @@ import { Screen, AppText, Muted } from "../src/ui/base";
 import { Card, StackHeader } from "../src/ui/widgets";
 import { useTheme } from "../src/theme/ThemeProvider";
 import { useI18n } from "../src/i18n";
+import { demoAlert } from "../src/ui/demo";
 
 const PACKAGES = [
   { id: "c1", name: "Əsas Check-up", items: "Qan, ürək, görüntüləmə", price: "120 AZN" },
@@ -27,7 +28,7 @@ export default function Checkup() {
             <AppText weight="bold" color={t.brand} style={{ fontSize: 16 }}>
               {p.price}
             </AppText>
-            <Pressable style={{ backgroundColor: t.brand, borderRadius: 11, paddingHorizontal: 20, paddingVertical: 9 }}>
+            <Pressable onPress={() => demoAlert(tr)} style={{ backgroundColor: t.brand, borderRadius: 11, paddingHorizontal: 20, paddingVertical: 9 }}>
               <AppText weight="bold" color="#ffffff">
                 {tr("chk.buy")}
               </AppText>

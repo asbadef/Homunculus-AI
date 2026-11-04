@@ -13,6 +13,13 @@ export const newsImages: Record<string, any> = {
   n3: require("../../assets/gen/haber-checkup.png"),
 };
 
+export const storyImages = [
+  require("../../assets/gen/story-1.png"),
+  require("../../assets/gen/story-2.png"),
+  require("../../assets/gen/story-3.png"),
+  require("../../assets/gen/story-4.png"),
+];
+
 export const onboardingImages = [
   require("../../assets/gen/onb-1.png"),
   require("../../assets/gen/onb-2.png"),

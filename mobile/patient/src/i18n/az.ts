@@ -159,5 +159,7 @@ const az: Record<string, string> = {
   "chk.buy": "Al",
   "notif.title": "Bildirişlər",
   "saglik.soon": "Sağlığım (addım, nəbz, yuxu) tezliklə — məlumatı özün daxil edəcəksən.",
+  "demo.title": "Nümunə",
+  "demo.msg": "Bu əməliyyat tam versiyada aktiv olacaq.",
 };
 export default az;

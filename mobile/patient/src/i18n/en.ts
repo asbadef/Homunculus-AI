@@ -157,5 +157,7 @@ const en: Record<string, string> = {
   "chk.buy": "Buy",
   "notif.title": "Notifications",
   "saglik.soon": "My Health (steps, pulse, sleep) coming soon — you will enter the data yourself.",
+  "demo.title": "Demo",
+  "demo.msg": "This action will be active in the full version.",
 };
 export default en;

@@ -5,6 +5,7 @@ import { Screen, AppText, Muted } from "../src/ui/base";
 import { Card, StackHeader } from "../src/ui/widgets";
 import { useTheme } from "../src/theme/ThemeProvider";
 import { useI18n } from "../src/i18n";
+import { demoAlert } from "../src/ui/demo";
 
 const DOCS = [
   { id: "d1", name: "Epikriz — Kardiologiya", date: "24.11.2026" },
@@ -30,7 +31,7 @@ export default function Documents() {
           <Ionicons name="download-outline" size={20} color={t.faint} />
         </Card>
       ))}
-      <Pressable style={{ marginTop: 6, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      <Pressable onPress={() => demoAlert(tr)} style={{ marginTop: 6, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <Ionicons name="cloud-upload-outline" size={18} color={t.brand} />
         <AppText weight="semibold">{tr("doc.upload")}</AppText>
       </Pressable>

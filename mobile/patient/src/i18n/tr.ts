@@ -157,5 +157,7 @@ const tr: Record<string, string> = {
   "chk.buy": "Al",
   "notif.title": "Bildirimler",
   "saglik.soon": "Sağlığım (adım, nabız, uyku) yakında — veriyi kendin gireceksin.",
+  "demo.title": "Örnek",
+  "demo.msg": "Bu işlem tam sürümde aktif olacak.",
 };
 export default tr;

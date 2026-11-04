@@ -7,6 +7,7 @@ import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { Invoice } from "../../src/demo/types";
+import { demoAlert } from "../../src/ui/demo";
 
 export default function Invoices() {
   const { t } = useTheme();
@@ -36,7 +37,7 @@ export default function Invoices() {
           </View>
         </Card>
       ))}
-      <Pressable style={{ marginTop: 6, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      <Pressable onPress={() => demoAlert(tr)} style={{ marginTop: 6, borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <Ionicons name="card-outline" size={18} color={t.brand} />
         <AppText weight="semibold">{tr("inv.addCard")}</AppText>
       </Pressable>
