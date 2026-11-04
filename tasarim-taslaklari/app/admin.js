@@ -456,6 +456,10 @@
         onPick(id) { f.bed = id; if (id) box.querySelector('[data-w="bed"]').classList.remove("adm-err"); } });
       bindForm(box, f, k => {
         if (k === "dob") { box.querySelector("[data-age]").textContent = ageStr(formAge()); picker.redraw(); }
+        if (k === "fin") { const r = H.hastaBul && H.hastaBul(f.fin); if (r) { const set = (fld, v) => { if (v) { f[fld] = v; const el = box.querySelector(`[data-f="${fld}"]`); if (el) el.value = v; } };
+          set("name", r.ad); set("surname", r.soyad); set("dob", r.dob); set("phone", (r.tel || "").replace(/^\+?994\s*/, ""));
+          if (r.sex) { f.sex = r.sex; const sx = box.querySelector('[data-f="sex"]'); if (sx && sx.tagName === "SELECT") sx.value = r.sex; else box.querySelectorAll('[data-f="sex"]').forEach(i => i.checked = i.value === r.sex); }
+          box.querySelector("[data-age]").textContent = ageStr(formAge()); picker.redraw(); H.toast("Kayıtlı hasta bulundu: " + r.tam + " · bilgiler dolduruldu"); } }
         if (k === "noAllergy") { const i = box.querySelector('[data-f="allergy"]'); i.disabled = f.noAllergy; if (f.noAllergy) { i.value = ""; f.allergy = ""; } }
         if (k === "kvkk" || k === "unconscious") box.querySelector('[data-w="consent"]').classList.remove("adm-err");
       });
@@ -474,7 +478,7 @@
           <div class="box"><h5>${I("user")} Kimlik</h5>
             ${fld("name", "Ad soyad", inp("name", pre.name || "", 'placeholder="Ad soyad"'), 1)}
             ${fld("fin", "FİN kod", inp("fin", pre.fin || "", 'maxlength="7" placeholder="7 karakter" style="text-transform:uppercase"'))}
-            ${fld("sex", "Cinsiyet", opts("sex", [["K", "Kadın"], ["E", "Erkek"]], "K"))}
+            ${fld("sex", "Cinsiyet", opts("sex", [["K", "Kadın"], ["E", "Erkek"]], pre.sex || "K"))}
             ${fld("age", "Yaş", `<input data-f="age" type="number" min="0" class="adm-num" placeholder="yaş">`)}
             ${fld("phone", "Telefon", `<div class="adm-row" style="flex-wrap:nowrap"><span class="tag mono">+994</span>${inp("phone", pre.phone || "", 'inputmode="tel" placeholder="50 123 45 67"')}</div>`)}
           </div>
@@ -487,7 +491,7 @@
             ${fld("neden", "Geliş nedeni", inp("neden", "", 'placeholder="Şikayet / amaç"'))}
             ${fld("erisim", "Erişim kanalı", sel("erisim", ["", ...erisimL], ""))}
             ${fld("tercih", "Tercih sebebi", sel("tercih", ["", ...tercihL], ""))}
-            ${fld("kurum", "Kurum / sigorta", sel("kurum", kurumL, kurumL[0] || ""))}
+            ${fld("kurum", "Kurum / sigorta", sel("kurum", kurumL, pre.kurum || kurumL[0] || ""))}
             ${chk("sms", true, "SMS ile randevu/hatırlatma bilgilendirmesi")}
           </div>
         </div></fieldset></div>
@@ -509,6 +513,14 @@
         H.log("Ayaktan kayıt açıldı", name + " · " + bolum + (tanim ? " · " + tanim.hizmetAd : ""));
         H.toast(name + " · ayaktan kayıt açıldı, iş listesine düştü"); H.go("gelisler", { enc:"ayaktan" });
       };
+      // FİN veya ad ile otomatik doldurma (hasta kartından) + randevudan gelen pre'yi doldur (video bulgusu).
+      const ayFill = (r) => { if (!r) return; const set = (f, v) => { const el = body.querySelector(`[data-f="${f}"]`); if (el && v != null && v !== "") el.value = v; };
+        set("name", r.tam); set("fin", r.fin); set("sex", r.sex); set("phone", (r.tel || "").replace(/^\+?994\s*/, "")); const a = r.dob ? ageFromDob(r.dob) : null; if (a && a.years != null) set("age", a.years);
+        H.toast("Kayıtlı hasta bulundu: " + r.tam + " · bilgiler dolduruldu"); };
+      const finEl = body.querySelector('[data-f="fin"]'), nameEl = body.querySelector('[data-f="name"]');
+      if (finEl) finEl.onchange = () => { const r = H.hastaBul && H.hastaBul(finEl.value); if (r) ayFill(r); };
+      if (nameEl) nameEl.onchange = () => { const r = H.hastaBul && H.hastaBul(nameEl.value); if (r) ayFill(r); };
+      if (pre.fin || pre.name) { const r = H.hastaBul && H.hastaBul(pre.fin || pre.name); if (r) ayFill(r); }
     }
 
     function saveForm() {

@@ -320,7 +320,7 @@
       const pat = (H.data.patients || []).find(p => p.name === r.hasta);
       if (pat) { if (H.proto) { const att = H.userBy(pat.attending); H.proto.create(pat.id, { bolum:r.bolum || "—", doktor:r.doktor || (att && att.name) || "—", gelisTipi:"Ayaktan", ptip:r.tur || "Genel muayene" }); }
         H.log("Randevudan kabul", r.hasta + " · protokol açıldı"); H.toast("Kabul edildi · protokol açıldı"); H.go("hasta360", { pid:pat.id }); }
-      else { H.toast("Hasta kaydı yok · ayaktan kayıt açılıyor"); H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum } }); }
+      else { H.toast("Hasta kaydı yok · ayaktan kayıt açılıyor"); H.go("admission", { tab:"ayaktan", pre:{ name:r.hasta, bolum:r.bolum, fin:r.fin || "", phone:(r.cep || "").replace(/^\+?994\s*/, ""), sex:/E/.test(r.cinsiyet || "") ? "E" : /K/.test(r.cinsiyet || "") ? "K" : "", kurum:r.anlasmaliKurum && r.anlasmaliKurum !== "Seçiniz" ? r.anlasmaliKurum : (r.sgk && r.sgk !== "Seçiniz" ? r.sgk : "") } }); }
     }
     function rndDetay(r) {
       H.modal({ title:"Randevu · " + H.esc(r.hasta), body:`<div class="icd-form">
