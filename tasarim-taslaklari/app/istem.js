@@ -254,6 +254,10 @@
         <div class="fr"><label>Anestezi tipi</label><select data-f="anes">${ANES.map(a => `<option>${esc(a)}</option>`).join("")}</select></div>
         <div class="fr"><label>Anestezi değerlendirmesi</label><select data-f="anesist"><option>İç anestezist</option><option>Dış anestezist</option><option>Gerekmez</option></select></div>
       </div>
+      <div class="fg2">
+        <div class="fr"><label>Kesi tipi (yara sınıfı)</label><select data-f="kesi"><option>Temiz</option><option>Temiz-kontamine</option><option>Kontamine</option><option>Kirli / enfekte</option></select></div>
+        <div class="fr"><label>Ameliyat grubu (faturalama)</label><select data-f="grup"><option value="">—</option>${["A (büyük)", "B", "C", "D", "E (küçük)"].map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+      </div>
       <div class="fr"><label>Özellikli istekler</label><div class="amf-opts">${OPTS.map(o => `<label class="hc-ac"><input type="checkbox" data-opt="${o[0]}"> ${esc(o[1])}</label>`).join("")}</div></div>
       <div class="fr"><label>Gerekli onamlar</label><input data-f="onam" placeholder="ör. Ameliyat ve anestezi onamı"></div>
       <div class="fr"><label>İstek notu</label><input data-f="not" placeholder="Not"></div>
@@ -276,8 +280,8 @@
           const kod = adEl.dataset.code;
           const opts = OPTS.filter(o => m.querySelector(`[data-opt="${o[0]}"]`).checked).map(o => o[1]);
           const det = [kod ? "Kod " + kod : "", v("acil"), v("gunubirlik") ? "Günübirlik" : `Yatış ${v("yatis")} gün`, +v("ybu") ? `YBÜ ${v("ybu")} gün` : "",
-            v("bolum"), v("cerrah"), "Anestezi: " + v("anes"), v("anesist"), opts.join(" + "), v("onam") ? "Onam: " + v("onam") : "", v("not")].filter(Boolean).join(" · ");
-          addOrder(p, { cat:"Ameliyat", ad, detay:det });
+            v("bolum"), v("cerrah"), "Anestezi: " + v("anes"), v("anesist"), v("kesi") ? "Kesi: " + v("kesi") : "", v("grup") ? "Grup " + v("grup") : "", opts.join(" + "), v("onam") ? "Onam: " + v("onam") : "", v("not")].filter(Boolean).join(" · ");
+          addOrder(p, { cat:"Ameliyat", ad, detay:det, kesiTipi:v("kesi"), ameliyatGrubu:v("grup") });
           H.toast("Ameliyat istemi eklendi"); H.closeModal(); rerender();
         };
       } });
