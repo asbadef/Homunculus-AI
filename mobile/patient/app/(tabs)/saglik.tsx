@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Screen, AppText, Muted, Title } from "../../src/ui/base";
+import { Screen, AppText, Title } from "../../src/ui/base";
 import { Card, SectionTitle } from "../../src/ui/widgets";
 import { NewsStrip } from "../../src/components/home";
+import { HealthMetrics } from "../../src/components/HealthMetrics";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
@@ -46,10 +47,8 @@ export default function HealthHub() {
         ))}
       </View>
 
-      <Card style={{ marginTop: 14, flexDirection: "row", gap: 10, backgroundColor: t.surface2, borderColor: t.border }}>
-        <Ionicons name="pulse" size={18} color={t.muted} />
-        <Muted style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 18 }}>{tr("saglik.soon")}</Muted>
-      </Card>
+      <SectionTitle>{tr("saglik.my")}</SectionTitle>
+      <HealthMetrics />
 
       <SectionTitle>📰 {tr("home.news")}</SectionTitle>
       <NewsStrip data={news} />
