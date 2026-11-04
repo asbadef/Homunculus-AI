@@ -5,12 +5,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card, SectionTitle, LangThemeControls, BrandGradient } from "../../src/ui/widgets";
 import { layout } from "../../src/theme/tokens";
-import { Stories, BannerCarousel, Shortcuts, QuickServices, NewsStrip } from "../../src/components/home";
+import { Stories, BannerCarousel, SummaryCards, Shortcuts, QuickServices, NewsStrip } from "../../src/components/home";
+import { bannerImages } from "../../src/demo/images";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/config/features";
-import { Appointment, Banner, Invoice, NewsItem, Story } from "../../src/demo/types";
+import { Appointment, Banner, Invoice, NewsItem, Result, Story } from "../../src/demo/types";
 import { askNotificationPermissionOnce } from "../../src/notifications/ask";
 import { useSession } from "../../src/session/SessionProvider";
 import { MenuDrawer } from "../../src/components/MenuDrawer";
@@ -25,6 +26,7 @@ export default function HomeScreen() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [next, setNext] = useState<Appointment | null>(null);
   const [unpaid, setUnpaid] = useState<Invoice | null>(null);
+  const [lastResult, setLastResult] = useState<Result | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -34,9 +36,15 @@ export default function HomeScreen() {
     transport.getNews().then(setNews);
     transport.getAppointments().then((a) => setNext(a[0] ?? null));
     transport.getInvoices().then((i) => setUnpaid(i.find((x) => x.status === "unpaid") ?? null));
+    transport.getResults().then((r) => setLastResult(r.find((x) => x.status === "ready") ?? null));
   }, []);
 
   const label = (f: Feature) => tr(f.titleKey);
+
+  const summary = [
+    { key: "appt", title: tr("feat.appointments"), value: next ? `${next.date} · ${next.time}` : tr("appointments.empty"), icon: "calendar" as const, image: bannerImages[0], route: "/randevu" },
+    { key: "res", title: tr("feat.results"), value: lastResult ? lastResult.title : tr("results.empty"), icon: "document-text" as const, image: bannerImages[1], route: "/neticeler" },
+  ];
 
   return (
     <Screen scroll>
@@ -54,7 +62,9 @@ export default function HomeScreen() {
       <MenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <Stories data={stories} />
-      <View style={{ height: 12 }} />
+      <View style={{ height: 14 }} />
+      <SummaryCards items={summary} />
+      <View style={{ height: 14 }} />
       <BannerCarousel data={banners} />
 
       <SectionTitle>{tr("home.shortcuts")}</SectionTitle>

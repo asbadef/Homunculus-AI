@@ -63,6 +63,33 @@ function go(route: string) {
   }
 }
 
+export type SummaryItem = { key: string; title: string; value: string; icon: IconName; image: any; route: string };
+
+// Büyük görselli özet kartları — ana ekranın üstünde hastanın durumunu özetler.
+export function SummaryCards({ items }: { items: SummaryItem[] }) {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}>
+      {items.map((it) => (
+        <Pressable key={it.key} onPress={() => go(it.route)} style={{ width: "48%" }}>
+          <ImageBackground source={it.image} resizeMode="cover" style={{ height: 118, borderRadius: layout.radius, overflow: "hidden" }}>
+            <LinearGradient colors={["#00000022", "#000000bb"]} style={{ flex: 1, padding: 13, justifyContent: "space-between" }}>
+              <Ionicons name={it.icon} size={22} color="#ffffff" />
+              <View>
+                <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 15 }} numberOfLines={1}>
+                  {it.title}
+                </AppText>
+                <AppText color="#ffffff" style={{ fontSize: 11, opacity: 0.92, marginTop: 1 }} numberOfLines={1}>
+                  {it.value}
+                </AppText>
+              </View>
+            </LinearGradient>
+          </ImageBackground>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export function Shortcuts({ items, label }: { items: Feature[]; label: (f: Feature) => string }) {
   const { t } = useTheme();
   const { t: tr } = useI18n();
