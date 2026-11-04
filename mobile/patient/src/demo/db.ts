@@ -18,62 +18,77 @@ export const hospitals: Hospital[] = [
   { id: "h3", name: "Sağlam Nəsil Klinikası", distanceKm: 6.1 },
 ];
 
-// Aligned with HBYS clinical units (subset). Full list is ~40+ in panel; kept consistent.
+// Mirror of HBYS units (H.allUnits), patient-bookable subset only (per panel: outpatient /
+// policlinic / day units; inpatient/ICU/emergency are not open to patient booking). Real ids.
 export const departments: Department[] = [
-  { id: "d1", name: "Daxili Xəstəliklər", icon: "medkit-outline" },
-  { id: "d2", name: "Cərrahiyyə", icon: "cut-outline" },
-  { id: "d3", name: "Təcili Yardım", icon: "flash-outline" },
-  { id: "d4", name: "Anesteziologiya-reanimatologiya", icon: "pulse-outline" },
-  { id: "d5", name: "Kardiologiya", icon: "heart-outline" },
-  { id: "d6", name: "Uşaq xidməti", icon: "happy-outline" },
-  { id: "d7", name: "Yenidoğan (YBŞ)", icon: "body-outline" },
-  { id: "d8", name: "Check-up", icon: "shield-checkmark-outline" },
-  { id: "d9", name: "Poliklinika", icon: "business-outline" },
+  { id: "pol", name: "Poliklinikalar", icon: "business-outline" },
+  { id: "dax", name: "Daxili Xəstəliklər Servisi", icon: "medkit-outline" },
+  { id: "cer", name: "Cərrahiyyə Servisi", icon: "cut-outline" },
+  { id: "usq", name: "Uşaq Servisi", icon: "happy-outline" },
+  { id: "kem", name: "Kimya Terapiyası", icon: "flask-outline" },
+  { id: "gun", name: "Günübirlik Xidmət", icon: "sunny-outline" },
+  { id: "ivf", name: "IVF Günübirlik Xidmət", icon: "heart-circle-outline" },
 ];
 
-// Mirrors the 4 demo doctors assigned in HBYS (panel) so the directory stays consistent.
-// Full unit list is rich (~40+) in HBYS; doctor assignment is still these 4 (per panel).
+// Doctors with department assignments. The 4 real HBYS doctors (per panel) plus demo
+// doctors so every department has someone; the appointment wizard filters by department.
 export const doctors: Doctor[] = [
   {
-    id: "dr1",
-    name: "Dr. Kamran Rzayev",
-    specialty: "Anesteziologiya-reanimatologiya",
-    favorite: true,
+    id: "dr1", name: "Dr. Kamran Rzayev", specialty: "Anesteziologiya-reanimatologiya", departmentIds: ["gun","kem"], favorite: true,
     education: ["Azərbaycan Tibb Universiteti, 2004–2010", "Rezidentura: Anesteziologiya, 2010–2013"],
     experience: ["2013–bu gün Reanimasiya (Böyüklər), KVC Reanimasiyası"],
     memberships: ["Azərbaycan Anesteziologiya Cəmiyyəti"],
-    nextSlot: "Bu gün",
-    times: ["09:00", "09:30", "10:00", "10:30"],
+    publications: ["Kritik vəziyyətli xəstələrdə sedasiya, 2022"],
+    nextSlot: "Bu gün", times: ["09:00", "09:30", "10:00", "10:30"],
   },
   {
-    id: "dr2",
-    name: "Dr. Emil Nəsirov",
-    specialty: "Təcili tibb",
+    id: "dr2", name: "Dr. Emil Nəsirov", specialty: "Təcili tibb", departmentIds: ["dax","cer","usq"],
     education: ["Azərbaycan Tibb Universiteti, 2006–2012"],
     experience: ["2012–bu gün Təcili Yardım, Daxili və Cərrahiyyə servisləri"],
-    memberships: [],
-    nextSlot: "Sabah",
-    times: ["08:30", "09:00", "11:00"],
+    memberships: [], publications: [],
+    nextSlot: "Sabah", times: ["08:30", "09:00", "11:00"],
   },
   {
-    id: "dr3",
-    name: "Dr. Aynur Cəfərli",
-    specialty: "Daxili xəstəliklər",
+    id: "dr3", name: "Dr. Aynur Cəfərli", specialty: "Daxili xəstəliklər", departmentIds: ["dax","pol"],
     education: ["Azərbaycan Tibb Universiteti, 2008–2014"],
     experience: ["2014–bu gün Daxili Xəstəliklər Servisi"],
-    memberships: [],
-    nextSlot: "Bu gün",
-    times: ["13:10", "13:30", "14:00"],
+    memberships: [], publications: ["Diabetin ambulator idarəsi, 2021"],
+    nextSlot: "Bu gün", times: ["13:10", "13:30", "14:00"],
   },
   {
-    id: "dr4",
-    name: "Dr. Samir Quliyev",
-    specialty: "Cərrahiyyə",
+    id: "dr4", name: "Dr. Samir Quliyev", specialty: "Cərrahiyyə", departmentIds: ["cer","ivf"],
     education: ["Azərbaycan Tibb Universiteti, 2003–2009"],
     experience: ["2009–bu gün Cərrahiyyə Servisi"],
-    memberships: ["Azərbaycan Cərrahlar Birliyi"],
-    nextSlot: "3 Dekabr",
-    times: ["09:15", "09:45", "10:15"],
+    memberships: ["Azərbaycan Cərrahlar Birliyi"], publications: ["Laparoskopik cərrahiyyə təcrübəsi, 2020"],
+    nextSlot: "3 Dekabr", times: ["09:15", "09:45", "10:15"],
+  },
+  {
+    id: "dr5", name: "Dr. Elçin Əliyev", specialty: "Kardiologiya", departmentIds: ["pol"],
+    education: ["Azərbaycan Tibb Universiteti, 2005–2011", "Rezidentura: Kardiologiya, 2011–2014"],
+    experience: ["2014–bu gün Baş kardioloq"],
+    memberships: ["Azərbaycan Kardiologiya Cəmiyyəti"], publications: ["Hipertoniyanın erkən müalicəsi, 2023"],
+    nextSlot: "Bu gün", times: ["10:00", "10:30", "11:00", "14:30"],
+  },
+  {
+    id: "dr6", name: "Dr. Günel Məmmədova", specialty: "Pediatriya", departmentIds: ["usq"],
+    education: ["Azərbaycan Tibb Universiteti, 2008–2014"],
+    experience: ["2014–bu gün Uşaq və Yenidoğan xidməti"],
+    memberships: ["Pediatriya Assosiasiyası"], publications: [],
+    nextSlot: "Sabah", times: ["10:00", "10:20", "11:00"],
+  },
+  {
+    id: "dr7", name: "Dr. Nigar Əlizadə", specialty: "Kardiologiya", departmentIds: ["pol"],
+    education: ["Azərbaycan Tibb Universiteti, 2010–2016"],
+    experience: ["2016–bu gün Kardioloq"],
+    memberships: [], publications: [],
+    nextSlot: "4 Dekabr", times: ["12:00", "12:30", "13:00"],
+  },
+  {
+    id: "dr8", name: "Dr. Validə Qasımova", specialty: "Neonatologiya", departmentIds: ["usq"],
+    education: ["Azərbaycan Tibb Universiteti, 2007–2013"],
+    experience: ["2013–bu gün Yenidoğan (YBŞ)"],
+    memberships: ["Neonatologiya Cəmiyyəti"], publications: ["Erkən doğulanların qidalanması, 2021"],
+    nextSlot: "Bu gün", times: ["09:30", "10:00", "10:30"],
   },
 ];
 
@@ -161,7 +176,11 @@ export const stories: Story[] = [
   { id: "s1", title: "Anında həkim", tint: "#0891b2" },
   { id: "s2", title: "Beynəlxalq keyfiyyət", tint: "#6366f1" },
   { id: "s3", title: "Sağlıq kartı", tint: "#10b981" },
-  { id: "s4", title: "Check-up", tint: "#f59e0b" },
+  { id: "s4", title: "Check-up həftəsi", tint: "#f59e0b" },
+  { id: "s5", title: "Ürək sağlamlığı", tint: "#ef4444" },
+  { id: "s6", title: "Peyvənd təqvimi", tint: "#0ea5e9" },
+  { id: "s7", title: "Qış kampaniyası", tint: "#8b5cf6" },
+  { id: "s8", title: "Yenidoğan mərkəzi", tint: "#14b8a6" },
 ];
 
 export const banners: Banner[] = [

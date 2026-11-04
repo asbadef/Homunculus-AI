@@ -47,21 +47,22 @@ export default function Onboarding() {
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
           onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / (width - 32)))}
         >
           {slides.map((s, i) => (
-            <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 20, gap: 18 }}>
-              <Image source={onboardingImages[i]} style={{ width: width - 96, height: width - 96, maxWidth: 320, maxHeight: 320, borderRadius: 30 }} resizeMode="cover" />
-              <AppText weight="extrabold" style={{ fontSize: 23, textAlign: "center" }}>
+            <View key={i} style={{ width: width - 32, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, gap: 20 }}>
+              <Image source={onboardingImages[i]} style={{ width: width - 72, height: width - 72, maxWidth: 340, maxHeight: 340, borderRadius: 32 }} resizeMode="cover" />
+              <AppText weight="extrabold" style={{ fontSize: 24, textAlign: "center" }}>
                 {s.title}
               </AppText>
-              <AppText style={{ fontSize: 15, textAlign: "center", color: t.muted, lineHeight: 22, paddingHorizontal: 10 }}>
+              <AppText style={{ fontSize: 15, textAlign: "center", color: t.muted, lineHeight: 22, paddingHorizontal: 8 }}>
                 {s.sub}
               </AppText>
             </View>
           ))}
         </ScrollView>
-        <View style={{ flexDirection: "row", gap: 7, justifyContent: "center", marginTop: 22 }}>
+        <View style={{ flexDirection: "row", gap: 7, justifyContent: "center", marginTop: 24 }}>
           {slides.map((_, i) => (
             <View key={i} style={{ width: i === page ? 20 : 7, height: 7, borderRadius: 99, backgroundColor: i === page ? t.brand : t.border }} />
           ))}

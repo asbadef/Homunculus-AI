@@ -29,10 +29,12 @@ export type Doctor = {
   id: string;
   name: string;
   specialty: string;
+  departmentIds: string[]; // which departments this doctor serves
   favorite?: boolean;
   education: string[];
   experience: string[];
   memberships: string[];
+  publications?: string[];
   nextSlot: string;
   times: string[];
 };
