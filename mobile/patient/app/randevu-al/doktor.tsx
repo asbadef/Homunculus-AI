@@ -38,10 +38,16 @@ function DoctorCard({ d, selected, onSelect }: { d: Doctor; selected: boolean; o
         </View>
         {d.favorite ? <Ionicons name="heart" size={18} color={t.brand} /> : <Ionicons name={selected ? "checkmark-circle" : "chevron-forward"} size={20} color={selected ? t.brand : t.faint} />}
       </View>
-      <Pressable onPress={() => setOpen((v) => !v)} hitSlop={8} style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 4 }}>
-        <AppText weight="semibold" color={t.brand} style={{ fontSize: 12 }}>{tr("wiz.cv")}</AppText>
-        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.brand} />
-      </Pressable>
+      <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 16 }}>
+        <Pressable onPress={() => setOpen((v) => !v)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <AppText weight="semibold" color={t.brand} style={{ fontSize: 12 }}>{tr("wiz.cv")}</AppText>
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.brand} />
+        </Pressable>
+        <Pressable onPress={() => router.push(`/doktor/${d.id}`)} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Ionicons name="person-circle-outline" size={15} color={t.brand} />
+          <AppText weight="semibold" color={t.brand} style={{ fontSize: 12 }}>{tr("doc.viewProfile")}</AppText>
+        </Pressable>
+      </View>
       {open ? (
         <View style={{ marginTop: 8 }}>
           <View style={{ flexDirection: "row", gap: 16, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border }}>

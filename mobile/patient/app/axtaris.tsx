@@ -27,7 +27,7 @@ export default function Search() {
   const items: SearchItem[] = useMemo(() => [
     ...FEATURES.map((f) => ({ id: "f-" + f.key, label: tr(f.titleKey), icon: f.icon, route: f.route, kind: "feature" as const })),
     ...branches.map((b) => ({ id: "b-" + b.id, label: b.name, sub: tr("wiz.dept.title"), icon: b.icon, route: "/randevu-al/tip", kind: "branch" as const })),
-    ...doctors.map((d) => ({ id: "d-" + d.id, label: d.name, sub: d.specialty, icon: "person-outline", route: "/randevu-al/tip", kind: "doctor" as const })),
+    ...doctors.map((d) => ({ id: "d-" + d.id, label: d.name, sub: d.specialty, icon: "person-outline", route: `/doktor/${d.id}`, kind: "doctor" as const })),
   ], [branches, doctors, tr]);
 
   const results = searchItems(q, items);
