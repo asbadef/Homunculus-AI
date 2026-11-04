@@ -1,8 +1,9 @@
 import React from "react";
-import { View, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, ScrollView, Pressable, StyleSheet, ImageBackground, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { bannerImages, newsImages } from "../demo/images";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { AppText } from "../ui/base";
@@ -33,15 +34,17 @@ export function Stories({ data }: { data: Story[] }) {
 export function BannerCarousel({ data }: { data: Banner[] }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
-      {data.map((b) => (
-        <LinearGradient key={b.id} colors={[b.tint, "#06495a"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 300, borderRadius: layout.radius, padding: 16, justifyContent: "center", minHeight: 96 }}>
-          <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 17 }}>
-            {b.title}
-          </AppText>
-          <AppText color="#ffffff" style={{ opacity: 0.92, marginTop: 6, fontSize: 12 }}>
-            {b.subtitle}
-          </AppText>
-        </LinearGradient>
+      {data.map((b, i) => (
+        <ImageBackground key={b.id} source={bannerImages[i % bannerImages.length]} resizeMode="cover" style={{ width: 300, height: 128, borderRadius: layout.radius, overflow: "hidden", justifyContent: "flex-end" }}>
+          <LinearGradient colors={["#00000000", "#00000066"]} style={{ padding: 14 }}>
+            <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 17 }}>
+              {b.title}
+            </AppText>
+            <AppText color="#ffffff" style={{ opacity: 0.95, marginTop: 4, fontSize: 12 }}>
+              {b.subtitle}
+            </AppText>
+          </LinearGradient>
+        </ImageBackground>
       ))}
     </ScrollView>
   );
@@ -98,14 +101,19 @@ export function NewsStrip({ data }: { data: NewsItem[] }) {
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {data.map((n, i) => (
-        <View key={n.id} style={{ flexDirection: "row", gap: 11, padding: 13, borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
-          <View style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: n.tint, marginTop: 6 }} />
+        <View key={n.id} style={{ flexDirection: "row", gap: 12, padding: 12, alignItems: "center", borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: t.border }}>
+          {newsImages[n.id] ? (
+            <Image source={newsImages[n.id]} style={{ width: 56, height: 56, borderRadius: 12 }} resizeMode="cover" />
+          ) : (
+            <View style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: n.tint + "33" }} />
+          )}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText weight="semibold" style={{ fontSize: 13 }}>
+            <AppText weight="semibold" style={{ fontSize: 13 }} numberOfLines={2}>
               {n.title}
             </AppText>
-            <AppText style={{ fontSize: 11, color: t.muted, marginTop: 2 }}>{n.summary}</AppText>
+            <AppText style={{ fontSize: 11, color: t.muted, marginTop: 2 }} numberOfLines={1}>{n.summary}</AppText>
           </View>
+          <Ionicons name="chevron-forward" size={16} color={t.faint} />
         </View>
       ))}
     </Card>
