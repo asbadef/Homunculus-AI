@@ -264,6 +264,7 @@
     if (!m.rows.length) { root.innerHTML = CSS + `<div class="ph"><div><h2>${t("m_workload")}</h2></div></div><div class="empty">${t("wl_empty")}</div>`; return; }
     const allN = new Set(m.pts.map(p => p.nurse).filter(Boolean)).size;
     const late = m.tasks.filter(x => x.state === "late").length, rem = m.tasks.filter(x => x.state !== "done").length, unas = m.pts.filter(p => !p.nurse).length;
+    const canAssign = H.can("occupancy");   // sorumlu hemşire / yönetici atama yapabilir; salt staff_view yapamaz
     const maxPer = Math.max(1, ...m.rows.map(r => r.per || 0));
     const shiftTasks = WL.unit ? m.tasks.filter(x => bedOf(H.pt(x.pid)).unitId === WL.unit) : m.tasks;
     const aheadCnt = {}; shiftTasks.filter(x => x.state !== "done" && x.t >= Math.floor(NOW)).forEach(x => { const h = Math.floor(x.t); aheadCnt[h] = (aheadCnt[h] || 0) + 1; });
@@ -292,14 +293,15 @@
       <div class="sec">${t("wl_sec_nurse")} <small>${t("wl_sec_nurse_s")}</small></div>
       <div class="bu-nurses">${m.nurses.map(n => `<div class="bu-card bu-nurse"><div class="bu-ntop"><b>${E(n.name)}</b><span class="bu-mute">${E([...new Set(n.pts.map(p => unitOf(p).tr))].join(" · "))}</span></div>
           <div class="bu-nmeta"><span class="pill">${t("wl_pts", { n:n.pts.length })}</span><span class="pill">${t("wl_left", { n:n.left })}</span>${n.high ? `<span class="pill">${t("wl_hr", { n:n.high })}</span>` : ""}</div>
-          <div class="bu-chips">${n.pts.map(p => `<span class="bu-chip ${p.risk === "crit" ? "c" : p.risk === "high" ? "h" : ""}" title="${E(t("wl_left", { n:m.left(p.id) }))}"><i class="bu-dot" style="--c:${(H.SEV[p.risk] || H.SEV.stable).c}"></i>${ptLabel(p)}</span>`).join("")}</div></div>`).join("")}
-        ${m.pts.some(p => !p.nurse) ? `<div class="bu-card bu-nurse" style="border-color:color-mix(in srgb,var(--crit) 45%,transparent)"><div class="bu-ntop"><b>${t("wl_unas")}</b></div>
-          <div class="bu-chips" style="margin-top:8px">${m.pts.filter(p => !p.nurse).map(p => `<span class="bu-chip"><i class="bu-dot" style="--c:${(H.SEV[p.risk] || H.SEV.stable).c}"></i>${ptLabel(p)} <span class="bu-mute">${E(unitOf(p).tr)}</span></span>`).join("")}</div></div>` : ""}</div>
+          <div class="bu-chips">${n.pts.map(p => `<span class="bu-chip ${p.risk === "crit" ? "c" : p.risk === "high" ? "h" : ""}"${canAssign ? ` data-wlassign="${p.id}" style="cursor:pointer" title="Hemşire değiştir"` : ` title="${E(t("wl_left", { n:m.left(p.id) }))}"`}><i class="bu-dot" style="--c:${(H.SEV[p.risk] || H.SEV.stable).c}"></i>${ptLabel(p)}</span>`).join("")}</div></div>`).join("")}
+        ${m.pts.some(p => !p.nurse) ? `<div class="bu-card bu-nurse" style="border-color:color-mix(in srgb,var(--crit) 45%,transparent)"><div class="bu-ntop"><b>${t("wl_unas")}</b>${canAssign ? ` <span class="bu-mute">· çipe tıklayıp hemşire atayın</span>` : ""}</div>
+          <div class="bu-chips" style="margin-top:8px">${m.pts.filter(p => !p.nurse).map(p => `<span class="bu-chip"${canAssign ? ` data-wlassign="${p.id}" style="cursor:pointer" title="Hemşire ata"` : ""}><i class="bu-dot" style="--c:${(H.SEV[p.risk] || H.SEV.stable).c}"></i>${ptLabel(p)} <span class="bu-mute">${E(unitOf(p).tr)}</span></span>`).join("")}</div></div>` : ""}</div>
       <div class="note i" style="margin-top:14px">${t("wl_note")}</div>
       ${H.adminNote("İş yükü ölçeği ve hedef hasta/hemşire oranı hastane tarafından seçilir ve onaylanır; sistem puan üretmez, yalnız iş sayar.", "div")}`;
     drawHours(root.querySelector("[data-bu-hours]"), shiftTasks);
     root.addEventListener("change", e => { const s = e.target.closest("[data-bu-wu]"); if (s) { WL.unit = s.value; H.renderApp(); } });
     root.addEventListener("click", e => {
+      const as = e.target.closest("[data-wlassign]"); if (as) { const p = H.pt(as.dataset.wlassign); if (p && canAssign) assignNurseModal(p); return; }
       if (!e.target.closest("[data-bu-redis]")) return;
       const lines = suggest(m);
       H.log("İş yükü · yeniden dağıtım önerisi görüntülendi", lines.length + " öneri");
@@ -308,6 +310,16 @@
         onMount(md) { md.addEventListener("click", ev => { if (ev.target.closest("[data-bu-note]")) { H.log("İş yükü · öneri not alındı", lines.join(" | ").replace(/<[^>]+>/g, "")); H.closeModal(); H.toast(t("wl_m_saved")); } }); } });
     });
   } });
+
+  // Hemşire-yatak ataması: hastanın bulunduğu birime yetkili hemşire kullanıcıları.
+  const eligibleNurses = (unitId) => (H.data.users || []).filter(u => u.active !== false && /hems/i.test(u.role || "") && (u.units === "*" || (Array.isArray(u.units) && u.units.includes(unitId)))).map(u => ({ u:u.u, name:u.name }));
+  function assignNurseModal(p) {
+    const unitId = bedOf(p).unitId, elig = eligibleNurses(unitId), cur = p.nurse || "";
+    H.modal({ title:"Hemşire ata · " + E(ptLabel(p)),
+      body:`<div class="icd-form"><div class="fr" style="grid-column:1/-1"><label>Sorumlu hemşire · ${E(unitOf(p).tr)}</label><select data-f="n"><option value="">— atanmadı —</option>${elig.map(n => `<option value="${E(n.u)}"${n.u === cur ? " selected" : ""}>${E(n.name)}</option>`).join("")}</select></div></div>${elig.length ? "" : `<p class="adm-sub">Bu birime yetkili hemşire kullanıcı yok. Admin → Kullanıcılar'dan hemşireye bu birim yetkisi verin.</p>`}`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Ata</button>`,
+      onMount(md) { md.querySelector("[data-ok]").onclick = () => { const v = md.querySelector('[data-f="n"]').value; if (v) p.nurse = v; else delete p.nurse; H.saveData && H.saveData(); H.log("Hemşire ataması", ptLabel(p) + " → " + (v ? nurseName(v) : "atanmadı")); H.closeModal(); H.toast(v ? "Atandı: " + nurseName(v) : "Atama kaldırıldı"); H.renderApp(); }; } });
+  }
 
   /* =====================================================================
    * #14 · ENFEKSİYON KONTROL GÖRÜNÜMÜ
