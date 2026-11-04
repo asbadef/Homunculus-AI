@@ -10,6 +10,7 @@ import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
 import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/config/features";
 import { Appointment, Banner, Invoice, NewsItem, Story } from "../../src/demo/types";
+import { askNotificationPermissionOnce } from "../../src/notifications/ask";
 
 export default function HomeScreen() {
   const { t } = useTheme();
@@ -21,6 +22,7 @@ export default function HomeScreen() {
   const [unpaid, setUnpaid] = useState<Invoice | null>(null);
 
   useEffect(() => {
+    askNotificationPermissionOnce();
     transport.getStories().then(setStories);
     transport.getBanners().then(setBanners);
     transport.getNews().then(setNews);

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, ScrollView, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { Screen, AppText } from "../../src/ui/base";
 import { BottomButton } from "../../src/appointment/parts";
@@ -30,9 +31,9 @@ export default function Onboarding() {
         >
           {slides.map((s, i) => (
             <View key={i} style={{ width: width - 32, alignItems: "center", paddingHorizontal: 20, gap: 20 }}>
-              <View style={{ width: 120, height: 120, borderRadius: 32, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name={ICONS[i]} size={56} color={t.brand} />
-              </View>
+              <LinearGradient colors={[t.brand, t.brandGrad2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 128, height: 128, borderRadius: 36, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={ICONS[i]} size={60} color="#ffffff" />
+              </LinearGradient>
               <AppText weight="bold" style={{ fontSize: 20, textAlign: "center" }}>
                 {s}
               </AppText>

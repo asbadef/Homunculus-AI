@@ -89,6 +89,8 @@ const en: Record<string, string> = {
 
   "auth.continue": "Continue",
   "auth.start": "Start",
+  "auth.hero": "The easiest way to stay healthy",
+  "auth.remember": "Remember me",
   "onb.app": "Health in your pocket",
   "onb.1": "Manage all your health in one app",
   "onb.2": "Book an appointment in seconds",
