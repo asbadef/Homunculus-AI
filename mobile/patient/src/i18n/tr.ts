@@ -199,6 +199,11 @@ const tr: Record<string, string> = {
   "perm.kvkk": "Gizlilik / KVKK metni",
 
   "inv.addCard": "Kart ekle",
+  "card.number": "Kart numarası",
+  "card.holder": "Kart sahibi",
+  "card.expiry": "Son kullanma (AA/YY)",
+  "card.empty": "Henüz kart eklenmedi",
+  "card.note": "Güvenlik için yalnızca son 4 hane saklanır. Ödeme HBYS (M1) bağlanınca aktif olacak.",
   "inv.unpaid": "Ödenmemiş",
   "inv.paid": "Ödendi",
   "hc.blood": "Kan grubu",

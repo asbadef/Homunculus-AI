@@ -199,6 +199,11 @@ const en: Record<string, string> = {
   "perm.kvkk": "Privacy / consent text",
 
   "inv.addCard": "Add card",
+  "card.number": "Card number",
+  "card.holder": "Cardholder",
+  "card.expiry": "Expiry (MM/YY)",
+  "card.empty": "No card added yet",
+  "card.note": "For safety only the last 4 digits are stored. Payment activates once HBYS (M1) is connected.",
   "inv.unpaid": "Unpaid",
   "inv.paid": "Paid",
   "hc.blood": "Blood type",

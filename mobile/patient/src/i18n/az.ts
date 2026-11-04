@@ -201,6 +201,11 @@ const az: Record<string, string> = {
   "perm.kvkk": "Məxfilik / KVKK mətni",
 
   "inv.addCard": "Kart əlavə et",
+  "card.number": "Kart nömrəsi",
+  "card.holder": "Kart sahibi",
+  "card.expiry": "Bitmə tarixi (AA/İİ)",
+  "card.empty": "Hələ kart əlavə edilməyib",
+  "card.note": "Təhlükəsizlik üçün yalnız son 4 rəqəm saxlanır. Ödəmə HBYS (M1) qoşulanda aktiv olacaq.",
   "inv.unpaid": "Ödənilməmiş",
   "inv.paid": "Ödənilib",
   "hc.blood": "Qan qrupu",
