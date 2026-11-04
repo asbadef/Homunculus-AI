@@ -29,7 +29,8 @@ export const onboardingImages = [
 
 // Doctor photos keyed by demo doctor id.
 export const doctorImages: Record<string, any> = {
-  dr1: require("../../assets/gen/doktor-1.png"),
-  dr2: require("../../assets/gen/doktor-2.png"),
-  dr3: require("../../assets/gen/doktor-3.png"),
+  dr1: require("../../assets/gen/doktor-2.png"), // Kamran (m)
+  dr2: require("../../assets/gen/doktor-3.png"), // Emil (m)
+  dr3: require("../../assets/gen/doktor-1.png"), // Aynur (f)
+  dr4: require("../../assets/gen/doktor-2.png"), // Samir (m)
 };

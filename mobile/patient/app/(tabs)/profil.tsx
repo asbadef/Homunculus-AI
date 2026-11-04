@@ -79,6 +79,7 @@ export default function ProfileTab() {
       <Row icon="globe-outline" label={tr("pf.lang")} value={tr("lang.code")} onPress={cycleLang} />
       <Row icon="moon-outline" label={tr("pf.theme")} value={mode === "dark" ? tr("pf.on") : tr("pf.off")} onPress={toggle} />
       <Row icon="notifications-outline" label={tr("pf.notif")} onPress={() => router.push("/bildirisler")} />
+      <Row icon="options-outline" label={tr("pf.perms")} onPress={() => router.push("/iletisim-izinleri")} />
 
       <View style={{ height: 8 }} />
       <Pressable onPress={signOut} style={{ borderWidth: 1, borderColor: t.border, borderRadius: 13, paddingVertical: 14, alignItems: "center" }}>

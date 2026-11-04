@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
 import { Card } from "../../src/ui/widgets";
-import { WizardHeader, Chip, BottomButton } from "../../src/appointment/parts";
+import { WizardHeader, BottomButton } from "../../src/appointment/parts";
+import { Dropdown } from "../../src/ui/form";
 import { useWizard } from "../../src/appointment/useWizard";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
@@ -14,7 +15,7 @@ export default function StepSummary() {
   const { state, reset } = useWizard();
   const { t } = useI18n();
   const { t: th } = useTheme();
-  const [pay, setPay] = useState<"insured" | "uninsured">("uninsured");
+  const [insurance, setInsurance] = useState("cari");
   const [done, setDone] = useState(false);
   const [names, setNames] = useState({ doctor: "", dept: "", hospital: "" });
 
@@ -75,12 +76,18 @@ export default function StepSummary() {
         <Line icon="calendar-outline" label={t("wiz.date.title")} value={`${state.date ?? ""} · ${state.time ?? ""}`} />
       </Card>
 
-      <AppText weight="semibold" color={th.fg} style={{ marginTop: 18, marginBottom: 10 }}>
-        {t("wiz.pay.insured")} / {t("wiz.pay.uninsured")}
-      </AppText>
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <Chip label={t("wiz.pay.insured")} selected={pay === "insured"} onPress={() => setPay("insured")} />
-        <Chip label={t("wiz.pay.uninsured")} selected={pay === "uninsured"} onPress={() => setPay("uninsured")} />
+      <View style={{ marginTop: 18 }}>
+        <Dropdown
+          label={t("ins.title")}
+          value={insurance}
+          onChange={setInsurance}
+          options={[
+            { key: "cari", label: t("ins.cari") },
+            { key: "samhi", label: t("ins.samhi") },
+            { key: "private", label: t("ins.private") },
+            { key: "voluntary", label: t("ins.voluntary") },
+          ]}
+        />
       </View>
 
       <BottomButton label={t("wiz.confirm")} onPress={confirm} />

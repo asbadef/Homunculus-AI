@@ -50,7 +50,7 @@ export type Appointment = {
   date: string;
   time: string;
   hospital: string;
-  status: "confirmed" | "pending";
+  status: "confirmed" | "pending" | "completed" | "cancelled";
 };
 
 export type Invoice = { id: string; title: string; amount: number; currency: string; status: "unpaid" | "paid"; date: string };

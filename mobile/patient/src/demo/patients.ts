@@ -28,6 +28,8 @@ const ozan: DemoPatient = {
   appointments: [
     { id: "a1", doctor: "Dr. Elçin Əliyev", specialty: "Kardiologiya", date: "28 Noyabr 2026", time: "14:30", hospital: "Mərkəzi Klinika Bakı", status: "confirmed" },
     { id: "a2", doctor: "Dr. Günel Məmmədova", specialty: "Daxili Xəstəliklər", date: "5 Dekabr 2026", time: "10:00", hospital: "Mərkəzi Klinika Bakı", status: "pending" },
+    { id: "a3", doctor: "Dr. Ramin Həsənov", specialty: "Terapiya", date: "12 Oktyabr 2026", time: "09:30", hospital: "Mərkəzi Klinika Bakı", status: "completed" },
+    { id: "a4", doctor: "Dr. Pərvanə Əsgərova", specialty: "Radiologiya", date: "20 İyul 2026", time: "16:00", hospital: "Mərkəzi Klinika Bakı", status: "cancelled" },
   ],
   results: [
     {
