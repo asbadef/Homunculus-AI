@@ -2269,7 +2269,7 @@
         <div style="min-width:0"><b style="cursor:pointer" data-open="${p.id}">${b.no} · ${H.esc(p.name)}</b> <span class="pill">${H.unit(b.unitId).tr}</span><div class="mute" style="font-size:13px">${H.esc(a.txt)}</div>
           ${a.state === "open" ? `<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${STEPS.map((s, i) => `<span class="pill" style="${i < a.step ? `background:color-mix(in srgb, ${SEVC[a.sev]} 20%, transparent);color:${SEVC[a.sev]}` : ""}">${s}</span>`).join("")}</div>` : ""}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${a.state === "open" ? `<button class="btn p sm" data-ack="${a.id}">Gördüm</button><button class="btn sm" data-snooze="${a.id}">Ertele</button><button class="btn d sm" data-esc="${a.id}">Eskale</button>` : a.state === "seen" ? `<button class="btn sm" data-close="${a.id}">Değerlendirildi · kapat</button>` : `<span class="mute" style="font-size:12px">kapandı</span>`}</div></div>`; };
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_alarms")}</h2><p>Zaman sırasına göre · en eski yanıtsız en üstte · eskalasyon: 3 / 5 / 10 dakika</p></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_alarms")}</h2><p>Zaman sırasına göre · en eski yanıtsız en üstte · eskalasyon: 3 / 5 / 10 dakika</p></div>${H.alerts && H.alerts.galleryModal ? `<div class="r"><button class="btn" data-algaleri>${I("shield") || ""} Uyarı rehberi</button></div>` : ""}</div>
       <div class="seg" data-f style="margin-bottom:12px">${[["open", "Açık · " + all.filter(a => a.state === "open").length], ["crit", "Yalnız kritik"], ["mine", "Benim hastalarım"]].map(([k, l]) => `<button data-v="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="sec">Yanıt bekliyor</div>${list("open").map(row).join("") || `<div class="empty">Yanıt bekleyen alarm yok.</div>`}
       <div class="sec">Değerlendiriliyor</div>${list("seen").map(row).join("") || `<div class="mute">—</div>`}
@@ -2277,6 +2277,7 @@
     root.addEventListener("click", e => {
       const g = (s) => { const el = e.target.closest(`[data-${s}]`); return el && H.data.alarms.find(a => a.id == el.dataset[s]); };
       const fb = e.target.closest("[data-f] button"); if (fb) return H.go("alarms", { f:fb.dataset.v });
+      if (e.target.closest("[data-algaleri]")) { H.alerts.galleryModal(); return; }
       const op = e.target.closest("[data-open]"); if (op) return H.go("patient", { pid:op.dataset.open, tab:"ozet" });
       let a;
       if ((a = g("ack"))) { a.state = "seen"; H.log("alarm görüldü", a.pid); H.toast("Alarm görüldü olarak işaretlendi. Eskalasyon durdu."); return H.renderApp(); }

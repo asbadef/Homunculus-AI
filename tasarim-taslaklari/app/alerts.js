@@ -430,5 +430,16 @@
     }
   }
 
-  H.alerts = { of, chips, bar, open, types:() => H.ALERT_TYPES, type:(k) => TYPE[k] };
+  // Hasta uyarı rehberi (galeri): tüm uyarı tiplerinin renk+ikon+anlam lejantı (salt-okunur, hastasız referans).
+  function gallery() {
+    return H.ALERT_CATS.map(([ck]) => { const ts = H.ALERT_TYPES.filter(t => t.cat === ck);
+      return `<div class="al-h">${esc(catLabel(ck))}<small>${ts.length}</small></div><div class="al-grid">${ts.map(t => `<div class="al-t" style="--c:${t.color};cursor:default" title="${esc(t.name + " · " + SRC_TXT[t.src])}">${ic(t)}<span>${esc(t.name)}<small style="display:block;color:var(--mute);font-weight:500">${esc(SRC_TXT[t.src])}</small></span></div>`).join("")}</div>`; }).join("");
+  }
+  function galleryModal() {
+    H.modal({ title:"Hasta uyarı rehberi", wide:true,
+      body:`<p class="adm-sub" style="margin:0 0 10px">Tüm hasta güvenlik uyarıları: renk + ikon + anlamı. Uyarılar hasta dosyasından ya da kayıttan (form/hekim) atanır; renk ve ikon her ekranda aynıdır. Kaynak: kayıt = otomatik, form = değerlendirme formundan, elle = elle eklenir.</p>${gallery()}`,
+      actions:`<button class="btn p" data-x>Kapat</button>` });
+  }
+
+  H.alerts = { of, chips, bar, open, gallery, galleryModal, types:() => H.ALERT_TYPES, type:(k) => TYPE[k] };
 })();
