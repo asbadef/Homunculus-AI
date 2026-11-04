@@ -382,6 +382,17 @@
         <div class="fr"><label>Başlangıç</label><input type="date" data-f="bas" value="${new Date().toISOString().slice(0, 10)}"></div>
         <div class="fr"><label>İstem miktarı (adet)</label><input type="number" data-f="adet" value="1" min="1"></div>
       </div>
+      <div class="fr" style="grid-column:1/-1"><details><summary class="adm-sub" style="cursor:pointer;font-weight:600">Doz / infüzyon hesaplayıcı (kg · VYA · akış hızı)</summary>
+        <div class="icd-form" style="grid-template-columns:1fr 1fr 1fr;margin-top:8px">
+          <div class="fr"><label>Kilo (kg)</label><input type="number" data-f="kg" value="${p.weight || ""}"></div>
+          <div class="fr"><label>Boy (cm)</label><input type="number" data-f="boy" value="${p.height || ""}"></div>
+          <div class="fr"><label>VYA (m²)</label><input data-f="vya" readonly placeholder="oto (Mosteller)"></div>
+          <div class="fr"><label>mg/kg doz</label><input type="number" data-f="mgkg" placeholder="ör. 10"></div>
+          <div class="fr" style="grid-column:2/-1;align-self:end"><button class="btn sm" type="button" data-dozhesap>Hesapla → Doz'a yaz</button> <span class="adm-sub" data-dozsonuc></span></div>
+          <div class="fr"><label>İnfüzyon hacmi (ml)</label><input type="number" data-f="hacim" placeholder="ör. 100"></div>
+          <div class="fr"><label>Süre (saat)</label><input type="number" data-f="infsure" step="0.25" placeholder="ör. 2"></div>
+          <div class="fr"><label>Akış hızı (ml/saat)</label><input data-f="akis" readonly placeholder="oto"></div>
+        </div></details></div>
       <div class="fr"><label>Özellikli istekler</label><div class="amf-opts"><label class="hc-ac"><input type="checkbox" data-opt="acil"> Acil (STAT)</label><label class="hc-ac"><input type="checkbox" data-opt="prn"> Gerektiğinde (PRN)</label></div></div>
       <div class="fr"><label>İstem notu</label><input data-f="not" placeholder="Not"></div>
       <p class="adm-sub">İlaç istemi eczaneye iletilir; eczacı karşılar. Doz/etkileşim denetimi eczane karşılamada yapılır.</p></div>`;
@@ -398,10 +409,17 @@
           dd.classList.remove("hidden"); };
         dd.onclick = (e) => { const o = e.target.closest("[data-code]"); if (!o) return; const r = pool.find(x => String(x[0]) === o.dataset.code); if (r) { adEl.value = r[1]; adEl.dataset.code = String(r[0]); info.textContent = [r[2], r[3], +r[4] ? (+r[4]).toFixed(2) + " ₼" : ""].filter(Boolean).join(" · "); } dd.classList.add("hidden"); };
         document.addEventListener("click", (e) => { if (!m.querySelector(".amel-cb") || !m.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
+        // Doz/infüzyon hesaplayıcı: VYA (Mosteller), kg×mg/kg → doz, hacim/süre → ml/saat.
+        const gel = (s) => m.querySelector(`[data-f="${s}"]`), num = (s) => +(gel(s) || {}).value || 0;
+        const hesapVya = () => { const kg = num("kg"), boy = num("boy"); gel("vya").value = (kg > 0 && boy > 0) ? (Math.sqrt(kg * boy / 3600)).toFixed(2) : ""; };
+        const hesapAkis = () => { const h = num("hacim"), s = num("infsure"); gel("akis").value = (h > 0 && s > 0) ? (h / s).toFixed(1) : ""; };
+        ["kg", "boy"].forEach(s => gel(s) && (gel(s).oninput = hesapVya)); ["hacim", "infsure"].forEach(s => gel(s) && (gel(s).oninput = hesapAkis)); hesapVya();
+        const dz = m.querySelector("[data-dozhesap]"); if (dz) dz.onclick = () => { const kg = num("kg"), mgkg = num("mgkg"); if (kg <= 0 || mgkg <= 0) { H.toast("Kilo ve mg/kg girin.", "w"); return; }
+          const doz = Math.round(kg * mgkg * 100) / 100; gel("doz").value = doz + " mg"; m.querySelector("[data-dozsonuc]").textContent = kg + " kg × " + mgkg + " mg/kg = " + doz + " mg"; };
         m.querySelector("[data-ok]").onclick = () => {
           const ad = v("ad"); if (!ad) { H.toast("İlaç gerekli.", "w"); return; }
           const opts = [m.querySelector('[data-opt="acil"]').checked ? "Acil (STAT)" : "", m.querySelector('[data-opt="prn"]').checked ? "PRN" : ""].filter(Boolean);
-          const detay = [v("doz"), v("siklik"), v("yol"), v("sure"), v("bas") ? "Başl. " + v("bas") : "", +v("adet") > 1 ? v("adet") + " adet" : "", ...opts, v("not")].filter(Boolean).join(" · ");
+          const detay = [v("doz"), v("siklik"), v("yol"), v("sure"), v("akis") ? "Akış " + v("akis") + " ml/saat" : "", v("bas") ? "Başl. " + v("bas") : "", +v("adet") > 1 ? v("adet") + " adet" : "", ...opts, v("not")].filter(Boolean).join(" · ");
           addOrder(p, { cat:"İlaç", ad, kod:adEl.dataset.code || "", detay });
           H.toast("İlaç istemi eklendi: " + ad); H.closeModal(); rerender();
         };
