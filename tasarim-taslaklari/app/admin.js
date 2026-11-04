@@ -208,6 +208,18 @@
     { proto:"2026-104460", name:"Fidan", surname:"Mirzəyeva", father:"Elxan", sex:"K", dob:"1995-12-01", fin:"5VB7N1C", blood:"0 Rh(-)", allergies:["Penisilin"] },
     { proto:"2026-104502", name:"Ramil", surname:"Əhmədov", father:"Qəzənfər", sex:"E", dob:"1968-04-22", fin:"8XK4M2A", blood:"A Rh(-)", allergies:[] },
   ];
+  /* Birleşik hasta dizini (randevu/kabul otomatik doldurma + FİN/ad ile arama). Zengin kayıtlar HBYS_Q/HBYS_DIR/userPatients; klinik hastalar yalnız ad+cinsiyet. */
+  H.hastaDir = () => { const out = [], seen = new Set();
+    const splitAd = (full) => { const t = (full || "").trim().split(/\s+/); return t.length > 1 ? { ad:t.slice(0, -1).join(" "), soyad:t[t.length - 1] } : { ad:full || "", soyad:"" }; };
+    const telOf = (p) => (p.cep || p.tel || p.telefon || ((p.comp || "").match(/\+?\d[\d \-*]{6,}\d/) || [])[0] || "").trim();
+    const add = (o) => { const tam = (o.soyad ? (o.ad + " " + o.soyad) : o.ad).trim(); if (!tam || seen.has(tam.toLocaleLowerCase("tr") + "|" + (o.fin || ""))) return; seen.add(tam.toLocaleLowerCase("tr") + "|" + (o.fin || "")); out.push({ tam, ad:o.ad || "", soyad:o.soyad || "", fin:o.fin && o.fin !== "—" ? o.fin : "", sex:o.sex || "", dob:o.dob || "", tel:o.tel || "" }); };
+    [...HBYS_Q, ...HBYS_DIR].forEach(p => add({ ad:p.name, soyad:p.surname, fin:p.fin, sex:p.sex, dob:p.dob, tel:telOf(p) }));
+    (H.data.userPatients || []).forEach(p => { const s = p.surname ? { ad:p.name, soyad:p.surname } : splitAd(p.name); add({ ad:s.ad, soyad:s.soyad, fin:p.fin, sex:p.sex, dob:p.dob || p.dogum, tel:telOf(p) }); });
+    (H.data.patients || []).forEach(p => { const s = p.surname ? { ad:p.name, soyad:p.surname } : splitAd(p.name); add({ ad:s.ad, soyad:s.soyad, fin:p.fin, sex:p.sex, dob:p.dob, tel:telOf(p) }); });
+    return out; };
+  // FİN veya tam ad ile tek hasta bul.
+  H.hastaBul = (key) => { const k = (key || "").trim().toLocaleLowerCase("tr"); if (!k) return null; const dir = H.hastaDir();
+    return dir.find(x => x.fin && x.fin.toLocaleLowerCase("tr") === k) || dir.find(x => x.tam.toLocaleLowerCase("tr") === k) || null; };
 
   /* ================= hasta oluşturma ================= */
   let gSeq = 0;
