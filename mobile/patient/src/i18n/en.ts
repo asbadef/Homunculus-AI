@@ -143,6 +143,12 @@ const en: Record<string, string> = {
   "res.explainTitle": "Plain-language explanation",
   "res.explainBody": "This value gives a general idea of your condition. Do not treat the result alone as a diagnosis.",
   "res.consult": "For an exact interpretation, talk to your doctor.",
+  "ai.title": "AI interpretation",
+  "ai.ok": "Got it",
+  "ai.normal": "All values are within the normal range. 👍",
+  "ai.abnormalPrefix": "The following values are out of range:",
+  "ai.noValues": "This record has no numeric values; open the detail to see it.",
+  "ai.disclaimer": "This AI note is for information only. It is not a diagnosis — discuss with your doctor.",
 
   "rx.title": "Prescriptions",
   "rx.empty": "No prescriptions yet",

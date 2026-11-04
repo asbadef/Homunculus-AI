@@ -143,6 +143,12 @@ const tr: Record<string, string> = {
   "res.explainTitle": "Sade dille açıklama",
   "res.explainBody": "Bu değer genel durum hakkında fikir verir. Sonucu tek başına tanı gibi kabul etme.",
   "res.consult": "Kesin yorum için doktoruna danış.",
+  "ai.title": "AI Yorumu",
+  "ai.ok": "Anladım",
+  "ai.normal": "Tüm değerler normal aralıkta. 👍",
+  "ai.abnormalPrefix": "Aşağıdaki değerler normal aralığın dışında:",
+  "ai.noValues": "Bu kayıtta sayısal değer yok; detayı açarak bakabilirsin.",
+  "ai.disclaimer": "Bu yorum yapay zeka ile, bilgilendirme amaçlı hazırlandı. Tanı değildir — doktoruna danış.",
 
   "rx.title": "Reçeteler",
   "rx.empty": "Henüz reçete yok",

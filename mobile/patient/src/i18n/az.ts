@@ -145,6 +145,12 @@ const az: Record<string, string> = {
   "res.explainTitle": "Sadə dildə izah",
   "res.explainBody": "Bu dəyər ümumi vəziyyət haqqında fikir verir. Nəticəni tək başına diaqnoz kimi qəbul etmə.",
   "res.consult": "Dəqiq şərh üçün həkiminlə danış.",
+  "ai.title": "AI Yorumu",
+  "ai.ok": "Anladım",
+  "ai.normal": "Bütün dəyərlər normal aralıqdadır. 👍",
+  "ai.abnormalPrefix": "Aşağıdakı dəyərlər normal aralıqdan kənardır:",
+  "ai.noValues": "Bu kayıtda rəqəmsal dəyər yoxdur; detalları açaraq baxa bilərsən.",
+  "ai.disclaimer": "Bu şərh yapay zəka ilə, məlumat məqsədilə hazırlanıb. Diaqnoz deyil — həkiminlə müzakirə et.",
 
   "rx.title": "Reseptlər",
   "rx.empty": "Hələ resept yoxdur",

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Pressable, ScrollView, Modal, TextInput } from "react-native";
+import { View, Pressable, ScrollView, Modal, TextInput, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { Screen, AppText, Muted } from "../../src/ui/base";
@@ -28,6 +28,14 @@ const TYPE_TINT: Record<ResultType, string> = {
 function hasAbnormal(r: Result): boolean {
   return r.values.some((v) => v.value < v.refLow || v.value > v.refHigh);
 }
+// Demo "AI" interpretation generated client-side from the result's values (no model call).
+function aiComment(r: Result, tr: (k: string) => string): string {
+  if (r.values.length === 0) return r.body ? r.body : tr("ai.noValues");
+  const bad = r.values.filter((v) => v.value < v.refLow || v.value > v.refHigh);
+  if (bad.length === 0) return tr("ai.normal");
+  const lines = bad.map((v) => `• ${v.name}: ${v.value} ${v.unit} (${tr("res.ref")} ${v.refLow}–${v.refHigh})`);
+  return tr("ai.abnormalPrefix") + "\n" + lines.join("\n") + "\n\n" + tr("res.consult");
+}
 type Filter = "all" | ResultType;
 const FILTERS: Filter[] = ["all", "lab", "radiology", "pathology", "epicrisis", "document"];
 
@@ -37,6 +45,7 @@ export default function ResultsTab() {
   const [list, setList] = useState<Result[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [adding, setAdding] = useState(false);
+  const [aiFor, setAiFor] = useState<Result | null>(null);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
 
@@ -96,8 +105,8 @@ export default function ResultsTab() {
           const tint = TYPE_TINT[r.type];
           const abnormal = hasAbnormal(r);
           return (
-            <Pressable key={r.id} onPress={() => router.push(`/netice/${r.id}`)}>
-              <Card style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Card key={r.id} style={{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
+              <Pressable onPress={() => router.push(`/netice/${r.id}`)} style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14 }}>
                 <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: tint + "1f", alignItems: "center", justifyContent: "center" }}>
                   <Ionicons name={TYPE_ICON[r.type]} size={22} color={tint} />
                 </View>
@@ -114,11 +123,38 @@ export default function ResultsTab() {
                   ) : null}
                 </View>
                 <StatusPill kind={r.status === "ready" ? "ok" : "wait"} label={r.status === "ready" ? tr("status.completed") : tr("status.pending")} />
-              </Card>
-            </Pressable>
+              </Pressable>
+              {r.status === "ready" ? (
+                <Pressable onPress={() => setAiFor(r)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border, backgroundColor: t.brandSoft }}>
+                  <Ionicons name="sparkles" size={15} color={t.brand} />
+                  <AppText weight="bold" color={t.brand} style={{ fontSize: 12.5 }}>{tr("ai.title")}</AppText>
+                </Pressable>
+              ) : null}
+            </Card>
           );
         })
       )}
+
+      <Modal visible={!!aiFor} transparent animationType="fade" onRequestClose={() => setAiFor(null)}>
+        <Pressable onPress={() => setAiFor(null)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "center", padding: 24 }}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: t.surface, borderRadius: 20, padding: 20 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 12 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="sparkles" size={19} color={t.brand} />
+              </View>
+              <AppText weight="bold" style={{ fontSize: 16, flex: 1, minWidth: 0 }} numberOfLines={1}>{tr("ai.title")}</AppText>
+            </View>
+            {aiFor ? <AppText style={{ fontSize: 14, lineHeight: 21 }}>{aiComment(aiFor, tr)}</AppText> : null}
+            <View style={{ flexDirection: "row", gap: 7, marginTop: 14, alignItems: "flex-start" }}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={t.muted} style={{ marginTop: 2 }} />
+              <Muted style={{ flex: 1, minWidth: 0, fontSize: 11.5, lineHeight: 17 }}>{tr("ai.disclaimer")}</Muted>
+            </View>
+            <Pressable onPress={() => setAiFor(null)} style={{ marginTop: 14, backgroundColor: t.brand, borderRadius: 12, paddingVertical: 12, alignItems: "center" }}>
+              <AppText weight="bold" color="#ffffff">{tr("ai.ok")}</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
         <Pressable onPress={() => setAdding(false)} style={{ flex: 1, backgroundColor: "#0008", justifyContent: "center", padding: 24 }}>
