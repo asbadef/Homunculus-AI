@@ -745,6 +745,23 @@
    * ================================================================================================================= */
   const pc = (s, max = 10) => s == null ? "var(--body-sel)" : max !== 10 ? (s > 3 ? "var(--crit)" : s > 0 ? "var(--mid)" : "var(--ok)") : s === 0 ? "var(--ok)" : s <= 3 ? "var(--low)" : s <= 6 ? "var(--mid)" : "var(--crit)";
   const recsOf = (key, pid) => NS.records.filter(r => r.key === key && r.pid === pid);
+  /* Konsolide gözlem çizelgesi (flowsheet): hastanın tüm gözlemleri (vital + hemşirelik formları + ilaç uygulama)
+   * tek zaman-sıralı tabloda, salt-okunur. Kaynak: NS.records + H.data.tasks (med). */
+  const FS_AD = { vitals:"Vital bulgular", pain:"Ağrı", io:"Aldığı–çıkardığı", glucose:"Kan şekeri", braden:"Bası yarası riski", wound:"Yara takibi", gcs:"Bilinç (GKS)", fall:"Düşme riski", activity:"Aktivite", rass:"Sedasyon (RASS)" };
+  H.flowsheet = (p) => {
+    const recs = (((H.data.nursing || {}).records) || []).filter(r => r.pid === p.id);
+    const meds = (H.data.tasks || []).filter(t => t.pid === p.id && t.kind === "med" && (t.state === "done" || t.state === "miss"));
+    const items = [];
+    recs.forEach(r => items.push({ at:((r.date && !/^\d{1,2}:/.test(r.date)) ? r.date + " " : "") + (r.at || ""), tur:FS_AD[r.key] || r.key, ozet:r.summary || "—", by:r.user || "—", c:"info" }));
+    meds.forEach(t => items.push({ at:(typeof hhmm === "function" ? hhmm(t.t) : t.t) + "", tur:"İlaç uygulama", ozet:(t.label || "") + (t.state === "miss" ? " · uygulanmadı" + (t.reason ? " (" + t.reason + ")" : "") : " · uygulandı"), by:t.by || "—", c:t.state === "miss" ? "crit" : "ok" }));
+    items.sort((a, z) => String(z.at).localeCompare(String(a.at)));
+    if (!items.length) return `<div class="empty">Bu hastada henüz gözlem kaydı yok. Hemşire vital/form/ilaç kaydı girince burada toplanır.</div>`;
+    return `<div class="tw"><table class="t"><thead><tr><th style="width:150px">Zaman</th><th style="width:150px">Gözlem</th><th>Değer / özet</th><th style="width:140px">Kaydeden</th></tr></thead><tbody>${items.map(x => `<tr><td class="mono adm-sub">${H.esc(x.at)}</td><td><span class="tag ${x.c}">${H.esc(x.tur)}</span></td><td>${H.esc(x.ozet)}</td><td class="adm-sub">${H.esc(x.by)}</td></tr>`).join("")}</tbody></table></div>`;
+  };
+  H.flowsheetModal = (p) => H.modal({ title:"Gözlem çizelgesi · " + H.esc(H.showNames() ? p.name : (H.bed(p.bed) ? H.bed(p.bed).no : "")), wide:true,
+    body:`<p class="adm-sub" style="margin:0 0 10px">Hastanın tüm gözlemleri (vital, hemşirelik formları, ilaç uygulama) zaman sırasıyla. Salt-okunur; giriş ilgili formdan yapılır.</p>${H.flowsheet(p)}`,
+    actions:`<button class="btn" data-fsyaz>${H.icon("print")} Yazdır</button><span class="spacer"></span><button class="btn p" data-x>Kapat</button>`,
+    onMount(m) { const y = m.querySelector("[data-fsyaz]"); if (y) y.onclick = () => { const tmp = document.createElement("div"); tmp.innerHTML = H.flowsheet(p); const rows = [...tmp.querySelectorAll("tbody tr")].map(tr => [...tr.children].map(td => td.textContent.trim())); H.printTable ? H.printTable("Gözlem çizelgesi · " + (H.showNames() ? p.name : ""), ["Zaman", "Gözlem", "Değer / özet", "Kaydeden"], rows) : H.toast("Yazdırma yok", "w"); }; } });
   const regionReq = (d) => (d.regions && d.regions.length) || d.diffuse;
 
   /* ---------------------------------------------- AĞRI ---------------------------------------------- */
