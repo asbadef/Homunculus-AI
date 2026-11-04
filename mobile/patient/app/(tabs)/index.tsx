@@ -13,6 +13,7 @@ import { visibleFeatures, Feature, FEATURES as FEATURE_LIST } from "../../src/co
 import { Appointment, Banner, Invoice, NewsItem, Story } from "../../src/demo/types";
 import { askNotificationPermissionOnce } from "../../src/notifications/ask";
 import { useSession } from "../../src/session/SessionProvider";
+import { MenuDrawer } from "../../src/components/MenuDrawer";
 
 export default function HomeScreen() {
   const { t } = useTheme();
@@ -24,6 +25,7 @@ export default function HomeScreen() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [next, setNext] = useState<Appointment | null>(null);
   const [unpaid, setUnpaid] = useState<Invoice | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     askNotificationPermissionOnce();
@@ -38,7 +40,10 @@ export default function HomeScreen() {
 
   return (
     <Screen scroll>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 6, paddingBottom: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 6, paddingBottom: 10 }}>
+        <Pressable onPress={() => setMenuOpen(true)} hitSlop={10}>
+          <Ionicons name="menu" size={26} color={t.fg} />
+        </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText weight="extrabold" style={{ fontSize: 19 }} numberOfLines={1}>
             {tr("greeting")}, {firstName} 👋
@@ -46,6 +51,7 @@ export default function HomeScreen() {
         </View>
         <LangThemeControls />
       </View>
+      <MenuDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <Stories data={stories} />
       <View style={{ height: 12 }} />
