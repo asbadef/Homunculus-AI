@@ -9,8 +9,8 @@ import { useI18n } from "../i18n";
 import { layout } from "../theme/tokens";
 
 const STORAGE = "hm-health";
-type Metrics = { height: string; weight: string; bp: string; pulse: string; glucose: string; steps: string; sleep: string; water: string };
-const EMPTY: Metrics = { height: "", weight: "", bp: "", pulse: "", glucose: "", steps: "", sleep: "", water: "" };
+type Metrics = { height: string; weight: string; bp: string; pulse: string; glucose: string; steps: string; sleep: string; water: string; oxygen: string; temp: string };
+const EMPTY: Metrics = { height: "", weight: "", bp: "", pulse: "", glucose: "", steps: "", sleep: "", water: "", oxygen: "", temp: "" };
 
 type Item = { key: keyof Metrics; labelKey: string; unit: string; icon: string; keyboard?: "default" | "number-pad" };
 const ITEMS: Item[] = [
@@ -22,6 +22,8 @@ const ITEMS: Item[] = [
   { key: "steps", labelKey: "m.steps", unit: "", icon: "walk-outline", keyboard: "number-pad" },
   { key: "sleep", labelKey: "m.sleep", unit: "saat", icon: "bed-outline", keyboard: "number-pad" },
   { key: "water", labelKey: "m.water", unit: "stəkan", icon: "cafe-outline", keyboard: "number-pad" },
+  { key: "oxygen", labelKey: "m.oxygen", unit: "%", icon: "fitness-outline", keyboard: "number-pad" },
+  { key: "temp", labelKey: "m.temp", unit: "°C", icon: "thermometer-outline", keyboard: "number-pad" },
 ];
 
 function bmi(m: Metrics): string {
