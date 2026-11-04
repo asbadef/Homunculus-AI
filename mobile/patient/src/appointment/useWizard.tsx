@@ -11,6 +11,7 @@ export type WizardState = {
   doctorId: string | null;
   date: string | null;
   time: string | null;
+  insurance: string;
 };
 
 export const WIZARD_STEPS = ["tip", "hastane", "bolum", "doktor", "tarix", "ozet"] as const;
@@ -24,6 +25,7 @@ export const initialWizard: WizardState = {
   doctorId: null,
   date: null,
   time: null,
+  insurance: "cari",
 };
 
 // Pure per-step guard. State lives in context (below), independent of language,

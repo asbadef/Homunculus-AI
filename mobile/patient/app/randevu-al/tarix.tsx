@@ -3,6 +3,7 @@ import { View, ScrollView } from "react-native";
 import { router } from "expo-router";
 import { Screen, AppText } from "../../src/ui/base";
 import { WizardHeader, Chip, BottomButton } from "../../src/appointment/parts";
+import { Dropdown } from "../../src/ui/form";
 import { useWizard, canContinue } from "../../src/appointment/useWizard";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
@@ -39,6 +40,20 @@ export default function StepDate() {
         {times.map((tm) => (
           <Chip key={tm} label={tm} selected={state.time === tm} onPress={() => set({ time: tm })} />
         ))}
+      </View>
+
+      <View style={{ marginTop: 20 }}>
+        <Dropdown
+          label={t("ins.title")}
+          value={state.insurance}
+          onChange={(v) => set({ insurance: v })}
+          options={[
+            { key: "cari", label: t("ins.cari") },
+            { key: "samhi", label: t("ins.samhi") },
+            { key: "private", label: t("ins.private") },
+            { key: "voluntary", label: t("ins.voluntary") },
+          ]}
+        />
       </View>
       <BottomButton label={t("wiz.continue")} disabled={!canContinue("tarix", state)} onPress={() => router.push("/randevu-al/ozet")} />
     </Screen>
