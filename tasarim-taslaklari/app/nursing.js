@@ -1364,6 +1364,7 @@
       ${S.res === "Uygulanmadı" ? `<div class="fld col"><label>Neden <span class="req">●</span></label><div class="opts">${["Hasta reddetti", "Hasta serviste değil", "Aç / NPO", "İlaç eczaneden gelmedi", "Hekim durdurdu", "Damar yolu yok", "Diğer"].map(x => `<i data-m-why="${x}" class="${S.why === x ? "on" : ""}">${x}</i>`).join("")}</div></div>
       <label class="nfChk"><input type="checkbox" data-m-iade${S.iade ? " checked" : ""}>Kullanılmayan ilacı eczaneye iade gönder</label>` : ""}
       <div class="fld col"><label>Not</label><input data-m-note value="${E(S.note)}" placeholder="İsteğe bağlı"></div>
+      ${S.res === "Uygulandı" ? `<div class="note" style="margin:8px 0;border-left:3px solid #10b981">İmzalayan: <b style="font-family:Figtree">${E(uname())}</b> · ${H.now()}. Kaydet'e basınca uygulama bu adla imzalanır.</div>` : ""}
       <div class="nfNote">Sistem doz ya da ilaç önermez; yalnız order'daki uygulamayı kaydeder.</div></div>`;
     const m = H.modal({ title:"İlaç uygulama", body:body(), actions:`<button class="btn g" data-mx="c">İptal</button>${t.prn ? "" : `<button class="btn" data-mx="later">Ertele · 30 dk</button>`}<button class="btn p" data-mx="s">${I("ok")}Kaydet</button>`,
       onMount(el) { const re = () => { el.querySelector(".mb").innerHTML = body(); };
@@ -1389,6 +1390,28 @@
         actions:`<button class="btn" data-x>Kapat</button>` }); }
     return medModal(t, opt);
   };
+  // Toplu ilaç uygulama: bekleyen (şimdi+geciken) ilaç görevlerini tek barkod + tek imzayla uygular.
+  function medBulk(tasks) {
+    const S = { scan:false, sel:new Set(tasks.map(t => H.data.tasks.indexOf(t))) };
+    const row = (t) => { const p = H.pt(t.pid), i = H.data.tasks.indexOf(t);
+      return `<label class="nfChk" style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)"><input type="checkbox" data-bl-i="${i}"${S.sel.has(i) ? " checked" : ""}>
+        <span class="tc ${t.state}" style="flex:0 0 auto">${tcIcon(t.state)}</span><div style="flex:1"><b style="font-family:Figtree">${E(t.label)}</b><small style="display:block;color:var(--mute)">${E(H.bed(p.bed).no)} · ${E(p.name)} · ${hhmm(t.t)}</small></div><span class="${t.state === "late" ? "tag c" : "tag"}">${stTxt[t.state]}</span></label>`; };
+    const body = () => `<div class="nf"><div class="nfNote">Seçili ilaçlar tek seferde, aynı hemşire adıyla imzalanıp uygulanır. Reddedilen/ertelenen için tek tek pencereyi kullanın.</div>
+      <div style="max-height:46vh;overflow:auto;margin:8px 0">${tasks.map(row).join("")}</div>
+      <label class="nfChk"><input type="checkbox" data-bl-scan${S.scan ? " checked" : ""}>Her hastanın bilekliği ve ilaç barkodu okutuldu (eşleşti)</label>
+      <div class="note" style="margin:8px 0;border-left:3px solid #10b981">İmzalayan: <b style="font-family:Figtree">${E(uname())}</b> · <b>${S.sel.size}</b> ilaç seçili.</div></div>`;
+    return H.modal({ title:"Toplu ilaç uygulama", body:body(),
+      actions:`<button class="btn g" data-blx="c">İptal</button><button class="btn p" data-blx="s">${I("ok")}İmzala ve uygula</button>`,
+      onMount(el) {
+        el.addEventListener("change", (e) => { const c = e.target.closest("[data-bl-i]"); if (c) { const i = +c.dataset.blI; c.checked ? S.sel.add(i) : S.sel.delete(i); el.querySelector(".mb").innerHTML = body(); }
+          if (e.target.matches("[data-bl-scan]")) S.scan = e.target.checked; });
+        el.addEventListener("click", (e) => { const b = e.target.closest("[data-blx]"); if (!b) return; if (b.dataset.blx === "c") return H.closeModal();
+          if (!S.sel.size) return H.toast("En az bir ilaç seçin.", "e"); if (!S.scan) return H.toast("Önce bileklik ve ilaç barkodlarını okutun.", "e");
+          const by = uname(), at = H.now(); let n = 0;
+          S.sel.forEach(i => { const t = H.data.tasks[i]; if (!t) return; t.state = "done"; t.given = true; t.by = by; t.doneAt = at; n++;
+            const p = H.pt(t.pid); H.log("İlaç uygulandı (toplu)", `${H.bed(p.bed).no} · ${t.label} · ${hhmm(t.t)}`); });
+          H.saveData && H.saveData(); H.closeModal(); H.toast(`${n} ilaç ${by} adıyla uygulandı`, ""); H.renderApp(); }); } });
+  }
   function careModal(t) {
     const p = H.pt(t.pid), pos = /Pozisyon/i.test(t.label), lab = t.kind === "lab", S = { pos:null, scan:false, note:"" };
     const body = () => `<div class="nf"><div class="kv"><span>Hasta</span><b style="font-family:Figtree">${E(H.bed(p.bed).no)} · ${E(p.name)}</b></div><div class="kv"><span>İş</span><b style="font-family:Figtree">${E(t.label)}</b></div><div class="kv"><span>Planlanan saat</span><b>${hhmm(t.t)}</b></div>
@@ -1458,7 +1481,8 @@
       <div class="tkBar"><div class="seg" data-tk-kind>${[["all", "Tümü"], ["form", "Form"], ["med", "İlaç"], ["care", "Bakım"], ["lab", "Lab"]].map(([k, l]) => `<button type="button" data-v="${k}" class="${TS.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>
         <label class="nfChk" style="padding:0"><input type="checkbox" data-tk-lo${TS.late ? " checked" : ""}>Yalnız gecikenler</label>
         ${mode === "izgara" ? `<button type="button" class="btn sm g" data-tk-now>${I("clock")}Şimdiye git</button>` : ""}
-        ${mode === "izgara" ? `<button type="button" class="btn sm g" data-tk-colall>${TS.collapsed.size ? "Tümünü aç" : "Tümünü kapat"}</button>` : ""}</div>
+        ${mode === "izgara" ? `<button type="button" class="btn sm g" data-tk-colall>${TS.collapsed.size ? "Tümünü aç" : "Tümünü kapat"}</button>` : ""}
+        ${(() => { const md = all.filter(t => t.kind === "med" && (t.state === "due" || t.state === "late")); return md.length ? `<button type="button" class="btn sm p" data-tk-bulk>${I("ok")}Toplu ilaç uygula · ${md.length}</button>` : ""; })()}</div>
       ${bodyHtml}`;
     root.addEventListener("click", (e) => {
       const i = e.target.closest("[data-tk-i]"); if (i) return taskAct(H.data.tasks[+i.dataset.tkI]);
@@ -1467,6 +1491,7 @@
       const kd = e.target.closest("[data-tk-kind] button"); if (kd) { TS.kind = kd.dataset.v; return H.renderApp(); }
       if (e.target.closest("[data-tk-late]")) { TS.late = !TS.late; return H.renderApp(); }
       if (e.target.closest("[data-tk-colall]")) { if (TS.collapsed.size) TS.collapsed.clear(); else pts.forEach(p => TS.collapsed.add(p.id)); return H.renderApp(); }
+      if (e.target.closest("[data-tk-bulk]")) return medBulk(all.filter(t => t.kind === "med" && (t.state === "due" || t.state === "late")).sort((a, b) => PRIO[a.state] - PRIO[b.state] || a.t - b.t));
       if (e.target.closest("[data-tk-all]")) return H.go("tasks", {});
       if (e.target.closest("[data-tk-now]")) { const w2 = root.querySelector(".tkWrap"), cw2 = tkColW(w2); return w2.scrollTo({ left:Math.max(0, (13.7 - 3) * cw2), behavior:"smooth" }); }
     });

@@ -980,7 +980,7 @@
     if (!(banko in donemler)) donemler[banko] = (banko === bankolar[0]) ? { no:H.data.vezneDonemSeq, acik:true } : { no:null, acik:false };
     const cur = donemler[banko], donemNo = cur.no, donemAcik = cur.acik, donemYetki = H.can("vezne_donem");
     const acikBankolar = Object.keys(donemler).filter(b => donemler[b].acik);
-    const TABS = [["giris", "Giriş"], ["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
+    const TABS = [["giris", "Giriş"], ["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["kasa", "Kasa"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
     const bekKap = (H.data.vezneKapanislar || []).find(x => x.banko === banko && x.onay === "bekliyor");
     const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>${donemAcik ? `Dönem <b>#${donemNo}</b> · <b>Açık</b>` : bekKap ? `<b>Kapalı · Mali İşler onayı bekliyor (#${bekKap.no})</b>` : `<b>Kapalı · işlem yapılamaz</b>`} · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa — her bankonun kendi dönemi vardır">${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}${donemler[b] && donemler[b].acik ? " ● açık" : ""}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönemi kapat" : "Bu bankoda dönem aç"}</button>` : ""}${!donemAcik && donemYetki ? `<button class="btn sm" data-vdevir>${I("key") || ""} Devir alarak aç</button>` : ""}<button class="btn sm" data-vozet>Dönem özeti</button>${acikBankolar.length > 1 ? `<span class="adm-sub" style="margin-left:4px">Açık bankolar: ${acikBankolar.map(H.esc).join(", ")}</span>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
@@ -993,16 +993,18 @@
           ${all.length ? all.map(x => `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td class="mono adm-sub">${H.esc(x.protokol)}</td><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.kurum)}</td><td class="n">${x.katilim} ₼</td><td><span class="tag ${x.durum === "Ödendi" ? "ok" : "w"}">${x.durum === "Ödendi" ? "Tahsil edildi" : "Bekliyor"}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}
           <tr><td colspan="3"><b>Toplam katılım payı</b></td><td class="n"><b>${top} ₼</b></td><td></td></tr></tbody></table></div>
           <p class="adm-sub" style="margin-top:8px">Protokol başına hasta katılım payları (tahsil edilen / bekleyen).</p>`; }
-      const f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
-      return subSeg + `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      const f = params.durum || "hepsi", odnz = all.filter(x => x.odenemez), list = f === "odenemez" ? odnz : f === "hepsi" ? all : all.filter(x => x.durum === f);
+      return subSeg + `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"], ["odenemez", "Ödemesi alınamayan" + (odnz.length ? " · " + odnz.length : "")]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        ${f === "odenemez" ? `<p class="adm-sub" style="margin:-4px 0 8px">Ödemesi alınamayan faturalar — dönem kapanışında medikal muhasebeye (mali işler) devredilir. Satırdaki "İşareti kaldır" ile geri alınır.</p>` : ""}
         ${H.durumLejant([["Tahsil edildi", "ok"], ["Bekliyor", "w"], ["Hukuksal takip", "crit"]])}
         <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Protokol</th><th>Kurum / sigorta</th><th style="width:80px">Toplam</th><th style="width:100px">Katılım payı</th><th style="width:160px">Durum / ödeme</th><th style="width:160px"></th></tr></thead><tbody>
         ${list.length ? list.map(x => { const hukBtn = `<button class="btn sm" data-huk="${x.id}">${x.hukuksal ? "Hukuksal ✓" : "Hukuksal"}</button>`;
           const tkTxt = x.taksitPlan ? (() => { let c = 0, p = x.odenen || 0, d = 0; x.taksitPlan.forEach(tk => { c += tk.tutar; if (p >= c - 0.001) d++; }); return ` <span class="tag info">${d}/${x.taksitPlan.length} taksit</span>`; })() : "";
-          const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${tkTxt}${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}`;
+          const durHtml = `<span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span>${tkTxt}${x.odemeTipi ? ` <span class="adm-sub">${H.esc(x.odemeTipi)}</span>` : ""}${x.hukuksal ? ` <span class="tag w">Hukuksal takip</span>` : ""}${x.odenemez ? ` <span class="tag crit">Alınamadı${x.odenemezNeden ? " · " + H.esc(x.odenemezNeden) : ""}</span>` : ""}`;
           const dokBtn = `<button class="btn sm" data-fdetay="${x.id}">Döküm</button>`;
           const ipBtn = (x.durum !== "İptal" && x.durum !== "Ödendi" && H.canAct("fatura_iptal")) ? ` <button class="btn g sm" data-fiptal="${x.id}">İptal</button>` : "";
-          const act = (x.durum === "İptal" ? `<span class="adm-sub">İptal: ${H.esc(x.iptalNeden || "")}</span>` : (x.durum === "Bekliyor" || x.durum === "Taksitli") ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` :`<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`) + " " + dokBtn + ipBtn;
+          const odnzBtn = x.odenemez ? ` <button class="btn sm" data-odnzgeri="${x.id}">İşareti kaldır</button>` : (x.durum === "Bekliyor" || x.durum === "Taksitli") ? ` <button class="btn g sm" data-odnz="${x.id}">Alınamadı</button>` : "";
+          const act = (x.durum === "İptal" ? `<span class="adm-sub">İptal: ${H.esc(x.iptalNeden || "")}</span>` : (x.durum === "Bekliyor" || x.durum === "Taksitli") ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button> ${hukBtn}` :`<span class="adm-sub">${x.banko ? H.esc(x.banko) : "—"}</span>${x.hukuksal ? " " + hukBtn : ""}`) + " " + dokBtn + ipBtn + odnzBtn;
           return `<tr data-vzhasta="${H.esc(x.hasta)}" style="cursor:pointer" title="Hasta dosyasını aç"><td><b>${H.esc(vzName(x.hasta))}</b></td><td class="adm-sub">${H.esc(x.protokol)}</td><td>${H.esc(x.kurum)}</td><td class="n">${x.toplam} ₼</td><td class="n">${x.katilim} ₼</td><td>${durHtml}</td><td>${act}</td></tr>`; }).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Fatura yok.</td></tr>`}</tbody></table></div>`; };
     const panFiyat = () => { const rows = H.data.vFiyat = H.data.vFiyat || [], kurum = params.kurum || "Özel ödeme", samhi = kurum.includes("SAMHI");
       const kamps = (H.data.kampanyalar || []).filter(k => k.aktif), kamp = kamps.find(k => k.id === params.kamp);
@@ -1041,6 +1043,15 @@
         <div class="tw"><table class="t"><thead><tr><th>Tip</th><th>Tarih</th><th>Talep eden</th><th style="width:90px">Tutar</th><th>Departman</th><th>Açıklama</th><th>Protokol</th><th style="width:120px">Durum</th><th style="width:230px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tip)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(vzName(x.eden))}</b></td><td class="n">${x.tutar} ₼</td><td class="adm-sub">${H.esc(x.dep)}</td><td class="adm-sub">${H.esc(x.aciklama)}</td><td class="mono adm-sub">${H.esc(x.proto)}<div class="adm-sub" style="font-size:11px">${H.esc(zincStr(x.zincir))}</div></td><td><span class="tag ${/Onaylandı|tamamlandı/.test(x.durum) ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td><button class="btn sm" data-iazinc="${x.id}">Alıcılar</button> ${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-iaap="${x.id}">Onayla</button> <button class="btn g sm" data-iared="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri çok kademeli onaylanır (seviye 1/2/3): her onay bir sonraki alıcıya geçer, tüm seviyeler onaylayınca iade tamamlanır. "Alıcılar" ile zinciri görebilirsiniz.</p>`; };
+    // Kasa el hareketleri: manuel giriş/çıkış + kasalar arası transfer. Transfer iki satır yazar (çıkış+giriş) → bakiye kolay.
+    const kasaHar = () => H.data.kasaHareket = H.data.kasaHareket || [];
+    const kasaBakiye = (b) => kasaHar().filter(h => h.banko === b).reduce((a, h) => a + (/Giriş/.test(h.tip) ? h.tutar : -h.tutar), 0);
+    const panKasa = () => { const list = kasaHar().filter(h => h.banko === banko).slice().reverse();
+      return `<div class="r" style="gap:8px;align-items:center;margin-bottom:10px"><button class="btn p sm" data-kasayeni${donemAcik ? "" : " disabled"}>${I("plus") || ""} El hareketi (giriş/çıkış)</button><button class="btn sm" data-kasatransfer${donemAcik ? "" : " disabled"}>${I("refresh") || ""} Kasalar arası transfer</button><span class="spacer"></span><span class="adm-sub">Bu banko kasa bakiyesi: <b>${kasaBakiye(banko)} ₼</b></span></div>
+        ${donemAcik ? "" : `<div class="ist-lock closed" style="margin-bottom:10px">${I("lock") || ""}<span>Dönem kapalı — hareket girilemez.</span></div>`}
+        <div class="tw"><table class="t"><thead><tr><th style="width:140px">Tarih</th><th style="width:130px">Tür</th><th style="width:110px">Tutar</th><th>Açıklama</th><th>Giren</th></tr></thead><tbody>
+        ${list.length ? list.map(h => `<tr><td class="adm-sub">${H.esc(h.tarih)}</td><td><span class="tag ${/Giriş/.test(h.tip) ? "ok" : "w"}">${H.esc(h.tip)}</span>${h.hedef ? ` <span class="adm-sub">→ ${H.esc(h.hedef)}</span>` : ""}${h.kaynak ? ` <span class="adm-sub">← ${H.esc(h.kaynak)}</span>` : ""}</td><td class="n">${/Giriş/.test(h.tip) ? "+" : "−"}${h.tutar} ₼</td><td>${H.esc(h.aciklama || "—")}</td><td class="adm-sub">${H.esc(h.by || "—")}</td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Henüz el hareketi yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">El hareketleri dönem içinde girilir ve dönem özetine yansır. Kasalar arası transfer iki satır yazar: kaynakta çıkış, hedefte giriş. Yetkili onayı gerçek kurguda eklenir.</p>`; };
     const panGiris = () => { const hep = (H.data.patients || []).slice().reverse();
       const sf = (k, ph) => `<div class="fr"><label>${H.esc(ph)}</label><input data-vs="${k}" placeholder=""></div>`;
       const row = (pp) => { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId), att = H.userBy(pp.attending);
@@ -1124,7 +1135,7 @@
           <div class="seg" style="margin-bottom:10px;flex-wrap:wrap">${KFT.map(([k, l]) => `<button data-kftab="${k}" class="${kft === k ? "on" : ""}">${l}</button>`).join("")}</div>
           ${pane}</div></div>
         <p class="adm-sub" style="margin-top:10px">Kurumsal faturalama: anlaşmalı kurumun dönem faturası; soldan fatura seçilir, sağda kalemler/işlemler/protokoller/vezne/evrak/icmal/notlar/klinik dökümanlar görülür. İcmal kuruma gönderilecek özettir. <b>Aynı kayıt Medikal Muhasebe'den de açılır</b> (asıl ev orası; bu, veznedeki kısayol).</p>`; };
-    const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, kurumsal:panKurumsal, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
+    const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, kasa:panKasa, kurumsal:panKurumsal, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     // Sol panel: işleve göre 5 mantıklı grup + ikon (referanstan farklı, kullanıcıya daha kolay). [etiket, tab, ikon]
     const RAIL = [
       ["Arama & kabul", "search", [["Hasta arama", "", "user"], ["Randevu arama", "", "clock"], ["Son hastalar", "", "clock"], ["Gizli / VIP hasta listesi", "", "shield"], ["UHM hasta arama", "", "search"]]],
@@ -1174,6 +1185,34 @@
           ["Yeni doğan kaydı aç", () => H.toast("Yeni doğan: anneye bağlı bebek protokolü açılır (yakında).", "w")],
           ["Protokol bilgileri", () => H.go("hasta360", { pid:pp.id, atab:"360", stab:"gelisler" })],
         ]); };
+    }
+    if (tab === "kasa") {
+      const now = () => new Date().toLocaleDateString("az") + " " + new Date().toTimeString().slice(0, 5);
+      const by = () => (H.state.user || {}).name || "—";
+      const yeni = root.querySelector("[data-kasayeni]"); if (yeni) yeni.onclick = () => {
+        let tip = "Giriş"; H.modal({ title:"Kasa el hareketi · " + banko,
+          body:`<div class="fld col"><label>Tür</label><div class="opts">${["Giriş", "Çıkış"].map(x => `<i data-kt="${x}" class="${x === "Giriş" ? "on" : ""}">${x}</i>`).join("")}</div></div>
+            <div class="fld col"><label>Tutar (₼) <span class="req">●</span></label><input data-ktutar type="number" min="0" placeholder="0"></div>
+            <div class="fld col"><label>Açıklama</label><input data-kacik placeholder="ör. Kasa açılış bakiyesi, fazla para iadesi"></div>`,
+          actions:`<button class="btn g" data-x>İptal</button><button class="btn p" data-ksave>${I("ok") || ""} Kaydet</button>`,
+          onMount(m) { m.addEventListener("click", (e) => { const t = e.target.closest("[data-kt]"); if (t) { tip = t.dataset.kt; m.querySelectorAll("[data-kt]").forEach(i => i.classList.toggle("on", i.dataset.kt === tip)); return; }
+            if (e.target.closest("[data-ksave]")) { const tut = +(m.querySelector("[data-ktutar]").value || 0); if (!(tut > 0)) return H.toast("Tutar girin.", "e");
+              kasaHar().unshift({ id:"kh" + Date.now(), banko, tip, tutar:tut, aciklama:(m.querySelector("[data-kacik]").value || "").trim(), tarih:now(), by:by(), donem:donemNo });
+              H.saveData && H.saveData(); H.log("Kasa el hareketi", `${banko} · ${tip} · ${tut} ₼`); H.closeModal(); H.toast(`${tip}: ${tut} ₼ kaydedildi`); H.go("vezne", { tab:"kasa" }); } }); } }); };
+      const trans = root.querySelector("[data-kasatransfer]"); if (trans) trans.onclick = () => { const hedefler = bankolar.filter(b => b !== banko);
+        if (!hedefler.length) return H.toast("Transfer için başka kasa yok.", "w");
+        H.modal({ title:"Kasalar arası transfer · " + banko,
+          body:`<div class="fld col"><label>Hedef kasa <span class="req">●</span></label><select data-khedef>${hedefler.map(b => `<option>${H.esc(b)}</option>`).join("")}</select></div>
+            <div class="fld col"><label>Tutar (₼) <span class="req">●</span></label><input data-ktutar type="number" min="0" placeholder="0"></div>
+            <div class="fld col"><label>Açıklama</label><input data-kacik placeholder="ör. Gün sonu merkez kasaya aktarım"></div>
+            <div class="nfNote">Kaynak kasada çıkış, hedef kasada giriş olarak iki satır yazılır.</div>`,
+          actions:`<button class="btn g" data-x>İptal</button><button class="btn p" data-ksave>${I("refresh") || ""} Transfer et</button>`,
+          onMount(m) { m.addEventListener("click", (e) => { if (!e.target.closest("[data-ksave]")) return;
+            const hedef = m.querySelector("[data-khedef]").value, tut = +(m.querySelector("[data-ktutar]").value || 0), ac = (m.querySelector("[data-kacik]").value || "").trim(), t = now(), u = by();
+            if (!(tut > 0)) return H.toast("Tutar girin.", "e");
+            kasaHar().unshift({ id:"kh" + Date.now(), banko, tip:"Transfer çıkış", hedef, tutar:tut, aciklama:ac, tarih:t, by:u, donem:donemNo });
+            kasaHar().unshift({ id:"kh" + (Date.now() + 1), banko:hedef, tip:"Transfer giriş", kaynak:banko, tutar:tut, aciklama:ac, tarih:t, by:u });
+            H.saveData && H.saveData(); H.log("Kasalar arası transfer", `${banko} → ${hedef} · ${tut} ₼`); H.closeModal(); H.toast(`${tut} ₼ → ${hedef} aktarıldı`); H.go("vezne", { tab:"kasa" }); }); } }); };
     }
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
@@ -1411,6 +1450,8 @@
             (H.data.iptaller = H.data.iptaller || []).unshift({ no:x.no, hasta:x.hasta, tutar:x.toplam, neden, eden:x.iptalEden, tarih:(H.nowFull ? H.nowFull() : "") });
             H.saveData && H.saveData(); H.log("Fatura iptal", (x.hasta || "") + " · " + (x.no || "") + " · " + neden); H.closeModal(); H.toast("Fatura iptal edildi: " + (x.no || ""), "w"); H.go("vezne", params); }; } }); return; }
       const huk = e.target.closest("[data-huk]"); if (huk) { const x = faturalar().find(y => y.id === huk.dataset.huk); if (x) hukuksalModal(x); return; }
+      const odz = e.target.closest("[data-odnz]"); if (odz) { const x = faturalar().find(y => y.id === odz.dataset.odnz); if (!x) return; const n = prompt("Ödeme neden alınamadı? (ör. hasta ulaşılamıyor, kurum reddetti)", x.odenemezNeden || ""); if (n === null) return; x.odenemez = true; x.odenemezNeden = (n || "").trim(); H.saveData && H.saveData(); H.log("Fatura 'ödemesi alınamayan' işaretlendi", `${vzName(x.hasta)} · ${x.toplam} ₼`); H.toast("Ödemesi alınamayan olarak işaretlendi — dönem kapanışında mali işlere devredilir", "w"); return H.go("vezne", { tab:"fatura", durum:params.durum }); }
+      const odg = e.target.closest("[data-odnzgeri]"); if (odg) { const x = faturalar().find(y => y.id === odg.dataset.odnzgeri); if (!x) return; delete x.odenemez; delete x.odenemezNeden; H.saveData && H.saveData(); H.log("'Ödemesi alınamayan' işareti kaldırıldı", vzName(x.hasta)); H.toast("İşaret kaldırıldı"); return H.go("vezne", { tab:"fatura", durum:params.durum }); }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
