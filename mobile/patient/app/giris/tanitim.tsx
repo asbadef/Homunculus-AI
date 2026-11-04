@@ -8,7 +8,7 @@ import { BottomButton } from "../../src/appointment/parts";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { LANGS } from "../../src/i18n/core";
-import { onboardingImages } from "../../src/demo/images";
+import { onboardingImages, logo } from "../../src/demo/images";
 
 export default function Onboarding() {
   const { t } = useTheme();
@@ -31,9 +31,14 @@ export default function Onboarding() {
   return (
     <Screen>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 6 }}>
-        <AppText weight="extrabold" color={t.brand} style={{ fontSize: 15 }}>
-          {tr("onb.app")}
-        </AppText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>
+            <Image source={logo} style={{ width: 26, height: 26 }} resizeMode="contain" />
+          </View>
+          <AppText weight="extrabold" color={t.brand} style={{ fontSize: 15 }}>
+            {tr("onb.app")}
+          </AppText>
+        </View>
         <Pressable onPress={cycleLang} style={{ flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderColor: t.border, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6 }}>
           <Ionicons name="globe-outline" size={14} color={t.fg} />
           <AppText weight="semibold" style={{ fontSize: 12 }}>
