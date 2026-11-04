@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card } from "../../src/ui/widgets";
+import { Screen, AppText, Muted } from "../../src/ui/base";
+import { Card, GradientHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { LANGS } from "../../src/i18n/core";
@@ -49,9 +49,7 @@ export default function ProfileTab() {
 
   return (
     <Screen scroll>
-      <View style={{ paddingTop: 6, paddingBottom: 14 }}>
-        <Title>{tr("profile.title")}</Title>
-      </View>
+      <GradientHeader title={tr("profile.title")} />
 
       <Card style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 18 }}>
         <View style={{ width: 58, height: 58, borderRadius: 99, backgroundColor: t.brandSoft, alignItems: "center", justifyContent: "center" }}>

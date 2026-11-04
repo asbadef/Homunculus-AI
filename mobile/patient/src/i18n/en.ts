@@ -35,7 +35,7 @@ const en: Record<string, string> = {
   "appointments.title": "Appointments",
   "appointments.new": "Book appointment",
   "appointments.empty": "No appointments yet",
-  "empty.apptNote": "Book your first appointment in seconds with the button above.",
+  "empty.apptNote": "Book your first appointment in seconds with the + button below.",
   "empty.resNote": "New tests or images will appear here once they are ready.",
   "status.confirmed": "Confirmed",
   "status.pending": "Pending",

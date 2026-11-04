@@ -2,8 +2,8 @@ import React, { useCallback, useState } from "react";
 import { View, Pressable, ScrollView, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card, StatusPill, Chip, EmptyState } from "../../src/ui/widgets";
+import { Screen, AppText, Muted } from "../../src/ui/base";
+import { Card, StatusPill, Chip, EmptyState, GradientHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { layout } from "../../src/theme/tokens";
@@ -48,13 +48,15 @@ export default function ResultsTab() {
 
   return (
     <Screen scroll>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 6, paddingBottom: 12 }}>
-        <Title style={{ flex: 1 }}>{tr("results.title")}</Title>
-        <Pressable onPress={() => setAdding(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: t.brandSoft, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99 }}>
-          <Ionicons name="add" size={16} color={t.brand} />
-          <AppText weight="semibold" color={t.brand} style={{ fontSize: 13 }}>{tr("doc.add")}</AppText>
-        </Pressable>
-      </View>
+      <GradientHeader
+        title={tr("results.title")}
+        right={
+          <Pressable onPress={() => setAdding(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ffffff2e", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99 }}>
+            <Ionicons name="add" size={16} color="#ffffff" />
+            <AppText weight="semibold" color="#ffffff" style={{ fontSize: 13 }}>{tr("doc.add")}</AppText>
+          </Pressable>
+        }
+      />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
         {FILTERS.map((f) => (

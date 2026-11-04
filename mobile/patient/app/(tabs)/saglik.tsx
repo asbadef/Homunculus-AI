@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Screen, AppText, Title } from "../../src/ui/base";
-import { Card, SectionTitle } from "../../src/ui/widgets";
+import { Screen, AppText } from "../../src/ui/base";
+import { Card, SectionTitle, GradientHeader } from "../../src/ui/widgets";
 import { NewsStrip } from "../../src/components/home";
 import { HealthMetrics } from "../../src/components/HealthMetrics";
 import { useTheme } from "../../src/theme/ThemeProvider";
@@ -27,9 +27,7 @@ export default function HealthHub() {
 
   return (
     <Screen scroll>
-      <View style={{ paddingTop: 6, paddingBottom: 12 }}>
-        <Title>{tr("tab.health")}</Title>
-      </View>
+      <GradientHeader title={tr("tab.health")} />
 
       <View style={{ gap: 10 }}>
         {kozlar.map((k) => (

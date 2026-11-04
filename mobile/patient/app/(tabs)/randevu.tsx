@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Screen, AppText, Muted, Title } from "../../src/ui/base";
-import { Card, EmptyState } from "../../src/ui/widgets";
+import { Screen, AppText, Muted } from "../../src/ui/base";
+import { Card, EmptyState, GradientHeader } from "../../src/ui/widgets";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/i18n";
 import { transport } from "../../src/demo/transport";
@@ -68,16 +68,7 @@ export default function AppointmentsTab() {
 
   return (
     <Screen scroll>
-      <View style={{ paddingTop: 6, paddingBottom: 12 }}>
-        <Title>{tr("appointments.title")}</Title>
-      </View>
-
-      <Pressable onPress={() => router.push("/randevu-al/tip")} style={{ backgroundColor: t.brand, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 18 }}>
-        <Ionicons name="add" size={20} color="#ffffff" />
-        <AppText weight="bold" color="#ffffff" style={{ fontSize: 15 }}>
-          {tr("appointments.new")}
-        </AppText>
-      </Pressable>
+      <GradientHeader title={tr("appointments.title")} />
 
       {list && upcoming.length === 0 && past.length === 0 ? (
         <EmptyState icon="calendar-outline" title={tr("appointments.empty")} note={tr("empty.apptNote")} />

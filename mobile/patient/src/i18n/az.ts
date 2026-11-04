@@ -37,7 +37,7 @@ const az: Record<string, string> = {
   "appointments.title": "Randevular",
   "appointments.new": "Yeni randevu al",
   "appointments.empty": "Hələ randevun yoxdur",
-  "empty.apptNote": "Yuxarıdakı düymə ilə ilk randevunu saniyələr içində al.",
+  "empty.apptNote": "Aşağıdakı + düyməsi ilə ilk randevunu saniyələr içində al.",
   "empty.resNote": "Yeni analiz və ya şəkil hazır olduqda burada görünəcək.",
   "status.confirmed": "Təsdiqli",
   "status.pending": "Gözləyir",

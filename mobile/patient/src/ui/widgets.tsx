@@ -2,12 +2,34 @@ import React from "react";
 import { View, ViewProps, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useTheme } from "../theme/ThemeProvider";
 import { layout } from "../theme/tokens";
 import { useI18n } from "../i18n";
 import { LANGS } from "../i18n/core";
 import { AppText } from "./base";
+
+// Branded gradient header band for tab screens (matches the Home hero so every screen
+// feels part of the same app). `right` renders an optional action on the trailing side.
+export function GradientHeader({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) {
+  const { t } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <LinearGradient
+      colors={[t.brand, t.brandGrad2]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ marginHorizontal: -layout.pad, marginTop: -insets.top, paddingTop: insets.top + 14, paddingHorizontal: layout.pad, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 10 }}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText weight="extrabold" color="#ffffff" style={{ fontSize: 21 }} numberOfLines={1}>{title}</AppText>
+        {subtitle ? <AppText color="#ffffff" style={{ fontSize: 12.5, opacity: 0.9, marginTop: 2 }} numberOfLines={1}>{subtitle}</AppText> : null}
+      </View>
+      {right}
+    </LinearGradient>
+  );
+}
 
 // Back + title header for stack (non-tab) screens.
 export function StackHeader({ title }: { title: string }) {
