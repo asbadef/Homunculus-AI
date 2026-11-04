@@ -1464,6 +1464,12 @@
   const BS_F = [["hr", "Nabız", "/dk", 1, 0, 300, "device"], ["sbp", "KB sistolik", "mmHg", 1, 0, 300, "device"], ["dbp", "KB diyastolik", "mmHg", 1, 0, 200, "device"], ["spo2", "SpO₂", "%", 1, 50, 100, "device"], ["temp", "Ateş", "°C", 0.1, 30, 43, "device"], ["rr", "Solunum", "/dk", 1, 0, 120, "nurse"]];
   const birth = (p) => { const d = new Date(); if (p.ageGroup === "neonate") { d.setDate(d.getDate() - (p.ageDays || 0)); return d.toLocaleDateString("tr-TR"); } return String(d.getFullYear() - p.age); };
   const bsNews = (p) => p.ageGroup === "adult" ? news2({ ...BS.v, o2:BS.v.o2 === "Ek oksijen", scale2:!!NS.scale2[p.id] }) : null;
+  // Yaşa göre vital sınır aralıkları (standart pediatrik/yenidoğan değerleri). GEÇERLİ ERKEN UYARI SKORU DEĞİL — tam skor çocukta PEWS, yenidoğanda protokol ölçeğiyle manuel girilir.
+  const VBAND = { child:{ hr:[70, 120], rr:[16, 30], spo2:[94, 100], temp:[36, 38], sbp:[90, 110] }, neonate:{ hr:[100, 160], rr:[30, 60], spo2:[90, 100], temp:[36.5, 37.5], sbp:[60, 90] } };
+  const VLBL = { hr:"Nabız", rr:"Solunum", spo2:"SpO₂", temp:"Isı", sbp:"Sistolik" };
+  const vitalBandFlags = (p) => { const b = VBAND[p.ageGroup]; if (!b) return []; const out = [];
+    Object.keys(b).forEach(k => { const v = N(BS.v[k]); if (v == null) return; const [lo, hi] = b[k]; if (v < lo) out.push([VLBL[k] + " ↓ düşük", v, k === "spo2" ? "c" : "m"]); else if (v > hi) out.push([VLBL[k] + " ↑ yüksek", v, "h"]); }); return out; };
+  const vitalBandHtml = (p) => { const f = vitalBandFlags(p); return f.length ? `<div class="flags" style="margin-top:8px">${f.map(([l, v, c]) => `<span class="${c}">${l} (${v})</span>`).join("")}</div><div class="nfNote">Yaşa göre vital sınır kontrolü (geçerli skor değil) — tam değerlendirme ${p.ageGroup === "child" ? "PEWS" : "yenidoğan ölçeği"} ile yapılır.</div>` : ""; };
 
   H.register("bedside", { title:() => H.t("m_bedside"), perm:"bedside", render(root, params = {}) {
     if (params.pid && BS.pid !== params.pid && BS.step === 1 && !BS.scanning) { BS.pid = params.pid; }
@@ -1500,7 +1506,7 @@
             <div>${r.complete ? `<b>${resp[0] === "0" ? "Puan 0" : "NEWS2 " + resp[0]}</b><div style="color:var(--mute);font-size:13px">Protokole göre önerilen yanıt: <b style="color:var(--ink)">${resp[1]}</b></div>` : `<span class="mute">Solunum ve bilinç girilince hesaplanır.</span>`}</div></div>
             ${r.complete ? `<div class="flags" style="margin-top:8px">${Object.entries(r.pts).filter(([, v]) => v > 0).map(([k, v]) => `<span class="${v === 3 ? "c" : v === 2 ? "h" : "m"}">${{ rr:"Solunum", spo2:"SpO₂", o2:"O₂", sbp:"Sistolik", hr:"Nabız", loc:"Bilinç", temp:"Isı" }[k]} +${v}</span>`).join("") || "<span>Tüm parametreler 0</span>"}</div>` : ""}
             <div class="nfNote">Puan tablosu: <b>NEWS2 (RCP 2017)</b>${ADM("yanıt hastanenin onaylı protokolüne göredir")} · karar hekimindir.</div></div>`
-          : p.ageGroup === "child" ? `<div class="note i" style="margin-top:12px">Çocukta NEWS2 kullanılmaz. PEWS için <a data-bs="pews" style="cursor:pointer;font-weight:700">Vital bulgular formunu</a> açın.</div>` : `<div class="note i" style="margin-top:12px">Yenidoğanda NEWS2 kullanılmaz.${ADM("Yenidoğan erken uyarı ölçeği hastanenin protokolüne göre eklenecek.", " ")}</div>`}
+          : p.ageGroup === "child" ? `<div class="box" style="margin-top:12px"><div class="note i">Çocukta NEWS2 kullanılmaz. PEWS için <a data-bs="pews" style="cursor:pointer;font-weight:700">Vital bulgular formunu</a> açın.</div>${vitalBandHtml(p)}</div>` : `<div class="box" style="margin-top:12px"><div class="note i">Yenidoğanda NEWS2 kullanılmaz.${ADM("Yenidoğan erken uyarı ölçeği hastanenin protokolüne göre eklenecek.", " ")}</div>${vitalBandHtml(p)}</div>`}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button type="button" class="btn g lg" data-bs="back">${I("chevL")}Geri</button><button type="button" class="btn p lg" data-bs="save" style="flex:1;justify-content:center;min-width:200px">${I("ok")}Kaydet</button></div>`;
     }
     if (BS.step === 4 && p) main = `<div class="box bsOk"><div class="ic">${I("ok")}</div><b style="font:700 22px 'Space Grotesk'">Kaydedildi · ${BS.saved ? BS.saved.at : H.now()}</b>
