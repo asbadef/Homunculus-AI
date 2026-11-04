@@ -826,7 +826,7 @@
     s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
     const protos = [...new Set(s.map(o => o.protokolNo).filter(Boolean))], fno = "FTR-" + (Date.now() % 1000000);
     protos.forEach(no => { const pr = H.proto && H.proto.get(p.id, no); if (pr) pr.fatura = { durum:"Kesildi", tutar:Math.round(((pr.fatura && pr.fatura.tutar) || 0) + bd.hastaPayi / protos.length), kurum }; });
-    (H.data.faturalar = faturalar()).unshift({ id:"fat" + Date.now(), hasta:p.name, protokol:(protos[0] || p.proto || "—") + (p.dx ? " · " + p.dx : ""), kurum, toplam:bd.brut, katilim:bd.hastaPayi, kurumPayi:bd.kurumPayi, indirim:bd.indirim, kdv:bd.kdvTutar, kdvOran:bd.kdvOran, kalemler:bd.kalem, kesin:true, durum:"Bekliyor", protokolNo:protos[0], no:fno, tarih:(H.nowFull ? H.nowFull() : "") });
+    (H.data.faturalar = faturalar()).unshift({ id:"fat" + Date.now(), hasta:p.name, protokol:(protos[0] || p.proto || "—") + (p.dx ? " · " + p.dx : ""), kurum, toplam:bd.brut, katilim:bd.hastaPayi, kurumPayi:bd.kurumPayi, indirim:bd.indirim, kdv:bd.kdvTutar, kdvOran:bd.kdvOran, kdvMuaf:!!bd.kdvMuaf, faturaTuru:bd.faturaTuru || "e-Qaimə", kalemler:bd.kalem, kesin:true, durum:"Bekliyor", protokolNo:protos[0], no:fno, tarih:(H.nowFull ? H.nowFull() : "") });
     H.data.gfk = gfkRows(); protos.forEach(no => { const ex = H.data.gfk.find(g => g.proto === no); if (ex) ex.durum = "Hasta faturası kesilmiş"; else { const pr = H.proto && H.proto.get(p.id, no); H.data.gfk.unshift({ proto:no, hasta:p.name, gelis:(pr && pr.gelisTipi) || "Ayaktan", ptip:(pr && pr.ptip) || "Normal", bolum:(pr && pr.bolum) || "—", durum:"Hasta faturası kesilmiş" }); } });
     (H.data.evrak = evrakRows()).unshift({ no:fno, matbu:"", kurum, durum:"Veznede" });
     H.saveData && H.saveData();
@@ -847,9 +847,11 @@
       ${kalem.map(k => `<tr><td><b>${esc(k.ad)}</b></td><td class="adm-sub">${esc(k.cat)}</td><td class="mono adm-sub">${esc(k.kod || "—")}</td><td class="n">${k.birim.toFixed(2)} ₼</td></tr>`).join("")}
       </tbody><tfoot><tr><td colspan="3"><b>Brüt toplam</b></td><td class="n"><b data-fkbrut>${brut.toFixed(2)} ₼</b></td></tr></tfoot></table></div>
       <div class="rc-head" style="margin-top:12px">
+        <div class="fr"><label>Fatura türü</label><select data-f="faturaturu">${["e-Qaimə (elektron faktura)", "Fiş (qəbz)", "Kurum faturası"].map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Kurum payı (%)</label><input type="number" data-fk="kp" value="${kpOran0}" min="0" max="100"></div>
         <div class="fr"><label>İndirim (₼)</label><input type="number" data-fk="ind" value="0" min="0"></div>
         <div class="fr"><label>KDV (%)</label><input type="number" data-fk="kdv" value="0" min="0" max="18"${kdvMuaf ? " disabled" : ""}></div>
+        <div class="fr"><label>KDV muaf</label><label class="dc-chk" style="margin-top:6px"><input type="checkbox" data-f="kdvmuaf"${kdvMuaf ? " checked disabled" : ""}> Tıbbi hizmet KDV'den muaf</label></div>
       </div>
       <div class="tw" style="margin-top:10px"><table class="t"><tbody data-fkhesap></tbody></table></div>
       <p class="adm-sub" style="margin-top:6px">Kurum payı sigorta/kurum tarafından karşılanır; kalanı hasta öder. İndirim onaylı olmalıdır. Tıbbi hizmet çoğunlukla KDV'den muaftır (hasta kartında işaretliyse kilitli). Değerler örnektir, gerçek oranlar kurum anlaşmasına göre.</p>`;
@@ -858,14 +860,15 @@
       onMount(m) {
         const g = (k) => { const el = m.querySelector(`[data-fk="${k}"]`); return Math.max(0, +(el && el.value) || 0); };
         const calc = () => {
-          const kp = Math.min(100, g("kp")), kdv = kdvMuaf ? 0 : Math.min(100, g("kdv"));
+          const muaf = kdvMuaf || !!(m.querySelector('[data-f="kdvmuaf"]') || {}).checked;
+          const kp = Math.min(100, g("kp")), kdv = muaf ? 0 : Math.min(100, g("kdv"));
           const kurumPayi = Math.round(brut * kp / 100 * 100) / 100;
           const afterKurum = brut - kurumPayi;
           const indirim = Math.min(afterKurum, g("ind"));
           const netHasta = Math.max(0, afterKurum - indirim);
           const kdvTutar = Math.round(netHasta * kdv / 100 * 100) / 100;
           const hastaPayi = Math.round((netHasta + kdvTutar) * 100) / 100;
-          return { brut, kalem, kurumPayi, indirim, netHasta, kdvOran:kdv, kdvTutar, hastaPayi };
+          return { brut, kalem, kurumPayi, indirim, netHasta, kdvOran:kdv, kdvTutar, hastaPayi, kdvMuaf:muaf, faturaTuru:(m.querySelector('[data-f="faturaturu"]') || {}).value || "" };
         };
         const drawHesap = () => { const b = calc();
           m.querySelector("[data-fkhesap]").innerHTML = [
@@ -876,6 +879,7 @@
         };
         drawHesap();
         m.querySelectorAll("[data-fk]").forEach(el => el.addEventListener("input", drawHesap));
+        const muafChk = m.querySelector('[data-f="kdvmuaf"]'); if (muafChk && !muafChk.disabled) muafChk.onchange = () => { const kdvEl = m.querySelector('[data-fk="kdv"]'); kdvEl.disabled = muafChk.checked; if (muafChk.checked) kdvEl.value = 0; drawHesap(); };
         m.querySelector("[data-fkok]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } cutInvoice(p, s, label || "Fatura kesildi", calc()); };
       } });
   }
@@ -884,7 +888,7 @@
     const kalem = f.kalemler || [];
     const brk = [["Brüt toplam", f.toplam], ["Kurum payı (−)", -(f.kurumPayi || 0)], ["İndirim (−)", -(f.indirim || 0)], [`KDV (%${f.kdvOran || 0})`, f.kdv || 0], ["Hasta ödeyecek", f.katilim]];
     const kilit = f.kesin && f.durum !== "İptal" ? `<div class="ist-lock">${I("lock") || ""}<span>Kesinleşti · satır-kalem ve tutar <b>değiştirilemez</b>; düzeltmek için faturayı iptal edip yeniden kesin.</span></div>` : (f.durum === "İptal" ? `<div class="ist-lock closed">${I("x") || ""}<span>Bu fatura <b>iptal edildi</b>${f.iptalNeden ? " · " + esc(f.iptalNeden) : ""}${f.iptalEden ? " · " + esc(f.iptalEden) : ""}</span></div>` : "");
-    const body = `<div class="adm-bar" style="margin-bottom:8px"><span class="tag">${esc(f.no || f.id)}</span><span class="tag ${H.durumClass(f.durum)}">${esc(f.durum)}</span><span class="spacer"></span><span class="adm-sub">${esc(f.kurum || "")} · ${esc(f.tarih || "")}</span></div>${kilit}
+    const body = `<div class="adm-bar" style="margin-bottom:8px"><span class="tag">${esc(f.no || f.id)}</span><span class="tag ${H.durumClass(f.durum)}">${esc(f.durum)}</span>${f.faturaTuru ? `<span class="tag info">${esc(f.faturaTuru)}</span>` : ""}${f.kdvMuaf ? `<span class="tag w">KDV muaf</span>` : ""}<span class="spacer"></span><span class="adm-sub">${esc(f.kurum || "")} · ${esc(f.tarih || "")}</span></div>${kilit}
       ${kalem.length ? `<div class="tw"><table class="t"><thead><tr><th>Kalem</th><th style="width:140px">Tür</th><th style="width:120px">Kod</th><th style="width:100px">Tutar</th></tr></thead><tbody>${kalem.map(k => `<tr><td><b>${esc(k.ad)}</b></td><td class="adm-sub">${esc(k.cat || "")}</td><td class="mono adm-sub">${esc(k.kod || "—")}</td><td class="n">${(+k.birim || 0).toFixed(2)} ₼</td></tr>`).join("")}</tbody></table></div>` : `<div class="adm-sub" style="margin-bottom:8px">Bu fatura kalem dökümü olmadan oluşturulmuş (eski kayıt).</div>`}
       <div class="tw" style="margin-top:10px"><table class="t"><tbody>${brk.map(([l, v], i) => `<tr><td class="${i === brk.length - 1 ? "" : "adm-sub"}">${i === brk.length - 1 ? "<b>" + l + "</b>" : l}</td><td class="n ${i === brk.length - 1 ? "" : "adm-sub"}">${i === brk.length - 1 ? "<b>" + (+v || 0).toFixed(2) + " ₼</b>" : (+v || 0).toFixed(2) + " ₼"}</td></tr>`).join("")}</tbody></table></div>`;
     H.modal({ title:"Fatura dökümü · " + esc(vzName(f.hasta)), wide:true, body,
