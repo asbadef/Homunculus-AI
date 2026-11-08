@@ -1,6 +1,6 @@
 # VM kapasitesi ve dalga yolu — HBYS kurulum planına göre gözden geçirme
 
-**Tarih:** 2026-11-03 · **Yazan:** Lane A · **Niteliği:** karar belgesi değil; sahibin kararı için plan. Sahibin sözü
+**Tarih:** 2026-11-03, gözden geçirme 2 2026-11-08 · **Yazan:** Lane A · **Niteliği:** karar belgesi değil; sahibin kararı için plan. Sahibin sözü
 (03.11): «bunun planını kuralım; Lane C üzerinde HBYS kurulumu konusunu konuştuk, ona göre gözden geçir».
 **Karşılaştırılan kaynak:** HBS birleştirme mimarisi planı (`~/.claude/plans/…c-radiant-music.md`, 25.10.2026, Azerbaycanca:
 14 onaylı karar, §B proses topolojisi, §G kurulum paketi, §G2 S/M/L ölçülendirme, «Homunculus üzərində görüləcək işlər» H0–H3)
@@ -9,6 +9,9 @@ Hasta adı, numarası, değeri yoktur; yalnız sayılar ve sistem adları.
 
 > **Numaralama uyarısı.** İki «H1» var: mimari planın **H1 = runtime stabilizasyonu** (Redis, worker, ingest ayrımı) ve
 > ayrıştırma kararlarının **H1 = kişi kaydı**. Bu belgede ilki «**M-H1**» (mimari), ikincisi «**K-H1**» (kayıt) diye anılır.
+
+**Gözden geçirme 2 (08.11, Lane A):** 4 vCPU sonrası ölçümler (M-1/M-2/M-3, 07–08.11) §1b'ye, IO-1 yazıcı ataması (08.11)
+§1c'ye girdi; §3–§6 buna göre güncellendi. Karar 4 kapandı; altı karar açık. 03.11 metni olduğu gibi durur (tarih notlarıyla).
 
 ## 1. Bulgu (DALGA2 denemesi, 02–03.11; Lane B'nin kaydı)
 
@@ -39,8 +42,69 @@ Okuma:
 (3,4 GB boş)**. Üzerinde bizim 4 konteynerden (toplam ≈200 MB RAM) başka **MicroK8s (kubelite, k8s-dqlite, calico-node ×3),
 mysqld, containerd, redis-server, snapd** çalışıyor; kubelite tek başına 350 MB. PSI: cpu some ≈%6–7, io full ≈%3–6 (sabah 3,2–3,8).
 
-**VM'nin bugünkü durumu:** kod 3e0f2b0; api 6a981248 / web d71ce62f (dalga2 imajları); `INFINITY_WAVES=on`; hub R8
+**VM'nin 03.11'deki durumu:** kod 3e0f2b0; api 6a981248 / web d71ce62f (dalga2 imajları); `INFINITY_WAVES=on`; hub R8
 transport-3473891380ecc72e + 97-dalga.conf; `:pre-dalga2` = G3'ün imajları (508d1802 / b9a4cbb1); alembic 0015; köprü, nce dokunulmadı.
+
+### 1b. 4 vCPU sonrası (07–08.11; Lane B'nin DALGA2-ÖLÇÜM kaydı, Lane A okudu)
+
+Sahip VM'i 03.11 08:10Z'de büyüttü: **4 vCPU, ≈10 GB RAM**; kök disk 24 → 48 GB (DISK-1, 03.11) → **58 GB, %36 dolu** (DISK-1b,
+08.11 09:59Z, çevrimiçi, yeniden açılış yok). Aynı datastore, aynı tek disk. Hub R8 aynı sürüm (transport-3473891380ecc72e).
+
+| Pencere (UTC) | Panel | >500 ms | >1000 ms | paket_ms | commit_ms | hub CPU | Not |
+|---|---|---|---|---|---|---|---|
+| M-1 taban (07.11 19:18) | kapalı | %0,19 | %0,00 | 44,9 | 26,2 | %10,5 | R8 tabanı, 4 vCPU; io full %2,22 |
+| M-2 #1 (07.11 19:40) | 1, arka planda | %5,89 | %4,97 | — | 33,7 | — | **GEÇERSİZ ve KİRLİ:** 21 okuma; sahibin aynı dakikalarda yapıştırdığı DISK-0 (host geneli SCSI taraması) IO'yu ≈10 sn durdurdu → **kanıt değil, silindi** |
+| M-2 #2 (07.11 19:50) | 1 | %1,38 | %0,00 | 41,5 | 23,0 | %10,6 | KABUL; api ≈30 ms/yoklama (yetki) |
+| M-3 #1 (08.11 09:02) | 1, yoklamıyor | — | — | 75–80 (dk7–8) | 54–58 | — | blok dk8'de kesti; dk1 fwupd-refresh ≈11 MB; **09:08–09:10Z ≈2,5 dk depolama yavaş** (wa %3–4, bo/bi/cpu düz, zamanlayıcı yok) |
+| M-3 #2 (08.11 09:10, 553 sn) | 1, önde | %1,01 | %0,03 | 39,5 | 21,3 | %10,6 | **KABUL**; 670 yoklama ≈31 ms; refused +0; wa tek-saniye sıçramaları (en çok 19, 8 sn) |
+
+Okuma:
+- **4 vCPU CPU tarafını kapattı:** tek panelle 1000 ms kuyruğu %1,5–1,9 → %0,03; paket_ms 48–64 → 39,5. Beş hub CPU yan yana:
+  R6 A-3 %9,3 · R8 B-2 %10,2 · D-0 %9,9 · M-1 %10,5 · M-3 %10,6 → panelin hub'a maliyeti ≈0,1 puan; 500 ms kuyruğuna ≈0,3–0,5
+  puan; API'ye ≈31 ms/yoklama (yetki; dalga-perf-2'nin 3b maddesi, değişmedi).
+- Sahip (08.11): ekran 10 dk **akıcıydı**; G-1 sözü yok → bayrak açık kaldı (iki hattın okuması: kalan kuyruk depolama, bayrak değil).
+- **Düzeltme (03.11 metnine):** «sabah %5,81» 2 vCPU dönemine aittir (M-1 aynı hub, 4 vCPU, panelsiz: %0,19); M-2 #1'in
+  duraklaması DISK-0 kirliliğidir. **Kalan depolama kanıtı:** D-0 koşu 2 (03.11), M-3 #1'in 2,5 dk yavaş dönemi, M-3 #2'nin
+  tek-saniyelik wa sıçramaları, gece panelsiz refused +2754, IO-1'in 12:55:03Z duraklaması (§1c).
+- **Yeni kural:** host geneli SCSI taraması (`- - -`) bu VM'in IO'sunu ≈10 sn durdurur; bir daha yalnız tek-aygıt taraması,
+  ölçüm dışında, Lane A'ya haber vererek.
+
+### 1c. IO-1 — VM içindeki yazıcı kim (08.11 12:51:23–12:56:23Z, 300 sn, salt okunur; Lane B yazdı ve okudu, Lane A ham dosyalardan doğruladı)
+
+Soru: 500 ms kuyruğunu VM içi zamanlanmış yazıcılar mı sürüyor, VM altındaki depolama mı? Yanıt: **yükün kaynağı hub'ın kendi
+kalıcı kuyruğu, duraklamaların kaynağı depolama; zamanlanmış yazıcılar değil.**
+
+| Ölçü | Değer |
+|---|---|
+| VM yazma yükü (sda) | 606 MB / 300 sn = **2,07 MB/s, 227 IOPS**; okuma 0; flush 0; meşguliyet **%6,4**; dm-0 aynı 606 MB |
+| hub servisi (cgroup io.stat Δ) | **500 MB = %82,6**; 62 909 aygıt yazması; 842 write syscall/sn; değişen tek hub dosyası `/var/lib/homunculus-infinity-pilot/archive.sqlite` (244 MB) |
+| hiçbir dilimde olmayan (kök − system.slice − user.slice) | **81 MB = %13,4** → çekirdek ext4 günlüğü (jbd2; her commit'te günlük dosyası aç/sil + fsync). Raporun «atanmamış 0,0» satırı hesap hatası (kök − aygıt yazılmış); io1 r3'te düzeltilecek |
+| öteki yazıcılar | nextcloud mysqld 13 MB (%2,2) · k8s-dqlite 8,3 MB (%1,4) · containerd ≈1,6 MB · homunculus postgres 0,44 MB (1 zamanlı checkpoint, 11 tampon) · journald 0,3 MB · docker kap günlükleri ≈0,05 KB/s · fwupd pencerede yok (son 12:31Z, sonraki 13:58Z) |
+| depolama (saniyelik yazma gecikmesi) | **medyan 3,3 ms, p95 6,2 ms**, 299/300 sn sağlıklı; **12:55:03Z tek duraklama:** 148 yazma/sn, 1,5 MB/s (ortalamanın altı), gecikme 167 ms, PSI io full 230 ms/sn, wa %10–11 → **VM altı imzası** (yazıcı patlaması değil); ikinci en kötü saniye 24 ms |
+| hub aynı pencerede | KABUL: CPU %10,6; 19 210 paket; >500 %0,60; >1000 %0,00; paket_ms 39,2; refused +0; **append 26,6 ms'nin 20,7'si commit**; 922 commit: 912'si 10–50 ms, 4'ü 50–100, 2'si 100–250, 3'ü 250–500 ms |
+
+Kodla eşleme (Lane A; `homunculus-engine/src/homunculus/edge/infinity_journal.py`, `infinity_collector.py`):
+- Hub Journal'ı **kalıcı bir kuyruk**tur, arşiv değil: `append` şifreli satırları ekler, işçinin ack'i siler; dosya büyümez
+  (244–256 MB), **her gönderi bir commit**tir. `PRAGMA journal_mode=DELETE` + `synchronous=FULL`: her commit'te rollback günlüğü
+  yazılır + fsync, veri sayfaları yazılır + fsync, günlük dosyası silinir. 500 MB'ın tamamı **yazma çoğaltması**dır (değişen sayfa
+  iki kez, üstüne ext4 günlüğü); kuyruğa giren gerçek veri bunun küçük bir parçası.
+- `append` sözleşmesi: «Atomic batch: **ack only after commit**». Sözleşmeye dokunmadan yazmayı azaltan düğme **WAL kipi +
+  `synchronous=FULL`**: değişen sayfa her commit'te bir kez WAL'a yazılır, tek fsync; veri dosyası checkpoint'te güncellenir.
+  `synchronous=NORMAL` (güç kesintisinde son commit'ler kaybolabilir) ve **toplu commit** sözleşmeye dokunur: ayrı dayanıklılık
+  kararı. Hepsi ayrı kod dilimi (dalga-perf-2 madde 2); eski sürüm hub'ı açılışta kipi geri alır (DELETE her açılışta yazılır).
+- **45 sn'de bir sessiz saniye** (12:51:37, 12:52:22, 12:53:07, 12:53:52, 12:55:22; 6–14 yazma/sn): işçinin (.74) toplayıcısı
+  her 45 sn'de çoklu-yayın üyeliğini bırakıp 2 sn sonra yeniden katılır (`collect`: `refresh_interval=45`, `rejoin_gap=2`; sahadaki
+  yukarı akış budaması 89–193 sn'de akışı kestiği için bilinçli tasarım). Bu bir **alım boşluğu**dur, gecikme kuyruğu yapmaz; depolama
+  değil. Yalnız kayıt.
+- Güne vurulursa hub ≈144 GB/gün, VM ≈175 GB/gün yazma. SSD alınırsa **TBW hesabına bu girer**; WAL ile belirgin düşmesi beklenir
+  (ölçülmeden sayı verilmez).
+- Temizlik notu (performans değil): api/web/postgres kaplarında json-file günlük döndürmesi yok (`{}`), daemon.json yok; web günlüğü 19,3 MB.
+
+**Okuma:** Depolama ortalama yükte rahat (%6,4 meşgul; 2 MB/s). Sorun **senkron commit gecikmesi** (her gönderide iki fsync;
+gönderi süresinin yarısından çoğu) ve **seyrek depolama duraklamaları** (300 sn'de bir; M-3 #1'de 2,5 dk). İki kol birbirini
+tamamlar: (a) daha düşük gecikmeli datastore/SSD her commit'i kısaltır ve duraklamaları azaltır; (b) WAL + FULL commit başına
+yazma ve fsync sayısını düşürür, depolamanın her takılmasının gönderi yoluna binme payını küçültür. (b) ucuz, ölçülebilir,
+sözleşmeyi korur; (a) sahibin ve hastane BT'nin kararı.
 
 ## 2. HBYS kurulum planı ne diyor (ilgili kısımlar)
 
@@ -61,8 +125,8 @@ transport-3473891380ecc72e + 97-dalga.conf; `:pre-dalga2` = G3'ün imajları (50
 
 | Seçenek | Plana göre | Yargı |
 |---|---|---|
-| **1. VM'i büyütmek** (4 vCPU, hızlı/ayrı disk) | Plan M kademesi için **ayrı APP ve DB VM'leri** ister; bugünkü .72 planın öncülüne (bize ait, adanmış VM) uymuyor: MicroK8s + MySQL ile paylaşımlı, 24 GB disk. | **Gerekli ama tek başına yetmez.** Sahibin «CPU ekleyeceğim» kararı CPU paylaşımını azaltır; D-0'ın imzası ve sabah penceresi **disk**. CPU ile birlikte **ayrı/hızlı bir disk** (postgres + hub kaydı) olmadan diz noktasına yine değilir. |
-| **2. Hub kaydının commit maliyeti** | Planda hub = edge ajanı, **EDGE VM'de**, kendi diskinde; APP/DB diskini paylaşmaz. Araştırma yolu (`clinical forwarding DISABLED`). | **Küçük, bağımsız, bugün de yarın da geçerli.** Commit başına 22–43 ms olan kaydın `synchronous` düzeyi / toplu commit'i: tıbbi yolu etkilemez. Yerel bench + VM'de commit_ms ile doğrulanır. |
+| **1. VM'i büyütmek** (4 vCPU, hızlı/ayrı disk) | Plan M kademesi için **ayrı APP ve DB VM'leri** ister; bugünkü .72 planın öncülüne (bize ait, adanmış VM) uymuyor: MicroK8s + MySQL ile paylaşımlı. | **CPU yapıldı (03.11, 4 vCPU): 1000 ms kuyruğu kapandı (M-3 %0,03).** Disk 58 GB'a büyüdü ama aynı datastore; IO-1 depolamanın 300 sn'de bir ≈170 ms durduğunu, M-3 #1 2,5 dk yavaşladığını gösterdi. **Ayrı/düşük gecikmeli datastore** hâlâ açık; yazma yükü ≈2 MB/s (TBW ≈175 GB/gün bugünkü kipte). |
+| **2. Hub kaydının commit maliyeti** | Planda hub = edge ajanı, **EDGE VM'de**, kendi diskinde; APP/DB diskini paylaşmaz. Araştırma yolu (`clinical forwarding DISABLED`). | **Artık ölçülü: VM yazmasının ≈%96'sı bu yol** (IO-1, §1c). Commit 21–58 ms, gönderinin yarısından çoğu. Sıra: önce **WAL + FULL** (sözleşme aynı), sonra gerekirse `synchronous`/toplu commit (dayanıklılık kararı). Tıbbi yolu etkilemez. Yerel bench'te commit_ms + VM'de IO-1 yeniden koşusu ile doğrulanır. |
 | **3. Panel sorgusunun 9 yetki deyimi** | Plan M-H1(a)'da **kapsam çözümü Redis'te 30 sn önbellek** ve api 2×2 işçi diyor; Redis henüz VM'de yok. | **İki adımlı.** Önce (b): `resolve_scope`'un 8 deyimini birleştirmek — anlam değişmez, her JWT yolu kazanır, Redis'siz. Sonra M-H1(a) ile 30 sn Redis önbelleği (planın kararı; yetki geri alma penceresi 30 sn — uygulamada bir kez daha teyit). |
 
 Planın görmediği, ölçülen üçüncü neden: **api tek işçi** (A-29: motor api içinde) ve motor HTTP ile aynı proseste. Panel sorguları,
@@ -72,18 +136,21 @@ Planın görmediği, ölçülen üçüncü neden: **api tek işçi** (A-29: moto
 ## 4. Önerilen yol
 
 **Faz 0 — VM (sahip + hastane BT; kod yok).** Sahibin «CPU» kararına ek:
-1. **CPU:** ≥ 4 vCPU (planın S kademesi 8; pilot için 4 başlangıç). VM yeniden başlar; hub ömrü sıfırlanır, taban yeniden alınır.
-2. **Disk:** postgres + hub kaydı için **ayrı bir SSD disk** (ya da hızlı datastore); kök disk 24 GB/%86 derlemeler için bile dar
-   (P-0 ile 0,7 GB kazanıldı). En az 100 GB.
-3. **Komşular:** .72'deki MicroK8s + mysqld kime ait, taşınır mı — hastane BT'ye soru. Plan sahamızın adanmış VM olmasını
-   varsayıyor; değilse ölçümler komşuların yüküne bağlı kalır (D-0 koşu 1 ↔ 2 farkı; sabah %5,81).
+1. **CPU: YAPILDI** (03.11 08:10Z: 4 vCPU, ≈10 GB; yeniden açılış; taban M-1 ile yeniden alındı). Planın S kademesi 8; pilot 4 ile
+   sınırların içinde (M-3 #2).
+2. **Disk:** alan sorunu kapandı (kök 24 → 48 → **58 GB, %36 dolu**; DISK-1 03.11, DISK-1b 08.11, çevrimiçi). **Gecikme sorunu açık:**
+   postgres + hub kaydı için **ayrı bir SSD disk ya da düşük gecikmeli datastore** (IO-1: ≈2 MB/s, 227 IOPS, iki fsync/gönderi; TBW
+   girdisi ≈175 GB/gün bugünkü kipte, WAL sonrası ölçülecek). Kural: bu VM'de host geneli SCSI taraması yok.
+3. **Komşular:** .72'deki MicroK8s + mysqld kime ait, taşınır mı — hastane BT'ye soru. IO-1 komşuların **disk yazmasında küçük**
+   olduğunu gösterdi (mysqld %2,2, dqlite %1,4): soru RAM/CPU paylaşımı (kubelite 350 MB) ve VM'nin sahipliği içindir, IO için değil.
 4. **Hedef:** M kademesi (APP 12/32 + DB 8/32/1 TB) yeni VM'lerde = planın kurulum sırası (3–5 iş günü). Pilotun «büyütülmüş
    .72»den «planın sahası»na geçişi; zamanı sahibin.
 
 **Faz 1 — küçük kod dilimi «dalga-perf-2» (Lane B; VM'e tek dağıtım kuralıyla).**
 1. `resolve_scope` 8 → ≈2 deyim (3b): anlam değişmez; `test_api_scope` + yetki tabloları testleri; ölçüm: api CPU/poll.
-2. Hub kaydı commit maliyeti (2): `synchronous` düzeyi ve/veya toplu commit, yalnız araştırma kaydı; bench'te commit_ms, VM'de
-   B-2/D-0'da commit_ms satırı.
+2. Hub kaydı commit maliyeti (2): **önce WAL + `synchronous=FULL`** (ack-sonrası-commit sözleşmesi aynı), ölçüm; sonra gerekirse
+   `synchronous=NORMAL` / toplu commit (dayanıklılık kararı, sahibe). Bench'te commit_ms; VM'de IO-1 yeniden koşusu (hub payı,
+   fsync/gönderi, commit satırı). io1 r3: atanmamış = kök − dilimler; vmstat çocuğu da öldürülür.
 3. hubdurum: D-0 geçerlilik tabanı ≈150 okuma/180 sn (1 panel ≈1,0/sn); yeniden başlatma sonrası yeni taban kuralı; `refused`
    sayacı kayda.
 4. Çıkış ölçütü aynı: mutlak sınırlar (paket ≤ 60 ms, >500 ≤ %3, >1000 ≤ %2, çözücü sağlıklı, PSI cpu ≤ %35) + sabit taban.
@@ -93,23 +160,29 @@ M-H1(a) Redis + worker-jobs + api 2×2 + kapsam önbelleği 30 sn + eskalasyon d
 Her biri ayrı VM dağıtımı + geri dönüş. **Bu iş ayrıştırma sırasında (K-H1 → K-H7) yer almıyor**; sahibin sıraya koyması
 gerekir (öneri: K-H1 kişi kaydı ile paralel hat; dalga ve ekran sayısı artmadan, K-H5 ayaktan ekranlarından önce).
 
-**Dalga paneli bu arada:** sahibin kararıyla **açık** (02.11 22:01Z). Faz 0.1 + 0.2 sonrası yeni taban + D-0/D-2. Disk değişmeden
-sınır aşımı yinelenir (sabah %5,81 panelsiz). Alarm yolu ve kartlar etkilenmez (3 sn sınırı %100); bedel şeridin tazeliği ve
-geç çözülen dalga blokları (yalnız görüntü).
+**Dalga paneli bu arada:** açık (sahip 02.11; 08.11 «akıcıydı», G-1 yok). 4 vCPU ile tek panel mutlak sınırların içinde (M-3 #2);
+disk değişmeden seyrek takılmalar sürer (M-3 #1'in 2,5 dk'sı). Alarm yolu ve kartlar etkilenmez (3 sn sınırı %100); bedel şeridin
+tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
 
 ## 5. Sahibin kararları
 
-1. **Faz 0 kapsamı:** yalnız CPU mu, CPU + ayrı SSD disk mi? (**Öneri:** ikisi birlikte; disk imzası iki kez ölçüldü.)
+1. **Depolama:** ayrı SSD disk / düşük gecikmeli datastore istenecek mi, ne zaman? (**Öneri:** önce Faz 1'in WAL dilimi (günler),
+   sonra IO-1 yeniden koşusuyla ölçülmüş sayıyla BT'ye gidilir; SSD isteniyorsa TBW girdisi bugünkü kipte ≈175 GB/gün.) CPU kısmı yapıldı.
 2. **.72'nin komşuları:** MicroK8s/mysqld taşınır mı, .72 kalıcı pilot sunucu mu? (BT'ye soru; cevaba göre M kademesi takvimi.)
 3. **M kademesi yeni VM'ler:** ne zaman? (Planın 3–5 günlük kurulumu; G3/B1d/dalga blokları yeni sahaya uyarlanır.)
-4. **R6 karşılaştırma penceresi** (sabah %5,81'in R8'e mi VM'e mi ait olduğunu ayırmak için gündüz iki hub yeniden başlatması):
-   şimdi mi, CPU/disk değişikliğinden sonra mı? (**Öneri:** sonra; yeni taban zaten alınacak, iki gündüz kesintisi boşa gider.)
-5. **Faz 1'in sırası:** dalga-perf-2 (3b + 2 + hubdurum) şimdi, Lane B'de — onay?
+4. ~~R6 karşılaştırma penceresi~~ **KAPANDI (08.11):** M-1 (R8, panelsiz, 4 vCPU) %0,19 / %0,00 — sabah %5,81 R8'e değil 2 vCPU +
+   depolamaya aitti; iki gündüz yeniden başlatması gerekmez.
+5. **Faz 1'in sırası:** dalga-perf-2 (3b + WAL/FULL + hubdurum/io1 r3) şimdi, Lane B'de — onay? (**Öneri:** evet; VM'e tek dağıtım
+   kuralıyla; geri dönüş eski hub sürümü, kipi açılışta kendi geri alır.)
 6. **M-H1 runtime stabilizasyonu** ayrıştırma sırasına nereye girer? (**Öneri:** K-H1 ile paralel, K-H5'ten önce.)
 7. **Kapsam önbelleği 30 sn** (planın M-H1(a) kararı): yetki geri alma penceresi 30 sn — teyit.
 
 ## 6. Açık gerçekler
 - .72'nin sahibi/amacı ve komşu iş yükleri (BT).
 - vCPU değişikliği VM'i yeniden başlatır; hub ömrü ve R6/R8 tabanı sıfırlanır; A-3 tarzı taban yeniden alınır.
-- `waves.refused` +332 (iki D-0 koşusu arasında, 21:52–21:55Z) ve gece +1542 — Lane B kayda bakacak.
+- `waves.refused` gece sürüklenmesi (M-1 → M-3 +2754, panelsiz): panelli pencerelerde ve IO-1'de +0; kaynağı açık — gece depolama
+  duraklamaları adayı. Ömür 24 760 (08.11).
+- Toplayıcının 45 sn üyelik yenilemesi 2 sn alım boşluğu demek (tasarım gereği, saha budamasına karşı): dalga şeridinde her 45 sn'de
+  ≈2 sn eksik. Kapasite konusu değil; ayrı not.
+- IO-1 ham dosyaları: VM `~/dalga2/olcum/io1-125120Z/`; KOŞULDU `IO1-bloklari.txt` sonunda (Lane B) + Lane A EK'i.
 - Bu belge karar üretmez; kararlar roadmap'e ve ilgili spec'lere yazılır.
