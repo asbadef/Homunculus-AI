@@ -126,3 +126,25 @@ The box's strings go into the `denetim` namespace under `heat.*`, in tr, az, ru 
 - A per-kind split.
 - Windows other than 7 days.
 - A `board.view` version for clinicians (the owner's rejected option, possible later).
+
+## 6. Review amendments (2026-11-09, commits 343f017e, b0f8b674)
+
+- **D6, truncated window.** `/alarm-quality` keeps the newest 20 000 rows of the episode kinds, and repeated
+  `alert` rows count toward that cap. On a busy ward the cap can be reached with only a day or two covered.
+  - When the report says `truncated`, the warning gives the real start of what was counted, from the report's
+    `window_from`: «… yalnız {from} sonrasındaki olaylar sayıldı …». Without a parseable `window_from` it keeps
+    the general text.
+  - A truncated window never shows «Son 7 günde alarm yok».
+- **D6, unreadable.** `heatRows` sums every readable cell before the 30-row cap. When `report.episodes` is a
+  number and the sum differs, the box says «Rapor okunamadı.» Cells the browser cannot read never vanish
+  silently.
+- **D4, freshness.** A new run clears the previous map at once. The «as of» line carries the day
+  (`dd.MM hh:mm`).
+- **State.** The box keeps only `{heat, truncated, windowFrom, at}`. It does not keep the raw report or every
+  patient's raw id.
+- **Known limits, noted rather than changed.**
+  - The local hour is the browser's. Baku (UTC+4, no DST) maps one UTC hour onto one local hour. A
+    half-hour-offset zone would put an hour's count in the earlier local hour.
+  - Shading is relative even when the largest cell is 1, and the legend says so.
+  - Two patients whose ids end in the same four characters share a masked label. This is owner D2's rule.
+

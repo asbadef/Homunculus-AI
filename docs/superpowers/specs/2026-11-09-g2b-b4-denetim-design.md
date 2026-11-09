@@ -166,3 +166,19 @@ own entry, each with a blank line on either side.
 
 B6 (the bed × hour alarm heatmap) is its own slice. `/alarm-quality` has no per-hour or per-bed
 breakdown today, only `per_day` and the top ten patient ids, so B6 needs a backend field first.
+
+## 8. Review amendments (2026-11-09, commit 343f017e)
+
+- **`view` label.** `view` is POST /view, written when «a clinician opened a patient». It is not an alarm being
+  seen. Its label is «Hasta açıldı» (az «Xəstə açıldı», ru «Пациент открыт», en «Patient opened»).
+- **`bed.release` label.** `bed.release` is a bed moving from cleaning to available. Its label is «Yatak hazır
+  (temizlik bitti)». The ru column «Konu» is «Объект».
+- **D1 tightened.**
+  - A new run clears the previous verdict at once, so a stale verdict never sits beside a busy button.
+  - The time line carries the day: «Son doğrulama dd.MM hh:mm».
+  - An unreadable answer gets no time line, because no verification completed.
+- **Screen readers.** A verdict other than «broken» is announced through an always-mounted polite live region
+  (`Announce`). A «broken» verdict is already `role="alert"`, and a `Note` is never announced.
+- **D4 tightened.** An `ok: true` answer is read as `unreadable` when its `records` is not a number or its
+  `complete` is not a boolean. It is never read as intact or empty.
+
