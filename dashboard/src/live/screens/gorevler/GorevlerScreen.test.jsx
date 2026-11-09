@@ -72,3 +72,34 @@ describe("the task screen", () => {
     expect(screen.getByText("Tapşırıq yazma icazəniz yoxdur; ekran yalnız oxunur.")).toBeInTheDocument();
   });
 });
+
+describe("grid and list", () => {
+  it("paints the grid: 24 hour columns from the shift start, a vital row and a hand row under the patient", async () => {
+    await open();
+    const grid = screen.getByRole("table", { name: "Tapşırıqlarım" });
+    expect(within(grid).getAllByRole("columnheader")).toHaveLength(25);      // bed/name + 24 hours
+    const ayse = within(grid).getByRole("row", { name: /REA-01 · 2/ });
+    expect(ayse).toBeInTheDocument();
+    expect(within(grid).getByText("Vital ölçmə")).toBeInTheDocument();
+    expect(within(grid).getByText("Pansuman")).toBeInTheDocument();
+    expect(within(grid).getByRole("button", { name: /gecikdi/ })).toBeInTheDocument();   // the late vital cell
+    expect(within(grid).getAllByRole("button", { name: /tamamlandı/ })).toHaveLength(1); // the 90-min-old entry
+  });
+  it("lists open items late first on a narrow screen and hides done ones", async () => {
+    await open({ width: 700 });
+    const list = screen.getByRole("list", { name: "Tapşırıqlarım" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Vital ölçmə");
+    expect(rows[0]).toHaveTextContent("gecikdi");
+    expect(rows[1]).toHaveTextContent("Pansuman");
+    expect(within(list).queryByText("tamamlandı")).toBeNull();
+    expect(screen.getByText("Siyahı görünüşündə tamamlananlar gizlidir; cədvəldə görünür.")).toBeInTheDocument();
+  });
+  it("filters: only late, only vitals", async () => {
+    await open();
+    await press(screen.getByLabelText("Yalnız gecikənlər"));
+    expect(screen.queryByText("Pansuman")).toBeNull();
+    await press(screen.getByRole("button", { name: "Vital" }));
+    expect(screen.getByText("Vital ölçmə")).toBeInTheDocument();
+  });
+});
