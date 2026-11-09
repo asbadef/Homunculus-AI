@@ -555,8 +555,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
     // `duplicate_open_admission` (A-37, the final review).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
-    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block).
-    expect(CODES).toHaveLength(29);
+    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
+    // `bed_reserved` (D5, X1).
+    expect(CODES).toHaveLength(30);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
