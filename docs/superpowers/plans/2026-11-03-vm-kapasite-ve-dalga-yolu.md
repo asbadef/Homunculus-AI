@@ -146,7 +146,7 @@ Planın görmediği, ölçülen üçüncü neden: **api tek işçi** (A-29: moto
 4. **Hedef:** M kademesi (APP 12/32 + DB 8/32/1 TB) yeni VM'lerde = planın kurulum sırası (3–5 iş günü). Pilotun «büyütülmüş
    .72»den «planın sahası»na geçişi; zamanı sahibin.
 
-**Faz 1 — küçük kod dilimi «dalga-perf-2» (Lane B; VM'e tek dağıtım kuralıyla).**
+**Faz 1 — küçük kod dilimi «dalga-perf-2» (Lane B; VM'e tek dağıtım kuralıyla).** **ONAY 09.11 — sıra: 2 (WAL/FULL) → 1 (3b) → 3 (hubdurum).**
 1. `resolve_scope` 8 → ≈2 deyim (3b): anlam değişmez; `test_api_scope` + yetki tabloları testleri; ölçüm: api CPU/poll.
 2. Hub kaydı commit maliyeti (2): **önce WAL + `synchronous=FULL`** (ack-sonrası-commit sözleşmesi aynı), ölçüm; sonra gerekirse
    `synchronous=NORMAL` / toplu commit (dayanıklılık kararı, sahibe). Bench'te commit_ms; VM'de IO-1 yeniden koşusu (hub payı,
@@ -166,14 +166,16 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
 
 ## 5. Sahibin kararları
 
-1. **Depolama:** ayrı SSD disk / düşük gecikmeli datastore istenecek mi, ne zaman? (**Öneri:** önce Faz 1'in WAL dilimi (günler),
-   sonra IO-1 yeniden koşusuyla ölçülmüş sayıyla BT'ye gidilir; SSD isteniyorsa TBW girdisi bugünkü kipte ≈175 GB/gün.) CPU kısmı yapıldı.
+1. **Depolama — KARAR (09.11, sahip «önerini yapalım»):** önce yazılım — Faz 1'in WAL + `synchronous=FULL` dilimi (dalga-perf-2,
+   Lane B); sonra IO-1 yeniden koşusu; ayrı SSD / düşük gecikmeli datastore BT'ye ölçülmüş sayıyla sorulur (TBW girdisi: bugün
+   ≈175 GB/gün, WAL sonrası ölçülen değer). CPU kısmı yapıldı. BT'ye henüz gidilmedi.
 2. **.72'nin komşuları:** MicroK8s/mysqld taşınır mı, .72 kalıcı pilot sunucu mu? (BT'ye soru; cevaba göre M kademesi takvimi.)
 3. **M kademesi yeni VM'ler:** ne zaman? (Planın 3–5 günlük kurulumu; G3/B1d/dalga blokları yeni sahaya uyarlanır.)
 4. ~~R6 karşılaştırma penceresi~~ **KAPANDI (08.11):** M-1 (R8, panelsiz, 4 vCPU) %0,19 / %0,00 — sabah %5,81 R8'e değil 2 vCPU +
    depolamaya aitti; iki gündüz yeniden başlatması gerekmez.
-5. **Faz 1'in sırası:** dalga-perf-2 (3b + WAL/FULL + hubdurum/io1 r3) şimdi, Lane B'de — onay? (**Öneri:** evet; VM'e tek dağıtım
-   kuralıyla; geri dönüş eski hub sürümü, kipi açılışta kendi geri alır.)
+5. **Faz 1'in sırası — KARAR (09.11; karar 1'in onayı dalga-perf-2'yi açtı):** dalga-perf-2 Lane B'de — sıra: WAL/FULL → 3b →
+   hubdurum/io1 r3; kapsam 09.11 Lane A → Lane B yazıldı. VM'e tek dağıtım kuralıyla; geri dönüş eski hub sürümü (kipi açılışta
+   kendi geri alır); `synchronous=NORMAL` / toplu commit bu dilimde yok (ayrı dayanıklılık kararı).
 6. **M-H1 runtime stabilizasyonu** ayrıştırma sırasına nereye girer? (**Öneri:** K-H1 ile paralel, K-H5'ten önce.)
 7. **Kapsam önbelleği 30 sn** (planın M-H1(a) kararı): yetki geri alma penceresi 30 sn — teyit.
 
