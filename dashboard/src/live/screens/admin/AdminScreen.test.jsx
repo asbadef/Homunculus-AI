@@ -9,6 +9,7 @@ import { READS } from "./useAdminData.js";
 
 import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
 import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
+import { TasksTab } from "./TasksTab.jsx"; // G3-02
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A list's length, or "null" for a read that has no answer — never 0 for "no answer". */
@@ -68,6 +69,7 @@ describe("which tabs a session sees", () => {
       ["users", "users.manage"], ["roles", "groups.manage"], ["source", "users.manage"],
       ["structure", "structure.manage"], // G2-B1a
       ["protocol", "structure.manage"], // G2-B1d
+      ["tasks", "structure.manage"], // G3-02
     ]);
   });
 
@@ -93,7 +95,7 @@ describe("which tabs a session sees", () => {
 
   // G2-B1a — on this build's own tabs: Yapı is built, and `structure.manage` alone opens it.
   it("offers the structure tab to structure.manage, and to no other right", () => {
-    expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure", "protocol"]);
+    expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure", "protocol", "tasks"]);
     expect(tabScreenOf(openTabs(["structure.manage"])[0])).toBe(StructureTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("structure");
   });
@@ -102,6 +104,12 @@ describe("which tabs a session sees", () => {
   it("offers the protocol tab to structure.manage, and to no other right", () => {
     expect(tabScreenOf(openTabs(["structure.manage"])[1])).toBe(ProtocolTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("protocol");
+  });
+
+  // G3-02 — Görevler is built, and `structure.manage` alone opens it (spec D10).
+  it("offers the tasks tab to structure.manage, and to no other right", () => {
+    expect(tabScreenOf(openTabs(["structure.manage"])[2])).toBe(TasksTab);
+    expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("tasks");
   });
 
   it("the seam refuses outside the test build, and gives the build's tabs back", () => {
