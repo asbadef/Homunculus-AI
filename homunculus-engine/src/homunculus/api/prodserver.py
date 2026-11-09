@@ -460,18 +460,22 @@ def _scope_resolver():
     `decode_access_credential` yields `(user_id, tenant_slug)` from the access token, and the
     scope is read in that tenant — the same tenant the JWT resolver puts the caller's board in.
 
+    `read_access_for_user` reads the whole answer — role, grants, own patients, break-glass — in
+    one session and two statements (one for somebody who sees nothing). Every request that needs
+    a scope pays for it, the live wave panel about once a second per open screen; the two readers
+    it replaces (`read_scope_for_user` + `break_glass_patient_ids`) cost eight statements in two
+    sessions for the same answer (dalga-perf 3b).
+
     Nothing narrows until a `staff_scopes` row exists. With the table empty every user resolves
     as unassigned and sees the whole hospital exactly as before, which is why this can ship to a
     running pilot without a screen changing. Narrowing begins when an administrator assigns
     somebody, and becomes deny-by-default only when `SCOPE_ENFORCE_UNASSIGNED` is set.
     """
     from homunculus.scope.resolver import (
-        break_glass_patient_ids, decode_access_credential, make_scope_resolver,
-        read_scope_for_user,
+        decode_access_credential, make_scope_resolver, read_access_for_user,
     )
 
-    return make_scope_resolver(read_scope_for_user, decode=decode_access_credential,
-                               break_glass=break_glass_patient_ids)
+    return make_scope_resolver(read_access=read_access_for_user, decode=decode_access_credential)
 
 
 def _samples(url: str) -> SampleStore:

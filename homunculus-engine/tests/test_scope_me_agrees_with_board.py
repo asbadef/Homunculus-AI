@@ -11,11 +11,11 @@ grant that is reason-bound and audited.
 
 These tests are written as an AGREEMENT between the two, not as assertions about the route's
 output: each one resolves the SAME access token through the board's resolver and through HTTP and
-compares them. The board side is the real `make_scope_resolver`, wired exactly as production wires
-it (`api/prodserver._scope_resolver`: `read_scope_for_user`, `decode_access_credential`,
-`break_glass_patient_ids`) and reading the test database — not a copy of its arguments rebuilt
-here, which would agree with the route by construction and keep agreeing after the resolver or its
-wiring changed. That is the property that was broken, and a future change to either side that
+compares them. The board side is the resolver production builds — `api/prodserver._scope_resolver()`
+itself (since dalga-perf 3b: `read_access_for_user`, one session for the whole answer, with
+`decode_access_credential`) — reading the test database. Not a copy of its arguments rebuilt here,
+which would agree with the route by construction and keep agreeing after the resolver or its wiring
+changed; a copy is exactly what went stale when that wiring changed. That is the property that was broken, and a future change to either side that
 re-breaks it fails here rather than in a hospital. Four reasons, one test each: `role`, `assigned`,
 `unassigned` (both with enforcement and without) and `break_glass` — and the fifth answer the
 resolver gives, `unknown`, for an account with no active membership or no active account here:
@@ -44,9 +44,6 @@ from homunculus.db import get_db
 from homunculus.escalation.models import BreakGlassReason, BreakGlassSession
 from homunculus.scope import service
 from homunculus.scope.models import StaffScope  # noqa: F401  (staff_scopes, before create_all)
-from homunculus.scope.resolver import (
-    break_glass_patient_ids, decode_access_credential, make_scope_resolver, read_scope_for_user,
-)
 from homunculus.scope.rules import ScopeReason
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -101,16 +98,16 @@ async def client(db_session):
 
 @pytest_asyncio.fixture
 async def board(db_session, monkeypatch):
-    """The BOARD's scope resolver, built exactly as `api/prodserver._scope_resolver` builds it and
-    reading the test database (its readers open `homunculus.db.AsyncSessionLocal`, as in
+    """The BOARD's scope resolver: the one `api/prodserver._scope_resolver` builds — called, not
+    copied — reading the test database (its reader opens `homunculus.db.AsyncSessionLocal`, as in
     production). `enforce_unassigned` is left at its default, which reads `SCOPE_ENFORCE_UNASSIGNED`
     — the variable each test sets for the route as well."""
     import homunculus.db
+    from homunculus.api.prodserver import _scope_resolver
 
     monkeypatch.setattr(homunculus.db, "AsyncSessionLocal",
                         async_sessionmaker(db_session.bind, expire_on_commit=False))
-    return make_scope_resolver(read_scope_for_user, decode=decode_access_credential,
-                               break_glass=break_glass_patient_ids)
+    return _scope_resolver()
 
 
 async def _token(db, user) -> str:
