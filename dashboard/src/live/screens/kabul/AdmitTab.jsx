@@ -179,10 +179,18 @@ export function AdmitTab() {
   const { t } = useI18n();
   const { user, store } = useSession();
   const { structure, index, phase, error, reload } = useStructure();
-  // G2-B3a (D5): the reserved-bed question while it is open ({bedId, bed}), and the bed the nurse
-  // said yes for — her answer holds for that bed only, and the next bed is asked about again.
+  // G2-B3a (D5): the reserved-bed question while it is open ({bedId, bed}), and what the nurse said
+  // yes for ({bedId, requestId}): her answer holds for that bed in THAT form only. Another bed, or
+  // another form — «Yeni qəbul» after a hold, the next patient — is asked about again (review I-2).
   const [ask, setAsk] = useState(null);
-  const [confirmedBed, setConfirmedBed] = useState(null);
+  const [confirmed, setConfirmed] = useState(null);
+  // Is this instance on screen? A refusal that would ask (`bed_reserved`) may answer after she
+  // left the tab: then there is no question to show, and the toast says it instead (A-21).
+  const onScreen = useRef(false);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => { onScreen.current = false; };
+  }, []);
   const toast = useToast();
   const canAdmit = user?.perms?.includes("admissions.admit") ?? false;
   // The session's (admitDraft.js): `sending` is read from the draft at once, so a second press in
@@ -244,8 +252,10 @@ export function AdmitTab() {
 
   if (!canAdmit) return <Note tone="info" icon="eye">{t("kabul.readOnly")}</Note>;
   // «Yeni qəbul» empties the draft for the next patient: the form, the box, the hold, and a new
-  // request id. A send whose outcome is still not known stays looked for (R2).
+  // request id. A send whose outcome is still not known stays looked for (R2). A yes to a reserved
+  // bed was the old form's: the next patient is asked again (G2-B3a, review I-2).
   const startAfresh = () => {
+    setConfirmed(null);
     draft.update({ ...freshForm(), done: null, held: null });
     setFocusTo({ field: "name" });
   };
@@ -260,7 +270,7 @@ export function AdmitTab() {
   /** The form's patient admitted — by this send's answer, or found after one that got none. Every
    *  send under that name is done with, and the form is emptied for the next patient. */
   function admitted(next, name) {
-    setConfirmedBed(null);        // G2-B3a (D5): her yes was for this admission; the next patient is asked again
+    setConfirmed(null);           // G2-B3a (D5): her yes was for this admission; the next patient is asked again
     draft.update((s) => ({
       ...freshForm(),
       done: next,
@@ -342,7 +352,13 @@ export function AdmitTab() {
       // beds again and ask, as for a bed the picker shows reserved.
       await reload();
       if (!draft.live) return;
-      setConfirmedBed(null);
+      setConfirmed(null);
+      if (!onScreen.current) {
+        // She left the tab meanwhile: no question can open, so the toast says the bed is reserved
+        // (A-21). Back on the form, the re-read shows it reserved, and her next press asks.
+        toast(refusedFor(t, sent.bed, reasonOf(t, err)), "warn");
+        return;
+      }
       setAsk({ bedId: sent.bedId, bed: sent.bed });
       return;
     }
@@ -397,7 +413,7 @@ export function AdmitTab() {
     await reload();
   }
 
-  async function submit(event, confirmed = false) {
+  async function submit(event, yes = false) {
     event?.preventDefault();
     const now = draft.get();
     if (now.sending) return;
@@ -415,14 +431,18 @@ export function AdmitTab() {
     const again = now.unanswered.find((s) => sameSend(s, { bedId: form.bedId, name: form.name }));
     const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false, requestId: again?.requestId ?? now.requestId };
     // G2-B3a (D5): a bed the structure shows reserved is asked about first; the answer goes out
-    // as `confirm_reserved`, which the server leaves out of the form's digest (X2).
+    // as `confirm_reserved`, which the server leaves out of the form's digest (X2). A yes is this
+    // bed's in this form (review I-2), and goes out whatever the beds show now: after
+    // `bed_reserved` a re-read that failed still shows the bed free, and without the flag the
+    // server would refuse again, and ask again, round and round. On a free bed it is ignored.
     const reservedNow = index.beds.get(normId(form.bedId))?.state === "RESERVED";
-    const saidYes = confirmed || normId(confirmedBed) === normId(form.bedId);
+    const saidYes = yes || (confirmed !== null && normId(confirmed.bedId) === normId(form.bedId)
+      && confirmed.requestId === now.requestId);
     if (reservedNow && !saidYes) {
       setAsk({ bedId: form.bedId, bed: bedText });
       return;
     }
-    const body = toBody(form, sent.requestId, { confirmReserved: reservedNow && saidYes });
+    const body = toBody(form, sent.requestId, { confirmReserved: saidYes });
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -623,7 +643,11 @@ export function AdmitTab() {
       {ask ? (
         <ReservedAsk bedId={ask.bedId} bed={ask.bed}
           onCancel={() => setAsk(null)}
-          onConfirm={() => { setConfirmedBed(ask.bedId); setAsk(null); submit(null, true); }} />
+          onConfirm={() => {
+            setConfirmed({ bedId: ask.bedId, requestId: draft.get().requestId });
+            setAsk(null);
+            submit(null, true);
+          }} />
       ) : null}
     </form>
   );

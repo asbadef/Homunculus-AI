@@ -30,12 +30,14 @@ export function ReservedAsk({ bedId, bed, onCancel, onConfirm }) {
   const said = note.phase === "loading" ? t("kabul.reservedAsk.noteLoading")
     : note.phase === "failed" ? t("kabul.reservedAsk.noteFailed", { reason: readErrorText(t, note.err) })
       : note.text ? t("kabul.reservedAsk.note", { note: note.text }) : t("kabul.reservedAsk.noNote");
+  // The yes is held until the note's read has settled, read or failed: she decides with the note —
+  // or the word that it could not be read — in front of her, never before it is there (review minor).
   return (
     <Modal open title={t("kabul.reservedAsk.title", { bed })} onClose={onCancel}
       actions={(
         <>
           <Button onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button variant="primary" icon="ok" onClick={onConfirm}>{t("kabul.reservedAsk.confirm")}</Button>
+          <Button variant="primary" icon="ok" busy={note.phase === "loading"} onClick={onConfirm}>{t("kabul.reservedAsk.confirm")}</Button>
         </>
       )}>
       <p className="m-0 mb-2 text-14">{t("kabul.reservedAsk.body")}</p>

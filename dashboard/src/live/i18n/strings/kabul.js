@@ -165,7 +165,7 @@ export default {
       transferUnavailable: "Transfer henüz kullanılamıyor.",
     },
     invalid: {
-      displayName: "Ad soyad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",
+      displayName: "Soyad ad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",   // G2-B3a (R9): surname first, as the field «Soyad ad»
       nationalId: "FİN 7 harf ya da rakam olmalı.", phone: "Telefon numarası geçerli değil.",
       relativePhone: "Yakınının telefon numarası geçerli değil.", admissionType: "Kabul türü gerekli.",
       diagnosis: "Kabul tanısı gerekli.", weight: "Kilo kabul edilebilir aralıkta değil.",
@@ -329,7 +329,7 @@ export default {
       transferUnavailable: "Köçürmə hələ mümkün deyil.",
     },
     invalid: {
-      displayName: "Ad soyad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
+      displayName: "Soyad ad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
       nationalId: "FİN 7 hərf və ya rəqəm olmalıdır.", phone: "Telefon nömrəsi düzgün deyil.",
       relativePhone: "Yaxınının telefon nömrəsi düzgün deyil.", admissionType: "Qəbul növü tələb olunur.",
       diagnosis: "Qəbul diaqnozu tələb olunur.", weight: "Çəki qəbul edilən həddə deyil.",
@@ -493,7 +493,7 @@ export default {
       transferUnavailable: "Перевод пока недоступен.",
     },
     invalid: {
-      displayName: "Нужны имя и фамилия.", dateOfBirth: "Дата рождения неверна.",
+      displayName: "Нужны фамилия и имя.", dateOfBirth: "Дата рождения неверна.",
       nationalId: "ФИН — 7 букв или цифр.", phone: "Номер телефона неверен.",
       relativePhone: "Номер телефона родственника неверен.", admissionType: "Нужен тип приёма.",
       diagnosis: "Нужен диагноз при поступлении.", weight: "Вес вне допустимых пределов.",
@@ -656,7 +656,7 @@ export default {
       transferUnavailable: "Transfer is not available yet.",
     },
     invalid: {
-      displayName: "The full name is required.", dateOfBirth: "The date of birth is not valid.",
+      displayName: "The surname and name are required.", dateOfBirth: "The date of birth is not valid.",
       nationalId: "FIN must be 7 letters or digits.", phone: "The phone number is not valid.",
       relativePhone: "The relative's phone number is not valid.", admissionType: "The admission type is required.",
       diagnosis: "The admission diagnosis is required.", weight: "The weight is outside the accepted range.",

@@ -34,6 +34,7 @@ describe("BedStateDialog", () => {
     // A toast is in the DOM twice (the sr-only live region and the visible one), as in the admin tests.
     expect(toasts().getAllByText(`${SUBJECT} · Rezerv edildi.`).length).toBeGreaterThan(0);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith(`${SUBJECT} · Rezerv edildi.`);   // the screen says it too (§3)
   });
 
   it("sends no note as null, and holds a note to 200 characters", async () => {
@@ -58,6 +59,19 @@ describe("BedStateDialog", () => {
     expect(api.bedOutOfService).toHaveBeenCalledWith(BED(1), { reason: "OTHER", note: "Sentetik arıza" });
   });
 
+  // Review minor: the reason's error is an alert; the note's for «Digər» was said nowhere. The
+  // focus goes to the note, which its error describes, so it is read as the reason's is.
+  it("takes the focus to the note, described by its error, when «Digər» has none", async () => {
+    await open("outOfService", (a) => a.bedOutOfService.mockResolvedValue({}));
+    fireEvent.click(within(dialog()).getByLabelText("Digər"));
+    await submit("İstifadədən çıxar");
+    const note = within(dialog()).getByLabelText(/^Qeyd/);
+    expect(document.activeElement).toBe(note);
+    expect(note.getAttribute("aria-invalid")).toBe("true");
+    const said = note.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id).textContent);
+    expect(said).toContain("«Digər» üçün qeyd yazın.");
+  });
+
   it("takes a bed out of service with a reason alone", async () => {
     const { api } = await open("outOfService", (a) => a.bedOutOfService.mockResolvedValue({}));
     fireEvent.click(within(dialog()).getByLabelText("Nasazlıq"));
@@ -73,6 +87,7 @@ describe("BedStateDialog", () => {
     await settle();
     expect(toasts().getByText(new RegExp(`^${SUBJECT}: `))).toBeTruthy();
     expect(refused).toHaveBeenCalledTimes(1);
+    expect(refused.mock.calls[0][0]).toMatch(new RegExp(`^${SUBJECT}: `));   // the screen says it too (§3)
     expect(done).not.toHaveBeenCalled();
   });
 });

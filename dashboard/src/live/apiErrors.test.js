@@ -624,6 +624,15 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
   });
 
+  // G2-B3a (R9): the name is asked surname first («Soyad ad»), and its refusal says it the same way.
+  it("field_invalid:display_name says the surname first, as the field «Soyad ad» does (R9)", () => {
+    const said = Object.fromEntries(LANG_CODES.map((lang) => [lang,
+      apiErrorText(createTranslator(lang, DICTIONARIES), coded("field_invalid:display_name"))]));
+    expect(said).toEqual({
+      tr: "Soyad ad gerekli.", az: "Soyad ad tələb olunur.", ru: "Нужны фамилия и имя.", en: "The surname and name are required.",
+    });
+  });
+
   it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {
     const en = createTranslator("en", DICTIONARIES);
     expect(apiErrorKey(coded("field_invalid:something_new")).key).toBe("kabul.invalid.other");

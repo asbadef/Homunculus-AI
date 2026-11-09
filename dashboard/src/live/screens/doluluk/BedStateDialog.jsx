@@ -5,7 +5,7 @@
 // - Out of service: a reason is required, and «Digər» needs a note as well (X3).
 // The server checks all of it again. A refusal is said on the toast, named after the bed, and
 // the screen reads its beds again (`onRefused`).
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Button, Field, Modal, useToast } from "../../ui/index.js";
@@ -16,7 +16,8 @@ import { REASONS } from "./occupancy.js";
 export const NOTE_MAX = 200;
 
 /** `mode`: "reserve" | "outOfService"; `bed`: the structure's bed; `subject`: "label · room · unit".
- *  `onDone` is awaited (the screen re-reads before the dialog's buttons let go); `onRefused` is not. */
+ *  `onDone(text)` is awaited (the screen re-reads before the dialog's buttons let go); `onRefused(text)`
+ *  is not. Each is handed the words the toast said, which the screen also shows (§3). */
 export function BedStateDialog({ mode, bed, subject, onClose, onDone, onRefused }) {
   const { t } = useI18n();
   const { store } = useSession();
@@ -25,6 +26,8 @@ export function BedStateDialog({ mode, bed, subject, onClose, onDone, onRefused 
   const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [noteAsked, setNoteAsked] = useState(0);     // bumped by a send stopped for «Digər»'s note
+  const noteRef = useRef(null);
   const out = mode === "outOfService";
   const text = note.trim();
   const errors = {
@@ -34,11 +37,18 @@ export function BedStateDialog({ mode, bed, subject, onClose, onDone, onRefused 
   const formId = `doluluk-${mode}`;
   const reasonErrorId = `${formId}-reason-error`;
 
+  // The reason's error is an alert. The note's goes where she types it: the focus moves to the
+  // note once its error is drawn, so the error that describes it is read with it (review minor).
+  useEffect(() => {
+    if (noteAsked > 0) noteRef.current?.focus();
+  }, [noteAsked]);
+
   async function submit(event) {
     event.preventDefault();
     if (busy) return;
     if (errors.reason || errors.note) {
       setTried(true);
+      if (!errors.reason) setNoteAsked((n) => n + 1);
       return;
     }
     setBusy(true);
@@ -46,11 +56,13 @@ export function BedStateDialog({ mode, bed, subject, onClose, onDone, onRefused 
       await store.track(() => (out
         ? store.api.bedOutOfService(bed.id, { reason, note: text || null })
         : store.api.reserveBed(bed.id, { note: text || null })));
-      toast(doneFor(t, subject, t(`doluluk.done.${mode}`)));
-      await onDone();
+      const said = doneFor(t, subject, t(`doluluk.done.${mode}`));
+      toast(said);
+      await onDone(said);
     } catch (err) {
-      toast(refusedFor(t, subject, reasonOf(t, err)), "error");
-      onRefused?.();
+      const said = refusedFor(t, subject, reasonOf(t, err));
+      toast(said, "error");
+      onRefused?.(said);
     } finally {
       setBusy(false);
     }
@@ -88,7 +100,7 @@ export function BedStateDialog({ mode, bed, subject, onClose, onDone, onRefused 
         ) : null}
         <Field label={t("doluluk.dialog.note")} hint={t(out ? "doluluk.dialog.noteHint" : "doluluk.dialog.reserveHint")}
           error={tried ? errors.note ?? undefined : undefined}>
-          <textarea value={note} maxLength={NOTE_MAX} rows={3} readOnly={busy} onChange={(e) => setNote(e.target.value)}
+          <textarea ref={noteRef} value={note} maxLength={NOTE_MAX} rows={3} readOnly={busy} onChange={(e) => setNote(e.target.value)}
             className="w-full rounded-ctl border border-line2 bg-card2 px-[11px] py-[9px] font-text text-14.5 text-ink outline-none focus:border-pri" />
         </Field>
       </form>

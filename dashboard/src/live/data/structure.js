@@ -183,3 +183,13 @@ export const BED_STATE_KEYS = Object.freeze({
   BLOCKED: "kabul.state.BLOCKED",
   RESERVED: "kabul.state.RESERVED",   // G2-B3a
 });
+
+/** A unit's type (homunculus-engine tenant/models.py UnitType) in words. One copy: Yapı's unit
+ *  type chooser offers them, and Doluluk's unit header names its unit's (G2-B3a, §3). */
+export const UNIT_TYPE_KEYS = Object.freeze({
+  ADULT_ICU: "kabul.unitType.adultIcu",
+  NICU: "kabul.unitType.nicu",
+  PICU: "kabul.unitType.picu",
+  CVICU: "kabul.unitType.cvicu",
+  BMT_ICU: "kabul.unitType.bmtIcu",
+});

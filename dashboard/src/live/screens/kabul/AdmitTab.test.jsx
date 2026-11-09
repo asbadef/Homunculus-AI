@@ -41,7 +41,7 @@ const firstDraft = () => row({ state: "DRAFT", bed_id: BED(1), patient_number: "
 
 // The words the tab says, as dashboard/src/live/i18n/strings/kabul.js (az) has them (A-7).
 const BED1 = "1 · Otaq 1 · Reanimasiya";
-const EVERY_MISSING = ["Soyad ad","Cins", "Doğum tarixi", "Qəbul növü", "Qəbul diaqnozu",
+const EVERY_MISSING = ["Soyad ad", "Cins", "Doğum tarixi", "Qəbul növü", "Qəbul diaqnozu",
   "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri", "Razılıq", "Çarpayı"];
 const ALLERGY_MISSING = "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri";
 const TIMEOUT = "Server cavab vermədi. Əməliyyat yerinə yetirilmiş ola bilər; yoxlayın və lazım olsa yenidən cəhd edin.";
@@ -1190,12 +1190,18 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
   const NOTE = "Sentetik planlı kabul";
   const RESERVED_1 = () => withBed(1, { state: "RESERVED" });
   const ask = () => screen.queryByRole("dialog", { name: /^Rezerv edilmiş çarpayı · / });
-  const reservedNote = (a) => a.occupancy.mockResolvedValue({
-    beds: [{ bed_id: BED(1), occupant_short: null, state_reason: null, state_note: NOTE }] });
+  const notes = () => ({ beds: [{ bed_id: BED(1), occupant_short: null, state_reason: null, state_note: NOTE }] });
+  const reservedNote = (a) => a.occupancy.mockResolvedValue(notes());
   const pickReserved1 = () => {
     fireEvent.click(screen.getByRole("button", { name: /^Reanimasiya/ }));
     fireEvent.click(screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya · Rezervdədir" }));
   };
+  const YES = "Yenə də bu çarpayıya qəbul et";
+  const sayYes = async () => {
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: YES })); });
+    await settle();
+  };
+  const reservedRefusal = () => refusal(409, "The bed is reserved: the admission must confirm it.", { apiCode: "bed_reserved" });
 
   it("offers a reserved bed, and asks with its note before anything is sent", async () => {
     const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
@@ -1286,6 +1292,97 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     expect(within(ask()).getByText(/^Rezerv qeydi oxunmadı: /)).toBeTruthy();
     await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "Yenə də bu çarpayıya qəbul et" })); });
     await settle();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+  });
+
+  // Review I-2: her yes is for one bed AND one form. Held by a refusal that only «Yeni qəbul»
+  // ends, the next patient is a new form, and is asked about the same reserved bed again.
+  it.each([
+    ["duplicate_open_admission", "An open admission already exists for this patient."],
+    ["request_conflict", "This request id came before with another admission form."],
+  ])("asks again for the next patient on the same bed after a %s hold and «Yeni qəbul» (I-2)", async (apiCode, message) => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      reservedNote(a);
+      a.admit.mockRejectedValueOnce(refusal(409, message, { apiCode })).mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(api.admit.mock.calls[0][0].confirm_reserved).toBe(true);
+    await act(async () => { fireEvent.click(panel().getByRole("button", { name: "Yeni qəbul" })); });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(1);                              // nothing sent on the old yes
+    expect(ask()).toBeTruthy();
+  });
+
+  // Review minor: when the beds cannot be read again after `bed_reserved`, the picker still shows
+  // the bed free. Her yes goes out all the same — else the server refuses again, and she is asked
+  // again, round and round. The server ignores the flag on a free bed.
+  it("sends her yes even when the beds could not be read again after the server said the bed was reserved", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      reservedNote(a);
+      a.admit.mockRejectedValueOnce(reservedRefusal()).mockResolvedValue(admitted());
+    } });
+    fillRequired();
+    api.structure.mockRejectedValue(refusal(503, "Service unavailable"));    // the re-read fails: bed 1 still shows free
+    await press();
+    expect(ask()).toBeTruthy();
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(api.admit.mock.calls[1][0].confirm_reserved).toBe(true);
+    expect(ask()).toBeNull();
+    expect(screen.getByText("H2600042")).toBeTruthy();
+  });
+
+  // Review minor (A-21): the answer comes while she is on another tab. The question has no tab to
+  // open in, so the toast says the bed is reserved; back on Qəbul, her next press asks.
+  it("says on the toast that the bed is reserved when the refusal comes while another tab is open", async () => {
+    let answer;
+    const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => {
+      reservedNote(a);
+      a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })).mockResolvedValue(admitted());
+    } });
+    fillRequired();
+    api.structure.mockResolvedValue(RESERVED_1());                           // reserved meanwhile
+    await act(async () => { fireEvent.click(admitButton()); });              // on its way
+    await openTab("Evə yazılma");
+    await act(async () => { answer(reservedRefusal()); });
+    await settle();
+    const told = toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`);
+    expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(ask()).toBeNull();
+
+    await openTab("Qəbul");
+    await press();
+    expect(ask()).toBeTruthy();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+  });
+
+  // Review minor: the yes waits for the note — read or failed — so she decides with it in front of her.
+  it("holds the yes until the note is read", async () => {
+    let read;
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      a.occupancy.mockReturnValue(new Promise((resolve) => { read = resolve; }));
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    const yes = () => within(ask()).getByRole("button", { name: YES });
+    expect(yes().getAttribute("aria-busy")).toBe("true");
+    await sayYes();
+    expect(api.admit).not.toHaveBeenCalled();
+    await act(async () => { read(notes()); });
+    await settle();
+    expect(within(ask()).getByText(`Rezerv qeydi: ${NOTE}`)).toBeTruthy();
+    expect(yes().getAttribute("aria-busy")).toBeNull();
+    await sayYes();
     expect(api.admit).toHaveBeenCalledTimes(1);
   });
 });
