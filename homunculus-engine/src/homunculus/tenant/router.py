@@ -131,9 +131,13 @@ async def _lock_bed(db: AsyncSession, bed_id: uuid.UUID) -> Bed:
     UPDATE until the commit, and an insert pointing at the bed then waits. A state or
     `is_active` change keeps NO KEY UPDATE. So any code that writes a row pointing at a bed takes
     THIS lock on that bed first: it then waits for a relabel here, holding nothing a relabel
-    needs, instead of waiting inside its insert while holding other locks."""
+    needs, instead of waiting inside its insert while holding other locks.
+
+    Read afresh under the lock (`populate_existing`): a bed already in the session must not come
+    back as it was when it was loaded, or a move that waited here would act on a stale state."""
     return (await db.execute(
-        select(Bed).where(Bed.id == bed_id).with_for_update(key_share=True))).scalar_one()
+        select(Bed).where(Bed.id == bed_id).with_for_update(key_share=True)
+        .execution_options(populate_existing=True))).scalar_one()
 
 
 async def _unit_of_room(db: AsyncSession, room_id: uuid.UUID) -> uuid.UUID:
@@ -571,8 +575,9 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     review): an older admission's row may be written after a newer one's (`updated_at`), and the
     newer card would stand behind it. For each, the step runs again (`BoardLink.take_off`:
     idempotent; it ends the patient's alerts, which no longer hold it), audited
-    `admission.discharge_board_retry` with `via` — the release (`bed.release`) or the
-    administrator's raw move (`bed.transition`); when one still fails, the bed is refused
+    `admission.discharge_board_retry` with `via` — the release (`bed.release`), the
+    administrator's raw move (`bed.transition`) or the Doluluk's return to service
+    (`bed.return_to_service`); when one still fails, the bed is refused
     `board_not_cleared` with that patient's number and board key — the newest such, by
     `updated_at` — (the caller's units hold this bed, or the caller administers the structure).
     Called under the bed's lock. An app without its BoardLink has no board, so no card can
@@ -658,8 +663,9 @@ async def _free_guards(request: Request, db: AsyncSession, hospital: str, bed: B
     await _last_card_off(request, db, hospital, bed.id, actor, via=via)
 
 
-#: G2-B3a (X4): states the raw move never sets — each comes with a note or a reason, which only
-#: the Doluluk's routes take.
+#: G2-B3a (X4): states the raw move neither sets nor leaves. Each comes with a note or a reason,
+#: which only the Doluluk's routes take; and a bed in one leaves it only through its own audited
+#: moves (unreserve, return to service, or an admission that confirms the reservation).
 _NOT_RAW = frozenset({BedState.RESERVED, BedState.BLOCKED})
 
 
@@ -670,18 +676,27 @@ async def transition_bed(
     db: AsyncSession = Depends(get_db), user: User = _admin, caller_tenant: uuid.UUID = _tenant,
 ) -> BedResponse:
     """The administrator's raw move along the bed's state machine (§1.3; a move it does not allow
-    is a 400). A move that FREES the bed — to AVAILABLE, from cleaning, maintenance or a block —
-    frees none the release would not (the final review): it is refused `bed_in_use` while an
+    is a 400). A move that FREES the bed — to AVAILABLE, from cleaning or maintenance (a block
+    goes back by `return-to-service`, X4) — frees none the release would not (the final review): it is refused `bed_in_use` while an
     admission on the bed is still open (it is discharged first), and it runs the release's check
     first (`_last_card_off`: every discharged patient's card still standing is taken off the
     board, or the move is refused `board_not_cleared` with that patient's number). Under the
-    bed's lock, as the release."""
+    bed's lock, as the release.
+
+    G2-B3a (X4), two rules, each a 400: it never SETS RESERVED or BLOCKED (both come with a note
+    or a reason, which only the bed's own routes take), and it never LEAVES a bed that is
+    RESERVED or BLOCKED now — such a bed goes back only through `unreserve` or `return-to-service`,
+    or into an admission that confirms the reservation, each audited."""
     scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
     bed = await _lock_bed(db, bed_id)
     if body.new_state in _NOT_RAW:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"{body.new_state.value} is set on the bed's own routes "
                                    "(reserve, out-of-service), with its note or reason.")
+    if bed.state in _NOT_RAW:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"The bed is {bed.state.value}: it leaves that state on its "
+                                   "own routes (unreserve, return-to-service), which are audited.")
     if body.new_state == BedState.AVAILABLE and \
             body.new_state in BED_STATE_TRANSITIONS.get(bed.state, set()):
         try:
@@ -740,13 +755,15 @@ async def _state_written(request: Request, db: AsyncSession, hospital: str, bed:
                          unit_id: uuid.UUID, user: User, event_type: str, *, was: BedState,
                          reason: str | None, note: bool) -> BedResponse:
     """Commit the move, then audit it: who, the bed, from → to, the reason, and whether a note
-    was written — never the note (R8)."""
-    to = bed.state
+    was written — never the note (R8). The row is written right after the commit and before the
+    refresh, so a refresh that fails cannot leave a committed move without its audit row; what
+    the payload needs is read before the commit."""
+    bed_id, to = str(bed.id), bed.state
     await db.commit()
-    await db.refresh(bed)
     trail.record(request, hospital, event_type, payload={
-        "bed_id": str(bed.id), "unit_id": str(unit_id), "from": was.value, "to": to.value,
+        "bed_id": bed_id, "unit_id": str(unit_id), "from": was.value, "to": to.value,
         "reason": reason, "note": note, "actor": user.username})
+    await db.refresh(bed)
     return BedResponse.model_validate(bed)
 
 
