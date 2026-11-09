@@ -115,3 +115,35 @@ one at a time, owner's «onay» first; the owner walks the screen on a tablet af
 - O4 Personal assignment and «my patients» after B1c (care team).
 - O5 Medication, care-plan and handover sources (their own slices).
 - O6 A tasks box on the patient screen; O7 notifications; O8 printing the shift's tasks (prototype `yazdir.js`).
+
+## 9. Amendments (plan 208bec26, implementation and reviews, 2026-11-09)
+
+- **A1 (D6, D10) Tenant key.** `tasks` and `task_settings` are keyed by the tenant **slug** (`tenant VARCHAR(64)`), as
+  `patient_identity` and the audit rows are: the queue lives in the api world, not the admission world. People are
+  the actor's **username**, as `charted_by` is. `title` and `skip_reason` are Fernet ciphertext written by the store
+  (`crypto.encrypt_phi`), not an ORM `EncryptedString`.
+- **A2 (§3, D10) Routes.** The settings are `GET|PUT /tasks/settings` under the one `/tasks` prefix (not
+  `/tenant/task-settings`). The router is a factory bound to the app's caller resolver and scoped board
+  (`tasks_router`, the edge-query pattern); `/patients` and `/tasks` share one reader (`_board_for`).
+- **A3 (D9, D11) Scope.** A patient who is not on the caller's scoped board answers **404 «hasta bulunamadı»**, like
+  every other patient route (not 403 `scope_denied`); a discharged patient is simply not on the board. A task
+  whose patient left the board cannot be claimed, closed or skipped (404).
+- **A4 (D7) Vital skip.** No table: the skip is a `vital_skipped` audit event `{patient_id, until, actor}`, read back
+  per poll. `until` is the first due point after now (several overdue intervals included). A newer hand entry
+  ends the skip. The reason is required at the door and is **not stored** (D7: no free text in the chain) — an
+  open item for the owner (O9).
+- **A5 (D2) NEWS2 source.** The band reads the board card's `latest.news2`; an identity-only card (never
+  measured) reads as band 0.
+- **A6 (D12, D13) Screen.** Rail icon `clip` (not `list`). A failed read is an Alert with the reason, not the board
+  strip's note. A vital cell opens a dialog that holds G3-01's own «Ölçüm gir» button (two clicks), offered only
+  to a `clinical.chart` holder. The vital item has role `any`, so «yalnız benim rolüm» never hides a late vital.
+  The dialog shows the live item after every write. The anchor is shown as «Dayanak {saat}» without saying
+  whether it is an entry or the admission (the API does not say).
+- **A7 (D14) Cost.** One `/tasks` poll reads the tenant's hand entries and skips once (two audit reads) and the
+  admission time only for patients without an anchor.
+- **A8 (D18) Migration.** `0017_tasks` revises `0016_bed_occupancy` (B3a); it also inserts `tasks.view` and
+  `tasks.manage` into the six default groups of every tenant (`ensure_default_groups` creates missing groups
+  only). The dashboard mirrors the catalogue (`catalogue.js`, `perms.js`, `admin.testutil.js`).
+- **O9 (new open item).** Keep the vital-skip reason (encrypted, its own row) or drop the field — owner's call.
+- **O10 (new open item).** A device token reads `/tasks` with decrypted titles, as it reads `/patients` with
+  names — owner's call whether the queue should be person-only.
