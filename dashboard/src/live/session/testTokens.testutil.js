@@ -78,6 +78,12 @@ export function fakeApi(vi, { access = null } = {}) {
     startDischarge: vi.fn(),
     confirmDischarge: vi.fn(),
     releaseBed: vi.fn(),
+    // G2-B3a: Doluluk — the names read and the four moves
+    occupancy: vi.fn(),
+    reserveBed: vi.fn(),
+    unreserveBed: vi.fn(),
+    bedOutOfService: vi.fn(),
+    bedReturnToService: vi.fn(),
     createSite: vi.fn(),
     createUnit: vi.fn(),
     createRoom: vi.fn(),
