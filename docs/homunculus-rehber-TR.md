@@ -1146,8 +1146,9 @@ geldiğinde yalnız formu önceden dolduracak. Bu ekranlar kimin hangi yatakta y
 nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesaplamaz. Örneklerdeki
 numaralar ve yerler uydurmadır.
 
-**Üç sekme** — menüde "Hasta Kabul":
-- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* ad soyad\*, baba adı, cinsiyet\*, doğum
+**İki sekme** — menüde "Hasta Kabul" (B3a'dan önce üçüncü sekme «Yataklar»dı; artık ayrı «Doluluk»
+ekranı, bkz. 3.13):
+- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* soyad ad\* (koğuşun yazdığı sırayla), baba adı, cinsiyet\*, doğum
   tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
   *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
   "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
@@ -1159,8 +1160,6 @@ numaralar ve yerler uydurmadır.
   da oturumun kapanması temizler.
 - **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
   "Yatan hastalar".
-- **Yataklar:** birimlerinizin yatakları oda oda, durumlarıyla (Boş, Dolu, Taburcu bekliyor,
-  Temizlikte, Kapatılmış…); temizlikteki yatakta "Temizlik bitti · boş" düğmesi.
 
 **Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
 değiştirilebilir):
