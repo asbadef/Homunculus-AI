@@ -2,7 +2,8 @@
 Tenant → Site → Unit → Room → Bed hierarchy.
 Design doc §1.1 – §1.3.
 
-PHI RULE: No real patient data in this module.
+PHI RULE: No real patient data in this module. One column may hold a patient's name all the same:
+`beds.state_note` (G2-B3a), a reservation's "for whom" — encrypted at rest like every name.
 CLINICAL RULE: This module is infrastructure — no clinical logic here.
 """
 from __future__ import annotations
@@ -11,12 +12,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, DateTime, Enum, ForeignKey,
+    Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
     Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from homunculus.crypto import EncryptedString
 from homunculus.db import Base
 
 
@@ -37,18 +39,37 @@ class BedState(str, enum.Enum):
     PENDING_TRANSFER_OUT = "PENDING_TRANSFER_OUT"
     HOUSEKEEPING = "HOUSEKEEPING"
     MAINTENANCE = "MAINTENANCE"
-    BLOCKED = "BLOCKED"
+    BLOCKED = "BLOCKED"          # G2-B3a: shown as «Kullanım dışı», always with a reason (D4)
+    # G2-B3a (spec §4, D5): held for an expected patient; only an admission that confirms it takes it.
+    RESERVED = "RESERVED"
 
 
-# Valid transitions for BedState (§1.3)
+class BedStateReason(str, enum.Enum):
+    """G2-B3a (spec §4, D4): why a bed is out of service (BLOCKED). Stored as text and checked by
+    `ck_beds_state_reason`: a fifth reason is a migration, not a typo that reaches the ward."""
+    FAULT = "FAULT"
+    ISOLATION_CLEANING = "ISOLATION_CLEANING"
+    STAFFING = "STAFFING"
+    OTHER = "OTHER"
+
+
+#: G2-B3a (R8): the ciphertext of a 200-character note, four-byte letters included. The width
+#: admission/models.py PHI_COLUMN_LENGTH gives every encrypted text; not imported from there, so
+#: that the structure's models do not depend on the admission's.
+STATE_NOTE_COLUMN_LENGTH = 1536
+
+
+# Valid transitions for BedState (§1.3). G2-B3a: a free bed is reserved or taken out of service,
+# and only a free one (spec §4).
 BED_STATE_TRANSITIONS: dict[BedState, set[BedState]] = {
-    BedState.AVAILABLE: {BedState.OCCUPIED},
+    BedState.AVAILABLE: {BedState.OCCUPIED, BedState.RESERVED, BedState.BLOCKED},
     BedState.OCCUPIED: {BedState.PENDING_DISCHARGE, BedState.PENDING_TRANSFER_OUT},
     BedState.PENDING_DISCHARGE: {BedState.OCCUPIED, BedState.HOUSEKEEPING},
     BedState.PENDING_TRANSFER_OUT: {BedState.OCCUPIED, BedState.HOUSEKEEPING},
     BedState.HOUSEKEEPING: {BedState.MAINTENANCE, BedState.AVAILABLE},
     BedState.MAINTENANCE: {BedState.AVAILABLE},
     BedState.BLOCKED: {BedState.AVAILABLE},
+    BedState.RESERVED: {BedState.AVAILABLE, BedState.OCCUPIED},
 }
 
 
@@ -157,11 +178,22 @@ class Bed(Base):
     # Group 2 · B1a: a closed bed is kept (nothing is deleted) and offered to no admission. Only a
     # bed that holds no patient may be closed (tenant/router.py PATCH /tenant/beds/{id}).
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # G2-B3a (spec §4, R8): the out-of-service reason (BLOCKED only) and the reservation's or the
+    # out-of-service note. Both belong to the state they were written with: every transition
+    # clears them (`transition_to`), and the route that enters RESERVED or BLOCKED sets them after
+    # it. The note may name the expected patient, so it is encrypted at rest like a patient's name.
+    state_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    state_note: Mapped[str | None] = mapped_column(EncryptedString(STATE_NOTE_COLUMN_LENGTH),
+                                                   nullable=True)
 
     room: Mapped[Room] = relationship("Room", back_populates="beds")
 
     __table_args__ = (
         UniqueConstraint("room_id", "label", name="uq_bed_label_per_room"),
+        # G2-B3a: the same text as migration 0016's CHECK.
+        CheckConstraint("state_reason IS NULL OR state_reason IN "
+                        "('FAULT', 'ISOLATION_CLEANING', 'STAFFING', 'OTHER')",
+                        name="ck_beds_state_reason"),
     )
 
     def transition_to(self, new_state: BedState) -> None:
@@ -174,3 +206,6 @@ class Bed(Base):
             )
         self.state = new_state
         self.state_updated_at = datetime.now(timezone.utc)
+        # G2-B3a (R8): the reason and the note were the state's that is left behind.
+        self.state_reason = None
+        self.state_note = None
