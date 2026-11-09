@@ -1,8 +1,9 @@
 # Group 2 · Lane B · slice B3a — Occupancy ("Doluluk")
 
 **Date** 2026-10-26 · **Refreshed** 2026-11-09 against main `628c46d4` (§0)
-**Status** approved in conversation on 2026-10-26 ("Doğru"). Refreshed 2026-11-09, and waiting
-for the user to read this file.
+**Status** approved in conversation on 2026-10-26 ("Doğru"). Refreshed 2026-11-09 and approved by
+the owner the same day («tamam»). **Plan:** `docs/superpowers/plans/2026-11-09-g2b-b3a-doluluk.md`.
+Its departures X1–X10 refine this text; X1 is folded in below (R8, §4).
 **Lane** Lane B wrote it. The B1d session (homunculus-ai-bd) now carries it: on 2026-11-09 the
 owner chose "the rest of Group 2" as that session's next work.
 **Branches** this spec: `docs/g2b-b3a-doluluk`. The code goes on `feat/g2b-b3a-doluluk`, cut from
@@ -34,7 +35,7 @@ Each change below either follows from a fact on main or settles a point the old 
 | R6 | **Reserve, unreserve, out of service and return to service all run under the bed's row lock** (`_lock_bed`), like release and the raw move. **Return to service** also runs the same guards as the raw move to AVAILABLE: `bed_in_use`, and the board check `_last_card_off`. | Otherwise an admission and a reservation can race for the same free bed. The guards keep the release's own invariants. |
 | R7 | **The short name comes from `patients.display_name`**, a single encrypted free-text field (the Kabul form's one "Ad Soyad" box). **The ward writes the surname first** (the user, 2026-11-09, O1: "Soyad Ad Ata adı"). The server shows the **second** word in full, followed by the first letter of the **first** word: "Məmmədov Əli Rauf oğlu" → "Əli M."; "Kaya Ayşe" → "Ayşe K.". This keeps D3's form, "first name + surname initial". A one-word name is shown as it is. Surrounding whitespace is stripped, and letters keep their case in Turkish and Azerbaijani ("İ", "ı", "Ə"). | The old text assumed separate first-name and surname fields. Main has one field. Its order is the ward's habit, and the user stated that habit. |
 | R9 | **The Kabul form's name box is relabelled to match how the ward writes:** "Ad soyad / Ad soyad / Имя и фамилия / Full name" becomes **"Soyad ad / Soyad ad / Фамилия и имя / Surname and name"**. The label changes in both the form and the list headers. The stored field stays the same, and so do the separate "Baba adı / Ata adı" box and the identity digest. | A label saying "Ad soyad" invites name-first entries, which R7 would shorten wrongly. |
-| R8 | **The reservation note and the out-of-service note are patient data at rest.** A note may well name the expected patient. `beds.state_note` is stored like `display_name` (`EncryptedString`). The audit record carries the reason and only *whether* a note was written, never the note's text. The notes are returned only by `GET /tenant/occupancy` and by the `bed_reserved` refusal (sent to a caller holding `admissions.admit`). | "For whom" invites a name. An unencrypted column, or an audit payload holding the text, would put a name where the project's patient-data rule says it must not go. |
+| R8 | **The reservation note and the out-of-service note are patient data at rest.** A note may well name the expected patient. `beds.state_note` is stored like `display_name` (`EncryptedString`). The audit record carries the reason and only *whether* a note was written, never the note's text. The notes are returned only by `GET /tenant/occupancy`. The `bed_reserved` refusal names the bed and never the note, because a refusal never carries a name (`admission/errors.py` `Refusal`). The Kabul form reads the note from the occupancy read (plan X1). | "For whom" invites a name. An unencrypted column, or an audit payload holding the text, would put a name where the project's patient-data rule says it must not go. |
 
 ## 1. What this slice delivers
 
@@ -115,9 +116,10 @@ It shows no UUID and no raw key.
 
   `/return-to-service` accepts BLOCKED or MAINTENANCE and runs the raw move's guards to AVAILABLE
   (R6).
-- **Admission** (B1a's `POST /admissions`): a RESERVED bed needs `confirm_reserved: true`. Without
-  it, the refusal `bed_reserved` carries the note so the form can ask. Both a BLOCKED and a
-  MAINTENANCE bed are refused.
+- **Admission** (B1a's `POST /admissions`): a RESERVED bed needs `confirm_reserved: true`, which
+  sits beside the form and is not part of it (plan X2). Without it, the refusal `bed_reserved`
+  carries the bed's id; the form reads the note from `GET /tenant/occupancy` and asks (plan X1).
+  Both a BLOCKED and a MAINTENANCE bed are refused.
 - **`GET /tenant/structure`** gains `state_since` per bed (from `state_updated_at`). It gains
   nothing about patients, and no notes (R1).
 - **`GET /tenant/occupancy`** (new, R1) is gated by D2's permissions and limited to the caller's
