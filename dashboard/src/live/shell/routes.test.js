@@ -121,7 +121,7 @@ describe("who may open what", () => {
     expect(hasWorkRoute(NURSE)).toBe(true);
     expect(hasWorkRoute(["users.manage"])).toBe(true);
     expect(hasWorkRoute(["devices.manage"])).toBe(true);      // biomedical: the monitor screen (Aşama A)
-    expect(hasWorkRoute(["audit.view"])).toBe(false);         // the audit page: Group 2
+    expect(hasWorkRoute(["audit.view"])).toBe(true);          // G2-B4: the audit page
     expect(hasWorkRoute([])).toBe(false);
   });
 
@@ -147,10 +147,12 @@ describe("the monitor screen's route", () => {
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["nav.devices"], lang).toBeTruthy();
   });
 
-  it("is the one main entry and the home of a devices.manage-only session — biomedical, vendor support", () => {
+  it("is the first main entry and the home of a devices.manage session — biomedical, vendor support", () => {
+    expect(navRoutes(["devices.manage"]).main.map((r) => r.id)).toEqual(["devices"]);
+    // G2-B4: vendor support (platform_support: audit.view + devices.manage) gains the audit page, second
+    expect(navRoutes(["audit.view", "devices.manage"]).main.map((r) => r.id)).toEqual(["devices", "denetim"]);
     for (const perms of [["devices.manage"], ["audit.view", "devices.manage"]]) {
       expect(hasWorkRoute(perms)).toBe(true);
-      expect(navRoutes(perms).main.map((r) => r.id)).toEqual(["devices"]);
       expect(homePath(perms)).toBe("/devices");
     }
   });
@@ -162,6 +164,26 @@ describe("the monitor screen's route", () => {
     expect(ids).toContain("beds");
     expect(ids).toContain("devices");
     expect(homePath(hospitalAdmin)).toBe("/beds");
+  });
+});
+
+// G2-B4: «Denetim bütünlüğü» — the audit trail's integrity page, for audit.view (spec D3).
+describe("the audit page's route", () => {
+  afterEach(() => resetScreens());
+  const denetim = () => ROUTES.find((r) => r.id === "denetim");
+
+  it("is a work screen for audit.view, last on the main rail, with its own names", () => {
+    expect(denetim()).toMatchObject({ path: "/denetim", perms: ["audit.view"], work: true, nav: "main",
+      icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort" });
+    expect(screenOf(denetim())).not.toBeNull();
+    expect(canReach(denetim(), ["board.view"])).toBe(false);
+    expect(ROUTES.map((r) => r.id).slice(-2)).toEqual(["denetim", "settings"]);
+  });
+
+  it("is the home of an audit.view-only session and moves nobody else's", () => {
+    expect(homePath(["audit.view"])).toBe("/denetim");
+    expect(homePath(["board.view", "audit.view"])).toBe("/beds");          // the auditor group keeps the board first
+    expect(navRoutes(["board.view", "audit.view"]).main.map((r) => r.id)).toEqual(["beds", "alarms", "denetim"]);
   });
 });
 

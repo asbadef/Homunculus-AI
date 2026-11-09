@@ -95,6 +95,12 @@ export function fakeApi(vi, { access = null } = {}) {
     saveProtocolSettings: vi.fn(),
     admissionLabel: vi.fn(),
 
+    // G2-B4: «Denetim bütünlüğü» — the newest events, the chain's verification (screens/denetim); and the
+    // alarm-quality report the heatmap slice (B6) will read
+    audit: vi.fn(),
+    verifyAudit: vi.fn(),
+    alarmQuality: vi.fn(),
+
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

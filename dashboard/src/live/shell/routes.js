@@ -32,6 +32,8 @@ import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
 
 import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
 
+import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -53,6 +55,8 @@ const SCREENS = Object.freeze({
   kabul: KabulScreen, // G2-B1a — Hasta Kabul: admission, discharge, beds
 
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
+
+  denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
 
   settings: SettingsScreen,
 });
@@ -92,6 +96,12 @@ export const ROUTES = Object.freeze([
   // so nobody's home moves; a session that only charts lands here.
   route({ id: "olcum", path: "/olcum", icon: "heart", labelKey: "olcum.nav", shortKey: "olcum.navShort",
     perms: ["clinical.chart"], work: true, nav: "main" }),
+
+  // G2-B4 (spec D3) — «Denetim bütünlüğü»: for whoever reads the audit trail (`audit.view`: the auditor group,
+  // vendor support, the hospital administrator). Last on the rail, so nobody's home moves; a session that only
+  // reads the audit trail lands here.
+  route({ id: "denetim", path: "/denetim", icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort",
+    perms: ["audit.view"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

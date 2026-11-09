@@ -1743,6 +1743,33 @@ uydurmadır.
   bildirilebilir. Geri dönüş bloğu (R-1) bu yüzden önce kaç geri alma olduğunu sayar; sayı 0 değilse
   sahibin aynı sayıyı yazdığı bir onay olmadan hiçbir şeye dokunmaz (`G3-BEDSIDE-bloklari.txt`).
 
+### 3.13 «Denetim bütünlüğü» sayfası (Grup 2 · B4)
+
+- **Ne:** `/denetim`. `audit.view` yetkisi olanlar görür: denetçi grubu, satıcı desteği (`platform_support`) ve hastane
+  yöneticisi. Sayfa yalnız okur, hiçbir şey yazmaz. Menüde en sondadır; yalnız bu yetkiyi taşıyan biri girişte bu sayfaya
+  düşer.
+- **Zincir doğrulaması:** her denetim kaydı, kendinden önceki kaydın mührünü (hash) taşır. Arada bir kayıt silinir ya da
+  değiştirilirse zincir o noktada kopar.
+  - «Zinciri doğrula» mühürleri baştan yeniden hesaplar ve ilk kopan kaydı numarasıyla gösterir.
+  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). En çok 50 000 kaydı okur ve API'yi kısa bir süre meşgul eder.
+  - Sonuç, doğrulamanın saatiyle görünür. Sayfadan çıkınca silinir: eski bir sonuç güncelmiş gibi gösterilmez.
+  - Kayıt 50 000'den uzunsa sonuç «ilk N kayıtta sağlam» der, zincirin tamamı için sağlam demez.
+- **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
+  - Sütunlar: no, zaman, tür, kim, hasta, konu.
+  - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
+  - Olayın ayrıntısı (payload) ve mühürler gösterilmez.
+  - «Tür» süzgeci seçilen türü sunucudan ister. Böylece seyrek bir tür, sayıca çok olan ölçüm kayıtlarının arasında
+    kaybolmaz.
+- **Kapsam:** birim kapsamlı bir hesap denetim kaydının tamamını göremez ve sayfa bunu söyler. Zincir doğrulaması ise hasta
+  göstermediği için böyle bir hesaba da açıktır.
+- **Alarm yoğunluğu (B6):** aynı sayfada üçüncü kutu, «Haritayı göster» düğmesiyle gelir.
+  - Son 7 günde her hastanın hangi saatte kaç alarm olayı yaşadığını gösterir: satırlar hasta (maskeli), sütunlar
+    günün saatleri (00–23, yerel saat), en sonda toplam.
+  - Renk tonu yalnız tablodaki en yüksek sayıya göredir; klinik bir eşik değildir.
+  - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
+  - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
+- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
+
 ---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi
