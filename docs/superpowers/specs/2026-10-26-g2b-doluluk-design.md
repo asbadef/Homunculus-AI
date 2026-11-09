@@ -22,7 +22,7 @@ later, in its own slice with its own safety rules.
 
 Main moved on after this spec was approved: B1d, the monitor → bed editor, A4, G3-01 and DALGA.
 Each change below either follows from a fact on main or settles a point the old text left open.
-**R1** and **R8** change the design. The rest are bookkeeping.
+**R1**, **R8** and **R9** change the design; R7 records the user's answer to O1. The rest are bookkeeping.
 
 | # | Change | Why |
 |---|---|---|
@@ -32,7 +32,8 @@ Each change below either follows from a fact on main or settles a point the old 
 | R4 | **`BLOCKED` is renamed on screen** from "Kapatılmış / Bağlanıb / Заблокирована / Blocked" to **"Kullanım dışı / İstifadədən kənar / Не используется / Out of service"**. | "Kapat" already means the structure editor's close (`is_active: false`, B1a). Two different things must not share one word. |
 | R5 | **Only admission meets a reserved bed in this slice.** Transfer is closed on main (A-37: both transfer routes refuse `transfer_unavailable`). B1b applies the same `confirm_reserved` rule when it opens transfer. | Settles the gap in D5. |
 | R6 | **Reserve, unreserve, out of service and return to service all run under the bed's row lock** (`_lock_bed`), like release and the raw move. **Return to service** also runs the same guards as the raw move to AVAILABLE: `bed_in_use`, and the board check `_last_card_off`. | Otherwise an admission and a reservation can race for the same free bed. The guards keep the release's own invariants. |
-| R7 | **The short name comes from `patients.display_name`**, a single encrypted free-text field (the Kabul form's one "Ad Soyad" box). The server takes the first word in full, plus the first letter of the **second** word: "Ahmet Yılmaz" → "Ahmet Y."; "Ayşe Nur Kaya" → "Ayşe N."; "Məmmədov Əli Rauf oğlu" → "Məmmədov Ə.". A one-word name is shown as it is. Surrounding whitespace is stripped, and letters keep their case in Turkish and Azerbaijani ("İ", "ı", "Ə"). **Open for the user (O1):** this rule depends on how the ward types names. The second word is used rather than the last, because an Azerbaijani name written surname-first ends in "oğlu" / "qızı". | The old text assumed separate first-name and surname fields. Main has one field, and the order of the words in it is whatever the nurse typed. |
+| R7 | **The short name comes from `patients.display_name`**, a single encrypted free-text field (the Kabul form's one "Ad Soyad" box). **The ward writes the surname first** (the user, 2026-11-09, O1: "Soyad Ad Ata adı"). The server shows the **second** word in full, followed by the first letter of the **first** word: "Məmmədov Əli Rauf oğlu" → "Əli M."; "Kaya Ayşe" → "Ayşe K.". This keeps D3's form, "first name + surname initial". A one-word name is shown as it is. Surrounding whitespace is stripped, and letters keep their case in Turkish and Azerbaijani ("İ", "ı", "Ə"). | The old text assumed separate first-name and surname fields. Main has one field. Its order is the ward's habit, and the user stated that habit. |
+| R9 | **The Kabul form's name box is relabelled to match how the ward writes:** "Ad soyad / Ad soyad / Имя и фамилия / Full name" becomes **"Soyad ad / Soyad ad / Фамилия и имя / Surname and name"**. The label changes in both the form and the list headers. The stored field stays the same, and so do the separate "Baba adı / Ata adı" box and the identity digest. | A label saying "Ad soyad" invites name-first entries, which R7 would shorten wrongly. |
 | R8 | **The reservation note and the out-of-service note are patient data at rest.** A note may well name the expected patient. `beds.state_note` is stored like `display_name` (`EncryptedString`). The audit record carries the reason and only *whether* a note was written, never the note's text. The notes are returned only by `GET /tenant/occupancy` and by the `bed_reserved` refusal (sent to a caller holding `admissions.admit`). | "For whom" invites a name. An unencrypted column, or an audit payload holding the text, would put a name where the project's patient-data rule says it must not go. |
 
 ## 1. What this slice delivers
@@ -140,15 +141,15 @@ Backend:
 - Unit scope and tenant isolation on every route, including `/tenant/occupancy`.
 - **A caller holding only `users.manage` or only `devices.map_beds` is refused by
   `/tenant/occupancy`, and their `/tenant/structure` carries no name and no note (R1).**
-- The short name never carries more than the first word and one initial: one-word names, names with
-  several spaces, surname-first names ending in "oğlu" / "qızı", Turkish and Azerbaijani letters
-  (R7).
+- The short name never carries more than one word and one initial, and takes the second word plus
+  the first word's initial. Cases: one-word names, two words, names with several spaces,
+  surname-first names ending in "oğlu" / "qızı", Turkish and Azerbaijani letters (R7).
 - The note is stored encrypted, and is absent from the audit payload (R8).
 - The counts, and the usable-bed denominator.
 
 Dashboard:
 - Every action's permission gate.
-- Four languages, and the BLOCKED label renamed in all four (R4).
+- Four languages, the BLOCKED label renamed in all four (R4), and the Kabul name box relabelled "Soyad ad" in all four (R9).
 - No UUID on screen.
 - The reserved-bed confirmation in the Kabul form.
 
