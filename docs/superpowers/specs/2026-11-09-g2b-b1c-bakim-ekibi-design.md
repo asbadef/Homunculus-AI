@@ -1,11 +1,14 @@
 # Group 2 · Lane B · slice B1c — The care team ("Bakım ekibi")
 
 **Date** 2026-11-09
-**Status** The owner's decisions of 2026-11-09 (§2) are binding. This text turns them into a design
-and awaits the owner's reading. **Plan:** not written yet.
+**Status** The owner's decisions of 2026-11-09 (§2) are binding. The same day the owner answered
+the two open items: the charge nurse's claim (D7) and whom the picker offers (D8). This text turns
+the decisions into a design and awaits the owner's reading. **Plan:** not written yet.
 **Lane** Lane B.
-**Branches** this spec: `docs/g2b-b1b-b1c`, cut from `feat/g2b-b3a-doluluk` @ `da306570`. The code
-goes on `feat/g2b-b1c-bakim-ekibi`, cut from main when the plan is written.
+**Branches** this spec: `docs/g2b-b1b-b1c`, on `feat/g2b-b3a-doluluk` @ `c3965ed5`. The code goes
+on `feat/g2b-b1c-bakim-ekibi`, cut from main when the plan is written.
+**Migration** `0018`, shared with B1b (D9, §5.1): whichever of the two slices is built first
+writes all of it.
 **Builds on**
 - B1a — `docs/superpowers/specs/2026-10-25-g2b-kabul-taburcu-design.md`: the sign-off, unit
   scope (`_reach_admission`, `_locked`), the patient screen's `SignOffStrip`.
@@ -19,7 +22,7 @@ goes on `feat/g2b-b1c-bakim-ekibi`, cut from main when the plan is written.
 **Companion** B1b (`2026-11-09-g2b-b1b-nakil-design.md`): a transfer closes the source's rows and
 copies them onto the arriving admission.
 
-## 0. Where the code stands (branch head `da306570`)
+## 0. Where the code stands (`feat/g2b-b3a-doluluk` @ `c3965ed5`)
 
 Paths are relative to `homunculus-engine/src/homunculus/`.
 
@@ -27,12 +30,12 @@ Paths are relative to `homunculus-engine/src/homunculus/`.
 |---|---|---|
 | F1 | `CareTeamRole`: `ATTENDING`, `ASSOCIATE_PHYSICIAN`, `ONCALL_PHYSICIAN`. | `admission/models.py:146-150` |
 | F2 | `CareTeamMember` holds `role`, `granted_by_id`, the window, `is_active`, `created_at` and `closed_at`. `UniqueConstraint(admission_id, user_id, is_active)` allows one CLOSED row per member and admission: ending a member twice breaks it. | `admission/models.py:384-414` (constraint `:412-413`) |
-| F3 | `claim` makes the caller ATTENDING and sets `attending_physician_id`. It has no reach check, no state check, no lock and no audit. It does not end an earlier attending. | `admission/router.py:831-846`; `admission/service.py:197-211` |
-| F4 | `add` checks tenant membership only. A duplicate raises IntegrityError, which becomes a 500. ONCALL needs a window of at most 48 h. | `admission/router.py:849-869`; `admission/service.py:214-238` (window `:220-226`) |
-| F5 | `GET` (`admissions.view`) is limited to the tenant only. Its rows carry ids: no name, no `closed_at`. | `admission/router.py:872-882`; `admission/schemas.py:350-361` |
-| F6 | Nothing ends a row except the discharge confirmation. | `admission/service.py:458-467` |
-| F7 | Sign-off makes the signer the attending when none is set, and writes no care-team row (O45). | `admission/router.py:745-779` (`:760-761`) |
-| F8 | `attending` holds `care_team.claim` and `care_team.assign`. `unit_physician` holds neither (its description: "bakım ekibi atamaz"); nor does `physician`. **`charge_nurse` holds `care_team.claim`.** | `auth/permissions.py` `_ATTENDING`, `DEFAULT_GROUPS` |
+| F3 | `claim` makes the caller ATTENDING and sets `attending_physician_id`. It has no reach check, no state check, no lock and no audit. It does not end an earlier attending. | `admission/router.py:841-856`; `admission/service.py:199-213` |
+| F4 | `add` checks tenant membership only. A duplicate raises IntegrityError, which becomes a 500. ONCALL needs a window of at most 48 h. | `admission/router.py:859-879`; `admission/service.py:216-240` (window `:222-228`) |
+| F5 | `GET` (`admissions.view`) is limited to the tenant only. Its rows carry ids: no name, no `closed_at`. | `admission/router.py:882-892`; `admission/schemas.py:353-364` |
+| F6 | Nothing ends a row except the discharge confirmation. | `admission/service.py:460-469` |
+| F7 | Sign-off makes the signer the attending when none is set, and writes no care-team row (O45). | `admission/router.py:755-784` (`:770-771`) |
+| F8 | `attending` holds `care_team.claim` and `care_team.assign`. `unit_physician` holds neither (its description: "bakım ekibi atamaz"); nor does `physician`. **`charge_nurse` holds `care_team.claim`** (D7 removes it). | `auth/permissions.py` `_ATTENDING`, `DEFAULT_GROUPS` |
 | F9 | The scope reads a user's ACTIVE rows, an ON-CALL row only inside its window, and keys them by the admission's board key. An own patient is always seen (`sees_patient`), but it widens only what she sees, not where she acts. | `scope/service.py:89-155`; `scope/rules.py:134-155`; `admission/unitscope.py:10-11` |
 | F10 | A board stream binds its scope when its ticket is issued, for the life of the connection. | `api/app.py:1726-1757` |
 | F11 | `/admin/users` needs `users.manage`. No route lists clinicians for a physician. | |
@@ -54,6 +57,9 @@ units.
 | D4 | **A new attending ends the previous attending's row.** | One responsible physician at a time; the history stays. |
 | D5 | **Members are added and removed in a «Bakım ekibi» box** on the patient screen. Every change is audited. | The team is read where the patient is read. |
 | D6 | **A member sees her own patient outside her scope.** That rule exists (F9). This slice makes its rows right. | Consultation and on-call cover cross units. |
+| D7 | **`charge_nurse` loses `care_team.claim`** (the owner, 2026-11-09, answering open item O-1). It leaves the group in `DEFAULT_GROUPS`, and `0018` deletes that group's rows for existing tenants (§5.1 step 7). «bakım ekibi» leaves the group's description. | Under D1 a charge nurse's claim is always refused (T1). A key that can only fail misleads the administrator who reads the group. |
+| D8 | **The picker offers every physician of the tenant, names only** (the owner, 2026-11-09, answering open item O-2). | The own-patient rule matters most for a physician from another unit, such as an on-call colleague. A list limited to the caller's units would never offer her. |
+| D9 | **One migration, `0018`, serves B1c and B1b** (the owner, 2026-11-09, with B1b's D8). Whichever slice is built first writes it whole, `down_revision = "0017"`, with both slices' parts. | Alembic is one chain. Two slices planned the same day should not race for two numbers. |
 
 ## 3. Derived in this spec
 
@@ -113,8 +119,10 @@ units.
 
 ### 5.1 Migration `0018`
 
-`0018_care_team`, `down_revision = "0017"` (G3-02's `0017_tasks`). Alembic is one chain: if 0017
-is not on main when this merges, the numbers move, as the G3-02 spec's D18 says.
+`0018_care_team_transfer`, `down_revision = "0017"` (G3-02's `0017_tasks`). It serves B1c and
+B1b (D9): whichever slice is built first writes all of it, steps 1–8, and the other finds its part
+done. Alembic is one chain: if 0017 is not on main when this merges, the numbers move, as the
+G3-02 spec's D18 says.
 
 Upgrade, in this order:
 1. Drop the constraint `uq_care_team_active_member`.
@@ -130,14 +138,24 @@ Upgrade, in this order:
    `is_active`.
 6. Create the unique index `uq_care_team_one_attending` ON (`admission_id`) WHERE `is_active` AND
    `role = 'ATTENDING'`.
-7. If the owner answers O-1 yes: delete `care_team.claim` from every `charge_nurse` group.
+7. Delete the `care_team.claim` rows of every `charge_nurse` group (D7): `DELETE FROM
+   group_permissions WHERE permission = 'care_team.claim' AND group_id IN (SELECT id FROM groups
+   WHERE slug = 'charge_nurse')`.
+8. B1b's part (its D8, §5.9): `admissions.transfer_reason` (VARCHAR, NULL, check
+   `ck_admissions_transfer_reason` on the six reasons) and `admissions.transfer_note`
+   (`EncryptedString(PHI_COLUMN_LENGTH)`, NULL, ≤ 200 characters of plaintext).
 
 The model mirrors steps 5 and 6 with `postgresql_where` and `sqlite_where`, because
-`scripts/dev_local.py` builds the models on SQLite (E10).
+`scripts/dev_local.py` builds the models on SQLite (E10). `DEFAULT_GROUPS` drops
+`care_team.claim` from `charge_nurse`, so a new tenant is seeded without it.
 
-Downgrade drops the two indexes, restores the old constraint, and puts step 7 back. Restoring the
-constraint fails loudly when a member has two closed rows on one admission; the plan's rollback
-block counts them first. Rows closed or written by steps 2–4 stay.
+Downgrade drops the two indexes, restores the old constraint, puts back step 7's rows for every
+`charge_nurse` group, and drops step 8's columns. Restoring the constraint fails loudly when a
+member has two closed rows on one admission; the plan's rollback block counts them first. Rows
+closed or written by steps 2–4 stay.
+
+A charge nurse signed in before the deploy keeps `care_team.claim` in her token until it is
+refreshed (an access token's life, as B1a's O46). It does her no good: T1 refuses her claim.
 
 ### 5.2 Routes
 
@@ -150,7 +168,7 @@ reach, then the lock, then the state.
 | `POST …` (`CareTeamAdd`) | `care_team.assign` | `user_id` must be an active member of the tenant (422, as today) and a physician (T1). Role ATTENDING: T4. `ASSOCIATE_PHYSICIAN`: no window. `ONCALL_PHYSICIAN`: a window is required; its end is after its start, in the future, and at most 48 h after the start (422 `field_invalid:window_start` or `field_invalid:window_end`); T8 applies. A window on another role: 422. Already an active member: 409 `care_team_conflict`. |
 | `POST …/{member_id}/end` (new) | `care_team.assign`, or the member herself | Ends an active row that is not the attending's: `is_active` false, `closed_at` now. The ATTENDING row: 409 `care_team_attending_required`. A row already ended: 409 `invalid_transition`. A row of another admission: 404. An assigner needs reach. A member ending her own row does not, because ending it only narrows what she sees. |
 | `GET …` | `admissions.view` | Allowed when the caller's units hold the bed, or when she has an active row on this admission; otherwise 403 `out_of_scope`. All rows, the active ones first, newest first. |
-| `GET …/candidates` (new) | `care_team.assign` | Reach as for the writes. The tenant's active physicians (T1) who hold no row in force on this admission, sorted by name. Each carries `user_id` and `full_name`, nothing else. (Breadth: §8 O-2.) |
+| `GET …/candidates` (new) | `care_team.assign` | Reach as for the writes. The tenant's active physicians (T1) who hold no row in force on this admission, sorted by name. Each carries `user_id` and `full_name`, nothing else. Not limited to the caller's units (D8). |
 
 The end route is guarded by `require_permission("care_team.assign", "admissions.view")`. Inside,
 a caller without `care_team.assign` may end only her own row; another's is 403.
@@ -206,8 +224,12 @@ four languages.
 
 Backend:
 - **Migration `0018`** on Postgres. Upgrade over data with two active attendings, an attending
-  without a row, and an open row on a discharged admission. The indexes then hold. Downgrade, then
-  upgrade again.
+  without a row, and an open row on a discharged admission. The indexes then hold. Every
+  `charge_nurse` group has lost `care_team.claim` and no other group has (D7). B1b's two columns
+  exist (its tests cover them). Downgrade restores the key and drops the columns; then upgrade
+  again.
+- **Default groups.** A new tenant's `charge_nurse` is seeded without `care_team.claim`; the
+  default-group tests follow.
 - **The old fault.** Add, end, add again, end again: two closed rows, no error.
 - **Sign-off.** It writes the ATTENDING row in its own transaction; a failure rolls back both. The
   signer becomes attending; a form-named attending gets the row instead. A non-physician signer is
@@ -224,8 +246,9 @@ Backend:
 - **Scope and tenant isolation** on every route, the candidates route included. `GET` for a member
   outside her units.
 - **Candidates.** Physicians only: never a nurse, a charge nurse or an administrator. Active users
-  and memberships only, this tenant only. The keys are exactly `user_id` and `full_name`. Members
-  in force are left out.
+  and memberships only, this tenant only, from every unit — a physician with no grant on the
+  admission's unit is offered (D8). The keys are exactly `user_id` and `full_name`. Members in
+  force are left out.
 - **The own-patient rule.** An on-call member outside the unit sees the card inside her window and
   not after it. An ended member no longer sees it. After a B1b transfer, the copied rows point at
   the card's key.
@@ -252,10 +275,5 @@ Dashboard:
 
 ## 8. Open for the owner
 
-- **O-1 · `charge_nurse` holds `care_team.claim` (F8).** Under D1 a charge nurse's claim is always
-  refused (T1). **Recommended:** remove the key from the group, in `DEFAULT_GROUPS` and, for
-  existing tenants, in `0018` step 7. Drop «bakım ekibi» from the group's description.
-- **O-2 · Whom the picker offers.** Either the tenant's physicians, or only those of the caller's
-  units. The own-patient rule matters most for a physician from another unit, such as an on-call
-  colleague, and a unit-only list would never offer her. **Recommended:** the tenant's physicians,
-  names only.
+None. Both open items were answered on 2026-11-09: the charge nurse's claim is D7, and the
+picker's breadth is D8.
