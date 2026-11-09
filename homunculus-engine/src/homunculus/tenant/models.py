@@ -206,6 +206,7 @@ class Bed(Base):
             )
         self.state = new_state
         self.state_updated_at = datetime.now(timezone.utc)
-        # G2-B3a (R8): the reason and the note were the state's that is left behind.
+        # G2-B3a (R8): the reason and the note belong to the state being left; the route that
+        # enters RESERVED or BLOCKED sets them afterwards.
         self.state_reason = None
         self.state_note = None
