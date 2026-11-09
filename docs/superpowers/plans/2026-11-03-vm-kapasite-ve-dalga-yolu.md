@@ -178,6 +178,15 @@ Planın görmediği, ölçülen üçüncü neden: **api tek işçi** (A-29: moto
    olduğunu gösterdi (mysqld %2,2, dqlite %1,4): soru RAM/CPU paylaşımı (kubelite 350 MB) ve VM'nin sahipliği içindir, IO için değil.
    **BT = sahibin kendisi (09.11):** soru dışarıya değil, sahibe. D-0 #2 anlık top: kubelite %15, k8s-dqlite %8 CPU (sürekli), mysqld %8;
    disk yazması yine küçük (mysqld %2,6, dqlite %1,8).
+   **09.11 14:56Z envanter (salt okunur SSH, Lane A; `komsu-envanter-1456Z.txt`):** microk8s v1.35.6 snap = BOŞ küme (75 gün, yalnız
+   kube-system calico/coredns; deploy/helm/pvc yok; kubelite 390 MB, calico ≈340 MB, k8s-dqlite 79 MB + ≈30 KB/s sürekli yazma); nextcloud
+   35.0.2 snap = apache :80 + mysqld (281 MB, ≈49 KB/s sürekli yazma ≈4 GB/gün) + redis/php-fpm/cron, 1 kullanıcı dizini / 64 dosya, en yenisi
+   27.08, erişim günlüğü 0 satır, veri 84 MB; prometheus 2.37 snap yalnız kendini kazıyor (:9090), 83 MB. Toplam komşu RSS 1531 MB
+   (= «kullanılan» 1910 MB'ın %80'i), yazma ≈80 KB/s (WAL sonrası VM yazmasının ≈%5'i, ≈7 GB/gün TBW), CPU ömür ort. ≈%12; Homunculus
+   bağımlılığı yok (compose/deploy'da iz yok; web 8080/8443, hub 8766, bridge 2575). **Sahip (≈14:50Z): «kullanılmıyor» → KOMSU dilimi:**
+   `snap stop --disable` prometheus (K-1) → nextcloud (K-2) → microk8s (K-3) → K-4 salt okunur özet; veri ve paket diskte kalır (`snap remove`
+   ayrı karar); geri dönüş R-1/R-2/R-3 = `snap start --enable`. Bloklar `/c/tmp/infinity-a-releases/KOMSU-bloklari.txt` (Lane A yazdı, Lane B
+   inceler), VM'de henüz KOŞULMADI; tek VM işlemi: KOMSU bitmeden depolama dilimi başlamaz.
 4. **Hedef:** M kademesi (APP 12/32 + DB 8/32/1 TB) yeni VM'lerde = planın kurulum sırası (3–5 iş günü). Pilotun «büyütülmüş
    .72»den «planın sahası»na geçişi; zamanı sahibin.
 
@@ -206,7 +215,20 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
    ≈175 GB/gün, WAL sonrası ölçülen değer). CPU kısmı yapıldı. BT'ye henüz gidilmedi.
    **09.11 ölçüldü (§1d):** commit 20,2 → 10,4 ms; VM yazma isteği −%44, bayt −%20; TBW ≈178 → ≈142 GB/gün VM. **BT = sahip (09.11):**
    SSD / düşük gecikmeli datastore artık dışarıya soru değil, sahibin kararı; girdi hazır.
-2. **.72'nin komşuları:** MicroK8s/mysqld taşınır mı, .72 kalıcı pilot sunucu mu? (BT'ye soru; cevaba göre M kademesi takvimi.) **09.11: BT = sahibin kendisi; soru doğrudan sahibe (Lane A soruyor).**
+   **09.11 ≈15:05Z SAHİBİN KARARI (Lane B'ye, Lane B aktardı): İKİ veritabanı da (hub `archive.sqlite` + postgres) AYRI bir DB VM'ine /
+   sunucusuna; disk «ayrı ama aynı tür» (SSD değil).** Sonuçlar (Lane B okuması; dilimi Lane A planlar, sahip itiraz ederse düzelir):
+   - `archive.sqlite` ağdan çalışmaz (WAL -shm/kilit) → **hub servisinin kendisi** (alıcı + kayıt, :8766) DB VM'ine taşınır; .72'de api/web/nginx
+     kalır; VM yazmasının ≈%87'si .72'den çıkar. Bu, M kademesindeki «ayrı APP ve DB VM'leri»nin ve karar 3'ün ilk adımıdır.
+   - Kod büyük olasılıkla değişmez (DOĞRULANMADI): api hub'ı `INFINITY_HUB_URL` + `INFINITY_HUB_CA_FILE` ile, hub'ın forwarder'ı api'yi
+     `INFINITY_SHADOW_URL` ile bulur; işçi .74 hub adresini kendi ayarından alır. Değişecekler: hub TLS sertifikası (yeni IP için SAN), .74'ün
+     hedefi + CA güveni, api'nin HUB_URL/CA'sı, forwarder'ın SHADOW_URL'i, güvenlik duvarı (.74→DB:8766, DB→.72:443, .72→DB:8766 ve 5432).
+   - Postgres ağdan gidince hasta verisi ağdan geçer → postgres TLS (sslmode) ya da en azından yalnız .72'ye açık güvenlik duvarı; `DATABASE_URL`
+     VM'de değişir (sahibin bloğu); taşıma pg_dump/restore ya da hacim kopyası = panel kapalı pencere.
+   - «Aynı tür disk» komşulardan yalıtım verir, tek yazma ≈3–4 ms'den pek inmez (commit ≈10 ms kalır). DB VM'inin diski .72'ninkinden **ayrı
+     datastore'da** olmalı; yoksa VM-altı duraklamalar (IO-1 167 ms, M-3 #1 2,5 dk) yine vurur.
+   - Sıra: KOMSU (Faz 0 #3) → sahip DB VM'ini kurar (boyut: M kademesi) → **hub taşıma dilimi** (en büyük kazanç; panel açık kalır; kısa
+     refused duraklaması) → **postgres taşıma dilimi** (kesinti penceresi). Her biri ayrı spec + onay + geri dönüş; önce/sonra IO-1 r3; tek-işlem kuralı.
+2. **.72'nin komşuları:** MicroK8s/mysqld taşınır mı, .72 kalıcı pilot sunucu mu? (BT'ye soru; cevaba göre M kademesi takvimi.) **09.11: BT = sahibin kendisi; soru doğrudan sahibe (Lane A soruyor).** **09.11 ≈14:50Z sahip: «kullanılmıyor» → durdurulacak (KOMSU-bloklari.txt, Faz 0 #3); VM'de henüz koşulmadı.**
 3. **M kademesi yeni VM'ler:** ne zaman? (Planın 3–5 günlük kurulumu; G3/B1d/dalga blokları yeni sahaya uyarlanır.)
 4. ~~R6 karşılaştırma penceresi~~ **KAPANDI (08.11):** M-1 (R8, panelsiz, 4 vCPU) %0,19 / %0,00 — sabah %5,81 R8'e değil 2 vCPU +
    depolamaya aitti; iki gündüz yeniden başlatması gerekmez.
@@ -217,7 +239,7 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
 7. **Kapsam önbelleği 30 sn** (planın M-H1(a) kararı): yetki geri alma penceresi 30 sn — teyit.
 
 ## 6. Açık gerçekler
-- .72'nin sahibi/amacı ve komşu iş yükleri: **BT = sahibin kendisi (09.11)** — karar 2 sahibe doğrudan.
+- .72'nin komşuları: BT = sahip; **09.11 «kullanılmıyor»** — envanter + durdurma blokları hazır (KOMSU K-1…K-4, R-1…R-3), VM'de koşulması sahibin sözüyle; `snap remove` ayrı karar.
 - vCPU değişikliği VM'i yeniden başlatır; hub ömrü ve R6/R8 tabanı sıfırlanır; A-3 tarzı taban yeniden alınır.
 - `waves.refused` gece sürüklenmesi (M-1 → M-3 +2754, panelsiz): panelli pencerelerde ve IO-1'de +0; kaynağı açık — gece depolama
   duraklamaları adayı. Ömür 24 760 (08.11) → 28 117 (09.11 sabah, +3357/gün); R9 açılışından sonra 88 (B-1 duraklaması), sonra +0 — WAL sonrası gece sürüklenmesi izlenecek.
@@ -227,5 +249,9 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
 - dalga-perf-2 ham dosyaları: VM `~/dalgaperf2/` (io-once-085323Z, io-sonra-114531Z, d0-132308Z); iş istasyonu `/c/tmp/infinity-a-releases/dalgaperf2-*.txt`;
   KOŞULDU `DALGAPERF2-bloklari.txt` sonunda (Lane B), koşulan r3 kopyası `.r3.txt`.
 - cgroup v2 `io.stat` hub yeniden başlatıldıktan sonra hub'ı eksik gösterir (§1d); hub payı için süreç `/proc/<pid>/io` esas.
-- `feat/dalga-perf-2` (14b4a642) VM'de canlı ama **main'de değil, itilmedi**; «main'e al» (yalnız ileri sarma) sahibin sözüyle.
+- Komşu envanteri ham: `/c/tmp/infinity-a-releases/komsu-envanter-1456Z.txt` (09.11 14:56Z); hub birimi `homunculus-infinity-pilot-hub.service`
+  (drop-in 30…98); nce konteyneri Exited = bilerek (04.09), ASLA başlatılmaz.
+- Depolama: sahibin kararı (09.11) = ayrı DB VM'i, aynı tür disk (§5 karar 1); DB VM'inin boyutu, datastore'u ve adresi sahipten gelecek;
+  hub taşıma ve postgres taşıma dilimlerinin spec'leri yazılmadı.
+- `feat/dalga-perf-2` 14b4a642 = **main (09.11 ≈13:50Z, sahibin «maine al» sözüyle Lane B itti)**; VM kodu = main.
 - Bu belge karar üretmez; kararlar roadmap'e ve ilgili spec'lere yazılır.
