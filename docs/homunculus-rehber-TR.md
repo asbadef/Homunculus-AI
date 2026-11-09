@@ -1762,6 +1762,12 @@ uydurmadır.
     kaybolmaz.
 - **Kapsam:** birim kapsamlı bir hesap denetim kaydının tamamını göremez ve sayfa bunu söyler. Zincir doğrulaması ise hasta
   göstermediği için böyle bir hesaba da açıktır.
+- **Alarm yoğunluğu (B6):** aynı sayfada üçüncü kutu, «Haritayı göster» düğmesiyle gelir.
+  - Son 7 günde her hastanın hangi saatte kaç alarm olayı yaşadığını gösterir: satırlar hasta (maskeli), sütunlar
+    günün saatleri (00–23, yerel saat), en sonda toplam.
+  - Renk tonu yalnız tablodaki en yüksek sayıya göredir; klinik bir eşik değildir.
+  - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
+  - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
 - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
 
 ---
