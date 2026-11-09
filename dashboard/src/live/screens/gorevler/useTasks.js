@@ -7,12 +7,16 @@ export const TASKS_TICK_MS = 30_000;
 export function useTasks(store, { everyMs = TASKS_TICK_MS } = {}) {
   const [state, setState] = useState({ data: null, error: null });
   const alive = useRef(true);
+  //: the sequence of the latest read issued; an answer to an earlier one (a slow tick overtaken by the
+  //: re-read after a write) is dropped, so the screen never shows an older queue over a newer one
+  const seq = useRef(0);
   const read = useCallback(async () => {
+    const mine = ++seq.current;
     try {
       const data = await store.track(() => store.api.tasks());
-      if (alive.current) setState({ data, error: null });
+      if (alive.current && mine === seq.current) setState({ data, error: null });
     } catch (error) {
-      if (alive.current) setState((s) => ({ data: s.data, error }));
+      if (alive.current && mine === seq.current) setState((s) => ({ data: s.data, error }));
     }
   }, [store]);
   useEffect(() => {

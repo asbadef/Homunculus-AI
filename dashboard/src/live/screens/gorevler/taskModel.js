@@ -26,7 +26,7 @@ export function items(patient, nowMs, graceMin) {
   if (v) {
     for (const at of v.entries || []) out.push({ key: `v:${patient.patient_id}:${at}`, kind: "vital", patientId: patient.patient_id, state: "done", at, vital: v });
     out.push({ key: `v:${patient.patient_id}:now`, kind: "vital", patientId: patient.patient_id, state: v.state,
-               at: v.due_at ?? new Date(nowMs).toISOString(), vital: v, role: "nurse" });
+               at: v.due_at ?? new Date(nowMs).toISOString(), vital: v, role: "any" });
   }
   for (const task of patient.tasks || []) {
     out.push({ key: `t:${task.id}`, kind: "hand", patientId: patient.patient_id, state: handStateOf(task, nowMs, graceMin), at: task.due_at, task, role: task.target_role });
@@ -55,6 +55,9 @@ export function myRole(groups) {
   if (slugs.some((s) => PHYSICIAN_SLUGS.has(s))) return "physician";
   return null;
 }
+
+/** The label key of each NEWS2 band the server names (api/tasks.py): the dialog and the settings tab read it. */
+export const BAND_KEY = Object.freeze({ b0: "gorevler.bandB0", b1_4: "gorevler.bandB1_4", b3_single: "gorevler.bandB3single", b5_6: "gorevler.bandB5_6", b7: "gorevler.bandB7" });
 
 /** StatusPill tones per state (ui/Tag.jsx): the same five colours the prototype's legend used. */
 export const TONE = { late: "crit", due: "att", plan: "neutral", done: "ok", skipped: "low", unknown: "neutral", open: "neutral" };

@@ -8,8 +8,10 @@ import { readErrorText } from "../../apiErrors.js";
 import { dayStamp } from "../../i18n/dates.js";
 import { Alert, Box, Button, Field, Input, Note, useToast } from "../../ui/index.js";
 import { refusedFor } from "./refusal.js";
+import { BAND_KEY } from "../gorevler/taskModel.js";
 
-export const BANDS = Object.freeze([["b0", "gorevler.bandB0"], ["b1_4", "gorevler.bandB1_4"], ["b3_single", "gorevler.bandB3single"], ["b5_6", "gorevler.bandB5_6"], ["b7", "gorevler.bandB7"]]);
+/** [band, labelKey] in the server's order — the same table the vital dialog reads (taskModel.BAND_KEY). */
+export const BANDS = Object.freeze(Object.entries(BAND_KEY).map((pair) => Object.freeze(pair)));
 const formOf = (s) => ({ a: String(s?.shift_start_a ?? 8), b: String(s?.shift_start_b ?? 20), grace: String(s?.grace_min ?? 30),
   ...Object.fromEntries(BANDS.map(([k]) => [k, s?.intervals?.[k] == null ? "" : String(s.intervals[k])])) });
 const int = (text) => (/^\d+$/.test(text) ? Number(text) : NaN);

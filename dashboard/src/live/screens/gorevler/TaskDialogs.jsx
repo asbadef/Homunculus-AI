@@ -10,7 +10,7 @@ import { nameOf } from "../common/BoardState.jsx";
 import { bedNameOf } from "../beds/order.js";
 import { VitalsEntry } from "../patient/VitalsEntry.jsx";
 import { fromLocalInput, toLocalInput } from "../patient/meds/medsFields.js";
-import { TONE } from "./taskModel.js";
+import { BAND_KEY, TONE } from "./taskModel.js";
 
 const REASON_MAX = 200;
 const CONTROL = "w-full rounded-ctl border border-line2 bg-card2 px-[11px] py-[9px] font-text text-14.5 text-ink outline-none focus:border-pri";
@@ -64,7 +64,7 @@ export function TaskDialog({ item, patient, nowMs, canManage, write, onClose }) 
   );
 }
 
-export function VitalDialog({ item, patient, nowMs, canManage, write, refresh, onClose }) {
+export function VitalDialog({ item, patient, nowMs, canManage, canChart = false, write, refresh, onClose }) {
   const { t } = useI18n();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -85,8 +85,9 @@ export function VitalDialog({ item, patient, nowMs, canManage, write, refresh, o
     <Modal open title={t("gorevler.vitalTitle", { bed })} onClose={onClose} busy={busy}>
       <div className="grid gap-2 text-13">
         <p className="m-0"><StatusPill tone={TONE[item.state]}>{stateLabel(t, item.state)}</StatusPill>{v.due_at ? <> · {t("gorevler.vitalDue", { time: dayStamp(Date.parse(v.due_at), nowMs) })}</> : null}{v.partial ? <> · {t("gorevler.vitalPartial")}</> : null}</p>
-        <p className="m-0 text-mute">{t("gorevler.vitalBand", { band: v.band, minutes: v.interval_min })}{v.anchor_at ? ` · ${t(v.entries?.length ? "gorevler.vitalAnchor" : "gorevler.vitalAnchorAdmission", { time: dayStamp(Date.parse(v.anchor_at), nowMs) })}` : ""}</p>
-        {patient && canManage ? <VitalsEntry patientId={patient.patient_id} bed={bed} nowMs={nowMs} onWritten={() => refresh()} /> : null}
+        {/* the anchor is the server's (the last hand set, or the admission when there is none): one neutral word */}
+        <p className="m-0 text-mute">{t("gorevler.vitalBand", { band: BAND_KEY[v.band] ? t(BAND_KEY[v.band]) : String(v.band ?? "—"), minutes: v.interval_min })}{v.anchor_at ? ` · ${t("gorevler.vitalAnchor", { time: dayStamp(Date.parse(v.anchor_at), nowMs) })}` : ""}</p>
+        {patient && canManage && canChart ? <VitalsEntry patientId={patient.patient_id} bed={bed} nowMs={nowMs} onWritten={() => refresh()} /> : null}
         {canSkip && !skipping ? <div><Button variant="ghost" onClick={() => setSkipping(true)}>{t("gorevler.skipVitalConfirm")}</Button></div> : null}
         {skipping ? <ReasonForm label={t("gorevler.skipReason")} confirm={t("gorevler.skipVitalConfirm")} busy={busy} onCancel={() => setSkipping(false)} onConfirm={skip} /> : null}
       </div>
@@ -98,7 +99,8 @@ export function NewTaskDialog({ patients, nowMs, write, onClose }) {
   const { t } = useI18n();
   const toast = useToast();
   const nextHour = Math.ceil(nowMs / 3_600_000) * 3_600_000;
-  const [form, setForm] = useState({ patientId: patients[0]?.patient_id ?? "", title: "", due: toLocalInput(nextHour), role: "nurse" });
+  // No patient preselected: a task for the wrong bed is worse than one more choice (review round 1).
+  const [form, setForm] = useState({ patientId: "", title: "", due: toLocalInput(nextHour), role: "nurse" });
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -119,8 +121,9 @@ export function NewTaskDialog({ patients, nowMs, write, onClose }) {
   return (
     <Modal open title={t("gorevler.newTitle")} onClose={onClose} busy={busy}>
       <form noValidate autoComplete="off" onSubmit={save} className="grid gap-2">
-        <Field label={t("gorevler.fieldPatient")} required>
+        <Field label={t("gorevler.fieldPatient")} required error={tried && !form.patientId ? t("gorevler.err.patient") : undefined}>
           <Select value={form.patientId} onChange={(e) => set({ patientId: e.target.value })}>
+            <option value="">—</option>
             {patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{`${bedNameOf(p)} · ${nameOf(p, t)}`}</option>)}
           </Select>
         </Field>

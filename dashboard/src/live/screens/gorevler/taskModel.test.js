@@ -33,13 +33,14 @@ describe("taskModel", () => {
     const got = items(P, NOW, SETTINGS.grace_min);
     expect(got.map((x) => [x.kind, x.state, hourIndex(x.at, START)])).toEqual([
       ["vital", "done", 1], ["vital", "late", 4], ["hand", "late", 2], ["hand", "plan", 8], ["hand", "done", 3],
-    ].map(([k, s]) => [k, s, expect.any(Number)]));
+    ]);
   });
   it("counts this shift and filters by kind, lateness and role", () => {
     const got = items(P, NOW, SETTINGS.grace_min);
     expect(counters(got)).toEqual({ late: 2, due: 0, plan: 1, done: 2 });
     expect(got.filter((x) => keep(x, { kind: "hand", onlyLate: true, onlyMine: false }, "nurse")).map((x) => x.task.id)).toEqual(["t1"]);
     expect(got.filter((x) => keep(x, { kind: "all", onlyLate: false, onlyMine: true }, "nurse")).map((x) => x.kind + ":" + (x.task?.id ?? "v"))).toEqual(["vital:v", "vital:v", "hand:t1", "hand:t3"]);
+    expect(got.filter((x) => keep(x, { kind: "all", onlyLate: false, onlyMine: true }, "physician")).map((x) => x.kind + ":" + (x.task?.id ?? "v"))).toEqual(["vital:v", "vital:v", "hand:t2", "hand:t3"]);
     expect(sortItems(got.filter((x) => x.state !== "done")).map((x) => x.state)).toEqual(["late", "late", "plan"]);
   });
   it("reads the session's role from its default-group slugs", () => {

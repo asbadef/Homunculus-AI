@@ -87,6 +87,7 @@ describe("grid and list", () => {
     expect(within(grid).getByText("Pansuman")).toBeInTheDocument();
     expect(within(grid).getByRole("button", { name: /gecikdi/ })).toBeInTheDocument();   // the late vital cell
     expect(within(grid).getAllByRole("button", { name: /tamamlandı/ })).toHaveLength(1); // the 90-min-old entry
+    expect(screen.getByRole("button", { name: "İndiyə keç" })).toBeInTheDocument();          // «Şimdiye git»
   });
   it("lists open items late first on a narrow screen and hides done ones", async () => {
     await open({ width: 700 });
@@ -98,11 +99,16 @@ describe("grid and list", () => {
     expect(within(list).queryByText("tamamlandı")).toBeNull();
     expect(screen.getByText("Siyahı görünüşündə tamamlananlar gizlidir; cədvəldə görünür.")).toBeInTheDocument();
   });
-  it("filters: only late, only vitals", async () => {
+  it("filters: only late", async () => {
     await open();
     await press(screen.getByLabelText("Yalnız gecikənlər"));
     expect(screen.queryByText("Pansuman")).toBeNull();
+    expect(screen.getByText("Vital ölçmə")).toBeInTheDocument();
+  });
+  it("filters: only vitals, with the lateness filter off", async () => {
+    await open();
     await press(screen.getByRole("button", { name: "Vital" }));
+    expect(screen.queryByText("Pansuman")).toBeNull();
     expect(screen.getByText("Vital ölçmə")).toBeInTheDocument();
   });
 });
@@ -114,9 +120,14 @@ describe("dialogs", () => {
     m.api.doneTask.mockResolvedValue({ ...TASKS.patients[0].tasks[0], state: "done" });
     await press(screen.getByText("Pansuman"));
     const dialog = screen.getByRole("dialog", { name: "Pansuman · REA-01 · 2" });
+    // the re-read after the claim answers the claimed task: the open dialog shows it, not the item it opened with
+    const t1 = TASKS.patients[0].tasks[0];
+    m.api.tasks.mockResolvedValueOnce({ ...TASKS, patients: [{ ...TASKS.patients[0], tasks: [{ ...t1, claimed_by: "hem.ayse", claimed_at: iso(NOW) }] }, TASKS.patients[1]] });
     await press(within(dialog).getByRole("button", { name: "Öhdəyə götür" }));
     expect(m.api.claimTask).toHaveBeenCalledWith("t1");
     expect(toasted("Tapşırıq öhdəyə götürüldü.")).toHaveLength(1);
+    expect(within(dialog).getByText(/öhdəsinə götürən: hem\.ayse/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Öhdəyə götür" })).toBeNull();
     await press(within(dialog).getByRole("button", { name: "Tamamla" }));
     expect(m.api.doneTask).toHaveBeenCalledWith("t1");
     expect(m.api.tasks).toHaveBeenCalledTimes(3);

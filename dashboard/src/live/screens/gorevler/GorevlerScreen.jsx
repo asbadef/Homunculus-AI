@@ -26,6 +26,7 @@ export function GorevlerScreen() {
   const nowMs = useBoardNow(30_000);
   const { data, error, refresh, write } = useTasks(store);
   const canManage = user?.perms?.includes("tasks.manage") ?? false;
+  const canChart = user?.perms?.includes("clinical.chart") ?? false;
   const role = myRole(user?.groups);
   const [mode, setMode] = useState(() => (typeof window !== "undefined" && window.innerWidth < NARROW_PX ? "list" : "grid"));
   const [filters, setFilters] = useState({ kind: "all", onlyLate: false, onlyMine: false });
@@ -40,6 +41,9 @@ export function GorevlerScreen() {
   const shiftStartMs = data ? Date.parse(data.shift.start) : nowMs;
   const shiftEndMs = data ? Date.parse(data.shift.end) : nowMs;
 
+  // The open dialog shows the item as the LAST read has it (keys are stable: `v:<pid>:now`, `t:<id>`), so a claim or a
+  // skip is seen in the dialog itself; the item it opened with is the fallback while the patient is off the board.
+  const liveItem = dialog?.item ? (all.find((x) => x.key === dialog.item.key) ?? dialog.item) : null;
   const set = (patch) => setFilters((f) => ({ ...f, ...patch }));
   const openItem = (item) => setDialog(item.kind === "vital" ? { kind: "vital", patientId: item.patientId, item } : { kind: "hand", patientId: item.patientId, item });
 
@@ -80,8 +84,8 @@ export function GorevlerScreen() {
           ? <TaskGrid patients={patients} items={shown} shiftStartMs={shiftStartMs} nowMs={nowMs} onOpen={openItem} />
           : <TaskList patients={patients} items={shown} nowMs={nowMs} onOpen={openItem} />}
       {dialog?.kind === "new" ? <NewTaskDialog patients={patients} nowMs={nowMs} write={write} onClose={() => setDialog(null)} /> : null}
-      {dialog?.kind === "hand" ? <TaskDialog item={dialog.item} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} write={write} onClose={() => setDialog(null)} /> : null}
-      {dialog?.kind === "vital" ? <VitalDialog item={dialog.item} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} write={write} refresh={refresh} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === "hand" ? <TaskDialog item={liveItem} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} write={write} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === "vital" ? <VitalDialog item={liveItem} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} canChart={canChart} write={write} refresh={refresh} onClose={() => setDialog(null)} /> : null}
     </div>
   );
 }

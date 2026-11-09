@@ -1,9 +1,9 @@
 // src/live/screens/gorevler/TaskGrid.jsx — the prototype's 24-hour grid (G3-02 D12): one patient row, then
 // one row per task kind; hour columns from the shift start; a cell is a button in the state's colour.
-import React from "react";
+import React, { useRef } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
-import { StatusPill } from "../../ui/index.js";
+import { Button, StatusPill } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { nameOf } from "../common/BoardState.jsx";
 import { bedNameOf } from "../beds/order.js";
@@ -26,8 +26,18 @@ function Cell({ item, t, onOpen }) {
 export function TaskGrid({ patients, items, shiftStartMs, nowMs, onOpen }) {
   const { t } = useI18n();
   const nowCol = Math.min(23, Math.max(0, Math.floor((nowMs - shiftStartMs) / HOUR_MS)));
+  const scroller = useRef(null);
+  //: «Şimdiye git» — the current hour's column into view (jsdom has no scrollIntoView: then nothing)
+  const goNow = () => {
+    const th = scroller.current?.querySelector('[aria-current="time"]');
+    if (th && typeof th.scrollIntoView === "function") th.scrollIntoView({ inline: "center", block: "nearest" });
+  };
   return (
-    <div className="overflow-x-auto rounded-box border border-line bg-card">
+    <div className="rounded-box border border-line bg-card">
+      <div className="flex justify-end border-b border-line px-3 py-2">
+        <Button size="sm" icon="clock" onClick={goNow}>{t("gorevler.gotoNow")}</Button>
+      </div>
+      <div ref={scroller} className="overflow-x-auto">
       <table aria-label={t("gorevler.title")} className="min-w-[1100px] border-collapse text-13">
         <thead>
           <tr>
@@ -51,7 +61,7 @@ export function TaskGrid({ patients, items, shiftStartMs, nowMs, onOpen }) {
               <React.Fragment key={p.patient_id}>
                 <tr aria-label={`${bedNameOf(p)} ${nameOf(p, t)}`} className="bg-card2">
                   <th scope="row" className="sticky left-0 bg-card2 px-3 py-2 text-left"><b className="font-data text-pri">{bedNameOf(p)}</b> <span className="text-ink">{nameOf(p, t)}</span></th>
-                  <td colSpan={24} className="px-3 text-12 text-mute">{late ? `${late} ${t("gorevler.stateLate")}` : ""}</td>
+                  <td colSpan={24} className="px-3 text-12 text-mute">{late ? t("gorevler.lateCount", { n: late }) : ""}</td>
                 </tr>
                 {rows.filter(([, , xs]) => xs.length > 0).map(([key, label, xs]) => {
                   // The row's label opens its live item — the vital that is due, the open task — not a past entry.
@@ -73,6 +83,7 @@ export function TaskGrid({ patients, items, shiftStartMs, nowMs, onOpen }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
