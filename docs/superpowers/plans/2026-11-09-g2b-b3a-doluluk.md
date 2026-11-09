@@ -47,7 +47,7 @@
 
 ## Ground rules for every task
 
-- **Your worktree.** `/c/tmp/g2b-b3a`, branch `feat/g2b-b3a-doluluk`. It holds main `628c46d4`, the spec commits and this plan's commit.
+- **Your worktree.** `/c/tmp/g2b-b3a`, branch `feat/g2b-b3a-doluluk`. It holds main `14b4a642`, the spec commits and this plan's commit. The branch was rebased on 2026-11-09 from `628c46d4` onto `14b4a642`, which brought in dalga-perf-2: the hub's WAL, and the scope resolver's single-session read in `scope/resolver.py`, `scope/service.py` and `api/prodserver.py`. That was before any code; no task touches those three files.
   - **Never touch `/c/Users/User/Desktop/Project/Homunculus AI`** (the user's main checkout), and never touch another `/c/tmp` worktree.
   - Never `git push`, never deploy, never change anything on a VM.
   - **Never run `git stash`.** The stash is shared with every other worktree and session.
@@ -175,7 +175,7 @@ cd /c/tmp/g2b-b3a && git status --short && git rev-parse --abbrev-ref HEAD && gi
 Expected:
 - no status output;
 - the branch `feat/g2b-b3a-doluluk`;
-- this plan's commit on top of the spec commits, on top of `628c46d4`.
+- this plan's commit on top of the spec commits, on top of `14b4a642`.
 
 - [ ] **Step 2: The `node_modules` junction to the shared install**
 
@@ -4060,7 +4060,7 @@ Expected:
 
 - [ ] **Step 3: The final review (the controller dispatches it)**
 
-One reviewer, the most capable model, reads the whole diff `git diff 628c46d4..HEAD` against the spec (§0–§6) and this plan's departures (X1–X10). It looks hardest at five things:
+One reviewer, the most capable model, reads the whole diff `git diff 14b4a642..HEAD` against the spec (§0–§6) and this plan's departures (X1–X10). It looks hardest at five things:
 - lock order: each bed move takes the bed lock first; the admission takes the bed lock (in `_bed_of`) before the protocol;
 - patient data: no name in the structure, the audit or a refusal, and the note encrypted;
 - the raw move's guards, now shared through `_free_guards`;
