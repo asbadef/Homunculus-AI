@@ -32,12 +32,6 @@ def test_the_catalogue_is_exactly_the_specified_twenty_four_keys():
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
 
-def test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states():
-    from homunculus.auth.permissions import DEFAULT_GROUPS
-    holders = {g["slug"] for g in DEFAULT_GROUPS if "beds.manage_state" in g["permissions"]}
-    assert holders == {"hospital_admin", "charge_nurse"}
-
-
 def test_every_key_has_a_description():
     for key, description in PERMISSIONS.items():
         assert description.strip(), key
@@ -188,6 +182,11 @@ def test_a_cleaned_bed_is_released_by_the_wards_nurses_and_no_one_else_by_defaul
     holders = {slug for slug, perms in by_slug.items() if "beds.release" in perms}
     assert holders == {"nurse", "charge_nurse", "hospital_admin"}
     assert "structure.manage" not in by_slug["nurse"] | by_slug["charge_nurse"]
+
+
+def test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states():
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "beds.manage_state" in g["permissions"]}
+    assert holders == {"hospital_admin", "charge_nurse"}
 
 
 def test_legacy_pharmacist_and_biomedical_convert():

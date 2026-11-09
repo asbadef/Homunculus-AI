@@ -9,7 +9,9 @@
 The model agrees with the migration. Synthetic rows only."""
 from __future__ import annotations
 
+import re
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from alembic import command
@@ -24,10 +26,12 @@ import homunculus.escalation.models  # noqa: F401
 import homunculus.protocol.models  # noqa: F401
 import homunculus.tenant.models  # noqa: F401
 from homunculus.db import Base
+from homunculus.tenant.models import BedState, BedStateReason
 from tests.conftest import requires_db
 
 pytestmark = [requires_db]
 CHECK = "ck_beds_state_reason"
+RESERVED_AT = datetime(2026, 1, 1, tzinfo=timezone.utc)   # an old stamp: the downgrade's must be later
 
 
 def _tenant(conn, slug: str) -> uuid.UUID:
@@ -78,7 +82,8 @@ def test_0016_adds_the_state_the_columns_and_the_charge_nurses_right(clean_db):
             "SELECT group_id FROM group_permissions WHERE permission = 'beds.manage_state'")).scalars())
         row = conn.execute(text("SELECT state::text, state_reason, state_note FROM beds WHERE id = :id"),
                            {"id": bed}).one()
-    assert "RESERVED" in labels
+    # The type holds exactly the model's states: no label lost, none left over.
+    assert labels == {s.name for s in BedState}
     # hospital_admin holds the whole catalogue by rule (auth/permissions.py): no row for it.
     assert holders == {groups[(t, "charge_nurse")] for t in (a, b)}
     assert tuple(row) == ("AVAILABLE", None, None)
@@ -87,14 +92,20 @@ def test_0016_adds_the_state_the_columns_and_the_charge_nurses_right(clean_db):
     assert columns["state_note"]["type"].length == 1536 and columns["state_note"]["nullable"]
 
 
-@pytest.mark.parametrize("reason", ["FAULT", "ISOLATION_CLEANING", "STAFFING", "OTHER", None])
-def test_a_reason_is_one_of_the_four_or_none(clean_db, reason):
+def test_a_reason_is_one_of_the_four_or_none(clean_db):
+    # One chain build for all five (each costs seconds): one bed per reason, and one with none.
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
+    reasons = [r.value for r in BedStateReason] + [None]
     with engine.begin() as conn:
-        bed = _bed(conn, _tenant(conn, "hastane-a"))
-        conn.execute(text("UPDATE beds SET state = 'BLOCKED', state_reason = :r WHERE id = :id"),
-                     {"r": reason, "id": bed})
+        tenant = _tenant(conn, "hastane-a")
+        beds = {_bed(conn, tenant): reason for reason in reasons}
+        for bed, reason in beds.items():
+            conn.execute(text("UPDATE beds SET state = 'BLOCKED', state_reason = :r WHERE id = :id"),
+                         {"r": reason, "id": bed})
+    with engine.connect() as conn:
+        stored = dict(conn.execute(text("SELECT id, state_reason FROM beds")).all())
+    assert stored == beds
 
 
 def test_any_other_reason_is_refused(clean_db):
@@ -115,13 +126,15 @@ def test_the_downgrade_frees_reserved_beds_and_takes_the_rest_away(clean_db):
         reserved, blocked = _bed(conn, tenant), _bed(conn, tenant)
     command.upgrade(cfg, "0016")
     with engine.begin() as conn:
-        conn.execute(text("UPDATE beds SET state = 'RESERVED', state_note = 'x' WHERE id = :id"),
-                     {"id": reserved})
+        conn.execute(text("UPDATE beds SET state = 'RESERVED', state_note = 'x', "
+                          "state_updated_at = :t WHERE id = :id"), {"id": reserved, "t": RESERVED_AT})
         conn.execute(text("UPDATE beds SET state = 'BLOCKED', state_reason = 'FAULT' WHERE id = :id"),
                      {"id": blocked})
     command.downgrade(cfg, "0015")
     with engine.connect() as conn:
         states = dict(conn.execute(text("SELECT id, state::text FROM beds")).all())
+        freed_at = conn.execute(text("SELECT state_updated_at FROM beds WHERE id = :id"),
+                                {"id": reserved}).scalar_one()
         rights = conn.execute(text(
             "SELECT count(*) FROM group_permissions WHERE permission = 'beds.manage_state'")).scalar_one()
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
@@ -129,14 +142,18 @@ def test_the_downgrade_frees_reserved_beds_and_takes_the_rest_away(clean_db):
     assert states == {reserved: "AVAILABLE", blocked: "BLOCKED"}
     assert rights == 0 and version == "0015"
     assert {"state_reason", "state_note"}.isdisjoint(_columns(engine, "beds"))
+    # The freed bed is stamped: "how long has it been in this state" must not read the reservation's age.
+    assert freed_at > RESERVED_AT
     command.upgrade(cfg, "0016")                     # ADD VALUE IF NOT EXISTS runs again
+    with engine.connect() as conn:
+        labels = list(conn.execute(text("SELECT unnest(enum_range(NULL::bedstate))::text")).scalars())
+    assert labels.count("RESERVED") == 1             # the value stayed in the type: once, not twice
+    assert {"state_reason", "state_note"} <= set(_columns(engine, "beds"))
 
 
 def test_the_model_and_the_migration_agree(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "0015")
-    command.upgrade(cfg, "0016")
 
     def only_0016(object_, name, type_, reflected, compare_to):
         if type_ == "table":
@@ -150,6 +167,7 @@ def test_the_model_and_the_migration_agree(clean_db):
         ctx = MigrationContext.configure(conn, opts={
             "compare_type": True, "compare_server_default": False, "include_object": only_0016})
         assert compare_metadata(ctx, Base.metadata) == []
-        # compare_metadata reads no CHECK: it is read here, by name.
-        assert conn.execute(text("SELECT count(*) FROM pg_constraint WHERE contype = 'c' "
-                                 "AND conname = :n"), {"n": CHECK}).scalar_one() == 1
+        # compare_metadata reads no CHECK: it is read here, by name, with the reasons it lists.
+        definition = conn.execute(text("SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                                       "WHERE conname = :n"), {"n": CHECK}).scalar_one()
+    assert re.findall(r"'([A-Z_]+)'", definition) == [r.value for r in BedStateReason]

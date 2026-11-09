@@ -5,7 +5,9 @@ Revision 0016, follows 0015 (protocol).
 
 * `bedstate` gains `RESERVED`. `ALTER TYPE … ADD VALUE` runs inside the migration's transaction
   (Postgres 12 and later); nothing here uses the new value, which Postgres forbids before the
-  commit.
+  commit. `alembic/env.py` runs every pending revision in ONE transaction, so a LATER revision that
+  uses 'RESERVED' fails with "unsafe use of new value" when a database below 0016 goes straight to
+  head. Such a revision commits first, or gets its own transaction.
 * `beds.state_reason` VARCHAR(20) NULL, one of FAULT / ISOLATION_CLEANING / STAFFING / OTHER
   (`ck_beds_state_reason`), and `beds.state_note` VARCHAR(1536) NULL — a Fernet ciphertext
   (`EncryptedString`, R8): a note may name the expected patient.
@@ -54,7 +56,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DELETE FROM group_permissions WHERE permission = 'beds.manage_state'")
-    op.execute("UPDATE beds SET state = 'AVAILABLE' WHERE state = 'RESERVED'")
+    # Stamped, so "how long has it been free" does not read the reservation's age.
+    op.execute("UPDATE beds SET state = 'AVAILABLE', state_updated_at = now() WHERE state = 'RESERVED'")
     op.drop_constraint(CHECK, "beds", type_="check")
     op.drop_column("beds", "state_note")
     op.drop_column("beds", "state_reason")
