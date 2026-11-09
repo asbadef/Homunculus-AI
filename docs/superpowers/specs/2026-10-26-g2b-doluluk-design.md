@@ -152,6 +152,25 @@ Dashboard:
 - No UUID on screen.
 - The reserved-bed confirmation in the Kabul form.
 
+## 5a. Constraints the plan must keep (Lane B, 2026-11-09)
+
+Lane B checked its own branches and worktrees. It has no draft or open decision for any slice left
+in Group 2. On main, four points sit next to this slice:
+
+- **One open admission per person** (A-37 decision 2, `a659e7d0`). It is checked under the bed's
+  lock and backed by a partial unique index. The new routes take the bed's lock in the same order
+  as admission and release, so no new lock order is introduced.
+- **The administrator's raw move** (`34aa97d7`, `b112d98f`). A move to AVAILABLE while an
+  admission is open is refused with `bed_in_use`, and the release's card check runs first.
+  `/return-to-service` reuses these guards; it does not copy them.
+- **Transfer is closed** (A-37 decision 1, `090ca488`; the dashboard handles it in `08837fd2`), and
+  the protocol is kept across a transfer (O8, `b19d654c`). This slice changes neither of them (R5).
+- **`feat/dalga-perf-2`** (Lane B, not on main, running on the VM) changes three files:
+  `scope/resolver.py`, `scope/service.py`, and `_scope_resolver` in `api/prodserver.py`.
+  `GET /tenant/occupancy` reads unit scope through `homunculus.admission.unitscope`, as
+  `/tenant/structure` does, and touches none of those three files. If dalga-perf-2 reaches main
+  first, the code branch is rebased onto it before review.
+
 ## 6. Not in this slice
 
 - Printing the occupancy.
