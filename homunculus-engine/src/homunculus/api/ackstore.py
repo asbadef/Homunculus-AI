@@ -54,6 +54,11 @@ class AckStore:
     # X13: the chains of episodes that left the board unanswered, kept for the escalation delay.
     # Written by the prune; read, and spent, by the next stamp of the key.
     recent: dict[tuple[str, str], Chain] = field(default_factory=dict)
+    # G2-B5 (spec 2026-11-09-g2b-b5-rrt-design.md, D4): the alarms a person called the rapid-response team to —
+    # {"by": username, "at": datetime, "reason": text} — kept with the episode like `acks`: an acknowledgement
+    # answers the call (`acknowledge`, and `alert_lifecycle.acknowledge_latched`), an episode that leaves the
+    # board takes its call with it (`prune`), and a discharge forgets it (`forget_patient`).
+    rrt_calls: dict[tuple[str, str], dict] = field(default_factory=dict)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
                          chain_gap: timedelta | None = None) -> bool:
@@ -87,8 +92,18 @@ class AckStore:
         if clock is not None:
             self.recent[key] = Chain(clock, cleared_at, key in self.paged)
 
+    def call_rrt(self, patient_id: str, kind: str, by: str, reason: str, now: datetime) -> bool:
+        """Record a call to the rapid-response team (G2-B5, D3). False when the alert already has one: the first
+        call stands, and the caller writes nothing more."""
+        key = (patient_id, kind)
+        if key in self.rrt_calls:
+            return False
+        self.rrt_calls[key] = {"by": by, "at": now, "reason": reason}
+        return True
+
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}
+        self.rrt_calls.pop((patient_id, kind), None)   # G2-B5: an answer ends the call
 
     def prune(self, live_keys: set[tuple[str, str]],
               firing_keys: set[tuple[str, str]] | None = None,
@@ -105,7 +120,7 @@ class AckStore:
         if now is not None:
             for key in [k for k in self.first_seen if k not in live_keys and k not in self.acks]:
                 self.remember_chain(key, now)
-        for mapping in (self.acks, self.first_seen, self.clock_from):
+        for mapping in (self.acks, self.first_seen, self.clock_from, self.rrt_calls):
             for key in [k for k in mapping if k not in live_keys]:
                 del mapping[key]
         self.paged &= live_keys
@@ -122,7 +137,7 @@ class AckStore:
         every episode at once (`alert_lifecycle.retire_state`); nothing of them may answer a later
         number, and nothing is left for the escalation cycle to page."""
         for mapping in (self.acks, self.first_seen, self.clock_from, self.resolved, self.firing,
-                        self.recent):
+                        self.recent, self.rrt_calls):
             for key in [k for k in mapping if k[0] == patient_id]:
                 del mapping[key]
         self.escalated = {k for k in self.escalated if k[0] != patient_id}

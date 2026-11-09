@@ -1,8 +1,8 @@
 # src/homunculus/api/rehydrate.py
 """Rehydrate engine + ack state from the audit log (event sourcing).
 
-The append-only audit is the event log: replaying its `ingest`, `chart`, `profile`, `ack` and
-`first_seen` records in id order into a fresh Engine + AckStore reconstructs the runtime state a
+The append-only audit is the event log: replaying its `ingest`, `chart`, `profile`, `ack`, `rrt_call`
+(G2-B5) and `first_seen` records in id order into a fresh Engine + AckStore reconstructs the runtime state a
 restart would otherwise lose. `first_seen` keeps the earliest stamp per (patient, kind), so an
 alert's escalation clock runs on across a restart instead of starting over. Replay calls the
 engine/store directly, so it writes NO new audit records. Deliberately NOT replayed: the derived
@@ -57,6 +57,8 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
             _replay_profile(engine, rec)
         elif rec.event_type == "ack":
             _replay_ack(engine, store, rec)
+        elif rec.event_type == "rrt_call":
+            _replay_rrt_call(engine, store, rec)
         elif rec.event_type == "first_seen":
             key = (rec.patient_id, rec.subject)
             # G3-01 (D12): a stamp only for an alert the replay has on the board, as `_replay_ack` guards. The
@@ -161,6 +163,21 @@ def _replay_ack(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
         return
     at = datetime.fromisoformat(rec.payload["at"])
     store.acknowledge(rec.patient_id, rec.subject, bounded_role(rec.payload.get("role")), at)
+
+
+def _replay_rrt_call(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
+    """G2-B5 (D5): an open call to the rapid-response team survives a restart — only for an alert the replay has
+    on the board and nobody had acknowledged at this point of the log, the rule the live door applies; a later
+    `ack` row answers it as the live one did."""
+    key = (rec.patient_id, rec.subject)
+    if key not in live_keys(engine, store) or key in store.acks:
+        return
+    try:
+        at = datetime.fromisoformat(rec.payload["at"])
+    except (KeyError, TypeError, ValueError):
+        return
+    by = rec.payload.get("actor") or bounded_role(rec.payload.get("role"))
+    store.call_rrt(rec.patient_id, rec.subject, str(by), str(rec.payload.get("reason") or ""), at)
 
 
 #: G3-01 (D10): the kinds a patient's ENGINE state is rebuilt from — what `rehydrate` replays into the engine
