@@ -49,6 +49,7 @@ describe("the audit page's events", () => {
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual(["Audit bütövlüyü"]);
     expect(api.audit).toHaveBeenCalledWith({ limit: 200, eventType: null });
     expect(api.verifyAudit).not.toHaveBeenCalled();
+    expect(api.alarmQuality).not.toHaveBeenCalled();                  // G2-B6 D4: the heatmap waits for its button
     const [first, second, third] = bodyRows();
     expect(first).toHaveTextContent("#3");
     expect(first).toHaveTextContent("structure.create");               // no label: the code itself

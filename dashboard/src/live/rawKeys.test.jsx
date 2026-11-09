@@ -203,6 +203,9 @@ const AUDIT_ROWS = { records: [
 ] };
 const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
   records: 2, complete: true };
+const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, per_patient_hour: [
+  { patient_id: "260109004821", hour: "2026-11-09T10:00:00+00:00", episodes: 2 },
+] };
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
@@ -232,6 +235,7 @@ async function openAt(path) {
       // G2-B4: «Denetim bütünlüğü» (screens/denetim)
       api.audit.mockResolvedValue(AUDIT_ROWS);
       api.verifyAudit.mockResolvedValue(BROKEN_CHAIN);
+      api.alarmQuality.mockResolvedValue(HEAT_REPORT);   // G2-B6
 
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
@@ -400,6 +404,9 @@ describe("no screen shows a reader a translation key", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
     expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
     expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəritəni göstər" })); await settle(); });
+    expect(screen.getByText(/klinik hədd deyil/)).toBeInTheDocument();                              // denetim.heat.legend
+    expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncated
     expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });

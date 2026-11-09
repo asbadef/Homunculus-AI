@@ -1,9 +1,10 @@
 // src/live/screens/denetim/DenetimScreen.jsx — «Denetim bütünlüğü» (G2-B4, spec
-// docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md), for `audit.view`. Two boxes:
+// docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md), for `audit.view`. Three boxes:
 //   - the chain's verification, ON ITS BUTTON ONLY (owner D1): it re-hashes up to 50 000 records on the API's
 //     event loop, and that load is asked for, never paid on every visit. The verdict stays with the local time it
 //     was taken, in this component only — a verdict from an earlier visit shown as current is the one thing this
 //     page must never do; a failed run replaces it rather than sitting beside it;
+//   - the alarm heatmap (G2-B6, HeatBox.jsx), also on its button: masked patients by hour of day, last 7 days;
 //   - the newest events, newest first, the patient id MASKED (owner D2), a type filter that asks the server (D7).
 //     No payload, no hashes (D5). Nothing here writes.
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ import { Alert, Box, Button, Field, Note, Select, Table } from "../../ui/index.j
 import {
   EVENTS_LIMIT, EVENT_TYPES, VERIFY_LIMIT, actorOf, maskPatient, newestFirst, typeKey, verdictOf,
 } from "./denetim.js";
+import { HeatBox } from "./HeatBox.jsx";
 
 const timeText = (ts) => {
   const ms = Date.parse(ts);
@@ -185,6 +187,7 @@ export function DenetimScreen() {
         <p className="m-0 text-13 text-mute">{t("denetim.intro")}</p>
       </div>
       <VerifyBox />
+      <HeatBox />
       <EventsBox />
     </div>
   );
