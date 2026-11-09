@@ -234,6 +234,12 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
      datastore'da** olmalı; yoksa VM-altı duraklamalar (IO-1 167 ms, M-3 #1 2,5 dk) yine vurur.
    - Sıra: KOMSU (Faz 0 #3) → sahip DB VM'ini kurar (boyut: M kademesi) → **hub taşıma dilimi** (en büyük kazanç; panel açık kalır; kısa
      refused duraklaması) → **postgres taşıma dilimi** (kesinti penceresi). Her biri ayrı spec + onay + geri dönüş; önce/sonra IO-1 r3; tek-işlem kuralı.
+   **09.11 ≈16Z SAHİP ERTELEDİ (Lane B'ye): «tüm işler bittikten sonra ayıracağım bunları» — DB VM'i ve hub/postgres taşıma dilimleri sıradaki iş DEĞİL;
+   sahip diğer işler bitince VM'i kendisi kurup haber verecek. Verilen boyut önerisi (Lane B; Lane A katıldı): 4 vCPU / 16 GB; sistem 40 GB + veri
+   100–300 GB AYRI datastore'da (thick eager-zeroed); Ubuntu 24.04 Server, kurulumda featured snaps YOK; statik IP, sysadmin + SSH anahtarı. Ölçülen
+   veri (09.11 15:40Z, salt okunur du): pgdata 90 MB (uygulama DB 36 MB, pg_wal 33 MB), hub `/var/lib/homunculus-infinity-pilot` 249 MB
+   (archive.sqlite 255 873 024 B sabit halka + -wal 4,6 MB) → taşınacak ≈0,35 GB, büyüme yavaş. Birim: StateDirectory=homunculus-infinity-pilot,
+   ProtectSystem=strict; ExecStart'lar /opt/homunculus-infinity/<release>/ (drop-in 30…98) → release klasörleri de taşınır (spec'te).**
 2. **.72'nin komşuları:** MicroK8s/mysqld taşınır mı, .72 kalıcı pilot sunucu mu? **09.11 ≈14:50Z sahip: «kullanılmıyor» → KOŞULDU 15:13–15:35Z: üçü de durduruldu ve açılıştan kaldırıldı (veri yerinde; Faz 0 #3). KAPANDI; kalan yalnız `snap remove` (ayrı, acil değil).**
 3. **M kademesi yeni VM'ler:** ne zaman? (Planın 3–5 günlük kurulumu; G3/B1d/dalga blokları yeni sahaya uyarlanır.)
 4. ~~R6 karşılaştırma penceresi~~ **KAPANDI (08.11):** M-1 (R8, panelsiz, 4 vCPU) %0,19 / %0,00 — sabah %5,81 R8'e değil 2 vCPU +
@@ -258,6 +264,6 @@ tazeliği ve geç çözülen dalga blokları (yalnız görüntü).
 - Komşu envanteri ham: `/c/tmp/infinity-a-releases/komsu-envanter-1456Z.txt` (09.11 14:56Z); hub birimi `homunculus-infinity-pilot-hub.service`
   (drop-in 30…98); nce konteyneri Exited = bilerek (04.09), ASLA başlatılmaz.
 - Depolama: sahibin kararı (09.11) = ayrı DB VM'i, aynı tür disk (§5 karar 1); DB VM'inin boyutu, datastore'u ve adresi sahipten gelecek;
-  hub taşıma ve postgres taşıma dilimlerinin spec'leri yazılmadı.
+  hub taşıma ve postgres taşıma dilimlerinin spec'leri yazılmadı. **09.11 ≈16Z: sahip ERTELEDİ («tüm işler bittikten sonra»); boyut önerisi verildi (§5 karar 1).**
 - `feat/dalga-perf-2` 14b4a642 = **main (09.11 ≈13:50Z, sahibin «maine al» sözüyle Lane B itti)**; VM kodu = main.
 - Bu belge karar üretmez; kararlar roadmap'e ve ilgili spec'lere yazılır.
