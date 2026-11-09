@@ -26,12 +26,19 @@ async def read_grants(db: AsyncSession, user_id: uuid.UUID,
     narrow (or widen) this hospital's board.
     """
     result = await db.execute(
-        select(StaffScope)
-        .where(StaffScope.user_id == user_id, StaffScope.tenant_id == tenant_id,
-               StaffScope.is_active == True)  # noqa: E712
+        grant_rows(StaffScope, user_id=user_id, tenant_id=tenant_id)
         .order_by(StaffScope.created_at)
     )
     return list(result.scalars().all())
+
+
+def grant_rows(*columns, user_id, tenant_id):
+    """SELECT `columns` over this user's ACTIVE grants in one tenant: `read_grants`' rows, and the
+    grant branch of the resolver's one-session reader (`resolver.read_access_for_user`) — which
+    grants count is written once."""
+    return select(*columns).select_from(StaffScope).where(
+        StaffScope.user_id == user_id, StaffScope.tenant_id == tenant_id,
+        StaffScope.is_active == True)  # noqa: E712
 
 
 async def read_all_grants(db: AsyncSession, user_id: uuid.UUID,
@@ -103,9 +110,28 @@ async def read_own_patient_ids(
     from homunculus.admission.models import Patient
 
     moment = now or datetime.now(timezone.utc)
-    result = await db.execute(
-        select(Patient.his_patient_reference, Patient.patient_number, Admission.protocol_no,
-               CareTeamMember.window_start, CareTeamMember.window_end)
+    result = await db.execute(own_patient_rows(
+        Patient.his_patient_reference, Patient.patient_number, Admission.protocol_no,
+        CareTeamMember.window_start, CareTeamMember.window_end,
+        user_id=user_id, tenant_id=tenant_id))
+    own: list[str] = []
+    for his, number, protocol_no, start, end in result.all():
+        if _window_open(start, end, moment):
+            key = board_key(protocol_no, number)
+            own.extend(ref for ref in (his, key) if ref and ref not in own)
+    return own
+
+
+def own_patient_rows(*columns, user_id, tenant_id):
+    """SELECT `columns` over this user's ACTIVE care-team links in one tenant (the admission's
+    tenant and its patient's), one row per link — the window is judged in Python
+    (`_window_open`). `read_own_patient_ids`' rows, and the own-patient branch of the resolver's
+    one-session reader (`resolver.read_access_for_user`): whose patients a care team member sees
+    is written once."""
+    from homunculus.admission.models import Patient
+
+    return (
+        select(*columns)
         .select_from(CareTeamMember)
         .join(Admission, CareTeamMember.admission_id == Admission.id)
         .join(Patient, Admission.patient_id == Patient.id)
@@ -116,12 +142,6 @@ async def read_own_patient_ids(
             Patient.tenant_id == tenant_id,
         )
     )
-    own: list[str] = []
-    for his, number, protocol_no, start, end in result.all():
-        if _window_open(start, end, moment):
-            key = board_key(protocol_no, number)
-            own.extend(ref for ref in (his, key) if ref and ref not in own)
-    return own
 
 
 def _window_open(start: datetime | None, end: datetime | None, now: datetime) -> bool:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from homunculus.scope import ScopeReason
-from homunculus.scope.resolver import make_scope_resolver
+from homunculus.scope.resolver import UNKNOWN, make_scope_resolver
 
 
 def reader(role="NURSE", units=(), beds=(), own=()):
@@ -205,3 +205,89 @@ async def test_which_roles_are_unscoped_is_a_short_and_explicit_list(role, expec
     """
     resolve = make_scope_resolver(reader(role=role, units=["unit-adult"]), decode=decoder("u-1"))
     assert (await resolve("token")).unrestricted is expected
+
+
+def access(role="NURSE", units=(), beds=(), own=(), glass=()):
+    """A `read_access` reader: the whole answer, break-glass included, from one call."""
+    async def read(_user_id: str, _tenant: str):
+        return role, list(units), list(beds), list(own), list(glass)
+    return read
+
+
+class TestFOneReaderForTheWholeAnswer:
+    """`read_access=` (dalga-perf 3b): one reader returns role, grants, own patients AND the
+    break-glass patients, so production reads them in one database session. The decisions around
+    it are the ones `read_scope` + `break_glass` had — above all, failing closed."""
+
+    async def test_the_answer_reaches_the_scope_break_glass_included(self):
+        resolve = make_scope_resolver(read_access=access(units=["unit-adult"], beds=["bed-n1"],
+                                                         own=["p-1"], glass=["p-77"]),
+                                      decode=decoder("u-1"))
+        scope = await resolve("token")
+        assert scope.reason == ScopeReason.ASSIGNED
+        assert (scope.unit_ids, scope.bed_ids) == (frozenset({"unit-adult"}), frozenset({"bed-n1"}))
+        assert scope.own_patient_ids == frozenset({"p-1", "p-77"})
+
+    async def test_break_glass_alone_is_the_reason(self):
+        resolve = make_scope_resolver(read_access=access(glass=["p-77"]), decode=decoder("u-1"),
+                                      enforce_unassigned=lambda: True)
+        scope = await resolve("token")
+        assert (scope.reason, scope.own_patient_ids) == (ScopeReason.BREAK_GLASS,
+                                                         frozenset({"p-77"}))
+
+    async def test_a_failing_reader_refuses_rather_than_widens(self):
+        async def broken(_user_id: str, _tenant: str):
+            raise RuntimeError("connection reset")
+
+        scope = await make_scope_resolver(read_access=broken, decode=decoder("u-1"))("token")
+        assert scope == UNKNOWN and scope.is_empty
+
+    async def test_no_role_here_gets_nothing_whatever_else_was_read(self):
+        resolve = make_scope_resolver(read_access=access(role=None, units=["unit-adult"],
+                                                         glass=["p-77"]),
+                                      decode=decoder("u-1"), enforce_unassigned=lambda: False)
+        assert await resolve("token") == UNKNOWN
+
+    async def test_a_token_that_does_not_decode_reads_nothing(self):
+        seen = []
+
+        async def read(user_id, tenant):
+            seen.append((user_id, tenant))
+            return "MEMBER", [], [], [], []
+        assert await make_scope_resolver(read_access=read, decode=decoder(None))("t") == UNKNOWN
+        assert seen == []
+
+    async def test_the_reader_receives_user_and_tenant(self):
+        seen = []
+
+        async def read(user_id, tenant):
+            seen.append((user_id, tenant))
+            return "MEMBER", [], [], [], []
+        await make_scope_resolver(read_access=read, decode=decoder("u-1"))("t")
+        assert seen == [("u-1", "demo-hastanesi")]
+
+    def test_one_way_of_reading_and_only_one(self):
+        """`read_access` already answers break-glass: a second break-glass reader beside it, or a
+        `read_scope` too, would be two answers to one question. Neither reader is no answer."""
+        async def glass(_user_id, _tenant):
+            return []
+
+        with pytest.raises(TypeError):
+            make_scope_resolver(reader(), read_access=access(), decode=decoder("u-1"))
+        with pytest.raises(TypeError):
+            make_scope_resolver(read_access=access(), break_glass=glass, decode=decoder("u-1"))
+        with pytest.raises(TypeError):
+            make_scope_resolver(decode=decoder("u-1"))
+
+    def test_production_reads_the_whole_answer_in_one_reader(self):
+        """`prodserver._scope_resolver` wires `read_access_for_user` — one session per resolution —
+        and neither of the two readers it replaces."""
+        import inspect
+
+        from homunculus.api import prodserver
+        from homunculus.scope.resolver import read_access_for_user
+
+        assert "read_access=read_access_for_user" in inspect.getsource(prodserver._scope_resolver)
+        wired = inspect.getclosurevars(prodserver._scope_resolver()).nonlocals
+        assert wired["read_access"] is read_access_for_user
+        assert wired["read_scope"] is None and wired["break_glass"] is None
