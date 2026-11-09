@@ -203,7 +203,7 @@ const AUDIT_ROWS = { records: [
 ] };
 const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
   records: 2, complete: true };
-const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, per_patient_hour: [
+const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, window_from: "2026-11-08T06:00:00+00:00", per_patient_hour: [
   { patient_id: "260109004821", hour: "2026-11-09T10:00:00+00:00", episodes: 2 },
 ] };
 
@@ -406,7 +406,8 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəritəni göstər" })); await settle(); });
     expect(screen.getByText(/klinik hədd deyil/)).toBeInTheDocument();                              // denetim.heat.legend
-    expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncated
+    expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncatedFrom
+    expect(screen.getByText(/yalnız .* sonrakı hadisələr sayıldı/)).toBeInTheDocument();             // its {from} filled in, not left as a placeholder
     expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });

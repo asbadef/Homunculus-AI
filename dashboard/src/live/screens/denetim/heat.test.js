@@ -1,7 +1,7 @@
 // heat.test.js — the «Alarm yoğunluğu» box's rules (G2-B6, spec 2026-11-09): UTC hour starts to local hours (D2),
 // rows of masked patients with 24 counts and a total, ordered and capped (D5), the four shading steps. Synthetic ids.
 import { describe, it, expect } from "vitest";
-import { HEAT_DAYS, HEAT_ROWS, HOURS, heatRows, heatStep, localHour } from "./heat.js";
+import { HEAT_DAYS, HEAT_ROWS, HOURS, heatRows, heatStep, localHour, windowStart } from "./heat.js";
 
 const at = (h) => `2026-11-09T${String(h).padStart(2, "0")}:00:00+00:00`;
 
@@ -59,6 +59,29 @@ describe("the rows (D5)", () => {
     expect(heatRows(undefined)).toBeNull();
     expect(heatRows({ episodes: 3 })).toBeNull();
     expect(heatRows({ per_patient_hour: [] })).toEqual({ rows: [], total: 0, max: 0 });
+  });
+
+  it("reads cells that do not add up to the report's own episode count as unreadable — none may vanish silently", () => {
+    expect(heatRows({ episodes: 5, per_patient_hour: [{ patient_id: "260109004821", hour: at(10), episodes: 1 }] })).toBeNull();
+    expect(heatRows({ episodes: 2, per_patient_hour: [{ patient_id: "260109004821", hour: "garbage", episodes: 2 }] })).toBeNull();
+    expect(heatRows({ episodes: 1, per_patient_hour: [{ patient_id: "260109004821", hour: at(10), episodes: 3 }] })).toBeNull();
+  });
+
+  it("checks the sum over every patient, not only the thirty shown, and accepts a total that matches", () => {
+    const cells = Array.from({ length: 31 }, (_, i) => ({ patient_id: `SYN-${String(i).padStart(4, "0")}`, hour: at(i % 24), episodes: 1 }));
+    expect(heatRows({ episodes: 31, per_patient_hour: cells })).toMatchObject({ total: 31 });
+    expect(heatRows({ episodes: 30, per_patient_hour: cells })).toBeNull();     // the cap hides a row; the sum still sees it
+    expect(heatRows({ episodes: 0, per_patient_hour: [] })).toEqual({ rows: [], total: 0, max: 0 });
+    expect(heatRows({ episodes: "x", per_patient_hour: cells.slice(0, 2) })).toMatchObject({ total: 2 });   // no usable total: no check
+  });
+});
+
+describe("where a truncated window starts", () => {
+  it("is the report's window_from as an instant, or null when it is missing or does not parse", () => {
+    expect(windowStart({ window_from: "2026-11-08T06:00:00+00:00" })).toBe(Date.UTC(2026, 10, 8, 6));
+    for (const bad of [{}, undefined, null, { window_from: null }, { window_from: "garbage" }, { window_from: 20261108 }]) {
+      expect(windowStart(bad)).toBeNull();
+    }
   });
 });
 

@@ -5,6 +5,7 @@ import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
+import { ddmmhhmm } from "../../i18n/dates.js";
 import { localHour } from "./heat.js";
 import { HeatBox } from "./HeatBox.jsx";
 
@@ -44,7 +45,7 @@ describe("the alarm heatmap box", () => {
     await show();
     expect(api.alarmQuality).toHaveBeenCalledWith(7);
     // day and month with the time: a screen left open overnight must not pass an old map off as today's
-    expect(screen.getByText(/^Saat \d\d\.\d\d \d\d:\d\d vəziyyətinə$/)).toBeInTheDocument();
+    expect(screen.getByText(/^\d\d\.\d\d \d\d:\d\d vəziyyətinə görə$/)).toBeInTheDocument();
   });
 
   it("takes the previous map away the moment the next run starts, so an old one never sits beside the busy button", async () => {
@@ -56,7 +57,7 @@ describe("the alarm heatmap box", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     await show();                                                     // held: the second run is under way
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.queryByText(/vəziyyətinə$/)).toBeNull();
+    expect(screen.queryByText(/vəziyyətinə görə$/)).toBeNull();
     await act(async () => { release(); });
     await settle();
     expect(screen.getByText("Son 7 gündə siqnal olmayıb.")).toBeInTheDocument();
@@ -79,10 +80,41 @@ describe("the alarm heatmap box", () => {
     expect(document.body).not.toHaveTextContent("260109004821");
   });
 
-  it("says a truncated window is incomplete", async () => {
-    await open((a) => a.alarmQuality.mockResolvedValue({ ...REPORT, truncated: true }));
+  it("says a truncated window is incomplete — and, when the report says from when it counts, from when", async () => {
+    const from = "2026-11-08T06:00:00+00:00";
+    await open((a) => a.alarmQuality.mockResolvedValue({ ...REPORT, truncated: true, window_from: from }));
+    await show();
+    expect(screen.getByText(
+      `Pəncərə serverin oxuma həddini aşdı: yalnız ${ddmmhhmm(Date.parse(from))} sonrakı hadisələr sayıldı; daha köhnələr sayılmadı, rəqəmlər natamamdır.`,
+    )).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();             // the counted part is still shown, with the warning above it
+  });
+
+  it("keeps the general truncated note when the report gives no usable start", async () => {
+    const { api } = await open((a) => a.alarmQuality
+      .mockResolvedValueOnce({ ...REPORT, truncated: true })
+      .mockResolvedValueOnce({ ...REPORT, truncated: true, window_from: "garbage" }));
+    for (const call of [1, 2]) {
+      await show();
+      expect(api.alarmQuality).toHaveBeenCalledTimes(call);
+      expect(screen.getByText("Pəncərə serverin oxuma həddini aşdı; ən köhnə hadisələr sayılmadı, rəqəmlər natamamdır.")).toBeInTheDocument();
+      expect(screen.queryByText(/yalnız .* sonrakı hadisələr sayıldı/)).toBeNull();
+    }
+  });
+
+  it("never says «no alarms» for a truncated window with nothing counted — only the warning", async () => {
+    await open((a) => a.alarmQuality.mockResolvedValue({ episodes: 0, truncated: true, per_patient_hour: [] }));
     await show();
     expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();
+    expect(screen.queryByText("Son 7 gündə siqnal olmayıb.")).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("reads cells that do not add up to the report's episodes as an unreadable report, not a smaller map", async () => {
+    await open((a) => a.alarmQuality.mockResolvedValue({ ...REPORT, episodes: 9 }));
+    await show();
+    expect(screen.getByText("Hesabat oxunmadı.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("says when the window had no alarms, and when the report cannot be read", async () => {

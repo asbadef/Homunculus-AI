@@ -9,7 +9,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { ddmmhhmm, pad2 } from "../../i18n/dates.js";
 import { Alert, Box, Button, Note, Table } from "../../ui/index.js";
-import { HEAT_DAYS, HOURS, heatRows, heatStep } from "./heat.js";
+import { HEAT_DAYS, HOURS, heatRows, heatStep, windowStart } from "./heat.js";
 
 /** The four steps' backgrounds — the primary colour at rising strength; the number is always the cell's text. */
 const SHADE = [
@@ -55,7 +55,7 @@ export function HeatBox() {
   const { t } = useI18n();
   const { store } = useSession();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);       // { report, heat, at } | { error }
+  const [result, setResult] = useState(null);       // { heat, truncated, windowFrom, at } | { error } — what is drawn, not the raw report
   const alive = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -67,7 +67,9 @@ export function HeatBox() {
     setResult(null);          // review: an old map never sits beside a busy button (the page's freshness rule)
     try {
       const report = await store.track(() => store.api.alarmQuality(HEAT_DAYS));
-      if (alive.current) setResult({ report, heat: heatRows(report), at: Date.now() });
+      if (alive.current) {
+        setResult({ heat: heatRows(report), truncated: report?.truncated === true, windowFrom: windowStart(report), at: Date.now() });
+      }
     } catch (error) {
       if (alive.current) setResult({ error });
     } finally {
@@ -85,12 +87,18 @@ export function HeatBox() {
   } else if (result && result.heat === null) {
     body = <Note tone="warn">{t("denetim.heat.unreadable")}</Note>;
   } else if (result) {
-    const { heat, report } = result;
+    const { heat, truncated, windowFrom } = result;
+    // A truncated window is NOT the last seven days: say from when it counts (the report's own start, when it gives
+    // one) — and never «no alarms» for it: what was not counted is not known to be quiet.
     body = (
       <>
-        {report?.truncated === true ? <Note tone="warn">{t("denetim.heat.truncated")}</Note> : null}
+        {truncated ? (
+          <Note tone="warn">
+            {windowFrom === null ? t("denetim.heat.truncated") : t("denetim.heat.truncatedFrom", { from: ddmmhhmm(windowFrom) })}
+          </Note>
+        ) : null}
         {heat.rows.length === 0 ? (
-          <Note tone="info">{t("denetim.heat.none", { days: HEAT_DAYS })}</Note>
+          truncated ? null : <Note tone="info">{t("denetim.heat.none", { days: HEAT_DAYS })}</Note>
         ) : (
           <>
             {heat.total > heat.rows.length ? (
