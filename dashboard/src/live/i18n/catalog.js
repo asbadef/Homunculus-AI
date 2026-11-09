@@ -61,6 +61,9 @@ import olcum from "./strings/olcum.js";
 // Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
 
+// G2-B4: «Denetim bütünlüğü» — the audit trail's integrity page (screens/denetim).
+import denetim from "./strings/denetim.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -96,6 +99,8 @@ export const NAMESPACES = {
 
   olcum, // G3-01
   waves, // dalga
+
+  denetim, // G2-B4
 };
 
 function flattenInto(out, prefix, entries) {

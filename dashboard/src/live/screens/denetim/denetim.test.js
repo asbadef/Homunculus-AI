@@ -4,6 +4,8 @@ import { describe, it, expect } from "vitest";
 import {
   ACTOR_KEYS, EVENTS_LIMIT, EVENT_TYPES, MASK, VERIFY_LIMIT, actorOf, maskPatient, newestFirst, reasonKey, typeKey, verdictOf,
 } from "./denetim.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
+import { LANG_CODES } from "../../i18n/langs.js";
 
 describe("the masked patient id (owner D2)", () => {
   it("shows four dots and the id's last four characters", () => {
@@ -100,5 +102,13 @@ describe("the events, newest first (D5)", () => {
   it("asks for the server's own caps", () => {
     expect(VERIFY_LIMIT).toBe(50000);   // AUDIT_VERIFY_LIMIT_MAX
     expect(EVENTS_LIMIT).toBe(200);
+  });
+});
+
+describe("the page's words", () => {
+  it("has every type label, reason and verdict in every language", () => {
+    const keys = [...EVENT_TYPES.map((e) => e.key), "denetim.reasonDeleted", "denetim.reasonAltered", "denetim.reasonOther",
+      "denetim.verdictOk", "denetim.verdictPartial", "denetim.verdictBroken", "denetim.verdictEmpty", "denetim.verdictUnreadable"];
+    for (const lang of LANG_CODES) for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
   });
 });
