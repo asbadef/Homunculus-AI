@@ -397,5 +397,97 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                               "vital": _vital(hospital, c, settings, now, since, until),
                               "tasks": by_patient[c["patient_id"]]} for c in cards]}
 
-    # Task 5 appends the write routes here; Task 6 the settings routes.
+    def _text(raw, code: str) -> str:
+        if not isinstance(raw, str) or not raw.strip() or len(raw) > TITLE_MAX:
+            raise _refuse(422, code)
+        return raw.strip()
+
+    async def _on_board(authorization: str | None, patient_id: str) -> tuple[Caller, dict]:
+        who, cards = await board(authorization, TASKS_VIEW)
+        _require(who, TASKS_MANAGE)
+        for card in cards:
+            if card["patient_id"] == patient_id:
+                return who, card
+        raise HTTPException(status_code=404, detail=PATIENT_NOT_FOUND)
+
+    def _event(hospital: str, kind: str, patient_id: str, subject: str, payload: dict) -> None:
+        audit.append(AuditEvent(hospital, kind, patient_id, subject, payload))
+
+    @router.post("/tasks", status_code=201)
+    async def create_task(body: dict = Body(...), authorization: str | None = Header(default=None)):
+        patient_id = body.get("patient_id")
+        if not isinstance(patient_id, str) or not patient_id:
+            raise HTTPException(status_code=422, detail="patient_id is required")
+        who, _ = await _on_board(authorization, patient_id)
+        actor = _person(who)
+        now = clock()
+        title = _text(body.get("title"), TASK_TITLE_LENGTH)
+        due_at = _instant(body.get("due_at"))
+        if due_at is None or not (now - DUE_BACK <= due_at <= now + DUE_AHEAD):
+            raise _refuse(422, TASK_DUE_WINDOW)
+        role = body.get("target_role")
+        if role not in TARGET_ROLES:
+            raise _refuse(422, TASK_ROLE_UNKNOWN)
+        settings, _ = _settings(who.hospital)
+        row = store.create(new_task(tenant=who.hospital, patient_id=patient_id, title=title, due_at=due_at,
+                                    target_role=role, created_by=actor, now=now))
+        answer = row.as_dict(grace_min=settings.grace_min, now=now)
+        _event(who.hospital, "task_created", patient_id, row.id,
+               {"task": row.id, "patient_id": patient_id, "due_at": answer["due_at"], "target_role": role, "actor": actor})
+        return answer
+
+    async def _open_task(authorization: str | None, task_id: str) -> tuple[Caller, TaskRow, TaskSettings, datetime]:
+        who = await caller(authorization)
+        _require(who, TASKS_VIEW)
+        _require(who, TASKS_MANAGE)
+        row = store.get(who.hospital, task_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=TASK_NOT_FOUND)
+        await _on_board(authorization, row.patient_id)      # 404 when the patient left the caller's board
+        if row.state != "open":
+            raise _refuse(409, TASK_NOT_OPEN)
+        settings, _ = _settings(who.hospital)
+        return who, row, settings, clock()
+
+    @router.post("/tasks/{task_id}/claim")
+    async def claim_task(task_id: str, authorization: str | None = Header(default=None)):
+        who, row, settings, now = await _open_task(authorization, task_id)
+        actor = _person(who)
+        saved = store.update(replace(row, claimed_by=actor, claimed_at=now))
+        _event(who.hospital, "task_claimed", row.patient_id, row.id, {"task": row.id, "actor": actor})
+        return saved.as_dict(grace_min=settings.grace_min, now=now)
+
+    @router.post("/tasks/{task_id}/done")
+    async def finish_task(task_id: str, authorization: str | None = Header(default=None)):
+        who, row, settings, now = await _open_task(authorization, task_id)
+        actor = _person(who)
+        saved = store.update(replace(row, state="done", closed_by=actor, closed_at=now))
+        _event(who.hospital, "task_done", row.patient_id, row.id, {"task": row.id, "actor": actor})
+        return saved.as_dict(grace_min=settings.grace_min, now=now)
+
+    @router.post("/tasks/{task_id}/skip")
+    async def skip_task(task_id: str, body: dict = Body(...), authorization: str | None = Header(default=None)):
+        who, row, settings, now = await _open_task(authorization, task_id)
+        actor = _person(who)
+        reason = _text(body.get("reason"), TASK_REASON_LENGTH)
+        saved = store.update(replace(row, state="skipped", closed_by=actor, closed_at=now, skip_reason=reason))
+        _event(who.hospital, "task_skipped", row.patient_id, row.id, {"task": row.id, "actor": actor})
+        return saved.as_dict(grace_min=settings.grace_min, now=now)
+
+    @router.post("/tasks/vitals/{patient_id}/skip")
+    async def skip_vital(patient_id: str, body: dict = Body(...), authorization: str | None = Header(default=None)):
+        who, card = await _on_board(authorization, patient_id)
+        actor = _person(who)
+        reason = _text(body.get("reason"), TASK_REASON_LENGTH)   # kept out of the chain (D7); the event is the record
+        now = clock()
+        settings, _ = _settings(who.hospital)
+        current = _vital(who.hospital, card, settings, now, now, now)
+        if current is None or current["state"] not in ("due", "late"):
+            raise _refuse(409, VITAL_NOT_DUE)
+        until = _instant(current["due_at"]) + timedelta(minutes=current["interval_min"])
+        _event(who.hospital, VITAL_SKIPPED, patient_id, "vital", {"patient_id": patient_id, "until": _iso(until), "actor": actor})
+        log.info("vital measurement skipped by %s for one interval (reason length %d)", actor, len(reason))
+        return {"patient_id": patient_id, "skipped_until": _iso(until)}
+
+    # Task 6 appends the settings routes here.
     return router
