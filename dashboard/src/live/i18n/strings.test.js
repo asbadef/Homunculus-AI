@@ -56,6 +56,11 @@ const NEUTRAL = new Set([
   // G2-ESLEME (esleme) · neutral — an arrow between two names the screen fills in
   "esleme.confirm.bind",
 
+  // G3-02 (gorevler) · neutral — band labels: the score's own name and numbers; two placeholder-only texts
+  "gorevler.bandB0", "gorevler.bandB1_4", "gorevler.bandB5_6", "gorevler.bandB7", // NEWS2 0 · 1–4 · 5–6 · ≥ 7
+  "gorevler.taskTitle", //        "{title} · {bed}"    — punctuation; the words are the halves'
+  "gorevler.refused", //          "{subject}: {reason}" — the same (as admin.refusedFor)
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -180,6 +185,13 @@ const AZ_SAME_AS_TR = new Set([
   "shadow.viaHr", "shadow.viaPls", "shadow.viaSpo2", "shadow.viaArt", "shadow.viaNbp", // as monitor.p.*
   "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
   "shadow.since", //         açılış {time} — "opening {time}", the same noun as colOpened; chosen over "{time}'den beri" / "{time}-dən bəri", whose suffix has to agree with the time's last vowel (reviewed 2026-10-27, Task 10)
+
+  // G3-02 (gorevler) · az = tr
+  "gorevler.kindVital", //   Vital — the clinical word, the same in Azerbaijani (the filter's short label)
+  "gorevler.stateDone", //   tamamlandı — the same verb, the same past tense, in Azerbaijani
+  "gorevler.finish", //      Tamamla — its imperative, the same
+  "gorevler.taskTitle", //   "{title} · {bed}"     — punctuation only (NEUTRAL above)
+  "gorevler.refused", //     "{subject}: {reason}" — the same
 
 ]);
 
