@@ -3,7 +3,7 @@
 **Date** 2026-10-26 · **Refreshed** 2026-11-09 against main `628c46d4` (§0)
 **Status** approved in conversation on 2026-10-26 ("Doğru"). Refreshed 2026-11-09, and waiting
 for the user to read this file.
-**Lane** Lane B wrote it. The B1d session (homunculus-ai-bf) now carries it: on 2026-11-09 the
+**Lane** Lane B wrote it. The B1d session (homunculus-ai-bd) now carries it: on 2026-11-09 the
 owner chose "the rest of Group 2" as that session's next work.
 **Branches** this spec: `docs/g2b-b3a-doluluk`. The code goes on `feat/g2b-b3a-doluluk`, cut from
 main when the plan is written.
