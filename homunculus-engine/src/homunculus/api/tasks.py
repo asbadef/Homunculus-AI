@@ -293,3 +293,109 @@ class InMemoryTaskStore:
 
     def close(self) -> None:
         return None
+
+# ----------------------------------------------------------------------------- the anchor: hand entries
+
+def hand_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: datetime,
+                 until: datetime) -> list[datetime]:
+    """When this patient's NEWS2 inputs were entered by hand in [since, until], oldest first — the
+    `chart` rows minus the withdrawn ones (G3-01 D12). A monitor or HL7 observation is not one."""
+    rows = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", RETRACT},
+                         since=since - BEDSIDE_SKEW, limit=HAND_LIMIT, newest=True)
+    withdrawn = {rec.payload.get("entry") for rec in rows if rec.event_type == RETRACT}
+    stamps = []
+    for rec in rows:
+        if rec.event_type != "chart" or rec.subject not in NEWS2_HAND_CODES or rec.id in withdrawn:
+            continue
+        at = _instant(rec.payload.get("obs_ts"))
+        if at is not None and since <= at <= until:
+            stamps.append(at)
+    return sorted(stamps)
+
+
+def skipped_until(audit: AuditLog, hospital: str, patient_id: str) -> datetime | None:
+    """The latest `vital_skipped` event's `until`, if any (spec D7)."""
+    rows = audit.records(tenant=hospital, patient_id=patient_id, event_type=VITAL_SKIPPED, limit=1, newest=True)
+    return _instant(rows[-1].payload.get("until")) if rows else None
+
+
+# ----------------------------------------------------------------------------- the router
+
+def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
+                 board: Callable[[str | None, str], Awaitable[tuple[Caller, list[dict]]]],
+                 audit: AuditLog, store: TaskStore,
+                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> APIRouter:
+    """The routes of spec §3, bound to the app: `caller` resolves the credential, `board(authorization,
+    permission)` answers the caller and the cards they may see (the `/patients` body), `audit` is
+    the chain the events go to, `store` holds the hand tasks and the settings."""
+    router = APIRouter(tags=["tasks"])
+
+    def _settings(hospital: str) -> tuple[TaskSettings, bool]:
+        saved = store.settings(hospital)
+        return (saved, True) if saved is not None else (DEFAULT_SETTINGS, False)
+
+    def _person(who: Caller) -> str:
+        if who.is_device or not isinstance(who.actor, str) or not who.actor.strip():
+            raise HTTPException(status_code=403, detail=PERSON_REQUIRED)
+        return who.actor
+
+    def _require(who: Caller, permission: str) -> None:
+        if not who.can(permission):
+            raise HTTPException(status_code=403, detail=f"permission required: {permission}")
+
+    def _refuse(status: int, code: str) -> HTTPException:
+        return HTTPException(status_code=status, detail={"code": code, "message": WORDS[code]})
+
+    def _window(hospital: str, settings: TaskSettings, now: datetime,
+                from_: str | None, to: str | None) -> tuple[datetime, datetime, datetime, datetime]:
+        zone = zone_of(store.timezone(hospital))
+        start, end = shift_window(now, zone, (settings.shift_start_a, settings.shift_start_b))
+        since = _instant(from_) or start
+        until = _instant(to) or end
+        if until <= since:
+            raise HTTPException(status_code=422, detail="`to` is after `from`")
+        return start, end, since, until
+
+    def _vital(hospital: str, card: dict, settings: TaskSettings, now: datetime,
+               since: datetime, until: datetime) -> dict | None:
+        # The board carries the engine's NEWS2 under `latest` (api/board.py `patient_board`); an
+        # identity-only card has none, and reads as a score of 0 — the b0 band, the one default.
+        news2 = (card.get("latest") or {}).get("news2") or {}
+        total = news2.get("total")
+        band = band_of(int(total), bool(news2.get("red_param"))) if isinstance(total, int) else "b0"
+        interval = settings.intervals.get(band)
+        if interval is None:
+            return None
+        pid = card["patient_id"]
+        stamps = hand_entries(audit, hospital, pid, since=now - ANCHOR_WINDOW, until=now)
+        anchor = stamps[-1] if stamps else None
+        derived = vital_task(now=now, anchor=anchor, admitted_at=store.admitted_at(hospital, pid),
+                             interval_min=interval, grace_min=settings.grace_min,
+                             skipped_until=skipped_until(audit, hospital, pid))
+        return {**derived, "anchor_at": _iso(derived["anchor_at"]), "due_at": _iso(derived["due_at"]),
+                "skipped_until": _iso(derived["skipped_until"]), "band": band, "interval_min": interval,
+                "partial": bool(news2.get("partial")), "entries": [_iso(s) for s in stamps if since <= s < until]}
+
+    @router.get("/tasks")
+    async def list_tasks(authorization: str | None = Header(default=None),
+                         from_: str | None = Query(default=None, alias="from"),
+                         to: str | None = Query(default=None)):
+        who, cards = await board(authorization, TASKS_VIEW)
+        hospital = who.hospital
+        now = clock()
+        settings, _ = _settings(hospital)
+        start, end, since, until = _window(hospital, settings, now, from_, to)
+        ids = {c["patient_id"] for c in cards}
+        rows = store.list(hospital, since=since, until=until, patient_ids=ids)
+        by_patient: dict[str, list[dict]] = {pid: [] for pid in ids}
+        for row in rows:
+            by_patient[row.patient_id].append(row.as_dict(grace_min=settings.grace_min, now=now))
+        return {"from": _iso(since), "to": _iso(until), "shift": {"start": _iso(start), "end": _iso(end)},
+                "now": _iso(now),
+                "settings": {"grace_min": settings.grace_min, "intervals": dict(settings.intervals)},
+                "patients": [{"patient_id": c["patient_id"], "bed_key": c.get("bed_key"), "unit_id": c.get("unit_id"),
+                              "vital": _vital(hospital, c, settings, now, since, until),
+                              "tasks": by_patient[c["patient_id"]]} for c in cards]}
+
+    # Task 5 appends the write routes here; Task 6 the settings routes.
+    return router
