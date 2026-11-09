@@ -3995,7 +3995,7 @@ In `docs/homunculus-rehber-TR.md`:
 2. Insert a new section before the line `## 4. "Neden bunu kullanmıyoruz" köşesi`:
 
 ```markdown
-### 3.13 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
+### 3.14 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
 
 Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
 temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
