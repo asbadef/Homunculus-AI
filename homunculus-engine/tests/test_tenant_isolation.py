@@ -532,6 +532,14 @@ async def test_the_structure_holds_only_the_callers_tenant(world):
 
 
 @requires_db
+async def test_the_occupancy_holds_only_the_callers_tenant(world):
+    """G2-B3a (R1): GET /tenant/occupancy — the names and notes of the caller's own beds only."""
+    r = await _call(world, "GET", "/tenant/occupancy")
+    assert r.status_code == 200, r.text
+    assert {b["bed_id"] for b in r.json()["beds"]} == {str(world.a.bed)}
+
+
+@requires_db
 async def test_the_tenant_list_holds_only_the_callers_tenant(world):
     r = await _call(world, "GET", "/tenant/tenants")
     assert r.status_code == 200

@@ -74,12 +74,14 @@ from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.devicebeds import writes as device_beds   # G2-ESLEME: Yapı follows the mapping (D18)
 from homunculus.tenant import scope
+from homunculus.tenant.shortname import short_name          # G2-B3a (R7)
 from homunculus.tenant.models import (
     BED_STATE_TRANSITIONS, Bed, BedState, BedStateReason, Room, Site, Tenant, Unit,
 )
 from homunculus.tenant.schemas import (
     BedCreate, BedOutOfService, BedPatch, BedReserve, BedResponse, BedStateTransitionRequest,
     RoomCreate, RoomPatch, RoomResponse, SiteCreate, SiteResponse,
+    OccupancyBed, OccupancyResponse,
     StructureBed, StructureResponse, StructureRoom, StructureSite, StructureUnit,
     TenantCreate, TenantResponse, UnitCreate, UnitPatch, UnitResponse,
 )
@@ -435,7 +437,7 @@ async def structure(
             for room in sorted((r for r in rooms if r.unit_id == unit.id),
                                key=lambda r: _natural(r.name)):
                 room_beds = [StructureBed(id=b.id, label=b.label, state=b.state,
-                                          is_active=b.is_active)
+                                          is_active=b.is_active, state_since=b.state_updated_at)
                              for b in sorted((b for b in beds if b.room_id == room.id),
                                              key=lambda b: _natural(b.label))
                              if whole or shown(b)]
@@ -839,3 +841,47 @@ async def bed_return_to_service(
     bed.transition_to(BedState.AVAILABLE)
     return await _state_written(request, db, hospital, bed, unit_id, user,
                                 "bed.return_to_service", was=was, reason=reason, note=False)
+
+
+#: D2: whoever may open the Doluluk screen reads its names and notes; nobody else does (R1).
+_OCCUPANCY_READERS = ("admissions.view", "admissions.admit", "admissions.discharge.confirm",
+                      "beds.release")
+
+
+@router.get("/occupancy", response_model=OccupancyResponse,
+            summary="The short names and the notes of the caller's beds (G2-B3a)")
+async def occupancy(
+    db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
+    user: User = Depends(require_permission(*_OCCUPANCY_READERS)),
+) -> OccupancyResponse:
+    """R1: the patient data of the bed screen, apart from GET /tenant/structure. The structure
+    is read by the scope editor (`users.manage`) and the monitor→bed editor (`devices.map_beds`)
+    as well, and they must not get patient names.
+    For each of the caller's beds (her units; her tenant), it lists:
+    - the short name of the patient whose admission is still open on it (R7);
+    - the out-of-service reason;
+    - the note, decrypted (R8).
+    A bed with none of the three is left out; the screen joins the rest to the structure by
+    `bed_id`."""
+    reach = await unitscope.caller_scope(db, user.id, caller_tenant)
+    stmt = (select(Bed).join(Room, Room.id == Bed.room_id).join(Unit, Unit.id == Room.unit_id)
+            .join(Site, Site.id == Unit.site_id).where(Site.tenant_id == caller_tenant))
+    # `reach_clause` is None for an unrestricted caller (an administrator; an unassigned one while
+    # SCOPE_ENFORCE_UNASSIGNED is off). It must not reach `.where()`: SQLAlchemy reads None there
+    # as NULL, and the unrestricted caller would see no bed at all.
+    within = unitscope.reach_clause(reach, unit_id=Unit.id, bed_id=Bed.id)
+    if within is not None:
+        stmt = stmt.where(within)
+    beds = (await db.execute(stmt)).scalars().all()
+    ids = [b.id for b in beds]
+    names = dict((await db.execute(
+        select(Admission.bed_id, Patient.display_name)
+        .join(Patient, Patient.id == Admission.patient_id)
+        .where(Admission.bed_id.in_(ids),
+               Admission.state.in_(list(OPEN_ADMISSION_STATES))))).all()) if ids else {}
+    return OccupancyResponse(beds=[
+        OccupancyBed(bed_id=b.id, occupant_short=short_name(names.get(b.id)),
+                     state_reason=b.state_reason, state_note=b.state_note)
+        for b in sorted(beds, key=lambda b: str(b.id))
+        if b.id in names or b.state_reason is not None or b.state_note is not None
+    ])

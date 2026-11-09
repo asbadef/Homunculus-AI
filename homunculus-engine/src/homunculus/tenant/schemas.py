@@ -134,6 +134,8 @@ class StructureBed(BaseModel):
     label: str
     state: BedState
     is_active: bool
+    # G2-B3a: when the bed entered its state (`beds.state_updated_at`) — "temizlikte · 25 dk".
+    state_since: datetime | None = None
 
 
 class StructureRoom(BaseModel):
@@ -183,3 +185,18 @@ class BedOutOfService(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: BedStateReason
     note: _Note200 | None = None
+
+
+class OccupancyBed(BaseModel):
+    """One bed of GET /tenant/occupancy. It carries the short name of its patient while an
+    admission holds the bed (R7), and the out-of-service reason and the note (R8). Nothing else
+    about the patient."""
+    bed_id: uuid.UUID
+    occupant_short: str | None = None
+    state_reason: BedStateReason | None = None
+    state_note: str | None = None
+
+
+class OccupancyResponse(BaseModel):
+    """GET /tenant/occupancy (R1): only the caller's beds that have something to say."""
+    beds: list[OccupancyBed]
