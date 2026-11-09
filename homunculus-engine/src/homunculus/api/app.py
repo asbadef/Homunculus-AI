@@ -669,7 +669,8 @@ def create_app(
             for name, store, release in (("audit", audit, "dispose"),
                                          ("identities", identities, "close"),
                                          ("samples", samples, "dispose"),
-                                         ("device_beds", device_beds, "dispose")):
+                                         ("device_beds", device_beds, "dispose"),
+                                         ("tasks", tasks, "close")):           # G3-02
                 method = getattr(store, release, None)
                 if callable(method):
                     try:

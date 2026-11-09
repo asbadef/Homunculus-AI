@@ -7,19 +7,22 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
 from homunculus.api.identity import Caller
-from homunculus.api.tasks import DEFAULT_SETTINGS, TASK_NOT_OPEN, InMemoryTaskStore
+from homunculus.api.tasks import DEFAULT_SETTINGS, TASK_NOT_OPEN, VITAL_SKIPPED, InMemoryTaskStore
 
 TOKEN = "tok"
 DEVICE = {"Authorization": f"Bearer {TOKEN}"}
 NURSE = {"Authorization": "Bearer nurse-jwt"}
 VIEWER = {"Authorization": "Bearer viewer-jwt"}
 ADMIN = {"Authorization": "Bearer admin-jwt"}
+H2_NURSE = {"Authorization": "Bearer h2-nurse-jwt"}
 PEOPLE = {
     "nurse-jwt": Caller(hospital="h1", actor="hem.ayse", groups=("nurse",),
                         perms=frozenset({"board.view", "clinical.chart", "tasks.view", "tasks.manage"})),
     "viewer-jwt": Caller(hospital="h1", actor="dr.elif", groups=("auditor",), perms=frozenset({"board.view"})),
     "admin-jwt": Caller(hospital="h1", actor="admin.lbys", groups=("hospital_admin",),
                         perms=frozenset({"board.view", "tasks.view", "tasks.manage", "structure.manage"})),
+    "h2-nurse-jwt": Caller(hospital="h2", actor="hem.zeynep", groups=("nurse",),
+                           perms=frozenset({"board.view", "clinical.chart", "tasks.view", "tasks.manage"})),
 }
 NOW = datetime(2026, 11, 9, 10, 0, tzinfo=timezone.utc)
 
@@ -112,6 +115,49 @@ class TestReading:
     def test_a_device_token_reads_too(self, client):
         assert _tasks(client, DEVICE).status_code == 200
 
+    def test_a_set_stamped_up_to_two_minutes_ahead_is_the_anchor_at_once(self, client):
+        ahead = datetime.now(timezone.utc) + timedelta(minutes=1)          # the bedside clock runs a minute fast
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], ahead)
+        vital = _card(client, "S-001")["vital"]
+        assert vital["state"] == "plan" and vital["anchor_at"] == ahead.isoformat()
+
+    def test_one_board_read_gives_each_patient_its_own_anchor(self, client, store, monkeypatch):
+        now = datetime.now(timezone.utc)
+        stamps = {"S-001": now - timedelta(minutes=5), "S-002": now - timedelta(hours=2), "S-003": now - timedelta(hours=13)}
+        for patient, at in stamps.items():
+            _chart(client, patient, [{"code": "resp_rate", "value": 16}], at)
+        _seen(client, "S-004")                                                  # no hand set, no admission
+        audit, reads, admissions = client.app.state.audit, [], []
+        real_records, real_admitted = audit.records, store.admitted_at
+
+        def records(**kw):
+            reads.append(kw)
+            return real_records(**kw)
+
+        def admitted_at(tenant, patient_id):
+            admissions.append(patient_id)
+            return real_admitted(tenant, patient_id)
+
+        monkeypatch.setattr(audit, "records", records)
+        monkeypatch.setattr(store, "admitted_at", admitted_at)
+        vitals = {p["patient_id"]: p["vital"] for p in _tasks(client).json()["patients"]}
+        for patient, at in stamps.items():
+            assert vitals[patient]["anchor_at"] == at.isoformat(), patient
+            assert vitals[patient]["entries"] in ([], [at.isoformat()]), patient   # the shift window cuts, never mixes
+        assert [vitals[p]["state"] for p in ("S-001", "S-002", "S-003", "S-004")] == ["plan", "plan", "late", "unknown"]
+        assert len([kw for kw in reads if "chart" in (kw.get("event_types") or ())]) == 1
+        assert len([kw for kw in reads if kw.get("event_type") == VITAL_SKIPPED]) == 1
+        assert admissions == ["S-004"]                                          # only the patient without an anchor
+
+    def test_an_unreadable_or_too_long_window_is_422(self, client):
+        start = datetime.now(timezone.utc)
+        assert _tasks(client, **{"from": "dün"}).status_code == 422
+        assert _tasks(client, to="yarın").status_code == 422
+        week = (start + timedelta(days=7)).isoformat()
+        assert _tasks(client, **{"from": start.isoformat(), "to": week}).status_code == 200
+        longer = (start + timedelta(days=7, minutes=1)).isoformat()
+        assert _tasks(client, **{"from": start.isoformat(), "to": longer}).status_code == 422
+
 
 def _create(client, headers=NURSE, **over):
     body = {"patient_id": "S-001", "title": "Pansuman",
@@ -186,6 +232,41 @@ class TestWriting:
         rows = client.app.state.audit.records(tenant="h1", event_type="vital_skipped", limit=5)
         assert rows[-1].payload == {"patient_id": "S-001", "until": until, "actor": "hem.ayse"}
 
+    def test_a_skip_more_than_one_interval_late_lasts_until_the_next_due_point(self, client):
+        _seen(client)
+        at = datetime.now(timezone.utc) - timedelta(hours=30)
+        # Not one of the six bedside vitals, so a set 30 h back is accepted (G3-01 X12); still a NEWS2 input.
+        _chart(client, "S-001", [{"code": "supplemental_oxygen", "value": False}], at)
+        assert _card(client, "S-001")["vital"]["state"] == "late"                  # due at +12 h, +24 h passed too
+        r = client.post("/tasks/vitals/S-001/skip", json={"reason": "hasta görüntülemede"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        until = r.json()["skipped_until"]
+        assert until == (at + timedelta(minutes=3 * 720)).isoformat()             # +36 h: the first due point after now
+        assert datetime.fromisoformat(until) > datetime.now(timezone.utc)
+        vital = _card(client, "S-001")["vital"]
+        assert vital["state"] == "skipped" and vital["due_at"] == until
+
+    def test_a_newer_hand_set_ends_the_skip(self, client):
+        at = datetime.now(timezone.utc) - timedelta(hours=13)
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], at)
+        assert client.post("/tasks/vitals/S-001/skip", json={"reason": "hasta görüntülemede"}, headers=NURSE).status_code == 200
+        assert _card(client, "S-001")["vital"]["state"] == "skipped"
+        later = datetime.now(timezone.utc)                                          # measured after the skip
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], later)
+        vital = _card(client, "S-001")["vital"]
+        assert vital["state"] == "plan" and vital["skipped_until"] is None and vital["anchor_at"] == later.isoformat()
+
+    def test_a_close_that_lost_the_race_is_409_and_writes_nothing(self, client, store, monkeypatch):
+        _seen(client)
+        task = _create(client).json()
+        stale = store.get("h1", task["id"])                                         # read before the other nurse closed it
+        assert client.post(f"/tasks/{task['id']}/done", headers=NURSE).status_code == 200
+        monkeypatch.setattr(store, "get", lambda tenant, task_id: stale)
+        r = client.post(f"/tasks/{task['id']}/skip", json={"reason": "hasta ameliyatta"}, headers=NURSE)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == TASK_NOT_OPEN
+        kinds = [r.event_type for r in client.app.state.audit.records(tenant="h1", limit=1000)]
+        assert kinds.count("task_skipped") == 0
+
     def test_skipping_a_vital_task_that_is_not_due_is_409(self, client):
         at = datetime.now(timezone.utc) - timedelta(minutes=5)
         _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], at)          # plan
@@ -219,6 +300,16 @@ class TestSettings:
         assert rows[-1].payload["actor"] == "admin.lbys" and rows[-1].payload["after"]["grace_min"] == 45
         assert rows[-1].payload["before"]["grace_min"] == 30
 
+    def test_the_first_save_audits_the_defaults_as_not_configured(self, client):
+        good = {"shift_start_a": 8, "shift_start_b": 20, "grace_min": 45,
+                "intervals": {"b0": 720, "b1_4": 360, "b3_single": 60, "b5_6": 60, "b7": 30}}
+        assert client.put("/tasks/settings", json=good, headers=ADMIN).status_code == 200
+        rows = client.app.state.audit.records(tenant="h1", event_type="task_settings_changed", limit=5)
+        assert rows[-1].payload["before"]["configured"] is False
+        assert client.put("/tasks/settings", json={**good, "grace_min": 30}, headers=ADMIN).status_code == 200
+        rows = client.app.state.audit.records(tenant="h1", event_type="task_settings_changed", limit=5)
+        assert rows[-1].payload["before"]["configured"] is True and rows[-1].payload["before"]["grace_min"] == 45
+
     def test_the_queue_uses_the_saved_intervals(self, client):
         client.put("/tasks/settings", json={"shift_start_a": 8, "shift_start_b": 20, "grace_min": 30,
                                             "intervals": {"b0": 720, "b1_4": None, "b3_single": 60, "b5_6": None, "b7": None}},
@@ -227,3 +318,45 @@ class TestSettings:
         _chart(client, "S-001", [{"code": "resp_rate", "value": 26}], at)          # b3_single, now 60 min
         vital = _card(client, "S-001")["vital"]
         assert vital["band"] == "b3_single" and vital["interval_min"] == 60 and vital["state"] == "plan"
+
+
+_CLOSE = (("claim", None), ("done", None), ("skip", {"reason": "hasta taburcu"}))
+
+
+class TestScope:
+    def test_a_task_whose_patient_left_the_board_is_404(self, client, store):
+        _seen(client)
+        task = _create(client).json()
+        client.portal.call(client.app.state.retire_patient, "h1", "S-001")
+        assert all(p["patient_id"] != "S-001" for p in _tasks(client).json()["patients"])
+        for action, body in _CLOSE:
+            r = client.post(f"/tasks/{task['id']}/{action}", json=body, headers=NURSE)
+            assert r.status_code == 404, (action, r.text)
+        row = store.get("h1", task["id"])
+        assert row.state == "open" and row.claimed_by is None
+
+    def test_another_hospital_neither_sees_nor_touches_the_task(self, client, store):
+        _seen(client)
+        task = _create(client).json()
+        body = _tasks(client, H2_NURSE).json()
+        assert all(p["patient_id"] != "S-001" for p in body["patients"])
+        assert all(t["id"] != task["id"] for p in body["patients"] for t in p["tasks"])
+        for action, payload in _CLOSE:
+            r = client.post(f"/tasks/{task['id']}/{action}", json=payload, headers=H2_NURSE)
+            assert r.status_code == 404, (action, r.text)
+        assert client.post("/tasks/vitals/S-001/skip", json={"reason": "x"}, headers=H2_NURSE).status_code == 404
+        assert _create(client, H2_NURSE).status_code == 404
+        row = store.get("h1", task["id"])
+        assert row.state == "open" and row.claimed_by is None
+        written = {r.event_type for r in client.app.state.audit.records(tenant="h2", limit=1000)}
+        assert not written & {"task_created", "task_claimed", "task_done", "task_skipped", VITAL_SKIPPED}
+
+
+def test_the_task_store_is_released_at_shutdown():
+    closed = []
+    store = InMemoryTaskStore()
+    store.close = lambda: closed.append(True)
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, tasks=store)
+    with TestClient(app):
+        assert closed == []
+    assert closed == [True]

@@ -5,12 +5,13 @@ the tenant's time zone from `tenants`, the admission time of a board key from `a
 fails the request in seconds. `title` and `skip_reason` are Fernet ciphertext at rest."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
 
 from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
-from homunculus.api.tasks import BAND_KEYS, TaskRow, TaskSettings
+from homunculus.api.tasks import BAND_KEYS, TaskNotOpen, TaskRow, TaskSettings
 from homunculus.crypto import decrypt_phi, encrypt_phi
 
 STATEMENT_TIMEOUT_MS = 2000
@@ -19,6 +20,14 @@ _COLUMNS = ("id", "tenant", "patient_id", "title", "due_at", "target_role", "cre
 _SELECT = "SELECT " + ", ".join(_COLUMNS) + " FROM tasks"
 #: admission/models.py OPEN_ADMISSION_STATES, as the enum's values
 _OPEN_STATES = "('DRAFT','ACTIVE','PENDING_DISCHARGE','PENDING_TRANSFER')"
+
+
+def _uuid(task_id) -> str | None:
+    """The id in its canonical spelling, or None when it is not a UUID — never a cast error in Postgres."""
+    try:
+        return str(uuid.UUID(task_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
 
 
 def _row(r) -> TaskRow:
@@ -53,9 +62,12 @@ class PostgresTaskStore:
         return row
 
     def get(self, tenant: str, task_id: str) -> TaskRow | None:
+        key = _uuid(task_id)
+        if key is None:
+            return None
         with self._engine.connect() as conn:
             r = conn.execute(text(_SELECT + " WHERE tenant = :tenant AND id = CAST(:id AS uuid)"),
-                             {"tenant": tenant, "id": task_id}).mappings().first()
+                             {"tenant": tenant, "id": key}).mappings().first()
         return None if r is None else _row(r)
 
     def list(self, tenant: str, *, since: datetime, until: datetime, patient_ids: set[str]) -> list[TaskRow]:
@@ -68,15 +80,23 @@ class PostgresTaskStore:
         return [_row(r) for r in rows]
 
     def update(self, row: TaskRow) -> TaskRow:
+        """Open rows only (`AND state = 'open'`): of two closes that read the row open, the second
+        changes nothing and raises TaskNotOpen; KeyError when the tenant has no such task."""
+        key = _uuid(row.id)
+        if key is None:
+            raise KeyError(row.id)
         with self._engine.begin() as conn:
             done = conn.execute(text(
                 "UPDATE tasks SET state = :state, claimed_by = :claimed_by, claimed_at = :claimed_at, closed_by = :closed_by, "
-                "closed_at = :closed_at, skip_reason = :skip_reason WHERE tenant = :tenant AND id = CAST(:id AS uuid)"),
+                "closed_at = :closed_at, skip_reason = :skip_reason "
+                "WHERE tenant = :tenant AND id = CAST(:id AS uuid) AND state = 'open'"),
                 {"state": row.state, "claimed_by": row.claimed_by, "claimed_at": row.claimed_at, "closed_by": row.closed_by,
                  "closed_at": row.closed_at, "skip_reason": encrypt_phi(row.skip_reason) if row.skip_reason else None,
-                 "tenant": row.tenant, "id": row.id})
-            if done.rowcount != 1:
-                raise KeyError(row.id)
+                 "tenant": row.tenant, "id": key})
+            if done.rowcount == 0:
+                found = conn.execute(text("SELECT 1 FROM tasks WHERE tenant = :tenant AND id = CAST(:id AS uuid)"),
+                                     {"tenant": row.tenant, "id": key}).first()
+                raise TaskNotOpen(row.id) if found is not None else KeyError(row.id)
         return row
 
     def settings(self, tenant: str) -> TaskSettings | None:

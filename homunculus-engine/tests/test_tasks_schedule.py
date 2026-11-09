@@ -3,8 +3,8 @@
 from datetime import datetime, timedelta, timezone
 
 from homunculus.api.tasks import (
-    BAND_KEYS, DEFAULT_SETTINGS, NEWS2_HAND_CODES, TaskSettings, band_of, hand_state, shift_window,
-    vital_task, zone_of,
+    BAND_KEYS, DEFAULT_SETTINGS, NEWS2_HAND_CODES, TaskSettings, band_of, hand_state, next_due_point,
+    shift_window, vital_task, zone_of,
 )
 from homunculus.canonical import SignalCode
 
@@ -87,6 +87,22 @@ class TestVitalTask:
         v = vital_task(now=T0, anchor=T0 - timedelta(hours=5), admitted_at=None, interval_min=240, grace_min=30,
                        skipped_until=T0 - timedelta(minutes=1))
         assert v["state"] == "late"                      # a skip in the past no longer hides anything
+
+    def test_a_hand_set_after_the_skip_ends_it(self):
+        skip = dict(admitted_at=None, interval_min=240, grace_min=30, skipped_until=T0 + timedelta(hours=3))
+        v = vital_task(now=T0, anchor=T0 - timedelta(minutes=10), skipped_at=T0 - timedelta(minutes=20), **skip)
+        assert v["state"] == "plan" and v["skipped_until"] is None and v["due_at"] == T0 + timedelta(minutes=230)
+        v = vital_task(now=T0, anchor=T0 - timedelta(hours=5), skipped_at=T0 - timedelta(minutes=20), **skip)
+        assert v["state"] == "skipped"                   # the set the skip was made over keeps the skip
+
+
+class TestNextDuePoint:
+    def test_the_first_due_point_after_now(self):
+        due = T0 - timedelta(minutes=10)
+        assert next_due_point(due, 720, T0) == due + timedelta(minutes=720)
+        assert next_due_point(T0 - timedelta(hours=18), 720, T0) == T0 + timedelta(hours=6)    # two points in the past
+        assert next_due_point(T0 - timedelta(hours=12), 720, T0) == T0 + timedelta(hours=12)   # a point AT now is not after it
+        assert next_due_point(T0, 240, T0) == T0 + timedelta(minutes=240)
 
 
 class TestHandState:

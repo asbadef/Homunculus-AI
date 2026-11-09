@@ -3,7 +3,9 @@
 DB-less suite and the tests use. The Postgres store answers the same protocol (test_tasks_postgres.py)."""
 from datetime import datetime, timedelta, timezone
 
-from homunculus.api.tasks import DEFAULT_SETTINGS, InMemoryTaskStore, TaskRow, TaskSettings, new_task
+import pytest
+
+from homunculus.api.tasks import DEFAULT_SETTINGS, InMemoryTaskStore, TaskNotOpen, TaskRow, TaskSettings, new_task
 
 T0 = datetime(2026, 11, 9, 10, 0, tzinfo=timezone.utc)
 
@@ -44,3 +46,15 @@ def test_admitted_at_and_zone_are_what_the_test_set():
     store = InMemoryTaskStore(zones={"h1": "Asia/Baku"}, admitted={("h1", "S-001"): T0})
     assert store.admitted_at("h1", "S-001") == T0 and store.admitted_at("h1", "S-009") is None
     assert store.timezone("h1") == "Asia/Baku" and store.timezone("h2") == "UTC"
+
+
+def test_only_an_open_row_changes():
+    store = InMemoryTaskStore()
+    saved = store.create(_row())
+    closed = store.update(TaskRow(**{**saved.__dict__, "state": "done", "closed_by": "hem.ayse", "closed_at": T0}))
+    with pytest.raises(TaskNotOpen):                                   # a second nurse's close, read before the first
+        store.update(TaskRow(**{**saved.__dict__, "state": "skipped", "closed_by": "hem.zeynep", "closed_at": T0,
+                                "skip_reason": "ameliyatta"}))
+    assert store.get("h1", saved.id) == closed
+    with pytest.raises(KeyError):
+        store.update(_row())                                           # a row the store never had

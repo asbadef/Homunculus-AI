@@ -52,9 +52,16 @@ DUE_BACK = timedelta(hours=24)
 DUE_AHEAD = timedelta(days=7)
 #: How far back the anchor read looks for a hand entry before it falls back to the admission (D2).
 ANCHOR_WINDOW = timedelta(hours=48)
-#: The most hand-entry rows one anchor read keeps (newest first), as trends keeps (G3-01 X1).
+#: The most hand-entry rows one patient's anchor read keeps (newest first), as trends keeps (G3-01 X1);
+#: the board's one tenant-wide read keeps HAND_LIMIT * 4.
 HAND_LIMIT = 5000
 VITAL_SKIPPED = "vital_skipped"
+#: How far back the board reads `vital_skipped`. A skip lasts until the first due point after the moment
+#: it was made, at most one interval later, and an interval is at most 1440 minutes: a skip still in
+#: force was written in the last 24 hours.
+SKIP_WINDOW = timedelta(minutes=1440)
+#: The longest `from`–`to` window GET /tasks answers.
+MAX_WINDOW = timedelta(days=7)
 
 TASKS_VIEW, TASKS_MANAGE, STRUCTURE_MANAGE = validate_permissions(("tasks.view", "tasks.manage", "structure.manage"))
 
@@ -174,15 +181,27 @@ def shift_window(now: datetime, zone, starts: tuple[int, int]) -> tuple[datetime
     return start, start + timedelta(hours=24)
 
 
+def next_due_point(due_at: datetime, interval_min: int, now: datetime) -> datetime:
+    """The first due point strictly after `now` on the grid `due_at + k * interval` (spec D7): a skip
+    hides the vital task until then, however many due points have already passed."""
+    step = timedelta(minutes=interval_min)
+    return due_at + (int((now - due_at) // step) + 1) * step
+
+
 def vital_task(*, now: datetime, anchor: datetime | None, admitted_at: datetime | None,
-               interval_min: int | None, grace_min: int, skipped_until: datetime | None) -> dict | None:
-    """The derived vital task (spec D2, D4), or None when the band has no interval."""
+               interval_min: int | None, grace_min: int, skipped_until: datetime | None,
+               skipped_at: datetime | None = None) -> dict | None:
+    """The derived vital task (spec D2, D4), or None when the band has no interval. `skipped_at` is
+    when the skip was made: a hand entry measured after it is the answer to the task, and the skip
+    no longer hides anything."""
     if interval_min is None:
         return None
     anchor_at = anchor if anchor is not None else admitted_at
     if anchor_at is None:
         return {"state": "unknown", "anchor_at": None, "due_at": None, "skipped_until": None}
     due_at = anchor_at + timedelta(minutes=interval_min)
+    if anchor is not None and skipped_at is not None and anchor > skipped_at:
+        skipped_until = None
     if skipped_until is not None and skipped_until > now:
         return {"state": "skipped", "anchor_at": anchor_at, "due_at": skipped_until, "skipped_until": skipped_until}
     if now < due_at:
@@ -229,6 +248,10 @@ class TaskRow:
                 "closed_by": self.closed_by, "closed_at": _iso(self.closed_at)}
 
 
+class TaskNotOpen(Exception):
+    """`update` on a row that is no longer open: another hand closed it between the read and the write."""
+
+
 def new_task(*, tenant: str, patient_id: str, title: str, due_at: datetime, target_role: str,
              created_by: str, now: datetime) -> TaskRow:
     return TaskRow(id=str(uuid.uuid4()), tenant=tenant, patient_id=patient_id, title=title, due_at=due_at,
@@ -236,7 +259,9 @@ def new_task(*, tenant: str, patient_id: str, title: str, due_at: datetime, targ
 
 
 class TaskStore(Protocol):
-    """What the router needs. `tenant` is the hospital slug (the audit's tenant key)."""
+    """What the router needs. `tenant` is the hospital slug (the audit's tenant key). `get` answers
+    None for an id that is not a task of this tenant (a non-UUID one included); `update` changes an
+    OPEN row only — TaskNotOpen when the row is closed, KeyError when there is none."""
     def create(self, row: TaskRow) -> TaskRow: ...
     def get(self, tenant: str, task_id: str) -> TaskRow | None: ...
     def list(self, tenant: str, *, since: datetime, until: datetime, patient_ids: set[str]) -> list[TaskRow]: ...
@@ -272,8 +297,11 @@ class InMemoryTaskStore:
         return sorted(rows, key=lambda r: (r.due_at, r.created_at, r.id))
 
     def update(self, row: TaskRow) -> TaskRow:
-        if (row.tenant, row.id) not in self._rows:
+        current = self._rows.get((row.tenant, row.id))
+        if current is None:
             raise KeyError(row.id)
+        if current.state != "open":
+            raise TaskNotOpen(row.id)
         self._rows[(row.tenant, row.id)] = row
         return row
 
@@ -296,27 +324,64 @@ class InMemoryTaskStore:
 
 # ----------------------------------------------------------------------------- the anchor: hand entries
 
+def _stamps_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, list[datetime]]:
+    """Each patient's hand-entry instants in [since, until], oldest first: the `chart` rows of a NEWS2
+    input minus the ones a `chart_retract` of the SAME patient withdrew (G3-01 D12)."""
+    withdrawn = {(rec.patient_id, rec.payload.get("entry")) for rec in rows if rec.event_type == RETRACT}
+    stamps: dict[str, list[datetime]] = {}
+    for rec in rows:
+        if rec.event_type != "chart" or rec.subject not in NEWS2_HAND_CODES or (rec.patient_id, rec.id) in withdrawn:
+            continue
+        at = _instant(rec.payload.get("obs_ts"))
+        if at is not None and since <= at <= until:
+            stamps.setdefault(rec.patient_id, []).append(at)
+    return {pid: sorted(found) for pid, found in stamps.items()}
+
+
 def hand_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: datetime,
                  until: datetime) -> list[datetime]:
     """When this patient's NEWS2 inputs were entered by hand in [since, until], oldest first — the
     `chart` rows minus the withdrawn ones (G3-01 D12). A monitor or HL7 observation is not one."""
     rows = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", RETRACT},
                          since=since - BEDSIDE_SKEW, limit=HAND_LIMIT, newest=True)
-    withdrawn = {rec.payload.get("entry") for rec in rows if rec.event_type == RETRACT}
-    stamps = []
-    for rec in rows:
-        if rec.event_type != "chart" or rec.subject not in NEWS2_HAND_CODES or rec.id in withdrawn:
-            continue
-        at = _instant(rec.payload.get("obs_ts"))
-        if at is not None and since <= at <= until:
-            stamps.append(at)
-    return sorted(stamps)
+    return _stamps_by_patient(rows, since=since, until=until).get(patient_id, [])
 
 
-def skipped_until(audit: AuditLog, hospital: str, patient_id: str) -> datetime | None:
-    """The latest `vital_skipped` event's `until`, if any (spec D7)."""
+def hand_entries_by_patient(audit: AuditLog, hospital: str, *, since: datetime,
+                            until: datetime) -> dict[str, list[datetime]]:
+    """`hand_entries` for every patient of the tenant in ONE read — what the board's poll needs."""
+    rows = audit.records(tenant=hospital, event_types={"chart", RETRACT}, since=since - BEDSIDE_SKEW,
+                         limit=HAND_LIMIT * 4, newest=True)
+    return _stamps_by_patient(rows, since=since, until=until)
+
+
+@dataclass(frozen=True)
+class VitalSkip:
+    """A `vital_skipped` event (spec D7): hidden until `until`; `at` is when the skip was written."""
+    until: datetime
+    at: datetime
+
+
+def _skip_of(rec) -> VitalSkip | None:
+    until, at = _instant(rec.payload.get("until")), _instant(rec.ts)
+    return None if until is None or at is None else VitalSkip(until=until, at=at)
+
+
+def vital_skip(audit: AuditLog, hospital: str, patient_id: str) -> VitalSkip | None:
+    """This patient's latest `vital_skipped` event, if any (spec D7)."""
     rows = audit.records(tenant=hospital, patient_id=patient_id, event_type=VITAL_SKIPPED, limit=1, newest=True)
-    return _instant(rows[-1].payload.get("until")) if rows else None
+    return _skip_of(rows[-1]) if rows else None
+
+
+def vital_skips(audit: AuditLog, hospital: str, *, since: datetime) -> dict[str, VitalSkip]:
+    """Every patient's latest `vital_skipped` event written since `since`, in ONE read (the newest wins)."""
+    rows = audit.records(tenant=hospital, event_type=VITAL_SKIPPED, since=since, limit=HAND_LIMIT, newest=True)
+    skips: dict[str, VitalSkip] = {}
+    for rec in rows:                                     # oldest first: a later row replaces an earlier one
+        skip = _skip_of(rec)
+        if skip is not None:
+            skips[rec.patient_id] = skip
+    return skips
 
 
 # ----------------------------------------------------------------------------- the router
@@ -350,14 +415,20 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                 from_: str | None, to: str | None) -> tuple[datetime, datetime, datetime, datetime]:
         zone = zone_of(store.timezone(hospital))
         start, end = shift_window(now, zone, (settings.shift_start_a, settings.shift_start_b))
-        since = _instant(from_) or start
-        until = _instant(to) or end
+        since = start if from_ is None else _instant(from_)
+        until = end if to is None else _instant(to)
+        if since is None or until is None:
+            raise HTTPException(status_code=422, detail="`from` and `to` are ISO-8601 instants")
         if until <= since:
             raise HTTPException(status_code=422, detail="`to` is after `from`")
+        if until - since > MAX_WINDOW:
+            raise HTTPException(status_code=422, detail="the window is at most 7 days")
         return start, end, since, until
 
-    def _vital(hospital: str, card: dict, settings: TaskSettings, now: datetime,
-               since: datetime, until: datetime) -> dict | None:
+    def _vital(hospital: str, card: dict, settings: TaskSettings, now: datetime, since: datetime, until: datetime,
+               *, stamps: list[datetime], skip: VitalSkip | None) -> dict | None:
+        """One card's vital task from what was read for it: `stamps` its hand entries (oldest first),
+        `skip` its latest `vital_skipped`. The admission is read only when there is no hand entry."""
         # The board carries the engine's NEWS2 under `latest` (api/board.py `patient_board`); an
         # identity-only card has none, and reads as a score of 0 — the b0 band, the one default.
         news2 = (card.get("latest") or {}).get("news2") or {}
@@ -366,12 +437,11 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         interval = settings.intervals.get(band)
         if interval is None:
             return None
-        pid = card["patient_id"]
-        stamps = hand_entries(audit, hospital, pid, since=now - ANCHOR_WINDOW, until=now)
         anchor = stamps[-1] if stamps else None
-        derived = vital_task(now=now, anchor=anchor, admitted_at=store.admitted_at(hospital, pid),
+        admitted = store.admitted_at(hospital, card["patient_id"]) if anchor is None else None
+        derived = vital_task(now=now, anchor=anchor, admitted_at=admitted,
                              interval_min=interval, grace_min=settings.grace_min,
-                             skipped_until=skipped_until(audit, hospital, pid))
+                             skipped_until=skip.until if skip else None, skipped_at=skip.at if skip else None)
         return {**derived, "anchor_at": _iso(derived["anchor_at"]), "due_at": _iso(derived["due_at"]),
                 "skipped_until": _iso(derived["skipped_until"]), "band": band, "interval_min": interval,
                 "partial": bool(news2.get("partial")), "entries": [_iso(s) for s in stamps if since <= s < until]}
@@ -390,11 +460,17 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         by_patient: dict[str, list[dict]] = {pid: [] for pid in ids}
         for row in rows:
             by_patient[row.patient_id].append(row.as_dict(grace_min=settings.grace_min, now=now))
+        # One read of the tenant's hand entries and one of its skips for the whole board, not one per
+        # patient. The upper bound takes a bedside time stamped up to BEDSIDE_SKEW ahead at once.
+        stamps = hand_entries_by_patient(audit, hospital, since=now - ANCHOR_WINDOW,
+                                         until=now + BEDSIDE_SKEW) if cards else {}
+        skips = vital_skips(audit, hospital, since=now - SKIP_WINDOW) if cards else {}
         return {"from": _iso(since), "to": _iso(until), "shift": {"start": _iso(start), "end": _iso(end)},
                 "now": _iso(now),
                 "settings": {"grace_min": settings.grace_min, "intervals": dict(settings.intervals)},
                 "patients": [{"patient_id": c["patient_id"], "bed_key": c.get("bed_key"), "unit_id": c.get("unit_id"),
-                              "vital": _vital(hospital, c, settings, now, since, until),
+                              "vital": _vital(hospital, c, settings, now, since, until,
+                                              stamps=stamps.get(c["patient_id"], []), skip=skips.get(c["patient_id"])),
                               "tasks": by_patient[c["patient_id"]]} for c in cards]}
 
     def _text(raw, code: str) -> str:
@@ -440,6 +516,10 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         who = await caller(authorization)
         _require(who, TASKS_VIEW)
         _require(who, TASKS_MANAGE)
+        try:
+            task_id = str(uuid.UUID(task_id))       # a malformed id is no task, not a database error
+        except ValueError:
+            raise HTTPException(status_code=404, detail=TASK_NOT_FOUND) from None
         row = store.get(who.hospital, task_id)
         if row is None:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND)
@@ -449,11 +529,20 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         settings, _ = _settings(who.hospital)
         return who, row, settings, clock()
 
+    def _save(row: TaskRow) -> TaskRow:
+        """The write, open rows only: a close that lost the race to another hand is 409, as a late one."""
+        try:
+            return store.update(row)
+        except TaskNotOpen:
+            raise _refuse(409, TASK_NOT_OPEN) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail=TASK_NOT_FOUND) from None
+
     @router.post("/tasks/{task_id}/claim")
     async def claim_task(task_id: str, authorization: str | None = Header(default=None)):
         who, row, settings, now = await _open_task(authorization, task_id)
         actor = _person(who)
-        saved = store.update(replace(row, claimed_by=actor, claimed_at=now))
+        saved = _save(replace(row, claimed_by=actor, claimed_at=now))
         _event(who.hospital, "task_claimed", row.patient_id, row.id, {"task": row.id, "actor": actor})
         return saved.as_dict(grace_min=settings.grace_min, now=now)
 
@@ -461,7 +550,7 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     async def finish_task(task_id: str, authorization: str | None = Header(default=None)):
         who, row, settings, now = await _open_task(authorization, task_id)
         actor = _person(who)
-        saved = store.update(replace(row, state="done", closed_by=actor, closed_at=now))
+        saved = _save(replace(row, state="done", closed_by=actor, closed_at=now))
         _event(who.hospital, "task_done", row.patient_id, row.id, {"task": row.id, "actor": actor})
         return saved.as_dict(grace_min=settings.grace_min, now=now)
 
@@ -470,7 +559,7 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         who, row, settings, now = await _open_task(authorization, task_id)
         actor = _person(who)
         reason = _text(body.get("reason"), TASK_REASON_LENGTH)
-        saved = store.update(replace(row, state="skipped", closed_by=actor, closed_at=now, skip_reason=reason))
+        saved = _save(replace(row, state="skipped", closed_by=actor, closed_at=now, skip_reason=reason))
         _event(who.hospital, "task_skipped", row.patient_id, row.id, {"task": row.id, "actor": actor})
         return saved.as_dict(grace_min=settings.grace_min, now=now)
 
@@ -481,10 +570,12 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         reason = _text(body.get("reason"), TASK_REASON_LENGTH)   # kept out of the chain (D7); the event is the record
         now = clock()
         settings, _ = _settings(who.hospital)
-        current = _vital(who.hospital, card, settings, now, now, now)
+        stamps = hand_entries(audit, who.hospital, patient_id, since=now - ANCHOR_WINDOW, until=now + BEDSIDE_SKEW)
+        current = _vital(who.hospital, card, settings, now, now, now,
+                         stamps=stamps, skip=vital_skip(audit, who.hospital, patient_id))
         if current is None or current["state"] not in ("due", "late"):
             raise _refuse(409, VITAL_NOT_DUE)
-        until = _instant(current["due_at"]) + timedelta(minutes=current["interval_min"])
+        until = next_due_point(_instant(current["due_at"]), current["interval_min"], now)
         _event(who.hospital, VITAL_SKIPPED, patient_id, "vital", {"patient_id": patient_id, "until": _iso(until), "actor": actor})
         log.info("vital measurement skipped by %s for one interval (reason length %d)", actor, len(reason))
         return {"patient_id": patient_id, "skipped_until": _iso(until)}
@@ -509,11 +600,11 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         code = wanted.refusal()
         if code is not None:
             raise _refuse(422, code)
-        before, _ = _settings(who.hospital)
+        before, configured = _settings(who.hospital)
         now = clock()
         saved = store.save_settings(who.hospital, wanted, by=actor, now=now)
         _event(who.hospital, "task_settings_changed", "", "settings",
-               {"actor": actor, "before": before.as_dict(True), "after": saved.as_dict(True)})
+               {"actor": actor, "before": before.as_dict(configured), "after": saved.as_dict(True)})
         return saved.as_dict(True)
 
     return router
