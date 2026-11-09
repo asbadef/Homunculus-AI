@@ -194,6 +194,16 @@ const ADMISSIONS = [
 const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
   label_height_mm: 30, printer_dpi: 203, updated_at: null };
 
+/** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
+const AUDIT_ROWS = { records: [
+  { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
+    subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
+  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
+    subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
+] };
+const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
+  records: 2, complete: true };
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -218,6 +228,10 @@ async function openAt(path) {
       // G2-ESLEME: the monitor–bed list on «Monitörler» — a bound, a label-only, another unit's and
       // an absent monitor, so every row kind and both actions are drawn.
       api.deviceBeds.mockResolvedValue(MAPPING);
+
+      // G2-B4: «Denetim bütünlüğü» (screens/denetim)
+      api.audit.mockResolvedValue(AUDIT_ROWS);
+      api.verifyAudit.mockResolvedValue(BROKEN_CHAIN);
 
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
@@ -374,6 +388,19 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B4 — the audit page: its verdict appears only on the button (owner D1), so the sweep above never saw it.
+  it("the audit page's keys resolve on its events and on a broken chain's verdict", async () => {
+    const mounted = await openAt("/denetim");
+    expect(screen.getByRole("heading", { level: 1, name: "Audit bütövlüyü" })).toBeInTheDocument();   // denetim.title
+    // the label is also the filter's option, so ask for the events row's cell, not the first match
+    expect(screen.getAllByText("Siqnalın təsdiqi").some((el) => el.tagName === "TD")).toBe(true);   // denetim.type.ack
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
+    expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
+    expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed
+    expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });
 
