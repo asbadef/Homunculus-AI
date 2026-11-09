@@ -57,6 +57,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from homunculus.admission import trail, unitscope
 from homunculus.admission.boardkey import board_key
@@ -373,7 +374,9 @@ async def list_beds(
     caller_tenant: uuid.UUID = _tenant,
 ) -> list[BedResponse]:
     scope.ensure_owned(await scope.tenant_of_room(db, room_id), caller_tenant, "Room not found")
-    result = await db.execute(select(Bed).where(Bed.room_id == room_id))
+    # G2-B3a (R1): BedResponse has no note, so the note is never loaded, let alone decrypted.
+    result = await db.execute(select(Bed).options(defer(Bed.state_note, raiseload=True))
+                              .where(Bed.room_id == room_id))
     return [BedResponse.model_validate(b) for b in result.scalars().all()]
 
 
@@ -415,8 +418,12 @@ async def structure(
         select(Unit).where(Unit.site_id.in_([s.id for s in sites])))).scalars().all()
     rooms = (await db.execute(
         select(Room).where(Room.unit_id.in_([u.id for u in units])))).scalars().all()
+    # G2-B3a (R1): the structure never holds a note's plaintext. The column is not loaded, so it
+    # is not decrypted either: a note that cannot be read must not take the tree every screen
+    # reads down with it, and a later change cannot leak the note by touching the attribute.
     beds = (await db.execute(
-        select(Bed).where(Bed.room_id.in_([r.id for r in rooms])))).scalars().all()
+        select(Bed).options(defer(Bed.state_note, raiseload=True))
+        .where(Bed.room_id.in_([r.id for r in rooms])))).scalars().all()
     room_unit = {r.id: r.unit_id for r in rooms}
 
     def shown(bed: Bed) -> bool:
@@ -874,11 +881,13 @@ async def occupancy(
         stmt = stmt.where(within)
     beds = (await db.execute(stmt)).scalars().all()
     ids = [b.id for b in beds]
+    # Oldest first, so `dict()` keeps the newest admission of a bed (no index forbids two open ones).
     names = dict((await db.execute(
         select(Admission.bed_id, Patient.display_name)
         .join(Patient, Patient.id == Admission.patient_id)
-        .where(Admission.bed_id.in_(ids),
-               Admission.state.in_(list(OPEN_ADMISSION_STATES))))).all()) if ids else {}
+        .where(Admission.tenant_id == caller_tenant, Admission.bed_id.in_(ids),
+               Admission.state.in_(list(OPEN_ADMISSION_STATES)))
+        .order_by(Admission.created_at))).all()) if ids else {}
     return OccupancyResponse(beds=[
         OccupancyBed(bed_id=b.id, occupant_short=short_name(names.get(b.id)),
                      state_reason=b.state_reason, state_note=b.state_note)

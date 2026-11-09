@@ -5,6 +5,8 @@ the FIRST word's initial: "Əli M.". Never more than one word and one initial. N
 synthetic names only."""
 from __future__ import annotations
 
+import unicodedata
+
 import pytest
 
 from homunculus.tenant.shortname import short_name
@@ -19,6 +21,15 @@ from homunculus.tenant.shortname import short_name
     ("", None),
     ("   ", None),
     (None, None),
+    ("-Kaya Ayşe", "Ayşe K."),                  # the initial skips a leading mark that is no letter
+    ("Məmmədov - Əli", "Əli M."),               # a lone "-" is not a word
+    ("-", None),
+    ("- Sentetik -", "Sentetik"),               # one word left: shown as it is
+    # A name from a system that writes decomposed letters reads as the composed one (NFC), and
+    # a letter that has no composed form keeps its combining mark.
+    (unicodedata.normalize("NFD", "Şahin Əli"), "Əli Ş."),
+    (unicodedata.normalize("NFD", "İsmayılov İlkin"), "İlkin İ."),
+    ("X̧yz Ayşe", "Ayşe X̧."),        # NFC has no "X̧": the cedilla stays with the initial
 ])
 def test_the_second_word_and_the_first_words_initial(name, short):
     assert short_name(name) == short
