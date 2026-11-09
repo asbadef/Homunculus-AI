@@ -291,6 +291,15 @@ BY_ID: dict[str, ById] = {
     "room patch": ById("PATCH", lambda s: f"/tenant/rooms/{s.room}", lambda a: {"name": "Oda 9"}),
     "bed patch": ById("PATCH", lambda s: f"/tenant/beds/{s.free_bed}", lambda a: {"label": "9Z"}),
     "bed release": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/release", control=409),
+    # G2-B3a (Doluluk): the caller's own free bed is reserved and taken out of service (200); it is
+    # neither reserved nor out of service, so the two undos are refused by the domain (409).
+    "bed reserve": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/reserve",
+                        lambda a: {"note": "Sentetik rezerv"}),
+    "bed unreserve": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/unreserve", control=409),
+    "bed out of service": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/out-of-service",
+                               lambda a: {"reason": "FAULT"}),
+    "bed return to service": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/return-to-service",
+                                  control=409),
 }
 
 

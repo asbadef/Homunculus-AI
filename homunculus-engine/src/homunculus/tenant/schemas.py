@@ -4,9 +4,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from homunculus.tenant.models import BedState, UnitType
+from homunculus.tenant.models import BedState, BedStateReason, UnitType
 
 # G2-B1a (amendment A-13): a new site's, unit's, room's or bed's name is trimmed, never blank, and
 # never longer than its column (a longer one was a 500 from the database).
@@ -165,3 +165,21 @@ class StructureResponse(BaseModel):
     screen ever shows a UUID (spec D9). `tenant_id` is the parent a new site is created under."""
     tenant_id: uuid.UUID
     sites: list[StructureSite]
+
+
+# ---------------------------------------------------------------- G2-B3a (Doluluk)
+# A note is trimmed and at most 200 characters (spec §3); blank is "no note" (None, at the route).
+_Note200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+
+
+class BedReserve(BaseModel):
+    """Hold a free bed: for whom and why — optional, and stored encrypted (R8)."""
+    model_config = ConfigDict(extra="forbid")
+    note: _Note200 | None = None
+
+
+class BedOutOfService(BaseModel):
+    """Take a free bed out of service: always a reason (D4), a note too for OTHER (X3)."""
+    model_config = ConfigDict(extra="forbid")
+    reason: BedStateReason
+    note: _Note200 | None = None

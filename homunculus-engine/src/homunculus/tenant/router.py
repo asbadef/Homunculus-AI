@@ -62,8 +62,8 @@ from homunculus.admission import trail, unitscope
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.boardlink import board_link_of
 from homunculus.admission.errors import (
-    BED_IN_USE, BED_LABEL_TAKEN, BOARD_NOT_CLEARED, HAS_OPEN_BEDS, INVALID_TRANSITION, NAME_TAKEN,
-    Refusal, field_invalid,
+    BED_CLOSED, BED_IN_USE, BED_LABEL_TAKEN, BOARD_NOT_CLEARED, HAS_OPEN_BEDS, INVALID_TRANSITION,
+    NAME_TAKEN, Refusal, field_invalid,
 )
 from homunculus.admission.models import OPEN_ADMISSION_STATES, Admission, AdmissionState, Patient
 from homunculus.auth.dependencies import (
@@ -75,10 +75,10 @@ from homunculus.db import get_db
 from homunculus.devicebeds import writes as device_beds   # G2-ESLEME: Yapı follows the mapping (D18)
 from homunculus.tenant import scope
 from homunculus.tenant.models import (
-    BED_STATE_TRANSITIONS, Bed, BedState, Room, Site, Tenant, Unit,
+    BED_STATE_TRANSITIONS, Bed, BedState, BedStateReason, Room, Site, Tenant, Unit,
 )
 from homunculus.tenant.schemas import (
-    BedCreate, BedPatch, BedResponse, BedStateTransitionRequest,
+    BedCreate, BedOutOfService, BedPatch, BedReserve, BedResponse, BedStateTransitionRequest,
     RoomCreate, RoomPatch, RoomResponse, SiteCreate, SiteResponse,
     StructureBed, StructureResponse, StructureRoom, StructureSite, StructureUnit,
     TenantCreate, TenantResponse, UnitCreate, UnitPatch, UnitResponse,
@@ -646,6 +646,23 @@ async def _holds_open_admission(db: AsyncSession, bed_id: uuid.UUID) -> bool:
         .limit(1))).first() is not None
 
 
+async def _free_guards(request: Request, db: AsyncSession, hospital: str, bed: Bed, actor: str,
+                       *, via: str) -> None:
+    """What every move that FREES a bed checks first, under the bed's lock (B1a's final review;
+    G2-B3a R6): no admission on it still open (`bed_in_use`), and its discharged patients' cards
+    off the board (`_last_card_off`, `board_not_cleared`). The raw move and the Doluluk's return
+    to service share it, so neither frees a bed the release would not. Raises Refusal."""
+    if await _holds_open_admission(db, bed.id):
+        raise Refusal(409, BED_IN_USE, "An admission on this bed is still open: it is "
+                      "discharged before the bed is freed.")
+    await _last_card_off(request, db, hospital, bed.id, actor, via=via)
+
+
+#: G2-B3a (X4): states the raw move never sets — each comes with a note or a reason, which only
+#: the Doluluk's routes take.
+_NOT_RAW = frozenset({BedState.RESERVED, BedState.BLOCKED})
+
+
 @router.post("/beds/{bed_id}/transition", response_model=BedResponse,
              summary="Transition a bed to a new lifecycle state (§1.3)")
 async def transition_bed(
@@ -661,14 +678,15 @@ async def transition_bed(
     bed's lock, as the release."""
     scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
     bed = await _lock_bed(db, bed_id)
+    if body.new_state in _NOT_RAW:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"{body.new_state.value} is set on the bed's own routes "
+                                   "(reserve, out-of-service), with its note or reason.")
     if body.new_state == BedState.AVAILABLE and \
             body.new_state in BED_STATE_TRANSITIONS.get(bed.state, set()):
         try:
-            if await _holds_open_admission(db, bed.id):
-                raise Refusal(409, BED_IN_USE, "An admission on this bed is still open: it is "
-                              "discharged before the bed is freed.")
-            await _last_card_off(request, db, await trail.hospital_of(db, caller_tenant), bed.id,
-                                 user.username, via="bed.transition")
+            await _free_guards(request, db, await trail.hospital_of(db, caller_tenant), bed,
+                               user.username, via="bed.transition")
         except Refusal as exc:
             raise exc.http() from None
     try:
@@ -678,3 +696,129 @@ async def transition_bed(
     await db.commit()
     await db.refresh(bed)
     return BedResponse.model_validate(bed)
+
+
+# ---------------------------------------------------------------- G2-B3a (Doluluk)
+# A free bed reserved for an expected patient or taken out of service with a reason, and either
+# undone (spec §4, D4). Every route follows the same steps:
+#   1. the bed is proven the caller's tenant's, and its row is locked (R6);
+#   2. the caller's units must reach it, and a closed bed is refused (X6);
+#   3. the state is checked;
+#   4. one transition runs, which clears the old reason and note (`Bed.transition_to`), and the
+#      new ones are written.
+# Each move is audited after the commit, with the reason and whether a note was written — never
+# its words (R8).
+_manage_state = Depends(require_permission("beds.manage_state"))
+
+
+async def _bed_in_reach(db: AsyncSession, bed_id: uuid.UUID, caller_tenant: uuid.UUID,
+                        user: User) -> tuple[Bed, uuid.UUID]:
+    """The bed, locked, and its unit — or the refusal: 404 when the bed is another tenant's or
+    does not exist; 403 `out_of_scope` outside the caller's units; 409 `bed_closed` for a closed
+    bed (X6)."""
+    scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, "Bed not found")
+    bed = await _lock_bed(db, bed_id)
+    unit_id = await _unit_of_bed(db, bed_id)
+    try:
+        unitscope.require_reach(await unitscope.caller_scope(db, user.id, caller_tenant),
+                                unit_id=unit_id, bed_id=bed.id)
+    except Refusal as exc:
+        raise exc.http() from None
+    if not bed.is_active:
+        raise Refusal(409, BED_CLOSED, "The bed is closed: it is reopened first.").http()
+    return bed, unit_id
+
+
+def _must_be(bed: Bed, states: frozenset[BedState], what: str) -> BedState:
+    """The bed's state, if it is one of `states`; else 409 `invalid_transition`."""
+    if bed.state not in states:
+        raise Refusal(409, INVALID_TRANSITION, f"{what} (it is {bed.state.value}).").http()
+    return bed.state
+
+
+async def _state_written(request: Request, db: AsyncSession, hospital: str, bed: Bed,
+                         unit_id: uuid.UUID, user: User, event_type: str, *, was: BedState,
+                         reason: str | None, note: bool) -> BedResponse:
+    """Commit the move, then audit it: who, the bed, from → to, the reason, and whether a note
+    was written — never the note (R8)."""
+    to = bed.state
+    await db.commit()
+    await db.refresh(bed)
+    trail.record(request, hospital, event_type, payload={
+        "bed_id": str(bed.id), "unit_id": str(unit_id), "from": was.value, "to": to.value,
+        "reason": reason, "note": note, "actor": user.username})
+    return BedResponse.model_validate(bed)
+
+
+@router.post("/beds/{bed_id}/reserve", response_model=BedResponse,
+             summary="Hold a free bed for an expected patient (G2-B3a)")
+async def reserve_bed(
+    bed_id: uuid.UUID, body: BedReserve, request: Request,
+    db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
+    user: User = _manage_state,
+) -> BedResponse:
+    bed, unit_id = await _bed_in_reach(db, bed_id, caller_tenant, user)
+    was = _must_be(bed, frozenset({BedState.AVAILABLE}), "Only a free bed can be reserved")
+    hospital = await trail.hospital_of(db, caller_tenant)
+    note = body.note or None
+    bed.transition_to(BedState.RESERVED)
+    bed.state_note = note
+    return await _state_written(request, db, hospital, bed, unit_id, user, "bed.reserve",
+                                was=was, reason=None, note=note is not None)
+
+
+@router.post("/beds/{bed_id}/unreserve", response_model=BedResponse,
+             summary="Cancel a bed's reservation (G2-B3a)")
+async def unreserve_bed(
+    bed_id: uuid.UUID, request: Request,
+    db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
+    user: User = _manage_state,
+) -> BedResponse:
+    bed, unit_id = await _bed_in_reach(db, bed_id, caller_tenant, user)
+    was = _must_be(bed, frozenset({BedState.RESERVED}), "Only a reserved bed can be unreserved")
+    hospital = await trail.hospital_of(db, caller_tenant)
+    bed.transition_to(BedState.AVAILABLE)
+    return await _state_written(request, db, hospital, bed, unit_id, user, "bed.unreserve",
+                                was=was, reason=None, note=False)
+
+
+@router.post("/beds/{bed_id}/out-of-service", response_model=BedResponse,
+             summary="Take a free bed out of service, with a reason (G2-B3a)")
+async def bed_out_of_service(
+    bed_id: uuid.UUID, body: BedOutOfService, request: Request,
+    db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
+    user: User = _manage_state,
+) -> BedResponse:
+    bed, unit_id = await _bed_in_reach(db, bed_id, caller_tenant, user)
+    was = _must_be(bed, frozenset({BedState.AVAILABLE}),
+                   "Only a free bed can be taken out of service")
+    note = body.note or None
+    if body.reason is BedStateReason.OTHER and note is None:
+        raise field_invalid("note", "The reason 'other' needs a note.").http()      # X3
+    hospital = await trail.hospital_of(db, caller_tenant)
+    bed.transition_to(BedState.BLOCKED)
+    bed.state_reason, bed.state_note = body.reason.value, note
+    return await _state_written(request, db, hospital, bed, unit_id, user, "bed.out_of_service",
+                                was=was, reason=body.reason.value, note=note is not None)
+
+
+@router.post("/beds/{bed_id}/return-to-service", response_model=BedResponse,
+             summary="Free a bed out of service or in maintenance (G2-B3a)")
+async def bed_return_to_service(
+    bed_id: uuid.UUID, request: Request,
+    db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
+    user: User = _manage_state,
+) -> BedResponse:
+    """R3, R6: BLOCKED or MAINTENANCE → AVAILABLE, after the guards every freeing move runs."""
+    bed, unit_id = await _bed_in_reach(db, bed_id, caller_tenant, user)
+    was = _must_be(bed, frozenset({BedState.BLOCKED, BedState.MAINTENANCE}),
+                   "Only a bed out of service or in maintenance returns to service")
+    reason = bed.state_reason
+    hospital = await trail.hospital_of(db, caller_tenant)
+    try:
+        await _free_guards(request, db, hospital, bed, user.username, via="bed.return_to_service")
+    except Refusal as exc:
+        raise exc.http() from None
+    bed.transition_to(BedState.AVAILABLE)
+    return await _state_written(request, db, hospital, bed, unit_id, user,
+                                "bed.return_to_service", was=was, reason=reason, note=False)
