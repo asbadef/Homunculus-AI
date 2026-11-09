@@ -101,6 +101,9 @@ export function fakeApi(vi, { access = null } = {}) {
     verifyAudit: vi.fn(),
     alarmQuality: vi.fn(),
 
+    // G2-B5: «RRT çağır» (screens/alarms, screens/rrt)
+    callRrt: vi.fn(),
+
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

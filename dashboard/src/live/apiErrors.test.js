@@ -321,6 +321,38 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, new Error(sentence))).toBe("The reason can be at most 200 characters.");
   });
 
+  // G2-B5 (D3): the RRT call's 409 on an alarm somebody already answered — nothing was opened, and it says so.
+  it("says the RRT call's refusal on an answered alarm, in all four languages", () => {
+    const sentence = "alarm zaten yanıtlandı; RRT çağrısı açılmaz";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.rrtAnswered", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
+      .toBe("Bu alarm zaten yanıtlanmış; RRT çağrısı açılmadı.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Bu siqnal artıq cavablandırılıb; RRT çağırışı açılmadı.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
+      .toBe("На эту тревогу уже ответили; вызов БРР не создан.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("This alarm has already been answered; no RRT call was opened.");
+  });
+
+  // …and its other two refusals, which api/app.py states beside it (the sweep above holds them mapped).
+  it("says the RRT call's refusal of a device and of a reason outside 3–500 characters, in all four languages", () => {
+    const person = "RRT'yi bir kişi çağırır";
+    const length = "RRT çağrısının gerekçesi 3–500 karakter olmalı";
+    expect(apiErrorKey(new Error(person))).toEqual({ key: "errors.rrtByPerson", vars: {} });
+    expect(apiErrorKey(new Error(length))).toEqual({ key: "errors.rrtReasonLength", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(person)))
+      .toBe("RRT çağrısını bir kişi açar; cihaz kimliğiyle çağrı yapılamaz.");
+    expect(apiErrorText(az, new Error(person))).toBe("RRT çağırışını bir nəfər açır; cihaz kimliyi ilə çağırış etmək olmaz.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(person)))
+      .toBe("Вызов БРР открывает человек; с идентификатором устройства вызвать нельзя.");
+    expect(apiErrorText(en, new Error(person))).toBe("An RRT call is opened by a person; a device cannot make one.");
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(length)))
+      .toBe("RRT çağrısının gerekçesi 3–500 karakter olmalıdır.");
+    expect(apiErrorText(az, new Error(length))).toBe("RRT çağırışının səbəbi 3–500 simvol olmalıdır.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(length)))
+      .toBe("Причина вызова БРР должна содержать от 3 до 500 символов.");
+    expect(apiErrorText(en, new Error(length))).toBe("The reason for an RRT call must be 3–500 characters.");
+  });
+
   it("translates a known message, whatever whitespace surrounds it", () => {
     expect(apiErrorText(az, new Error("  Invalid credentials \n"))).toBe("İstifadəçi adı və ya şifrə səhvdir.");
     expect(apiErrorText(en, "Parola hatalı")).toBe("Incorrect password.");
