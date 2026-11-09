@@ -101,7 +101,7 @@ describe("DischargeTab", () => {
   });
 
   // Final review M-4: a row's button carries its bed in its name — the visible words first (WCAG
-  // 2.5.3: a voice user says what she sees), then the bed, as BedsTab, SignOffStrip and StructureTab
+  // 2.5.3: a voice user says what she sees), then the bed, as DolulukScreen, SignOffStrip and StructureTab
   // name theirs. Its description is a hold's reason, and only that.
   it("names each row's button by its words, then that row's bed, and describes it only by a hold's reason (M-4)", async () => {
     await open([...DOCTOR, "admissions.discharge.confirm"]);

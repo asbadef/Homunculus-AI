@@ -34,6 +34,8 @@ import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
 
 import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
 
+import { DolulukScreen } from "../screens/doluluk/DolulukScreen.jsx"; // G2-B3a
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -57,6 +59,8 @@ const SCREENS = Object.freeze({
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
 
   denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
+
+  doluluk: DolulukScreen, // G2-B3a — Doluluk: the ward's beds, their states and moves
 
   settings: SettingsScreen,
 });
@@ -87,9 +91,14 @@ export const ROUTES = Object.freeze([
   route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
     perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main" }),   // G2-ESLEME: + the editor's key
 
-  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits, confirms a discharge or
-  // releases a bed. After the board's screens in the table, so nobody's home moves.
+  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits or confirms a discharge
+  // (releasing a bed moved to Doluluk, X7). After the board's screens in the table, so nobody's home moves.
   route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
+    perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm"], work: true, nav: "main" }),   // G2-B3a (X7)
+
+  // G2-B3a — Doluluk (spec D2): for whoever reads admissions, admits, confirms a discharge or releases
+  // a bed — the right to its names (GET /tenant/occupancy). After Kabul, so nobody's home moves.
+  route({ id: "doluluk", path: "/doluluk", icon: "bed", labelKey: "doluluk.nav", shortKey: "doluluk.navShort",
     perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm", "beds.release"], work: true, nav: "main" }),
 
   // G3-01 (D3, D14) — Yatak başı ölçüm: for whoever charts (`clinical.chart`). After the ward's other screens,
