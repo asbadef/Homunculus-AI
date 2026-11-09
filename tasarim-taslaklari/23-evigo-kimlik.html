@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evigo Kimliği</title>
+<link rel="icon" id="fav" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Geologica:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Commissioner:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#f4f6f9; --panel:#fff; --panel2:#eef1f5; --ink:#141a24; --mute:#5b6676; --line:#dfe3ea;
+  --ui:#0e7490; --onui:#fff; --uiSoft:#e1f1f6;
+  --crit:#b91c1c; --critSoft:#fdecec; --shadow:0 10px 28px rgba(20,30,50,.08);
+}
+:root[data-theme="dark"]{
+  --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#98a6ba; --line:#223047;
+  --ui:#3fb6d3; --onui:#04131a; --uiSoft:rgba(63,182,211,.14);
+  --crit:#ff8a80; --critSoft:rgba(239,68,68,.14); --shadow:0 10px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:15px/1.55 Inter,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:9;background:var(--page);border-bottom:1px solid var(--line)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0}
+h1{font:700 21px/1.2 Onest,sans-serif;margin:0;flex:1;min-width:200px}
+h2{font:700 19px/1.25 Onest,sans-serif;margin:26px 0 10px}
+.seg{display:inline-flex;background:var(--panel2);border-radius:12px;padding:3px;flex-wrap:wrap}
+.seg button{padding:7px 12px;border-radius:9px;font-weight:700;font-size:13.5px;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--ui);color:var(--onui)}
+.note{background:var(--uiSoft);border-radius:16px;padding:14px 16px;margin:16px 0}
+.note b{font-weight:800}
+.note ul{margin:6px 0 0;padding-left:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+.row{display:grid;gap:14px}
+@media(min-width:900px){ .row.c2{grid-template-columns:1fr 1fr} .row.c3{grid-template-columns:repeat(3,1fr)} }
+.muted{color:var(--mute)}
+.small{font-size:13px}
+/* yön başlığı */
+.dirhead{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.dirhead .big{width:88px;height:88px;border-radius:22px;display:grid;place-items:center;flex:none}
+.dirhead h3{margin:0;font-size:24px;line-height:1.1}
+/* logo boyut testi */
+.sizes{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.sizes div{display:flex;flex-direction:column;align-items:center;gap:4px;font:600 11px "JetBrains Mono";color:var(--mute)}
+.lockups{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.lock{border-radius:14px;padding:16px;display:flex;align-items:center;gap:10px;min-height:76px}
+.sw{display:flex;gap:8px;flex-wrap:wrap}
+.sw div{flex:1;min-width:92px;border-radius:12px;padding:10px;font:600 12px "JetBrains Mono";min-height:74px;display:flex;flex-direction:column;justify-content:flex-end}
+/* yazı */
+.glyph{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ok{color:#17763a;font-weight:800} .bad{color:#b42318;font-weight:800}
+:root[data-theme="dark"] .ok{color:#6ad08f} :root[data-theme="dark"] .bad{color:#ff8a80}
+/* telefon çerçevesi */
+.phone{width:100%;max-width:300px;margin:0 auto;border-radius:34px;border:8px solid #1b2230;overflow:hidden;background:#000;aspect-ratio:9/18.5;position:relative}
+.home{position:absolute;inset:0;padding:40px 16px 16px;background:linear-gradient(160deg,#3b4a63,#161c28);display:grid;grid-template-columns:repeat(4,1fr);gap:16px 8px;align-content:start}
+.app{display:flex;flex-direction:column;align-items:center;gap:5px;color:#fff;font-size:10.5px}
+.app i{width:48px;height:48px;border-radius:13px;background:rgba(255,255,255,.22);display:block}
+.app .ic{width:48px;height:48px;border-radius:13px;display:grid;place-items:center}
+.login{position:absolute;inset:0;display:flex;flex-direction:column}
+.login .top{flex:1;padding:44px 20px 18px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;color:#fff;background-size:cover;background-position:center}
+.login .brandrow{display:flex;align-items:center;gap:8px}
+.login .hero{font-size:22px;line-height:1.2;font-weight:700}
+.login .form{background:#fff;color:#141a24;border-radius:22px 22px 0 0;padding:18px;display:flex;flex-direction:column;gap:9px}
+.login .inp{height:38px;border-radius:10px;border:1px solid #dfe3ea;padding:0 10px;display:flex;align-items:center;font-size:12.5px;color:#8a94a4}
+.login .btn{height:40px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px}
+.inapp{position:absolute;inset:0;background:#f4f6f9;display:flex;flex-direction:column;color:#141a24}
+.inapp .tb{padding:40px 14px 10px;display:flex;align-items:center;gap:8px;background:#fff;border-bottom:1px solid #e1e6ee}
+.inapp .tb b{font-size:19px;flex:1}
+.inapp .body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.crit{border-radius:16px;background:#b91c1c;color:#fff;padding:12px}
+.crit small{font-weight:800;letter-spacing:.06em;font-size:10.5px;opacity:.9}
+.task{background:#fff;border:1px solid #e1e6ee;border-radius:14px;padding:10px 12px;font-size:12.5px;display:flex;gap:8px;align-items:center}
+.task .bar{width:4px;align-self:stretch;border-radius:4px;padding:0}
+.tabbar{margin-top:auto;background:#fff;border-top:1px solid #e1e6ee;display:flex;justify-content:space-around;padding:8px 0 14px}
+.tabbar span{width:34px;height:6px;border-radius:4px;background:#e1e6ee}
+.tabbar span.on{height:22px;border-radius:11px}
+/* tanıtım üstü */
+.landing{border-radius:18px;overflow:hidden;border:1px solid var(--line);position:relative;min-height:320px;display:flex;align-items:center;background-size:cover;background-position:center}
+.landing .shade{position:absolute;inset:0}
+.landing .in{position:relative;padding:28px;max-width:560px;color:#fff;display:flex;flex-direction:column;gap:14px}
+.landing .nav{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:14px 20px;color:#fff;font-size:13px}
+.landing .nav .sp{flex:1}
+.landing h4{margin:0;font-size:34px;line-height:1.1}
+.landing .cta{display:flex;gap:10px;flex-wrap:wrap}
+.landing .cta span{padding:10px 16px;border-radius:12px;font-weight:700;font-size:14px}
+/* sekme */
+.browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel2)}
+.browser .tabs{display:flex;gap:6px;padding:8px 8px 0}
+.browser .tab{display:flex;align-items:center;gap:7px;background:var(--panel);border-radius:10px 10px 0 0;padding:7px 12px;font-size:12.5px;font-weight:600;max-width:220px}
+.browser .tab.off{background:transparent;color:var(--mute)}
+.browser .addr{background:var(--panel);padding:8px 12px;font:600 12px "JetBrains Mono";color:var(--mute)}
+/* yan yana */
+.side{display:grid;gap:14px}
+@media(min-width:900px){ .side{grid-template-columns:repeat(3,1fr)} }
+footer{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);z-index:9;margin-top:24px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px}
+.ans{font:600 14px "JetBrains Mono";background:var(--panel2);padding:8px 12px;border-radius:10px;flex:1;min-width:220px}
+footer input{flex:2;min-width:200px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0 10px;font:inherit}
+.btn2{background:var(--ui);color:var(--onui);font-weight:800;padding:9px 14px;border-radius:11px}
+</style>
+</head>
+<body>
+<header><div class="wrap bar">
+  <h1>Evigo · marka kimliği · 3 yön</h1>
+  <div class="seg" role="group" aria-label="Yön">
+    <button data-dir="A" aria-pressed="true">A · Uyanık</button>
+    <button data-dir="B" aria-pressed="false">B · Nöbet halkası</button>
+    <button data-dir="C" aria-pressed="false">C · Ufuk</button>
+    <button data-dir="all" aria-pressed="false">Yan yana</button>
+  </div>
+  <div class="seg" role="group" aria-label="Tema">
+    <button data-theme="light" aria-pressed="true">Açık</button>
+    <button data-theme="dark" aria-pressed="false">Koyu</button>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <details class="note" open>
+    <summary><b>Neden böyle? · önceki turlardan öğrendiklerimiz</b></summary>
+    <ul>
+      <li><b>Önce kullanım.</b> 16'nın tarzını beğendin: her yön aynı yerlerde — telefon ana ekranı, giriş, uygulamanın içi (kritik kırmızının yanında), tanıtım sayfası, tarayıcı sekmesi.</li>
+      <li><b>Maskot, hikâye, klişe yok.</b> Kalp atışı çizgisi, lamba, eller, beyin, haç yok (01–09 turları). İşaretler düz, tek renkle basılabilir; 16 pikselde sınanıyor.</li>
+      <li><b>Marka rengi kırmızı, turuncu, sarı değil.</b> O renkler alarma ayrılmış; klinik durum renkleri markadan bağımsız, marka değişince değişmez.</li>
+      <li><b>Yazı ölçülüyor.</b> Her yazı tipinin "ə" ve Kiril (Ж) çizip çizmediği aşağıda tarayıcıda canlı ölçülür — Rusça ve Azerbaycanca ekranda başka yazıya düşmesin.</li>
+      <li><b>Görseller Higgsfield ile üretildi</b> (insansız, yazısız, sentetik). Logolar kodla çizildi: yapay zekâ logosu küçük boyutta bulanıklaşır ve tescilde sorun çıkarır. Seçilen yönün son çizimi ayrıca baskı kalitesinde hazırlanır.</li>
+      <li>Bu sayfa yalnız öneridir. <b>Uygulamada ve tanıtım sayfasında henüz hiçbir şey değişmedi.</b></li>
+    </ul>
+  </details>
+  <div id="view"></div>
+</main>
+
+<footer><div class="wrap">
+  <div class="ans" id="ans">Yön: A</div>
+  <input id="extra" placeholder="İstersen ekle: ör. 'A'nın logosu, B'nin renkleri'" aria-label="Ek not">
+  <button class="btn2" id="copy">Kopyala</button>
+</div></footer>
+
+<script>
+// ---- işaretler (64×64, tek renk, currentColor) ----
+const MARK = {
+  // A · Uyanık: küçük harf "e"; üst boşluğundaki nokta göz bebeği — "e" uyanık bakan bir göze dönüşür
+  A: (c, w = 7) => `<svg viewBox="0 0 64 64" width="100%" height="100%" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"><path d="M14.25 35 H49.75 A18 18 0 1 0 45.8 43.6"/><circle cx="32" cy="24.5" r="4" fill="${c}" stroke="none"/></svg>`,
+  // B · Nöbet halkası: saat kadranı gibi kesintisiz nöbet; boşluktaki nokta "şu an" — gözünün önündeki hasta
+  B: (c, w = 7) => `<svg viewBox="0 0 64 64" width="100%" height="100%" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="butt"><path d="M51.32 28.82 A20 20 0 1 1 37.18 14.68"/><circle cx="46.14" cy="19.86" r="4.6" fill="${c}" stroke="none"/></svg>`,
+  // C · Ufuk: gece bitiyor, yeni gün doğuyor — nöbetin güvenle devri
+  C: (c, w = 7) => `<svg viewBox="0 0 64 64" width="100%" height="100%" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"><path d="M17 38 A15 15 0 0 1 47 38"/><path d="M8 47 H56"/></svg>`,
+};
+const DIR = {
+  A: { name:"Uyanık", mean:"Küçük harf <b>e</b> ile açık bir göz aynı çizgide: harfin üst boşluğundaki nokta göz bebeği. <b>Evigo</b>'nun ilk harfi, \"uyanık kal\" anlamını taşır. Sakin petrol-mint; mevcut uygulama rengine en yakın yön — geçiş en ucuzu. <b>Dikkat:</b> nokta yüzünden küçük boyutta gülen bir yüz gibi de okunabilir.",
+       deep:"#0b3a47", pri:"#0f766e", acc:"#5eead4", soft:"#e6f7f4", ink:"#0b2a33", disp:"Onest", body:"Inter", img:"marka-evigo/a-zemin.jpg",
+       shade:"linear-gradient(90deg,rgba(6,36,44,.92) 30%,rgba(6,36,44,.35))" },
+  B: { name:"Nöbet halkası", mean:"Hiç kesilmeyen bir halka: 24 saat süren nöbet. Tek boşluk ve oradaki nokta \"şu an\" — sistemin gözünün önündeki hasta. Saat kadranı çağrışımı güçlü, kalp/haç klişesi yok. Gece mavisi ve camgöbeği; en \"teknoloji\" duran yön. <b>Dikkat:</b> dönen ok gibi okunursa \"yenile / yükleniyor\" simgesine benzeyebilir.",
+       deep:"#0b1433", pri:"#2446c9", acc:"#38bdf8", soft:"#e8edfc", ink:"#0d1638", disp:"Geologica", body:"IBM Plex Sans", img:"marka-evigo/b-halka.jpg",
+       shade:"linear-gradient(90deg,rgba(8,14,40,.9) 35%,rgba(8,14,40,.1))" },
+  C: { name:"Ufuk", mean:"Ufuk çizgisinin üstünde doğan yarım daire: gece bitiyor, nöbet güvenle devrediliyor. En sıcak ve insani duran yön; koyu lacivert, camgöbeği ve soluk leylak — sabah ışığı ama turuncu değil.",
+       deep:"#0c1f4a", pri:"#1d4ed8", acc:"#67e8f9", soft:"#e7eefc", ink:"#0c1f4a", disp:"Commissioner", body:"Noto Sans", img:"marka-evigo/c-safak.jpg",
+       shade:"linear-gradient(90deg,rgba(10,24,60,.88) 32%,rgba(10,24,60,.2))" },
+};
+const store = { get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} } };
+let cur = new URLSearchParams(location.search).get("dir") || store.get("evigo.dir", "A");
+
+const icon = (k, size, radius) => { const d = DIR[k]; return `<div class="ic" style="width:${size}px;height:${size}px;border-radius:${radius ?? Math.round(size*.27)}px;background:${d.pri};display:grid;place-items:center"><div style="width:${Math.round(size*.72)}px;height:${Math.round(size*.72)}px">${MARK[k]("#fff", size < 24 ? 9 : 7)}</div></div>`; };
+const word = (k, color, px) => `<span style="font-family:${DIR[k].disp};font-weight:700;font-size:${px}px;letter-spacing:-.01em;color:${color}">evigo</span>`;
+const lockup = (k, fg, markColor, px = 26) => `<span style="display:inline-flex;align-items:center;gap:${Math.round(px*.35)}px"><span style="width:${Math.round(px*1.15)}px;height:${Math.round(px*1.15)}px;display:inline-block">${MARK[k](markColor)}</span>${word(k, fg, px)}</span>`;
+
+// "ə" ve "Ж" gerçekten bu yazı tipiyle mi çiziliyor? Yedek yazı tipine göre genişlik farkıyla ölçülür.
+function draws(font, ch) {
+  const cv = draws.cv || (draws.cv = document.createElement("canvas")), x = cv.getContext("2d");
+  const w = (f) => { x.font = `64px ${f}`; return x.measureText(ch.repeat(6)).width; };
+  return w(`"${font}", monospace`) !== w("monospace") || w(`"${font}", serif`) !== w("serif");
+}
+function glyphRow(font) {
+  const ok = document.fonts.check(`400 16px "${font}"`) || document.fonts.check(`700 16px "${font}"`);
+  const cells = ["ə", "Ə", "Ж", "ж", "ş", "İ", "ı"].map(ch => { const y = ok && draws(font, ch); return `<span title="${ch}"><span style="font-family:'${font}';font-size:22px">${ch}</span> <span class="${y ? "ok" : "bad"}">${y ? "✓" : ok ? "✕" : "…"}</span></span>`; }).join(" ");
+  return `<div class="glyph"><b style="font-family:'${font}'">${font}</b>${cells}</div>`;
+}
+
+function phoneHome(k) {
+  const others = Array.from({ length: 11 }, (_, i) => `<div class="app"><i></i>&nbsp;</div>`);
+  others.splice(5, 0, `<div class="app">${icon(k, 48)}<span>Evigo</span></div>`);
+  return `<div class="phone"><div class="home">${others.join("")}</div></div>`;
+}
+function phoneLogin(k) {
+  const d = DIR[k];
+  return `<div class="phone"><div class="login">
+    <div class="top" style="background-image:linear-gradient(180deg,${d.deep}40,${d.deep}f0 78%),url('${d.img}')">
+      <div class="brandrow">${lockup(k, "#fff", d.acc, 20)}</div>
+      <div class="hero" style="font-family:${d.disp}">Her yatak, her nöbet — <span style="color:${d.acc}">tek bakışta.</span></div>
+      <div style="font-family:${d.body};font-size:12px;opacity:.85">Yoğun bakım · yenidoğan · erken uyarı</div>
+    </div>
+    <div class="form" style="font-family:${d.body}">
+      <b style="font-family:${d.disp};font-size:16px">Oturum açın</b>
+      <div class="inp">Kullanıcı adı</div><div class="inp">Şifrə · Пароль</div>
+      <div class="btn" style="background:${d.pri}">Giriş yap</div>
+    </div></div></div>`;
+}
+function phoneInApp(k) {
+  const d = DIR[k];
+  return `<div class="phone"><div class="inapp" style="font-family:${d.body}">
+    <div class="tb"><span style="width:22px;height:22px">${MARK[k](d.pri)}</span><b style="font-family:${d.disp}">İşlerim</b><span style="width:28px;height:28px;border-radius:50%;background:${d.pri};color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center">SQ</span></div>
+    <div class="body">
+      <div class="crit"><small>KRİTİK · REA01</small><div style="font-weight:700;font-size:14px;margin-top:3px">Kötüleşme kriterleri karşılanıyor</div><div style="font-size:12px;opacity:.9">MAP 51 · laktat 4.1</div></div>
+      <div class="task"><span class="bar" style="background:#b91c1c"></span>21:00 · Ağrı değerlendirmesi</div>
+      <div class="task"><span class="bar" style="background:${d.pri}"></span>22:00 · Pozisyon ver</div>
+      <div class="task"><span class="bar" style="background:${d.pri}"></span>22:00 · Seftriakson 2 g IV</div>
+    </div>
+    <div class="tabbar"><span class="on" style="background:${d.pri}"></span><span></span><span style="width:40px;height:40px;border-radius:50%;background:${d.pri};margin-top:-18px"></span><span></span><span></span></div>
+  </div></div>`;
+}
+function landing(k) {
+  const d = DIR[k];
+  return `<div class="landing" style="background-image:url('${d.img}');font-family:${d.body}">
+    <div class="shade" style="background:${d.shade}"></div>
+    <div class="nav">${lockup(k, "#fff", d.acc, 20)}<span class="sp"></span><span>Ürün</span><span>Güvenlik</span><span>İletişim</span></div>
+    <div class="in" style="padding-top:64px">
+      <h4 style="font-family:${d.disp}">Her yatak, her nöbet —<br><span style="color:${d.acc}">tek bakışta.</span></h4>
+      <div style="opacity:.9">Yoğun bakım ve yenidoğan için erken uyarı. İzler, uyarır, gerekçesini gösterir; kararı hekim verir.</div>
+      <div class="cta"><span style="background:${d.acc};color:${d.ink}">Tanıtım isteyin</span><span style="border:1px solid rgba(255,255,255,.5)">Nasıl çalışır?</span></div>
+    </div></div>`;
+}
+function browser(k) {
+  return `<div class="browser"><div class="tabs"><div class="tab">${icon(k, 16, 4)}<span>Evigo · İşlerim</span></div><div class="tab off">Yeni sekme</div></div><div class="addr">https://evigo.… /app</div></div>`;
+}
+
+function one(k) {
+  const d = DIR[k];
+  return `
+  <div class="card" style="margin-top:16px">
+    <div class="dirhead">
+      <div class="big" style="background:${d.pri}"><div style="width:62px;height:62px">${MARK[k]("#fff")}</div></div>
+      <div style="flex:1;min-width:240px"><h3 style="font-family:${d.disp}">${k} · ${d.name}</h3><p class="muted" style="margin:6px 0 0">${d.mean}</p></div>
+    </div>
+  </div>
+  <h2>Logo · açık, koyu, tek renk</h2>
+  <div class="lockups">
+    <div class="lock" style="background:#fff;border:1px solid #e1e6ee">${lockup(k, d.ink, d.pri)}</div>
+    <div class="lock" style="background:${d.deep}">${lockup(k, "#fff", d.acc)}</div>
+    <div class="lock" style="background:#fff;border:1px solid #e1e6ee">${lockup(k, "#000", "#000")}</div>
+    <div class="lock" style="background:${d.pri}">${lockup(k, "#fff", "#fff")}</div>
+  </div>
+  <h2>Küçük boyut testi</h2>
+  <div class="card"><div class="sizes">${[96, 60, 40, 28, 20, 16].map(s => `<div>${icon(k, s)}${s}px</div>`).join("")}
+    <div style="margin-left:8px">${lockup(k, "var(--ink)", d.pri, 14)}14px yazı</div></div>
+    <p class="small muted" style="margin:10px 0 0">16 piksel tarayıcı sekmesi boyutu: işaret bu boyutta hâlâ ayırt edilebilmeli.</p></div>
+  <h2>Renkler</h2>
+  <div class="sw">
+    <div style="background:${d.deep};color:#fff">Derin<br>${d.deep}</div>
+    <div style="background:${d.pri};color:#fff">Ana<br>${d.pri}</div>
+    <div style="background:${d.acc};color:${d.ink}">Vurgu<br>${d.acc}</div>
+    <div style="background:${d.soft};color:${d.ink};border:1px solid var(--line)">Yumuşak<br>${d.soft}</div>
+    <div style="background:#b91c1c;color:#fff">Kritik (sabit)<br>#b91c1c</div>
+    <div style="background:#c2410c;color:#fff">Yüksek (sabit)<br>#c2410c</div>
+  </div>
+  <p class="small muted">Son iki renk marka değil, klinik durum rengidir: her yönde aynı kalır. Marka, alarmla karışmasın diye mavi-yeşil ailesinde.</p>
+  <h2>Yazı · "ə" ve Kiril ölçümü</h2>
+  <div class="card" style="display:flex;flex-direction:column;gap:10px" data-glyphs="${d.disp}|${d.body}">
+    <div style="font-family:${d.disp};font-size:26px;font-weight:700">Növbə bitmədən — Смена под контролем</div>
+    <div style="font-family:${d.body}">Başlık: <b>${d.disp}</b> · Gövde: <b>${d.body}</b>. Xəstə vəziyyəti · Состояние пациента · Hasta durumu · Patient status</div>
+    <div class="glyphs"></div>
+  </div>
+  <h2>Kullanıldığı yerde · telefon</h2>
+  <div class="row c3">
+    <div><p class="small muted" style="text-align:center">Ana ekran</p>${phoneHome(k)}</div>
+    <div><p class="small muted" style="text-align:center">Giriş</p>${phoneLogin(k)}</div>
+    <div><p class="small muted" style="text-align:center">Uygulamanın içi · kritik kırmızının yanında</p>${phoneInApp(k)}</div>
+  </div>
+  <h2>Kullanıldığı yerde · web</h2>
+  <div class="row">${landing(k)}${browser(k)}</div>`;
+}
+function all() {
+  return `<div class="side" style="margin-top:16px">${["A", "B", "C"].map(k => { const d = DIR[k]; return `<div class="card" style="display:flex;flex-direction:column;gap:12px">
+    <h3 style="margin:0;font-family:${d.disp}">${k} · ${d.name}</h3>
+    <div class="lock" style="background:${d.deep};border-radius:14px;padding:14px">${lockup(k, "#fff", d.acc, 22)}</div>
+    <div class="sizes">${[60, 40, 16].map(s => `<div>${icon(k, s)}${s}px</div>`).join("")}</div>
+    ${phoneLogin(k)}${browser(k)}</div>`; }).join("")}</div>`;
+}
+function render() {
+  document.getElementById("view").innerHTML = cur === "all" ? all() : one(cur);
+  document.querySelectorAll("[data-dir]").forEach(b => b.setAttribute("aria-pressed", b.dataset.dir === cur));
+  const k = cur === "all" ? "A" : cur;
+  document.getElementById("fav").href = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${DIR[k].pri}"/><g transform="translate(9 9) scale(.72)">${MARK[k]("#fff", 9).replace(/<svg[^>]*>|<\/svg>/g, "")}</g></svg>`);
+  paintGlyphs(); answer();
+}
+function paintGlyphs() {
+  document.fonts.ready.then(() => document.querySelectorAll("[data-glyphs]").forEach(el => {
+    const [a, b] = el.dataset.glyphs.split("|"); const box = el.querySelector(".glyphs");
+    Promise.all([a, b].flatMap(f => [document.fonts.load(`400 16px "${f}"`, "əЖşİı"), document.fonts.load(`700 16px "${f}"`, "əЖşİı")])).finally(() => { box.innerHTML = glyphRow(a) + glyphRow(b); });
+  }));
+}
+function answer() {
+  const x = document.getElementById("extra").value.trim();
+  document.getElementById("ans").textContent = `Yön: ${cur === "all" ? "?" : cur}` + (x ? ` · ${x}` : "");
+}
+document.querySelectorAll("[data-dir]").forEach(b => b.onclick = () => { cur = b.dataset.dir; store.set("evigo.dir", cur); render(); window.scrollTo({ top: 0 }); });
+document.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; document.querySelectorAll("button[data-theme]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+document.getElementById("extra").oninput = answer;
+document.getElementById("copy").onclick = async () => { const t = document.getElementById("ans").textContent; try { await navigator.clipboard.writeText(t); document.getElementById("copy").textContent = "Kopyalandı"; } catch (e) { prompt("Kopyala:", t); } };
+render();
+</script>
+</body>
+</html>

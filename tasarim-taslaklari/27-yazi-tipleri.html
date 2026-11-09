@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yazı tipi seçimi</title>
+<!-- 30.09.2026 · Taslak 27 · istek #279. Yalnız ÖNERİ: ana sayfa ve uygulama hâlâ Space Grotesk + Figtree kullanıyor. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&family=Space+Grotesk:wght@500;700&family=Onest:wght@400;500;600;800&family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&family=Golos+Text:wght@400;500;600;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=Geologica:wght@500;600;700&family=JetBrains+Mono:wght@500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#0f1c24;--mute:#5b6b76;--line:#e2e8ee;--pri:#0e7490;--priSoft:#e0f2f6;--crit:#dc2626;--ok:#16a34a;--warn:#d97706}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1419;--card:#111d24;--ink:#e6eef2;--mute:#93a4ae;--line:#1f2f38;--pri:#22b8d6;--priSoft:#0f2f38}}
+:root[data-theme="dark"]{--bg:#0b1419;--card:#111d24;--ink:#e6eef2;--mute:#93a4ae;--line:#1f2f38;--pri:#22b8d6;--priSoft:#0f2f38}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+.bar{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.bar h1{font-size:15px;margin:0 10px 0 0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--ink);padding:6px 12px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--pri);color:#fff}
+.page{max-width:1200px;margin:0 auto;padding:20px 16px 100px}
+.intro{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:22px}
+.opt{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:18px;display:grid;grid-template-columns:260px 1fr;gap:24px}
+.opt.sel{border-color:var(--pri);box-shadow:0 0 0 3px var(--priSoft)}
+.meta h2{margin:0;font-size:18px}.meta .who{color:var(--mute);font-size:13px;margin:2px 0 10px}
+.meta .tag{display:inline-block;font-size:11px;background:var(--ok);color:#fff;border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+.meta .tag.now{background:var(--mute)}
+.cov{font-size:13px;margin:10px 0;display:grid;gap:3px}
+.cov span b{display:inline-block;width:18px}
+.cov .y b{color:var(--ok)}.cov .n b{color:var(--crit)}
+.why{font-size:13px;border-left:3px solid var(--pri);padding:6px 10px;background:var(--bg);border-radius:0 8px 8px 0}
+.pick{margin-top:12px;border:1px solid var(--pri);color:var(--pri);background:transparent;border-radius:10px;padding:7px 12px;font:inherit;cursor:pointer}
+.opt.sel .pick{background:var(--pri);color:#fff}
+.demo{min-width:0}
+.demo .pill{display:inline-block;font-size:12px;color:var(--pri);background:var(--priSoft);border-radius:999px;padding:3px 10px}
+.demo h3{font-size:40px;line-height:1.08;letter-spacing:-.02em;margin:10px 0 8px}
+.demo .lead{color:var(--mute);font-size:17px;margin:0 0 14px;max-width:620px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch}
+.btn{border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.btn.p{background:var(--pri);border-color:var(--pri);color:#fff}
+.bed{border:1px solid var(--crit);border-radius:12px;padding:10px 12px;min-width:150px;background:var(--card)}
+.bed .n{font-weight:700;font-size:13px}.bed .v{font-size:26px;font-weight:700;color:var(--crit);line-height:1.1}
+.bed small{color:var(--mute);font-size:12px}
+.tbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:14px;flex:1;min-width:260px}
+.tbl div{display:flex;justify-content:space-between;padding:7px 12px;border-top:1px solid var(--line)}.tbl div:first-child{border:0;font-weight:600;background:var(--bg)}
+.tbl .num{font-variant-numeric:tabular-nums}
+.small{font-size:13px;color:var(--mute);margin-top:12px}
+@media (max-width:800px){.opt{grid-template-columns:1fr}.demo h3{font-size:28px}}
+.answer{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center}
+.answer code{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;overflow:auto;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Yazı tipi seçimi</h1>
+  <span class="seg" data-g="lang"><button class="on" data-v="TR">TR</button><button data-v="AZ">AZ</button><button data-v="RU">RU</button><button data-v="EN">EN</button></span>
+  <span class="seg" data-g="theme"><button class="on" data-v="light">Açık</button><button data-v="dark">Koyu</button></span>
+</div>
+<div class="page">
+  <div class="intro"><b>Bu sayfa yalnız öneri — ana sayfa ve uygulama hâlâ bugünkü yazı tipini kullanıyor.</b><br>
+  Dil düğmesiyle örnek metni AZ ve RU'ya çevir: bugünkü yazı tipinde Rusça harfler başka bir yazı tipine düşüyor. Her kartın solundaki ✓/✗ işaretlerini bu sayfa tarayıcıda kendisi ölçüyor (harfin genişliği yedek yazı tipiyle aynıysa, o harf yazı tipinde yok demektir).</div>
+  <div data-list></div>
+</div>
+<div class="answer"><b>Cevap satırı:</b><code data-ans></code><button class="btn p" data-copy>Kopyala</button></div>
+<script>
+const OPTS = [
+  { k:"F0", name:"Bugünkü", who:"Space Grotesk (başlık) + Figtree (gövde)", h:"Space Grotesk", b:"Figtree", m:"JetBrains Mono", now:true,
+    why:"Karakterli başlık, ama ikisinde de Kiril harf yok ve gövde yazısı (Figtree) Azerbaycanca ə'yi çizmiyor — ilk pazarımızın dilinde her ə başka bir yazı tipinden geliyor. Uygulamada bunu yamamak için ek yazı tipi tanımları duruyor (app.css)." },
+  { k:"F1", name:"Onest", who:"Onest (başlık + gövde) + JetBrains Mono (sayılar)", h:"Onest", b:"Onest", m:"JetBrains Mono", rec:true,
+    why:"Kiril için baştan çizilmiş, Latin'de de sakin ve modern. Tek aile olduğu için sayfa hızlı yüklenir, başlık ile gövde arasında kopukluk olmaz. Hastane ekranında yorucu değil. Önerim." },
+  { k:"F2", name:"Manrope + Inter", who:"Manrope (başlık) + Inter (gövde)", h:"Manrope", b:"Inter", m:"JetBrains Mono",
+    why:"En temiz, en 'klinik yazılım' duran eşleşme. Inter ekranlarda çok okunaklı. Zayıf yanı: çok yaygın; kimlik katmıyor ve Manrope ə'yi çizmiyor — Azerbaycanca başlıklarda ə başka yazı tipinden gelir." },
+  { k:"F3", name:"Golos", who:"Golos Text (başlık + gövde)", h:"Golos Text", b:"Golos Text", m:"JetBrains Mono",
+    why:"Kamu hizmeti ekranları için tasarlanmış; küçük boyda ve yoğun tablolarda çok okunaklı. Ama ə yok — Azerbaycan ilk pazar olduğu için elenmeli." },
+  { k:"F4", name:"IBM Plex", who:"IBM Plex Sans + IBM Plex Mono", h:"IBM Plex Sans", b:"IBM Plex Sans", m:"IBM Plex Mono",
+    why:"Tıbbi cihaz / mühendislik havası: güvenilir, ciddi. Monitör değerleri Plex Mono ile uyumlu. Tanıtım sayfasında biraz soğuk kalabilir." },
+  { k:"F5", name:"Geologica + Onest", who:"Geologica (başlık) + Onest (gövde)", h:"Geologica", b:"Onest", m:"JetBrains Mono",
+    why:"Başlıkta daha karakterli, bugünkü Space Grotesk'in 'teknolojik' duygusunu Kiril destekli olarak korur. Gövde F1 ile aynı." }
+];
+const TXT = {
+  TR:{ pill:"Yoğun bakım için klinik karar desteği", h:"Kötüleşmeyi erken görür, doğru kişiye haber verir.", lead:"Monitörden gelen ölçümü okur, kötüleşmeyi erken fark eder ve doğru kişiye haber verir. Karar hekimindir.", b1:"Tanışalım", b2:"Ekranları görün", crit:"Kritik · 3 dk", th:["Saat","İş","Durum"], r:[["22:00","Ağrı değerlendirmesi","bekliyor"],["23:00","Sıvı dengesi","yapıldı"]], s:"Şişli · Çağrı · Göğüs · Ölçüm · İğne" },
+  AZ:{ pill:"Reanimasiya üçün klinik qərar dəstəyi", h:"Pisləşməni erkən görür, doğru şəxsə xəbər verir.", lead:"Monitordan gələn ölçməni oxuyur, pisləşməni erkən hiss edir və doğru şəxsə xəbər verir. Qərar həkimindir.", b1:"Tanış olaq", b2:"Ekranlara baxın", crit:"Kritik · 3 dəq", th:["Saat","İş","Vəziyyət"], r:[["22:00","Ağrının qiymətləndirilməsi","gözləyir"],["23:00","Maye balansı","edildi"]], s:"Əməliyyat · Şəkər · Çağırış · Ölçmə · Xəstə" },
+  RU:{ pill:"Клиническая поддержка решений для реанимации", h:"Замечает ухудшение рано и сообщает нужному человеку.", lead:"Читает показания монитора, рано замечает ухудшение и оповещает нужного человека. Решение за врачом.", b1:"Познакомимся", b2:"Посмотреть экраны", crit:"Критично · 3 мин", th:["Время","Задача","Статус"], r:[["22:00","Оценка боли","ожидает"],["23:00","Водный баланс","выполнено"]], s:"Жизнь · Щёлочь · Ёмкость · Подъём · Юг" },
+  EN:{ pill:"Clinical decision support for intensive care", h:"Sees deterioration early, tells the right person.", lead:"Reads the monitor, notices deterioration early and alerts the right person. The physician decides.", b1:"Let's talk", b2:"See the screens", crit:"Critical · 3 min", th:["Time","Task","Status"], r:[["22:00","Pain assessment","pending"],["23:00","Fluid balance","done"]], s:"Quick · Fix · Jump · Vital · Glyph" }
+};
+let lang = "TR", sel = "F1";
+
+// Ölçüm: harf bu yazı tipinde var mı? Genişlik iki farklı yedekte aynı kalıyorsa yazı tipinin kendisi çiziyordur.
+function has(font, chars){
+  const c = document.createElement("canvas").getContext("2d");
+  const w = fb => { c.font = `600 40px "${font}", ${fb}`; return c.measureText(chars).width; };
+  return Math.abs(w("monospace") - w("serif")) < 0.5;
+}
+function cov(o){
+  const fonts = [...new Set([o.h, o.b])];
+  const t = (label, s) => { const miss = fonts.filter(f => !has(f, s)), ok = !miss.length;
+    return `<span class="${ok?"y":"n"}"><b>${ok?"✓":"✗"}</b>${label}${ok?"":` — ${miss.join(", ")} çizmiyor`}</span>`; };
+  return `<div class="cov">${t("Türkçe (ş ğ ı İ)","şğıİŞĞ")}${t("Azerbaycanca (ə Ə)","əƏ")}${t("Rusça (Ж щ ё)","ЖщёЮя")}</div>`;
+}
+function render(){
+  const T = TXT[lang];
+  document.querySelector("[data-list]").innerHTML = OPTS.map(o => `
+    <div class="opt ${sel===o.k?"sel":""}" data-k="${o.k}">
+      <div class="meta"><h2>${o.k} · ${o.name}${o.rec?'<span class="tag">önerim</span>':""}${o.now?'<span class="tag now">şu an</span>':""}</h2>
+        <div class="who">${o.who}</div>${cov(o)}<div class="why">${o.why}</div>
+        <button class="pick" data-pick="${o.k}">${sel===o.k?"Seçildi ✓":"Bunu seç"}</button></div>
+      <div class="demo" style="font-family:'${o.b}',sans-serif">
+        <span class="pill">${T.pill}</span>
+        <h3 style="font-family:'${o.h}',sans-serif;font-weight:${o.h==="Space Grotesk"?700:800}">${T.h}</h3>
+        <p class="lead">${T.lead}</p>
+        <div class="row" style="margin-bottom:14px"><span class="btn p">${T.b1} →</span><span class="btn">${T.b2}</span></div>
+        <div class="row">
+          <div class="bed"><div class="n" style="font-family:'${o.m}',monospace">REA03</div><div class="v" style="font-family:'${o.m}',monospace">SpO₂ 86</div><small>${T.crit}</small></div>
+          <div class="tbl"><div><span>${T.th[0]}</span><span>${T.th[1]}</span><span>${T.th[2]}</span></div>
+            ${T.r.map(r=>`<div><span class="num" style="font-family:'${o.m}',monospace">${r[0]}</span><span>${r[1]}</span><span>${r[2]}</span></div>`).join("")}</div>
+        </div>
+        <div class="small">${T.s} · 0123456789 · 1l I|</div>
+      </div>
+    </div>`).join("");
+  document.querySelector("[data-ans]").textContent = `Yazı tipi: ${sel} (${OPTS.find(o=>o.k===sel).name})`;
+}
+document.addEventListener("click", e => {
+  const p = e.target.closest("[data-pick]"); if (p) { sel = p.dataset.pick; render(); return; }
+  const b = e.target.closest(".seg button"); if (b) { const g = b.parentElement.dataset.g;
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x===b));
+    if (g==="lang") lang = b.dataset.v; else document.documentElement.dataset.theme = b.dataset.v; render(); }
+  if (e.target.closest("[data-copy]")) { try { navigator.clipboard.writeText(document.querySelector("[data-ans]").textContent); } catch {} }
+});
+render();
+// Google Fonts Kiril / Latin-ek alt kümelerini ancak metin istenince indirir; ölçmeden önce hepsini açıkça yükle.
+const ALL = [...new Set(OPTS.flatMap(o => [o.h, o.b]))];
+Promise.all(ALL.flatMap(f => ["400","600","800"].map(w => document.fonts.load(`${w} 40px "${f}"`, "şğıİŞĞəƏЖщёЮяAa")))).catch(()=>{}).then(() => document.fonts.ready).then(render);
+</script>
+</body>
+</html>

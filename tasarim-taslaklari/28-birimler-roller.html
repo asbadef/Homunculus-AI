@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birimler ve roller · seçenekler</title>
+<!-- 30.09.2026 · Taslak 28 · istekler #292–#295. Yalnız ÖNERİ: ana sayfada ve uygulamada hiçbir şey değişmedi.
+     Birim katmanları core.js:121-124 (tam / ara / op) ile aynı; roller core.js:204 H.data.roles ile aynı. -->
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#0f1c24;--mute:#5b6b76;--line:#e2e8ee;--line2:#cfd8e0;--pri:#0e7490;--priSoft:#e0f2f6;--ok:#16a34a;--okSoft:#dcfce7;--warn:#d97706;--warnSoft:#fef3c7;--crit:#dc2626;--vio:#7c3aed;--vioSoft:#ede9fe;--shadow:0 10px 30px -12px rgba(15,28,36,.18)}
+:root[data-theme="dark"]{--bg:#0b1419;--card:#111d24;--ink:#e6eef2;--mute:#93a4ae;--line:#1f2f38;--line2:#2b3e49;--pri:#22b8d6;--priSoft:#0f2f38;--okSoft:#12301f;--warnSoft:#3a2a0c;--vioSoft:#261c3f;--shadow:0 10px 30px -12px rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,Segoe UI,sans-serif}
+button{font:inherit;cursor:pointer}
+.bar{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+.bar h1{font-size:15px;margin:0 12px 0 0}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--ink);padding:6px 12px}
+.seg button.on{background:var(--pri);color:#fff}
+.note-top{font-size:13px;color:var(--mute);margin-left:auto}
+.page{max-width:1340px;margin:0 auto;padding:20px 16px 120px}
+.block{margin:26px 0 46px}
+.block>h2{font-size:22px;margin:0 0 4px}
+.ask{color:var(--mute);margin:0 0 14px}
+.opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.opt{border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 14px}
+.opt.on{border-color:var(--pri);background:var(--priSoft);color:var(--pri);font-weight:600}
+.rec{font-size:11px;background:var(--ok);color:#fff;border-radius:6px;padding:1px 6px;margin-left:6px}
+.why{border-left:3px solid var(--pri);background:var(--card);border-radius:0 10px 10px 0;padding:10px 14px;margin-top:12px;font-size:14px}
+.why b{color:var(--pri)}
+.frame{container-type:inline-size;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;margin:0 auto}
+body[data-dev="desk"] .frame{max-width:1280px}
+body[data-dev="phone"] .frame{max-width:390px}
+.sec{padding:40px 32px}
+.k{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pri)}
+.sec h3{font-size:30px;margin:6px 0 8px;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:0 0 22px;max-width:680px}
+@container (max-width:600px){ .sec{padding:26px 16px} .sec h3{font-size:24px} }
+
+/* A1 katmanlar */
+.tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.tier{border:1px solid var(--line);border-radius:16px;padding:16px;background:var(--bg);display:flex;flex-direction:column}
+.tier .tt{display:flex;align-items:center;gap:8px;font-weight:700}
+.tier .dot{width:10px;height:10px;border-radius:50%}
+.tier .does{font-size:13px;color:var(--mute);margin:6px 0 12px;min-height:58px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12.5px;border:1px solid var(--line2);background:var(--card);border-radius:999px;padding:3px 10px}
+.tier .foot{margin-top:auto;padding-top:12px;font-size:12px;color:var(--mute)}
+@container (max-width:1000px){ .tiers{grid-template-columns:1fr 1fr} }
+@container (max-width:560px){ .tiers{grid-template-columns:1fr} .tier .does{min-height:0} }
+
+/* A2 branş haritası */
+.map{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.grp{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--card)}
+.grp h4{margin:0 0 8px;font-size:15px}
+.br{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:13.5px}
+.br:first-of-type{border:0}
+.lvl{font-size:11px;font-weight:700;border-radius:6px;padding:1px 7px;white-space:nowrap;align-self:center}
+.lvl.tam{background:var(--priSoft);color:var(--pri)}.lvl.ara{background:var(--okSoft);color:var(--ok)}.lvl.op{background:var(--line);color:var(--mute)}.lvl.src{background:var(--vioSoft);color:var(--vio)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mute);margin-bottom:14px}
+@container (max-width:900px){ .map{grid-template-columns:1fr 1fr} }
+@container (max-width:560px){ .map{grid-template-columns:1fr} }
+
+/* A3 birim kartları */
+.ucards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.uc{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--card);display:flex;flex-direction:column}
+.uc .img{aspect-ratio:16/10;background:var(--bg) center top/cover no-repeat;border-bottom:1px solid var(--line)}
+.uc .b{padding:14px;display:flex;flex-direction:column;gap:6px;flex:1}
+.uc h4{margin:0;font-size:16px}.uc p{margin:0;font-size:13px;color:var(--mute)}
+.uc .go{margin-top:auto;color:var(--pri);font-weight:600;font-size:13.5px}
+@container (max-width:1000px){ .ucards{grid-template-columns:1fr 1fr} }
+@container (max-width:560px){ .ucards{grid-template-columns:1fr} }
+
+/* B1 rol sekmeleri */
+.rtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.rtab{border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:10px;padding:7px 12px;font-size:14px}
+.rtab.on{background:var(--pri);border-color:var(--pri);color:#fff}
+.rview{display:grid;grid-template-columns:1fr 1.35fr;gap:26px;align-items:center}
+.rview h4{font-size:22px;margin:0 0 6px}
+.rview ul{list-style:none;padding:0;margin:12px 0}
+.rview li{padding:7px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}
+.rview li::before{content:"✓";color:var(--ok);font-weight:800}
+.rview .no{color:var(--crit);font-size:14px;margin-top:6px}
+.shot{border-radius:14px;border:1px solid var(--line);box-shadow:var(--shadow);aspect-ratio:16/10;background:var(--bg) left top/cover no-repeat}
+@container (max-width:760px){ .rview{grid-template-columns:1fr} }
+
+/* B2 matris */
+.mx{width:100%;border-collapse:collapse;font-size:13.5px}
+.mx th,.mx td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:center}
+.mx th:first-child,.mx td:first-child{text-align:left;white-space:nowrap}
+.mx thead th{font-size:12px;color:var(--mute);font-weight:600}
+.mx .y{color:var(--ok);font-weight:800}.mx .r{color:var(--warn)}.mx .n{color:var(--line2)}
+.mxw{overflow-x:auto}
+
+/* C konsültasyon / konsey */
+.cons{display:grid;grid-template-columns:1.1fr 1fr;gap:18px}
+.panel{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:16px}
+.panel h4{margin:0 0 4px;font-size:16px}
+.panel .ph{font-size:13px;color:var(--mute);margin-bottom:12px}
+.pick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pg{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.pg b{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.pg label{display:flex;gap:6px;align-items:center;font-size:13.5px;padding:2px 0;cursor:pointer}
+.sel{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;min-height:30px}
+.sel span{background:var(--priSoft);color:var(--pri);border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
+.fld{display:grid;grid-template-columns:120px 1fr;gap:8px;font-size:13.5px;padding:6px 0;border-top:1px solid var(--line)}
+.fld span{color:var(--mute)}
+.btn{border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 14px;font-size:14px}
+.btn.p{background:var(--pri);border-color:var(--pri);color:#fff}
+.list .it{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.st{font-size:11.5px;font-weight:700;border-radius:6px;padding:2px 8px}
+.st.w{background:var(--warnSoft);color:var(--warn)}.st.o{background:var(--okSoft);color:var(--ok)}.st.p{background:var(--priSoft);color:var(--pri)}
+.mono{font-family:ui-monospace,Consolas,monospace}
+@container (max-width:860px){ .cons{grid-template-columns:1fr} }
+@container (max-width:460px){ .pick{grid-template-columns:1fr} .fld{grid-template-columns:1fr} }
+
+.answer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--card);border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center}
+.answer code{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;overflow:auto;white-space:nowrap}
+</style>
+</head>
+<body data-dev="desk">
+<div class="bar">
+  <h1>Birimler · Kim ne görür · Konsültasyon</h1>
+  <span class="seg" data-g="dev"><button data-v="desk" class="on">Masaüstü</button><button data-v="phone">Telefon</button></span>
+  <span class="seg" data-g="theme"><button data-v="light" class="on">Açık</button><button data-v="dark">Koyu</button></span>
+  <span class="note-top">Yalnız öneri — ana sayfada ve uygulamada henüz hiçbir şey değişmedi.</span>
+</div>
+
+<div class="page">
+
+<section class="block" data-q="units">
+  <h2>A · Ana sayfa: "Birimler" bölümü</h2>
+  <p class="ask">Verdiğin branş listesi kullanıldı. Her branşın yanında sistemin orada <b>bugün gerçekten</b> ne yaptığı yazıyor (uygulamadaki üç katman: tam / erken uyarı / operasyonel).</p>
+  <div class="opts">
+    <button class="opt on" data-v="A1">A1 · Üç katman, branşlar altında<span class="rec">önerim</span></button>
+    <button class="opt" data-v="A2">A2 · Hastanenin branş haritası</button>
+    <button class="opt" data-v="A3">A3 · Dört büyük birim kartı (ekran görüntülü)</button>
+  </div>
+  <div class="frame"><div data-units></div></div>
+  <div class="why" data-why="units"></div>
+</section>
+
+<section class="block" data-q="roles">
+  <h2>B · Ana sayfa: "Kim ne görür" bölümü</h2>
+  <p class="ask">Ekran görüntüleri uygulamanın gerçek ekranları (anasayfa/gorsel). Rollere tıkla.</p>
+  <div class="opts">
+    <button class="opt on" data-v="B1">B1 · Rol sekmeleri + gerçek ekran<span class="rec">önerim</span></button>
+    <button class="opt" data-v="B2">B2 · Rol × modül tablosu</button>
+  </div>
+  <div class="frame"><div data-roles></div></div>
+  <div class="why" data-why="roles"></div>
+</section>
+
+<section class="block" data-q="cons">
+  <h2>C · Uygulamanın içi: branşlara konsültasyon ve konsey</h2>
+  <p class="ask">Hasta sayfasında bugün "Konsültasyonlar" var ama branş listesi yok ve çok branşlı <b>konsey</b> yok. Branşları işaretle — sağdaki özet canlı değişir.</p>
+  <div class="opts">
+    <button class="opt on" data-v="C1">C1 · Tek ekranda: konsültasyon ya da konsey<span class="rec">önerim</span></button>
+    <button class="opt" data-v="C2">C2 · Yalnız konsültasyon (konsey yok)</button>
+  </div>
+  <div class="frame"><div data-cons></div></div>
+  <div class="why" data-why="cons"></div>
+</section>
+
+</div>
+
+<div class="answer"><b>Cevap satırı:</b><code data-ans></code><button class="btn p" data-copy>Kopyala</button></div>
+
+<script>
+const S = { units:"A1", roles:"B1", cons:"C1", role:"hekim", picks:new Set(["Kardiologiya","Nefrologiya"]) };
+const TH = () => document.documentElement.dataset.theme === "dark" ? "gece" : "gun";
+const IMG = k => `anasayfa/gorsel/${k}-TR-${TH()}.webp`;
+
+// Branşlar (Ozan'ın listesi, 30.09) → sistemdeki katman. Katmanlar core.js:121-124.
+const GROUPS = [
+  ["Dahili branşlar", [["Kardiologiya","ara"],["Qastroenterologiya","ara"],["Endokrinologiya","ara"],["Nevrologiya","ara"],["Pediatriya","ara"],["Nefrologiya","ara"],["Pulmonologiya","ara"],["Revmatologiya","ara"],["Hematologiya","ara"]]],
+  ["Cerrahi branşlar", [["Ümumi cərrahiyyə","ara"],["Ürək-damar cərrahiyyəsi","ara"],["Neyrocərrahiyyə","ara"],["Ortopediya və travmatologiya","ara"],["Otorinolarinqologiya (LOR)","ara"],["Urologiya","ara"],["Plastik və rekonstruktiv cərrahiyyə","ara"],["Uşaq cərrahiyyəsi","ara"]]],
+  ["Acil ve yoğun bakım", [["Anesteziologiya və reanimatologiya","tam"],["Yenidoğulmuş reanimasiyası","tam"],["Təcili tibbi yardım","op"]]],
+  ["Kadın sağlığı", [["Mamalıq və ginekologiya","op"]]],
+  ["Tanı ve destek", [["Radiologiya","src"],["Laborator diaqnostika","src"],["Fizioterapiya və reabilitasiya","op"]]]
+];
+const TIERS = [
+  ["tam","Tam destek","var(--pri)","Skorları sistem doldurur, hekim onaylar; kötüleşmede alarm zinciri (hemşire → sorumlu → hekim).","Yetişkin ve yenidoğan yoğun bakım"],
+  ["ara","Erken uyarı","var(--ok)","Vital izleme ve erken uyarı skoru (NEWS2, çocukta PEWS); ameliyat sonrası ilk 24 saat takibi. Hastanenin onayıyla açılır.","Servisler, çocuk ve KVC yoğun bakım"],
+  ["op","Operasyonel","var(--mute)","Yatak ve doluluk, kabul/taburcu, cihaz takibi. Klinik öneri yok.","Acil, günübirlik, doğumhane"],
+  ["src","Sonuç kaynağı","var(--vio)","Sonuçları hastanın 'Sonuçlar' sekmesine akar; kritik değer hekime iletilir.","Laboratuvar ve radyoloji"]
+];
+const LVL = { tam:"Tam destek", ara:"Erken uyarı", op:"Operasyonel", src:"Sonuç kaynağı" };
+const head = (k,h,s) => `<div class="k">${k}</div><h3>${h}</h3><p class="sub">${s}</p>`;
+
+function unitsHTML(){
+  if (S.units === "A1") return `<div class="sec">${head("Birimler","Her birime ihtiyacı kadar.","Yoğun bakımda tam karar desteği, serviste erken uyarı, destek birimlerinde operasyon. Hangi birimde neyin açık olduğuna hastane karar verir.")}
+    <div class="tiers">${TIERS.map(t => { const br = GROUPS.flatMap(g => g[1]).filter(b => b[1] === t[0]).map(b => b[0]);
+      return `<div class="tier"><div class="tt"><i class="dot" style="background:${t[2]}"></i>${t[1]}</div><div class="does">${t[3]}</div><div class="chips">${br.map(b=>`<span class="chip">${b}</span>`).join("")}</div><div class="foot">${t[4]}</div></div>`; }).join("")}</div></div>`;
+  if (S.units === "A2") return `<div class="sec">${head("Birimler","Hastanenizin her bölümünde.","Branşlar hastanenin kendi düzeninde; renk, sistemin o bölümde ne yaptığını gösterir.")}
+    <div class="legend">${TIERS.map(t=>`<span><span class="lvl ${t[0]}">${t[1]}</span></span>`).join("")}</div>
+    <div class="map">${GROUPS.map(g=>`<div class="grp"><h4>${g[0]}</h4>${g[1].map(b=>`<div class="br"><span>${b[0]}</span><span class="lvl ${b[1]}">${LVL[b[1]]}</span></div>`).join("")}</div>`).join("")}</div></div>`;
+  const C = [["unitdash","Yoğun bakım","Yatak ızgarası, skor onayı, alarm zinciri. Anesteziologiya və reanimatologiya."],
+             ["bedside","Yenidoğan yoğun bakım","Küvöz başı ölçüm, nSOFA, aileye bilgilendirme kaydı."],
+             ["tasks","Servisler","Dahili ve cerrahi servislerde vital izleme, NEWS2 / PEWS, ameliyat sonrası 24 saat."],
+             ["admission","Acil ve kabul","Yatak bulma, kabul ve transfer; doluluk tek ekranda."]];
+  return `<div class="sec">${head("Birimler","Her birim kendi ekranında.","Her kart ileride o birimin kendi tanıtım sayfasına açılır.")}
+    <div class="ucards">${C.map(c=>`<div class="uc"><div class="img" style="background-image:url('${IMG(c[0])}')"></div><div class="b"><h4>${c[1]}</h4><p>${c[2]}</p><span class="go">Birim sayfası →</span></div></div>`).join("")}</div></div>`;
+}
+
+const ROLES = [
+  ["hekim","Hekim","skor",["Birimin tamamı tek ekranda, kritik hasta üstte","Sistemin doldurduğu skoru gerekçesiyle onaylar","Sonuçlar, trendler, eskale edilenler"],"Emir ya da tanı önerisi almaz; karar kendisinindir."],
+  ["hemsire","Hemşire","tasks",["İşlerim: saati gelen bakım işleri, gecikenler","Yatak başı ölçüm, ağrı, sıvı, yara formları","Kritik uyarıda Gördüm / Eskale et"],"Başka birimin hastasını görmez."],
+  ["charge","Sorumlu hemşire","workload",["Birimin iş yükü ve geciken işler","Kabul ve doluluk, ekip dağılımı","3 dk yanıtlanmayan uyarı ona gelir"],"—"],
+  ["eczaci","Eczacı","pharmacy",["İlaç çizelgesi ve uygulama durumu","Etkileşim ve doz uyarıları","Hasta özeti ve sonuçlar (salt okunur)"],"Bakım formlarını ve kamerayı görmez."],
+  ["biyomed","Biyomedikal","devices",["Cihaz envanteri ve bağlantı durumu","Bakım ve kalibrasyon takvimi","Arıza kaydı"],"Hiçbir ekranda hasta adı görmez."],
+  ["yonetici","Yönetim","summary",["Yanıt süreleri, doluluk, iş yükü","Birim karşılaştırması: bugün / 7 gün / 30 gün","Denetim kaydı"],"Hasta adı görmez; sayılar isimsizdir."],
+  ["kalite","Kalite","quality",["Süreç göstergeleri, eskalasyon süreleri","Denetim kaydı (adlar yatak no ile maskeli)"],"Hasta adı görmez."],
+  ["sistem","BT / sistem yöneticisi","users",["Kullanıcılar, roller, hastane yapısı","Entegrasyonlar, sistem durumu, olay günlüğü","Rol gözüyle önizleme (kayda yazılır)"],"Hasta adını görüp görmeyeceği karar bekliyor (#262)."]
+];
+const MODS = [["Yatak ızgarası",["hekim","hemsire","charge"]],["Hasta sayfası",["hekim","hemsire","charge","eczaci:r"]],["Skor onayı",["hekim"]],["İşlerim / formlar",["hemsire","charge"]],["İlaç",["hekim:r","hemsire","eczaci"]],["Cihazlar",["biyomed"]],["Doluluk",["charge","yonetici","sistem:r"]],["Göstergeler",["yonetici","kalite"]],["Denetim kaydı",["yonetici","kalite","sistem"]],["Yönetim paneli",["sistem"]]];
+function rolesHTML(){
+  if (S.roles === "B1") { const r = ROLES.find(x=>x[0]===S.role);
+    return `<div class="sec">${head("Kim ne görür","Herkes yalnız kendi işini görür.","Aynı hasta, aynı veri; ekran role göre değişir.")}
+      <div class="rtabs">${ROLES.map(x=>`<button class="rtab ${x[0]===S.role?"on":""}" data-role="${x[0]}">${x[1]}</button>`).join("")}</div>
+      <div class="rview"><div><h4>${r[1]}</h4><ul>${r[3].map(l=>`<li>${l}</li>`).join("")}</ul>${r[4]!=="—"?`<div class="no">✕ ${r[4]}</div>`:""}</div>
+      <div class="shot" style="background-image:url('${IMG(r[2])}')"></div></div></div>`; }
+  return `<div class="sec">${head("Kim ne görür","Yetkiler baştan belli.","✓ düzenler · ◐ yalnız görür · — görmez")}
+    <div class="mxw"><table class="mx"><thead><tr><th></th>${ROLES.map(r=>`<th>${r[1]}</th>`).join("")}</tr></thead><tbody>
+    ${MODS.map(m=>`<tr><td>${m[0]}</td>${ROLES.map(r=>{ const hit=m[1].find(x=>x.split(":")[0]===r[0]); return hit?(hit.endsWith(":r")?'<td class="r">◐</td>':'<td class="y">✓</td>'):'<td class="n">—</td>'; }).join("")}</tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+
+function consHTML(){
+  const picks = [...S.picks], konsey = S.cons === "C1" && picks.length > 1;
+  const grp = GROUPS.filter(g => g[0] !== "Tanı ve destek" || true).map(g => `<div class="pg"><b>${g[0]}</b>${g[1].filter(b=>b[1]!=="src").map(b=>`<label><input type="checkbox" data-br="${b[0]}" ${S.picks.has(b[0])?"checked":""}>${b[0]}</label>`).join("")}</div>`).join("");
+  return `<div class="sec" style="background:var(--bg)"><div class="cons">
+    <div class="panel"><h4>REA02 · ${konsey ? "Konsey iste" : "Konsültasyon iste"}</h4><div class="ph">${S.cons==="C1" ? "Bir branş seçersen konsültasyon, birden fazla seçersen konsey olur." : "Tek branş seçilir."}</div>
+      <div class="pick">${grp}</div></div>
+    <div class="panel"><h4>${konsey ? "Konsey özeti" : "İstem özeti"}</h4>
+      <div class="sel">${picks.length ? picks.map(p=>`<span>${p}</span>`).join("") : '<em style="color:var(--mute);font-size:13px">Branş seçilmedi</em>'}</div>
+      <div class="fld"><span>Soru</span><b>${konsey ? "Akut böbrek hasarı + düşük ejeksiyon: sıvı ve diyaliz kararı" : "Kreatinin 2,4 — değerlendirme"}</b></div>
+      <div class="fld"><span>Aciliyet</span><b>${konsey ? "Bugün, 14:00" : "24 saat içinde"}</b></div>
+      <div class="fld"><span>Otomatik eklenen</span><b>Son 24 sa trend, NEWS2/SOFA, son sonuçlar, ilaç listesi</b></div>
+      ${konsey ? '<div class="fld"><span>Yer</span><b>Reanimasiya toplantı odası · ya da görüntülü</b></div><div class="fld"><span>Karar notu</span><b>Toplantıdan sonra tek not; katılanların imzası</b></div>' : ""}
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="btn p">${konsey ? "Konseyi planla" : "Konsültasyon iste"}</button><button class="btn">Vazgeç</button></div>
+      <div style="margin-top:18px;font-weight:600;font-size:14px">Bu hastada</div>
+      <div class="list">
+        <div class="it"><span class="st w">Bekliyor</span><span>Nefrologiya · kreatinin artışı</span><span class="mono">2 sa</span></div>
+        <div class="it"><span class="st o">Yanıtlandı</span><span>Kardiologiya · EKO önerildi</span><span class="mono">dün</span></div>
+        ${S.cons==="C1" ? '<div class="it"><span class="st p">Konsey</span><span>Kardiologiya + Nefrologiya + Reanimasiya</span><span class="mono">14:00</span></div>' : ""}
+      </div></div></div></div>`;
+}
+
+const WHY = {
+  A1:"<b>Neden böyle?</b> Satın alan hastane ilk olarak \"bizim hangi bölümümüzde işe yarar?\" diye sorar. Branşları dört katmana dizince cevap tek bakışta görünür ve <b>abartı yoktur</b>: dahili ve cerrahi servislerde bugün sistemin yaptığı şey erken uyarıdır, tam karar desteği değil. Katmanlar uygulamadaki gerçek ayarla aynı (core.js).",
+  A2:"<b>Neden böyle?</b> Hastanenin kendi branş listesini tanır; \"bizim hastane\" duygusu verir. Zayıf yanı: 24 satırlık liste ana sayfada uzun durur, telefonda iki ekran kaydırma.",
+  A3:"<b>Neden böyle?</b> En görsel seçenek; senin \"birim tanıtım sayfaları\" fikrine (#287) doğrudan kapı açar. Ama branş listesini göstermez; birim sayfaları yapılana kadar \"Birim sayfası →\" bağlantıları boşa gider.",
+  B1:"<b>Neden böyle?</b> Karar masasındaki her kişi (başhekim, başhemşire, eczane, biyomedikal, BT) kendi sekmesine tıklar ve <b>kendi ekranını</b> görür. Her rolün altında kırmızı \"görmez\" satırı güven bölümünü destekler. Görseller uygulamanın gerçek ekranları.",
+  B2:"<b>Neden böyle?</b> BT ve hukuk birimi için net; tek bakışta tüm yetkiler. Hekim ve hemşire için soğuk; telefonda yatay kaydırma ister.",
+  C1:"<b>Neden böyle?</b> Konsültasyon ile konsey aynı işin iki boyu: tek branş = konsültasyon, birden fazla = konsey. Ayrı ekran açmaya gerek yok. Sistem hastanın son 24 saatini, skorlarını ve sonuçlarını <b>kendisi ekler</b>; hekim yalnız soruyu yazar. Karar notu tek yerde ve imzalı olur. Tanı birimleri (Radiologiya, Laborator) listede yok: onlara konsültasyon değil tetkik istenir.",
+  C2:"<b>Neden böyle?</b> Daha basit. Ama yoğun bakımda çok branşlı karar (ör. kardiyoloji + nefroloji) sık ve bugün telefonla, kâğıtla yürüyor; bu seçenekte o iş sistem dışında kalır."
+};
+
+function render(){
+  document.querySelector("[data-units]").innerHTML = unitsHTML();
+  document.querySelector("[data-roles]").innerHTML = rolesHTML();
+  document.querySelector("[data-cons]").innerHTML = consHTML();
+  for (const k of ["units","roles","cons"]) document.querySelector(`[data-why="${k}"]`).innerHTML = WHY[S[k]];
+  document.querySelector("[data-ans]").textContent = `Birimler: ${S.units} · Kim ne görür: ${S.roles} · Konsültasyon: ${S.cons}`;
+}
+document.addEventListener("click", e => {
+  const o = e.target.closest(".opt"); if (o) { const q = o.closest("[data-q]").dataset.q; o.parentElement.querySelectorAll(".opt").forEach(x=>x.classList.toggle("on",x===o)); S[q]=o.dataset.v;
+    if (q==="cons" && S.cons==="C2" && S.picks.size>1) S.picks = new Set([[...S.picks][0]]); render(); return; }
+  const r = e.target.closest("[data-role]"); if (r) { S.role = r.dataset.role; render(); return; }
+  const b = e.target.closest(".seg button"); if (b) { b.parentElement.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+    if (b.parentElement.dataset.g==="dev") document.body.dataset.dev=b.dataset.v; else document.documentElement.dataset.theme=b.dataset.v; render(); return; }
+  if (e.target.closest("[data-copy]")) { try { navigator.clipboard.writeText(document.querySelector("[data-ans]").textContent); } catch {} }
+});
+document.addEventListener("change", e => { const br = e.target.dataset.br; if (!br) return;
+  if (S.cons==="C2") S.picks = e.target.checked ? new Set([br]) : new Set(); else e.target.checked ? S.picks.add(br) : S.picks.delete(br); render(); });
+render();
+</script>
+</body>
+</html>

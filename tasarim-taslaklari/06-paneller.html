@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel Seçenekleri</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- tema: Gece (varsayılan) / Gün ---------- */
+  :root, [data-theme="gece"] {
+    --page:#0b0f16; --app:#07101f; --rail:#0a1628; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+    --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13);
+    --att:rgba(202,138,4,.07); --attLine:rgba(202,138,4,.38); --attIco:rgba(202,138,4,.16); --attInk:#f5c451;
+    --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --critSoft:rgba(239,68,68,.12);
+    --v-ecg:#22e05a; --v-art:#ff4d4d; --v-spo:#ffe14a; --v-rr:#3fd8ff; --v-t:#e8eef7; --monbg:#040a14;
+    --shadow:0 12px 30px rgba(0,0,0,.45);
+  }
+  [data-theme="gun"] {
+    --page:#e9e6de; --app:#f6f4ef; --rail:#ffffff; --card:#ffffff; --card2:#f0ede6; --ink:#1b2a2f; --mute:#5f6d71; --line:#e4dfd4; --line2:#cfc8b8;
+    --pri:#0f6e67; --onpri:#ffffff; --priSoft:#e1efec;
+    --att:#fffaeb; --attLine:#f3dc9a; --attIco:#fdf0c8; --attInk:#9a6a00;
+    --crit:#dc2626; --high:#ea580c; --mid:#ca8a04; --ok:#16a34a; --critSoft:#fdecec;
+    --v-ecg:#15803d; --v-art:#dc2626; --v-spo:#a16207; --v-rr:#0369a1; --v-t:#1b2a2f; --monbg:#0b1424;
+    --shadow:0 12px 30px rgba(40,40,20,.14);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; transition:background .3s; }
+  .wrap { max-width:1320px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font:700 26px/1.15 "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0; max-width:900px; }
+  .lead b { color:var(--ink); }
+
+  /* ---------- kontrol çubuğu ---------- */
+  .ctrl { position:sticky; top:0; z-index:40; background:var(--page); padding:12px 0; margin:14px 0 10px; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; border-bottom:1px solid var(--line); }
+  .grp { display:flex; align-items:center; gap:8px; }
+  .grp > span { font:600 12px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.08em; }
+  .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:3px; }
+  .seg button { font:600 13px Figtree; color:var(--mute); background:none; border:0; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .seg button.on { background:var(--pri); color:var(--onpri); }
+  .step { font:600 13px Figtree; color:var(--ink); }
+  .step b { color:var(--pri); }
+
+  /* ---------- uygulama kabuğu ---------- */
+  .app { display:grid; grid-template-columns:84px 1fr; height:780px; background:var(--app); border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:var(--shadow); position:relative; }
+  .rail { background:var(--rail); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:stretch; padding:10px 8px; gap:4px; position:relative; z-index:20; }
+  .brand { display:flex; flex-direction:column; align-items:center; gap:4px; padding:4px 0 12px; margin-bottom:6px; border-bottom:1px solid var(--line); }
+  .brand small { font:700 9px/1.1 "Space Grotesk"; color:var(--mute); text-align:center; letter-spacing:.02em; }
+  .ri { display:flex; flex-direction:column; align-items:center; gap:4px; padding:9px 2px 8px; border-radius:12px; color:var(--mute); cursor:pointer; position:relative; font:600 10.5px/1.1 Figtree; text-align:center; transition:background .15s, color .15s; }
+  .ri:hover { background:var(--card2); color:var(--ink); }
+  .ri.on { background:var(--pri); color:var(--onpri); box-shadow:0 6px 16px rgba(0,0,0,.25); }
+  .ri svg { width:21px; height:21px; }
+  .ri .b { position:absolute; top:4px; right:10px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:var(--crit); color:#fff; font:700 10px/17px Figtree; }
+  .ri .fly { display:none; position:absolute; left:74px; top:-6px; min-width:210px; background:var(--card); border:1px solid var(--line2); border-radius:14px; box-shadow:var(--shadow); padding:8px; text-align:left; z-index:50; }
+  .ri:hover .fly { display:block; }
+  .fly h6 { margin:4px 8px 6px; font:700 10px Figtree; letter-spacing:.1em; color:var(--mute); text-transform:uppercase; }
+  .fly a { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px; color:var(--ink); font:600 13px Figtree; text-decoration:none; }
+  .fly a:hover { background:var(--card2); }
+  .fly a svg { width:17px; height:17px; color:var(--mute); }
+  .fly a em { margin-left:auto; font:600 10px Figtree; font-style:normal; color:var(--pri); background:var(--priSoft); padding:2px 6px; border-radius:6px; }
+  .rail .spacer { flex:1; }
+  .powered { display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 0 2px; border-top:1px solid var(--line); margin-top:4px; font:600 8.5px Figtree; color:var(--mute); }
+
+  .main { display:grid; grid-template-rows:60px 1fr; min-width:0; }
+  .top { display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid var(--line); background:var(--rail); min-width:0; }
+  .top .title { font:700 17px "Space Grotesk"; white-space:nowrap; }
+  .chip { display:flex; align-items:center; gap:8px; font:600 12.5px Figtree; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:6px 10px; white-space:nowrap; }
+  .chip .hl { width:22px; height:22px; border-radius:6px; background:linear-gradient(135deg,#7c2d12,#b45309); color:#fff; font:800 9px/22px Figtree; text-align:center; }
+  .search { flex:1; max-width:360px; margin-left:auto; display:flex; align-items:center; gap:8px; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; color:var(--mute); font-size:13px; }
+  .search kbd { margin-left:auto; font:600 10px "JetBrains Mono"; border:1px solid var(--line2); border-radius:5px; padding:2px 5px; }
+  .shift { font:600 12px Figtree; color:var(--mute); white-space:nowrap; }
+  .shift b { color:var(--ink); }
+  .ib { width:34px; height:34px; border-radius:9px; display:grid; place-items:center; color:var(--mute); position:relative; }
+  .ib svg { width:18px; height:18px; }
+  .ib .dot { position:absolute; top:6px; right:7px; width:8px; height:8px; border-radius:50%; background:var(--crit); border:2px solid var(--rail); }
+  .av { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#1f6f94,#22b8d6); color:#fff; font:700 12px/34px Figtree; text-align:center; }
+
+  .content { overflow:auto; padding:18px 20px 30px; position:relative; }
+  .content.swap { animation:in .35s cubic-bezier(.2,.8,.2,1); }
+  @keyframes in { from { opacity:0; transform:translateY(8px); } }
+  .ph { display:flex; align-items:flex-end; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .ph h2 { font:700 24px/1.1 "Space Grotesk"; margin:0; }
+  .ph p { margin:4px 0 0; color:var(--mute); font-size:13px; }
+  .ph .r { margin-left:auto; display:flex; gap:8px; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:8px 13px; border:1px solid var(--line2); background:var(--card); color:var(--ink); display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .btn.d { background:var(--crit); color:#fff; border-color:transparent; }
+  .sec { font:700 14px "Space Grotesk"; margin:18px 0 10px; display:flex; align-items:baseline; gap:10px; }
+  .sec small { font:500 12px Figtree; color:var(--mute); margin-left:auto; }
+
+  /* dikkat kartları (referanstaki "unutulan işler") */
+  .att { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .ac { background:var(--att); border:1px solid var(--attLine); border-radius:14px; padding:14px; display:grid; grid-template-columns:40px 1fr; gap:4px 12px; cursor:pointer; transition:transform .15s; }
+  .ac:hover { transform:translateY(-2px); }
+  .ac .i { grid-row:span 2; width:40px; height:40px; border-radius:10px; background:var(--attIco); color:var(--attInk); display:grid; place-items:center; }
+  .ac .i svg { width:20px; height:20px; }
+  .ac b { font:700 24px/1 "Space Grotesk"; }
+  .ac span { font-size:12.5px; color:var(--mute); }
+  .ac.crit { background:var(--critSoft); border-color:color-mix(in srgb, var(--crit) 45%, transparent); }
+  .ac.crit .i { background:color-mix(in srgb, var(--crit) 18%, transparent); color:var(--crit); }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .cp { display:flex; gap:8px; align-items:center; border:1px solid var(--attLine); background:var(--att); border-radius:999px; padding:6px 12px 6px 8px; font:600 12.5px Figtree; }
+  .cp b { font:700 14px "Space Grotesk"; }
+  .cp.crit { background:var(--critSoft); border-color:color-mix(in srgb, var(--crit) 45%, transparent); }
+  .cp.crit b { color:var(--crit); }
+  .cp svg { width:16px; height:16px; color:var(--attInk); }
+  .cp.crit svg { color:var(--crit); }
+
+  /* yatak kartları */
+  .beds { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .bed { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px 12px; position:relative; overflow:hidden; cursor:pointer; transition:border-color .15s, transform .15s; }
+  .bed:hover { border-color:var(--line2); transform:translateY(-2px); }
+  .bed::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--r); }
+  .bed .h { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+  .bed .no { font:700 15px "JetBrains Mono"; color:var(--r); margin-right:6px; }
+  .bed .nm { font:700 15px "Space Grotesk"; }
+  .bed .mt { font-size:12px; color:var(--mute); }
+  .sv { display:inline-flex; align-items:center; gap:5px; font:700 10.5px Figtree; letter-spacing:.04em; padding:4px 8px; border-radius:999px; color:var(--r); background:color-mix(in srgb, var(--r) 14%, transparent); white-space:nowrap; }
+  .sv svg { width:12px; height:12px; }
+  .vit { display:flex; gap:14px; margin:12px 0 8px; }
+  .vit div { font:700 19px/1 "JetBrains Mono"; }
+  .vit small { display:block; font:700 9.5px Figtree; margin-bottom:4px; letter-spacing:.04em; }
+  .bed svg.spark { width:100%; height:30px; display:block; }
+  .bed .ft { display:flex; justify-content:space-between; font-size:11.5px; color:var(--mute); margin-top:6px; }
+  .bed.empty { opacity:.55; } .bed.empty::before { background:var(--line2); }
+
+  /* tablo */
+  table.t { width:100%; border-collapse:collapse; font-size:13px; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  table.t th { text-align:left; font:700 10.5px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); padding:10px 12px; border-bottom:1px solid var(--line); background:var(--card2); }
+  table.t td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  table.t tr:last-child td { border-bottom:0; }
+  table.t tr.row { cursor:pointer; } table.t tr.row:hover td { background:var(--card2); }
+  table.t td.n { font:700 14px "JetBrains Mono"; }
+  .rl { display:inline-block; width:4px; height:26px; border-radius:2px; background:var(--r); vertical-align:middle; margin-right:8px; }
+
+  /* hasta */
+  .pt-h { display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .pt-h .bn { font:700 26px "JetBrains Mono"; color:var(--crit); }
+  .pt-h .nm { font:700 20px "Space Grotesk"; }
+  .tag { font:600 11.5px Figtree; border:1px solid var(--line2); border-radius:8px; padding:4px 8px; color:var(--mute); white-space:nowrap; }
+  .tag.w { color:var(--attInk); border-color:var(--attLine); background:var(--att); }
+  .mon { display:grid; grid-template-columns:1fr 200px; background:var(--monbg); border-radius:14px; overflow:hidden; margin-top:12px; border:1px solid var(--line); }
+  .mon .wv { padding:8px 10px; display:flex; flex-direction:column; gap:4px; }
+  .mon .ch { position:relative; } .mon .ch span { position:absolute; left:6px; top:3px; font:700 10px Figtree; }
+  .mon canvas { width:100%; height:54px; display:block; }
+  .mon .nums { display:grid; border-left:1px solid #1c2c45; }
+  .mon .nu { padding:6px 12px; border-bottom:1px solid #1c2c45; display:flex; flex-direction:column; justify-content:center; }
+  .mon .nu small { font:700 10.5px Figtree; display:flex; justify-content:space-between; }
+  .mon .nu b { font:700 30px/1 "JetBrains Mono"; margin-top:2px; }
+  .mon .nu b em { font:600 13px "JetBrains Mono"; font-style:normal; opacity:.8; }
+  .demo-note { font:600 10.5px Figtree; color:#8fa1ba; padding:4px 10px 6px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:14px 0 12px; }
+  .tabs span { font:600 13px Figtree; color:var(--mute); padding:9px 12px; border-bottom:2px solid transparent; }
+  .tabs span.on { color:var(--ink); border-color:var(--pri); }
+  .reco { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--crit); border-radius:12px; padding:12px 14px; }
+  .reco h4 { margin:0 0 4px; font:700 15px "Space Grotesk"; }
+  .reco ul { margin:6px 0 8px; padding-left:18px; color:var(--mute); font-size:13px; }
+  .reco .who { font-size:12px; color:var(--mute); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .box h5 { margin:0 0 8px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
+  .kv { display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px dashed var(--line); }
+  .kv:last-child { border:0; }
+  .kv b { font-family:"JetBrains Mono"; }
+  .sg { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:10px; }
+  .so { background:var(--card2); border-radius:10px; padding:8px 10px; position:relative; font-size:12px; }
+  .so span { color:var(--mute); font-weight:600; display:block; }
+  .so b { display:block; font:700 13px "JetBrains Mono"; margin:3px 0 2px; }
+  .so small { color:var(--mute); font-size:10.5px; }
+  .so em { position:absolute; top:6px; right:8px; font:700 16px "Space Grotesk"; font-style:normal; color:var(--pri); }
+  .so.need { grid-column:span 1; border:1.5px dashed var(--attLine); background:var(--att); }
+  .so.need b { font-family:Figtree; color:var(--attInk); font-size:12px; }
+  .pick { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .pick i { font:700 11px Figtree; font-style:normal; padding:4px 6px; border-radius:6px; border:1px solid var(--line2); cursor:pointer; }
+  .pick i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  @media (max-width:1100px) { .sg { grid-template-columns:repeat(3,1fr); } }
+  .pb { display:grid; grid-template-columns:280px 1fr; gap:14px; }
+  .big { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .big div { background:var(--monbg); border-radius:12px; padding:10px 12px; font:700 30px/1 "JetBrains Mono"; }
+  .big small { display:block; font:700 10.5px Figtree; margin-bottom:6px; }
+  .tl { position:relative; padding-left:20px; }
+  .tl::before { content:""; position:absolute; left:6px; top:4px; bottom:4px; width:2px; background:var(--line); }
+  .ev { position:relative; padding:0 0 14px; }
+  .ev::before { content:""; position:absolute; left:-19px; top:4px; width:12px; height:12px; border-radius:50%; background:var(--card); border:3px solid var(--c, var(--line2)); }
+  .ev .tm { font:700 12px "JetBrains Mono"; color:var(--mute); }
+  .ev .tx { font-size:13.5px; }
+  .ev .tx b { font-weight:700; }
+
+  /* alarmlar */
+  .kan { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .col { background:var(--card2); border-radius:14px; padding:10px; min-height:300px; }
+  .col h5 { margin:2px 4px 10px; font:700 12px Figtree; display:flex; justify-content:space-between; color:var(--mute); text-transform:uppercase; letter-spacing:.06em; }
+  .al { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; border-left:4px solid var(--r); }
+  .al .a1 { display:flex; justify-content:space-between; font:700 13px "Space Grotesk"; }
+  .al .a2 { font-size:12.5px; color:var(--mute); margin:3px 0 8px; }
+  .al .a3 { display:flex; gap:6px; }
+  .al .a3 .btn { padding:5px 9px; font-size:12px; }
+  .clock { font:700 12px "JetBrains Mono"; color:var(--r); }
+  .filters { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .filters span { font:600 12px Figtree; border:1px solid var(--line2); border-radius:999px; padding:5px 11px; color:var(--mute); }
+  .filters span.on { background:var(--priSoft); color:var(--pri); border-color:transparent; }
+  .arow { display:grid; grid-template-columns:70px 4px 1fr auto; gap:12px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .arow .bar { height:100%; min-height:34px; border-radius:2px; background:var(--r); }
+  .grpT { font:700 11px Figtree; letter-spacing:.08em; color:var(--mute); text-transform:uppercase; margin:14px 0 8px; }
+
+  /* yönetici */
+  .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .kpi b { font:700 24px/1 "Space Grotesk"; display:block; }
+  .kpi span { font-size:12.5px; color:var(--mute); }
+  .kpi em { font:600 11.5px Figtree; font-style:normal; }
+  .bars { display:flex; align-items:flex-end; gap:6px; height:110px; margin:10px 0 6px; }
+  .bars i { flex:1; background:color-mix(in srgb, var(--pri) 25%, var(--card2)); border-radius:6px 6px 3px 3px; }
+  .bars i.now { background:var(--pri); }
+  .meter { margin:10px 0 12px; }
+  .meter .l { display:flex; justify-content:space-between; font-size:13px; }
+  .meter .l b { font-family:"JetBrains Mono"; }
+  .meter .tr { height:7px; border-radius:4px; background:var(--card2); margin-top:6px; overflow:hidden; }
+  .meter .tr i { display:block; height:100%; border-radius:4px; }
+  .heat td.h { text-align:center; font:700 12px "JetBrains Mono"; border-radius:6px; }
+  .placeholder { display:grid; place-items:center; height:100%; color:var(--mute); text-align:center; }
+  .placeholder b { font:700 20px "Space Grotesk"; color:var(--ink); display:block; margin-bottom:6px; }
+
+  /* seçenek rozeti */
+  .optbadge { position:absolute; top:12px; right:16px; font:700 11px Figtree; background:var(--pri); color:var(--onpri); padding:4px 9px; border-radius:999px; z-index:5; }
+
+  .qs { margin-top:26px; display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+  .q { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; }
+  .q h3 { margin:0 0 6px; font:700 16px "Space Grotesk"; }
+  .q p { margin:0; color:var(--mute); font-size:14px; }
+  .q p b { color:var(--ink); }
+  .answer { margin-top:18px; background:var(--card); border:1px solid var(--line2); border-radius:16px; padding:16px 18px; }
+  .answer code { display:block; margin-top:8px; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 14px "JetBrains Mono"; white-space:pre-wrap; }
+
+  @media (max-width:1100px) { .att, .kpis { grid-template-columns:repeat(2,1fr); } .beds { grid-template-columns:repeat(2,1fr); } .shift, .search { display:none; } }
+  @media (max-width:760px) {
+    .app { grid-template-columns:64px 1fr; height:auto; min-height:700px; }
+    .ri { font-size:0; } .ri svg { width:22px; height:22px; } .brand small, .powered span { display:none; }
+    .ri .fly { left:56px; }
+    .beds, .kan, .two, .pb, .qs, .mon { grid-template-columns:1fr; }
+    .att, .kpis { grid-template-columns:1fr 1fr; }
+    .top { padding:0 10px; gap:8px; } .top .chip:not(.keep) { display:none; }
+    table.t .hide { display:none; }
+  }
+</style>
+</head>
+<body data-theme="gece">
+<div class="wrap">
+  <h1>Paneller · Taslak 06</h1>
+  <p class="lead">Gönderdiğin görüntüdeki <b>dar sol menüyü</b> (simge ve altında yazı, üstüne gelince açılan alt menü) ve <b>"unutulan işler" kartlarını</b> Homunculus'a uyarladım. Aşağıdaki ekran gerçek bir uygulama gibi çalışıyor. <b>Soldaki menüye tıkla</b>, her panelin <b>A ve B</b> seçeneği arasında üstteki düğmelerle geçiş yap. Gece ve gündüz temasını da oradan değiştirebilirsin.</p>
+
+  <div class="ctrl">
+    <div class="grp"><span>Tema</span><div class="seg" data-set="theme"><button data-v="gece" class="on">Gece</button><button data-v="gun">Gün Işığı</button></div></div>
+    <div class="grp"><span>Marka yeri</span><div class="seg" data-set="brand"><button data-v="h" class="on">Homunculus önde</button><button data-v="k">Hastane önde</button></div></div>
+    <div class="grp"><span>Bu panelin seçeneği</span><div class="seg" data-set="opt"><button data-v="A" class="on">A</button><button data-v="B">B</button></div></div>
+    <div class="step" data-step></div>
+  </div>
+
+  <div class="app">
+    <nav class="rail" data-rail></nav>
+    <div class="main">
+      <header class="top">
+        <div class="title" data-title>Yatak Paneli</div>
+        <div class="chip keep" data-hosp></div>
+        <div class="chip">Erişkin YBÜ ▾</div>
+        <div class="search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Hasta, yatak, protokol ara<kbd>Ctrl K</kbd></div>
+        <div class="shift">Akşam nöbeti · <b>3 sa 12 dk</b> kaldı</div>
+        <div class="ib" data-themebtn title="Tema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></div>
+        <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></div>
+        <div class="av">AD</div>
+      </header>
+      <section class="content" data-content></section>
+    </div>
+  </div>
+
+  <div class="qs">
+    <div class="q"><h3>1 · Sol menü</h3><p>Referanstaki dar menü: simge, altında yazı, üstüne gelince açılan alt menü. <b>Bu hâliyle uygun mu?</b> Menüdeki gruplar ve sıraları da değişebilir.</p></div>
+    <div class="q"><h3>2 · Marka yeri</h3><p><b>Homunculus önde:</b> sol üstte bizim logomuz, hastanenin adı üst çubukta. <b>Hastane önde:</b> sol üstte hastanenin logosu, bizim logomuz en altta "Homunculus ile" olarak. Satış yaparken bu fark önemli.</p></div>
+    <div class="q"><h3>3 · Her panel için A mı, B mi?</h3><p>Yatak Paneli, Hasta, Alarmlar ve Yönetici Özeti ekranlarının her birinde üstteki <b>A / B</b> düğmesiyle iki seçeneği karşılaştır.</p></div>
+    <div class="q"><h3>4 · Tema</h3><p>Gece mi, Gün Işığı mı, yoksa ikisi birden mi (kullanıcı seçer)?</p></div>
+  </div>
+  <div class="answer">
+    <b>Cevabını nasıl yazacaksın:</b> Satırı kopyala, harfleri kendi seçiminle değiştir ve gönder.
+    <code>Menü: uygun   Marka: Homunculus önde   Yatak: A   Hasta: A   Alarm: B   Yönetici: A   Tema: ikisi</code>
+  </div>
+</div>
+
+<script>
+/* ---------- simgeler ---------- */
+const P = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  zap:'<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  user:'<circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M19 8v6M22 11h-6"/>',
+  swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
+  flask:'<path d="M9 3h6M10 3v6L4 20h16L14 9V3"/>',
+  pill:'<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>',
+  chart:'<path d="M3 3v18h18"/><path d="M7 16V9M12 16V5M17 16v-4"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  tv:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  gear:'<circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+  alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  plug:'<path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  bed:'<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/>',
+  clip:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  tree:'<rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-3h14v3"/>',
+  lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+};
+const I = (k, s = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${s}>${P[k]}</svg>`;
+const LOGO = (s = 34) => `<svg width="${s}" height="${s}" viewBox="0 0 200 200"><defs><linearGradient id="lg${s}" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#0e6f90"/><stop offset="1" stop-color="#9ff3ff"/></linearGradient></defs>
+  <circle cx="100" cy="100" r="94" fill="#0a2340"/><line x1="28" y1="64" x2="172" y2="64" stroke="#a9bccf" stroke-width="7" stroke-dasharray="12 10" opacity=".7"/>
+  <g fill="url(#lg${s})"><rect x="41" y="138" width="12" height="16" rx="6" transform="rotate(-28 47 146)" opacity=".5"/><rect x="61" y="127" width="15" height="22" rx="7.5" transform="rotate(-30 69 138)" opacity=".65"/><rect x="85" y="110" width="18" height="28" rx="9" transform="rotate(-33 94 124)" opacity=".8"/><rect x="107" y="89" width="22" height="34" rx="11" transform="rotate(-36 118 106)" opacity=".92"/></g>
+  <rect x="131" y="70" width="26" height="38" rx="13" transform="rotate(-38 144 89)" fill="#e9fdff"/></svg>`;
+const HOSP = (s = 34) => `<div style="width:${s}px;height:${s}px;border-radius:10px;background:linear-gradient(135deg,#7c2d12,#b45309);color:#fff;font:800 ${s*.32}px/${s}px Figtree;text-align:center">HŞH</div>`;
+
+/* ---------- menü ---------- */
+const NAV = [
+  { k:"beds", ic:"grid", l:"Yataklar" },
+  { k:"alarms", ic:"bell", l:"Alarmlar", b:3, fly:["Alarmlar", [["bell","Açık alarmlar","3"],["zap","Hızlı Yanıt Ekibi"],["clock","Alarm geçmişi"]]] },
+  { k:"pt", ic:"user", l:"Hasta", fly:["Hasta işlemleri", [["user","Kabul / Transfer"],["clip","Vardiya Devri","yeni"],["flask","Sonuçlar","3"]]] },
+  { k:"ph", ic:"pill", l:"Eczane" },
+  { k:"dev", ic:"cpu", l:"Cihazlar" },
+  { k:"admin", ic:"chart", l:"Analiz", fly:["Analiz", [["chart","Yönetici Özeti"],["bell","Alarm Kalitesi"],["grid","Isı Haritası"]]] },
+  { k:"mgmt", ic:"shield", l:"Yönetim", fly:["Yönetim", [["users","Kullanıcılar"],["lock","Yetki Yönetimi"],["tree","Hastane Yapısı"],["clip","Denetim Kaydı"]]] },
+];
+const BOTTOM = [{ k:"wall", ic:"tv", l:"Duvar" }, { k:"set", ic:"gear", l:"Ayarlar" }, { k:"out", ic:"out", l:"Çıkış" }];
+const S = { theme:"gece", brand:"h", page:"beds", opt:{ beds:"A", pt:"A", alarms:"A", admin:"A" } };
+const TITLES = { beds:"Yatak Paneli", alarms:"Alarmlar", pt:"Hasta · 105 Zeynep Şahin", admin:"Yönetici Özeti", ph:"Eczane", dev:"Cihazlar", mgmt:"Yönetim", wall:"Duvar Ekranı", set:"Ayarlar", out:"Çıkış" };
+
+function renderRail() {
+  const item = n => `<div class="ri ${S.page === n.k || (n.k === "pt" && S.page === "pt") ? "on" : ""}" data-k="${n.k}">${I(n.ic)}${n.l}${n.b ? `<span class="b">${n.b}</span>` : ""}
+    ${n.fly ? `<div class="fly"><h6>${n.fly[0]}</h6>${n.fly[1].map(([ic,t,e]) => `<a href="#" data-k="${n.k}">${I(ic)}${t}${e ? `<em>${e}</em>` : ""}</a>`).join("")}</div>` : ""}</div>`;
+  const brand = S.brand === "h" ? `<div class="brand">${LOGO(38)}<small>Homunculus</small></div>` : `<div class="brand">${HOSP(38)}<small>Homunculus Şehir Hst.</small></div>`;
+  const foot = S.brand === "k" ? `<div class="powered">${LOGO(18)}<span>Homunculus ile</span></div>` : "";
+  document.querySelector("[data-rail]").innerHTML = brand + NAV.map(item).join("") + `<div class="spacer"></div>` + BOTTOM.map(item).join("") + foot;
+  document.querySelector("[data-hosp]").innerHTML = S.brand === "h" ? `<span class="hl">HŞH</span>Homunculus Şehir Hastanesi ▾` : `${LOGO(20)}Homunculus`;
+}
+
+/* ---------- veri ---------- */
+const BEDS = [
+  { no:105, n:"Zeynep Şahin", a:"61y K", dx:"Sepsis şüphesi, hipotansiyon", r:"var(--crit)", sv:"KRİTİK", ic:"alert", hr:131, map:51, spo:91, rr:30, t:"39.2", tr:[70,74,80,88,97,105,118,131], who:"Dr. Elif Y.", last:"0:05 önce" },
+  { no:101, n:"Ahmet Yıldız", a:"67y E", dx:"Pnömoni, solunum yetmezliği", r:"var(--high)", sv:"YÜKSEK", ic:"alert", hr:119, map:66, spo:84, rr:27, t:"38.4", tr:[98,100,104,108,110,116,117,119], who:"Dr. Elif Y.", last:"2:40 önce" },
+  { no:104, n:"Mehmet Demir", a:"72y E", dx:"Akut böbrek hasarı", r:"var(--mid)", sv:"ORTA", ic:"clock", hr:102, map:74, spo:96, rr:20, t:"37.1", tr:[96,99,97,101,100,103,101,102], who:"Dr. Can Ö.", last:"—" },
+  { no:102, n:"Fatma Kaya", a:"54y K", dx:"Postoperatif takip", r:"var(--ok)", sv:"STABİL", ic:"clip", hr:82, map:88, spo:97, rr:16, t:"36.8", tr:[86,84,85,83,82,83,81,82], who:"Dr. Can Ö.", last:"—" },
+  { no:401, n:"İbrahim Koç", a:"58y E", dx:"NSTEMI", r:"var(--ok)", sv:"STABİL", ic:"clip", hr:88, map:82, spo:96, rr:18, t:"36.7", tr:[90,89,91,88,87,88,89,88], who:"Dr. Murat Ş.", last:"—" },
+];
+const spark = (a, c) => { const mn = Math.min(...a) - 3, mx = Math.max(...a) + 3, w = 200, h = 30;
+  const pts = a.map((v, i) => `${(i / (a.length - 1) * w).toFixed(1)},${(h - (v - mn) / (mx - mn) * h).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`; };
+const V = b => `<div class="vit"><div><small style="color:var(--v-ecg)">HR</small>${b.hr}</div><div><small style="color:var(--v-art)">MAP</small>${b.map}</div><div><small style="color:var(--v-spo)">SpO₂</small>${b.spo}</div><div><small style="color:var(--v-rr)">RR</small>${b.rr}</div></div>`;
+const sv = b => `<span class="sv" style="--r:${b.r}">${I(b.ic)}${b.sv}</span>`;
+const ATT = [
+  ["crit","alert","2","kritik alarm yanıt bekliyor — en eskisi 5 dk"],
+  ["","flask","3","sonuç görülmedi — en eskisi 42 dk (laktat 4.1)"],
+  ["","plug","1","cihaz sessiz — Yatak 104, 6 dk'dır veri yok"],
+  ["","bed","2","hasta HBYS'de yatak bekliyor — Acil, Ameliyathane"],
+];
+
+/* ---------- paneller ---------- */
+const PANELS = {
+  beds: {
+    A: () => `<div class="ph"><div><h2>Yatak Paneli</h2><p>Erişkin YBÜ · 5 / 6 yatak dolu · son veri 2 sn önce</p></div><div class="r"><span class="btn">Kart ▾</span><span class="btn p">+ Hasta kabul</span></div></div>
+      <div class="sec">Dikkat bekleyenler <small>Kimsenin bakmadığı 8 iş</small></div>
+      <div class="att">${ATT.map(([c,ic,n,t]) => `<div class="ac ${c}"><div class="i">${I(ic)}</div><b>${n}</b><span>${t}</span></div>`).join("")}</div>
+      <div class="sec">Yataklar <small>Risk sırasına göre</small></div>
+      <div class="beds">${BEDS.map(b => `<div class="bed" style="--r:${b.r}" data-open="pt"><div class="h"><div><span class="no">${b.no}</span><span class="nm">${b.n}</span><div class="mt">${b.a} · ${b.dx}</div></div>${sv(b)}</div>${V(b)}${spark(b.tr, b.r)}<div class="ft"><span>HR · son 8 saat</span><span>${b.who}</span></div></div>`).join("")}
+        <div class="bed empty" style="--r:var(--line2)"><div class="h"><div><span class="no" style="color:var(--mute)">103</span><span class="nm" style="color:var(--mute)">Boş yatak</span><div class="mt">Temizlik tamamlandı · 21:10</div></div></div><div style="margin-top:30px"><span class="btn">+ Hasta ata</span></div></div></div>`,
+    B: () => `<div class="ph"><div><h2>Yatak Paneli</h2><p>Erişkin YBÜ · 5 / 6 yatak dolu · son veri 2 sn önce</p></div><div class="r"><span class="btn">Liste ▾</span><span class="btn p">+ Hasta kabul</span></div></div>
+      <div class="chips" style="margin-bottom:14px">${ATT.map(([c,ic,n,t]) => `<span class="cp ${c}">${I(ic)}<b>${n}</b>${t.split(" — ")[0]}</span>`).join("")}</div>
+      <table class="t"><tr><th>Yatak</th><th>Hasta</th><th>Durum</th><th>HR</th><th>MAP</th><th>SpO₂</th><th>RR</th><th class="hide">Isı</th><th class="hide" style="width:160px">HR · 8 sa</th><th class="hide">Son alarm</th><th class="hide">Sorumlu</th></tr>
+        ${BEDS.map(b => `<tr class="row" data-open="pt"><td class="n"><span class="rl" style="--r:${b.r}"></span>${b.no}</td><td><b>${b.n}</b><div style="font-size:11.5px;color:var(--mute)">${b.a} · ${b.dx}</div></td><td>${sv(b)}</td>
+          <td class="n" style="color:var(--v-ecg)">${b.hr}</td><td class="n" style="color:var(--v-art)">${b.map}</td><td class="n" style="color:var(--v-spo)">${b.spo}</td><td class="n" style="color:var(--v-rr)">${b.rr}</td><td class="n hide">${b.t}</td>
+          <td class="hide">${spark(b.tr, b.r)}</td><td class="hide" style="color:var(--mute)">${b.last}</td><td class="hide">${b.who}</td></tr>`).join("")}
+        <tr><td class="n" style="color:var(--mute)"><span class="rl" style="--r:var(--line2)"></span>103</td><td colspan="10" style="color:var(--mute)">Boş · temizlik tamamlandı 21:10 · <b style="color:var(--pri)">+ Hasta ata</b></td></tr></table>`,
+  },
+  pt: {
+    A: () => `<div class="pt-h"><span class="bn">105</span><div><div class="nm">Zeynep Şahin</div><div style="font-size:12.5px;color:var(--mute)">61y · Kadın · 68 kg · Yatış 6 sa önce · Dr. Elif Yılmaz</div></div>
+        <span class="tag w">Alerji: Penisilin</span><span class="tag">Tam kod</span><span class="tag">İzolasyon yok</span><span style="margin-left:auto" class="sv" style="--r:var(--crit)">${I("alert")}KRİTİK · NEWS2 14</span></div>
+      <div class="mon"><div class="wv">
+          <div class="ch"><span style="color:var(--v-ecg)">EKG II</span><canvas data-w="ecg" data-r="131" data-c="--v-ecg"></canvas></div>
+          <div class="ch"><span style="color:var(--v-art)">ART</span><canvas data-w="art" data-r="131" data-c="--v-art"></canvas></div>
+          <div class="ch"><span style="color:var(--v-spo)">SpO₂</span><canvas data-w="pleth" data-r="131" data-c="--v-spo"></canvas></div>
+          <div class="demo-note">Örnek dalga · gerçek dalga cihazdan okunmaya başlayınca buraya gelecek</div></div>
+        <div class="nums"><div class="nu"><small style="color:var(--v-ecg)"><span>HR</span><span>bpm</span></small><b style="color:var(--v-ecg)">131</b></div>
+          <div class="nu"><small style="color:var(--v-art)"><span>ART</span><span>mmHg</span></small><b style="color:var(--v-art)">78<em>/40</em> <em>(51)</em></b></div>
+          <div class="nu"><small style="color:var(--v-spo)"><span>SpO₂</span><span>%</span></small><b style="color:var(--v-spo)">91</b></div>
+          <div class="nu" style="border:0"><small style="color:var(--v-rr)"><span>RESP</span><span>/dk</span></small><b style="color:var(--v-rr)">30</b></div></div></div>
+      <div class="tabs"><span class="on">Özet</span><span>Trendler</span><span>Tedavi & sıvı</span><span>Sonuçlar · 1</span><span>Skorlar</span><span>Devir notu</span></div>
+      <div class="two"><div class="reco"><h4>Kötüleşme kriterleri karşılanıyor</h4><div style="font-size:13px">Değerlendirme önerilir. Tanı ve tedavi kararı hekimindir.</div>
+          <ul><li>MAP 65'in altında · 25 dakikadır</li><li>Laktat 4.1 mmol/L · 21:30</li><li>NEWS2 10 → 14 · son 2 saatte</li></ul>
+          <div style="display:flex;gap:8px"><span class="btn p">Değerlendirdim</span><span class="btn">Kanıtı gör</span><span class="btn d">Eskale et</span></div></div>
+        <div class="box"><h5>Son 6 saat</h5><div class="kv"><span>Sıvı dengesi</span><b>+1 850 mL</b></div><div class="kv"><span>İdrar</span><b>0.3 mL/kg/sa</b></div><div class="kv"><span>Noradrenalin</span><b>0.08 µg/kg/dk</b></div><div class="kv"><span>Antibiyotik</span><b>1 sa 10 dk önce</b></div></div></div>
+      <div class="box sofa" style="margin-top:12px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h5 style="margin:0">Günlük SOFA formu · son 24 saatin en kötü değerleri</h5><span class="sv" style="--r:var(--high)">Toplam 9 · dünden +3</span>
+          <span style="margin-left:auto;font-size:12.5px;color:var(--mute)">Sistem 5 / 6 maddeyi doldurdu · <b style="color:var(--ink)">1 madde sizi bekliyor</b></span></div>
+        <div class="sg">${[["Solunum","PaO₂/FiO₂ 210","Kan gazı · 07:40",2],["Pıhtılaşma","Trombosit 96 bin","Laboratuvar · 06:10",2],["Karaciğer","Bilirubin 1.4","Laboratuvar · 06:10",1],["Dolaşım","Noradrenalin 0.08","Pompa · canlı",3],["Böbrek","Kreatinin 1.9","Laboratuvar · 06:10",1]].map(([o,v,s,p]) => `<div class="so"><span>${o}</span><b>${v}</b><small>${s}</small><em>${p}</em></div>`).join("")}
+          <div class="so need"><span>Nörolojik · GCS</span><b>Hekim seçimi gerekli</b><div class="pick"><i>15</i><i>13–14</i><i class="on">10–12</i><i>6–9</i><i>&lt;6</i></div></div></div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center"><span class="btn p">Onayla ve kaydet</span><span class="btn">Bir değeri düzelt</span><span style="font-size:12px;color:var(--mute);margin-left:auto">Kaynağı olmayan hiçbir değer kendiliğinden girilmez.</span></div></div>`,
+    B: () => `<div class="pb"><div>
+        <div class="box"><div style="display:flex;gap:10px;align-items:center"><span style="font:700 26px 'JetBrains Mono';color:var(--crit)">105</span><div><b style="font:700 18px 'Space Grotesk'">Zeynep Şahin</b><div style="font-size:12px;color:var(--mute)">61y · K · 68 kg · 6 sa</div></div></div>
+          <div style="margin:10px 0 4px">${sv(BEDS[0])}</div>
+          <div class="big"><div><small style="color:var(--v-ecg)">HR</small><span style="color:var(--v-ecg)">131</span></div><div><small style="color:var(--v-art)">MAP</small><span style="color:var(--v-art)">51</span></div><div><small style="color:var(--v-spo)">SpO₂</small><span style="color:var(--v-spo)">91</span></div><div><small style="color:var(--v-rr)">RR</small><span style="color:var(--v-rr)">30</span></div></div>
+          <canvas data-w="ecg" data-r="131" data-c="--v-ecg" style="width:100%;height:44px;display:block;background:var(--monbg);border-radius:10px;margin-top:8px"></canvas></div>
+        <div class="box" style="margin-top:10px"><h5>Künye</h5><div class="kv"><span>Alerji</span><b style="color:var(--attInk)">Penisilin</b></div><div class="kv"><span>Kod durumu</span><b>Tam</b></div><div class="kv"><span>Sorumlu hekim</span><b>Dr. Elif Y.</b></div><div class="kv"><span>Hemşire</span><b>Ayşe D.</b></div></div></div>
+      <div><div class="reco" style="margin-bottom:14px"><h4>Kötüleşme kriterleri karşılanıyor</h4><div style="font-size:13px;color:var(--mute)">Değerlendirme önerilir. Karar hekimindir.</div><div style="display:flex;gap:8px;margin-top:10px"><span class="btn p">Değerlendirdim</span><span class="btn d">Eskale et</span></div></div>
+        <div class="box"><h5>Zaman çizelgesi · bu nöbet</h5><div class="tl">
+          <div class="ev" style="--c:var(--crit)"><div class="tm">21:37</div><div class="tx"><b>Alarm:</b> MAP 51, kötüleşme kriterleri karşılanıyor</div></div>
+          <div class="ev" style="--c:var(--high)"><div class="tm">21:30</div><div class="tx"><b>Sonuç:</b> Laktat 4.1 mmol/L <span style="color:var(--mute)">(önceki 2.2)</span></div></div>
+          <div class="ev" style="--c:var(--pri)"><div class="tm">20:25</div><div class="tx"><b>Tedavi:</b> Noradrenalin 0.08 µg/kg/dk başlandı · Dr. Elif Y.</div></div>
+          <div class="ev" style="--c:var(--pri)"><div class="tm">20:10</div><div class="tx"><b>Tedavi:</b> Seftriakson 2 g IV · Ayşe D.</div></div>
+          <div class="ev" style="--c:var(--mid)"><div class="tm">19:40</div><div class="tx"><b>Skor:</b> NEWS2 10 → 12</div></div>
+          <div class="ev"><div class="tm">18:05</div><div class="tx"><b>Devir:</b> Gündüz → akşam nöbeti imzalandı</div></div></div></div></div></div>`,
+  },
+  alarms: {
+    A: () => `<div class="ph"><div><h2>Alarmlar</h2><p>Sütunlar arasında sürükle · her kartta yanıt süresi sayıyor</p></div><div class="r"><span class="btn">Ses: açık</span></div></div>
+      <div class="kan">
+        <div class="col"><h5>Yeni <span>2</span></h5>
+          <div class="al" style="--r:var(--crit)"><div class="a1"><span>105 · Zeynep Şahin</span><span class="clock">0:05</span></div><div class="a2">Kötüleşme kriterleri karşılanıyor · MAP 51</div><div class="a3"><span class="btn p">Gördüm</span><span class="btn">Aç</span><span class="btn d">Eskale</span></div></div>
+          <div class="al" style="--r:var(--high)"><div class="a1"><span>101 · Ahmet Yıldız</span><span class="clock">2:40</span></div><div class="a2">SpO₂ 84 · 3 dakikadır</div><div class="a3"><span class="btn p">Gördüm</span><span class="btn">Aç</span><span class="btn">Ertele</span></div></div></div>
+        <div class="col"><h5>Görüldü · değerlendiriliyor <span>1</span></h5>
+          <div class="al" style="--r:var(--mid)"><div class="a1"><span>104 · Mehmet Demir</span><span class="clock" style="color:var(--mute)">12:10</span></div><div class="a2">Potasyum 5.8 · Ayşe D. gördü</div><div class="a3"><span class="btn">Kapat</span></div></div></div>
+        <div class="col"><h5>Eskale edildi <span>1</span></h5>
+          <div class="al" style="--r:var(--crit)"><div class="a1"><span>105 · Zeynep Şahin</span><span class="clock">RRT</span></div><div class="a2">Hızlı yanıt ekibi yolda · Dr. Murat Ş.</div></div></div></div>`,
+    B: () => `<div class="ph"><div><h2>Alarmlar</h2><p>Zaman sırasına göre · en eski yanıtsız en üstte</p></div></div>
+      <div class="filters"><span class="on">Açık · 3</span><span>Kritik</span><span>Yüksek</span><span>Benim hastalarım</span><span>Eskale</span><span>Kapanan</span></div>
+      <div class="grpT">Yanıt bekliyor</div>
+      ${[["0:05","var(--crit)","105 · Zeynep Şahin","Kötüleşme kriterleri karşılanıyor · MAP 51 · laktat 4.1"],["2:40","var(--high)","101 · Ahmet Yıldız","SpO₂ 84 · 3 dakikadır"]].map(([t,r,a,b]) => `<div class="arow" style="--r:${r}"><span class="clock" style="font-size:15px">${t}</span><span class="bar"></span><div><b>${a}</b><div style="font-size:12.5px;color:var(--mute)">${b}</div></div><div style="display:flex;gap:6px"><span class="btn p">Gördüm</span><span class="btn">Ertele</span><span class="btn d">Eskale</span></div></div>`).join("")}
+      <div class="grpT">Değerlendiriliyor</div>
+      <div class="arow" style="--r:var(--mid)"><span class="clock" style="color:var(--mute)">12:10</span><span class="bar"></span><div><b>104 · Mehmet Demir</b><div style="font-size:12.5px;color:var(--mute)">Potasyum 5.8 · Ayşe D. gördü 21:30</div></div><span class="btn">Kapat</span></div>
+      <div class="grpT">Son 1 saatte kapanan · 4</div>
+      <div class="arow" style="--r:var(--line2);opacity:.6"><span class="clock" style="color:var(--mute)">21:02</span><span class="bar"></span><div><b>102 · Fatma Kaya</b><div style="font-size:12.5px;color:var(--mute)">Kablo çıktı · hatalı alarm olarak işaretlendi</div></div><span></span></div>`,
+  },
+  admin: {
+    A: () => `<div class="ph"><div><h2>Yönetici Özeti</h2><p>İyi akşamlar · 23 Eylül 2026 Çarşamba</p></div><div class="r"><div class="seg"><button>Bugün</button><button class="on">7 gün</button><button>30 gün</button></div><span class="btn">Rapor al</span></div></div>
+      <div class="sec">Unutulan işler <small>Bekleyen ve kimsenin görmediği 6 başlık</small></div>
+      <div class="att">${[["crit","bell","3","alarm 10 dk'dan uzun yanıtsız kaldı — bu hafta"],["","clip","4","imzasız vardiya devri — en eskisi 2 gün"],["","plug","2","cihaz 1 saatten uzun sessiz — Yatak 104, 207"],["","clock","1","kişiye özel eşiğin süresi doldu — Yatak 101"]].map(([c,ic,n,t]) => `<div class="ac ${c}"><div class="i">${I(ic)}</div><b>${n}</b><span>${t}</span></div>`).join("")}</div>
+      <div class="two" style="margin-top:14px"><div class="box"><h5>Nabız · saatlik alarm</h5><div style="display:flex;align-items:baseline;gap:10px"><b style="font:700 30px 'Space Grotesk'">14</b><span style="color:var(--mute);font-size:13px">bugünkü alarm · <b style="color:var(--ok)">▼ %22</b> geçen haftaya göre</span></div>
+          <div class="bars">${[40,52,38,60,72,55,48,64,58,44,50,36,42,30].map((h,i) => `<i class="${i===13?'now':''}" style="height:${h}%"></i>`).join("")}</div><div style="font-size:11.5px;color:var(--mute)">son 14 gün</div></div>
+        <div class="box"><h5>Alarm kalitesi · son 7 gün</h5>
+          ${[["Yanıtlanan alarm","186 · %92","var(--ok)",92],["2 dk içinde yanıt","148 · %73","var(--pri)",73],["Eskale edilen","21 · %10","var(--high)",10],["Hatalı olarak işaretlenen","34 · %17","var(--crit)",17]].map(([l,v,c,w]) => `<div class="meter"><div class="l"><span>${l}</span><b>${v}</b></div><div class="tr"><i style="width:${w}%;background:${c}"></i></div></div>`).join("")}</div></div>
+      <div class="kpis" style="margin-top:14px">${[["18 / 24","Dolu yatak","%75"],["2:40","Ortalama yanıt süresi","▼ 0:35"],["31","Aktif kullanıcı","bu hafta"],["22 / 24","Bağlı cihaz","2 sessiz"],["0","Kopan denetim zinciri","bütün"]].map(([b,s,e]) => `<div class="kpi"><b>${b}</b><span>${s}</span> · <em style="color:var(--mute)">${e}</em></div>`).join("")}</div>`,
+    B: () => { const U = [["Erişkin YBÜ","6/6",[3,1,92,"2:10"]],["Koroner YBÜ","5/6",[1,0,95,"1:40"]],["KVC YBÜ","4/4",[2,1,88,"3:05"]],["Yenidoğan YBÜ","8/10",[0,0,97,"1:20"]],["Palyatif","3/4",[0,1,90,"4:30"]]];
+      const cell = (v, bad, good) => { const x = Math.max(0, Math.min(1, (v - good) / (bad - good))); return `color-mix(in srgb, var(--crit) ${Math.round(x*55)}%, color-mix(in srgb, var(--ok) ${Math.round((1-x)*35)}%, var(--card)))`; };
+      return `<div class="ph"><div><h2>Yönetici Özeti</h2><p>Ünite ünite · koyu kırmızı = dikkat</p></div><div class="r"><div class="seg"><button>Bugün</button><button class="on">7 gün</button><button>30 gün</button></div></div></div>
+      <div class="chips" style="margin-bottom:14px"><span class="cp crit">${I("bell")}<b>3</b>uzun yanıtsız alarm</span><span class="cp">${I("clip")}<b>4</b>imzasız devir</span><span class="cp">${I("plug")}<b>2</b>sessiz cihaz</span></div>
+      <table class="t heat"><tr><th>Ünite</th><th>Doluluk</th><th>Açık kritik alarm</th><th>Sessiz cihaz</th><th>Yanıtlanan %</th><th>Ort. yanıt</th><th class="hide">7 gün</th></tr>
+      ${U.map(([u,d,[a,s,y,t]]) => `<tr class="row"><td><b>${u}</b></td><td class="n">${d}</td><td class="h" style="background:${cell(a,3,0)}">${a}</td><td class="h" style="background:${cell(s,2,0)}">${s}</td><td class="h" style="background:${cell(100-y,15,3)}">%${y}</td><td class="h" style="background:${cell(parseInt(t)*60+ +t.split(":")[1],280,70)}">${t}</td><td class="hide">${spark([4,6,5,7,3,5,a+2].map(v=>v*3),"var(--pri)")}</td></tr>`).join("")}</table>
+      <div class="two" style="margin-top:14px"><div class="box"><h5>En gürültülü yataklar</h5><div class="kv"><span>Erişkin 105</span><b>42 alarm</b></div><div class="kv"><span>KVC 207</span><b>31 alarm</b></div><div class="kv"><span>Erişkin 101</span><b>27 alarm</b></div></div>
+        <div class="box"><h5>Vardiya karşılaştırması</h5><div class="kv"><span>Gündüz</span><b>1:55 ort. yanıt</b></div><div class="kv"><span>Akşam</span><b>2:40 ort. yanıt</b></div><div class="kv"><span>Gece</span><b style="color:var(--crit)">3:50 ort. yanıt</b></div></div></div>`; },
+  },
+};
+const PLACE = { ph:"Eczane", dev:"Cihazlar", mgmt:"Yönetim", wall:"Duvar Ekranı", set:"Ayarlar", out:"Çıkış" };
+
+/* ---------- dalga motoru (örnek) ---------- */
+const G = (x, m, s) => Math.exp(-((x - m) ** 2) / (2 * s * s));
+const WF = {
+  ecg: (t, hr) => { const p = (t * hr / 60) % 1; return .12*G(p,.12,.025) - .12*G(p,.27,.008) + 1*G(p,.3,.011) - .28*G(p,.33,.01) + .28*G(p,.55,.045); },
+  art: (t, hr) => { const p = ((t * hr / 60) + .8) % 1; return p < .12 ? Math.sin(p / .12 * Math.PI / 2) : (.95 * Math.exp(-(p - .12) * 2.6) - .12 * G(p,.33,.02) + .1 * G(p,.38,.03)); },
+  pleth: (t, hr) => { const p = ((t * hr / 60) + .7) % 1; return p < .2 ? Math.sin(p / .2 * Math.PI / 2) ** 2 : .9 * Math.exp(-(p - .2) * 2.2) + .12 * G(p,.45,.05); },
+};
+let sweeps = [];
+function wire(root) {
+  sweeps = [...root.querySelectorAll("canvas[data-w]")].map(cv => { const d = devicePixelRatio || 1; cv.width = cv.clientWidth * d; cv.height = cv.clientHeight * d;
+    const ctx = cv.getContext("2d"); ctx.scale(d, d); return { cv, ctx, k: cv.dataset.w, r: +cv.dataset.r, cvar: cv.dataset.c, x: 0, t: 0, last: null }; });
+}
+let prev = performance.now();
+(function frame(now) { const dt = Math.min(.05, (now - prev) / 1000); prev = now;
+  for (const s of sweeps) { const w = s.cv.clientWidth, h = s.cv.clientHeight; if (!w) continue;
+    const col = getComputedStyle(document.body).getPropertyValue(s.cvar).trim(); const [lo] = [col];
+    const n = Math.max(1, Math.round(90 * dt));
+    for (let i = 0; i < n; i++) { s.t += dt / n; const y = h - 5 - WF[s.k](s.t, s.r) * (h - 12) * .85 - (s.k === "ecg" ? h * .12 : 0);
+      s.ctx.clearRect(s.x, 0, 14, h);
+      if (s.last != null && s.x > 0) { s.ctx.strokeStyle = S.theme === "gun" ? ({ "--v-ecg":"#22e05a","--v-art":"#ff4d4d","--v-spo":"#ffe14a","--v-rr":"#3fd8ff" })[s.cvar] : lo; s.ctx.lineWidth = 1.8; s.ctx.beginPath(); s.ctx.moveTo(s.x - 1, s.last); s.ctx.lineTo(s.x, y); s.ctx.stroke(); }
+      s.last = y; s.x++; if (s.x > w) { s.x = 0; s.last = null; } } }
+  requestAnimationFrame(frame); })(prev);
+
+/* ---------- çizim ---------- */
+function render(anim = true) {
+  document.body.dataset.theme = S.theme;
+  renderRail();
+  document.querySelector("[data-title]").textContent = TITLES[S.page];
+  const c = document.querySelector("[data-content]");
+  const pnl = PANELS[S.page];
+  c.innerHTML = pnl ? `<span class="optbadge">Seçenek ${S.opt[S.page]}</span>` + pnl[S.opt[S.page]]()
+    : `<div class="placeholder"><div><b>${PLACE[S.page]}</b>Bu panel bir sonraki turda gelecek.<br>Bu turda Yatak Paneli, Hasta, Alarmlar ve Yönetici Özeti var.</div></div>`;
+  if (anim) { c.classList.remove("swap"); void c.offsetWidth; c.classList.add("swap"); }
+  c.scrollTop = 0; wire(c);
+  document.querySelectorAll('[data-set="opt"] button').forEach(b => { b.classList.toggle("on", !!pnl && b.dataset.v === S.opt[S.page]); b.disabled = !pnl; b.style.opacity = pnl ? 1 : .4; });
+  document.querySelector("[data-step]").innerHTML = pnl ? `Şu an: <b>${TITLES[S.page].split(" · ")[0]}</b> · seçenek <b>${S.opt[S.page]}</b>` : "";
+}
+document.querySelector("[data-rail]").addEventListener("click", e => { const it = e.target.closest("[data-k]"); if (!it) return; e.preventDefault(); S.page = it.dataset.k; render(); });
+document.querySelector("[data-content]").addEventListener("click", e => {
+  const pk = e.target.closest(".pick i"); if (pk) { pk.parentNode.querySelectorAll("i").forEach(x => x.classList.toggle("on", x === pk)); return; }
+  if (e.target.closest("[data-open]")) { S.page = "pt"; render(); } });
+document.querySelectorAll("[data-set]").forEach(g => g.addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.disabled) return;
+  const k = g.dataset.set; if (k === "opt") S.opt[S.page] = b.dataset.v; else S[k] = b.dataset.v;
+  g.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); render(k === "opt"); }));
+document.querySelector("[data-themebtn]").addEventListener("click", () => { S.theme = S.theme === "gece" ? "gun" : "gece";
+  document.querySelectorAll('[data-set="theme"] button').forEach(x => x.classList.toggle("on", x.dataset.v === S.theme)); render(false); });
+render(false);
+</script>
+</body>
+</html>

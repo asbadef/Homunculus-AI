@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marka Seçimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@500;700;800&family=Noto+Sans:wght@400;600&family=Onest:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#f4f5f7; --panel:#ffffff; --panel2:#eef0f4; --ink:#141a24; --mute:#5d6878; --line:#dfe3ea; --line2:#c9d0db;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e1f1f6; --warn:#8a5a00; --warnSoft:#fff6e0; --okSoft:#e6f6ec; --ok:#17763a;
+  --shadow:0 10px 28px rgba(20,30,50,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#95a3b8; --line:#223047; --line2:#2d3e5a;
+    --pri:#3fb6d3; --onpri:#04131a; --priSoft:rgba(63,182,211,.14); --warn:#f2c46b; --warnSoft:rgba(242,196,107,.1); --okSoft:rgba(60,190,110,.12); --ok:#6ad08f;
+    --shadow:0 10px 28px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#95a3b8; --line:#223047; --line2:#2d3e5a;
+  --pri:#3fb6d3; --onpri:#04131a; --priSoft:rgba(63,182,211,.14); --warn:#f2c46b; --warnSoft:rgba(242,196,107,.1); --okSoft:rgba(60,190,110,.12); --ok:#6ad08f;
+  --shadow:0 10px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:15px/1.55 Inter,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+h1,h2,h3{margin:0;line-height:1.2}
+p{margin:0}
+.mute{color:var(--mute)}
+small{font-size:12.5px}
+
+/* üst çubuk */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--page) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
+.top b{font-weight:700;font-size:14px}
+.top .sp{flex:1}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--mute)}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.jump{display:flex;gap:6px;flex-wrap:wrap}
+.jump a{font-size:13px;font-weight:600;color:var(--mute);text-decoration:none;padding:5px 9px;border-radius:8px;border:1px solid var(--line)}
+.jump a:hover{color:var(--ink);border-color:var(--line2)}
+
+.intro{padding:34px 0 10px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pri)}
+.intro h1{font-size:clamp(26px,5vw,40px);font-weight:800;letter-spacing:-.02em;margin:8px 0 12px}
+.intro p{max-width:760px;color:var(--mute)}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:18px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px;font-size:14px}
+.note b{display:block;margin-bottom:4px}
+
+/* bölüm 1: hızlı sorular */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+.q{margin-top:16px}
+.q h3{font-size:16px;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line2);background:var(--panel);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:500;text-align:left}
+.chip:hover{border-color:var(--pri)}
+.chip.on{background:var(--pri);border-color:var(--pri);color:var(--onpri)}
+.hint{margin-top:8px;font-size:13px;color:var(--mute);min-height:1em}
+section{scroll-margin-top:70px}
+.sec{margin-top:34px}
+.sec>h2{font-size:22px;letter-spacing:-.01em;margin-bottom:6px}
+
+/* yön kartı */
+.dir{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
+.dir.picked{outline:3px solid var(--pri);outline-offset:2px}
+.dhead{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:22px 22px 6px}
+.letter{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font:800 22px Inter;background:var(--panel2);border:1px solid var(--line);flex:none}
+.dhead .t{flex:1;min-width:220px}
+.dhead h2{font-size:24px;letter-spacing:-.01em}
+.dhead p{color:var(--mute);margin-top:4px;max-width:720px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tag{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--panel2);color:var(--mute);border:1px solid var(--line)}
+.pick{border:1px solid var(--pri);background:transparent;color:var(--pri);font-weight:700;border-radius:12px;padding:10px 16px;white-space:nowrap}
+.pick.on{background:var(--pri);color:var(--onpri)}
+.dbody{padding:14px 22px 22px;display:grid;gap:16px}
+.row2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+.box{border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}
+.box>h4{margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute)}
+
+.logos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lk{border-radius:12px;padding:22px 14px;display:flex;align-items:center;justify-content:center;gap:12px;min-height:118px;flex-wrap:wrap;overflow:hidden}
+.sizes{display:flex;align-items:flex-end;gap:16px;margin-top:12px;flex-wrap:wrap}
+.sizes div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--mute)}
+.story{font-size:14px;margin-top:12px}
+
+.pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.sw{border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:12.5px}
+.sw i{display:block;height:46px}
+.sw div{padding:7px 9px}
+.sw b{display:block;font-size:13px}
+.sw code{font:500 12px "JetBrains Mono",monospace;color:var(--mute)}
+.palnote{font-size:13px;color:var(--mute);margin-top:10px}
+
+.type .spec{font-size:13px;color:var(--mute);margin-bottom:10px}
+.type .big{font-size:30px;line-height:1.15;margin-bottom:6px;overflow-wrap:anywhere}
+.type .body{font-size:15px}
+.type .nums{font-size:22px;margin-top:6px}
+.badge{display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--panel2);color:var(--mute)}
+.badge.ok{background:var(--okSoft);color:var(--ok)}
+.badge.no{background:var(--warnSoft);color:var(--warn)}
+
+.apps{display:grid;grid-template-columns:auto 1fr 1.5fr;gap:14px;align-items:start}
+.app{min-width:0}
+.app>small{display:block;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:8px;font-size:11.5px}
+
+.why{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.why .box{background:var(--panel2);border-color:transparent}
+.why .weak{background:var(--warnSoft)}
+.why h4{color:var(--ink)}
+.why ul{margin:0;padding-left:18px;font-size:14px}
+.why li+li{margin-top:5px}
+
+/* telefon */
+.phone{width:176px;height:350px;border-radius:30px;padding:7px;background:#11141a;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.scr{width:100%;height:100%;border-radius:24px;overflow:hidden;position:relative;display:flex;flex-direction:column;padding:10px 10px 8px}
+.sbar{display:flex;justify-content:space-between;font:600 10px Inter;margin-bottom:14px;padding:0 4px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 6px}
+.ic{display:flex;flex-direction:column;align-items:center;gap:3px;font:500 8px Inter;white-space:nowrap;overflow:hidden}
+.ic span{max-width:46px;overflow:hidden;text-overflow:ellipsis}
+.ic .g{width:32px;height:32px;border-radius:8px}
+.dock{margin-top:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:7px 5px;border-radius:18px;background:rgba(255,255,255,.18)}
+.dock .g{width:28px;height:28px;border-radius:8px;margin:auto}
+.me .g{box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 0 4px rgba(0,0,0,.25)}
+
+/* giriş mini */
+.login{border-radius:14px;padding:16px;border:1px solid var(--k-line);background:var(--k-bg);color:var(--k-ink);font-family:var(--k-fb);max-width:300px}
+.login .lk2{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.login h5{margin:0 0 10px;font:600 15px var(--k-fh);color:var(--k-ink)}
+.fld{font-size:10.5px;color:var(--k-mute);margin-bottom:3px}
+.inp{height:28px;border:1px solid var(--k-line);border-radius:8px;background:var(--k-surf);margin-bottom:8px;display:flex;align-items:center;padding:0 8px;font-size:11px;color:var(--k-mute)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:600;background:var(--k-acc);color:var(--k-onacc);width:100%}
+.lfoot{margin-top:10px;font-size:10.5px;color:var(--k-mute);display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
+
+/* tanıtım kahramanı mini */
+.hero{border-radius:14px;border:1px solid var(--k-line);background:var(--k-bg);color:var(--k-ink);font-family:var(--k-fb);overflow:hidden;position:relative}
+.hnav{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--k-line);position:relative;z-index:2}
+.hnav .links{margin-left:auto;display:flex;gap:10px;font-size:10px;color:var(--k-mute);align-items:center}
+.hnav .mini{height:22px;padding:0 9px;border-radius:7px;background:var(--k-acc);color:var(--k-onacc);font-size:10px;font-weight:600;display:inline-flex;align-items:center}
+.hbody{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;padding:18px 14px 18px;position:relative;z-index:2;align-items:center}
+.hbody .ey{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--k-acc)}
+.hbody h6{margin:6px 0 8px;font:var(--k-hw) 21px/1.12 var(--k-fh);letter-spacing:var(--k-hls);color:var(--k-ink)}
+.hbody p{font-size:11px;color:var(--k-mute)}
+.hbtns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.hbtns span{height:26px;padding:0 10px;border-radius:7px;font-size:10.5px;font-weight:600;display:inline-flex;align-items:center}
+.hb1{background:var(--k-acc);color:var(--k-onacc)}
+.hb2{border:1px solid var(--k-line);color:var(--k-ink)}
+.prev{border:1px solid var(--k-line);background:var(--k-surf);border-radius:10px;padding:8px;min-width:0}
+.prev .ph{display:flex;justify-content:space-between;font-size:9px;color:var(--k-mute);margin-bottom:6px;gap:4px}
+.prev .ph em{font-style:normal;border:1px solid var(--k-line);border-radius:5px;padding:0 4px}
+.beds{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.bed{border:1px solid var(--k-line);border-radius:7px;padding:5px 6px;font-size:9px;background:var(--k-bg);min-width:0}
+.bed b{font:600 9px var(--k-fn);display:flex;justify-content:space-between;align-items:center;gap:3px}
+.bed i{display:inline-block;width:7px;height:7px;border-radius:50%}
+.bed .n{font:600 13px var(--k-fn);margin-top:2px;color:var(--k-ink)}
+.bed .n small{font:500 8px var(--k-fb);color:var(--k-mute)}
+.deco{position:absolute;inset:0;z-index:1;pointer-events:none}
+
+/* karşılaştırma */
+#compare{display:none}
+body.cmp #compare{display:block}
+body.cmp #dirs{display:none}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:14px}
+.ccard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ccard.picked{outline:3px solid var(--pri)}
+.ccard h3{font-size:16px;display:flex;align-items:center;gap:8px}
+.ccard h3 .letter{width:30px;height:30px;font-size:15px;border-radius:9px}
+.cicons{display:flex;gap:10px;align-items:flex-end}
+.cpal{display:flex;height:16px;border-radius:6px;overflow:hidden}
+.cpal i{flex:1}
+
+/* cevap satırı */
+.answer{margin:40px 0 60px}
+.pickrow{display:flex;gap:8px;flex-wrap:wrap}
+.pickrow .chip{min-width:52px;text-align:center;font-weight:700}
+textarea{width:100%;min-height:52px;border:1px solid var(--line2);border-radius:12px;background:var(--panel2);color:var(--ink);font:14px Inter;padding:10px 12px;resize:vertical}
+.line{margin-top:16px;border:2px dashed var(--pri);border-radius:14px;padding:14px 16px;font:600 15px/1.5 "JetBrains Mono",monospace;background:var(--priSoft);overflow-wrap:anywhere}
+.copy{margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.copy button{border:0;background:var(--pri);color:var(--onpri);font-weight:700;border-radius:12px;padding:11px 18px}
+.copy .reset{background:transparent;color:var(--mute);border:1px solid var(--line2)}
+
+@media (max-width:980px){
+  .apps{grid-template-columns:auto 1fr}
+  .apps .app.h{grid-column:1/-1}
+}
+@media (max-width:760px){
+  .row2,.why{grid-template-columns:1fr}
+  .apps{grid-template-columns:1fr}
+  .apps .app{justify-self:stretch}
+  .phone{margin:0 auto}
+  .login{max-width:none}
+  .hbody{grid-template-columns:1fr}
+  .hnav .links span:not(.mini){display:none}
+  .hnav .mini{white-space:nowrap}
+  .dhead,.dbody{padding-left:14px;padding-right:14px}
+  .logos{grid-template-columns:1fr}
+  .top .jump{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <b>Homunculus · Taslak 16 · Marka seçimi</b>
+    <nav class="jump" aria-label="Bölümler">
+      <a href="#sorular">Sorular</a><a href="#yon-A">A</a><a href="#yon-B">B</a><a href="#yon-C">C</a><a href="#yon-D">D</a><a href="#cevap">Cevap</a>
+    </nav>
+    <span class="sp"></span>
+    <div class="seg" role="group" aria-label="Görünüm">
+      <button id="vDetail" class="on" type="button">Tek tek</button>
+      <button id="vCmp" type="button">Yan yana</button>
+    </div>
+    <div class="seg" role="group" aria-label="Tema">
+      <button data-th="light" type="button">Açık</button>
+      <button data-th="dark" type="button">Koyu</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="intro">
+    <div class="eyebrow">24.09.2026 · Marka kimliği · Seçim turu</div>
+    <h1>Önce neyi beğenmediğini bulalım, sonra bir yön seçelim.</h1>
+    <p>Önceki üç turda (01, 07, 09) toplam 11 karakter gördün ve hiçbiri oturmadı. Bu sefer hikâye anlatmıyoruz. Dört yönün her birini <b>aynı üç yerde</b> gösteriyoruz: telefondaki uygulama simgesi, giriş ekranı ve tanıtım sayfasının üst bölümü. Farkı çizimlerde değil, kullanıldığı yerde görebilesin diye. Bu sayfada seçim yaparsın. <b>Uygulamada ve tanıtım sayfasında henüz hiçbir şey değişmedi.</b></p>
+    <div class="notes">
+      <div class="note"><b>Sabit olanlar</b>Ad her yönde "Homunculus". Marka rengi hiçbir yönde kırmızı, turuncu ya da sarı değil: o renkler uygulamada alarma ayrıldı (Taslak 01 kararı).</div>
+      <div class="note"><b>MedRapor'dan alınanlar</b>Büyük, kalın başlık ve kahraman bölümündeki canlı önizleme kartı alındı. Mor-mavi renkler ve yazılan kelime animasyonu alınmadı. İki ürün kardeş gibi dursun, kopya gibi durmasın.</div>
+      <div class="note"><b>"ə" harfi ölçüldü</b>Bu sayfa her yazı tipinin "ə" harfini gerçekten çizip çizmediğini tarayıcıda ölçüyor (yazı tipi kutusunun altındaki rozet). 24.09 ölçümü: uygulamanın bugünkü yazısı <b>Figtree</b>, Taslak 09'daki <b>Sora</b> ve <b>Outfit</b> "ə"yi çizmiyor; başka bir yazı tipine düşüyor. Bu sayfadaki dört çiftin hepsi çiziyor.</div>
+      <div class="note"><b>Çizimler hakkında</b>Logolar kodla çizilmiş konsept çizimleri. Seçilen yönün son çizimi ayrıca, baskı kalitesinde hazırlanır. Azerbaycanca metinleri ben yazdım, yayından önce yerel biri okumalı.</div>
+    </div>
+  </div>
+
+  <section id="sorular" class="sec">
+    <div class="card">
+      <h2 style="font-size:22px">1 · Önce şunu seç</h2>
+      <p class="mute" style="margin-top:4px">Önceki turlarda seni rahatsız eden fikir miydi, çizim kalitesi mi, renkler mi, yazı tipi mi? Birden çok seçebilirsin. Seçtiklerin en alttaki cevap satırına kendiliğinden yazılır.</p>
+      <div class="q"><h3>Önceki marka turlarında (01, 07, 09) seni rahatsız eden neydi?</h3><div class="chips" data-q="bad" data-multi="1"></div></div>
+      <div class="q"><h3>Başhekim Homunculus'a ilk baktığında ne hissetsin?</h3><div class="chips" data-q="feel"></div><div class="hint" id="feelHint"></div></div>
+      <div class="q"><h3>MedRapor ile yan yana durunca?</h3><div class="chips" data-q="med"></div></div>
+    </div>
+  </section>
+
+  <section class="sec" id="yonler">
+    <h2>2 · Dört yön</h2>
+    <p class="mute">Her yön ayrı bir kişilikte. Her birinde logo, renkler, yazı tipi ve aynı üç kullanım var. Üstteki "Açık / Koyu" düğmesi örneklerin koyu hâlini de gösterir.</p>
+  </section>
+
+  <div id="dirs"></div>
+
+  <section id="compare" class="sec">
+    <h2>Yan yana</h2>
+    <p class="mute">Dört yön aynı ekranda, küçük boyutta. Ayrıntı ve gerekçe için "Tek tek" görünümüne dön.</p>
+    <div class="cgrid" id="cgrid"></div>
+  </section>
+
+  <section id="cevap" class="sec answer">
+    <div class="card">
+      <h2 style="font-size:22px">3 · Cevap satırı</h2>
+      <p class="mute" style="margin-top:4px">Yönü seç, istersen başka yönden bir şey ödünç al. Satırı kopyalayıp bana gönder, yeter.</p>
+      <div class="q"><h3>Yön</h3><div class="pickrow chips" data-q="dir"></div></div>
+      <div class="q"><h3>Değiştir (başka yönden ödünç al ya da düzelt)</h3><div class="chips" data-q="chg" data-multi="1"></div></div>
+      <div class="q"><h3>Kendi notun (isteğe bağlı)</h3><textarea id="free" placeholder="Örn: B'nin çizgisi güzel ama biraz daha kalın olsun"></textarea></div>
+      <div class="line" id="line"></div>
+      <div class="copy"><button type="button" id="copyBtn">Satırı kopyala</button><button type="button" class="reset" id="resetBtn">Seçimleri temizle</button><span class="mute" id="copyMsg" aria-live="polite"></span></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- saklama (yalnız bu tarayıcı) ---------- */
+const KEY="homunculus-16-marka";
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} }
+const st=Object.assign({bad:[],feel:null,med:null,dir:null,chg:[],free:"",theme:null},load());
+
+/* ---------- yönler ---------- */
+const BUTA="M20 46C8 46 3 36 6 27C9 18 18 16 22 10C25 6 24 2 21 1C29 2 33 10 32 19C31 26 34 32 31 38C29 43 25 46 20 46Z M20 38C14 38 12 32 15 28C18 24 24 26 23 31";
+let uid=0;
+
+const D=[
+{ id:"A", name:"Klinik sakin", tone:"Güven veren, ölçülü, hastane gibi.",
+  about:"Beyaz zemin, lacivert yazı ve tek bir vurgu rengi. İşaret tek başına bir H: iki dikey çizgi ve ortada, çizginin yerini alan küçük bir nokta. Süs yok, hikâye yok. Bir tıbbi cihazın üstüne, bir ihale dosyasına ya da bir yaka kartına aynı ciddiyetle oturur.",
+  tags:["sakin","kurumsal","okunaklı","en az risk"],
+  fh:"'IBM Plex Sans'", fb:"'IBM Plex Sans'", fn:"'IBM Plex Mono'", hw:"700", hls:"-.01em",
+  fontText:"IBM Plex Sans + IBM Plex Mono", fontWhy:"Tek aile: başlık, gövde ve sayılar aynı elden çıkmış. IBM'in teknik belgeler için çizdiği yazı; soğuk değil, düzgün.",
+  wm:{t:"Homunculus", w:600, ls:"-.01em"},
+  pal:[["Beyaz","#FFFFFF","zemin"],["Lacivert","#0B2545","yazı ve simge"],["Taş gri","#5B6B7F","ikincil yazı"],["Çizgi","#E3E8EF","ayırıcı"],["Klinik camgöbeği","#0E8FB0","tek vurgu: düğme, bağlantı"]],
+  palNote:"Kural: ekranda aynı anda tek vurgu rengi. Geri kalan her şey lacivert ve gri tonları.",
+  light:{bg:"#FFFFFF",surf:"#F4F6F9",ink:"#0B2545",mute:"#5B6B7F",line:"#E3E8EF",acc:"#0E8FB0",onacc:"#FFFFFF"},
+  dark:{bg:"#0B1626",surf:"#122238",ink:"#E8EEF6",mute:"#93A3B8",line:"#223552",acc:"#3FB6D3",onacc:"#04131A"},
+  icon:{bg:"#0B2545",fg:"#FFFFFF",acc:"#4CC4E2"},
+  mark:(fg,acc)=>`<path d="M20 13V51M44 13V51" stroke="${fg}" stroke-width="7.5" stroke-linecap="round" fill="none"/><circle cx="32" cy="32" r="5.8" fill="${acc}"/>`,
+  story:"H, Homunculus'un baş harfi. Normalde iki çizgiyi bağlayan yatay çizginin yerinde tek bir nokta var: sistemin dikkat ettiği an. 20 pikselde bile iki çizgi ve bir nokta olarak okunur.",
+  slogan:"Kararı hekim verir.",
+  deco:()=>"",
+  why:["Başhekim, bilgi işlem ve bakanlık için en az açıklama gerektiren yön: \"ciddi bir hastane yazılımı\" gibi durur.","Uygulamanın bugünkü Gün Işığı teması (açık zemin, camgöbeği vurgu) ile en yakın akraba; uygulamada en az değişiklik ister.","Tek vurgu kuralı, alarm renklerinin ekranda tek başına öne çıkmasını sağlar."],
+  weak:["Rakiplerden ayrışması zor. Sağlık yazılımlarının çoğu lacivert ve mavi kullanıyor.","Akılda kalıcılığı düşük; hemşireyi heyecanlandırmaz.","Taslak 07'deki \"Nöbetçi\" karakterine yakın bir ton. O turda neyi sevmediysen burada da sevmeyebilirsin."]
+},
+{ id:"B", name:"Tek Çizgi", tone:"Sade, zarif, akılda kalan tek bir hareket.",
+  about:"İşaret tek bir sürekli çizgi: soldan düz gelir, bir kez kalp atışı gibi kırılır, yükselip küçük bir \"h\" harfine dönüşür ve bir noktada biter. Konseyin çekirdek logo önerisi buydu, sana hiç sunulmamıştı. Taslak 09'daki Tek Çizgi'den farkı: bina ve yatak yok, el çizimi yok; tek hareket, küçük boyutta da okunur.",
+  tags:["zarif","sürekli bakım","sade","uluslararası"],
+  fh:"'Plus Jakarta Sans'", fb:"'Inter'", fn:"'Inter'", hw:"800", hls:"-.03em",
+  fontText:"Plus Jakarta Sans + Inter", fontWhy:"Plus Jakarta Sans yumuşak ve geometrik; çizginin yumuşak dönüşleriyle aynı dili konuşuyor. Gövde Inter, küçük boyutta en okunaklılardan.",
+  wm:{t:"homunculus", w:700, ls:"-.03em"},
+  pal:[["Kâğıt","#F8F7F4","zemin"],["Mürekkep","#14181F","yazı ve çizgi"],["Grafit","#5E6570","ikincil yazı"],["Kum çizgi","#E4E2DC","ayırıcı"],["Nabız camgöbeği","#00A3C4","yalnız nokta ve düğme"]],
+  palNote:"Renk neredeyse yok: işi çizgi yapıyor. Camgöbeği yalnız çizginin bittiği noktada ve ana düğmede.",
+  light:{bg:"#F8F7F4",surf:"#FFFFFF",ink:"#14181F",mute:"#5E6570",line:"#E4E2DC",acc:"#00A3C4",onacc:"#FFFFFF"},
+  dark:{bg:"#101318",surf:"#181C23",ink:"#F1F0EC",mute:"#9AA0A8",line:"#2A2F38",acc:"#2CD3EE",onacc:"#051418"},
+  icon:{bg:"#14181F",fg:"#F8F7F4",acc:"#2CD3EE"},
+  mark:(fg,acc)=>`<path d="M6 46H16L19.5 38L23 53L26.5 46H30V12V30C30 21 48 21 48 31V46" stroke="${fg}" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="56" cy="46" r="4" fill="${acc}"/>`,
+  story:"Çizgi hastayla kurulan bağ gibi hiç kopmuyor. Kalp atışı sadece bir kez, abartısız. Sondaki nokta, sistemin bir şeyi fark ettiği an. Tek renkle, tek kalemle her yere basılabilir.",
+  slogan:"Her yatak, her nöbet — tek bakışta.",
+  deco:(t)=>`<svg class="deco" viewBox="0 0 400 220" preserveAspectRatio="none"><path d="M-10 196H120L128 180L137 208L145 196H400" stroke="${t.acc}" stroke-opacity=".28" stroke-width="1.6" fill="none"/></svg>`,
+  why:["İsmin zorluğunu dengeliyor: \"Homunculus\" uzun ve yabancı, işaret ise tek bakışta anlaşılır bir hareket.","Konseyin önerisiydi: tek pazara kilitlenmiyor; Azerbaycan, Türkiye ve Rusça konuşulan ülkelerde aynı çalışır.","Tek renkle basılabilir: faks, damga, cihaz etiketi, yaka kartı."],
+  weak:["Kalp atışı çizgisi sağlıkta çok kullanılan bir motif; tek başına özgün değil. Özgünlüğü \"h\" harfine dönüşmesi taşıyor.","Çok sade: ilk bakışta ürünün ne yaptığını söylemez.","Son hâli için iyi bir çizer gerekir; kötü çizilirse ucuz durur. Taslak 07'deki H + kalp atışı fikrine akraba."]
+},
+{ id:"C", name:"Buta dokunuşu", tone:"Sıcak, yerel, \"bizden biri\" ama klinikte sade.",
+  about:"Asıl işaret sade: firuze bir karede küçük bir \"h\". Azerbaycan'ın buta motifi logoya girmiyor; yalnız ikinci katmanda yaşıyor: tanıtım sayfasının kenarında, broşürde, fuar standında, duvar panosunda. Uygulamanın içinde buta yok. Taslak 09'daki Buta'dan farkı bu: orada buta logonun kendisiydi.",
+  tags:["yerel","sıcak","katmanlı","klinikte sade"],
+  fh:"'Source Serif 4'", fb:"'Noto Sans'", fn:"'Noto Sans'", hw:"600", hls:"-.01em",
+  fontText:"Source Serif 4 + Noto Sans", fontWhy:"Tırnaklı başlık kitap ve çini gibi sıcak bir his veriyor. Noto Sans Azerbaycan, Türk ve Rus harflerinin tamamını aynı biçimde çiziyor.",
+  wm:{t:"Homunculus", w:600, ls:"-.01em"},
+  pal:[["Fildişi","#F6F1E7","zemin"],["Çini laciverti","#1C2B4B","yazı"],["Firuze","#0F8C8C","ana renk, simge"],["Kül","#6B6660","ikincil yazı"],["Mis","#A5673F","yalnız buta deseninde"]],
+  palNote:"Mis (bakır) yalnız basılı desende kullanılır, uygulama ekranında asla: turuncuya yakın olduğu için alarm rengiyle karışabilir.",
+  light:{bg:"#F6F1E7",surf:"#FFFDF8",ink:"#1C2B4B",mute:"#6B6660",line:"#E4DBC9",acc:"#0F8C8C",onacc:"#FFFFFF"},
+  dark:{bg:"#111A2E",surf:"#18243D",ink:"#F3EEE3",mute:"#A7A196",line:"#2B3957",acc:"#2EB5B0",onacc:"#051716"},
+  icon:{bg:"#0F8C8C",fg:"#F6F1E7",acc:"#F6F1E7"},
+  mark:(fg,acc)=>`<path d="M22 11V53M22 35C22 26 28 22 33.5 22S45 26 45 35V53" stroke="${fg}" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+  story:"İşaret bilerek sade: klinik ekranda desen gürültüdür. Buta ikinci katmanda: firuze çini ve halı kenarı gibi, yalnız basılı ve tanıtım yüzeylerinde.",
+  slogan:"Hər çarpayı, hər növbə — bir baxışda.",
+  sloganTr:"Her yatak, her nöbet — tek bakışta.",
+  deco:(t,dark)=>{ const id="bp"+(++uid); const c=dark?"#2EB5B0":"#A5673F"; return `<svg class="deco" viewBox="0 0 400 220" preserveAspectRatio="xMaxYMax slice"><defs><pattern id="${id}" width="44" height="52" patternUnits="userSpaceOnUse"><g transform="translate(2 2)"><path d="${BUTA}" fill="none" stroke="${c}" stroke-width="1.4" stroke-opacity=".55"/></g></pattern></defs><rect x="300" y="0" width="100" height="220" fill="url(#${id})" opacity=".55"/></svg>`; },
+  why:["İlk pazar Azerbaycan: tanıtım ve basılı işlerde \"bizden biri\" hissi veriyor, rakiplerden hemen ayrışıyor.","Konsey başkanının önerdiği ayrım: kimlik sade, Azerbaycan yüzü buta. Başka pazara gidince yalnız ikinci katman değişir, logo kalır.","Firuze, Azerbaycan çinisinin rengi ve sağlıkta alışılmış camgöbeğine yakın; iki dünyayı birleştiriyor."],
+  weak:["Buta ulusal bir simge. Ticari markada ve logoya yakın kullanımda yasal durum doğrulanmadı; bir Azerbaycanlı marka avukatına sorulmalı.","Asıl işaret (firuze karede h) tek başına sıradan; kişiliği desen taşıyor, desen de uygulamada yok.","Türkiye ve başka pazarlar için ikinci katmanın yeniden tasarlanması gerekir."]
+},
+{ id:"D", name:"Gece nöbeti", tone:"Koyu, teknik, monitörün yanında duran.",
+  about:"Koyu lacivert zemin, fosfor camgöbeği çizgiler, eşit genişlikte rakamlar. İşaret küçük bir monitör ekranı: üç kanal üst üste akıyor, en alttaki düz çizginin sonunda parlayan bir nokta var. Uygulamanın bugünkü Gece temasının marka olarak sahiplenilmiş hâli.",
+  tags:["teknik","karanlık oda dostu","monitör","nöbet"],
+  fh:"'Onest'", fb:"'Onest'", fn:"'JetBrains Mono'", hw:"700", hls:"-.02em",
+  fontText:"JetBrains Mono + Onest", fontWhy:"Kelime işareti ve sayılar eşit genişlikte mono yazıda: değer değişince sütun kaymaz, monitör gibi okunur. Gövde Onest, Rusça harfleri de iyi çizen yeni bir yazı.",
+  wm:{t:"homunculus", w:700, ls:".01em", mono:true},
+  pal:[["Gece","#050B16","zemin"],["Ekran","#0B1526","kart, simge zemini"],["Fosfor","#2EE6D6","çizgi, vurgu"],["Buz","#DCE6F2","yazı"],["Sis","#7E90A8","ikincil yazı"]],
+  palNote:"Vital renkleri (yeşil kalp hızı, kırmızı tansiyon, sarı SpO₂) markada kullanılmaz; onlar hastanın verisine ait.",
+  light:{bg:"#EEF2F6",surf:"#FFFFFF",ink:"#0B1526",mute:"#5A6B82",line:"#D6DEE8",acc:"#0B8A91",onacc:"#FFFFFF"},
+  dark:{bg:"#050B16",surf:"#0B1526",ink:"#DCE6F2",mute:"#7E90A8",line:"#1A2A42",acc:"#2EE6D6",onacc:"#03201D"},
+  icon:{bg:"#050B16",fg:"#2EE6D6",acc:"#2EE6D6",screen:true},
+  mark:(fg,acc)=>`<rect x="5" y="9" width="54" height="46" rx="10" fill="#0B1526"/><path d="M12 22H22L25 15.5L28.5 28L31 22H52" stroke="${acc}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M12 33C15.5 28 19 28 22.5 33S29.5 38 33 33 40 28 43.5 33 50 36 52 33" stroke="${acc}" stroke-opacity=".7" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M12 45H43" stroke="${acc}" stroke-opacity=".45" stroke-width="2.6" stroke-linecap="round"/><circle cx="49" cy="45" r="4.4" fill="${acc}" opacity=".25"/><circle cx="49" cy="45" r="2.8" fill="${acc}"/>`,
+  story:"Üç kanal, başucu monitörünün satırları. Sondaki nokta: bir sonraki değer gelmeden fark edilen şey. Monitörle aynı odada, aynı ışıkta durmak için tasarlandı.",
+  slogan:"Her yatak, her nöbet — tek bakışta.",
+  deco:(t)=>{ const id="gp"+(++uid); return `<svg class="deco" viewBox="0 0 400 220" preserveAspectRatio="none"><defs><pattern id="${id}" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="${t.acc}" stroke-opacity=".07" stroke-width="1"/></pattern></defs><rect width="400" height="220" fill="url(#${id})"/></svg>`; },
+  why:["Hekim ve hemşire gece karanlık odada çalışıyor; koyu zemin göz yormaz ve monitörle aynı ortamda kaybolmaz.","Uygulamanın bugünkü Gece teması zaten bu dilde; marka ile ürün arasında en kısa mesafe.","Rakamlar mono yazıda: satış sunumunda ve tanıtımda \"gerçek veri gösteren sistem\" hissi."],
+  weak:["Sektörde çok yaygın: monitör estetiği ve lacivert-camgöbeği rakiplerde de var. Taslak 01'deki \"Gece Nöbeti\" yönüne yakın.","Başhekim ve bakanlık sunumunda soğuk, fazla teknik durabilir.","Basılı işlerde (broşür, rapor kapağı) koyu zemin pahalı ve zor; açık hâli ayrıca iş ister."]
+}
+];
+
+/* ---------- yardımcılar ---------- */
+function isDark(){
+  if(st.theme) return st.theme==="dark";
+  try{ return window.matchMedia("(prefers-color-scheme: dark)").matches; }catch(e){ return false; }
+}
+function tok(d){ return isDark()?d.dark:d.light; }
+function kvars(d,t){ return `--k-bg:${t.bg};--k-surf:${t.surf};--k-ink:${t.ink};--k-mute:${t.mute};--k-line:${t.line};--k-acc:${t.acc};--k-onacc:${t.onacc};--k-fh:${d.fh},system-ui,sans-serif;--k-fb:${d.fb},system-ui,sans-serif;--k-fn:${d.fn},monospace;--k-hw:${d.hw};--k-hls:${d.hls}`; }
+function markSvg(d,size,fg,acc){ return `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">${d.mark(fg,acc)}</svg>`; }
+function iconSvg(d,size){
+  const i=d.icon, r=Math.round(size*0.225);
+  const inner = i.screen
+    ? `<svg width="${size}" height="${size}" viewBox="3 5 58 54">${d.mark(i.fg,i.acc)}</svg>`
+    : `<svg width="${Math.round(size*0.72)}" height="${Math.round(size*0.72)}" viewBox="0 0 64 64">${d.mark(i.fg,i.acc)}</svg>`;
+  return `<div class="g" style="width:${size}px;height:${size}px;border-radius:${r}px;background:${i.bg};display:grid;place-items:center;overflow:hidden">${inner}</div>`;
+}
+function wordmark(d,color,size){
+  const fam = d.wm.mono ? d.fn : d.fh;
+  return `<span style="font-family:${fam},system-ui,sans-serif;font-weight:${d.wm.w};letter-spacing:${d.wm.ls};font-size:${size}px;color:${color};line-height:1;white-space:nowrap">${d.wm.t}</span>`;
+}
+function lockup(d,t,size){
+  return `<span style="display:inline-flex;align-items:center;gap:${Math.round(size*.35)}px">${markSvg(d,Math.round(size*1.25),t.ink,t.acc)}${wordmark(d,t.ink,size)}</span>`;
+}
+
+/* ---------- uygulamalar ---------- */
+function phone(d){
+  const dark=isDark();
+  const wall = dark ? "linear-gradient(160deg,#1d2433,#0d1119 70%)" : "linear-gradient(160deg,#dfe6ee,#b9c6d4 75%)";
+  const txt = dark ? "#e8edf3" : "#1b2330";
+  const grey = dark ? ["#3a4354","#2f3747","#465063","#353d4d"] : ["#ffffff","#eef1f5","#f7f8fa","#e6eaf0"];
+  const names=["Telefon","Mesajlar","Kamera","Takvim","Saat","Harita","Notlar","Posta","Hava","Fotoğraf","Ayarlar"];
+  let cells="", n=0;
+  for(let k=0;k<12;k++){
+    if(k===5){ cells+=`<div class="ic me">${iconSvg(d,32)}<span style="color:${txt}">Homunculus</span></div>`; continue; }
+    const nm=names[n++]||"";
+    cells+=`<div class="ic"><i class="g" style="display:block;background:${grey[k%4]};box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)"></i><span style="color:${txt}">${nm}</span></div>`;
+  }
+  let dock=""; for(let k=0;k<4;k++) dock+=`<i class="g" style="display:block;background:${grey[(k+1)%4]}"></i>`;
+  return `<div class="phone"><div class="scr" style="background:${wall};color:${txt}"><div class="sbar"><span>09:41</span><span>●●● 5G</span></div><div class="grid4">${cells}</div><div class="dock">${dock}</div></div></div>`;
+}
+function login(d){
+  const t=tok(d);
+  return `<div class="login" style="${kvars(d,t)}">
+    <div class="lk2">${markSvg(d,26,t.ink,t.acc)}${wordmark(d,t.ink,17)}</div>
+    <h5>Daxil olun</h5>
+    <div class="fld">İstifadəçi adı</div><div class="inp">dr.kamran</div>
+    <div class="fld">Şifrə</div><div class="inp">••••••••</div>
+    <span class="btn">Daxil ol</span>
+    <div class="lfoot"><span>Qərarı həkim verir.</span><span>AZ · TR · RU · EN</span></div>
+  </div>`;
+}
+function hero(d){
+  const t=tok(d), dark=isDark();
+  const beds=[["REA01","#ef4444",14],["REA02","#f97316",10],["REA03","#38bdf8",4],["REA04","#22c55e",1]]
+    .map(b=>`<div class="bed"><b>${b[0]}<i style="background:${b[1]}"></i></b><div class="n">${b[2]} <small>NEWS2</small></div></div>`).join("");
+  const sub = d.sloganTr ? `${d.sloganTr} Klinik karar destek: izler, gerekçesini gösterir, kararı hekime bırakır.` : `Klinik karar destek: izler, gerekçesini gösterir, kararı hekime bırakır.`;
+  const title = d.id==="A" ? "Her yatak, her nöbet — tek bakışta." : d.slogan;
+  return `<div class="hero" style="${kvars(d,t)}">${d.deco(t,dark)}
+    <div class="hnav">${markSvg(d,20,t.ink,t.acc)}${wordmark(d,t.ink,14)}<div class="links"><span>Nasıl çalışır</span><span>Ekranlar</span><span class="mini">Demo iste</span></div></div>
+    <div class="hbody">
+      <div><div class="ey">Klinik karar destek</div><h6>${title}</h6><p>${sub}</p>
+        <div class="hbtns"><span class="hb1">Demo iste</span><span class="hb2">Uygulamayı gez</span></div></div>
+      <div class="prev"><div class="ph"><span>Erişkin yoğun bakım</span><em>Örnek görünüm</em></div><div class="beds">${beds}</div></div>
+    </div></div>`;
+}
+
+/* ---------- yön kartı ---------- */
+function dirCard(d){
+  const L=d.light, K=d.dark;
+  const sw=d.pal.map(p=>`<div class="sw"><i style="background:${p[1]}"></i><div><b>${p[0]}</b><code>${p[1]}</code><div class="mute">${p[2]}</div></div></div>`).join("");
+  const t=tok(d);
+  const picked = st.dir===d.id;
+  return `<article class="dir${picked?" picked":""}" id="yon-${d.id}">
+    <div class="dhead"><div class="letter">${d.id}</div>
+      <div class="t"><h2>${d.id} · ${d.name}</h2><p><b style="color:var(--ink)">${d.tone}</b> ${d.about}</p><div class="tags">${d.tags.map(x=>`<span class="tag">${x}</span>`).join("")}</div></div>
+      <button type="button" class="pick${picked?" on":""}" data-pick="${d.id}">${picked?"✓ Seçildi":"Bu yönü seç"}</button>
+    </div>
+    <div class="dbody">
+      <div class="row2">
+        <div class="box"><h4>Logo işareti ve kelime işareti</h4>
+          <div class="logos">
+            <div class="lk" style="background:${L.bg};border:1px solid ${L.line}">${lockup(d,L,30)}</div>
+            <div class="lk" style="background:${K.bg}">${lockup(d,K,30)}</div>
+          </div>
+          <div class="sizes"><div>${iconSvg(d,60)}60</div><div>${iconSvg(d,40)}40</div><div>${iconSvg(d,28)}28</div><div>${iconSvg(d,20)}20 px</div></div>
+          <p class="story">${d.story}</p>
+        </div>
+        <div class="box"><h4>Renk paleti</h4><div class="pal">${sw}</div><p class="palnote">${d.palNote}</p></div>
+      </div>
+      <div class="box type" style="${kvars(d,t)}"><h4>Yazı tipi çifti · ${d.fontText}</h4>
+        <p class="spec">${d.fontWhy}</p>
+        <div class="big" style="font-family:var(--k-fh);font-weight:${d.hw};letter-spacing:${d.hls}">Həkim · Xəstə · Növbə</div>
+        <div class="body" style="font-family:var(--k-fb)">Həkim · Xəstə · Növbə — gövde metni. Ğ ş ç ö ü ı İ ə Ə. Türkçe: Hekim, hasta, nöbet.</div>
+        <div class="nums" style="font-family:var(--k-fn);font-weight:600">NEWS2 14 · HR 131 · SpO₂ 91</div>
+        <span class="badge" data-fcheck="${d.id}">ə kontrol ediliyor…</span>
+      </div>
+      <div class="box"><h4>Aynı üç yerde</h4>
+        <div class="apps">
+          <div class="app"><small>a · Uygulama simgesi</small>${phone(d)}</div>
+          <div class="app"><small>b · Giriş ekranı</small>${login(d)}</div>
+          <div class="app h"><small>c · Tanıtım sayfası, üst bölüm</small>${hero(d)}</div>
+        </div>
+      </div>
+      <div class="why">
+        <div class="box"><h4>Neden böyle?</h4><ul>${d.why.map(x=>`<li>${x}</li>`).join("")}</ul></div>
+        <div class="box weak"><h4>Zayıf yanı (dürüst)</h4><ul>${d.weak.map(x=>`<li>${x}</li>`).join("")}</ul></div>
+      </div>
+    </div>
+  </article>`;
+}
+function cmpCard(d){
+  const t=tok(d), picked=st.dir===d.id;
+  return `<div class="ccard${picked?" picked":""}">
+    <h3><span class="letter">${d.id}</span>${d.name}</h3>
+    <div class="lk" style="background:${t.bg};border:1px solid ${t.line};min-height:90px">${lockup(d,t,24)}</div>
+    <div class="cicons">${iconSvg(d,56)}${iconSvg(d,32)}${iconSvg(d,20)}</div>
+    <div class="cpal">${d.pal.map(p=>`<i style="background:${p[1]}"></i>`).join("")}</div>
+    ${hero(d)}
+    ${login(d)}
+    <button type="button" class="pick${picked?" on":""}" data-pick="${d.id}">${picked?"✓ Seçildi":"Bunu seç"}</button>
+  </div>`;
+}
+
+/* ---------- sorular ---------- */
+const Q={
+  bad:[["fikir","Fikir / hikâye"],["cizim","Çizim kalitesi"],["renk","Renkler"],["yazi","Yazı tipi"],["cok","Çok fazla seçenek vardı"],["gorunmedi","Uygulamada nasıl duracağını göremedim"],["bilmiyorum","Bilmiyorum, içime sinmedi"]],
+  feel:[["guven","Güven, ciddiyet"],["sade","Sadelik, pahalı his"],["yerel","Sıcaklık, \"bizden biri\""],["teknik","Teknoloji, monitör"]],
+  med:[["kardes","Kardeş gibi dursun"],["ayri","Tamamen ayrı dursun"],["farketmez","Fark etmez"]],
+  dir:[["A","A"],["B","B"],["C","C"],["D","D"],["hicbiri","Hiçbiri"]],
+  chg:[["A-renk","A'nın renkleri"],["B-isaret","B'nin işareti"],["C-buta","C'nin buta katmanı (yalnız basılı işler)"],["D-koyu","D'nin koyu hâli uygulamanın içinde"],["yazi","Başka yazı tipi"],["kalin","İşaret daha kalın"],["renkli","Daha renkli"],["buyuk","Kelime işareti büyük harfle"]]
+};
+const FEEL_HINT={guven:"En yakın yön: A · Klinik sakin",sade:"En yakın yön: B · Tek Çizgi",yerel:"En yakın yön: C · Buta dokunuşu",teknik:"En yakın yön: D · Gece nöbeti"};
+function label(q,v){ const x=Q[q].find(a=>a[0]===v); return x?x[1]:v; }
+
+function renderChips(){
+  document.querySelectorAll(".chips[data-q]").forEach(box=>{
+    const q=box.dataset.q, multi=box.dataset.multi==="1";
+    box.innerHTML=Q[q].map(([v,l])=>{
+      const on = multi ? st[q].includes(v) : st[q]===v;
+      return `<button type="button" class="chip${on?" on":""}" data-v="${v}" aria-pressed="${on}">${l}</button>`;
+    }).join("");
+  });
+  document.getElementById("feelHint").textContent = st.feel ? FEEL_HINT[st.feel] : "";
+}
+function toggle(q,v,multi){
+  if(multi){ const a=st[q]; const i=a.indexOf(v); if(i>=0) a.splice(i,1); else a.push(v); }
+  else st[q] = st[q]===v ? null : v;
+}
+
+/* ---------- cevap satırı ---------- */
+function lineText(){
+  const dir = st.dir ? (st.dir==="hicbiri" ? "Hiçbiri" : st.dir+" ("+D.find(d=>d.id===st.dir).name+")") : "_";
+  const bad = st.bad.length ? st.bad.map(v=>label("bad",v)).join(", ") : "_";
+  const chg = [...st.chg.map(v=>label("chg",v)), (st.free||"").trim()].filter(Boolean).join(", ") || "_";
+  let s=`Yön: ${dir} · Beğenmediğim: ${bad} · Değiştir: ${chg}`;
+  if(st.feel) s+=` · His: ${label("feel",st.feel)}`;
+  if(st.med) s+=` · MedRapor: ${label("med",st.med)}`;
+  return s;
+}
+function renderLine(){ document.getElementById("line").textContent=lineText(); }
+
+/* ---------- ə desteği ölçümü ---------- */
+/* Yöntem: yazı tipini 'ə' için yükle; sonra aynı metni iki farklı yedek yazı tipiyle ölç.
+   Yazı tipi 'ə'yi çiziyorsa iki genişlik aynı çıkar; çizmiyorsa yedeğe düşer ve genişlikler ayrılır. */
+const cv=document.createElement("canvas").getContext("2d");
+function widthWith(fam,fb){ cv.font=`40px ${fam}, ${fb}`; return cv.measureText("əƏəƏə").width; }
+async function hasSchwa(fam,weight){
+  try{ await document.fonts.load(`${weight} 40px ${fam}`,"əƏ"); }catch(e){}
+  const a=widthWith(fam,"monospace"), b=widthWith(fam,"serif");
+  const base=widthWith("monospace","monospace"), base2=widthWith("serif","serif");
+  if(Math.abs(base-base2)<0.5) return null; // araç ayırt edemiyor: sonuç bilinmiyor
+  return Math.abs(a-b)<0.5;
+}
+async function checkFonts(){
+  if(!document.fonts){ return; }
+  for(const d of D){
+    const fams=[...new Set([d.wm.mono?d.fn:d.fh, d.fb, d.fn])];
+    const res=[];
+    for(const f of fams){ res.push([f.replace(/'/g,""), await hasSchwa(f,"600")]); }
+    document.querySelectorAll(`[data-fcheck="${d.id}"]`).forEach(el=>{
+      const bad=res.filter(r=>r[1]===false), unk=res.filter(r=>r[1]===null);
+      if(bad.length){ el.className="badge no"; el.textContent="ə eksik: "+bad.map(r=>r[0]).join(", ")+" yedek yazı tipine düşüyor"; }
+      else if(unk.length){ el.className="badge"; el.textContent="ə ölçülemedi (tarayıcı ayırt edemedi)"; }
+      else { el.className="badge ok"; el.textContent="ə ölçüldü: "+res.map(r=>r[0]).join(" + ")+" çiziyor ✓"; }
+    });
+  }
+}
+
+/* ---------- çizim ---------- */
+function renderDirs(){
+  uid=0;
+  document.getElementById("dirs").innerHTML=D.map(dirCard).join("");
+  document.getElementById("cgrid").innerHTML=D.map(cmpCard).join("");
+  checkFonts();
+}
+function renderTheme(){
+  if(st.theme) document.documentElement.setAttribute("data-theme",st.theme); else document.documentElement.removeAttribute("data-theme");
+  const dk=isDark();
+  document.querySelectorAll("[data-th]").forEach(b=>b.classList.toggle("on",(b.dataset.th==="dark")===dk));
+}
+function renderAll(){ renderTheme(); renderChips(); renderDirs(); renderLine(); document.getElementById("free").value=st.free||""; }
+
+/* ---------- olaylar ---------- */
+document.addEventListener("click",e=>{
+  const chip=e.target.closest(".chips[data-q] .chip");
+  if(chip){
+    const box=chip.parentElement, q=box.dataset.q;
+    toggle(q,chip.dataset.v,box.dataset.multi==="1");
+    save(); renderChips(); renderLine();
+    if(q==="dir") renderDirs();
+    return;
+  }
+  const pk=e.target.closest("[data-pick]");
+  if(pk){ const v=pk.dataset.pick; st.dir = st.dir===v?null:v; save(); renderChips(); renderDirs(); renderLine(); return; }
+  const th=e.target.closest("[data-th]");
+  if(th){ st.theme=th.dataset.th; save(); renderTheme(); renderDirs(); return; }
+});
+document.getElementById("vDetail").onclick=()=>{ document.body.classList.remove("cmp"); document.getElementById("vDetail").classList.add("on"); document.getElementById("vCmp").classList.remove("on"); };
+document.getElementById("vCmp").onclick=()=>{ document.body.classList.add("cmp"); document.getElementById("vCmp").classList.add("on"); document.getElementById("vDetail").classList.remove("on"); document.getElementById("compare").scrollIntoView({block:"start"}); };
+document.getElementById("free").addEventListener("input",e=>{ st.free=e.target.value; save(); renderLine(); });
+document.getElementById("copyBtn").onclick=async()=>{
+  const txt=lineText(), msg=document.getElementById("copyMsg");
+  let ok=false;
+  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(txt); ok=true; } }catch(e){}
+  if(!ok){ try{ const ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select(); ok=document.execCommand("copy"); ta.remove(); }catch(e){} }
+  if(!ok){ const r=document.createRange(); r.selectNodeContents(document.getElementById("line")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); }
+  msg.textContent = ok ? "Kopyalandı. Bana yapıştırıp gönder." : "Satır seçildi, Ctrl+C ile kopyala.";
+};
+document.getElementById("resetBtn").onclick=()=>{ Object.assign(st,{bad:[],feel:null,med:null,dir:null,chg:[],free:""}); save(); renderAll(); };
+try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(!st.theme){ renderTheme(); renderDirs(); } }); }catch(e){}
+
+renderAll();
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(checkFonts);
+})();
+</script>
+</body>
+</html>

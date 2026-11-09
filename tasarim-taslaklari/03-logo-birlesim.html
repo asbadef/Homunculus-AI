@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo Birleşimi</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0b0f16; --ink:#e7ebf2; --mute:#8d97a8; --line:#1f2733; --card:#111722; --brand:#22b8d6; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:32px 16px 60px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  .lead { color:var(--mute); max-width:780px; margin:0 0 8px; }
+  .lead b { color:var(--ink); }
+  .story { margin:18px 0 8px; display:flex; gap:14px; flex-wrap:wrap; }
+  .story div { flex:1 1 240px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:14px; color:var(--mute); }
+  .story b { color:var(--ink); display:block; margin-bottom:2px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(520px,1fr)); gap:16px; margin-top:24px; }
+  .c { background:var(--card); border:1px solid var(--line); border-radius:22px; overflow:hidden; }
+  .stage { display:grid; grid-template-columns:1fr 1fr; }
+  .stage > div { display:flex; align-items:center; justify-content:center; padding:24px 10px; }
+  .dark { background:#07101f; } .light { background:#f4f2ec; }
+  .ctx { display:grid; grid-template-columns:auto auto 1fr; gap:14px; padding:16px 18px; border-top:1px solid var(--line); align-items:center; }
+  .tab { background:#dee1e6; color:#202124; border-radius:10px 10px 0 0; padding:8px 12px; display:flex; gap:8px; align-items:center; font:500 12px/1 system-ui; width:170px; }
+  .app { width:60px; height:60px; border-radius:15px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.45); }
+  .side { background:#0b1424; border:1px solid #1c2c45; border-radius:12px; padding:10px 12px; display:flex; gap:10px; align-items:center; }
+  .side b { font-weight:800; font-size:16px; display:block; line-height:1.1; }
+  .side small { color:#8fa1ba; font-size:11px; }
+  .sizes { display:flex; gap:10px; align-items:center; padding:0 18px 14px; color:var(--mute); font-size:12px; }
+  .body { padding:4px 18px 18px; }
+  .no { color:var(--brand); font-weight:700; font-size:12px; letter-spacing:.1em; text-transform:uppercase; }
+  h2 { margin:4px 0 6px; font-size:20px; }
+  .body p { margin:0; color:var(--mute); font-size:14px; }
+  .body p b { color:var(--ink); }
+  @media (max-width:600px) { .grid { grid-template-columns:1fr; } .ctx { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gCy" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#0e6f90"/><stop offset="1" stop-color="#9ff3ff"/></linearGradient>
+    <radialGradient id="gOrb" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#1f6f94"/><stop offset=".6" stop-color="#0a2340"/><stop offset="1" stop-color="#050b16"/></radialGradient>
+    <radialGradient id="gHot" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f0feff"/><stop offset=".35" stop-color="#5fe3ff" stop-opacity=".9"/><stop offset="1" stop-color="#5fe3ff" stop-opacity="0"/></radialGradient>
+
+    <!-- A · Yükselen dilimler: dilimler riskle büyüyor, sonuncusu eşiğin hemen altında parlıyor -->
+    <symbol id="vA" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <line x1="28" y1="64" x2="172" y2="64" stroke="#a9bccf" stroke-width="3.5" stroke-dasharray="8 7" opacity=".6"/>
+      <g fill="url(#gCy)">
+        <rect x="41" y="138" width="12" height="16" rx="6" transform="rotate(-28 47 146)" opacity=".45"/>
+        <rect x="62" y="127" width="15" height="22" rx="7.5" transform="rotate(-30 69 138)" opacity=".6"/>
+        <rect x="85" y="110" width="18" height="28" rx="9" transform="rotate(-33 94 124)" opacity=".75"/>
+        <rect x="107" y="89" width="22" height="34" rx="11" transform="rotate(-36 118 106)" opacity=".9"/>
+      </g>
+      <circle cx="144" cy="88" r="30" fill="url(#gHot)"/>
+      <rect x="131" y="70" width="26" height="38" rx="13" transform="rotate(-38 144 89)" fill="#e9fdff"/>
+    </symbol>
+
+    <!-- B · Nokta dizisi: en sade, küçük boyutta en sağlam -->
+    <symbol id="vB" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <line x1="28" y1="62" x2="172" y2="62" stroke="#a9bccf" stroke-width="4" stroke-dasharray="8 7" opacity=".6"/>
+      <g fill="url(#gCy)">
+        <circle cx="46" cy="146" r="6" opacity=".45"/><circle cx="68" cy="136" r="8.5" opacity=".6"/>
+        <circle cx="94" cy="121" r="11" opacity=".78"/><circle cx="120" cy="103" r="13.5" opacity=".92"/>
+      </g>
+      <circle cx="148" cy="84" r="32" fill="url(#gHot)"/>
+      <circle cx="148" cy="84" r="16" fill="#e9fdff"/>
+    </symbol>
+
+    <!-- C · Halka: kortikal şerit kapalı bir halka; eşik halkayı keser, en kalın dilim eşiğin altında parlar -->
+    <symbol id="vC" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <g fill="none" stroke="url(#gCy)" stroke-linecap="round">
+        <path d="M150.2 71 A58 58 0 0 0 110.1 42.9" stroke-width="8" opacity=".6"/>
+        <path d="M102 42 A58 58 0 0 0 55.6 62.7" stroke-width="12" opacity=".75"/>
+        <path d="M50.8 69.3 A58 58 0 0 0 45.5 119.8" stroke-width="6" opacity=".45"/>
+        <path d="M48.8 127.2 A58 58 0 0 0 89.9 157.1" stroke-width="9" opacity=".6"/>
+        <path d="M98 158 A58 58 0 0 0 151.2 127.2" stroke-width="5" opacity=".4"/>
+      </g>
+      <line x1="26" y1="70" x2="174" y2="70" stroke="#a9bccf" stroke-width="3.5" stroke-dasharray="8 7" opacity=".6"/>
+      <circle cx="154" cy="96" r="34" fill="url(#gHot)"/>
+      <path d="M154.5 119.8 A58 58 0 0 0 153.8 78.3" fill="none" stroke="#e9fdff" stroke-width="18" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- D · Fırça dalgası: tek bir yükselen çizgi, kalınlaşarak — resim / fırça hissi (betikle üretilir) -->
+    <symbol id="vD" viewBox="0 0 200 200"><circle cx="100" cy="100" r="94" fill="url(#gOrb)"/><g id="vDg"></g></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <h1>Logo · Fikir 1 + 2 birleşimi · Taslak 03</h1>
+  <p class="lead">İki fikir tek işarette birleşiyor: <b>dikkat, risk büyüdükçe büyür</b> (isimden gelen dikkat haritası) ve <b>sistem eşik aşılmadan fark eder</b> (ürünün vaadi). Hız göstergesine benzememesi için yarım daire kullanılmadı.</p>
+  <div class="story">
+    <div><b>Büyüyen parçalar</b>Homunculus haritasında hassas bölgeye daha çok alan ayrılır. Burada da risk arttıkça dilim büyüyor.</div>
+    <div><b>Kesik çizgi</b>Klasik alarm eşiği. Eski sistemler ancak bu çizgi aşılınca öter.</div>
+    <div><b>Parlayan parça</b>Eşiğe varmadan fark edilen an. Homunculus'un asıl işi.</div>
+  </div>
+  <div class="grid" id="g"></div>
+</div>
+
+<script>
+  // D: kübik eğri boyunca büyüyen dairelerle fırça darbesi
+  (() => {
+    const P = [[34,150],[78,150],[104,132],[146,86]];
+    const pt = t => { const u = 1-t; return [0,1].map(k => u*u*u*P[0][k] + 3*u*u*t*P[1][k] + 3*u*t*t*P[2][k] + t*t*t*P[3][k]); };
+    let s = `<line x1="28" y1="62" x2="172" y2="62" stroke="#a9bccf" stroke-width="3.5" stroke-dasharray="8 7" opacity=".6"/>`;
+    for (let i = 0; i <= 60; i++) { const t = i/60, [x,y] = pt(t); s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(2.2 + t*t*11).toFixed(1)}" fill="url(#gCy)" opacity="${(.35 + t*.6).toFixed(2)}"/>`; }
+    const [ex, ey] = pt(1);
+    s += `<circle cx="${ex}" cy="${ey}" r="34" fill="url(#gHot)"/><circle cx="${ex}" cy="${ey}" r="12.5" fill="#e9fdff"/>`;
+    document.getElementById("vDg").innerHTML = s;
+  })();
+
+  const v = [
+    { id:"vA", name:"Yükselen Dilimler", text:"Dilimler riskle birlikte büyüyor ve eşiğe yaklaşıyor. Sonuncusu eşiğe varmadan parlıyor. Fikir 1'in dilimleri ile fikir 2'nin eğrisi tek harekette birleşiyor. <b>Hikâyeyi en eksiksiz anlatan çizim.</b>" },
+    { id:"vB", name:"Nokta Dizisi", text:"Aynı hikâye, en sade hâliyle. Dilimlerin yerini büyüyen noktalar alıyor. <b>20 pikselde en net okunan çizim.</b> Uygulama simgesi ve sekme için en güvenli seçenek." },
+    { id:"vC", name:"Halka", text:"Kortikal şerit kapalı bir halkaya dönüşüyor. Dilimlerin kalınlığı farklı, eşik halkayı kesiyor, en kalın dilim eşiğin altında parlıyor. <b>En \"marka\" gibi duran çizim</b>, ama hikâyesi ilk bakışta en az okunan." },
+    { id:"vD", name:"Fırça Dalgası", text:"Tek bir yükselen çizgi, ilerledikçe kalınlaşıyor, ucu eşiğe varmadan parlıyor. <b>İstediğin \"resim tarzı\" hisse en yakın çizim.</b> Son hâlinde fırça ya da mürekkep dokusuyla üretilebilir." },
+  ];
+  const use = (id, s) => `<svg width="${s}" height="${s}" viewBox="0 0 200 200"><use href="#${id}"/></svg>`;
+  const appIcon = id => `<svg width="60" height="60" viewBox="6 6 188 188"><use href="#${id}"/></svg>`;
+  document.getElementById("g").innerHTML = v.map((x,i) => `
+    <article class="c">
+      <div class="stage"><div class="dark">${use(x.id,170)}</div><div class="light">${use(x.id,170)}</div></div>
+      <div class="ctx">
+        <div class="tab">${use(x.id,16)}<span>Homunculus · Yatak Paneli</span></div>
+        <div class="app">${appIcon(x.id)}</div>
+        <div class="side">${use(x.id,38)}<div><b>Homunculus</b><small>Klinik İzleme ve Karar Destek</small></div></div>
+      </div>
+      <div class="sizes">Küçük boyutlar: ${use(x.id,48)} ${use(x.id,32)} ${use(x.id,20)} ${use(x.id,16)}</div>
+      <div class="body"><span class="no">Çizim ${String.fromCharCode(65+i)}</span><h2>${x.name}</h2><p>${x.text}</p></div>
+    </article>`).join("");
+</script>
+</body>
+</html>

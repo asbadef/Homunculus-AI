@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="tr" data-theme="gece">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Sadeleşme Seçimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Taslak 26 · Web sadeleşme (#195) · 29.09.2026
+   Ozan: "Web'i gözden geçir, görselleştirme daha iyi, sadeleşme (özellik azalmadan)".
+   Önce ölçüldü (hemşire + hekim, 1440 px, her sayfa ve hastanın 10 sekmesi), sonra ekranlara tek tek bakıldı.
+   Bu sayfa ÖNERİDİR: uygulamada değişen yok. Hiçbir seçenek özellik silmez; yalnız tekrar kalkar ya da ikincil olan katlanır. */
+:root {
+  --page:#eef2f6; --card:#fff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e0f2f7; --crit:#dc2626; --critSoft:#fdecec; --high:#ea580c; --ok:#16a34a; --okSoft:#e7f6ec; --mid:#ca8a04; --midSoft:#fdf6e3;
+  --app:#f5f8fb; --appCard:#fff; --appCard2:#eef3f8; --appLine:#dde5ee; --appInk:#152231; --appMute:#64748b;
+}
+:root[data-theme="gece"] {
+  --page:#050b16; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --priSoft:rgba(34,184,214,.13);
+  --critSoft:rgba(220,38,38,.14); --okSoft:rgba(22,163,74,.15); --midSoft:rgba(202,138,4,.12);
+  --app:#070f1c; --appCard:#0e1a2c; --appCard2:#132238; --appLine:#1d2d46; --appInk:#e6edf6; --appMute:#8a9bb3;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+h1, h2, h3 { font-family:"Space Grotesk", Figtree, sans-serif; margin:0; letter-spacing:-.01em; }
+button { font:inherit; color:inherit; cursor:pointer; }
+.mono { font-family:"JetBrains Mono", ui-monospace, monospace; }
+.bar { position:sticky; top:0; z-index:30; background:var(--card); border-bottom:1px solid var(--line); }
+.bar-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+.bar h1 { font-size:17px; margin-right:auto; }
+.bar h1 small { display:block; font:500 12.5px Figtree; color:var(--mute); }
+.seg { display:flex; background:var(--card2); border:1px solid var(--line); border-radius:11px; padding:3px; }
+.seg button { border:0; background:none; padding:6px 12px; border-radius:8px; font-weight:600; font-size:13px; color:var(--mute); }
+.seg button.on { background:var(--card); color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+.wrap { max-width:1400px; margin:0 auto; padding:24px clamp(16px,4vw,48px) 140px; }
+.note { background:var(--midSoft); border:1px solid color-mix(in srgb, var(--mid) 35%, transparent); border-radius:12px; padding:10px 14px; font-size:13.5px; margin-bottom:10px; }
+.note b { color:var(--mid); }
+.meas { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; font-size:13.5px; color:var(--mute); }
+.meas table { border-collapse:collapse; width:100%; margin-top:8px; font-size:13px; }
+.meas td, .meas th { text-align:left; padding:5px 10px 5px 0; border-bottom:1px solid var(--line); }
+.meas th { color:var(--ink); font-weight:700; }
+.meas td.n { font-family:"JetBrains Mono"; color:var(--ink); }
+.q { margin:38px 0 0; }
+.q-h { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.q-h .n { font:700 13px "JetBrains Mono"; color:var(--onpri); background:var(--pri); border-radius:8px; padding:2px 8px; }
+.q-h h2 { font-size:23px; }
+.q-h p { flex-basis:100%; margin:4px 0 0; color:var(--mute); }
+.opts { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:18px; margin-top:16px; }
+.opt { background:var(--card); border:1.5px solid var(--line); border-radius:20px; padding:16px 16px 14px; text-align:left; display:flex; flex-direction:column; gap:12px; min-width:0; }
+.opt:hover { border-color:var(--line2); }
+.opt.on { border-color:var(--pri); box-shadow:0 0 0 4px var(--priSoft); }
+.opt-h { display:flex; align-items:center; gap:8px; }
+.opt-h .k { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:var(--card2); font:700 13px "Space Grotesk"; }
+.opt.on .opt-h .k { background:var(--pri); color:var(--onpri); }
+.opt-h b { font:700 16px "Space Grotesk"; }
+.opt-h .rec { margin-left:auto; font:700 10.5px Figtree; color:var(--ok); background:var(--okSoft); padding:2px 8px; border-radius:99px; }
+.opt > p { margin:0; color:var(--mute); font-size:13.5px; }
+.why { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; margin-top:14px; font-size:13.5px; color:var(--mute); }
+.why b { color:var(--ink); }
+.ans { position:fixed; left:0; right:0; bottom:0; z-index:40; background:var(--card); border-top:1px solid var(--line); }
+.ans-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.ans-in span { color:var(--mute); font-size:13px; }
+.ans-in b { font:700 15px "JetBrains Mono"; }
+.ans-in button { margin-left:auto; border:0; background:var(--pri); color:var(--onpri); font-weight:700; padding:9px 16px; border-radius:10px; }
+
+/* ---------- uygulama minyatürü ---------- */
+.mini { background:var(--app); border:1px solid var(--appLine); border-radius:14px; padding:10px; color:var(--appInk); font-size:11px; line-height:1.35; overflow:hidden; }
+.mc { background:var(--appCard); border:1px solid var(--appLine); border-radius:9px; padding:7px 9px; }
+.mm { color:var(--appMute); }
+.row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.chip { border:1px solid var(--appLine); border-radius:6px; padding:1px 6px; font-size:10px; white-space:nowrap; }
+.chip.w { border-color:color-mix(in srgb, var(--mid) 60%, transparent); color:var(--mid); }
+.chip.c { border-color:color-mix(in srgb, var(--crit) 60%, transparent); color:var(--crit); }
+.band { border:1px solid color-mix(in srgb, var(--mid) 60%, transparent); color:var(--mid); border-radius:7px; padding:4px 8px; font-size:10.5px; }
+.bed { font:700 15px "JetBrains Mono"; color:var(--crit); }
+.v { font:700 16px "JetBrains Mono"; }
+.vl { font-size:9px; color:var(--appMute); display:block; }
+.tabs { display:flex; gap:10px; border-bottom:1px solid var(--appLine); padding:3px 2px; font-size:10px; color:var(--appMute); }
+.tabs b { color:var(--appInk); border-bottom:2px solid var(--pri); }
+.dup { outline:2px dashed var(--crit); outline-offset:2px; border-radius:6px; }
+.wave { height:40px; background:linear-gradient(90deg, rgba(34,197,94,.35) 0 8%, transparent 8%); border-radius:6px; }
+.grid2 { display:grid; grid-template-columns:1.2fr 1fr; gap:6px; }
+.spark { height:10px; border-radius:3px; background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--pri) 60%, transparent)); }
+.tl { display:grid; grid-template-columns:110px repeat(12, 1fr); gap:1px; font-size:9px; }
+.tl i { height:12px; background:var(--appCard2); border-radius:2px; }
+.tl i.x { background:color-mix(in srgb, var(--ok) 45%, transparent); }
+.tl i.l { background:var(--crit); }
+.tl span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pt { font-weight:700; margin:6px 0 3px; display:flex; gap:6px; align-items:center; }
+.more { color:var(--pri); font-weight:700; }
+.leg { font-size:11px; color:var(--mute); margin-top:4px; }
+.leg i { display:inline-block; width:14px; height:0; border-top:2px dashed var(--crit); vertical-align:middle; margin-right:4px; }
+@media (max-width:640px) { .ans-in button { margin-left:0; } .bar h1 { font-size:15px; } }
+</style>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <h1>Web sadeleşme · 4 karar <small>Taslak 26 · #195 · 29.09.2026 · öneri, uygulamada henüz değişen yok</small></h1>
+  <div class="seg" data-seg="theme"><button data-v="gun">Gündüz</button><button data-v="gece" class="on">Gece</button></div>
+</div></div>
+
+<div class="wrap">
+  <div class="note" style="border-color:var(--crit)"><b style="color:var(--crit)">29.09 · Uygulanmayacak.</b> Ozan: "Web'de sadeleşme yalnız tanıtım (ana) sayfasında yapılacak, uygulamanın içinde değil." Bu sayfa yalnız arşiv olarak duruyor.</div>
+  <div class="note"><b>Bu sayfa öneridir.</b> Uygulamada şu an hiçbir şey değişmedi. Seçimini aşağıdaki satırla gönderince uygulanır. Hiçbir seçenek özellik silmez: yalnız aynı bilginin ikinci kopyası kalkar ya da ikincil olan katlanır.</div>
+
+  <div class="meas"><b>Nasıl bulundu.</b> Hemşire (Sevda Q.) ve hekim (Dr. Kamran R.) hesabıyla, 1440 px ekranda her sayfa ve hastanın 10 sekmesi ölçüldü; sonra en uzun ekranlara tek tek bakıldı. Sayı tek başına kusur demek değil: aşağıdaki dört karar, ekrana bakınca <b>gerçekten tekrar ya da gereksiz uzunluk</b> çıkanlar.
+    <table>
+      <tr><th>Ekran</th><th>Boy</th><th>Ne görüldü</th></tr>
+      <tr><td>Hasta · Özet</td><td class="n">1.551 px</td><td>Monitör paneli ve altındaki "Son 24 saat" aynı 4 değeri (nabız 131, MAP 51, SpO₂ 91, solunum 30) iki kez gösteriyor; dalga alanı büyük ölçüde boş</td></tr>
+      <tr><td>Hasta · Özet</td><td class="n">—</td><td>Bekleyen konsültasyon hem başlıkta çip hem sekmelerin altında sarı şerit: aynı cümle iki kez</td></tr>
+      <tr><td>İşler</td><td class="n">2.627 px</td><td>6 hastanın hepsi açık, hasta başına 33 satır; geciken 6 iş uzun listenin içinde kalıyor (133 düğme)</td></tr>
+      <tr><td>Hasta başlığı</td><td class="n">4 satır</td><td>Kişi bilgisi, tanı, alerji, cihaz günleri, konsültasyon, hekim/hemşire, numaralar hep açık; telefonda bu #196'da katlandı</td></tr>
+    </table>
+  </div>
+
+  <div id="qs"></div>
+</div>
+
+<div class="ans"><div class="ans-in">
+  <span>Cevap satırı (kopyala, bana gönder):</span><b id="ans"></b><button id="copy" type="button">Kopyala</button>
+</div></div>
+
+<script>
+(function () {
+  "use strict";
+  /* ---- minyatür parçaları ---- */
+  function head(full) {
+    return '<div class="mc" style="border-left:3px solid var(--crit)"><div class="row"><span class="bed">REA01</span><b>Elvin Hüseynov</b>' +
+      (full ? '' : '<span class="chip c">Alerji: Penisilin</span><span class="chip">NEWS2 14 · SOFA 11</span><span class="more">Ayrıntı ▾</span>') + '</div>' +
+      (full
+        ? '<div class="mm">61 y · Erkek · A Rh(+) · 82 kg · 176 cm · BKİ 26,5 · BSA 2 m²</div><div><b>Pnömoni, sepsis şüphesi</b> <span class="mm">J18.9 · Reanimasyon · yatış 2. gün · antibiyotik 2. gün</span></div>' +
+          '<div class="row"><span class="chip c">Alerji: Penisilin</span><span class="chip">Kod: Tam</span></div>' +
+          '<div class="row mm">Cihaz günleri <span class="chip">SVK 2</span><span class="chip">Arter 2</span><span class="chip">Entübasyon 2</span><span class="chip w">Konsültasyon bekliyor · 3 sa 12 dk</span></div>' +
+          '<div class="mm">Hekim Dr. Kamran R. · Hemşire Sevda Q. · Hasta no HN-0250137 · Protokol 2026-103929</div>'
+        : '<div><b>Pnömoni, sepsis şüphesi</b> <span class="mm">· yatış 2. gün</span></div>') + '</div>';
+  }
+  function monitor(kind) {
+    var nums = [["Nabız", "131"], ["ART", "78/40"], ["SpO₂", "91"], ["Solunum", "30"], ["Ateş", "39.2"]];
+    if (kind === "strip") return '<div class="mc row" style="justify-content:space-between">' + nums.map(function (n) { return '<span><span class="vl">' + n[0] + '</span><span class="v">' + n[1] + '</span></span>'; }).join("") + '<span class="more">Monitörü büyüt ⤢</span></div>';
+    return '<div class="mc grid2" style="grid-template-columns:3fr 1fr"><div><div class="wave"></div><div class="wave" style="margin-top:4px;height:26px"></div></div><div class="' + (kind === "dupA" || kind === "dupC" ? "dup" : "") + '">' +
+      nums.slice(0, 4).map(function (n) { return '<div><span class="vl">' + n[0] + '</span><span class="v">' + n[1] + '</span></div>'; }).join("") + '</div></div>';
+  }
+  function last24(withNums, dup) {
+    var rows = [["Nabız", "131"], ["MAP", "51"], ["SpO₂", "91"], ["Solunum", "30"]];
+    return '<div class="mc"><div class="mm" style="font-weight:700">SON 24 SAAT</div>' + rows.map(function (r) {
+      return '<div class="row" style="flex-wrap:nowrap"><span style="width:62px"' + (withNums && dup ? ' class="dup"' : '') + '>' + (withNums ? '<span class="vl">' + r[0] + '</span><b class="mono">' + r[1] + '</b>' : '<span class="vl">' + r[0] + '</span>') + '</span><div class="spark" style="flex:1"></div></div>';
+    }).join("") + '</div>';
+  }
+  function ozet(mon, l24, dup) {
+    return '<div class="mini">' + head(true) + '<div style="height:6px"></div>' + monitor(mon) +
+      '<div class="tabs" style="margin-top:6px"><b>Özet</b><span>Trendler</span><span>Skorlar</span><span>Takip</span><span>İlaç</span><span>Sıvı</span><span>Sonuçlar</span></div>' +
+      '<div class="grid2" style="margin-top:6px"><div class="mc" style="border-left:3px solid var(--crit)"><b>Perfüzyon ölçütleri karşılanıyor</b><div class="mm">MAP 51 · laktat 4,1</div></div>' + last24(l24, dup) + '</div></div>';
+  }
+  function konsul(where) {
+    var chip = where !== "band";
+    var band = where !== "chip";
+    return '<div class="mini"><div class="mc"><div class="row"><span class="bed">REA01</span><b>Elvin Hüseynov</b></div><div class="row mm">Cihaz günleri <span class="chip">SVK 2</span><span class="chip">Arter 2</span>' +
+      (chip ? '<span class="chip w' + (where === "both" ? ' dup' : '') + '">Konsültasyon bekliyor · Göğüs hast. · 3 sa 12 dk</span>' : '') + '</div></div>' +
+      '<div class="tabs" style="margin-top:6px"><b>Özet</b><span>Trendler</span><span>Skorlar</span><span>Takip</span></div>' +
+      (band ? '<div class="band' + (where === "both" ? ' dup' : '') + '" style="margin-top:6px">⏱ Bekleyen konsültasyon: Göğüs hastalıkları · istendi · henüz bakılmadı · 3 sa 12 dk bekliyor</div>' : '') +
+      '<div class="mc" style="margin-top:6px"><b>Perfüzyon ölçütleri karşılanıyor</b></div></div>';
+  }
+  function cells(pattern) { return pattern.split("").map(function (c) { return '<i class="' + (c === "x" ? "x" : c === "!" ? "l" : "") + '"></i>'; }).join(""); }
+  function isler(mode) {
+    var pts = [["REA01", "1 gecikmiş · 9 şimdi · 33 iş", true], ["REA02", "2 gecikmiş · 6 şimdi · 29 iş", true], ["REA03", "3 şimdi · 21 iş", false], ["REA04", "18 iş · hepsi planlı", false], ["REA06", "3 gecikmiş · 17 iş", true], ["KVC01", "24 iş · hepsi planlı", false]];
+    var body = pts.map(function (p, i) {
+      var open = mode === "all" || (mode === "late" && p[2]);
+      var rows = open ? [["Ağrı değerlendirmesi", "x....!......"], ["Yatak yarası riski", "............"], ["Vital bulgular", "..x...x...x."], ["Seftriakson 2 g IV", ".....x......"]].map(function (r) { return '<span>' + r[0] + '</span>' + cells(r[1]); }).join("") + '<span class="mm">… +' + (mode === "all" ? "29" : "29") + ' iş</span>' + cells("............") : "";
+      return '<div class="pt">' + (open ? "▾" : "▸") + ' <span class="mono" style="color:var(--pri)">' + p[0] + '</span><span class="mm" style="font-weight:500">' + p[1] + '</span></div>' + (open ? '<div class="tl">' + rows + '</div>' : '');
+    }).join("");
+    var hdr = '<div class="row" style="margin-bottom:6px"><span class="chip c">6 gecikmiş</span><span class="chip">25 şimdi</span><span class="chip">23 kalan</span><span class="chip">68 tamamlanan</span>' + (mode === "closed" ? '<span class="more">Hepsini aç</span>' : mode === "late" ? '<span class="more">Hepsini aç · Hepsini kapat</span>' : '') + '</div>';
+    return '<div class="mini" style="max-height:330px">' + hdr + body + '</div>';
+  }
+
+  var QS = [
+    { id: "mon", t: "Hasta Özet · monitör ve \"Son 24 saat\"", p: "Aynı dört değer bir ekranda iki kez görünüyor (kesikli kırmızı çizgi). Dalga alanı da büyük ölçüde boş.",
+      o: {
+        A: { n: "Bugünkü gibi", s: "Monitör paneli ve Son 24 saat, ikisi de değerleri gösterir.", h: function () { return ozet("dupA", true, true); } },
+        B: { n: "Monitör ince şerit", rec: 1, s: "Beş değer tek satırda; dalga ve büyük panel \"Monitörü büyüt\" ile açılır. Son 24 saat değer + eğriyle kalır. Sayfa ~200 px kısalır.", h: function () { return ozet("strip", true, false); } },
+        C: { n: "Monitör kalır, 24 saatten sayı çıkar", s: "Monitör bugünkü gibi; Son 24 saat kutusunda yalnız eğriler kalır. Tekrar biter ama boş dalga alanı yerinde durur.", h: function () { return ozet("big", false, false); } } },
+      why: "<b>Önerim B.</b> Web'de hasta ekranına masada, geriye dönüp bakmak için gelinir; anlık dalga telefona ve duvar monitörüne ait. Değerlerin <b>şimdiki hâli</b> şeritte, <b>gidişi</b> Son 24 saat'te durur: her bilgi bir kez. Dalga isteyen tek dokunuşla büyütür, özellik kaybolmaz." },
+    { id: "kon", t: "Bekleyen konsültasyon · iki yerde", p: "Aynı uyarı hem hasta başlığında çip, hem sekmelerin altında sarı şerit.",
+      o: {
+        A: { n: "Bugünkü gibi", s: "İki yerde.", h: function () { return konsul("both"); } },
+        B: { n: "Yalnız başlıkta çip", rec: 1, s: "Sarı şerit kalkar; çip başlıkta, cihaz günlerinin yanında kalır. Hangi sekmede olursan ol görünür.", h: function () { return konsul("chip"); } },
+        C: { n: "Yalnız sarı şerit", s: "Başlıktaki çip kalkar; şerit Özet sekmesinde kalır. Dikkat çeker ama diğer sekmelerde görünmez.", h: function () { return konsul("band"); } } },
+      why: "<b>Önerim B.</b> Başlık her sekmede sabit; uyarı orada olursa İlaç'ta da Sonuçlar'da da görülür. Şerit yalnız Özet'te ve sayfayı aşağı itiyor. 3 saati geçen bekleme zaten çipte sarı yanıyor." },
+    { id: "isl", t: "İşler sayfası · 6 hasta hep açık", p: "2.627 px boy, 133 düğme. Geciken 6 iş uzun listenin arasında kalıyor.",
+      o: {
+        A: { n: "Bugünkü gibi", s: "Bütün hastalar açık, her hastanın bütün satırları görünür.", h: function () { return isler("all"); } },
+        B: { n: "Gecikeni olan açık", rec: 1, s: "Gecikmiş işi olan hasta açık gelir, diğerleri tek satır özet (\"3 şimdi · 21 iş\"). Tıklayınca açılır; \"Hepsini aç\" düğmesi var.", h: function () { return isler("late"); } },
+        C: { n: "Hepsi kapalı", s: "Her hasta tek satır; hangisine bakacaksan onu açarsın. En kısa ama geciken iş için de bir tık ister.", h: function () { return isler("closed"); } } },
+      why: "<b>Önerim B.</b> Ekranın işi \"şimdi neye yetişmem lazım\" sorusunu cevaplamak. Gecikeni olan hasta açıkken bir bakışta görülür; planlı işleri olan hasta tek satırda bekler. Hiçbir iş gizlenmez, sayısı özette yazar." },
+    { id: "bas", t: "Hasta başlığı · 4 satır hep açık", p: "Telefonda #196'da katlandı ve beğenildi; web'de hâlâ dört satır.",
+      o: {
+        A: { n: "Bugünkü gibi", s: "Bütün kişi bilgisi, cihaz günleri, konsültasyon, ekip ve numaralar hep açık.", h: function () { return '<div class="mini">' + head(true) + '</div>'; } },
+        B: { n: "İki satır + Ayrıntı ▾", rec: 1, s: "Açıkken: yatak, ad, alerji, NEWS2/SOFA, tanı. Ayrıntı ▾ ile ölçüler, cihaz günleri, ekip, numaralar. <b>Alerji ve izolasyon hep görünür.</b> Seçim hatırlanır.", h: function () { return '<div class="mini">' + head(false) + '</div>'; } } },
+      why: "<b>Önerim B.</b> Telefonda aynı düzen denendi ve beğenildi; web'de de aynı olursa hemşire iki cihazda aynı yeri arar. Güvenlik bilgisi (alerji, izolasyon, risk) hiçbir zaman katlanmaz; katlanan yalnız her gün değişmeyen bilgiler." }
+  ];
+
+  var st = {}; QS.forEach(function (q) { st[q.id] = Object.keys(q.o).filter(function (k) { return q.o[k].rec; })[0] || "A"; });
+  try { var sv = JSON.parse(localStorage.getItem("hmc.webSade") || "{}"); QS.forEach(function (q) { if (sv[q.id] && q.o[sv[q.id]]) st[q.id] = sv[q.id]; }); } catch (e) {}
+
+  function render() {
+    document.getElementById("qs").innerHTML = QS.map(function (q, qi) {
+      return '<section class="q"><div class="q-h"><span class="n">' + (qi + 1) + '</span><h2>' + q.t + '</h2><p>' + q.p + '</p></div><div class="opts">' +
+        Object.keys(q.o).map(function (k) { var o = q.o[k];
+          return '<button type="button" class="opt' + (st[q.id] === k ? ' on' : '') + '" data-q="' + q.id + '" data-k="' + k + '"><div class="opt-h"><span class="k">' + k + '</span><b>' + o.n + '</b>' + (o.rec ? '<span class="rec">Önerim</span>' : '') + '</div>' + o.h() + '<p>' + o.s + '</p></button>';
+        }).join("") + '</div>' + (qi === 0 ? '<div class="leg"><i></i>kesikli kırmızı = aynı bilginin ikinci kopyası</div>' : '') + '<div class="why">' + q.why + '</div></section>';
+    }).join("");
+    document.getElementById("ans").textContent = "Web sadeleşme: " + QS.map(function (q, i) { return (i + 1) + st[q.id]; }).join(" · ");
+  }
+  document.addEventListener("click", function (e) {
+    var o = e.target.closest(".opt"); if (o) { st[o.dataset.q] = o.dataset.k; try { localStorage.setItem("hmc.webSade", JSON.stringify(st)); } catch (x) {} return render(); }
+    var b = e.target.closest("[data-seg] button"); if (b) { b.parentNode.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); }); document.documentElement.setAttribute("data-theme", b.dataset.v); return; }
+    if (e.target.closest("#copy")) { var c = e.target.closest("#copy"); try { navigator.clipboard.writeText(document.getElementById("ans").textContent); c.textContent = "Kopyalandı"; setTimeout(function () { c.textContent = "Kopyala"; }, 1500); } catch (x) {} }
+  });
+  render();
+})();
+</script>
+</body>
+</html>

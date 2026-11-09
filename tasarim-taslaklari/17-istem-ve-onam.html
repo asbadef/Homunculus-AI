@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>İstem ve Onam Kararları</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --ok:#22c55e; --proto:#a78bfa; --idea:#eab308; --no:#64748b; --crit:#f87171; --scr:#0a1526; }
+  :root[data-theme="gun"] { --page:#eef0f3; --card:#fff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de; --pri:#0e7490; --onpri:#fff;
+          --ok:#16a34a; --proto:#7c3aed; --idea:#a16207; --no:#64748b; --crit:#dc2626; --scr:#f7f9fb; }
+  * { box-sizing:border-box; }
+  html, body { overflow-x:hidden; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; overflow-wrap:anywhere; }
+  .wrap { max-width:1180px; margin:0 auto; padding:26px 16px 70px; transition:max-width .2s; }
+  body.tel .wrap { max-width:390px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0 0 16px; max-width:880px; } .lead b { color:var(--ink); }
+  .top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .top a { color:var(--pri); font-weight:700; text-decoration:none; font-size:13px; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:7px 12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); cursor:pointer; }
+  .btn.on, .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .btn.sm { font-size:12px; padding:5px 9px; border-radius:8px; }
+  .st { display:inline-flex; align-items:center; gap:5px; font:700 11px Figtree; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .st.real { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .st.proto { background:color-mix(in srgb, var(--proto) 16%, transparent); color:var(--proto); }
+  .st.idea { background:color-mix(in srgb, var(--idea) 16%, transparent); color:var(--idea); }
+  .st.no { background:var(--card2); color:var(--mute); }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; font-size:12.5px; color:var(--mute); margin:12px 0 18px; }
+  .banner { background:linear-gradient(90deg, color-mix(in srgb, var(--idea) 12%, transparent), transparent 75%); border:1px solid color-mix(in srgb, var(--idea) 40%, transparent); border-radius:14px; padding:12px 14px; font-size:13.5px; margin:10px 0 18px; }
+  .banner b { color:var(--ink); }
+  h2 { font:700 21px "Space Grotesk"; margin:34px 0 8px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  h2 .k { font:700 13px "Space Grotesk"; background:var(--pri); color:var(--onpri); border-radius:8px; padding:4px 9px; }
+  h2 small { font:500 13px Figtree; color:var(--mute); }
+  h3 { font:700 16px "Space Grotesk"; margin:0; }
+  .sub { color:var(--mute); font-size:14px; margin:0 0 14px; max-width:900px; }
+  .sum { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  .sum > div { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; }
+  .sum .q { font:700 12px Figtree; color:var(--pri); letter-spacing:.04em; text-transform:uppercase; }
+  .sum p { margin:6px 0 0; font-size:13.5px; color:var(--mute); } .sum p b { color:var(--ink); }
+  .facts { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  .facts > div { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:13px; color:var(--mute); }
+  .facts h4 { margin:0 0 6px; font:700 14px "Space Grotesk"; color:var(--ink); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .facts ul { margin:0; padding-left:18px; } .facts li { margin:3px 0; } .facts b { color:var(--ink); } .facts code { font-size:12px; color:var(--ink); }
+  .decision { background:linear-gradient(135deg, color-mix(in srgb, var(--pri) 14%, transparent), color-mix(in srgb, var(--pri) 3%, transparent)); border:1px solid color-mix(in srgb, var(--pri) 45%, transparent); border-radius:16px; padding:14px 16px; margin:4px 0 16px; font-size:14px; }
+  .decision .t { font:700 12px Figtree; color:var(--pri); letter-spacing:.04em; text-transform:uppercase; }
+  .decision p { margin:6px 0 0; }
+  .cards { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .card.pick { border-color:color-mix(in srgb, var(--ok) 55%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--ok) 25%, transparent) inset; }
+  .card .hd { display:flex; gap:8px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+  .card .no { font:700 12px "Space Grotesk"; color:var(--mute); margin-right:6px; }
+  .vd { font:800 11px Figtree; padding:4px 9px; border-radius:8px; white-space:nowrap; letter-spacing:.03em; }
+  .vd.evet { background:color-mix(in srgb, var(--ok) 18%, transparent); color:var(--ok); }
+  .vd.sonra { background:color-mix(in srgb, var(--idea) 18%, transparent); color:var(--idea); }
+  .vd.hayir { background:color-mix(in srgb, var(--crit) 15%, transparent); color:var(--crit); }
+  .kv { display:grid; grid-template-columns:104px minmax(0, 1fr); gap:4px 10px; font-size:13px; } .kv > span { color:var(--mute); }
+  .risks { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:3px 10px; font-size:12.5px; align-items:center; }
+  .risks span { color:var(--mute); }
+  .lv { display:inline-flex; gap:3px; align-items:center; font:700 11px Figtree; }
+  .lv i { width:14px; height:6px; border-radius:3px; background:var(--line2); display:inline-block; }
+  .lv.l1 i:nth-child(1) { background:var(--ok); }
+  .lv.l2 i:nth-child(-n+2) { background:var(--idea); }
+  .lv.l3 i { background:var(--crit); }
+  .lv em { font-style:normal; color:var(--mute); margin-left:4px; min-width:40px; }
+  /* mini ekran */
+  .mk { background:var(--scr); border:1px solid var(--line2); border-radius:12px; overflow:hidden; font-size:12.5px; }
+  .mk .bar { display:flex; gap:6px; align-items:center; padding:7px 10px; background:var(--card2); border-bottom:1px solid var(--line); font:700 11.5px Figtree; color:var(--mute); flex-wrap:wrap; }
+  .mk .bar .dots { display:inline-flex; gap:4px; } .mk .bar .dots i { width:7px; height:7px; border-radius:50%; background:var(--line2); display:inline-block; }
+  .mk .bar .r { margin-left:auto; }
+  .mk .bd { padding:10px; display:flex; flex-direction:column; gap:7px; }
+  .mk .row { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:9px; padding:7px 9px; }
+  .mk .row.click { cursor:pointer; } .mk .row.click:hover { border-color:var(--pri); }
+  .mk .row b { font-weight:700; }
+  .mk .f { color:var(--mute); font-size:11.5px; width:100%; }
+  .pill { font:700 10.5px Figtree; padding:2px 7px; border-radius:6px; background:var(--card2); color:var(--mute); white-space:nowrap; }
+  .pill.ok { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .pill.w { background:color-mix(in srgb, var(--idea) 18%, transparent); color:var(--idea); }
+  .pill.c { background:color-mix(in srgb, var(--crit) 16%, transparent); color:var(--crit); }
+  .pill.i { background:color-mix(in srgb, var(--pri) 16%, transparent); color:var(--pri); }
+  .dose { font:700 11px Figtree; padding:3px 7px; border-radius:7px; cursor:pointer; border:1px dashed var(--line2); color:var(--mute); background:transparent; }
+  .dose.done { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); border-color:transparent; }
+  .dose.due { background:color-mix(in srgb, var(--pri) 18%, transparent); color:var(--pri); border:1px solid var(--pri); }
+  .msg { border-radius:9px; padding:7px 9px; font:600 12px Figtree; background:var(--card2); color:var(--mute); display:none; }
+  .msg.show { display:block; }
+  .msg.w { background:color-mix(in srgb, var(--idea) 14%, transparent); color:var(--idea); }
+  .msg.c { background:color-mix(in srgb, var(--crit) 13%, transparent); color:var(--crit); }
+  .msg.ok { background:color-mix(in srgb, var(--ok) 14%, transparent); color:var(--ok); }
+  .fld { display:grid; grid-template-columns:78px minmax(0, 1fr); gap:6px; align-items:center; }
+  .fld span { color:var(--mute); font-size:11.5px; }
+  .inp { background:var(--card); border:1px solid var(--line2); border-radius:8px; padding:5px 8px; font-size:12.5px; }
+  .steps { display:flex; gap:0; flex-wrap:wrap; }
+  .steps span { font:700 10.5px Figtree; padding:4px 8px; background:var(--card2); color:var(--mute); border-right:1px solid var(--scr); }
+  .steps span:first-child { border-radius:7px 0 0 7px; } .steps span:last-child { border-radius:0 7px 7px 0; border-right:0; }
+  .steps span.done { background:color-mix(in srgb, var(--ok) 20%, transparent); color:var(--ok); }
+  .steps span.now { background:color-mix(in srgb, var(--pri) 22%, transparent); color:var(--pri); }
+  .steps span.bad { background:color-mix(in srgb, var(--crit) 18%, transparent); color:var(--crit); }
+  .gap { display:flex; gap:6px; align-items:center; font-size:12px; color:var(--crit); }
+  .drop { border:1.5px dashed var(--line2); border-radius:10px; padding:14px; text-align:center; color:var(--mute); cursor:pointer; }
+  .drop:hover { border-color:var(--pri); color:var(--pri); }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; }
+  .tabs button { font:700 11px Figtree; padding:4px 8px; border-radius:7px; border:1px solid var(--line2); background:transparent; color:var(--mute); cursor:pointer; }
+  .tabs button.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .chip { display:inline-flex; align-items:center; gap:5px; font:700 11.5px Figtree; padding:3px 9px; border-radius:999px; cursor:pointer; border:1px solid var(--line2); background:var(--card); color:var(--ink); }
+  .chip.c { color:var(--crit); border-color:color-mix(in srgb, var(--crit) 45%, transparent); background:color-mix(in srgb, var(--crit) 10%, transparent); }
+  .chip.w { color:var(--idea); border-color:color-mix(in srgb, var(--idea) 45%, transparent); background:color-mix(in srgb, var(--idea) 10%, transparent); }
+  .chip.v { color:var(--proto); border-color:color-mix(in srgb, var(--proto) 45%, transparent); background:color-mix(in srgb, var(--proto) 10%, transparent); }
+  .tog { display:inline-flex; align-items:center; gap:6px; cursor:pointer; font:600 12px Figtree; color:var(--mute); user-select:none; }
+  .tog i { width:30px; height:17px; border-radius:999px; background:var(--line2); position:relative; display:inline-block; transition:.15s; }
+  .tog i::after { content:""; position:absolute; width:13px; height:13px; top:2px; left:2px; border-radius:50%; background:#fff; transition:.15s; }
+  .tog.on i { background:var(--crit); } .tog.on i::after { left:15px; }
+  .tog.okc.on i { background:var(--ok); }
+  /* karar kutusu */
+  .dec { border-top:1px solid var(--line); padding-top:10px; font-size:13.5px; display:flex; flex-direction:column; gap:5px; }
+  .dec div b:first-child { font:800 11px Figtree; letter-spacing:.04em; text-transform:uppercase; color:var(--pri); margin-right:4px; }
+  .dec .why b:first-child { color:var(--mute); } .dec .obj b:first-child { color:var(--idea); }
+  .dec .obj { color:var(--mute); }
+  .objbtn { align-self:flex-start; margin-top:4px; font:700 12px Figtree; padding:6px 11px; border-radius:9px; border:1px dashed var(--line2); background:transparent; color:var(--mute); cursor:pointer; }
+  .objbtn.on { border-style:solid; border-color:var(--idea); color:var(--idea); background:color-mix(in srgb, var(--idea) 10%, transparent); }
+  details { font-size:13px; } summary { cursor:pointer; color:var(--pri); font-weight:700; font-size:12.5px; } details p { margin:6px 0 0; color:var(--mute); }
+  /* tür tablosu */
+  .types { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+  .trow { display:grid; grid-template-columns:1.1fr .95fr 1.9fr 1.5fr; gap:12px; padding:10px 14px; border-top:1px solid var(--line); font-size:13px; align-items:start; }
+  .trow:first-child { border-top:0; }
+  .trow.h { background:var(--card2); font:700 11.5px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
+  .trow .m { color:var(--mute); }
+  .trow .lab { display:none; font:700 10.5px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
+  .src { font:800 11px Figtree; padding:3px 8px; border-radius:7px; display:inline-block; }
+  .src.h { background:color-mix(in srgb, var(--pri) 15%, transparent); color:var(--pri); }
+  .src.b { background:color-mix(in srgb, var(--proto) 16%, transparent); color:var(--proto); }
+  .src.x { background:color-mix(in srgb, var(--idea) 16%, transparent); color:var(--idea); }
+  .principle { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin:0 0 14px; }
+  .principle > div { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:13px; color:var(--mute); }
+  .principle b { display:block; color:var(--ink); font:700 15px "Space Grotesk"; margin-bottom:3px; }
+  .open { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:6px 16px; }
+  .open > div { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr) auto; gap:10px; padding:10px 0; border-top:1px dashed var(--line); font-size:13.5px; align-items:start; }
+  .open > div:first-child { border-top:0; }
+  .open .m { color:var(--mute); font-size:12.5px; }
+  .ask { background:linear-gradient(90deg, color-mix(in srgb, var(--idea) 12%, transparent), transparent 70%); border:1px solid color-mix(in srgb, var(--idea) 40%, transparent); border-radius:14px; padding:14px 16px; margin-top:28px; }
+  .ask b.t { font:700 16px "Space Grotesk"; }
+  .ask .line { margin-top:10px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px 12px; font:600 14px Figtree; }
+  .ask .line b { color:var(--idea); }
+  .ask .row2 { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+  .toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:var(--ink); color:var(--page); font:700 13px Figtree; padding:9px 14px; border-radius:10px; opacity:0; pointer-events:none; transition:.2s; max-width:calc(100vw - 32px); }
+  .toast.show { opacity:1; }
+  @media (max-width:860px) { .sum, .facts { grid-template-columns:1fr; } .cards { grid-template-columns:1fr; } .principle { grid-template-columns:1fr; } }
+  @media (max-width:700px) {
+    .trow { grid-template-columns:1fr; gap:4px; } .trow.h { display:none; } .trow .lab { display:block; margin-top:4px; }
+    .open > div { grid-template-columns:1fr; }
+    h1 { font-size:25px; }
+  }
+  body.tel .sum, body.tel .facts, body.tel .cards, body.tel .principle { grid-template-columns:1fr; }
+  body.tel .trow { grid-template-columns:1fr; gap:4px; } body.tel .trow.h { display:none; } body.tel .trow .lab { display:block; margin-top:4px; }
+  body.tel .open > div { grid-template-columns:1fr; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="index.html">← Tasarım Masası</a><span style="margin-left:auto"></span><button class="btn" id="tel">Telefon görünümü</button><button class="btn" id="th">Tema</button></div>
+  <h1>İstem, onam ve ilaç uyarıları</h1>
+  <p class="lead">İstek listesindeki 21, 22 ve 23. maddeler. Her soruda seçenekleri kart kart gösteriyorum; <b>her kartın altında ekibin kararı, gerekçesi ve itiraz edersen ne olacağı yazıyor.</b> Senden cevap beklemiyorum: kararlar geçerli, yalnız itiraz ettiğin maddeyi en alttaki satıra yaz. Kartlardaki küçük ekranlara tıklanabilir.</p>
+
+  <div class="banner">✏️ <b>Bu sayfa bir karar ve öneri sayfasıdır.</b> Buradaki küçük ekranlar yalnız çizimdir; <b>prototipte ve gerçek üründe bu sayfa yüzünden hiçbir şey değişmedi.</b> Hastalar, ilaçlar ve saatler örnektir. Küçük ekranlarda "HBYS" yerine kullanıcıların göreceği "hastane kaydı" yazıyor (istek 6).</div>
+
+  <div class="legend"><span class="st real">● Gerçek üründe var</span><span class="st proto">● Yalnız prototipte</span><span class="st idea">● Öneri · çizildi, uygulamada yok</span><span class="st no">● Bilerek yapmıyoruz</span></div>
+
+  <h2>Kısaca kararlar</h2>
+  <div class="sum">
+    <div><span class="q">A · İstem (order)</span>
+      <p><b>İstemler hastane sisteminde yazılır; Homunculus okur, gösterir, zamanını izler.</b> Tek istisna: hemşirelik bakım girişimleri ve izlem sıklığı Homunculus'ta. Homunculus'tan hastane sistemine istem gönderilmez.</p></div>
+    <div><span class="q">B · Onam formları</span>
+      <p><b>İmzalı onam belgesi Homunculus'a yüklenmez;</b> asıl yeri hastane arşivi. Homunculus yalnız "onam alındı mı" gösterir. Yükleme alanı yalnız Homunculus'a özgü iki onamın <b>boş şablonu</b> için var: kamera ile izleme bilgilendirmesi ve yara fotoğrafı izni.</p></div>
+    <div><span class="q">C · Uyarılar ve etkileşim</span>
+      <p><b>Homunculus kendi ilaç etkileşim veritabanını kurmaz.</b> Etkileşim uyarısını hastane sistemi üretir, biz kaynağıyla gösteririz. Hasta uyarıları (alerji, izolasyon, zor hava yolu…) Homunculus'ta kalır.</p></div>
+  </div>
+
+  <h2>Bugün ne var <small>ölçtüm · dosya adlarıyla</small></h2>
+  <div class="facts">
+    <div><h4>Gerçek ürün (motor) <span class="st real">kod okundu</span></h4><ul>
+      <li>Hastaneden <b>yalnız alıyor:</b> sonuç mesajı (HL7 ORU), hasta kabul mesajı (HL7 ADT), FHIR ölçümleri, cihazın hasta sorgusuna cevap ve alındı onayı.</li>
+      <li>Hastane sistemine <b>istem gönderen hiçbir kod yok</b> (istem ya da ilaç mesajı üretilmiyor). <code>homunculus-engine/src/homunculus/gateway</code>, <code>edge</code></li>
+      <li>İlaçta yalnız: vazopresör hızları ve "antibiyotik uygulandı" sinyali, sepsis sonrası 1 saatlik antibiyotik saati (<code>api/board.py</code>).</li>
+      <li>Kabulde "yatışta kullandığı ilaçlar" ve "bilinen alerjiler" alanları var (<code>admission/models.py</code>).</li>
+      <li><b>Etkileşim veritabanı yok. Onam kaydı yok.</b></li></ul></div>
+    <div><h4>Prototip <span class="st proto">tıklanabilir</span></h4><ul>
+      <li>İlaç sekmesi: "istem hastane kaydından gelir, burada değiştirilmez" + uygulama çizelgesi (uygulandı / uygulanmadı / ertele).</li>
+      <li>Alerji notu: "kayıt gösterilir, karar hekimin". İlaç-alerji eşleştirmesi yapılmıyor.</li>
+      <li>Sonuçlar: İstendi → Çekildi → Raporlandı → Görüldü.</li>
+      <li>Hasta uyarıları modülü: 25 tür, her birinin kaynağı yazılı.</li>
+      <li>Kabulde "Onaylar" kutusu (kişisel veri, SMS, "sonra alınacak"); Kamera ön koşulları (hukuki dayanak, politika, levha).</li>
+      <li><b>Etkileşim uyarısı prototipte de yok.</b></li></ul></div>
+    <div><h4>Hastane tarafı <span class="st idea">kısmen biliniyor</span></h4><ul>
+      <li>Hastanenin ağında <b>hasta kabul ve istem mesajı gönderen bir hastane sistemi motoru</b> gözlendi (<code>docs/hastane-hl7-omurgasi-analizi.md</code>). Yani istemleri okumak için bir kaynak büyük olasılıkla var. Ürün adı ve erişim yolu IT'ye sorulacak.</li>
+      <li>Paylaştığın hastane sistemi ekranlarında istem menüsü, ilaç istemi, laboratuvar istemi, bakım istem kataloğu ve hasta uyarı simgeleri var (Taslak 14, 15).</li>
+      <li>Yol haritası madde 7 "ilaç-ilaç etkileşim kontrolü" diyordu (<code>docs/gelecek-yol-haritasi-20-madde.md</code>). <b>C kararı bunu daraltıyor</b>; o dosyaya dokunmadım.</li></ul></div>
+  </div>
+
+  <!-- ================= A ================= -->
+  <h2><span class="k">A</span> İstem (order) nereden gelsin? <small>istek 22, 23</small></h2>
+  <p class="sub">İstem: hekimin ilaç, laboratuvar, radyoloji ya da bakım için verdiği talimat. Soru, bu talimatın hangi ekranda yazılacağı. Dört seçenek var; aşağıda her birinin kazancı, riski ve bugünkü durumu.</p>
+  <div class="decision"><span class="t">Ekip kararı</span>
+    <p><b>Seçenek 1 varsayılan:</b> ilaç, laboratuvar, radyoloji, kan, konsültasyon istemleri hastane sisteminde yazılır; Homunculus okur, gösterir, zamanını ve sonucunu izler. <b>Hemşirelik bakım girişimleri ve izlem sıklığı Homunculus'ta</b> (Mod 3; bunlar tedavi değil, izlem ve bakım). Seçenek 2 (taslak) pilottan sonra ölçüye bakılarak yeniden açılır. Seçenek 3 ve 4 yapılmaz.</p></div>
+  <div class="cards" id="cardsA"></div>
+
+  <h3 style="margin:22px 0 8px">Tür bazında karar</h3>
+  <p class="sub">Aynı kural her türe aynı uymuyor. Satır satır:</p>
+  <div class="types" id="types"></div>
+
+  <!-- ================= B ================= -->
+  <h2><span class="k">B</span> Onam formları için yükleme alanı gerekir mi? <small>istek 21</small></h2>
+  <p class="sub">Onam: hastanın ya da yakınının bir işleme yazılı izni. İmzalı belge hukuken hastanenin belgesidir ve hastane arşivinde ya da hastane sisteminde saklanır. Soru, Homunculus'un bu işte ne kadar yer alacağı.</p>
+  <div class="decision"><span class="t">Ekip kararı</span>
+    <p><b>Genel bir "onam formu yükle" alanı yapmıyoruz.</b> Homunculus imzalı belge saklamaz. "Bu işlem için onam alındı mı" bilgisini hastane sisteminden okuruz (B2); hastane sistemi bunu vermiyorsa hemşire ya da hekim yalnız işaret koyar (B3). <b>Yükleme alanı yalnız Homunculus'un kendi özellikleri için ve yalnız boş şablon olarak</b> var (B4). Bütün onam metinlerini <b>hastanenin hukuk birimi onaylar</b>; biz metin yazmayız.</p></div>
+  <div class="cards" id="cardsB"></div>
+
+  <!-- ================= C ================= -->
+  <h2><span class="k">C</span> Hasta uyarıları ve ilaç etkileşimi <small>istek 23</small></h2>
+  <p class="sub">İlaç etkileşim uyarısı (iki ilacın birlikte sorun çıkarması, ilaç-alerji çakışması) bir ilaç bilgi veritabanından gelir. Bu veritabanları lisanslıdır, sürekli güncellenir ve arkasında klinik içerik ekibi vardır. Soru, bu uyarıyı kimin üreteceği.</p>
+  <div class="principle">
+    <div><b>Bizim ürettiğimiz uyarılar</b>Fizyolojiden ve zamandan gelir: sepsis kriterleri, skor artışı, antibiyotik saati, sonuç görülmedi. Bunlar motorda var ve kaynakları klinik arşivde.</div>
+    <div><b>Bizim üretmediğimiz uyarılar</b>İlaç bilgisinden gelir: ilaç-ilaç, ilaç-alerji, doz aralığı. Bunları üreten hastane sistemidir; biz kaynağıyla gösteririz.</div>
+  </div>
+  <div class="decision"><span class="t">Ekip kararı</span>
+    <p><b>Kendi etkileşim veritabanımızı kurmuyoruz ve ilaç-alerji eşleştirmesi yapmıyoruz</b> (C1 hayır). Hastane sisteminin etkileşim uyarısını dışarı veriyorsa okuyup kaynağıyla gösteririz (C2). Lisanslı bir ilaç veritabanını kendimiz bağlamak, ancak bir gün istem yazmaya karar verilirse gündeme gelir (C3 şimdi değil). <b>Hasta uyarıları modülü Homunculus'ta kalır</b> (C4, prototipte var). Alerji her zaman ilaç listesinin üstünde, kayıttan gelir ve buradan silinemez.</p></div>
+  <div class="cards" id="cardsC"></div>
+
+  <h2>Hastaneye sorulacaklar <small>⏳ bunlar sana değil, hastanenin IT ve hukuk birimine</small></h2>
+  <div class="open" id="open"></div>
+
+  <div class="ask"><b class="t">Senin için tek satır</b>
+    <p style="margin:6px 0 0;color:var(--mute);font-size:13.5px">Kararlara itiraz etmiyorsan bir şey yazman gerekmiyor. İtiraz ettiğin kartın altındaki <b>"İtiraz ediyorum"</b> düğmesine bas; satır kendiliğinden dolar. Kopyala, bana yapıştır.</p>
+    <div class="line" id="objLine">İtiraz ettiğim madde: <b>yok</b></div>
+    <div class="row2"><button class="btn p" id="copy">Satırı kopyala</button><button class="btn" id="clearObj">Temizle</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- veri ---------- */
+const LV = { 1:"düşük", 2:"orta", 3:"yüksek" };
+const RISK_NAMES = ["Çift kayıt", "Etkileşim / doz sorumluluğu bizde", "Tıbbi cihaz yazılımı sınıfı ağırlaşır", "Entegrasyon maliyeti"];
+// [id, başlık, karar(evet|sonra|hayir), kararEtiketi, durum(real|proto|idea|no), kazandırır, riskler[4], bugün, mockupHTML, karar, neden, itiraz, neden-böyle]
+const A = [
+  ["A1", "Yalnız hastane sisteminden oku ve göster", "evet", "KARAR: EVET · varsayılan", "proto",
+   "Çift kayıt yok. Hekim alışkanlığını değiştirmiyoruz. İstemi bizde zaman çizgisine, uygulama çizelgesine, trend grafiğindeki ◆ işaretine ve sonuç yolculuğuna çeviririz.",
+   [1, 1, 1, 2],
+   "Motor sonuçları ve hasta kabulünü okuyor; ilaç istemini henüz okumuyor. Prototipte ilaç sekmesi tam bu modeli çiziyor.",
+   "a1",
+   "Bütün istem türleri için varsayılan budur.",
+   "Hastane sisteminin yaptığını tekrar etmeme ilkesi. Eczane kontrolü, etkileşim uyarısı ve hukuki sorumluluk hastane sisteminde kalır. Motorun bugünkü yapısı (yalnız almak) ile uyumlu; hastanede istem mesajı gönderen bir motor gözlendi, yani okumanın yolu büyük olasılıkla var.",
+   "Hekim iki ekran arasında gidip gelir. Bunu hafifletmek için A2'yi (taslak) pilottan önceye çekeriz, ama yalnız laboratuvar için.",
+   "Ekrandaki her ilaç satırında \"hastane kaydı\" etiketi var ve satıra dokununca değiştirilemeyeceği yazıyor. Hemşirenin \"uygulandı\" işareti ise bizde tutulur, çünkü paylaştığın hastane sistemi ekranlarında saatli uygulama çizelgesi yoktu (Taslak 14). Hastane sisteminde varsa oradan okuruz."],
+  ["A2", "İstem taslağı hazırla, hekim hastane sisteminde onaylar", "sonra", "KARAR: ŞİMDİ DEĞİL · pilottan sonra", "idea",
+   "Sistem bir eksik fark ettiğinde (ör. laktat 4 saattir ölçülmedi) hekime hazır bir taslak sunar. Hekim tek dokunuşla hastane sistemine geçer ve orada imzalar. Yazma yükü azalır.",
+   [2, 1, 2, 2],
+   "Yok. Motor \"laktat eski\" gibi bayat veri bilgisini zaten biliyor; taslak ekranı çizilmedi.",
+   "a2",
+   "Pilot bitene kadar yapılmaz. Pilotta hekimler \"önerinin hastane sistemine geçişi zahmetli\" derse ve hastane sistemi dışarıdan taslak kabul ediyorsa yalnız laboratuvar için açılır. İlaç hiçbir zaman taslak olmaz.",
+   "Taslak \"istem gibi görünen ama istem olmayan\" bir şeydir. Hekim taslağı hazırlayıp imzalamayı unutursa \"istedim sandım\" hatası doğar. Bunu önlemek için önce A1 çalışmalı ki taslağın hastane sisteminde gerçekten isteme dönüştüğünü geri okuyabilelim.",
+   "Pilottan önce yalnız laboratuvar için açarız. Koşul: hastane sistemi dışarıdan taslak kabul etmeli ve taslağın isteme dönüştüğünü geri okuyabilmeliyiz.",
+   "Küçük ekranda iki adım var: taslak hastane sistemine aktarılır, sonra hastane kaydında istem göründüğünde yeşile döner. Aradaki süre, taslağın unutulup unutulmadığını gösterir."],
+  ["A3", "Homunculus'ta tam istem, hastane sistemine geri gönder", "hayir", "KARAR: HAYIR", "no",
+   "En rahat kullanım: hekim her şeyi tek ekranda yapar.",
+   [2, 3, 3, 3],
+   "Motorda hastane sistemine giden yol hiç yok. Her hastane sistemi için ayrı yazma entegrasyonu gerekir.",
+   "a3",
+   "Yapılmaz.",
+   "Bir istemin eczaneye gerçekten ulaştığını garanti etmek bizim sorumluluğumuz olur; bağlantı koptuğunda istemin nerede olduğu belirsizleşir. Etkileşim ve doz kontrolü bize geçer (C1'e zorlar). Ürün izleme yazılımından istem yazan klinik sisteme dönüşür; ruhsat yükünün ne kadar ağırlaşacağı Azerbaycan'da doğrulanmadı.",
+   "Önce hedef hastanenin IT'si dışarıdan istem kabul eden bir arayüz sunuyor mu, ölçülür. Sunuyorsa o hastane için ayrı bir proje olarak ele alınır; ruhsat sorusu hukuk birimine ve düzenleyici danışmana gider.",
+   "Küçük ekranda \"Bağlantı koparsa\" anahtarını aç: istem gönderildi mi, eczane gördü mü, hekim bilemiyor. Bu riskin sahibi biz oluruz."],
+  ["A4", "Hastane sistemi yoksa bağımsız istem", "hayir", "KARAR: HAYIR", "no",
+   "Hastane sistemi olmayan küçük bir kurumda tek başına çalışabilmek.",
+   [1, 3, 3, 1],
+   "Yok. Hedef hastanelerin hepsinde hastane sistemi var.",
+   "a4",
+   "Yapılmaz.",
+   "Bağımsız istem, bir hastane sistemi yazmak demektir: eczane, stok, faturalama, arşiv, etkileşim veritabanı. Bu başka bir ürün. Hedef kitlemizde gerek yok.",
+   "Hastane sistemi olmayan bir müşteri çıkarsa bu ayrı bir ürün kararıdır; Homunculus'un kapsamına eklenmez.",
+   "Küçük ekranda istem kaydediliyor ama kırmızı satırlar eksik olan her şeyi sayıyor. Eczane bu istemi görmüyor."],
+];
+const B = [
+  ["B1", "İmzalı onam belgesini Homunculus'a yükle", "hayir", "KARAR: HAYIR", "no",
+   "Belge hasta kartında elinin altında olur.",
+   [3, 1, 1, 1],
+   "Yok.",
+   "b1",
+   "Yapılmaz.",
+   "İmzalı belge iki yerde durursa hangisinin asıl olduğu tartışılır; hukuki belge hastanenin arşivindedir. Bizde saklamak, kişisel veri ve imzalı belge sorumluluğunu da bize taşır.",
+   "Hastane açıkça isterse yalnız \"belgeye bağlantı\" (hastane arşivinde açılır) eklenir; dosya yine bizde saklanmaz.",
+   "Küçük ekranda bir dosya yükle: hemen \"hangisi asıl\" uyarısı çıkıyor."],
+  ["B2", "\"Onam alındı mı\" bilgisini hastane sisteminden oku", "evet", "KARAR: EVET · entegrasyon varsa", "idea",
+   "Hemşire ve hekim, bir işleme başlamadan onam durumunu hasta kartında görür. Belge açılmaz, yalnız durum ve tarih.",
+   [1, 1, 1, 2],
+   "Yok. Hastane sisteminin bu bilgiyi dışarı verip vermediği bilinmiyor (IT'ye soru 3).",
+   "b2",
+   "Hastane sistemi veriyorsa yapılır.",
+   "Onamın asıl yeri değişmez. Bizim katkımız hatırlatma: planlı işlemde onam kaydı yoksa sarı işaret.",
+   "Hastane sistemi vermiyorsa B3'e düşeriz; o da yetmezse bu gösterge hiç yapılmaz.",
+   "Sarı satıra dokun: belge buradan açılmıyor, hastane arşivine yönlendiriyor."],
+  ["B3", "Hemşire ya da hekim \"onam alındı\" işareti koyar", "evet", "KARAR: EVET · yalnız B2 yoksa", "idea",
+   "Hastane sistemi bilgiyi vermese bile hasta kartında görünür bir hatırlatma olur.",
+   [2, 1, 1, 1],
+   "Prototipte benzeri var: kabulde \"onay sonra alınacak\" işareti hasta kartında hatırlatılıyor.",
+   "b3",
+   "Yalnız B2 mümkün değilse. Belge yok, yalnız işaret: kim, ne zaman, belge nerede.",
+   "Bu bir kayıt değil, hatırlatma. \"Belge: hastane arşivi\" yazısı zorunlu, böylece kimse işareti onamın kendisi sanmaz.",
+   "Çift kayıt sayıyorsan bu seçeneği kaldırırız; o zaman onam durumu hiç görünmez.",
+   "İşaret açılınca kim ve ne zaman otomatik yazılır; işaret kaldırılırsa gerekçe sorulur (hasta uyarıları modülüyle aynı kural)."],
+  ["B4", "Homunculus'a özgü onamlar · yalnız boş şablon yüklenir", "evet", "KARAR: EVET", "idea",
+   "Kamera ile izleme ve yara fotoğrafı yalnız Homunculus'ta var; hastane sisteminde bunların onamı yok. Yönetici, hukuk biriminin onayladığı boş şablonu yükler; hemşire yazdırır, imzalı nüsha hastane arşivine gider, bizde yalnız \"verildi · kim · ne zaman\" kalır.",
+   [1, 1, 1, 1],
+   "Prototipte kamera ön koşulları var (hukuki dayanak, politika, levha ve bilgilendirme). Şablon yükleme ekranı yok.",
+   "b4",
+   "Yalnız iki onam için: kamera ile izleme bilgilendirmesi, yara fotoğrafı izni. Hukuk onayı işaretlenmeden şablon kullanıma açılmaz.",
+   "Bu özellikleri biz getirdiğimiz için onamlarının yolunu da biz göstermeliyiz; ama metni hastanenin hukuk birimi yazar ya da onaylar. Kamera, bu onam olmadan zaten bağlanmıyor.",
+   "Şablonu tamamen hastaneye bırakırız; o zaman kamera ön koşullarındaki \"bilgilendirme\" maddesini yalnız elle işaretleriz.",
+   "Küçük ekranda iki sekme var: Yönetim (şablon ve hukuk onayı) ve Hasta kartı (verildi mi). Hukuk onayı bekleyen şablon kilitli."],
+];
+const C = [
+  ["C1", "Homunculus kendi etkileşim veritabanını kurar", "hayir", "KARAR: HAYIR", "no",
+   "Hastane sisteminden bağımsız uyarı.",
+   [2, 3, 3, 1],
+   "Yok. Yol haritası madde 7 bunu öneriyordu; bu kararla daralıyor.",
+   "c1",
+   "Yapılmaz. İlaç-alerji eşleştirmesi (penisilin alerjisi ↔ hangi ilaçlar) de buna dahildir.",
+   "Etkileşim bilgisi sürekli değişir ve klinik içerik ekibi ister. Yanlış ya da eski bir kural, olmayan bir kuraldan daha tehlikelidir. Azerbaycan'daki ticari ilaç adlarını etken maddeye bağlamak ayrı bir iş. Klinik kural kaynağımız arşiv; bir ilaç veritabanını oraya almak mümkün değil.",
+   "Kabul etmezsen tek yol C3'tür (lisanslı veritabanı). Kendi yazdığımız tablo hiçbir durumda olmaz.",
+   "Küçük ekrandaki uyarıya dokun: \"bu kuralı kim yazdı, ne zaman güncellendi\" sorularının cevabı yok. Sorun bu."],
+  ["C2", "Hastane sisteminin ürettiği uyarıyı oku ve göster", "evet", "KARAR: EVET · hastane veriyorsa", "idea",
+   "Hemşire ilacı uygularken uyarıyı da görür; uyarı hastane sisteminde hekimin ekranında kalmaz. Hekimin orada yazdığı gerekçe de görünür.",
+   [1, 1, 1, 2],
+   "Yok. Hastane sisteminin etkileşim uyarısı üretip üretmediği ve dışarı verip vermediği bilinmiyor (IT'ye soru 2).",
+   "c2",
+   "Hastane sistemi veriyorsa yapılır. Metin aynen, kaynağı ve saati ile gösterilir; biz yorum eklemeyiz.",
+   "Uyarının sahibi onu üreten sistemdir. Biz yalnız doğru kişinin önüne koyarız: uygulama anında hemşire.",
+   "Hastane vermiyorsa bu satır boş kalır; boş kalmasını \"etkileşim yok\" diye göstermeyiz, \"hastane sisteminden etkileşim bilgisi gelmiyor\" yazarız.",
+   "Uyarıya dokun: kaynağı, saati ve hekimin hastane sistemindeki kararı görünüyor."],
+  ["C3", "Lisanslı ilaç veritabanını Homunculus'a bağla", "sonra", "KARAR: ŞİMDİ DEĞİL", "no",
+   "Uyarı kalitesi hastane sisteminden bağımsız olur; hastane sistemi zayıfsa değerli.",
+   [1, 2, 3, 3],
+   "Yok. Lisans yok.",
+   "c3",
+   "Yalnız bir gün A3 (tam istem) kararı verilirse gündeme gelir; o durumda zorunludur.",
+   "Lisans bedeli ve güncelleme işi, istem yazmayan bir ürün için karşılığını vermez. Uyarı istem anında işe yarar; istem hastane sisteminde yazıldığı sürece uyarının doğru yeri de orası.",
+   "Pilot hastanenin sisteminde etkileşim uyarısı hiç yoksa ve hastane bunu bizden isterse, lisans maliyeti ölçülür ve ayrı bir teklif olur.",
+   "Küçük ekranda lisans satırı gri: bağlı değil. Dokununca neden bağlı olmadığı yazıyor."],
+  ["C4", "Hasta uyarıları (alerji, izolasyon, zor hava yolu…) Homunculus'ta", "evet", "KARAR: EVET · prototipte var", "proto",
+   "Hastane sistemindeki uyarı simgeleri yatak kartına ve hasta başlığına taşınır. Kayıttan gelenler kendiliğinden görünür, elle eklenenlerde kim, ne zaman, not tutulur.",
+   [1, 1, 1, 1],
+   "Prototipte var: hasta uyarıları modülü, 25 tür. Gerçek motorda kabuldeki \"bilinen alerjiler\" alanı var; uyarı modülü yok.",
+   "c4",
+   "Yapılır. Alerji ve canlandırma kararı yalnız hastane kaydından gelir, buradan eklenmez ve silinmez.",
+   "Uyarı simgesi bir ilaç bilgisi değil, hastanın durumu. Bu tam bizim işimiz: doğru anda, doğru kişiye göstermek. Alerji ilaç listesinin üstünde durur ama ilaçla eşleştirilmez (C1).",
+   "Hastane sistemindeki uyarı listesi yeterliyse elle eklemeyi kapatırız; yalnız kayıttan gelenleri gösteririz.",
+   "Simgelere dokun: kaynağı ve kimin eklediği görünüyor. Alerji kilitli."],
+];
+const TYPES = [
+  ["İlaç istemi", "h", "Hastane sistemi", "Liste, uygulama çizelgesi (hastane sisteminde yoksa), pompadan canlı infüzyon hızı, antibiyotik saati, trendde ◆ işareti.", "Eczane, etkileşim ve doz sorumluluğu hastane sisteminde kalır.", "proto"],
+  ["Laboratuvar istemi", "h", "Hastane sistemi", "İstendi → numune → sonuç yolculuğu, kritik değer haberi, \"görüldü\", trend. \"Tekrar ölçüm değerlendirilebilir\" gibi hatırlatma istem değildir.", "Sonuç zaten hastane sisteminden geliyor (motor okuyor).", "proto"],
+  ["Radyoloji istemi", "h", "Hastane sistemi", "Çekim sırası, rapor, öncekiyle yan yana, görüntüleme sistemine bağlantı.", "Görüntüyü biz açmayız ve saklamayız.", "proto"],
+  ["Kan ve kan ürünü", "h", "Hastane sistemi", "Yalnız gösterim.", "Kan bankası süreci ayrı ve sıkı denetimli.", "idea"],
+  ["Konsültasyon istemi", "h", "Hastane sistemi", "İstendi → görüldü → öneri yazıldı süresi.", "Formu yeniden yazmayız, bekleme süresini gösteririz (Taslak 15 · 7).", "idea"],
+  ["Diyet ve beslenme", "h", "Hastane sistemi", "\"Aç (NPO)\" ve \"özel beslenme\" hasta uyarısı olarak.", "Mutfak ve diyetisyen süreci hastane sisteminde.", "proto"],
+  ["Hemşirelik bakım girişimleri (pozisyon, ağız bakımı, kateter bakımı)", "b", "Homunculus (Mod 3)", "Bakım planı → saatli görev. Sistem riski kayıttan önerir, hemşire kabul eder.", "Paylaştığın hastane sisteminde hemşire 40'tan fazla tanıyı elle arıyordu; bu bizim en güçlü olduğumuz yer. Tedavi değil, bakım.", "proto"],
+  ["İzlem sıklığı (vital, GKS, saatlik idrar)", "x", "Hastane sisteminde varsa oradan; yoksa Homunculus", "Hekim ya da sorumlu hemşire sıklığı belirler, hemşirenin saatli görevine dönüşür.", "Bu bir tedavi değil, gözlem talimatı. Hastane sisteminde yoksa bizde durması çift kayıt yaratmaz.", "idea"],
+];
+const OPEN = [
+  ["Hastane sistemi istemleri dışarı veriyor mu? Hangi yolla?", "HL7 istem mesajı, FHIR ya da veritabanı görünümü. Ağda istem mesajı gönderen bir motor gözlendi; ürün adı bilinmiyor.", "IT", "A1"],
+  ["Hastane sistemi ilaç etkileşim uyarısı üretiyor mu? Hangi veritabanıyla? Uyarıyı dışarı veriyor mu?", "Cevap hayırsa C2 satırı \"etkileşim bilgisi gelmiyor\" yazar.", "IT", "C2"],
+  ["Hastane sisteminde \"onam alındı\" alanı var mı?", "Varsa B2, yoksa B3.", "IT", "B2"],
+  ["Kamera ile izleme bilgilendirmesi ve yara fotoğrafı izni metinleri", "Metni hastane yazar ya da onaylar; biz boş şablonu taşırız.", "Hukuk birimi", "B4"],
+  ["Klinik karar destek yazılımının Azerbaycan'daki sınıfı", "Bugünkü kapsam (izleme, istem yazmama) için. A3 ya da C3 açılırsa yeniden sorulur.", "Hukuk birimi · düzenleyici danışman", "A3"],
+];
+
+/* ---------- küçük ekranlar ---------- */
+const bar = (t, r = "") => `<div class="bar"><span class="dots"><i></i><i></i><i></i></span>${t}${r ? `<span class="r">${r}</span>` : ""}</div>`;
+const MK = {
+  a1: () => `<div class="mk" data-mk="a1">${bar("REA-01 · İlaç", '<span class="pill">hastane kaydı</span>')}<div class="bd">
+      <div class="row click" data-a="ro"><b>Noradrenalin 4 mg / 50 mL</b><span class="pill i">pompa · canlı</span><div class="f">sürekli infüzyon · 20:25'ten beri</div></div>
+      <div class="row"><span class="click" data-a="ro" style="cursor:pointer"><b>Seftriakson 2 g IV</b></span><span style="display:flex;gap:4px;flex-wrap:wrap"><button class="dose done">14:00 ✓</button><button class="dose due" data-a="give">22:00</button><button class="dose">06:00</button></span><div class="f">8 saatte bir · hastane kaydı</div></div>
+      <div class="row"><b>Laktat</b><div class="steps"><span class="done">İstendi 20:10</span><span class="done">Numune 20:25</span><span class="now">Sonuç bekleniyor</span></div></div>
+      <div class="msg" data-m></div></div></div>`,
+  a2: () => `<div class="mk" data-mk="a2">${bar("REA-01 · Hatırlatma")}<div class="bd">
+      <div class="row"><span><b>Laktat 4 sa 10 dk önce ölçüldü.</b> Sepsis kriterleri izleniyor; tekrar ölçüm değerlendirilebilir.</span><div class="f">Kaynak: motorun bayat veri kuralı · karar hekimin</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-a="draft">Taslağa ekle</button><button class="btn sm p" data-a="send" disabled style="opacity:.5">Hastane sisteminde imzala ↗</button></div>
+      <div class="steps" data-steps style="display:none"><span class="now" data-s1>Taslak</span><span data-s2>Hastane sistemine aktarıldı</span><span data-s3>İstem göründü</span></div>
+      <div class="msg" data-m></div></div></div>`,
+  a3: () => `<div class="mk" data-mk="a3">${bar("REA-01 · Yeni istem")}<div class="bd">
+      <div class="fld"><span>İlaç</span><div class="inp">Piperasilin-tazobaktam</div><span>Doz</span><div class="inp">4.5 g IV</div><span>Sıklık</span><div class="inp">8 saatte bir</div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn sm p" data-a="order">İstemi gönder</button><span class="tog" data-a="cut"><i></i>Bağlantı koparsa</span></div>
+      <div class="steps" data-steps style="display:none"><span data-s1>Gönderildi</span><span data-s2>Hastane aldı</span><span data-s3>Eczane onayı</span></div>
+      <div class="msg" data-m></div></div></div>`,
+  a4: () => `<div class="mk" data-mk="a4">${bar("Bağımsız istem")}<div class="bd">
+      <div class="fld"><span>İlaç</span><div class="inp">Parasetamol 1 g IV</div><span>Sıklık</span><div class="inp">gerekirse</div></div>
+      <div class="gap">✕ Eczane stoku: bağlı değil</div><div class="gap">✕ Etkileşim kontrolü: yok</div><div class="gap">✕ Faturalama ve arşiv: yok</div>
+      <button class="btn sm" data-a="save4" style="align-self:flex-start">Kaydet</button>
+      <div class="msg" data-m></div></div></div>`,
+  b1: () => `<div class="mk" data-mk="b1">${bar("REA-01 · Belgeler")}<div class="bd">
+      <div class="drop" data-a="upload">⤒ İmzalı onam formunu buraya bırakın</div>
+      <div class="msg" data-m></div></div></div>`,
+  b2: () => `<div class="mk" data-mk="b2">${bar("REA-01 · İşlemler", '<span class="pill">hastane kaydı</span>')}<div class="bd">
+      <div class="row"><b>Santral kateter takılması</b><span class="pill ok">Onam alındı · 23.09 10:40</span></div>
+      <div class="row click" data-a="missing"><b>Bronkoskopi (planlı · yarın)</b><span class="pill w">Onam kaydı yok</span></div>
+      <div class="msg" data-m></div></div></div>`,
+  b3: () => `<div class="mk" data-mk="b3">${bar("REA-01 · Onam işareti")}<div class="bd">
+      <div class="row"><b>Bronkoskopi (planlı)</b><span class="tog okc" data-a="flag"><i></i>Onam alındı</span></div>
+      <div class="msg" data-m></div>
+      <div class="f" style="color:var(--mute)">Bu bir işarettir. İmzalı belge hastane arşivindedir.</div></div></div>`,
+  b4: () => `<div class="mk" data-mk="b4">${bar('<span class="tabs"><button class="on" data-a="tabY">Yönetim</button><button data-a="tabH">Hasta kartı</button></span>')}<div class="bd">
+      <div data-pane="Y"><div class="row"><span><b>Kamera ile izleme bilgilendirmesi</b><div class="f">şablon v1 · PDF</div></span><span class="pill ok">Hukuk onayı ✓ 20.09</span></div>
+        <div class="row click" data-a="locked" style="margin-top:7px"><span><b>Yara fotoğrafı izni</b><div class="f">şablon v1 · PDF</div></span><span class="pill w">Hukuk onayı bekliyor · kilitli</span></div>
+        <div class="drop" data-a="tpl" style="margin-top:7px;padding:9px">⤒ Boş şablon yükle (imzalı belge değil)</div></div>
+      <div data-pane="H" style="display:none"><div class="row"><span><b>Kamera bilgilendirmesi</b><div class="f">yakınına verildi · 23.09 21:10 · hs.sevda · imzalı nüsha hastane arşivinde</div></span><span class="pill ok">Verildi</span></div>
+        <div class="row" style="margin-top:7px"><span><b>Yara fotoğrafı izni</b><div class="f">şablon hukuk onayı bekliyor</div></span><span class="pill">Kullanılamaz</span></div>
+        <button class="btn sm" data-a="print" style="margin-top:7px">Boş şablonu yazdır</button></div>
+      <div class="msg" data-m></div></div></div>`,
+  c1: () => `<div class="mk" data-mk="c1">${bar("REA-01 · İlaç")}<div class="bd">
+      <div class="row click" data-a="own"><b>Seftriakson 2 g IV</b><span class="pill c">Etkileşim?</span><div class="f">kural: Homunculus tablosu · kaynak: ? · son güncelleme: ?</div></div>
+      <div class="msg" data-m></div></div></div>`,
+  c2: () => `<div class="mk" data-mk="c2">${bar("REA-01 · İlaç", '<span class="pill">hastane kaydı</span>')}<div class="bd">
+      <div class="row click" data-a="his"><b>Furosemid 40 mg IV</b><span class="pill w">Hastane uyarısı</span><div class="f">22:00 dozu · uyarı kaynağı: hastane sisteminin ilaç veritabanı</div></div>
+      <div class="row"><b>Pantoprazol 40 mg IV</b><span class="pill">uyarı yok</span></div>
+      <div class="msg" data-m></div></div></div>`,
+  c3: () => `<div class="mk" data-mk="c3">${bar("Yönetim · Entegrasyonlar")}<div class="bd">
+      <div class="row"><b>Hastane sistemi (sonuç, kabul)</b><span class="pill ok">bağlı</span></div>
+      <div class="row click" data-a="lic" style="opacity:.7"><b>İlaç bilgi veritabanı (lisanslı)</b><span class="pill">bağlı değil</span></div>
+      <div class="msg" data-m></div></div></div>`,
+  c4: () => `<div class="mk" data-mk="c4">${bar("REA-01 · Hasta başlığı")}<div class="bd">
+      <div style="display:flex;gap:5px;flex-wrap:wrap"><span class="chip c" data-a="al">⚠ Alerji: Penisilin 🔒</span><span class="chip w" data-a="iso">✋ Temas izolasyonu</span><span class="chip c" data-a="air">◉ Zor hava yolu</span><span class="chip v" data-a="cpr">♥ Canlandırma: tam</span></div>
+      <div class="row"><b>İlaç listesi</b><span class="f" style="width:auto">alerji kaydı listenin üstünde gösterilir · ilaçla eşleştirilmez</span></div>
+      <div class="msg" data-m></div></div></div>`,
+};
+const MSG = {
+  ro:["", "Bu istem hastane kaydından gelir. Değiştirmek için hastane sisteminde açın. Burada yalnız uygulama işaretlenir."],
+  give:["ok", "22:00 dozu uygulandı olarak işaretlendi · 21:44 · hs.sevda. İstemin kendisi değişmedi."],
+  upload:["c", "onam_bronkoskopi_imzali.pdf yüklendi. Aynı belge artık iki yerde: hastane arşivi ve Homunculus. Hangisi asıl? Bu yüzden B1 hayır."],
+  missing:["w", "Bu işlem için hastane kaydında onam görünmüyor. Belge buradan açılmaz; hastane arşivinde aranır. Bu bir hatırlatmadır, işlemi engellemez."],
+  locked:["w", "Hukuk birimi onayı işaretlenmeden bu şablon kullanıma açılmaz."],
+  tpl:["", "Yalnız boş şablon kabul edilir. İmzalı nüsha hastane arşivine gider."],
+  print:["", "Boş şablon yazdırılıyor (örnek). İmzalandıktan sonra \"Verildi\" işaretlenir; belge hastane arşivine gider."],
+  own:["c", "Bu kuralı kim yazdı? Hangi kaynaktan? En son ne zaman güncellendi? Yeni bir ilaç çıkınca kim ekleyecek? Cevabı olmayan kural, olmayan kuraldan daha tehlikeli."],
+  his:["w", "Hastane sisteminin uyarı metni burada aynen görünür (örnek yer tutucu) · 21:05 · Hekimin hastane sistemindeki kararı ve gerekçesi altında. Homunculus metne bir şey eklemez, çıkarmaz."],
+  lic:["", "Bağlı değil. Yalnız bir gün Homunculus'ta istem yazılırsa gerekir (A3). Bugün istem hastane sisteminde, uyarının doğru yeri de orası."],
+  al:["c", "Alerji: Penisilin · kaynak: hastane kaydı (kabul) · buradan eklenmez, kaldırılamaz."],
+  iso:["w", "Temas izolasyonu · kaynak: hastane kaydı · başlangıç 22.09 · elle de eklenebilir; kaldırırken gerekçe sorulur."],
+  air:["c", "Zor hava yolu · elle eklendi · dr.kamran · 23.09 08:12 · not zorunlu: \"önceki yatışta entübasyon güç olmuş\"."],
+  cpr:["", "Canlandırma kararı yalnız hekimin hastane kaydından gelir. Sistem öneremez, değiştiremez."],
+};
+function say(mk, key, txt) { const m = mk.querySelector("[data-m]"); const [k, t] = txt ? [key, txt] : MSG[key]; m.className = "msg show " + (k || ""); m.textContent = t; }
+
+/* ---------- kart çizimi ---------- */
+const SL = { real:"Gerçek üründe var", proto:"Prototipte", idea:"Öneri", no:"Bilerek yapmıyoruz" };
+function card([id, title, vd, vdl, st, gain, risks, today, mk, dec, why, obj, more]) {
+  return `<div class="card ${vd === "evet" ? "pick" : ""}" id="card-${id}">
+    <div class="hd"><h3><span class="no">${id}</span>${title}</h3><span class="vd ${vd}">${vdl}</span></div>
+    <div><span class="st ${st}">● ${SL[st]}</span></div>
+    <div class="kv"><span>Ne kazandırır</span><div>${gain}</div><span>Bugün</span><div>${today}</div></div>
+    <div class="risks">${risks.map((l, i) => `<span>${RISK_NAMES[i]}</span><span class="lv l${l}"><i></i><i></i><i></i><em>${LV[l]}</em></span>`).join("")}</div>
+    ${MK[mk]()}
+    <div class="dec">
+      <div><b>Karar:</b>${dec}</div>
+      <div class="why"><b>Neden:</b>${why}</div>
+      <div class="obj"><b>İtiraz edersen:</b>${obj}</div>
+      <details><summary>Neden böyle? · küçük ekranda ne var</summary><p>${more}</p></details>
+      <button class="objbtn" data-obj="${id}">İtiraz ediyorum · ${id}</button>
+    </div></div>`;
+}
+document.getElementById("cardsA").innerHTML = A.map(card).join("");
+document.getElementById("cardsB").innerHTML = B.map(card).join("");
+document.getElementById("cardsC").innerHTML = C.map(card).join("");
+document.getElementById("types").innerHTML = `<div class="trow h"><div>İstem türü</div><div>Nerede yazılır</div><div>Homunculus'ta ne olur</div><div>Neden</div></div>` +
+  TYPES.map(([t, k, where, ours, why, st]) => `<div class="trow"><div><b>${t}</b><div style="margin-top:4px"><span class="st ${st}">● ${SL[st]}</span></div></div>
+    <div><span class="lab">Nerede yazılır</span><span class="src ${k}">${where}</span></div><div><span class="lab">Homunculus'ta ne olur</span>${ours}</div><div class="m"><span class="lab">Neden</span>${why}</div></div>`).join("");
+document.getElementById("open").innerHTML = OPEN.map(([q, n, who, ref], i) => `<div><div><b>${i + 1}. ${q}</b></div><div class="m">${n}</div><div><span class="pill">${who}</span> <span class="pill i">${ref}</span></div></div>`).join("");
+
+/* ---------- etkileşim ---------- */
+const obj = new Set();
+function drawObj() {
+  const L = [...obj].sort();
+  document.getElementById("objLine").innerHTML = `İtiraz ettiğim madde: <b>${L.length ? L.join(", ") : "yok"}</b>`;
+  document.querySelectorAll("[data-obj]").forEach(b => b.classList.toggle("on", obj.has(b.dataset.obj)));
+}
+function toast(t) { const e = document.getElementById("toast"); e.textContent = t; e.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("show"), 1800); }
+
+document.addEventListener("click", (e) => {
+  if (e.target.id === "th") { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "gun" ? "" : "gun"; try { localStorage.setItem("h17-theme", r.dataset.theme); } catch (x) {} return; }
+  if (e.target.id === "tel") { document.body.classList.toggle("tel"); e.target.classList.toggle("on"); return; }
+  if (e.target.id === "clearObj") { obj.clear(); drawObj(); return; }
+  if (e.target.id === "copy") { const t = document.getElementById("objLine").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("Kopyalandı: " + t), () => toast("Kopyalanamadı; satırı elle seç")); return; }
+  const ob = e.target.closest("[data-obj]"); if (ob) { const id = ob.dataset.obj; obj.has(id) ? obj.delete(id) : obj.add(id); drawObj(); return; }
+  const a = e.target.closest("[data-a]"); if (!a) return;
+  const mk = a.closest(".mk"), act = a.dataset.a;
+  switch (act) {
+    case "ro": case "upload": case "missing": case "locked": case "tpl": case "print": case "own": case "his": case "lic": case "al": case "iso": case "air": case "cpr": say(mk, act); break;
+    case "give": if (a.classList.contains("done")) { say(mk, "ro"); break; } a.className = "dose done"; a.textContent = "22:00 ✓"; say(mk, "give"); break;
+    case "draft": { const s = mk.querySelector("[data-steps]"); s.style.display = "flex"; const b = mk.querySelector('[data-a="send"]'); b.disabled = false; b.style.opacity = 1; a.disabled = true; a.style.opacity = .5;
+      say(mk, "w", "Taslak hazır. Bu henüz bir istem DEĞİL: hastane sisteminde hekim imzalamadıkça laboratuvar görmez."); break; }
+    case "send": { if (a.dataset.st === "1") { mk.querySelector("[data-s2]").className = "done"; mk.querySelector("[data-s3]").className = "done"; a.disabled = true; a.style.opacity = .5;
+        say(mk, "ok", "Hastane kaydında istem göründü · 21:52 · dr.kamran. Taslak kapandı."); break; }
+      a.dataset.st = "1"; a.textContent = "Hastane kaydını kontrol et"; mk.querySelector("[data-s1]").className = "done"; mk.querySelector("[data-s2]").className = "now";
+      say(mk, "w", "Taslak hastane sistemine aktarıldı. İstem olması için orada imzalanmalı. İmzalanmazsa 30 dk sonra hatırlatılır."); break; }
+    case "cut": a.classList.toggle("on"); break;
+    case "order": { const s = mk.querySelector("[data-steps]"); s.style.display = "flex"; const cut = mk.querySelector('[data-a="cut"]').classList.contains("on");
+      mk.querySelector("[data-s1]").className = "done";
+      if (cut) { mk.querySelector("[data-s2]").className = "bad"; mk.querySelector("[data-s3]").className = "bad";
+        say(mk, "c", "Hastane sistemi yanıt vermedi. İstem ulaştı mı? Eczane gördü mü? Hekim bilmiyor, hemşire ilacı bekliyor. Bu belirsizliğin sahibi biz oluruz."); }
+      else { mk.querySelector("[data-s2]").className = "done"; mk.querySelector("[data-s3]").className = "now";
+        say(mk, "", "Gönderildi 21:44 · hastane aldı · eczane onayı bekleniyor. Etkileşim ve doz kontrolünü kim yaptı? Bu akışta biz yapmak zorundayız."); }
+      break; }
+    case "save4": say(mk, "c", "Kaydedildi. Ama bu istemi eczane görmüyor, stoktan düşülmüyor, etkileşim kontrol edilmedi."); break;
+    case "flag": { a.classList.toggle("on"); a.classList.contains("on") ? say(mk, "ok", "Onam alındı · işaretleyen hs.sevda · 21:40 · belge: hastane arşivi") : say(mk, "w", "İşaret kaldırıldı. Gerekçe sorulur ve kayda yazılır."); break; }
+    case "tabY": case "tabH": { const k = act === "tabY" ? "Y" : "H"; mk.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b === a));
+      mk.querySelectorAll("[data-pane]").forEach(p => p.style.display = p.dataset.pane === k ? "" : "none"); mk.querySelector("[data-m]").className = "msg"; break; }
+  }
+});
+(function () { let t = null; try { t = localStorage.getItem("h17-theme"); } catch (x) {}
+  if (t !== null) document.documentElement.dataset.theme = t;
+  else if (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) document.documentElement.dataset.theme = "gun"; })();
+drawObj();
+</script>
+</body>
+</html>

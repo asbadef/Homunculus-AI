@@ -1,0 +1,1481 @@
+TOPLAM benzersiz form: 3188
+
+== MODÜL SAYIMLARI ==
+ 299  Stok/Eczane/Satınalma (kapsam dışı)
+  39  Sterilizasyon/Biyomedikal/Cihaz (kapsam dışı)
+ 143  Hakediş/Muhasebe/ERP finans (kapsam dışı)
+ 145  Laboratuvar (kapsam dışı-ileri)
+  83  Radyoloji/Tetkik (kapsam dışı-ileri)
+  57  Hasta Kabul / Ön büro (BİZİM)
+ 346  Vezne / Tahsilat (BİZİM)
+  86  Medikal Muhasebe / Kurum (BİZİM)
+ 377  Tedavi / Muayene / Doktor (BİZİM)
+  67  Yatan / Hemşire / Bakım (kısmen BİZİM)
+  62  Randevu (BİZİM)
+  70  İK / Personel (BİZİM)
+ 239  Admin / Tanım / Güvenlik / Sistem (BİZİM)
+ 136  Rapor / İstatistik (BİZİM-kısmi)
+  14  Kalite / Enfeksiyon / Memnuniyet (kapsam dışı-ileri)
+  68  E-Nabız/E-İmza/Entegrasyon/Kiosk/Mobil (kapsam dışı)
+ 957  Diğer / sınıflanamayan
+
+
+== BİZİM KAPSAM MODÜLLERİNİN FORM LİSTELERİ ==
+
+--- Hasta Kabul / Ön büro (BİZİM) (57) ---
+  Ayaktan Hasta İşlemleri
+  Doktor Kara Liste
+  HES Kodu Sorgulama
+  Hasta Araç Plaka Listesi
+  Hasta Birleştirme
+  Hasta Değişim Logu
+  Hasta Finans
+  Hasta KVKK Onayı
+  Hasta Kabul
+  Hasta Kabul Hizmet
+  Hasta Kabul Provizyon
+  Hasta Kayıt
+  Hasta Kayıt Kabul Bilgi Formu
+  Hasta Onam Formu
+  Hasta Onam Formu Giriş
+  Hasta Onay Formu
+  Hasta Protokol
+  Hasta Protokol Listesi
+  Hasta Refakatçi
+  Hasta Refakatçi Formu
+  Hasta Refakatçi Listesi
+  Hasta Referans Kişiler
+  Hasta Referans Listesi
+  Hasta Referans Protokol Seçim
+  Hasta Sevk
+  Hasta Sevk Listesi
+  Hasta Tercüman Listesi
+  Hasta Uyarı
+  Hasta Yakınları
+  Hasta Yakını
+  Hasta Ön Kayıt
+  Hasta İşlemleri
+  KVKK Red Formu
+  Kara Liste
+  Kara Liste Kayıt
+  Kurum Değişiklik
+  Kurum Değişiklik Onay
+  Medula Reçete Yatan Hasta Onayı
+  Merkezi Hasta Bilgileri
+  Merkezi Hasta Birleştirme
+  Pediarik Hematoloji Onkoloji Ayaktan Hasta Kabul ve Tanılama
+  Protokol Birleştirme
+  Pyxis Hasta Kayıt
+  Refakatçi Gerekçe
+  Refakatçi Listesi
+  Tercüman İhtiyacı Olan Randevular
+  Toplu Hasta Kayıt
+  Toplu Hasta Not Girişi
+  Yatan Hasta Paneli(Hasta Kabul)
+  Yatan Hasta İşlemleri
+  Yenidoğan Epikriz
+  Yenidoğan Hasta Nakil Bilgileri
+  Yenidoğan Tanılama Ve Takip Listesi
+  Yenidoğan Tanılama ve Takip Formu
+  Yenidoğan Yoğun Bakım Hasta Tanılama
+  Yenidoğan Yoğun Bakım Hasta Tanılama Formu
+  Özel Hasta Bilgileri
+
+--- Vezne / Tahsilat (BİZİM) (346) ---
+  Allianz Provizyon İptal Açıklama
+  Alt Ödeme Tipi
+  Alt Ödeme Tipi Listesi
+  Analitik Dönem Analizi
+  Anlaşmalı Kurum Faturası
+  Avans
+  Avans Aktar
+  Avans İade
+  Avans İadesi
+  Axapta SGK Fatura Alanları Aktarım Listesi
+  Banko Vezne Fatura Analizi
+  Bankosuz Hastanecilik
+  Barkodla Fatura Etiketleme
+  Barkodla Fatura Teslim
+  Bekleyen Avans
+  Bekleyen Avans Listesi
+  Borçlu İşlemler
+  Büyük Boy Fatura
+  Claimer Provizyon İşlemleri
+  Datasoft Fatura Aktarım
+  Dekont İade
+  Diş Tedavi Planı - Vezne
+  Diş Tedavi Ödeme Plani
+  Diş Tedavi Ödeme Planı Tahsilat
+  Diş Tedavi İndirim
+  Dosya Paket Ve Ödeme Sorgulama
+  Dönem
+  Dönem Bilgileri
+  Dönem Dışı İşlemler
+  Dönem Listesi
+  Dönem Onaylama
+  Dönem Onaylama (Çoklu)
+  Dönem Seçimi
+  Dönem İşlemleri
+  Dörtte Bir Fatura
+  E-Fatura
+  E-Fatura Aktarım
+  E-Fatura Gönderim Detay
+  E-Fatura Numarator Listesi
+  E-Fatura Numaratör
+  EDM E-Fatura Aktarım
+  ETA Fatura Aktarım
+  Eriyen Fix Borç Listesi
+  Fatura
+  Fatura - Tahsilat
+  Fatura Aktarım
+  Fatura Aktarım Listesi (MPH)
+  Fatura Aktarım Raporu
+  Fatura Analiz Raporu
+  Fatura Analizi
+  Fatura Doktor Takip
+  Fatura Dosya Gonderim Listesi
+  Fatura Dönem
+  Fatura Dönem Listesi
+  Fatura Düzenleme
+  Fatura Ekle/Güncelle
+  Fatura Etiket
+  Fatura Etiket Listesi
+  Fatura Etiket Seçim
+  Fatura Evrak Kuruma Teslim
+  Fatura Evrak Takip
+  Fatura Evrak Takip Açıklama
+  Fatura Evrak Takip Detay
+  Fatura Evrak Takip Kargo Bilgileri
+  Fatura Evrak Teslim
+  Fatura Gönderim Log
+  Fatura GİB Gonderim Listesi
+  Fatura Hizmet Dökümü
+  Fatura Kalem Doktor Listesi
+  Fatura Kalem Listesi
+  Fatura Kalem Raporu
+  Fatura Kalem Ödeme
+  Fatura Kayıt Analizi
+  Fatura Kişi Bazlı Analiz Listesi
+  Fatura Kuruma Teslim Listesi
+  Fatura Listesi
+  Fatura Listesi (Datecs)
+  Fatura Log
+  Fatura Pasaport Takibi
+  Fatura Seçim
+  Fatura Tahsilat İşlemleri
+  Fatura Tipi Seçim
+  Fatura Çoklu Seçim
+  Fatura Ödeme
+  Fatura Ödeme Eşleştir
+  Fatura Ödeme Listesi
+  Fatura Ödeme Takibi
+  Fatura Ödeme İşlemi
+  Fatura Özellik Seçim
+  Fatura İptal Analizi
+  Fatura İşlemleri
+  Fatura Şablon
+  Fatura Şablon Listesi
+  Fatura-Tahsilat Listesi
+  Faturalanacak Protokol Seçim
+  Faturalanacak İşlem Seçim
+  Faturalanmamış Protokol Analizi
+  Faturalanmamış Tahsilat Analizi
+  Faturalanmayan İşlem Listesi
+  Faturalar
+  Faturasız Tahsilat Analizi
+  Fix Borcu Seçim
+  Fiyat Teklifleri
+  GIB Gelen Fatura Kalemleri Eşleştirme
+  GIB Gelen Fatura Kalemleri Eşleştirme Listesi
+  Gelen E-Fatura Listesi
+  Gelen E-Fatura İşlemleri
+  Gelen İade
+  Genel Fatura Analizi
+  Genel Fatura Analizi Detay
+  Genel Fatura Faaliyet Raporu
+  Giden E-Fatura İşlemleri
+  Hasta Avans Girişi
+  Hasta Borç Takip
+  Hasta Fatura
+  Hasta Faturası
+  Hasta İndirim Analizi
+  Hastadan İade
+  Hastanın Teklifleri
+  Havuz Ödeme Aktarım
+  Havuz Ödeme Aktarımı
+  Havuz Ödeme Bloke Girişi
+  Havuz Ödeme Fatura Eşleştir
+  Havuz Ödeme Girişi
+  Havuz Ödeme/Fatura Eşleştirme
+  Havuz Ödemeler
+  Hemşire İade
+  Hukuksal Takip Faturaları
+  Hızlı Tahsilat
+  Iscala Fatura Aktarım
+  Kampanya Kupon Girişi
+  Kapalı Dönem Vezne Bilgileri
+  Katılım Payı (İade) Aktarım
+  Katılım Payı Aktar
+  Katılım Payı Düzenleme
+  Katılım Payı İndirim
+  Kiosk Provizyon Kurum Ekle
+  Kupon Kod Onay
+  Kurum Avans Listesi
+  Kurum Detaylı Fatura Analizi
+  Kurum Fatura
+  Kurum Fatura Analizi
+  Kurum Faturalama
+  Kurum Faturalama Yeni
+  Kurum Provizyon
+  Kurum Provizyon Islem Tipleri
+  Kurum İndirim
+  Kurumsal Faturalama
+  Kurumsal Faturalama Analizi
+  Kurumsal Faturalama Filtre
+  Kurumsal Faturalama Raporu
+  Kurumsal Faturalama Raporu (DDO)
+  Kurumsal Faturalama Şablon
+  Logo Fatura Aktarım
+  Logo GO Fatura Aktarım
+  Logo GO Tahsilat Aktarım
+  Logo Tahsilat Aktarım
+  Medula Dönem
+  Medula Dönem Analizi
+  Medula Dönem Eşleştirme
+  Medula Dönem Listesi
+  Medula Dönem Takip Listesi
+  Medula Fatura Dönemi
+  Medula Fatura Dönemi Listesi
+  Medula Fatura Oku
+  Medula Fatura Tutar Oku
+  Medula Faturalama Raporu (DDO)
+  Medula Katılım Payı Ücreti
+  Medula Toplu Fatura Tutar Onay
+  Merkezi Fatura Listesi
+  Merkezi Teklif Değerlendirme
+  Merkezi Teklif Ekle/Güncelle
+  Merkezi Teklif İstek Ekle/Güncelle
+  Merkezi Teklif İstek Listesi
+  Mikro Eksik Tahsilat Aktarim ASG
+  Mikro Fatura Aktarım
+  Mikro Fatura Aktarım ASG
+  Mikro Tahsilat Aktarım
+  Mikro Tahsilat Aktarım ASG
+  Netsis Fatura Aktarım
+  Netsis Tahsilat Aktarım
+  OSS Provizyon
+  Omnitech Avans Listesi
+  Omnitech Fatura Listesi
+  Onay Bekleyen İade İstek Listesi
+  Onay Bekleyen İadeler
+  Onay Bekleyen İndirimler
+  Online Ödeme Listesi
+  Online Ödemeler
+  Oracle Fatura Aktarım
+  Oracle Tahsilat Aktarım
+  Orka Fatura Aktarım
+  Orka Tahsilat Aktarım
+  Oto.Provizyon
+  Oto.Provizyon Güncelleme Listesi
+  Para İadesi Makbuzu
+  Personel Borç Takip Analizi
+  Personel Eğitim Katılım Analizi
+  Pos İşlem Ödeme Listesi
+  Pospartum Depresyon
+  Pospartum Depresyon Skorlama
+  Protein Ödeme Sorgulama
+  Protokol Borç Takip
+  Protokol Borç Takip Listesi
+  Protokol Fatura Durumu
+  Protokol Fatura-Tahsilat Analizi
+  Provizyon
+  Provizyon Bekleyen Listesi
+  Provizyon Dosya Ekleme
+  Provizyon Dosya İşlemleri
+  Provizyon Kurum Listesi
+  Provizyon Oran Tanımı
+  Provizyon Seçim
+  Provizyon Takip
+  Provizyon Tarihçe
+  Provizyon İndirim Şablonları
+  Provizyon İptal Açıklama
+  Provizyon-Tedavi Tipi Açıklama
+  Provizyonu Faturaya Çevir Listesi
+  SAP Fatura Aktarım
+  SAP Tahsilat Aktarım
+  SGK Dönem E-Fatura
+  SGK Dönem Fatura
+  SGK Dönem Faturaları
+  SGK Fatura Kayıt İşlem Kuyruğu Raporu
+  SGK Faturalanmış Hasta Listesi
+  SGK Hasta Faturası
+  SGK Tek Fatura
+  SGK Toplu Fatura Dökümü
+  SGK Toplu Faturalama Listesi
+  Satış İade
+  Satış İade Listesi
+  Silinmiş Provizyon, Dosya Listesi
+  Tahilat-Fatura(Yeni)
+  Tahsil Edilecek Faturalar
+  Tahsilat
+  Tahsilat - Fatura
+  Tahsilat Aktarim
+  Tahsilat Aktarım
+  Tahsilat Aktarım Listesi (MPH)
+  Tahsilat Analiz Raporu
+  Tahsilat Analizi
+  Tahsilat Bilgileri Listesi
+  Tahsilat Detay
+  Tahsilat Düzenleme
+  Tahsilat Makbuzu
+  Tahsilat Ödeme Bilgileri
+  Tahsilat/Avans Listesi
+  Tahsilatsız Fatura Analizi
+  Tedavi Teklif
+  Tedavi Teklif Dökümü
+  Tedavi Teklif Hizmet Dökümü
+  Tedavi Teklif Kalem
+  Tedavi Teklif Seçim
+  Tedavi Teklif İşlemleri
+  Teklif Değerlendirme
+  Teklif Değerlendirme Formu
+  Teklif Dökümü
+  Teklif Ekle/Güncelle
+  Teklif Formu
+  Teklif Hizmet Döküm
+  Teklif Kayit
+  Teklif Listesi
+  Teklif Tarihçe
+  Teklif Yönetimi
+  Teklif İstek Ekle/Güncelle
+  Teklif İstek Formu
+  Teklif İstek Listesi
+  Teklif İstek Listesi Yeni
+  Teklif İşlemleri
+  Teklif Şablon Listesi
+  Teklif Şablonu
+  Teklifler
+  Toplu Fatura
+  Toplu Fatura Detay
+  Toplu Fatura İşlemleri
+  Toplu Provizyon Alma
+  Toplu Provizyon Güncelleme
+  Toplu Provizyon Güncelleme (Yeni)
+  USS Ambulans Fatura Bilgisi
+  Vezne 360
+  Vezne Açık Hesap Analizi
+  Vezne Borç Takip
+  Vezne Donem Kapama Ve Onay
+  Vezne Donem Protokol Islemleri
+  Vezne Dönem
+  Vezne Dönem Aç
+  Vezne Dönem Devir
+  Vezne Dönem Düzenleme
+  Vezne Dönem Kapama
+  Vezne Dönem Kapama Onaya Gönderme Nedenleri
+  Vezne Dönem Kasa Hareket Girişi
+  Vezne Dönem Kasa Hareketleri
+  Vezne Dönem Nakit Detay
+  Vezne Genel Iptal Analizi
+  Vezne Genel Iptal Analizi Detay
+  Vezne Paneli
+  Vezne Tahakkuk Tahsilat Analizi
+  Vezne İade Departman Listesi
+  Vezne İade Departman Tanım
+  Vezne İş Havuzu
+  Vezne İşlem İptal Analizi
+  Vezne İşlemleri
+  ÖSS ve AK Fatura İşlemleri
+  Ödeme
+  Ödeme Bilgileri
+  Ödeme Durumu
+  Ödeme Emri
+  Ödeme Fatura Eşleştirme Tarihçe
+  Ödeme Giriş - Çıkış
+  Ödeme Girişi
+  Ödeme Grubu
+  Ödeme Listesi
+  Ödeme Planı
+  Ödeme Takip
+  Ödeme Yazısı
+  Ödeme İşlem Listesi
+  Ödeme İşlemleri
+  Ödemeler
+  Ön Provizyon
+  İade
+  İade Fatura
+  İade Fatura Talebi
+  İade Onay Formu
+  İade Onay Seviyesi
+  İade Talebi
+  İade Taleplerim
+  İcmal Fatura
+  İcmal Faturalama
+  İcmal Faturası
+  İcmal Faturası Detaylı
+  İndirim
+  İndirim Analizi
+  İndirim Analizi Detay
+  İndirim Döküman Takibi
+  İndirim Düzenleme
+  İndirim Onay
+  İndirim Onay Formu
+  İndirim Onay Grubu Alıcı Tanımı
+  İndirim Onay Grubu Listesi
+  İndirim Onay Grubu Tanım
+  İndirim Onay Listesi
+  İndirim İşlem Tipi
+  İndirimler
+  İptal Faturalar
+  İptal Ödemeler
+
+--- Medikal Muhasebe / Kurum (BİZİM) (86) ---
+  (Anlaşmalar) Fiyatlandırma
+  Allianz İcmal Sorgulama
+  Anlasma
+  Anlaşma
+  Anlaşma Fiyat Değişken
+  Anlaşma Fiyat Değişkenleri
+  Anlaşma Fiyatları
+  Anlaşma Formul Listesi
+  Anlaşma Formul Notu
+  Anlaşma Formül
+  Anlaşma Formül Aktarım
+  Anlaşma Formül Kopyalama
+  Anlaşma Formül Tarihçe
+  Anlaşma Grubu
+  Anlaşma Hak Sahibi Tanım
+  Anlaşma Kriter Tanım
+  Anlaşma Kullanımlarım
+  Anlaşma Listesi
+  Anlaşma Paket Aktarım
+  Anlaşma Paket Listesi
+  Anlaşma Paket İçerik
+  Anlaşma Seçim
+  Anlaşma Tanım
+  Anlaşma Tarihçe
+  Anlaşma İçerikleri
+  Anlaşmalarım
+  Anlaşmalı Kurumlar
+  Barkodla İcmale Atama
+  Claimer Kurum Tanım
+  Doktor Anlaşmaları
+  E-Rapor KurumSeçim
+  Entgere Kurum Listesi
+  Hasta Çalıştığı Kurum
+  Hasta Çalıştığı Kurum Listesi
+  Havuz Anlaşma
+  Hesaplanmış Anlaşma Fiyatları
+  Kiosk Kurum
+  Kiosk Kurum Listesi
+  Kurum
+  Kurum  İcmal Seçim
+  Kurum Açıklaması
+  Kurum Bazlı Ciro
+  Kurum Checkin Ekle
+  Kurum Detay
+  Kurum Ekle
+  Kurum Etiket
+  Kurum Etiket Listesi
+  Kurum Etiket Secim
+  Kurum Evrak Süresi Tanımı
+  Kurum Grubu
+  Kurum Grubu Listesi
+  Kurum Hasta
+  Kurum Hasta Listesi
+  Kurum Havale Dağıtım
+  Kurum Hizmet
+  Kurum Hizmet Fiyat
+  Kurum Hizmet Listesi
+  Kurum Hizmet Seçim
+  Kurum Mustehaklik Sorgulama
+  Kurum Seçim (Çoklu)
+  Kurum Seçim Kuralı
+  Kurum Tanım Bilgileri
+  Kurum Veri Aktarım Onayı
+  Kurum Özellik Aktarım
+  Kurum Özellik Yönetimi
+  Kurum İçi Formlar Listesi
+  Kurum Şablonları
+  Kuruma Ait Olmayan İşlem Listesi
+  Kurumsal Mesaj
+  Kurumsal Mesaj Listesi
+  Kurumsal Mesajlar
+  Kurumsal Seçim
+  Kurumsal Vade Alacak Raporu
+  Merkezi Anlaşma Listesi
+  Merkezi Anlaşma Tanım
+  Merkezi Kurum
+  Merkezi Kurum Listesi
+  PortTSS  İcmal İşlemleri
+  Sık Kullanılan Kurumlar
+  İcmal
+  İcmal Birleştir
+  İcmal Dökümü
+  İcmal Hizmet Döküm
+  İcmal Hizmet Döküm(Tümü)
+  İcmal Listesi
+  İcmal Seçim
+
+--- Tedavi / Muayene / Doktor (BİZİM) (377) ---
+  ASOS Bilgi Formu Tanımı
+  Aktivite Tanım
+  Alkol Muayene
+  Alkol Muayene Formu
+  Ameliyat
+  Ameliyat Bilgileri
+  Ameliyat Bitiş Bilgileri
+  Ameliyat Ekip Şablon Seçim
+  Ameliyat Ekip Şablon Tanım
+  Ameliyat Ekip Şablonları
+  Ameliyat Hizmet Oran Tanımı
+  Ameliyat Hizmet Şablon Listesi
+  Ameliyat Hizmet Şablon Seçim
+  Ameliyat Hizmet Şablon Tanımı
+  Ameliyat Hizmet Şablonları
+  Ameliyat Listesi
+  Ameliyat Notu
+  Ameliyat Notu (Comed EMR)
+  Ameliyat Paket Ekle
+  Ameliyat Paket Hizmeti
+  Ameliyat Paket İçerik
+  Ameliyat Paket Şablon
+  Ameliyat Paket Şablon Listesi
+  Ameliyat Paket Şablon İçerik
+  Ameliyat Paketleri
+  Ameliyat Planları
+  Ameliyat Randevu
+  Ameliyat Randevu Kayıt
+  Ameliyat Randevusu
+  Ameliyat Rapor
+  Ameliyat Rapor Şablon Seçim
+  Ameliyat Rapor Şablonları
+  Ameliyat Raporu
+  Ameliyat Seçim
+  Ameliyat Tarihçe
+  Ameliyat İstek
+  Ameliyat İçerik Düzenle
+  Ameliyat İçerik Şablonu
+  Ameliyat İşlem
+  Ameliyathane
+  Ameliyathane Durumu
+  Ameliyathane Ek Süre
+  Ameliyathane Grubu
+  Ameliyathane Hizmet İşlem
+  Ameliyathane Hizmetleri Şablon Tanımı
+  Ameliyathane Listesi
+  Ameliyathane Tanım
+  Ameliyathane Çalışma Takvimi
+  Anamnez Detay
+  Anamnez Seçenek
+  Anamnez Seçenek Seçim
+  Anamnez Veri Tipi
+  Anamnez Veri Tipi Listesi
+  Anestezi Değerlendirme
+  Anestezi Değerlendirme Formu
+  Anestezi Değerlendirme Listesi
+  Anestezi Hizmet Işlem
+  Anestezi Öncesi Değerlendirme
+  Approved IPAC Orders
+  Bakım Planı Alt Bölüm Tanım
+  Bakım Planı Bulgu Tanım
+  Bakım Planı Tanım
+  Bakım Planı Tanımlama
+  Bakım Planı Şablon Tanım(Virginia Henderson)
+  Bekleyen Ameliyat İşlemleri
+  Comed Epikriz Oluşturma
+  ComedEMR Order Listesi
+  Değişken Tanimlari
+  Değişken Tanımı
+  Dijital İmza Döküman Alan Tanımı
+  Dijital İmza Tanım
+  Diyetisyen Muayene
+  Diyetisyen Muayene Ölçümleri
+  Diğer Order Takip Çizelgesi
+  Diş Ağrı Bilgisi
+  Diş Fiyatlandırma
+  Diş Fiyatlandırma Listesi
+  Diş Fiyatlandırma Log
+  Diş Hizmet Seçim
+  Diş Icon İndeks
+  Diş Konsultasyon
+  Diş Konsultasyon Raporu
+  Diş Muayene
+  Diş Muayene Raporu
+  Diş Protez Takip
+  Diş Protez Takip Detay
+  Diş Protez Takip Listesi
+  Diş Protez İşlem Türü
+  Diş Randevu Kayıt
+  Diş Randevusu
+  Diş Tedavi
+  Diş Tedavi Planlama
+  Diş Tedavi Planları
+  Diş Tedavi Teşhiş - Planlama
+  Diş Tedavi Türü
+  Diş Tedavi İstek
+  Diş Teshis
+  Diş Teşhis
+  Diş Teşhiş - Tedavi - Planlama
+  Diş İşlem Seçenekleri
+  Diş Şeması
+  Donör Muayene
+  Dış Hizmetlerin Mutabakatı
+  E-Rapor Tanımı
+  E-Reçete
+  Ek Evrak Tanım
+  Emr Ameliyat İstekleri
+  Endişe Durumu
+  Epikriz
+  Epikriz Bilgisi
+  Epikriz Düzenleme
+  Epikriz Geçmişi
+  Epikriz Listesi
+  Epikriz Paneli
+  Epikriz Rapor Şablonları
+  Epikriz Şablon
+  Epikriz Şablon Listesi
+  Epikriz Şablon Seçim
+  Erişkin Hasta Tanılama
+  Erişkin Hasta Tanılama Formu
+  Etiket Tanımları
+  FTR Muayene Değerlendirme Raporu
+  FTR Muayene Raporu
+  FTR Seans Tanım Listesi
+  FTR Tedavi Formu
+  Favori Tanılar
+  Fiyat Ünvan Tanımı
+  Fiziksel Muayene
+  Gecikmiş Epikrizlerim
+  Genel Filtre Tanım
+  Genel Muayene
+  Genel Muayene Özet
+  Genel Tanım
+  Genel Tanım Listesi
+  Genel Tanımlar
+  Genel Tanımları
+  Genel Yoğun Bakım Üriner Kateter İlişkili Üriner Sistem Enfeksiyonu Takip Formu
+  Geçmiş Epikriz Listesi
+  Geçmiş Muayene
+  Görüşmeci Muayene
+  Göz Anamnez Rapor
+  Göz Epikriz
+  Göz Epikriz Listesi
+  Göz Muayene Tarihçe
+  Gözlük Reçetesi
+  Günlük Muayene Kota Analizi
+  Güvenlik Raporlama Sistemi
+  Güvenlik Raporlama Sistemi Bildirimi
+  Güvenlik Raporlama Sistemi Listesi
+  Güvenlik Tanimlari
+  Güvenlik Tanımları
+  Hasta Anamnez Aktarım
+  Hasta Fiziksel Muayene Bilgileri
+  Hasta Muayene Formu
+  Hasta Order Geçmişi
+  Hasta Reçete Bilgisi
+  Hasta Takip(Anestezist)
+  Hastanın Protokol Listesi
+  Havuz Tanımı
+  Hematoloji Muayene
+  Hematoloji Protokol Tanım
+  Hematoloji Tedavi Başlat
+  Hematoloji Tedavi Plan Tanım
+  Hematoloji Tedavi Planları
+  Hematoloji Tedavi Protokolleri
+  Hizmet Order Listesi
+  Hizmet İstem
+  Hizmet İstem Tipi
+  Hizmet İstem Tipi Listesi
+  Hizmet İstem Uygulama
+  Hizmet Şablon Tanım
+  ICD-O Tanım
+  ICD-O Tanım Listesi
+  Ipac Order
+  KDS Tanım
+  KDS Tanım Listesi
+  Kadın Doğum Muayene Raporu
+  Kapak Tanımı
+  Kargo Tanim
+  Kategori Tanım
+  Kategori Tipi Tanımı
+  Kaynak Grubu Tanım
+  Kemoterapi Tedavi Başlat
+  Kemoterapi Tedavi Başlat 2
+  Kemoterapi Tedavi Formu
+  Kemoterapi Tedavi Planları
+  Kesi Kural Tanım
+  Konsultasyon
+  Konsultasyon Listesi
+  Konsultasyon Raporu
+  Konsültasyon
+  Kontrol Muayenesi
+  Kullanıcı Sayfa Kontrol Tanımlamaları
+  Kullanıcı Sayfa Kontrol Tanımı
+  Kur Tanımı
+  Kural Tanım
+  Kural Tanım Grubu
+  Kural Tanım Listesi
+  Kıdem Tanım
+  Lab İstem Formu
+  Loglama Tanımları
+  Lokalizasyon Tanim Listesi
+  Lokalizasyon Tanım
+  Medikal Tedavi
+  Medikal Tedavi Genel Rıza Belgesi
+  Medula Ameliyat Bilgileri
+  Medula Diş Taahhut
+  Medula Medula Kanser Tanı İşlemleri
+  Medula Optik Reçete Şablon
+  Medula Rapor Şablon Tanımı
+  Medula Reçete Açıklama
+  Medula Reçete Listesi
+  Medula Reçete Okuma
+  Medula Reçete Sorgula
+  Medula Reçete İşleri
+  Medula Sevk Mutat Dışı Araç Rapor
+  Medula Tanı Seçim
+  Medula Teşhis Listesi Oluştur
+  Medula Teşhis Seçim
+  Medula Teşhis ve Tanı Seçim
+  Medula Yurtdışı Yardım Hakkı Sorgulama
+  Muayene
+  Muayene Adres Bilgisi
+  Muayene Analizi
+  Muayene Bekleme Analizi
+  Muayene Bulasici Hastalik Olasi Vaka Bildirim
+  Muayene Bulaşıcı Hastalık Kesin Vaka Bildirim
+  Muayene Detay
+  Muayene Diyabet Bildirim
+  Muayene HIV Tespit
+  Muayene Kanser Bildirim
+  Muayene Kronik Hastalik Bildirim
+  Muayene Kuduz Profilaksi İzlem
+  Muayene Kuduz Şüpheli Temas Bildirim
+  Muayene Lohusa İzlem
+  Muayene Madde Bağımlılığı Bildirim
+  Muayene Mesleki Maruziyet
+  Muayene Notu
+  Muayene Obezite Bildirim
+  Muayene Paraziter Hastalik Bildirim
+  Muayene Resimleri
+  Muayene Sayıları Raporu
+  Muayene Seçenekleri
+  Muayene Sıtma
+  Muayene Verem Bildirim
+  Muayene Zehirlenme
+  Muayene Zorunlu Alan
+  Muayene Zorunlu Alan Listesi
+  Muayene Özel Durum
+  Muayene Özellik İzlem Listesi
+  Muayene Şablon
+  Muayene Şablon Listesi
+  MultiDisipliner Disipliner Konsey Raporu
+  MultiDisipliner Konsey Rapor Doktor Şablon
+  MultiDisipliner Konsey Rapor Listesi
+  MultiDisipliner Konsey Rapor Onay
+  MultiDisipliner Konsey Raporu
+  MultiDisipliner Toplanti Tutanagi
+  Multidisipliner Konsey Tipi
+  Not Tanım
+  Nöbet Listem
+  Nöbetçi Konsultasyon Doktor
+  Nöbetçi Konsultasyon Doktor Listesi
+  Onkoloji Protokol Tanım
+  Order
+  Order Analiz
+  Order Değerlendirme
+  Order Diğer Rapor
+  Order E-İmza
+  Order Formu
+  Order Güncelleme
+  Order Listesi
+  Order Onay İşlemleri
+  Order Onaylama(Yeni)
+  Order Pas Geç Karekod Girişi
+  Order Rapor
+  Order Takip Çizelgesi
+  Order Tanım
+  Order Tanım Listesi
+  Order Transfer Rapor
+  Order Uyari
+  Order Uygulama
+  Order Uygulama Analizi
+  Order Uygulama Bilgileri
+  Order Uygulama Bilgisi
+  Order Uygulama Bilgisi Tanımları
+  Order Uygulama Raporu
+  Order Uygulama Zaman Şablonu
+  Order İşlemleri
+  Organizasyon Şeması Tanım
+  Ortodonti Tedavi Hizmet Takip
+  Otomatik Hizmet Tanım Listesi
+  Otomatik Hizmet Tanımı
+  Otomatik Oluşan ICD Tanımı
+  Paket Dağılım Şablon Tanımı
+  Paket Kriter Tanımı
+  Paket Limit Şablon Tanımı
+  Paket Tanımı
+  Persantil Tanım
+  Poliklinik Sayılarının Yatış ve Ameliyata Dönüş Oranı
+  Poliçe Türü Tanımı
+  Protokol Süreç Detay Tanım
+  Protokol Süreç Tanım
+  Pyxis Order İstem
+  Rapor Ameliyat Şablon Tanımlama
+  Rapor Şablon Tanımlama
+  Renkli Reçete Listesi
+  Resmi Tatil Tanımlama
+  Rezerve Yatak Tanımlama
+  Reçete
+  Reçete Ekle
+  Reçete Listesi
+  Reçete Şablon Ekle
+  Reçete Şablon Listesi
+  Reçeteler
+  Rol Tanımı
+  SGK Anestezi Hizmet Işlem
+  SGK Payı Düşüm Yöntemi Tanımı
+  SQL Tanım
+  SQL Tanım Kategori
+  SQL Tanım Listesi
+  SQL Tanım Mail Gönderim Takvimi
+  Saç Ekimi Muayene
+  Sistem
+  Sistem Formları
+  Sistem Formları Seçim
+  Sözleşme Tanım
+  Sıkça Sorulan Soru Tanımları
+  Tablet Tanım
+  Takip İstemeyen Hasta
+  Takip İstemeyen Hasta Listesi
+  Tanim
+  Tanı Geçmişi
+  Tanı Seçim
+  Tanılar
+  Tanım
+  Tanımlamalar
+  Tanımlar
+  Tedarikçi Tanımlama Formu
+  Tedavi
+  Tedavi Analiz
+  Tedavi Bilgileri Aktar
+  Tedavi Raporu
+  Teşhis Bilgisi
+  Toplu Özet Epikriz Oluşturma
+  Tıbbi Form Tanım
+  USS Reçete Listesi
+  Veri Dışa Aktarım Takibi
+  Veri Kaynak Tanımları
+  Yakınlık Tanım
+  Yatan Erişkin Hasta Hemşire Tanılama Formu (10 yaş ve üstü)
+  Yatan Çocuk Hasta Hemşire Tanılama Formu (31 Gün - 9 Yaş)
+  Yatan Çocuk Hasta Tanılama Formu
+  Yeni Muayene Gelişi
+  Yenigoğan Epikriz Raporu
+  Yurt Dışı Yardım Hakkı
+  Zorunlu Evrak Hizmet Tanımı
+  Zorunlu Evrak Tanımı
+  Zorunlu ameliyathane İşlem Tipi Tanım
+  Ön Anamnez
+  Ön Anamnez Bilgileri
+  Örnek Tanım
+  Özel Muayene Seçenek
+  Özel Muayene Seçenek Listesi
+  Özet Epikriz
+  Özet Epikriz Rapor Şablonları
+  İlgili Bölüm Tanımı
+  İptal Edilen Diş Tedavi Planlamaları
+  İstem Birleştir
+  İş Emri Grubu Tanım
+  İş Emri Islem Tanım
+  İş Emri Tipi Tanım
+  İş Yeri Hekimi Muayene
+  İş Yeri Hekimi Muayene Detay
+  İş Yeri Hekimi Muayene Raporu
+  İşyeri Hekimi Muayene
+  Şablon Tanımı
+
+--- Yatan / Hemşire / Bakım (kısmen BİZİM) (67) ---
+  Apache II Score Raporu
+  BakimPlaniSecim
+  Bakım Planları
+  Bakım Planı Durum Değiştir
+  Bakım Planı Güncelle
+  Bakım Planı Raporu
+  Bakım Planı Seçim
+  Bakım Planı Şablon Seçim(Virginia Henderson)
+  Bası Yarası Değerlendirme
+  Bası Yarası Değerlendirme Formu
+  Diyetetik Yatan Hasta Beslenmesi
+  Düşme Sonrası Hasta Değerlendirme
+  Düşme Sonrası Hasta Değerlendirme Listesi
+  E-Nabız Yoğun Bakım Değerlendirme
+  ENabız Yatak Bilgisi Gönderim
+  Euroscore Değerlendirme
+  Euroscore Raporu
+  Genel Yoğun Bakım Ünitesi Ventilatör İlişkili Pnönoni Takip Formu
+  Glaskow Skoru Analizi
+  Hasta Bakım Planı Analizi
+  Hasta Yatış Bilgileri
+  Hasta Yatış Bilgisi
+  HastaBakimPlani
+  Hemsire
+  Hemşire Bakım Planı
+  Hemşire Bakım Planı Analizi
+  Hemşire Bilgileri
+  Hemşire Hasta Sınıflandırma
+  Hemşire Seans Uygulaması
+  Hemşire Seçim
+  Hemşire Vaka Takip
+  Medula Kemik iligi
+  Medula Yatak Listesi
+  Medula Yatak Seçim
+  Medula Yatak Sorgula
+  NEOMOD Skorlama
+  Revised Trauma Skorlama
+  SNAP II Score
+  Sofa Score
+  Sofa Score Raporu
+  Standart Düşme Önleme Uygulamaları
+  Trafik Kazası Yaralı Skorlama
+  Varlık Bakım
+  Varlık Bakım Planları
+  Yatak
+  Yatak Doluluk Oranları
+  Yatak Durum Listesi
+  Yatak Seçim
+  Yatak Tipi
+  Yatak Tipi Listesi
+  Yatan Hasta
+  Yatan Hasta Bilgileri
+  Yatan Hasta Diyet Paneli
+  Yatan Hasta Listesi
+  Yatan Hasta Paneli
+  Yatan Hasta Paneli(Doktor)
+  Yatan Hasta Paneli(Hemşire)
+  Yatan Hastalar
+  Yatış
+  Yatış Oku
+  Yatış Planlama
+  Yatış Tarihçe Listesi
+  Yatış İstek Formu
+  Yatış İstek Listesi
+  Yatış İstekleri
+  Yoğun Bakım Izlem
+  Yoğun Bakım İzlem
+
+--- Randevu (BİZİM) (62) ---
+  Bekleyen Randevu Hizmetleri
+  Birim Randevu Durumu
+  Birim Randevu Kayıt
+  Birim Randevusu
+  Bölüm Randevu Tipi
+  Bölüm Randevu Özellikleri
+  Control Randevu Barkod
+  Diyaliz Randevu Listesi
+  FTR Randevu Kayıt
+  FTR Randevu İstek
+  FTR Randevusu
+  Genel Randevu Bilgileri
+  Hasta Randevu
+  Hasta Randevu - Takip
+  Hasta Randevu Listesi
+  Hizmet Randevu
+  Hizmet Randevu Kayıt
+  Hizmet Randevuları
+  Kemoterapi Randevu
+  Kemoterapi Randevu Kayıt (Periyodik)
+  Kemoterapi Randevusu
+  Misafir Doktor Randevu Kayıt
+  Online Randevu Listesi
+  Online Randevu Listesi (PRM)
+  PRM Randevu Takip Raporu
+  Periyodik Kapalı Randevu İptal
+  Periyodik Randevu Kapatma
+  Poliklinik Randevu Durumu
+  Poliklinik Randevu Kaynakları
+  Poliklinik Randevusu
+  Randevu
+  Randevu Arama
+  Randevu Bilgilendirme
+  Randevu Bilgilendirme Mesajları
+  Randevu Formu
+  Randevu Kapama Bilgileri
+  Randevu Kapatma
+  Randevu Kaynak Grupları
+  Randevu Kaynak Seçim
+  Randevu Kaynak Çalışma Planı
+  Randevu Kaynak Çalışma Takvimi
+  Randevu Kayıt
+  Randevu Kural
+  Randevu Kural Listesi
+  Randevu Listesi
+  Randevu Okuma
+  Randevu Takip
+  Randevu Takip Raporu
+  Randevu Takip Raporu (Merkez)
+  Randevu Takip Raporu(Yetkili)
+  Randevu Tamamla
+  Randevu Tarihçe
+  Randevu Temsilci Atama
+  Randevu Tipi
+  Randevu protokol Eşleştir
+  Randevu Çizelgesi
+  Randevulanacak Hizmetler (PRM)
+  Randevular
+  Randevularım
+  Verilemeyen Randevu
+  Verilemeyen Randevu Listesi
+  Verilemeyen Randevu Takip Raporu
+
+--- İK / Personel (BİZİM) (70) ---
+  Dijital Personel Çalışma Saatleri
+  Doktor Çalışma Takvimi
+  ENabız Nöbetçi Personel Bilgisi Gönderim
+  Egitim
+  Egitim Grubu
+  Egitim Listesi
+  Eğitim Listesine Gönder
+  Eğitim Planı
+  Eğitim Planı Listesi
+  Eğitim Şablonları
+  Eğitimlerim
+  Hasta Eğitim
+  Hasta Eğitim Listesi
+  Hasta Eğitim Raporu
+  Hasta İzin
+  Hasta İzin Listesi
+  Hastane Mesai Saatleri
+  Hızlı İzin Talebi
+  IK İzin Onay
+  Kat Personel Listesi
+  MM - Personel Listesi
+  Mesai Listesi
+  Norm Kadro Listesi
+  Nöbetçi Personel
+  Nöbetçi Personel Listesi
+  Onay Bekleyen İzinler(IK)
+  Onayımı Bekleyen İzinler
+  Personel
+  Personel Aktarım
+  Personel Aktarım Listesi
+  Personel Aşı
+  Personel Bilgilendirme
+  Personel Bilimsel Yayin
+  Personel CV
+  Personel Danışma
+  Personel Demo
+  Personel Dil
+  Personel Doktor
+  Personel Hatırlatma
+  Personel Kartı
+  Personel Kurs
+  Personel Listesi
+  Personel Listesi Demo
+  Personel Log
+  Personel Maliyet
+  Personel Maliyet Listesi
+  Personel Mesleki Üyelik
+  Personel Norm Kadro Analizi
+  Personel Nöbet İzin Mesai
+  Personel Okul
+  Personel Seçim
+  Personel Sigorta Bilgileri
+  Personel Tarihçe
+  Personel Ve Personel Yakını Seçimi
+  Personel Ve Yakını Açık Hesap Analizi
+  Personel Yakınlık Tipi
+  Personel Yakını
+  Personel Yakını Aktarım Listesi
+  Personel Çalışma Takvimi
+  Personel İzin Takip Analizi
+  Plansız Mesai
+  Protokol Sorumlu Personel Listesi
+  Toplu Eğitim Planı
+  Yönetici İzin Onay
+  İzin
+  İzin Talebi
+  İzin Tipi
+  İzin Tipleri
+  İzin-Nöbet-Mesai Tarihçe
+  İzinlerim
+
+--- Admin / Tanım / Güvenlik / Sistem (BİZİM) (239) ---
+  Acil Servis 112 Bölüm
+  Acil Servis 112 Bölüm Listesi
+  Aktarım Önizleme
+  Ana Veri Çeviri Listesi
+  Anket Şablon Kategori
+  Anket Şablon Kategori Listesi
+  Anket Şablon Kategori Seçim
+  Anket Şablonu
+  Antibiotik Şablon
+  Arama Kriteri Şablon Seçim
+  Arıza Bildirim Listesi
+  Arşiv Kontrol
+  Arşiv Log Listesi
+  Açık Oturumlar
+  Bebek Ölüm Bildirimi
+  Bildirim
+  Bildirim Degerlendirme
+  Bildirim Geri Arama
+  Bildirim Geri Arama Listesi
+  Bildirim Konu
+  Bildirim Listesi
+  Bildirim Yontemi
+  Bildirim Yönlendirme
+  Bildirim Öncelik Açıklama
+  Bildirim Öncelik Açıklama Listesi
+  Bildirimi Zorunlu Hastalık
+  Bileşen Çeviri
+  Bolum Seçim
+  Borda Lighthouse Bildirim Havuzu
+  Branş
+  Branş Görüş Bilgisi
+  Branş Listesi
+  Branş Seçim
+  Bölüm
+  Bölüm Bazlı Ciro
+  Bölüm Bazlı Ciro (Yetkili)
+  Bölüm Listesi
+  Bölüm Seçim
+  Bölüm Sorumluları
+  Comed Ceviri
+  Comed Dil Ceviri Listesi
+  ComedEMR Yetki Log
+  Dağılım Şablon Kriteri
+  Detaylı Job Logu
+  Değişken Log
+  Dialog
+  Diyet
+  Diyet Analizi
+  Diyet Kisitlamalari
+  Diyet Listesi
+  Diyet Seçim
+  Diyet Takip Çizelgesi
+  Diyet Tipi
+  Diyet İstek
+  Diyet İstek Tarihçe
+  Diyet İstek Uygula
+  Diyet İçerik
+  Diyet Şablon
+  Diyetisyen Değerlendirme
+  Diyetisyen Değerlendirme Formu
+  Diğer Tıbbi Rapor Şablonları
+  Doktor Bazlı Ciro (Detaylı,Yetkili)
+  Doktor Bazlı Ciro (Yetkili)
+  E-İmza PIN
+  Email - SMS Listesi
+  Enfeksiyon Etkeni Bildirim
+  Evrak Kontrol
+  Finansal Veri İzleme
+  Formül Değişken
+  Formül Değişken Listesi
+  Gastroenteroloji Rapor Şablonları
+  Gelen SMS
+  Gelen SMS Grubu
+  Gelen SMS Listesi
+  Genel Yetkiler ve Parametreler
+  Genel Çeviri Listesi
+  Giden SMS Listesi
+  Gizli Hasta Yetkilendirme
+  Gözlem Notu Şablon
+  Güvenlik
+  Hasta Diyet Listesi
+  Hasta Diyetleri
+  Hastane Logo
+  Hastane Logo Listesi
+  Hizmet Bölüm Kod Listesi
+  Hizmet Rapor Şablonları
+  Hizmet Şablon Listesi
+  Hizmet-Şablon Bağlantı Detayları
+  ICD
+  ICD Grubu
+  ICD Grup Seçimi
+  ICD Listesi
+  ITS Bildirim
+  ITS Bildirim Detay Seçim
+  ITS Bildirim Listesi
+  ITS Bildirim Tipi Seçim
+  ITS Bildirimi Yapılmamış Harcamalar
+  KDS Bildirim
+  KDS Bildirim Listesi
+  Kampanya
+  Kampanya Bilgilendirme
+  Kampanya Listesi
+  Kampanya Sağlık Kart Seçim
+  Kampanya Seçim
+  Kampanyalar
+  Kapanmış Hasta Dosyası Kontrol
+  Kateter İliskili İdrar Yolu Enfeksiyon Önlem Paketi Kontrol Listesi
+  Kiosk Kullanıcı Pin
+  Kiosk Yetkili Kullanıcı Ekle
+  Kontrol Paneli
+  Kontrol Özeliikleri
+  Kredi Karti Kontrol
+  Kullanıcı
+  Kullanıcı Aktar
+  Kullanıcı Barkodu
+  Kullanıcı Grubu
+  Kullanıcı Gurubu Seçim
+  Kullanıcı Memnuniyet Anketi
+  Kullanıcı Pin Listesi
+  Kullanıcı Seçim
+  Kullanıcı Seçimi
+  Kullanıcı Yetkileri && Rol Listesi
+  Kullanıcı İzleme
+  Kullanıcı İzleme Mesaj
+  Kural
+  Kural Girişi
+  Kural Grubu
+  Kural Listesi
+  Kural Şablon
+  Kök Nakil Kontrol Formu
+  Limit Şablon Grubu
+  Limit Şablon Kriteri
+  Log
+  Log İzleme
+  Log İzleme Detay
+  Logo
+  Logo Güven
+  Logo Hasta Aktarım
+  Maluliyet Branş Görüş Bilgisi
+  Manuel Bildirim Bilgileri Girişi
+  Medula Rapor Etken Madde Şablon Listesi
+  Medula Rapor Şablon
+  Medula Rapor Şablon Listesi
+  Medula SUT Kuralı Oku
+  Medula Sözleşme Kuralları
+  Medula Takip Log
+  Merkezi Parametreler
+  Mesaj Çeviri
+  Mesaj Çeviri Listesi
+  Mesaj Şablonları
+  Mesaj Şablonu Ekle
+  Mesaj Şablonu Gönder
+  Mesaj Şablonu Kullanıcı Grupları
+  Misafir İnternet Kullanıcı (Şifre)
+  Mobil Kampanya
+  Mobil Kullanıcılar
+  Nakit Kontrol
+  Numarator Listesi
+  Numaratör
+  Olay Afet Bildirim Listesi
+  PDF Önizleme
+  Paket Dağılım Şablon Seçim
+  Paket Dağılım Şablonları
+  Paket Limit Şablon Seçim
+  Paket Limit Şablon Tarihçe
+  Paket Limit Şablonları
+  Paket Limit Şablonu
+  Parametre
+  Parametre && Yetki
+  Parametre Grubu
+  Parametre Listesi
+  Parametre Seçim
+  Parametreler
+  Protokol Ciro Analizi(Yetkili)
+  Protokol Fiyat Log
+  Protokol Tipi
+  Protokol Tipleri
+  Pyxis Parametreler
+  Pyxis Parametreler Listesi
+  Rapor Bölüm
+  Rapor Çıktı Şablonları
+  Rapor Şablon Seçim
+  ReUse Kullanım Bildirim
+  ReUse Kullanım Bildirim Raporu
+  ReUse Kullanım Bildirimleri
+  Rol
+  Rol Grubu
+  Rol Görev
+  Rol Seçim
+  Rol Seçimi
+  SAP Log Detay
+  SMS
+  SMS Cevap Grubu
+  SMS Gönder
+  SMS Gönderim
+  Süper Admin Yetki
+  Süper Admin Yetki Listesi
+  TIG Branş Bilgisi Gönderim
+  TIG Branş Bilgisi Gönderim Listesi
+  Tablo Çeviri
+  Tablo Çeviri Listesi
+  Talep Şablon Listesi
+  Tarife Formül Önizleme
+  Tarife Önizleme
+  Toplu Verme Bildirimi
+  Triaj Bilgisi Hizmet Kontrol
+  Tıbbi Atık Bildirim
+  Tıbbi Atık Bildirim Listesi
+  Vademecum Sözlük
+  Versiyon Önizleme
+  Yabancı Hasta Bildirimi
+  Yetki
+  Yetki Devri
+  Yetki Kodu
+  Yetki Kodu Listesi
+  Yetki Log
+  Yetki Seçim
+  Yetki Seçimi
+  Yetki İzleme
+  Zayi ve Tüketim Bildirim
+  Zayi ve Tüketim Bildirim Listesi
+  Çalışan İstenmeyen Olay Bildirimi
+  Çeviri
+  Çoklu Alma Bildirimi Yap
+  Ölçü Birimi
+  Ölçü Birimi Listesi
+  Ölçü Birimi Seçim
+  Ölüm Bildirim Listesi
+  Ölüm Bildirimi
+  ÜTS Bildirim Seçim
+  ÜTS Bildirim Sorgulama
+  İzleme
+  İzolasyon Bildirim ve Uygulama Formu
+  İş Emri Bildirim Atama
+  İş Emri Bildirim Detay
+  İşlem Eşleştirme Log Detay
+  Şablon Seç
+  Şablon Seçim
+  Şablon Seçimi
+
+--- Rapor / İstatistik (BİZİM-kısmi) (136) ---
+  Analizler
+  Analık Raporu
+  Anjiyografi Rapor Kayıt Listesi
+  Anjjiyografi Rapor Kayıt
+  Apache İki Analizi
+  Ay Bazlı Vade Alacak Raporu
+  Aynı Gün Geliş Analizi
+  Ciro
+  Ciro Dağılım Analizi
+  Ciro Dağılım Analizi(Detay)
+  Ciro Detay Analizi
+  Ciro Detay Raporu
+  Ciro Değişim Analizi
+  Ciro Özet Raporu
+  Ciro İşlem Tipi
+  Comed Rapor Sonucu
+  ComedEMR Rapor
+  Cross Raporu
+  Damar İzi Analizi
+  Dağıtım Rapor
+  Dijital İmza Döküman Alan Listesi
+  Dinamik Rapor
+  Dinamik Rapor Dizayn Seç
+  Dinamik Rapor Listesi
+  Dinamik Raporlar
+  Doktor Bazlı Ciro
+  Doktor Bazlı Ciro (Detaylı)
+  Doktor Protokol Sayı Analizi
+  Doktor Verimlilik Analizi
+  Doktor İşlem Analizi
+  Doğum Öncesi Çalışabilir Raporu
+  Döküman Düzenle
+  Döküman Grubu
+  Döküman Kayıt
+  Döküman Listesi
+  Döküman Seçim
+  Döküman Tasarım
+  Döküman Yönetimi
+  E-Nabız Paket Gönderim Oranları Raporu
+  E-Rapor
+  ESWL Raporu
+  Ek Rapor Sonuç
+  FTR Raporu
+  Fiyatlandırma Değişim Analizi
+  Genel İstatistik Detaylı
+  Genel İstatistik Raporu
+  Girişimsel Kardiyoloji Rapor Kayıt
+  Girişimsel Kardiyoloji Rapor Listesi
+  Görüşmeci Analizi
+  Günlük Nakit Akış Analizi
+  Günlük İstatistik Raporu
+  Hasta Adres Analizi
+  Hasta Ciro Analizi
+  Hasta Danışman Raporu
+  Hasta Dökümanları
+  Hasta Geliş Analizi
+  Hasta Nakil Raporu
+  Hasta Rapor
+  Hemodiyaliz Rapor
+  Hizmet Analizi
+  Hizmet Analizi(Fiyat İçermez)
+  Hizmet Dağılım
+  Hizmet Döküm Kriterleri
+  Hizmet Dökümü
+  Hizmet Kayıt Analizi
+  Hizmet Rapor
+  Hizmet Raporları
+  Hizmet İstek ve Uygulama Raporu
+  Kasa Döküm
+  Kasa Döküm Özet
+  Kayıtlı Dökümanlar
+  Kemoterapi Protokol Analizi
+  Kemoterapi Rapor
+  Klinik Döküman
+  Klinik Dökümanlar
+  Kültür Sonuç Raporu
+  Lab Maliyet Analizi
+  Maluliyet Raporu
+  Masraf Merkezi Bazli Doktor Dağıtım Raporu
+  Medula Rapor
+  Medula Rapor Listesi
+  Medula Rapor Okuma
+  Medula Rapor Seçim
+  Medula Raporları
+  Medula Raporu
+  Medula Takip Analizi
+  Medula İşGörememezlik Mevcut Rapor
+  Merkezi Dosya Analizi
+  Mernis Sorgu Raporu
+  Mortalite Analizi
+  Paket Dağılım
+  Paket İçi Dağılım
+  Protez Raporu
+  Protokol Bazlı Hizmet Analizi
+  Protokol Ciro Analizi
+  Protokol Ciro Özet Analizi
+  Protokol İptal Analizi
+  Protokol İşlem İptal Analizi
+  Rapor
+  Rapor Detay
+  Rapor Gurbu
+  Rapor Güncelleme
+  Rapor Tasarim Seçim
+  Rapor Tasarim Varsayilan
+  Rapor Tasarim Çoklu Seçim
+  Rapor Tasarım
+  Rapor Tasarım Listesi
+  Rapor Tipi Seçim
+  Rapor Özellikleri
+  Rapor İşlem
+  Rapor İşlemleri
+  Raporlar
+  ReUse Analizi
+  ReUse Kullanım Analiz
+  SAPSII Raporu
+  SGK Hizmet Döküm Kriterleri
+  SGK Hizmet Dökümü
+  SGK Hizmet Kayıt İşlem Kuyruğu Raporu
+  SNAP II Raporu
+  Snap II Analiz
+  Snap İki Analizi
+  Tasarımsal Form Rapor
+  Tıbbi Form Analizi
+  Tıbbi Gereklilik Raporu
+  Uygulanacak İşlemler Çıktı Raporu
+  Versiyon Dökümanı
+  Yabancı Hasta Ciro Analizi
+  Yönetim Raporları
+  Zorunlu Döküman
+  Zorunlu Döküman Listesi
+  influenza (Grip) Sürveyans Raporu
+  İmha Raporu
+  İstatistik ve Analizler
+  İş Göremezlik Raporu
+  İş Kazası Raporu
+  İşlem Bazlı Ciro

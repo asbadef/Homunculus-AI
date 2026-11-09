@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBYS Analizi</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --app:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --vio:#a78bfa; --att:rgba(202,138,4,.08); --attLine:rgba(202,138,4,.38); --attInk:#f5c451; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:28px 16px 70px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 8px; }
+  .lead { color:var(--mute); max-width:920px; margin:0; } .lead b { color:var(--ink); }
+  h2 { font:700 23px "Space Grotesk"; margin:44px 0 6px; display:flex; gap:10px; align-items:center; }
+  h2 .k { font:700 13px "Space Grotesk"; background:var(--pri); color:var(--onpri); border-radius:8px; padding:5px 9px; }
+  .sub { color:var(--mute); margin:0 0 14px; max-width:920px; } .sub b { color:var(--ink); }
+  .privacy { margin-top:18px; background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.4); border-radius:14px; padding:12px 14px; font-size:14px; color:#fecaca; }
+  .privacy b { color:#fff; }
+  .rule { background:linear-gradient(135deg, rgba(34,184,214,.14), rgba(34,184,214,.03)); border:1px solid rgba(34,184,214,.4); border-radius:18px; padding:18px 20px; margin-top:22px; }
+  .rule h3 { margin:0 0 6px; font:700 20px "Space Grotesk"; }
+  .rule p { margin:0 0 8px; color:#cfe9f2; } .rule b { color:#fff; }
+  .rule .g { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px; }
+  .rule .g div { background:rgba(0,0,0,.2); border-radius:12px; padding:10px 12px; font-size:13.5px; color:#cfe9f2; }
+  .rule .g b { display:block; font:700 15px "Space Grotesk"; }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 14px; font-size:13px; color:var(--mute); }
+  .d { display:inline-flex; font:700 11.5px Figtree; padding:5px 9px; border-radius:8px; cursor:pointer; border:1px solid var(--line2); color:var(--mute); user-select:none; }
+  .d.al.on { background:rgba(34,197,94,.18); color:#4ade80; border-color:transparent; }
+  .d.gs.on { background:rgba(34,184,214,.18); color:#7fe3f5; border-color:transparent; }
+  .d.no.on { background:rgba(100,116,139,.25); color:#cbd5e1; border-color:transparent; }
+  .grp { background:var(--card); border:1px solid var(--line); border-radius:16px; margin-bottom:12px; overflow:hidden; }
+  .grp > summary { list-style:none; cursor:pointer; padding:12px 16px; display:flex; align-items:center; gap:10px; }
+  .grp > summary::-webkit-details-marker { display:none; }
+  .grp > summary b { font:700 16px "Space Grotesk"; } .grp > summary span { color:var(--mute); font-size:13px; }
+  .grp > summary .cnt { margin-left:auto; display:flex; gap:6px; }
+  .grp > summary .cnt i { font-style:normal; font:700 11px Figtree; padding:2px 7px; border-radius:999px; }
+  .grp[open] > summary { border-bottom:1px solid var(--line); }
+  .it { display:grid; grid-template-columns:1fr 1.25fr auto; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); font-size:13.5px; }
+  .it:last-child { border:0; }
+  .it .w b { display:block; } .it .w small { color:var(--mute); font-size:12px; }
+  .it .why { color:var(--mute); font-size:13px; } .it .why b { color:var(--ink); font-weight:600; }
+  .it .ch { display:flex; gap:4px; }
+  .st { display:inline-block; font:700 10px Figtree; padding:1px 6px; border-radius:999px; margin-left:4px; vertical-align:middle; }
+  .st.ok { background:rgba(34,197,94,.15); color:#4ade80; } .st.part { background:rgba(234,179,8,.15); color:#facc15; } .st.nx { background:rgba(100,116,139,.2); color:#a3b1c6; }
+  .sum { position:sticky; bottom:12px; z-index:10; margin-top:14px; background:#0d1a2d; border:1px solid var(--line2); border-radius:14px; padding:10px 14px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; box-shadow:0 10px 30px rgba(0,0,0,.5); font-size:14px; }
+  .sum b { font:700 18px "Space Grotesk"; }
+
+  /* APACHE demo */
+  .ap { display:grid; grid-template-columns:1.3fr 1fr; gap:14px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .box h5 { margin:0 0 10px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); display:flex; gap:8px; align-items:center; }
+  .box h5 .r { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:600; }
+  .row { display:grid; grid-template-columns:1.1fr .8fr 1.2fr 34px; gap:8px; align-items:center; padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px; }
+  .row:last-child { border:0; }
+  .row .v { font:700 13px "JetBrains Mono"; }
+  .row .src { font-size:11px; color:var(--mute); } .row .src i { font-style:normal; font-weight:700; padding:1px 6px; border-radius:5px; margin-right:4px; }
+  .src .m { background:rgba(34,184,214,.15); color:#7fe3f5; } .src .l { background:rgba(167,139,250,.18); color:#c4b5fd; } .src .h { background:rgba(148,163,184,.2); color:#cbd5e1; } .src .e { background:rgba(234,179,8,.18); color:#fcd34d; }
+  .row .pt { font:700 16px "Space Grotesk"; text-align:right; color:var(--pri); }
+  .row.need { background:var(--att); border-radius:8px; padding:6px 6px; border:1px dashed var(--attLine); }
+  .opts { display:flex; gap:4px; flex-wrap:wrap; } .opts i { font-style:normal; font:600 11.5px Figtree; padding:4px 7px; border-radius:7px; border:1px solid var(--line2); cursor:pointer; }
+  .opts i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .big { font:700 54px/1 "Space Grotesk"; color:var(--high); }
+  .spark { width:100%; height:70px; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:8px 13px; border:1px solid var(--line2); background:var(--card); color:var(--ink); display:inline-flex; gap:6px; cursor:pointer; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .note { background:var(--att); border:1px solid var(--attLine); color:var(--attInk); border-radius:10px; padding:8px 10px; font:600 12.5px Figtree; margin-top:10px; }
+  .unit { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
+  .unit div { background:var(--card2); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--mute); } .unit b { display:block; color:var(--ink); font:700 14px "Space Grotesk"; }
+
+  table.src { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; font-size:13.5px; }
+  table.src th { text-align:left; font:700 10.5px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); padding:10px 12px; background:var(--card2); }
+  table.src td { padding:9px 12px; border-top:1px solid var(--line); vertical-align:top; }
+  .steps { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px; }
+  .steps div { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--mute); } .steps b { color:var(--ink); display:block; font:700 14px "Space Grotesk"; }
+  .lang { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .lang table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  .lang td { padding:6px 8px; border-bottom:1px solid var(--line); } .lang td:first-child { color:var(--mute); width:44%; }
+  .flags { display:flex; gap:6px; } .flags span { font:700 12px Figtree; padding:6px 10px; border-radius:9px; background:var(--card2); cursor:pointer; } .flags span.on { background:var(--pri); color:var(--onpri); }
+  .need ol { margin:0; padding-left:20px; color:var(--mute); } .need li { margin-bottom:6px; } .need b { color:var(--ink); }
+  .qs { margin-top:36px; background:var(--card); border:1px solid var(--line2); border-radius:18px; padding:18px 20px; }
+  .qs code { display:block; margin-top:12px; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 13.5px "JetBrains Mono"; white-space:pre-wrap; }
+  @media (max-width:640px) { table.src th:nth-child(2), table.src td:nth-child(2) { display:none; } }
+  @media (max-width:900px) { .rule .g, .steps, .unit { grid-template-columns:1fr 1fr; } .ap, .lang { grid-template-columns:1fr; } .it { grid-template-columns:1fr; } .row { grid-template-columns:1fr 1fr; } .row .src { grid-column:span 2; } }
+  @media (max-width:480px) { .rule .g, .steps, .unit { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>HBYS analizi · Taslak 14</h1>
+  <p class="lead">Gönderdiğin 9 ekranı nokta nokta inceledim. Tasarımlarıyla değil, <b>içlerindeki özelliklerle</b> ilgilendim. Aşağıda her özellik için bir öneri var: <b>bizde üret</b>, <b>HBYS'den göster</b> ya da <b>gerek yok</b>. Önerilerimi seçili bıraktım, değiştirmek için üzerine tıklayabilirsin.</p>
+  <div class="privacy">🔒 <b>Gizlilik:</b> Ekranlarda gerçek bir hastanın adı, numarası ve notları vardı. Bu sayfaya <b>hiçbiri alınmadı</b>, yalnızca özellikler çıkarıldı. Bundan sonra lütfen adı ve numarayı karartarak gönder.</div>
+
+  <div class="rule">
+    <h3>"Bu kadar detaya gerek var mı?" sorusunun cevabı</h3>
+    <p>Kural şu: <b>HBYS'nin zaten yaptığını tekrar yapmayız. HBYS'nin yapamadığını yaparız.</b> Gördüğüm HBYS'de hekim formları <b>elle, açılır listelerden seçerek</b> dolduruyor. "Monitör Bilgisi Getir" düğmesi bile tek seferlik, elle çalışan bir çekme. Bizim farkımız dört şeyde:</p>
+    <div class="g">
+      <div><b>1 · Kendiliğinden dolar</b>Skorlar monitör ve laboratuvardan her an dolar, hekim yalnız eksik maddeyi seçer.</div>
+      <div><b>2 · Zaman içinde görünür</b>HBYS bir anlık fotoğraf verir. Biz skorun 3 günlük gidişini gösteririz.</div>
+      <div><b>3 · Değişince haber verir</b>Enfeksiyon şüphesi girilmiş hastada SOFA 2 puan artınca sepsis kriterleri uyarısı çıkar (motorda var). Diğer skorlar için uyarı kuralı ayrıca tasarlanacak.</div>
+      <div><b>4 · Geri gönderir</b>Onaylanan skor HBYS'ye yazılır, hekim iki kez girmez (Mod 2).</div>
+    </div>
+  </div>
+
+  <!-- ============ ENVANTER ============ -->
+  <h2><span class="k">1</span>Ekranlardan çıkan özellikler</h2>
+  <p class="sub">Başlıklara tıklayınca açılır. Her satırda: HBYS'de ne var, bizde ne yapmalı ve neden. <span class="st ok">var</span> <span class="st part">kısmen</span> <span class="st nx">yok</span> etiketleri bizim kodumuzun bugünkü durumunu gösteriyor.</p>
+  <div class="legend"><span class="d al on">Bizde üret</span> bizim ekranımızda, otomatik ve akıllı <span class="d gs on">HBYS'den göster</span> onlardan okuruz, tekrar girilmez <span class="d no on">Gerek yok</span> bizim işimiz değil</div>
+  <div id="inv"></div>
+  <div class="sum" id="sum"></div>
+
+  <!-- ============ APACHE DEMO ============ -->
+  <h2><span class="k">2</span>Skor formu bizde nasıl olur: APACHE II örneği</h2>
+  <p class="sub">HBYS'de hekim 15 açılır listeyi tek tek seçiyor. Bizde maddelerin çoğu <b>kaynağıyla birlikte kendiliğinden</b> doluyor (monitör, laboratuvar, HBYS). Hekime yalnız <b>sarı çerçeveli</b> maddeler kalıyor. Onları seçince toplam kendiliğinden güncellenir. <b>Buradaki puanlar örnektir.</b> Gerçek puan tabloları kaynak arşivine alınıp doğrulanmadan kullanılmayacak (bkz. bölüm 4).</p>
+  <div class="ap">
+    <div class="box"><h5>APACHE II · yoğun bakıma yatışın ilk 24 saati · en kötü değerler <span class="r" style="color:var(--mute)">12 / 15 madde kendiliğinden doldu · GKS hekim girdi</span></h5><div id="apRows"></div></div>
+    <div>
+      <div class="box"><h5>Toplam <span class="r" style="color:var(--mute)">örnek puan</span></h5><div style="display:flex;align-items:baseline;gap:12px"><span class="big" id="apTot">—</span><span style="color:var(--mute);font-size:13px"><b id="apDelta" style="color:var(--attInk)"></b></span></div>
+        <div style="font-size:12.5px;color:var(--mute);margin-top:8px">APACHE II <b style="color:var(--ink)">bir kez</b>, yatışın ilk 24 saati için hesaplanır. Günlük gidişi izlenen skor <b style="color:var(--ink)">SOFA</b>'dır, onun trendi Hasta ekranında görünür.</div>
+        <div class="note">"Beklenen ölüm oranı" bir <b>grup tahminidir</b>, bu hastanın kaderi değildir. Ekranda gösterilecekse bu açıklamayla birlikte gösterilmeli. Hekime varsayılan olarak kapalı gelmesini öneririm.</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><span class="btn p">Onayla ve imzala</span><span class="btn">Bir değeri düzelt (gerekçe zorunlu)</span></div></div>
+      <div class="box" style="margin-top:12px"><h5>Hangi ünitede hangi skor</h5>
+        <div class="unit" style="margin-top:0"><div><b>Erişkin YBÜ</b>SOFA, APACHE II, NEWS2 (servis)</div><div><b>Yenidoğan YBÜ</b>SNAPPE II, yenidoğan SOFA (nSOFA)</div><div><b>Çocuk YBÜ</b>PRISM <span class="st part">lisans?</span></div></div>
+        <div style="font-size:12.5px;color:var(--mute);margin-top:8px">HBYS'deki beş sekme her hastada gösteriliyor. Oysa her hasta yaşına ve ünitesine göre yalnız 1–2 skora ihtiyaç duyar. Bizde <b style="color:var(--ink)">yalnız uygun olanlar</b> görünür.</div></div>
+    </div>
+  </div>
+
+  <!-- ============ DİL ============ -->
+  <h2><span class="k">3</span>Dil: varsayılan Azerbaycanca</h2>
+  <p class="sub">Gözlemim: gördüğün HBYS'nin <b>arayüzü Türkçe</b>, ama hekim ve hemşirelerin <b>notları Azerbaycanca</b> yazılmış. Yani ekip Türkçe okuyabiliyor ama Azerbaycanca yazıyor. Bizim önerimiz: <b>arayüz varsayılan olarak Azerbaycanca</b>. AZ / TR / RU / EN arasında seçimi <b>hastane mi yapsın, her kullanıcı mı?</b> Bu senin kararın (alttaki cevap satırında). Web panelinde bu dört dil zaten var <span class="st ok">var</span>, mobilde yalnız Türkçe <span class="st nx">yok</span>.</p>
+  <div class="lang">
+    <div class="box"><h5>Dil seçimi <span class="r"><div class="flags" id="flags"><span class="on">AZ</span><span>TR</span><span>RU</span><span>EN</span></div></span></h5><table id="glos"></table></div>
+    <div class="box"><h5>Dikkat edilecekler</h5><div style="font-size:13.5px;color:var(--mute)">
+      <p style="margin:0 0 8px">• <b style="color:var(--ink)">Tıbbi terimler sözlüğü</b> gerekiyor. Aynı kavramın hastanede kullanılan adı: "Reanimasiya" mı, "İntensiv terapiya" mı? Karar yerel hekimlerin.</p>
+      <p style="margin:0 0 8px">• Hasta adlarındaki <b style="color:var(--ink)">ə, ğ, ı, ö, ş, ç, ü</b> harfleri her yerde doğru görünmeli: ekran, yazıcı, PDF, arama. Yazı tipleri bunlara göre seçilmeli.</p>
+      <p style="margin:0 0 8px">• Hekim not yazarken dil karışık olabilir. Arama iki dilde de çalışmalı ("hemşire" yazan "tibb bacısı"nı da bulmalı).</p>
+      <p style="margin:0">• Soldaki Azerbaycanca karşılıkları ben yazdım. <b style="color:var(--attInk)">Yerel bir hekime okutulmadan kullanılmayacak.</b></p></div></div>
+  </div>
+
+  <!-- ============ KAYNAKLAR ============ -->
+  <h2><span class="k">4</span>"Aralıkları ve sayıları nereden bulacağız?"</h2>
+  <p class="sub">Açılır listelerdeki aralıklar (örneğin sodyum için "≤110, 111–119, …") ve her aralığın puanı <b>uydurulamaz</b>. Her skorun yayımlanmış bir kaynak makalesi var. Projenin kendi klinik kaynak arşivi (<b>Homunculus/</b> klasörü) tam olarak bunun için kurulmuş, kuralı da net: <b>kaynağı arşivde olmayan sayı sisteme girmez.</b> Arşivde bugün ne olduğunu kontrol ettim:</p>
+  <table class="src" id="srcTab"><tr><th>Skor / ölçek</th><th>Nerede kullanılır</th><th>Arşivde</th><th>Not</th></tr></table>
+  <div class="steps">
+    <div><b>1 · Kaynak alınır</b>Yayımlanmış makale ya da kılavuz arşive (raw/) konur</div>
+    <div><b>2 · Tablo çıkarılır</b>Aralıklar ve puanlar kaynağıyla birlikte yazılır</div>
+    <div><b>3 · Hekim kontrol eder</b>Hastanenin klinik ekibi tabloyu onaylar</div>
+    <div><b>4 · Sisteme girer</b>Motor hesaplar, ekranda kaynağı görünür</div>
+  </div>
+
+  <!-- ============ İHTİYAÇ ============ -->
+  <h2><span class="k">5</span>Senden ihtiyacım olan bilgiler</h2>
+  <div class="box need"><ol>
+    <li><b>Bu HBYS'nin adı ve firması.</b> Hastaneye veri gönderip alabilmemiz buna bağlı. HL7 ya da FHIR destekliyor mu, API var mı?</li>
+    <li><b>Adı ve numarası karartılmış</b> birkaç ekran daha: İzlem → Laboratuvar, İlaç, Sıvı İzlem, Bakım Planı, Görevler, Konsültasyon. Bir de hemşirenin doldurduğu formlar: düşme ve bası yarası formu var mı?</li>
+    <li><b>Hekimler bu beş skordan hangilerini gerçekten dolduruyor?</b> Hepsi mi, yoksa sadece zorunlu olanlar mı? (Bir yoğun bakım hekimine sorulabilir.)</li>
+    <li>Ekrandaki <b>"Yoğun bakım seviyesi (1/2/3. basamak)"</b> Azerbaycan'da resmî bir sınıflama mı, yoksa HBYS Türkiye'den mi geliyor?</li>
+    <li>Sağ alttaki <b>"e-nabız"</b> ve <b>"Görüntülü Görüşme"</b> düğmeleri Azerbaycan'da çalışıyor mu? e-Nabız Türkiye'nin ulusal sağlık kaydı sistemi. Azerbaycan'ın karşılığına bağlanmak gerekecek mi?</li>
+  </ol></div>
+
+  <div class="qs">
+    <h2 style="margin:0 0 8px">Cevap satırı</h2>
+    <div style="color:var(--mute);font-size:14px">Özellik tablosundaki önerilerimi değiştirmediysen "öneri uygun" yaz. Değiştirdiysen ekranın altındaki özet satırını kopyala.</div>
+    <code>Özellikler: öneri uygun
+Dil seçimi: hastane belirler / her kullanıcı seçer
+Beklenen ölüm oranı: hiç gösterilmesin / hastane açabilsin
+Çocuk ve yenidoğan YBÜ ilk sürümde: evet / hayır
+HBYS adı: …</code>
+  </div>
+</div>
+
+<script>
+/* ---------- envanter: [özellik, HBYS'de ne var, bizim yapacağımız, öneri (al/gs/no), kodda] ---------- */
+const INV = [
+  ["Hasta başlığı", "Her ekranın tepesi", [
+    ["Kimlik, yaş, doğum tarihi, hasta no", "Üst şeritte", "HBYS'den gelir, bizde değiştirilemez.", "gs", "ok"],
+    ["Kan grubu ve Rh", "Kırmızıyla vurgulu", "Başlıkta her zaman görünür, kan ürünü verilirken kritik. Bizde kabul formunda ve hasta etiketinde var.", "gs", "ok"],
+    ["Kilo, boy, vücut yüzey alanı, beden kitle indeksi", "Üst şeritte", "Kilo ve boy HBYS'den gelir. VYA ve VKİ'yi <b>biz hesaplar, gösteririz</b>. Doz önerisi yapılmaz.", "al", "part"],
+    ["Kronik hastalıklar uyarısı", "Kırmızı üçgen", "Başlıkta ikonla. Alerjiyle birlikte en görünür yerde.", "gs", "part"],
+    ["Antibiyotik gün sayacı", "\"Antibiyotik: 7. gün\"", "Koddaki 'antibiyotik saati' <b>başka bir şey</b>: sepsiste ilk dozun 1 saatlik penceresi. Tedavinin kaçıncı gününde olunduğunu sayan özellik yok, eklenmeli.", "al", "nx"],
+    ["Yatış tarihi, tanı (ICD-10), vizit tipi", "Başlığın altında", "HBYS'den gelir.", "gs", "part"],
+  ]],
+  ["Hekim günlük izlem notu", "\"Hastanın durumu ve planı\"", [
+    ["Serbest metin günlük not", "Uzun paragraf, her gün", "Not HBYS'de yazılır, bizde okunur. Ama <b>notu bizim verimizden taslak olarak hazırlayabiliriz</b> (vitaller, SOFA, infüzyonlar), hekim düzeltir. HBYS'deki \"Akıllı Metin\" düğmesinin daha iyisi.", "al", "nx"],
+    ["Yoğun bakım seviyesi (1/2/3. basamak)", "Seçim, zorunlu", "Veriden <b>öneri</b>: ventilatör ve vazopressör varsa üst basamak. Seçim hekimin.", "al", "nx"],
+    ["Septik şok · sepsis · ventilasyon ihtiyacı", "Evet / Hayır, zorunlu", "<b>Tam bizim işimiz.</b> Sistem kriterlerin karşılanıp karşılanmadığını gösterir, hekim onaylar, sonuç HBYS'ye gider.", "al", "part"],
+    ["Hemşirelik bakım planları görüldü onayı", "Tek tık", "Devir akışının parçası olur.", "al", "nx"],
+    ["Kaydet · Kaydet ve İmzala ayrımı", "Alt çubukta", "Bizde de olmalı: taslak ile imzalı kayıt ayrı. İmzalı kayıt değiştirilemez, sadece yeni sürüm açılır.", "al", "part"],
+    ["Şablon seç · şablonlara ekle", "Alt çubukta", "Not için şablonlar faydalı. İlk sürümde değil.", "no", "nx"],
+    ["Tarihçe", "Sağ üstte", "Bizde denetim kaydı var, her formda \"kim ne zaman değiştirdi\" görünür.", "al", "ok"],
+  ]],
+  ["Hemşire gözlem notu", "Serbest metin, her nöbet", [
+    ["\"Nöbeti devir aldım · devrettim\"", "Metnin ilk satırı", "Bizde <b>iki imzalı devir</b> olarak yapılandırılır.", "al", "part"],
+    ["Kateterler (santral kateter, idrar sondası, stoma, dren)", "Metin içinde", "Bizde <b>vücut haritasında</b> yeri ve gün sayısıyla (Taslak 13).", "al", "nx"],
+    ["Yara (bir bölgede yüzeysel yara gibi)", "Metin içinde", "Vücut haritası + evre + boyut + zaman içinde değişimi.", "al", "nx"],
+    ["İnfüzyonlar (sıvı, sedasyon, heparin: doz/saat)", "Metin içinde", "İlaç uygulama çizelgesi ve pompadan gelen doz. Metinden okunmaz, yapılandırılmış girilir.", "al", "part"],
+    ["Bilinç, beslenme, solunum, hemodinami gözlemi", "Metin içinde", "Tek tıkla seçimler. <b>Not metni bu seçimlerden kendiliğinden oluşur</b>, hemşire tekrar yazmaz.", "al", "nx"],
+  ]],
+  ["Hastalık şiddeti skorlama formu", "5 sekme: SNAP · PRISM · APACHE · MOD · SOFA", [
+    ["APACHE II (15 madde, açılır listeler)", "Hekim elle seçiyor", "Yatışın ilk 24 saati için bir kez. Kendiliğinden dolar, hekim eksikleri seçer (aşağıdaki örnek). Bizde sekme var, puan tablosu yok.", "al", "part"],
+    ["SOFA (6 organ)", "Tek seçimli satırlar", "<b>Bizde var</b>, motor hesaplıyor, onay ekranı var (demoda görünmüyor).", "al", "ok"],
+    ["SNAP II / SNAPPE II (yenidoğan)", "Doğum ağırlığı, gebelik haftası, Apgar", "Yenidoğan YBÜ için gerekli. Doğum bilgileri HBYS'den gelir. Bizde sekme var, puan tablosu yok.", "al", "part"],
+    ["PRISM (çocuk)", "13 madde", "Çocuk YBÜ hedefimizse. <b>Lisans durumu doğrulanmalı.</b> Bizde sekme var, puan tablosu yok.", "al", "part"],
+    ["MOD (çoklu organ işlev bozukluğu)", "Ekranda yalnız GKS görünüyor", "SOFA ile büyük ölçüde örtüşüyor. İlk sürümde gerek yok.", "no", "nx"],
+    ["Glasgow Koma Skoru + \"Sedasyon var mı?\"", "Her skorda tekrar tekrar", "<b>Bir kez girilir</b>, bütün skorlar kullanır. Sedasyondaki hastada GKS ayrı işaretlenir.", "al", "part"],
+    ["\"Monitör Bilgisi Getir\" düğmesi", "Tek seferlik, elle", "Bizde düğmeye gerek yok, veri zaten sürekli akıyor. <b>En büyük farkımız bu.</b>", "al", "ok"],
+    ["Beklenen ölüm oranı (%)", "Skorun yanında", "Grup tahmini. Gösterilecekse açıklamasıyla ve varsayılan kapalı.", "al", "nx"],
+  ]],
+  ["VTE (pıhtı) risk değerlendirmesi", "Uzun Evet/Hayır listesi", [
+    ["Risk faktörleri (kırık, inme, travma, ameliyat türü, yaş)", "Onlarca Evet/Hayır", "Yaş, ameliyat ve tanı HBYS'den <b>önceden dolar</b>, hekim kalanları onaylar.", "al", "nx"],
+    ["Profilaksi engelleri (kanama, trombosit düşüklüğü, INR…)", "Mutlak / göreli", "Trombosit ve INR laboratuvardan kendiliğinden işaretlenir. Karar hekimin.", "al", "nx"],
+    ["Böbrek fonksiyonu (GFR) notu", "Serbest alan", "Kreatininden hesaplanan değer gösterilir, ama yoğun bakımda böbrek işlevi hızla değiştiği için güvenilir olmayabilir. Bu uyarı değerin yanında yazar.", "al", "nx"],
+  ]],
+  ["Diğer bölümler", "Sol menü ve formun altı", [
+    ["Tanılar (ICD-10) tablosu", "Birincil, ön tanı, taraf", "HBYS'den okunur. Tanı koymak bizim işimiz değil.", "gs", "part"],
+    ["Ağrı değerlendirmesi", "Tek düğme: Var / Yok", "Bizde vücut haritalı ağrı formu (Taslak 13).", "al", "nx"],
+    ["Dışarıdan yüklenen dosyalar", "Liste", "HBYS'de kalır.", "no", "nx"],
+  ]],
+  ["Sağ menüdeki modüller", "HBYS'nin hasta dosyası", [
+    ["İzlem → Laboratuvar · Görüntüleme · Patoloji", "Alt menü", "Sonuçlar HBYS'den gelir, bizde trend ve yolculuk olarak görünür (Taslak 12).", "gs", "part"],
+    ["İzlem → Kan ürünleri", "Alt menü", "Transfüzyon HBYS'den okunur, zaman çizelgesinde gösterilir.", "gs", "nx"],
+    ["İzlem → İlaç", "Alt menü", "Order HBYS'den gelir. Uygulama çizelgesi (HBYS'de yoksa) bizde.", "gs", "part"],
+    ["Sıvı izlem", "Ayrı menü", "Bizde sıvı girişi var. Pompa verisinin gelip gelmediği cihaz tarafında, doğrulanmalı. Giriş-çıkış dengesi grafiği eklenir.", "al", "part"],
+    ["İstem tarihçesi", "Ayrı menü", "Tetkiklerin yolculuğu olarak bizde.", "al", "nx"],
+    ["Konsültasyon", "Ayrı menü", "HBYS'den okunur. Konsültasyon cevabı gelince bildirim bizde.", "gs", "nx"],
+    ["Görevler · Bakım planı · Takip", "Ayrı menüler", "Hemşirenin saatli iş listesi olarak bizde (Taslak 12).", "al", "nx"],
+    ["Muayene · tüm gelişler · randevu geçmişi · ameliyat raporu · protokol işlem · dokümanlar", "Ayrı menüler", "Yoğun bakımda izleme işimiz değil. Gerekirse HBYS'ye bağlantı verilir.", "no", "nx"],
+    ["e-Nabız bağlantısı", "Sağ altta", "Türkiye'nin ulusal kaydı. Azerbaycan karşılığı araştırılmalı.", "no", "nx"],
+    ["Görüntülü görüşme", "Sağ altta", "Yol haritasındaki tele-yoğun bakım ile ilgili. İlk sürümde değil.", "no", "nx"],
+  ]],
+];
+const LBL = { al:"Bizde üret", gs:"HBYS'den göster", no:"Gerek yok" }, STL = { ok:"var", part:"kısmen", nx:"yok" };
+function inv() {
+  document.getElementById("inv").innerHTML = INV.map(([g, s, items], gi) => { const c = k => items.filter(i => i[3] === k).length;
+    return `<details class="grp" ${gi < 2 ? "open" : ""}><summary><b>${g}</b><span>${s}</span><span class="cnt"><i style="background:rgba(34,197,94,.15);color:#4ade80">${c("al")}</i><i style="background:rgba(34,184,214,.15);color:#7fe3f5">${c("gs")}</i><i style="background:rgba(100,116,139,.2);color:#cbd5e1">${c("no")}</i></span></summary>
+      ${items.map(([n, h, w, d, st], ii) => `<div class="it"><div class="w"><b>${n}<span class="st ${st}">${STL[st]}</span></b><small>HBYS: ${h}</small></div><div class="why">${w}</div><div class="ch">${["al","gs","no"].map(k => `<span class="d ${k} ${d === k ? "on" : ""}" data-i="${gi}-${ii}-${k}">${LBL[k]}</span>`).join("")}</div></div>`).join("")}</details>`; }).join("");
+  const all = INV.flatMap(g => g[2]), n = k => all.filter(i => i[3] === k).length;
+  document.getElementById("sum").innerHTML = `<span><b>${all.length}</b> özellik</span><span style="color:#4ade80"><b>${n("al")}</b> bizde üret</span><span style="color:#7fe3f5"><b>${n("gs")}</b> HBYS'den göster</span><span style="color:#cbd5e1"><b>${n("no")}</b> gerek yok</span>`;
+}
+document.getElementById("inv").addEventListener("click", e => { const d = e.target.closest("[data-i]"); if (!d) return; e.preventDefault(); const [g, i, k] = d.dataset.i.split("-"); INV[+g][2][+i][3] = k; const open = [...document.querySelectorAll(".grp")].map(x => x.open); inv(); document.querySelectorAll(".grp").forEach((x, j) => x.open = open[j]); });
+inv();
+
+/* ---------- APACHE II örnek (puanlar ÖRNEKTİR) ---------- */
+const AP = [["Vücut ısısı","39.2 °C","m","monitör · 21:40",3],["Ortalama kan basıncı","51 mmHg","m","monitör · 21:37",2],["Kalp hızı","131 /dk","m","monitör · canlı",2],["Solunum hızı","30 /dk","m","monitör · canlı",1],["Oksijenlenme","PaO₂ 68","l","kan gazı · 07:40",1],["Arter pH","7.31","l","kan gazı · 07:40",2],["Sodyum","138 mmol/L","l","laboratuvar · 06:10",0],["Potasyum","4.9 mmol/L","l","laboratuvar · 06:10",0],["Kreatinin","1.9 mg/dL","l","laboratuvar · 06:10",2],["Hematokrit","34 %","l","laboratuvar · 06:10",0],["Lökosit","17.4 ×10³","l","laboratuvar · 06:10",1],["Yaş","61","h","HBYS",3],["Glasgow Koma Skoru","11 (puan = 15 − GKS)","e","hekim · sedasyon yok",4]];
+const NEED = [["Kronik organ yetmezliği", ["Yok (0)","Var · acil ameliyat ya da ameliyatsız (5)","Var · planlı ameliyat (2)"], 0],["Yatış tanı kategorisi", ["Sepsis","Solunum yetmezliği","Kardiyovasküler","Diğer"], null]];
+const SRC = { m:"monitör", l:"lab", h:"HBYS", e:"elle" };
+const apSel = [null, null];
+function ap() {
+  document.getElementById("apRows").innerHTML = AP.map(([n, v, s, t, p]) => `<div class="row"><span>${n}</span><span class="v">${v}</span><span class="src"><i class="${s}">${SRC[s]}</i>${t}</span><span class="pt">${p}</span></div>`).join("")
+   + NEED.map(([n, o], i) => `<div class="row need"><span><b>${n}</b></span><span class="opts" data-ap="${i}" style="grid-column:span 2">${o.map((x, j) => `<i class="${apSel[i] === j ? "on" : ""}" data-j="${j}">${x}</i>`).join("")}</span><span class="pt">${i === 0 && apSel[0] != null ? [0,5,2][apSel[0]] : "—"}</span></div>`).join("");
+  const base = AP.reduce((a, r) => a + r[4], 0), ch = apSel[0] != null ? [0,5,2][apSel[0]] : null;
+  const tot = ch == null ? null : base + ch;
+  document.getElementById("apTot").textContent = tot ?? `${base}+`;
+  document.getElementById("apDelta").textContent = tot == null ? "eksik madde var" : "tüm maddeler tamam · onay bekliyor";
+}
+document.getElementById("apRows").addEventListener("click", e => { const i = e.target.closest("[data-ap] i"); if (!i) return; apSel[+i.parentNode.dataset.ap] = +i.dataset.j; ap(); });
+ap();
+
+/* ---------- dil ---------- */
+const GL = { AZ:[["Yoğun bakım","Reanimasiya şöbəsi"],["Hemşire","Tibb bacısı"],["Hekim","Həkim"],["Yatak","Çarpayı"],["Alarm","Həyəcan siqnalı"],["Vardiya devri","Növbə təhvili"],["Kaydet ve imzala","Yadda saxla və imzala"],["Düşme riski","Yıxılma riski"]],
+  TR:[["Yoğun bakım","Yoğun bakım"],["Hemşire","Hemşire"],["Hekim","Hekim"],["Yatak","Yatak"],["Alarm","Alarm"],["Vardiya devri","Vardiya devri"],["Kaydet ve imzala","Kaydet ve imzala"],["Düşme riski","Düşme riski"]],
+  RU:[["Yoğun bakım","Отделение реанимации"],["Hemşire","Медсестра"],["Hekim","Врач"],["Yatak","Койка"],["Alarm","Тревога"],["Vardiya devri","Передача смены"],["Kaydet ve imzala","Сохранить и подписать"],["Düşme riski","Риск падения"]],
+  EN:[["Yoğun bakım","Intensive care unit"],["Hemşire","Nurse"],["Hekim","Physician"],["Yatak","Bed"],["Alarm","Alarm"],["Vardiya devri","Shift handover"],["Kaydet ve imzala","Save and sign"],["Düşme riski","Fall risk"]] };
+const glos = l => document.getElementById("glos").innerHTML = GL[l].map(([a, b]) => `<tr><td>${a}</td><td><b>${b}</b></td></tr>`).join("") + `<tr><td colspan="2" style="color:var(--attInk);font-size:12px">${l === "TR" ? "" : "Taslak çeviri · yerel kontrol gerekli"}</td></tr>`;
+document.getElementById("flags").addEventListener("click", e => { const s = e.target.closest("span"); if (!s) return; [...s.parentNode.children].forEach(x => x.classList.toggle("on", x === s)); glos(s.textContent); });
+glos("AZ");
+
+/* ---------- kaynak tablosu (arşiv: C:\Dev\Homunculus\Homunculus\raw) ---------- */
+const SR = [["SOFA","Erişkin YBÜ, organ yetmezliği","var","Kaynak ve kavram notu arşivde. Motor zaten hesaplıyor."],["qSOFA","Hızlı sepsis taraması","var","Kavram notu arşivde."],["NEWS2","Servis erken uyarı","var","Kılavuz (RCP 2017) arşivde. Motor hesaplıyor."],["Yenidoğan SOFA (nSOFA)","Yenidoğan YBÜ","var","Sistematik derleme arşivde. SNAPPE II'ye alternatif olabilir."],["APACHE II","Erişkin YBÜ, hastalık şiddeti","yok","Yayımlanmış makaleden alınmalı. APACHE III/IV ticari olabilir, doğrulanmalı."],["SNAP II / SNAPPE II","Yenidoğan YBÜ","yok","Yayımlanmış makaleden alınmalı."],["PRISM","Çocuk YBÜ","yok","Lisanslı olabilir. Kullanmadan önce doğrulanmalı."],["Phoenix ölçütleri","Çocuk sepsisi","var","Arşivde (JAMA 2024). Çocuk YBÜ hedefse kullanılabilir."],["MODS","Çoklu organ","yok","SOFA ile örtüşüyor, önerim ilk sürümde yok."],["VTE risk (Caprini benzeri)","Pıhtı riski","yok","Hastanenin kullandığı ölçek hangisiyse o alınmalı."],["Morse · Braden · CPOT · RASS · CAM-ICU","Hemşirelik değerlendirmeleri","yok","Yayımlanmış kaynaklardan alınmalı, hastane onayı gerekli."]];
+document.getElementById("srcTab").insertAdjacentHTML("beforeend", SR.map(([a, b, c, d]) => `<tr><td><b>${a}</b></td><td>${b}</td><td><span class="st ${c === "var" ? "ok" : "nx"}">${c}</span></td><td style="color:var(--mute)">${d}</td></tr>`).join(""));
+</script>
+</body>
+</html>

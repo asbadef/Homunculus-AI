@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasarım Masası</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6;
+          --ok:#22c55e; --wait:#eab308; --todo:#64748b; --web:#22b8d6; --mob:#a78bfa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:28px 16px 70px; }
+  h1 { font:700 32px/1.1 "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0; max-width:860px; } .lead b { color:var(--ink); }
+  h2 { font:700 21px "Space Grotesk"; margin:36px 0 12px; display:flex; align-items:center; gap:10px; }
+  h2 small { font:500 13px Figtree; color:var(--mute); }
+
+  .loop { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-top:20px; }
+  .loop div { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; position:relative; font-size:13px; color:var(--mute); }
+  .loop b { display:block; color:var(--ink); font:700 15px "Space Grotesk"; margin-bottom:2px; }
+  .loop i { font-style:normal; font:700 11px Figtree; color:var(--pri); letter-spacing:.08em; }
+  .loop div:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:50%; transform:translateY(-50%); color:var(--pri); font-weight:800; }
+
+  .wait { display:grid; gap:8px; }
+  .w { display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; background:linear-gradient(90deg, rgba(234,179,8,.10), transparent 60%); border:1px solid rgba(234,179,8,.35); border-radius:14px; padding:12px 14px; }
+  .w .n { font:700 20px "Space Grotesk"; color:#facc15; width:28px; text-align:center; }
+  .w b { display:block; } .w span { color:var(--mute); font-size:13.5px; }
+  .w a, a.go { color:#03141c; background:var(--pri); text-decoration:none; font:700 13px Figtree; padding:8px 12px; border-radius:10px; white-space:nowrap; }
+
+  .phases { display:grid; gap:10px; }
+  .ph { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; display:grid; grid-template-columns:200px 1fr 1fr; gap:14px; }
+  .ph .t b { font:700 16px "Space Grotesk"; display:block; }
+  .ph .t small { color:var(--mute); font-size:12.5px; }
+  .ph .t .st { margin-top:6px; }
+  .lane { border-left:3px solid var(--c); padding-left:12px; font-size:13.5px; color:var(--mute); }
+  .lane h5 { margin:0 0 4px; font:700 11px Figtree; letter-spacing:.1em; text-transform:uppercase; color:var(--c); }
+  .lane b { color:var(--ink); font-weight:600; }
+  .st { display:inline-block; font:700 11px Figtree; padding:3px 8px; border-radius:999px; }
+  .st.ok { background:rgba(34,197,94,.15); color:#4ade80; } .st.go { background:rgba(34,184,214,.15); color:#7fe3f5; }
+  .st.wait { background:rgba(234,179,8,.15); color:#facc15; } .st.todo { background:rgba(100,116,139,.2); color:#a3b1c6; }
+
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; font-size:14px; }
+  th { text-align:left; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); padding:10px 12px; background:var(--card2); }
+  td { padding:9px 12px; border-top:1px solid var(--line); vertical-align:top; }
+  td:first-child { color:var(--mute); width:190px; }
+  td b { font-weight:700; }
+  .drafts { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+  .d { display:block; text-decoration:none; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; transition:border-color .15s, transform .15s; }
+  .d:hover { border-color:var(--pri); transform:translateY(-2px); }
+  .d small { color:var(--pri); font:700 11px Figtree; letter-spacing:.08em; }
+  .d b { display:block; font:700 15px "Space Grotesk"; margin:2px 0; }
+  .d span { font-size:12.5px; color:var(--mute); }
+  .d.old { opacity:.55; }
+  .rules { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 18px; color:var(--mute); font-size:14px; }
+  .rules li { margin-bottom:5px; } .rules b { color:var(--ink); }
+  @media (max-width:900px) { .loop { grid-template-columns:1fr 1fr; } .loop div::after { display:none; } .ph { grid-template-columns:1fr; } td:first-child { width:auto; } .w { grid-template-columns:auto 1fr; } .w a { grid-column:span 2; text-align:center; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tasarım Masası</h1>
+  <p class="lead">Homunculus tasarım sürecinin <b>tek giriş kapısı</b>. Burada şunlar var: seni bekleyen sorular, alınan kararlar, fazlar (her birinde <b>web</b> ve <b>mobil</b> kolu) ve bütün taslaklar. Her turdan sonra güncellenir. Son güncelleme: <b>24.09.2026</b>.</p>
+
+  <div class="loop">
+    <div><i>1</i><b>Taslak + denetim</b>Ben seçenekli, canlı bir sayfa hazırlarım; denetçi ajan kontrol eder, ben düzeltirim</div>
+    <div><i>2</i><b>Seçim</b>Sen dokunup denersin, cevap satırını gönderirsin</div>
+    <div><i>3</i><b>Karar</b>Kararı bu sayfaya ve hafızaya yazarım</div>
+    <div><i>4</i><b>Kod</b>Fazın kararları tamamlanınca gerçek panele işlerim (yerel dal, GitHub'a gitmez)</div>
+    <div><i>5</i><b>Onay</b>Gerçek panelde görürsün, "tamam" dersin, faz kapanır</div>
+  </div>
+
+  <a href="app/index.html" style="display:flex;align-items:center;gap:16px;margin-top:22px;padding:18px 20px;border-radius:18px;text-decoration:none;color:#03141c;background:linear-gradient(135deg,#22b8d6,#7fe3f5)"><b style="font:700 22px 'Space Grotesk'">▶ Uygulamayı aç (prototip v1)</b><span style="font-weight:600">Giriş ekranı · rol rol demo hesaplar · bütün ekranlar tıklanabilir</span></a>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px">
+    <a class="d" href="24-mobil-ust.html"><small>YENİ · 25.09</small><b>Taslak 24 · Mobil üst çubuk</b><span>Gerçek uygulama, 3 biçim yan yana</span></a>
+    <a class="d" href="23-mobil-giris.html"><small>YENİ · 24.09</small><b>Taslak 23 · Mobil giriş</b><span>Giriş ekranı · renk yoğunluğu · hızlı dönüş</span></a>
+    <a class="d" href="22-mobil-secim.html"><small>YENİ · 24.09</small><b>Taslak 22 · Mobil seçimi</b><span>Alt menü · üst çubuk · Bana · Hastalar — 4 karar</span></a>
+    <a class="d" href="anasayfa/index.html"><small>YENİ · 24.09</small><b>Tanıtım sayfası</b><span>AZ/TR/RU/EN · yalnız kanıtlanabilir iddialar</span></a>
+    <a class="d" href="16-marka-secimi.html"><small>SEÇ · TASLAK 16</small><b>Marka kimliği</b><span>Renk + yazı tipi + logo · dört yön</span></a>
+    <a class="d" href="19-mobil-uygulama.html"><small>YENİ · TASLAK 19</small><b>Mobil uygulama</b><span>iOS ve Android ayrı · ana ekran A</span></a>
+    <a class="d" href="17-istem-ve-onam.html"><small>YENİ · TASLAK 17</small><b>İstem ve onam</b><span>Ekip kararı yazılı · itiraz edersen söyle</span></a>
+    <a class="d" href="20-kurum-yapisi.html"><small>YENİ · TASLAK 20</small><b>Yeni hastane kim ekler?</b><span>Kurum konsolu · grup · hastane</span></a>
+    <a class="d" href="18-bildirim-surecleri.html"><small>TASLAK 18</small><b>Bildirim süreçleri</b><span>Kararların işlendi</span></a>
+    <a class="d" href="15-sistem-neler-olabilir.html"><small>TASLAK 15</small><b>Sistem neler olabilir?</b><span>23 fikir · numarayla seç</span></a>
+    <a class="d" href="istekler.md"><small>TAKİP</small><b>Senin madde listen</b><span>Attığın her madde burada, durumuyla</span></a>
+    <a class="d" href="konsey-2026-09-24.md"><small>RAPOR</small><b>Konsey · 24.09</b><span>Durum, roller, kamera, tanıtım</span></a>
+    <a class="d" href="konsey-2026-09-24-b.md"><small>RAPOR</small><b>Konsey · 24.09 (2)</b><span>Kurum yapısı, 3/5/10, çeviri, tarih</span></a></div>
+  <h2>Seni bekleyenler <small>kısa cevap yeterli</small></h2>
+  <div class="wait" id="wait"></div>
+
+  <h2>Fazlar <small>her fazın web ve mobil kolu var</small></h2>
+  <div class="phases" id="phases"></div>
+
+  <h2>Alınan kararlar</h2>
+  <table id="dec"><tr><th>Konu</th><th>Karar</th><th>Tarih</th></tr></table>
+
+  <h2>Taslaklar</h2>
+  <div class="drafts" id="drafts"></div>
+
+  <h2>Kurallar</h2>
+  <ol class="rules">
+    <li><b>Cihaz bağlantısına dokunulmaz</b>: medibus, deploy, motorun cihaz köprüsü, paneldeki canlı veri katmanı. Sadece izlenir, her oturum başında değişenler raporlanır.</li>
+    <li><b>Tanı konmaz, emir verilmez.</b> Ekrandaki her öneri gerekçesini gösterir, kararı hekim verir. Başlıklar "…kriterleri karşılanıyor" dilinde yazılır.</li>
+    <li><b>Sahte veri gerçek sanılmaz.</b> Temsili dalga ve örnek veri her zaman etiketli olur.</li>
+    <li><b>Taslaktaki "hazır / yok" bilgisi koddan doğrulanır</b>, tahminle yazılmaz.</li>
+    <li><b>Her faz web ve mobil</b> olarak iki kolda ilerler.</li>
+    <li>Azerbaycanca metinler yayından önce <b>yerel birine</b> okutulur.</li>
+  </ol>
+</div>
+
+<script>
+const WAIT = [
+  ["Rol modeli (yeni)", "8 rol + 'sorumlu hemşire' işareti + 'hızlı yanıt' nöbet görevi. Biyomedikal, kalite, başhekim ve BT hasta adını görmez. Uygulamada Yönetim → Roller ve yetkiler'de. Onay mı, değişiklik mi?", "app/"],
+  ["Birim katmanları (yeni)", "Tam izlem yalnız erişkin ve yenidoğan yoğun bakım; servis/PICU/KVC/kemik iliği vital izlem; acil, günübirlik, kemoterapi, anjiyo, IVF, bebek odası yalnız yatak ve cihaz. Doğru mu?", "app/"],
+  ["Sistem neler olabilir (yeni)", "23 fikir: hangileri önce, hangileri sonra, hangilerini istemiyorsun? Numarayla yaz.", "15-sistem-neler-olabilir.html"],
+  ["Kamera ön koşulları (yeni)", "Hukuki dayanak, politika, odada levha işaretlenmeden bağlanamıyor. Bu koşullar hastane ile konuşulacak mı?", "app/"],
+  ["Marka kimliği (şimdi)", "Renk ve yazı tipi oturmadı dedin. Taslak 16'da dört yön var: birini seç, prototip ve mobil tek yerden o renge ve yazı tipine geçecek.", "16-marka-secimi.html"],
+  ["İstem ve onam (itiraz varsa)", "Ekip kararı: ilaç/lab/radyoloji istemi HBYS'de, hemşirelik bakımı bizde; onam belgesi saklanmaz, yalnız 'alındı mı' gösterilir.", "17-istem-ve-onam.html"],
+  ["Temsili dalga", "Monitördeki çizgi 'temsili' etiketiyle mi kalsın, kalksın mı?", "06-paneller.html"],
+  ["Telefon", "Prototipteki telefon beğenilmedi. Sorun görünüş mü, akış mı, telefonda yapılacak işler mi?", "11-prototip.html"],
+];
+const PH = [
+  ["A · Hijyen", "Göze batan hatalar", "ok", "Dev simge düzeltildi ✓ · 'HBYS' yalnız yönetimde ✓ · üst çubuk sadeleşti ✓ · form bildirim vaatleri dürüstleşti ✓", "Aynı kurallar mobile de uygulanacak."],
+  ["B · Roller", "Kim neyi görür", "wait", "8 rol + işaret + görev ✓ · hasta adı görmeyen roller ✓ · denetim kaydında ad maskesi ✓ · <b>onayın bekleniyor</b>", "Mobilde rol bazlı menü."],
+  ["C · Hastane yapısı", "Tüm bölümler", "wait", "12 birim, 3 katman ✓ · kodlu odalar, yatak tipi, izolasyon, kullanım dışı ✓ · kayıttan içe aktarma önizlemesi ✓ · doluluk ekranı ✓", "Kabul ve doluluk telefonda."],
+  ["D · Bildirim", "Doğru kişiye haber", "go", "Bildirim merkezi ✓ · kanal gerçeği ✓ · kurallar sekmesi kararlara göre ✓ · telefona bildirim yalnız kritik (karar ✓, üründe yok)", "Mobil taslakta kilit ekranı bildirimi."],
+  ["E · Kamera", "Bağlantı ekranı", "wait", "Ön koşullar, bağlantı formu, yatak eşleştirme, gerekçeli izleme, mahremiyet perdesi ✓ · gerçek bağlantı yok", "—"],
+  ["F · Biyomedikal", "Cihaz ve bakım", "go", "Envanter, bakım takvimi, arıza kayıtları, oda-cihaz, hasta adı yok ✓", "Arıza bildirimi telefondan."],
+  ["G · Hemşirelik+", "HBYS ekranlarından", "go", "Bakım planı (tanı önerisi + vardiya değerlendirmesi) · ayrıntılı sıvı ızgarası", "Yatak başında tablet."],
+  ["H · Tanıtım sayfası", "Satış yüzü", "go", "4 dil, iki tema, yalnız kanıtlanabilir iddialar", "—"],
+  ["I · Proje wiki'si", "Kararlar kaybolmasın", "todo", "Homunculus Türkçe wiki'si (Obsidian) kurulmadı; kararlar şimdilik bu Masa ve konsey dosyalarında", "—"],
+  ["Eski · 1-7", "23.09 fazları", "todo", "Hasta paneli, iki imzalı devir, pilot, mobil AZ, kurulum, marka. Sırası konsey 23.09'da.", "Mobil AZ/RU hâlâ sırada."],
+];
+const DEC = [
+  ["Kurulum", "Repo C:\\Dev\\Homunculus köküne klonlandı; çalışma yerel 'tasarim/yenileme' dalında, GitHub'a gitmez", "23.09"],
+  ["Çalışma biçimi", "Her karar seçenekli, canlı taslak sayfasıyla; kısa cevap satırı", "23.09"],
+  ["Menü", "Dar sol menü: simge + altında yazı, üstüne gelince alt menü", "23.09"],
+  ["Marka yeri", "Homunculus önde (sol üstte bizim logo, hastane adı üst çubukta)", "23.09"],
+  ["Yatak Paneli", "A: dikkat kartları + kart ızgarası", "23.09"],
+  ["Hasta ekranı", "A: monitör en üstte, altında sekmeler, SOFA onay kartı", "23.09"],
+  ["Alarmlar", "B: zaman sıralı liste, en eski yanıtsız en üstte", "23.09"],
+  ["Yönetici Özeti", "A: unutulan işler + nabız + alarm kalitesi", "23.09"],
+  ["Tema", "İkisi: Gece ve Gün Işığı, kullanıcı seçer", "23.09"],
+  ["Kullanıcı ayarları", "Yalnız tema, kart/liste, yazı boyu. Panel başına A/B kullanıcıya sunulmaz (vardiya güvenliği)", "23.09"],
+  ["Skorlar", "Sistem doldurur, hekim onaylar; kaynağı olmayan değer kendiliğinden girilmez", "23.09"],
+  ["Trend grafikleri", "T1 (her değer ayrı satır) + T2 (dokununca büyük grafik), varsayılan 24 saat, hastanın normal bandı görünür", "23.09"],
+  ["Web prototipi", "Taslak 11'in web tarafı beğenildi (devir ayrı menüde, hasta ekranı sırası, TEMSİLİ dalga, iki SOFA etiketi)", "23.09"],
+  ["Veri yolu", "Her modül üç moddan biriyle çalışır: HBYS ana / birlikte / bağımsız (Ozan'ın önerisi)", "23.09"],
+  ["Birimler", "Yoğun bakım katları + yatan hasta servisleri (Ozan). Not: docs/vision.md hâlâ 'yalnız YBÜ' diyor, o belge ekibin; güncellenmesi Asaf'a söylenmeli", "23.09"],
+  ["Kapsam", "Evet: ilaç order'ı, uygulama çizelgesi, tetkik/sonuç, hemşirelik değerlendirmeleri ürüne giriyor", "23.09"],
+  ["Modlar", "Sonuç ve ilaç Mod 1 (HBYS'den), değerlendirmeler Mod 3 (bizde)", "23.09"],
+  ["Öncelik", "Önce hemşirelik değerlendirmeleri; ağrı/yara formlarında vücut haritası", "23.09"],
+  ["Dil", "Sistem dili Azerbaycanca, dil seçimi olacak (AZ/TR/RU/EN)", "23.09"],
+  ["Denetçi", "Her taslak Ozan'a gitmeden önce ayrı bir denetçi ajana denetletilir (Ozan'ın önerisi)", "23.09"],
+  ["İsim", "Homunculus sabit", "23.09"],
+  ["Pazar", "İlk hedef Azerbaycan", "23.09"],
+  ["Logo yazısı", "Space Grotesk, yatay (marka yönü netleşince yeniden bakılacak)", "23.09"],
+  ["HBYS kelimesi", "Yalnız yönetim panellerinde; kullanıcı 'hastane kaydı' görür (Ozan)", "24.09"],
+  ["Tanıtım sayfası", "Yapılacak; 'bu bir prototiptir' notu konmayacak (Ozan). Kanıtlanamayan iddia yine yok", "24.09"],
+  ["Madde takibi", "Ozan'ın araya attığı her madde istekler.md'de tutulur", "24.09"],
+  ["Karar biçimi", "Ozan soruları ekibe bırakır; ekip karar verir ve gerekçesini yazar, Ozan itiraz ederse değişir. Klinik protokol, hukuk ve hastane politikası yine hastanenin", "24.09"],
+  ["Telefona bildirim", "Yalnız kritik; içerikte hasta adı yok (Ozan)", "24.09"],
+  ["Sessiz saat", "Yok (Ozan)", "24.09"],
+  ["Erteleme", "Motordaki şartname: kritik ertelenemez, yüksek 30 dk, orta 120 dk (ekip)", "24.09"],
+  ["Kritik lab", "İlk bildirim hemşire + hekime birlikte (Ozan); basamak süresi hastanenin protokolü", "24.09"],
+  ["Vardiya değişimi", "Açık bildirim gelen ekibe geçer, giden teslime kadar görür (Ozan)", "24.09"],
+  ["3/5/10", "Örnek başlangıç değeri; hastane başına ayarlanır. Canlı hatta bağlama şimdilik bekliyor (Ozan)", "24.09"],
+  ["Yeni hastane", "Hastane yöneticisi eklemez; Homunculus ekibinin kurum konsolundan açılır (ekip)", "24.09"],
+  ["Admin görünümü", "BT hasta verisi görmez; 'rol gözüyle bak' ile her rolün ekranını sentetik veriyle görür (ekip)", "24.09"],
+  ["Sözlük", "Kaydet → Taslağı sakla · İmzala → Mühürle · Devir → Teslim (Ozan: HBYS'den alınmış gibi durmasın)", "24.09"],
+  ["Epikriz", "Teslim notunun içinde değil; hastada 'Belgeler' sekmesi: muayene notu, epikriz taslağı, sesle yazdırma (ekip)", "24.09"],
+  ["Mobil", "iOS ve Android ayrı tasarım dili · ana ekran A (Ozan)", "24.09"],
+  ["İstem", "İlaç/lab/radyoloji HBYS'de; hemşirelik bakımı bizde; kendi etkileşim veritabanımız yok (ekip)", "24.09"],
+];
+const DR = [
+  ["26","web-sadelesme","Web sadeleşme (uygulama içi)","29.09 Ozan: uygulama içi değişmeyecek · yalnız arşiv",1],
+  ["20","kurum-yapisi","Yeni hastane kim ekler?","Kurum konsolu · hastane grubu · hastane"],
+  ["19","mobil-uygulama","Mobil uygulama","iOS/Android ayrı · ana ekran A"],
+  ["18","bildirim-surecleri","Bildirim süreçleri","Kararlar alındı"],
+  ["17","istem-ve-onam","İstem ve onam","12 seçenek · ekip kararı"],
+  ["16","marka-secimi","Marka kimliği","Dört yön · seçim bekliyor"],
+  ["15","sistem-neler-olabilir","Sistem neler olabilir?","23 fikir · HBYS ekranlarından · numarayla seç"],
+  ["14","hbys-analizi","HBYS analizi","42 özellik · APACHE örneği · dil · skor kaynakları"],
+  ["13","vucut-haritasi","Vücut haritası","Ağrı, yara, kateter · denetçi sağ/sol hatasını yakaladı"],
+  ["12","klinik-is-akisi","Klinik iş akışı","İlaç, tetkik ve sonuç, değerlendirmeler, üç çalışma modu"],
+  ["11","prototip","Benim önerim · prototip","Web beğenildi · telefon beğenilmedi"],
+  ["06","paneller","Paneller","Menü, yatak, hasta, alarm, yönetici · kararlar alındı"],
+  ["10","trend-grafikleri","Trend grafikleri","T1 + T2 seçildi"],
+  ["08","surec-haritasi","Tek harita","Satış → kurulum → hastanın yolculuğu"],
+  ["05","gezinme-ve-monitor","Gezinme ve monitör","Mobil gezinme sorusu açık"],
+  ["09","marka-yeni","Marka · 2. tur","Beğenilmedi",1],
+  ["07","marka-karakteri","Marka · 1. tur","Beğenilmedi",1],
+  ["04","logo-a-gelistirme","Logo A geliştirme","Askıda",1],
+  ["03","logo-birlesim","Logo birleşim","Askıda",1],
+  ["02","logo-fikirleri","Logo fikirleri","Askıda",1],
+  ["01","gorsel-kimlik-yonleri","Görsel kimlik yönleri","İlk tur",1],
+];
+document.getElementById("wait").innerHTML = WAIT.map(([t, d, l], i) => `<div class="w"><span class="n">${i + 1}</span><div><b>${t}</b><span>${d}</span></div>${l ? `<a href="${l}">Sayfayı aç →</a>` : "<span></span>"}</div>`).join("");
+const ST = { ok:"Tamam", go:"Sürüyor", wait:"Karar bekliyor", todo:"Sırada" };
+document.getElementById("phases").innerHTML = PH.map(([n, s, st, w, m]) => `<div class="ph"><div class="t"><b>${n}</b><small>${s}</small><div class="st ${st}">${ST[st]}</div></div>
+  <div class="lane" style="--c:var(--web)"><h5>Web</h5>${w}</div><div class="lane" style="--c:var(--mob)"><h5>Mobil</h5>${m}</div></div>`).join("");
+document.getElementById("dec").insertAdjacentHTML("beforeend", DEC.map(([a, b, c]) => `<tr><td>${a}</td><td><b>${b}</b></td><td>${c}</td></tr>`).join(""));
+document.getElementById("drafts").innerHTML = DR.map(([n, f, t, s, old]) => `<a class="d ${old ? "old" : ""}" href="${n}-${f}.html"><small>TASLAK ${n}</small><b>${t}</b><span>${s}</span></a>`).join("")
+  + `<a class="d" href="konsey-2026-09-23-tasarim-plani.md"><small>RAPOR</small><b>Konsey · tasarım planı</b><span>Üç ajanın analizi ve karar</span></a>`;
+</script>
+</body>
+</html>

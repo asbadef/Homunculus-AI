@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="az" data-theme="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tur.js test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* a1.html 18-35 — sayfa değişkenleri */
+:root, [data-theme="gun"] {
+  --page:#f5f8fb; --card:#ffffff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+  --pri:#0e7490; --onpri:#ffffff; --priSoft:#e0f2f7; --priInk:#0e7490;
+  --crit:#dc2626; --critSoft:#fdecec; --mid:#ca8a04; --midSoft:#fdf6e3; --ok:#16a34a; --okSoft:#e7f6ec;
+  --spo:#a16207; --hr:#15803d; --tile:#f6f8fb;
+  --shadow:0 20px 50px rgba(20,30,50,.10); --shadowS:0 6px 18px rgba(20,30,50,.06);
+  --glow1:#0e7490; --glow2:#1d4ed8; --glowOp:.18; --dots:rgba(14,116,144,.14);
+  --hdr:rgba(245,248,251,.82);
+}
+[data-theme="gece"] {
+  --page:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+  --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13); --priInk:#7dd3e6;
+  --crit:#ef4444; --critSoft:rgba(239,68,68,.12); --mid:#eab308; --midSoft:rgba(234,179,8,.12); --ok:#22c55e; --okSoft:rgba(34,197,94,.12);
+  --spo:#ffe14a; --hr:#22e05a; --tile:#07101f;
+  --shadow:0 24px 60px rgba(0,0,0,.45); --shadowS:0 8px 22px rgba(0,0,0,.3);
+  --glow1:#0e7490; --glow2:#1d4ed8; --glowOp:.5; --dots:rgba(143,161,186,.07);
+  --hdr:rgba(7,16,31,.8);
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font:16px/1.55 Figtree, system-ui, sans-serif; }
+/* host'un genel .btn kuralı — tur'a sızmadığını görmek için */
+.btn { height:40px; padding:0 16px; border-radius:12px; }
+.s { padding:48px 0; }
+@media (max-width:640px) { #tur .wrap { padding:0 16px !important; } }
+</style>
+</head>
+<body>
+<section id="tur" class="s"><div class="wrap" style="max-width:1440px;margin:0 auto;padding:0 32px"><div class="head"><h2>test</h2></div><div id="tur-mount"></div></div></section>
+<div style="height:1200px"></div>
+<script src="tur.js"></script>
+</body>
+</html>

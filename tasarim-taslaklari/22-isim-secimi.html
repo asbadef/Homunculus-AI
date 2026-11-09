@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>İsim Seçimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700;800&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#f4f6f9; --panel:#fff; --panel2:#eef1f5; --ink:#141a24; --mute:#5b6676; --line:#dfe3ea;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e1f1f6; --ok:#17763a; --okSoft:#e6f6ec; --warn:#8a5a00; --warnSoft:#fff6e0; --no:#b42318; --noSoft:#fdecec;
+  --petrol:#0b3a47; --shadow:0 10px 28px rgba(20,30,50,.08);
+}
+:root[data-theme="dark"]{
+  --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#98a6ba; --line:#223047;
+  --pri:#3fb6d3; --onpri:#04131a; --priSoft:rgba(63,182,211,.14); --ok:#6ad08f; --okSoft:rgba(60,190,110,.13); --warn:#f2c46b; --warnSoft:rgba(242,196,107,.1); --no:#ff8a80; --noSoft:rgba(239,68,68,.13);
+  --petrol:#06222b; --shadow:0 10px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:15px/1.55 Figtree,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:5;background:var(--page);border-bottom:1px solid var(--line)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0}
+h1{font:700 22px/1.2 "Space Grotesk",sans-serif;margin:0;flex:1;min-width:180px}
+.seg{display:inline-flex;background:var(--panel2);border-radius:12px;padding:3px}
+.seg button{padding:7px 12px;border-radius:9px;font-weight:700;font-size:13.5px;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--pri);color:var(--onpri)}
+.why{margin:16px 0;background:var(--priSoft);border-radius:16px;padding:14px 16px}
+.why summary{font-weight:800;cursor:pointer}
+.why ul{margin:8px 0 0;padding-left:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding-bottom:140px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;cursor:pointer;transition:border-color .15s}
+.card[data-picked="true"]{border-color:var(--pri);box-shadow:0 0 0 2px var(--pri)}
+.top{display:flex;align-items:center;gap:12px}
+.icon{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;color:#fff;font:700 24px "Space Grotesk";flex:none;background:linear-gradient(145deg,var(--pri),var(--petrol))}
+.nm{font:700 24px/1 "Space Grotesk",sans-serif}
+.no{font:600 12px "JetBrains Mono";color:var(--mute)}
+.pick{margin-left:auto;width:34px;height:34px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:800;color:var(--onpri);flex:none}
+.card[data-picked="true"] .pick{background:var(--pri);border-color:var(--pri)}
+.mean{font-size:14.5px}
+.say{font-size:13px;color:var(--mute)}
+.tag{display:inline-block;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px}
+.t-clear{background:var(--okSoft);color:var(--ok)} .t-caution{background:var(--warnSoft);color:var(--warn)} .t-avoid{background:var(--noSoft);color:var(--no)} .t-wait{background:var(--panel2);color:var(--mute)}
+.risk{font-size:13px;color:var(--mute)}
+/* önizleme */
+.prev{border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.phone{background:var(--petrol);color:#fff;padding:18px 16px 16px;display:flex;flex-direction:column;gap:6px;min-height:150px;justify-content:flex-end}
+.phone .brand{display:flex;align-items:center;gap:8px;font:700 13px "Space Grotesk";opacity:.9}
+.phone .dot{width:18px;height:18px;border-radius:6px;background:#3fb6d3}
+.phone .hero{font:700 21px/1.2 "Space Grotesk"}
+.phone .hero b{color:#7fdcef}
+.desk{background:var(--panel2);display:none}
+.desk .tab{display:flex;align-items:center;gap:6px;background:var(--panel);margin:8px 8px 0;border-radius:9px 9px 0 0;padding:6px 10px;font-size:12.5px;font-weight:700;width:max-content;max-width:90%}
+.desk .tab i{width:12px;height:12px;border-radius:4px;background:var(--pri)}
+.desk .side{display:flex;gap:10px;background:var(--panel);margin:0 8px 8px;padding:10px;border-radius:0 9px 9px 9px}
+.desk .side .logo{font:700 18px "Space Grotesk";color:var(--pri)}
+.desk .side .m{font-size:12px;color:var(--mute);align-self:center}
+body[data-view="desk"] .phone{display:none}
+body[data-view="desk"] .desk{display:block}
+footer{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);z-index:6}
+footer .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px}
+.ans{font:600 15px "JetBrains Mono";background:var(--panel2);padding:8px 12px;border-radius:10px;flex:1;min-width:200px}
+.btn{background:var(--pri);color:var(--onpri);font-weight:800;padding:9px 14px;border-radius:11px}
+.btn.ghost{background:var(--panel2);color:var(--ink)}
+@media (max-width:520px){ .grid{grid-template-columns:1fr} h1{font-size:19px} }
+</style>
+</head>
+<body data-view="phone">
+<header><div class="wrap bar">
+  <h1>İsim seçimi</h1>
+  <div class="seg" role="group" aria-label="Liste">
+    <button data-list="proj" aria-pressed="true">Projeye uygun 6</button>
+    <button data-list="big" aria-pressed="false">İhtişamlı 7</button>
+    <button data-list="new" aria-pressed="false">Yeni 10 (28.09)</button>
+    <button data-list="old" aria-pressed="false">Önceki 10 (27.09)</button>
+    <button data-list="out" aria-pressed="false">Elenenler (18)</button>
+  </div>
+  <div class="seg" role="group" aria-label="Görünüm">
+    <button data-view="phone" aria-pressed="true">Telefon</button>
+    <button data-view="desk" aria-pressed="false">Masaüstü</button>
+  </div>
+  <div class="seg" role="group" aria-label="Tema">
+    <button data-theme="light" aria-pressed="true">Gündüz</button>
+    <button data-theme="dark" aria-pressed="false">Gece</button>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <details class="why" open>
+    <summary>Neden böyle? · nasıl seçilir</summary>
+    <ul>
+      <li><b>Ölçüt:</b> yoğun bakım / yenidoğan nöbetini anlatsın; "izler ve uyarır, teşhis koymaz" duruşuna uysun; AZ · RU · EN · TR'de aynı okunsun, ö/ü/ş/ı/ə gibi harf içermesin; kısa olsun.</li>
+      <li><b>Etiket:</b> yeşil = taramada çakışma görülmedi · sarı = dikkat · kırmızı = kaçın. Tarama internet aramasıdır; <b>marka tescili ve alan adı kontrolü değildir</b> — seçilen 2–3 isim için ayrıca yapılır.</li>
+      <li>Kartlara dokunarak <b>en fazla 3 favori</b> seç; alttaki cevap satırı kendiliğinden oluşur. Kopyala → bana yapıştır.</li>
+      <li>Önizleme, logo değil yalnız yazıdır. Logo ve renk (#80) isim seçilince bu isme göre çizilecek.</li>
+      <li>"Mira" bilerek yok: Fabrika Studio'daki karakterin adı.</li>
+    </ul>
+  </details>
+  <div class="grid" id="grid"></div>
+</main>
+
+<footer><div class="wrap">
+  <div class="ans" id="ans">İsim: —</div>
+  <button class="btn" id="copy">Kopyala</button>
+  <button class="btn ghost" id="clear">Temizle</button>
+</div></footer>
+
+<script>
+// risk: clear | caution | avoid | wait (tarama sürüyor). note: taramanın bulduğu, tek satır.
+// 28.09 gece: iki tur internet taraması (17 aday) sonrası kalan 10, en temizden başlayarak.
+const NEW = [
+  { n:"Lumeva", mean:"<i>lumen</i> (ışık) + <i>eva</i> (yaşam). Uydurma, yumuşak, akılda kalır; tescile yatkın.", say:"lu-ME-va · dört dilde aynı", risk:"clear", note:"Sağlık yazılımında aynı ad bulunmadı; yalnız bir güzellik merkezi ve bir cilt bakım markası var." },
+  { n:"Evigo", mean:"<i>e-</i> + <i>vigil</i> (nöbet, uyanık kalmak): \"uyanık kal\". Kısa, sert değil, her dilde aynı söylenir.", say:"e-Vİ-go", risk:"clear", note:"Hiçbir alanda aynı ad bulunmadı. En yakın benzerler (EviCore, Evira) ilgisiz." },
+  { n:"Tenvia", mean:"<i>tend</i> (özenle bakmak) + <i>via</i> (yol): bakımın yolu.", say:"TEN-vi-a", risk:"caution", note:"Sağlıkta aynı ad yok; ama ABD'de uzaktan hasta izleyen <b>Tenovi</b> adı çok benziyor." },
+  { n:"Egida", mean:"Rusça <i>egida</i> / İngilizce <i>aegis</i>: \"koruması altında\". Hasta sürekli gözetim altında.", say:"E-gi-da", risk:"caution", note:"Yazılım yok; ABD'de bir evde bakım şirketi ve Rusya'da bir klinik var. Rusçada sık kullanılan bir şirket adı: aramada öne çıkmak zor." },
+  { n:"Vigira", mean:"<i>vigil</i> (nöbet) kökünden: işini en doğrudan anlatan isim.", say:"vi-Gİ-ra", risk:"caution", note:"İngiltere'de küçük bir ilaç güvenliği danışmanlığı \"VigiRA Med\" var — seçilirse önce kontrol." },
+  { n:"Custa", mean:"Latince <i>custos</i> (bekçi, koruyucu) kökünden türetildi.", say:"KUS-ta", risk:"caution", note:"custa.com başka bir şirkette. İki okunuş: TR/AZ'de C harfi \"c\" sesiyle (\"Cus-ta\"), yurt dışında \"Kusta\"." },
+  { n:"Nocura", mean:"Latince <i>nox</i> (gece) + <i>cura</i> (bakım): gece bakımı.", say:"no-CU-ra", risk:"caution", note:"Aramada temiz; ama İspanyolca/İtalyanca \"no cura\" = \"iyileştirmez\". TR/AZ'de \"No-cu-ra\" okunur." },
+  { n:"Oryva", mean:"<i>ora</i> (saat) + <i>vita</i> (yaşam): her saat yaşam.", say:"or-YA-va", risk:"caution", note:"Y harfi karışık: TR/AZ \"Orya-va\", Rusça \"Орыва\" (kopmak/koparmak çağrışımı). Bir ajans bu adı kullanıyor." },
+  { n:"Zorka", mean:"Rusça <i>zorkiy</i> = keskin gözlü, uyanık; Slav dillerinde \"sabah yıldızı\".", say:"ZOR-ka", risk:"caution", note:"Sırbistan'da Zorka Pharma var. Rusçada köyde ineğe verilen bir ad gibi duruyor; TR/AZ'de \"zor\" ile başlıyor." },
+  { n:"Ritma", mean:"Ritim: kalbin ve nefesin düzeni; sistem ritmin bozulduğunu erkenden fark eder.", say:"RİT-ma", risk:"caution", note:"Rusya'da RITM adlı bir tıbbi cihaz üreticisi var; \"ritm\" üç dilde gündelik kelime, sahiplenmek zor." },
+];
+// 28.09 gece (Ozan: “ihtişamlı olmalı; markanın yüzü isim”): 12 klasik aday tarandı, 7 kaldı.
+// 28.09 gece (Ozan: “bulduğun isimler bu projeye uygun olmalı”): izleme, erken uyarı, yoğun bakım, nöbet, tek bakış.
+const PROJ = [
+ {
+  "n": "Intensa",
+  "mean": "<b>Projeye uyumu:</b> yoğun bakımın kendisi (intensive care) — ürünün çalıştığı yer. Dört dilde aynı okunur, teşhis ya da tedavi çağrıştırmaz.",
+  "say": "in-TEN-sa",
+  "risk": "clear",
+  "note": "Sağlık yazılımında yok; ABD'de bir muayene odası mobilyası üreticisi ve Avusturya'da bir teknik hizmet firması aynı adı kullanıyor."
+ },
+ {
+  "n": "Keshik",
+  "mean": "<b>Projeye uyumu:</b> “nöbet sırası” — keşik çəkmək = nöbet tutmak. Ürünün sözü “her yatak, her nöbet”; hemşirenin vardiyası ve devir teslim tam bu kelime. Tarihte hükümdarı gece gündüz koruyan muhafız birliği: ihtişamı da taşır.",
+  "say": "ke-ŞİK",
+  "risk": "caution",
+  "note": "<b>Mutlaka “Keshik” yazılmalı:</b> ş düşerse “kesik” (yara) olur. Rusçada “кешик” biraz sevimli duruyor. Sağlıkta aynı ad bulunmadı."
+ },
+ {
+  "n": "Vigilia",
+  "mean": "<b>Projeye uyumu:</b> Latince gece nöbeti — yoğun bakımın en riskli saatleri ve ürünün asıl işi: gece boyunca izleyip erkenden uyarmak.",
+  "say": "vi-Gİ-li-a",
+  "risk": "caution",
+  "note": "Rusçada <i>вигилия</i> kilisedeki gece ayini (dinî çağrışım). “Vigil” adlı izleme ürünleri kalabalık; aynı ad bulunmadı."
+ },
+ {
+  "n": "Signavia",
+  "mean": "<b>Projeye uyumu:</b> <i>signa</i> (bulgular, yaşam belirtileri) + <i>via</i> (yol): belirtilerin izi — ürün değerlerin gidişini okuyup gerekçesiyle gösterir.",
+  "say": "sig-na-Vİ-a",
+  "risk": "caution",
+  "note": "Sağlıkta yok; ama SAP'nin iş süreci ürünü <b>Signavio</b>'dan bir harf farklı."
+ },
+ {
+  "n": "Neovita",
+  "mean": "<b>Projeye uyumu:</b> yenidoğan (neo) + yaşam (vita): NICU tarafı. Yetişkin yoğun bakımı dışarıda bırakır.",
+  "say": "ne-o-Vİ-ta",
+  "risk": "caution",
+  "note": "Hindistan'da Neovita Biopharmaceuticals var; yalnız yenidoğanı anlattığı için kapsamı dar."
+ },
+ {
+  "n": "Baxis",
+  "mean": "<b>Projeye uyumu:</b> Azerbaycanca <i>baxış</i> (bakış) + <i>axis</i>: “her yatak, her nöbet — tek bakışta” sözünün kendisi.",
+  "say": "ba-HIS (AZ)",
+  "risk": "caution",
+  "note": "AZ'de çok iyi; ama Türkçede “bahşiş”, Rusçada “baks” (dolar argosu) ve kombi markası BAXI çağrışımı."
+ }
+];
+const BIG = [
+ {
+  "n": "Hesperis",
+  "mean": "Yunanca <i>Hesperos</i>, akşam yıldızı: gece çökerken ilk yanan ve bütün gece görünen ışık. Gece nöbetinin kendisi.",
+  "say": "HES-pe-ris · dört dilde aynı",
+  "risk": "clear",
+  "note": "Sağlıkta aynı ad bulunmadı. Benzerler: Hesperos (organ-çip biyoteknoloji), İtalya'da Hesperia Hastanesi."
+ },
+ {
+  "n": "Excubia",
+  "mean": "Latince <i>excubiae</i>: nöbetçiler, muhafız nöbeti. Bizans'ta imparatoru koruyan muhafızlar “Excubitores” idi. En ağır, en tarihî isim.",
+  "say": "eks-KU-bi-a",
+  "risk": "clear",
+  "note": "Sağlıkta yok; ABD'de bir bankacılık yazılımı ve Brezilya'da bir güvenlik firması aynı adı kullanıyor. “ks-k” sesi söylemeyi biraz zorlaştırıyor."
+ },
+ {
+  "n": "Keshik",
+  "mean": "Türk-Moğol hükümdar muhafızı <b>Keşik</b>: gündüz ve gece nöbet tutan seçkin birlik. Türkçe/Azerbaycanca “nöbet sırası” (keşik çəkmək = nöbet tutmak). İlk iki pazar için en güçlü hikâye.",
+  "say": "ke-ŞİK",
+  "risk": "caution",
+  "note": "<b>Mutlaka “Keshik” yazılmalı:</b> ş harfi alan adında ve yabancı klavyede düşer, “kesik” olur — klinik ortamda “kesik, yara” demek. Rusçada “кешик” biraz sevimli duruyor."
+ },
+ {
+  "n": "Aurelis",
+  "mean": "Latince <i>aureus</i> ışık kökü; Marcus Aurelius'u çağrıştırır: bilge, sakin otorite.",
+  "say": "au-RE-lis",
+  "risk": "caution",
+  "note": "aurelis.org bir ruh sağlığı derneği; Finlandiya'da Aurealis Pharma benzer."
+ },
+ {
+  "n": "Custodis",
+  "mean": "Latince <i>custos</i>, koruyucu, bekçi: “koruyanın”.",
+  "say": "kus-TO-dis",
+  "risk": "caution",
+  "note": "custodis.ai başka bir üründe; Belçika'da Custodix (klinik araştırma) çok benzer. TR/AZ'de C harfi “c” sesiyle okunur."
+ },
+ {
+  "n": "Vigilia",
+  "mean": "Latince gece nöbeti; Roma ordusunda gece dört “vigilia”ya bölünürdü. Anlamı en doğrudan isim.",
+  "say": "vi-Gİ-li-a",
+  "risk": "caution",
+  "note": "Rusçada <i>вигилия</i> kilisedeki gece ayini — dinî çağrışım. “Vigil” adlı izleme ürünleri kalabalık."
+ },
+ {
+  "n": "Noctua",
+  "mean": "Athena'nın baykuşu: gece uyanık kalan bilgelik.",
+  "say": "NOK-tu-a",
+  "risk": "caution",
+  "note": "Avusturyalı bilgisayar fanı markası Noctua aramaları tamamen kaplıyor."
+ }
+];
+// Taramada elenenler — gerekçesiyle, kararın nereden geldiği görünsün diye
+const OUT = [
+ {"n":"Prodroma","mean":"Hastalığın ilk belirtileri (prodrom).","say":"pro-DRO-ma","risk":"avoid","note":"Aramada temiz; ama ad hastalık tespiti vaat ediyor — “teşhis koymaz” kuralına aykırı."},
+ {"n":"Semeia","mean":"Yunanca belirtiler.","say":"se-ME-ia","risk":"avoid","note":"Sêmeia: Fransız uzaktan hasta izleme girişimi (21 milyon € yatırım) — doğrudan rakip."},
+ {"n":"Monitra","mean":"İzleme.","say":"mo-Nİ-tra","risk":"avoid","note":"Monitra Health: kalp izleme cihazı."},
+ {"n":"Vitasign","mean":"Yaşam belirtisi.","say":"vi-ta-SAYN","risk":"avoid","note":"Vitasigns: yapay zekâlı uzaktan yaşam bulgusu izleme."},
+ {"n":"Vitalia","mean":"Yaşamsal bulgular.","say":"vi-TA-li-a","risk":"avoid","note":"VitaliA sağlık asistanı uygulaması ve Vitalia Health; çok kalabalık."},
+ {"n":"Moneo","mean":"Latince “uyarırım”, monitörün kökü.","say":"MO-ne-o","risk":"avoid","note":"Moneo Medical Informatics ve Sırbistan'da Moneo reçete yazılımı; Türkiye'de moneo.com.tr yazılım şirketi."},
+  { n:"Palladia", mean:"Truva'yı koruyan heykel; platin ailesi metal.", say:"pal-LA-di-a", risk:"avoid", note:"Zoetis'in tescilli veteriner kanser ilacı Palladia®." },
+  { n:"Selenia", mean:"Ay.", say:"se-LE-ni-a", risk:"avoid", note:"Hologic Selenia: yerleşik bir mamografi cihazı markası." },
+  { n:"Aegira", mean:"Kalkan (aegis).", say:"e-Gİ-ra", risk:"avoid", note:"Aegira Scribe: klinik yapay zekâ yazıcısı — doğrudan çakışma." },
+  { n:"Tutela", mean:"Latince koruma, vesayet.", say:"tu-TE-la", risk:"avoid", note:"Tutela Monitoring Systems (tıbbi izleme) ve TutelaCare sağlık uygulaması." },
+  { n:"Vigilon", mean:"Nöbet kökünden.", say:"vi-gi-LON", risk:"avoid", note:"Honeywell Gent Vigilon yangın/güvenlik sistemi; klinik gözetimde VigiLanz." },
+  { n:"Prana", mean:"Sanskritçe nefes, yaşam gücü.", say:"PRA-na", risk:"avoid", note:"Yapay zekâyla \"erken uyarı\" yapan bir girişim (YC W26) — bizim işimizin aynısı." },
+  { n:"Atria", mean:"Kalbin kulakçıkları.", say:"A-tri-a", risk:"avoid", note:"Atria Health uzaktan hasta izleme platformu; yoğun bakımda \"atriyal fibrilasyon\" ile karışır." },
+  { n:"Vela", mean:"Mum, kandil — gece nöbetinin lambası.", say:"VE-la", risk:"avoid", note:"Vela Diagnostics, Vela Health: sağlık yazılımında kalabalık." },
+  { n:"Ardea", mean:"Balıkçıl kuşu: sabırlı gözetim.", say:"AR-de-a", risk:"avoid", note:"Ardea Biosciences (AstraZeneca) ve klinik veri platformu Ardea Outcomes." },
+  { n:"Ayla", mean:"Ayın çevresindeki ışık halkası.", say:"AY-la", risk:"avoid", note:"TR/AZ'de çok yaygın kız adı: ilk pazarlarda aramada kaybolur; Avustralya'da Ayla Health uygulaması." },
+  { n:"Sentora", mean:"sentinel + ora: her saatin nöbeti.", say:"sen-TO-ra", risk:"avoid", note:"ABD'nin büyük hastane grubu Sentara Health'ten bir harf farklı." },
+  { n:"Curavel", mean:"cura + vigil.", say:"ku-ra-VEL", risk:"avoid", note:"İki sağlık şirketi aynı adı kullanıyor, .com dolu; Portekizce \"curável\" = \"tedavi edilebilir\" (teşhis/tedavi çağrışımı)." },
+];
+// 27.09 listesi (isim-onerileri.md) — tarama o gün yapılmamıştı
+const OLD = [
+  { n:"Vigilo", mean:"Latince \"nöbet tutarım\". Ürünün işi tam bu.", say:"Vİ-gi-lo", risk:"caution", note:"Norveç'te aynı adlı bir okul uygulaması var (27.09 notu)" },
+  { n:"Oyaq", mean:"Azerbaycanca \"uyanık\". İlk pazar AZ.", say:"o-YAG", risk:"caution", note:"TR'de \"OYAK\" çağrışımı" },
+  { n:"Cardea", mean:"Roma'da eşiklerin ve yeni doğanların koruyucusu. NICU'ya uygun.", say:"kar-DE-a", risk:"caution", note:"\"Kardia\" (kalp) ile karışabilir" },
+  { n:"Kairo", mean:"Yunanca kairos: \"doğru an\". Erken uyarı = zamanında haber.", say:"KAY-ro", risk:"caution", note:"Almancada Kahire" },
+  { n:"Veyla", mean:"\"Vigil\"den türetilmiş, uydurma → tescile yatkın.", say:"VEY-la", risk:"clear", note:"Anlamı açıklanmalı" },
+  { n:"Sentiva", mean:"sentinel (nöbetçi) + vita (yaşam).", say:"sen-Tİ-va", risk:"clear", note:"Biraz uzun" },
+  { n:"Pulsa", mean:"Nabız; her dilde aynı okunur.", say:"PUL-sa", risk:"caution", note:"Genel, tescil zor olabilir" },
+  { n:"Alveo", mean:"Alveol → solunum, yoğun bakımın kalbi.", say:"al-VE-o", risk:"caution", note:"Solunuma dar bir çağrışım" },
+  { n:"Kora", mean:"\"Korumak\" kökünü hatırlatır, iki hece.", say:"KO-ra", risk:"caution", note:"Çok kısa, çakışma riski yüksek" },
+  { n:"Nöbet / Növbə", mean:"TR nöbet, AZ növbə — yerel ve sıcak.", say:"nö-BET", risk:"avoid", note:"ö harfi RU/EN'de sorun; yurt dışında zayıf" },
+];
+const TAG = { clear:["t-clear","Çakışma görülmedi"], caution:["t-caution","Dikkat"], avoid:["t-avoid","Kaçın"], wait:["t-wait","Tarama sürüyor"] };
+const store = { get(k, d){ try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} } };
+let list = store.get("isim.list3", "proj"), picks = store.get("isim.picks", []);
+
+function render(){
+  const data = list === "proj" ? PROJ : list === "big" ? BIG : list === "new" ? NEW : list === "out" ? OUT : OLD, pre = list === "proj" ? "P" : list === "big" ? "İ" : list === "new" ? "Y" : list === "out" ? "E" : "Ö";
+  document.getElementById("grid").innerHTML = data.map((x, i) => {
+    const id = pre + (i + 1), on = picks.includes(id), tg = TAG[x.risk];
+    return `<article class="card" data-id="${id}" data-picked="${on}" tabindex="0" role="button" aria-pressed="${on}">
+      <div class="top"><div class="icon">${x.n[0]}</div>
+        <div><div class="nm">${x.n}</div><div class="no">${id} · ${x.say}</div></div>
+        <div class="pick">${on ? picks.indexOf(id) + 1 : ""}</div></div>
+      <div class="prev">
+        <div class="phone"><div class="brand"><span class="dot"></span>${x.n}</div><div class="hero">Her yatak, her nöbet — <b>tek bakışta.</b></div></div>
+        <div class="desk"><div class="tab"><i></i>${x.n} · Yoğun bakım</div><div class="side"><span class="logo">${x.n}</span><span class="m">İşlerim · Hastalar · Alarm</span></div></div>
+      </div>
+      <div class="mean">${x.mean}</div>
+      <div><span class="tag ${tg[0]}">${tg[1]}</span></div>
+      ${x.note ? `<div class="risk">${x.note}</div>` : ""}
+      ${x.risk !== "avoid" ? `<a class="risk" style="font-weight:800;color:var(--pri)" href="24-yazi-logo.html?ad=${encodeURIComponent(x.n.split(" ")[0])}" onclick="event.stopPropagation()">Logoda gör →</a>` : ""}
+    </article>`;
+  }).join("");
+  document.getElementById("ans").textContent = "İsim: " + (picks.length ? picks.join(", ") : "—");
+  document.querySelectorAll("[data-list]").forEach(b => b.setAttribute("aria-pressed", b.dataset.list === list));
+}
+document.getElementById("grid").addEventListener("click", e => {
+  const c = e.target.closest(".card"); if (!c) return; const id = c.dataset.id;
+  if (picks.includes(id)) picks = picks.filter(p => p !== id); else if (picks.length < 3) picks.push(id);
+  store.set("isim.picks", picks); render();
+});
+document.getElementById("grid").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.closest(".card")) { e.preventDefault(); e.target.click(); } });
+document.querySelectorAll("[data-list]").forEach(b => b.onclick = () => { list = b.dataset.list; store.set("isim.list3", list); render(); });
+document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { document.body.dataset.view = b.dataset.view; document.querySelectorAll("button[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+document.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; document.querySelectorAll("button[data-theme]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+document.getElementById("copy").onclick = async () => { const t = document.getElementById("ans").textContent; try { await navigator.clipboard.writeText(t); document.getElementById("copy").textContent = "Kopyalandı"; } catch(e){ prompt("Kopyala:", t); } };
+document.getElementById("clear").onclick = () => { picks = []; store.set("isim.picks", picks); render(); };
+render();
+</script>
+</body>
+</html>

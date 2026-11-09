@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yazı Logosu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Cinzel:wght@500;600;700&family=Outfit:wght@300;400;500&family=Unbounded:wght@500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&family=Forum&family=Tenor+Sans&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{ --page:#f3f1ec; --panel:#fff; --panel2:#ebe8e1; --ink:#15181f; --mute:#646a75; --line:#dcd8cf; --ui:#0f2a44; --onui:#fff; --shadow:0 14px 34px rgba(20,24,32,.1); }
+:root[data-theme="dark"]{ --page:#0b0d12; --panel:#12151c; --panel2:#1a1e27; --ink:#e9ebf0; --mute:#9aa2b1; --line:#262b36; --ui:#c9d3e3; --onui:#0b0d12; --shadow:0 14px 34px rgba(0,0,0,.45); }
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:15px/1.55 Inter,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:9;background:var(--page);border-bottom:1px solid var(--line)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0}
+h1{font:600 23px/1.2 "Cormorant Garamond",serif;margin:0;flex:1;min-width:200px;letter-spacing:.01em}
+.seg{display:inline-flex;background:var(--panel2);border-radius:12px;padding:3px}
+.seg button{padding:7px 12px;border-radius:9px;font-weight:700;font-size:13.5px;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--ui);color:var(--onui)}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:16px 0}
+.note ul{margin:6px 0 0;padding-left:20px}
+.grid{display:grid;gap:18px;padding-bottom:120px}
+@media(min-width:980px){ body[data-view="grid"] .grid{grid-template-columns:1fr 1fr} }
+.item{background:var(--panel);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow .15s}
+.item[data-picked="true"]{box-shadow:0 0 0 3px var(--ui),var(--shadow)}
+.stage{min-height:300px;display:grid;place-items:center;padding:40px 24px;position:relative;overflow:hidden}
+.meta{padding:14px 18px;display:flex;flex-direction:column;gap:8px}
+.meta .t{display:flex;align-items:center;gap:10px}
+.meta .t b{font-size:17px}
+.meta .no{font:600 12px "JetBrains Mono";color:var(--mute)}
+.pick{margin-left:auto;width:32px;height:32px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:800;color:var(--onui)}
+.item[data-picked="true"] .pick{background:var(--ui);border-color:var(--ui)}
+.uses{display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:stretch;padding:0 18px 18px}
+@media(max-width:640px){ .uses{grid-template-columns:1fr} }
+.u{border-radius:14px;overflow:hidden;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;min-height:96px;position:relative}
+.u.icons{gap:10px;padding:12px;background:linear-gradient(160deg,#3b4a63,#161c28)}
+.u.login{flex-direction:column;align-items:flex-start;justify-content:flex-end;padding:12px 14px;gap:4px;background-size:cover;background-position:center;color:#fff}
+.u.login small{font-size:11px;opacity:.85}
+.u.card{background:#f6f2ea;color:#1a2233}
+.cap{font:600 11px "JetBrains Mono";color:var(--mute);padding:0 18px 4px}
+/* metal yazı */
+.plat{background:linear-gradient(180deg,#fdfdfd 0%,#c9ced6 38%,#8e96a3 52%,#e6e9ee 70%,#aab1bc 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.champ{background:linear-gradient(180deg,#fbf6ea 0%,#d9ccb0 45%,#a89a80 55%,#efe6d2 75%,#c2b597 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.silverline{height:1px;background:linear-gradient(90deg,transparent,rgba(210,220,235,.7),transparent)}
+footer{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);z-index:9}
+footer .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px}
+.ans{font:600 14px "JetBrains Mono";background:var(--panel2);padding:8px 12px;border-radius:10px;flex:1;min-width:200px}
+footer input{flex:2;min-width:200px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0 10px;font:inherit}
+.btn{background:var(--ui);color:var(--onui);font-weight:800;padding:9px 14px;border-radius:11px}
+</style>
+</head>
+<body data-view="one">
+<header><div class="wrap bar">
+  <h1 id="h1">Yazı logosu · 8 yön</h1>
+  <label style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px">İsim
+    <input id="name" maxlength="14" autocomplete="off" style="width:150px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0 10px;font:600 15px Inter"></label>
+  <div class="seg" role="group" aria-label="Görünüm">
+    <button data-view="one" aria-pressed="true">Büyük</button>
+    <button data-view="grid" aria-pressed="false">Yan yana</button>
+  </div>
+  <div class="seg" role="group" aria-label="Tema">
+    <button data-theme="light" aria-pressed="true">Açık</button>
+    <button data-theme="dark" aria-pressed="false">Koyu</button>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <details class="note" open>
+    <summary><b>Neden böyle?</b></summary>
+    <ul>
+      <li><b>İsim kutusu:</b> üstteki kutuya hangi ismi yazarsan 8 yön, simge, giriş ve kartvizit o isimle çizilir. Harf oyunları isme uyar: son "o" göz olur (L3), ilk "i"nin noktası ışık olur (L4), monogram baş harftir (L2, L6). İsimde o harf yoksa oyun kendiliğinden düşer.</li>
+      <li><b>Markanın yüzü isim.</b> 23'teki düz işaretler geri çekildi; burada ismin kendisi çiziliyor. Simge yalnız uygulama ikonunda, yazının bir harfinden doğuyor.</li>
+      <li><b>İhtişam neden bu harflerde:</b> Cinzel ve Forum Roma kitabelerinden gelir (kalıcılık, kurum); Cormorant ve Playfair klasik baskı zarafeti (özel klinik, prestij); platin ve gümüş metal, altın yerine — sarı/turuncu alarma ayrılmış.</li>
+      <li><b>Logo bir çizimdir, yazı tipi değil:</b> yalnız E-v-i-g-o harfleri kullanıldığı için "ə"/Kiril kuralı burada geçerli değil. Uygulamanın metin yazı tipi ayrıca seçilir (23'te ölçüldü).</li>
+      <li><b>Görseller:</b> Higgsfield bugün günlük sınıra takıldı; bu sayfa tamamen kodla. Sınır açılınca seçtiğin 1–2 yön için gerçek malzeme sunumu (taş kabartma, folyo baskı) üretilir.</li>
+      <li>Karta dokunarak <b>en fazla 2</b> favori seç. <b>Uygulamada hiçbir şey değişmedi.</b></li>
+    </ul>
+  </details>
+  <div class="grid" id="grid"></div>
+</main>
+
+<footer><div class="wrap">
+  <div class="ans" id="ans">Logo: —</div>
+  <input id="extra" placeholder="İstersen ekle: ör. 'L3'ün harfleri, L2'nin rengi'" aria-label="Ek not">
+  <button class="btn" id="copy">Kopyala</button>
+</div></footer>
+
+<script>
+// Göz "o": halka + iç halka + ışık noktası (x yüksekliğinde)
+const eyeO = (c, glow) => `<svg viewBox="0 0 100 100" style="height:.52em;width:.52em;vertical-align:baseline;margin:0 .01em 0 .03em;overflow:visible"><circle cx="50" cy="50" r="42" fill="none" stroke="${c}" stroke-width="11"/><circle cx="50" cy="50" r="19" fill="none" stroke="${c}" stroke-width="5" opacity=".75"/><circle cx="50" cy="50" r="6.5" fill="${glow}"/></svg>`;
+// Monogram E: ince çift halka içinde üç çizgili E
+const monoE = (c, s = 1) => `<svg viewBox="0 0 120 120" width="${120 * s}" height="${120 * s}" fill="none" stroke="${c}"><circle cx="60" cy="60" r="56" stroke-width="1.6"/><circle cx="60" cy="60" r="50" stroke-width=".8"/><text x="60" y="63" text-anchor="middle" dominant-baseline="middle" font-family="Cinzel, serif" font-weight="500" font-size="60" fill="${c}" stroke="none">${INIT}</text></svg>`;
+
+let INIT = "E";
+// son "o" → göz; yoksa isim olduğu gibi
+const eyeWord = (w, c, glow) => { const i = w.lastIndexOf("o"); return i < 0 ? w : w.slice(0, i) + eyeO(c, glow) + w.slice(i + 1); };
+// ilk "i" → noktasız ı + ışık noktası
+const starWord = (w) => { const i = w.search(/[iİ]/); if (i < 0) return w; return w.slice(0, i) + `<span style="position:relative">ı<span style="position:absolute;left:50%;top:.13em;width:.17em;height:.17em;margin-left:-.085em;border-radius:50%;background:#bff4ff;box-shadow:0 0 18px 6px rgba(103,232,249,.75),0 0 60px 18px rgba(56,189,248,.35)"></span></span>` + w.slice(i + 1); };
+let L = [];
+function build(N) {
+  // Türkçe harfli isimde (Keşik) Türkçe kural, Latin isimde (Vigilia) İ noktasız büyür
+  const trk = /[şğıçöüİŞĞÇÖÜ]/.test(N), n = trk ? N.toLocaleLowerCase("tr") : N.toLowerCase(), U = trk ? N.toLocaleUpperCase("tr") : N.toUpperCase(), f = n[0] || "";
+  INIT = U[0] || "";
+  L = [
+  { id:"L1", name:"Klasik ihtişam", why:"Yüksek kontrastlı klasik serif; özel klinik, köklü kurum. \"vi\" arasında daralan boşluk el işçiliği hissi verir. En zamansız yön.",
+    stage:`background:#f6f2ea`, word:`<div style="text-align:center;color:#0f2140"><div class="silverline" style="background:linear-gradient(90deg,transparent,#0f2140,transparent);width:260px;margin:0 auto 18px;opacity:.5"></div><div style="font:600 108px/1 'Cormorant Garamond',serif;letter-spacing:.01em">${N}</div><div style="font:600 12px Inter;letter-spacing:.42em;margin-top:14px;opacity:.75">YOĞUN BAKIM · ERKEN UYARI</div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:#0f2140;display:grid;place-items:center;font:600 ${s*.62}px/1 'Cormorant Garamond',serif;color:#f6f2ea">${INIT}</div>`,
+    login:`background:#0f2140`, lw:`<span style="font:600 30px/1 'Cormorant Garamond',serif;color:#f6f2ea">${N}</span>`, card:`<span style="font:600 34px/1 'Cormorant Garamond',serif;color:#0f2140">${N}</span>` },
+  { id:"L2", name:"Roma kitabesi", why:"Cinzel büyük harfleri Roma taş yazıtlarından gelir: kalıcılık, otorite, devlet hastanesi ciddiyeti. Geniş harf aralığı sakinlik verir; üstteki mühür E kurum arması gibi durur.",
+    stage:`background:radial-gradient(120% 90% at 50% 0%,#2a2f38,#101216)`, word:`<div style="text-align:center">${monoE("#c9ced6", .9)}<div class="plat" style="font:600 76px/1 Cinzel,serif;letter-spacing:.28em;margin:14px 0 0 .28em">${U}</div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:radial-gradient(circle at 50% 30%,#2e3440,#0f1115);display:grid;place-items:center">${monoE("#d9dee6", s/150)}</div>`,
+    login:`background:radial-gradient(120% 90% at 50% 0%,#2a2f38,#101216)`, lw:`<span class="plat" style="font:600 22px/1 Cinzel,serif;letter-spacing:.24em">${U}</span>`, card:`<span style="font:600 24px/1 Cinzel,serif;letter-spacing:.26em;color:#1a2233">${U}</span>` },
+  { id:"L3", name:"Uyanık göz", why:"Modern ince harfler; son harf \"o\" gözü açık bir iris: \"uyanık kal\". İsmin kendisi simgeyi taşır, ayrı bir işarete gerek kalmaz. Teknolojiyle ihtişamı birleştiren yön.",
+    stage:`background:radial-gradient(120% 100% at 30% 0%,#0f4a55,#062128)`, word:`<div class="plat" style="font:300 116px/1 Outfit,sans-serif;letter-spacing:-.01em">${eyeWord(n, "#dfe5ea", "#7ff0ea")}</div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:radial-gradient(circle at 50% 30%,#12606d,#062128);display:grid;place-items:center;font-size:${s*.9}px">${eyeO("#e8eef2", "#7ff0ea")}</div>`,
+    login:`background-image:linear-gradient(180deg,#06212855,#062128f0),url('marka-evigo/a-zemin.jpg')`, lw:`<span class="plat" style="font:300 32px/1 Outfit,sans-serif">${eyeWord(n, "#dfe5ea", "#7ff0ea")}</span>`, card:`<span style="font:300 36px/1 Outfit,sans-serif;color:#0b3a47">${eyeWord(n, "#0b3a47", "#0f766e")}</span>` },
+  { id:"L4", name:"Nöbet yıldızı", why:"Güçlü, geniş harfler; \"i\"nin noktası gece nöbetinde yanan tek bir ışık — sistemin hiç kapanmayan gözü. Sinematik, iddialı, uzaktan okunur.",
+    stage:`background:radial-gradient(120% 110% at 70% 10%,#1c2a5a,#070b1d)`, word:`<div style="font:600 96px/1 Unbounded,sans-serif;letter-spacing:-.02em" class="plat">${starWord(N)}</div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:radial-gradient(circle at 60% 20%,#24367a,#070b1d);display:grid;place-items:center;position:relative"><span class="plat" style="font:700 ${s*.56}px/1 Unbounded,sans-serif">${INIT}</span><span style="position:absolute;right:${s*.2}px;top:${s*.17}px;width:${s*.12}px;height:${s*.12}px;border-radius:50%;background:#bff4ff;box-shadow:0 0 ${s*.12}px ${s*.04}px rgba(103,232,249,.8)"></span></div>`,
+    login:`background-image:linear-gradient(180deg,#070b1d40,#070b1df0),url('marka-evigo/b-halka.jpg')`, lw:`<span class="plat" style="font:600 26px/1 Unbounded,sans-serif">${N}</span>`, card:`<span style="font:600 28px/1 Unbounded,sans-serif;color:#0d1638">${N}</span>` },
+  { id:"L5", name:"Ufuk ışığı", why:"Eğik, akan bir serif; harflerin arkasından geçen ince ışık çizgisi gece ile sabahın sınırı. Şampanya-platin metal: sıcak ama altın/sarı değil. En zarif, en \"özel\" yön.",
+    stage:`background:linear-gradient(180deg,#0c1740,#1b2a6b 70%,#2c3b82)`, word:`<div style="position:relative;display:grid;place-items:center"><div style="position:absolute;left:-18%;right:-18%;top:58%;height:2px;background:linear-gradient(90deg,transparent,rgba(214,226,255,.9),transparent);box-shadow:0 0 22px 3px rgba(165,180,252,.5)"></div><div class="champ" style="position:relative;font:italic 500 118px/1 'Playfair Display',serif">${n}</div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:linear-gradient(180deg,#0c1740,#2c3b82);display:grid;place-items:center;position:relative;overflow:hidden"><span style="position:absolute;left:12%;right:12%;bottom:22%;height:1px;background:rgba(214,226,255,.8)"></span><span class="champ" style="position:relative;font:italic 600 ${s*.7}px/1 'Playfair Display',serif">${f}</span></div>`,
+    login:`background-image:linear-gradient(180deg,#0c174030,#0c1740f0),url('marka-evigo/c-safak.jpg')`, lw:`<span class="champ" style="font:italic 500 32px/1 'Playfair Display',serif">${n}</span>`, card:`<span style="font:italic 500 38px/1 'Playfair Display',serif;color:#16225a">${n}</span>` },
+  { id:"L6", name:"Kurum arması", why:"Çift halkalı mühür içinde baş harf, yanında geniş aralıklı isim. Üniversite hastanesi, bakanlık, sertifika ağırlığı. Belgelerde, yazıcı çıktısında, kartta en güçlü duran yön.",
+    stage:`background:#eef1f5`, word:`<div style="display:flex;align-items:center;gap:28px;color:#0f2a44">${monoE("#0f2a44", 1.05)}<div><div style="font:400 72px/1 Forum,serif;letter-spacing:.2em">${U}</div><div style="font:600 11.5px Inter;letter-spacing:.38em;margin-top:10px;opacity:.7">VIGILANTIA · 2026</div></div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:#0f2a44;display:grid;place-items:center">${monoE("#eef1f5", s/140)}</div>`,
+    login:`background:#0f2a44`, lw:`<span style="display:flex;align-items:center;gap:8px">${monoE("#eef1f5", .28)}<span style="font:400 22px/1 Forum,serif;letter-spacing:.2em;color:#eef1f5">${U}</span></span>`, card:`<span style="display:flex;align-items:center;gap:8px">${monoE("#0f2a44", .32)}<span style="font:400 24px/1 Forum,serif;letter-spacing:.2em;color:#0f2a44">${U}</span></span>` },
+  { id:"L7", name:"Sessiz lüks", why:"Tenor Sans ince büyük harfleri, çok geniş aralık, tek renk lacivert: moda evleri ve premium teknoloji markalarının dili. Gösterişsiz ama pahalı durur; her boyutta temiz.",
+    stage:`background:#fafaf8`, word:`<div style="text-align:center;color:#101a2e"><div style="font:400 84px/1 'Tenor Sans',sans-serif;letter-spacing:.34em;margin-left:.34em">${U}</div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:#101a2e;display:grid;place-items:center;font:400 ${s*.5}px/1 'Tenor Sans',sans-serif;color:#fafaf8;padding-left:${s*.04}px">${INIT}</div>`,
+    login:`background:#101a2e`, lw:`<span style="font:400 22px/1 'Tenor Sans',sans-serif;letter-spacing:.3em;color:#fafaf8">${U}</span>`, card:`<span style="font:400 24px/1 'Tenor Sans',sans-serif;letter-spacing:.32em;color:#101a2e">${U}</span>` },
+  { id:"L8", name:"Platin serif · koyu", why:"L1'in harfleri, gece hâli: kabartma platin, koyu taş zemin. Aynı kimliğin premium tanıtım ve etkinlik yüzü — L1 ile birlikte seçilirse gündüz/gece çifti olur.",
+    stage:`background:radial-gradient(120% 100% at 50% 0%,#23262d,#0c0d10)`, word:`<div style="text-align:center"><div class="plat" style="font:600 112px/1 'Cormorant Garamond',serif;text-shadow:0 1px 0 rgba(255,255,255,.08)">${N}</div><div class="silverline" style="width:300px;margin:18px auto 0"></div></div>`,
+    icon:(s)=>`<div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:radial-gradient(circle at 50% 25%,#2f333b,#0c0d10);display:grid;place-items:center"><span class="plat" style="font:600 ${s*.64}px/1 'Cormorant Garamond',serif">${INIT}</span></div>`,
+    login:`background:radial-gradient(120% 100% at 50% 0%,#23262d,#0c0d10)`, lw:`<span class="plat" style="font:600 30px/1 'Cormorant Garamond',serif">${N}</span>`, card:`<span style="font:600 34px/1 'Cormorant Garamond',serif;color:#1b1d22">${N}</span>` },
+];
+}
+const store = { get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} } };
+let picks = store.get("evigo.logo", []);
+let NAME = new URLSearchParams(location.search).get("ad") || store.get("logo.name", "Hesperis");
+const nameBox = document.getElementById("name");
+nameBox.value = NAME;
+nameBox.oninput = () => { NAME = nameBox.value.trim() || "Hesperis"; store.set("logo.name", NAME); render(); };
+function render() {
+  build(NAME);
+  document.getElementById("h1").textContent = NAME + " · yazı logosu · 8 yön";
+  document.getElementById("grid").innerHTML = L.map(x => { const on = picks.includes(x.id); return `
+  <article class="item" data-id="${x.id}" data-picked="${on}" tabindex="0" role="button" aria-pressed="${on}">
+    <div class="stage" style="${x.stage}">${x.word}</div>
+    <div class="meta"><div class="t"><span class="no">${x.id}</span><b>${x.name}</b><span class="pick">${on ? picks.indexOf(x.id) + 1 : ""}</span></div>
+      <div style="color:var(--mute)">${x.why}</div></div>
+    <div class="cap">uygulama simgesi (60 · 40 · 16 px) · giriş ekranı · kartvizit</div>
+    <div class="uses">
+      <div class="u icons">${x.icon(60)}${x.icon(40)}${x.icon(16)}</div>
+      <div class="u login" style="${x.login}">${x.lw}<small>Her yatak, her nöbet — tek bakışta.</small></div>
+      <div class="u card">${x.card}</div>
+    </div>
+  </article>`; }).join("");
+  document.getElementById("ans").textContent = "İsim: " + NAME + " · Logo: " + (picks.length ? picks.join(", ") : "—") + (document.getElementById("extra").value.trim() ? " · " + document.getElementById("extra").value.trim() : "");
+}
+document.getElementById("grid").addEventListener("click", e => { const c = e.target.closest(".item"); if (!c) return; const id = c.dataset.id;
+  if (picks.includes(id)) picks = picks.filter(p => p !== id); else if (picks.length < 2) picks.push(id); else { picks.shift(); picks.push(id); }
+  store.set("evigo.logo", picks); render(); });
+document.getElementById("extra").oninput = render;
+document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { document.body.dataset.view = b.dataset.view; document.querySelectorAll("button[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+document.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; document.querySelectorAll("button[data-theme]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+document.getElementById("copy").onclick = async () => { const t = document.getElementById("ans").textContent; try { await navigator.clipboard.writeText(t); document.getElementById("copy").textContent = "Kopyalandı"; } catch (e) { prompt("Kopyala:", t); } };
+render();
+</script>
+</body>
+</html>

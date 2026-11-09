@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo A Geliştirme</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0b0f16; --ink:#e7ebf2; --mute:#8d97a8; --line:#1f2733; --card:#111722; --brand:#22b8d6; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:32px 16px 60px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  .lead { color:var(--mute); max-width:780px; margin:0; }
+  .lead b { color:var(--ink); }
+  section { margin-top:40px; }
+  .sh { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+  .sh .n { color:var(--brand); font-weight:800; font-size:13px; letter-spacing:.1em; }
+  .sh h2 { margin:0; font-size:21px; }
+  .q { color:var(--mute); margin:0 0 14px; font-size:14px; max-width:780px; }
+  .q b { color:var(--ink); }
+  .row { display:grid; gap:12px; }
+  .r3 { grid-template-columns:repeat(3,1fr); }
+  .r2 { grid-template-columns:repeat(2,1fr); }
+  .tile { border-radius:18px; border:1px solid var(--line); overflow:hidden; background:var(--card); }
+  .tile .art { display:flex; align-items:center; justify-content:center; padding:22px; min-height:200px; }
+  .tile .cap { padding:10px 14px 12px; border-top:1px solid var(--line); font-size:13px; color:var(--mute); }
+  .tile .cap b { color:var(--ink); display:block; font-size:14px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; margin-bottom:4px; background:#15243b; color:var(--brand); }
+  table.m { width:100%; border-collapse:separate; border-spacing:10px; margin:0 -10px; }
+  table.m th { font-size:12px; color:var(--mute); font-weight:600; text-align:left; text-transform:uppercase; letter-spacing:.08em; padding:0 4px; }
+  table.m td { border-radius:16px; padding:0; vertical-align:top; }
+  table.m td .cell { display:flex; align-items:center; justify-content:center; height:170px; border-radius:16px; }
+  table.m td.rowh { font-weight:700; font-size:14px; color:var(--ink); width:120px; padding:8px 4px; vertical-align:middle; }
+  table.m td.rowh small { display:block; color:var(--mute); font-weight:400; font-size:12px; }
+  .strip { display:flex; gap:18px; align-items:center; flex-wrap:wrap; padding:16px 18px; border-radius:16px; }
+  .strip small { font-size:12px; opacity:.7; width:100%; }
+  .lock { display:flex; align-items:center; gap:14px; }
+  .lock.stack { flex-direction:column; gap:8px; text-align:center; }
+  .wm { font-size:30px; line-height:1; letter-spacing:-.01em; }
+  .wm small { display:block; font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.65; margin-top:6px; font-family:Figtree, sans-serif; font-weight:600; }
+  .scroll { overflow-x:auto; }
+  @media (max-width:860px) { .r3, .r2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Logo A · Yükselen Dilimler · Taslak 04</h1>
+  <p class="lead">Seçtiğin A çizimini dört adımda geliştiriyorum. Her bölümün başında <b>tek bir soru</b> var. Cevaplarını "1: B, 2: …" gibi kısaca yazman yeterli.</p>
+
+  <section>
+    <div class="sh"><span class="n">1</span><h2>Biçim</h2></div>
+    <p class="q">Dilimler kaç tane olsun, logo bir dairenin içinde mi dursun, yoksa kendi başına mı? <b>Soru: A1, A2 ya da A3?</b></p>
+    <div class="row r3" id="s1"></div>
+  </section>
+
+  <section>
+    <div class="sh"><span class="n">2</span><h2>Renk × doku</h2></div>
+    <p class="q">Sütunlar görsel kimlik taslağındaki üç renk yönü. Satırlar doku: <b>düz</b> (sade, basılıya uygun), <b>ışıklı</b> (bugünkü parlak his), <b>grenli</b> (baskı ya da resim gibi, istediğin "resim tarzı" hisse en yakın doku). <b>Soru: hangi hücre? Örneğin "Gece × grenli".</b></p>
+    <div class="scroll"><table class="m" id="s2"></table></div>
+  </section>
+
+  <section>
+    <div class="sh"><span class="n">3</span><h2>Küçük boyut sürümü</h2></div>
+    <p class="q">16–20 pikselde kesik eşik çizgisi kayboluyordu. Sekme ve uygulama simgesi için sadeleşmiş bir sürüm öneriyorum: eşik yok, üç dilim var, son dilim parlıyor. Büyük logoyla aynı aileden olduğu belli. <b>Soru: sadeleşmiş sürüm uygun mu?</b></p>
+    <div class="row r2" id="s3"></div>
+  </section>
+
+  <section>
+    <div class="sh"><span class="n">4</span><h2>Logo + yazı</h2></div>
+    <p class="q">"Homunculus" yazısının yazı tipi, logonun karakterini belirler. <b>Soru: Figtree, Space Grotesk ya da Fraunces? Yatay mı, dikey mi?</b></p>
+    <div class="row r3" id="s4"></div>
+  </section>
+</div>
+
+<script>
+  const PAL = {
+    gece:  { name:"Gece",  bg:"#07101f", orbA:"#1f6f94", orbB:"#050b16", c1:"#0e6f90", c2:"#9ff3ff", hot:"#e9fdff", glow:"#5fe3ff", thr:"#a9bccf", ink:"#e8eef7" },
+    gun:   { name:"Gün Işığı", bg:"#f6f4ef", orbA:"#e6f0ec", orbB:"#c3d9d2", c1:"#5aa59c", c2:"#0f6e67", hot:"#0b4f4a", glow:"#3fc1b0", thr:"#6f817d", ink:"#1b2a2f" },
+    figur: { name:"Figür", bg:"#0f0d17", orbA:"#4b3a9c", orbB:"#0c0a14", c1:"#5a47b8", c2:"#d9cfff", hot:"#f6f1ff", glow:"#b8a8ff", thr:"#b3a9cc", ink:"#efeaf7" },
+  };
+  let uid = 0;
+  // Logo: form = "A1" (4 dilim) | "A2" (5 dilim, sıkı) | "A3" (dairesiz) | "S" (küçük boyut)
+  function mark({ p = PAL.gece, form = "A1", tex = "glow", size = 150, orb } = {}) {
+    const k = "m" + (++uid);
+    const useOrb = orb ?? (form !== "A3");
+    const light = p === PAL.gun;
+    const defs = `
+      <linearGradient id="${k}c" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="${p.c1}"/><stop offset="1" stop-color="${p.c2}"/></linearGradient>
+      <radialGradient id="${k}o" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="${p.orbA}"/><stop offset="1" stop-color="${p.orbB}"/></radialGradient>
+      <radialGradient id="${k}h" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="${p.glow}" stop-opacity="${light ? .55 : .95}"/><stop offset="1" stop-color="${p.glow}" stop-opacity="0"/></radialGradient>
+      <filter id="${k}g" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="7"/>
+        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.05"/>
+        <feComposite in2="SourceGraphic" operator="in"/>
+      </filter>`;
+    const fill = tex === "flat" ? p.c2 : `url(#${k}c)`;
+    let slices, hot, thrY = 64;
+    if (form === "S") {
+      slices = [[60,135,20,30,-30,.55],[93,116,26,40,-34,.8]];
+      hot = [134,84,32,50,-38];
+    } else if (form === "A2") {
+      slices = [[44,150,10,13,-26,.35],[62,142,12,17,-28,.48],[82,130,15,22,-31,.62],[103,114,18,28,-34,.78],[124,96,21,33,-36,.92]];
+      hot = [148,78,24,38,-38]; thrY = 56;
+    } else {
+      slices = [[47,146,12,16,-28,.45],[69,138,15,22,-30,.6],[94,124,18,28,-33,.75],[118,106,22,34,-36,.9]];
+      hot = [144,89,26,38,-38];
+    }
+    const R = ([cx,cy,w,h,r,o], f) => `<rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}" rx="${w/2}" transform="rotate(${r} ${cx} ${cy})" fill="${f}" ${o!=null && tex!=="flat" ? `opacity="${o}"` : o!=null ? `opacity="${.35 + o*.65}"` : ""}/>`;
+    let body = "";
+    if (useOrb) body += `<circle cx="100" cy="100" r="94" fill="${tex === "flat" ? (light ? "#dcebe6" : p.orbB) : `url(#${k}o)`}"/>`;
+    if (form !== "S") body += `<line x1="28" y1="${thrY}" x2="172" y2="${thrY}" stroke="${p.thr}" stroke-width="3.5" stroke-dasharray="8 7" opacity=".7"/>`;
+    const shapes = slices.map(s => R(s, fill)).join("");
+    body += shapes;
+    if (tex !== "flat") body += `<circle cx="${hot[0]}" cy="${hot[1]}" r="${hot[2]*1.25}" fill="url(#${k}h)"/>`;
+    body += R([...hot, null], p.hot);
+    if (tex === "grain") body += `<g filter="url(#${k}g)" opacity="${light ? .35 : .5}">${useOrb ? `<circle cx="100" cy="100" r="94" fill="#000"/>` : shapes + R([...hot,null], "#000")}</g>`;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 200 200" role="img" aria-label="Homunculus logo"><defs>${defs}</defs>${body}</svg>`;
+  }
+
+  // 1 · Biçim
+  document.getElementById("s1").innerHTML = [
+    ["A1","4 dilim · daire içinde","Taslak 03'teki hâli. Dengeli, hikâye rahat okunuyor."],
+    ["A2","5 dilim · daha sıkı","Daha çok adım, daha yumuşak bir yükseliş. \"Zaman içinde izleme\" hissi daha güçlü, ama küçük boyutta kalabalıklaşıyor."],
+    ["A3","4 dilim · dairesiz","Arka plandaki küre yok, işaret kendi başına duruyor. Daha çağdaş ve hafif. Ekranda, baskıda ve kıyafet üstünde rahat kullanılır."],
+  ].map(([f,t,d]) => `<div class="tile"><div class="art" style="background:${PAL.gece.bg}">${mark({ form:f, size:170 })}</div><div class="cap"><span class="tag">${f}</span><b>${t}</b>${d}</div></div>`).join("");
+
+  // 2 · Renk × doku
+  const tex = [["flat","Düz","sade, baskıya uygun"],["glow","Işıklı","bugünkü his"],["grain","Grenli","resim / baskı tarzı"]];
+  const pals = ["gece","gun","figur"];
+  document.getElementById("s2").innerHTML =
+    `<tr><th></th>${pals.map(k => `<th>${PAL[k].name}</th>`).join("")}</tr>` +
+    tex.map(([t,n,d]) => `<tr><td class="rowh">${n}<small>${d}</small></td>${pals.map(k =>
+      `<td><div class="cell" style="background:${PAL[k].bg}">${mark({ p:PAL[k], tex:t, size:140 })}</div></td>`).join("")}</tr>`).join("");
+
+  // 3 · Küçük boyut
+  const strip = (k) => { const p = PAL[k]; return `<div class="strip" style="background:${p.bg};color:${p.ink}">
+      <small>${p.name} · büyük logo → sadeleşmiş sürüm, 64 · 32 · 20 · 16 px</small>
+      ${mark({ p, size:64 })}<span style="opacity:.4">→</span>${mark({ p, form:"S", size:64 })}${mark({ p, form:"S", size:32 })}${mark({ p, form:"S", size:20 })}${mark({ p, form:"S", size:16 })}
+      <span style="opacity:.4;margin-left:8px">karşılaştır:</span>${mark({ p, size:20 })}${mark({ p, size:16 })}</div>`; };
+  document.getElementById("s3").innerHTML = strip("gece") + strip("gun");
+
+  // 4 · Logo + yazı
+  const fonts = [["Figtree","800","Bugünkü yazı tipi. Yuvarlak ve dost canlısı."],["Space Grotesk","700","Geometrik ve teknik. \"Ölçüm\" hissi veriyor."],["Fraunces","700","Tırnaklı ve akademik. Bilimsel köke vurgu yapıyor."]];
+  document.getElementById("s4").innerHTML = fonts.map(([f,w,d]) => `
+    <div class="tile">
+      <div class="art" style="background:${PAL.gece.bg};flex-direction:column;gap:26px;color:${PAL.gece.ink}">
+        <div class="lock">${mark({ size:58 })}<div class="wm" style="font-family:'${f}';font-weight:${w}">Homunculus<small>Klinik izleme · karar desteği</small></div></div>
+        <div class="lock stack">${mark({ size:64 })}<div class="wm" style="font-family:'${f}';font-weight:${w};font-size:24px">Homunculus</div></div>
+      </div>
+      <div class="art" style="background:${PAL.gun.bg};min-height:110px;color:${PAL.gun.ink}">
+        <div class="lock">${mark({ p:PAL.gun, size:48 })}<div class="wm" style="font-family:'${f}';font-weight:${w};font-size:26px">Homunculus</div></div>
+      </div>
+      <div class="cap"><b>${f}</b>${d}</div>
+    </div>`).join("");
+</script>
+</body>
+</html>

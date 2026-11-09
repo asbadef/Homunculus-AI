@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kurum Yapısı</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#07101f; --card:#0f1b2e; --card2:#15243b; --rail:#0a1628; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+          --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13);
+          --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --proto:#a78bfa; --attInk:#f5c451; --shadow:0 12px 30px rgba(0,0,0,.45); }
+  :root[data-theme="gun"] { --page:#eef0f3; --card:#fff; --card2:#f1f4f8; --rail:#fff; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+          --pri:#0e7490; --onpri:#fff; --priSoft:#e0f2f7;
+          --crit:#dc2626; --high:#ea580c; --mid:#ca8a04; --ok:#16a34a; --proto:#7c3aed; --attInk:#9a6a00; --shadow:0 12px 30px rgba(20,30,50,.12); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  button { font:inherit; color:inherit; }
+  input, select { font:inherit; color:var(--ink); background:var(--card2); border:1px solid var(--line2); border-radius:10px; padding:8px 10px; width:100%; min-width:0; outline:none; }
+  input:focus, select:focus { border-color:var(--pri); box-shadow:0 0 0 3px var(--priSoft); }
+  .mono { font-family:"JetBrains Mono", monospace; }
+  .wrap { max-width:1180px; margin:0 auto; padding:22px 16px 70px; }
+  .top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .top a { color:var(--pri); font-weight:700; text-decoration:none; font-size:13px; }
+  .seg { display:inline-flex; background:var(--card); border:1px solid var(--line2); border-radius:11px; padding:3px; gap:2px; }
+  .seg button { border:0; background:transparent; padding:6px 10px; border-radius:8px; font:600 12.5px Figtree; color:var(--mute); cursor:pointer; }
+  .seg button.on { background:var(--pri); color:var(--onpri); }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:7px 12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); cursor:pointer; white-space:nowrap; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .btn.sm { padding:4px 9px; font-size:12px; border-radius:8px; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  h1 { font:700 30px/1.12 "Space Grotesk"; margin:4px 0 8px; }
+  h2 { font:700 21px "Space Grotesk"; margin:34px 0 10px; }
+  h3 { font:700 16px "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0 0 14px; max-width:860px; } .lead b { color:var(--ink); }
+  .st { display:inline-flex; align-items:center; gap:5px; font:700 11px Figtree; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .st.karar { background:color-mix(in srgb, var(--pri) 16%, transparent); color:var(--pri); }
+  .st.cizim { background:color-mix(in srgb, var(--proto) 16%, transparent); color:var(--proto); }
+  .st.bugun { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .st.risk { background:color-mix(in srgb, var(--crit) 15%, transparent); color:var(--crit); }
+  .st.bek { background:color-mix(in srgb, var(--mid) 16%, transparent); color:var(--attInk); }
+  .st.no { background:var(--card2); color:var(--mute); }
+
+  .answer { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--pri); border-radius:16px; padding:16px 18px; margin:14px 0; }
+  .answer .q { color:var(--mute); font-size:13.5px; font-style:italic; margin-bottom:6px; }
+  .answer .a { font:700 19px/1.35 "Space Grotesk"; }
+  .answer p { margin:8px 0 0; color:var(--mute); font-size:14px; }
+  .drawn { display:flex; gap:10px; align-items:flex-start; background:color-mix(in srgb, var(--proto) 9%, var(--card)); border:1px solid color-mix(in srgb, var(--proto) 35%, transparent); border-radius:12px; padding:10px 14px; font-size:13.5px; color:var(--mute); }
+  .drawn b { color:var(--ink); }
+
+  /* üç katman çizimi */
+  .layers { display:grid; gap:0; margin:8px 0; }
+  .lay { display:grid; grid-template-columns:200px 1fr 1fr; gap:14px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; cursor:pointer; transition:border-color .15s; }
+  .lay:hover, .lay.on { border-color:var(--pri); }
+  .lay .who b { display:block; font:700 17px "Space Grotesk"; }
+  .lay .who small { color:var(--mute); font-size:12.5px; display:block; }
+  .lay .num { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:8px; background:var(--pri); color:var(--onpri); font:700 13px "Space Grotesk"; margin-bottom:6px; }
+  .lay ul { margin:0; padding-left:18px; font-size:13.5px; } .lay li { margin:2px 0; }
+  .lay .can h4, .lay .cant h4 { margin:0 0 4px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; }
+  .lay .can h4 { color:var(--ok); } .lay .cant h4 { color:var(--crit); }
+  .lay .opt { font:600 11px Figtree; color:var(--mute); border:1px dashed var(--line2); border-radius:6px; padding:1px 6px; margin-left:4px; }
+  .flow { display:flex; align-items:center; justify-content:center; gap:10px; padding:6px 0; font-size:12.5px; color:var(--mute); flex-wrap:wrap; text-align:center; }
+  .flow .ar { font:700 16px "Space Grotesk"; }
+  .flow .up { color:var(--ok); } .flow .x { color:var(--crit); }
+  .pill { display:inline-flex; align-items:center; gap:5px; background:var(--card2); border:1px solid var(--line); border-radius:999px; padding:2px 9px; font-size:12px; }
+
+  /* prototip çerçevesi */
+  .stage { background:color-mix(in srgb, var(--card2) 60%, transparent); border:1px solid var(--line); border-radius:18px; padding:14px; }
+  .who-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; font-size:13px; color:var(--mute); }
+  .frame { margin:0 auto; width:100%; max-width:100%; background:var(--page); border:1px solid var(--line2); border-radius:16px; overflow:hidden; box-shadow:var(--shadow); container-type:inline-size; transition:max-width .2s; }
+  .frame.tablet { max-width:820px; } .frame.phone { max-width:390px; border-radius:26px; }
+  .appbar { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--rail); border-bottom:1px solid var(--line); min-width:0; }
+  .mk { width:32px; height:32px; border-radius:10px; background:var(--ink); color:var(--page); display:grid; place-items:center; font:700 17px "Space Grotesk"; flex:none; }
+  .appbar .t { font:700 15px "Space Grotesk"; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .appbar .t small { display:block; font:500 11.5px Figtree; color:var(--mute); }
+  .appbar .u { margin-left:auto; font:600 11.5px Figtree; background:var(--card2); border-radius:999px; padding:4px 10px; color:var(--mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto; }
+  .scr { padding:14px; min-height:380px; }
+  .ph { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-bottom:10px; }
+  .ph h3 { margin:0; font-size:18px; } .ph p { margin:2px 0 0; color:var(--mute); font-size:12.5px; }
+  .ph .r { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .lock { display:flex; gap:8px; align-items:flex-start; font-size:12.5px; color:var(--mute); background:var(--card); border:1px dashed var(--line2); border-radius:10px; padding:8px 10px; margin:10px 0; }
+  .lock svg { flex:none; width:16px; height:16px; margin-top:2px; color:var(--pri); }
+
+  table.t { width:100%; border-collapse:collapse; font-size:13px; }
+  .t th { text-align:left; font:700 11px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; padding:8px; border-bottom:1px solid var(--line2); white-space:nowrap; }
+  .t td { padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .t tbody tr { cursor:pointer; } .t tbody tr:hover td { background:var(--card2); }
+  .t tr.sel td { background:var(--priSoft); }
+  .t td .lbl { display:none; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .d-ok { background:var(--ok); } .d-warn { background:var(--mid); } .d-off { background:var(--crit); } .d-wait { background:var(--proto); }
+  .sub { color:var(--mute); font-size:12px; }
+  @container (max-width:640px) {
+    .t thead { display:none; }
+    .t, .t tbody, .t tr, .t td { display:block; width:100%; }
+    .t tr { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; padding:6px 4px; background:var(--card); }
+    .t td { border:0; padding:3px 8px; display:grid; grid-template-columns:110px 1fr; gap:6px; }
+    .t td .lbl { display:block; color:var(--mute); font-size:11.5px; }
+    .t td.first { font-size:14.5px; grid-template-columns:1fr; }
+  }
+
+  .split { display:grid; grid-template-columns:1fr 320px; gap:12px; }
+  @container (max-width:860px) { .split { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; min-width:0; }
+  .panel h4 { margin:0 0 8px; font:700 14px "Space Grotesk"; }
+  .kv { display:grid; grid-template-columns:120px 1fr; gap:4px 10px; font-size:13px; } .kv span { color:var(--mute); }
+  .log { font-size:12px; color:var(--mute); margin:0; padding:0; list-style:none; } .log li { padding:5px 0; border-bottom:1px solid var(--line); } .log b { color:var(--ink); }
+  .log .mono { font-size:11px; }
+
+  /* sihirbaz */
+  .modal-bg { position:absolute; inset:0; background:rgba(3,8,16,.55); display:flex; align-items:flex-start; justify-content:center; padding:18px 10px; z-index:5; overflow:auto; }
+  .frame { position:relative; }
+  .modal { background:var(--card); border:1px solid var(--line2); border-radius:16px; width:100%; max-width:560px; padding:16px; box-shadow:var(--shadow); }
+  .steps { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin:10px 0 14px; }
+  .steps div { font:600 11.5px/1.25 Figtree; color:var(--mute); border-top:3px solid var(--line2); padding-top:6px; }
+  .steps div.on { color:var(--ink); border-color:var(--pri); } .steps div.done { color:var(--ok); border-color:var(--ok); }
+  .fld { margin-bottom:10px; } .fld label { display:block; font:600 12.5px Figtree; margin-bottom:4px; } .fld .h { font-size:11.5px; color:var(--mute); margin-top:3px; }
+  .choice { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line2); border-radius:12px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
+  .choice.on { border-color:var(--pri); background:var(--priSoft); }
+  .choice.dis { opacity:.55; cursor:not-allowed; }
+  .choice .rd { width:16px; height:16px; border-radius:50%; border:2px solid var(--line2); flex:none; margin-top:3px; }
+  .choice.on .rd { border-color:var(--pri); background:radial-gradient(var(--pri) 45%, transparent 50%); }
+  .choice b { display:block; font-size:14px; } .choice span { font-size:12.5px; color:var(--mute); }
+  .mfoot { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px; }
+  .warnline { font-size:12.5px; color:var(--attInk); background:color-mix(in srgb, var(--mid) 12%, transparent); border-radius:10px; padding:8px 10px; margin-top:8px; }
+  .errline { font-size:12.5px; color:var(--crit); margin-top:6px; }
+
+  /* grup */
+  .g3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  @container (max-width:700px) { .g3 { grid-template-columns:1fr; } }
+  .hc { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; min-width:0; cursor:pointer; }
+  .hc:hover { border-color:var(--pri); }
+  .hc h4 { margin:0; font:700 15px "Space Grotesk"; } .hc .sub { margin-bottom:8px; }
+  .met { margin:8px 0; } .met .row { display:flex; justify-content:space-between; font-size:12.5px; gap:8px; } .met .row b { font-family:"JetBrains Mono"; font-size:12.5px; }
+  .bar { height:6px; border-radius:999px; background:var(--card2); overflow:hidden; margin-top:3px; } .bar i { display:block; height:100%; background:var(--pri); border-radius:999px; }
+  .bar i.w { background:var(--mid); }
+
+  /* hastane yönetimi */
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:12px; flex-wrap:wrap; }
+  .tabs span { padding:8px 10px; font:600 13px Figtree; color:var(--mute); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
+  .tabs span.on { color:var(--ink); border-color:var(--pri); }
+  .tree { list-style:none; margin:0; padding:0; font-size:13.5px; }
+  .tree ul { list-style:none; margin:0; padding-left:18px; border-left:1px dashed var(--line2); margin-left:8px; }
+  .node { display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; flex-wrap:wrap; }
+  .node:hover { background:var(--card2); }
+  .node .k { font:700 10px Figtree; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); border:1px solid var(--line2); border-radius:5px; padding:1px 5px; }
+  .node .add { margin-left:auto; }
+  .bed { display:inline-flex; align-items:center; gap:4px; font:600 11.5px "JetBrains Mono"; background:var(--card2); border:1px solid var(--line); border-radius:6px; padding:2px 6px; margin:2px 3px 2px 0; }
+  .info { display:flex; gap:10px; align-items:flex-start; background:color-mix(in srgb, var(--pri) 8%, var(--card)); border:1px solid color-mix(in srgb, var(--pri) 35%, transparent); border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:12px; }
+  .info svg { flex:none; width:18px; height:18px; color:var(--pri); margin-top:1px; }
+  .info b { display:block; }
+
+  /* gerekçe, bugün */
+  .why { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
+  .why .panel p { margin:0; font-size:13.5px; color:var(--mute); }
+  .today { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+  .today .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .today h3 { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .today ul { margin:0; padding-left:18px; font-size:14px; } .today li { margin:6px 0; }
+  .today li small { display:block; color:var(--mute); font-size:12.5px; }
+  .today code { font:500 12px "JetBrains Mono"; background:var(--card2); border-radius:5px; padding:1px 5px; word-break:break-all; }
+  .riskbox { border:1px solid color-mix(in srgb, var(--crit) 45%, transparent); background:color-mix(in srgb, var(--crit) 7%, var(--card)); border-radius:12px; padding:12px 14px; margin:12px 0; font-size:14px; }
+  .riskbox .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+  .riskbox .two div { background:var(--card); border-radius:10px; padding:8px 10px; font-size:13px; }
+  .decisions { counter-reset:k; list-style:none; padding:0; margin:0; display:grid; gap:6px; }
+  .decisions li { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:9px 12px; font-size:14px; display:flex; gap:10px; align-items:flex-start; }
+  .decisions li b.n { font:700 13px "Space Grotesk"; color:var(--pri); flex:none; min-width:26px; }
+  .objection { margin-top:26px; background:linear-gradient(90deg, color-mix(in srgb, var(--mid) 12%, transparent), transparent 70%); border:1px solid color-mix(in srgb, var(--mid) 40%, transparent); border-radius:14px; padding:14px 16px; }
+  .objection code { display:block; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; font:500 14px "JetBrains Mono"; white-space:pre-wrap; margin-top:6px; }
+  .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--page); padding:9px 14px; border-radius:10px; font:600 13px Figtree; z-index:50; max-width:calc(100vw - 32px); opacity:0; pointer-events:none; transition:opacity .2s; }
+  .toast.show { opacity:1; }
+
+  @media (max-width:820px) {
+    .lay { grid-template-columns:1fr; gap:8px; }
+    .why, .today .cols, .riskbox .two { grid-template-columns:1fr; }
+    h1 { font-size:25px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a href="index.html">← Tasarım Masası</a>
+    <span style="flex:1"></span>
+    <div class="seg" id="dev"><button data-dev="desk" class="on">Masaüstü</button><button data-dev="tablet">Tablet</button><button data-dev="phone">Telefon</button></div>
+    <button class="btn" id="th">Tema</button>
+  </div>
+
+  <h1>Kurum yapısı: yeni hastaneyi kim ekler?</h1>
+  <p class="lead">Ozan'ın sorusu ve <b>ekibin kararı</b>. Bu sayfa soru sormaz, kararı yazar; yalnız itiraz edersen değişir. Aşağıdaki ekranlar tıklanabilir.</p>
+
+  <div class="answer">
+    <div class="q">"Admin sisteme yeni bir hastane ekleyebilmeli mi? Bu bir kurum ya da hastane için değil, bu bir sistem; o tarz nasıl olmalı?"</div>
+    <div class="a">Hayır. Hastanenin yöneticisi yeni hastane ekleyemez. Yeni hastaneyi Homunculus ekibi açar, iki kişinin onayıyla ve kayda geçerek.</div>
+    <p>Sistem üç katmanlı olur: <b>Homunculus ekibi</b> (kurulumları açar, sağlıklarını izler) · <b>hastane grubu</b> (isteğe bağlı, yalnız toplu göstergeler) · <b>hastane</b> (kendi binası, kullanıcıları, ayarları). Her hastanenin klinik verisi kendi sunucusunda kalır; kimse onu uzaktan açmaz.</p>
+  </div>
+
+  <div class="drawn"><span class="st cizim">✏️ Çizildi</span><div><b>Bu ekranların hiçbiri henüz uygulamada yok.</b> Kurum konsolu, grup paneli ve "Hastane ekle düğmesi olmayan" yönetim ekranı yalnız bu sayfada, öneri olarak var. Gerçek ürünün bugünkü hâli en alttaki kutuda.</div></div>
+
+  <h2>Üç katman</h2>
+  <p class="lead">Bir katmana tıkla, altındaki ekran açılır.</p>
+  <div class="layers" id="layers">
+    <div class="lay" data-go="konsol">
+      <div class="who"><span class="num">1</span><b>Homunculus ekibi</b><small>Kurum konsolu · satıcı tarafı</small></div>
+      <div class="can"><h4>Yapar</h4><ul><li>Yeni hastane kurulumu açar (iki kişi onaylar)</li><li>Lisans, sürüm, köprü sağlığı, son yedek görür</li><li>Destek kayıtlarını yürütür</li></ul></div>
+      <div class="cant"><h4>Yapamaz</h4><ul><li>Klinik veri ve hasta adı görmez</li><li>Hastanenin sunucusuna kendiliğinden giremez</li><li>Tek kişiyle hastane açamaz</li></ul></div>
+    </div>
+    <div class="flow"><span class="ar up">↑</span><span class="pill"><span class="dot d-ok"></span>Yalnız sağlık sinyali: sürüm, bağlantı, hata sayısı, son yedek</span><span class="pill"><span class="x">✕</span>Hasta, vital, not, alarm içeriği gitmez</span></div>
+    <div class="lay" data-go="grup">
+      <div class="who"><span class="num">2</span><b>Hastane grubu <span class="opt">isteğe bağlı</span></b><small>Ör. bir zincirin 3 hastanesi</small></div>
+      <div class="can"><h4>Yapar</h4><ul><li>Hastaneleri yan yana, toplu ve isimsiz göstergelerle görür: doluluk, kalite, alarm yanıt süresi</li></ul></div>
+      <div class="cant"><h4>Yapamaz</h4><ul><li>Hasta adı, hasta kartı, klinik ekran görmez</li><li>Hastane ekleyemez, kullanıcı yönetemez</li></ul></div>
+    </div>
+    <div class="flow"><span class="ar up">↑</span><span class="pill">Yalnız sayılar (kaç yatak dolu, ortalama yanıt süresi)</span></div>
+    <div class="lay" data-go="hastane">
+      <div class="who"><span class="num">3</span><b>Hastane</b><small>Hastanenin BT yöneticisi</small></div>
+      <div class="can"><h4>Yapar</h4><ul><li>Kendi bina, kat, birim, oda, yataklarını kurar</li><li>Kullanıcı, rol, entegrasyon ayarları</li><li>Destek ekibine süreli, gerekçeli erişim verir ya da vermez</li></ul></div>
+      <div class="cant"><h4>Yapamaz</h4><ul><li>Yeni hastane ekleyemez</li><li>Başka hastaneyi göremez, altına bir şey ekleyemez</li></ul></div>
+    </div>
+  </div>
+
+  <h2>Ekranlar <span class="st cizim" style="vertical-align:middle">✏️ Çizildi · uygulamada yok</span></h2>
+  <div class="stage">
+    <div class="who-bar">Kim olarak bakıyorsun?
+      <div class="seg" id="role"><button data-r="konsol" class="on">Homunculus ekibi</button><button data-r="grup">Grup yöneticisi</button><button data-r="hastane">Hastane BT yöneticisi</button></div>
+    </div>
+    <div class="frame" id="frame"></div>
+  </div>
+
+  <h2>Neden böyle?</h2>
+  <div class="why">
+    <div class="panel"><h4>Hastane açmak bir sözleşme işidir</h4><p>Motorda bir "kurum" bir sözleşmeye karşılık gelir. Sözleşmeyi hastane yöneticisi değil, Homunculus ile hastane imzalar. Yeni kurumu açma yetkisi de sözleşmenin sahibinde, yani ekipte olmalı.</p></div>
+    <div class="panel"><h4>Her hastane kendi sunucusunda</h4><p>Kurulum hastanenin kendi sunucusuna yapılıyor. Bir hastane yöneticisi "yeni hastane ekle"ye bassa bile o hastane kendi sunucusunda doğmaz; düğme hem yanlış yerde olur hem yanıltır.</p></div>
+    <div class="panel"><h4>Neden iki kişinin onayı?</h4><p>Yanlış açılan bir kurum, yanlış kişiye yönetici daveti gönderir. Açmayı tek bir yorgun ya da ele geçirilmiş hesaba bırakmıyoruz. Açan kişi kendi isteğini onaylayamaz, iki adım da denetim kaydına yazılır.</p></div>
+    <div class="panel"><h4>Konsol neden klinik veri görmez?</h4><p>Sağlık verisi hastanenin sorumluluğunda. Satıcının her hastanenin verisini tek ekranda görebildiği bir yapı, sızdığında hepsini birden sızdırır. Konsola yalnız "çalışıyor mu" bilgisi gelir.</p></div>
+    <div class="panel"><h4>Destek nasıl olacak?</h4><p>Hastanenin BT yöneticisi, gerekçesi yazılı ve süresi belli bir erişim verir (ör. 4 saat). Süre dolunca erişim kendiliğinden kapanır. Kimin, ne zaman, neden girdiği hastanenin kendi denetim kaydında durur.</p></div>
+    <div class="panel"><h4>Grup katmanı neden isimsiz?</h4><p>Zincir yönetimi "hangi hastanemiz zorlanıyor"u bilmek ister; "hangi hasta"yı bilmesi gerekmez. Klinik ekran her zaman tek hastanelik ve o hastanenin kendi hesabıyla açılır.</p></div>
+  </div>
+
+  <h2>Ekibin kararları</h2>
+  <ol class="decisions">
+    <li><b class="n">K1</b><span>Hastane BT yöneticisi yeni hastane ekleyemez. Yönetim ekranında "Hastane ekle" düğmesi olmaz, yerine bilgi notu olur.</span></li>
+    <li><b class="n">K2</b><span>Yeni hastaneyi Homunculus ekibi Kurum konsolundan açar; iki farklı kişinin onayı ve denetim kaydı şart.</span></li>
+    <li><b class="n">K3</b><span>Kurum konsolu klinik veri ve hasta adı görmez; yalnız sürüm, bağlantı, hata sayısı, lisans ve son yedek bilgisi gelir.</span></li>
+    <li><b class="n">K4</b><span>Destek erişimini hastane verir: süreli, gerekçeli, kayıtlı. Konsolda "içeri gir" düğmesi yok, "erişim iste" var.</span></li>
+    <li><b class="n">K5</b><span>Hastane grubu isteğe bağlıdır; grup yöneticisi yalnız toplu, isimsiz göstergeleri görür.</span></li>
+    <li><b class="n">K6</b><span>Motordaki yetki açığı kapatılmadan ikinci bir hastane aynı sunucuya konmaz.</span></li>
+  </ol>
+
+  <h2>Gerçek üründe bugün / yapılacak</h2>
+  <div class="today">
+    <div class="cols">
+      <div>
+        <h3><span class="st bugun">Bugün var</span> Ölçüldü, 24.09.2026</h3>
+        <ul>
+          <li>Yapı motorda hazır: <b>Kurum → Tesis → Birim → Oda → Yatak</b>.<small><code>tenant/models.py</code></small></li>
+          <li>Bir kullanıcı birden çok hastaneye üye olabiliyor.<small><code>auth/models.py</code> · TenantMembership</small></li>
+          <li>Kurulum tek hastanelik ve hastanenin kendi sunucusunda.<small><code>deploy/local/docker-compose.yml</code> "entirely on the hospital's own server" · <code>.env.example</code> tek TENANT_SLUG</small></li>
+          <li>Satıcı tarafının rolü ayrı: <b>PLATFORM_SUPPORT</b>; hastane tarafının tavanı HOSPITAL_ADMIN.<small><code>auth/models.py</code> · UserRole</small></li>
+        </ul>
+      </div>
+      <div>
+        <h3><span class="st bek">⏳ Yapılacak</span></h3>
+        <ul>
+          <li><b>Kiracı denetimi düzeltmesi.</b> Her istekte "bu kişi BU hastanenin yöneticisi mi?" sorulmalı. Motor işi; güvenlik incelemesi gerekir.<small><code>auth/dependencies.py</code> require_roles · <code>tenant/router.py</code> bütün uçlar</small></li>
+          <li><b>Hastane açma ve listeleme yalnız PLATFORM_SUPPORT'a.</b><small><code>POST /tenant/tenants</code> · <code>GET /tenant/tenants</code></small></li>
+          <li><b>Grup katmanı yok, eklenmeli.</b> Motorda "hastane grubu" diye bir kavram bulunmuyor.</li>
+          <li><b>Kurum konsolu ve iki kişilik onay yok.</b> Bu sayfadaki çizimden kurulacak.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="riskbox">
+      <span class="st risk">Güvenlik açığı</span> <b>Bugün hastanenin yöneticisi, olmaması gereken üç şeyi yapabiliyor:</b> yeni hastane açabiliyor, sistemdeki bütün hastaneleri listeleyebiliyor ve başka bir hastanenin altına tesis açabiliyor. Sebep: sistem "bu kişi herhangi bir hastanede yönetici mi?" diye bakıyor, "bu hastanede mi?" diye bakmıyor. Aynı boşluk birim, oda, yatak ekleme ve yatak durumu değiştirme için de geçerli.
+      <div class="two">
+        <div><b style="color:var(--ok)">Bugün zararsız</b><br>Her sunucuda tek hastane var. Görülecek ya da bozulacak başka hastane yok.</div>
+        <div><b style="color:var(--crit)">İkinci hastane aynı sunucuya konursa</b><br>Bir hastanenin yöneticisi öbürünün yapısını görür ve değiştirebilir; veri sızar. Bu yüzden K6.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="objection"><b style="font:700 16px 'Space Grotesk'">İtiraz edersen tek satır yeter</b>
+    <code>İtiraz ettiğim madde: …</code>
+    <div class="sub" style="margin-top:6px">Örnek: "İtiraz ettiğim madde: K5, grup yöneticisi hasta adını da görsün." İtiraz yoksa bir şey yazmana gerek yok; karar böyle kalır.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const ICO = {
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>'
+};
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 2600); }
+
+// Bütün kurum ve kişi adları UYDURMADIR. Sürüm ve tarihler örnektir.
+const HOS = [
+  { id:"kuzey", ad:"Örnek Kuzey Hastanesi", il:"Samsun", grup:"Örnek Sağlık Grubu", surum:"1.8.2", kopru:"ok", kTxt:"Bağlı · 1 dk önce", lisans:"31.12.2027", yedek:"Bugün 03:10", hata:0 },
+  { id:"guney", ad:"Örnek Güney Hastanesi", il:"Antalya", grup:"Örnek Sağlık Grubu", surum:"1.8.2", kopru:"ok", kTxt:"Bağlı · 2 dk önce", lisans:"31.12.2027", yedek:"Bugün 03:12", hata:2 },
+  { id:"dogu", ad:"Örnek Doğu Hastanesi", il:"Erzurum", grup:"Örnek Sağlık Grubu", surum:"1.7.9", kopru:"warn", kTxt:"Gecikiyor · 38 dk", lisans:"31.12.2027", yedek:"Dün 03:05", hata:14 },
+  { id:"cocuk", ad:"Örnek Çocuk Hastanesi", il:"İzmir", grup:"—", surum:"1.8.2", kopru:"ok", kTxt:"Bağlı · 1 dk önce", lisans:"15.03.2027", yedek:"Bugün 02:55", hata:0 },
+  { id:"egitim", ad:"Örnek Eğitim Hastanesi", il:"Konya", grup:"—", surum:"1.8.1", kopru:"off", kTxt:"Sinyal yok · 2 gün", lisans:"30.11.2026", yedek:"3 gün önce", hata:null },
+];
+const LOG = [
+  ["23.09 16:40", "Destek erişimi sona erdi", "Örnek Güney Hastanesi · 4 saatlik süre doldu"],
+  ["23.09 12:40", "Destek erişimi verildi", "Örnek Güney Hastanesi BT yöneticisi · gerekçe: köprü hatası"],
+  ["22.09 09:15", "Sürüm güncellendi", "Örnek Kuzey Hastanesi · 1.8.1 → 1.8.2"],
+];
+const S = { role:"konsol", dev:"desk", sel:null, wiz:null, per:"7", htab:"structure", req:{} };
+const PEOPLE = { a:"Ekip üyesi A (sen)", b:"Ekip üyesi B" };
+
+function appbar(title, sub, user) {
+  return `<div class="appbar"><div class="mk">H</div><div class="t">${title}<small>${sub}</small></div><div class="u">${user}</div></div>`;
+}
+
+/* ---------------- 1 · Kurum konsolu ---------------- */
+function konsol() {
+  const k = h => h.kopru === "ok" ? "d-ok" : h.kopru === "warn" ? "d-warn" : h.kopru === "wait" ? "d-wait" : "d-off";
+  const lic = h => { const [d, m, y] = h.lisans.split(".").map(Number); const days = (new Date(y, m - 1, d) - new Date(2026, 8, 24)) / 864e5; return days < 90 ? `<span style="color:var(--attInk);font-weight:700">${h.lisans}</span><div class="sub">${Math.round(days)} gün kaldı</div>` : h.lisans; };
+  const sel = HOS.find(h => h.id === S.sel);
+  let side;
+  if (!sel) side = `<div class="panel"><h4>Bir hastane seç</h4><p class="sub" style="margin:0">Satıra tıklayınca sağlık sinyalleri ve destek erişimi burada görünür.</p></div>`;
+  else {
+    const rq = S.req[sel.id];
+    side = `<div class="panel"><h4>${sel.ad}</h4>
+      <div class="kv"><span>Kurulum</span><div>Hastanenin sunucusu</div><span>Sürüm</span><div class="mono">${sel.surum}</div><span>Köprü</span><div><span class="dot ${k(sel)}"></span>${sel.kTxt}</div>
+      <span>Son 24 sa hata</span><div class="mono">${sel.hata === null ? "—" : sel.hata}</div><span>Son yedek</span><div>${sel.yedek}</div><span>Lisans bitişi</span><div>${sel.lisans}</div><span>Grup</span><div>${sel.grup}</div></div>
+      <div class="lock">${ICO.lock}<span><b style="color:var(--ink)">Klinik veri bu konsolda yok.</b> Hasta sayısı, hasta adı, alarm içeriği buraya hiç gelmez.</span></div>
+      ${sel.kopru === "wait" ? `<div class="sub">Kurulum bekliyor: hastanenin BT yöneticisi davetini kabul edip sunucuyu kurunca sinyal gelmeye başlar.</div>` :
+        rq ? `<div class="warnline">⏳ Erişim isteği gönderildi (${rq}). Hastanenin BT yöneticisi onaylarsa süreli erişim açılır.</div>` :
+        `<div class="fld"><label>Destek erişimi iste</label><select data-dur><option>2 saat</option><option selected>4 saat</option><option>8 saat</option></select></div>
+         <div class="fld"><input data-why placeholder="Gerekçe (zorunlu), ör. köprü hatası incelemesi"></div>
+         <button class="btn p sm" data-act="req">Hastaneden erişim iste</button><div class="sub" style="margin-top:6px">"İçeri gir" düğmesi yok: kapıyı hastane açar.</div>`}
+    </div>`;
+  }
+  return appbar("Kurum konsolu", "Homunculus ekibi · satıcı tarafı", PEOPLE.a + " · PLATFORM_SUPPORT") + `<div class="scr">
+    <div class="ph"><div><h3>Hastaneler</h3><p>${HOS.length} kurulum · adlar uydurmadır</p></div><div class="r"><button class="btn p" data-act="wiz">+ Yeni kurulum</button></div></div>
+    <div class="split"><div class="panel" style="padding:6px 8px"><table class="t"><thead><tr><th>Hastane</th><th>Şehir</th><th>Sürüm</th><th>Köprü</th><th>Lisans bitişi</th><th>Son yedek</th></tr></thead><tbody>
+      ${HOS.map(h => `<tr data-h="${h.id}" class="${S.sel === h.id ? "sel" : ""}"><td class="first"><b>${h.ad}</b>${h.grup !== "—" ? `<div class="sub">${h.grup}</div>` : ""}</td>
+        <td><span class="lbl">Şehir</span>${h.il}</td><td><span class="lbl">Sürüm</span><span class="mono">${h.surum}</span></td>
+        <td><span class="lbl">Köprü</span><span><span class="dot ${k(h)}"></span>${h.kTxt}</span></td><td><span class="lbl">Lisans bitişi</span><div>${lic(h)}</div></td><td><span class="lbl">Son yedek</span>${h.yedek}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div style="display:grid;gap:12px;align-content:start">${side}
+      <div class="panel"><h4>Denetim kaydı</h4><ul class="log">${LOG.map(([t, a, d]) => `<li><span class="mono">${t}</span> · <b>${a}</b><br>${d}</li>`).join("")}</ul></div></div></div>
+  </div>` + (S.wiz ? wizard() : "");
+}
+
+function wizard() {
+  const w = S.wiz, st = w.step;
+  const names = ["Kurum bilgisi", "Kurulum türü", "İlk BT yöneticisi", "Onay"];
+  let body = "";
+  if (st === 1) body = `<div class="fld"><label>Kurum adı</label><input data-f="ad" value="${w.ad}" placeholder="ör. Örnek Batı Hastanesi"></div>
+    <div class="fld"><label>Şehir</label><input data-f="il" value="${w.il}" placeholder="ör. Bursa"></div>
+    <div class="fld"><label>Sözleşme numarası</label><input data-f="soz" value="${w.soz}" placeholder="ör. HMN-2026-014"><div class="h">Bir kurum bir sözleşmedir. Sözleşmesiz kurum açılmaz.</div></div>
+    <div class="fld"><label>Hastane grubu (isteğe bağlı)</label><select data-f="grup"><option value="">Grup yok</option><option${w.grup === "Örnek Sağlık Grubu" ? " selected" : ""}>Örnek Sağlık Grubu</option></select></div>`;
+  if (st === 2) body = `<div class="choice on"><span class="rd"></span><div><b>Hastanenin kendi sunucusu</b><span>Homunculus hastanenin içinde çalışır. Klinik veri hastaneden çıkmaz; konsola yalnız sağlık sinyali gelir.</span></div></div>
+    <div class="choice dis" data-act="nocloud"><span class="rd"></span><div><b>Bizim sunucumuzda (bulut)</b><span>Sunulmuyor. Hasta verisini hastane dışında tutmuyoruz.</span></div></div>`;
+  if (st === 3) body = `<div class="fld"><label>Hastanenin ilk BT yöneticisinin e-postası</label><input data-f="mail" value="${w.mail}" placeholder="ad.soyad@ornek-hastane.test"><div class="h">Davet bu kişiye gider. Hastanenin geri kalan kullanıcılarını o açar; biz açmayız.</div></div>
+    <div class="lock">${ICO.lock}<span>Bu kişiye verilen rol hastane tarafının tavanıdır (HOSPITAL_ADMIN). O da başka hastane açamaz.</span></div>`;
+  if (st === 4) {
+    body = `<div class="kv" style="margin-bottom:10px"><span>Kurum</span><div><b>${w.ad}</b> · ${w.il}</div><span>Sözleşme</span><div class="mono">${w.soz}</div><span>Grup</span><div>${w.grup || "Yok"}</div><span>Kurulum</span><div>Hastanenin sunucusu</div><span>İlk yönetici</span><div>${w.mail}</div></div>`;
+    if (!w.sent) body += `<div class="sub">Göndermek ilk onaydır. Kurulum, <b>başka bir</b> ekip üyesi ikinci onayı verene kadar açılmaz.</div>`;
+    else body += `<div class="warnline">⏳ İlk onay: ${PEOPLE.a}. İkinci onay bekleniyor.<br>Kendi isteğini sen onaylayamazsın.</div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="selfok">Ben onaylayayım</button><button class="btn p sm" data-act="bok">Ekip üyesi B olarak onayla (gösterim)</button></div>${w.err ? `<div class="errline">${w.err}</div>` : ""}`;
+  }
+  const valid = st === 1 ? w.ad.trim() && w.il.trim() && w.soz.trim() : st === 3 ? /.+@.+\..+/.test(w.mail) : true;
+  return `<div class="modal-bg"><div class="modal"><div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">Yeni kurulum</h3><span style="flex:1"></span><button class="btn sm" data-act="close">Kapat</button></div>
+    <div class="steps">${names.map((n, i) => `<div class="${i + 1 === st ? "on" : i + 1 < st ? "done" : ""}">${i + 1} · ${n}</div>`).join("")}</div>
+    ${body}
+    <div class="mfoot">${st > 1 && !w.sent ? `<button class="btn" data-act="back">Geri</button>` : ""}
+      ${st < 4 ? `<button class="btn p" data-act="next"${valid ? "" : " disabled"}>İleri</button>` : !w.sent ? `<button class="btn p" data-act="send">Onaya gönder</button>` : ""}</div></div></div>`;
+}
+
+/* ---------------- 2 · Grup paneli ---------------- */
+const GM = { // [doluluk dolu, toplam, alarm yanıt sn, zamanında değ %, devir imza %]
+  "1":  { kuzey:[17, 20, 150, 94, 98], guney:[11, 16, 205, 88, 96], dogu:[9, 12, 290, 79, 91] },
+  "7":  { kuzey:[18, 20, 160, 92, 97], guney:[12, 16, 190, 90, 95], dogu:[10, 12, 270, 81, 93] },
+  "30": { kuzey:[17, 20, 170, 91, 97], guney:[13, 16, 185, 89, 96], dogu:[10, 12, 255, 83, 93] },
+};
+function grup() {
+  const d = GM[S.per], fmt = s => `${Math.floor(s / 60)} dk ${String(s % 60).padStart(2, "0")} sn`;
+  const cards = ["kuzey", "guney", "dogu"].map(id => { const h = HOS.find(x => x.id === id), [o, t, ar, zd, dv] = d[id], occ = Math.round(o / t * 100);
+    const m = (l, v, p, warn) => `<div class="met"><div class="row"><span>${l}</span><b>${v}</b></div><div class="bar"><i class="${warn ? "w" : ""}" style="width:${p}%"></i></div></div>`;
+    return `<div class="hc" data-hc="${id}"><h4>${h.ad}</h4><div class="sub">${h.il}</div>
+      ${m("Yatak doluluğu", `${o}/${t} · %${occ}`, occ, occ > 88)}
+      ${m("Alarm yanıt süresi (ortanca)", fmt(ar), Math.min(100, ar / 3.6), ar > 240)}
+      ${m("Zamanında değerlendirme", `%${zd}`, zd, zd < 85)}
+      ${m("Devir imzası", `%${dv}`, dv, dv < 94)}</div>`; }).join("");
+  return appbar("Grup paneli", "Örnek Sağlık Grubu · 3 hastane", "Grup yöneticisi") + `<div class="scr">
+    <div class="ph"><div><h3>Hastaneler yan yana</h3><p>Toplu ve isimsiz. Sayılar örnektir.</p></div><div class="r"><div class="seg" id="per">${[["1", "Bugün"], ["7", "7 gün"], ["30", "30 gün"]].map(([k, l]) => `<button data-per="${k}" class="${S.per === k ? "on" : ""}">${l}</button>`).join("")}</div></div></div>
+    <div class="g3">${cards}</div>
+    <div class="lock">${ICO.lock}<span><b style="color:var(--ink)">Bu panel hastaya inmez.</b> Kartlara tıklamak hasta listesi açmaz. Klinik ekranlar her zaman tek hastanelik; o hastanenin kendi hesabıyla açılır. Grup yöneticisi hastane ekleyemez, kullanıcı yönetemez.</span></div>
+  </div>`;
+}
+
+/* ---------------- 3 · Hastane yönetimi ---------------- */
+const TREE = [
+  { k:"Tesis", n:"Ana kampüs", ch:[
+    { k:"Birim", n:"Genel Yoğun Bakım · A Blok 3. kat", ch:[ { k:"Oda", n:"Oda 301", beds:["301-1", "301-2"] }, { k:"Oda", n:"Oda 302", beds:["302-1", "302-2"] }, { k:"Oda", n:"Oda 303 · izolasyon", beds:["303-1"] } ] },
+    { k:"Birim", n:"Yenidoğan Yoğun Bakım · B Blok 2. kat", ch:[ { k:"Oda", n:"Salon 1", beds:["K-01", "K-02", "K-03", "K-04"] } ] },
+  ] },
+];
+function treeHtml(list, path) {
+  return `<ul class="${path ? "" : "tree"}">${list.map((x, i) => { const p = path + i;
+    return `<li><div class="node"><span class="k">${x.k}</span><b>${x.n}</b>${x.beds ? `<span>${x.beds.map(b => `<span class="bed">${b}</span>`).join("")}</span>` : ""}
+      <span class="add">${x.k === "Tesis" ? `<button class="btn sm" data-add="Birim" data-p="${p}">+ Birim</button>` : x.k === "Birim" ? `<button class="btn sm" data-add="Oda" data-p="${p}">+ Oda</button>` : `<button class="btn sm" data-add="Yatak" data-p="${p}">+ Yatak</button>`}</span></div>
+      ${x.ch ? treeHtml(x.ch, p + ".") : ""}</li>`; }).join("")}</ul>`;
+}
+function hastane() {
+  const tabs = [["users", "Kullanıcılar"], ["roles", "Roller ve yetkiler"], ["structure", "Hastane yapısı"], ["integrations", "Entegrasyonlar"], ["support", "Destek erişimi"], ["audit", "Denetim kaydı"]];
+  let body = "";
+  if (S.htab === "structure") body = `<div class="info">${ICO.info}<div><b>Yeni hastane bu ekrandan açılmaz.</b>Bu yönetim yalnız Örnek Kuzey Hastanesi içindir. Grubunuza yeni bir hastane katılacaksa Homunculus ekibine yazın; kurulum sözleşmeyle, iki kişinin onayıyla ve o hastanenin kendi sunucusunda yapılır.</div></div>
+    <div class="ph"><div><h3 style="font-size:15px">Tesis → Birim → Oda → Yatak</h3><p>Her ekleme denetim kaydına yazılır</p></div><div class="r"><button class="btn sm" data-add="Tesis" data-p="">+ Tesis</button></div></div>
+    <div class="panel">${treeHtml(TREE, "")}</div>`;
+  else if (S.htab === "support") {
+    const rq = S.req.kuzey;
+    body = `<div class="panel"><h4>Homunculus destek ekibinin erişimi</h4>
+      ${rq ? `<div class="kv"><span>İsteyen</span><div>${PEOPLE.a}</div><span>Süre</span><div>${rq}</div><span>Durum</span><div><span class="st bek">Onayınızı bekliyor</span></div></div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn p sm" data-act="grant">Süreli erişim ver</button><button class="btn sm" data-act="deny">Reddet</button></div>`
+      : `<p class="sub" style="margin:0">Bekleyen istek yok. (İpucu: "Homunculus ekibi" olarak Örnek Kuzey Hastanesi'ni seçip erişim iste; istek buraya düşer.)</p>`}
+      <div class="lock">${ICO.lock}<span>Erişim süre dolunca kendiliğinden kapanır. Kim, ne zaman, hangi gerekçeyle girdi: bu hastanenin denetim kaydında.</span></div></div>`;
+  } else if (S.htab === "users") body = `<div class="panel" style="padding:6px 8px"><table class="t"><thead><tr><th>Ad</th><th>Rol</th><th>Birim</th></tr></thead><tbody>
+      ${[["Uydurma Hekim 1", "Sorumlu hekim", "Genel Yoğun Bakım"], ["Uydurma Hemşire 1", "Sorumlu hemşire", "Yenidoğan Yoğun Bakım"], ["Uydurma BT 1", "Hastane yöneticisi", "Tüm birimler"]].map(([a, r, b]) => `<tr><td class="first"><b>${a}</b></td><td><span class="lbl">Rol</span>${r}</td><td><span class="lbl">Birim</span>${b}</td></tr>`).join("")}</tbody></table></div>
+      <p class="sub">Bugünkü prototipteki Kullanıcı yönetimi ekranının aynısı; burada kısaltıldı.</p>`;
+  else body = `<div class="panel"><p class="sub" style="margin:0">Bu sekme bugünkü prototipteki Yönetim ekranıyla aynı; bu karar sayfasında değişen bir şey yok. Değişen yalnız "Hastane yapısı" ve yeni "Destek erişimi" sekmesi.</p></div>`;
+  return appbar("Yönetim", "Örnek Kuzey Hastanesi · yalnız bu hastane", "Uydurma BT 1 · HOSPITAL_ADMIN") + `<div class="scr">
+    <div class="tabs">${tabs.map(([k, l]) => `<span data-ht="${k}" class="${S.htab === k ? "on" : ""}">${l}</span>`).join("")}</div>${body}</div>`;
+}
+
+function draw() {
+  const f = $("#frame"); f.className = "frame " + (S.dev === "desk" ? "" : S.dev);
+  f.innerHTML = S.role === "konsol" ? konsol() : S.role === "grup" ? grup() : hastane();
+  document.querySelectorAll("#role button").forEach(b => b.classList.toggle("on", b.dataset.r === S.role));
+  document.querySelectorAll("#dev button").forEach(b => b.classList.toggle("on", b.dataset.dev === S.dev));
+  document.querySelectorAll(".lay").forEach(l => l.classList.toggle("on", l.dataset.go === S.role));
+}
+function findNode(p) { const idx = p.split(".").map(Number); let list = TREE, n; for (const i of idx) { n = list[i]; list = n.ch || []; } return n; }
+
+document.addEventListener("input", e => { const k = e.target.dataset.f; if (k && S.wiz) { S.wiz[k] = e.target.value; const nx = $("[data-act=next]"); if (nx) { const w = S.wiz; nx.disabled = !(w.step === 1 ? w.ad.trim() && w.il.trim() && w.soz.trim() : w.step === 3 ? /.+@.+\..+/.test(w.mail) : true); } } });
+document.addEventListener("change", e => { const k = e.target.dataset.f; if (k && S.wiz) S.wiz[k] = e.target.value; });
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (t.id === "th") { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "gun" ? "" : "gun"; try { localStorage.setItem("h20-theme", r.dataset.theme); } catch (_) {} return; }
+  const dv = t.closest("[data-dev]"); if (dv) { S.dev = dv.dataset.dev; draw(); return; }
+  const r = t.closest("[data-r]"); if (r) { S.role = r.dataset.r; S.wiz = null; draw(); return; }
+  const ly = t.closest("[data-go]"); if (ly) { S.role = ly.dataset.go; S.wiz = null; draw(); $("#frame").scrollIntoView({ behavior:"smooth", block:"start" }); return; }
+  const h = t.closest("[data-h]"); if (h) { S.sel = h.dataset.h; draw(); return; }
+  const pr = t.closest("[data-per]"); if (pr) { S.per = pr.dataset.per; draw(); return; }
+  const hc = t.closest("[data-hc]"); if (hc) { toast("Grup paneli hasta listesine inmez; klinik ekran yalnız o hastanenin kendi hesabıyla açılır."); return; }
+  const ht = t.closest("[data-ht]"); if (ht) { S.htab = ht.dataset.ht; draw(); return; }
+  const ad = t.closest("[data-add]"); if (ad) {
+    const kind = ad.dataset.add, p = ad.dataset.p;
+    if (kind === "Tesis") TREE.push({ k:"Tesis", n:"Yeni tesis (örnek)", ch:[] });
+    else { const n = findNode(p); if (kind === "Yatak") n.beds.push(n.n.replace(/\D+/g, "").slice(0, 3) + "-" + (n.beds.length + 1)); else (n.ch = n.ch || []).push(kind === "Birim" ? { k:"Birim", n:"Yeni birim (örnek)", ch:[] } : { k:"Oda", n:"Yeni oda", beds:[] }); }
+    draw(); toast(`${kind} eklendi · denetim kaydına yazıldı`); return;
+  }
+  const a = t.closest("[data-act]"); if (!a) return;
+  const act = a.dataset.act, w = S.wiz;
+  if (act === "wiz") S.wiz = { step:1, ad:"", il:"", soz:"", grup:"", mail:"", sent:false, err:"" };
+  else if (act === "close") S.wiz = null;
+  else if (act === "next" && !a.disabled) w.step++;
+  else if (act === "back") w.step--;
+  else if (act === "nocloud") { toast("Bulut kurulumu sunulmuyor: hasta verisi hastanede kalır."); return; }
+  else if (act === "send") { w.sent = true; LOG.unshift([now(), "Kurulum isteği · 1. onay", `${w.ad} · ${PEOPLE.a}`]); }
+  else if (act === "selfok") w.err = "Olmaz: isteği açan kişi ikinci onayı veremez. Başka bir ekip üyesi onaylamalı.";
+  else if (act === "bok") { const id = "yeni" + HOS.length;
+    HOS.push({ id, ad:w.ad, il:w.il, grup:w.grup || "—", surum:"—", kopru:"wait", kTxt:"Kurulum bekliyor", lisans:"31.12.2027", yedek:"—", hata:null });
+    LOG.unshift([now(), "Kurulum açıldı · 2. onay", `${w.ad} · ${PEOPLE.b} · davet: ${w.mail}`]); S.wiz = null; S.sel = id; toast("Kurulum açıldı. Davet hastanenin BT yöneticisine gitti."); }
+  else if (act === "req") { const why = $("[data-why]").value.trim(); if (!why) { toast("Gerekçe yazmadan erişim istenemez."); return; }
+    S.req[S.sel] = $("[data-dur]").value; LOG.unshift([now(), "Destek erişimi istendi", `${HOS.find(x => x.id === S.sel).ad} · ${S.req[S.sel]} · ${why}`]); toast("İstek hastaneye gitti. Hastane BT yöneticisi olarak bakabilirsin."); }
+  else if (act === "grant") { toast(`Erişim verildi: ${S.req.kuzey}. Süre dolunca kendiliğinden kapanır.`); delete S.req.kuzey; }
+  else if (act === "deny") { toast("İstek reddedildi. Denetim kaydına yazıldı."); delete S.req.kuzey; }
+  draw();
+});
+function now() { const d = new Date(); return `24.09 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
+(function () { let th = null; try { th = localStorage.getItem("h20-theme"); } catch (_) {}
+  if (th === null && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) th = "gun";
+  if (th) document.documentElement.dataset.theme = th; })();
+draw();
+</script>
+</body>
+</html>

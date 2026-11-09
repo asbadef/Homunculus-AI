@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klinik İş Akışı</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --app:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --vio:#a78bfa;
+          --att:rgba(202,138,4,.07); --attLine:rgba(202,138,4,.38); --attInk:#f5c451; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:28px 16px 70px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 8px; }
+  .lead { color:var(--mute); max-width:900px; margin:0; } .lead b { color:var(--ink); }
+  h2 { font:700 23px "Space Grotesk"; margin:44px 0 6px; display:flex; gap:10px; align-items:center; }
+  h2 .k { font:700 13px "Space Grotesk"; background:var(--pri); color:var(--onpri); border-radius:8px; padding:5px 9px; }
+  .sub { color:var(--mute); margin:0 0 14px; max-width:900px; } .sub b { color:var(--ink); }
+  .st { display:inline-block; font:700 10.5px Figtree; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .st.ok { background:rgba(34,197,94,.15); color:#4ade80; } .st.part { background:rgba(234,179,8,.15); color:#facc15; } .st.no { background:rgba(100,116,139,.2); color:#a3b1c6; }
+  .dir { display:inline-block; font:700 10.5px Figtree; padding:2px 7px; border-radius:6px; white-space:nowrap; }
+  .dir.in { background:rgba(34,184,214,.15); color:#7fe3f5; } .dir.out { background:rgba(167,139,250,.18); color:#c4b5fd; } .dir.own { background:rgba(148,163,184,.18); color:#cbd5e1; }
+
+  /* önemli uyarı */
+  .warn { background:linear-gradient(135deg, rgba(234,179,8,.10), rgba(234,179,8,.03)); border:1px solid var(--attLine); border-radius:18px; padding:16px 18px; margin-top:20px; }
+  .warn h3 { margin:0 0 6px; font:700 17px "Space Grotesk"; color:var(--attInk); }
+  .warn p { margin:0 0 8px; color:#e9dcb8; font-size:14px; } .warn b { color:#fff4d6; }
+
+  /* modlar */
+  .modes { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .mode { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; }
+  .mode .n { font:700 12px Figtree; color:var(--c); letter-spacing:.08em; text-transform:uppercase; }
+  .mode b { display:block; font:700 18px "Space Grotesk"; margin:2px 0 6px; }
+  .mode p { margin:0; font-size:13.5px; color:var(--mute); }
+  .flow { display:flex; align-items:center; gap:8px; margin:10px 0; font:700 12px Figtree; }
+  .flow span { background:var(--card2); border-radius:8px; padding:6px 9px; }
+  .flow i { font-style:normal; color:var(--c); font-size:16px; }
+  table.mt { width:100%; border-collapse:collapse; margin-top:14px; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; font-size:13.5px; }
+  table.mt th { text-align:left; font:700 10.5px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); padding:10px 12px; background:var(--card2); }
+  table.mt td { padding:9px 12px; border-top:1px solid var(--line); }
+  .pick { display:flex; gap:4px; } .pick i { font:700 11px Figtree; font-style:normal; padding:5px 8px; border-radius:7px; border:1px solid var(--line2); cursor:pointer; color:var(--mute); }
+  .pick i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+
+  /* şeritli gün */
+  .lanes { background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:auto; }
+  .lanes table { border-collapse:collapse; min-width:1080px; width:100%; font-size:12.5px; }
+  .lanes th { position:sticky; left:0; background:var(--card2); text-align:left; font:700 12px "Space Grotesk"; padding:10px 12px; width:110px; border-bottom:1px solid var(--line); }
+  .lanes thead th { font:700 11px Figtree; color:var(--mute); text-align:center; }
+  .lanes td { border-bottom:1px solid var(--line); border-left:1px dashed var(--line); padding:6px; vertical-align:top; }
+  .ev { background:var(--card2); border-radius:9px; padding:6px 8px; margin-bottom:5px; border-left:3px solid var(--c); cursor:pointer; }
+  .ev b { display:block; font-size:12px; } .ev span { color:var(--mute); font-size:11px; }
+  .ev.sel { outline:2px solid var(--pri); }
+  .detail { margin-top:12px; background:var(--app); border:1px solid var(--line2); border-radius:14px; padding:12px 14px; min-height:64px; font-size:14px; color:var(--mute); }
+  .detail b { color:var(--ink); }
+
+  /* mini ekranlar */
+  .scr { background:var(--app); border:1px solid var(--line); border-radius:16px; padding:14px; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .g3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .box h5 { margin:0 0 8px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); display:flex; gap:8px; align-items:center; }
+  .box h5 .r { margin-left:auto; text-transform:none; letter-spacing:0; }
+  .fld { display:grid; grid-template-columns:90px 1fr; gap:6px 10px; align-items:center; font-size:13px; margin-bottom:8px; }
+  .fld label { color:var(--mute); }
+  .inp { background:var(--card2); border:1px solid var(--line2); border-radius:9px; padding:7px 10px; font-size:13px; }
+  .inp.sel { border-color:var(--pri); }
+  .opts { display:flex; gap:5px; flex-wrap:wrap; } .opts i { font-style:normal; font:600 12px Figtree; padding:5px 9px; border-radius:8px; border:1px solid var(--line2); cursor:pointer; }
+  .opts i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .note { background:rgba(234,179,8,.1); border:1px solid var(--attLine); color:var(--attInk); border-radius:10px; padding:7px 10px; font:600 12.5px Figtree; margin:8px 0; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:8px 13px; border:1px solid var(--line2); background:var(--card); color:var(--ink); display:inline-flex; gap:6px; cursor:pointer; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .mar { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .mar th { font:700 10.5px Figtree; color:var(--mute); padding:6px; text-align:center; border-bottom:1px solid var(--line); }
+  .mar th:first-child { text-align:left; }
+  .mar td { padding:6px; border-bottom:1px solid var(--line); text-align:center; }
+  .mar td:first-child { text-align:left; } .mar td:first-child b { display:block; } .mar td:first-child span { color:var(--mute); font-size:11px; }
+  .dose { display:inline-block; min-width:44px; font:700 11px Figtree; padding:4px 6px; border-radius:7px; cursor:pointer; }
+  .dose.done { background:rgba(34,197,94,.16); color:#4ade80; } .dose.due { background:var(--pri); color:var(--onpri); animation:p 1.6s infinite; }
+  .dose.miss { background:rgba(239,68,68,.16); color:#fca5a5; } .dose.plan { border:1px dashed var(--line2); color:var(--mute); }
+  @keyframes p { 50% { opacity:.6; } }
+  .tl { display:flex; gap:0; margin:8px 0 4px; }
+  .tl span { flex:1; text-align:center; font:700 10.5px Figtree; padding:6px 2px; background:var(--card2); color:var(--mute); position:relative; }
+  .tl span:first-child { border-radius:8px 0 0 8px; } .tl span:last-child { border-radius:0 8px 8px 0; }
+  .tl span.done { background:rgba(34,184,214,.18); color:#7fe3f5; } .tl span.now { background:var(--pri); color:var(--onpri); }
+  .res { display:grid; grid-template-columns:1fr auto; gap:4px 10px; font-size:13px; padding:7px 0; border-bottom:1px dashed var(--line); }
+  .res:last-child { border:0; } .res b { font-family:"JetBrains Mono"; } .res small { grid-column:span 2; color:var(--mute); font-size:11.5px; }
+  .risk { display:flex; gap:10px; align-items:center; background:var(--card2); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .risk .ic { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; font:700 15px "Space Grotesk"; background:color-mix(in srgb, var(--c) 20%, transparent); color:var(--c); }
+  .risk b { display:block; font-size:13.5px; } .risk span { font-size:12px; color:var(--mute); }
+  .risk .sc { margin-left:auto; font:700 18px "JetBrains Mono"; color:var(--c); text-align:right; } .risk .sc small { display:block; font:600 10px Figtree; color:var(--mute); }
+  .bedcard { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; position:relative; overflow:hidden; }
+  .bedcard::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--high); }
+  .icons { display:flex; gap:5px; margin-top:8px; } .icons span { font:700 10.5px Figtree; padding:3px 7px; border-radius:6px; background:var(--card2); }
+  .task { display:grid; grid-template-columns:52px 1fr auto; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .task .tm { font:700 13px "JetBrains Mono"; color:var(--mute); } .task.late .tm { color:var(--crit); }
+  .chk { width:22px; height:22px; border-radius:6px; border:2px solid var(--line2); cursor:pointer; display:grid; place-items:center; font-size:13px; }
+  .chk.on { background:var(--ok); border-color:var(--ok); color:#04210f; }
+  .qs { margin-top:40px; background:var(--card); border:1px solid var(--line2); border-radius:18px; padding:18px 20px; }
+  .qs h2 { margin:0 0 10px; }
+  .qs ol { margin:0; padding-left:20px; color:var(--mute); } .qs li { margin-bottom:8px; } .qs b { color:var(--ink); }
+  .qs code { display:block; margin-top:12px; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 13.5px "JetBrains Mono"; white-space:pre-wrap; }
+  .g2 > *, .g3 > *, .modes > *, .fld > * { min-width:0; }
+  .flow, .opts { flex-wrap:wrap; }
+  .scr .box:has(.mar) { overflow-x:auto; }
+  @media (max-width:900px) { .modes, .g2, .g3 { grid-template-columns:1fr; } table.mt td:nth-child(2), table.mt th:nth-child(2) { display:none; } .fld { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Klinik iş akışı · Taslak 12</h1>
+  <p class="lead">Kendimizi hastanede hekim, hemşire ve hasta yerine koyup <b>bir günün bütün işlerini</b> çıkardım: ilaç, tetkik ve sonuçlar, düşme riski gibi değerlendirmeler, hemşirenin saatli işleri. Her işin yanında şunlar yazıyor: <span class="dir in">HBYS → biz</span> veri hastanenin sisteminden gelir, <span class="dir out">biz → HBYS</span> bizde girilir ve hastane sistemine gönderilir, <span class="dir own">bizde</span> sadece bizde tutulur. Ayrıca kodda bugün ne durumda olduğu: <span class="st ok">var</span> <span class="st part">kısmen</span> <span class="st no">yok</span>. <b>Kod durumunu satır satır kontrol ettim.</b> <i>Hastalar ve değerler örnektir.</i></p>
+
+  <div class="warn">
+    <h3>Önce dürüst bir not: bu bir büyüme kararı</h3>
+    <p>Bugün Homunculus bir <b>izleme ve erken uyarı</b> sistemi. İlaç order'ı, hemşirenin ilaç uygulama çizelgesi ve tetkik isteme eklenince, hastanenin <b>klinik bilgi sistemi</b> sınıfına geçer. Bu çok değerli ama üç sonucu var:</p>
+    <p>1. <b>Çift kayıt riski.</b> Hastanenin HBYS'sinde de ilaç order'ı varsa hekim aynı işi iki kez yapmak istemez. Bu yüzden aşağıdaki <b>"üç çalışma modu"</b> şart.</p>
+    <p>2. <b>Hastane sistemine veri göndermek bugün hiç yok.</b> Motor şu an yalnızca veri alıyor (HL7 hasta kabulü ve sonuç mesajları, FHIR ölçümler). Order'ı hastaneye göndermek her HBYS için ayrı bir entegrasyon işi ve bu iş <b>cihaz/entegrasyon ekibinde</b>.</p>
+    <p>3. <b>Mevzuat.</b> İlaç order'ı veren bir yazılımın ruhsat yükü, sadece izleme yapan bir yazılımdan daha ağır olabilir. Azerbaycan'da <b>doğrulanmalı</b>.</p>
+  </div>
+
+  <!-- ============ MODLAR ============ -->
+  <h2><span class="k">1</span>Üç çalışma modu</h2>
+  <p class="sub">Senin önerdiğin yapının kendisi. Her hastane, <b>her modül için ayrı ayrı</b> mod seçer. Örneğin ilaçlar HBYS'den gelir ama düşme riski değerlendirmesi bizde yapılır.</p>
+  <div class="modes">
+    <div class="mode" style="--c:#7fe3f5"><span class="n">Mod 1 · HBYS ana sistem</span><b>Onlar girer, biz gösteririz</b><div class="flow"><span>HBYS</span><i>→</i><span>Homunculus</span></div><p>Order, sonuç ve katalog hastanenin sisteminden gelir. Biz ekranda gösterir, trend ve uyarıya çeviririz. <b>Çift kayıt olmaz.</b> Satışı en kolay mod.</p></div>
+    <div class="mode" style="--c:#c4b5fd"><span class="n">Mod 2 · Birlikte</span><b>Bizde girilir, onlara gider</b><div class="flow"><span>Homunculus</span><i>⇄</i><span>HBYS</span></div><p>Hekim order'ı bizim ekranda verir, order hastane sistemine gönderilir ve sonuç geri gelir. En rahat kullanım, ama <b>her HBYS için ayrı entegrasyon</b> gerekir.</p></div>
+    <div class="mode" style="--c:#cbd5e1"><span class="n">Mod 3 · Bağımsız</span><b>Her şey bizde</b><div class="flow"><span>Homunculus</span></div><p>HBYS'nin o modülü yoksa (örneğin düşme riski değerlendirmesi) katalog bizde tanımlanır ve kayıt bizde tutulur. Hastane isterse rapor olarak alır.</p></div>
+  </div>
+  <table class="mt" id="modtab"><tr><th>Modül</th><th>Önerdiğim varsayılan</th><th>Kodda bugün</th><th>Hastane seçer (tıkla)</th></tr></table>
+
+  <!-- ============ GÜN ============ -->
+  <h2><span class="k">2</span>Yoğun bakımda bir gün: kim, ne zaman, ne yapar</h2>
+  <p class="sub">Satırlar kişiler, sütunlar günün saatleri. <b>Bir kutuya tıkla</b>, altta o işin ayrıntısı, veri yönü ve kodda bugünkü durumu çıkar.</p>
+  <div class="lanes"><table id="lanes"></table></div>
+  <div class="detail" id="detail">Bir kutuya tıkla.</div>
+
+  <!-- ============ İLAÇ ============ -->
+  <h2><span class="k">3</span>İlaç döngüsü</h2>
+  <p class="sub"><b>Hekim order'ı verir → eczacı kontrol eder → hemşire uygular → sistem etkiyi izler.</b> Soldaki ekran hekimin order'ı, sağdaki hemşirenin saatli uygulama çizelgesi. Çizelgede sıradaki doza tıklayınca "uygulandı" olarak işaretlenir.</p>
+  <div class="g2">
+    <div class="scr"><div class="box"><h5>Yeni order · 105 Zeynep Şahin <span class="r st no">kodda yok</span></h5>
+      <div class="fld"><label>İlaç</label><div class="inp sel">Seftriakson 1 g flakon ▾ <span style="color:var(--mute);font-size:11px">· hastane kataloğundan</span></div></div>
+      <div class="fld"><label>Doz</label><div class="opts" data-o><i>1 g</i><i class="on">2 g</i></div></div>
+      <div class="fld"><label>Yol</label><div class="opts" data-o><i class="on">IV</i><i>IM</i></div></div>
+      <div class="fld"><label>Sıklık</label><div class="opts" data-o><i class="on">24 saatte 1</i><i>12 saatte 1</i></div></div>
+      <div class="fld"><label>Başlangıç</label><div class="inp">Şimdi · 20:10</div></div>
+      <div class="note">⚠ Hastanın alerji kaydında <b>penisilin</b> var. Bu ilaçla ilişkisini değerlendirmek hekimin kararıdır.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="btn p">Order'ı ver</span><span class="btn">Taslak kaydet</span><span class="dir out" style="align-self:center">Mod 2'de HBYS'ye gider</span></div></div>
+      <div class="mute" style="font-size:12px;color:var(--mute);margin-top:8px">Uyarı dili kural: sistem "verme" demez, <b>kaydı gösterir</b>. Etkileşim ve alerji bilgisi kaynağıyla birlikte yazılır.</div></div>
+    <div class="scr"><div class="box"><h5>İlaç uygulama çizelgesi · bugün <span class="r st no">kodda yok</span></h5>
+      <table class="mar" id="mar"></table>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11.5px;color:var(--mute)"><span><span class="dose done">✓</span> uygulandı</span><span><span class="dose due">22:00</span> şimdi</span><span><span class="dose miss">✕</span> uygulanmadı (neden yazılır)</span><span><span class="dose plan">06:00</span> planlı</span></div></div>
+      <div class="box" style="margin-top:10px"><h5>Etkiyi izleme <span class="r st part">kısmen · trendde ilaç işaretleri</span></h5><div style="font-size:13px;color:var(--mute)">Noradrenalin 20:25'te başladı. MAP o zamandan beri 58 → 51 <b style="color:var(--crit)">düşüyor</b>. Bu satır Hasta ekranındaki trend grafiğinde ◆ işaretiyle görünür (prototip 11).</div></div></div>
+  </div>
+
+  <!-- ============ SONUÇLAR ============ -->
+  <h2><span class="k">4</span>Tetkik isteme ve sonuçlar: laboratuvar, radyoloji, patoloji</h2>
+  <p class="sub">Her tetkikin bir <b>yolculuğu</b> var: istendi → numune ya da çekim → çalışılıyor → sonuç → hekim gördü. Hekim bir tetkikin "nerede kaldığını" tek bakışta görür. Sonuçlar türüne göre farklı gösterilir.</p>
+  <div class="g3">
+    <div class="scr"><div class="box"><h5>Laboratuvar <span class="r"><span class="dir in">HBYS → biz</span> <span class="st part">kısmen</span></span></h5>
+      <div class="tl"><span class="done">İstendi</span><span class="done">Numune</span><span class="done">Çalışıldı</span><span class="now">Sonuç</span><span>Görüldü</span></div>
+      <div class="res"><span>Laktat</span><b style="color:var(--crit)">4.1 ↑</b><small>ref. 0.5–2.0 mmol/L · önceki 2.2 · 21:30 · <b style="color:var(--crit)">kritik değer, hekime bildirildi</b></small></div>
+      <div class="res"><span>Kreatinin</span><b style="color:var(--high)">1.9 ↑</b><small>ref. 0.5–1.1 mg/dL · 3 günde 1.1 → 1.4 → 1.9</small></div>
+      <svg viewBox="0 0 260 60" width="100%" height="60"><rect x="0" y="36" width="260" height="18" fill="rgba(34,184,214,.12)"/><polyline points="10,40 90,34 170,24 250,10" fill="none" stroke="#f97316" stroke-width="2.4"/><g fill="#f97316"><circle cx="10" cy="40" r="3.5"/><circle cx="90" cy="34" r="3.5"/><circle cx="170" cy="24" r="3.5"/><circle cx="250" cy="10" r="3.5"/></g><text x="4" y="58" font-size="9" fill="#8fa1ba">21.09</text><text x="228" y="58" font-size="9" fill="#8fa1ba">bugün</text></svg>
+      <div style="font-size:11.5px;color:var(--mute)">Laboratuvar sonuçları da vital bulgular gibi trend grafiğinde gösterilir. Mavi bant referans aralığı.</div></div></div>
+    <div class="scr"><div class="box"><h5>Radyoloji <span class="r"><span class="dir in">HBYS/PACS → biz</span> <span class="st part">kısmen</span></span></h5>
+      <div class="tl"><span class="done">İstendi</span><span class="done">Çekildi</span><span class="now">Raporlandı</span><span>Görüldü</span></div>
+      <div class="res"><span><b style="font-family:Figtree">Akciğer grafisi (yatak başı, AP)</b></span><span class="st ok">yeni</span><small>"Sağ alt zonda konsolidasyon ile uyumlu görünüm." · Dr. radyolog · 18:50</small></div>
+      <div style="display:grid;grid-template-columns:70px 1fr;gap:10px;align-items:center;margin-top:8px"><div style="height:70px;border-radius:8px;background:radial-gradient(circle at 35% 45%,#2b3a4d,#0a0f17 70%);border:1px solid var(--line2)"></div><div style="font-size:12px;color:var(--mute)">Görüntüyü açmak hastanenin <b>PACS</b> sistemine bağlantıyla olur. Biz görüntüyü saklamayız, sadece raporu ve bağlantıyı gösteririz.</div></div>
+      <div class="res" style="margin-top:6px"><span>Toraks BT</span><span class="st no">çekim bekleniyor</span><small>İstendi 19:15 · sırada 2. hasta</small></div></div></div>
+    <div class="scr"><div class="box"><h5>Patoloji <span class="r"><span class="dir in">HBYS → biz</span> <span class="st no">yok</span></span></h5>
+      <div class="tl"><span class="done">Alındı</span><span class="now">Değerlendiriliyor</span><span>Rapor</span><span>Görüldü</span></div>
+      <div class="res"><span>Bronş lavajı · sitoloji</span><span class="st no">5. gün</span><small>Patoloji sonuçları günler sürer. Önemli olan <b>unutulmaması</b>: sonuç gelince hekime ayrıca bildirim gider, beklenen süre aşılırsa "Dikkat bekleyenler" kartına düşer.</small></div>
+      <div class="note" style="margin-top:10px">Patoloji raporu uzun bir metin olarak gelir. Özetini sistem çıkarmaz, <b>raporun kendisi</b> gösterilir.</div></div></div>
+  </div>
+  <div class="box" style="margin-top:12px"><h5>Hekim bizden tetkik isteyebilir mi? <span class="r"><span class="dir out">biz → HBYS</span> <span class="st no">kodda yok</span></span></h5><div style="font-size:13.5px;color:var(--mute)">Evet, Mod 2'de. Hekim hasta ekranında "Tetkik iste" der, hastanenin katalogundan seçer ve istek HBYS'ye gönderilir. Sonuç HBYS'den geri gelir ve tetkikin yolculuğu tamamlanır. <b>Mod 1'de</b> bu düğme görünmez, hekim isteği HBYS'den yapar ve biz sadece yolculuğu gösteririz.</div></div>
+
+  <!-- ============ DEĞERLENDİRMELER ============ -->
+  <h2><span class="k">5</span>Hemşirelik değerlendirmeleri: düşme riski, bası yarası ve diğerleri</h2>
+  <p class="sub">Hemşirenin düzenli yaptığı ölçekler. Sistem bildiği kısımları <b>önceden doldurur</b> (örneğin hastada aktif IV hattı varsa düşme ölçeğindeki o madde kendiliğinden işaretlenir, hemşire değiştirebilir), hemşire eksikleri dokunarak seçer. Sonuç <b>yatak kartında simge</b> olarak görünür, zamanı gelince hatırlatılır.</p>
+  <div class="g2">
+    <div class="scr">
+      <div class="risk" style="--c:var(--high)"><div class="ic">DR</div><div><b>Düşme riski</b><span>Morse Düşme Ölçeği · 8 saatte bir · son 16:00</span></div><div class="sc">55<small>yüksek</small></div></div>
+      <div class="risk" style="--c:var(--mid)"><div class="ic">BY</div><div><b>Bası yarası riski</b><span>Braden Ölçeği · günde 1 · son 08:00</span></div><div class="sc">14<small>orta</small></div></div>
+      <div class="risk" style="--c:var(--crit)"><div class="ic">AĞ</div><div><b>Ağrı</b><span>Sayısal ölçek · 4 saatte bir · <b style="color:var(--crit)">gecikti 40 dk</b></span></div><div class="sc">—<small>bekliyor</small></div></div>
+      <div class="risk" style="--c:var(--pri)"><div class="ic">SD</div><div><b>Sedasyon ve deliryum</b><span>RASS ve CAM-ICU · yoğun bakımda · sıklık hastane protokolüne göre</span></div><div class="sc">−2<small>RASS</small></div></div>
+      <div class="risk" style="--c:var(--vio)"><div class="ic">BS</div><div><b>Beslenme ve tromboz önlemi</b><span>Günlük kontrol listesi</span></div><div class="sc">4/6<small>tamam</small></div></div>
+      <div style="font-size:12px;color:var(--mute);margin-top:6px">Kodda bugün: GKS girilebiliyor <span class="st part">kısmen</span>. Morse, Braden, ağrı, RASS, CAM-ICU ve beslenme <span class="st no">yok</span>. Hangi ölçeklerin kullanılacağına <b>hastanenin klinik ekibi</b> karar verir.</div>
+    </div>
+    <div class="scr">
+      <div class="box"><h5>Düşme riski · hızlı değerlendirme <span class="r" style="color:var(--mute)">Morse · toplam <b id="morse" style="color:var(--high);font-family:'JetBrains Mono'">55</b></span></h5>
+        <div class="fld"><label>Düşme öyküsü</label><div class="opts" data-o data-m><i data-p="0">Yok (0)</i><i class="on" data-p="25">Var (25)</i></div></div>
+        <div class="fld"><label>İkincil tanı</label><div class="opts" data-o data-m><i class="on" data-p="0">Yok (0)</i><i data-p="15">Var (15)</i></div></div>
+        <div class="fld"><label>Yürüme desteği</label><div class="opts" data-o data-m><i class="on" data-p="0">Yok · yatak istirahati · hemşire yardımı (0)</i><i data-p="15">Koltuk değneği · baston · yürüteç (15)</i><i data-p="30">Mobilyaya tutunur (30)</i></div></div>
+        <div class="fld"><label>IV hattı</label><div class="opts" data-o data-m><i data-p="0">Yok (0)</i><i class="on" data-p="20">Var (20)</i></div><span></span><span style="font-size:11px;color:var(--mute)">sistem doldurdu (aktif IV order) · değiştirilebilir</span></div>
+        <div class="fld"><label>Yürüyüş</label><div class="opts" data-o data-m><i data-p="0">Normal · yatakta · tekerlekli sandalye (0)</i><i class="on" data-p="10">Zayıf (10)</i><i data-p="20">Bozuk (20)</i></div></div>
+        <div class="fld"><label>Bilinç</label><div class="opts" data-o data-m><i class="on" data-p="0">Kendini bilir (0)</i><i data-p="15">Sınırlarını unutur (15)</i></div></div>
+        <div style="display:flex;gap:8px;align-items:center"><span class="btn p">Kaydet</span><span style="font-size:12px;color:var(--mute)">Risk eşikleri ve değerlendirme sıklığı hastanenin onayladığı protokolden gelir.</span></div></div>
+      <div class="bedcard" style="margin-top:10px"><b style="font:700 15px 'Space Grotesk'"><span style="color:var(--high);font-family:'JetBrains Mono'">101</span> Ahmet Yıldız</b><div style="font-size:12px;color:var(--mute)">67y E · yatak kartında risk simgeleri</div>
+        <div class="icons"><span style="color:#fdba74">DR yüksek</span><span style="color:#fde047">BY orta</span><span style="color:#fca5a5">Ağrı gecikti</span><span>İzolasyon yok</span></div></div>
+    </div>
+  </div>
+
+  <!-- ============ İŞ LİSTESİ ============ -->
+  <h2><span class="k">6</span>Hemşirenin saatli iş listesi</h2>
+  <p class="sub">Yukarıdakilerin hepsi hemşire için <b>tek bir listede</b> birleşir: ilaçlar, değerlendirmeler, pozisyon verme, numune alma. Geciken iş kırmızıya döner. Bu liste Yatak Paneli'ndeki "Dikkat bekleyenler" kartına bağlıdır.</p>
+  <div class="scr" style="max-width:720px"><div class="box"><h5>Ayşe Demir · bu nöbet · 4 hasta <span class="r st no">kodda yok</span></h5><div id="tasks"></div></div></div>
+
+  <div class="qs">
+    <h2>Kararlaştırıldı ✓</h2>
+    <ol style="margin-bottom:14px"><li><b>Kapsam: evet.</b> İlaç order'ı, uygulama çizelgesi, tetkik ve sonuçlar, hemşirelik değerlendirmeleri ürüne giriyor.</li><li><b>Modlar:</b> sonuç ve ilaç Mod 1 (HBYS'den), değerlendirmeler Mod 3 (bizde).</li><li><b>Önce:</b> hemşirelik değerlendirmeleri. Vücut haritası Taslak 13'te.</li></ol>
+    <h2>Açık kalan</h2>
+    <ol><li><b>İlaç uygulama çizelgesi:</b> İlaçlar Mod 1'de, yani HBYS'den geliyor. Ama HBYS'de hemşirenin uygulama çizelgesi yoksa çizelge bizde tutulsun mu? (Mod 3 istisnası)</li>
+      <li><b>Telefon:</b> neyi beğenmedin? Görünüşü mü, akışı mı, yoksa telefonda başka işler mi olmalı?</li></ol>
+    <code>Çizelge: HBYS'de yoksa bizde
+Telefon: …</code>
+  </div>
+</div>
+
+<script>
+/* ---------- modlar ---------- */
+const MODS = [["İlaç order'ı","Mod 1 · HBYS'den","kısmen",1],["İlaç uygulama çizelgesi","Mod 3 · bizde (HBYS'de yoksa)","yok",3],["İlaç kataloğu","Mod 1 · HBYS'den, yoksa bizde","yok",1],["Laboratuvar sonuçları","Mod 1 · HBYS'den","kısmen",1],["Radyoloji raporu + PACS bağlantısı","Mod 1 · HBYS/PACS'tan","kısmen",1],["Patoloji raporu","Mod 1 · HBYS'den","yok",1],["Tetkik isteme","Mod 1 (sonra Mod 2)","yok",1],["Düşme, bası yarası, ağrı, RASS/CAM-ICU","Mod 3 · bizde","yok",3],["Vital bulgular","Cihazdan + elle","kısmen",3],["Vardiya devri","Mod 3 · bizde","kısmen",3]];
+const stc = s => ({ var:"ok", kısmen:"part", yok:"no" })[s];
+document.getElementById("modtab").insertAdjacentHTML("beforeend", MODS.map(([m, d, s, sel]) => `<tr><td><b>${m}</b></td><td>${d}</td><td><span class="st ${stc(s)}">${s}</span></td><td><div class="pick">${[1,2,3].map(n => `<i class="${n === sel ? "on" : ""}">Mod ${n}</i>`).join("")}</div></td></tr>`).join(""));
+
+/* ---------- bir gün ---------- */
+const HOURS = ["07–09","09–12","12–15","15–18","18–21","21–24","Gece"];
+const LANES = [
+  ["Hasta", [[0,"Yatışının 2. günü","Monitöre bağlı","own","var","Monitör verisi canlı akıyor (cihaz ekibinin alanı)."],[4,"Ateş 38.4","Kötüleşme başlıyor","in","kısmen","Vital bulgular monitörden geliyor. Monitörü olmayan yatakta ateşin elle girilmesi kodda yok (motor elle ateş girişini kabul etmiyor)."],[5,"MAP 51","Erken uyarı","own","var","Kötüleşme kriterleri → alarm → 3/5/10 dk eskalasyon. Kodda var."]]],
+  ["Hemşire", [[0,"Devir alma","Karşı imza","own","kısmen","Motor iki imzalı. Ekran tek imzalı ve tarayıcıda. Eksik: gelenin 'imzamı bekleyenler' listesi."],[0,"Değerlendirmeler","Düşme, bası yarası, ağrı","own","yok","Morse, Braden, ağrı, RASS ve CAM-ICU kodda yok. Sadece GKS girilebiliyor."],[1,"İlaç uygulama","Saatli çizelge","own","kısmen","Saatli uygulama çizelgesi yok. Serbest metin bir ilaç listesi var ama yalnız tarayıcıda tutuluyor; motora yalnız vazopressör dozu, sıvı ve antibiyotik saati gidiyor."],[2,"Numune alma","Laktat, kültür","in","kısmen","Tetkiğin yolculuğu (istendi → numune → sonuç) kodda yok. Sonuç gelen kutusu var."],[4,"Alarmı gördü","3. dakikada","own","var","Alarm listesi ve eskalasyon kodda var."],[6,"Devir verme","İmza","own","kısmen","Açık kritik alarm varken imza kilitlenir. Kodda var."]]],
+  ["Hekim", [[1,"Vizit","Her hastaya bakış","own","kısmen","Hasta ekranı var. 'Vizit modu' (yatak yatak ilerleme, not) yok."],[1,"Order","İlaç, tetkik","out","yok","Hastane sistemine order gönderme hiç yok. Mod 2 için entegrasyon ekibinin işi."],[2,"SOFA onayı","Günlük form","own","kısmen","Onay ekranı var (severityScore.jsx), demoda görünmüyor."],[4,"Sonuçlara bakış","Lab, grafi","in","kısmen","Sonuç gelen kutusu demoda sahte veriyle. Lab trendi yok."],[5,"Değerlendirdi","Öneri kartı","own","var","Öneri kartı ve eskalasyon var."]]],
+  ["Eczane", [[1,"Order kontrolü","Doz, etkileşim","own","yok","Eczane sayfası okuma amaçlı: antibiyotik saati ve pressör alan hastalar. Onay akışı yok."],[3,"Antibiyotik saati","Gecikme takibi","own","var","Antibiyotik saati kodda var."]]],
+  ["Lab / Radyoloji", [[2,"Laktat 4.1","Kritik değer","in","kısmen","Sonuç HBYS'den gelir. Kritik değer bildirimi tasarlanacak."],[3,"Akciğer grafisi","Rapor","in","kısmen","Radyoloji raporu gelen kutusunda. PACS bağlantısı yok."],[6,"Patoloji","Günler sürer","in","yok","Patoloji hiç yok."]]],
+  ["HBYS", [[0,"Hasta kabul","ADT mesajı","in","var","HL7 ADT ile hasta kimliği alınıyor (cihaz/entegrasyon ekibinin alanı)."],[1,"Order kaydı","Mod 1 ise buradan gelir","in","yok","HBYS'den order almak da henüz yok."]]],
+];
+const DIR = { in:["in","HBYS → biz"], out:["out","biz → HBYS"], own:["own","bizde"] };
+document.getElementById("lanes").innerHTML = `<thead><tr><th></th>${HOURS.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+  LANES.map(([who, evs], li) => `<tr><th>${who}</th>${HOURS.map((_, hi) => `<td>${evs.map((e, ei) => e[0] === hi ? `<div class="ev" data-e="${li}-${ei}" style="--c:${({ var:"#22c55e", kısmen:"#eab308", yok:"#64748b" })[e[4]]}"><b>${e[1]}</b><span>${e[2]}</span></div>` : "").join("")}</td>`).join("")}</tr>`).join("") + "</tbody>";
+document.getElementById("lanes").addEventListener("click", ev => { const el = ev.target.closest("[data-e]"); if (!el) return;
+  document.querySelectorAll(".ev.sel").forEach(x => x.classList.remove("sel")); el.classList.add("sel");
+  const [li, ei] = el.dataset.e.split("-").map(Number), e = LANES[li][1][ei], [dc, dl] = DIR[e[3]];
+  document.getElementById("detail").innerHTML = `<b>${LANES[li][0]} · ${e[1]}</b> — ${e[2]} &nbsp; <span class="dir ${dc}">${dl}</span> <span class="st ${stc(e[4])}">kodda: ${e[4]}</span><br>${e[5]}`; });
+
+/* ---------- ilaç çizelgesi ---------- */
+const MAR = [["Seftriakson 2 g IV","24 sa'te 1",["20:10 ✓","","",""]],["Noradrenalin 0.08 µg/kg/dk","sürekli infüzyon",["20:25 ✓","doz 22:00","",""]],["Pantoprazol 40 mg IV","24 sa'te 1",["","","","06:00"]],["Parasetamol 1 g IV","gerekirse · en az 6 sa ara",["18:00 ✓","","",""]]];
+const SL = ["18–21","21–24","00–03","03–07"];
+function mar() { document.getElementById("mar").innerHTML = `<tr><th>İlaç</th>${SL.map(s => `<th>${s}</th>`).join("")}</tr>` + MAR.map(([n, f, cells], ri) => `<tr><td><b>${n}</b><span>${f}</span></td>${cells.map((c, ci) => { if (!c) return "<td></td>";
+  const cls = c.includes("✓") ? "done" : c.includes("✕") ? "miss" : c.startsWith("doz") ? "due" : "plan"; return `<td><span class="dose ${cls}" data-d="${ri}-${ci}">${c.replace("doz ", "")}</span></td>`; }).join("")}</tr>`).join(""); }
+mar();
+document.getElementById("mar").addEventListener("click", e => { const d = e.target.closest(".dose.due"); if (!d) return; const [r, c] = d.dataset.d.split("-").map(Number); MAR[r][2][c] = "21:58 ✓"; mar(); });
+
+/* ---------- seçenek düğmeleri ---------- */
+document.querySelectorAll("[data-o]").forEach(g => g.addEventListener("click", e => { const i = e.target.closest("i"); if (!i) return; [...g.children].forEach(x => x.classList.toggle("on", x === i)); morse(); }));
+function morse() { const t = [...document.querySelectorAll("[data-m] i.on")].reduce((a, i) => a + +i.dataset.p, 0), el = document.getElementById("morse"); if (el) el.textContent = t; }
+document.getElementById("modtab").addEventListener("click", e => { const i = e.target.closest(".pick i"); if (!i) return; [...i.parentNode.children].forEach(x => x.classList.toggle("on", x === i)); });
+
+/* ---------- iş listesi ---------- */
+const TASKS = [["21:00","105 · Ağrı değerlendirmesi","gecikti 40 dk",1],["22:00","105 · Noradrenalin doz kontrolü","ilaç",0],["22:00","101 · Pozisyon ver","bası yarası önlemi",0],["22:30","104 · Potasyum için numune al","laboratuvar",0],["23:00","Tüm hastalar · Devir notlarını hazırla","devir",0],["00:00","101 · Düşme riski yeniden değerlendir","8 saatte bir",0]];
+function tasks() { document.getElementById("tasks").innerHTML = TASKS.map(([t, l, s, late], i) => `<div class="task ${late ? "late" : ""}"><span class="tm">${t}</span><div><b>${l}</b><div style="font-size:11.5px;color:var(--mute)">${s}</div></div><span class="chk ${late === 2 ? "on" : ""}" data-t="${i}">${late === 2 ? "✓" : ""}</span></div>`).join(""); }
+tasks();
+document.getElementById("tasks").addEventListener("click", e => { const c = e.target.closest("[data-t]"); if (!c) return; TASKS[+c.dataset.t][3] = TASKS[+c.dataset.t][3] === 2 ? 0 : 2; tasks(); });
+</script>
+</body>
+</html>

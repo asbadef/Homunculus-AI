@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bildirim Süreçleri</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --ok:#22c55e; --proto:#a78bfa; --idea:#eab308; --no:#64748b; --crit:#f43f5e; --high:#f59e0b; --info:#38bdf8; --shadow:0 10px 30px rgba(0,0,0,.35); }
+  :root[data-theme="gun"] { --page:#eef0f3; --card:#fff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de; --pri:#0e7490; --onpri:#fff;
+          --ok:#16a34a; --proto:#7c3aed; --idea:#a16207; --no:#64748b; --crit:#dc2626; --high:#c2410c; --info:#0369a1; --shadow:0 10px 30px rgba(20,30,50,.12); }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; overflow-x:hidden; }
+  .wrap { max-width:1180px; margin:0 auto; padding:22px 16px 80px; }
+  body.phone .wrap { max-width:390px; border-left:1px solid var(--line2); border-right:1px solid var(--line2); min-height:100vh; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:10px 0 6px; }
+  h2 { font:700 21px "Space Grotesk"; margin:34px 0 8px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  h2 .n { font:700 13px Figtree; color:var(--onpri); background:var(--pri); border-radius:8px; padding:1px 8px; }
+  h2 small { font:500 13px Figtree; color:var(--mute); }
+  h3 { margin:0; font:700 15.5px "Space Grotesk"; }
+  p { margin:0 0 8px; }
+  .lead { color:var(--mute); margin:0 0 14px; max-width:880px; } .lead b { color:var(--ink); }
+  .top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .top a { color:var(--pri); font-weight:700; text-decoration:none; font-size:13px; }
+  .sp { margin-left:auto; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:7px 12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); cursor:pointer; }
+  .btn:hover { border-color:var(--pri); }
+  .btn.on, .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .btn.crit { background:var(--crit); color:#fff; border-color:transparent; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .btn.sm { padding:4px 9px; font-size:12px; border-radius:8px; }
+  .seg { display:inline-flex; flex-wrap:wrap; max-width:100%; border:1px solid var(--line2); border-radius:10px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; background:var(--card); color:var(--mute); font:600 12.5px Figtree; padding:6px 10px; cursor:pointer; }
+  .seg button.on { background:var(--pri); color:var(--onpri); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; min-width:0; }
+  .mute { color:var(--mute); }
+  code, .code { font:500 12px ui-monospace, Consolas, monospace; background:var(--card2); border-radius:6px; padding:1px 5px; word-break:break-word; }
+  .st { display:inline-flex; align-items:center; gap:5px; font:700 11px Figtree; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .st::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .st.real { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .st.part { background:color-mix(in srgb, var(--high) 16%, transparent); color:var(--high); }
+  .st.proto { background:color-mix(in srgb, var(--proto) 16%, transparent); color:var(--proto); }
+  .st.idea { background:color-mix(in srgb, var(--idea) 16%, transparent); color:var(--idea); }
+  .st.no { background:var(--card2); color:var(--mute); }
+  .legend { display:flex; gap:8px 14px; flex-wrap:wrap; font-size:12.5px; color:var(--mute); margin:12px 0 4px; align-items:center; }
+  .sev { font:700 11px Figtree; padding:2px 8px; border-radius:6px; white-space:nowrap; }
+  .sev.k { background:color-mix(in srgb, var(--crit) 18%, transparent); color:var(--crit); }
+  .sev.y { background:color-mix(in srgb, var(--high) 18%, transparent); color:var(--high); }
+  .sev.b { background:color-mix(in srgb, var(--info) 18%, transparent); color:var(--info); }
+
+  /* 1 · kanal şeridi */
+  .strip { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; }
+  .ch { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:4px; cursor:pointer; text-align:left; color:var(--ink); font:inherit; min-width:0; }
+  .ch .ic { font:700 22px "Space Grotesk"; line-height:1; }
+  .ch.ok .ic { color:var(--ok); } .ch.no .ic { color:var(--crit); }
+  .ch b { font:700 14px "Space Grotesk"; } .ch span { font-size:12px; color:var(--mute); }
+  .ch.sel { outline:2px solid var(--pri); }
+  .chinfo { margin-top:8px; font-size:13.5px; }
+  .truth { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:12px; }
+  .truth .card { border-left:4px solid var(--high); }
+  .truth .card p { font-size:13.5px; color:var(--mute); } .truth .card p b { color:var(--ink); }
+
+  /* 2 · yaşam döngüsü */
+  .flowbox { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:12px; align-items:start; }
+  .svgcard { padding:10px; }
+  #flow { width:100%; height:auto; display:block; }
+  #flow .node { cursor:pointer; }
+  #flow .node rect { fill:var(--card2); stroke:var(--line2); stroke-width:1.5; transition:stroke .15s; }
+  #flow .node:hover rect, #flow .node:focus rect { stroke:var(--pri); }
+  #flow .node.sel rect { stroke:var(--pri); stroke-width:3; }
+  #flow .node:focus { outline:none; }
+  #flow .num { fill:var(--mute); font:700 12px Figtree; }
+  #flow .lbl { fill:var(--ink); font:700 14.5px "Space Grotesk"; }
+  #flow .sub { fill:var(--mute); font:500 11px Figtree; }
+  #flow .dot-real { fill:var(--ok); } #flow .dot-part { fill:var(--high); } #flow .dot-idea { fill:var(--idea); } #flow .dot-proto { fill:var(--proto); }
+  #flow .edge { stroke:var(--line2); stroke-width:2; fill:none; }
+  #flow .edge.loop { stroke:var(--crit); stroke-dasharray:6 5; }
+  #flow .edge.ok { stroke:var(--ok); stroke-dasharray:6 5; }
+  #flow .elbl { font:600 11.5px Figtree; fill:var(--mute); }
+  #flow .elbl.loop { fill:var(--crit); } #flow .elbl.ok { fill:var(--ok); }
+  #flow .ah { fill:var(--line2); } #flow .ah.loop { fill:var(--crit); } #flow .ah.ok { fill:var(--ok); }
+  .detail { position:sticky; top:12px; }
+  .detail h3 { font-size:18px; margin:4px 0 8px; }
+  .detail .row { margin:10px 0 0; font-size:13.5px; }
+  .detail .row > b { display:block; font:700 11px Figtree; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); margin-bottom:2px; }
+  .detail .why { background:color-mix(in srgb, var(--pri) 10%, transparent); border-radius:12px; padding:10px 12px; margin-top:12px; font-size:13.5px; }
+  .detail .why b { color:var(--pri); }
+  .navbtns { display:flex; gap:6px; margin-top:12px; }
+
+  /* 3 · katalog */
+  .tw { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+  table.t { width:100%; border-collapse:collapse; font-size:13.5px; }
+  .t th { text-align:left; font:700 11.5px Figtree; letter-spacing:.04em; text-transform:uppercase; color:var(--mute); padding:10px 12px; border-bottom:1px solid var(--line); background:var(--card2); }
+  .t td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .t tr:last-child td { border-bottom:0; }
+  .t td .steps { display:flex; flex-direction:column; gap:3px; }
+  .t td .steps i { font-style:normal; }
+  .t .firm { color:var(--ok); font-weight:700; }
+  .t .sugg { color:var(--idea); font-size:12px; }
+  .filt { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px; }
+
+  /* 4 · zor durumlar */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:10px; }
+  .hard { display:flex; flex-direction:column; gap:8px; }
+  .hard .hd { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+  .hard .q { font-size:13.5px; color:var(--mute); }
+  .hard .a { font-size:13.5px; background:var(--card2); border-radius:10px; padding:9px 11px; }
+  .hard .a b { color:var(--pri); }
+  .hard ul { margin:4px 0 0; padding-left:18px; } .hard li { margin:2px 0; }
+  details { font-size:13px; } summary { cursor:pointer; color:var(--pri); font-weight:700; }
+  details p { color:var(--mute); margin:6px 0 0; }
+  .push-demo { display:flex; gap:10px; flex-wrap:wrap; }
+  .lock { flex:1 1 150px; background:linear-gradient(160deg, #1d2b44, #0a1222); color:#e8eef7; border-radius:14px; padding:10px; font-size:12px; min-width:0; }
+  .lock .pn { background:rgba(255,255,255,.12); border-radius:10px; padding:8px; margin-top:6px; }
+  .lock .pn b { display:block; font-size:12.5px; }
+  .lock.bad .pn { outline:2px solid var(--crit); }
+  .lock small { opacity:.7; }
+  .banner-demo { border-radius:10px; padding:8px 10px; background:var(--crit); color:#fff; font:700 12.5px Figtree; display:flex; gap:8px; align-items:center; }
+
+  /* 5 · simülasyon */
+  .simctl { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .tl { position:relative; height:54px; margin:6px 20px 14px; }
+  .tl .rail { position:absolute; left:0; right:0; top:20px; height:8px; background:var(--card2); border-radius:99px; }
+  .tl .fill { position:absolute; left:0; top:20px; height:8px; background:var(--crit); border-radius:99px; width:0; }
+  .tl .fill.acked { background:var(--ok); }
+  .tl .mk { position:absolute; top:10px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; font:700 11px Figtree; color:var(--mute); }
+  .tl .mk::before { content:""; width:2px; height:28px; background:var(--line2); margin-bottom:2px; }
+  .tl .mk.hit { color:var(--crit); } .tl .mk.hit::before { background:var(--crit); }
+  .tl .mk.off { opacity:.35; }
+  .clock { font:700 26px "Space Grotesk"; font-variant-numeric:tabular-nums; }
+  .devs { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  .dev { border:1px solid var(--line2); border-radius:18px; background:var(--card2); padding:10px; min-height:230px; display:flex; flex-direction:column; gap:8px; transition:box-shadow .2s, border-color .2s; min-width:0; }
+  .dev.phone-f { border-radius:24px; }
+  .dev .who { display:flex; justify-content:space-between; align-items:center; font:700 12.5px Figtree; gap:6px; }
+  .dev .who span { color:var(--mute); font-weight:600; font-size:11.5px; }
+  .dev .scr { flex:1; background:var(--card); border-radius:12px; padding:8px; display:flex; flex-direction:column; gap:6px; font-size:12.5px; }
+  .dev .idle { color:var(--mute); margin:auto; text-align:center; font-size:12px; }
+  .dev.ring { border-color:var(--crit); box-shadow:0 0 0 3px color-mix(in srgb, var(--crit) 35%, transparent); animation:pulse 1s infinite; }
+  .dev.done { border-color:var(--ok); }
+  @keyframes pulse { 50% { box-shadow:0 0 0 7px color-mix(in srgb, var(--crit) 12%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .dev.ring { animation:none; } }
+  .nt { border-left:4px solid var(--crit); background:var(--card2); border-radius:8px; padding:6px 8px; }
+  .nt b { display:block; font-size:12.5px; } .nt small { color:var(--mute); }
+  .nt.esc { border-left-color:var(--high); }
+  .nt.ok { border-left-color:var(--ok); }
+  .acts { display:flex; gap:5px; flex-wrap:wrap; }
+  .rrt { margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .log { margin-top:10px; font-size:12.5px; max-height:180px; overflow:auto; background:var(--card2); border-radius:10px; padding:8px 10px; }
+  .log div { padding:2px 0; border-bottom:1px dashed var(--line); } .log div:last-child { border:0; }
+  .log time { color:var(--mute); font-variant-numeric:tabular-nums; margin-right:6px; }
+  .reason { display:none; flex-direction:column; gap:5px; }
+  .reason.show { display:flex; }
+  .reason button { text-align:left; }
+
+  /* 6 · kararlar */
+  .dec { display:flex; flex-direction:column; gap:10px; }
+  .dq { display:grid; grid-template-columns:34px minmax(0,1fr); gap:10px; }
+  .dq .no { font:700 20px "Space Grotesk"; color:var(--pri); }
+  .dq p { font-size:13.5px; color:var(--mute); margin:3px 0 6px; } .dq p b { color:var(--ink); }
+  .opts { display:flex; gap:6px; flex-wrap:wrap; }
+  .opts button.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .answer { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .answer output { flex:1 1 260px; font:600 14px ui-monospace, Consolas, monospace; background:var(--card2); border:1px dashed var(--line2); border-radius:10px; padding:10px 12px; word-break:break-word; min-width:0; }
+
+  .foot { margin-top:30px; font-size:12.5px; color:var(--mute); }
+  .toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:var(--ink); color:var(--page); padding:8px 14px; border-radius:10px; font:600 13px Figtree; opacity:0; transition:opacity .2s; pointer-events:none; max-width:calc(100vw - 32px); }
+  .toast.show { opacity:1; }
+
+  /* Dar ekran — ya gerçek telefon ya "Telefon" anahtarı */
+  @media (max-width: 900px) { .flowbox { grid-template-columns:1fr; } .detail { position:static; } .truth { grid-template-columns:1fr; } }
+  @media (max-width: 760px) {
+    .strip { grid-template-columns:repeat(2, 1fr); } .strip .ch:first-child { grid-column:1 / -1; }
+    .devs { grid-template-columns:1fr; } .dev { min-height:0; }
+    table.t, .t tbody, .t tr, .t td { display:block; width:100%; } .t thead { display:none; }
+    .t tr { border-bottom:1px solid var(--line); padding:8px 0; } .t td { border:0; padding:4px 12px; }
+    .t td::before { content:attr(data-l); display:block; font:700 10.5px Figtree; letter-spacing:.05em; text-transform:uppercase; color:var(--mute); }
+    .grid { grid-template-columns:1fr; }
+    h1 { font-size:25px; }
+  }
+  body.phone .strip { grid-template-columns:repeat(2, 1fr); } body.phone .strip .ch:first-child { grid-column:1 / -1; }
+  body.phone .flowbox, body.phone .truth, body.phone .devs, body.phone .grid { grid-template-columns:1fr; }
+  body.phone .detail { position:static; } body.phone .dev { min-height:0; }
+  body.phone table.t, body.phone .t tbody, body.phone .t tr, body.phone .t td { display:block; width:100%; } body.phone .t thead { display:none; }
+  body.phone .t tr { border-bottom:1px solid var(--line); padding:8px 0; } body.phone .t td { border:0; padding:4px 12px; }
+  body.phone .t td::before { content:attr(data-l); display:block; font:700 10.5px Figtree; letter-spacing:.05em; text-transform:uppercase; color:var(--mute); }
+  body.phone h1 { font-size:25px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a href="index.html">← Tasarım Masası</a>
+    <span class="sp"></span>
+    <div class="seg" role="group" aria-label="Görünüm"><button id="vDesk" class="on">Masaüstü</button><button id="vPhone">Telefon</button></div>
+    <button class="btn" id="th">Tema</button>
+  </div>
+
+  <h1>Bildirim süreçleri</h1>
+  <p class="lead">Ozan'ın cümlesi: <b>"Bizim için en önemli şey sistemin bildirim atması."</b> Bu sayfa bir bildirimin doğumundan denetim kaydına kadar yolunu çiziyor.
+    Bugün kodda olanı, yalnız prototipte olanı ve öneriyi ayrı renkle gösteriyor. <b>Bu sayfa bir taslaktır; burada seçtiğin hiçbir şey uygulamayı değiştirmez.</b>
+    Homunculus tanı koymaz, emir vermez: bildirim "şuna bakın" der, "şunu yapın" demez.</p>
+  <div class="legend">
+    <span class="st real">Gerçek üründe var</span>
+    <span class="st part">Kısmen var</span>
+    <span class="st proto">Yalnız prototipte</span>
+    <span class="st idea">Öneri</span>
+    <span class="st no">Yok</span>
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <h2><span class="n">1</span> Bugün ne çalışıyor <small>kanala tıkla, dayanağı görünsün</small></h2>
+  <div class="strip" id="strip"></div>
+  <div class="card chinfo" id="chinfo"></div>
+
+  <div class="truth">
+    <div class="card"><h3>Kodda iki ayrı alarm hattı var</h3>
+      <p>Canlı pano ve bildirimler <b>bellek içi motor</b> hattında çalışıyor (<code>api/app.py</code>). 3 / 5 / 10 dk zinciri ise <b>veritabanlı alarm modülünde</b> (<code>escalation/service.py:33-35</code>) tanımlı.
+      Zinciri hesaplayan <code>compute_escalation_step</code> (<code>service.py:69-85</code>) yalnız testten çağrılıyor; bildirim göndermiyor.</p></div>
+    <div class="card"><h3>Canlı eskalasyon bugün tek basamak</h3>
+      <p>Bildirim hattındaki eskalasyon: <b>5 dk yanıtsız → hekim</b>. Eşik <code>app.py:94</code> (<code>escalate_after = 5 dk</code>), 20 sn'de bir kontrol (<code>app.py:95</code>),
+      hedef <code>"doctor"</code> (<code>notify.py:67</code>). Sorumlu hemşire ve hızlı yanıt ekibi basamakları <b>bu hatta yok</b>.</p></div>
+    <div class="card"><h3>Prototipte iki çelişki var</h3>
+      <p><code>admin.js:799</code> "Kritik alarmda erteleme en çok 10 dk" diyor; motorda <b>kritik hiç ertelenemez</b> (<code>service.py:11</code>, <code>:174</code>).
+      <code>admin.js:785</code> yüksek alarmı "5 / 10 dk" yazıyor; motor yüksek alarma da <b>aynı 3 / 5 / 10</b> zincirini uyguluyor (<code>service.py:47</code>, <code>:76-85</code>).</p></div>
+  </div>
+
+  <!-- ============ 2 ============ -->
+  <h2><span class="n">2</span> Bir bildirimin yaşam döngüsü <small>kutulara tıkla ya da ok tuşlarıyla gez</small></h2>
+  <div class="flowbox">
+    <div class="card svgcard"><svg id="flow" role="img" aria-label="Bildirim yaşam döngüsü akış şeması"></svg></div>
+    <div class="card detail" id="detail" aria-live="polite"></div>
+  </div>
+
+  <!-- ============ 3 ============ -->
+  <h2><span class="n">3</span> Olay kataloğu <small>hangi olay kime, ne kadar sürede gider</small></h2>
+  <p class="lead" style="margin-bottom:4px">Eskalasyon süreleri arasında <span class="firm" style="color:var(--ok);font-weight:700">yeşil</span> olanlar motorda kararlaştırılmış sürelerdir (S-05).
+    <span style="color:var(--idea);font-weight:700">Sarı</span> olanlar öneridir; hastanenin onayı olmadan hiçbiri devreye girmez.</p>
+  <div class="filt" id="filt"></div>
+  <div class="tw"><table class="t"><thead><tr><th>Olay</th><th>Önem</th><th>İlk kime</th><th>Eskalasyon basamakları</th><th>Kanal</th><th>Sessize alınır mı</th><th>Durum</th></tr></thead><tbody id="cat"></tbody></table></div>
+
+  <!-- ============ 4 ============ -->
+  <h2><span class="n">4</span> Zor durumlar <small>bunlar kararsız kalırsa bildirim sistemi sahada çöker</small></h2>
+  <div class="grid" id="hard"></div>
+
+  <!-- ============ 5 ============ -->
+  <h2><span class="n">5</span> Simülasyon: kritik alarm, kimse bakmıyor <small>1 dakika = 1,5 saniye</small></h2>
+  <div class="card">
+    <div class="simctl">
+      <button class="btn crit" id="simGo">▶ Kritik alarm başlat</button>
+      <button class="btn" id="simReset">Sıfırla</button>
+      <div class="seg" role="group" aria-label="Senaryo"><button id="mDec" class="on">Kararlaştırılan zincir (3/5/10)</button><button id="mNow">Bugünkü canlı hat (5 → hekim)</button></div>
+      <span class="sp"></span><span class="clock" id="clock">0:00</span>
+    </div>
+    <p class="mute" style="font-size:13px" id="modeNote"></p>
+    <div class="tl" id="tl"><div class="rail"></div><div class="fill" id="fill"></div></div>
+    <div class="devs" id="devs"></div>
+    <div class="rrt" id="rrt"></div>
+    <div class="log" id="log"><div class="mute">Henüz olay yok. "Kritik alarm başlat"a bas.</div></div>
+  </div>
+
+  <!-- ============ 6 ============ -->
+  <h2><span class="n">6</span> Senden karar bekleyenler <small>seçenekleri tıkla, alttaki satırı kopyalayıp bana yapıştır</small></h2>
+  <div class="card dec" id="dec"></div>
+  <div class="card answer" style="margin-top:10px"><output id="ans">Henüz seçim yok.</output><button class="btn p" id="copy">Cevabı kopyala</button></div>
+
+  <p class="foot">Kaynak dosyalar (24.09.2026'da okundu): <code>homunculus-engine/src/homunculus/api/notify.py</code> · <code>api/app.py</code> · <code>api/escalation.py</code> · <code>escalation/service.py</code> · <code>escalation/models.py</code> ·
+    <code>dashboard/src/notifications.js</code> · <code>Board.jsx</code> · <code>api.js</code> · <code>liveStore.js</code> · <code>NotificationHistory.jsx</code> · <code>homunculus-mobile/package.json</code> · prototip <code>app/core.js</code>, <code>admin.js</code>, <code>shell.js</code>.
+    Bu sayfa yalnız tasarım önerisidir; uygulamada hiçbir şey değişmedi.</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+  const ST = { real:"Gerçek üründe var", part:"Kısmen var", proto:"Yalnız prototipte", idea:"Öneri", no:"Yok" };
+  const badge = (k) => `<span class="st ${k}">${ST[k]}</span>`;
+  const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+  const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 1800); };
+
+  /* ---------- tema + görünüm ---------- */
+  const root = document.documentElement;
+  const sysLight = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches;
+  root.dataset.theme = store.get("h18-theme") || (sysLight ? "gun" : "gece");
+  $("#th").onclick = () => { root.dataset.theme = root.dataset.theme === "gun" ? "gece" : "gun"; store.set("h18-theme", root.dataset.theme); };
+  const setView = (ph) => { document.body.classList.toggle("phone", ph); $("#vPhone").classList.toggle("on", ph); $("#vDesk").classList.toggle("on", !ph); drawFlow(); };
+  $("#vDesk").onclick = () => setView(false); $("#vPhone").onclick = () => setView(true);
+
+  /* ---------- 1 · kanallar ---------- */
+  const CH = [
+    { k:"app", ok:true, ic:"✓", t:"Uygulama içi", s:"SSE akışı · rol süzgeçli",
+      d:`Motor bildirimi <code>/notifications</code> SSE akışıyla yayınlar (<code>app.py:612-635</code>). Hedef yalnız iki rol: yeni uyarı <b>hemşireye</b> (<code>notify.py:49</code>), eskalasyon <b>hekime</b> (<code>notify.py:67</code>).
+         Yalnız <code>urgency = "immediate"</code> olan yeni uyarılar gönderilir (<code>notify.py:44</code>); aynı hasta + aynı uyarı türü için bir kez (<code>notify.py:37-46</code>). Gövde yalnız "yatak: bulgu" (<code>notify.py:4-5</code>).
+         Kullanıcının göremediği hastanın bildirimi süzülür (<code>app.py:617-630</code>). Ekranda 8 sn'lik kutu çıkar (<code>Board.jsx:47-52</code>).` },
+    { k:"browser", ok:true, ic:"✓", t:"Tarayıcı bildirimi + ses", s:"yalnız sekme açıkken",
+      d:`<code>notifications.js:4-15</code> tarayıcı izni ister ve masaüstü bildirimi gösterir; <code>:17-31</code> 880 Hz, 0,15 sn'lik kısa bir bip çalar. Her bildirimde ikisi birlikte çalışır (<code>Board.jsx:50-51</code>).
+         <b>Sınır:</b> pano sekmesi kapalıysa hiçbir şey gelmez; ses çok kısa ve kısılabilir.` },
+    { k:"push", ok:false, ic:"✕", t:"Telefon push", s:"mobil uygulamada yok",
+      d:`<code>homunculus-mobile/package.json:7-15</code> Expo paketleri arasında <code>expo-notifications</code> yok; depo taramasında (node_modules hariç) tek eşleşme çıkmadı. Uygulama kapalıyken telefona hiçbir şey ulaşmaz.
+         Karar noktası için 4. bölümdeki "Telefon push" kartına ve 6. bölümdeki 1. soruya bak.` },
+    { k:"sms", ok:false, ic:"✕", t:"SMS", s:"yok", d:`Kodda SMS gönderen bir parça yok. Prototip de bunu "yok" diye gösteriyor (<code>core.js:264</code>). SMS hasta bilgisini operatörden geçirir; önerimiz yalnız "sistem çöktü" gibi hasta içermeyen yedek uyarılar için düşünmek.` },
+    { k:"pager", ok:false, ic:"✕", t:"Çağrı cihazı / hemşire çağrı sistemi", s:"entegrasyon yok",
+      d:`Hastanenin hasta başı hemşire çağrı sistemine ya da çağrı cihazlarına bağlantı yok. Öneri: 4. bölümdeki "Hemşire çağrı sistemi" kartı. Önce hastanede hangi sistemin kurulu olduğunu öğrenmek gerekiyor.` },
+  ];
+  let chSel = "app";
+  function drawStrip() {
+    $("#strip").innerHTML = CH.map(c => `<button class="ch ${c.ok ? "ok" : "no"}${c.k === chSel ? " sel" : ""}" data-ch="${c.k}"><span class="ic">${c.ic}</span><b>${c.t}</b><span>${c.s}</span></button>`).join("");
+    const c = CH.find(x => x.k === chSel);
+    $("#chinfo").innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap"><h3>${c.t}</h3>${badge(c.ok ? "real" : "no")}</div><p style="margin:0">${c.d}</p>`;
+  }
+  $("#strip").onclick = (e) => { const b = e.target.closest("[data-ch]"); if (!b) return; chSel = b.dataset.ch; drawStrip(); };
+  drawStrip();
+
+  /* ---------- 2 · yaşam döngüsü ---------- */
+  const N = [
+    { t:"Olay oluşur", s:"alarm · sonuç · cihaz…", st:"part",
+      what:"Bir şey olur: kritik alarm, kritik laboratuvar sonucu, geciken iş, sessizleşen monitör, yeni yatış, nöbet devri.",
+      code:`Bugün yalnız öneri motorunun <b>uyarıları</b> bildirim üretir: gözlem gelince <code>notifier.for_new(...)</code> çağrılır (<code>app.py:505-509</code>). Kritik sonuç, geciken iş, cihaz sessiz, yatış ve devir bildirimleri <b>yalnız prototipte</b> var (<code>core.js:266-283</code>).`,
+      why:"Tek bir giriş kapısı: her olay aynı biçime (kim, hangi yatak, ne, önem) dönüşür. Böylece kurallar, eskalasyon ve denetim her olay türü için ayrı ayrı yazılmaz.",
+      dec:"Olay türleri sabit bir listeden gelir; serbest metinli \"bildirim gönder\" düğmesi yok. Aksi hâlde herkes her şeyi bildirir ve kritik olan kaybolur." },
+    { t:"Kural eşleşir", s:"önem + tür → davranış", st:"part",
+      what:"Olay, kural tablosunda karşılığını bulur: önem düzeyi, ilk hedef, eskalasyon basamakları, kanal, sessiz saatte ne olacağı.",
+      code:`Bugünkü tek kural: <code>urgency == "immediate"</code> değilse gönderme (<code>notify.py:44</code>). Kural tablosu ekranı <b>yalnız prototipte</b> (<code>admin.js:783-805</code>, 10 satır).`,
+      why:"Kural hastaneye aittir, koda değil. Bir hastane kritik sonucu 15 dk'da, bir başkası 30 dk'da eskale etmek isteyebilir. Tablo yönetim ekranından değişir, her değişiklik denetime yazılır.",
+      dec:"Kritik alarm satırı kapatılamaz ve süreleri uzatılamaz; yalnız kısaltılabilir. Diğer satırlar hastanenin onayıyla açılır." },
+    { t:"Hedef bulunur", s:"rol + birim + nöbet", st:"part",
+      what:"Bildirim bir kişiye değil, bir göreve gider: \"Erişkin YB · REA01'in hemşiresi · şu anki nöbet\". Nöbet listesinden o an o görevde kim varsa ona düşer.",
+      code:`Bugün hedef yalnız rol: <code>"nurse"</code> ya da <code>"doctor"</code> (<code>notify.py:22</code>); akışa bağlanan istemci rolünü kendisi söyler (<code>app.py:613</code>, varsayılan <code>nurse</code>). Hasta kapsamı süzülür (<code>app.py:617-630</code>). Nöbet listesi modülü motorda ayrıca var (<code>app.py:232</code>, <code>:246</code>) ama bildirime bağlı değil.`,
+      why:"Kişiye giden bildirim, o kişi molaya çıkınca ya da vardiya bitince sahipsiz kalır. Göreve giden bildirim, görevi o an kim üstlenmişse onu bulur.",
+      dec:"Hiçbir hedef boş kalamaz: nöbet listesinde o görevde kimse yoksa bildirim birimin sorumlu hemşiresine düşer ve bu durum ayrıca kaydedilir." },
+    { t:"Kanal seçilir", s:"ekran · tarayıcı · push?", st:"part",
+      what:"Önem ve kişinin durumuna göre kanal seçilir: ekrandaysa uygulama içi, sekme arkadaysa tarayıcı bildirimi + ses, uygulama kapalıysa (karar verilirse) telefon push.",
+      code:`Bugün her bildirim aynı iki kanaldan gider: ekran kutusu + tarayıcı bildirimi + bip (<code>Board.jsx:47-52</code>). Push ve SMS yok (<code>package.json:7-15</code>).`,
+      why:"Kritik alarm bütün kanallardan aynı anda gider; bilgi düzeyindeki bir bildirim yalnız zil simgesinde birikir. Her şeyin ses çıkarması alarm yorgunluğunun ilk sebebidir.",
+      dec:"Push içeriğinde hasta adı yok: \"REA01 · kritik · uygulamayı açın\". Ayrıntı ancak kimlik doğrulamasından sonra uygulamada görünür." },
+    { t:"Teslim", s:"cihaza ulaştı mı?", st:"part",
+      what:"Bildirim hedef cihaza ulaşır. Ulaştığı an kaydedilir: \"12:04:10 · hs. Ayşe'nin telefonuna teslim edildi\".",
+      code:`SSE ile gönderilir, ulaşıp ulaşmadığı ölçülmez. Bildirim kuyruğu bellekte ve abone başına (<code>notify.py:75-91</code>); bağlantı kopukken yayınlanan bildirim <b>o istemciye bir daha gönderilmez</b>. Kayıt denetimde kalır, geçmiş panelinde görünür (<code>NotificationHistory.jsx:10</code>).`,
+      why:"\"Gönderdim\" ile \"ulaştı\" aynı şey değil. Eskalasyon kararı teslimi bilmeden verilirse, telefonu kapalı bir hemşire yüzünden süre boşa akar.",
+      dec:"Teslim edilemeyen bildirim eskalasyon süresini beklemez: 60 sn içinde hiçbir cihaza ulaşamadıysa bir sonraki basamağa hemen geçer (öneri)." },
+    { t:"Görüldü", s:"açıldı ≠ yanıtlandı", st:"no",
+      what:"Kişi bildirimi açtı. Bu, sorumluluk üstlendiği anlamına gelmez; yalnız \"gözüne çarptı\" demektir.",
+      code:`Kodda "görüldü" diye ayrı bir durum yok. Ekran kutusu 8 sn sonra kendiliğinden kapanır (<code>Board.jsx:52</code>) ve bu kaydedilmez. Prototipte okundu işareti var (<code>shell.js:240</code>).`,
+      why:"Kalite ekranı \"bildirim ne kadar sürede görüldü\" ile \"ne kadar sürede yanıtlandı\" farkını görmeli. Aradaki uzun süre, sorunun kişide değil iş yükünde olduğunu gösterir.",
+      dec:"Görüldü eskalasyonu durdurmaz. Yalnız yanıt durdurur." },
+    { t:"Yanıt", s:"gördüm · yoldayım · ertele", st:"part",
+      what:"Üç yanıt: <b>Gördüm</b> (sorumluluğu aldım), <b>Yoldayım</b> (geliyorum, 2 dk), <b>Ertele</b> (gerekçeyle, süre sınırlı). Kritik alarm ertelenemez.",
+      code:`Canlı hatta <code>/ack</code> onaylar ve eskalasyonu hemen durdurur (<code>app.py:513-529</code>); gerekçe istemez. Veritabanlı modülde kritik onay için gerekçe + en az 20 karakter not zorunlu (<code>service.py:50-51</code>, <code>:123-131</code>), erteleme sınırı yüksek 30 dk / orta 120 dk, kritik hiç (<code>service.py:37-41</code>, <code>:174</code>). "Yoldayım" hiçbir yerde yok.`,
+      why:"\"Yoldayım\" gerçek bir ihtiyaç: hemşire başka bir hastadayken \"gördüm\" diyemez ama kimse de 5 dk boyunca haber alamamalı. Yoldayım eskalasyonu 2 dk durdurur, sonra kaldığı yerden devam eder.",
+      dec:"Kritik alarmda \"Gördüm\" tek dokunuş; gerekçe notu olay kapandıktan sonra da yazılabilir. Hasta başındaki hemşirenin önce müdahale etmesi gerekir, form doldurması değil." },
+    { t:"Eskalasyon", s:"yanıt yoksa üst basamak", st:"part",
+      what:"Süre dolduğunda bildirim bir üst basamağa da gider; alttakinden silinmez. Kararlaştırılan zincir: 3 dk sorumlu hemşire → 5 dk hekim → 10 dk hızlı yanıt ekibi.",
+      code:`Zincir <code>service.py:33-35</code> ve hedef rolleri <code>models.py:79-83</code> (CHARGE_NURSE · ONCALL_PHYSICIAN · RAPID_RESPONSE). Ama <code>compute_escalation_step</code> yalnız <code>tests/test_escalation_chain.py</code>'den çağrılıyor. Canlı bildirim hattı tek basamak: 5 dk → hekim (<code>app.py:94</code>, <code>api/escalation.py:20-27</code>, <code>notify.py:58-69</code>). Elle eskalasyon doğrudan hızlı yanıt ekibine gider (<code>router.py:109-120</code>).`,
+      why:"Zincir kişiyi suçlamak için değil, hastayı sahipsiz bırakmamak için var. Üst basamak alttakini \"geçmez\"; herkes aynı olayı görür, ilk yanıt veren sahiplenir.",
+      dec:"Canlı hattı kararlaştırılan 3/5/10 zincirine bağlamak bir yazılım işi; 6. bölümdeki 6. soru bunu soruyor." },
+    { t:"Kapanış", s:"neden kapandı?", st:"part",
+      what:"Bildirim kapanır: yanıtlandı, olay kendiliğinden düzeldi, artefakt işaretlendi ya da hasta taburcu oldu. Kapanış nedeni kaydedilir.",
+      code:`Uyarı motorda kaybolunca "bir kez gönder" hafızası temizlenir (<code>notify.py:53-56</code>, <code>app.py:510</code>). Kapanış nedeni tutulmuyor. Veritabanlı modülde onay ve kapanış durumları var (<code>service.py:55</code>, <code>:120</code>).`,
+      why:"\"Kendiliğinden düzeldi\" ile \"birisi yanıtladı\" aynı istatistik değil. Kendiliğinden düzelen alarmlar çoksa eşik yanlış demektir; bu da alarm yorgunluğunun ölçüsüdür.",
+      dec:"Kapanan bildirim herkesin ekranından aynı anda kalkar; biri yanıtladıktan sonra başkasının telefonu çalmaya devam etmez." },
+    { t:"Denetim kaydı", s:"kim, ne zaman, ne yaptı", st:"real",
+      what:"Her adım kayda geçer: oluştu, kime gitti, teslim, görüldü, yanıt, eskalasyon, kapanış. Kalite ekranı yanıt sürelerini buradan hesaplar.",
+      code:`Her gönderim <code>"notification"</code> olayı olarak yazılır (<code>app.py:174-175</code>, <code>:508-509</code>); eskalasyon ve onay da ayrı olaylar (<code>app.py:170-171</code>, <code>:525-526</code>). Pano son 50 bildirimi bu kayıttan gösterir (<code>NotificationHistory.jsx:10</code>).`,
+      why:"Bir olay kötü sonuçlandığında ilk soru \"kime ne zaman haber verildi\" olacak. Bu sorunun cevabı tahmin değil kayıt olmalı.",
+      dec:"Kalite ekranındaki yanıt süresi raporu hasta adı içermez; yalnız birim, yatak ve süre." },
+  ];
+  let sel = 0;
+  const NS = "http://www.w3.org/2000/svg";
+  function drawFlow() {
+    const svg = $("#flow"); const wide = svg.parentElement.clientWidth >= 640 && !document.body.classList.contains("phone");
+    let W, H, pos, nw, nh;
+    if (wide) {
+      W = 1000; nw = 168; nh = 70; const gx = (W - 5 * nw) / 6; H = 330;
+      pos = N.map((_, i) => { const row = i < 5 ? 0 : 1; const col = row === 0 ? i : 9 - i; return { x: gx + col * (nw + gx), y: row === 0 ? 40 : 200 }; });
+    } else {
+      W = 360; nw = 250; nh = 58; const gy = 26; H = 20 + N.length * (nh + gy);
+      pos = N.map((_, i) => ({ x: 55, y: 14 + i * (nh + gy) }));
+    }
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    let h = `<defs>${["", "loop", "ok"].map(c => `<marker id="ar${c}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ${c}" d="M0,0 L10,5 L0,10 z"/></marker>`).join("")}</defs>`;
+    const mid = (p) => ({ cx: p.x + nw / 2, cy: p.y + nh / 2 });
+    // ana akış okları
+    for (let i = 0; i < N.length - 1; i++) {
+      const a = pos[i], b = pos[i + 1]; let d;
+      if (wide) {
+        if (i === 4) d = `M${a.x + nw / 2},${a.y + nh} L${b.x + nw / 2},${b.y}`;
+        else if (i < 4) d = `M${a.x + nw},${a.y + nh / 2} L${b.x},${b.y + nh / 2}`;
+        else d = `M${a.x},${a.y + nh / 2} L${b.x + nw},${b.y + nh / 2}`;
+      } else d = `M${a.x + nw / 2},${a.y + nh} L${b.x + nw / 2},${b.y}`;
+      h += `<path class="edge" d="${d}" marker-end="url(#ar)"/>`;
+    }
+    // eskalasyon döngüsü: 8 → 3
+    const e8 = pos[7], e3 = pos[2], e7 = pos[6], e9 = pos[8];
+    if (wide) {
+      h += `<path class="edge loop" d="M${e8.x + nw / 2 - 20},${e8.y} L${e3.x + nw / 2 - 20},${e3.y + nh}" marker-end="url(#arloop)"/>`;
+      h += `<text class="elbl loop" x="${e3.x + nw / 2 - 12}" y="${e3.y + nh + 30}">yanıt yok →</text><text class="elbl loop" x="${e3.x + nw / 2 - 12}" y="${e3.y + nh + 45}">bir üst basamak</text>`;
+      h += `<path class="edge ok" d="M${e7.x + nw / 2},${e7.y + nh} C${e7.x + nw / 2},${e7.y + nh + 60} ${e9.x + nw / 2},${e9.y + nh + 60} ${e9.x + nw / 2},${e9.y + nh}" marker-end="url(#arok)"/>`;
+      h += `<text class="elbl ok" x="${(e7.x + e9.x) / 2 + nw / 2}" y="${e7.y + nh + 56}" text-anchor="middle">yanıt geldi → eskalasyon durur</text>`;
+      h += `<text class="elbl" x="${(e7.x + e8.x) / 2 + nw / 2}" y="${e8.y - 8}" text-anchor="middle">süre doldu</text>`;
+    } else {
+      const rx = pos[0].x + nw + 22;
+      h += `<path class="edge loop" d="M${e8.x + nw},${e8.y + nh / 2} L${rx},${e8.y + nh / 2} L${rx},${e3.y + nh / 2} L${e3.x + nw + 2},${e3.y + nh / 2}" marker-end="url(#arloop)"/>`;
+      h += `<text class="elbl loop" x="${rx + 6}" y="${(e3.y + e8.y) / 2 + nh / 2}" transform="rotate(90 ${rx + 6} ${(e3.y + e8.y) / 2 + nh / 2})" text-anchor="middle">yanıt yok → üst basamak</text>`;
+      const lx = pos[0].x - 22;
+      h += `<path class="edge ok" d="M${e7.x},${e7.y + nh / 2} L${lx},${e7.y + nh / 2} L${lx},${e9.y + nh / 2} L${e9.x - 2},${e9.y + nh / 2}" marker-end="url(#arok)"/>`;
+      h += `<text class="elbl ok" x="${lx - 6}" y="${(e7.y + e9.y) / 2 + nh / 2}" transform="rotate(-90 ${lx - 6} ${(e7.y + e9.y) / 2 + nh / 2})" text-anchor="middle">yanıt geldi</text>`;
+    }
+    N.forEach((n, i) => {
+      const p = pos[i];
+      h += `<g class="node${i === sel ? " sel" : ""}" data-i="${i}" tabindex="0" role="button" aria-label="${i + 1}. ${esc(n.t)} — ${ST[n.st]}">
+        <rect x="${p.x}" y="${p.y}" width="${nw}" height="${nh}" rx="12"/>
+        <circle class="dot-${n.st === "no" ? "idea" : n.st}" cx="${p.x + nw - 14}" cy="${p.y + 14}" r="5"${n.st === "no" ? ' style="fill:var(--no)"' : ""}/>
+        <text class="num" x="${p.x + 12}" y="${p.y + 20}">${i + 1}</text>
+        <text class="lbl" x="${p.x + 12}" y="${p.y + (wide ? 42 : 38)}">${esc(n.t)}</text>
+        <text class="sub" x="${p.x + 12}" y="${p.y + (wide ? 60 : 53)}">${esc(n.s)}</text></g>`;
+    });
+    svg.innerHTML = h;
+  }
+  function drawDetail() {
+    const n = N[sel];
+    $("#detail").innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mute" style="font:700 12px Figtree">ADIM ${sel + 1} / ${N.length}</span>${badge(n.st)}</div>
+      <h3>${esc(n.t)}</h3>
+      <div class="row"><b>Ne olur</b>${n.what}</div>
+      <div class="row"><b>Bugün kodda</b>${n.code}</div>
+      <div class="why"><b>Neden böyle?</b> ${n.why}</div>
+      <div class="row"><b>Tasarım kararı (öneri)</b>${n.dec}</div>
+      <div class="navbtns"><button class="btn sm" data-nav="-1"${sel === 0 ? " disabled" : ""}>← Önceki</button><button class="btn sm" data-nav="1"${sel === N.length - 1 ? " disabled" : ""}>Sonraki →</button></div>`;
+  }
+  const pick = (i) => { sel = Math.max(0, Math.min(N.length - 1, i)); drawFlow(); drawDetail(); };
+  $("#flow").addEventListener("click", (e) => { const g = e.target.closest(".node"); if (g) pick(+g.dataset.i); });
+  $("#flow").addEventListener("keydown", (e) => {
+    const g = e.target.closest(".node"); if (!g) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(+g.dataset.i); }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); pick(sel + 1); $(`#flow .node[data-i="${sel}"]`).focus(); }
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); pick(sel - 1); $(`#flow .node[data-i="${sel}"]`).focus(); }
+  });
+  $("#detail").addEventListener("click", (e) => { const b = e.target.closest("[data-nav]"); if (b) pick(sel + +b.dataset.nav); });
+  let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(drawFlow, 120); });
+  drawFlow(); drawDetail();
+
+  /* ---------- 3 · katalog ---------- */
+  const F = (t) => `<i class="firm">${t}</i>`, S = (t) => `<i class="sugg">${t}</i>`;
+  const CAT = [
+    { o:"Kritik alarm (kötüleşme, septik şok kriteri vb.)", sev:"k", first:"Hastanın hemşiresi (rol + birim)", steps:[F("3 dk → sorumlu hemşire"), F("5 dk → nöbetçi / sorumlu hekim"), F("10 dk → hızlı yanıt ekibi"), S("Canlı hat bugün: yalnız 5 dk → hekim")], ch:"Uygulama içi + tarayıcı + ses · push (karar)", mute:"<b>Hayır.</b> Ertelenemez, gece de susmaz (service.py:11)", st:"part" },
+    { o:"Yüksek alarm (ör. SpO₂ düşüşü sürüyor)", sev:"y", first:"Hastanın hemşiresi", steps:[F("Motor: aynı 3 / 5 / 10 zinciri (service.py:47)"), S("Prototip: 5 dk sorumlu hemşire · 10 dk hekim — çelişki")], ch:"Uygulama içi + tarayıcı + ses", mute:"Gerekçeyle en çok <b>30 dk</b> (service.py:39)", st:"part" },
+    { o:"Kritik laboratuvar sonucu", sev:"k", first:"Hastanın sorumlu hekimi", steps:[S("15 dk görülmezse → nöbetçi hekim"), S("30 dk → birim sorumlu hekimi")], ch:"Uygulama içi + tarayıcı + ses · push (karar)", mute:"Hayır", st:"proto" },
+    { o:"Monitör / cihaz sessiz (veri gelmiyor)", sev:"y", first:"Birim sorumlu hemşiresi + biyomedikal", steps:[S("5 dk veri yoksa bildirim"), S("15 dk → birim sorumlu hekimi")], ch:"Uygulama içi + tarayıcı", mute:"Bakım modunda gerekçeyle, en çok 60 dk", st:"proto" },
+    { o:"Geciken hemşirelik işi", sev:"b", first:"Hastanın hemşiresi", steps:[S("30 dk gecikince → sorumlu hemşire")], ch:"Uygulama içi (zil)", mute:"Evet, gerekçeyle", st:"proto" },
+    { o:"Skor imza bekliyor (sistem doldurdu)", sev:"b", first:"Sorumlu hekim", steps:[S("60 dk sonra bir kez hatırlatma")], ch:"Uygulama içi (zil)", mute:"Evet", st:"proto" },
+    { o:"Yeni yatış yolda", sev:"b", first:"Hasta kabul + birim sorumlu hemşiresi", steps:[S("Eskalasyon yok")], ch:"Uygulama içi (zil)", mute:"Evet", st:"proto" },
+    { o:"Nöbet devri karşı imzası", sev:"b", first:"Gelen ekip", steps:[S("Vardiya başından 30 dk sonra → sorumlu hemşire")], ch:"Uygulama içi (zil)", mute:"Hayır, devir kapanmadan", st:"proto" },
+    { o:"Uzun yanıtsız alarm (kalite)", sev:"b", first:"Kalite · başhekim", steps:[S("Günlük özet, hasta adı olmadan")], ch:"Uygulama içi (özet)", mute:"Evet", st:"proto" },
+    { o:"Bağlantı koptu (istemci ya da hastane kaydı)", sev:"y", first:"Ekrandaki herkes + sistem yöneticisi", steps:[S("Ekranda kırmızı şerit hemen"), S("2 dk sürerse → sistem yöneticisi")], ch:"Ekranda şerit (bildirim değil)", mute:"Hayır", st:"part" },
+  ];
+  let fsev = "all";
+  const SEVL = { k:"Kritik", y:"Yüksek", b:"Bilgi" };
+  function drawCat() {
+    $("#filt").innerHTML = [["all", "Hepsi"], ["k", "Kritik"], ["y", "Yüksek"], ["b", "Bilgi"]].map(([k, l]) => `<button class="btn sm${fsev === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("");
+    $("#cat").innerHTML = CAT.filter(r => fsev === "all" || r.sev === fsev).map(r => `<tr>
+      <td data-l="Olay"><b>${r.o}</b></td><td data-l="Önem"><span class="sev ${r.sev}">${SEVL[r.sev]}</span></td><td data-l="İlk kime">${r.first}</td>
+      <td data-l="Eskalasyon"><div class="steps">${r.steps.join("")}</div></td><td data-l="Kanal">${r.ch}</td><td data-l="Sessize alınır mı">${r.mute}</td><td data-l="Durum">${badge(r.st)}</td></tr>`).join("");
+  }
+  $("#filt").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { fsev = b.dataset.f; drawCat(); } };
+  drawCat();
+
+  /* ---------- 4 · zor durumlar ---------- */
+  const HARD = [
+    { t:"Vardiya değişiminde açık bildirimler", st:"idea", q:"08:00'de nöbet değişti; 07:58'de açılmış kritik bir alarm hâlâ yanıtsız. Giden hemşire çıkıyor, gelen daha giriş yapmadı.",
+      a:`<b>Öneri:</b> Açık bildirim <b>kişiye değil göreve</b> bağlı olduğu için, gelen ekip giriş yapınca otomatik ona geçer. Giden kişi, devir imzasını atana kadar görmeye devam eder. <ul><li>Devir ekranında "açık bildirimler" ayrı bir başlık; imza bunlar okunmadan atılamaz.</li><li>Eskalasyon sayacı devir yüzünden sıfırlanmaz.</li></ul>`,
+      why:"Devir anı, bir bildirimin en kolay sahipsiz kaldığı an. Sayacı sıfırlamak kulağa adil gelir ama hastanın beklediği süreyi saklar." },
+    { t:"Sorumlu hemşire molada ya da meşgul", st:"idea", q:"Sorumlu hemşire yemekte; 3. dakika basamağı ona düşüyor.",
+      a:`<b>Öneri:</b> "Moladayım / meşgulüm" düğmesi yerine geçecek kişiyi seçtirir (boş bırakılamaz). Seçilmezse basamak <b>atlanmaz</b>, ikisine birden gider. <ul><li>Mola en çok 45 dk; sonra kendiliğinden kalkar.</li></ul>`,
+      why:"Kimse molaya çıktığı için bir hasta basamak kaybetmemeli. Vekil seçmek iki saniye sürer; unutulan vekil ise saatlerce." },
+    { t:"Hekim ameliyatta / girişimde", st:"idea", q:"5. dakikada bildirim, steril alanda olan nöbetçi hekime gidiyor.",
+      a:`<b>Öneri:</b> "Girişimdeyim" durumu 5. dakika basamağını <b>ikinci nöbetçi hekime</b> de gönderir; ilk hekime de gider ama sessiz. Ekranda "Dr. X girişimde" yazar ki hemşire neden yanıt gelmediğini bilsin.`,
+      why:"Ameliyattaki hekimi rahatsız etmemek ile hastayı beklettirmemek arasında seçim yapmıyoruz: ikisine birden gidiyor." },
+    { t:"Aynı hastada 5 bildirim birden", st:"idea", q:"REA01'de laktat yükseldi, MAP düştü, SpO₂ düştü, skor değişti, bir iş gecikti — hepsi aynı dakikada.",
+      a:`<b>Öneri:</b> Aynı hastanın 2 dk içindeki bildirimleri <b>tek kartta toplanır</b>: "REA01 · 5 yeni bulgu · en ağırı: kritik". Tek ses çalar, tek "Gördüm" hepsini üstlenir. Kritik olan asla bilgi düzeyindekinin altına saklanmaz.`,
+      why:"Beş ayrı bip, hemşirenin beş kez telefona bakması demek. Bugün motor aynı hasta + aynı tür için zaten bir kez gönderiyor (notify.py:43-46); gruplama bunun bir adım ötesi." },
+    { t:"Gece sessiz saatler", st:"idea", q:"Gece 02:00. Skor imzası, bakım hatırlatması, günlük özet bildirimleri de çalmalı mı?",
+      a:`<b>Öneri:</b> 23:00–07:00 arası bilgi düzeyi bildirimler sessizce zile düşer, sabah özet olarak gelir. <b>Kritik ve yüksek asla susmaz</b> — ne gece, ne sessiz saat, ne kişisel ayar.`,
+      why:"Yoğun bakımın gecesi gündüzünden farklı değil; sessiz saat hasta için değil, idari bildirimler için." },
+    { t:"Alarm yorgunluğu", st:"idea", q:"Aynı monitör probu 1 saatte 14 kez düşük SpO₂ veriyor; hemşire artık bakmıyor.",
+      a:`<b>Öneri:</b> <ul><li>Aynı olayın tekrarı yeni bildirim değil, mevcut kartta sayaç: "14. kez · son 60 dk".</li><li><b>Artefakt işaretle</b> düğmesi: kapanış nedeni "artefakt" olur, prob kontrolü için iş açılır.</li><li>Kalite ekranında birim bazında "artefakt oranı" ve "kendiliğinden düzelen alarm oranı" görünür.</li></ul>`,
+      why:"Yorgunluğu kişisel ayarla çözmek (sesi kısmak) tehlikeli; ölçüp eşiği düzeltmek doğru yol. Artefakt işareti ölçümü mümkün kılar." },
+    { t:"Bağlantı kopunca", st:"part", q:"Hemşirenin tableti Wi-Fi'dan düştü; 40 sn sonra geri geldi. Bu sürede bir kritik alarm oldu.",
+      a:`<b>Bugün:</b> Pano akışı kopunca kendini yeniden bağlar ve bağlantı durumunu işaretler (<code>liveStore.js:186-199</code>). Bildirim akışı ise ayrı ve yeniden oynatma yok: kopukken gelen bildirim <b>o ekrana hiç gelmez</b> (<code>api.js:22-28</code>, <code>notify.py:88-91</code>).<br><b>Öneri:</b> <div class="banner-demo" style="margin:6px 0">● Bağlantı koptu · 0:40 · bildirimler gelmeyebilir</div> Ekranın tepesinde kırmızı şerit; bağlantı gelince kaçan bildirimler sırayla yeniden gelir ve "bağlantı yokken geldi" diye işaretlenir.`,
+      why:"Sessiz bir ekran \"sorun yok\" gibi görünür. Kopukluğu gizleyen bir sistem, hemşireye yanlış güven verir." },
+    { t:"Telefon push kararı", st:"idea", q:"Uygulama kapalıyken kritik alarm telefona gelsin mi? Push, Apple ve Google'ın sunucularından — hastane dışından — geçer.",
+      a:`<div class="push-demo"><div class="lock"><small>Kilit ekranı · önerilen</small><div class="pn"><b>Homunculus</b>REA01 · kritik · uygulamayı açın</div></div>
+         <div class="lock bad"><small>Kilit ekranı · <b style="color:#fda4af">yapılmamalı</b></small><div class="pn"><b>Homunculus</b>Ayşe Y., 64 · laktat 4.1 · septik şok kriteri</div></div></div>
+         <p style="margin:8px 0 0"><b>Öneri:</b> içerikte yalnız yatak kodu ve önem; ayrıntı ancak uygulamada, giriş sonrası. Bugün motorun gövdesi "yatak: bulgu" (<code>notify.py:50</code>); push için bulgu da çıkarılmalı.</p>`,
+      why:"Kilit ekranı herkesin görebildiği bir yer ve push servisi hastane dışında. Yatak kodu tek başına kimseyi tanımlamaz ama hemşireyi harekete geçirmeye yeter. Karar sende — 6. bölüm, 1. soru." },
+    { t:"Hasta başı hemşire çağrı sistemiyle entegrasyon", st:"idea", q:"Hastanede zaten koridor lambası ve çağrı cihazları olan bir hemşire çağrı sistemi var.",
+      a:`<b>Öneri:</b> Kritik alarm Homunculus'ta açıldığında hastanenin çağrı sistemine de "REA01 · öncelikli" çağrısı gönderilir; koridor lambası yanar. Onay tek yönden verilir (Homunculus), iki sistem ayrı ayrı kapatılmaz.<br><span class="mute">Önce hastanede hangi sistemin kurulu olduğunu ve dışarıdan çağrı kabul edip etmediğini öğrenmek gerekiyor.</span>`,
+      why:"Hemşireler zaten koridor lambasına bakmaya alışkın. Yeni bir alışkanlık öğretmektense mevcut olanı kullanmak daha güvenli." },
+  ];
+  $("#hard").innerHTML = HARD.map(h => `<div class="card hard"><div class="hd"><h3>${h.t}</h3>${badge(h.st)}</div><div class="q">${h.q}</div><div class="a">${h.a}</div><details><summary>Neden böyle?</summary><p>${h.why}</p></details></div>`).join("");
+
+  /* ---------- 5 · simülasyon ---------- */
+  const SPM = 1500; // 1 simüle dakika = 1,5 sn
+  const MAXM = 12;
+  let mode = "dec", tm = null, t0 = 0, simMin = 0, acked = null, running = false, fired = {};
+  const DEVS = [
+    { id:"n", who:"Hemşire", sub:"telefon · REA01'in hemşiresi", phone:true },
+    { id:"c", who:"Sorumlu hemşire", sub:"masaüstü · merkezi istasyon", phone:false },
+    { id:"d", who:"Hekim", sub:"telefon · nöbetçi", phone:true },
+  ];
+  const STEPS = { dec:[{ m:0, to:"n", l:"Kritik alarm" }, { m:3, to:"c", l:"Eskalasyon · 3. dk" }, { m:5, to:"d", l:"Eskalasyon · 5. dk" }, { m:10, to:"rrt", l:"Hızlı yanıt ekibi · 10. dk" }],
+                  now:[{ m:0, to:"n", l:"Yeni uyarı" }, { m:5, to:"d", l:"Eskalasyon" }] };
+  const mm = (m) => { const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  const logs = [];
+  const log = (m) => { logs.unshift(`<div><time>${mm(simMin)}</time>${m}</div>`); $("#log").innerHTML = logs.join(""); };
+  function drawTl() {
+    const marks = mode === "dec" ? [0, 3, 5, 10] : [0, 5];
+    $("#tl").innerHTML = `<div class="rail"></div><div class="fill${acked !== null ? " acked" : ""}" id="fill" style="width:${Math.min(100, simMin / MAXM * 100)}%"></div>` +
+      [0, 3, 5, 10].map(m => `<div class="mk${fired[m] ? " hit" : ""}${marks.includes(m) ? "" : " off"}" style="left:${m / MAXM * 100}%">${m} dk</div>`).join("");
+  }
+  function drawDevs() {
+    const steps = STEPS[mode];
+    $("#devs").innerHTML = DEVS.map(d => {
+      const got = steps.filter(s => s.to === d.id && fired[s.m]);
+      const ring = got.length && acked === null;
+      let scr;
+      if (!got.length) scr = `<div class="idle">${running ? "Bu ekranda henüz bir şey yok" : "Bekliyor"}</div>`;
+      else {
+        const s = got[got.length - 1];
+        scr = `<div class="nt ${s.m ? "esc" : ""}${acked !== null ? " ok" : ""}"><b>${s.l}</b>REA01 · kritik${d.id === "n" ? "" : ` · ${mm(s.m)} yanıtsız`}<br><small>${d.phone ? "kilit ekranında: \"REA01 · kritik · uygulamayı açın\"" : "ekran kutusu + tarayıcı bildirimi + ses"}</small></div>`;
+        if (acked === null) scr += `<div class="acts"><button class="btn sm p" data-ack="${d.id}">Gördüm</button><button class="btn sm" data-otw="${d.id}">Yoldayım</button><button class="btn sm" disabled title="Kritik alarm ertelenemez (service.py:174)">Ertele</button></div>
+          <div class="reason" id="rs-${d.id}"><small class="mute">Gerekçe (sonra da yazılabilir):</small><button class="btn sm" data-rs="${d.id}" data-r="Hasta başındayım">Hasta başındayım</button><button class="btn sm" data-rs="${d.id}" data-r="Artefakt, prob kontrol edildi">Artefakt</button><button class="btn sm" data-rs="${d.id}" data-r="Müdahale ediliyor">Müdahale ediliyor</button></div>`;
+        else scr += `<div class="nt ok"><b>Kapandı</b>${esc(acked.by)} üstlendi · ${mm(acked.m)}<br><small>${esc(acked.r)}</small></div>`;
+      }
+      return `<div class="dev${d.phone ? " phone-f" : ""}${ring ? " ring" : ""}${acked !== null && got.length ? " done" : ""}"><div class="who">${d.who}<span>${d.sub}</span></div><div class="scr">${scr}</div></div>`;
+    }).join("");
+    const rrtOn = mode === "dec" && fired[10];
+    $("#rrt").innerHTML = mode === "dec" ? `<span class="st ${rrtOn ? (acked ? "real" : "part") : "no"}">Hızlı yanıt ekibi</span> <span class="mute">${rrtOn ? (acked ? "çağrı kapandı" : "çağrı düştü · REA01 · 4. kat · ekip yolda olmalı") : "10. dakikada devreye girer"}</span>`
+      : `<span class="st no">Hızlı yanıt ekibi</span> <span class="mute">bugünkü canlı hatta bu basamak yok</span>`;
+  }
+  function tick() {
+    simMin = (performance.now() - t0) / SPM;
+    for (const s of STEPS[mode]) {
+      const eff = s.m + (otwShift || 0);
+      if (!fired[s.m] && simMin >= (s.m === 0 ? 0 : eff)) {
+        fired[s.m] = true;
+        const who = s.to === "rrt" ? "Hızlı yanıt ekibi" : DEVS.find(d => d.id === s.to).who;
+        log(s.m === 0 ? `<b>Alarm oluştu</b> · ${who} ekranına gitti` : `<b>Yanıt yok</b> → ${who} ekranına da gitti`);
+      }
+    }
+    $("#clock").textContent = mm(simMin);
+    drawTl(); drawDevs();
+    const last = STEPS[mode][STEPS[mode].length - 1].m + (otwShift || 0);
+    if (simMin >= Math.max(MAXM, last + 1)) { stop(); log("Simülasyon bitti · kimse yanıt vermedi"); return; }
+    tm = requestAnimationFrame(tick);
+  }
+  let otwShift = 0;
+  function start() { reset(); running = true; t0 = performance.now(); $("#simGo").disabled = true; tm = requestAnimationFrame(tick); }
+  function stop() { cancelAnimationFrame(tm); running = false; $("#simGo").disabled = false; }
+  function reset() { stop(); simMin = 0; acked = null; fired = {}; otwShift = 0; logs.length = 0; $("#log").innerHTML = `<div class="mute">Henüz olay yok. "Kritik alarm başlat"a bas.</div>`; $("#clock").textContent = "0:00"; drawTl(); drawDevs(); }
+  function setMode(m) { mode = m; $("#mDec").classList.toggle("on", m === "dec"); $("#mNow").classList.toggle("on", m === "now");
+    $("#modeNote").innerHTML = m === "dec" ? "Kararlaştırılan zincir (S-05, <code>service.py:33-35</code>). Kodda tanımlı ama canlı bildirimi henüz sürmüyor."
+      : "Bugün canlıda çalışan hat: yeni uyarı hemşireye, 5 dk yanıtsızsa hekime (<code>app.py:94</code>, <code>notify.py:49</code>, <code>:67</code>). Sorumlu hemşire ve hızlı yanıt ekibi basamağı yok."; reset(); }
+  $("#simGo").onclick = start; $("#simReset").onclick = reset;
+  $("#mDec").onclick = () => setMode("dec"); $("#mNow").onclick = () => setMode("now");
+  $("#devs").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-ack]"); if (a) { $("#rs-" + a.dataset.ack).classList.add("show"); return; }
+    const r = e.target.closest("[data-rs]");
+    if (r) { const d = DEVS.find(x => x.id === r.dataset.rs); acked = { by:d.who, m:simMin, r:r.dataset.r }; log(`<b>${d.who}: Gördüm</b> · "${esc(r.dataset.r)}" · eskalasyon durdu, bütün ekranlardan kalktı`); stop(); drawTl(); drawDevs(); toast("Eskalasyon durdu"); return; }
+    const o = e.target.closest("[data-otw]");
+    if (o && running) { const d = DEVS.find(x => x.id === o.dataset.otw); const next = STEPS[mode].find(s => !fired[s.m]);
+      if (!next) { toast("Açık basamak kalmadı"); return; }
+      otwShift += 2; log(`<b>${d.who}: Yoldayım</b> · sonraki basamak 2 dk ertelendi (öneri — kodda yok)`); toast("Sonraki basamak 2 dk ileri"); }
+  });
+  setMode("dec");
+
+  /* ---------- 6 · kararlar ---------- */
+  const DEC = [
+    { q:"Telefon push olsun mu?", p:"Uygulama kapalıyken kritik alarm telefona gelsin mi? Push Apple/Google sunucularından geçer; içerik yalnız <b>\"REA01 · kritik · uygulamayı açın\"</b> olur, hasta adı ve bulgu olmaz.", o:["evet, yalnız kritik", "evet, kritik + yüksek", "hayır, şimdilik yok"] },
+    { q:"Gece sessiz saatler", p:"Bilgi düzeyi bildirimler gece susup sabah özet olarak gelsin mi? <b>Kritik ve yüksek her durumda çalar.</b>", o:["23:00–07:00", "00:00–06:00", "sessiz saat olmasın"] },
+    { q:"Erteleme en çok kaç dakika?", p:"Motor bugün: yüksek alarm <b>30 dk</b>, orta <b>120 dk</b>, kritik <b>hiç</b> (<code>service.py:37-41</code>). Prototip \"kritikte 10 dk\" yazıyor (<code>admin.js:799</code>). Hangisi doğru?", o:["motordaki gibi kalsın", "yüksekte 15 dk'ya insin", "kritikte de 10 dk olsun"] },
+    { q:"Kritik laboratuvar sonucu kime gider?", p:"İlk kime ve kaç dakika görülmezse bir üst basamağa?", o:["sorumlu hekim, 15 dk sonra nöbetçi", "doğrudan nöbetçi hekim", "hemşire + hekim birlikte"] },
+    { q:"Vardiya devrinde açık bildirim", p:"Açık bildirim nöbet değişince ne olsun?", o:["gelen ekibe geçsin, giden imzaya kadar görsün", "yalnız gelen ekibe geçsin", "giden kapatmadan devir imzalanamasın"] },
+    { q:"Canlı hat 3/5/10 zincirine bağlansın mı?", p:"Bugün canlı bildirim yalnız 5 dk → hekim. Kararlaştırılan 3 dk sorumlu hemşire / 5 dk hekim / 10 dk hızlı yanıt zinciri kodda var ama bağlı değil. Bağlamak bir yazılım işi.", o:["evet, önce bunu yap", "evet, push kararından sonra", "şimdilik bekleyelim"] },
+  ];
+  const ans = {};
+  $("#dec").innerHTML = DEC.map((d, i) => `<div class="dq"><div class="no">${i + 1}</div><div><h3>${d.q}</h3><p>${d.p}</p><div class="opts">${d.o.map((o, j) => `<button class="btn sm" data-d="${i}" data-o="${j}">${o}</button>`).join("")}</div></div></div>`).join("");
+  $("#dec").onclick = (e) => { const b = e.target.closest("[data-d]"); if (!b) return; const i = +b.dataset.d;
+    ans[i] = DEC[i].o[+b.dataset.o]; b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    const keys = Object.keys(ans).map(Number).sort((a, b) => a - b);
+    $("#ans").textContent = keys.length ? keys.map(k => `${k + 1}: ${ans[k]}`).join(" · ") : "Henüz seçim yok."; };
+  $("#copy").onclick = async () => { const t = $("#ans").textContent; try { await navigator.clipboard.writeText(t); toast("Kopyalandı"); } catch { toast("Kopyalanamadı — satırı seçip Ctrl+C"); } };
+})();
+</script>
+</body>
+</html>
