@@ -150,3 +150,81 @@ def test_set_aside_rows_count_against_the_caps_until_they_expire(tmp_path):
         assert held() == 0 and journal.snapshot()["rows"] == 3
     finally:
         journal.close()
+
+
+def test_the_journal_commits_through_a_wal_with_a_full_sync(factory):
+    # dalga-perf-2: DELETE mode copied every changed page into a -journal file, synced it, wrote
+    # the pages again and synced the database: 82.6 % of the VM's writes on 08.11 (IO-1). WAL
+    # writes them once; FULL keeps «ack only after commit».
+    journal = factory()
+    assert journal.mode == "wal"
+    assert journal.db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert journal.db.execute("PRAGMA synchronous").fetchone()[0] == 2      # FULL
+    journal.append([event()])
+    assert journal.snapshot()["rows"] == 1
+
+
+def test_a_journal_the_old_code_wrote_turns_wal_on_open_and_keeps_its_rows(tmp_path):
+    import sqlite3
+    from cryptography.fernet import Fernet
+    from homunculus.edge.infinity_journal import Journal
+    key = Fernet.generate_key()
+    path = tmp_path / "archive.sqlite"
+    journal = Journal(path, key)
+    journal.append([event(), event()])
+    journal.close()
+    old = sqlite3.connect(path)                     # what the previous release does on open
+    assert old.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+    old.close()
+    assert not (tmp_path / "archive.sqlite-wal").exists()
+    reopened = Journal(path, key)
+    try:
+        assert reopened.mode == "wal"
+        assert reopened.snapshot()["rows"] == 2
+    finally:
+        reopened.close()
+
+
+def test_the_old_code_takes_a_crash_left_wal_journal_back_with_every_committed_row(tmp_path):
+    # The rollback (G-1) is the previous release: it sets DELETE on open. The hub may have been
+    # stopped without a close, so the -wal still holds commits the database file has not got yet.
+    import shutil
+    import sqlite3
+    from cryptography.fernet import Fernet
+    from homunculus.edge.infinity_journal import Journal
+    key = Fernet.generate_key()
+    live, crashed = tmp_path / "live", tmp_path / "crashed"
+    live.mkdir()
+    crashed.mkdir()
+    journal = Journal(live / "archive.sqlite", key)
+    try:
+        journal.db.execute("PRAGMA wal_autocheckpoint=0")    # every commit stays in the -wal
+        for _ in range(3):
+            journal.append([event()])
+        assert (live / "archive.sqlite-wal").stat().st_size > 0
+        for name in ("archive.sqlite", "archive.sqlite-wal"):  # the files as a kill leaves them
+            shutil.copy(live / name, crashed / name)
+    finally:
+        journal.close()
+    old = sqlite3.connect(crashed / "archive.sqlite")
+    try:
+        assert old.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+        assert old.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 3
+    finally:
+        old.close()
+    assert not (crashed / "archive.sqlite-wal").exists()
+
+
+def test_where_wal_is_not_available_the_journal_keeps_the_old_mode_and_says_so(caplog):
+    from homunculus.edge.infinity_journal import _enter_wal
+
+    class NoWal:                                     # SQLite answers with the mode it kept
+        def execute(self, sql):
+            assert sql == "PRAGMA journal_mode=WAL"
+            return self
+
+        def fetchone(self):
+            return ("delete",)
+    with caplog.at_level("WARNING", logger="homunculus.edge.infinity_journal"):
+        assert _enter_wal(NoWal()) == "delete"
+    assert "delete" in caplog.text and "WAL" in caplog.text

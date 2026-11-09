@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -12,6 +13,9 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from .infinity_stream import canonical
+
+
+log = logging.getLogger(__name__)
 
 
 class CapacityError(Exception):
@@ -27,6 +31,26 @@ def external_path(path):
     if any((parent / ".git").exists() for parent in (path.parent, *path.parents)):
         raise ValueError("Runtime data must stay outside repositories.")
     return path
+
+
+def _enter_wal(db):
+    """Put the journal in WAL mode and return the mode SQLite answers with.
+
+    In DELETE mode every commit copied the pages it changed into a -journal file, synced it,
+    wrote the pages into the database, synced that and removed the -journal again. On 08.11 the
+    hub's journal made 82.6 % of the VM's disk writes that way and its commit was more than half
+    of each post (IO-1). In WAL a commit appends the changed pages to the -wal file and syncs that
+    once; they reach the database at a checkpoint. With synchronous=FULL the contract stays the
+    same: an append returns, and the worker is acknowledged, only once its commit is on disk.
+
+    The mode is kept in the file. The previous release sets DELETE when it opens the file, so a
+    rollback takes the file back by itself, with no data step. Where WAL cannot run (a filesystem
+    without shared memory), SQLite keeps the mode it had: the journal works as before and says so.
+    """
+    mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+    if mode != "wal":
+        log.warning("Journal stays in %s mode: WAL is not available here (same guarantees, more writes).", mode)
+    return mode
 
 
 class _Untimed:
@@ -53,9 +77,11 @@ class Journal:
         self.max_bytes, self.max_rows = max_bytes, max_rows
         self.lock = threading.RLock()
         self.db = sqlite3.connect(self.path, check_same_thread=False)
-        self.db.execute("PRAGMA journal_mode=DELETE")
+        self.mode = _enter_wal(self.db)
         self.db.execute("PRAGMA synchronous=FULL")
         # SQLite reuses freed pages; logical caps bound growth, not immediate file shrinkage.
+        # The caps count rows and encrypted bytes, not files: the -wal beside the database (about
+        # 4 MB at SQLite's default checkpoint of 1000 pages) is outside them.
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS events (
                 seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, digest TEXT NOT NULL,
