@@ -69,6 +69,13 @@ describe("what one verification answer reads as (D4)", () => {
     expect(verdictOf(undefined)).toEqual({ kind: "unreadable", unsealed: 0 });
     expect(verdictOf({ checked: 5 })).toEqual({ kind: "unreadable", unsealed: 0 });
   });
+
+  it("an answer that says ok but not how many records or whether it is whole is unreadable too — not «empty», not «intact»", () => {
+    expect(verdictOf({ ok: true })).toEqual({ kind: "unreadable", unsealed: 0 });
+    expect(verdictOf({ ok: true, records: 5, checked: 5 })).toEqual({ kind: "unreadable", unsealed: 0 });
+    expect(verdictOf({ ok: true, records: "5", complete: true, unsealed: 2 })).toEqual({ kind: "unreadable", unsealed: 2 });
+    expect(verdictOf({ ok: true, records: Number.NaN, complete: true })).toEqual({ kind: "unreadable", unsealed: 0 });
+  });
 });
 
 describe("the reason (D4)", () => {

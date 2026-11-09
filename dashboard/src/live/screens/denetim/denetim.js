@@ -75,6 +75,9 @@ export function verdictOf(report) {
   const unsealed = count(r.unsealed);
   if (r.ok === false) return { kind: "broken", brokenAt: r.broken_at ?? null, reasonKey: reasonKey(r.reason), unsealed };
   if (r.ok !== true) return { kind: "unreadable", unsealed };
+  // `ok: true` alone is not a verdict: without how many records it covered, and whether that was all of them, it
+  // can be neither «intact» nor «empty».
+  if (!Number.isFinite(r.records) || typeof r.complete !== "boolean") return { kind: "unreadable", unsealed };
   if (count(r.records) === 0) return { kind: "empty", unsealed };
   if (r.complete === false) return { kind: "partial", records: count(r.records), unsealed };
   return { kind: "ok", checked: count(r.checked), unsealed };

@@ -11,8 +11,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
-import { ddmmhhmm, hhmm } from "../../i18n/dates.js";
-import { Alert, Box, Button, Field, Note, Select, Table } from "../../ui/index.js";
+import { ddmmhhmm } from "../../i18n/dates.js";
+import { Alert, Announce, Box, Button, Field, Note, Select, Table } from "../../ui/index.js";
 import {
   EVENTS_LIMIT, EVENT_TYPES, VERIFY_LIMIT, actorOf, maskPatient, newestFirst, typeKey, verdictOf,
 } from "./denetim.js";
@@ -23,31 +23,44 @@ const timeText = (ts) => {
   return Number.isFinite(ms) ? ddmmhhmm(ms) : "—";
 };
 
+/** The sentence of a verdict that is a Note, with the Note's look — null for a broken chain, which is an Alert
+ *  of its own. One place for the words: the Notes show them and the status region speaks them (`saidOf`), so the
+ *  two cannot drift apart. */
+function noteOf(t, verdict) {
+  if (verdict.kind === "partial") return { tone: "warn", text: t("denetim.verdictPartial", { records: verdict.records }) };
+  if (verdict.kind === "ok") return { tone: "info", icon: "ok", text: t("denetim.verdictOk", { checked: verdict.checked }) };
+  if (verdict.kind === "empty") return { tone: "info", text: t("denetim.verdictEmpty") };
+  if (verdict.kind === "unreadable") return { tone: "warn", text: t("denetim.verdictUnreadable") };
+  return null;
+}
+
+const unsealedOf = (t, verdict) => (verdict.unsealed > 0 ? t("denetim.unsealed", { unsealed: verdict.unsealed }) : "");
+
+/** What a screen reader is told about a verdict. A Note is static and never announced, so the verdict's
+ *  sentence (with the unsealed one) goes to a polite status region. A broken chain says nothing here: it is
+ *  already a role="alert" box, and a failed run is an Alert too. */
+function saidOf(t, verdict) {
+  const note = noteOf(t, verdict);
+  return note ? [note.text, unsealedOf(t, verdict)].filter(Boolean).join(" ") : "";
+}
+
 /** One verdict (D4). A broken chain is the page's only alarm (role="alert"); a partial or unreadable answer
  *  is a warning; records written before the seal are noted with any verdict. */
 function Verdict({ verdict }) {
   const { t } = useI18n();
-  let main;
-  if (verdict.kind === "broken") {
-    main = (
-      <Alert tone="crit">
-        <p className="m-0">{t("denetim.verdictBroken", { id: verdict.brokenAt ?? "—" })}</p>
-        <p className="m-0 font-normal">{t(verdict.reasonKey)}</p>
-      </Alert>
-    );
-  } else if (verdict.kind === "partial") {
-    main = <Note tone="warn">{t("denetim.verdictPartial", { records: verdict.records })}</Note>;
-  } else if (verdict.kind === "ok") {
-    main = <Note tone="info" icon="ok">{t("denetim.verdictOk", { checked: verdict.checked })}</Note>;
-  } else if (verdict.kind === "empty") {
-    main = <Note tone="info">{t("denetim.verdictEmpty")}</Note>;
-  } else {
-    main = <Note tone="warn">{t("denetim.verdictUnreadable")}</Note>;
-  }
+  const note = noteOf(t, verdict);
+  const unsealed = unsealedOf(t, verdict);
   return (
     <>
-      {main}
-      {verdict.unsealed > 0 ? <Note tone="info">{t("denetim.unsealed", { unsealed: verdict.unsealed })}</Note> : null}
+      {note ? (
+        <Note tone={note.tone} icon={note.icon}>{note.text}</Note>
+      ) : (
+        <Alert tone="crit">
+          <p className="m-0">{t("denetim.verdictBroken", { id: verdict.brokenAt ?? "—" })}</p>
+          <p className="m-0 font-normal">{t(verdict.reasonKey)}</p>
+        </Alert>
+      )}
+      {unsealed ? <Note tone="info">{unsealed}</Note> : null}
     </>
   );
 }
@@ -65,6 +78,9 @@ function VerifyBox() {
 
   const run = async () => {
     setBusy(true);
+    // review: a stale verdict never sits beside a busy button; and the live region hears a change, so a repeated
+    // verdict is announced again
+    setResult(null);
     try {
       const answer = await store.track(() => store.api.verifyAudit(VERIFY_LIMIT));
       if (alive.current) setResult({ verdict: verdictOf(answer), at: Date.now() });
@@ -75,10 +91,13 @@ function VerifyBox() {
     }
   };
 
+  const said = result?.verdict ? saidOf(t, result.verdict) : "";
+
   return (
     <Box title={t("denetim.verifyTitle")} icon="lock" level={2}
       right={<Button size="sm" variant="primary" busy={busy} onClick={run}>{t("denetim.verifyButton")}</Button>}>
       <div className="flex flex-col gap-2">
+        <Announce text={said} />
         <p className="m-0 text-13 text-mute">{t("denetim.verifyIntro")}</p>
         {result?.error ? (
           <Alert tone="crit">
@@ -88,7 +107,11 @@ function VerifyBox() {
         {result?.verdict ? (
           <>
             <Verdict verdict={result.verdict} />
-            <p className="m-0 text-12 text-mute">{t("denetim.lastVerified", { time: hhmm(result.at) })}</p>
+            {/* day and month with the time: a screen left open overnight; none for an answer nobody could read —
+                no verification completed */}
+            {result.verdict.kind === "unreadable" ? null : (
+              <p className="m-0 text-12 text-mute">{t("denetim.lastVerified", { time: ddmmhhmm(result.at) })}</p>
+            )}
           </>
         ) : null}
       </div>

@@ -38,7 +38,7 @@ export default {
     colNo: "No", colTime: "Zaman", colType: "Tür", colActor: "Kim", colPatient: "Hasta", colSubject: "Konu",
     type: {
       auth: "Oturum açma", admin: "Yönetim", scope: "Kapsam ataması", scopeDenied: "Kapsam reddi",
-      ack: "Alarm onayı", view: "Alarm görüldü",
+      ack: "Alarm onayı", view: "Hasta açıldı",
       chart: "Kayıt girişi", chartRetract: "Hatalı giriş", profile: "Hastanın kendi normali",
       score: "SOFA okundu", scoreSigned: "SOFA imzalandı",
       alert: "Alarm", firstSeen: "Alarm başladı", alertCleared: "Alarm bitti",
@@ -46,7 +46,7 @@ export default {
       identity: "Kimlik", ingest: "Ölçüm alındı", readingDropped: "Taburcu hastanın ölçümü atıldı",
       shadowAlert: "Gölge öneri", shadowCleared: "Gölge öneri bitti",
       admit: "Hasta kabul", signOff: "Kabul imzası", dischargeStart: "Taburcu başlatıldı", dischargeConfirm: "Taburcu onaylandı",
-      bedRelease: "Yatak boşaltıldı", deviceBind: "Monitör yatağa bağlandı", deviceUnbind: "Monitör yataktan ayrıldı",
+      bedRelease: "Yatak hazır (temizlik bitti)", deviceBind: "Monitör yatağa bağlandı", deviceUnbind: "Monitör yataktan ayrıldı",
       protocolSettings: "Protokol ayarları",
     },
     heat: {
@@ -96,7 +96,7 @@ export default {
     colNo: "№", colTime: "Vaxt", colType: "Növ", colActor: "İcraçı", colPatient: "Xəstə", colSubject: "Mövzu",
     type: {
       auth: "Sistemə giriş", admin: "İdarəetmə", scope: "Əhatə təyinatı", scopeDenied: "Əhatədən imtina",
-      ack: "Siqnalın təsdiqi", view: "Siqnal görüldü",
+      ack: "Siqnalın təsdiqi", view: "Xəstə açıldı",
       chart: "Qeyd daxil edilməsi", chartRetract: "Səhv daxiletmə", profile: "Xəstənin öz norması",
       score: "SOFA oxundu", scoreSigned: "SOFA imzalanıb",
       alert: "Siqnal", firstSeen: "Siqnal başladı", alertCleared: "Siqnal bitdi",
@@ -104,7 +104,7 @@ export default {
       identity: "Şəxsiyyət", ingest: "Ölçmə qəbul edildi", readingDropped: "Evə yazılmış xəstənin ölçməsi atıldı",
       shadowAlert: "Kölgə tövsiyəsi", shadowCleared: "Kölgə tövsiyəsi bitdi",
       admit: "Xəstə qəbulu", signOff: "Qəbulun imzası", dischargeStart: "Evə yazılma başladıldı", dischargeConfirm: "Evə yazılma təsdiqləndi",
-      bedRelease: "Çarpayı boşaldıldı", deviceBind: "Monitor çarpayıya qoşuldu", deviceUnbind: "Monitorun çarpayı ilə bağlantısı kəsildi",
+      bedRelease: "Çarpayı hazırdır (təmizlik bitdi)", deviceBind: "Monitor çarpayıya qoşuldu", deviceUnbind: "Monitorun çarpayı ilə bağlantısı kəsildi",
       protocolSettings: "Protokol parametrləri",
     },
     heat: {
@@ -151,10 +151,10 @@ export default {
     readFailed: "Не удалось прочитать события: {reason}",
     retry: "Повторить",
     caption: "События аудита, от новых к старым",
-    colNo: "Номер", colTime: "Время", colType: "Тип", colActor: "Кто", colPatient: "Пациент", colSubject: "Предмет",
+    colNo: "Номер", colTime: "Время", colType: "Тип", colActor: "Кто", colPatient: "Пациент", colSubject: "Объект",
     type: {
       auth: "Вход в систему", admin: "Администрирование", scope: "Назначение области", scopeDenied: "Отказ по области",
-      ack: "Подтверждение тревоги", view: "Тревога просмотрена",
+      ack: "Подтверждение тревоги", view: "Пациент открыт",
       chart: "Запись в карту", chartRetract: "Ошибочная запись", profile: "Собственная норма пациента",
       score: "SOFA прочитана", scoreSigned: "SOFA подписана",
       alert: "Тревога", firstSeen: "Тревога началась", alertCleared: "Тревога закончилась",
@@ -162,7 +162,7 @@ export default {
       identity: "Идентификация", ingest: "Измерение получено", readingDropped: "Измерение выписанного пациента отброшено",
       shadowAlert: "Теневая рекомендация", shadowCleared: "Теневая рекомендация закончилась",
       admit: "Приём пациента", signOff: "Подпись приёма", dischargeStart: "Выписка начата", dischargeConfirm: "Выписка подтверждена",
-      bedRelease: "Койка освобождена", deviceBind: "Монитор привязан к койке", deviceUnbind: "Монитор отвязан от койки",
+      bedRelease: "Койка готова (уборка завершена)", deviceBind: "Монитор привязан к койке", deviceUnbind: "Монитор отвязан от койки",
       protocolSettings: "Настройки протокола",
     },
     heat: {
@@ -212,7 +212,7 @@ export default {
     colNo: "No.", colTime: "Time", colType: "Type", colActor: "Who", colPatient: "Patient", colSubject: "Subject",
     type: {
       auth: "Sign-in", admin: "Administration", scope: "Scope assignment", scopeDenied: "Scope refusal",
-      ack: "Alarm acknowledged", view: "Alarm seen",
+      ack: "Alarm acknowledged", view: "Patient opened",
       chart: "Charted", chartRetract: "Erroneous entry", profile: "Patient's own normal",
       score: "SOFA read", scoreSigned: "SOFA signed",
       alert: "Alarm", firstSeen: "Alarm started", alertCleared: "Alarm ended",
@@ -220,7 +220,7 @@ export default {
       identity: "Identity", ingest: "Reading received", readingDropped: "Discharged patient's reading dropped",
       shadowAlert: "Shadow suggestion", shadowCleared: "Shadow suggestion ended",
       admit: "Admission", signOff: "Admission signed", dischargeStart: "Discharge started", dischargeConfirm: "Discharge confirmed",
-      bedRelease: "Bed released", deviceBind: "Monitor assigned to bed", deviceUnbind: "Monitor unassigned from bed",
+      bedRelease: "Bed ready (cleaning done)", deviceBind: "Monitor assigned to bed", deviceUnbind: "Monitor unassigned from bed",
       protocolSettings: "Protocol settings",
     },
     heat: {

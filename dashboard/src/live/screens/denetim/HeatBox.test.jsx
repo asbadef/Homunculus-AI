@@ -43,7 +43,23 @@ describe("the alarm heatmap box", () => {
     expect(screen.queryByRole("table")).toBeNull();
     await show();
     expect(api.alarmQuality).toHaveBeenCalledWith(7);
-    expect(screen.getByText(/^Saat \d\d:\d\d vəziyyətinə$/)).toBeInTheDocument();
+    // day and month with the time: a screen left open overnight must not pass an old map off as today's
+    expect(screen.getByText(/^Saat \d\d\.\d\d \d\d:\d\d vəziyyətinə$/)).toBeInTheDocument();
+  });
+
+  it("takes the previous map away the moment the next run starts, so an old one never sits beside the busy button", async () => {
+    let release;
+    await open((a) => a.alarmQuality
+      .mockResolvedValueOnce(REPORT)
+      .mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ episodes: 0, truncated: false, per_patient_hour: [] }); })));
+    await show();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    await show();                                                     // held: the second run is under way
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText(/vəziyyətinə$/)).toBeNull();
+    await act(async () => { release(); });
+    await settle();
+    expect(screen.getByText("Son 7 gündə siqnal olmayıb.")).toBeInTheDocument();
   });
 
   it("shows masked patients, highest total first, each count in its local hour, the total and the relative legend", async () => {

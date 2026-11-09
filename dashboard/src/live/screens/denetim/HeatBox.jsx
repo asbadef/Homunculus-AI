@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
-import { hhmm, pad2 } from "../../i18n/dates.js";
+import { ddmmhhmm, pad2 } from "../../i18n/dates.js";
 import { Alert, Box, Button, Note, Table } from "../../ui/index.js";
 import { HEAT_DAYS, HOURS, heatRows, heatStep } from "./heat.js";
 
@@ -64,6 +64,7 @@ export function HeatBox() {
 
   const run = async () => {
     setBusy(true);
+    setResult(null);          // review: an old map never sits beside a busy button (the page's freshness rule)
     try {
       const report = await store.track(() => store.api.alarmQuality(HEAT_DAYS));
       if (alive.current) setResult({ report, heat: heatRows(report), at: Date.now() });
@@ -99,7 +100,7 @@ export function HeatBox() {
             <p className="m-0 text-12 text-mute">{t("denetim.heat.legend")}</p>
           </>
         )}
-        <p className="m-0 text-12 text-mute">{t("denetim.heat.asOf", { time: hhmm(result.at) })}</p>
+        <p className="m-0 text-12 text-mute">{t("denetim.heat.asOf", { time: ddmmhhmm(result.at) })}</p>
       </>
     );
   }
