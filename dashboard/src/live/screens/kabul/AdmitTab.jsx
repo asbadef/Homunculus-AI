@@ -75,6 +75,7 @@ import { freshForm, newRequestId, sameName, useAdmitDraft } from "./admitDraft.j
 import { BedPicker } from "./BedPicker.jsx";
 import { boardKeyOf } from "./boardKey.js"; //                    G2-B1d: the card key (E12)
 import { PrintLabelButton } from "./label/PrintLabelButton.jsx"; // G2-B1d: the protocol label (§6)
+import { ReservedAsk } from "./ReservedAsk.jsx";            // G2-B3a (D5)
 
 const localToday = () => {
   const d = new Date();
@@ -178,6 +179,10 @@ export function AdmitTab() {
   const { t } = useI18n();
   const { user, store } = useSession();
   const { structure, index, phase, error, reload } = useStructure();
+  // G2-B3a (D5): the reserved-bed question while it is open ({bedId, bed}), and the bed the nurse
+  // said yes for — her answer holds for that bed only, and the next bed is asked about again.
+  const [ask, setAsk] = useState(null);
+  const [confirmedBed, setConfirmedBed] = useState(null);
   const toast = useToast();
   const canAdmit = user?.perms?.includes("admissions.admit") ?? false;
   // The session's (admitDraft.js): `sending` is read from the draft at once, so a second press in
@@ -255,6 +260,7 @@ export function AdmitTab() {
   /** The form's patient admitted — by this send's answer, or found after one that got none. Every
    *  send under that name is done with, and the form is emptied for the next patient. */
   function admitted(next, name) {
+    setConfirmedBed(null);        // G2-B3a (D5): her yes was for this admission; the next patient is asked again
     draft.update((s) => ({
       ...freshForm(),
       done: next,
@@ -331,6 +337,15 @@ export function AdmitTab() {
   // Every step after an `await` first asks whether the draft is still live: a send of a session
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
   async function failed(err, sent) {
+    if (err?.apiCode === "bed_reserved") {
+      // G2-B3a (X1): the bed was reserved after the picker read it. Nothing was written: read the
+      // beds again and ask, as for a bed the picker shows reserved.
+      await reload();
+      if (!draft.live) return;
+      setConfirmedBed(null);
+      setAsk({ bedId: sent.bedId, bed: sent.bed });
+      return;
+    }
     if (err?.apiCode === "request_conflict") {
       // An admission exists under this form's id (A-19) — not known where, and not found by a look.
       // Held, with the words that say so, until «Yeni qəbul». The sends that went under the id are
@@ -382,8 +397,8 @@ export function AdmitTab() {
     await reload();
   }
 
-  async function submit(event) {
-    event.preventDefault();
+  async function submit(event, confirmed = false) {
+    event?.preventDefault();
     const now = draft.get();
     if (now.sending) return;
     if (now.held) {
@@ -399,7 +414,15 @@ export function AdmitTab() {
     // retry of a send that got no answer — its bed, its patient — that send's own; else the form's.
     const again = now.unanswered.find((s) => sameSend(s, { bedId: form.bedId, name: form.name }));
     const sent = { bedId: form.bedId, bed: bedText, name: form.name, checked: false, requestId: again?.requestId ?? now.requestId };
-    const body = toBody(form, sent.requestId);
+    // G2-B3a (D5): a bed the structure shows reserved is asked about first; the answer goes out
+    // as `confirm_reserved`, which the server leaves out of the form's digest (X2).
+    const reservedNow = index.beds.get(normId(form.bedId))?.state === "RESERVED";
+    const saidYes = confirmed || normId(confirmedBed) === normId(form.bedId);
+    if (reservedNow && !saidYes) {
+      setAsk({ bedId: form.bedId, bed: bedText });
+      return;
+    }
+    const body = toBody(form, sent.requestId, { confirmReserved: reservedNow && saidYes });
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -597,6 +620,11 @@ export function AdmitTab() {
         {form.bedId ? <p className="m-0 mt-2"><Tag icon="bed">{bedText}</Tag></p> : null}
         <Announce text={busy ? t("kabul.admitting") : ""} />
       </aside>
+      {ask ? (
+        <ReservedAsk bedId={ask.bedId} bed={ask.bed}
+          onCancel={() => setAsk(null)}
+          onConfirm={() => { setConfirmedBed(ask.bedId); setAsk(null); submit(null, true); }} />
+      ) : null}
     </form>
   );
 }

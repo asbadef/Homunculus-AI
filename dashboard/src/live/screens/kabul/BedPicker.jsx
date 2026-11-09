@@ -1,5 +1,6 @@
 // src/live/screens/kabul/BedPicker.jsx — unit → room → bed, from the caller's structure (G2-B1a,
-// spec §5.2). Only an open, AVAILABLE bed can be chosen; every other bed is shown dimmed WITH its
+// spec §5.2). Only an open, AVAILABLE bed — or, since G2-B3a (D5), a RESERVED one, which says so and
+// which the form asks about before it sends — can be chosen; every other bed is shown dimmed WITH its
 // reason (occupied, cleaning, closed…), so a nurse looking for a bed sees why one is not offered.
 // A choice is a pressed button (aria-pressed); the beds of a room are one group with the room's
 // name. A unit button is named "unit · its free beds", a bed button "label · room · unit" and, when
@@ -21,9 +22,10 @@ const withOpen = (unit, room, bed) => ({
   ...bed, open: unit.is_active !== false && room.is_active !== false && bed.is_active !== false,
 });
 
-/** The beds of a unit an admission can take: open (bed, room and unit) and AVAILABLE. */
+/** The FREE beds of a unit: open (bed, room and unit) and AVAILABLE. A reserved bed can be chosen
+ *  (G2-B3a, D5) but is not counted free: it waits for someone. */
 const freeBeds = (unit) => (unit.rooms ?? []).flatMap((room) =>
-  (room.beds ?? []).filter((bed) => admissible(withOpen(unit, room, bed))));
+  (room.beds ?? []).filter((bed) => admissible(withOpen(unit, room, bed)) && bed.state === "AVAILABLE"));
 
 /** `structure`: GET /tenant/structure's answer, null until the first; `phase` / `error`: the
  *  provider's (StructureProvider.jsx) — with no answer yet, "failed" says so and offers `onRetry`,
@@ -86,16 +88,19 @@ export function BedPicker({ structure, phase, error, onRetry, unitId, bedId, onU
                   // The bed as every screen of the slice names it (A-17), not its bare label "1"
                   // (walk M-3); a held bed says why after it. Chosen is `aria-pressed`.
                   const label = `${b.label} · ${room.name} · ${unit.name}`;
+                  // G2-B3a (D5): a reserved bed is choosable and says so; the form asks before it sends.
+                  const reserved = !why && b.state === "RESERVED" ? t("kabul.state.RESERVED") : null;
                   return (
                     <button key={b.id} id={b.id === firstFree ? focusId : undefined} type="button" aria-pressed={chosen}
                       aria-disabled={why ? "true" : undefined} aria-describedby={b.id === firstFree ? describedBy : undefined}
-                      aria-label={why ? `${label} · ${t(why)}` : label}
+                      aria-label={why ? `${label} · ${t(why)}` : reserved ? `${label} · ${reserved}` : label}
                       onClick={() => {
                         if (!why) onBed({ id: b.id, unitId: unit.id, label });
                       }}
                       className={`grid min-w-[72px] place-items-center rounded-ctl border px-2.5 py-2 text-13 ${chosen ? "border-pri bg-pri text-onpri" : "border-line2 bg-card text-ink"} ${why ? "cursor-not-allowed opacity-55" : ""} ${FOCUS_RING}`}>
                       <b className="font-data text-15">{b.label}</b>
                       {why ? <span aria-hidden="true" className="text-10.5">{t(why)}</span> : null}
+                      {reserved ? <span aria-hidden="true" className="text-10.5">{reserved}</span> : null}
                     </button>
                   );
                 })}
