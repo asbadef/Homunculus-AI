@@ -22,13 +22,20 @@ SPEC_KEYS = {
     "devices.manage", "clinical.chart", "scores.sign",
     "beds.release",       # G2-B1a (spec D8)
     "devices.map_beds",   # G2-ESLEME monitor→bed editor (spec D2)
+    "beds.manage_state",  # G2-B3a Doluluk: reserve / out of service (spec D4)
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_three_keys():
-    assert len(SPEC_KEYS) == 23
+def test_the_catalogue_is_exactly_the_specified_twenty_four_keys():
+    assert len(SPEC_KEYS) == 24
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
+
+
+def test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states():
+    from homunculus.auth.permissions import DEFAULT_GROUPS
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "beds.manage_state" in g["permissions"]}
+    assert holders == {"hospital_admin", "charge_nurse"}
 
 
 def test_every_key_has_a_description():
@@ -124,7 +131,7 @@ SPEC_GROUPS = {
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds"}),
+                                    "devices.map_beds", "beds.manage_state"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
                              "clinical.chart", "beds.release"}),
