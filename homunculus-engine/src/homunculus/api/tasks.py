@@ -198,3 +198,98 @@ def hand_state(state: str, due_at: datetime, *, grace_min: int, now: datetime) -
     """A hand task's state and whether it is late: only an OPEN task past its grace is (spec D4)."""
     late = state == "open" and now > due_at + timedelta(minutes=grace_min)
     return state, late
+
+# ----------------------------------------------------------------------------- rows and the store
+
+@dataclass(frozen=True)
+class TaskRow:
+    """A hand task (spec D6). `title` and `skip_reason` are plain text here; the Postgres store
+    encrypts them at rest (`crypto.encrypt_phi`). People are the actor's username, as `charted_by`."""
+    id: str
+    tenant: str
+    patient_id: str
+    title: str
+    due_at: datetime
+    target_role: str
+    created_by: str
+    created_at: datetime
+    state: str = "open"
+    claimed_by: str | None = None
+    claimed_at: datetime | None = None
+    closed_by: str | None = None
+    closed_at: datetime | None = None
+    skip_reason: str | None = None
+
+    def as_dict(self, *, grace_min: int, now: datetime) -> dict:
+        state, late = hand_state(self.state, self.due_at, grace_min=grace_min, now=now)
+        return {"id": self.id, "patient_id": self.patient_id, "title": self.title, "due_at": _iso(self.due_at),
+                "target_role": self.target_role, "state": state, "late": late,
+                "created_by": self.created_by, "created_at": _iso(self.created_at),
+                "claimed_by": self.claimed_by, "claimed_at": _iso(self.claimed_at),
+                "closed_by": self.closed_by, "closed_at": _iso(self.closed_at)}
+
+
+def new_task(*, tenant: str, patient_id: str, title: str, due_at: datetime, target_role: str,
+             created_by: str, now: datetime) -> TaskRow:
+    return TaskRow(id=str(uuid.uuid4()), tenant=tenant, patient_id=patient_id, title=title, due_at=due_at,
+                   target_role=target_role, created_by=created_by, created_at=now)
+
+
+class TaskStore(Protocol):
+    """What the router needs. `tenant` is the hospital slug (the audit's tenant key)."""
+    def create(self, row: TaskRow) -> TaskRow: ...
+    def get(self, tenant: str, task_id: str) -> TaskRow | None: ...
+    def list(self, tenant: str, *, since: datetime, until: datetime, patient_ids: set[str]) -> list[TaskRow]: ...
+    def update(self, row: TaskRow) -> TaskRow: ...
+    def settings(self, tenant: str) -> TaskSettings | None: ...
+    def save_settings(self, tenant: str, settings: TaskSettings, *, by: str, now: datetime) -> TaskSettings: ...
+    def admitted_at(self, tenant: str, patient_id: str) -> datetime | None: ...
+    def timezone(self, tenant: str) -> str: ...
+    def close(self) -> None: ...
+
+
+class InMemoryTaskStore:
+    """For tests and for a deployment without Postgres (rows vanish on restart). `zones` and
+    `admitted` let a test say what the tenants table and the admissions would say."""
+
+    def __init__(self, *, zones: dict[str, str] | None = None,
+                 admitted: dict[tuple[str, str], datetime] | None = None) -> None:
+        self._rows: dict[tuple[str, str], TaskRow] = {}
+        self._settings: dict[str, TaskSettings] = {}
+        self._zones = dict(zones or {})
+        self._admitted = dict(admitted or {})
+
+    def create(self, row: TaskRow) -> TaskRow:
+        self._rows[(row.tenant, row.id)] = row
+        return row
+
+    def get(self, tenant: str, task_id: str) -> TaskRow | None:
+        return self._rows.get((tenant, task_id))
+
+    def list(self, tenant: str, *, since: datetime, until: datetime, patient_ids: set[str]) -> list[TaskRow]:
+        rows = [r for (t, _), r in self._rows.items()
+                if t == tenant and r.patient_id in patient_ids and since <= r.due_at < until]
+        return sorted(rows, key=lambda r: (r.due_at, r.created_at, r.id))
+
+    def update(self, row: TaskRow) -> TaskRow:
+        if (row.tenant, row.id) not in self._rows:
+            raise KeyError(row.id)
+        self._rows[(row.tenant, row.id)] = row
+        return row
+
+    def settings(self, tenant: str) -> TaskSettings | None:
+        return self._settings.get(tenant)
+
+    def save_settings(self, tenant: str, settings: TaskSettings, *, by: str, now: datetime) -> TaskSettings:
+        saved = replace(settings, updated_at=now, updated_by=by)
+        self._settings[tenant] = saved
+        return saved
+
+    def admitted_at(self, tenant: str, patient_id: str) -> datetime | None:
+        return self._admitted.get((tenant, patient_id))
+
+    def timezone(self, tenant: str) -> str:
+        return self._zones.get(tenant, "UTC")
+
+    def close(self) -> None:
+        return None
