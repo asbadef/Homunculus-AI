@@ -194,6 +194,14 @@ const ADMISSIONS = [
 const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
   label_height_mm: 30, printer_dpi: 203, updated_at: null };
 
+// G3-02: one patient with a late vital and one open hand task, so the sweep meets every state word.
+const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-09T04:00:00Z" }, now: "2026-10-08T10:00:00Z",
+  settings: { grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null } },
+  patients: [{ patient_id: "S-001", bed_key: "REA^01^2", unit_id: "REA-01",
+    vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
+    tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
+const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -222,6 +230,10 @@ async function openAt(path) {
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
+
+      // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
+      api.tasks.mockResolvedValue(TASKS_SWEEP);
+      api.taskSettings.mockResolvedValue(TASK_SETTINGS_SWEEP);
     },
   });
   await act(async () => { await mounted.board.start(); });

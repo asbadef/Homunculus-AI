@@ -58,6 +58,10 @@ import protokol from "./strings/protokol.js";
 
 // G3-01: the bedside measurement — the «Yatak başı ölçüm» page, «Ölçüm gir», «hatalı giriş».
 import olcum from "./strings/olcum.js";
+
+// G3-02: Görevlerim — the task queue, its dialogs and the Yönetim › Görevler tab.
+import gorevler from "./strings/gorevler.js";
+
 // Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
 
@@ -95,6 +99,9 @@ export const NAMESPACES = {
   protokol, // G2-B1d
 
   olcum, // G3-01
+
+  gorevler, // G3-02
+
   waves, // dalga
 };
 

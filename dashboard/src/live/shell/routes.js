@@ -32,6 +32,8 @@ import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
 
 import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
 
+import { GorevlerScreen } from "../screens/gorevler/GorevlerScreen.jsx"; // G3-02
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -53,6 +55,8 @@ const SCREENS = Object.freeze({
   kabul: KabulScreen, // G2-B1a — Hasta Kabul: admission, discharge, beds
 
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
+
+  gorevler: GorevlerScreen, // G3-02 — Görevlerim: the ward's task queue
 
   settings: SettingsScreen,
 });
@@ -92,6 +96,11 @@ export const ROUTES = Object.freeze([
   // so nobody's home moves; a session that only charts lands here.
   route({ id: "olcum", path: "/olcum", icon: "heart", labelKey: "olcum.nav", shortKey: "olcum.navShort",
     perms: ["clinical.chart"], work: true, nav: "main" }),
+
+  // G3-02 (D12) — Görevlerim: for whoever reads the queue (`tasks.view`). After Ölçüm, so nobody's home moves;
+  // a session that only reads tasks lands here.
+  route({ id: "gorevler", path: "/gorevler", icon: "clip", labelKey: "gorevler.nav", shortKey: "gorevler.navShort",
+    perms: ["tasks.view"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

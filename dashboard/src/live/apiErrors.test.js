@@ -152,7 +152,9 @@ describe("the auth surface's messages are translated", () => {
 
   it("every mapped key has its text in the four languages", () => {
     for (const key of new Set(API_MESSAGE_KEYS.values())) {
-      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][`errors.${key}`], `${lang} ${key}`).toBeTruthy();
+      // a bare name lives under `errors.`; a key with a dot (G3-02's gorevler.err.*) is already whole
+      const full = key.includes(".") ? key : `errors.${key}`;
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][full], `${lang} ${key}`).toBeTruthy();
     }
   });
 });
@@ -741,6 +743,22 @@ describe("a 422 for a field the server does not take, or a number that is not on
       for (const key of ["kabul.invalid.extraField", "kabul.invalid.number"]) {
         expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
       }
+    }
+  });
+});
+
+// G3-02 — Görevlerim: the queue's refusals, by code (err.apiCode) and by the server's words.
+describe("the task queue's refusals (G3-02)", () => {
+  it("maps the task queue's refusals by code and by words", () => {
+    expect(apiErrorKey(Object.assign(new Error("The task is already closed."), { status: 409, apiCode: "task_not_open" })).key).toBe("gorevler.err.notOpen");
+    expect(apiErrorKey(Object.assign(new Error("görev bulunamadı"), { status: 404 })).key).toBe("gorevler.err.taskNotFound");
+    expect(apiErrorKey(Object.assign(new Error("a person signs a task: this credential names no actor"), { status: 403 })).key).toBe("gorevler.err.person");
+  });
+  it("every coded refusal of the queue has its text in the four languages", () => {
+    for (const code of ["task_settings_range", "task_title_length", "task_due_window", "task_role_unknown", "task_not_open", "task_reason_length", "vital_not_due"]) {
+      const hit = apiErrorKey(Object.assign(new Error("x"), { status: 422, apiCode: code }));
+      expect(hit?.key, code).toMatch(/^gorevler\.err\./);
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
     }
   });
 });

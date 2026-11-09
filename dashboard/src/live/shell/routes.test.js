@@ -263,3 +263,14 @@ describe("the path inside an address's hash", () => {
     expect(matchRoute("/patients/P%3F1")).toMatchObject({ params: { id: "P?1" } });
   });
 });
+
+// G3-02 — Görevlerim: the ward's task queue, for whoever reads it.
+describe("G3-02 — Görevlerim", () => {
+  it("opens with tasks.view, after Ölçüm, and is a work screen", () => {
+    expect(navRoutes(["tasks.view"]).main.map((r) => r.id)).toEqual(["gorevler"]);
+    expect(homePath(["tasks.view"])).toBe("/gorevler");
+    expect(homePath(["clinical.chart", "tasks.view"])).toBe("/olcum");
+    const ids = ROUTES.filter((r) => r.nav === "main").map((r) => r.id);
+    expect(ids.indexOf("gorevler")).toBe(ids.indexOf("olcum") + 1);
+  });
+});
