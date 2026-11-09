@@ -192,3 +192,38 @@ class TestWriting:
         assert client.post("/tasks/vitals/S-001/skip", json={"reason": "x"}, headers=NURSE).status_code == 409
         _seen(client, "S-003")                                                       # unknown anchor
         assert client.post("/tasks/vitals/S-003/skip", json={"reason": "x"}, headers=NURSE).status_code == 409
+
+
+class TestSettings:
+    def test_defaults_until_saved_structure_manage_only(self, client):
+        assert client.get("/tasks/settings", headers=NURSE).status_code == 403
+        r = client.get("/tasks/settings", headers=ADMIN)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["configured"] is False and body["shift_start_a"] == 8 and body["shift_start_b"] == 20
+        assert body["grace_min"] == 30 and body["intervals"] == DEFAULT_SETTINGS.intervals
+        assert body["default_source"] == {"b0": "news2-rcp-2017"}
+
+    def test_put_validates_saves_and_audits(self, client):
+        good = {"shift_start_a": 8, "shift_start_b": 20, "grace_min": 45,
+                "intervals": {"b0": 720, "b1_4": 360, "b3_single": 60, "b5_6": 60, "b7": 30}}
+        r = client.put("/tasks/settings", json=good, headers=ADMIN)
+        assert r.status_code == 200, r.text
+        assert r.json()["configured"] is True and r.json()["grace_min"] == 45 and r.json()["updated_by"] == "admin.lbys"
+        assert client.get("/tasks/settings", headers=ADMIN).json()["intervals"]["b1_4"] == 360
+        assert client.put("/tasks/settings", json={**good, "shift_start_b": 8}, headers=ADMIN).status_code == 422
+        assert client.put("/tasks/settings", json={**good, "grace_min": 241}, headers=ADMIN).status_code == 422
+        assert client.put("/tasks/settings", json={**good, "intervals": {**good["intervals"], "b7": 4}}, headers=ADMIN).status_code == 422
+        assert client.put("/tasks/settings", json={**good, "intervals": {"b0": 720}}, headers=ADMIN).status_code == 422
+        rows = client.app.state.audit.records(tenant="h1", event_type="task_settings_changed", limit=5)
+        assert rows[-1].payload["actor"] == "admin.lbys" and rows[-1].payload["after"]["grace_min"] == 45
+        assert rows[-1].payload["before"]["grace_min"] == 30
+
+    def test_the_queue_uses_the_saved_intervals(self, client):
+        client.put("/tasks/settings", json={"shift_start_a": 8, "shift_start_b": 20, "grace_min": 30,
+                                            "intervals": {"b0": 720, "b1_4": None, "b3_single": 60, "b5_6": None, "b7": None}},
+                   headers=ADMIN)
+        at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 26}], at)          # b3_single, now 60 min
+        vital = _card(client, "S-001")["vital"]
+        assert vital["band"] == "b3_single" and vital["interval_min"] == 60 and vital["state"] == "plan"

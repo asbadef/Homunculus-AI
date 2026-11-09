@@ -765,7 +765,19 @@ CALLER_ELSEWHERE = {("GET", "/infinity-waves/{device_id}")}
 # G2-B1d (spec D12): the bridge's patient query — the device credential's own hospital, through
 # the app's `_caller`, outside `homunculus.api.app` (api/edge_query.py, E2).
 DEVICE_ONLY = {("POST", "/edge/patient-query")}
-UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | {
+# G3-02: the task queue (api/tasks.py) is a factory router bound to the app's `_caller` and its scoped
+# board (`_board_for`): the caller's own hospital, a patient only when on the caller's board.
+TASK_QUEUE = {
+    ("GET", "/tasks"),
+    ("POST", "/tasks"),
+    ("POST", "/tasks/{task_id}/claim"),
+    ("POST", "/tasks/{task_id}/done"),
+    ("POST", "/tasks/{task_id}/skip"),
+    ("POST", "/tasks/vitals/{patient_id}/skip"),
+    ("GET", "/tasks/settings"),
+    ("PUT", "/tasks/settings"),
+}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -824,4 +836,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE - DEVICE_ONLY == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE - DEVICE_ONLY - TASK_QUEUE == board

@@ -489,5 +489,31 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         log.info("vital measurement skipped by %s for one interval (reason length %d)", actor, len(reason))
         return {"patient_id": patient_id, "skipped_until": _iso(until)}
 
-    # Task 6 appends the settings routes here.
+    @router.get("/tasks/settings")
+    async def read_settings(authorization: str | None = Header(default=None)):
+        who = await caller(authorization)
+        _require(who, STRUCTURE_MANAGE)
+        settings, configured = _settings(who.hospital)
+        return settings.as_dict(configured)
+
+    @router.put("/tasks/settings")
+    async def write_settings(body: dict = Body(...), authorization: str | None = Header(default=None)):
+        who = await caller(authorization)
+        _require(who, STRUCTURE_MANAGE)
+        actor = _person(who)
+        intervals = body.get("intervals")
+        if not isinstance(intervals, dict):
+            raise _refuse(422, TASK_SETTINGS_RANGE)
+        wanted = TaskSettings(shift_start_a=body.get("shift_start_a"), shift_start_b=body.get("shift_start_b"),
+                              grace_min=body.get("grace_min"), intervals={k: intervals.get(k) for k in intervals})
+        code = wanted.refusal()
+        if code is not None:
+            raise _refuse(422, code)
+        before, _ = _settings(who.hospital)
+        now = clock()
+        saved = store.save_settings(who.hospital, wanted, by=actor, now=now)
+        _event(who.hospital, "task_settings_changed", "", "settings",
+               {"actor": actor, "before": before.as_dict(True), "after": saved.as_dict(True)})
+        return saved.as_dict(True)
+
     return router
