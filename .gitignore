@@ -8,3 +8,20 @@ Thumbs.db
 *.db
 *.db-journal
 *.db-wal
+
+# Referans ekran gorselleri (ic kullanim, dagitilmaz)
+docs/referans-ekranlar/
+
+# Gemini API anahtari (gizli, asla commit edilmez)
+gemini.txt
+
+# Egitim videolari ve ekran kayitlari (buyuk ikili - GitHub'a gitmez, ayri yedeklenir)
+*Eğitimleri/
+*.mp4
+
+# Python sanal ortami
+.venv-homunculus/
+
+# Baska depolarin yerel kopyalari (nested, karismasin)
+_asbadef-main/
+_asbadef-tasarim/
