@@ -102,6 +102,7 @@ export default defineConfig({
       "/infinity-research",
       "/infinity-shadow",   // Aşama A's monitor strip (the board GET; the POST is the hub forwarder's)
       "/infinity-waves",    // Lane C (dalga): the live waveform panel's GET
+      "/tasks",             // G3-02: Görevlerim — the queue and its settings
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {

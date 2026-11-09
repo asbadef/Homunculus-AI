@@ -69,6 +69,15 @@ export function fakeApi(vi, { access = null } = {}) {
     // G3-01: the bedside form's preview and the «hatalı giriş» withdrawal (screens/bedside, trends)
     previewChart: vi.fn(),
     retractEntry: vi.fn(),
+    // G3-02: Görevlerim — the queue, its writes and the settings tab
+    tasks: vi.fn(),
+    createTask: vi.fn(),
+    claimTask: vi.fn(),
+    doneTask: vi.fn(),
+    skipTask: vi.fn(),
+    skipVitalTask: vi.fn(),
+    taskSettings: vi.fn(),
+    saveTaskSettings: vi.fn(),
 
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),

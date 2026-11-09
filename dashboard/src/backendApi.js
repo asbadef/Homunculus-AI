@@ -924,6 +924,21 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     protocolSettings() { return authed("/admin/protocol-settings"); },
     /** {next_no, label_width_mm, label_height_mm, printer_dpi} → as protocolSettings() */
     saveProtocolSettings(body) { return authed("/admin/protocol-settings", { method: "PUT", body }); },
+    // G3-02: Görevlerim — the task queue, its writes and the hospital's settings (homunculus/api/tasks.py).
+    tasks(from = null, to = null) {
+      const q = new URLSearchParams();
+      if (from) q.set("from", from);
+      if (to) q.set("to", to);
+      const s = q.toString();
+      return authed(`/tasks${s ? `?${s}` : ""}`);
+    },
+    createTask(body) { return authed("/tasks", { method: "POST", body }); },
+    claimTask(id) { return authed(`/tasks/${seg(id)}/claim`, { method: "POST" }); },
+    doneTask(id) { return authed(`/tasks/${seg(id)}/done`, { method: "POST" }); },
+    skipTask(id, reason) { return authed(`/tasks/${seg(id)}/skip`, { method: "POST", body: { reason } }); },
+    skipVitalTask(patientId, reason) { return authed(`/tasks/vitals/${seg(patientId)}/skip`, { method: "POST", body: { reason } }); },
+    taskSettings() { return authed("/tasks/settings"); },
+    saveTaskSettings(body) { return authed("/tasks/settings", { method: "PUT", body }); },
     /** {protocol_no, display_name, date_of_birth, sex, unit_name, bed_label, label: {width_mm,
      *  height_mm, printer_dpi}} — every call is an audited print (`reprint`: not the first). */
     admissionLabel(id, reprint = false) {
