@@ -160,14 +160,15 @@ export function bedNamer(t, view, ids, locale) {
   });
 }
 
-/** Can an admission take this bed? Open, and AVAILABLE. */
-export const admissible = (bed) => Boolean(bed?.open) && bed.state === "AVAILABLE";
+/** Can an admission take this bed? Open, and AVAILABLE — or RESERVED, which the form asks about
+ *  first (G2-B3a, D5): the server takes it only with `confirm_reserved`. */
+export const admissible = (bed) => Boolean(bed?.open) && (bed.state === "AVAILABLE" || bed.state === "RESERVED");
 
 /** Why a bed is not offered, as an i18n key — or null when it is. Closed wins over its state. */
 export function unavailableKey(bed) {
   if (!bed) return null;
   if (!bed.open) return "kabul.bedClosed";
-  if (bed.state === "AVAILABLE") return null;
+  if (bed.state === "AVAILABLE" || bed.state === "RESERVED") return null;
   return BED_STATE_KEYS[bed.state] ?? "kabul.bedOther";
 }
 
@@ -180,4 +181,5 @@ export const BED_STATE_KEYS = Object.freeze({
   HOUSEKEEPING: "kabul.state.HOUSEKEEPING",
   MAINTENANCE: "kabul.state.MAINTENANCE",
   BLOCKED: "kabul.state.BLOCKED",
+  RESERVED: "kabul.state.RESERVED",   // G2-B3a
 });
