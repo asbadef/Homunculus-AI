@@ -22,11 +22,13 @@ SPEC_KEYS = {
     "devices.manage", "clinical.chart", "scores.sign",
     "beds.release",       # G2-B1a (spec D8)
     "devices.map_beds",   # G2-ESLEME monitor→bed editor (spec D2)
+    "tasks.view",         # G3-02 Görevlerim (spec D8): open the queue, read /tasks
+    "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_three_keys():
-    assert len(SPEC_KEYS) == 23
+def test_the_catalogue_is_exactly_the_specified_twenty_five_keys():
+    assert len(SPEC_KEYS) == 25
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -111,25 +113,28 @@ SPEC_GROUPS = {
     "attending": (True, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                 "admissions.sign_off", "admissions.move.initiate",
                                 "care_team.claim", "care_team.assign", "handover.sign",
-                                "break_glass.use", "clinical.chart", "scores.sign"}),
+                                "break_glass.use", "clinical.chart", "scores.sign",
+                                "tasks.view", "tasks.manage"}),
     "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
                                      "admissions.view", "admissions.sign_off",
                                      "admissions.move.initiate", "handover.sign",
-                                     "break_glass.use", "clinical.chart", "scores.sign"}),
+                                     "break_glass.use", "clinical.chart", "scores.sign",
+                                     "tasks.view", "tasks.manage"}),
     "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                  "handover.sign", "break_glass.use", "clinical.chart",
-                                 "scores.sign"}),
+                                 "scores.sign", "tasks.view", "tasks.manage"}),
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds"}),
+                                    "devices.map_beds", "tasks.view", "tasks.manage"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
-                             "clinical.chart", "beds.release"}),
+                             "clinical.chart", "beds.release", "tasks.view", "tasks.manage"}),
     "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
-                                      "admissions.view", "break_glass.use", "clinical.chart"}),
+                                      "admissions.view", "break_glass.use", "clinical.chart",
+                                      "tasks.view", "tasks.manage"}),
     "auditor": (False, False, {"board.view", "audit.view"}),
     "platform_support": (True, False, {"audit.view", "devices.manage"}),
     "pharmacist": (False, False, {"board.view", "admissions.view"}),
