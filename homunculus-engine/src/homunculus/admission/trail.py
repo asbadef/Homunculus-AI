@@ -40,7 +40,8 @@ async def hospital_of(db: AsyncSession, tenant_id: uuid.UUID) -> str:
 #: our own rows that the admission, bed and structure rows name. An ALLOW-list, not a pattern: a
 #: key merely ending in "_id" (a `national_id`, a HIS reference) identifies a person and stays
 #: out. A new row type whose ids should be logged adds them here.
-LOGGED_KEYS = ("kind", "id", "admission_id", "bed_id", "unit_id", "room_id", "site_id")
+LOGGED_KEYS = ("kind", "id", "admission_id", "bed_id", "unit_id", "room_id", "site_id",
+               "handover_id")          # G2-B3b: the handover rows (`handover.*`)
 
 
 def _ids(payload: dict) -> str:

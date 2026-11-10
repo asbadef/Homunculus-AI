@@ -16,7 +16,10 @@ writes from the first into the second, and nothing else in `admission/` does:
 * `open_critical`      how many critical alerts on this patient's board nobody has acknowledged —
                        a latched one (`resolved_at` set, G2-A1) counted as firing ones are: the
                        same alerts the clinician sees, never the Postgres escalation tables;
-* `is_discharged`      whether the number is a `kabul` tombstone — asked by the writes below
+* `handover_summary`   what the card shows of a patient now — risk, NEWS2, the vitals, a pressor,
+                       the alerts — sealed by a handover at its outgoing signature (G2-B3b, D6);
+                       no name and no free text;
+* `is_discharged`     whether the number is a `kabul` tombstone — asked by the writes below
                        (`_refuse_discharged`) and by the bed's card check before it is freed
                        (tenant/router.py `_last_card_off`). The app's doors that drop a reading
                        for a tombstone before the engine (A-11) ask
@@ -314,6 +317,37 @@ class BoardLink:
         board = self._plain_card(tenant, patient_number,
                                  self._identities.get(tenant, patient_number))
         return count_open_critical(board.get("alerts") or [])
+
+    def handover_summary(self, tenant: str, patient_number: str) -> dict:
+        """G2-B3b (D6): what the board shows of this patient now, for a handover to seal at its
+        outgoing signature — the risk, NEWS2's total and whether it is partial, the five vitals
+        the card leads with, whether a pressor runs, the alerts on the card (kind, severity,
+        acknowledged: firing and latched alike) and the moment it was read. Read from the plain
+        card, as `open_critical` reads it. No name, no free text, nobody's user name: the card's
+        identity and an alert's `acknowledged_by` stay where they are. A patient never measured
+        (or discharged: a tombstone's card is its removal) gets the moment only."""
+        captured_at = self._clock().isoformat()
+        engine = self._engine(tenant)
+        if patient_number not in set(engine.patient_ids()):
+            return {"captured_at": captured_at}
+        card = self._plain_card(tenant, patient_number,
+                                self._identities.get(tenant, patient_number))
+        if card.get("removed"):
+            return {"captured_at": captured_at}
+        latest = card.get("latest") or {}
+        news2 = latest.get("news2") or {}
+        meds = card.get("meds") or {}
+        return {
+            "risk": card.get("risk"),
+            "news2": {"total": news2.get("total"), "partial": news2.get("partial")},
+            "latest": {key: latest.get(key)
+                       for key in ("heart_rate", "map", "spo2", "resp_rate", "temperature")},
+            "on_pressor": bool(meds.get("on_pressor")),
+            "open_alerts": [{"kind": a.get("kind"), "severity": a.get("severity"),
+                             "acknowledged": bool(a.get("acknowledged"))}
+                            for a in card.get("alerts") or [] if isinstance(a, dict)],
+            "captured_at": captured_at,
+        }
 
     def is_discharged(self, tenant: str, patient_number: str) -> bool:
         """True when the number is a `kabul` tombstone — a patient discharged here. A HIS-fed
