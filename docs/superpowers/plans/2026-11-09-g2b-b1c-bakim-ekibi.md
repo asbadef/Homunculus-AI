@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Refreshed 2026-11-10 for base `ea61714a` (origin/main).** The plan was written against `6302ccd8` (G2-B3a's head, migration head `0016`). Main has since gained G2-B5 (RRT), G3-02 «Görevlerim» (migration `0017_tasks`), G3-03 «Sıvı dengesi» (the FluidsBox on the patient screen), G2-B3b «Vardiya devri» (the handover routes in `admission/router.py`) and the screens' lazy loading. What this refresh changed: `0017` is on main, so the worktree holds no untracked copy and no test waits for it (X1, Task 0 Step 4); B3a's two baseline failures are fixed on main, so the no-DB suite starts green; the pins (`EXPECTED` 72 → 73 → 74, the pinned `CODES` 30 → 33, the charge nurse's set with G3-02's `tasks.*`, Denetim's `EVENT_TYPES` 37 → 40); the text anchors that B3b and G3 moved (`_board_summary` before the sign-off, the schemas and models imports, `catalog.js`, `INVALID_FIELD_KEYS`); the guide section is §3.19; departures X11–X13. Nothing on the new base changes what a B1c step means: G3-02's tasks and B3b's handovers read neither the care team nor `attending_physician_id`, and no new permission overlaps `care_team.*`. The spec's §0 is dated `c3965ed5` and is left as it is; of its facts only F11 has moved: B3b's `GET /handovers/colleagues` now lists the tenant's `handover.sign` holders, nurses included, to a `handover.sign` holder. That is not the picker (physicians only, the team left out, `care_team.assign`), so Task 7's candidates route stands.
+
 **Goal:** The record of who is responsible for a patient is written, shown and kept correct. A «Bakım ekibi» box on the patient screen shows the attending, the associates and the on-call physicians, and lets an authorised user add and remove them. The physician who signs the admission becomes its attending. Each member sees her patient on the board, even outside her units.
 
 **Architecture:**
@@ -15,7 +17,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy 2 (async), Alembic, Postgres 16, pytest. React 18, Vitest, Testing Library.
 
-**Spec:** `docs/superpowers/specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md` (branch `docs/g2b-b1b-b1c` @ `4f9e9490`), with the owner's decisions D1–D9 of 2026-11-09. The owner approved the design on 2026-11-09 and asked for the work. **Read §0, §2, §3 and §5 of the spec before Task 1.** The companion spec `2026-11-09-g2b-b1b-nakil-design.md` §5.9 gives B1b's part of migration `0018`.
+**Spec:** `docs/superpowers/specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md` (branch `docs/g2b-b1b-b1c` @ `81a8f98b`; its line numbers are dated `c3965ed5`, as it says), with the owner's decisions D1–D9 of 2026-11-09. The owner approved the design on 2026-11-09 and asked for the work. **Read §0, §2, §3 and §5 of the spec before Task 1.** The companion spec `2026-11-09-g2b-b1b-nakil-design.md` §5.9 gives B1b's part of migration `0018`.
 
 ---
 
@@ -23,7 +25,7 @@
 
 | # | Departure | Why |
 |---|---|---|
-| X1 | **The code branch is cut from `docs/g2b-b1b-b1c`, not from main.** That branch sits on `feat/g2b-b3a-doluluk` @ `c3965ed5`. | `0018` follows G3-02's `0017`, which follows B3a's `0016`; neither is on main. The merge order is B3a, then G3-02, then this slice (G3-02 spec D18). |
+| X1 | **The code branch is cut from `docs/g2b-b1b-b1c`, which is `origin/main` @ `ea61714a` with only documents on top** (the two specs, B1b's plan and this plan). `0018` has `down_revision = "0017"`, and `0017` is a real file on main: G3-02's `0017_tasks.py` (commit `a4253b43`). | The spec said "cut from main"; the documents branch is main plus the documents, so the code travels with its specs and plans. Refreshed 2026-11-10: the plan was written at `6302ccd8`, when `0017` lived on `feat/g3-gorevlerim` only and the worktree held an untracked copy of it. B3a (`0016`) and G3-02 (`0017`) have both merged since, in the order G3-02's D18 asked. |
 | X2 | **The model also declares B1b's part of `0018`:** `TransferReason`, `admissions.transfer_reason`, `admissions.transfer_note` and the CHECK `ck_admissions_transfer_reason`. No route reads or writes them before B1b. `AdmissionResponse` gains `transfer_reason` in B1b, not here. | Every migration here has a model that agrees with it (B3a's `0016`, the parity tests). B1b then "finds its part done" (D9). |
 | X3 | **`0018` also rewrites the charge nurse's group description**, and only where it is still the default text. The downgrade puts it back. | D7 says «bakım ekibi» leaves the group's description, but the seeded description lives in the database (`groups.description`). Spec step 7 named only the permission rows. A description a hospital wrote itself is left alone. |
 | X4 | **The renewal (T8) applies to any role.** A physician whose only active row is an EXPIRED on-call row has it ended and gets the new row, whatever its role. The picker therefore leaves out exactly the physicians whose active row is not expired: in force, or a window still to come. | The picker offers an expired on-call physician (she holds "no row in force"). Read literally, T8 would then refuse her as an associate (`care_team_conflict`) right after offering her. |
@@ -33,10 +35,13 @@
 | X8 | **The sign-off task (Task 6) comes before the routes (Tasks 7–8).** | Every route test can then start from a signed admission that already holds its attending's row (D3). |
 | X9 | **The window rules are checked in the route, before reach and the locks, as 422 `field_invalid:window_start` or `field_invalid:window_end`.** The window's ends must carry an offset (`AwareDatetime`); a naive time is a 422. `CareTeamAdd` refuses unknown fields (`extra="forbid"`). | A naive time compared with the server's clock is a 500. B1a's request models refuse unknown fields the same way. |
 | X10 | **`GET …/care-team`'s member exception reads `is_active`**, not "in force". An on-call member whose window has passed still reads the team she is on, until her row is ended. | The spec says "an active row". The list carries staff names only, no patient data. |
+| X11 | **The «Denetim bütünlüğü» page names the three care-team events** (`care_team.attending`, `care_team.add`, `care_team.end`): `EVENT_TYPES` 37 → 40, a label in four languages each (Task 13, Step 4). Added by the 2026-11-10 refresh. | G2-B4's page (on main) names an engine event only through `screens/denetim/denetim.js` `EVENT_TYPES`; any other code shows as itself and is not offered in the «Tür» filter. B3a, B5 and B3b each added theirs. The spec (§5.5) names the events but not the page, which was not on its base. |
+| X12 | **G3-02's `tests/test_tasks_postgres.py` runs with the migration tests** (Task 0 Step 7, Task 2 Step 5). Added by the 2026-11-10 refresh. | It upgrades to `head`, which is `0018` once Task 2 lands, and one of its tests downgrades through `0018` to `0016`: it is the one older test that runs `0018`'s downgrade. |
+| X13 | **The patient-screen test of Task 16 answers the fluid box's read with an empty ledger** (`emptyFluids`, as `PatientScreen.test.jsx`'s `open` does). Added by the 2026-11-10 refresh. | G3-03 put `FluidsBox` on the patient screen; it reads `api.patientFluids`, which the fake leaves unanswered. Unanswered, the box shows its read failure beside the care team; the test asserts nothing about it either way. |
 
 ## Open items (not this slice)
 
-- **B3a's two open test failures at `c3965ed5`.** `test_admission_form.py::test_every_other_refusal_has_a_stable_code` lacks `bed_reserved`. `test_access_log_redaction.py::test_every_route_parameter_is_redacted_in_the_log_uri` lacks B3a's four bed routes in `deploy/local/web/nginx.conf`. B3a's lane fixes them (the first is fixed uncommitted in `/c/tmp/g2b-b3a` at the time of writing). Task 4 writes `bed_reserved` into the pinned set anyway, because it rewrites the same lines. This slice leaves the nginx bed routes to B3a.
+- **G3-02's copy of the physician groups.** `screens/gorevler/taskModel.js` holds the same three slugs (`PHYSICIAN_SLUGS`, not exported) for «Görevlerim»'s "my role". This slice adds `careTeam.js` `PHYSICIAN_GROUPS`, held equal to the engine's `PHYSICIAN_GROUPS` by its test; the two dashboard copies are not tied to each other. A later tidy can make one import the other.
 - **B1b.** It tests that a transfer copies the rows onto the arriving admission's card key (spec §6, "After a B1b transfer").
 - **Native readings** of the az, ru and en texts (O48).
 - **Spec §7:** a sweep for expired on-call rows; a box for a member outside the unit; telling an open board stream about a new member.
@@ -45,19 +50,16 @@
 
 ## Ground rules for every task
 
-- **Your worktree.** `/c/tmp/g2b-b1c`, branch `feat/g2b-b1c-bakim-ekibi`. Task 0 creates both from the head of `docs/g2b-b1b-b1c`. That branch holds `feat/g2b-b3a-doluluk` @ `c3965ed5`, the two spec commits, B1b's plan and this plan. B1b is built after this slice, on its head (B1b's plan, Task 0).
+- **Your worktree.** `/c/tmp/g2b-b1c`, branch `feat/g2b-b1c-bakim-ekibi`. Task 0 creates both from the head of `docs/g2b-b1b-b1c`. That branch is `origin/main` @ `ea61714a` with documents only on top: the two spec commits, B1b's plan and this plan (X1). B1b is built after this slice, on its head (B1b's plan, Task 0).
   - **Never touch `/c/Users/User/Desktop/Project/Homunculus AI`** (the user's main checkout), and never touch another `/c/tmp` worktree.
   - Never `git push`, never deploy, never change anything on a VM.
   - **Never run `git stash`.** The stash is shared with every other worktree and session.
-- **Migration `0017` is not this slice's.** It is G3-02's (`feat/g3-gorevlerim`). Task 0 copies it into the worktree for the tests only.
-  - **Never stage it, never commit it, never edit it.** `git status` shows it as `?? homunculus-engine/alembic/versions/0017_tasks.py` for the whole slice.
-  - If G3-02 changes it, copy it again (Task 0, Step 4) and say so in the report.
+- **Migration `0017` is G3-02's, on main** (`homunculus-engine/alembic/versions/0017_tasks.py`, commit `a4253b43`). This slice never edits it; its `0018` follows it (X1). If main gains a migration after `ea61714a`, `0018`'s `down_revision` must follow the new head: stop and report (Task 0, Step 4).
 - **Several implementers may share this worktree.** Stage and commit explicit paths only. Use `git add -- <paths>`, then `git commit -m … -m … -- <paths>`.
   - Before every commit, run `git status --short` and `git diff --cached --stat`.
   - If a staged path is not one the task lists, stop and ask.
-- **The knowledge graph.** `graphify-out/` does not exist in these worktrees (checked 2026-11-09). If it appears, the project rule applies: run `graphify query "<question>"` before the first grep or source read, and put that rule in every subagent prompt that explores code.
-- **Write and Edit tools only, on repo files.** Never use `sed`, `python`, `node` or a shell heredoc to change one. There are two exceptions:
-  - the copy of `0017` (Task 0, Step 4), which is not a repo file of this branch;
+- **The knowledge graph.** `graphify-out/` does not exist in these worktrees (checked 2026-11-09, and again on the documents branch at `ea61714a` on 2026-11-10). If it appears, the project rule applies: run `graphify query "<question>"` before the first grep or source read, and put that rule in every subagent prompt that explores code.
+- **Write and Edit tools only, on repo files.** Never use `sed`, `python`, `node` or a shell heredoc to change one. There is one exception:
   - line ends. A NEW file is written with the Write tool, then converted to **CRLF** by this one-line call, which touches only that file:
     ```bash
     /c/tmp/f7-py312/venv/Scripts/python.exe -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))" <file>
@@ -104,7 +106,7 @@
 - **Four languages for every key.** `tr` is the source; `az` is the default and the tests' language.
   - An `az` text equal to its `tr` text, or an `ru` text with no Cyrillic, fails `i18n/strings.test.js`.
   - If it does, change the wording; do not list it.
-- **Comments explain why**, in the register of the file. New lines are tagged `G2-B1c` with the spec item (`D1`…`D9`, `T1`…`T8`, `F1`…`F11`, `§n`) or the departure (`X1`…`X10`).
+- **Comments explain why**, in the register of the file. New lines are tagged `G2-B1c` with the spec item (`D1`…`D9`, `T1`…`T8`, `F1`…`F11`, `§n`) or the departure (`X1`…`X13`).
 - **Report back:**
   - DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED;
   - the commit sha;
@@ -137,7 +139,7 @@
 | `tests/test_discharge_api.py` | the sign-off's audit payload | 6 |
 | `tests/test_tenant_isolation.py` | `Side.doctor` (6); candidates (7); `Side.team_row`, the controls, end (8) | 6, 7, 8 |
 | `tests/test_care_team_reads.py` | new (DB) | 7 |
-| `tests/test_route_permissions.py` | 70 → 71 → 72 | 7, 8 |
+| `tests/test_route_permissions.py` | 72 → 73 → 74 | 7, 8 |
 | `tests/test_care_team_api.py` | new (DB) (8); the discharge (9) | 8, 9 |
 | `tests/test_admission_workflow.py` | `claim_attending` → `set_attending` | 8 |
 | `tests/test_care_team_scope.py` | new (DB) | 10 |
@@ -151,31 +153,32 @@
 | `live/i18n/strings/ekip.js` | new namespace, four languages | 13 |
 | `live/i18n/catalog.js` | registers `ekip` | 13 |
 | `live/apiErrors.js`, `live/apiErrors.test.js` | the three codes, the two window fields, 30 → 33 | 13 |
+| `live/screens/denetim/denetim.js`, `denetim.test.js`, `live/i18n/strings/denetim.js` | the three `care_team.*` events named on «Denetim bütünlüğü», 37 → 40 (X11) | 13 |
 | `live/screens/patient/careTeam/careTeam.js`, `careTeam.test.js` | new: the box's rules (pure) | 14 |
 | `live/screens/patient/careTeam/AddMemberDialog.jsx`, `AddMemberDialog.test.jsx` | new: «Ekibe ekle» | 15 |
 | `live/screens/patient/careTeam/CareTeamBox.jsx`, `CareTeamBox.test.jsx` | new: the box | 16 |
 | `live/screens/patient/PatientScreen.jsx` | mounts the box | 16 |
 
-**Docs:** the roadmap's Grup 2 table, and the Turkish guide's section 3.15 (Task 17).
+**Docs:** the roadmap's Grup 2 table, and the Turkish guide's section 3.19 (Task 17).
 
 ---
 
-### Task 0: The worktree, the shared install, migration 0017, the test database and the baseline
+### Task 0: The worktree, the shared install, the migration head, the test database and the baseline
 
-**Files:** none committed. One untracked copy: `homunculus-engine/alembic/versions/0017_tasks.py`.
+**Files:** none.
 
-- [ ] **Step 1: B3a has not moved since the spec was written**
+- [ ] **Step 1: The documents branch sits on `ea61714a`, and main has not moved**
 
 ```bash
-cd /c/tmp/g2b-b1bc && git log --oneline c3965ed5..feat/g2b-b3a-doluluk; echo ---; git log --oneline c3965ed5..docs/g2b-b1b-b1c; echo ---; git diff --stat c3965ed5 docs/g2b-b1b-b1c | tail -1; git diff --name-only c3965ed5 docs/g2b-b1b-b1c | grep -v '^docs/'
+cd /c/tmp/g2b-b1bc && git log --oneline -1 origin/main; echo ---; git merge-base --is-ancestor ea61714a docs/g2b-b1b-b1c && echo "on ea61714a"; git log --oneline ea61714a..docs/g2b-b1b-b1c; echo ---; git diff --stat ea61714a docs/g2b-b1b-b1c | tail -1; git diff --name-only ea61714a docs/g2b-b1b-b1c | grep -v '^docs/'
 ```
 
 Expected:
-- nothing above the first `---`;
-- between the two: documents only — the two spec commits (`5ff99e34`, `4f9e9490`), B1b's plan (`ab37812b`) and this plan's commit, and any later documents commit;
+- above the first `---`: `ea61714a fix(shell): review — preload from LiveApp in every phase, …` (main as last fetched);
+- between the two: `on ea61714a`, then documents only — the two spec commits (`2114bd09`, `81a8f98b`), B1b's plan (`e3a4b59f`), this plan's commits (`6b97abfb`, `dacb0df9`, `6407e1a2` and the 2026-11-10 refresh), and any later documents commit;
 - below the second: the stat line, and no path outside `docs/`.
 
-If commits appear above `---`, B3a's lane has committed its review fixes since. **Stop and report.** The controller rebases `docs/g2b-b1b-b1c` onto `feat/g2b-b3a-doluluk` (no code exists yet, so nothing conflicts). Then start again at Step 1. The two baseline failures of Step 6 may then be gone.
+If `origin/main` names another commit, main has moved since this refresh. **Stop and report.** The controller rebases `docs/g2b-b1b-b1c` onto the new main (no code exists yet, so nothing conflicts) and reads this plan's pins again against it: the route table's size (Tasks 7, 8), the pinned `CODES` (Task 4), the charge nurse's default set (Task 3), Denetim's `EVENT_TYPES` (Task 13), the migration head (Step 4) and the guide's last section (Task 17). Then start again at Step 1.
 
 - [ ] **Step 2: The worktree and the branch**
 
@@ -204,26 +207,18 @@ Expected: `LinkType : Junction`, `Target : {C:\tmp\homunculus-g1\dashboard\node_
 - before this worktree is removed, unlink it first: `cmd /c rmdir "C:\tmp\g2b-b1c\dashboard\node_modules"` removes the link only;
 - only then run `git worktree remove`.
 
-- [ ] **Step 4: G3-02's migration 0017, for the tests only**
+- [ ] **Step 4: The migration head is G3-02's `0017`, on main**
 
 ```bash
-cd /c/tmp/g2b-b1c && git show feat/g3-gorevlerim:homunculus-engine/alembic/versions/ | grep '^0017_'
-```
-
-**If it prints `0017_tasks.py`** (it did at the time of writing; commit `a4253b43` on `feat/g3-gorevlerim`):
-
-```bash
-cd /c/tmp/g2b-b1c && git show feat/g3-gorevlerim:homunculus-engine/alembic/versions/0017_tasks.py > homunculus-engine/alembic/versions/0017_tasks.py && git log -1 --format='%h %s' feat/g3-gorevlerim -- homunculus-engine/alembic/versions/0017_tasks.py && grep -n '^revision\|^down_revision' homunculus-engine/alembic/versions/0017_tasks.py && git status --short
+cd /c/tmp/g2b-b1c && git log -1 --format='%h %s' -- homunculus-engine/alembic/versions/0017_tasks.py && grep -n '^revision\|^down_revision' homunculus-engine/alembic/versions/0017_tasks.py && cd homunculus-engine && PYTHONPATH=src /c/tmp/f7-py312/venv/Scripts/python.exe -c "from alembic.config import Config; from alembic.script import ScriptDirectory; print(ScriptDirectory.from_config(Config('alembic.ini')).get_heads())"
 ```
 
 Expected:
-- the commit that last touched it;
+- `a4253b43 feat(tasks): migration 0017 (tasks, task_settings, permission rows) and the Postgres task store; …`;
 - `revision: str = "0017"` and `down_revision: Union[str, None] = "0016"`;
-- exactly one status line: `?? homunculus-engine/alembic/versions/0017_tasks.py`.
+- `['0017']`.
 
-Write the commit's sha into the report. The copy is untracked and stays so (ground rules).
-
-**If it prints nothing,** G3-02 has not written `0017` yet. Record that in the report. Task 2 still writes `0018` with `down_revision = "0017"`. Every test that runs the migration chain (`clean_db`: Task 2's file, the older migration tests, Task 11's chain) then fails with `Can't locate revision identified by '0017'`. Those tests wait for `0017`; the rest of the slice goes on. The `db_session` tests build the schema from the models and do not need the chain.
+`0017` is purely additive: it creates `tasks` and `task_settings` and grants `tasks.view` and `tasks.manage` to the six working default groups that exist when it runs. It touches neither the care team nor `admissions`. If the head is anything but `['0017']`, **stop and report**: `0018`'s `down_revision` (Task 2) must name the new head.
 
 - [ ] **Step 5: The test database**
 
@@ -239,11 +234,9 @@ Expected: `… accepting connections`.
 cd /c/tmp/g2b-b1c/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -5
 ```
 
-Expected: everything passes, the DB tests are skipped, and exactly two tests fail. Both failures are B3a's (Open items):
-- `tests/test_access_log_redaction.py::test_every_route_parameter_is_redacted_in_the_log_uri`, naming `/tenant/beds/{bed_id}/reserve`, `unreserve`, `out-of-service` and `return-to-service`;
-- `tests/test_admission_form.py::test_every_other_refusal_has_a_stable_code`, missing `bed_reserved`.
+Expected: everything passes, the DB tests are skipped, and nothing fails. (At `c3965ed5`, where the spec was written, two B3a tests failed; B3a fixed both before it merged: `87fe086d` put `bed_reserved` in the pinned set, `6c157630` put the bed routes in the log map.)
 
-Write the numbers into the report. Any other failure: stop and report.
+Record the counts (passed, skipped) in the report: every later "Task 0's count" is this one. Any failure: stop and report.
 
 - [ ] **Step 7: The Postgres baseline of the files this slice touches, one file per call**
 
@@ -260,13 +253,12 @@ The files:
 4. `tests/test_protocol_board_key.py`
 5. `tests/test_unit_scope.py`
 6. `tests/test_scope_access_reader.py`
-7. `tests/test_migration_0016_bed_occupancy.py` (with `0017` present; it runs the chain to `head`)
-8. `tests/test_migration_0010_schema_parity.py`
-9. `tests/test_tenant_isolation.py`, with `run_in_background: true`. Wait for its notification.
+7. `tests/test_migration_0016_bed_occupancy.py` (it runs the chain to `head`, `0017` today)
+8. `tests/test_tasks_postgres.py` (G3-02's `0017`: it runs the chain to `head` and back down to `0016`; X12)
+9. `tests/test_migration_0010_schema_parity.py`
+10. `tests/test_tenant_isolation.py`, with `run_in_background: true`. Wait for its notification.
 
-Expected: every file all passed, none skipped. Write the counts into the report.
-
-If 7 or 8 fails only once `0017` is present, that failure is G3-02's, not this slice's. Name it in the report.
+Expected: every file all passed, none skipped. Write the counts into the report. A failure here is the base's, not this slice's: stop and report it.
 
 - [ ] **Step 8: The dashboard baseline and the build**
 
@@ -276,8 +268,8 @@ cd /c/tmp/g2b-b1c/dashboard && ./node_modules/.bin/vite build 2>&1 | tail -6
 ```
 
 Expected:
-- the suite: every file and test passed. Write the counts into the report.
-- the build: a `precache  N entries` line and no `larger than 500 kB`. Write N into the report.
+- the suite: every file and test passed. Record the counts (files, tests) in the report.
+- the build: a `precache  N entries` line and no `larger than 500 kB`. Record N in the report. Since the lazy loading (`live/shell/routes.js`, `lazyScreen.js`) each screen is its own chunk; this slice's box and dialog join the patient screen's chunk, so N should not move.
 
 ---
 
@@ -501,7 +493,7 @@ Same command as Step 2. Expected: `5 passed`.
 cd /c/tmp/g2b-b1c/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -5
 ```
 
-Expected: Task 0's count + 5, and no failure other than Task 0's two B3a failures.
+Expected: Task 0's count + 5, and no failure.
 
 - [ ] **Step 6: Line ends, then commit**
 
@@ -521,7 +513,7 @@ git commit -m "feat(admission): one active row per member and one attending per 
 - Create: `homunculus-engine/alembic/versions/0018_care_team_transfer.py`
 - Create: `homunculus-engine/tests/test_migration_0018_care_team_transfer.py`
 
-**Needs `0017`** (Task 0, Step 4). Without it, this task's file is written, committed and left red with `Can't locate revision identified by '0017'`. Say so in the report.
+**`0018` follows `0017`, which is on main** (G3-02's `0017_tasks.py`; Task 0, Step 4). `0017` meets nothing of `0018`: it adds two tables of its own and grants `tasks.*` only to the groups that exist when it runs. This task's tests make their groups after `upgrade(cfg, "0017")`, so `0017` grants them nothing, and a downgrade to `"0017"` never runs `0017`'s own downgrade.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -542,7 +534,8 @@ never `create_all`):
 - B1b's two columns exist, and the CHECK refuses a seventh reason;
 - the downgrade restores the old key, drops the columns, and refuses loudly over a member with two
   closed rows on one admission; 0017 → 0018 → 0017 → 0018 runs.
-Synthetic rows only. Needs G3-02's 0017 in the worktree (plan Task 0, Step 4)."""
+Synthetic rows only. The revision before is G3-02's 0017 (tasks): it grants `tasks.*` only to the
+groups that exist when it runs, and every group here is made after it."""
 from __future__ import annotations
 
 import uuid
@@ -1000,6 +993,7 @@ Expected: `['0018']`.
 Then run each of these as its own Bash call (`timeout: 600000`), with the Postgres command of Task 0, Step 7:
 - `tests/test_migration_0016_bed_occupancy.py`
 - `tests/test_migration_0015_protocol.py`
+- `tests/test_tasks_postgres.py` (G3-02's: its `head` is now `0018`, and `test_downgrade_drops_only_the_new_objects` downgrades through `0018`'s downgrade to `0016`; X12)
 - `tests/test_migration_0010_schema_parity.py`
 
 Expected: all passed.
@@ -1012,10 +1006,8 @@ If one of them asserts that `head` is its own revision, change that line to name
 cd /c/tmp/g2b-b1c && for f in homunculus-engine/alembic/versions/0018_care_team_transfer.py homunculus-engine/tests/test_migration_0018_care_team_transfer.py; do /c/tmp/f7-py312/venv/Scripts/python.exe -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))" "$f"; printf '%s ' "$f"; /c/tmp/f7-py312/venv/Scripts/python.exe -c "import sys;b=open(sys.argv[1],'rb').read();print(b.count(b'\r\n'), b.count(b'\n'))" "$f"; done
 git add -- homunculus-engine/alembic/versions/0018_care_team_transfer.py homunculus-engine/tests/test_migration_0018_care_team_transfer.py
 git status --short && git diff --cached --stat
-git commit -m "feat(migration): 0018 — the care team put right under two partial unique indexes, the charge nurse's claim taken back, B1b's transfer columns (G2-B1c, §5.1, D7, D9, O45, X3)" -m "Open rows of closed admissions close; of two attendings the newest stays; a signed admission's attending gets her row. Then one active row per member and one attending per admission. The downgrade restores the old key and fails loudly over a member ended twice. 0017 (G3-02) is a local, uncommitted copy. Red: Can't locate revision '0018'." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/alembic/versions/0018_care_team_transfer.py homunculus-engine/tests/test_migration_0018_care_team_transfer.py
+git commit -m "feat(migration): 0018 — the care team put right under two partial unique indexes, the charge nurse's claim taken back, B1b's transfer columns (G2-B1c, §5.1, D7, D9, O45, X3)" -m "Open rows of closed admissions close; of two attendings the newest stays; a signed admission's attending gets her row. Then one active row per member and one attending per admission. The downgrade restores the old key and fails loudly over a member ended twice. It follows G3-02's 0017 (on main). Red: Can't locate revision '0018'." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/alembic/versions/0018_care_team_transfer.py homunculus-engine/tests/test_migration_0018_care_team_transfer.py
 ```
-
-`git status --short` still shows `?? homunculus-engine/alembic/versions/0017_tasks.py`. It is never staged.
 
 ---
 
@@ -1041,7 +1033,7 @@ with
     assert "care_team.claim" not in by_slug["charge_nurse"]     # G2-B1c (D7): it could only fail (T1)
 ```
 
-2. In `SPEC_GROUPS`, replace the `charge_nurse` entry
+2. In `SPEC_GROUPS`, replace the `charge_nurse` entry (G3-02 added `tasks.view` and `tasks.manage` to its last line)
 
 ```python
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
@@ -1049,7 +1041,7 @@ with
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds", "beds.manage_state"}),
+                                    "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage"}),
 ```
 
 with
@@ -1060,8 +1052,10 @@ with
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds", "beds.manage_state"}),
+                                    "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage"}),
 ```
+
+Only `care_team.claim` leaves; G3-02's two keys stay.
 
 3. After `test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states`, add:
 
@@ -1100,7 +1094,7 @@ In `homunculus-engine/src/homunculus/auth/permissions.py`, replace
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
-                     "devices.map_beds", "beds.manage_state")},
+                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage")},
 ```
 
 with
@@ -1116,10 +1110,10 @@ with
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
-                     "devices.map_beds", "beds.manage_state")},
+                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage")},
 ```
 
-The description must equal `0018`'s `CHARGE_AFTER` exactly.
+The description must equal `0018`'s `CHARGE_AFTER` exactly. G3-02's `tasks.view` and `tasks.manage` stay (its migration `0017` granted them to the charge nurses already seeded).
 
 - [ ] **Step 4: Run it and see it green, then the suites that read the groups**
 
@@ -1127,7 +1121,7 @@ The description must equal `0018`'s `CHARGE_AFTER` exactly.
 cd /c/tmp/g2b-b1c/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -5
 ```
 
-Expected: no failure but Task 0's two B3a failures. `tests/test_migration_0010_defaults.py` pins 0010's frozen copy and does not move.
+Expected: no failure. `tests/test_migration_0010_defaults.py` pins 0010's frozen copy and does not move.
 
 A test that pins the charge nurse's live rights may fail here with `care_team.claim` named. Remove the key from its list, the way this task removes it from `SPEC_GROUPS`. Name the file in the report, and add it to Step 5's paths.
 
@@ -1152,17 +1146,17 @@ A new code must reach, in this slice: `errors.py` (this task); the pinned set in
 
 - [ ] **Step 1: Write the failing test**
 
-In `homunculus-engine/tests/test_admission_form.py`, in `test_every_other_refusal_has_a_stable_code`, replace the end of the set. At `c3965ed5` it reads
+In `homunculus-engine/tests/test_admission_form.py`, in `test_every_other_refusal_has_a_stable_code`, replace the end of the set. At `ea61714a` it reads (30 codes; B3a's `bed_reserved` last)
 
 ```python
-                     "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",
-                     "no_protocol"}
+                     "no_protocol",
+                     # G2-B3a (spec D5, X1)
+                     "bed_reserved"}
 ```
 
 Replace it with
 
 ```python
-                     "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",
                      "no_protocol",
                      # G2-B3a (spec D5, X1)
                      "bed_reserved",
@@ -1171,7 +1165,7 @@ Replace it with
                      "care_team_attending_required"}
 ```
 
-If B3a's fix has reached this branch (Task 0, Step 1), the set already ends `"bed_reserved"}`. Then replace only `"bed_reserved"}` with `"bed_reserved",` followed by the last three lines above.
+The set then holds 33 codes, as `apiErrors.test.js` will (Task 13).
 
 - [ ] **Step 2: Run it and see it red**
 
@@ -1207,7 +1201,7 @@ CODES = CODES | frozenset({CARE_TEAM_CONFLICT, CARE_TEAM_NOT_PHYSICIAN, CARE_TEA
 cd /c/tmp/g2b-b1c/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_admission_form.py 2>&1 | tail -3
 ```
 
-Expected: all passed. B3a's `bed_reserved` failure from Task 0 is gone with it.
+Expected: all passed.
 
 - [ ] **Step 5: Line ends, then commit**
 
@@ -1215,7 +1209,7 @@ Expected: all passed. B3a's `bed_reserved` failure from Task 0 is gone with it.
 cd /c/tmp/g2b-b1c && for f in homunculus-engine/src/homunculus/admission/errors.py homunculus-engine/tests/test_admission_form.py; do printf '%s ' "$f"; /c/tmp/f7-py312/venv/Scripts/python.exe -c "import sys;b=open(sys.argv[1],'rb').read();print(b.count(b'\r\n'), b.count(b'\n'))" "$f"; done
 git add -- homunculus-engine/src/homunculus/admission/errors.py homunculus-engine/tests/test_admission_form.py
 git status --short && git diff --cached --stat
-git commit -m "feat(admission): the three care-team refusal codes (G2-B1c, §5.6)" -m "care_team_conflict, care_team_not_physician, care_team_attending_required, in their own block after B3a's. The pinned set also gains B3a's bed_reserved, missing at c3965ed5. Red: the pinned set held three codes errors.py lacked." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/src/homunculus/admission/errors.py homunculus-engine/tests/test_admission_form.py
+git commit -m "feat(admission): the three care-team refusal codes (G2-B1c, §5.6)" -m "care_team_conflict, care_team_not_physician, care_team_attending_required, in their own block after B3a's; the pinned set goes from 30 to 33. Red: the pinned set held three codes errors.py lacked." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/src/homunculus/admission/errors.py homunculus-engine/tests/test_admission_form.py
 ```
 
 ---
@@ -1622,7 +1616,7 @@ Run each as its own Bash call, with the Postgres command of Task 0, Step 7:
 
 Then the whole no-DB suite (Task 1, Step 5).
 
-Expected: all passed, apart from Task 0's one remaining B3a failure in the no-DB suite (the nginx bed routes).
+Expected: all passed, and nothing fails in the no-DB suite.
 
 - [ ] **Step 6: Line ends, then commit**
 
@@ -1928,10 +1922,10 @@ from homunculus.admission.errors import (
 )
 ```
 
-2. Replace
+2. Replace (the end of G2-B3b's `_board_summary`, which now stands between `_open_critical` and the sign-off, and the sign-off section's header)
 
 ```python
-    return link.open_critical(hospital, key)
+    return link.handover_summary(hospital, key)
 
 
 # ---------------------------------------------------------------------------
@@ -1941,7 +1935,7 @@ from homunculus.admission.errors import (
 with
 
 ```python
-    return link.open_critical(hospital, key)
+    return link.handover_summary(hospital, key)
 
 
 async def _people(db: AsyncSession, *ids: uuid.UUID | None) -> dict[uuid.UUID, tuple[str, str]]:
@@ -2220,9 +2214,9 @@ In `homunculus-engine/tests/test_route_permissions.py`:
   ```python
       ("GET", "/admissions/{admission_id}/care-team/candidates"): ANY("care_team.assign"),   # G2-B1c (D8)
   ```
-- replace `    assert len(EXPECTED) == 70                  # G2-B3a: +4, the bed moves; +1, GET /tenant/occupancy` with
+- replace `    assert len(EXPECTED) == 72      # G2-B3a: +4, the bed moves; +1, GET /tenant/occupancy; G2-B3b: + GET /handovers, GET /handovers/colleagues` with
   ```python
-      assert len(EXPECTED) == 71                  # G2-B3a: +5 (the bed moves, the occupancy read); G2-B1c: +1, the picker
+      assert len(EXPECTED) == 73      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +1, the picker
   ```
 
 In `homunculus-engine/tests/test_tenant_isolation.py`, after the `"care-team add"` entry of `BY_ID` (it ends `lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),`), add:
@@ -2249,11 +2243,12 @@ Then `tests/test_route_permissions.py` (the Postgres command, one call). Expecte
 
 In `homunculus-engine/src/homunculus/admission/schemas.py`:
 
-1. Replace
+1. Replace (G2-B3b added `model_validator`)
 
 ```python
 from pydantic import (
     AfterValidator, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo, field_validator,
+    model_validator,
 )
 ```
 
@@ -2262,7 +2257,7 @@ with
 ```python
 from pydantic import (
     AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo,
-    field_validator,
+    field_validator, model_validator,
 )
 ```
 
@@ -2337,18 +2332,20 @@ class CareTeamCandidate(BaseModel):
 
 In `homunculus-engine/src/homunculus/admission/router.py`:
 
-1. In the schemas import, replace
+1. In the schemas import, replace (G2-B3b added `Colleague` and the handover shapes)
 
 ```python
-    AlertRetire, CareTeamAdd, CareTeamMemberResponse, DischargeConfirmResponse, DischargeStart,
+    AlertRetire, CareTeamAdd, CareTeamMemberResponse, Colleague, DischargeConfirmResponse,
 ```
 
 with
 
 ```python
-    AlertRetire, CareTeamAdd, CareTeamCandidate, CareTeamMemberResponse, DischargeConfirmResponse,
-    DischargeStart,
+    AlertRetire, CareTeamAdd, CareTeamCandidate, CareTeamMemberResponse, Colleague,
+    DischargeConfirmResponse,
 ```
+
+The next line, `    DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,`, stays as it is.
 
 2. Replace the whole care-team section, from its header to the end of `list_care_team`:
 
@@ -2524,7 +2521,7 @@ async def care_team_candidates(
 Same command as Step 2. Expected: `4 passed`. Then, each as its own call:
 - `tests/test_route_permissions.py` (Postgres command): all passed;
 - `tests/test_tenant_isolation.py` (Postgres command, `run_in_background: true`; wait for its notification): all passed;
-- the no-DB file `tests/test_access_log_redaction.py`: only the B3a failure of Task 0, and `/admissions/{admission_id}/care-team/candidates` is not named in it.
+- the no-DB file `tests/test_access_log_redaction.py`: all passed (it would name `/admissions/{admission_id}/care-team/candidates` if the log map missed it).
 
 - [ ] **Step 6: Line ends, then commit**
 
@@ -2992,9 +2989,9 @@ In `homunculus-engine/tests/test_route_permissions.py`:
       ("POST", "/admissions/{admission_id}/care-team/{member_id}/end"):
           ANY("care_team.assign", "admissions.view"),          # G2-B1c: an assigner, or the member herself
   ```
-- replace the size pin's line with
+- replace the size pin's line (Task 7's `== 73`) with
   ```python
-      assert len(EXPECTED) == 72                  # G2-B3a: +5 (the bed moves, the occupancy read); G2-B1c: +2, the picker, the end
+      assert len(EXPECTED) == 74      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end
   ```
 
 In `homunculus-engine/tests/test_tenant_isolation.py`:
@@ -3123,12 +3120,12 @@ from homunculus.admission.errors import (
 )
 ```
 
-2. Replace
+2. Replace (G2-B3b added `HandoverStatus`)
 
 ```python
 from homunculus.admission.models import (
     OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX, Admission, AdmissionState, CareTeamMember,
-    DischargeDisposition, Handover, Patient,
+    DischargeDisposition, Handover, HandoverStatus, Patient,
 )
 ```
 
@@ -3138,7 +3135,7 @@ with
 from homunculus.admission.models import (
     CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX, OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX,
     Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
-    Patient,
+    HandoverStatus, Patient,
 )
 ```
 
@@ -3424,7 +3421,7 @@ async def end_care_team_member(
 Same command as Step 2. Expected: `27 passed` (the window rules run seven times, the renewal twice, the state refusals three times). Then, each as its own call:
 - `tests/test_care_team_reads.py`, `tests/test_care_team_sign_off.py`, `tests/test_care_team_service.py`, `tests/test_route_permissions.py`, `tests/test_admission_workflow.py` (the Postgres command, one call each): all passed;
 - `tests/test_tenant_isolation.py` (`run_in_background: true`; wait for its notification): all passed;
-- the whole no-DB suite (Task 1, Step 5): only the B3a nginx failure of Task 0, and neither care-team route is named in it.
+- the whole no-DB suite (Task 1, Step 5): no failure; `tests/test_access_log_redaction.py` names neither care-team route.
 
 - [ ] **Step 5: Line ends, then commit**
 
@@ -3611,7 +3608,7 @@ cd /c/tmp/g2b-b1c/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://ho
 
 Expected: `3 passed`.
 
-If the first test sees the card through her units alone, the card's identity has no `unit_id`. Read `sees_patient` (`scope/rules.py:134-155`) and report it: that is a finding about the board, not a reason to change the assertion.
+If the first test sees the card through her units alone, the card's identity has no `unit_id`. Read `sees_patient` (`scope/rules.py`, `def sees_patient`) and report it: that is a finding about the board, not a reason to change the assertion.
 
 - [ ] **Step 3: Line ends, then commit**
 
@@ -3634,7 +3631,7 @@ git commit -m "test(scope): a care-team member sees her patient outside her unit
 cd /c/tmp/g2b-b1c/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -5
 ```
 
-Expected: Task 0's passed count + 9 new tests (5 of Task 1, 1 of Task 3, 3 of Task 5) + 1 (the pinned-codes test, failing at Task 0, passes since Task 4). The one failure left is B3a's nginx bed routes (`test_every_route_parameter_is_redacted_in_the_log_uri`, naming only `/tenant/beds/…`). If B3a's fix has reached this branch, nothing fails.
+Expected: Task 0's passed count + 9 new tests (5 of Task 1, 1 of Task 3, 3 of Task 5), and nothing fails.
 
 - [ ] **Step 2: The whole Postgres suite, one file per call**
 
@@ -3772,13 +3769,16 @@ git commit -m "feat(dashboard): the API client reads, claims, adds to and ends t
 
 ---
 
-### Task 13: The words — `ekip`, the three codes and the two window fields (spec §4, §5.6)
+### Task 13: The words — `ekip`, the three codes, the two window fields and the three audit events (spec §4, §5.5, §5.6; X11)
 
 **Files:**
 - Create: `dashboard/src/live/i18n/strings/ekip.js`
 - Modify: `dashboard/src/live/i18n/catalog.js`
 - Modify: `dashboard/src/live/apiErrors.js`
 - Modify: `dashboard/src/live/apiErrors.test.js`
+- Modify: `dashboard/src/live/screens/denetim/denetim.js`
+- Modify: `dashboard/src/live/screens/denetim/denetim.test.js`
+- Modify: `dashboard/src/live/i18n/strings/denetim.js`
 
 - [ ] **Step 1: See the guard red first**
 
@@ -4075,13 +4075,13 @@ export default {
 };
 ```
 
-In `dashboard/src/live/i18n/catalog.js`:
-- after the line `import doluluk from "./strings/doluluk.js";`, add a blank line, then
+In `dashboard/src/live/i18n/catalog.js` (G2-B3b's `devir` is the last namespace at `ea61714a`; the newest slice goes after it, as B5's and B3b's did):
+- after the line `import devir from "./strings/devir.js";`, add a blank line, then
   ```js
   // G2-B1c: Bakım ekibi, the care-team box on the patient screen (screens/patient/careTeam).
   import ekip from "./strings/ekip.js";
   ```
-- in `NAMESPACES`, after the line `  doluluk, // G2-B3a`, add a blank line and `  ekip, // G2-B1c`.
+- in `NAMESPACES`, after the line `  devir, // G2-B3b`, add a blank line and `  ekip, // G2-B1c`.
 
 Keep the blank lines on either side, as the file's comments ask.
 
@@ -4108,7 +4108,7 @@ with
 ]);
 ```
 
-2. In `INVALID_FIELD_KEYS`, after the line `  ["label", "kabul.invalid.label"],`, add:
+2. In `INVALID_FIELD_KEYS`, after G2-B3b's last field, the line `  ["narrative_note", NOT_ON_SCREEN],`, add:
 
 ```js
   // G2-B1c: the on-call window (admission/router.py `_check_window`).
@@ -4116,24 +4116,92 @@ with
   ["window_end", "ekip.invalid.windowEnd"],
 ```
 
-- [ ] **Step 4: Run the guards and every string test, and see them green**
+- [ ] **Step 4: The «Denetim bütünlüğü» page names the three events (X11)**
+
+G2-B4's page names an engine event only through `EVENT_TYPES`; any other code shows as itself and is not offered in the «Tür» filter. B3a, B5 and B3b each added theirs (37 at `ea61714a`).
+
+1. In `dashboard/src/live/screens/denetim/denetim.test.js`, in `names the engine's codes and leaves every other code to show as itself`, replace
+
+```js
+    expect(EVENT_TYPES).toHaveLength(37);   // G2-B3a's four bed moves + G2-B5's rrt_call + G2-B3b's three handover events
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(37);
+```
+
+with
+
+```js
+    expect(EVENT_TYPES).toHaveLength(40);   // G2-B3a's four bed moves + G2-B5's rrt_call + G2-B3b's three handover events + G2-B1c's three care-team events
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(40);
+    expect(typeKey("care_team.attending")).toBe("denetim.type.careTeamAttending");   // G2-B1c (spec §5.5)
+    expect(typeKey("care_team.add")).toBe("denetim.type.careTeamAdd");
+    expect(typeKey("care_team.end")).toBe("denetim.type.careTeamEnd");
+```
+
+2. Run it and see it red:
 
 ```bash
-cd /c/tmp/g2b-b1c/dashboard && ./node_modules/.bin/vitest run src/live/apiErrors.test.js src/live/i18n src/live/rawKeys.test.jsx 2>&1 | tail -8
+cd /c/tmp/g2b-b1c/dashboard && ./node_modules/.bin/vitest run src/live/screens/denetim/denetim.test.js 2>&1 | tail -6
+```
+
+Expected: 1 failed, `expected [ … ] to have a length of 40 but got 37`.
+
+3. In `dashboard/src/live/screens/denetim/denetim.js`, after the line
+
+```js
+  ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
+```
+
+add:
+
+```js
+  // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
+  ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
+```
+
+4. In `dashboard/src/live/i18n/strings/denetim.js`, in `type` of each language, after that language's handover line, add the language's line below. The handover lines are, in order: `      handoverOpen: "Devir açıldı", handoverSign: "Devir imzalandı", handoverCountersign: "Devir karşı imzalandı",` (tr); `      handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",` (az); `      handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",` (ru); `      handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",` (en).
+
+```js
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
+```
+
+```js
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
+```
+
+```js
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
+```
+
+```js
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Attending physician made", careTeamAdd: "Added to the care team", careTeamEnd: "Left the care team",
+```
+
+`care_team.end` is both an assigner's removal and a member's own leaving (its payload's `self`); the label names the leaving, not who did it. These az, ru and en texts await a native reading with the rest (O48).
+
+5. Same command as item 2. Expected: all passed.
+
+- [ ] **Step 5: Run the guards and every string test, and see them green**
+
+```bash
+cd /c/tmp/g2b-b1c/dashboard && ./node_modules/.bin/vitest run src/live/apiErrors.test.js src/live/i18n src/live/screens/denetim src/live/rawKeys.test.jsx 2>&1 | tail -8
 ```
 
 Expected: all passed.
 
 If `strings.test.js` reports an `az` text equal to `tr`, or an `ru` text with no Cyrillic, change the wording. Do not list it.
 
-- [ ] **Step 5: Line ends, then commit**
+- [ ] **Step 6: Line ends, then commit**
 
 ```bash
 cd /c/tmp/g2b-b1c && /c/tmp/f7-py312/venv/Scripts/python.exe -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))" dashboard/src/live/i18n/strings/ekip.js
-for f in dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js; do printf '%s ' "$f"; /c/tmp/f7-py312/venv/Scripts/python.exe -c "import sys;b=open(sys.argv[1],'rb').read();print(b.count(b'\r\n'), b.count(b'\n'))" "$f"; done
-git add -- dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js
+for f in dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js dashboard/src/live/screens/denetim/denetim.js dashboard/src/live/screens/denetim/denetim.test.js dashboard/src/live/i18n/strings/denetim.js; do printf '%s ' "$f"; /c/tmp/f7-py312/venv/Scripts/python.exe -c "import sys;b=open(sys.argv[1],'rb').read();print(b.count(b'\r\n'), b.count(b'\n'))" "$f"; done
+git add -- dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js dashboard/src/live/screens/denetim/denetim.js dashboard/src/live/screens/denetim/denetim.test.js dashboard/src/live/i18n/strings/denetim.js
 git status --short && git diff --cached --stat
-git commit -m "feat(dashboard): the care team's words in four languages, its three refusal codes and its two window fields (G2-B1c, §4, §5.6)" -m "Red: apiErrors.test (care_team_* unmapped; field_invalid:window_start/end read the generic sentence; 33 codes)." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js
+git commit -m "feat(dashboard): the care team's words in four languages, its three refusal codes, its two window fields, and its three audit events named on «Denetim bütünlüğü» (G2-B1c, §4, §5.5, §5.6, X11)" -m "Red: apiErrors.test (care_team_* unmapped; field_invalid:window_start/end read the generic sentence; 33 codes); denetim.test (EVENT_TYPES 37, not 40)." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/i18n/strings/ekip.js dashboard/src/live/i18n/catalog.js dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js dashboard/src/live/screens/denetim/denetim.js dashboard/src/live/screens/denetim/denetim.test.js dashboard/src/live/i18n/strings/denetim.js
 ```
 
 ---
@@ -4740,6 +4808,7 @@ import { profile, token } from "../../../session/testTokens.testutil.js";
 import { ddmmhhmm } from "../../../i18n/dates.js";
 import { board, entry, identity, measured } from "../../../data/board.testutil.js";
 import { answering } from "../trends/trends.testutil.js";
+import { emptyFluids } from "../fluids/fluids.testutil.js";
 import { BED, REA, expectNoUuid, mountKabul, row as admissionRow, settle, toasts } from "../../kabul/kabul.testutil.js";
 import { PatientScreen } from "../PatientScreen.jsx";
 import { CareTeamBox } from "./CareTeamBox.jsx";
@@ -4963,6 +5032,7 @@ describe("the patient screen", () => {
         api.streamTicket.mockResolvedValue({ ticket: "t-1" });
         api.view.mockResolvedValue({ ok: true });
         api.patientTrends.mockImplementation(answering());
+        api.patientFluids.mockImplementation((pid) => Promise.resolve(emptyFluids(pid)));   // G3-03's box, an empty ledger (X13)
         api.admissions.mockResolvedValue([ACTIVE]);
         api.careTeam.mockResolvedValue([ATTENDING]);
       },
@@ -5305,21 +5375,24 @@ git commit -m "feat(dashboard): the «Bakım ekibi» box on the patient screen �
 - Modify: `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`
 - Modify: `docs/homunculus-rehber-TR.md`
 
-- [ ] **Step 1: Where B3a's docs stand**
+- [ ] **Step 1: Where the two documents end**
 
 ```bash
-cd /c/tmp/g2b-b1c && grep -n '^| G2-B3a \|^| G2-B1d ' docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md | cut -c1-40; grep -n '^### 3.1[3-5] \|^## 4\. ' docs/homunculus-rehber-TR.md
+cd /c/tmp/g2b-b1c && grep -n '^| G2-\|^\*\*Grup 3' docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md | cut -c1-40; grep -n '^### 3\.1[0-9] \|^### 3\.2[0-9] \|^---$\|^## 4\. ' docs/homunculus-rehber-TR.md | tail -8
 ```
 
-- If a `| G2-B3a |` row and a `### 3.14` section exist, B3a's Task 14 has reached this branch. Insert after them.
-- If they do not exist, insert the row after the `| G2-B1d |` row and the section before `## 4.`, still numbered 3.15. Section 3.14 is B3a's and arrives with it. The two branches then meet one conflict at each place, resolved by keeping both, B3a's first. Say so in the report.
+At `ea61714a`:
+- the «Grup 2 · durum» table's last row is `| G2-B3a |`, followed by a blank line and `**Grup 3 · durum**`;
+- the guide's last section of part 3 is `### 3.18 Vardiya devri (Grup 2 · B3b)`, ending with the line ``- **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.``, then a blank line, `---`, a blank line and `## 4. "Neden bunu kullanmıyoruz" köşesi`.
+
+The row goes after the table's last row, and the section after §3.18's last line, before that `---`, numbered **3.19**. If main has gained a row or a section since (a later documents merge), insert after the last one and number the section one past the last; B1b's §3.20 then follows this one. Say so in the report.
 
 - [ ] **Step 2: The roadmap row**
 
 In the roadmap's «Grup 2 · durum» table, insert this row (Step 1 says where). Read the neighbouring line first, because it is long:
 
 ```markdown
-| G2-B1c | Bakım ekibi (Lane B): hasta ekranında «Bakım ekibi» kutusu — sorumlu hekim (her an tek), yardımcı hekimler, nöbetçi hekimler (pencere en çok 48 saat, geçince «süresi doldu»), adla, kimlik numarası olmadan; «Önceki üyeler» katlı; «Sorumlu hekim ol» (`care_team.claim`, yalnız hekim), «Ekibe ekle» / «Sorumlu hekim yap» / «Ekipten çıkar» (`care_team.assign`), «Ekipten ayrıl» (üyenin kendisi); kabulü imzalayan hekim sorumlu hekim olur ve satırı aynı işlemde yazılır (O45 kapandı); yeni sorumlu hekim öncekinin satırını bitirir; seçici kurumun bütün hekimlerini adla sunar (D8); üye hastasını kendi birimlerinin dışında da görür; sorumlu hemşire `care_team.claim`'i kaybetti (D7); her değişiklik adsız denetim satırı; göç `0018` (G3-02'nin `0017`'sinin ardından; B1b'nin iki nakil sütunu dahil) · spec: [2026-11-09](../specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md) · plan: [2026-11-09](2026-11-09-g2b-b1c-bakim-ekibi.md) | Kodda `feat/g2b-b1c-bakim-ekibi` · göç `0018` (önce B3a'nın `0016`'sı ve G3-02'nin `0017`'si main'e) · **main'e alınmadı · VM'de değil** |
+| G2-B1c | Bakım ekibi (Lane B): hasta ekranında «Bakım ekibi» kutusu — sorumlu hekim (her an tek), yardımcı hekimler, nöbetçi hekimler (pencere en çok 48 saat, geçince «süresi doldu»), adla, kimlik numarası olmadan; «Önceki üyeler» katlı; «Sorumlu hekim ol» (`care_team.claim`, yalnız hekim), «Ekibe ekle» / «Sorumlu hekim yap» / «Ekipten çıkar» (`care_team.assign`), «Ekipten ayrıl» (üyenin kendisi); kabulü imzalayan hekim sorumlu hekim olur ve satırı aynı işlemde yazılır (O45 kapandı); yeni sorumlu hekim öncekinin satırını bitirir; seçici kurumun bütün hekimlerini adla sunar (D8); üye hastasını kendi birimlerinin dışında da görür; sorumlu hemşire `care_team.claim`'i kaybetti (D7); her değişiklik adsız denetim satırı; göç `0018` (G3-02'nin `0017`'sinin ardından; B1b'nin iki nakil sütunu dahil) · spec: [2026-11-09](../specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md) · plan: [2026-11-09](2026-11-09-g2b-b1c-bakim-ekibi.md) | Kodda `feat/g2b-b1c-bakim-ekibi` (main `ea61714a` üzerinde) · göç `0018` · **main'e alınmadı · VM'de değil** |
 ```
 
 - [ ] **Step 3: The guide**
@@ -5336,13 +5409,13 @@ with
 
 ```markdown
 - İmza, imzalayan hekimi bakım ekibine eklemez (B1c). *B1c'de kapandı: imzalayan hekim sorumlu
-  hekim olur ve ekip satırı yazılır (3.15).*
+  hekim olur ve ekip satırı yazılır (3.19).*
 ```
 
-2. Insert this section where Step 1 says (before `## 4. "Neden bunu kullanmıyoruz" köşesi`, after section 3.14 when it exists):
+2. Insert this section where Step 1 says: after §3.18's last line, before the `---` that precedes `## 4. "Neden bunu kullanmıyoruz" köşesi`, with one blank line before it and one after it:
 
 ```markdown
-### 3.15 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
+### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
 
 Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
 kodda (`feat/g2b-b1c-bakim-ekibi`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Örneklerdeki
@@ -5375,7 +5448,8 @@ adlar uydurmadır.
 - **Sorumlu hemşire.** Sorumlu hemşire grubu `care_team.claim` yetkisini kaybetti: ekip hekimlerindir,
   hemşirenin bu düğmesi her zaman reddedilirdi. Grubun açıklamasından da «bakım ekibi» çıktı.
 - **Denetim.** Her değişiklik denetim kaydına yazılır: kim, kimi, hangi rolle, hangi satırı bitirerek;
-  hastanın adı yazılmaz.
+  hastanın adı yazılmaz. «Denetim bütünlüğü» sayfası (3.13) bu üç olayı adıyla gösterir ve «Tür»
+  süzgecinde sunar: sorumlu hekim atandı, bakım ekibine eklendi, bakım ekibinden çıkış.
 - **Göç `0018`.** Eski kısıt, bir üyenin aynı kabulden ikinci kez çıkarılmasını engelliyordu. Yerine
   iki kısmi tekil dizin gelir: kabul başına üye için bir etkin satır, kabul başına bir sorumlu hekim.
   Göç önce veriyi düzeltir: kapanmış kabullerin açık satırlarını kapatır, iki sorumlu hekimden en
@@ -5408,24 +5482,24 @@ cd /c/tmp/g2b-b1c/dashboard && ./node_modules/.bin/vite build 2>&1 | tail -6
 ```
 
 Expected:
-- the suite: all passed. The count is Task 0's plus the new tests: 1 (Task 12), 11 (Task 14), 8 (Task 15), 16 (Task 16).
+- the suite: all passed. The count is Task 0's plus the new tests: 1 (Task 12), 11 (Task 14), 8 (Task 15), 16 (Task 16). And 5 cases of Task 13: `apiErrors.test.js`'s `it.each(CODES)` runs for the three new codes and its `it.each(FIELDS)` for the two window fields. Its Denetim change widens one existing test and adds none. In all, Task 0's count + 41.
 - the build: no `larger than 500 kB`. The precache count is Task 0's N, or a different number with its reason named.
 
 - [ ] **Step 3: The final review (the controller dispatches it)**
 
-One reviewer, the most capable model, reads the whole diff `git diff c3965ed5..HEAD -- . ':!docs/superpowers/specs'` against the spec (§0–§7) and this plan's departures (X1–X10). It looks hardest at six things:
+One reviewer, the most capable model, reads the whole diff `git diff ea61714a..HEAD -- . ':!docs/superpowers/specs'` against the spec (§0–§7) and this plan's departures (X1–X13). It looks hardest at six things:
 - the order in every write: tenant, reach, lock, state, then the physician check and the conflict. In sign-off, the state comes first under the locks;
 - T1 everywhere: the sign-off, the claim and the add, and the candidates;
 - migration `0018`'s data steps against real shapes: two attendings, an attending with no row, an on-call row turned attending. Also its downgrade, and its description step (X3);
 - patient data: the audit rows carry staff user names and ids only; the candidates carry `user_id` and `full_name` only; the answers carry no patient name;
 - the index answer (T7) and the renewal (T8, X4);
-- the box: the holds, the focus, the four languages, and no UUID.
+- the box: the holds, the focus, the four languages, and no UUID; and the three events on «Denetim bütünlüğü» (X11).
 
 Fix what it finds and re-review until it approves.
 
 - [ ] **Step 4: The local walk (the controller runs it)**
 
-Run it on a local stack of this branch with `0017` present, synthetic accounts and synthetic patients. The accounts: a nurse and a charge nurse of Reanimasiya; two physicians of Reanimasiya (`attending` group); one physician of Neonatal only (`physician` group); an administrator. Use a headless Chrome at 390 px and 1440 px, in the Gece and Gün themes, and in all four languages.
+Run it on a local stack of this branch (migrated to `0018`), synthetic accounts and synthetic patients. The accounts: a nurse and a charge nurse of Reanimasiya; two physicians of Reanimasiya (`attending` group); one physician of Neonatal only (`physician` group); an administrator. Use a headless Chrome at 390 px and 1440 px, in the Gece and Gün themes, and in all four languages.
 
 1. The nurse admits; before the signature the box says «Məsul həkim qəbul imzalandıqda təyin olunur.». The first physician signs: the box shows her as «Məsul həkim», «əlavə edən: <her>».
 2. She opens «Komandaya əlavə et». The picker lists the Neonatal physician by name, beside the second Reanimasiya physician, and no nurse. She adds the Neonatal physician as «Növbətçi həkim» for 12 hours.
@@ -5434,6 +5508,7 @@ Run it on a local stack of this branch with `0017` present, synthetic accounts a
 5. The charge nurse sees no «Məsul həkim ol».
 6. The administrator signs a DRAFT that names nobody. The refusal is said in her language.
 7. Keyboard only, through the add dialog and the question. No UUID and no raw key anywhere.
+8. The administrator (`audit.view`, the system group's by rule) opens «Denetim bütünlüğü»: the sign-off's `care_team.attending`, the add and the leave are named in her language, and the «Tür» filter offers the three (X11).
 
 Record the walk in the plan's record section, and in the roadmap row's status cell.
 
@@ -5442,18 +5517,18 @@ Record the walk in the plan's record section, and in the roadmap row's status ce
 - the gates' numbers;
 - the review's verdict;
 - the walk;
-- that `0017` is a local, uncommitted copy and the branch waits for G3-02's `0017` on main.
+- the base the branch sits on (`ea61714a`, or the main it was rebased onto).
 
-The slice then waits for the owner's «main'e al» (after B3a and G3-02, X1) and, separately, the VM decision.
+The slice then waits for the owner's «main'e al» and, separately, the VM decision.
 
-Before the worktree is removed: delete the untracked `homunculus-engine/alembic/versions/0017_tasks.py` (a rebase onto a main that holds it would otherwise stop on it), then unlink the `node_modules` junction (Task 0, Step 3).
+Before the worktree is removed, unlink the `node_modules` junction (Task 0, Step 3).
 
 ---
 
 ## Deploy notes (for the VM step — not part of this plan's tasks)
 
 - **What ships:** api and web. The web image carries the box and `nginx.conf`'s two new log-map lines. The hub, the bridge and nce are untouched.
-- **Migrations:** `0017` (G3-02) must be on the VM first, or in the same `alembic upgrade head`. Then `0018`.
+- **Migrations:** `0016` (B3a) and `0017` (G3-02), both on main since before `ea61714a`, must be on the VM first, or in the same `alembic upgrade head`. Then `0018`.
 - **Before the deploy, count what `0018` will change** (one `psql` per line; read-only):
   ```sql
   SELECT count(*) FROM care_team_members m JOIN admissions a ON a.id = m.admission_id WHERE m.is_active AND a.state IN ('DISCHARGED','TRANSFERRED');
