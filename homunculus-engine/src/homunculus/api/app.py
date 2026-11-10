@@ -1673,10 +1673,12 @@ def create_app(
             raise HTTPException(status_code=422, detail="erteleme süresi bu alarm için izin verilen aralıkta değil")
         now = datetime.now(timezone.utc)
         until = now + timedelta(minutes=minutes)
+        # `severity` is what it was given at (review, fix 4): a restart holds the snooze to it, so a withdrawal that
+        # made the alarm worse — and so ended the snooze live — does not bring the snooze back.
         audit.append(AuditEvent(hospital, "alert_snooze", patient_id, kind,
                                 {**who, "minutes": minutes, "until": until.isoformat(), "reason": reason,
                                  **({"reason_text": reason_text} if reason_text is not None else {}),
-                                 "at": now.isoformat()}))
+                                 "severity": severity, "at": now.isoformat()}))
         store.snooze(patient_id, kind, by=who["actor"], at=now, minutes=minutes, reason=reason,
                      reason_text=reason_text, severity=severity)
         board = _card(hospital, patient_id)

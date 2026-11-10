@@ -40,7 +40,7 @@ from homunculus.api.alert_lifecycle import (
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import RETRACT, profile_from_payload
 from homunculus.api.identity import bounded_role
-from homunculus.api.snooze import clean_reason, minutes_ok   # G2-B5b
+from homunculus.api.snooze import clean_reason, minutes_ok, worse   # G2-B5b
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
@@ -213,7 +213,15 @@ def _replay_snooze(store: AckStore, rec: AuditRecord, now: datetime) -> None:
     payload = rec.payload
     minutes = payload.get("minutes")
     cleaned = clean_reason(payload.get("reason"), payload.get("reason_text"))
-    if cleaned is None or not minutes_ok(alert.severity, minutes):
+    # Review (fix 4): the row says the severity the snooze was given at (a row from before says nothing: today's
+    # rule). Its minutes are held to both caps, and the snooze to the milder severity — the replayed one, or the
+    # row is passed over: an alarm worse than the one snoozed ended its snooze live, by a worse reading or by a
+    # withdrawal's rebuild (plan note 1).
+    recorded = payload.get("severity")
+    recorded = alert.severity if recorded is None else recorded
+    if cleaned is None or not minutes_ok(alert.severity, minutes) or not minutes_ok(recorded, minutes):
+        return
+    if worse(alert.severity, recorded):
         return
     try:
         at = datetime.fromisoformat(payload["at"])
@@ -226,7 +234,7 @@ def _replay_snooze(store: AckStore, rec: AuditRecord, now: datetime) -> None:
         return
     by = payload.get("actor") or bounded_role(payload.get("role"))
     store.snooze(rec.patient_id, rec.subject, by=str(by), at=at, minutes=minutes, reason=cleaned[0],
-                 reason_text=cleaned[1], severity=alert.severity)
+                 reason_text=cleaned[1], severity=alert.severity)      # the milder of the two (above)
 
 
 #: G3-01 (D10): the kinds a patient's ENGINE state is rebuilt from — what `rehydrate` replays into the engine

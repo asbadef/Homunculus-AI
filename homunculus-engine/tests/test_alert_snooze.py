@@ -256,7 +256,10 @@ NURSE = {"Authorization": "Bearer nurse-jwt"}
 VIEWER = {"Authorization": "Bearer viewer-jwt"}
 DEVICE_H2 = {"Authorization": "Bearer tok2"}
 NURSE_H2 = {"Authorization": "Bearer nurse-h2-jwt"}
+CHARGE = {"Authorization": "Bearer charge-jwt"}
 PEOPLE = {
+    "charge-jwt": Caller(hospital="h1", actor="hem.sorumlu", groups=("nurse",),
+                         perms=frozenset({"board.view", "alerts.ack", "clinical.chart"})),
     "nurse-jwt": Caller(hospital="h1", actor="hem.leyla", groups=("nurse",),
                         perms=frozenset({"board.view", "alerts.ack"})),
     "viewer-jwt": Caller(hospital="h1", actor="izleyici", groups=("viewer",), perms=frozenset({"board.view"})),
@@ -295,10 +298,10 @@ def _app(audit):
                       resolve_jwt=_resolve)
 
 
-def _reading(client, code, value, minute=0, patient="bed-3", headers=DEVICE):
+def _reading(client, code, value, minute=0, patient="bed-3", headers=DEVICE, at=None):
     fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
             "subject": {"reference": f"Patient/{patient}"},
-            "effectiveDateTime": (START + timedelta(minutes=minute)).isoformat(),
+            "effectiveDateTime": (at or START + timedelta(minutes=minute)).isoformat(),
             "valueQuantity": {"value": value, "unit": ""}}
     assert client.post("/ingest", json=fhir, headers=headers).status_code == 200
 
@@ -354,7 +357,7 @@ def test_a_snooze_puts_the_snooze_on_the_card_and_one_row_in_the_trail(wall, aud
         assert (row.patient_id, row.subject) == NEWS2
         assert row.payload == {"role": "hem.leyla", "via": "user", "actor": "hem.leyla", "groups": ["nurse"],
                                "minutes": 15, "until": snooze["until"], "reason": "ARTEFACT_OR_SIGNAL_NOISE",
-                               "at": snooze["at"]}
+                               "severity": "high", "at": snooze["at"]}, "the severity it was given at (fix 4)"
 
 
 def test_who_may_snooze(wall, audit):
@@ -791,3 +794,55 @@ def test_a_snooze_row_the_replay_cannot_judge_is_passed_over_and_the_rest_still_
     _engine, store = _replayed(audit, now=later)
     assert store.firing[NEWS2].severity == "moderate", "the rows after it were replayed"
     assert (store.snoozes[NEWS2]["at"], store.snoozes[NEWS2]["minutes"]) == (AT, 10), "and a good row still counts"
+
+
+def test_a_replayed_snooze_is_held_to_the_milder_severity_and_to_both_caps():
+    """Review (fix 4): the row records the severity the snooze was given at. The replay holds the snooze to the
+    milder of that and the alarm it has, and its minutes to both caps; an alarm worse than the one snoozed ended
+    its snooze live, and is not snoozed by the restart."""
+    later = AT + timedelta(minutes=3)
+    audit = _news2_rows(InMemoryAuditLog())                         # HIGH at the row
+    audit.append(_snooze_row(minutes=15, severity="moderate"))
+    assert _replayed(audit, now=later)[1].snoozes == {}, "given on a MODERATE: not this alarm"
+    audit = _news2_rows(InMemoryAuditLog(), rr=22.0)                # MODERATE at the row
+    audit.append(_snooze_row(minutes=60, severity="high"))
+    assert _replayed(audit, now=later)[1].snoozes == {}, "60 minutes is within a moderate's cap, not a high's"
+    audit.append(_snooze_row(minutes=30, severity="high"))
+    assert _replayed(audit, now=later)[1].snoozes[NEWS2]["severity"] == "moderate", "held to the milder"
+    for bad in ("critical", "low", "unheard_of", 7):
+        audit = _news2_rows(InMemoryAuditLog())
+        audit.append(_snooze_row(severity=bad))
+        assert _replayed(audit, now=later)[1].snoozes == {}, bad
+    audit = _news2_rows(InMemoryAuditLog(), rr=22.0)                # a row from before the review: today's rule
+    audit.append(_snooze_row(minutes=60))
+    assert _replayed(audit, now=later)[1].snoozes[NEWS2]["minutes"] == 60
+
+
+def test_a_restart_does_not_bring_back_a_snooze_a_withdrawal_ended(wall, audit):
+    """Review (fix 4): W, a charted respiratory rate of 22, lowers news2 to MODERATE, and the snooze is taken on
+    that. W is withdrawn («hatalı giriş»): news2 is HIGH again, which ends the snooze live (plan note 1). The
+    restart replays without W, so news2 is HIGH at the snooze's row, and its 15 minutes are within a high's cap:
+    only the row's own severity tells that this was not the alarm a person snoozed."""
+    with TestClient(_app(audit)) as live:
+        for code, value in (("heart_rate", 115), ("temperature", 39.5), ("resp_rate", 26)):
+            _reading(live, code, value, at=WALL0)                   # NEWS2 7: HIGH, measured at the wall's time
+        wall.at = WALL0 + timedelta(minutes=1)
+        r = live.post("/clinical/bed-3", json={"entries": [{"code": "resp_rate", "value": 22}]}, headers=CHARGE)
+        assert r.status_code == 200, r.text
+        [w] = [e["entry"] for e in r.json()["entries"]]
+        assert _alerts(live)["news2"]["severity"] == "moderate"
+        wall.at = WALL0 + timedelta(minutes=2)
+        assert _snooze(live, minutes=15, headers=CHARGE).status_code == 200      # until WALL0+17
+        assert _rows(audit)[0].payload["severity"] == "moderate"
+        wall.at = WALL0 + timedelta(minutes=3)
+        r = live.post(f"/clinical/bed-3/entries/{w}/retract", json={"reason": "yanlış hasta seçilmişti"},
+                      headers=CHARGE)
+        assert r.status_code == 200, r.text
+        card = _alerts(live)["news2"]
+        assert card["severity"] == "high" and card["snooze"] is None, "the worse alarm ended it live"
+    wall.at = WALL0 + timedelta(minutes=5)                          # a restart within until
+    restarted_app = _app(audit)
+    with TestClient(restarted_app) as restarted:
+        card = _alerts(restarted)["news2"]
+        assert card["severity"] == "high" and card["snooze"] is None, "and the restart does not bring it back"
+        assert _store(restarted_app).snoozes == {}
