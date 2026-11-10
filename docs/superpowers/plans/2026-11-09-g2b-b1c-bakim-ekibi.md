@@ -45,7 +45,7 @@
 
 ## Ground rules for every task
 
-- **Your worktree.** `/c/tmp/g2b-b1c`, branch `feat/g2b-b1c-bakim-ekibi`. Task 0 creates both from the head of `docs/g2b-b1b-b1c`. That branch holds `feat/g2b-b3a-doluluk` @ `c3965ed5`, the two spec commits and this plan's commit.
+- **Your worktree.** `/c/tmp/g2b-b1c`, branch `feat/g2b-b1c-bakim-ekibi`. Task 0 creates both from the head of `docs/g2b-b1b-b1c`. That branch holds `feat/g2b-b3a-doluluk` @ `c3965ed5`, the two spec commits, B1b's plan and this plan. B1b is built after this slice, on its head (B1b's plan, Task 0).
   - **Never touch `/c/Users/User/Desktop/Project/Homunculus AI`** (the user's main checkout), and never touch another `/c/tmp` worktree.
   - Never `git push`, never deploy, never change anything on a VM.
   - **Never run `git stash`.** The stash is shared with every other worktree and session.
@@ -167,12 +167,13 @@
 - [ ] **Step 1: B3a has not moved since the spec was written**
 
 ```bash
-cd /c/tmp/g2b-b1bc && git log --oneline c3965ed5..feat/g2b-b3a-doluluk; echo ---; git log --oneline -4 docs/g2b-b1b-b1c
+cd /c/tmp/g2b-b1bc && git log --oneline c3965ed5..feat/g2b-b3a-doluluk; echo ---; git log --oneline c3965ed5..docs/g2b-b1b-b1c; echo ---; git diff --stat c3965ed5 docs/g2b-b1b-b1c | tail -1; git diff --name-only c3965ed5 docs/g2b-b1b-b1c | grep -v '^docs/'
 ```
 
 Expected:
-- nothing above `---`;
-- below it: this plan's commit, the two spec commits (`4f9e9490`, `5ff99e34`), then `c3965ed5`.
+- nothing above the first `---`;
+- between the two: documents only — the two spec commits (`5ff99e34`, `4f9e9490`), B1b's plan (`ab37812b`) and this plan's commit, and any later documents commit;
+- below the second: the stat line, and no path outside `docs/`.
 
 If commits appear above `---`, B3a's lane has committed its review fixes since. **Stop and report.** The controller rebases `docs/g2b-b1b-b1c` onto `feat/g2b-b3a-doluluk` (no code exists yet, so nothing conflicts). Then start again at Step 1. The two baseline failures of Step 6 may then be gone.
 
@@ -187,7 +188,7 @@ Expected:
 - `Preparing worktree (new branch 'feat/g2b-b1c-bakim-ekibi')`;
 - no status output;
 - the branch `feat/g2b-b1c-bakim-ekibi`;
-- the same four commits as in Step 1.
+- on top, the head of `docs/g2b-b1b-b1c` that Step 1 listed. Write its sha into the report.
 
 - [ ] **Step 3: The `node_modules` junction to the shared install**
 
