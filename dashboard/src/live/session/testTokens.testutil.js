@@ -104,6 +104,13 @@ export function fakeApi(vi, { access = null } = {}) {
     // G2-B5: «RRT çağır» (screens/alarms, screens/rrt)
     callRrt: vi.fn(),
 
+    // G2-B3b: Vardiya devri (screens/devir)
+    handovers: vi.fn(),
+    handoverColleagues: vi.fn(),
+    openHandover: vi.fn(),
+    signHandover: vi.fn(),
+    countersignHandover: vi.fn(),
+
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

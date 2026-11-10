@@ -621,6 +621,39 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/alerts/rrt-call", { method: "POST", body: { patient_id: patientId, kind, reason } });
     },
 
+    // ---- G2-B3b: Vardiya devri (homunculus-engine admission/router.py, /handovers) ----
+    // The caller is the token's: nobody's id but the receiver's is ever sent. A refusal carries `err.apiCode`
+    // (admission/errors.py): `critical_alarm_open` (409, the live board holds an unanswered critical alarm for this
+    // patient), `out_of_scope`, `invalid_transition`.
+
+    /** My handovers of one box — "incoming" (I am to countersign) or "outgoing" (I handed over) —: OPEN and
+     *  OUTGOING_SIGNED ones, and the COMPLETED and EXPIRED of the last 24 hours, newest first, at most 100. Each row
+     *  {id, status, created_at, bridge_expires_at, outgoing_signed_at, incoming_signed_at, outgoing: {id, name},
+     *  incoming: {id, name}, patients: [{admission_id, board_key, display_name, bed_label, unit_name}],
+     *  note: {situation, background, assessment, recommendation} | null, summary}. Nothing but the two words goes on
+     *  the address. */
+    handovers(box) {
+      if (box !== "incoming" && box !== "outgoing") throw new TypeError("handovers: box is 'incoming' or 'outgoing'");
+      return authed(`/handovers?box=${box}`);
+    },
+    /** [{id, name}] — the people I can hand over to, by name (my tenant's, holding `handover.sign`, not me). */
+    handoverColleagues() { return authed("/handovers/colleagues"); },
+    /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
+    openHandover({ unitId, incomingUserId, admissionId }) {
+      return authed("/handovers", {
+        method: "POST", body: { unit_id: unitId, incoming_user_id: incomingUserId, admission_ids: [admissionId] },
+      });
+    },
+    /** The outgoing signature, with the D-Ö-D-Ö note ({situation, background, assessment, recommendation}). The
+     *  server seals the system summary at this moment. 409 `critical_alarm_open`: the handover stays OPEN. */
+    signHandover(id, note) {
+      return authed(`/handovers/${seg(id)}/sign-outgoing`, { method: "POST", body: { note } });
+    },
+    /** The receiver's countersignature; the handover is COMPLETED. */
+    countersignHandover(id) {
+      return authed(`/handovers/${seg(id)}/countersign`, { method: "POST" });
+    },
+
     /** Record that a clinician opened this patient — the audit line an inspection asks for.
      *  Sent for a patient the screen actually shows: the server answers 404 for one outside the
      *  caller's scope AND for one that does not exist (deliberately the same answer), and logs

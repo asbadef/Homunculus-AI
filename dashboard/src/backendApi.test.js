@@ -442,6 +442,79 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
   });
 
+  // G2-B3b (D5, D7): «Vardiya devri». The actors come from the token; nothing about who is sent.
+  it("reads my handovers of one box with an authed GET /handovers?box=…, and nothing but a box", async () => {
+    const rows = [{ id: "h-1", status: "OUTGOING_SIGNED" }];
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(rows));
+    const api = signedIn(fetchMock);
+    expect(await api.handovers("incoming")).toEqual(rows);
+    await api.handovers("outgoing");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers?box=incoming");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/handovers?box=outgoing");
+    // nothing else goes on the address
+    for (const box of ["incoming&x=1", "../colleagues", "", null, undefined, 3]) {
+      expect(() => api.handovers(box), String(box)).toThrow(TypeError);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the people I can hand over to with an authed GET /handovers/colleagues", async () => {
+    const people = [{ id: "u-2", name: "Sentetik Hemşire" }];
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(people));
+    const api = signedIn(fetchMock);
+    expect(await api.handoverColleagues()).toEqual(people);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/colleagues");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+
+  it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
+    const row = { id: "h-1", status: "OPEN" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));
+    const api = signedIn(fetchMock);
+    expect(await api.openHandover({ unitId: "u-1", incomingUserId: "u-2", admissionId: "a-1" })).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ unit_id: "u-1", incoming_user_id: "u-2", admission_ids: ["a-1"] });
+  });
+
+  it("signs out with the D-Ö-D-Ö note: POST /handovers/{id}/sign-outgoing {note}", async () => {
+    const row = { id: "h 1", status: "OUTGOING_SIGNED" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row));
+    const api = signedIn(fetchMock);
+    const note = { situation: "Sentetik durum", background: "", assessment: "", recommendation: "" };
+    expect(await api.signHandover("h 1", note)).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/h%201/sign-outgoing");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ note });
+  });
+
+  it("countersigns: POST /handovers/{id}/countersign, with no body", async () => {
+    const row = { id: "h-1", status: "COMPLETED" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row));
+    const api = signedIn(fetchMock);
+    expect(await api.countersignHandover("h-1")).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/h-1/countersign");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+  });
+
+  // The gate (D3) answers 409 with the admission code beside its words; the screen maps the code.
+  it("a signature refused for an open critical alarm carries its code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "critical_alarm_open", message: "A critical alert nobody acknowledged is open.",
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).signHandover("h-1", {}).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "critical_alarm_open" });
+  });
+
   it("reads Aşama A's monitor strip with an authed GET /infinity-shadow/board", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ stage: "off" }));
     const api = signedIn(fetchMock);

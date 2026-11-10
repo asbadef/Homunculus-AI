@@ -639,6 +639,22 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
   });
 
+  // G2-B3b (D3, D4): the handover routes refuse with codes of this map, not with words of their own — a signature
+  // while a critical alarm is open (409), an admission of another unit (403), an admission that is not open (409).
+  // Their texts are the admission screen's; «Vardiya devri» says the critical lock in its own words where it knows
+  // the route (the dialog), and every other screen reads the code here.
+  it.each(["critical_alarm_open", "out_of_scope", "invalid_transition"])(
+    "the handover routes' %s is a mapped code, said in the four languages", (code) => {
+      expect(ADMISSION_CODE_KEYS.has(code)).toBe(true);
+      const hit = apiErrorKey(coded(code));
+      expect(hit.key).toMatch(/^kabul\.err\./);
+      for (const lang of LANG_CODES) {
+        expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+        const t = createTranslator(lang, DICTIONARIES);
+        expect(apiErrorText(t, coded(code)), lang).not.toMatch(/English words/);
+      }
+    });
+
   // G2-ESLEME: the editor's four device codes are said by its own namespace; Yapı's `bed_has_monitor`
   // stays in `kabul`. The namespace is pinned per code, so neither can drift into the other's.
   const ESLEME = ["monitor_lane_off", "device_unknown", "bed_occupied", "mapping_changed"];
