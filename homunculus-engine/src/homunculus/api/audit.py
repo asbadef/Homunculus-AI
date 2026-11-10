@@ -56,6 +56,8 @@ class AuditEvent:
     #                          | "alert_cleared" (G2-A1: an episode's end — api/alert_lifecycle.py)
     #                          | "rrt_call" (G2-B5: a person called the rapid-response team to an
     #                            alert — payload: who, why in free text, when)
+    #                          | "alert_snooze" (G2-B5b: a person snoozed an alert — payload: who,
+    #                            minutes, until, reason code, reason_text?, severity, when)
     patient_id: str
     subject: str             # alert kind or signal slug
     payload: dict = field(default_factory=dict)
