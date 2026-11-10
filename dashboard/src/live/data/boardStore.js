@@ -36,6 +36,7 @@
 // watchdog — so LIVE is never held without a stream for longer than the store already tolerates.
 import { patientFromBoard, patientsFromBoard, alertsFromPatients, alertsEqual } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
+import { isSnoozed } from "./snooze.js";
 
 export const RECONNECT_DELAY_MS = 5000;
 /** The server's heartbeat cadence (api/app.py `sse_board_frames`, keepalive=15.0). */
@@ -580,12 +581,14 @@ export const isChronicExpected = (a) => a?.downgraded === true && !NEVER_SUPPRES
 // A RESOLVED alarm (G2-A1: a critical whose rule stopped before anyone acknowledged it) is never
 // acknowledged — an acknowledgement removes it — so it needs an answer, and the bell, the rail and
 // the lock screen count it. Only the sound and the notification's vibration stop (signals.js).
-const needsAnswer = (a) => !a.ack && !isChronicExpected(a);
+// G2-B5b (spec D4): a SNOOZED alarm does not, until its `until` by `nowMs`, the board's clock the caller
+// passes (data/useSnoozeClock.js). Without one, no snooze is honoured (data/snooze.js `isSnoozed`).
+const needsAnswer = (a, nowMs) => !a.ack && !isChronicExpected(a) && !isSnoozed(a, nowMs);
 
 /** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or
  *  not), by severity (`unknown`: a severity this build does not know); `waiting` those nobody has
  *  acknowledged AND that the engine has not marked chronic-expected (`needsAnswer`). */
-export function alarmCounts({ alerts = [], connection } = {}) {
+export function alarmCounts({ alerts = [], connection, nowMs } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, open: null, waiting: null };
   const open = { total: 0, unknown: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
@@ -593,7 +596,7 @@ export function alarmCounts({ alerts = [], connection } = {}) {
   for (const a of alerts) {
     open.total += 1;
     open[SEVERITY_ORDER.includes(a.severity) ? a.severity : "unknown"] += 1;
-    if (needsAnswer(a)) waiting += 1;
+    if (needsAnswer(a, nowMs)) waiting += 1;
   }
   return { known, stale, open, waiting };
 }
@@ -603,18 +606,18 @@ export function alarmCounts({ alerts = [], connection } = {}) {
  *  fires before one that passed unacknowledged (RESOLVED), then the oldest first.
  *  A chronic-expected finding is not among them (`needsAnswer`); it is still on the card and in
  *  the alarms list. */
-export function waitingAlarms({ alerts = [], connection } = {}) {
+export function waitingAlarms({ alerts = [], connection, nowMs } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, items: null };
-  return { known, stale, items: queue(alerts) };
+  return { known, stale, items: queue(alerts, nowMs) };
 }
 
 /** The alarms somebody must answer (`needsAnswer`), unknown severity first, then the most severe,
  *  firing before RESOLVED, then the oldest. The one ordering `waitingAlarms` and `alarmsToSignal` share. */
-function queue(alerts) {
+function queue(alerts, nowMs) {
   const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
   // After severity, one that still fires before one that passed unacknowledged (RESOLVED, G2-A1).
-  return alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
+  return alerts.filter((a) => needsAnswer(a, nowMs)).sort((a, b) => rank(a) - rank(b)
     || (a.status === "RESOLVED") - (b.status === "RESOLVED")
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
 }
@@ -626,9 +629,9 @@ function queue(alerts) {
  *  previous workspace sounded its first load). A board that never loaded, or whose load failed,
  *  gives no items. `known` is LIVE only, as everywhere: only a LIVE board may say an alarm stopped
  *  waiting. Not for the bell or a count — those still wait for LIVE (Decision 18). */
-export function alarmsToSignal({ alerts = [], connection, loaded } = {}) {
+export function alarmsToSignal({ alerts = [], connection, loaded, nowMs } = {}) {
   if (loaded !== true || connection === CONNECTION.UNAVAILABLE) return { known: false, items: [] };
-  return { known: connection === CONNECTION.LIVE, items: queue(alerts) };
+  return { known: connection === CONNECTION.LIVE, items: queue(alerts, nowMs) };
 }
 
 /** All the lock screen may show of the ward (Decision 3): the open alarms in the session's units,

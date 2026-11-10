@@ -658,6 +658,26 @@ describe("alarm counts and lists", () => {
     expect(alarmCounts({ alerts: passed, connection: CONNECTION.LIVE }).waiting).toBe(1);
   });
 
+  // G2-B5b (spec D4): a snoozed alarm is out of the waiting queue until its `until`, by the board's clock — the bell,
+  // the rail, the lock screen's count and the sound all read this — and back in from that instant.
+  it("leaves a snoozed alarm out of the queue until its time, by the board's clock, and takes it back after", () => {
+    const snoozed = { id: "s", severity: "high", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
+    const at = (nowMs) => ({ alerts: [...alerts, snoozed], connection: CONNECTION.LIVE, nowMs });
+    expect(waitingAlarms(at(4_999)).items).not.toContain(snoozed);
+    expect(alarmCounts(at(4_999)).waiting).toBe(4);
+    expect(alarmsToSignal({ ...at(4_999), loaded: true }).items).not.toContain(snoozed);
+    expect(waitingAlarms(at(5_000)).items).toContain(snoozed);
+    expect(alarmCounts(at(5_000)).waiting).toBe(5);
+    expect(alarmsToSignal({ ...at(5_000), loaded: true }).items).toContain(snoozed);
+  });
+
+  it("honours no snooze without a clock, and none on a critical alarm", () => {
+    const high = { id: "s", severity: "high", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
+    const crit = { id: "c", severity: "critical", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
+    expect(waitingAlarms({ alerts: [high], connection: CONNECTION.LIVE }).items).toEqual([high]);
+    expect(waitingAlarms({ alerts: [crit], connection: CONNECTION.LIVE, nowMs: 0 }).items).toEqual([crit]);
+  });
+
   // After severity, an alarm that still fires comes before one that passed: the bell lists the
   // first ones a nurse should look at, and a critical whose condition is gone is the lesser claim
   // on her eyes than one that is still happening — even when it is the older one.
