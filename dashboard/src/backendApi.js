@@ -628,6 +628,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/alerts/rrt-call", { method: "POST", body: { patient_id: patientId, kind, reason } });
     },
 
+    /** G2-B5b: snooze one active alarm for `minutes` with a reason from the engine's list. `reasonText` is the
+     *  explanation, required for OTHER; null otherwise. The actor comes from the token, as with `acknowledge`.
+     *  Resolves to the patient's board entry as it is AFTER the snooze.
+     *  409: answered, or a severity never snoozed (`snooze_not_allowed`).
+     *  422: minutes over the cap, or a reason the engine does not take. */
+    snoozeAlert(patientId, kind, minutes, reason, reasonText = null) {
+      return authed("/alerts/snooze", {
+        method: "POST", body: { patient_id: patientId, kind, minutes, reason, reason_text: reasonText },
+      });
+    },
+
     // ---- G2-B3b: Vardiya devri (homunculus-engine admission/router.py, /handovers) ----
     // The caller is the token's: nobody's id but the receiver's is ever sent. A refusal carries `err.apiCode`
     // (admission/errors.py): `critical_alarm_open` (409, the live board holds an unanswered critical alarm for this

@@ -460,6 +460,21 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
   });
 
+  // G2-B5b: «Ertele». The actor comes from the token; the body names the alarm, the minutes and the reason.
+  it("snoozes an alarm with an authed POST /alerts/snooze, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.snoozeAlert("S-001", "news2", 15, "OTHER", "Hasta yıkanıyor, prob çıktı")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/alerts/snooze");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2", minutes: 15, reason: "OTHER",
+      reason_text: "Hasta yıkanıyor, prob çıktı" });
+    await api.snoozeAlert("S-001", "news2", 5, "PATIENT_BASELINE");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).reason_text).toBeNull();
+  });
+
   // G2-B3b (D5, D7): «Vardiya devri». The actors come from the token; nothing about who is sent.
   it("reads my handovers of one box with an authed GET /handovers?box=…, and nothing but a box", async () => {
     const rows = [{ id: "h-1", status: "OUTGOING_SIGNED" }];

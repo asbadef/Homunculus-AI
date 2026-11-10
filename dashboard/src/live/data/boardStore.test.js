@@ -790,6 +790,30 @@ describe("an answer the API gave, put onto the board", () => {
     expect(state().alerts[0].rrtCall).toBeNull();
   });
 
+  it("snoozes through the session's wrapper and puts the card it answers with onto the board", async () => {
+    const snooze = { by: "hem.leyla", at: "2026-11-10T10:00:00+00:00", until: "2026-11-10T10:15:00+00:00", minutes: 15,
+      reason: "PATIENT_BASELINE", reason_text: null };
+    const card = entry("P-001", [alert("news2", "high", { snooze })]);
+    const api = { snoozeAlert: vi.fn().mockResolvedValue(card) };
+    const track = vi.fn((fn) => fn());
+    const store = createBoardStore({ api, track, openStream: vi.fn(), setTimer: vi.fn(), clearTimer: vi.fn() });
+
+    expect(await store.snooze("P-001", "news2", 15, "PATIENT_BASELINE", null)).toBe(card);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(api.snoozeAlert).toHaveBeenCalledWith("P-001", "news2", 15, "PATIENT_BASELINE", null);
+    expect(store.getState().alerts[0].snooze)
+      .toMatchObject({ by: "hem.leyla", untilMs: Date.parse(snooze.until), minutes: 15 });
+  });
+
+  it("changes nothing on the board when the server refuses the snooze", async () => {
+    const { api, store, state } = setup();
+    await store.start();
+    api.snoozeAlert = vi.fn().mockRejectedValue(new Error("snooze_not_allowed"));
+    await expect(store.snooze("P-001", "news2", 15, "PATIENT_BASELINE", null)).rejects.toThrow(/snooze_not_allowed/);
+    expect(state().alerts[0].snooze).toBeNull();
+  });
+
   it("is replayed over a snapshot still on its way, so a reload cannot undo it", async () => {
     // The same guarantee a stream frame has: the load's snapshot was taken by the server before
     // the acknowledgement, and must not come back and un-acknowledge it.

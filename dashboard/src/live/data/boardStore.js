@@ -386,6 +386,23 @@ export function createBoardStore({
       return entry;
     },
     /**
+     * G2-B5b: snooze one alarm (`POST /alerts/snooze {patient_id, kind, minutes, reason, reason_text}`, permission
+     * `alerts.ack`) and put the board entry it answers with onto the board. The shape of `acknowledge`, for the same
+     * reasons:
+     * - through `track`;
+     * - resolves with the entry;
+     * - REJECTS with the API's own error having changed nothing: a snooze that may not have been made must not
+     *   silence the alarm here;
+     * - an answer after `clear()` is dropped.
+     */
+    async snooze(patientId, kind, minutes, reason, reasonText) {
+      const mine = generation;
+      const entry = await track(() => api.snoozeAlert(patientId, kind, minutes, reason, reasonText));
+      if (mine !== generation) return null;
+      ingest(entry);
+      return entry;
+    },
+    /**
      * Record that a clinician opened this patient (`POST /view`, permission `board.view`) — the
      * audit line an inspection asks for. It writes a log row and nothing else, so it changes no
      * state here. The CALLER decides when: only for a patient the screen actually shows, because
