@@ -68,6 +68,8 @@ const BoardContext = createContext<BoardContextValue | null>(null);
 function makeListener(dispatch: Dispatch<BoardAction>): TransportListener {
   return {
     onBoard: (board) => dispatch({ type: "board", board, now: Date.now() }),
+    // The live snapshot is the whole ward (G2 borç 1c): a bed it no longer carries leaves the screen.
+    onSnapshot: (boards) => dispatch({ type: "snapshot", boards, now: Date.now() }),
     onNotification: (note) => dispatch({ type: "notification", note }),
     onLoop: () => dispatch({ type: "loop" }),
   };

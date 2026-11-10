@@ -425,6 +425,51 @@ describe("createSseTransport", () => {
     transport.stop();
   });
 
+  // G2 borç 1c: each cycle's snapshot is the whole board. A listener that takes it whole (onSnapshot)
+  // is given it in one call, so it can drop the patients the snapshot no longer carries; stream
+  // frames still arrive one by one through onBoard.
+  it("hands each cycle's snapshot to onSnapshot whole, before the streams, and stream frames to onBoard", async () => {
+    const clock = fakeClock();
+    const api = fakeAuthedFetch();
+    const snapshots = [
+      [board("bed-3", 1), board("bed-5", 1)],
+      [board("bed-5", 2)], // bed-3 left the scope the rotation read again
+    ];
+    let patientsCalls = 0;
+    api.on("/patients", () => jsonResponse(200, { patients: snapshots[patientsCalls++] }));
+    api.on("/stream-ticket", () => jsonResponse(200, { ticket: "t", expires_in: 60 }));
+    const boardStreams: ControllableStream[] = [];
+    api.on("/stream", () => {
+      const cs = controllableStreamResponse();
+      boardStreams.push(cs);
+      return cs.response;
+    });
+    api.on("/notifications", () => controllableStreamResponse().response);
+
+    const seen: string[] = [];
+    const transport = createSseTransport({
+      authedFetch: api.authedFetch,
+      role: nurse,
+      onSessionExpired: jest.fn(),
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    transport.subscribe({
+      onBoard: (b) => seen.push(`board ${b.patient_id}`),
+      onSnapshot: (boards) => seen.push(`snapshot ${boards.map((b) => b.patient_id).join(",")}`),
+      onNotification: () => {},
+    });
+    transport.start();
+    await flush();
+    boardStreams[0].push(`data: ${JSON.stringify(board("bed-5", 9))}\n\n`);
+    await flush();
+    boardStreams[0].push("event: rotate\ndata: {}\n\n");
+    await flush();
+
+    expect(seen).toEqual(["snapshot bed-3,bed-5", "board bed-5", "snapshot bed-5"]);
+    transport.stop();
+  });
+
   it("a rotation whose resnapshot fails falls back to the backoff reconnect", async () => {
     const clock = fakeClock();
     const api = fakeAuthedFetch();

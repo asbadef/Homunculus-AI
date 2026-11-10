@@ -5,7 +5,10 @@
 // mint a fresh single-use ticket and open each of the two SSE streams. That order is load-
 // bearing — it is what makes "missed frames" impossible: whatever changed while we were
 // disconnected is folded into the resnapshot, and the streams that come up after it only need to
-// carry what happens from that instant on.
+// carry what happens from that instant on. "Folded in" includes what LEFT: the snapshot is handed
+// on whole (`onSnapshot`, G2 borç 1c), and the board becomes exactly it — a patient discharged in
+// the gap, or outside the scope the new ticket carries, leaves the screen instead of staying as a
+// card no frame will ever update.
 //
 // Reconnect coupling: the two streams (board, notifications) share ONE reconnect cycle. If
 // either ends or errors, both are torn down and both are rebuilt together, behind a single
@@ -80,6 +83,16 @@ export function createSseTransport(
   function emitBoard(board: PatientBoard): void {
     if (stopped) return;
     for (const listener of listeners) listener.onBoard(board);
+  }
+
+  /** A cycle's snapshot, whole (G2 borç 1c): to a listener that takes it as the board
+   * (`onSnapshot`), in one call; to any other, one board at a time, as before. */
+  function emitSnapshot(boards: PatientBoard[]): void {
+    if (stopped) return;
+    for (const listener of listeners) {
+      if (listener.onSnapshot) listener.onSnapshot(boards);
+      else for (const board of boards) listener.onBoard(board);
+    }
   }
 
   function emitNotification(note: BoardNotification): void {
@@ -279,7 +292,8 @@ export function createSseTransport(
     }
     if (stopped || gen !== generation) return;
 
-    for (const patientBoard of body.patients) emitBoard(patientBoard);
+    // The whole board, not boards to merge: a patient missing from it has left this screen.
+    emitSnapshot(body.patients);
     setState("open");
 
     // Both streams open concurrently, each behind its own single-use ticket. Backoff resets when
