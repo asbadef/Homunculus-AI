@@ -1771,6 +1771,27 @@ sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerle
 - **Ne yapmaz.** Hastanın ne sıklıkla ölçüleceğine karar vermez, ilaç / bakım planı / devir işlerini henüz
   göstermez (sonraki dilimler), kişiye atama yapmaz (bakım ekibi B1c'den sonra).
 
+### 3.15 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
+
+Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** kodda
+hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok). Örneklerdeki değerler uydurmadır.
+
+- **Ne girilir.** Aldığı: IV sıvı/infüzyon, kristaloid bolus, enteral/oral, kan ürünü, diğer. Çıkardığı: idrar,
+  dren, diğer (NG, kusma). Her giriş mL ve saatle; saat en çok 24 saat geri, ileri olamaz. «Giriş/çıkış ekle»
+  penceresinde birkaç satır birden girilir; yazma `clinical.chart` yetkisi ister.
+- **Bolus iki yerden girilebilir:** İlaç kutusunun formu ve Sıvı penceresi. İkisi aynı kayıttır, iki kez sayılmaz;
+  septik şok kuralı bolusu eskisi gibi okur.
+- **Toplamları sunucu hesaplar:** bugün (sıvı günü 08:00'de başlar — Görevlerim'in nöbet ayarı), iki nöbet ara
+  toplamı, son tamamlanan 24 saat, saatlik çubuk grafiği ve kümülatif denge. Tarayıcı toplama yapmaz.
+- **İdrar ve SOFA.** Son tamamlanan 24 saatin idrar toplamının yanında Sepsis-3'ün SOFA böbrek satırı yazar:
+  <500 mL/gün 3 puan, <200 mL/gün 4 puan. Sistem puan **vermez**, renk de kullanmaz; ekran o 24 saatin kaçında idrar
+  kaydı olduğunu söyler, çünkü eksik kayıt toplamı düşük gösterir. mL/kg/sa (son 6 saat) yalnız sayıdır: kasada
+  oligüri eşiği için kaynak yok.
+- **Hatalı giriş.** Yanlış bir hacim (bolus dahil) gerekçeyle geri alınır; toplamdan çıkar, listede üstü çizili kalır.
+  Bolus geri alınınca motor hastayı yeniden değerlendirir (septik şok kuralı dahil).
+- **Ne yapmaz.** Pompadan otomatik veri almaz, saatlik idrar hatırlatması yapmaz (Görevlerim'e sonra eklenebilir),
+  SOFA formuna idrar aktarmaz.
+
 ## 4. "Neden bunu kullanmıyoruz" köşesi
 
 Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıdır.

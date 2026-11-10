@@ -116,3 +116,22 @@ After G3-02 is live: api + web images; no migration; rollback = previous image t
 - O3 An oliguria threshold for mL/kg/h — ingest a source (e.g. KDIGO) into the vault first.
 - O4 Pump integration (devices not connected).
 - O5 AZ, RU and EN texts await a native reading, as every namespace.
+
+## 9. Amendments (implementation and review, 2026-11-10)
+
+- **A1 (D3)** The 24-hour time rule binds every fluid code at the server, so the meds form's bolus too (the
+  browser already limited it); seven older tests that charted a bolus months back now chart it three hours back.
+- **A2 (§3)** The door refuses with **400** (as G3-01's bedside door), not 422.
+- **A3 (D4)** `RETRACT_NOT_BEDSIDE` now reads «yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak
+  işaretlenebilir»; the dashboard's mapping and its four-language text follow.
+- **A4 (D7)** `api/fluids.py` reuses `trends._instant` / `_finite_number` (a zoneless time or a non-finite value
+  is left out, as trends does); the day windows are computed in UTC (always 24 rows); each hour also carries
+  `in_ml` / `out_ml` so the chart draws the engine's sums.
+- **A5 (D10)** A failed read is a warning Note (the SOFA box's pattern), not an Alert; toasts name the bed; two
+  TR texts avoid suffixes on placeholders; volumes are shown with one decimal.
+- **A6 (§3)** `balance_cum` is null for an hour not yet begun (the line stops at now); a top-level `truncated` says the 48-h read was cut (the box says so); sums are rounded to 3 places, never −0.
+- **A7 (§3, D7)** «today» is the day window over entries read up to now + BEDSIDE_SKEW, so today = shift A + shift B = the sum of the hours.
+- **A8 (D10)** Rows with different times go as one request per time: a partial save is possible; the toast says how many were saved, refused and unsent rows stay in the dialog.
+- **A9 (D12)** The Meds box's saves (bolus, weight) also re-read the Sıvı box (the screen's `reread`, as the SOFA box).
+- **A10 (D8)** The reference text adds «Sistem puan vermez; eksik kayıt toplamı düşük gösterir.»
+- **Known limits** the fluid day is a fixed 24 h (no DST in Asia/Baku); a discharge arriving mid multi-request save does not name the rows already saved.
