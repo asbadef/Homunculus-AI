@@ -24,7 +24,7 @@ describe("the RRT queue", () => {
 
   // G2-B5b (spec §2): a snoozed alarm is not «on its way» until its time; then it is.
   it("leaves a snoozed alarm out of the waiting list until its time, by the board's clock", () => {
-    const snoozed = alarm("S", { snooze: { untilMs: 5_000 } });
+    const snoozed = alarm("S", { snooze: { atMs: 0, untilMs: 5_000 } });
     expect(rrtQueue({ alerts: [snoozed], connection: CONNECTION.LIVE, nowMs: 4_999 }).waiting).toEqual([]);
     expect(rrtQueue({ alerts: [snoozed], connection: CONNECTION.LIVE, nowMs: 5_000 }).waiting).toEqual([snoozed]);
   });

@@ -36,10 +36,20 @@ export function maySnooze(alarm) {
   return !!alarm && !alarm.ack && alarm.status === "FIRED" && SNOOZABLE.has(alarm.severity);
 }
 
-/** Is this alarm snoozed at `nowMs`, the board's clock? */
+/** The most minutes each severity may be snoozed for (owner D1). The client honours no snooze longer than this,
+ *  whatever a card carries: a moderate alarm's 120 minutes stop holding it back once it is high (plan note 1). */
+export const SNOOZE_CAP_MINUTES = Object.freeze({ high: 30, moderate: 120 });
+
+/** Is this alarm snoozed at `nowMs`, the board's clock? Only a FIRING high or moderate alarm, whose snooze has a
+ *  start and an until no further apart than the owner's cap for its severity, and whose until is still ahead. A
+ *  latched (RESOLVED) or answered alarm is never: the engine ends a snooze on both, and a card that says otherwise
+ *  is not trusted to silence anything. */
 export function isSnoozed(alarm, nowMs) {
-  const until = alarm?.snooze?.untilMs;
-  return Number.isFinite(nowMs) && Number.isFinite(until) && until > nowMs && SNOOZABLE.has(alarm?.severity);
+  if (!alarm || alarm.status !== "FIRED" || !SNOOZABLE.has(alarm.severity)) return false;
+  const at = alarm.snooze?.atMs;
+  const until = alarm.snooze?.untilMs;
+  if (!Number.isFinite(nowMs) || !Number.isFinite(at) || !Number.isFinite(until)) return false;
+  return until > nowMs && until - at <= SNOOZE_CAP_MINUTES[alarm.severity] * 60_000;
 }
 
 /** The next instant after `nowMs` at which a snooze on the board ends, or null. */

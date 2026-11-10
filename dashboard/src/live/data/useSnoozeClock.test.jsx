@@ -8,7 +8,8 @@ import { useSnoozeClock } from "./useSnoozeClock.js";
 
 const NOW = Date.parse("2026-11-10T10:00:00Z");
 const storeOf = (state) => ({ subscribe: () => () => {}, getState: () => state });
-const snoozed = (untilMs) => ({ id: `x${untilMs}`, severity: "high", status: "FIRED", ack: null, snooze: { untilMs } });
+const snoozed = (untilMs) => ({ id: `x${untilMs}`, severity: "high", status: "FIRED", ack: null,
+  snooze: { atMs: untilMs - 5 * 60_000, untilMs } });
 
 function Probe() {
   return <p data-testid="now">{useSnoozeClock()}</p>;

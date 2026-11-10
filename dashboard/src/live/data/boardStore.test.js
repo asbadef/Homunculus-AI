@@ -661,7 +661,8 @@ describe("alarm counts and lists", () => {
   // G2-B5b (spec D4): a snoozed alarm is out of the waiting queue until its `until`, by the board's clock — the bell,
   // the rail, the lock screen's count and the sound all read this — and back in from that instant.
   it("leaves a snoozed alarm out of the queue until its time, by the board's clock, and takes it back after", () => {
-    const snoozed = { id: "s", severity: "high", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
+    const snoozed = { id: "s", severity: "high", status: "FIRED", ack: null, firstSeenAtMs: 10,
+      snooze: { atMs: 0, untilMs: 5_000 } };
     const at = (nowMs) => ({ alerts: [...alerts, snoozed], connection: CONNECTION.LIVE, nowMs });
     expect(waitingAlarms(at(4_999)).items).not.toContain(snoozed);
     expect(alarmCounts(at(4_999)).waiting).toBe(4);
@@ -672,8 +673,10 @@ describe("alarm counts and lists", () => {
   });
 
   it("honours no snooze without a clock, and none on a critical alarm", () => {
-    const high = { id: "s", severity: "high", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
-    const crit = { id: "c", severity: "critical", ack: null, firstSeenAtMs: 10, snooze: { untilMs: 5_000 } };
+    const high = { id: "s", severity: "high", status: "FIRED", ack: null, firstSeenAtMs: 10,
+      snooze: { atMs: 0, untilMs: 5_000 } };
+    const crit = { id: "c", severity: "critical", status: "FIRED", ack: null, firstSeenAtMs: 10,
+      snooze: { atMs: 0, untilMs: 5_000 } };
     expect(waitingAlarms({ alerts: [high], connection: CONNECTION.LIVE }).items).toEqual([high]);
     expect(waitingAlarms({ alerts: [crit], connection: CONNECTION.LIVE, nowMs: 0 }).items).toEqual([crit]);
   });
