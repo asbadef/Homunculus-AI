@@ -21,6 +21,7 @@ from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.board import patient_board
 from homunculus.api.identity import Caller
+from homunculus.api.patient_identity import InMemoryIdentityStore
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.snooze import (
     OTHER_MIN_CHARS, REASON_TEXT_MAX, SNOOZE_CAPS, SNOOZE_REASONS, clean_reason, minutes_ok, snooze_cap, worse,
@@ -253,10 +254,14 @@ MINUTES_RULE = "erteleme süresi bu alarm için izin verilen aralıkta değil"
 DEVICE = {"Authorization": "Bearer tok"}
 NURSE = {"Authorization": "Bearer nurse-jwt"}
 VIEWER = {"Authorization": "Bearer viewer-jwt"}
+DEVICE_H2 = {"Authorization": "Bearer tok2"}
+NURSE_H2 = {"Authorization": "Bearer nurse-h2-jwt"}
 PEOPLE = {
     "nurse-jwt": Caller(hospital="h1", actor="hem.leyla", groups=("nurse",),
                         perms=frozenset({"board.view", "alerts.ack"})),
     "viewer-jwt": Caller(hospital="h1", actor="izleyici", groups=("viewer",), perms=frozenset({"board.view"})),
+    "nurse-h2-jwt": Caller(hospital="h2", actor="hem.sona", groups=("nurse",),
+                           perms=frozenset({"board.view", "alerts.ack"})),
 }
 
 
@@ -290,18 +295,18 @@ def _app(audit):
                       resolve_jwt=_resolve)
 
 
-def _reading(client, code, value, minute=0, patient="bed-3"):
+def _reading(client, code, value, minute=0, patient="bed-3", headers=DEVICE):
     fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
             "subject": {"reference": f"Patient/{patient}"},
             "effectiveDateTime": (START + timedelta(minutes=minute)).isoformat(),
             "valueQuantity": {"value": value, "unit": ""}}
-    assert client.post("/ingest", json=fhir, headers=DEVICE).status_code == 200
+    assert client.post("/ingest", json=fhir, headers=headers).status_code == 200
 
 
-def _vitals(client, rr, minute=0):
+def _vitals(client, rr, minute=0, headers=DEVICE):
     """HR 115, temperature 39.5 and respiratory rate `rr` on bed-3: RR 26 a HIGH `news2`, RR 22 a MODERATE one."""
     for code, value in (("heart_rate", 115), ("temperature", 39.5), ("resp_rate", rr)):
-        _reading(client, code, value, minute)
+        _reading(client, code, value, minute, headers=headers)
 
 
 def _drive_shock(client):
@@ -569,6 +574,55 @@ async def test_a_cycle_that_runs_late_still_starts_the_clock_from_until(wall, au
     assert NEWS2 not in store.snoozes
     assert store.clock_from[NEWS2] == WALL0 + timedelta(minutes=16)
     assert NEWS2 in store.escalated, "nine minutes unanswered since until: past the five-minute delay already"
+
+
+class _FlakyIdentities(InMemoryIdentityStore):
+    """An identity store whose next read for `fail_for` raises, once: the store blipping mid-cycle."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_for = None
+
+    def get(self, hospital, patient_id):
+        if hospital == self.fail_for:
+            self.fail_for = None
+            raise RuntimeError("identity store blip")
+        return super().get(hospital, patient_id)
+
+
+def _news2_cards(queue):
+    """The news2 alert of every bed-3 card sent on `queue` since it was last read."""
+    frames = [queue.get_nowait() for _ in range(queue.qsize())]
+    return [next(a for a in f["alerts"] if a["kind"] == "news2") for f in frames if f.get("patient_id") == "bed-3"]
+
+
+async def test_a_cycle_that_raises_after_a_snooze_ended_leaves_the_card_to_the_next_and_wakes_every_hospital(
+        wall, audit):
+    """Review (fix 3): the cycle ends the snoozes before anything that can raise, for every hospital, and lets a
+    woken patient go only once its card is out. An identity read failing in the first hospital — the cycle still
+    raises, and the loop logs it — neither keeps the second hospital's alarm silent nor loses the frames that tell
+    the screens the snoozes ended: the next cycle sends them, once."""
+    identities = _FlakyIdentities()
+    app = create_app({"tok": "h1", "tok2": "h2"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
+                     audit=audit, resolve_jwt=_resolve, identities=identities)
+    client = TestClient(app)
+    _vitals(client, rr=26)                                          # h1 first, h2 second in the cycle's walk
+    _vitals(client, rr=26, headers=DEVICE_H2)
+    assert _snooze(client, minutes=5).status_code == 200            # at WALL0, until WALL0+5
+    assert _snooze(client, minutes=5, headers=NURSE_H2).status_code == 200
+    frames = {h: app.state.broadcaster.subscribe(h) for h in ("h1", "h2")}
+    identities.fail_for = "h1"
+    with pytest.raises(RuntimeError):
+        await app.state.escalation_cycle(WALL0 + timedelta(minutes=5))
+    stores = app.state.ack_stores
+    assert stores["h1"].snoozes == {} and stores["h2"].snoozes == {}, "every hospital's spent snooze ended"
+    assert stores["h2"].clock_from[NEWS2] == WALL0 + timedelta(minutes=5)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=5, seconds=20))
+    for hospital in ("h1", "h2"):
+        cards = _news2_cards(frames[hospital])
+        assert cards and cards[-1]["snooze"] is None, hospital
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=5, seconds=40))
+    assert _news2_cards(frames["h1"]) == [] and _news2_cards(frames["h2"]) == [], "sent once, then let go"
 
 
 # --- the episode, through the doors ----------------------------------------------------------------------

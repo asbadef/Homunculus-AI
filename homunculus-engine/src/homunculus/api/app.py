@@ -622,13 +622,18 @@ def create_app(
                 await broadcaster.publish(hospital, _card(hospital, pid, now=now))
 
     async def _escalation_cycle(now: datetime) -> None:
+        # G2-B5b (spec §2): a snooze whose `until` has come ends first. Its alarm waits for an answer again, on a
+        # fresh escalation clock from `until` and with the doctor's page cleared (`AckStore.expire_snoozes`), so
+        # the escalation below judges it as it now is. Every hospital's end here, before anything in any hospital
+        # can raise — an identity read, a retire, an audit append (review, fix 3): one hospital's failure, which
+        # still stops the cycle and is logged by the loop, keeps no other hospital's alarm silent past its `until`.
+        # Their patients wait in `woken` until their card is republished below: a screen without its own clock
+        # hears the alarm again within a cycle, or the next one if this one raises first.
+        for hospital in list(engines):
+            store = _store(hospital)
+            store.woken.update(pid for pid, _kind in store.expire_snoozes(now))
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
-            # G2-B5b (spec §2): a snooze whose `until` has come ends first. Its alarm waits for an answer again, on a
-            # fresh escalation clock from `until` and with the doctor's page cleared (`AckStore.expire_snoozes`),
-            # so the escalation below judges it as it now is. Its card is republished below: a screen without
-            # its own clock hears the alarm again within a cycle.
-            woke = {pid for pid, _kind in store.expire_snoozes(now)}
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
@@ -654,10 +659,15 @@ def create_app(
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
-            # G2-B5b: the cards of the alarms whose snooze just ended, unless sent above or retired.
-            for pid in sorted(woke - changed - set(gone)):
-                await broadcaster.publish(hospital, _card(hospital, pid, now=now))
-            changed |= woke
+            # G2-B5b: the cards of the alarms whose snooze ended — this cycle, or one that raised before here —
+            # each sent once, unless sent above, retired, or no longer in the engine (`_card` would create it),
+            # and only then let go.
+            measured = set(engine.patient_ids())
+            for pid in sorted(store.woken):
+                if pid not in changed and pid not in gone and pid in measured:
+                    await broadcaster.publish(hospital, _card(hospital, pid, now=now))
+                    changed.add(pid)
+                store.woken.discard(pid)
             # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
             # critical that latches and returns, or an alert that clears and returns within the
             # delay, is escalated again — but the doctor was told about this chain already (`paged`).

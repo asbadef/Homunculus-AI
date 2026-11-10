@@ -86,6 +86,10 @@ class AckStore:
     # episode's end (`prune`; no X13 chain carries it), a discharge (`forget_patient`), the same alarm worse
     # (`alert_lifecycle.sync_alerts`, plan note 1) and its own time (`expire_snoozes`). A second snooze replaces it.
     snoozes: dict[tuple[str, str], dict] = field(default_factory=dict)
+    # G2-B5b (review, fix 3): the patients whose snooze the escalation cycle ended and whose card it has not yet
+    # republished. A patient leaves only once its card is out, so a cycle that raises in between leaves it to the
+    # next one: the screens without a clock of their own still hear that the alarm is back. A discharge forgets it.
+    woken: set[str] = field(default_factory=set)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
                          chain_gap: timedelta | None = None) -> bool:
@@ -206,3 +210,4 @@ class AckStore:
                 del mapping[key]
         self.escalated = {k for k in self.escalated if k[0] != patient_id}
         self.paged = {k for k in self.paged if k[0] != patient_id}
+        self.woken.discard(patient_id)                  # G2-B5b: no card is left to republish
