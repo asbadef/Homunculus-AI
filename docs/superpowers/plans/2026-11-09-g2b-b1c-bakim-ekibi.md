@@ -156,7 +156,7 @@
 | `live/screens/patient/careTeam/CareTeamBox.jsx`, `CareTeamBox.test.jsx` | new: the box | 16 |
 | `live/screens/patient/PatientScreen.jsx` | mounts the box | 16 |
 
-**Docs:** the roadmap's Grup 2 table, and the Turkish guide's section 3.14 (Task 17).
+**Docs:** the roadmap's Grup 2 table, and the Turkish guide's section 3.15 (Task 17).
 
 ---
 
@@ -5308,11 +5308,11 @@ git commit -m "feat(dashboard): the «Bakım ekibi» box on the patient screen �
 - [ ] **Step 1: Where B3a's docs stand**
 
 ```bash
-cd /c/tmp/g2b-b1c && grep -n '^| G2-B3a \|^| G2-B1d ' docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md | cut -c1-40; grep -n '^### 3.1[2-4] \|^## 4\. ' docs/homunculus-rehber-TR.md
+cd /c/tmp/g2b-b1c && grep -n '^| G2-B3a \|^| G2-B1d ' docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md | cut -c1-40; grep -n '^### 3.1[3-5] \|^## 4\. ' docs/homunculus-rehber-TR.md
 ```
 
-- If a `| G2-B3a |` row and a `### 3.13` section exist, B3a's Task 14 has reached this branch. Insert after them.
-- If they do not exist, insert the row after the `| G2-B1d |` row and the section before `## 4.`, still numbered 3.14. Section 3.13 is B3a's and arrives with it. The two branches then meet one conflict at each place, resolved by keeping both, B3a's first. Say so in the report.
+- If a `| G2-B3a |` row and a `### 3.14` section exist, B3a's Task 14 has reached this branch. Insert after them.
+- If they do not exist, insert the row after the `| G2-B1d |` row and the section before `## 4.`, still numbered 3.15. Section 3.14 is B3a's and arrives with it. The two branches then meet one conflict at each place, resolved by keeping both, B3a's first. Say so in the report.
 
 - [ ] **Step 2: The roadmap row**
 
@@ -5336,13 +5336,13 @@ with
 
 ```markdown
 - İmza, imzalayan hekimi bakım ekibine eklemez (B1c). *B1c'de kapandı: imzalayan hekim sorumlu
-  hekim olur ve ekip satırı yazılır (3.14).*
+  hekim olur ve ekip satırı yazılır (3.15).*
 ```
 
-2. Insert this section where Step 1 says (before `## 4. "Neden bunu kullanmıyoruz" köşesi`, after section 3.13 when it exists):
+2. Insert this section where Step 1 says (before `## 4. "Neden bunu kullanmıyoruz" köşesi`, after section 3.14 when it exists):
 
 ```markdown
-### 3.14 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
+### 3.15 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
 
 Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
 kodda (`feat/g2b-b1c-bakim-ekibi`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Örneklerdeki
