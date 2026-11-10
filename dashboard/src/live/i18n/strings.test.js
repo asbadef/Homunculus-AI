@@ -56,6 +56,11 @@ const NEUTRAL = new Set([
   // G2-ESLEME (esleme) · neutral — an arrow between two names the screen fills in
   "esleme.confirm.bind",
 
+  // G3-02 (gorevler) · neutral — band labels: the score's own name and numbers; two placeholder-only texts
+  "gorevler.bandB0", "gorevler.bandB1_4", "gorevler.bandB5_6", "gorevler.bandB7", // NEWS2 0 · 1–4 · 5–6 · ≥ 7
+  "gorevler.taskTitle", //        "{title} · {bed}"    — punctuation; the words are the halves'
+  "gorevler.refused", //          "{subject}: {reason}" — the same (as admin.refusedFor)
+
   // G2-B3b (devir) · neutral — the score's own name, a clinical abbreviation, and an arrow between two names
   "devir.sum.news2", //            NEWS2
   "devir.sum.spo2", //             SpO₂
@@ -191,6 +196,16 @@ const AZ_SAME_AS_TR = new Set([
   "rrt.seen", //             Gördüm — the alarm screen's own az word (alarms.seen), the same acknowledgement
   "rrt.seenLabel", //        "Gördüm: {bed}, {kind}" — the same word; the rest is the row's own names
   "rrt.callSend", //         Çağır — the imperative of "çağırmaq", spelled the same in Azerbaijani
+  // G3-02 (gorevler) · az = tr
+  "gorevler.kindVital", //   Vital — the clinical word, the same in Azerbaijani (the filter's short label)
+  "gorevler.stateDone", //   tamamlandı — the same verb, the same past tense, in Azerbaijani
+  "gorevler.finish", //      Tamamla — its imperative, the same
+  "gorevler.taskTitle", //   "{title} · {bed}"     — punctuation only (NEUTRAL above)
+  "gorevler.refused", //     "{subject}: {reason}" — the same
+
+  // G3-03 (sivi) · az = tr
+  "sivi.fieldMl", //         mL — a unit symbol, not a word (as patient.medsBolusUnit)
+  "sivi.ml", //              "{value} mL" — a number and the unit symbol
 
   // G2-B3b (devir) · az = tr
   "devir.sum.risk", //       Risk — the same word in Azerbaijani (as risk.prefix)

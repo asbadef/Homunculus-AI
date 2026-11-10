@@ -152,7 +152,9 @@ describe("the auth surface's messages are translated", () => {
 
   it("every mapped key has its text in the four languages", () => {
     for (const key of new Set(API_MESSAGE_KEYS.values())) {
-      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][`errors.${key}`], `${lang} ${key}`).toBeTruthy();
+      // a bare name lives under `errors.`; a key with a dot (G3-02's gorevler.err.*) is already whole
+      const full = key.includes(".") ? key : `errors.${key}`;
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][full], `${lang} ${key}`).toBeTruthy();
     }
   });
 });
@@ -302,14 +304,14 @@ describe("apiErrorText", () => {
   // The sentence is the engine's RETRACT_REASON_LONG, byte for byte (the sweep above reads it from clinical.py).
   // X22: a withdrawal of a value outside the bedside form's set (a lactate) is refused by the engine with a 409.
   it("says the withdrawal's refusal of a value that is not a bedside measurement, in all four languages", () => {
-    const sentence = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir";
+    const sentence = "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir";
     expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractNotBedside", vars: {} });
     expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
-      .toBe("Yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir.");
-    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə səhv qeyd kimi işarələnə bilər.");
+      .toBe("Yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə və maye qeydi səhv qeyd kimi işarələnə bilər.");
     expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
-      .toBe("Ошибочной записью можно отметить только прикроватное измерение.");
-    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement can be marked as entered in error.");
+      .toBe("Ошибочной записью можно отметить только прикроватное измерение и запись жидкости.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement or a fluid entry can be marked as entered in error.");
   });
 
   it("says the withdrawal's refusal of a reason that is too long, in all four languages", () => {
@@ -799,6 +801,22 @@ describe("a 422 for a field the server does not take, or a number that is not on
       for (const key of ["kabul.invalid.extraField", "kabul.invalid.number"]) {
         expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
       }
+    }
+  });
+});
+
+// G3-02 — Görevlerim: the queue's refusals, by code (err.apiCode) and by the server's words.
+describe("the task queue's refusals (G3-02)", () => {
+  it("maps the task queue's refusals by code and by words", () => {
+    expect(apiErrorKey(Object.assign(new Error("The task is already closed."), { status: 409, apiCode: "task_not_open" })).key).toBe("gorevler.err.notOpen");
+    expect(apiErrorKey(Object.assign(new Error("görev bulunamadı"), { status: 404 })).key).toBe("gorevler.err.taskNotFound");
+    expect(apiErrorKey(Object.assign(new Error("a person signs a task: this credential names no actor"), { status: 403 })).key).toBe("gorevler.err.person");
+  });
+  it("every coded refusal of the queue has its text in the four languages", () => {
+    for (const code of ["task_settings_range", "task_title_length", "task_due_window", "task_role_unknown", "task_not_open", "task_reason_length", "vital_not_due"]) {
+      const hit = apiErrorKey(Object.assign(new Error("x"), { status: 422, apiCode: code }));
+      expect(hit?.key, code).toMatch(/^gorevler\.err\./);
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
     }
   });
 });

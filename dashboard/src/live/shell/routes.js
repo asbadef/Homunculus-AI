@@ -32,6 +32,8 @@ import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
 
 import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
 
+import { GorevlerScreen } from "../screens/gorevler/GorevlerScreen.jsx"; // G3-02
+
 import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
 
 import { DolulukScreen } from "../screens/doluluk/DolulukScreen.jsx"; // G2-B3a
@@ -61,6 +63,8 @@ const SCREENS = Object.freeze({
   kabul: KabulScreen, // G2-B1a — Hasta Kabul: admission, discharge, beds
 
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
+
+  gorevler: GorevlerScreen, // G3-02 — Görevlerim: the ward's task queue
 
   denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
 
@@ -113,6 +117,11 @@ export const ROUTES = Object.freeze([
   // so nobody's home moves; a session that only charts lands here.
   route({ id: "olcum", path: "/olcum", icon: "heart", labelKey: "olcum.nav", shortKey: "olcum.navShort",
     perms: ["clinical.chart"], work: true, nav: "main" }),
+
+  // G3-02 (D12) — Görevlerim: for whoever reads the queue (`tasks.view`). After Ölçüm, so nobody's home moves;
+  // a session that only reads tasks lands here.
+  route({ id: "gorevler", path: "/gorevler", icon: "clip", labelKey: "gorevler.nav", shortKey: "gorevler.navShort",
+    perms: ["tasks.view"], work: true, nav: "main" }),
 
   // G2-B4 (spec D3) — «Denetim bütünlüğü»: for whoever reads the audit trail (`audit.view`: the auditor group,
   // vendor support, the hospital administrator). Last on the rail, so nobody's home moves; a session that only

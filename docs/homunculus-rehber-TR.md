@@ -1852,6 +1852,53 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
 
 ---
 
+### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
+
+«Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
+bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** kodda hazır, hastane
+sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerler uydurmadır.
+
+- **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **elle girilen** NEWS2 değeridir (3.12'deki
+  form; geri alınan giriş sayılmaz). Monitörden ya da HBYS'den gelen değer dayanak değildir. Son 48 saatte elle
+  giriş yoksa dayanak kabul zamanıdır; o da yoksa ekran «ölçüm kaydı yok» der. Vade = dayanak + hastanın NEWS2
+  bandının aralığı. Ölçüm kaydedilince görev kendiliğinden ilerler.
+- **Aralığı hastane belirler, sistem değil.** Yönetim › Görevler sekmesinde (`structure.manage`) beş bant var:
+  NEWS2 0, 1–4, tek parametrede 3, 5–6, ≥ 7. Yalnız «0 → 720 dk» varsayılan doludur; kaynağı kasadaki NEWS2
+  belgesidir (RCP 2017: en az 12 saatte bir gözlem). Diğer bantlar boş gelir; hastane kendi protokolünü girer.
+  **Boş bant görev üretmez** — bu, «ölçüm gerekmiyor» demek değildir, «bu bant için aralık girilmedi» demektir.
+- **Durumlar.** planlı (vadesi gelmedi) · şimdi (vadesi geldi, gecikme payı içinde; pay varsayılan 30 dk) · gecikti ·
+  tamamlandı · uygulanmadı. Gecikmiş bir ölçüm «uygulanmadı» diye bir aralık için atlanabilir; bunun için neden
+  yazmak gerekir, ama metin saklanmaz — denetim kaydında yalnız «atlandı, kim, ne zamana kadar» olayı kalır.
+- **Elle görev.** «Görev ekle»: hasta, metin (en çok 200 karakter; hasta adı yazmayın, yatak yeter), vade (en çok
+  24 saat geri, 7 gün ileri), kime (hemşire / hekim / herkes). Üstlen · tamamla · uygulanmadı; her biri kimin
+  yaptığıyla denetim kaydına yazılır, metin yazılmaz (metin veritabanında şifrelidir).
+- **Görünüm.** Geniş ekranda nöbet başından (08:00 ya da 20:00) 24 saatlik ızgara, «şimdi» sütunu ve «Şimdiye git»;
+  tablette liste (gecikenler önce, tamamlananlar gizli). Üstte sayaçlar; süzgeçler: tür, yalnız gecikenler, yalnız
+  benim rolüm. Ekran 30 saniyede bir yenilenir; bildirim göndermez.
+- **Ne yapmaz.** Hastanın ne sıklıkla ölçüleceğine karar vermez, ilaç / bakım planı / devir işlerini henüz
+  göstermez (sonraki dilimler), kişiye atama yapmaz (bakım ekibi B1c'den sonra).
+
+### 3.17 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
+
+Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** kodda
+hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok). Örneklerdeki değerler uydurmadır.
+
+- **Ne girilir.** Aldığı: IV sıvı/infüzyon, kristaloid bolus, enteral/oral, kan ürünü, diğer. Çıkardığı: idrar,
+  dren, diğer (NG, kusma). Her giriş mL ve saatle; saat en çok 24 saat geri, ileri olamaz. «Giriş/çıkış ekle»
+  penceresinde birkaç satır birden girilir; yazma `clinical.chart` yetkisi ister.
+- **Bolus iki yerden girilebilir:** İlaç kutusunun formu ve Sıvı penceresi. İkisi aynı kayıttır, iki kez sayılmaz;
+  septik şok kuralı bolusu eskisi gibi okur.
+- **Toplamları sunucu hesaplar:** bugün (sıvı günü 08:00'de başlar — Görevlerim'in nöbet ayarı), iki nöbet ara
+  toplamı, son tamamlanan 24 saat, saatlik çubuk grafiği ve kümülatif denge. Tarayıcı toplama yapmaz.
+- **İdrar ve SOFA.** Son tamamlanan 24 saatin idrar toplamının yanında Sepsis-3'ün SOFA böbrek satırı yazar:
+  <500 mL/gün 3 puan, <200 mL/gün 4 puan. Sistem puan **vermez**, renk de kullanmaz; ekran o 24 saatin kaçında idrar
+  kaydı olduğunu söyler, çünkü eksik kayıt toplamı düşük gösterir. mL/kg/sa (son 6 saat) yalnız sayıdır: kasada
+  oligüri eşiği için kaynak yok.
+- **Hatalı giriş.** Yanlış bir hacim (bolus dahil) gerekçeyle geri alınır; toplamdan çıkar, listede üstü çizili kalır.
+  Bolus geri alınınca motor hastayı yeniden değerlendirir (septik şok kuralı dahil).
+- **Ne yapmaz.** Pompadan otomatik veri almaz, saatlik idrar hatırlatması yapmaz (Görevlerim'e sonra eklenebilir),
+  SOFA formuna idrar aktarmaz.
+
 ## 4. "Neden bunu kullanmıyoruz" köşesi
 
 Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıdır.

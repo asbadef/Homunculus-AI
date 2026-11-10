@@ -279,14 +279,17 @@ class TestTheRefusals:
         trail = len(client.app.state.audit.records(tenant="h1", limit=1000))
         r = _retract(client, ids[code])
         assert (r.status_code, r.json()["detail"]) == (409, RETRACT_NOT_BEDSIDE)
-        assert RETRACT_NOT_BEDSIDE == "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir"   # mapped so
+        # mapped so (G3-03 D4: the fluid entries named too)
+        assert RETRACT_NOT_BEDSIDE == "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir"
         assert len(client.app.state.audit.records(tenant="h1", limit=1000)) == trail
 
     def test_the_withdrawable_codes_are_the_bedside_forms(self):
         """The bedside form's own codes (dashboard live/screens/bedside/vitalsFields.js), as a chart row's
-        subject."""
+        subject — and, since G3-03 (D4), the fluid ledger's eight volumes."""
         assert RETRACTABLE_CODES == {"resp_rate", "spo2", "supplemental_oxygen", "sbp", "map", "heart_rate",
-                                     "acvpu", "temperature"}
+                                     "acvpu", "temperature",
+                                     "iv_fluid_ml", "crystalloid_bolus_ml", "enteral_ml", "blood_product_ml",
+                                     "other_intake_ml", "urine_output_ml", "drain_output_ml", "other_output_ml"}
 
     @pytest.mark.parametrize("code,value", [
         ("resp_rate", 18), ("spo2", 96), ("supplemental_oxygen", 1), ("sbp", 120), ("map", 85), ("heart_rate", 80),

@@ -47,6 +47,7 @@ import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
+import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -195,6 +196,13 @@ const ADMISSIONS = [
 const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
   label_height_mm: 30, printer_dpi: 203, updated_at: null };
 
+// G3-02: one patient with a late vital and one open hand task, so the sweep meets every state word.
+const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-09T04:00:00Z" }, now: "2026-10-08T10:00:00Z",
+  settings: { grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null } },
+  patients: [{ patient_id: "S-001", bed_key: "REA^01^2", unit_id: "REA-01",
+    vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
+    tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
+const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
 /** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
 const AUDIT_ROWS = { records: [
   { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
@@ -261,6 +269,14 @@ async function openAt(path) {
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
+
+      // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
+      api.tasks.mockResolvedValue(TASKS_SWEEP);
+      api.taskSettings.mockResolvedValue(TASK_SETTINGS_SWEEP);
+
+      // G3-03: the patient screen's «Sıvı» box — today's entries (one withdrawn), the shifts and the last day, so
+      // the sweep meets every word the box prints. Unstubbed it would say only that the ledger is unreadable.
+      api.patientFluids.mockImplementation((pid) => Promise.resolve(fluids(pid)));
 
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));

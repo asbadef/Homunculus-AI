@@ -63,6 +63,9 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
     REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
 )
+from homunculus.api.fluids import patient_fluids                  # G3-03
+from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
+from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.admission.boardlink import BoardLink    # G2-B1a
@@ -75,7 +78,9 @@ from homunculus.scoring.signing import (
     MIN_REASON_CHARS, Override, ScoreSigningError, SignedScore, form_digest, parse_overrides,
     sign as sign_score,
 )
-from homunculus.scope import Scope, ScopeReason, apply_scope, normalise_id, scope_report, sees_patient
+from homunculus.scope import (
+    Scope, ScopeReason, ScopeResult, apply_scope, normalise_id, scope_report, sees_patient,
+)
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
@@ -261,6 +266,7 @@ def create_app(
     shadow_monotonic: Callable[[], float] | None = None,
     samples: SampleStore | None = None,
     device_beds: DeviceBedSource | None = None,
+    tasks: TaskStore | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -317,6 +323,7 @@ def create_app(
     tickets = TicketStore()
     audit = audit or InMemoryAuditLog()
     identities = identities if identities is not None else InMemoryIdentityStore()
+    tasks = tasks if tasks is not None else InMemoryTaskStore()      # G3-02: the task queue's rows
     # No table is a working state, not an error: every location comes back unmatched and counted,
     # every patient still gets a card, and the discovery report is what tells the operator the
     # table has yet to be written.
@@ -667,7 +674,8 @@ def create_app(
             for name, store, release in (("audit", audit, "dispose"),
                                          ("identities", identities, "close"),
                                          ("samples", samples, "dispose"),
-                                         ("device_beds", device_beds, "dispose")):
+                                         ("device_beds", device_beds, "dispose"),
+                                         ("tasks", tasks, "close")):           # G3-02
                 method = getattr(store, release, None)
                 if callable(method):
                     try:
@@ -737,6 +745,13 @@ def create_app(
     from homunculus.api.edge_query import edge_query_router
     app.include_router(edge_query_router(caller=lambda authorization: _caller(authorization),
                                          identities=identities))
+    # G3-02: Görevlerim — the task queue, bound to the caller resolver and the scoped board (`_board_for`
+    # is defined below; the lambdas read it when a request arrives, as the edge query does).
+    async def _tasks_board(authorization: str | None, permission: str):
+        who, _, result = await _board_for(authorization, permission)
+        return who, result.boards
+    app.include_router(tasks_router(caller=lambda authorization: _caller(authorization),
+                                    board=_tasks_board, audit=audit, store=tasks))
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
@@ -746,6 +761,7 @@ def create_app(
     app.state.notification_hub = hub
     app.state.audit = audit
     app.state.tickets = tickets
+    app.state.tasks = tasks                         # G3-02
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_lane = lane
@@ -1185,7 +1201,8 @@ def create_app(
         - 400 for a reason shorter than 10 or longer than 200 characters after trim;
         - 409 for a discharged number, before anything is read;
         - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
-        - 409 for a chart row of a code the bedside form does not chart (X22: RETRACTABLE_CODES);
+        - 409 for a chart row of a code neither the bedside form nor the fluid ledger charts (X22, G3-03 D4:
+          RETRACTABLE_CODES);
         - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
           append raised left the engine still counting the value, and with the current card sent again either
           way (a withdrawal whose later step raised sent none).
@@ -1222,7 +1239,8 @@ def create_app(
         target = next((r for r in rows if r.id == wanted and r.event_type == "chart"), None)
         if target is None:
             raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
-        # X22 (the local walk): only the bedside form's values. A physician's suspected-infection mark, the SOFA
+        # X22 (the local walk): only the bedside form's values — and, since G3-03 (D4), the fluid ledger's volumes,
+        # the meds chart's bolus among them. A physician's suspected-infection mark, the SOFA
         # form's labs and the meds chart are chart rows too, but they are corrected by a new entry, not withdrawn —
         # the sepsis panel tells the user its mark «geri alınmaz». Before the «already» check: no rule of this
         # route reaches such a row.
@@ -1507,9 +1525,8 @@ def create_app(
         sign-ins (bcrypt runs on worker threads) must not make the service look dead."""
         return {"status": "ok"}
 
-    @app.get("/patients")
-    async def patients(authorization: str | None = Header(default=None)):
-        """The ward, narrowed to what this caller may see — and told why it is that size.
+    async def _board_for(authorization: str | None, permission: str) -> tuple[Caller, Scope, ScopeResult]:
+        """The ward narrowed to this caller — what `/patients` answers and `/tasks` reads (G3-02).
 
         `scope` travels with the patients rather than being left for the screen to infer. An
         empty board and a quiet ward are the same picture; only this block can tell them apart,
@@ -1517,7 +1534,7 @@ def create_app(
         prevent.
         """
         caller = await _caller(authorization)
-        _require(caller, BOARD_VIEW)
+        _require(caller, permission)
         hospital = caller.hospital
         # 503 before the board is narrowed (G2-A2, D13): an unreadable scope is not an empty one.
         scope = _readable(await _scope(authorization))
@@ -1537,6 +1554,12 @@ def create_app(
             # find it on the server, not only in a screenshot from the ward.
             log.warning("scope yielded an empty board for a %s caller in %s (grants: %s)",
                         scope.reason, hospital, ", ".join(result.unmatched_grants) or "none")
+        return caller, scope, result
+
+    @app.get("/patients")
+    async def patients(authorization: str | None = Header(default=None)):
+        """The ward, narrowed to what this caller may see — and told why it is that size."""
+        _, _, result = await _board_for(authorization, BOARD_VIEW)
         return {"patients": result.boards,
                 "scope": result.as_dict(),
                 "scope_note": scope_report(result)}
@@ -1568,6 +1591,24 @@ def create_app(
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
                               patient_id=patient_id, hours=int(hours),
                               now=datetime.now(timezone.utc))
+
+    @app.get("/patients/{patient_id}/fluids")
+    async def fluids(patient_id: str, authorization: str | None = Header(default=None)):
+        """G3-03: the patient's fluid ledger, summed here (`api/fluids.py`) — the browser adds nothing (D6).
+        Read-only and not audited, as the trends read. The fluid day starts at Görevlerim's first shift start in
+        the tenant's zone (D5), the defaults when the tenant saved no settings; the weight is the last charted
+        one (the board's `meds.weight_kg`). Out of scope and unknown are one 404, as at /trends."""
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        scope = await _scope(authorization)
+        await _require_patient(caller, authorization, patient_id, scope=scope)
+        state = _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
+        settings = tasks.settings(caller.hospital) or DEFAULT_TASK_SETTINGS
+        weight = state.latest(SignalCode.WEIGHT_KG)
+        return patient_fluids(audit, hospital=caller.hospital, patient_id=patient_id,
+                              now=datetime.now(timezone.utc), zone=zone_of(tasks.timezone(caller.hospital)),
+                              start_a=settings.shift_start_a, start_b=settings.shift_start_b,
+                              weight_kg=None if weight is None else weight.value)
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants_now(hospital: str) -> dict[str, list[str]]:

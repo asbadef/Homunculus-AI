@@ -38,6 +38,8 @@ export const PERMISSION_KEYS = freeze([
 
   // G2-B3a — a bed reserved or taken out of service on the Doluluk screen (spec D4)
   "beds.manage_state",
+  // G3-02 — Görevlerim (spec D8): open the queue and read the ward's tasks; write, claim, close or skip one
+  "tasks.view", "tasks.manage",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

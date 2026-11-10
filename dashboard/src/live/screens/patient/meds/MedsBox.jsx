@@ -137,10 +137,12 @@ function Meds({ meds, nowMs }) {
  *
  *  `onChart(entries, recordedAt)` is the write, already bound to this patient by the screen; it
  *  resolves to the store's answer, which the form reads (`dropped`). `patientId` is whose form is open.
+ *  `onSaved(patientId)` tells the screen a write may have landed for that patient (G3-03 D12: the Sıvı box
+ *  reads its ledger again — the same bolus record, and the weight its urine rate divides by).
  *  `nowMs` is the screen's clock (the reader's "today"; this instant when the screen passes none).
  *  The form is the box's LAST child whatever the picture holds, so the reload that lands while it is
  *  still open (a first entry turns "no medication information" into a picture) does not remount it. */
-export function MedsBox({ meds, bed, canChart, onChart, patientId, nowMs = Date.now() }) {
+export function MedsBox({ meds, bed, canChart, onChart, patientId, nowMs = Date.now(), onSaved = null }) {
   const { t } = useI18n();
   // `{ id, opening }`: the patient the form was opened FOR and which opening this is, or null.
   const [editing, setEditing] = useState(null);
@@ -158,12 +160,13 @@ export function MedsBox({ meds, bed, canChart, onChart, patientId, nowMs = Date.
       {meds ? <Meds meds={meds} nowMs={nowMs} /> : <p className="m-0 text-13 text-mute">{t("patient.noMeds")}</p>}
       {/* No `onSaved` work of its own: a write the engine answered is followed by the store's own reload
           (`board.store.chart`), and one that landed without its answer reaching here is published on the
-          board's stream by the engine (api/app.py `POST /clinical`), so the box re-renders from the board. */}
+          board's stream by the engine (api/app.py `POST /clinical`), so the box re-renders from the board. The
+          screen is told, for the patient the form was opened for (G3-03 D12). */}
       {editing && editing.id === patientId ? (
         <MedsChartForm
           key={editing.opening} bed={bed} onChart={onChart}
           onClose={() => setEditing((current) => (current?.opening === editing.opening ? null : current))}
-          onSaved={() => {}}
+          onSaved={() => onSaved?.(editing.id)}
         />
       ) : null}
     </Box>

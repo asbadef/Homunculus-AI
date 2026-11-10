@@ -1795,3 +1795,52 @@ describe("backendApi — the monitor→bed editor", () => {
     expect(stray.occupied).toBeUndefined();
   });
 });
+
+// G3-02 — Görevlerim: the task queue, its writes and the hospital's settings (homunculus/api/tasks.py)
+describe("G3-02 Görevlerim calls", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+
+  it("reads the queue, writes a task and its three verbs, skips a vital and reads/saves the settings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const api = signedIn(fetchMock);
+    await api.tasks();
+    await api.tasks("2026-11-09T04:00:00Z", "2026-11-10T04:00:00Z");
+    await api.createTask({ patient_id: "S-001", title: "Pansuman", due_at: "2026-11-09T12:00:00Z", target_role: "nurse" });
+    await api.claimTask("t-1");
+    await api.doneTask("t-1");
+    await api.skipTask("t-1", "ameliyatta");
+    await api.skipVitalTask("S-001", "görüntülemede");
+    await api.taskSettings();
+    await api.saveTaskSettings({ grace_min: 30 });
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/tasks")).map(([url, init]) => [String(url), init.method ?? "GET"]);
+    expect(calls).toEqual([
+      ["/tasks", "GET"],
+      ["/tasks?from=2026-11-09T04%3A00%3A00Z&to=2026-11-10T04%3A00%3A00Z", "GET"],
+      ["/tasks", "POST"], ["/tasks/t-1/claim", "POST"], ["/tasks/t-1/done", "POST"], ["/tasks/t-1/skip", "POST"],
+      ["/tasks/vitals/S-001/skip", "POST"], ["/tasks/settings", "GET"], ["/tasks/settings", "PUT"],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith("/t-1/skip"))[1].body)).toEqual({ reason: "ameliyatta" });
+  });
+});
+
+// G3-03 — Sıvı dengesi: the patient's fluid ledger, summed by the engine (homunculus/api/fluids.py)
+describe("G3-03 Sıvı dengesi call", () => {
+  it("reads one patient's fluid ledger with an authed GET", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const answer = { patient_id: "S 1/x", totals: {} };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.patientFluids("S 1/x")).toEqual(answer);
+    expect(await api.patientFluids("S-001")).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/patients/S%201%2Fx/fluids");
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/patients/S-001/fluids");
+  });
+});

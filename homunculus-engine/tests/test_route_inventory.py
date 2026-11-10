@@ -26,7 +26,16 @@ CALLER_RESOLVED_MODULE = "homunculus.api.app"
 # Dalga: the waveform GET is registered from api/infinity_waves.py, and resolves its caller by
 # calling the strip board's own handler (`shadow_board`: the Caller, board.view/devices.manage).
 CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-query"),
-                          ("homunculus.api.infinity_waves", "GET", "/infinity-waves/{device_id}")}
+                          ("homunculus.api.infinity_waves", "GET", "/infinity-waves/{device_id}"),
+                          # G3-02: the task queue resolves its caller through the app's `_caller`
+                          ("homunculus.api.tasks", "GET", "/tasks"),
+                          ("homunculus.api.tasks", "POST", "/tasks"),
+                          ("homunculus.api.tasks", "POST", "/tasks/{task_id}/claim"),
+                          ("homunculus.api.tasks", "POST", "/tasks/{task_id}/done"),
+                          ("homunculus.api.tasks", "POST", "/tasks/{task_id}/skip"),
+                          ("homunculus.api.tasks", "POST", "/tasks/vitals/{patient_id}/skip"),
+                          ("homunculus.api.tasks", "GET", "/tasks/settings"),
+                          ("homunculus.api.tasks", "PUT", "/tasks/settings")}
 
 
 def _calls(dependant) -> set:

@@ -40,6 +40,8 @@ import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
 
 import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
 
+import { TasksTab } from "./TasksTab.jsx"; // G3-02
+
 const TAB_ID = "admin";
 
 /** Each read's name, for the Alert that says which one failed. Written out, never built from the
@@ -64,6 +66,9 @@ export const TABS = Object.freeze([
 
   // G2-B1d — Yönetim › Protokol ve etiket: the next protocol number and the label (spec D11)
   Object.freeze({ id: "protocol", perm: "structure.manage", labelKey: "protokol.tab" }),
+
+  // G3-02 — Yönetim › Görevler: shift starts, grace and the vital interval per NEWS2 band (spec D10)
+  Object.freeze({ id: "tasks", perm: "structure.manage", labelKey: "gorevler.settingsTab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -83,6 +88,8 @@ const TAB_SCREENS = Object.freeze({
   structure: StructureTab, // G2-B1a
 
   protocol: ProtocolTab, // G2-B1d
+
+  tasks: TasksTab, // G3-02
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */

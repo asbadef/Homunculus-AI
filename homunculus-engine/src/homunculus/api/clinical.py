@@ -92,6 +92,14 @@ CHARTABLE: dict[SignalCode, str] = {
     SignalCode.MAP: "mmHg",
     SignalCode.HEART_RATE: "/min",
     SignalCode.TEMPERATURE: "°C",
+    # G3-03 (D2): the fluid ledger's new volumes, mL per entry. No rule reads one; api/fluids.py sums them with
+    # the bolus and the urine output above.
+    SignalCode.IV_FLUID_ML: "mL",
+    SignalCode.ENTERAL_ML: "mL",
+    SignalCode.BLOOD_PRODUCT_ML: "mL",
+    SignalCode.OTHER_INTAKE_ML: "mL",
+    SignalCode.DRAIN_OUTPUT_ML: "mL",
+    SignalCode.OTHER_OUTPUT_ML: "mL",
 }
 
 # Bounds that catch a slipped decimal point or a wrong unit, not clinical judgement. They are
@@ -134,6 +142,14 @@ PLAUSIBLE: dict[SignalCode, tuple[float, float]] = {
     SignalCode.MAP: (0.0, 300.0),                 # mmHg
     SignalCode.HEART_RATE: (0.0, 300.0),          # /min
     SignalCode.TEMPERATURE: (25.0, 45.0),         # °C
+    # G3-03 (D2): one entry's volume — a slipped digit, not a judgement; the urine output's bound (the bolus
+    # keeps its own 10000).
+    SignalCode.IV_FLUID_ML: (0.0, 5000.0),
+    SignalCode.ENTERAL_ML: (0.0, 5000.0),
+    SignalCode.BLOOD_PRODUCT_ML: (0.0, 5000.0),
+    SignalCode.OTHER_INTAKE_ML: (0.0, 5000.0),
+    SignalCode.DRAIN_OUTPUT_ML: (0.0, 5000.0),
+    SignalCode.OTHER_OUTPUT_ML: (0.0, 5000.0),
 }
 
 # G2-A4 review: the refusal of a GCS that is not a whole number — at this door, and for a SOFA correction
@@ -165,13 +181,21 @@ RETRACT_REASON_SHORT = "gerekçe en az 10 karakter olmalı"
 #: body limit.
 RETRACT_MAX_REASON_CHARS = 200
 RETRACT_REASON_LONG = "gerekçe en çok 200 karakter olabilir"
+#: G3-03 (spec D2): the fluid ledger's eight codes — five new, the meds chart's bolus and the urine output.
+FLUID_CODES = frozenset(code.value for code in (
+    SignalCode.IV_FLUID_ML, SignalCode.CRYSTALLOID_BOLUS_ML, SignalCode.ENTERAL_ML, SignalCode.BLOOD_PRODUCT_ML,
+    SignalCode.OTHER_INTAKE_ML, SignalCode.URINE_OUTPUT_ML, SignalCode.DRAIN_OUTPUT_ML, SignalCode.OTHER_OUTPUT_ML))
+_FLUID_SIGNALS = frozenset(SignalCode(c) for c in FLUID_CODES)
 #: G3-01 (X22, the local walk): what «hatalı giriş» may withdraw — the bedside form's set (G3-01 D2): the six
 #: BEDSIDE_VITALS, supplemental oxygen and ACVPU, by the slug a `chart` row carries as its subject. Other chart rows
 #: — a physician's suspected-infection mark, the SOFA form's labs, the meds chart — are corrected by a new entry,
-#: not withdrawn (X22); the sepsis panel says so of its mark.
+#: not withdrawn (X22); the sepsis panel says so of its mark. G3-03 (D4): the fluid ledger's volumes too — a volume
+#: is corrected by withdrawal, not by a new entry; a departure from X22 for the bolus, whose withdrawal re-runs the
+#: septic-shock rule on the rebuilt patient.
 RETRACTABLE_CODES = frozenset(code.value for code in
-                              BEDSIDE_VITALS | {SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ACVPU})
-RETRACT_NOT_BEDSIDE = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir"
+                              BEDSIDE_VITALS | {SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ACVPU}) | FLUID_CODES
+#: G3-03 (D4): names the fluid entries too, now withdrawable. The dashboard maps this exact sentence (apiErrors.js).
+RETRACT_NOT_BEDSIDE = "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir"
 RETRACT_NEEDS_PERSON = "geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz"
 RETRACT_UNKNOWN = "bu hastada böyle bir elle girilmiş değer yok"
 #: The dashboard tells «already withdrawn» from the other 409s by this exact sentence (apiErrors.js).
@@ -298,9 +322,10 @@ def _check_bedside(built: list[ChartedEntry], recorded_at: datetime | None, now:
     """G3-01 (D6, D7, X12): the bedside set's two rules that read more than one value. The time is bounded
     only when one was sent (an untouched time is the server's clock), and only for a request that charts one
     of the six; MAP is compared with a systolic in the SAME request — one form's two numbers, not an older
-    reading's. Raises with the clinician's sentence; all-or-nothing, as the loop above."""
+    reading's. Raises with the clinician's sentence; all-or-nothing, as the loop above. G3-03 (D3): the time bound
+    covers the fluid ledger's eight codes too — a volume is a measurement."""
     codes = {item.observation.code for item in built}
-    if recorded_at is not None and codes & BEDSIDE_VITALS:
+    if recorded_at is not None and codes & (BEDSIDE_VITALS | _FLUID_SIGNALS):
         if recorded_at < now - BEDSIDE_BACKDATE:
             raise ClinicalEntryError(AT_TOO_OLD)
         if recorded_at > now + BEDSIDE_SKEW:
