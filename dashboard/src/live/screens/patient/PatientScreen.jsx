@@ -66,6 +66,7 @@ import { TrendsBox } from "./trends/TrendsBox.jsx";
 import { MedsBox } from "./meds/MedsBox.jsx";
 import { VitalsEntry } from "./VitalsEntry.jsx"; // G3-01 (D3b)
 import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
+import { FluidsBox } from "./fluids/FluidsBox.jsx"; // G3-03 (D10)
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
@@ -452,6 +453,9 @@ export function PatientScreen({ params }) {
             <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
               onChart={(entries, at) => board.store.chart(id, entries, at)} />
           </div>
+
+          <FluidsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} />{/* G3-03 (D10): the fluid ledger */}
+
           {/* G2-A4 (D1): the SOFA form's box, where the "forms come later" note stood. It reads the form of the
               patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
           <SofaBox patientId={id} bed={bed} nowMs={nowMs} reread={sofaReread} />

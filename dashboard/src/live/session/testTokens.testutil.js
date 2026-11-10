@@ -78,6 +78,8 @@ export function fakeApi(vi, { access = null } = {}) {
     skipVitalTask: vi.fn(),
     taskSettings: vi.fn(),
     saveTaskSettings: vi.fn(),
+    // G3-03: Sıvı dengesi — the patient screen's fluid box (screens/patient/fluids)
+    patientFluids: vi.fn(),
 
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),

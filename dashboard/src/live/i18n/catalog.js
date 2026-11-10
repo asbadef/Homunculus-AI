@@ -62,6 +62,9 @@ import olcum from "./strings/olcum.js";
 // G3-02: Görevlerim — the task queue, its dialogs and the Yönetim › Görevler tab.
 import gorevler from "./strings/gorevler.js";
 
+// G3-03: Sıvı dengesi — the patient screen's fluid box, its chart and entry dialog (screens/patient/fluids).
+import sivi from "./strings/sivi.js";
+
 // Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
 
@@ -101,6 +104,8 @@ export const NAMESPACES = {
   olcum, // G3-01
 
   gorevler, // G3-02
+
+  sivi, // G3-03
 
   waves, // dalga
 };
