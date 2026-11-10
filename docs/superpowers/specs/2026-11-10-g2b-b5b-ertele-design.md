@@ -1,7 +1,7 @@
 # G2-B5b — «Ertele»: snoozing an alarm on the live system
 
 **Date:** 2026-11-10 · **Lane:** B (session homunculus-ai-3b), assigned by Lane A · **Branch:** `feat/g2b-b5b-ertele`,
-cut from `abe8b2e7` (`feat/g2-borclar`, which touches the same engine files)
+cut from `fd595687`, the head of `feat/g2-borclar` (which touches the same engine files)
 
 **Origin:** B5's owner decision D2 put snooze in its own slice. The B5 spec (`2026-11-09-g2b-b5-rrt-design.md` §1)
 describes the two escalation systems. This slice builds on the live one (`api/ackstore.py`, `api/escalation.py`,
