@@ -9,6 +9,8 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { NOW, ago, board, entry, identity, news2 } from "../../data/board.testutil.js";
 import { dayStamp, hhmm } from "../../i18n/dates.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
+import { LANG_CODES } from "../../i18n/langs.js";
 import { BedsideScreen } from "./BedsideScreen.jsx";
 import { SAVE_ARM_MS } from "./VitalsForm.jsx";
 
@@ -65,6 +67,19 @@ describe("the bedside page", () => {
     expect(toasted("REA-01 · 2: şəxsiyyət uyğun gəlmədi, seçim ləğv edildi. Baş tibb bacısına bildirin.").length).toBeGreaterThan(0);
     expect(picks()).toHaveLength(2);
     expect(api.previewChart).not.toHaveBeenCalled();
+  });
+
+  // G2-B3a (R9, final review M-7b): the name is shown as the ward writes it, surname first — the
+  // Kabul form's box says so, and so does the identity check that reads it back.
+  it("labels the name it asks about surname first, as the Kabul form's box does, in every language", async () => {
+    await open();
+    await pick("S-001");
+    const term = screen.getByText("Soyad, ad");
+    expect(term.tagName).toBe("DT");
+    expect(term.nextElementSibling).toHaveTextContent("Ayşe Sentetik");     // the name it labels
+    expect(Object.fromEntries(LANG_CODES.map((lang) => [lang, DICTIONARIES[lang]["olcum.identityName"]]))).toEqual({
+      tr: "Soyad ad", az: "Soyad, ad", ru: "Фамилия и имя", en: "Surname and name",
+    });
   });
 
   it("a patient with no birth date says so, and «Bəli» opens the form for that bed", async () => {

@@ -271,6 +271,9 @@ BOARD_EXPECTED = {
     ("POST", "/scores/sofa/{patient_id}/preview"): "scores.sign",
     ("GET", "/alarm-quality"): "audit.view",
     ("GET", "/audit/verify"): "audit.view",
+    # G2-B5 (D3): «RRT çağır» — whoever may call the rapid-response team; a device is additionally refused
+    # (test_a_device_cannot_call_the_rrt, below).
+    ("POST", "/alerts/rrt-call"): "alerts.escalate",
     # Group 2's trend charts (api/trends.py), read with the board's own right.
     ("GET", "/patients/{patient_id}/trends"): "board.view",
     # G3-03: the fluid ledger (api/fluids.py), read with the board's own right.
@@ -367,3 +370,10 @@ async def test_a_device_cannot_sign_a_score():
         res = await _call("POST", path, "tok")
         assert res.status_code == 403
         assert res.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"
+
+
+async def test_a_device_cannot_call_the_rrt():
+    """G2-B5 (D3): the call names a person in the trail, and the bridge's token names nobody."""
+    res = await _call("POST", "/alerts/rrt-call", "tok")
+    assert res.status_code == 403
+    assert res.json()["detail"] == "RRT'yi bir kişi çağırır"

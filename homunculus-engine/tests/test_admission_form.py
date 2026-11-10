@@ -429,7 +429,9 @@ def test_every_other_refusal_has_a_stable_code():
                      # G2-B1d (spec §7)
                      "protocol_not_configured", "protocol_exhausted", "protocol_format",
                      "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",
-                     "no_protocol"}
+                     "no_protocol",
+                     # G2-B3a (spec D5, X1)
+                     "bed_reserved"}
 
 
 # ---------------------------------------------------------------- the person (A-37)

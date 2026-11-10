@@ -82,6 +82,10 @@ export const API_MESSAGE_KEYS = new Map([
   ["malformed identity resource", "badIdentityResource"],
   ["identity source 'kabul' is reserved for the admission", "kabulSourceReserved"],
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
+  // POST /alerts/rrt-call (G2-B5): a device is refused, the reason is 3–500 characters, an answered alarm opens no call.
+  ["RRT'yi bir kişi çağırır", "rrtByPerson"],
+  ["RRT çağrısının gerekçesi 3–500 karakter olmalı", "rrtReasonLength"],
+  ["alarm zaten yanıtlandı; RRT çağrısı açılmaz", "rrtAnswered"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
@@ -226,6 +230,10 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["label_too_narrow", "protokol.err.tooNarrow"],
   ["label_dpi", "protokol.err.dpi"],
   ["no_protocol", "protokol.err.noProtocol"],
+
+  // G2-B3a — Doluluk (spec D5). `bed_reserved` opens the reserved-bed question in the Kabul form
+  // (ReservedAsk.jsx); its sentence is said only where a screen shows the refusal itself.
+  ["bed_reserved", "kabul.err.bedReserved"],
 ]);
 
 /** G3-02 — Görevlerim (homunculus/api/tasks.py WORDS, spec D11): the queue's refusals by their code

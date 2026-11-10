@@ -21,7 +21,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator,
+    AfterValidator, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo, field_validator,
 )
 
 from homunculus.admission.errors import field_invalid
@@ -205,6 +205,9 @@ class AdmissionCreate(BaseModel):
     patient: PatientIdentity
     note: AdmissionNoteFields
     request_id: uuid.UUID | None = None
+    # G2-B3a (spec D5, X2): the nurse saw the bed is reserved and admits into it all the same. A
+    # real boolean, beside the form and not in it: `_request_digest` leaves it out.
+    confirm_reserved: StrictBool = False
 
 
 class AdmissionResponse(BaseModel):

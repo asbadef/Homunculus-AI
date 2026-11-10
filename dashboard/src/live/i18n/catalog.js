@@ -59,6 +59,7 @@ import protokol from "./strings/protokol.js";
 // G3-01: the bedside measurement — the «Yatak başı ölçüm» page, «Ölçüm gir», «hatalı giriş».
 import olcum from "./strings/olcum.js";
 
+import doluluk from "./strings/doluluk.js";
 // G3-02: Görevlerim — the task queue, its dialogs and the Yönetim › Görevler tab.
 import gorevler from "./strings/gorevler.js";
 
@@ -67,6 +68,12 @@ import sivi from "./strings/sivi.js";
 
 // Dalga: the live waveform panel (screens/common/WavePanel.jsx).
 import waves from "./strings/waves.js";
+
+// G2-B4: «Denetim bütünlüğü» — the audit trail's integrity page (screens/denetim).
+import denetim from "./strings/denetim.js";
+
+// G2-B5: the rapid-response team — the RRT screen (screens/rrt), its rail badge, «RRT çağır».
+import rrt from "./strings/rrt.js";
 
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
@@ -103,11 +110,16 @@ export const NAMESPACES = {
 
   olcum, // G3-01
 
+  doluluk, // G2-B3a
   gorevler, // G3-02
 
   sivi, // G3-03
 
   waves, // dalga
+
+  denetim, // G2-B4
+
+  rrt, // G2-B5
 };
 
 function flattenInto(out, prefix, entries) {

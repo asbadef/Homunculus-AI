@@ -130,6 +130,7 @@ def acknowledge_latched(store: AckStore, patient_id: str, kind: str) -> Cleared 
     entry = store.resolved.pop(key, None)
     if entry is None:
         return None
+    store.rrt_calls.pop(key, None)   # G2-B5: an answer ends the call
     seen = store.first_seen.pop(key, None)
     store.clock_from.pop(key, None)
     if seen is None:

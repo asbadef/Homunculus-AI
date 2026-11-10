@@ -137,6 +137,16 @@ describe("alertsFromPatients", () => {
     expect(alerts[0].escalated).toBe(false);
   });
 
+  // G2-B5 (D4): the open call to the rapid-response team rides on the card's alert.
+  it("carries an open RRT call — who, when, why — and null when there is none", () => {
+    const at = "2026-11-09T10:00:00+00:00";
+    const called = { ...entry, alerts: [{ ...entry.alerts[0],
+      rrt_call: { by: "sorumlu.hem", at, reason: "Ekip gelsin" } }] };
+    expect(alertsFromPatients([patientFromBoard(called)])[0].rrtCall)
+      .toEqual({ by: "sorumlu.hem", atMs: Date.parse(at), reason: "Ekip gelsin" });
+    expect(alertsFromPatients([patientFromBoard(entry)])[0].rrtCall).toBeNull();
+  });
+
   it("maps the engine's severity onto the tier the alarm UI colors by", () => {
     const critical = { ...entry, alerts: [{ ...entry.alerts[0], severity: "critical" }] };
     expect(alertsFromPatients([patientFromBoard(critical)])[0].tier).toBe("CRITICAL");

@@ -81,7 +81,10 @@ class TestReading:
         card = next(p for p in body["patients"] if p["patient_id"] == "S-001")
         vital = card["vital"]
         assert vital["state"] == "plan" and vital["band"] == "b0" and vital["interval_min"] == 720
-        assert vital["anchor_at"][:16] == at.isoformat()[:16] and len(vital["entries"]) == 1
+        assert vital["anchor_at"][:16] == at.isoformat()[:16]
+        # `entries` are this shift's cells: an entry 5 min back is in the previous shift during the first 5 min of one.
+        in_shift = at >= datetime.fromisoformat(body["shift"]["start"])
+        assert len(vital["entries"]) == (1 if in_shift else 0)
         assert card["tasks"] == []
 
     def test_a_band_without_an_interval_has_no_vital_task(self, client):

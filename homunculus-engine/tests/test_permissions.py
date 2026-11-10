@@ -22,13 +22,14 @@ SPEC_KEYS = {
     "devices.manage", "clinical.chart", "scores.sign",
     "beds.release",       # G2-B1a (spec D8)
     "devices.map_beds",   # G2-ESLEME monitor→bed editor (spec D2)
+    "beds.manage_state",  # G2-B3a Doluluk: reserve / out of service (spec D4)
     "tasks.view",         # G3-02 Görevlerim (spec D8): open the queue, read /tasks
     "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_five_keys():
-    assert len(SPEC_KEYS) == 25
+def test_the_catalogue_is_exactly_the_specified_twenty_six_keys():
+    assert len(SPEC_KEYS) == 26
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -128,7 +129,7 @@ SPEC_GROUPS = {
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds", "tasks.view", "tasks.manage"}),
+                                    "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
                              "clinical.chart", "beds.release", "tasks.view", "tasks.manage"}),
@@ -186,6 +187,11 @@ def test_a_cleaned_bed_is_released_by_the_wards_nurses_and_no_one_else_by_defaul
     holders = {slug for slug, perms in by_slug.items() if "beds.release" in perms}
     assert holders == {"nurse", "charge_nurse", "hospital_admin"}
     assert "structure.manage" not in by_slug["nurse"] | by_slug["charge_nurse"]
+
+
+def test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states():
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "beds.manage_state" in g["permissions"]}
+    assert holders == {"hospital_admin", "charge_nurse"}
 
 
 def test_legacy_pharmacist_and_biomedical_convert():

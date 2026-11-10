@@ -430,6 +430,18 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "sepsis" });
   });
 
+  it("calls the RRT to an alarm by patient, kind and reason, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [{ kind: "news2_high",
+      rrt_call: { by: "sorumlu.hem", at: "2026-11-09T10:00:00+00:00", reason: "Ekip gelsin" } }] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.callRrt("S-001", "news2_high", "Ekip gelsin")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/alerts/rrt-call");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
+  });
+
   it("reads Aşama A's monitor strip with an authed GET /infinity-shadow/board", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ stage: "off" }));
     const api = signedIn(fetchMock);
@@ -1619,6 +1631,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     ]);
     expect(sent(fetchMock, 0).body).toEqual({ patient: { display_name: "Sentetik" }, note: {} });
     expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
+  });
+
+  it("reads the beds' names and notes and moves a bed by its own routes (G2-B3a)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.occupancy();
+    await api.reserveBed("b/1", { note: "Sentetik planlı kabul" });
+    await api.unreserveBed("b-1");
+    await api.bedOutOfService("b-1", { reason: "FAULT", note: null });
+    await api.bedReturnToService("b-1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/tenant/occupancy"], ["POST", "/tenant/beds/b%2F1/reserve"], ["POST", "/tenant/beds/b-1/unreserve"],
+      ["POST", "/tenant/beds/b-1/out-of-service"], ["POST", "/tenant/beds/b-1/return-to-service"],
+    ]);
+    expect(sent(fetchMock, 1).body).toEqual({ note: "Sentetik planlı kabul" });
+    expect(sent(fetchMock, 3).body).toEqual({ reason: "FAULT", note: null });
   });
 
   it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {

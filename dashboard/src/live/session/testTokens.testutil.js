@@ -89,6 +89,12 @@ export function fakeApi(vi, { access = null } = {}) {
     startDischarge: vi.fn(),
     confirmDischarge: vi.fn(),
     releaseBed: vi.fn(),
+    // G2-B3a: Doluluk — the names read and the four moves
+    occupancy: vi.fn(),
+    reserveBed: vi.fn(),
+    unreserveBed: vi.fn(),
+    bedOutOfService: vi.fn(),
+    bedReturnToService: vi.fn(),
     createSite: vi.fn(),
     createUnit: vi.fn(),
     createRoom: vi.fn(),
@@ -105,6 +111,15 @@ export function fakeApi(vi, { access = null } = {}) {
     protocolSettings: vi.fn(),
     saveProtocolSettings: vi.fn(),
     admissionLabel: vi.fn(),
+
+    // G2-B4: «Denetim bütünlüğü» — the newest events, the chain's verification (screens/denetim); and the
+    // alarm-quality report the heatmap slice (B6) will read
+    audit: vi.fn(),
+    verifyAudit: vi.fn(),
+    alarmQuality: vi.fn(),
+
+    // G2-B5: «RRT çağır» (screens/alarms, screens/rrt)
+    callRrt: vi.fn(),
 
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),

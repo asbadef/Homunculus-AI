@@ -335,6 +335,20 @@ export function createBoardStore({
       return entry;
     },
     /**
+     * G2-B5: call the rapid-response team to one alarm (`POST /alerts/rrt-call {patient_id, kind, reason}`,
+     * permission `alerts.escalate`) and put the board entry it answers with onto the board. The shape of
+     * `acknowledge`, for the same reasons: through `track`; resolves with the entry; REJECTS with the API's own
+     * error having changed nothing — a call that may not have been made must not be shown as one; an answer
+     * after `clear()` is dropped.
+     */
+    async callRrt(patientId, kind, reason) {
+      const mine = generation;
+      const entry = await track(() => api.callRrt(patientId, kind, reason));
+      if (mine !== generation) return null;
+      ingest(entry);
+      return entry;
+    },
+    /**
      * Record that a clinician opened this patient (`POST /view`, permission `board.view`) — the
      * audit line an inspection asks for. It writes a log row and nothing else, so it changes no
      * state here. The CALLER decides when: only for a patient the screen actually shows, because

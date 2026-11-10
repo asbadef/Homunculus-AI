@@ -323,6 +323,38 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, new Error(sentence))).toBe("The reason can be at most 200 characters.");
   });
 
+  // G2-B5 (D3): the RRT call's 409 on an alarm somebody already answered — nothing was opened, and it says so.
+  it("says the RRT call's refusal on an answered alarm, in all four languages", () => {
+    const sentence = "alarm zaten yanıtlandı; RRT çağrısı açılmaz";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.rrtAnswered", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
+      .toBe("Bu alarm zaten yanıtlanmış; RRT çağrısı açılmadı.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Bu siqnal artıq cavablandırılıb; RRT çağırışı açılmadı.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
+      .toBe("На эту тревогу уже ответили; вызов БРР не создан.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("This alarm has already been answered; no RRT call was opened.");
+  });
+
+  // …and its other two refusals, which api/app.py states beside it (the sweep above holds them mapped).
+  it("says the RRT call's refusal of a device and of a reason outside 3–500 characters, in all four languages", () => {
+    const person = "RRT'yi bir kişi çağırır";
+    const length = "RRT çağrısının gerekçesi 3–500 karakter olmalı";
+    expect(apiErrorKey(new Error(person))).toEqual({ key: "errors.rrtByPerson", vars: {} });
+    expect(apiErrorKey(new Error(length))).toEqual({ key: "errors.rrtReasonLength", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(person)))
+      .toBe("RRT çağrısını bir kişi açar; cihaz kimliğiyle çağrı yapılamaz.");
+    expect(apiErrorText(az, new Error(person))).toBe("RRT çağırışını bir nəfər açır; cihaz kimliyi ilə çağırış etmək olmaz.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(person)))
+      .toBe("Вызов БРР открывает человек; с идентификатором устройства вызвать нельзя.");
+    expect(apiErrorText(en, new Error(person))).toBe("An RRT call is opened by a person; a device cannot make one.");
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(length)))
+      .toBe("RRT çağrısının gerekçesi 3–500 karakter olmalıdır.");
+    expect(apiErrorText(az, new Error(length))).toBe("RRT çağırışının səbəbi 3–500 simvol olmalıdır.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(length)))
+      .toBe("Причина вызова БРР должна содержать от 3 до 500 символов.");
+    expect(apiErrorText(en, new Error(length))).toBe("The reason for an RRT call must be 3–500 characters.");
+  });
+
   it("translates a known message, whatever whitespace surrounds it", () => {
     expect(apiErrorText(az, new Error("  Invalid credentials \n"))).toBe("İstifadəçi adı və ya şifrə səhvdir.");
     expect(apiErrorText(en, "Parola hatalı")).toBe("Incorrect password.");
@@ -557,8 +589,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
     // `duplicate_open_admission` (A-37, the final review).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
-    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block).
-    expect(CODES).toHaveLength(29);
+    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
+    // `bed_reserved` (D5, X1).
+    expect(CODES).toHaveLength(30);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -623,6 +656,15 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     const hit = apiErrorKey(coded(`field_invalid:${field}`));
     expect(hit.key).not.toBe("kabul.invalid.other");
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  // G2-B3a (R9): the name is asked surname first («Soyad ad»), and its refusal says it the same way.
+  it("field_invalid:display_name says the surname first, as the field «Soyad ad» does (R9)", () => {
+    const said = Object.fromEntries(LANG_CODES.map((lang) => [lang,
+      apiErrorText(createTranslator(lang, DICTIONARIES), coded("field_invalid:display_name"))]));
+    expect(said).toEqual({
+      tr: "Soyad ad gerekli.", az: "Soyad ad tələb olunur.", ru: "Нужны фамилия и имя.", en: "The surname and name are required.",
+    });
   });
 
   it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {

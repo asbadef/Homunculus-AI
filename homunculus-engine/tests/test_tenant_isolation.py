@@ -291,6 +291,15 @@ BY_ID: dict[str, ById] = {
     "room patch": ById("PATCH", lambda s: f"/tenant/rooms/{s.room}", lambda a: {"name": "Oda 9"}),
     "bed patch": ById("PATCH", lambda s: f"/tenant/beds/{s.free_bed}", lambda a: {"label": "9Z"}),
     "bed release": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/release", control=409),
+    # G2-B3a (Doluluk): the caller's own free bed is reserved and taken out of service (200); it is
+    # neither reserved nor out of service, so the two undos are refused by the domain (409).
+    "bed reserve": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/reserve",
+                        lambda a: {"note": "Sentetik rezerv"}),
+    "bed unreserve": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/unreserve", control=409),
+    "bed out of service": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/out-of-service",
+                               lambda a: {"reason": "FAULT"}),
+    "bed return to service": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/return-to-service",
+                                  control=409),
 }
 
 
@@ -520,6 +529,14 @@ async def test_the_structure_holds_only_the_callers_tenant(world):
     assert r.json()["tenant_id"] == str(world.a.tenant)
     assert units == {str(world.a.unit)}
     assert beds == {str(world.a.bed), str(world.a.free_bed)}
+
+
+@requires_db
+async def test_the_occupancy_holds_only_the_callers_tenant(world):
+    """G2-B3a (R1): GET /tenant/occupancy — the names and notes of the caller's own beds only."""
+    r = await _call(world, "GET", "/tenant/occupancy")
+    assert r.status_code == 200, r.text
+    assert {b["bed_id"] for b in r.json()["beds"]} == {str(world.a.bed)}
 
 
 @requires_db
@@ -782,6 +799,7 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
     ("POST", "/ack"),
+    ("POST", "/alerts/rrt-call"),   # G2-B5 (D3): «RRT çağır» — the Caller, alerts.escalate, _require_patient, as /ack
     ("POST", "/view"),
     ("GET", "/patients"),
     ("GET", "/alerts/{patient_id}"),

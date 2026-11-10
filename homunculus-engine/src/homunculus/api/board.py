@@ -229,6 +229,13 @@ def _sepsis_context(engine: Engine, state, patient_id: str) -> dict:
     }
 
 
+def _rrt_call(call: dict | None) -> dict | None:
+    """G2-B5 (D4): the open call to the rapid-response team, as the card carries it — or None."""
+    if not call:
+        return None
+    return {"by": call["by"], "at": call["at"].isoformat(), "reason": call["reason"]}
+
+
 def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
     key = (patient_id, alert.kind)
     ack = store.acks.get(key)
@@ -240,6 +247,7 @@ def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
         "acknowledged_at": ack["at"].isoformat() if ack else None,
         "first_seen_at": seen.isoformat() if seen is not None else None,
         "escalated": key in store.escalated,
+        "rrt_call": _rrt_call(store.rrt_calls.get(key)),
         # G2-A1 (D10): when its rule stopped firing; None while it fires.
         "resolved_at": None,
     }
@@ -264,6 +272,7 @@ def _latched_alerts(patient_id: str, firing: list[Alert], store: AckStore) -> li
             "acknowledged_at": None,
             "first_seen_at": seen.isoformat() if seen is not None else None,
             "escalated": False,
+            "rrt_call": _rrt_call(store.rrt_calls.get(key)),
             "resolved_at": entry["resolved_at"].isoformat(),
         })
     return out
