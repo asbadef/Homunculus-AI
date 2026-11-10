@@ -516,3 +516,57 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
         with TestClient(app_with(UNKNOWN)) as client:
             r = client.post("/ack", headers=NURSE, json={"patient_id": {"x": 1}, "kind": "news2"})
         assert (r.status_code, r.json()["detail"]) == (400, "geçersiz patient_id")
+
+
+# --- the streams, read through their own handlers ---------------------------------------------------
+
+def _endpoint(app, path: str):
+    """A route's own handler. A stream is read through it: httpx's ASGITransport cannot read an
+    unbounded response, and the handler hands back the StreamingResponse whose body is the frames."""
+    (route,) = [r for r in app.routes if getattr(r, "path", None) == path]
+    return route.endpoint
+
+
+async def _async_reading(client, pid: str, spo2: float = 97.0) -> None:
+    """`_reading`, for an httpx client on the app's own loop."""
+    r = await client.post("/ingest", headers=TOKEN, json={
+        "resourceType": "Observation", "subject": {"reference": f"Patient/{pid}"},
+        "effectiveDateTime": WHEN.isoformat(), "code": {"coding": [{"code": "spo2"}]},
+        "valueQuantity": {"value": spo2, "unit": "%"}})
+    assert r.status_code == 200, r.text
+
+
+def _note(pid: str):
+    from homunculus.api.notify import Notification
+    return Notification(tenant="demo", patient_id=pid, kind="news2", severity="high",
+                        urgency="immediate", audience="nurse", trigger="new", title="synthetic",
+                        body=f"{pid}: synthetic", ts=WHEN.isoformat())
+
+
+class TestKTheNotificationStreamReadsTheScopeCard:
+    """G2 borç 5. The notification stream decided scope on `_card` — `patient_board`, which creates
+    the patient it is asked about (`engine.state()`) and scores a whole card to read two ids. It
+    reads the card every other check reads, `_require_patient`'s: the id, and the bed and unit the
+    board publishes for that patient."""
+
+    async def test_a_note_is_judged_on_its_bed_and_unit_and_creates_no_patient(self):
+        import asyncio
+
+        import httpx
+
+        app = app_with(ADULT)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://t") as client:
+            for pid in EVERYONE:
+                await _async_reading(client, pid)
+            ticket = (await client.post("/stream-ticket", headers=NURSE)).json()["ticket"]
+            response = await _endpoint(app, "/notifications")(token=None, ticket=ticket,
+                                                               role="nurse")
+            frames = response.body_iterator
+            for pid in ("ghost-n", "p-n1", "p-a1"):     # unknown, out of scope, in scope
+                await app.state.notification_hub.publish("demo", _note(pid))
+            first = await asyncio.wait_for(anext(frames), timeout=2)
+            await frames.aclose()
+            board = (await client.get("/patients", headers=TOKEN)).json()["patients"]
+        assert '"patient_id": "p-a1"' in first
+        assert sorted(p["patient_id"] for p in board) == EVERYONE     # no ghost on the wall board

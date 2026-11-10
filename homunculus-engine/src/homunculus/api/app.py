@@ -910,6 +910,28 @@ def create_app(
             raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
         return scope
 
+    def _scope_card(hospital: str, patient_id: str, record=_READ, *, counted: bool = True) -> dict:
+        """The card every scope check reads (`_require_patient`, the notification stream): only
+        what `sees_patient` reads — the id, and the bed and unit the board publishes for that
+        patient (same identity, same bed map). `record` is the identity the caller already holds;
+        left out, it is read here. `counted` False: the bed is resolved without counting a miss.
+
+        It is NOT built with `patient_board`: that reads `engine.state()`, which creates the
+        patient, so a refused probe for a made-up id would put that id on every board in the
+        hospital — and it scores a whole card to read two ids (G2 borç 5).
+        """
+        record = identities.get(hospital, patient_id) if record is _READ else record
+        if is_tombstone(record):
+            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
+            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
+            # the route, whose discharged-number drop answers; another unit's still get the 404.
+            identity = tombstone_board(record)["identity"]
+        elif record is not None:
+            identity = identity_only_board(record, bedmap if counted else uncounted_bedmap)["identity"]
+        else:
+            identity = None
+        return {"patient_id": patient_id, "identity": identity}
+
     async def _require_patient(caller: Caller, authorization: str | None,
                                patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
@@ -937,26 +959,13 @@ def create_app(
         blip to turn a readable scope into an unreadable one. Every other route leaves it out and
         the scope is resolved here.
 
-        The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
-        the board publishes for that patient (same identity, same bed map). It is NOT built with
-        `patient_board`: that reads `engine.state()`, which creates the patient, so a refused
-        probe for a made-up id would put that id on every board in the hospital.
+        The card it checks is `_scope_card`'s, never `patient_board`'s.
         """
         hospital = caller.hospital
         scope = _readable(scope if scope is not None else await _scope(authorization))
         if scope.unrestricted:
             return
-        record = identities.get(hospital, patient_id)
-        if is_tombstone(record):
-            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
-            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
-            # the route, whose discharged-number drop answers; another unit's still get the 404.
-            identity = tombstone_board(record)["identity"]
-        else:
-            identity = (identity_only_board(record, bedmap)["identity"]
-                        if record is not None else None)
-        card = {"patient_id": patient_id, "identity": identity}
-        if sees_patient(card, scope):
+        if sees_patient(_scope_card(hospital, patient_id), scope):
             return
         audit.append(AuditEvent(hospital, "scope_denied", patient_id, scope.reason,
                                 {"units": sorted(scope.unit_ids), "beds": sorted(scope.bed_ids),
@@ -1852,12 +1861,13 @@ def create_app(
 
             Its body is `"{patient_id}: {summary}"`, which means letting an out-of-scope
             notification through would hand over the identifier *and* the finding — more than
-            the board itself would have shown.
+            the board itself would have shown. Judged on `_scope_card`, as every patient route is
+            (G2 borç 5).
             """
             if scope.unrestricted:
                 return True
             pid = str(note.get("patient_id") or "")
-            return sees_patient(_card(hospital, pid), scope)
+            return sees_patient(_scope_card(hospital, pid), scope)
 
         async def events():
             try:
