@@ -33,6 +33,25 @@ export function unitCounts(unit) {
   return out;
 }
 
+/** The states of a bed a patient is in: OCCUPIED and the two pending states. */
+const WITH_PATIENT = new Set(["OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT"]);
+const NOTHING_SHOWN = Object.freeze({ name: null, reason: null, note: null });
+
+/** What a bed's tile says from the names read (`about`, GET /tenant/occupancy, R1), by the state
+ *  the STRUCTURE shows (final review M-2). The two are read apart, and the structure is also read
+ *  again on its own (StructureProvider: a retry, a unit added, another screen's write): a newer
+ *  state must never stand under an older read's name, note or reason. So the short name goes only
+ *  on a bed a patient is in, the note only on a reserved or out-of-service bed, and the reason only
+ *  on an out-of-service bed. */
+export function shownOf(bed, about) {
+  if (!about) return NOTHING_SHOWN;
+  return {
+    name: WITH_PATIENT.has(bed?.state) ? about.occupant_short ?? null : null,
+    reason: bed?.state === "BLOCKED" ? about.state_reason ?? null : null,
+    note: bed?.state === "RESERVED" || bed?.state === "BLOCKED" ? about.state_note ?? null : null,
+  };
+}
+
 const can = (perms, key) => Array.isArray(perms) && perms.includes(key);
 
 /** The moves this session may offer on a bed, in the order they are shown. The server checks

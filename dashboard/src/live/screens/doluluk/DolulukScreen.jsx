@@ -8,7 +8,9 @@
 //
 // Names and notes come from GET /tenant/occupancy (R1), never from the structure. A failed read
 // leaves the beds on screen without them and says so: a stale name on a bed whose patient has
-// moved would be worse than none.
+// moved would be worse than none. For the same reason a tile shows them only where the state the
+// structure shows has them (`shownOf`, M-2), and both are read again every minute while the
+// screen is seen.
 //
 // One move is out at a time (the old tab's rule, A-17): while it is, every other bed's buttons
 // are held and say why. Every move, landed or refused, is followed by a re-read of the beds and
@@ -31,7 +33,7 @@ import { msOf } from "../common/elapsed.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { freshForm, useAdmitDraft } from "../kabul/admitDraft.js";
 import { BedStateDialog } from "./BedStateDialog.jsx";
-import { actionsFor, sinceKey, unitCounts, withOpen } from "./occupancy.js";
+import { actionsFor, shownOf, sinceKey, unitCounts, withOpen } from "./occupancy.js";
 
 // Red is for alarms. A bed waiting for something (cleaning, a discharge, a transfer) is warned. A
 // reserved, out-of-service or maintenance bed says so in words, and its tile's edge marks it.
@@ -40,6 +42,11 @@ const EDGE = { RESERVED: "border-l-4 border-l-pri", BLOCKED: "border-l-4 border-
 const ICON = { admit: "userPlus", reserve: "clock", outOfService: "x", unreserve: "x", returnToService: "ok", release: "ok" };
 const COUNT_KEYS = ["free", "cleaning", "reserved", "outOfService", "maintenance"];
 const NO_NAMES = new Map();
+/** How often the beds and the names are read again while the screen is seen: DischargeTab's minute. */
+export const REREAD_MS = 60_000;
+// Either says hidden, it is hidden (the shadow store's rule; useTrends, MappingSection).
+const hidden = () => typeof document !== "undefined"
+  && (document.visibilityState === "hidden" || document.hidden === true);
 
 export function DolulukScreen() {
   const { t } = useI18n();
@@ -84,6 +91,47 @@ export function DolulukScreen() {
   }, [store]);
   const rereadAll = useCallback(() => Promise.all([reload(), readNames()]), [reload, readNames]);
   useEffect(() => { rereadAll(); }, [rereadAll]);
+
+  // G2-B3a (final review M-2): another nurse's admission, discharge or reservation shows without a
+  // press. Every minute while the page is seen, the beds and the names are read again. Hidden: no
+  // timer at all. Seen again: one read now, and the minute starts from then (useTrends' rule). A
+  // read still out is not stacked on.
+  const polling = useRef(false);
+  useEffect(() => {
+    let timer = 0;
+    const stop = () => {
+      clearTimeout(timer);
+      timer = 0;
+    };
+    const read = () => {
+      if (polling.current) return;
+      polling.current = true;
+      rereadAll().finally(() => { polling.current = false; });
+    };
+    const arm = () => {
+      stop();
+      if (!hidden()) timer = setTimeout(tick, REREAD_MS);
+    };
+    const tick = () => {
+      timer = 0;
+      read();
+      arm();
+    };
+    const onVisibility = () => {
+      if (hidden()) {
+        stop();
+        return;
+      }
+      read();
+      arm();
+    };
+    arm();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [rereadAll]);
 
   const heldId = `${uid}-held`;
   const units = (structure?.sites ?? []).flatMap((site) => site.units ?? []);
@@ -206,7 +254,8 @@ export function DolulukScreen() {
                       {(room.beds ?? []).map((raw) => {
                         const bed = withOpen(unit, room, raw);
                         const subject = `${bed.label} · ${room.name} · ${unit.name}`;
-                        const about = names.byBed.get(normId(bed.id));
+                        // By the state the structure shows, never the names read's (M-2).
+                        const shown = shownOf(bed, names.byBed.get(normId(bed.id)));
                         const since = bed.open ? sinceKey(msOf(bed.state_since), now) : null;
                         const held = working !== null && working.id !== bed.id;
                         const actions = actionsFor(bed, perms);
@@ -220,9 +269,9 @@ export function DolulukScreen() {
                               <Tag tone={bed.open ? TONE[bed.state] ?? "neutral" : "neutral"}>{stateText}</Tag>
                             </span>
                             {since ? <span className="text-12 text-mute">{t(since.key, since.vars)}</span> : null}
-                            {about?.occupant_short ? <span className="text-14 font-semibold">{about.occupant_short}</span> : null}
-                            {about?.state_reason ? <span className="text-12.5">{t(`doluluk.reason.${about.state_reason}`)}</span> : null}
-                            {about?.state_note ? <span className="text-12.5 text-mute">{about.state_note}</span> : null}
+                            {shown.name ? <span className="text-14 font-semibold">{shown.name}</span> : null}
+                            {shown.reason ? <span className="text-12.5">{t(`doluluk.reason.${shown.reason}`)}</span> : null}
+                            {shown.note ? <span className="text-12.5 text-mute">{shown.note}</span> : null}
                             {actions.length > 0 ? (
                               <span className="flex flex-wrap gap-1.5">
                                 {actions.map((action) => (

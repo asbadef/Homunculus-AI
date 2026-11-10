@@ -1,7 +1,7 @@
 // What the Doluluk screen counts, offers and says about time (G2-B3a, spec §3, R3, X10). Pure.
 import { describe, it, expect } from "vitest";
 import { structure } from "../kabul/kabul.testutil.js";
-import { REASONS, actionsFor, sinceKey, unitCounts, usable, withOpen } from "./occupancy.js";
+import { REASONS, actionsFor, shownOf, sinceKey, unitCounts, usable, withOpen } from "./occupancy.js";
 
 const rea = () => structure().sites[0].units[0];
 const open = (state) => ({ state, open: true });
@@ -63,5 +63,21 @@ describe("occupancy", () => {
 
   it("offers the four reasons in the server's order", () => {
     expect(REASONS).toEqual(["FAULT", "ISOLATION_CLEANING", "STAFFING", "OTHER"]);
+  });
+
+  // Final review M-2: the two reads land apart, so what the names read says is shown only where the
+  // state the structure shows has it.
+  it("shows the name on a bed a patient is in, the note on a reserved or out-of-service bed, and the reason out of service only", () => {
+    const about = { occupant_short: "Əli M.", state_reason: "FAULT", state_note: "Sentetik arıza" };
+    const shown = (state) => shownOf(open(state), about);
+    for (const state of ["OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT"]) {
+      expect(shown(state), state).toEqual({ name: "Əli M.", reason: null, note: null });
+    }
+    expect(shown("RESERVED")).toEqual({ name: null, reason: null, note: "Sentetik arıza" });
+    expect(shown("BLOCKED")).toEqual({ name: null, reason: "FAULT", note: "Sentetik arıza" });
+    for (const state of ["AVAILABLE", "HOUSEKEEPING", "MAINTENANCE"]) {
+      expect(shown(state), state).toEqual({ name: null, reason: null, note: null });
+    }
+    expect(shownOf(open("OCCUPIED"), undefined)).toEqual({ name: null, reason: null, note: null });
   });
 });

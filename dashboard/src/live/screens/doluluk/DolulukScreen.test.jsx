@@ -7,11 +7,12 @@
 // - «Bu çarpayıya xəstə qəbul et» puts the bed in the session's admission form and opens Kabul.
 // - Each move says its result on the screen as well as on the toast, and a move that takes its
 //   button away leaves the focus on the bed's tile (A-22).
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { ROUTES, canReach } from "../../shell/routes.js";
+import { useStructure } from "../../data/StructureProvider.jsx";
 import { admitDraftOf } from "../kabul/admitDraft.js";
 import { BED, CHARGE, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, settle, structure, toasts } from "../kabul/kabul.testutil.js";
 import { DolulukScreen } from "./DolulukScreen.jsx";
@@ -377,5 +378,86 @@ describe("DolulukScreen", () => {
     expect(api.structure.mock.calls.length).toBeGreaterThan(reads);
     expect(screen.getByRole("region", { name: "Reanimasiya · Otaq 1" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Yenidən cəhd et" })).toBeNull();
+  });
+});
+
+// Final review M-2: the structure and the names are two reads. The structure is also read again on
+// its own (StructureProvider: a retry, a unit added, another screen's write), so a tile may show a
+// newer state before the names have caught up.
+describe("DolulukScreen · what the names read says, by the state shown (M-2)", () => {
+  /** A re-read of the structure that no move of this screen asked for. */
+  function Reread() {
+    const { reload } = useStructure();
+    return <button type="button" onClick={() => reload()}>reread</button>;
+  }
+
+  it("takes the name off a bed the structure, read again on its own, shows its patient has left", async () => {
+    const { api } = await mountKabul(<><DolulukScreen /><Reread /></>, { perms: NURSE, setup: (a) => {
+      a.occupancy.mockResolvedValue(names([{ bed_id: BED(2), occupant_short: "Əli M.", state_reason: null, state_note: null }]));
+    } });
+    expect(tile("Reanimasiya · Otaq 1", "2").getByText("Əli M.")).toBeTruthy();
+    api.structure.mockResolvedValue(ward((s) => { rea(s).rooms[0].beds[1].state = "HOUSEKEEPING"; }));
+    await press("reread");
+    await settle();
+    expect(tile("Reanimasiya · Otaq 1", "2").getByText("Təmizlikdədir")).toBeTruthy();
+    expect(screen.queryByText("Əli M.")).toBeNull();
+  });
+
+  it("shows a name only on a bed a patient is in, a note only reserved or out of service, a reason only out of service", async () => {
+    await mountScreen(MANAGER, (a) => {
+      a.structure.mockResolvedValue(ward((s) => {
+        rea(s).rooms[0].beds[0].state = "AVAILABLE";                       // bed 1: back in service
+        rea(s).rooms[0].beds[1].state = "AVAILABLE";                       // bed 2: its patient has left
+        rea(s).rooms[0].beds[2].state = "PENDING_DISCHARGE";               // bed 3: a patient on her way out
+        rea(s).rooms[1].beds[0].state = "RESERVED";                        // bed 5: reserved
+      }));
+      a.occupancy.mockResolvedValue(names([
+        { bed_id: BED(1), occupant_short: null, state_reason: "FAULT", state_note: "Sentetik arıza" },
+        { bed_id: BED(2), occupant_short: "Əli M.", state_reason: null, state_note: null },
+        { bed_id: BED(3), occupant_short: "Ayşe K.", state_reason: null, state_note: null },
+        { bed_id: BED(5), occupant_short: null, state_reason: "FAULT", state_note: "Sentetik planlı kabul" },
+      ]));
+    });
+    expect(screen.queryByText("Əli M.")).toBeNull();
+    expect(screen.queryByText("Sentetik arıza")).toBeNull();
+    expect(screen.queryByText("Nasazlıq")).toBeNull();                      // nor on the reserved bed 5
+    expect(tile("Reanimasiya · Otaq 1", "3").getByText("Ayşe K.")).toBeTruthy();
+    expect(tile("Reanimasiya · Otaq 2", "5").getByText("Sentetik planlı kabul")).toBeTruthy();
+  });
+});
+
+describe("DolulukScreen · read again while it is seen (M-2)", () => {
+  const REREAD_MS = 60_000;                                                  // DischargeTab's minute
+  const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  const reads = (api) => [api.structure.mock.calls.length, api.occupancy.mock.calls.length];
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+  it("reads the beds and the names again every minute", async () => {
+    vi.useFakeTimers();
+    const { api } = await mountScreen(NURSE);
+    const [beds, notes] = reads(api);
+    await tick(REREAD_MS - 1);
+    expect(reads(api)).toEqual([beds, notes]);
+    await tick(1);
+    expect(reads(api)).toEqual([beds + 1, notes + 1]);
+    await tick(REREAD_MS);
+    expect(reads(api)).toEqual([beds + 2, notes + 2]);
+  });
+
+  it("reads nothing while the page is hidden, and reads at once when it is seen again", async () => {
+    vi.useFakeTimers();
+    const state = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { api } = await mountScreen(NURSE);
+    const [beds, notes] = reads(api);
+    state.mockReturnValue("hidden");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await tick(5 * REREAD_MS);
+    expect(reads(api)).toEqual([beds, notes]);
+    state.mockReturnValue("visible");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle();
+    expect(reads(api)).toEqual([beds + 1, notes + 1]);
+    await tick(REREAD_MS);
+    expect(reads(api)).toEqual([beds + 2, notes + 2]);
   });
 });
