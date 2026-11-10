@@ -9,8 +9,8 @@ validated against the bed lifecycle state machine (§1.3).
 Two exceptions since Group 2 · B1a (Hasta Kabul): `GET /tenant/structure` — the names of the
 caller's own units and beds, which every clinical screen needs and no screen may print as a UUID —
 is open to `admissions.view`, `admissions.admit`, `beds.release`, `structure.manage`,
-`users.manage` (the scope editor names the units and beds it grants) and `devices.map_beds` (the
-monitor→bed editor's picker); and
+`users.manage` (the scope editor names the units and beds it grants), `devices.map_beds` (the
+monitor→bed editor's picker) and, since G2-B3a, `admissions.discharge.confirm` (Doluluk, D2); and
 `POST /tenant/beds/{id}/release` (cleaning done, bed free) to `beds.release`, the ward's nurses, in
 their own units. Their refusals, and those of the create / rename / close / reopen routes, carry a
 stable code (admission/errors.py). A bed is never freed — by the release, or by the
@@ -47,7 +47,17 @@ every tenant. Creating a tenant is a platform operator's action alone
 and could not be administered through `/admin`. Its first administrator comes from
 `scripts/seed_admin.py`.
 
-PHI RULE: infrastructure only — no patient data.
+PHI RULE. The structure is infrastructure and carries no patient data. Since G2-B3a (Doluluk,
+spec R1, R8) two kinds of route here touch it, and nothing else does:
+- The four bed moves — `POST /tenant/beds/{id}/reserve`, `/unreserve`, `/out-of-service` and
+  `/return-to-service` (`beds.manage_state`) — write or clear `beds.state_note`. A note may name
+  the expected patient, so it is stored encrypted (`EncryptedString`). Their audit rows carry the
+  reason and only whether a note was written, never its words.
+- `GET /tenant/occupancy` returns the short names of the patients in the caller's beds (R7) and the
+  notes, decrypted. Only D2's readers get them (`admissions.view`, `admissions.admit`,
+  `admissions.discharge.confirm`, `beds.release`), and only for their own units.
+`GET /tenant/structure` never decrypts a note: the column is not even loaded
+(`defer(..., raiseload=True)`), and the tree names no patient.
 """
 from __future__ import annotations
 import re
