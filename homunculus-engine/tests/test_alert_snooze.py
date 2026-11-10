@@ -661,3 +661,26 @@ def test_a_running_app_restarts_with_its_running_snooze_and_without_a_spent_one(
         assert _alerts(restarted)["news2"]["snooze"] is None, "its time ran out before this restart"
         assert _store(later).clock_from[NEWS2] == WALL0 + timedelta(minutes=16), "the clock rule at expiry"
     assert len(_rows(audit)) == 1, "a replay writes nothing"
+
+
+@pytest.mark.parametrize("bad_at", [
+    "2026-07-14T10:01:00",                                          # no UTC offset
+    "9999-12-31T23:59:00+00:00",                                    # its `until` would be past year 9999
+    (AT + timedelta(hours=2)).isoformat(),                          # later than the restart's own clock
+], ids=["naive", "year-9999", "future"])
+def test_a_snooze_row_the_replay_cannot_judge_is_passed_over_and_the_rest_still_installs(bad_at):
+    """Review (fix 1): one bad `alert_snooze` row never fails a replay, nor installs a snooze. A time with no
+    offset cannot be compared with the clock, a time whose `until` overflows has no `until`, and a time later
+    than the restart's `now` (a clock stepped back since the row was written) would outlive its cap from `now`."""
+    later = AT + timedelta(minutes=3)
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row(at=bad_at))
+    _engine, store = _replayed(audit, now=later)
+    assert store.snoozes == {}
+    assert store.clock_from[NEWS2] == datetime.fromisoformat(T0_ISO), "passed over, not installed and ended"
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "resp_rate",
+                            {"value": 22.0, "unit": "", "obs_ts": "2026-07-14T10:02:00+00:00", "device": "mon"}))
+    audit.append(_snooze_row(minutes=10))
+    _engine, store = _replayed(audit, now=later)
+    assert store.firing[NEWS2].severity == "moderate", "the rows after it were replayed"
+    assert (store.snoozes[NEWS2]["at"], store.snoozes[NEWS2]["minutes"]) == (AT, 10), "and a good row still counts"

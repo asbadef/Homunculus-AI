@@ -31,7 +31,7 @@ later; `paged` is not replayed either."""
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import (
@@ -51,6 +51,9 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
     # which reads the log a page at a time, so no cap can drop the newest rows.
     # G3-01 (D12): `skip` is the `chart` rows a «hatalı giriş» withdrew (`retracted_entries`, read first by
     # the API): they are not replayed, so a restart scores the patient as the live rebuild did.
+    # G2-B5b: `now` is the restart's clock — a snooze row written later than it is passed over, and what is left
+    # running is judged against it at the end.
+    now = now if now is not None else datetime.now(timezone.utc)
     for rec in records:
         if rec.event_type == "chart" and rec.id in skip:
             continue
@@ -71,7 +74,7 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
         elif rec.event_type == "rrt_call":
             _replay_rrt_call(engine, store, rec)
         elif rec.event_type == "alert_snooze":
-            _replay_snooze(store, rec)                               # G2-B5b
+            _replay_snooze(store, rec, now)                          # G2-B5b
         elif rec.event_type == "first_seen":
             key = (rec.patient_id, rec.subject)
             # G3-01 (D12): a stamp only for an alert the replay has on the board, as `_replay_ack` guards. The
@@ -93,7 +96,7 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
     store.recent.clear()
     # G2-B5b (D3): a replayed snooze whose `until` the restart has passed ended live in the escalation cycle. It ends
     # here, with the clock rule at expiry (`AckStore.expire_snoozes`), judged once at the restart's `now`.
-    store.expire_snoozes(now if now is not None else datetime.now(timezone.utc))
+    store.expire_snoozes(now)
 
 
 def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
@@ -196,11 +199,13 @@ def _replay_rrt_call(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
     store.call_rrt(rec.patient_id, rec.subject, str(by), str(rec.payload.get("reason") or ""), at)
 
 
-def _replay_snooze(store: AckStore, rec: AuditRecord) -> None:
+def _replay_snooze(store: AckStore, rec: AuditRecord, now: datetime) -> None:
     """G2-B5b (D3): a snooze survives a restart under the live door's rules. It needs an alarm the replay has firing
     at this point of the log (a latched critical is never snoozed) that nobody had acknowledged, of a severity that
     may be snoozed, with minutes within its cap and a reason the door takes. A row the door could not have written
-    is passed over, and does not fail the replay."""
+    is passed over, and does not fail the replay: so is one whose `at` has no UTC offset (it cannot be compared
+    with the clock), whose `until` would be past year 9999, or whose `at` is later than the restart's `now` (a
+    clock stepped back since: kept, it would run past its cap from `now`)."""
     key = (rec.patient_id, rec.subject)
     alert = store.firing.get(key)
     if alert is None or key in store.acks:
@@ -212,7 +217,12 @@ def _replay_snooze(store: AckStore, rec: AuditRecord) -> None:
         return
     try:
         at = datetime.fromisoformat(payload["at"])
-    except (KeyError, TypeError, ValueError):
+        if at.utcoffset() is None:
+            return
+        at + timedelta(minutes=minutes)          # its `until`: one past year 9999 raises OverflowError here
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return
+    if at > now:
         return
     by = payload.get("actor") or bounded_role(payload.get("role"))
     store.snooze(rec.patient_id, rec.subject, by=str(by), at=at, minutes=minutes, reason=cleaned[0],
