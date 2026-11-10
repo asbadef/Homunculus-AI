@@ -89,9 +89,10 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(37);   // G2-B3a's four bed moves + G2-B5's rrt_call + G2-B3b's three handover events
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(37);
+    expect(EVENT_TYPES).toHaveLength(38);   // … + G2-B5b's alert_snooze
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(38);
     expect(typeKey("rrt_call")).toBe("denetim.type.rrtCall");   // G2-B5 (spec D9)
+    expect(typeKey("alert_snooze")).toBe("denetim.type.alertSnooze");   // G2-B5b (spec D4)
     expect(typeKey("handover.open")).toBe("denetim.type.handoverOpen");                 // G2-B3b (spec D8)
     expect(typeKey("handover.sign_outgoing")).toBe("denetim.type.handoverSign");
     expect(typeKey("handover.countersign")).toBe("denetim.type.handoverCountersign");

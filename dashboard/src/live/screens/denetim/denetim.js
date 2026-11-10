@@ -37,6 +37,7 @@ export const EVENT_TYPES = Object.freeze([
   ["score", "score"], ["score_signed", "scoreSigned"],
   ["alert", "alert"], ["first_seen", "firstSeen"], ["alert_cleared", "alertCleared"],
   ["escalation", "escalation"], ["rrt_call", "rrtCall"], ["notification", "notification"],   // rrt_call: G2-B5 (spec D9)
+  ["alert_snooze", "alertSnooze"],   // G2-B5b (spec D4): «Ertele»
   ["identity", "identity"], ["ingest", "ingest"], ["reading_dropped_discharged", "readingDropped"],
   ["shadow_alert", "shadowAlert"], ["shadow_alert_cleared", "shadowCleared"],
   ["admission.admit", "admit"], ["admission.sign_off", "signOff"],
