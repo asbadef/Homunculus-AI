@@ -1850,8 +1850,6 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
 - **Bu dilimde olmayanlar:** RRT cihazlarına anlık bildirim (push) yok; RRT çağrıyı rozetten ve ekrandan görür.
 - **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b5-rrt-design.md`.
 
----
-
 ### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
 
 «Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
@@ -1898,6 +1896,33 @@ hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok).
   Bolus geri alınınca motor hastayı yeniden değerlendirir (septik şok kuralı dahil).
 - **Ne yapmaz.** Pompadan otomatik veri almaz, saatlik idrar hatırlatması yapmaz (Görevlerim'e sonra eklenebilir),
   SOFA formuna idrar aktarmaz.
+
+### 3.18 Vardiya devri (Grup 2 · B3b)
+
+- **Ne:** `/devir`, «Vardiya devri». Devir yetkisi (`handover.sign`) olanlar görür: hemşire, sorumlu hemşire, hekim, yönetici.
+- **Hasta başına devir** (sahip kararı): her hasta için ayrı bir devir yapılır. Devrin notu D-Ö-D-Ö düzenindedir:
+  Durum · Öykü · Değerlendirme · Öneri. Taslak tanı içermez; nota ad ya da kimlik numarası yazılmaz.
+- **İki imza:**
+  - Giden kişi devri açar ve imzalar; teslim alan kişi karşı imzalar.
+  - Teslim alan kişiyi giden kişi seçer (sahip kararı). Seçilebilecekler, devir yetkisi olan başka meslektaşlardır.
+  - Yalnız seçilen kişi karşı imzalayabilir. Sunucu kişinin kendine ya da yetkisiz birine devretmesini reddeder.
+- **Kritik alarm kilidi:**
+  - Hastada yanıtlanmamış kritik alarm (çalan ya da kilitli kalan) varsa giden imza atılamaz.
+  - Kontrol canlı panodan okunur; eskiden VM'de hiç yazılmayan bir tablodan okunuyordu.
+  - Ekran da imzadan önce panoya bakar, ama son söz sunucunundur.
+  - Pano canlı değilse ekran bunu söyler: «kritik alarm denetimini sunucu yapar».
+- **Sistem özeti:**
+  - Giden imza anında sistem panodan bir özet mühürler: risk, NEWS2, son vitaller, vazopresör ve açık alarmlar.
+  - Özette ad yoktur. Teslim alan kişi notu ve özeti görür; güncel veri için hastayı açar.
+- **Listeler:**
+  - Üç liste var: «Karşı imzanızı bekleyenler», «Benim devrettiklerim» ve «Son 24 saat».
+  - Liste kendiliğinden yenilenmez; «Yenile» düğmesi ve son okuma saati vardır.
+  - Açık bir devrin 30 dakikalık süresi dolarsa devir «Süresi doldu» olur; yeni devir açılır.
+- **Denetim kaydı:** açma, imza ve karşı imza denetim kaydına yazılır. Notun metni kayda yazılmaz.
+- **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
+- **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
+
+---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi
 

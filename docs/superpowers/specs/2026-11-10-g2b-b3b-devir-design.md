@@ -173,3 +173,48 @@ It goes after `rrt`, so nobody's home moves.
 - the engine's no-DB suite, plus the DB subset that touches admission and handover;
 - the whole dashboard suite;
 - `vite build`.
+
+## 5. Review amendments (2026-11-10; commits 209197e0, 70d96218)
+
+**D2 is enforced on the server, not only on the screen.** `POST /handovers` refuses with a coded 422
+`field_invalid:incoming_user_id` when:
+- the receiver is the caller;
+- the receiver does not hold `handover.sign` in this hospital (the system group counts by rule).
+
+`GET /handovers/colleagues` and the open route share one query. `admission_ids` must hold at least one admission.
+
+**The note:**
+- A legacy `narrative_note` that cannot be read as JSON, deeply nested text included, reads back as the situation.
+  It never fails a box with a 500.
+- `narrative_note` is bounded to 8000 characters and refuses control characters.
+- `HandoverSign` refuses unknown fields, so a misspelled `notes` is a 422 instead of a signature without a note.
+- When both `note` and `narrative_note` are sent, `note` wins.
+
+**Sealing.** The gate's count and the sealed summary are read in the same synchronous step, so they see the same
+board.
+
+**Trail rows.**
+- Every row also carries `patients`, the board keys of all the handover's patients.
+- `handover.open` also carries `admission_ids`.
+- `patient_id` stays the first key.
+
+**Box window.** The 24 h window counts from the countersignature (`coalesce(incoming_signed_at, created_at)`).
+A late countersignature therefore stays in the box. An OPEN handover whose bridge has lapsed reads as EXPIRED,
+and the GET writes nothing.
+
+**Screen:**
+- A refused signature after the handover was opened is announced (a toast), not only shown.
+- The patient and receiver are frozen while the open is in flight. Once opened, the lock and the toasts follow the
+  opened patient.
+- A patient who already has my OPEN handover gets no second one. The dialog points at the row.
+- A refused opening re-reads the patient list.
+- «Yenile» and the last read time sit above the lists, with no timer.
+- Focus moves to the affected list after a write.
+- When the board is not LIVE, the screen says «Pano güncel değil; kritik alarm denetimini sunucu yapar».
+
+**Accepted, not changed:**
+- No rail badge.
+- A dialog note is lost if the nurse follows «Alarma git», since drafts are D10.
+- Rows use the first patient (the screen opens one patient per handover).
+- az, ru and en, including the note-part initials, await a native reading.
+- The LiveApp bundle warning (> 500 kB) is known on main. Splitting the bundle is its own slice.
