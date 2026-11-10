@@ -5537,14 +5537,24 @@ Before the worktree is removed, unlink the `node_modules` junction (Task 0, Step
   SELECT count(*) FROM group_permissions gp JOIN groups g ON g.id = gp.group_id WHERE g.slug = 'charge_nurse' AND gp.permission = 'care_team.claim';
   ```
   The third count is every admission signed before this slice (O45). Each of these rows gets its attending's row.
+- **Before the deploy, count the attendings who are not physicians** (counts only, no names or ids; read-only). The definition is T1's: an active account with an active membership of the tenant and a group of the tenant among `attending`, `unit_physician`, `physician` (`PHYSICIAN_GROUPS`).
+  ```sql
+  SELECT count(*) FROM admissions a WHERE a.state IN ('ACTIVE','PENDING_DISCHARGE','PENDING_TRANSFER') AND a.attending_physician_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM care_team_members m WHERE m.admission_id = a.id AND m.is_active AND m.role = 'ATTENDING') AND NOT EXISTS (SELECT 1 FROM users u JOIN tenant_memberships tm ON tm.user_id = u.id JOIN user_groups ug ON ug.user_id = u.id JOIN groups g ON g.id = ug.group_id WHERE u.id = a.attending_physician_id AND u.is_active AND tm.is_active AND tm.tenant_id = a.tenant_id AND g.tenant_id = a.tenant_id AND g.slug IN ('attending','unit_physician','physician'));
+  SELECT count(*) FROM care_team_members m JOIN admissions a ON a.id = m.admission_id WHERE m.is_active AND m.role = 'ATTENDING' AND a.state NOT IN ('DISCHARGED','TRANSFERRED') AND NOT EXISTS (SELECT 1 FROM users u JOIN tenant_memberships tm ON tm.user_id = u.id JOIN user_groups ug ON ug.user_id = u.id JOIN groups g ON g.id = ug.group_id WHERE u.id = m.user_id AND u.is_active AND tm.is_active AND tm.tenant_id = a.tenant_id AND g.tenant_id = a.tenant_id AND g.slug IN ('attending','unit_physician','physician'));
+  ```
+  - The first: open, signed admissions (it carries the third count's test, no active ATTENDING row yet) whose named attending is not a physician. The backfill (step 4) gives each of them a «sorumlu hekim» row for that non-physician.
+  - The second: ATTENDING rows that already exist for such users on admissions not yet closed (the old claim route let a charge nurse take a patient). Step 3 may still close one of them if its admission has two.
+  - A non-zero count does not stop the deploy; the box shows those rows as they are. Afterwards a physician claims the patient, or the attending adds her with role ATTENDING; either ends the previous attending's row (T4). The row cannot be ended alone (T5: 409 `care_team_attending_required`), so there is nothing to end by hand.
+  - The owner decides which of these patients to hand to a physician first; the counts only say how many there are.
 - **Order:** api first, then web.
   - An old web against the new api works: it never calls the care-team routes.
   - A new web against the old api would show the box with unnamed rows and a picker that cannot read. Hence api first.
-- **The old image against `0018`:** its claim route would write a second ATTENDING row and get a 500 from the index. No screen calls it.
+- **The old image against `0018`:** two routes of it would write a second active ATTENDING row and get a 500 from an index: its claim route, and its care-team add route (`POST .../care-team` with role ATTENDING; the old `add_care_team_member` limits no role). The old web calls neither.
 - **Rollback:**
   - First, count the members with two closed rows on one admission: `SELECT admission_id, user_id, count(*) FROM care_team_members WHERE NOT is_active GROUP BY 1, 2 HAVING count(*) > 1;`
   - If that is empty: `alembic downgrade 0017`, then the previous images. The rows steps 2–4 closed or wrote stay; the charge nurses get `care_team.claim` back.
   - If it is not empty: the downgrade would fail (spec §5.1). Roll back the images only and keep `0018`.
+  - **After B1b has shipped, a downgrade loses every transfer's reason and note:** `0018` is also B1b's migration, and its downgrade drops `admissions.transfer_reason` and `admissions.transfer_note`. Count first: `SELECT count(*) FROM admissions WHERE transfer_reason IS NOT NULL;` (the note travels with the reason). If it is not zero, keep `0018` and roll back the images only; a downgrade is then the owner's decision, taken knowing those transfers lose their reasons. Before B1b ships the count is zero.
 - **Tokens:** a charge nurse signed in before the deploy keeps `care_team.claim` in her token until it is refreshed. It does her no good: T1 refuses her claim, and the box offers her no button.
 - **Tell the ward:** the physician who signs a kabul becomes its sorumlu hekim; the «Bakım ekibi» box is on the patient screen; the charge nurse no longer claims the care team.
 

@@ -22,13 +22,20 @@ Upgrade, in this order (B1c §5.1):
    ciphertext (`EncryptedString`, ≤ 200 characters of plaintext).
 
 Steps 2–4 close or write rows at `now()`. An image from before this revision runs against it
-with one exception: its claim route writes a second ATTENDING row without ending the first, which
-the step-6 index refuses (a 500). No screen calls that route.
+with two exceptions, both a second active ATTENDING row that a new index refuses (a 500; the
+step-6 one, or the step-5 one when the same physician is named twice):
+- its claim route (`POST .../care-team/claim`) writes an ATTENDING row without ending the first;
+- its care-team ADD route (`POST .../care-team`, `admission/service.py` `add_care_team_member`)
+  limits no role, so it writes an ATTENDING row the same way.
+The old web calls neither route (deploy notes).
 
 Downgrade: B1b's columns and CHECK go; the `charge_nurse` rows and the description come back; the
-two indexes go and the old constraint returns. That last step FAILS LOUDLY when a member holds two
-closed rows on one admission; the deploy notes' rollback block counts them first. Rows closed or
-written by steps 2–4 stay as they are.
+two indexes go and the old constraint returns. THE DOWNGRADE DROPS `admissions.transfer_reason`
+AND `admissions.transfer_note`: once B1b has shipped, every transfer's reason and its (encrypted)
+note are lost, and nothing here saves them. The deploy notes' rollback block counts the reasons
+first. The last step FAILS LOUDLY when a member holds two closed rows on one admission, and the
+whole downgrade rolls back with it; the deploy notes' rollback block counts those too. Rows closed
+or written by steps 2–4 stay as they are.
 
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013).
 

@@ -2,16 +2,19 @@
 """Migration 0018 (G2-B1c spec §5.1 with G2-B1b spec §5.9, D9) on the real chain (`clean_db`,
 never `create_all`):
 - the data is put right before the indexes: the open rows of closed admissions close; of two
-  active attendings the newest stays and `attending_physician_id` follows her; a signed admission
-  whose attending has no row gets one (O45), and her other active row becomes it when she holds
-  one; a DRAFT gets none;
+  active attendings the newest stays (on a tie the greater id) and `attending_physician_id`
+  follows her, the other is ended with `closed_at` set; a signed admission (ACTIVE,
+  PENDING_DISCHARGE or PENDING_TRANSFER) whose attending has no row gets one (O45), and her other
+  active row becomes it when she holds one; a DRAFT gets none, and nor does a signed admission
+  that names no attending;
 - then one active row per member and admission, and one active ATTENDING per admission, hold,
   and a member ended twice keeps two closed rows (F2);
 - every `charge_nurse` group loses `care_team.claim`, and no other group does (D7); the default
   description loses «bakım ekibi», and a hospital's own is kept (X3);
 - B1b's two columns exist, and the CHECK refuses a seventh reason;
 - the downgrade restores the old key, drops the columns, and refuses loudly over a member with two
-  closed rows on one admission; 0017 → 0018 → 0017 → 0018 runs.
+  closed rows on one admission, rolling back whole (columns, CHECK, group text and claim all as
+  0018 left them); 0017 → 0018 → 0017 → 0018 runs.
 Synthetic rows only. The revision before is G3-02's 0017 (tasks): it grants `tasks.*` only to the
 groups that exist when it runs, and every group here is made after it."""
 from __future__ import annotations
@@ -104,10 +107,12 @@ def _admission(conn, tenant: uuid.UUID, number: str, state: str,
 
 
 def _row(conn, admission: uuid.UUID, user: uuid.UUID, role: str, *, active: bool = True,
-         hours_ago: int = 0, window: tuple[datetime, datetime] | None = None) -> uuid.UUID:
-    """One care-team row; a closed one is closed now."""
+         hours_ago: int = 0, window: tuple[datetime, datetime] | None = None,
+         row_id: uuid.UUID | None = None) -> uuid.UUID:
+    """One care-team row; a closed one is closed now. Rows made in one transaction with the same
+    `hours_ago` share their `created_at` (`now()` is the transaction's); `row_id` fixes the id."""
     assert role in ROLES                                    # written into the statement
-    rid = uuid.uuid4()
+    rid = row_id or uuid.uuid4()
     start, end = window or (None, None)
     conn.execute(text(
         "INSERT INTO care_team_members (id, admission_id, user_id, role, is_active, created_at, "
@@ -116,6 +121,16 @@ def _row(conn, admission: uuid.UUID, user: uuid.UUID, role: str, *, active: bool
         {"id": rid, "a": admission, "u": user, "active": active, "h": hours_ago, "ws": start,
          "we": end})
     return rid
+
+
+def low(n: int) -> uuid.UUID:
+    """A fixed row id at the bottom of the id order (`n` tells two apart)."""
+    return uuid.UUID(int=n)
+
+
+def high(n: int) -> uuid.UUID:
+    """A fixed row id at the top of the id order."""
+    return uuid.UUID(int=2 ** 128 - n)
 
 
 def _rows(conn, admission: uuid.UUID) -> list[tuple]:
@@ -150,9 +165,10 @@ def test_0018_puts_the_care_team_right_before_its_indexes(clean_db):
         draft = _admission(conn, tenant, "H9900106", "DRAFT", attending=d1)
     command.upgrade(cfg, "0018")
     with engine.connect() as conn:
-        # Step 3: of two attendings the newest stays, and the admission names her.
-        assert [(user, role, active) for user, role, active, *_ in _rows(conn, two)] == [
-            (d1, "ATTENDING", False), (d2, "ATTENDING", True)]
+        # Step 3: of two attendings the newest stays, and the admission names her. The older row
+        # is ended for good: inactive AND closed (`closed_at` set), not just flagged.
+        assert [(user, role, active, closed) for user, role, active, closed, *_ in
+                _rows(conn, two)] == [(d1, "ATTENDING", False, True), (d2, "ATTENDING", True, False)]
         assert _attending(conn, two) == d2
         # Step 4 (O45): a signed admission whose attending had no row gets one, granted by nobody.
         assert _rows(conn, none) == [(d3, "ATTENDING", True, False, None, None, None)]
@@ -163,6 +179,55 @@ def test_0018_puts_the_care_team_right_before_its_indexes(clean_db):
                 _rows(conn, gone) + _rows(conn, moved)] == [(d2, False, True), (d1, False, True)]
         # A DRAFT has no attending row yet (D3).
         assert _rows(conn, draft) == []
+
+
+def test_the_backfill_covers_a_pending_transfer_and_leaves_an_unnamed_attending_alone(clean_db):
+    """O45 (step 4) reaches every open, signed state: a PENDING_TRANSFER admission gets her row like
+    an ACTIVE or a PENDING_DISCHARGE one does. A signed admission that names no attending gets
+    none: there is nobody to write it for, and `attending_physician_id` stays NULL."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0017")
+    with engine.begin() as conn:
+        tenant = _tenant(conn, "hastane-a")
+        d1 = _user(conn, "d1")
+        leaving = _admission(conn, tenant, "H9900111", "PENDING_TRANSFER", attending=d1)
+        unnamed = _admission(conn, tenant, "H9900112", "ACTIVE")
+    command.upgrade(cfg, "0018")
+    with engine.connect() as conn:
+        assert _rows(conn, leaving) == [(d1, "ATTENDING", True, False, None, None, None)]
+        assert _attending(conn, leaving) == d1
+        assert _rows(conn, unnamed) == []
+        assert _attending(conn, unnamed) is None
+
+
+def test_two_attendings_made_in_the_same_instant_leave_the_one_with_the_greater_id(clean_db):
+    """Step 3 ranks by `created_at DESC NULLS LAST, id DESC`: on a tie the greater id stays. The
+    ids are fixed, and the two admissions put the greater one on different users and write it
+    first and last, so the winner can only be the id. `attending_physician_id` starts on the loser
+    and follows the kept row."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0017")
+    with engine.begin() as conn:
+        tenant = _tenant(conn, "hastane-a")
+        d1, d2 = _user(conn, "d1"), _user(conn, "d2")
+        high_first = _admission(conn, tenant, "H9900121", "ACTIVE", attending=d2)
+        _row(conn, high_first, d1, "ATTENDING", row_id=high(1))
+        _row(conn, high_first, d2, "ATTENDING", row_id=low(1))
+        high_last = _admission(conn, tenant, "H9900122", "ACTIVE", attending=d1)
+        _row(conn, high_last, d1, "ATTENDING", row_id=low(2))
+        _row(conn, high_last, d2, "ATTENDING", row_id=high(2))
+        for admission in (high_first, high_last):           # the tie is real, not assumed
+            assert conn.execute(text("SELECT count(DISTINCT created_at) FROM care_team_members "
+                                     "WHERE admission_id = :a"), {"a": admission}).scalar_one() == 1
+    command.upgrade(cfg, "0018")
+    with engine.connect() as conn:
+        # `_rows` lists the smaller id first on a tie: the loser, ended and closed, then the keeper.
+        assert [(user, active, closed) for user, _, active, closed, *_ in _rows(conn, high_first)] == [
+            (d2, False, True), (d1, True, False)]
+        assert _attending(conn, high_first) == d1
+        assert [(user, active, closed) for user, _, active, closed, *_ in _rows(conn, high_last)] == [
+            (d1, False, True), (d2, True, False)]
+        assert _attending(conn, high_last) == d2
 
 
 def test_then_one_active_row_per_member_and_one_attending_per_admission_hold(clean_db):
@@ -272,6 +337,7 @@ def test_the_downgrade_refuses_loudly_over_a_member_ended_twice(clean_db):
     command.upgrade(cfg, "0017")
     with engine.begin() as conn:
         tenant = _tenant(conn, "hastane-a")
+        charge = _group(conn, tenant, "charge_nurse", "care_team.claim")
         d1, d2 = _user(conn, "d1"), _user(conn, "d2")
         admission = _admission(conn, tenant, "H9900501", "ACTIVE", attending=d1)
     command.upgrade(cfg, "0018")
@@ -282,6 +348,17 @@ def test_the_downgrade_refuses_loudly_over_a_member_ended_twice(clean_db):
         command.downgrade(cfg, "0017")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0018"
+        # The whole downgrade rolled back, not just its last step: B1b's columns are still there,
+        # and the charge nurse's group still lacks the claim and still carries the new text.
+        claim = set(conn.execute(text("SELECT group_id FROM group_permissions "
+                                      "WHERE permission = 'care_team.claim'")).scalars())
+        described = conn.execute(text("SELECT description FROM groups WHERE id = :g"),
+                                 {"g": charge}).scalar_one()
+        constraint = conn.execute(text("SELECT count(*) FROM pg_constraint WHERE conname = :n"),
+                                  {"n": CHECK}).scalar_one()
+    assert {"transfer_reason", "transfer_note"} <= {
+        c["name"] for c in inspect(engine).get_columns("admissions")}
+    assert claim == set() and described == AFTER and constraint == 1
 
 
 def test_the_model_and_the_migration_agree_on_the_transfer_columns(clean_db):
