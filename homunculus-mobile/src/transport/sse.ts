@@ -8,6 +8,9 @@
  *   - `event: heartbeat\ndata: {}\n\n` — a NAMED event (the board stream, while idle), by which a
  *     browser's EventSource tells a quiet stream from a dead one. Not a payload: like
  *     EventSource's `onmessage`, this parser yields only unnamed (or `message`) events.
+ *   - `event: rotate\ndata: {}\n\n` — a NAMED event, the last of a stream that reached its age
+ *     (G2 borç 1b, `STREAM_MAX_AGE`): the server ends it so a fresh ticket reads the scope again.
+ *     Not a payload either; a named event is reported by its name (`onNamedEvent`) instead.
  *
  * A streamed fetch delivers these as raw decoded text chunks that can split anywhere — mid
  * line, mid `\n\n` terminator, even mid-JSON. This module owns reassembling that byte stream
@@ -21,6 +24,9 @@
 export interface SseParserOptions {
   /** Called with the raw data payload that failed JSON.parse; parsing continues. */
   onError?: (raw: string) => void;
+  /** Called with the name of each complete NAMED event (`heartbeat`, `rotate`), which is never a
+   * payload — the transport acts on `rotate` (sseTransport.ts). */
+  onNamedEvent?: (name: string) => void;
 }
 
 export interface SseParser {
@@ -29,7 +35,7 @@ export interface SseParser {
 }
 
 export function createSseParser(options: SseParserOptions = {}): SseParser {
-  const { onError } = options;
+  const { onError, onNamedEvent } = options;
 
   // Trailing partial line carried over between pushes.
   let buffer = "";
@@ -44,8 +50,11 @@ export function createSseParser(options: SseParserOptions = {}): SseParser {
     if (dataLines.length === 0) return;
     const raw = dataLines.join("\n");
     dataLines = [];
-    // A named event (the board stream's heartbeat) is not a payload.
-    if (name !== "" && name !== "message") return;
+    // A named event (the board stream's heartbeat, a stream's rotate) is not a payload.
+    if (name !== "" && name !== "message") {
+      onNamedEvent?.(name);
+      return;
+    }
     try {
       results.push(JSON.parse(raw));
     } catch {

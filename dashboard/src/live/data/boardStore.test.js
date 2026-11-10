@@ -481,6 +481,137 @@ describe("a stream that has gone silent", () => {
   });
 });
 
+// G2 borç 1b (owner: «Süre sınırı»): the server ends every stream after STREAM_MAX_AGE (15 minutes)
+// with a named `rotate` event, so that a scope resolved once from a ticket is read again. That is a
+// planned end, not a failure: the board is not marked as possibly out of date, it reconnects at once
+// with a fresh ticket, and the new open reloads it as every open does.
+describe("a stream the server rotates", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const live = async (s) => {
+    await s.store.start();
+    s.handlers[0].onopen();
+    await vi.waitFor(() => expect(s.state().connection).toBe(CONNECTION.LIVE));
+  };
+
+  it("closes the old stream and reconnects at once with a fresh ticket, without ever saying DEGRADED", async () => {
+    const s = setup();
+    await live(s);
+    const seen = [];
+    s.store.subscribe(() => seen.push(s.state().connection));
+    s.api.streamTicket.mockResolvedValue({ ticket: "t-2" });
+    s.handlers[0].onrotate();
+    expect(s.closes[0]).toHaveBeenCalled();
+    expect(s.due(RECONNECT_DELAY_MS)).toHaveLength(0);                 // no waiting: at once
+    await settle();
+    expect(s.api.streamTicket).toHaveBeenCalledTimes(2);
+    expect(s.openStream).toHaveBeenLastCalledWith("/stream?ticket=t-2", expect.any(Object));
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+    s.handlers[1].onopen();
+    expect(s.api.boardPatients).toHaveBeenCalledTimes(3);              // the new open reloads
+    await settle();
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+    expect(seen).not.toContain(CONNECTION.DEGRADED);
+  });
+
+  it("takes the new open's reload as the board — a patient the new scope leaves out is gone", async () => {
+    const s = setup();
+    await live(s);
+    s.handlers[0].onrotate();
+    await settle();
+    s.api.boardPatients.mockResolvedValue({ ...BOARD, patients: [entry("P-002")] });
+    s.handlers[1].onopen();
+    await vi.waitFor(() => expect(s.state().patients.map((p) => p.patient_id)).toEqual(["P-002"]));
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+  });
+
+  it("is not made DEGRADED by a load that lands in the gap, before or after the new open", async () => {
+    const s = setup();
+    await live(s);
+    let early;
+    s.api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { early = resolve; }));
+    const before = s.store.refresh();                                  // began under the old stream
+    s.handlers[0].onrotate();
+    await s.store.refresh();                                           // began and landed in the gap
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+    await settle();
+    let reload;
+    s.api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { reload = resolve; }));
+    s.handlers[1].onopen();
+    early(BOARD);                                                      // lands after the open, before its reload
+    await before;
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+    reload(BOARD);
+    await settle();
+    expect(s.state().connection).toBe(CONNECTION.LIVE);
+  });
+
+  it("hands a failed reconnect to the error path: DEGRADED, and ONE scheduled reconnect", async () => {
+    const s = setup();
+    await live(s);
+    s.api.streamTicket.mockRejectedValueOnce(Object.assign(new Error("kapsam şu anda okunamıyor"), { status: 503 }));
+    s.handlers[0].onrotate();
+    await settle();
+    expect(s.state().connection).toBe(CONNECTION.DEGRADED);
+    expect(s.due(RECONNECT_DELAY_MS)).toHaveLength(1);
+    await s.fire(RECONNECT_DELAY_MS);
+    s.handlers[1].onopen();
+    await vi.waitFor(() => expect(s.state().connection).toBe(CONNECTION.LIVE));
+  });
+
+  it("then watches only the new stream: the old one's silence timer is stopped, a new one starts at the reopen", async () => {
+    const s = setup();
+    await live(s);
+    const old = s.due(STREAM_SILENCE_MS)[0];
+    s.handlers[0].onrotate();
+    expect(old.cleared).toBe(true);
+    await settle();
+    expect(s.due(STREAM_SILENCE_MS)).toHaveLength(1);                  // watched from its opening
+    s.fire(STREAM_SILENCE_MS);                                         // one that never answers
+    expect(s.state().connection).toBe(CONNECTION.DEGRADED);
+  });
+
+  it("does nothing for a board already cleared", async () => {
+    const s = setup();
+    await live(s);
+    s.store.clear();
+    s.handlers[0].onrotate();
+    await settle();
+    expect(s.api.streamTicket).toHaveBeenCalledTimes(1);
+    expect(s.state().connection).toBe(CONNECTION.CONNECTING);
+  });
+
+  it("hears the server's named rotate through a real EventSource, which it closes before the browser retries", async () => {
+    const sources = [];
+    class FakeEventSource extends EventTarget {
+      constructor(url) { super(); this.url = url; sources.push(this); }
+      close() { this.closed = true; }
+      emit(type, data) {
+        const event = new MessageEvent(type, { data });
+        this.dispatchEvent(event);
+        if (type === "message") this.onmessage?.(event);
+        if (type === "open") this.onopen?.(event);
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const api = {
+      boardPatients: vi.fn().mockResolvedValue(BOARD),
+      streamTicket: vi.fn().mockResolvedValueOnce({ ticket: "t-1" }).mockResolvedValueOnce({ ticket: "t-2" }),
+    };
+    const store = createBoardStore({ api, setTimer: () => 0, clearTimer: () => {} });
+    await store.start();
+    sources[0].emit("open");
+    await vi.waitFor(() => expect(store.getState().connection).toBe(CONNECTION.LIVE));
+    sources[0].emit("rotate", "{}");
+    expect(sources[0].closed).toBe(true);
+    await settle();
+    expect(sources[1].url).toBe("/stream?ticket=t-2");
+    expect(store.getState().patients).toHaveLength(2);                 // a rotate is no frame
+    expect(store.getState().connection).toBe(CONNECTION.LIVE);
+    store.clear();
+  });
+});
+
 describe("alarm counts and lists", () => {
   const alerts = [
     { id: "a", severity: "critical", ack: null, firstSeenAtMs: 300 },

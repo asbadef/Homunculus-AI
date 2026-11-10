@@ -542,6 +542,11 @@ Dalga 3'te geldi: 3.6.
   işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
   ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
   "sakin servis" gibi okunmaz.
+- *Akışın ömrü (sahip kararı, 2026-11-10, «Süre sınırı»):* Sunucu her pano ve bildirim akışını en
+  geç 15 dakikada bir kendisi kapatır (`rotate`). Kişinin birim kapsamı akış açılırken bir kez
+  okunur; bu kapanış sayesinde birimi değişen bir hemşirenin ya da düzenlenen bir yapının ekranı
+  en geç 15 dakikada yeni kapsama geçer. Tarayıcı hemen yeni bir biletle bağlanır ve panoyu
+  yeniden yükler; bu planlı bir yenilemedir, ekranda "güncel olmayabilir" şeridi çıkmaz.
 - *Ana ekrana eklenen uygulama:* Uygulama **gerçek sistemle** kurulur — Dalga 2'den önce kısayol
   simülasyonu (`?demo=1`) açıyordu. Ana ekranda zaten duran eski bir kısayol, tarayıcı uygulama
   tanımını yeniden okuyana kadar eski adresi açar; G1-16'dan beri o adres de gerçek sistemi açar

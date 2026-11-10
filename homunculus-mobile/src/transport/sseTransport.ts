@@ -12,6 +12,12 @@
 // resnapshot. They could in principle reconnect independently, but a shared cycle is simpler to
 // reason about and the resnapshot already covers whatever gap either stream left — there is no
 // benefit to keeping the other stream's now-stale connection alive while its sibling recovers.
+//
+// Planned rotation (G2 borç 1b, owner: «Süre sınırı»): the server ends every stream after
+// STREAM_MAX_AGE (15 minutes) with a named `rotate` event, because each stream's scope is the one
+// its ticket fixed at open. That is not a failure: the cycle is rebuilt AT ONCE — no backoff, the
+// state stays "open" — through the same resnapshot and fresh tickets. If that cycle fails, the
+// ordinary reconnect (backoff, "reconnecting") takes over.
 import { createSseParser } from "./sse";
 import { PasswordChangeRequiredError, readDetail, SessionExpiredError } from "./authClient";
 import type { BoardNotification, PatientBoard, Role, Transport, TransportListener } from "./types";
@@ -134,6 +140,17 @@ export function createSseTransport(
     }, delay);
   }
 
+  /** The server ended a stream at its age (`rotate`): rebuild both streams now, behind a
+   * resnapshot, without the backoff or the "reconnecting" state of a failure. A stream of a cycle
+   * already torn down (its sibling rotated first) starts nothing. */
+  function rotate(gen: number): void {
+    if (stopped || gen !== generation) return;
+    if (reconnectScheduled) return; // a failure's reconnect is already on its way
+    generation += 1;
+    abortAll();
+    void runCycle(generation, false, true);
+  }
+
   async function safeCancel(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
     try {
       await reader.cancel();
@@ -144,21 +161,31 @@ export function createSseTransport(
 
   /** Reads one SSE stream to completion, feeding each parsed payload to `onPayload`. Returns once
    * the stream closes, is superseded by a later generation, or the transport stops — the caller
-   * decides what "returned" means for reconnection. */
-  async function pump(response: Response, gen: number, onPayload: (payload: unknown) => void): Promise<void> {
+   * decides what "returned" means for reconnection — or as soon as the server says `rotate`, which
+   * is the one end it reports apart ("rotated"). */
+  async function pump(
+    response: Response,
+    gen: number,
+    onPayload: (payload: unknown) => void
+  ): Promise<"ended" | "rotated"> {
     const body = response.body;
-    if (!body) return;
+    if (!body) return "ended";
     const reader = body.getReader();
     const decoder = new TextDecoder();
-    const parser = createSseParser();
+    let rotated = false;
+    const parser = createSseParser({
+      onNamedEvent: (name) => {
+        if (name === "rotate") rotated = true;
+      },
+    });
     try {
       for (;;) {
         const { done, value } = await reader.read();
         if (stopped || gen !== generation) {
           await safeCancel(reader);
-          return;
+          return "ended";
         }
-        if (done) return;
+        if (done) return "ended";
         // Any bytes at all — even a keep-alive comment the parser discards — are proof this
         // connection is genuinely alive, which is a better "successful reconnect" signal than the
         // HTTP handshake succeeding: a stream that reconnects and closes again before delivering
@@ -168,15 +195,21 @@ export function createSseTransport(
         for (const payload of parser.push(chunk)) {
           if (stopped || gen !== generation) {
             await safeCancel(reader);
-            return;
+            return "ended";
           }
           onPayload(payload);
+        }
+        if (rotated) {
+          // The server's last frame: the end follows it. Not waited for — the caller rebuilds now.
+          await safeCancel(reader);
+          return "rotated";
         }
       }
     } catch {
       // reader.read() rejected (network error, aborted fetch) — treated as a clean stream end;
       // the caller schedules a reconnect the same as a natural close.
     }
+    return "ended";
   }
 
   /** Mints a single-use ticket and opens one SSE stream. `path` is the ticketed endpoint
@@ -211,13 +244,17 @@ export function createSseTransport(
       scheduleReconnect(gen);
       return;
     }
-    await pump(response, gen, onPayload);
-    // The stream ended (server closed it, or pump() absorbed a read error as a clean close).
-    scheduleReconnect(gen);
+    const end = await pump(response, gen, onPayload);
+    // The server rotated it (planned: rebuild now), or the stream ended (server closed it, or
+    // pump() absorbed a read error as a clean close).
+    if (end === "rotated") rotate(gen);
+    else scheduleReconnect(gen);
   }
 
-  async function runCycle(gen: number, isFirst: boolean): Promise<void> {
-    setState(isFirst ? "connecting" : "reconnecting");
+  /** `planned`: a rotation's cycle, which keeps the state it found ("open") — only a failure in it
+   * (through scheduleReconnect) says "reconnecting". */
+  async function runCycle(gen: number, isFirst: boolean, planned = false): Promise<void> {
+    if (!planned) setState(isFirst ? "connecting" : "reconnecting");
 
     let res: Response;
     try {

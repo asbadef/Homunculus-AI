@@ -23,6 +23,17 @@
 // HEARTBEAT_MS of silence (api/app.py `sse_board_frames`); a stream that says nothing — no frame,
 // no heartbeat — for STREAM_SILENCE_MS is dropped like a failed one: DEGRADED, a reconnect, and
 // LIVE again only through its open and that open's reload.
+//
+// And a stream has a bounded life (G2 borç 1b, owner: «Süre sınırı»). The scope the board is
+// streamed under is the ticket's, read once; so the server ends every stream after STREAM_MAX_AGE
+// (api/app.py, 15 minutes) with a named `rotate` event. That end is PLANNED, not a failure: the old
+// EventSource is closed (or the browser would retry with the spent ticket), a fresh ticket is asked
+// for at once — no RECONNECT_DELAY_MS, no DEGRADED, no «may be out of date» — and the new open
+// reloads the board as every open does, which is what brings a changed scope onto the screen. A
+// LIVE board stays LIVE through that gap; any load landing in it keeps the connection it found. The
+// gap is bounded by what bounds any stream here: a ticket that fails or times out takes the error
+// path (DEGRADED, one scheduled reconnect), and a stream that never opens is dropped by the silence
+// watchdog — so LIVE is never held without a stream for longer than the store already tolerates.
 import { patientFromBoard, patientsFromBoard, alertsFromPatients, alertsEqual } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
 
@@ -33,6 +44,8 @@ export const HEARTBEAT_MS = 15_000;
 export const STREAM_SILENCE_MS = 3 * HEARTBEAT_MS;
 /** The heartbeat's event name; the board's frames are unnamed (`message`). */
 export const HEARTBEAT_EVENT = "heartbeat";
+/** The server's planned end of a stream (api/app.py `ROTATE_FRAME`, at STREAM_MAX_AGE): reconnect now. */
+export const ROTATE_EVENT = "rotate";
 
 // `loaded`: the board holds a ward it LOADED (the last whole load succeeded), whatever the stream
 // is doing. It is what tells "connecting, with the first load landed" — `start` loads first and
@@ -52,6 +65,8 @@ function defaultOpenStream(url, handlers) {
   source.onmessage = handlers.onmessage;
   source.onerror = handlers.onerror;
   source.addEventListener(HEARTBEAT_EVENT, handlers.onheartbeat);
+  // Named, so `onmessage` never hears it: an `addEventListener` of its own, as the heartbeat has.
+  source.addEventListener(ROTATE_EVENT, handlers.onrotate);
   return () => source.close();
 }
 
@@ -78,6 +93,7 @@ export function createBoardStore({
   let reloadRetry = null;           // a reload that failed under an open stream, tried again
   let opened = 0;                   // the stream's opens so far: a load counts for the one it began in
   let streamOpen = false;
+  let rotating = false;             // a planned reconnect (`rotate`) whose open's reload has not landed
   let loadsBegun = 0;               // a load overtaken by a later one that landed first is dropped
   let loadLanded = 0;
   // A load's snapshot is taken by the server when the request arrives; a frame that comes while
@@ -157,13 +173,16 @@ export function createBoardStore({
     if (patients) {
       cancelReloadRetry();
       // LIVE only for a load that began after the stream (still) open had opened; otherwise the
-      // data is shown but not vouched for: still connecting at the start, DEGRADED after.
+      // data is shown but not vouched for: still connecting at the start, DEGRADED after — except
+      // in a planned rotation's gap, where a LIVE board keeps LIVE until the new open's reload lands.
       const live = streamOpen && during === opened;
-      const connection = live ? CONNECTION.LIVE
+      if (live) rotating = false;
+      const connection = live || (rotating && state.connection === CONNECTION.LIVE) ? CONNECTION.LIVE
         : state.connection === CONNECTION.CONNECTING ? CONNECTION.CONNECTING : CONNECTION.DEGRADED;
       withPatients(newer.reduce(applyFrame, patients),
         { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection, loaded: true });
     } else {
+      rotating = false;
       // An empty list with the reason, never the last one: a board that stopped updating must
       // not look like a ward that is calm.
       withPatients([], { scope: null, scopeNote: null, connection: CONNECTION.UNAVAILABLE, loaded: false });
@@ -227,6 +246,7 @@ export function createBoardStore({
     closeSource();                                // or the browser retries with the spent ticket
     if (mine !== generation) return;
     streamOpen = false;
+    rotating = false;                             // a failed rotation is a failure like any other
     quiet();
     cancelReloadRetry();                          // the reconnect's open reloads instead
     // A board whose load failed stays UNAVAILABLE (empty, and says so); any other is DEGRADED.
@@ -236,6 +256,20 @@ export function createBoardStore({
       reconnect = null;
       if (mine === generation) connect(mine);
     }, RECONNECT_DELAY_MS);
+  }
+
+  /** The server ended the stream at its age (`rotate`, G2 borç 1b): planned, so no DEGRADED and no
+   *  waiting — the old one closed, a fresh ticket now (`connect`), and that open reloads the board. A
+   *  reconnect that fails is `connect`'s, and so the error path's. */
+  function onRotate(mine) {
+    if (mine !== generation) return;              // a cleared board's stream was closed with it
+    closeSource();                                // before the browser retries with the spent ticket
+    closeSource = () => {};
+    streamOpen = false;
+    rotating = true;
+    quiet();                                      // the new stream is watched from its own opening
+    cancelReloadRetry();                          // the new open reloads instead
+    connect(mine);
   }
 
   /** Anything heard from the stream (its open, a frame, a heartbeat) starts its silence over. */
@@ -260,6 +294,7 @@ export function createBoardStore({
         onopen: () => { if (mine === generation) { heard(mine); onOpen(); } },
         onmessage: (event) => { if (mine === generation) { heard(mine); onMessage(event); } },
         onheartbeat: () => { if (mine === generation) heard(mine); },
+        onrotate: () => onRotate(mine),
         onerror: () => onError(mine),
       });
       heard(mine);                                // watched from here: one that never opens is dead too
@@ -276,6 +311,7 @@ export function createBoardStore({
     closeSource();
     closeSource = () => {};
     streamOpen = false;
+    rotating = false;
     loading.clear();
     frames = [];
   }

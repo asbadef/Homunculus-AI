@@ -231,6 +231,19 @@ class TestDTheLiveFeed:
         _hospital, scope = app.state.tickets.consume(ticket, now=0.0)
         assert scope.unrestricted is True
 
+    def test_a_scoped_stream_ends_after_its_life_so_the_next_ticket_reads_the_scope_again(
+            self, adult_nurse, monkeypatch):
+        """G2 borç 1b (owner: «Süre sınırı»): the scope a ticket carries is the scope of that
+        connection's whole life — so the life is bounded. A reassignment reaches an open screen at
+        the next rotation, through a fresh ticket, instead of never."""
+        import homunculus.api.app as app_module
+        monkeypatch.setattr(app_module, "STREAM_MAX_AGE", 0.05)
+        app, client = adult_nurse
+        ticket = client.post("/stream-ticket", headers=NURSE).json()["ticket"]
+        body = client.get(f"/stream?ticket={ticket}").text
+        assert body.endswith("event: rotate\ndata: {}\n\n")
+        assert app.state.broadcaster._subs == {}                # noqa: SLF001 — unsubscribed
+
     async def test_the_frame_generator_drops_out_of_scope_boards(self):
         """The filter has to sit in the generator: the broadcaster fans one board out to every
         subscriber of the tenant, so there is nowhere earlier that knows who is listening."""

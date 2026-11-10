@@ -187,6 +187,19 @@ def _device_role(value: object) -> str:
 #: reader of unnamed `message` events only — the old workspace, the mobile app — never sees it.
 HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
+#: G2 borç 1b (owner decision 2026-11-10, «Süre sınırı»): the longest one live stream is kept open, in
+#: seconds. `/stream` and `/notifications` resolve the caller's scope ONCE, from the ticket, and keep it
+#: for the connection's whole life — so a nurse moved to another unit, a role changed, or a bed map or
+#: structure edited would leave an open screen on the old view until it happened to reconnect, which
+#: on a ward tablet can be days. Bounding the life bounds that: past this age the server ends the
+#: stream with ROTATE_FRAME, and the client reconnects with a fresh ticket — and so a scope read again
+#: — and reloads the board. Every subscriber, scoped or not: an unscoped one's role can change too.
+STREAM_MAX_AGE = 900
+#: The last frame of a stream that reached STREAM_MAX_AGE: a NAMED event, so a reader of unnamed
+#: `message` events only never takes it for a board. A planned end, not a failure — the dashboard
+#: reconnects at once and does not show the board as possibly out of date (boardStore.js).
+ROTATE_FRAME = "event: rotate\ndata: {}\n\n"
+
 
 class ScopedBoardView:
     """What one scoped subscriber of the board stream is sent for each board (G2 borç 1): the board
@@ -225,11 +238,19 @@ class ScopedBoardView:
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
                            allow: Callable[[dict], bool] | None = None,
-                           view: Callable[[dict], dict | None] | None = None):
+                           view: Callable[[dict], dict | None] | None = None, *,
+                           max_age: float = STREAM_MAX_AGE,
+                           clock: Callable[[], float] | None = None):
     """Yield SSE frames for boards arriving on `queue`; on idle, a keep-alive comment and then
     HEARTBEAT_FRAME. Tested directly (httpx ASGITransport cannot read an unbounded stream).
     Cancellation (client disconnect, via Starlette) interrupts the wait; the caller's finally
     unsubscribes. Do NOT read request.receive.
+
+    `max_age` (G2 borç 1b): once that many seconds have passed since the stream opened, one
+    ROTATE_FRAME and the generator returns, which ends the response — the caller's finally still
+    unsubscribes. A busy stream is held to it as an idle one is: the age is checked before every
+    frame, and the wait for the next board never outlasts the life that is left. `clock` is the
+    time it is measured on (the loop's by default); a test passes its own.
 
     `allow` is a scope as a plain filter. The broadcaster publishes one board per tenant to every
     subscriber of that tenant, so without a per-subscriber filter here the live feed would carry
@@ -244,17 +265,21 @@ async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
     nurse scoped to a quiet unit of a busy hospital is sent none of the boards the queue keeps
     bringing, and still gets her heartbeat (the dashboard drops a stream silent for three of them).
     """
-    loop = asyncio.get_running_loop()
-    last_sent = loop.time()
+    now = clock or asyncio.get_running_loop().time
+    opened = last_sent = now()
     while True:
-        wait = keepalive - (loop.time() - last_sent)
+        left = max_age - (now() - opened)
+        if left <= 0:
+            yield ROTATE_FRAME
+            return
+        wait = keepalive - (now() - last_sent)
         if wait <= 0:
             yield ": keep-alive\n\n"
             yield HEARTBEAT_FRAME
-            last_sent = loop.time()
+            last_sent = now()
             continue
         try:
-            board = await asyncio.wait_for(queue.get(), timeout=wait)
+            board = await asyncio.wait_for(queue.get(), timeout=min(wait, left))
         except asyncio.TimeoutError:
             continue
         if allow is not None and not allow(board):
@@ -263,17 +288,30 @@ async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
         if frame is None:
             continue
         yield f"data: {json.dumps(frame)}\n\n"
-        last_sent = loop.time()
+        last_sent = now()
 
 
 async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
-                                  allow: Callable[[dict], bool] | None = None):
-    """Same shape as sse_board_frames, for the /notifications stream. Tested directly."""
+                                  allow: Callable[[dict], bool] | None = None, *,
+                                  max_age: float = STREAM_MAX_AGE,
+                                  clock: Callable[[], float] | None = None):
+    """Same shape as sse_board_frames, for the /notifications stream. Tested directly.
+
+    Held to the same `max_age` (G2 borç 1b): its scope, too, is the ticket's, read once at open.
+    Its keep-alive is still a comment on an idle queue; a wait cut short by the end of the life is
+    no keep-alive, only the way to the ROTATE_FRAME."""
+    now = clock or asyncio.get_running_loop().time
+    opened = now()
     while True:
+        left = max_age - (now() - opened)
+        if left <= 0:
+            yield ROTATE_FRAME
+            return
         try:
-            note = await asyncio.wait_for(queue.get(), timeout=keepalive)
+            note = await asyncio.wait_for(queue.get(), timeout=min(keepalive, left))
         except asyncio.TimeoutError:
-            yield ": keep-alive\n\n"
+            if now() - opened < max_age:
+                yield ": keep-alive\n\n"
             continue
         if allow is not None and not allow(note):
             continue
@@ -1913,8 +1951,10 @@ def create_app(
         queue = broadcaster.subscribe(hospital)
 
         async def events():
+            # G2 borç 1b: the stream ends at STREAM_MAX_AGE (read here, as it opens) with a `rotate`
+            # event; the client comes back with a fresh ticket, and so with the scope as it is then.
             try:
-                async for frame in sse_board_frames(queue, view=view):
+                async for frame in sse_board_frames(queue, view=view, max_age=STREAM_MAX_AGE):
                     yield frame
             finally:
                 broadcaster.unsubscribe(hospital, queue)
@@ -1940,8 +1980,9 @@ def create_app(
             return sees_patient(_scope_card(hospital, pid), scope)
 
         async def events():
+            # Held to the board stream's life (G2 borç 1b): its scope is the ticket's too.
             try:
-                async for frame in sse_notification_frames(queue, allow=allow):
+                async for frame in sse_notification_frames(queue, allow=allow, max_age=STREAM_MAX_AGE):
                     yield frame
             finally:
                 hub.unsubscribe(hospital, role, queue)
