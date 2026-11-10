@@ -20,15 +20,16 @@ from datetime import datetime, timedelta, timezone
 import pytest_asyncio
 from sqlalchemy import func, select, update
 
+from homunculus.admission import service as adm_service
 from homunculus.admission.models import Handover, HandoverStatus
-from homunculus.auth.groups import ensure_default_groups
+from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.models import Group, TenantMembership, User
 from homunculus.escalation import service as esc_service
 from homunculus.escalation.models import AlertTier
-from homunculus.tenant.models import Tenant
+from homunculus.tenant.models import Site, Tenant, Unit, UnitType
 from tests.conftest import requires_db
 from tests.kabul_world import BOARD, SLUG, build_ward, ward_client
-from tests.signed_in import add_user
+from tests.signed_in import add_user, bearer
 
 pytestmark = [requires_db]
 
@@ -133,6 +134,16 @@ def refused(r, status: int, code: str) -> None:
     assert r.json()["detail"]["code"] == code, r.text
 
 
+async def handovers_in(db_session) -> int:
+    return (await db_session.execute(select(func.count(Handover.id)))).scalar_one()
+
+
+async def nurse_group(db_session, w) -> Group:
+    """The ward's default «nurse» group (build_ward seeded it)."""
+    return (await db_session.execute(select(Group).where(
+        Group.tenant_id == w.tenant.id, Group.slug == "nurse"))).scalar_one()
+
+
 # ---------------------------------------------------------------- D3: the gate on the live board
 async def test_an_unacknowledged_critical_on_the_board_blocks_the_signature_until_acked(ward):
     w, client, _ = ward
@@ -179,6 +190,94 @@ async def test_a_postgres_alert_row_alone_does_not_block(ward, db_session):
 
     r = await sign(w, client, handover)
     assert r.status_code == 200, r.text
+
+
+async def test_a_critical_on_another_patient_does_not_hold_this_handover(ward):
+    """D1: an unacknowledged critical alarm stops that patient's handover only."""
+    w, client, _ = ward
+    mine, theirs = await signed(w, client), await signed(w, client, "2")
+    await septic_shock(client, theirs["board_key"])
+    handover = await opened(w, client, mine)
+
+    r = await sign(w, client, handover)
+    assert r.status_code == 200, r.text
+
+
+async def test_a_handover_of_two_patients_sums_their_criticals_and_seals_both(ward):
+    """The API still takes a list (D4): the gate sums the patients' open criticals, the summary is
+    sealed per patient under `patients`, and every audit row names both."""
+    w, client, app = ward
+    one, two = await signed(w, client), await signed(w, client, "2")
+    keys = [one["board_key"], two["board_key"]]
+    for key in keys:
+        await septic_shock(client, key)
+    r = await client.post("/handovers", headers=w.auth["nurse"],
+                          json={**body(w, one), "admission_ids": [one["id"], two["id"]]})
+    assert r.status_code == 201, r.text
+    handover = r.json()
+
+    r = await sign(w, client, handover)
+    refused(r, 409, "critical_alarm_open")
+    assert "2 unacknowledged" in r.json()["detail"]["message"]
+    await acknowledged(client, keys[0])
+    r = await sign(w, client, handover)
+    refused(r, 409, "critical_alarm_open")
+    assert "1 unacknowledged" in r.json()["detail"]["message"]
+    await acknowledged(client, keys[1])
+    r = await sign(w, client, handover)
+    assert r.status_code == 200, r.text
+
+    (row,) = await box(w, client, "incoming", "charge")
+    assert [p["board_key"] for p in row["patients"]] == keys
+    assert set(row["summary"]) == {"patients"}
+    assert set(row["summary"]["patients"]) == set(keys)
+    for summary in row["summary"]["patients"].values():
+        assert set(summary) == {"risk", "news2", "latest", "on_pressor", "open_alerts",
+                                "captured_at"}
+        assert {"kind": "septic_shock", "severity": "critical", "acknowledged": True} \
+            in summary["open_alerts"]
+    (opened_row,) = audited(app, "handover.open")
+    assert opened_row.patient_id == keys[0]
+    assert opened_row.payload["patients"] == keys
+    assert opened_row.payload["admission_ids"] == [one["id"], two["id"]]
+    (signed_row,) = audited(app, "handover.sign_outgoing")
+    assert signed_row.payload["patients"] == keys
+
+
+# ---------------------------------------------------------------- D2: the receiver, at the server
+async def test_the_caller_is_not_her_own_receiver(ward, db_session):
+    w, client, _ = ward
+    admission = await signed(w, client)
+    r = await client.post("/handovers", json=body(w, admission, to="nurse"),
+                          headers=w.auth["nurse"])
+    refused(r, 422, "field_invalid:incoming_user_id")
+    assert await handovers_in(db_session) == 0
+
+
+async def test_the_receiver_holds_handover_sign(ward, db_session):
+    """D2: the receiver is one of the caller's colleagues (`GET /handovers/colleagues`) — the
+    auditor, a member without `handover.sign`, is not."""
+    w, client, _ = ward
+    admission = await signed(w, client)
+    r = await client.post("/handovers", json=body(w, admission, to="auditor"),
+                          headers=w.auth["nurse"])
+    refused(r, 422, "field_invalid:incoming_user_id")
+    assert await handovers_in(db_session) == 0
+
+
+async def test_the_administrator_is_a_receiver_by_the_system_rule(ward):
+    w, client, _ = ward
+    await opened(w, client, await signed(w, client), to="admin")
+
+
+async def test_a_handover_names_at_least_one_admission(ward, db_session):
+    w, client, _ = ward
+    await signed(w, client)
+    empty = {"unit_id": str(w.units["rea"].id), "incoming_user_id": str(w.users["charge"].id)}
+    for sent in ({**empty, "admission_ids": []}, empty):
+        r = await client.post("/handovers", json=sent, headers=w.auth["nurse"])
+        assert r.status_code == 422, (sent, r.text)
+    assert await handovers_in(db_session) == 0
 
 
 # ---------------------------------------------------------------- D4: checks on open
@@ -259,6 +358,46 @@ async def test_a_legacy_plain_text_note_reads_back_as_its_situation(ward):
                            "assessment": None, "recommendation": None}
 
 
+async def test_the_note_wins_over_the_legacy_text_when_both_come(ward):
+    w, client, _ = ward
+    handover = await opened(w, client, await signed(w, client))
+    r = await sign(w, client, handover, payload={"note": NOTE, "narrative_note": "Sentetik eski"})
+    assert r.status_code == 200, r.text
+
+    (row,) = await box(w, client, "outgoing", "nurse")
+    assert row["note"] == NOTE
+
+
+async def test_the_legacy_text_is_bounded_clean_and_the_body_has_no_stray_field(ward):
+    """The legacy text is held to 8000 characters and to the form's texts' rule (no control
+    character but tab and the line breaks: a NUL would be a 500 at Postgres); a field the body
+    does not have — `notes` for `note` — is a 422, never a signature with no note."""
+    w, client, _ = ward
+    handover = await opened(w, client, await signed(w, client))
+    r = await sign(w, client, handover, payload={"narrative_note": "x" * 8001})
+    assert r.status_code == 422, r.text
+    refused(await sign(w, client, handover, payload={"narrative_note": "Sentetik\x00not"}),
+            422, "field_invalid:narrative_note")
+    r = await sign(w, client, handover, payload={"notes": NOTE})
+    assert r.status_code == 422, r.text
+    r = await sign(w, client, handover, payload={"narrative_note": "x" * 8000})
+    assert r.status_code == 200, r.text
+
+
+async def test_a_legacy_note_no_json_reader_can_hold_never_breaks_the_box(ward, db_session):
+    """Whatever an older client stored in `narrative_note`, the box reads it back as text: a value
+    nested past the JSON reader's recursion limit is a legacy note, not a 500 for every row."""
+    w, client, _ = ward
+    handover = await handed(w, client, await signed(w, client))
+    deep = "[" * 20000 + "]" * 20000
+    await db_session.execute(update(Handover).where(Handover.id == uuid.UUID(handover["id"]))
+                             .values(narrative_note=deep))
+    await db_session.commit()
+
+    (row,) = await box(w, client, "outgoing", "nurse")
+    assert row["note"]["situation"] == deep
+
+
 # ---------------------------------------------------------------- D6: the summary
 async def test_the_summary_is_sealed_at_the_signature_and_holds_no_name(ward, db_session):
     w, client, _ = ward
@@ -331,14 +470,14 @@ async def test_a_row_names_its_people_and_its_patient(ward):
 async def test_closed_handovers_older_than_a_day_are_left_out(ward, db_session):
     w, client, _ = ward
     admission = await signed(w, client)
-    old_done, new_done, old_lapsed, old_waiting = [
-        await handed(w, client, admission) for _ in range(4)]
-    r = await client.post(f"/handovers/{old_done['id']}/countersign", headers=w.auth["charge"])
-    assert r.status_code == 200, r.text
-    r = await client.post(f"/handovers/{new_done['id']}/countersign", headers=w.auth["charge"])
-    assert r.status_code == 200, r.text
+    old_done, late_done, new_done, old_lapsed, old_waiting = [
+        await handed(w, client, admission) for _ in range(5)]
+    for done in (old_done, late_done, new_done):
+        r = await client.post(f"/handovers/{done['id']}/countersign", headers=w.auth["charge"])
+        assert r.status_code == 200, r.text
     day_ago = datetime.now(timezone.utc) - timedelta(hours=25)
-    for handover, values in ((old_done, {"created_at": day_ago}),
+    for handover, values in ((old_done, {"created_at": day_ago, "incoming_signed_at": day_ago}),
+                             (late_done, {"created_at": day_ago}),     # countersigned just now
                              (old_lapsed, {"created_at": day_ago,
                                            "status": HandoverStatus.EXPIRED}),
                              (old_waiting, {"created_at": day_ago})):
@@ -347,7 +486,9 @@ async def test_closed_handovers_older_than_a_day_are_left_out(ward, db_session):
     await db_session.commit()
 
     ids = {r["id"] for r in await box(w, client, "incoming", "charge")}
-    assert ids == {new_done["id"], old_waiting["id"]}       # still waiting for its countersign
+    # A COMPLETED one counts its day from the countersignature (review): one countersigned late
+    # stays. The OUTGOING_SIGNED one is still waiting for its countersign.
+    assert ids == {late_done["id"], new_done["id"], old_waiting["id"]}
 
 
 async def test_an_open_handover_past_its_bridge_reads_as_expired(ward, db_session):
@@ -381,6 +522,43 @@ async def test_the_boxes_need_handover_sign(ward):
     assert r.status_code == 403, r.text
 
 
+async def test_a_member_of_two_tenants_sees_only_her_session_tenants_handovers(ward, db_session):
+    """By person AND by tenant: a handover to her in her other hospital stays there. Her session
+    runs in the lowest slug of her memberships (auth/groups.tenant_of_user): «kabul-hastane»."""
+    w, client, _ = ward
+    both = await add_user(db_session, username="iki@kabul.example.com", tenant_id=w.tenant.id,
+                          group=await nurse_group(db_session, w))
+    other = Tenant(name="Sentetik Zeta Hastanesi", slug="zeta-hastane", country_code="AZ")
+    db_session.add(other)
+    await db_session.flush()
+    groups = await ensure_default_groups(db_session, other.id)
+    db_session.add(TenantMembership(user_id=both.id, tenant_id=other.id))
+    await db_session.flush()
+    await set_manual_groups(db_session, user=both, tenant_id=other.id,
+                            group_ids=[groups["nurse"].id], granted_by_id=None)
+    site = Site(tenant_id=other.id, name="Zeta bina")
+    db_session.add(site)
+    await db_session.flush()
+    unit = Unit(site_id=site.id, name="Zeta YBÜ", unit_type=UnitType.ADULT_ICU)
+    db_session.add(unit)
+    await db_session.commit()
+    sender = await add_user(db_session, username="gonderen@zeta.example.com",
+                            tenant_id=other.id, group=groups["nurse"])
+    await adm_service.open_handover(db_session, unit_id=unit.id, outgoing_user_id=sender.id,
+                                    incoming_user_id=both.id, admission_ids=[])
+    await db_session.commit()
+    admission = await signed(w, client)
+    r = await client.post("/handovers", headers=w.auth["nurse"],
+                          json={**body(w, admission), "incoming_user_id": str(both.id)})
+    assert r.status_code == 201, r.text
+    ours = r.json()
+
+    r = await client.get("/handovers", params={"box": "incoming"},
+                         headers=await bearer(db_session, both))
+    assert r.status_code == 200, r.text
+    assert [row["id"] for row in r.json()] == [ours["id"]]
+
+
 # ---------------------------------------------------------------- D7: colleagues
 async def test_colleagues_are_the_tenants_active_handover_signers_but_the_caller(
         ward, db_session):
@@ -389,8 +567,7 @@ async def test_colleagues_are_the_tenants_active_handover_signers_but_the_caller
     db_session.add(other)
     await db_session.flush()
     groups = await ensure_default_groups(db_session, other.id)
-    nurses = (await db_session.execute(select(Group).where(
-        Group.tenant_id == w.tenant.id, Group.slug == "nurse"))).scalar_one()
+    nurses = await nurse_group(db_session, w)
     await add_user(db_session, username="yabanci@baska.example.com", tenant_id=other.id,
                    group=groups["nurse"])
     gone = await add_user(db_session, username="ayrilan@kabul.example.com",
@@ -437,13 +614,14 @@ async def test_each_step_writes_one_audit_row_without_the_note(ward):
     (opened_row,) = audited(app, "handover.open")
     assert (opened_row.patient_id, opened_row.payload) == (key, {
         "handover_id": handover["id"], "admission_id": admission["id"],
+        "admission_ids": [admission["id"]], "patients": [key],
         "incoming_user_id": str(w.users["charge"].id), "actor": "nurse@kabul.example.com"})
     (signed_row,) = audited(app, "handover.sign_outgoing")
     assert (signed_row.patient_id, signed_row.payload) == (key, {
-        "handover_id": handover["id"], "actor": "nurse@kabul.example.com"})
+        "handover_id": handover["id"], "patients": [key], "actor": "nurse@kabul.example.com"})
     (counter_row,) = audited(app, "handover.countersign")
     assert (counter_row.patient_id, counter_row.payload) == (key, {
-        "handover_id": handover["id"], "actor": "charge@kabul.example.com"})
+        "handover_id": handover["id"], "patients": [key], "actor": "charge@kabul.example.com"})
 
     every = json.dumps([r.payload for r in app.state.audit.records(tenant=SLUG, limit=500)],
                        ensure_ascii=False)

@@ -49,7 +49,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1153,12 +1153,14 @@ def _note_text(note: HandoverNote) -> str:
 def _note_of(text: str | None) -> HandoverNoteOut | None:
     """D5: the stored note back as its four parts. A legacy plain-text note — anything that is not
     the `v: 1` JSON `_note_text` writes — is its `situation`. Read back without the input's
-    validator: a legacy note may be shorter than a new one must be."""
+    validator: a legacy note may be shorter than a new one must be. Whatever an older client
+    stored, it never fails the box: a text the JSON reader cannot hold — nested past its recursion
+    limit (`RecursionError`), or not JSON at all — is a legacy note (review)."""
     if not text:
         return None
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         data = None
     if isinstance(data, dict) and data.get("v") == 1:
         return HandoverNoteOut(**{part: data.get(part) if isinstance(data.get(part), str) else None
@@ -1196,6 +1198,28 @@ async def _locked_handover(db: AsyncSession, handover_id: uuid.UUID,
                              .execution_options(populate_existing=True))).scalar_one()
 
 
+def _signers(caller_tenant: uuid.UUID):
+    """D2, D7: the people of this tenant a handover can go to — `(id, full_name, username)` of
+    the active accounts with an active membership in the tenant whose groups there grant
+    `handover.sign`, a system group by rule (as at sign-in: `auth/groups.summarize`). One query,
+    which `GET /handovers/colleagues` lists (leaving the caller out) and `POST /handovers` asks of
+    its receiver (`.where(User.id == …)`), so the screen's list and the server's rule are one."""
+    signs = or_(Group.is_system.is_(True),
+                select(GroupPermission.group_id)
+                .where(GroupPermission.group_id == Group.id,
+                       GroupPermission.permission == HANDOVER_SIGN)
+                .exists())
+    return (select(User.id, User.full_name, User.username).distinct()
+            .join(TenantMembership, TenantMembership.user_id == User.id)
+            .join(UserGroup, UserGroup.user_id == User.id)
+            .join(Group, Group.id == UserGroup.group_id)
+            .where(TenantMembership.tenant_id == caller_tenant,
+                   TenantMembership.is_active.is_(True),
+                   User.is_active.is_(True),
+                   Group.tenant_id == caller_tenant,
+                   signs))
+
+
 @handover_router.post("", response_model=HandoverResponse, status_code=201)
 async def open_handover(
     payload: HandoverOpen,
@@ -1205,15 +1229,28 @@ async def open_handover(
     caller_tenant: uuid.UUID = _tenant,
 ):
     """Open a handover to the colleague the outgoing person chose (D2). The unit, the admissions
-    and the receiver are the caller's tenant's (404 / 422, before anything else). G2-B3b (D4):
-    each admission's bed is in the caller's units (403 `out_of_scope`) and the admission is open
-    and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`). The body is the one it
-    always was: a list of admissions, which the screen fills with one (D1). Audited
-    `handover.open` after the commit, under the first admission's board key (D8)."""
+    and the receiver are the caller's tenant's (404 / 422, before anything else). G2-B3b:
+
+    * D2 — the receiver is one of the caller's colleagues (`_signers`: an active member of the
+      tenant whose groups grant `handover.sign`), never the caller herself: otherwise 422
+      `field_invalid:incoming_user_id`. The server holds the rule, not only the screen's list;
+    * D4 — each admission's bed is in the caller's units (403 `out_of_scope`) and the admission is
+      open and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`).
+
+    The body is the one it always was, a list of admissions — at least one (422) — which the
+    screen fills with one (D1). Audited `handover.open` after the commit, under the first
+    admission's board key, every admission and key in its payload (D8)."""
     scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id), caller_tenant,
                        UNIT_NOT_FOUND)
     await scope.ensure_admissions(db, caller_tenant, payload.admission_ids, ADMISSION_NOT_FOUND)
     await scope.ensure_members(db, caller_tenant, [payload.incoming_user_id])
+    if payload.incoming_user_id == user.id:
+        raise field_invalid("incoming_user_id", "A handover goes to someone other than the "
+                            "person handing over.").http()
+    if (await db.execute(_signers(caller_tenant)
+                         .where(User.id == payload.incoming_user_id))).first() is None:
+        raise field_invalid("incoming_user_id", "The receiver does not sign handovers in this "
+                            "hospital (handover.sign).").http()
     admissions = [await _get_admission_or_404(db, admission_id, caller_tenant)
                   for admission_id in dict.fromkeys(payload.admission_ids)]
     for admission in admissions:
@@ -1224,7 +1261,7 @@ async def open_handover(
                           f"PENDING_TRANSFER); this one is {admission.state.value}.").http()
     keys = [await _key_of(db, admission) for admission in admissions]
     hospital = await trail.hospital_of(db, caller_tenant)
-    first = str(admissions[0].id) if admissions else None
+    admission_ids = [str(admission.id) for admission in admissions]
     actor = user.username
     handover = await service.open_handover(
         db, unit_id=payload.unit_id, outgoing_user_id=user.id,
@@ -1232,8 +1269,9 @@ async def open_handover(
     )
     await db.commit()
     await db.refresh(handover)
-    trail.record(request, hospital, "handover.open", patient_id=keys[0] if keys else "",
-                 payload={"handover_id": str(handover.id), "admission_id": first,
+    trail.record(request, hospital, "handover.open", patient_id=keys[0],
+                 payload={"handover_id": str(handover.id), "admission_id": admission_ids[0],
+                          "admission_ids": admission_ids, "patients": keys,
                           "incoming_user_id": str(payload.incoming_user_id), "actor": actor})
     return handover
 
@@ -1263,15 +1301,17 @@ async def sign_outgoing(
     keys = await _handover_keys(db, handover)
     hospital = await trail.hospital_of(db, caller_tenant)
     note = _note_text(payload.note) if payload.note is not None else payload.narrative_note
+    # One synchronous step, no await inside it (review): the board the gate counts is the board
+    # the summary seals — the one process holding the board runs nothing else in between.
+    critical = sum(_open_critical(request, hospital, key) for key in keys)
+    summaries = {key: _board_summary(request, hospital, key) for key in keys}
     try:
         await service.sign_handover_outgoing(
             db, handover, user_id=user.id, narrative_note=note,
-            unacknowledged_critical_count=sum(_open_critical(request, hospital, key)
-                                              for key in keys),
+            unacknowledged_critical_count=critical,
         )
     except WorkflowError as exc:
         raise _wf(exc)
-    summaries = {key: _board_summary(request, hospital, key) for key in keys}
     handover.auto_populated_summary = (
         None if not keys or None in summaries.values()
         else summaries[keys[0]] if len(keys) == 1 else {"patients": summaries})
@@ -1279,7 +1319,7 @@ async def sign_outgoing(
     await db.commit()
     await db.refresh(handover)
     trail.record(request, hospital, "handover.sign_outgoing", patient_id=keys[0] if keys else "",
-                 payload={"handover_id": str(handover.id), "actor": actor})
+                 payload={"handover_id": str(handover.id), "patients": keys, "actor": actor})
     return handover
 
 
@@ -1305,7 +1345,7 @@ async def countersign(
     await db.commit()
     await db.refresh(handover)
     trail.record(request, hospital, "handover.countersign", patient_id=keys[0] if keys else "",
-                 payload={"handover_id": str(handover.id), "actor": actor})
+                 payload={"handover_id": str(handover.id), "patients": keys, "actor": actor})
     return handover
 
 
@@ -1315,26 +1355,10 @@ async def handover_colleagues(
     user: User = Depends(require_permission(HANDOVER_SIGN)),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    """G2-B3b (D2, D7): the people the caller can hand over to — the active accounts with an
-    active membership in the caller's tenant whose groups there grant `handover.sign` (a system
-    group grants it by rule, as it does at sign-in: `auth/groups.summarize`), the caller left
-    out. `name` is the full name, else the user name; sorted by it."""
-    signs = or_(Group.is_system.is_(True),
-                select(GroupPermission.group_id)
-                .where(GroupPermission.group_id == Group.id,
-                       GroupPermission.permission == HANDOVER_SIGN)
-                .exists())
-    rows = (await db.execute(
-        select(User.id, User.full_name, User.username).distinct()
-        .join(TenantMembership, TenantMembership.user_id == User.id)
-        .join(UserGroup, UserGroup.user_id == User.id)
-        .join(Group, Group.id == UserGroup.group_id)
-        .where(TenantMembership.tenant_id == caller_tenant,
-               TenantMembership.is_active.is_(True),
-               User.is_active.is_(True),
-               Group.tenant_id == caller_tenant,
-               signs,
-               User.id != user.id))).all()
+    """G2-B3b (D2, D7): the people the caller can hand over to (`_signers`, which `POST
+    /handovers` asks of its receiver too), the caller left out. `name` is the full name, else the
+    user name; sorted by it."""
+    rows = (await db.execute(_signers(caller_tenant).where(User.id != user.id))).all()
     people = [Colleague(id=user_id, name=full_name or username)
               for user_id, full_name, username in rows]
     return sorted(people, key=lambda person: (person.name.casefold(), str(person.id)))
@@ -1351,17 +1375,21 @@ async def my_handovers(
     the ones she handed over. By person, not by unit: nobody sees a handover she is not a party
     to. In the caller's tenant (the handover's unit's site). The ones still in hand — OPEN while
     its bridge runs, OUTGOING_SIGNED — and, for `HANDOVER_BOX_WINDOW`, the ones that ended:
-    COMPLETED, EXPIRED, and an OPEN one past its bridge (S-24), read as the EXPIRED it is (the
-    signature would refuse it so). Newest first, at most `HANDOVER_BOX_CAP`.
+    COMPLETED (counted from its countersignature), EXPIRED, and an OPEN one past its bridge
+    (S-24), read as the EXPIRED it is (the signature would refuse it so). Newest first, at most
+    `HANDOVER_BOX_CAP`.
 
     Each row names its two parties (full name, else user name), its patients as the screen shows
     them (board key, name, bed, unit), its note (D5, read back in its four parts) and the summary
     sealed at the outgoing signature (D6)."""
     now = _now()
     party = Handover.incoming_user_id if box == "incoming" else Handover.outgoing_user_id
+    # A closed one's day runs from its end where it has one: a COMPLETED handover from its
+    # countersignature, so one countersigned late does not leave the box at once (review).
+    ended = func.coalesce(Handover.incoming_signed_at, Handover.created_at)
     held = or_(Handover.status == HandoverStatus.OUTGOING_SIGNED,
                and_(Handover.status == HandoverStatus.OPEN, Handover.bridge_expires_at > now),
-               Handover.created_at >= now - HANDOVER_BOX_WINDOW)
+               ended >= now - HANDOVER_BOX_WINDOW)
     handovers = (await db.execute(
         select(Handover)
         .join(Unit, Unit.id == Handover.unit_id)

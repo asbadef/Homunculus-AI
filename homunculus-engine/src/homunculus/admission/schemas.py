@@ -431,9 +431,11 @@ class DischargeStart(BaseModel):
 # Handover — §4.5, S-07, S-24
 # ---------------------------------------------------------------------------
 class HandoverOpen(BaseModel):
+    """`incoming_user_id` is one of the caller's colleagues (G2-B3b, D2: checked by the route);
+    `admission_ids` names at least one admission (a handover is of a patient, D1)."""
     unit_id: uuid.UUID
     incoming_user_id: uuid.UUID
-    admission_ids: list[uuid.UUID] = Field(default_factory=list)
+    admission_ids: list[uuid.UUID] = Field(min_length=1)
 
 
 #: G2-B3b (D5): the most one part of the D-Ö-D-Ö note holds.
@@ -473,9 +475,19 @@ class HandoverNoteOut(BaseModel):
     recommendation: str | None = None
 
 
+#: G2-B3b review: the most the legacy plain-text note holds.
+NARRATIVE_NOTE_MAX = 8000
+
+
 class HandoverSign(BaseModel):
-    narrative_note: str | None = None          # legacy: plain text, stored as it comes
-    note: HandoverNote | None = None           # G2-B3b (D5): the D-Ö-D-Ö note; wins over the text
+    """The outgoing signature's body. `note` (D5) wins over the legacy `narrative_note` when both
+    come; the legacy text is bounded and held to the form's texts' rule (no control character but
+    tab and the line breaks — a NUL would be a 500 at Postgres). A field the body does not have
+    (`notes` for `note`) is a 422, never a signature with no note."""
+    model_config = ConfigDict(extra="forbid")
+
+    narrative_note: OptionalFormText = Field(default=None, max_length=NARRATIVE_NOTE_MAX)
+    note: HandoverNote | None = None
 
 
 class HandoverPerson(BaseModel):
