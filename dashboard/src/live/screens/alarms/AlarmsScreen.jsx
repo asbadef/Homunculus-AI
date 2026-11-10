@@ -16,7 +16,7 @@
 // Nothing behind the live API has that shape: the board carries one boolean, `escalated`, which
 // the engine's own escalation loop sets. The prototype's own admin screen admits the chain is "in
 // the engine's code but not connected". So: the engine's flag, named, with one sentence saying
-// whose business escalation is. Snooze and manual escalation are Group 2 (the roadmap's list).
+// whose business escalation is. Manual escalation is «RRT çağır» (G2-B5); snooze is «Ertele» (G2-B5b), below.
 //
 // THE AGE IS THE SERVER'S INSTANT ON THIS BROWSER'S CLOCK. `firstSeenAtMs` with `elapsed()`:
 // `m:ss` under an hour, `h:mm:ss` above (never "318:30"), `0:00` for an instant that has not
@@ -27,10 +27,18 @@
 // waits for an answer and has no call yet, with a reason (RrtCallDialog). The call is not an answer: the alarm
 // stays where it is, still asking for «Gördüm», and its row says who called the team and when — the
 // acknowledgement ends the call (spec D4). One dialog for the screen: `callFor`, the alarm it is open for, or null.
+//
+// «ERTELE» (G2-B5b, spec D4). A holder of `alerts.ack` may snooze an unanswered high or moderate alarm (SnoozeDialog),
+// within the owner's caps and with a named reason.
+//   - A snoozed alarm moves to «Ertelenenler» until its `until`, by this screen's clock, and comes back to the
+//     waiting on its own. Its row says until when, by whom and why.
+//   - A critical alarm is never snoozed, and the screen says so once, beside the first critical alarm that waits.
+//   - One dialog: `snoozeFor`.
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { SEVERITY_ORDER } from "../../data/boardStore.js";
+import { isSnoozed, maySnooze } from "../../data/snooze.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, Note, RiskPill, Seg, StatusPill, useToast } from "../../ui/index.js";
@@ -41,6 +49,7 @@ import {
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 import { RrtCallDialog } from "../rrt/RrtCallDialog.jsx";
+import { SnoozeDialog, snoozeReasonText } from "./SnoozeDialog.jsx";
 
 /** The ages on this screen tick every second: how long an alarm nobody has answered has been open
  *  is the number this screen exists to show. `useNow` skips the tick while the tab is hidden. */
@@ -61,6 +70,10 @@ const TICK_MS = 1_000;
 function oldestFirst(a, b) {
   return (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity);
 }
+/** «Ertelenenler»: the one whose snooze ends first, first (G2-B5b). */
+function soonestBack(a, b) {
+  return (a.snooze?.untilMs ?? Infinity) - (b.snooze?.untilMs ?? Infinity) || oldestFirst(a, b);
+}
 function worstFirst(a, b) {
   // After severity, an alarm that still fires before a critical that passed unacknowledged
   // (G2-A1): the latter waits for an answer, but the former is what is happening now.
@@ -69,13 +82,18 @@ function worstFirst(a, b) {
     || oldestFirst(a, b);
 }
 
-function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall }) {
+function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, onSnooze, critNote }) {
   const { t } = useI18n();
   const age = elapsed(alarm.firstSeenAtMs, nowMs);
   const bed = alarm.bedLabel || alarm.patientId;
   const ackable = canAck && alarm.status !== "ACKNOWLEDGED";
   const callable = canCall && alarm.status !== "ACKNOWLEDGED" && !alarm.rrtCall;
+  // G2-B5b (spec D4): «Ertele» on an unanswered, firing high or moderate alarm — a snoozed one too: a new snooze
+  // replaces the old one.
+  const snoozable = canSnooze && maySnooze(alarm);
   const call = alarm.rrtCall;
+  // Said only while the snooze runs, by this screen's clock: once `until` has passed the alarm waits again.
+  const snooze = isSnoozed(alarm, nowMs) ? alarm.snooze : null;
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-t border-line px-3 py-2.5 first:border-t-0 max-[640px]:grid-cols-[auto_minmax(0,1fr)]">
       <RiskPill risk={pillRisk(alarm.severity)} measured />
@@ -107,6 +125,12 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall }) {
               {t("rrt.called", { by: call.by || "—", time: Number.isFinite(call.atMs) ? hhmm(call.atMs) : "—" })}
             </StatusPill>
           ) : null}
+          {/* G2-B5b (spec §2): until when, by whom and why. */}
+          {snooze ? (
+            <span data-snooze="">
+              {t("ertele.snoozedRow", { until: hhmm(snooze.untilMs), by: snooze.by || "—", reason: snoozeReasonText(t, snooze) })}
+            </span>
+          ) : null}
           {/* G2-A1 (O17): a critical whose condition passed before anyone acknowledged it stays
               here, waiting, until someone does. Its sound has stopped (signals.js); the badge and
               the instant it passed say why it is still on the list. */}
@@ -124,9 +148,17 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall }) {
           {Number.isFinite(alarm.ackAtMs) ? <span className="font-data">{hhmm(alarm.ackAtMs)}</span> : null}
         </p>
       </div>
-      {ackable || callable ? (
+      {ackable || callable || snoozable || critNote ? (
         <div className="flex flex-wrap items-start justify-end gap-2">
+          {/* G2-B5b (spec D4): «Kritik alarm ertelenemez», once on the screen, where «Ertele» would be. */}
+          {critNote ? <span className="self-center text-11.5 text-mute">{t("ertele.criticalNever")}</span> : null}
           {/* Named like «Gördüm»: the words the row shows, then the bed and the kind it is for. */}
+          {snoozable ? (
+            <Button size="sm" icon="clock" onClick={() => onSnooze(alarm)}
+              aria-label={t("ertele.snoozeLabel", { bed, kind: alarm.kind })}>
+              {t("ertele.snooze")}
+            </Button>
+          ) : null}
           {callable ? (
             <Button size="sm" icon="zap" onClick={() => onCall(alarm)}
               aria-label={t("rrt.callLabel", { bed, kind: alarm.kind })}>
@@ -150,7 +182,7 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall }) {
   );
 }
 
-function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, counted, level = 2 }) {
+function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, canSnooze = false, onSnooze, critNoteId = null, counted, level = 2 }) {
   const { t } = useI18n();
   const Heading = `h${level}`;
   return (
@@ -170,7 +202,8 @@ function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, can
         <ul className="m-0 list-none rounded-box border border-line bg-card p-0">
           {alarms.map((a) => (
             <Row key={a.id} alarm={a} nowMs={nowMs} canAck={canAck} onAck={onAck} busy={busyId === a.id}
-              canCall={canCall} onCall={onCall} />
+              canCall={canCall} onCall={onCall} canSnooze={canSnooze} onSnooze={onSnooze}
+              critNote={critNoteId === a.id} />
           ))}
         </ul>
       )}
@@ -187,6 +220,7 @@ export function AlarmsScreen() {
   const [only, setOnly] = useState("all");
   const [busyId, setBusyId] = useState(null);
   const [callFor, setCallFor] = useState(null);   // the alarm whose «RRT çağır» dialog is open, or null
+  const [snoozeFor, setSnoozeFor] = useState(null); // the alarm whose «Ertele» dialog is open, or null (G2-B5b)
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const canCall = user?.perms?.includes("alerts.escalate") ?? false;
   const known = boardKnown(board.connection);
@@ -201,10 +235,14 @@ export function AlarmsScreen() {
     return stale ? "alarms.unknown" : "alarms.unavailable";
   };
 
-  const { waiting, reviewing, hidden, openTotal } = useMemo(() => {
+  const { waiting, snoozed, reviewing, hidden, openTotal } = useMemo(() => {
     const picked = only === "crit" ? board.alerts.filter((a) => a.severity === "critical") : board.alerts;
+    const open = picked.filter((a) => a.status !== "ACKNOWLEDGED");
     return {
-      waiting: picked.filter((a) => a.status !== "ACKNOWLEDGED").sort(worstFirst),
+      // G2-B5b (spec D4): a snoozed alarm waits in «Ertelenenler» until its `until`, by this screen's clock, and
+      // comes back here on its own when that passes.
+      waiting: open.filter((a) => !isSnoozed(a, nowMs)).sort(worstFirst),
+      snoozed: open.filter((a) => isSnoozed(a, nowMs)).sort(soonestBack),
       reviewing: picked.filter((a) => a.status === "ACKNOWLEDGED").sort(oldestFirst),
       // How many the filter is keeping off the screen. A silent filter is the bed board's own
       // lesson (`beds.unitHidden`/`searchHidden`): a list narrowed by a control you cannot see
@@ -216,7 +254,10 @@ export function AlarmsScreen() {
       // many alarms are open is worse than either number alone.
       openTotal: board.alerts.filter((a) => a.status !== "ACKNOWLEDGED").length,
     };
-  }, [board.alerts, only]);
+  }, [board.alerts, only, nowMs]);
+  // «Kritik alarm ertelenemez», ONCE (spec D4): beside the first critical alarm that waits, where «Ertele» would be,
+  // for whoever may snooze (`alerts.ack`, owner D1).
+  const critNoteId = canAck ? (waiting.find((a) => a.severity === "critical")?.id ?? null) : null;
 
   async function acknowledge(alarm) {
     if (busyId) return;                       // one at a time: the answer rewrites the board
@@ -278,8 +319,20 @@ export function AlarmsScreen() {
         titleKey="alarms.waiting" emptyKey={emptyKey("alarms.emptyWaiting")}
         alarms={waiting} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
         canCall={canCall} onCall={setCallFor}
+        canSnooze={canAck} onSnooze={setSnoozeFor} critNoteId={critNoteId}
         counted={known || stale}
       />
+      {/* G2-B5b (spec D4): «Ertelenenler», only while one is snoozed, the soonest back first. Each can still be
+          answered, called or snoozed again. */}
+      {snoozed.length > 0 ? (
+        <Section
+          titleKey="ertele.groupTitle" emptyKey="ertele.groupEmpty"
+          alarms={snoozed} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
+          canCall={canCall} onCall={setCallFor}
+          canSnooze={canAck} onSnooze={setSnoozeFor}
+          counted={known || stale}
+        />
+      ) : null}
       <Section
         titleKey="alarms.reviewing" emptyKey={emptyKey("alarms.emptyReviewing")}
         alarms={reviewing} nowMs={nowMs} canAck={false} onAck={acknowledge} busyId={busyId}
@@ -287,6 +340,7 @@ export function AlarmsScreen() {
         counted={known || stale}
       />
       <RrtCallDialog alarm={callFor} open={callFor !== null} onClose={() => setCallFor(null)} />
+      <SnoozeDialog alarm={snoozeFor} open={snoozeFor !== null} onClose={() => setSnoozeFor(null)} />
 
       {/* Its own heading: this box is about CLOSED alarms, and titling it "Under review" put a
           second identical <h2> on the page. */}
