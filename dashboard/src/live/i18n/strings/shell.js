@@ -2,8 +2,10 @@
 // warning. From the prototype's dictionary where it has them (shell.js tb_*, deny_*, idle_*; core.js
 // logout, lock, notifs; lg_day/lg_night). Written for this plan (AZ/RU/EN need a native speaker's
 // review before the pilot): skip, rail, account, version*, units*, bell*, notFound, exitFullscreen,
-// idleSpoken. Times and counts stand after a label ("Since: 21:05"), never inside a word that would
-// need a suffix or a plural fitted to the number.
+// idleSpoken, screenLoading. loadFailed*, reload: the words src/LoadFailed.jsx says when the page's
+// root will not load, said here by the shell when ONE screen's code will not (Shell.jsx). Times and
+// counts stand after a label ("Since: 21:05"), never inside a word that would need a suffix or a
+// plural fitted to the number.
 export default {
   tr: {
     skip: "Ana içeriğe geç",
@@ -41,6 +43,10 @@ export default {
     idleWhy: "Hareket olmadığı için · {seconds} sn",
     idleSpoken: "Ekran {seconds} saniye içinde kilitlenecek. Devam etmek için Devam et düğmesine basın.",
     idleStay: "Devam et",
+    screenLoading: "Sayfa yükleniyor…",
+    loadFailed: "Sayfa yüklenemedi",
+    loadFailedHelp: "Bağlantınızı kontrol edip sayfayı yeniden yükleyin. Veriler kaybolmadı.",
+    reload: "Yeniden yükle",
   },
   az: {
     skip: "Əsas məzmuna keç",
@@ -78,6 +84,10 @@ export default {
     idleWhy: "Hərəkət olmadığı üçün · {seconds} san",
     idleSpoken: "Ekran {seconds} saniyə ərzində kilidlənəcək. Davam etmək üçün Davam et düyməsini basın.",
     idleStay: "Davam et",
+    screenLoading: "Səhifə yüklənir…",
+    loadFailed: "Səhifə yüklənə bilmədi",
+    loadFailedHelp: "Bağlantınızı yoxlayıb səhifəni yenidən yükləyin. Məlumatlar itməyib.",
+    reload: "Yenidən yüklə",
   },
   ru: {
     skip: "Перейти к основному содержимому",
@@ -115,6 +125,10 @@ export default {
     idleWhy: "Из-за бездействия · {seconds} с",
     idleSpoken: "Экран будет заблокирован через {seconds} с. Чтобы продолжить, нажмите «Продолжить».",
     idleStay: "Продолжить",
+    screenLoading: "Страница загружается…",
+    loadFailed: "Страница не загрузилась",
+    loadFailedHelp: "Проверьте подключение и перезагрузите страницу. Данные не потеряны.",
+    reload: "Перезагрузить",
   },
   en: {
     skip: "Skip to main content",
@@ -152,5 +166,9 @@ export default {
     idleWhy: "Due to inactivity · {seconds} s",
     idleSpoken: "The screen will lock in {seconds} s. Press Stay signed in to continue.",
     idleStay: "Stay signed in",
+    screenLoading: "Loading the page…",
+    loadFailed: "The page could not be loaded",
+    loadFailedHelp: "Check your connection and reload the page. No data has been lost.",
+    reload: "Reload",
   },
 };
