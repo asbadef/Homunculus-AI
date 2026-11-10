@@ -14,10 +14,15 @@ Revision 0016, follows 0015 (protocol).
 * `beds.manage_state` goes to every tenant's `charge_nurse` group. `hospital_admin` holds the whole
   catalogue by rule (auth/permissions.py) and needs no row.
 
-An image from before this revision serves against it as long as no bed is RESERVED: its
-`Enum(BedState)` cannot read that value. The downgrade therefore turns every RESERVED bed back to
-AVAILABLE first (X8). Postgres cannot drop an enum value, so `RESERVED` stays in the type after a
-downgrade; no row holds it, and the upgrade's `ADD VALUE IF NOT EXISTS` runs again cleanly.
+NOT PURELY ADDITIVE. An image from before this revision does not start against it: its start
+command's `alembic upgrade head` refuses the unknown revision ("Can't locate revision identified
+by '0016'"), and its `Enum(BedState)` could not read a RESERVED bed anyway. A rollback therefore
+runs `alembic downgrade 0015` FIRST, in a one-off container of THIS revision's image, and only then
+switches to the old image. The downgrade is what makes that safe (X8): it turns every RESERVED bed
+back to AVAILABLE, drops the two columns — every reason and note goes with them — and takes
+`beds.manage_state` from the groups. Postgres cannot drop an enum value, so `RESERVED` stays in the
+type after a downgrade; no row holds it, so the old image reads every bed, and the upgrade's
+`ADD VALUE IF NOT EXISTS` runs again cleanly.
 
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013).
 
