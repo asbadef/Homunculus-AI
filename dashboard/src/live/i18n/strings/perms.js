@@ -46,7 +46,8 @@ export default {
     scores: { sign: "Ağırlık skoru formunu (SOFA) düzeltmelerle imzalar" },
 
     // G2-B1a
-    beds: { release: "Temizliği biten yatağı yeniden boş olarak işaretler (temizlik → boş), kendi birimlerinde" },
+    beds: { release: "Temizliği biten yatağı yeniden boş olarak işaretler (temizlik → boş), kendi birimlerinde",
+      manage_state: "Boş bir yatağı beklenen bir hasta için rezerve eder ya da kullanım dışı bırakır ve bunları geri alır — kendi birimlerinde, Doluluk ekranında" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -79,7 +80,8 @@ export default {
     scores: { sign: "Ağırlıq balı formasını (SOFA) düzəlişlərlə imzalayır" },
 
     // G2-B1a
-    beds: { release: "Təmizlənmiş çarpayını yenidən boş kimi qeyd edir (təmizlik → boş), öz şöbələrində" },
+    beds: { release: "Təmizlənmiş çarpayını yenidən boş kimi qeyd edir (təmizlik → boş), öz şöbələrində",
+      manage_state: "Boş çarpayını gözlənilən xəstə üçün rezerv edir və ya istifadədən çıxarır və bunları geri qaytarır — öz şöbələrində, Doluluq ekranında" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -112,7 +114,8 @@ export default {
     scores: { sign: "Подписывает форму оценки тяжести (SOFA) с исправлениями" },
 
     // G2-B1a
-    beds: { release: "Отмечает убранную койку снова свободной (уборка → свободна) в своих отделениях" },
+    beds: { release: "Отмечает убранную койку снова свободной (уборка → свободна) в своих отделениях",
+      manage_state: "Резервирует свободную койку для ожидаемого пациента или выводит её из использования и отменяет это — в своих отделениях, на экране «Занятость коек»" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -145,6 +148,7 @@ export default {
     scores: { sign: "Sign a severity-score form (SOFA) with corrections" },
 
     // G2-B1a
-    beds: { release: "Mark a cleaned bed free again (housekeeping → available), in their own units" },
+    beds: { release: "Mark a cleaned bed free again (housekeeping → available), in their own units",
+      manage_state: "Reserve a free bed for an expected patient or take it out of service, and undo either — in their own units, on the Occupancy screen" },
   },
 };

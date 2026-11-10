@@ -28,15 +28,11 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Input, Select, Tag, useToast } from "../../ui/index.js";
-import { BED_STATE_KEYS, isUuid } from "../../data/structure.js";
+import { BED_STATE_KEYS, UNIT_TYPE_KEYS, isUuid } from "../../data/structure.js";
 import { doneFor, reasonOf, refusedFor } from "./refusal.js";
 
-const UNIT_TYPES = Object.freeze([
-  { value: "ADULT_ICU", key: "kabul.unitType.adultIcu" }, { value: "NICU", key: "kabul.unitType.nicu" },
-  { value: "PICU", key: "kabul.unitType.picu" }, { value: "CVICU", key: "kabul.unitType.cvicu" },
-  { value: "BMT_ICU", key: "kabul.unitType.bmtIcu" },
-]);
-const UNIT_TYPE_KEYS = Object.freeze(Object.fromEntries(UNIT_TYPES.map((o) => [o.value, o.key])));
+// G2-B3a: the keys moved to structure.js, which Doluluk's unit header reads too.
+const UNIT_TYPES = Object.freeze(Object.entries(UNIT_TYPE_KEYS).map(([value, key]) => ({ value, key })));
 
 /** What each box takes: the columns of tenant/models.py (a site's and a unit's name 200, a room's
  *  100, a bed's label 50, a room's number 20). */

@@ -64,6 +64,10 @@ CODES = CODES | frozenset({
     LABEL_SIZE, LABEL_TOO_NARROW, LABEL_DPI, NO_PROTOCOL,
 })
 
+# G2-B3a — Doluluk (spec D5, X1). Its own block after B1d's, which it widens the same way.
+BED_RESERVED = "bed_reserved"                          # a RESERVED bed, and no confirm_reserved
+CODES = CODES | frozenset({BED_RESERVED})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen

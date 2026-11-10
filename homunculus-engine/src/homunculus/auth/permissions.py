@@ -59,6 +59,11 @@ PERMISSIONS: dict[str, str] = {
     "devices.map_beds": "Assign a bedside monitor to a bed, or unassign it, on the Monitörler "
                         "screen — beds in one's own units only; a bed with an admitted patient "
                         "asks for a second confirmation",
+
+    # G2-B3a — Doluluk (spec D4): the charge nurse holds a bed for an expected patient or takes it
+    # out of service, and undoes either. Not `structure.manage`, which builds and closes the wards.
+    "beds.manage_state": "Reserve a free bed for an expected patient or take it out of service, "
+                         "and undo either — in one's own units, on the Doluluk screen",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -154,7 +159,7 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
-                     "devices.map_beds")},
+                     "devices.map_beds", "beds.manage_state")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,

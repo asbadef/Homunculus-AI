@@ -41,7 +41,7 @@ const firstDraft = () => row({ state: "DRAFT", bed_id: BED(1), patient_number: "
 
 // The words the tab says, as dashboard/src/live/i18n/strings/kabul.js (az) has them (A-7).
 const BED1 = "1 · Otaq 1 · Reanimasiya";
-const EVERY_MISSING = ["Ad soyad", "Cins", "Doğum tarixi", "Qəbul növü", "Qəbul diaqnozu",
+const EVERY_MISSING = ["Soyad ad", "Cins", "Doğum tarixi", "Qəbul növü", "Qəbul diaqnozu",
   "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri", "Razılıq", "Çarpayı"];
 const ALLERGY_MISSING = "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri";
 const TIMEOUT = "Server cavab vermədi. Əməliyyat yerinə yetirilmiş ola bilər; yoxlayın və lazım olsa yenidən cəhd edin.";
@@ -57,7 +57,7 @@ const EARLIER_TOAST = `${BED1} · əvvəl göndərilən qəbul yazılıb, xəst�
 const BACK = "Formaya qayıt";
 const TAKEN = `${BED1}: Bu çarpayı artıq boş deyil; başqa çarpayı seçin.`;
 const bedTaken = () => refusal(409, "Bed is not AVAILABLE (current state: OCCUPIED); cannot admit.", { apiCode: "bed_not_available" });
-const nameField = () => screen.getByLabelText(/^Ad soyad/);
+const nameField = () => screen.getByLabelText(/^Soyad ad/);
 
 /** Another tab of the Hasta Kabul screen, and what it reads on opening. */
 async function openTab(name) {
@@ -86,7 +86,7 @@ async function signInAs(api, store, id) {
 /** Fill every required field — bed 1 of Otaq 1 in Reanimasiya — except those named. */
 function fillRequired(except = []) {
   const steps = {
-    name: () => fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Hasta" } }),
+    name: () => fireEvent.change(screen.getByLabelText(/^Soyad ad/), { target: { value: "Sentetik Hasta" } }),
     sex: () => fireEvent.click(screen.getByLabelText("Qadın")),
     dob: () => fireEvent.change(screen.getByLabelText(/^Doğum tarixi/), { target: { value: "1970-05-05" } }),
     type: () => fireEvent.change(screen.getByLabelText(/^Qəbul növü/), { target: { value: "ICU" } }),
@@ -145,7 +145,7 @@ describe("AdmitTab", () => {
 
   it("pressed while held, sends nothing, marks each missing field and takes the focus to the first", async () => {
     const { api } = await mountKabul(<AdmitTab />, { perms: NURSE });
-    const name = screen.getByLabelText(/^Ad soyad/);
+    const name = screen.getByLabelText(/^Soyad ad/);
     const sex = screen.getByRole("radiogroup", { name: "Cins" });
     const consent = screen.getByRole("radiogroup", { name: "Razılıq" });
     expect(name.getAttribute("aria-invalid")).toBeNull();
@@ -156,7 +156,7 @@ describe("AdmitTab", () => {
     await press();
     expect(api.admit).not.toHaveBeenCalled();
     expect(name.getAttribute("aria-invalid")).toBe("true");
-    expect(errorOf(name)).toBe("Ad soyad");
+    expect(errorOf(name)).toBe("Soyad ad");
     expect(document.activeElement).toBe(name);
     expect(sex.getAttribute("aria-invalid")).toBe("true");
     expect(errorOf(sex)).toBe("Cins");
@@ -279,7 +279,7 @@ describe("AdmitTab", () => {
     fillRequired();
     await press();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
-    const name = screen.getByLabelText(/^Ad soyad/);
+    const name = screen.getByLabelText(/^Soyad ad/);
     expect(name.value).toBe("");
     expect(name.getAttribute("aria-invalid")).toBeNull();
     expect(missingNow()).toEqual(EVERY_MISSING);
@@ -365,7 +365,7 @@ describe("AdmitTab", () => {
     const schemas = fs.readFileSync(path.resolve(here, "../../../../../homunculus-engine/src/homunculus/admission/schemas.py"), "utf8");
     const bound = (field) => Number(new RegExp(`^\\s+${field}: [^\\n]*max_length=(\\d+)`, "m").exec(schemas)[1]);
     for (const [label, field] of [
-      [/^Ad soyad( \*)?$/, "display_name"], [/^Ata adı$/, "father_name"], [/^Pasport nömrəsi$/, "passport_no"],
+      [/^Soyad ad( \*)?$/, "display_name"], [/^Ata adı$/, "father_name"], [/^Pasport nömrəsi$/, "passport_no"],
       [/^Telefon$/, "phone"], [/^Qəbul diaqnozu( \*)?$/, "admission_diagnosis_free_text"],
       [/^Məlum allergiya( \*)?$/, "allergies_text"], [/^Digər müşayiət edən xəstəliklər$/, "comorbidities_text"],
       [/^XİS protokol nömrəsi$/, "his_patient_reference"], [/^Yaxınının adı$/, "relative_name"],
@@ -512,7 +512,7 @@ describe("AdmitTab", () => {
       const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockRejectedValue(timedOut()) });
       fillRequired();
       await press();
-      fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+      fireEvent.change(screen.getByLabelText(/^Soyad ad/), { target: { value: "Sentetik Başqası" } });
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);
       expect(panel().getByText(HELD)).toBeTruthy();
@@ -547,7 +547,7 @@ describe("AdmitTab", () => {
       });
       fillRequired();
       await press();                                                         // no answer for Sentetik Hasta, bed 1
-      fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+      fireEvent.change(screen.getByLabelText(/^Soyad ad/), { target: { value: "Sentetik Başqası" } });
       pickBed5();
       api.admissions.mockResolvedValue([firstDraft()]);
       await press();
@@ -575,9 +575,9 @@ describe("AdmitTab", () => {
       expect(toasts().queryByText(`${BED1} · qəbul edildi, xəstə nömrəsi H2600042`)).toBeNull();
 
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: BACK })); });
-      expect(screen.getByLabelText(/^Ad soyad/).value).toBe("Sentetik Başqası");
+      expect(screen.getByLabelText(/^Soyad ad/).value).toBe("Sentetik Başqası");
       expect(screen.getByText("Seçilən: 5 · Otaq 2 · Reanimasiya")).toBeTruthy();
-      expect(document.activeElement).toBe(screen.getByLabelText(/^Ad soyad/));
+      expect(document.activeElement).toBe(screen.getByLabelText(/^Soyad ad/));
       await press();
       expect(api.admit).toHaveBeenCalledTimes(2);
       expect(api.admit.mock.calls[1][0].patient.display_name).toBe("Sentetik Başqası");
@@ -1169,7 +1169,7 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     });
     fillRequired();
     await press();                                                           // no answer for Sentetik Hasta, bed 1
-    fireEvent.change(screen.getByLabelText(/^Ad soyad/), { target: { value: "Sentetik Başqası" } });
+    fireEvent.change(screen.getByLabelText(/^Soyad ad/), { target: { value: "Sentetik Başqası" } });
     pickBed5();
     api.admissions.mockResolvedValue([protocolDraft()]);
     await press();
@@ -1183,5 +1183,279 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
     expect(toasts().queryByText(/xəstə nömrəsi/)).toBeNull();
     expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
+  });
+});
+
+describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
+  const NOTE = "Sentetik planlı kabul";
+  const RESERVED_1 = () => withBed(1, { state: "RESERVED" });
+  const ask = () => screen.queryByRole("dialog", { name: /^Rezerv edilmiş çarpayı · / });
+  const notes = () => ({ beds: [{ bed_id: BED(1), occupant_short: null, state_reason: null, state_note: NOTE }] });
+  const reservedNote = (a) => a.occupancy.mockResolvedValue(notes());
+  const pickReserved1 = () => {
+    fireEvent.click(screen.getByRole("button", { name: /^Reanimasiya/ }));
+    fireEvent.click(screen.getByRole("button", { name: "1 · Otaq 1 · Reanimasiya · Rezervdədir" }));
+  };
+  const YES = "Yenə də bu çarpayıya qəbul et";
+  const sayYes = async () => {
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: YES })); });
+    await settle();
+  };
+  const reservedRefusal = () => refusal(409, "The bed is reserved: the admission must confirm it.", { apiCode: "bed_reserved" });
+
+  it("offers a reserved bed, and asks with its note before anything is sent", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      reservedNote(a);
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(within(ask()).getByText(`Rezerv qeydi: ${NOTE}`)).toBeTruthy();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "Yenə də bu çarpayıya qəbul et" })); });
+    await settle();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(api.admit.mock.calls[0][0].confirm_reserved).toBe(true);
+    expect(ask()).toBeNull();
+  });
+
+  it("sends nothing when the nurse steps back, and asks again on the next press", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      reservedNote(a);
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "İmtina" })); });
+    expect(ask()).toBeNull();
+    expect(api.admit).not.toHaveBeenCalled();
+    await press();
+    expect(ask()).toBeTruthy();
+  });
+
+  it("asks when the server says the bed was reserved after the picker read it", async () => {
+    let tree = structure();
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockImplementation(async () => tree);
+      reservedNote(a);
+      a.admit
+        .mockRejectedValueOnce(refusal(409, "The bed is reserved: the admission must confirm it.", { apiCode: "bed_reserved" }))
+        .mockResolvedValue(admitted());
+    } });
+    fillRequired();
+    tree = RESERVED_1();
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect("confirm_reserved" in api.admit.mock.calls[0][0]).toBe(false);
+    expect(ask()).toBeTruthy();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "Yenə də bu çarpayıya qəbul et" })); });
+    await settle();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(api.admit.mock.calls[1][0].confirm_reserved).toBe(true);
+    // One form, one request id: the server takes the two sends for one (X2).
+    expect(api.admit.mock.calls[1][0].request_id).toBe(api.admit.mock.calls[0][0].request_id);
+  });
+
+  it("asks again for the next patient on the same bed: her yes was for one admission", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      reservedNote(a);
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "Yenə də bu çarpayıya qəbul et" })); });
+    await settle();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
+    await settle();
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(ask()).toBeTruthy();
+  });
+
+  it("says when the note cannot be read, and still lets the nurse decide", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      a.occupancy.mockRejectedValue(refusal(503, "Service unavailable"));
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(within(ask()).getByText(/^Rezerv qeydi oxunmadı: /)).toBeTruthy();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "Yenə də bu çarpayıya qəbul et" })); });
+    await settle();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+  });
+
+  // Review I-2: her yes is for one bed AND one form. Held by a refusal that only «Yeni qəbul»
+  // ends, the next patient is a new form, and is asked about the same reserved bed again.
+  it.each([
+    ["duplicate_open_admission", "An open admission already exists for this patient."],
+    ["request_conflict", "This request id came before with another admission form."],
+  ])("asks again for the next patient on the same bed after a %s hold and «Yeni qəbul» (I-2)", async (apiCode, message) => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      reservedNote(a);
+      a.admit.mockRejectedValueOnce(refusal(409, message, { apiCode })).mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(api.admit.mock.calls[0][0].confirm_reserved).toBe(true);
+    await act(async () => { fireEvent.click(panel().getByRole("button", { name: "Yeni qəbul" })); });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(1);                              // nothing sent on the old yes
+    expect(ask()).toBeTruthy();
+  });
+
+  // Review minor: when the beds cannot be read again after `bed_reserved`, the picker still shows
+  // the bed free. Her yes goes out all the same — else the server refuses again, and she is asked
+  // again, round and round. The server ignores the flag on a free bed.
+  it("sends her yes even when the beds could not be read again after the server said the bed was reserved", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      reservedNote(a);
+      a.admit.mockRejectedValueOnce(reservedRefusal()).mockResolvedValue(admitted());
+    } });
+    fillRequired();
+    api.structure.mockRejectedValue(refusal(503, "Service unavailable"));    // the re-read fails: bed 1 still shows free
+    await press();
+    expect(ask()).toBeTruthy();
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(api.admit.mock.calls[1][0].confirm_reserved).toBe(true);
+    expect(ask()).toBeNull();
+    expect(screen.getByText("H2600042")).toBeTruthy();
+  });
+
+  // Review minor (A-21): the answer comes while she is on another tab. The question has no tab to
+  // open in, so the toast says the bed is reserved; back on Qəbul, her next press asks.
+  it("says on the toast that the bed is reserved when the refusal comes while another tab is open", async () => {
+    let answer;
+    const { api } = await mountKabul(<KabulScreen />, { perms: NURSE, setup: (a) => {
+      reservedNote(a);
+      a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })).mockResolvedValue(admitted());
+    } });
+    fillRequired();
+    api.structure.mockResolvedValue(RESERVED_1());                           // reserved meanwhile
+    await act(async () => { fireEvent.click(admitButton()); });              // on its way
+    await openTab("Evə yazılma");
+    await act(async () => { answer(reservedRefusal()); });
+    await settle();
+    const told = toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`);
+    expect(told[0].closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(ask()).toBeNull();
+
+    await openTab("Qəbul");
+    await press();
+    expect(ask()).toBeTruthy();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+  });
+
+  // Review minor: the yes waits for the note — read or failed — so she decides with it in front of her.
+  it("holds the yes until the note is read", async () => {
+    let read;
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(RESERVED_1());
+      a.occupancy.mockReturnValue(new Promise((resolve) => { read = resolve; }));
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    const yes = () => within(ask()).getByRole("button", { name: YES });
+    expect(yes().getAttribute("aria-busy")).toBe("true");
+    await sayYes();
+    expect(api.admit).not.toHaveBeenCalled();
+    await act(async () => { read(notes()); });
+    await settle();
+    expect(within(ask()).getByText(`Rezerv qeydi: ${NOTE}`)).toBeTruthy();
+    expect(yes().getAttribute("aria-busy")).toBeNull();
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+  });
+
+  // Final review I-1: her yes is for the bed the question named, never for whatever bed the form
+  // holds when she gives it.
+  const BED5 = "5 · Otaq 2 · Reanimasiya";
+  /** The structure with each bed of `ns` reserved. */
+  const reservedTree = (...ns) => {
+    const tree = structure();
+    for (const unit of tree.sites[0].units) {
+      for (const room of unit.rooms) for (const bed of room.beds) if (ns.some((n) => bed.id === BED(n))) bed.state = "RESERVED";
+    }
+    return tree;
+  };
+  const pickReserved5 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" }))
+    .getByRole("button", { name: `${BED5} · Rezervdədir` }));
+  /** The bed the open question names, or null when none is open. */
+  const askedAbout = () => [BED1, BED5].find((bed) => screen.queryByRole("dialog", { name: `Rezerv edilmiş çarpayı · ${bed}` })) ?? null;
+  /** The sends that went to bed `n` with a yes. */
+  const yesTo = (api, n) => api.admit.mock.calls.filter(([body]) => body.note.bed_id === BED(n) && body.confirm_reserved === true);
+
+  it("never sends her yes to a bed she picked while the send was out: the refusal is told, and that bed is asked about on its own (I-1)", async () => {
+    let answer;
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(reservedTree(5));
+      reservedNote(a);
+      a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })).mockResolvedValue(admitted());
+    } });
+    fillRequired();                                                          // bed 1, free when read
+    await act(async () => { fireEvent.click(admitButton()); });              // on its way to bed 1
+    pickReserved5();                                                         // meanwhile she picks bed 5, reserved
+    api.structure.mockResolvedValue(reservedTree(1, 5));                     // and bed 1 was reserved meanwhile
+    await act(async () => { answer(reservedRefusal()); });
+    await settle();
+    // Whatever she is asked now, she says yes to it: no yes may reach bed 5 unless bed 5 was asked about.
+    const first = askedAbout();
+    if (ask()) {
+      await settle();                                                        // the note read: the yes is not held
+      await sayYes();
+    }
+    if (first !== BED5) expect(yesTo(api, 5), `asked about ${first}, yet bed 5 got a yes`).toEqual([]);
+    // The bed she left is not asked about: the toast says it was refused, and the form keeps bed 5.
+    expect(first).toBeNull();
+    expect(toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`).length).toBeGreaterThan(0);
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    await press();
+    expect(askedAbout()).toBe(BED5);                                         // bed 5 is asked about on its own
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(api.admit.mock.calls[1][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
+  });
+
+  it("holds a yes to the bed the question named: with the form on another bed by then, that bed is asked about, and nothing is sent (I-1)", async () => {
+    const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(reservedTree(1, 5));
+      reservedNote(a);
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(askedAbout()).toBe(BED1);
+    // The form's bed moves while the question about bed 1 is open — the draft is the session's (A-21).
+    await act(async () => {
+      admitDraftOf(store).update((s) => ({ form: { ...s.form, bedId: BED(5), unitId: REA, bedLabel: BED5 } }));
+    });
+    await sayYes();
+    expect(yesTo(api, 5)).toEqual([]);
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(askedAbout()).toBe(BED5);
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(api.admit.mock.calls[0][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
   });
 });

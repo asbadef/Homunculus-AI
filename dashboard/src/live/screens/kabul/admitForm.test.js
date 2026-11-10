@@ -114,6 +114,13 @@ describe("the body POST /admissions takes", () => {
     expect(Object.keys(toBody(complete()))).toEqual(["patient", "note"]);
   });
 
+  it("says the nurse confirmed a reserved bed only when she did (G2-B3a, X2)", () => {
+    expect(Object.keys(toBody(complete(), null, { confirmReserved: true }))).toEqual(["patient", "note", "confirm_reserved"]);
+    expect(toBody(complete(), null, { confirmReserved: true }).confirm_reserved).toBe(true);
+    expect("confirm_reserved" in toBody(complete(), null, { confirmReserved: false })).toBe(false);
+    expect("confirm_reserved" in toBody(complete())).toBe(false);
+  });
+
   it("sends no nationality until one is chosen", () => {
     expect(emptyForm().nationality).toBe("");
     expect(toBody(complete()).patient.nationality).toBeNull();

@@ -156,7 +156,7 @@ const AZ_SAME_AS_TR = new Set([
   "monitor.p.nbp", //        NBP — the monitor's label, not a word
 
   // G2-B1a (kabul) · az = tr
-  "kabul.f.name", "kabul.miss.name", // Ad soyad — as admin.fieldFullName (the prototype's AZ dictionary)
+  "kabul.f.name", "kabul.miss.name", // Soyad ad — the ward writes the surname first (G2-B3a, R9)
   "kabul.f.fin", //          FİN — the Azerbaijani personal code's own name
   "kabul.f.phone", //        Telefon — the same word in Azerbaijani
   "kabul.choose", //         Seçin… — the same imperative in Azerbaijani

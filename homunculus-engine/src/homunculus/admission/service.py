@@ -85,6 +85,7 @@ async def create_draft_admission(
     request_digest: str | None = None,
     identity_digest: str | None = None,
     protocol_no: str | None = None,
+    reserved_ok: bool = False,
 ) -> Admission:
     """
     §4.1 steps 2–3: create a DRAFT admission and provisionally occupy the bed.
@@ -115,7 +116,8 @@ async def create_draft_admission(
     )).scalar_one_or_none()
     if bed is None:
         raise WorkflowError("Target bed not found.")
-    if bed.state != BedState.AVAILABLE:
+    # G2-B3a (D5): a reserved bed takes the admission its route confirmed (`reserved_ok`).
+    if bed.state != BedState.AVAILABLE and not (reserved_ok and bed.state == BedState.RESERVED):
         raise WorkflowError(
             f"Bed is not AVAILABLE (current state: {bed.state.value}); "
             f"cannot admit.",
