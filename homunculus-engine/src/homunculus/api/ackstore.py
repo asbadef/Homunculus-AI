@@ -26,7 +26,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
+from homunculus.api.snooze import snooze_cap
 from homunculus.reco.engine import Alert
+
+
+def _within_cap(snooze: dict, now: datetime) -> bool:
+    """G2-B5b (review, fix 2): is what is left of `snooze` from `now` within its severity's cap?"""
+    cap = snooze_cap(snooze["severity"])
+    return cap is not None and snooze["until"] - now <= timedelta(minutes=cap)
 
 
 class Chain(NamedTuple):
@@ -139,14 +146,23 @@ class AckStore:
         """End every snooze whose `until` is at or before `now`, and say whose (G2-B5b, spec §2). The alarm waits
         for an answer again. Its escalation clock starts at `until`, as the Postgres rule re-fired with a fresh
         `fired_at`, and its page is cleared: silence after a bounded decision is a new failure to answer, and it
-        may page the doctor again."""
-        due = sorted(key for key, entry in self.snoozes.items() if entry["until"] <= now)
-        for key in due:
-            until = self.snoozes.pop(key)["until"]
+        may page the doctor again.
+
+        A clock stepped back (review, fix 2) ends a snooze too: one taken later than `now` reads, or one whose
+        `until` lies further from `now` than its severity's cap, can no longer be held to the owner's cap. It ends
+        the same way, with the clock from `now` — `until` is still to come."""
+        due: dict[tuple[str, str], datetime] = {}
+        for key, entry in self.snoozes.items():
+            if entry["until"] <= now:
+                due[key] = entry["until"]
+            elif entry["at"] > now or not _within_cap(entry, now):
+                due[key] = now
+        for key in sorted(due):
+            del self.snoozes[key]
             if key in self.clock_from:
-                self.clock_from[key] = until
+                self.clock_from[key] = due[key]
             self.paged.discard(key)
-        return due
+        return sorted(due)
 
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}

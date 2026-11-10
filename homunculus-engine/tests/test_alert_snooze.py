@@ -153,6 +153,27 @@ def test_a_discharge_ends_the_snooze():
     assert set(store.snoozes) == {("q", "k")}
 
 
+def test_a_clock_stepped_back_ends_the_snooze_now_with_a_fresh_clock_and_a_cleared_page():
+    """Review (fix 2): a snooze taken «later» than the clock now reads, or one that would still run longer than its
+    cap from now, cannot be held to the owner's cap. It ends at once, by the expiry path, with the clock from now."""
+    store = AckStore()
+    store.first_seen[KEY] = store.clock_from[KEY] = NOW - timedelta(minutes=10)
+    store.paged.add(KEY)
+    _snoozed(store, minutes=15)                                     # at NOW, until NOW+15
+    stepped_back = NOW - timedelta(hours=1)
+    assert store.expire_snoozes(stepped_back) == [KEY]
+    assert store.snoozes == {} and KEY not in store.paged
+    assert store.clock_from[KEY] == stepped_back, "the clock starts from now: until is an hour and a quarter away"
+    # a snooze whose until lies further than its cap from now (minutes past the cap, written by no door)
+    store.paged.add(KEY)
+    _snoozed(store, minutes=60, severity="high")                    # at NOW, until NOW+60; a high's cap is 30
+    assert store.expire_snoozes(NOW + timedelta(minutes=1)) == [KEY]
+    assert store.clock_from[KEY] == NOW + timedelta(minutes=1) and KEY not in store.paged
+    # within its cap, and taken before now: it runs on
+    _snoozed(store, minutes=30, severity="high")
+    assert store.expire_snoozes(NOW) == [] and KEY in store.snoozes
+
+
 # --- the card, and the same alarm worse (an Engine, as a door drives it) -----------------------------------
 #
 # Heart rate 115 and temperature 39.5 score 2 NEWS2 points each. A respiratory rate of 26 adds 3 (NEWS2 7, a HIGH,
@@ -516,6 +537,38 @@ async def test_the_cycle_republishes_the_card_when_a_snooze_ends(wall, audit):
     cards = [f for f in sent if f.get("patient_id") == "bed-3"]
     assert cards, "a screen without its own clock hears the alarm again within a cycle"
     assert next(a for a in cards[-1]["alerts"] if a["kind"] == "news2")["snooze"] is None
+
+
+async def test_a_cycle_on_a_clock_stepped_back_ends_the_snooze_and_republishes_the_card(wall, audit):
+    """Review (fix 2): the wall clock stepped back an hour after the snooze was taken. Held to `until`, the alarm
+    would be silent for an hour and a quarter; it sounds again at once, on a clock from now."""
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)
+    wall.at = WALL0 + timedelta(hours=1)
+    assert _snooze(client, minutes=15).status_code == 200           # at WALL0+1h, until WALL0+1h15
+    store = _store(app)
+    frames = app.state.broadcaster.subscribe("h1")
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=2))
+    assert NEWS2 not in store.snoozes
+    assert store.clock_from[NEWS2] == WALL0 + timedelta(minutes=2)
+    cards = [f for f in (frames.get_nowait() for _ in range(frames.qsize())) if f.get("patient_id") == "bed-3"]
+    assert cards and next(a for a in cards[-1]["alerts"] if a["kind"] == "news2")["snooze"] is None
+
+
+async def test_a_cycle_that_runs_late_still_starts_the_clock_from_until(wall, audit):
+    """Review (fix 5): the first cycle after `until` comes late — the clock is `until`, not the cycle's instant, so
+    the alarm is judged unanswered from the moment its snooze ended."""
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)
+    wall.at = WALL0 + timedelta(minutes=1)
+    assert _snooze(client, minutes=15).status_code == 200           # until WALL0+16
+    store = _store(app)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=25))
+    assert NEWS2 not in store.snoozes
+    assert store.clock_from[NEWS2] == WALL0 + timedelta(minutes=16)
+    assert NEWS2 in store.escalated, "nine minutes unanswered since until: past the five-minute delay already"
 
 
 # --- the episode, through the doors ----------------------------------------------------------------------
