@@ -75,6 +75,28 @@ describe("the audit page's events", () => {
     expect(document.body).not.toHaveTextContent("Çarpayı boşaldıldı");
   });
 
+  // G2-B3a (final review M-7): Doluluk's four bed moves are named in the reader's words, never as
+  // their codes, and each can be chosen in the filter.
+  it("labels Doluluk's four bed moves, and offers each in the filter", async () => {
+    const MOVES = [
+      ["bed.reserve", "Çarpayı rezerv edildi"],
+      ["bed.unreserve", "Çarpayının rezervi ləğv edildi"],
+      ["bed.out_of_service", "Çarpayı istifadədən çıxarıldı"],
+      ["bed.return_to_service", "Çarpayı istifadəyə verildi"],
+    ];
+    await open((a) => a.audit.mockResolvedValue({ records: MOVES.map(([code], at) => rec(at + 1, {
+      event_type: code, patient_id: "", subject: "", payload: { actor: "charge", reason: null, note: true } })) }));
+    const rows = bodyRows().reverse();                                 // newest first: back to the moves' order
+    MOVES.forEach(([code, label], at) => {
+      expect(rows[at], code).toHaveTextContent(label);
+      expect(rows[at], code).not.toHaveTextContent(code);
+    });
+    const offered = within(screen.getByLabelText("Növ")).getAllByRole("option");
+    for (const [code, label] of MOVES) {
+      expect(offered.find((o) => o.value === code)?.textContent, code).toBe(label);
+    }
+  });
+
   it("asks the server for the chosen type, and reads again on «Yenilə»", async () => {
     const { api } = await open();
     fireEvent.change(screen.getByLabelText("Növ"), { target: { value: "admission.admit" } });
