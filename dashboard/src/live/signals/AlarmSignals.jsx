@@ -232,6 +232,11 @@ export function AlarmSignals({ children }) {
     // later one under the key is not. A frame that changes no alarm — the sampler's republish of a
     // linked patient with a new shadow picture (Aşama B), new readings — keeps `alerts` the same
     // array (boardStore.js `withPatients`), so it does not bring a dismissed notification back.
+    // `nowMs` (G2-B5b, useSnoozeClock) DOES re-run this effect: it changes when a snooze on the board
+    // ends, when the page comes back while one runs, and at most a minute apart while one runs. A
+    // critical notification the user dismissed is then raised again, if its alarm still waits and the
+    // page is hidden — though a critical alarm is never snoozed, so `nowMs` never changes WHICH
+    // notifications are due. That errs toward more alerting, not less, and is kept so (review).
     const keep = (key, notification) => {
       if (notification) notification.onclose = () => { if (open.get(key) === notification) open.delete(key); };
       open.set(key, notification);
