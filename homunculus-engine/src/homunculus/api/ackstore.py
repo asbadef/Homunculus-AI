@@ -12,7 +12,10 @@ the clear to the next first sight — is at most the escalation delay share one 
 first-seen (the board's ▲), no inherited acknowledgement, a nurse told again. Without the chain an
 alert flapping faster than the delay — NEWS2 7 / 4 every two minutes — never reached the doctor.
 An answer ends the chain (X13 review): only an episode that ended unanswered leaves one, so a return
-after an acknowledgement starts a new clock and can page the doctor anew."""
+after an acknowledgement starts a new clock and can page the doctor anew.
+
+Since G2-B5 a chain also carries the call to the rapid-response team (`rrt_calls`), as it carries the
+page: a flap inside the escalation delay does not un-call the team."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -24,10 +27,13 @@ from homunculus.reco.engine import Alert
 
 class Chain(NamedTuple):
     """An escalation chain whose episode has left the board (X13), kept for the escalation delay in
-    case the alert returns: its clock, when its episode ended, and whether its doctor was paged."""
+    case the alert returns: its clock, when its episode ended, whether its doctor was paged, and (G2-B5)
+    the call to the rapid-response team the episode ended with, if it had one — the team was called to
+    this alarm, and a flap does not un-call it, as it does not un-page the doctor."""
     clock_from: datetime
     cleared_at: datetime
     paged: bool
+    rrt_call: dict | None = None
 
 
 @dataclass
@@ -54,6 +60,14 @@ class AckStore:
     # X13: the chains of episodes that left the board unanswered, kept for the escalation delay.
     # Written by the prune; read, and spent, by the next stamp of the key.
     recent: dict[tuple[str, str], Chain] = field(default_factory=dict)
+    # G2-B5 (spec 2026-11-09-g2b-b5-rrt-design.md, D4): the alarms a person called the rapid-response team to —
+    # {"by": username, "at": datetime, "reason": text} — kept with the episode like `acks`: an acknowledgement
+    # answers the call (`acknowledge`, and `alert_lifecycle.acknowledge_latched`), a discharge forgets it
+    # (`forget_patient`), and an episode that leaves the board takes it off the board with it (`prune`) —
+    # but an episode that ends UNANSWERED leaves its X13 chain with the call in it (`remember_chain`), and a
+    # return inside the escalation delay gets it back (`stamp_first_seen`), as it gets the page back. After a
+    # gap longer than the delay, or an acknowledgement, the call is over.
+    rrt_calls: dict[tuple[str, str], dict] = field(default_factory=dict)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
                          chain_gap: timedelta | None = None) -> bool:
@@ -73,6 +87,8 @@ class AckStore:
             self.clock_from[key] = chain.clock_from
             if chain.paged:
                 self.paged.add(key)
+            if chain.rrt_call is not None:
+                self.rrt_calls.setdefault(key, chain.rrt_call)   # G2-B5: the team stays called
         else:
             self.clock_from[key] = now
         if chain_gap is not None:
@@ -85,10 +101,20 @@ class AckStore:
         before its state is dropped. A key never stamped has no clock, and nothing is kept."""
         clock = self.clock_from.get(key, self.first_seen.get(key))
         if clock is not None:
-            self.recent[key] = Chain(clock, cleared_at, key in self.paged)
+            self.recent[key] = Chain(clock, cleared_at, key in self.paged, self.rrt_calls.get(key))
+
+    def call_rrt(self, patient_id: str, kind: str, by: str, reason: str, now: datetime) -> bool:
+        """Record a call to the rapid-response team (G2-B5, D3). False when the alert already has one: the first
+        call stands, and the caller writes nothing more."""
+        key = (patient_id, kind)
+        if key in self.rrt_calls:
+            return False
+        self.rrt_calls[key] = {"by": by, "at": now, "reason": reason}
+        return True
 
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}
+        self.rrt_calls.pop((patient_id, kind), None)   # G2-B5: an answer ends the call
 
     def prune(self, live_keys: set[tuple[str, str]],
               firing_keys: set[tuple[str, str]] | None = None,
@@ -105,7 +131,7 @@ class AckStore:
         if now is not None:
             for key in [k for k in self.first_seen if k not in live_keys and k not in self.acks]:
                 self.remember_chain(key, now)
-        for mapping in (self.acks, self.first_seen, self.clock_from):
+        for mapping in (self.acks, self.first_seen, self.clock_from, self.rrt_calls):
             for key in [k for k in mapping if k not in live_keys]:
                 del mapping[key]
         self.paged &= live_keys
@@ -122,7 +148,7 @@ class AckStore:
         every episode at once (`alert_lifecycle.retire_state`); nothing of them may answer a later
         number, and nothing is left for the escalation cycle to page."""
         for mapping in (self.acks, self.first_seen, self.clock_from, self.resolved, self.firing,
-                        self.recent):
+                        self.recent, self.rrt_calls):
             for key in [k for k in mapping if k[0] == patient_id]:
                 del mapping[key]
         self.escalated = {k for k in self.escalated if k[0] != patient_id}

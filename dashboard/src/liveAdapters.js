@@ -217,6 +217,11 @@ export function alertsFromPatients(patients) {
         ackBy: a.acknowledged ? (a.acknowledged_by ?? null) : null,
         ackAtMs: a.acknowledged ? msFromTimestamp(a.acknowledged_at) : null,
         escalated: !!a.escalated,
+        // G2-B5 (D4): the open call to the rapid-response team — who, when, why — or null. An acknowledgement
+        // answers it, and the card then carries none.
+        rrtCall: a.rrt_call && typeof a.rrt_call === "object"
+          ? { by: a.rrt_call.by ?? null, atMs: msFromTimestamp(a.rrt_call.at), reason: a.rrt_call.reason ?? "" }
+          : null,
         firstSeenAtMs: msFromTimestamp(a.first_seen_at),
         // When its rule stopped firing (status RESOLVED), on the wall clock; null while it fires.
         resolvedAtMs: msFromTimestamp(a.resolved_at),

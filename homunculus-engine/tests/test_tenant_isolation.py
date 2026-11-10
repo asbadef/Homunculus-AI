@@ -799,6 +799,7 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
     ("POST", "/ack"),
+    ("POST", "/alerts/rrt-call"),   # G2-B5 (D3): «RRT çağır» — the Caller, alerts.escalate, _require_patient, as /ack
     ("POST", "/view"),
     ("GET", "/patients"),
     ("GET", "/alerts/{patient_id}"),

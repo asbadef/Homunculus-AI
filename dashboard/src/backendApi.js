@@ -614,6 +614,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/ack", { method: "POST", body: { patient_id: patientId, kind } });
     },
 
+    /** G2-B5: call the rapid-response team to one active alarm (owner D1: only by hand). The actor comes from the
+     *  token, as with `acknowledge`; the reason is the caller's. Resolves to the patient's board entry as it is
+     *  AFTER the call, so a screen shows the server's answer. 409: the alarm was already answered. */
+    callRrt(patientId, kind, reason) {
+      return authed("/alerts/rrt-call", { method: "POST", body: { patient_id: patientId, kind, reason } });
+    },
+
     /** Record that a clinician opened this patient — the audit line an inspection asks for.
      *  Sent for a patient the screen actually shows: the server answers 404 for one outside the
      *  caller's scope AND for one that does not exist (deliberately the same answer), and logs

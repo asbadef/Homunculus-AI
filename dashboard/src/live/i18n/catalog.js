@@ -69,6 +69,9 @@ import waves from "./strings/waves.js";
 // G2-B4: «Denetim bütünlüğü» — the audit trail's integrity page (screens/denetim).
 import denetim from "./strings/denetim.js";
 
+// G2-B5: the rapid-response team — the RRT screen (screens/rrt), its rail badge, «RRT çağır».
+import rrt from "./strings/rrt.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -110,6 +113,8 @@ export const NAMESPACES = {
   waves, // dalga
 
   denetim, // G2-B4
+
+  rrt, // G2-B5
 };
 
 function flattenInto(out, prefix, entries) {

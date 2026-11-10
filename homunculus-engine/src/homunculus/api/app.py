@@ -93,11 +93,14 @@ log = logging.getLogger(__name__)
 # would complain.
 BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE = validate_permissions(
     ("board.view", "alerts.ack", "audit.view", "clinical.chart", "scores.sign", "devices.manage"))
+(ALERTS_ESCALATE,) = validate_permissions(("alerts.escalate",))   # G2-B5: «RRT çağır»
 
 #: Aşama A: a patient's admitted beds are re-read for the monitor strip at most this often.
 SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
+#: G2-B5 (D3): a call's reason, trimmed — enough to say why, short enough for a card.
+RRT_REASON_MIN, RRT_REASON_MAX = 3, 500
 # PATIENT_ID_MAX is the gateway's since G2-A2 (D14): a body's id and an ingested one are capped alike (bodies are not stripped).
 
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
@@ -1456,6 +1459,47 @@ def create_app(
         await broadcaster.publish(hospital, board)
         return board
 
+    @app.post("/alerts/rrt-call")
+    async def call_rrt(authorization: str | None = Header(default=None), body: dict = Body(...)):
+        """A person calls the rapid-response team to one active alarm (G2-B5, spec 2026-11-09, owner D1: the RRT
+        comes only when called by hand).
+
+        Keyed like `/ack` — patient and kind in the body, never in the path the access log writes. A device is
+        refused (a device is exempt from permission checks, so the refusal is explicit): the call is a person's,
+        named in the trail. An acknowledged alarm is refused (409): nobody is waiting for help on it. A second
+        call answers the card and writes nothing: the first call stands. The trail before memory, as `/ack`
+        (spec 2026-11-01, D3).
+        """
+        caller = await _caller(authorization)
+        if caller.is_device:
+            raise HTTPException(status_code=403, detail="RRT'yi bir kişi çağırır")
+        _require(caller, ALERTS_ESCALATE)
+        hospital = caller.hospital
+        engine = _engine(hospital)
+        store = _store(hospital)
+        patient_id, kind = _body_patient_id(body), body.get("kind")
+        if not isinstance(kind, str):
+            raise HTTPException(status_code=400, detail="geçersiz kind")
+        raw = body.get("reason")
+        reason = raw.strip() if isinstance(raw, str) else ""
+        if not RRT_REASON_MIN <= len(reason) <= RRT_REASON_MAX:
+            raise HTTPException(status_code=400, detail="RRT çağrısının gerekçesi 3–500 karakter olmalı")
+        who = _attribution(caller, body)
+        await _require_patient(caller, authorization, patient_id)
+        key = (patient_id, kind)
+        if key not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        if key in store.acks:
+            raise HTTPException(status_code=409, detail="alarm zaten yanıtlandı; RRT çağrısı açılmaz")
+        if key not in store.rrt_calls:
+            now = datetime.now(timezone.utc)
+            audit.append(AuditEvent(hospital, "rrt_call", patient_id, kind,
+                                    {**who, "reason": reason, "at": now.isoformat()}))
+            store.call_rrt(patient_id, kind, who["actor"], reason, now)
+        board = _card(hospital, patient_id)
+        await broadcaster.publish(hospital, board)
+        return board
+
     @app.post("/view")
     async def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
         """Record that a clinician opened a patient — attributed from the token."""
@@ -1810,8 +1854,10 @@ def create_app(
         hospital = caller.hospital
         if patient_id:
             # Asking the audit log about one patient is asking about that patient. The trail
-            # carries no PHI, but it does carry who was alerted about whom and when, which is
-            # the same question the board answers and must get the same answer.
+            # carries no demographics — an `rrt_call` row (G2-B5) carries the caller's free-text
+            # reason, which the dialog asks not to name anyone — but it does carry who was alerted
+            # about whom and when, which is the same question the board answers and must get the
+            # same answer.
             await _require_patient(caller, authorization, patient_id)
         elif not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The unfiltered trail spans every bed in the hospital. It is an administrator's and

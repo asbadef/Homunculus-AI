@@ -1820,6 +1820,36 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
   boş» rezervin yaşını saymaz (Postgres bir durum değerini silemez, değer tipte kalır ama hiçbir yatak
   taşımaz).
 
+### 3.15 RRT ekranı ve «RRT çağır» (Grup 2 · B5)
+
+- **İki eskalasyon sistemi:**
+  - **Canlı sistem.** Bellekte çalışır ve tek kademelidir: acil (`immediate`) bir alarm 5 dk cevapsız kalırsa «eskale» olur
+    ve hekime bir kez bildirim gider.
+  - **Postgres'teki üç kademeli sistem** (sorumlu hemşire → hekim → RRT) koddadır ama hiç çağrılmaz; VM'de tabloları hiç
+    yazılmadı.
+  - B5 canlı sistemin üzerine kuruldu; çalışmayan sisteme dokunulmadı.
+- **Sahip kararı:** RRT yalnız elle çağrılınca gelir; otomatik RRT kademesi kapalıdır ve RRT ekranı bunu açıkça yazar. Alarm
+  erteleme ayrı bir dilimdir.
+- **«RRT çağır» (Alarmlar ekranı):**
+  - **Kim çağırabilir:** `alerts.escalate` yetkisi olanlar, yani RRT, sorumlu hemşire, hekimler ve yönetici. Hemşire
+    çağıramaz; cihaz jetonu reddedilir, çünkü çağrıyı bir kişi yapar.
+  - **Gerekçe zorunludur** (3–500 karakter). Gerekçeye ad ya da kimlik numarası yazılmaz.
+  - **Kayıt:** çağrı denetim kaydına `rrt_call` olarak, çağıranın adıyla yazılır. Kayıt belleğe yazılmadan önce düşülür.
+  - **Yanıtlanmış alarm:** böyle bir alarm için çağrı açılmaz.
+  - **İkinci çağrı:** aynı alarm ikinci kez çağrılırsa hiçbir şey yazılmaz, ilk çağrı geçerli kalır.
+- **RRT ekranı (`/rrt`):**
+  - **İki liste:** «RRT çağrıları» (açık çağrılar) ve «Yoldaki cevapsız acil alarmlar» (çağrısız, cevap bekleyen acil
+    alarmlar; hekime eskale olmuşsa bu yazılır).
+  - **Menü rozeti** açık çağrı sayısını gösterir.
+  - **Pano canlı değilse** ekran hiçbir zaman «çağrı yok» demez.
+- **Çağrı ne zaman biter:** alarm «Gördüm» ile yanıtlanınca (yanıtlayan RRT üyesi de olabilir, hemşire de) ya da alarmın
+  bölümü kapanınca.
+- **Alarm gidip gelirse:** gecikme süresi içinde geri gelen bir alarmda çağrı, eskalasyon zinciriyle birlikte sürer.
+- **API yeniden başlarsa:** açık çağrı denetim kaydından geri gelir. Yeniden başlatma, gidip gelen bir alarmın zincirini
+  taşımaz; bu, mevcut zincir sınırlamasıdır.
+- **Bu dilimde olmayanlar:** RRT cihazlarına anlık bildirim (push) yok; RRT çağrıyı rozetten ve ekrandan görür.
+- **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b5-rrt-design.md`.
+
 ---
 
 ### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)

@@ -430,6 +430,18 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "sepsis" });
   });
 
+  it("calls the RRT to an alarm by patient, kind and reason, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [{ kind: "news2_high",
+      rrt_call: { by: "sorumlu.hem", at: "2026-11-09T10:00:00+00:00", reason: "Ekip gelsin" } }] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.callRrt("S-001", "news2_high", "Ekip gelsin")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/alerts/rrt-call");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
+  });
+
   it("reads Aşama A's monitor strip with an authed GET /infinity-shadow/board", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ stage: "off" }));
     const api = signedIn(fetchMock);

@@ -32,6 +32,9 @@ function PatientProbe({ params }) {
 function AlarmsProbe() {
   return <h1>Siqnal ekranı</h1>;
 }
+function RrtProbe() {
+  return <h1>RRT ekranı</h1>;
+}
 // `built` adds a screen to whatever this build has; `only` pins the registry to a known set, for
 // a test whose subject IS which screens exist (the rail's list, where an empty address lands,
 // "no such page"). Without `only`, those tests assert a property of the build and break in this
@@ -135,6 +138,46 @@ describe("the rail", () => {
       await act(async () => { stream.open(); await settle(); });
       const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
       expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+    });
+  });
+
+  // G2-B5 (spec D7): the RRT entry counts the open calls, under the alarms entry's rule — a number only from a
+  // LIVE board, a dot from a stale one — and an answered call drops out. Its words are its own.
+  describe("the RRT entry's count", () => {
+    const RRT_PERMS = ["board.view", "alerts.ack", "alerts.escalate"];
+    const card = (alert) => ({ patient_id: "P-0", risk: "high", vitals: {}, alerts: [alert] });
+    const CALLED = { kind: "news2", severity: "high", urgency: "immediate", summary: "NEWS2 7", acknowledged: false,
+      rrt_call: { by: "leyla", at: "2026-11-09T10:00:00Z", reason: "Solunum güçlüğü" } };
+    // What `/ack` answers with: acknowledged, and the call gone with it (spec D4).
+    const ANSWERED = { ...CALLED, acknowledged: true, acknowledged_by: "leyla", rrt_call: null };
+    const rrtEntry = () => within(screen.getByRole("navigation", { name: "Əsas menyu" }))
+      .getByRole("link", { name: /Sürətli cavab/ });
+
+    it("counts the open calls on a LIVE board, in a badge AND in the entry's name; an answered call drops out", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      const { stream } = await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)] });
+      await act(async () => { stream.open(); await settle(); });
+      expect(rrtEntry().querySelector("[data-rail-badge='count']")).toHaveTextContent("1");
+      expect(rrtEntry()).toHaveAccessibleName(/1 açıq RRT çağırışı/);
+      act(() => { stream.frame(card(ANSWERED)); });
+      expect(rrtEntry().querySelector("[data-rail-badge]")).toBeNull();
+      expect(rrtEntry()).not.toHaveAccessibleName(/çağırışı/);
+    });
+
+    it("a board that may be out of date shows a dot, never a number", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      const { stream } = await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)] });
+      await act(async () => { stream.open(); await settle(); });
+      act(() => { stream.drop(); });
+      expect(rrtEntry().querySelector("[data-rail-badge='count']")).toBeNull();
+      expect(rrtEntry().querySelector("[data-rail-badge='stale']")).toBeInTheDocument();
+      expect(rrtEntry()).toHaveAccessibleName(/RRT çağırışları yenilənməmiş ola bilər/);
+    });
+
+    it("a board that cannot know shows nothing", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)], start: false });
+      expect(rrtEntry().querySelector("[data-rail-badge]")).toBeNull();
     });
   });
 
