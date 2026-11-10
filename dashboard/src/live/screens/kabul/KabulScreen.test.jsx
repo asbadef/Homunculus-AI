@@ -4,6 +4,8 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { ROUTES, canReach } from "../../shell/routes.js";
+import { DICTIONARIES } from "../../i18n/catalog.js";
+import { LANG_CODES } from "../../i18n/langs.js";
 import { KABUL_TABS, KabulScreen, kabulTabs } from "./KabulScreen.jsx";
 import { CHARGE, DOCTOR, NURSE, UUID_TEXT, mountKabul } from "./kabul.testutil.js";
 
@@ -39,6 +41,19 @@ describe("KabulScreen", () => {
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby"))
       .toBe(screen.getByRole("tab", { name: "Evə yazılma" }).id);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
+  // G2-B3a (X7, the browser walk): the beds moved to Doluluk, so the subtitle names admission and
+  // discharge only — in every language.
+  it("says under its title that it is for admission and discharge, not the beds' state", async () => {
+    await mountKabul(<KabulScreen />, { perms: NURSE });
+    expect(screen.getByText("Qəbul və evə yazılma — öz şöbələriniz.")).toBeTruthy();
+    expect(Object.fromEntries(LANG_CODES.map((lang) => [lang, DICTIONARIES[lang]["kabul.sub"]]))).toEqual({
+      tr: "Kabul ve taburcu — kendi birimleriniz.",
+      az: "Qəbul və evə yazılma — öz şöbələriniz.",
+      ru: "Приём и выписка — ваши отделения.",
+      en: "Admission and discharge — your own units.",
+    });
   });
 
   it("shows a physician and a charge nurse both tabs", async () => {

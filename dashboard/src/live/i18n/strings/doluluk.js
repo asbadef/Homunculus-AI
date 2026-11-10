@@ -80,7 +80,7 @@ export default {
     },
   },
   ru: {
-    nav: "Занятость коек", navShort: "Койки",
+    nav: "Занятость коек", navShort: "Занятость",   // not «Койки»: the board's own short label (nav.bedsShort)
     title: "Занятость коек",
     sub: "Койки ваших отделений: кто где лежит, какая койка свободна, на уборке, в резерве или не используется.",
     loading: "Койки загружаются…",
@@ -116,7 +116,7 @@ export default {
     },
   },
   en: {
-    nav: "Occupancy", navShort: "Beds",
+    nav: "Occupancy", navShort: "Occupancy",          // not «Beds»: the board's own short label (nav.bedsShort)
     title: "Bed occupancy",
     sub: "The beds of your units: who is where, which bed is free, being cleaned, reserved or out of service.",
     loading: "Reading the beds…",

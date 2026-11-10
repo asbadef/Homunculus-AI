@@ -9,7 +9,7 @@
 export default {
   tr: {
     nav: "Hasta Kabul", navShort: "Kabul",
-    title: "Hasta Kabul", sub: "Kabul, taburcu ve yatakların durumu — kendi birimleriniz.",
+    title: "Hasta Kabul", sub: "Kabul ve taburcu — kendi birimleriniz.",   // G2-B3a (X7): the beds moved to Doluluk
     sections: "Hasta kabul bölümleri", noAccess: "Bu ekranın hiçbir bölümüne yetkiniz yok.",
     tabAdmit: "Kabul", tabDischarge: "Taburcu",
     loading: "Yükleniyor…",
@@ -186,7 +186,7 @@ export default {
   },
   az: {
     nav: "Xəstə qəbulu", navShort: "Qəbul",
-    title: "Xəstə qəbulu", sub: "Qəbul, evə yazılma və çarpayıların vəziyyəti — öz şöbələriniz.",
+    title: "Xəstə qəbulu", sub: "Qəbul və evə yazılma — öz şöbələriniz.",
     sections: "Xəstə qəbulu bölmələri", noAccess: "Bu ekranın heç bir bölməsinə səlahiyyətiniz yoxdur.",
     tabAdmit: "Qəbul", tabDischarge: "Evə yazılma",
     loading: "Yüklənir…",
@@ -348,7 +348,7 @@ export default {
   },
   ru: {
     nav: "Приём пациентов", navShort: "Приём",
-    title: "Приём пациентов", sub: "Приём, выписка и состояние коек — ваши отделения.",
+    title: "Приём пациентов", sub: "Приём и выписка — ваши отделения.",
     sections: "Разделы приёма пациентов", noAccess: "У вас нет прав ни на один раздел этого экрана.",
     tabAdmit: "Приём", tabDischarge: "Выписка",
     loading: "Загрузка…",
@@ -510,7 +510,7 @@ export default {
   },
   en: {
     nav: "Admissions", navShort: "Admit",
-    title: "Admissions", sub: "Admission, discharge and the state of the beds — your own units.",
+    title: "Admissions", sub: "Admission and discharge — your own units.",
     sections: "Admission sections", noAccess: "You have no right to any section of this screen.",
     tabAdmit: "Admit", tabDischarge: "Discharge",
     loading: "Loading…",
