@@ -17,7 +17,10 @@ D7a), which retires the patient as the discharge did.
 
 The escalation chain (X13) is not in the log: a replayed episode's clock (`clock_from`) is its own
 `first_seen` row, and no chain of an episode that ended is remembered (`recent`). After a restart a
-chain starts over — the same limitation as `paged` and `escalated`, which are not replayed either."""
+chain starts over — the same limitation as `paged` and `escalated`, which are not replayed either.
+A call to the rapid-response team (G2-B5) rides its chain live, across a flap inside the escalation
+delay; so it is bound by the same limitation: a replayed `rrt_call` row stands only while its episode
+is open at that point of the log, and an episode that ended and returned replays without the call."""
 from __future__ import annotations
 
 from collections.abc import Iterable

@@ -11,8 +11,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import homunculus.api.app as app_module
 import homunculus.scenarios
 from homunculus.api.ackstore import AckStore
+from homunculus.api.alert_lifecycle import DISCHARGED
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.identity import Caller
@@ -347,3 +349,265 @@ def test_prune_drops_the_call_with_its_episode():
     assert ("p", "k") in store.rrt_calls, "the episode is still on the board"
     store.prune(live_keys=set())
     assert store.rrt_calls == {}, "the episode left the board and took its call with it"
+
+
+# --- the trail before memory ---------------------------------------------------------------------------
+
+class _TimesOut(InMemoryAuditLog):
+    """An audit whose append of `fail_on` raises once — the database timing out mid-request
+    (`test_api_ack.py` has the same)."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on = None
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            self.fail_on = None
+            raise RuntimeError("audit timed out")
+        return super().append(event)
+
+
+def test_a_call_whose_audit_row_fails_is_a_500_and_leaves_no_call_and_the_retry_is_the_call():
+    """The trail before memory, as `/ack`: applied first, a failed call would show the RRT as called on the
+    screen, the badge and the queue while the trail held nothing — and a restart would silently un-call it."""
+    audit = _TimesOut()
+    app = create_app({"tok": "h1"}, run_escalation_loop=False, audit=audit, resolve_jwt=_resolve)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        _drive_shock(client)
+        audit.fail_on = "rrt_call"
+        assert _call(client).status_code == 500
+        assert _store(app).rrt_calls == {}
+        assert _alerts(client)["septic_shock"]["rrt_call"] is None
+        assert _rows(audit) == []
+        r = _call(client)                                   # the audit works again: the retry is the call
+        assert r.status_code == 200, r.text
+        assert len(_rows(audit)) == 1
+        assert _alerts(client)["septic_shock"]["rrt_call"]["reason"] == REASON
+
+
+# --- a flap: the call rides its X13 chain, as the doctor's page does ---------------------------------------
+#
+# Heart rate 115 and temperature 39.5 score 2 NEWS2 points each; a respiratory rate of 26 adds 3 (NEWS2 7, a
+# HIGH `news2`), one of 16 adds none (NEWS2 4: the alert clears). Made-up values on a synthetic bed
+# (`test_api_ack.py` flaps the same way).
+
+WALL0 = datetime(2026, 10, 25, 9, 0, tzinfo=timezone.utc)
+NEWS2 = ("bed-3", "news2")
+
+
+class _Wall(datetime):
+    """The doors' wall clock, set by the test: the gap between an alert's clear and its return decides whether
+    its chain goes on (X13), and a gap the real clock would make a test wait for."""
+    at = WALL0
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.at
+
+
+@pytest.fixture
+def wall(monkeypatch):
+    _Wall.at = WALL0                  # a test that failed half-way must not leak its time
+    monkeypatch.setattr(app_module, "datetime", _Wall)
+    return _Wall
+
+
+def _news2_app(audit):
+    return create_app({"tok": "h1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
+                      audit=audit, resolve_jwt=_resolve)
+
+
+def _news2_called(client, wall):
+    """HR 115 / temp 39.5 and a respiratory rate of 26 at WALL0 (NEWS2 7, first seen), then a call a minute
+    later. Returns the call as the card carries it."""
+    _reading(client, "heart_rate", 115, minute=0)
+    _reading(client, "temperature", 39.5, minute=0)
+    _reading(client, "resp_rate", 26, minute=0)
+    wall.at = WALL0 + timedelta(minutes=1)
+    r = _call(client, "news2")
+    assert r.status_code == 200, r.text
+    return next(a for a in r.json()["alerts"] if a["kind"] == "news2")["rrt_call"]
+
+
+def test_a_call_rides_its_chain_across_a_flap_inside_the_escalation_delay(wall, audit):
+    """NEWS2 7 / 4 every two minutes with the RRT called once. Each return is a new episode, but none was off the
+    board longer than the escalation delay, so the doctor's page carries over (X13) — and so must the call: it
+    left the queue and the badge, and «RRT çağır» was offered again, on an alarm whose team had been called."""
+    app = _news2_app(audit)
+    with TestClient(app) as client:
+        call = _news2_called(client, wall)
+        for flap in range(3):
+            wall.at = WALL0 + timedelta(minutes=2 + 4 * flap)
+            _reading(client, "resp_rate", 16, minute=2 + 4 * flap)      # cleared
+            assert "news2" not in _alerts(client)
+            wall.at = WALL0 + timedelta(minutes=4 + 4 * flap)
+            _reading(client, "resp_rate", 26, minute=4 + 4 * flap)      # back, two minutes later
+            card = _alerts(client)["news2"]
+            assert card["rrt_call"] == call, f"flap {flap}: the same call, whole"
+            assert card["first_seen_at"] == wall.at.isoformat(), "the return is an episode of its own"
+        assert _store(app).rrt_calls == {NEWS2: {"by": "hem.ayse", "at": WALL0 + timedelta(minutes=1),
+                                                 "reason": REASON}}
+        assert len(_rows(audit)) == 1, "the carry writes nothing"
+        again = _call(client, "news2", reason="Yine de çağırıyorum")
+        assert again.status_code == 200 and len(_rows(audit)) == 1, "and a second call is still not one"
+
+
+def test_a_return_after_a_gap_longer_than_the_delay_finds_no_call_and_may_be_called_again(wall, audit):
+    app = _news2_app(audit)
+    with TestClient(app) as client:
+        _news2_called(client, wall)
+        wall.at = WALL0 + timedelta(minutes=2)
+        _reading(client, "resp_rate", 16, minute=2)                    # cleared
+        wall.at = WALL0 + timedelta(minutes=8)
+        _reading(client, "resp_rate", 26, minute=8)                    # back six minutes later: a new chain
+        assert _alerts(client)["news2"]["rrt_call"] is None
+        assert _store(app).rrt_calls == {}
+        r = _call(client, "news2", reason="Yeniden kötüleşti")
+        assert r.status_code == 200, r.text
+        assert len(_rows(audit)) == 2, "the new episode is a new call, with its own row"
+
+
+def test_an_episode_that_ends_takes_its_call_with_it(wall, audit):
+    """The rule stops, nothing latches (HIGH does not), and the alert does not return: the board has no alert,
+    so no call — in memory, and on the next card it is built into."""
+    app = _news2_app(audit)
+    with TestClient(app) as client:
+        _news2_called(client, wall)
+        wall.at = WALL0 + timedelta(minutes=2)
+        _reading(client, "resp_rate", 16, minute=2)
+        assert "news2" not in _alerts(client)
+        assert _store(app).rrt_calls == {}
+        wall.at = WALL0 + timedelta(minutes=30)                        # long after the delay
+        _reading(client, "heart_rate", 80, minute=30)                  # any later reading: still nothing
+        assert "news2" not in _alerts(client) and _store(app).rrt_calls == {}
+
+
+def test_an_acknowledged_call_does_not_ride_a_flap(wall, audit):
+    """An answer ends the chain (X13 review) and the call with it: only an episode that ended unanswered leaves
+    a chain, so the acknowledged call is not carried to the return."""
+    app = _news2_app(audit)
+    with TestClient(app) as client:
+        _news2_called(client, wall)
+        assert client.post("/ack", json={"patient_id": "bed-3", "kind": "news2", "role": "nurse"},
+                           headers=DEVICE).status_code == 200
+        wall.at = WALL0 + timedelta(minutes=2)
+        _reading(client, "resp_rate", 16, minute=2)
+        wall.at = WALL0 + timedelta(minutes=4)
+        _reading(client, "resp_rate", 26, minute=4)                    # back inside the delay
+        assert _alerts(client)["news2"]["rrt_call"] is None
+        assert _store(app).rrt_calls == {}
+
+
+def test_the_store_carries_a_call_with_its_chain_and_only_an_unanswered_one():
+    gap = timedelta(minutes=5)
+    call = {"by": "u", "at": NOW + timedelta(minutes=1), "reason": "why"}
+
+    # an episode that ends unanswered leaves its chain with the call; a return inside the delay continues both
+    store = AckStore()
+    store.stamp_first_seen("p", "k", NOW, chain_gap=gap)
+    store.call_rrt("p", "k", "u", "why", NOW + timedelta(minutes=1))
+    store.prune(live_keys=set(), now=NOW + timedelta(minutes=2))
+    assert store.rrt_calls == {}, "between episodes the board holds no call"
+    assert store.recent[("p", "k")].rrt_call == call
+    store.stamp_first_seen("p", "k", NOW + timedelta(minutes=4), chain_gap=gap)
+    assert store.rrt_calls == {("p", "k"): call}
+    assert store.recent == {}, "spent, as the chain is"
+
+    # a return after the delay starts a new chain: no call, and the old chain is gone
+    store = AckStore()
+    store.stamp_first_seen("p", "k", NOW, chain_gap=gap)
+    store.call_rrt("p", "k", "u", "why", NOW + timedelta(minutes=1))
+    store.prune(live_keys=set(), now=NOW + timedelta(minutes=2))
+    store.stamp_first_seen("p", "k", NOW + timedelta(minutes=8), chain_gap=gap)
+    assert store.rrt_calls == {} and store.recent == {}
+
+    # an episode that was answered leaves no chain, so nothing comes back
+    store = AckStore()
+    store.stamp_first_seen("p", "k", NOW, chain_gap=gap)
+    store.call_rrt("p", "k", "u", "why", NOW + timedelta(minutes=1))
+    store.acknowledge("p", "k", "nurse", NOW + timedelta(minutes=1))
+    store.prune(live_keys=set(), now=NOW + timedelta(minutes=2))
+    assert store.recent == {}
+    store.stamp_first_seen("p", "k", NOW + timedelta(minutes=4), chain_gap=gap)
+    assert store.rrt_calls == {}
+
+    # a chain with no call (the usual one) restores nothing, and another key's call is not touched
+    store = AckStore()
+    store.stamp_first_seen("p", "k", NOW, chain_gap=gap)
+    store.call_rrt("p", "j", "u", "why", NOW)
+    store.prune(live_keys={("p", "j")}, now=NOW + timedelta(minutes=2))
+    store.stamp_first_seen("p", "k", NOW + timedelta(minutes=4), chain_gap=gap)
+    assert set(store.rrt_calls) == {("p", "j")}
+
+
+# --- more of the restart ------------------------------------------------------------------------------------
+
+def _latched_trail():
+    """The shock fires and is first seen; then the lactate is back under 2 and nobody had acknowledged it —
+    live, it latched (`test_rehydrate.py` has the same)."""
+    audit = _shock_trail()
+    audit.append(AuditEvent("HOSP1", "first_seen", "bed-3", "septic_shock", {"at": T0}))
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "lactate",
+                            {"value": 1.5, "unit": "", "obs_ts": T0, "device": "lab"}))
+    return audit
+
+
+def test_a_latched_alerts_call_is_replayed_and_the_latched_ack_row_answers_it():
+    audit = _latched_trail()
+    audit.append(_call_row())
+    _engine, store = _replayed(audit)
+    assert set(store.resolved) == {SHOCK}
+    assert store.rrt_calls[SHOCK]["reason"] == REASON, "a call on a latched alert survives the replay"
+
+    audit.append(AuditEvent("HOSP1", "ack", "bed-3", "septic_shock", {"role": "ayse", "at": T0}))
+    _engine, store = _replayed(audit)
+    assert store.resolved == {}, "the ack removed the latch, as live"
+    assert store.rrt_calls == {}, "and answered the call"
+
+
+def test_a_call_followed_by_a_discharge_is_not_replayed():
+    audit = _shock_trail()
+    audit.append(_call_row())
+    audit.append(AuditEvent("HOSP1", "alert_cleared", "bed-3", "septic_shock", {"reason": DISCHARGED}))
+    engine, store = _replayed(audit)
+    assert engine.active_alerts("bed-3") == []
+    assert store.rrt_calls == {}
+
+
+def test_after_a_restart_a_call_does_not_cross_an_ended_episode_chains_are_not_replayed():
+    """A LIMITATION, not a wish: live, a call rides its chain across a flap inside the escalation delay
+    (`test_a_call_rides_its_chain_across_a_flap_inside_the_escalation_delay`). The chain is not in the trail —
+    `rehydrate` sets a replayed episode's stamps directly and clears `recent` (X13), as it does not replay
+    `paged` or `escalated` — so a trail that holds a call, an episode that ended and one that returned replays
+    without the call. The new episode is a fresh one for whoever opens the board; they may call again."""
+    audit = InMemoryAuditLog()
+    start = datetime.fromisoformat(T0)
+
+    def reading(slug, value, minute):
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", slug, {
+            "value": value, "unit": "", "obs_ts": (start + timedelta(minutes=minute)).isoformat(),
+            "device": "mon"}))
+
+    def first_seen(minute):
+        audit.append(AuditEvent("HOSP1", "first_seen", "bed-3", "news2",
+                                {"at": (start + timedelta(minutes=minute)).isoformat()}))
+
+    reading("heart_rate", 115, 0)
+    reading("temperature", 39.5, 0)
+    reading("resp_rate", 26, 0)                                         # NEWS2 7
+    first_seen(0)
+    audit.append(_call_row("news2", at=(start + timedelta(minutes=1)).isoformat()))
+    open_call = len(audit.records(tenant="HOSP1"))
+    reading("resp_rate", 16, 2)                                         # cleared
+    reading("resp_rate", 26, 4)                                         # and back, inside the delay
+    first_seen(4)
+
+    _engine, store = _replayed(audit)                                   # the whole trail
+    assert "news2" in {a.kind for a in _engine.active_alerts("bed-3")}
+    assert store.rrt_calls == {}, "the replay does not carry the call across the ended episode"
+    assert store.recent == {}, "(no chain survives a replay)"
+
+    engine, store = Engine(), AckStore()                                # the trail up to the call
+    rehydrate(engine, store, audit.records(tenant="HOSP1")[:open_call])
+    assert set(store.rrt_calls) == {NEWS2}, "while the episode is open the call is there"

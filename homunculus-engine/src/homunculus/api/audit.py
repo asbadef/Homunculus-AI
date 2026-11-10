@@ -53,6 +53,8 @@ class AuditEvent:
     tenant: str
     event_type: str          # "ingest" | "alert" | "ack" | "escalation" | "notification"
     #                          | "alert_cleared" (G2-A1: an episode's end — api/alert_lifecycle.py)
+    #                          | "rrt_call" (G2-B5: a person called the rapid-response team to an
+    #                            alert — payload: who, why in free text, when)
     patient_id: str
     subject: str             # alert kind or signal slug
     payload: dict = field(default_factory=dict)

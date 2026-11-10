@@ -1835,8 +1835,10 @@ def create_app(
         hospital = caller.hospital
         if patient_id:
             # Asking the audit log about one patient is asking about that patient. The trail
-            # carries no PHI, but it does carry who was alerted about whom and when, which is
-            # the same question the board answers and must get the same answer.
+            # carries no demographics — an `rrt_call` row (G2-B5) carries the caller's free-text
+            # reason, which the dialog asks not to name anyone — but it does carry who was alerted
+            # about whom and when, which is the same question the board answers and must get the
+            # same answer.
             await _require_patient(caller, authorization, patient_id)
         elif not _readable(await _scope(authorization)).unrestricted:   # G2-A2 (D13b): 503 first
             # The unfiltered trail spans every bed in the hospital. It is an administrator's and
