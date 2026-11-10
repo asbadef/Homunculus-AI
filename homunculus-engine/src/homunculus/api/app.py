@@ -17,7 +17,7 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -188,18 +188,57 @@ def _device_role(value: object) -> str:
 HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
 
+class ScopedBoardView:
+    """What one scoped subscriber of the board stream is sent for each board (G2 borç 1): the board
+    when it is in the scope, a removal when it is not and its patient is one this subscriber holds a
+    card for, otherwise nothing.
+
+    Dropping every board outside the scope left a card on a scoped screen for good once its patient
+    left the scope — a HIS transfer to another unit, a HIS discharge (which frees the bed), a removal
+    that knows no last place: the patient's next board lies outside the scope, and no frame ever
+    told the screen the card was gone, though a reload no longer showed it.
+
+    So the view remembers whom this subscriber holds a card for: `shown`, the patients in scope when
+    the stream opened (the dashboard reloads the board on every open), and every patient sent since.
+    One who leaves the scope is sent ONCE as a removal carrying the id alone — the id the screen
+    already holds, never where the patient went. A patient this subscriber never held stays
+    withheld, as before: that a patient exists elsewhere in the ward is itself the thing withheld.
+    """
+
+    def __init__(self, scope: Scope, shown: Iterable[str] = ()) -> None:
+        self._scope = scope
+        self._shown = set(shown)
+
+    def __call__(self, board: dict) -> dict | None:
+        patient_id = str(board.get("patient_id") or "")
+        if sees_patient(board, self._scope):
+            if board.get("removed"):
+                self._shown.discard(patient_id)
+            else:
+                self._shown.add(patient_id)
+            return board
+        if patient_id in self._shown:
+            self._shown.discard(patient_id)
+            return {"patient_id": patient_id, "removed": True, "identity": None}
+        return None
+
+
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
-                           allow: Callable[[dict], bool] | None = None):
+                           allow: Callable[[dict], bool] | None = None,
+                           view: Callable[[dict], dict | None] | None = None):
     """Yield SSE frames for boards arriving on `queue`; on idle, a keep-alive comment and then
     HEARTBEAT_FRAME. Tested directly (httpx ASGITransport cannot read an unbounded stream).
     Cancellation (client disconnect, via Starlette) interrupts the wait; the caller's finally
     unsubscribes. Do NOT read request.receive.
 
-    `allow` is the subscriber's scope. The broadcaster publishes one board per tenant to every
+    `allow` is a scope as a plain filter. The broadcaster publishes one board per tenant to every
     subscriber of that tenant, so without a per-subscriber filter here the live feed would carry
     every patient in the hospital to a nurse whose `/patients` response was filtered a second
     earlier. A board that does not pass is dropped silently rather than replaced by a placeholder:
     the fact that a patient exists elsewhere in the ward is itself the thing being withheld.
+    `view` is what `/stream` passes a scoped subscriber (`ScopedBoardView`): the frame this
+    subscriber is sent for the board, or None — the filter, and the removal of a card whose patient
+    left the scope (G2 borç 1).
 
     Idle means nothing SENT to this subscriber for `keepalive` seconds — not an empty queue: a
     nurse scoped to a quiet unit of a busy hospital is sent none of the boards the queue keeps
@@ -220,7 +259,10 @@ async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
             continue
         if allow is not None and not allow(board):
             continue
-        yield f"data: {json.dumps(board)}\n\n"
+        frame = board if view is None else view(board)
+        if frame is None:
+            continue
+        yield f"data: {json.dumps(frame)}\n\n"
         last_sent = loop.time()
 
 
@@ -1843,14 +1885,36 @@ def create_app(
         return {"ticket": tickets.issue(caller.hospital, now=time.monotonic(), scope=scope),
                 "expires_in": 60}
 
+    def _shown_to(hospital: str, scope: Scope) -> set[str]:
+        """The patients whose card a subscriber under `scope` holds as its stream opens — the ones
+        `/patients` shows it (G2 borç 1): the board's patients, a discharged admission's tombstone
+        not among them, each read as `_scope_card` reads it — no card built, no patient created,
+        no miss counted (this is not the board's own read)."""
+        engine = engines.get(hospital)
+        ids = set(identities.patient_ids(hospital))
+        if engine is not None:
+            ids.update(engine.patient_ids())
+        shown = set()
+        for patient_id in ids:
+            record = identities.get(hospital, patient_id)
+            if is_tombstone(record):
+                continue
+            if sees_patient(_scope_card(hospital, patient_id, record, counted=False), scope):
+                shown.add(patient_id)
+        return shown
+
     @app.get("/stream")
     async def stream(token: str | None = None, ticket: str | None = None):
         hospital, scope = _stream_hospital(token, ticket)
+        # An unrestricted subscriber is sent every board as it is. A scoped one is sent what its
+        # `ScopedBoardView` makes of each (G2 borç 1): read before subscribing, with no await
+        # between the two, so no board is published in the gap and a failed read leaves no queue.
+        view = None if scope.unrestricted else ScopedBoardView(scope, _shown_to(hospital, scope))
         queue = broadcaster.subscribe(hospital)
 
         async def events():
             try:
-                async for frame in sse_board_frames(queue, allow=lambda b: sees_patient(b, scope)):
+                async for frame in sse_board_frames(queue, view=view):
                     yield frame
             finally:
                 broadcaster.unsubscribe(hospital, queue)

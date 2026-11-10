@@ -576,3 +576,79 @@ class TestKTheNotificationStreamReadsTheScopeCard:
             board = (await client.get("/patients", headers=TOKEN)).json()["patients"]
         assert '"patient_id": "p-a1"' in first
         assert sorted(p["patient_id"] for p in board) == EVERYONE     # no ghost on the wall board
+
+
+def _encounter(pid: str, status: str, location: str = "") -> dict:
+    """The HIS feed's location message, five minutes after the first one (`_identities`)."""
+    later = WHEN.replace(minute=5).isoformat()
+    return {"resourceType": "Encounter", "status": status, "subject": {"reference": f"Patient/{pid}"},
+            "location": [{"location": {"display": location}}], "period": {"start": later},
+            "meta": {"lastUpdated": later, "source": "comed"}}
+
+
+async def _frame(frames) -> dict:
+    import asyncio
+    import json
+
+    raw = await asyncio.wait_for(anext(frames), timeout=2)
+    assert raw.startswith("data: "), raw
+    return json.loads(raw.removeprefix("data: "))
+
+
+class TestLAPatientWhoLeavesTheScopeLeavesTheScreen:
+    """G2 borç 1. The live feed drops a board outside the subscriber's scope. Alone, that left a card
+    on a scoped screen for good once its patient left the scope — a HIS transfer to another unit, a
+    HIS discharge (which frees the bed): the patient's next frame lies outside the scope and was
+    dropped, so no frame ever told the screen the card was gone, though a reload no longer showed
+    it. A patient this stream showed — in scope when it opened, or sent since — who leaves the scope
+    is sent once as a removal carrying only the id; one it never showed stays withheld."""
+
+    async def test_a_transfer_out_and_a_discharge_are_removals_and_a_transfer_in_is_a_card(self):
+        import httpx
+
+        app = app_with(ADULT)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://t") as client:
+            for pid in EVERYONE:
+                await _async_reading(client, pid)
+            stream = _endpoint(app, "/stream")
+            nurse_ticket = (await client.post("/stream-ticket", headers=NURSE)).json()["ticket"]
+            wall_ticket = (await client.post("/stream-ticket", headers=TOKEN)).json()["ticket"]
+            nurse = (await stream(token=None, ticket=nurse_ticket)).body_iterator
+            wall = (await stream(token=None, ticket=wall_ticket)).body_iterator
+            await _async_reading(client, "p-n1")       # the NICU, never shown here: withheld
+            for body in (_encounter("p-a1", "in-progress", "YYB^12^A"),    # to the NICU
+                         _encounter("p-a2", "finished"),                    # discharged by the HIS
+                         _encounter("p-n1", "in-progress", "YB^304^1")):    # to the adult unit
+                r = await client.post("/ingest", headers=TOKEN, json=body)
+                assert r.json()["identity"] == "ok", r.text
+            seen = [await _frame(nurse) for _ in range(3)]
+            walled = [await _frame(wall) for _ in range(4)]
+            await nurse.aclose()
+            await wall.aclose()
+        assert seen[:2] == [{"patient_id": "p-a1", "removed": True, "identity": None},
+                            {"patient_id": "p-a2", "removed": True, "identity": None}]
+        assert (seen[2]["patient_id"], seen[2]["identity"]["unit_id"]) == ("p-n1", "unit-adult")
+        assert "removed" not in seen[2]
+        # The wall board sees the whole hospital: every frame is the card itself, never a removal.
+        assert [f["patient_id"] for f in walled] == ["p-n1", "p-a1", "p-a2", "p-n1"]
+        assert not any(f.get("removed") for f in walled)
+        assert walled[1]["identity"]["unit_id"] == "unit-nicu"
+
+    async def test_a_removal_is_sent_once_and_a_patient_who_returns_is_a_card_again(self):
+        import asyncio
+
+        from homunculus.api.app import ScopedBoardView, sse_board_frames
+
+        adult = {"bed_id": "bed-a1", "unit_id": "unit-adult"}
+        nicu = {"bed_id": "bed-n1", "unit_id": "unit-nicu"}
+        queue: asyncio.Queue = asyncio.Queue()
+        for board in ({"patient_id": "p-a1", "identity": nicu},     # left: removed
+                      {"patient_id": "p-a1", "identity": nicu},     # still away: nothing more
+                      {"patient_id": "p-x", "identity": nicu},      # never shown: nothing
+                      {"patient_id": "p-a1", "identity": adult}):   # back: the card
+            await queue.put(board)
+        frames = sse_board_frames(queue, keepalive=5, view=ScopedBoardView(ADULT, shown={"p-a1"}))
+        assert await _frame(frames) == {"patient_id": "p-a1", "removed": True, "identity": None}
+        assert await _frame(frames) == {"patient_id": "p-a1", "identity": adult}
+        await frames.aclose()
