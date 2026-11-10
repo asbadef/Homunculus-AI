@@ -587,8 +587,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
     // `duplicate_open_admission` (A-37, the final review).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
-    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block).
-    expect(CODES).toHaveLength(29);
+    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
+    // `bed_reserved` (D5, X1).
+    expect(CODES).toHaveLength(30);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -653,6 +654,15 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     const hit = apiErrorKey(coded(`field_invalid:${field}`));
     expect(hit.key).not.toBe("kabul.invalid.other");
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  // G2-B3a (R9): the name is asked surname first («Soyad ad»), and its refusal says it the same way.
+  it("field_invalid:display_name says the surname first, as the field «Soyad ad» does (R9)", () => {
+    const said = Object.fromEntries(LANG_CODES.map((lang) => [lang,
+      apiErrorText(createTranslator(lang, DICTIONARIES), coded("field_invalid:display_name"))]));
+    expect(said).toEqual({
+      tr: "Soyad ad gerekli.", az: "Soyad ad tələb olunur.", ru: "Нужны фамилия и имя.", en: "The surname and name are required.",
+    });
   });
 
   it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {

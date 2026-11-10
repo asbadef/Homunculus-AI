@@ -72,7 +72,9 @@ async def test_a_nurse_reads_her_units_tree_with_names_and_states(ward):
     assert body["tenant_id"] == str(w.tenant.id)
     assert _tree(body) == {"Reanimasiya": {"Otaq 1": ["1", "2", "10"], "Otaq 2": ["3"]}}
     bed = body["sites"][0]["units"][0]["rooms"][0]["beds"][0]
-    assert bed == {"id": str(w.beds["1"].id), "label": "1", "state": "AVAILABLE", "is_active": True}
+    assert bed == {"id": str(w.beds["1"].id), "label": "1", "state": "AVAILABLE", "is_active": True,
+                   "state_since": bed["state_since"]}          # G2-B3a: when it entered the state
+    assert bed["state_since"]
 
 
 async def test_the_administrator_and_the_unassigned_see_every_unit(ward, db_session):

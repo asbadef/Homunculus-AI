@@ -214,6 +214,10 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["label_too_narrow", "protokol.err.tooNarrow"],
   ["label_dpi", "protokol.err.dpi"],
   ["no_protocol", "protokol.err.noProtocol"],
+
+  // G2-B3a — Doluluk (spec D5). `bed_reserved` opens the reserved-bed question in the Kabul form
+  // (ReservedAsk.jsx); its sentence is said only where a screen shows the refusal itself.
+  ["bed_reserved", "kabul.err.bedReserved"],
 ]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card

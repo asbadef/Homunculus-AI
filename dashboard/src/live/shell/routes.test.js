@@ -32,6 +32,19 @@ describe("the route table", () => {
     expect(new Set(ROUTES.map((r) => r.path)).size).toBe(ROUTES.length);
   });
 
+  // G2-B3a (the browser walk): at 390 px the rail shows only the short labels, so two routes
+  // sharing one — Doluluk's «Койки» / «Beds» beside the board's — are two items nobody can tell apart.
+  it("gives every route a short label of its own, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const seen = new Map();
+      for (const r of ROUTES) {
+        const text = DICTIONARIES[lang][r.shortKey];
+        expect(seen.get(text), `${lang} «${text}»: ${seen.get(text)} and ${r.id}`).toBeUndefined();
+        seen.set(text, r.id);
+      }
+    }
+  });
+
   // Wave 2 builds the shell and the settings; Wave 3 fills the others in. Until then their
   // addresses answer "no such page" and the rail does not show them: no dead links.
   it("shows only built screens in the rail", () => {

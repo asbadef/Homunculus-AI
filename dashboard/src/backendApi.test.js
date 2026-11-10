@@ -1633,6 +1633,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
   });
 
+  it("reads the beds' names and notes and moves a bed by its own routes (G2-B3a)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.occupancy();
+    await api.reserveBed("b/1", { note: "Sentetik planlı kabul" });
+    await api.unreserveBed("b-1");
+    await api.bedOutOfService("b-1", { reason: "FAULT", note: null });
+    await api.bedReturnToService("b-1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/tenant/occupancy"], ["POST", "/tenant/beds/b%2F1/reserve"], ["POST", "/tenant/beds/b-1/unreserve"],
+      ["POST", "/tenant/beds/b-1/out-of-service"], ["POST", "/tenant/beds/b-1/return-to-service"],
+    ]);
+    expect(sent(fetchMock, 1).body).toEqual({ note: "Sentetik planlı kabul" });
+    expect(sent(fetchMock, 3).body).toEqual({ reason: "FAULT", note: null });
+  });
+
   it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     const api = signedIn(fetchMock);

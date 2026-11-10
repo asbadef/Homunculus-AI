@@ -52,7 +52,7 @@ const press = async () => {
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qəbul et" })); });
   await settle();
 };
-const nameField = () => screen.getByLabelText(/^Ad soyad/);
+const nameField = () => screen.getByLabelText(/^Soyad ad/);
 const ids = (draft) => draft.get().unanswered.map((s) => [s.name, s.requestId]);
 /** The request id each send went out under, in order (Task 19b sends it as `request_id`). */
 const sentUnder = (api) => api.admit.mock.calls.map(([body]) => body.request_id);

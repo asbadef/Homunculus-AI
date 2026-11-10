@@ -89,10 +89,15 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(30);
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(30);
+    expect(EVENT_TYPES).toHaveLength(34);   // G2-B3a's four bed moves + G2-B5's rrt_call
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(34);
     expect(typeKey("rrt_call")).toBe("denetim.type.rrtCall");   // G2-B5 (spec D9)
     expect(typeKey("ack")).toBe("denetim.type.ack");
+    // G2-B3a (final review M-7): Doluluk's four bed moves.
+    expect(typeKey("bed.reserve")).toBe("denetim.type.bedReserve");
+    expect(typeKey("bed.unreserve")).toBe("denetim.type.bedUnreserve");
+    expect(typeKey("bed.out_of_service")).toBe("denetim.type.bedOutOfService");
+    expect(typeKey("bed.return_to_service")).toBe("denetim.type.bedReturnToService");
     expect(typeKey("admission.admit")).toBe("denetim.type.admit");
     expect(typeKey("reading_dropped_discharged")).toBe("denetim.type.readingDropped");
     expect(typeKey("structure.create")).toBeNull();

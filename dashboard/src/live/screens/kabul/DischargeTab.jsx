@@ -88,7 +88,7 @@ function Row({ row, children }) {
 
 /** A row's action, its `words` on it. It is named by those words, then its bed (`subject`), so a
  *  button that says "start discharge" also says whose — the visible words first (WCAG 2.5.3), as
- *  BedsTab, SignOffStrip and StructureTab name theirs (final review M-4). Held while `hold` names a
+ *  DolulukScreen, SignOffStrip and StructureTab name theirs (final review M-4). Held while `hold` names a
  *  reason: aria-disabled, never disabled — it keeps its focus — and described by the reason under
  *  it; a press then does nothing. */
 function RowAction({ words, subject, hold, onPress, ...button }) {

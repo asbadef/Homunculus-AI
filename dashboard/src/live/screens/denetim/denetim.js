@@ -45,6 +45,9 @@ export const EVENT_TYPES = Object.freeze([
   ["admission.discharge_start", "dischargeStart"], ["admission.discharge_confirm", "dischargeConfirm"],
   ["bed.release", "bedRelease"], ["device_bed.bind", "deviceBind"], ["device_bed.unbind", "deviceUnbind"],
   ["protocol.settings", "protocolSettings"],
+  // G2-B3a (Doluluk, final review M-7): the four bed moves (tenant/router.py).
+  ["bed.reserve", "bedReserve"], ["bed.unreserve", "bedUnreserve"],
+  ["bed.out_of_service", "bedOutOfService"], ["bed.return_to_service", "bedReturnToService"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));
