@@ -15,7 +15,9 @@
 // the time window only to hold a slip back, under the field, with the focus taken to the first one; anything it
 // lets through is the engine's to refuse, in the engine's words on the toast, named after the bed. A discharged
 // admission answers with nothing charted (`dropped`), which is not a save and is not said as one. A write that got
-// no answer may have landed (`mayHaveLanded`): she is told to look at the box in a moment, and the box reads again.
+// no answer may have landed (`mayHaveLanded`): she is told to look at the box in a moment, and the box reads again;
+// its rows leave the dialog with the saved ones (a second press could chart them twice), and the rows of a later
+// time, never sent, stay for her to save (review round 1: they were dropped with the dialog).
 //
 // The bolus row says it is the Meds box's bolus (D11): one code, one record, whichever form wrote it.
 import React, { useEffect, useId, useRef, useState } from "react";
@@ -94,9 +96,11 @@ export function FluidEntryDialog({ bed, onChart, onSaved, onClose }) {
     sending.current = true;
     setBusy(true);
     let saved = [];      // the indexes of the rows the engine took
+    let inFlight = [];   // the indexes of the rows of the request in flight
     let done;            // what is said and done once the writes are settled and Save is released
     try {
       for (const group of groups) {
+        inFlight = group.rows;
         // eslint-disable-next-line no-await-in-loop
         const answer = await onChart(group.entries, group.atIso);
         if (answer === null) return;   // the store dropped it: the session ended
@@ -111,7 +115,10 @@ export function FluidEntryDialog({ bed, onChart, onSaved, onClose }) {
       // A superseded session is gone: nothing is said about it into the one that replaced it.
       if (err?.superseded) return;
       if (mayHaveLanded(err)) {
-        done = { say: [t("sivi.mayHaveLanded", { subject: bed }), "warn"], reread: true, close: true };
+        const gone = [...saved, ...inFlight];
+        const unsent = pressed.length - gone.length;
+        done = { say: [t("sivi.mayHaveLanded", { subject: bed }), "warn"], reread: true, close: unsent === 0,
+          keep: unsent > 0 ? gone : null };
       } else {
         const forbidden = err?.status === 403;
         const reason = forbidden ? t("sivi.noRight") : apiErrorText(t, err);

@@ -2,9 +2,8 @@
 // order (api/fluids.py INTAKE, OUTPUT), the door's bounds (api/clinical.py, mirrored here only to hold a slipped
 // digit back — the server stays authoritative) and how a volume is written.
 //
-// The browser adds no clinical number (G2-A3 Decision 1): every total, shift, day, balance and rate on the box is
-// the engine's. The one sum here, `hourTotals`, lays an hour's per-code volumes end to end so a bar can be drawn
-// and titled — the answer carries the hour by code (spec §3) and no hour total.
+// The browser adds no clinical number (G2-A3 Decision 1, spec D6): every total, shift, day, hour, balance and rate
+// on the box is the engine's — an hour's bar is its `in_ml` / `out_ml` (review round 1), never a sum made here.
 import { numberText } from "../../../i18n/numbers.js";
 import { BACKDATE_MS, BOLUS, fromLocalInput } from "../meds/medsFields.js";
 
@@ -34,13 +33,6 @@ export function signedMlText(lang, value) {
   if (rounded > 0) return `+${numberText(lang, rounded)}`;
   if (rounded < 0) return `−${numberText(lang, -rounded)}`;
   return "0";
-}
-
-const sumOf = (byCode) => Object.values(byCode ?? {}).reduce((sum, v) => (typeof v === "number" && Number.isFinite(v) ? sum + v : sum), 0);
-
-/** One hour row's intake and output, its per-code volumes laid end to end — for the bar and its title only. */
-export function hourTotals(hour) {
-  return { in: sumOf(hour?.in), out: sumOf(hour?.out) };
 }
 
 /** A typed volume the door would take: a plain decimal with at most one place, a comma read as a point. */

@@ -69,6 +69,25 @@ def test_the_server_sums_today(client):
     assert today["by_code"] == {"iv_fluid_ml": 500, "urine_output_ml": 300}
     assert out["sofa_renal_reference"]["source"] == "sepsis-3-jama-2016"
     assert len(out["hours"]) == 24
+    # Review round 1: each hour's own totals — the chart's bars — are the engine's too (D6); the read was whole.
+    assert sum(h["in_ml"] for h in out["hours"]) == 500 and sum(h["out_ml"] for h in out["hours"]) == 300
+    assert out["truncated"] is False
+
+
+def test_off_the_callers_board_is_404_like_an_unknown_id_and_is_audited():
+    """D6: the patient must be on the caller's board — out of scope answers as an unknown id does, and the refusal
+    is in the trail (the ward of tests/test_trends_api.py: an adult-unit nurse, a NICU patient)."""
+    from tests.test_trends_api import ADULT, NURSE as WARD_NURSE, _app, _reading, _rows
+    app = _app(ADULT)
+    with TestClient(app) as c:
+        _reading(c, "p-a1", "heart_rate", 84)
+        _reading(c, "p-n1", "heart_rate", 84)
+        refused = c.get("/patients/p-n1/fluids", headers=WARD_NURSE)
+        mine = c.get("/patients/p-a1/fluids", headers=WARD_NURSE)
+    assert (refused.status_code, refused.json()["detail"]) == (404, "hasta bulunamadı")
+    assert mine.status_code == 200 and mine.json()["patient_id"] == "p-a1"
+    [row] = _rows(app, "scope_denied")
+    assert row.patient_id == "p-n1"
 
 
 def test_a_withdrawn_entry_leaves_the_sum_and_stays_listed(client):

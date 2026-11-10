@@ -93,6 +93,45 @@ describe("the fluid box — what the engine summed", () => {
     expect(chart.querySelector("polyline")).not.toBeNull();
   });
 
+  // Review round 1 (spec D6): the bar is the engine's hour total — the browser does not add the codes up.
+  it("draws each hour's bars from the engine's in_ml / out_ml, adding nothing of its own", async () => {
+    const answer = (pid) => {
+      const base = fluids(pid);
+      const hours = base.hours.map((h, i) => (i === 2 ? { ...h, in: {}, out: { urine_output_ml: 5 }, in_ml: 75, out_ml: 40 } : h));
+      return { ...base, hours };
+    };
+    await open({ answer });
+    const chart = screen.getByRole("img", { name: "Saatlıq giriş/çıxış və kumulyativ balans" });
+    const column = chart.querySelectorAll("[data-hour]")[2];
+    expect(column.querySelector("title").textContent).toBe(`${hhmm(DAY_START + 2 * H)} · qəbul 75 mL · xaric 40 mL · balans +130 mL`);
+    expect(column.querySelector("[data-bar='in']")).not.toBeNull();
+    expect(column.querySelector("[data-bar='out']")).not.toBeNull();
+  });
+
+  it("stops the running balance at the hour now is in: a later hour has none", async () => {
+    await open();
+    const chart = screen.getByRole("img", { name: "Saatlıq giriş/çıxış və kumulyativ balans" });
+    const columns = chart.querySelectorAll("[data-hour]");
+    expect(columns[7].querySelector("title").textContent).toBe(`${hhmm(DAY_START + 7 * H)} · qəbul 0 mL · xaric 0 mL · balans — mL`);
+    expect(chart.querySelector("polyline").getAttribute("points").split(" ")).toHaveLength(7);
+  });
+
+  it("says so when the engine's read was cut, and says nothing when it was whole", async () => {
+    await open({ answer: (pid) => fluids(pid, { truncated: true }) });
+    expect(screen.getByText(/^Oxuma həddinə çatıldı: /)).toBeInTheDocument();
+    cleanup();
+    await open();
+    expect(screen.queryByText(/^Oxuma həddinə çatıldı: /)).toBeNull();
+  });
+
+  it("does not list as today's an entry stamped past the day's end (the door's skew)", async () => {
+    const late = { entry: 106, code: "iv_fluid_ml", value: 99, at: new Date(DAY_START + 24 * H + 60_000).toISOString(), by: "hem.ayse", retracted: null };
+    await open({ answer: (pid) => fluids(pid, { entries: [late, ...fluids(pid).entries] }) });
+    const list = screen.getByRole("list", { name: "Bugünkü qeydlər" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(list).queryByText(/99 mL/)).toBeNull();
+  });
+
   it("lists today's entries newest first, a withdrawn one struck through and said as such", async () => {
     await open();
     const list = screen.getByRole("list", { name: "Bugünkü qeydlər" });
@@ -147,6 +186,53 @@ describe("the fluid box — reading", () => {
     expect(api.patientFluids).toHaveBeenLastCalledWith("S-002");
     expect(screen.queryByText("750 mL")).toBeNull();
     expect(screen.getByText("Maye qeydləri oxunur…")).toBeInTheDocument();
+  });
+
+  // D12: a write elsewhere on the screen (the Meds box's bolus or weight) is followed by a read — for its patient only.
+  it("reads again when the screen says a write landed for this patient, and not for another", async () => {
+    let bump;
+    function Host() {
+      const [reread, setReread] = React.useState({ id: null, n: 0 });
+      bump = (id) => setReread((last) => ({ id, n: last.n + 1 }));
+      return <FluidsBox patientId="S-001" bed={BED} nowMs={NOW} canChart reread={reread} />;
+    }
+    const { api } = await open({ host: <Host /> });
+    expect(api.patientFluids).toHaveBeenCalledTimes(1);
+    await act(async () => { bump("S-001"); await settle(); });
+    expect(api.patientFluids).toHaveBeenCalledTimes(2);
+    await act(async () => { bump("S-002"); await settle(); });
+    expect(api.patientFluids).toHaveBeenCalledTimes(2);
+  });
+
+  // Review round 1: a save that lands after a move to another patient must not take the new patient's first read.
+  it("a write for the patient left behind does not stall the next patient's first read", async () => {
+    function Host() {
+      const [id, setId] = React.useState("S-001");
+      return (
+        <>
+          <button type="button" onClick={() => setId("S-002")}>move</button>
+          <FluidsBox patientId={id} bed={BED} nowMs={NOW} canChart />
+        </>
+      );
+    }
+    let landChart;
+    let answerS002;
+    const { api } = await open({
+      host: <Host />,
+      setup: (a) => a.chart.mockImplementation(() => new Promise((resolve) => { landChart = resolve; })),
+    });
+    await openDialog();
+    typeInto(within(rowOf(1)).getByLabelText("mL"), "120");
+    await saveDialog();                                                          // the write is in flight
+    api.patientFluids.mockImplementation((pid) => (pid === "S-002"
+      ? new Promise((resolve) => { answerS002 = () => resolve(fluids("S-002")); })
+      : Promise.resolve(fluids(pid))));
+    await press(screen.getByRole("button", { name: "move" }));
+    expect(api.patientFluids).toHaveBeenLastCalledWith("S-002");
+    await act(async () => { landChart({ patient_id: "S-001", entries: [{ entry: 201, code: "urine_output_ml" }] }); await settle(); });
+    expect(api.patientFluids).toHaveBeenLastCalledWith("S-002");                // nothing read for S-001
+    await act(async () => { answerS002(); await settle(); });
+    expect(within(group(todayName())).getByText("750 mL")).toBeInTheDocument();
   });
 
   it("drops an answer that is not this patient's ledger", async () => {
@@ -221,7 +307,7 @@ describe("the fluid box — writing (G3-03 D10, D11)", () => {
     const { api } = await open({
       setup: (a) => a.chart
         .mockResolvedValueOnce({ patient_id: "S-001", entries: [{ entry: 201, code: "urine_output_ml" }] })
-        .mockRejectedValueOnce(refusal(422, "value out of range")),
+        .mockRejectedValueOnce(refusal(400, "ölçüm saati ileri olamaz")),   // the door refuses with 400 (G3-01)
     });
     await openDialog();
     typeInto(within(rowOf(1)).getByLabelText("mL"), "120");
@@ -242,6 +328,36 @@ describe("the fluid box — writing (G3-03 D10, D11)", () => {
     expect(within(rowOf(1)).getByLabelText("Növ")).toHaveValue("drain_output_ml");
     expect(within(rowOf(1)).getByLabelText("mL")).toHaveValue("40");
     expect(api.patientFluids.mock.calls.length).toBe(reads + 1);
+  });
+
+  const timedOut = () => Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" });
+
+  it("says a write with no answer may have landed, reads the ledger again and closes", async () => {
+    const { api } = await open({ setup: (a) => a.chart.mockRejectedValue(timedOut()) });
+    await openDialog();
+    typeInto(within(rowOf(1)).getByLabelText("mL"), "120");
+    const reads = api.patientFluids.mock.calls.length;
+    await saveDialog();
+    expect(toasted(`${BED}: cavab gəlmədi; yadda saxlanılmış ola bilər — bir azdan Maye qutusuna baxın.`)).toHaveLength(1);
+    expect(api.patientFluids.mock.calls.length).toBe(reads + 1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // Review round 1: rows of a later time, never sent, were closed away with the dialog.
+  it("keeps the rows it never sent when an earlier request got no answer, and drops the uncertain ones", async () => {
+    const { api } = await open({ setup: (a) => a.chart.mockRejectedValueOnce(timedOut()) });
+    await openDialog();
+    typeInto(within(rowOf(1)).getByLabelText("mL"), "120");
+    await press(within(dialog()).getByRole("button", { name: "Sətir əlavə et" }));
+    typeInto(within(rowOf(2)).getByLabelText("Növ"), "drain_output_ml");
+    typeInto(within(rowOf(2)).getByLabelText("mL"), "40");
+    typeInto(within(rowOf(2)).getByLabelText("Vaxt"), toLocalInput(NOW - 2 * H));
+    await saveDialog();
+    expect(api.chart).toHaveBeenCalledTimes(1);                                     // the second time was never sent
+    expect(toasted(`${BED}: cavab gəlmədi; yadda saxlanılmış ola bilər — bir azdan Maye qutusuna baxın.`)).toHaveLength(1);
+    expect(within(dialog()).queryByRole("group", { name: "Sətir 2" })).toBeNull();  // the unanswered row has left
+    expect(within(rowOf(1)).getByLabelText("Növ")).toHaveValue("drain_output_ml");   // the unsent one stays
+    expect(within(rowOf(1)).getByLabelText("mL")).toHaveValue("40");
   });
 
   it("says a discharged patient's entry was not taken, and closes", async () => {

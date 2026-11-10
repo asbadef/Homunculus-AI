@@ -69,8 +69,14 @@ function Entries({ data, nowMs, withdrawn, onRetract, rowRef }) {
   const headingId = useId();
   const base = useId();
   const start = timeOf(data.day?.start);
+  const end = timeOf(data.day?.end);
+  // Today's: in the day window as the engine drew it — an entry stamped past its end (the door's skew) is tomorrow's,
+  // as the engine's totals count it (review round 1).
   const today = data.entries
-    .filter((e) => start === null || (timeOf(e.at) ?? -Infinity) >= start)
+    .filter((e) => {
+      const at = timeOf(e.at);
+      return (start === null || (at ?? -Infinity) >= start) && (end === null || (at ?? -Infinity) < end);
+    })
     .sort((a, b) => (timeOf(b.at) ?? 0) - (timeOf(a.at) ?? 0) || (b.entry ?? 0) - (a.entry ?? 0));
   return (
     <div className="mt-2.5 border-t border-line pt-2.5">
@@ -123,6 +129,9 @@ function Ledger({ data, nowMs, withdrawn, onRetract, rowRef }) {
   const rate = data.urine_ml_kg_h_last_6h;
   return (
     <>
+      {/* The engine's read hit its limit and cut the oldest rows (review round 1, as trends' `manual_truncated`): a
+          short total must not be read as the patient's. Static, as the failed read's note. */}
+      {data.truncated === true ? <Note tone="warn" icon="alert" className="mb-2">{t("sivi.truncated")}</Note> : null}
       <Totals label={t("sivi.today", { start: dayStart === null ? "—" : hhmm(dayStart) })} totals={data.totals.today} big />
       <div className="mt-2 grid gap-2 min-[861px]:grid-cols-2">
         <Totals label={shiftLabel(shiftA)} totals={data.totals.shift_a} />
@@ -148,11 +157,21 @@ function Ledger({ data, nowMs, withdrawn, onRetract, rowRef }) {
 
 /** `patientId` is whose ledger this is; `bed` names the patient in the dialogs and on their toasts (never the
  *  patient's name, Decision 14); `nowMs` is the screen's clock, which says which stamps are today's; `canChart`
- *  (`clinical.chart`) offers «Giriş/çıkış ekle» and «Hatalı giriş» — absent otherwise. */
-export function FluidsBox({ patientId, bed, nowMs = Date.now(), canChart = false }) {
+ *  (`clinical.chart`) offers «Giriş/çıkış ekle» and «Hatalı giriş» — absent otherwise. `reread` is `{ id, n }`: the
+ *  screen's word that a write made elsewhere on it landed for patient `id` (the Meds box's bolus or weight — the
+ *  same bolus record, and the weight the urine rate divides by; D11, D12), as the SOFA box's `reread`. */
+export function FluidsBox({ patientId, bed, nowMs = Date.now(), canChart = false, reread = null }) {
   const { t, lang } = useI18n();
   const board = useBoard();
   const { data, error, refresh } = useFluids(patientId);
+  // D12: read again after a write elsewhere on the screen for this patient. Not on mount, not for one count twice.
+  const seenReread = useRef(reread?.n ?? 0);
+  useEffect(() => {
+    const n = reread?.n ?? 0;
+    if (n === seenReread.current) return;
+    seenReread.current = n;
+    if (reread.id === patientId) refresh();
+  }, [reread?.n]);
   // `{ id, opening }`: the patient the entry dialog was opened FOR and which opening this is, or null.
   const [editing, setEditing] = useState(null);
   // `{ id, row }`: the entry whose «Hatalı giriş» is open, and whose patient it is.

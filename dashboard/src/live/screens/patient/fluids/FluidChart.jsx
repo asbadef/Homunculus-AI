@@ -1,6 +1,7 @@
 // src/live/screens/patient/fluids/FluidChart.jsx — the fluid day hour by hour (G3-03 D10): the day's 24 columns
-// from the day start, the intake as a bar up from the midline, the output as a bar down, and the engine's
-// cumulative balance (`balance_cum`) as a line. SVG, no library.
+// from the day start, the hour's intake as a bar up from the midline, its output as a bar down — the engine's
+// `in_ml` / `out_ml`, the browser adds nothing (D6, review round 1) — and the engine's cumulative balance
+// (`balance_cum`) as a line, which stops at the hour now is in (an hour not yet begun carries none). SVG, no library.
 //
 // It judges nothing: no threshold, no colour that means «too much» or «too little» — the bars are the house's
 // primary and muted inks, the line the ink. Each column carries its own words (<title>: the hour, its intake, its
@@ -9,7 +10,7 @@
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
-import { hourTotals, mlText, signedMlText } from "./fluidCodes.js";
+import { mlText, signedMlText } from "./fluidCodes.js";
 
 const HOUR_MS = 3_600_000;
 const COLUMNS = 24;
@@ -37,15 +38,20 @@ function columnsOf(day, hours) {
   });
 }
 
+/** A number the engine sent, or null — never a 0 the answer did not say. */
+const sent = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
 /** `day` is the answer's `day` window, `hours` its hour rows. */
 export function FluidChart({ day, hours }) {
   const { t, lang } = useI18n();
-  const columns = columnsOf(day, hours).map((c) => ({ ...c, ...hourTotals(c.hour), cum: c.hour?.balance_cum }));
-  const barMax = Math.max(1, ...columns.map((c) => Math.max(c.in, c.out)));
-  const cumMax = Math.max(1, ...columns.map((c) => (typeof c.cum === "number" ? Math.abs(c.cum) : 0)));
+  const columns = columnsOf(day, hours).map((c) => ({
+    ...c, in: sent(c.hour?.in_ml), out: sent(c.hour?.out_ml), cum: sent(c.hour?.balance_cum),
+  }));
+  const barMax = Math.max(1, ...columns.map((c) => Math.max(c.in ?? 0, c.out ?? 0)));
+  const cumMax = Math.max(1, ...columns.map((c) => (c.cum === null ? 0 : Math.abs(c.cum))));
   const barH = (v) => (v > 0 ? Math.max(1, (v / barMax) * HALF) : 0);
   const line = columns
-    .map((c, i) => (typeof c.cum === "number" ? `${i * COL + COL / 2},${MID - (c.cum / cumMax) * HALF}` : null))
+    .map((c, i) => (c.cum !== null ? `${i * COL + COL / 2},${MID - (c.cum / cumMax) * HALF}` : null))
     .filter(Boolean)
     .join(" ");
   return (

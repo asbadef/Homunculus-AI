@@ -299,6 +299,10 @@ export function PatientScreen({ params }) {
   // writers say so, with whose it was; the SOFA box reads again for the patient it shows (sofa/SofaBox.jsx `reread`).
   const [sofaReread, setSofaReread] = useState({ id: null, n: 0 });
   const sofaMayHaveMoved = useCallback((patientId) => setSofaReread((last) => ({ id: patientId, n: last.n + 1 })), []);
+  // G3-03 (D12): a Meds box save (the bolus — the same record the fluid ledger sums — or the weight its urine rate
+  // divides by) is followed by a read of the Sıvı box, for the patient it was written for, as the SOFA box's reread.
+  const [fluidsReread, setFluidsReread] = useState({ id: null, n: 0 });
+  const fluidsMayHaveMoved = useCallback((patientId) => setFluidsReread((last) => ({ id: patientId, n: last.n + 1 })), []);
   const id = params?.id ?? "";
   const patient = useMemo(() => board.patients.find((p) => p.patient_id === id) ?? null, [board.patients, id]);
   const alarms = useMemo(() => board.alerts.filter((a) => a.patientId === id), [board.alerts, id]);
@@ -451,10 +455,10 @@ export function PatientScreen({ params }) {
           <div className="grid gap-2 min-[861px]:grid-cols-2">
             <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
             <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
-              onChart={(entries, at) => board.store.chart(id, entries, at)} />
+              onChart={(entries, at) => board.store.chart(id, entries, at)} onSaved={fluidsMayHaveMoved} />
           </div>
 
-          <FluidsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} />{/* G3-03 (D10): the fluid ledger */}
+          <FluidsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} reread={fluidsReread} />{/* G3-03 (D10): the fluid ledger */}
 
           {/* G2-A4 (D1): the SOFA form's box, where the "forms come later" note stood. It reads the form of the
               patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}

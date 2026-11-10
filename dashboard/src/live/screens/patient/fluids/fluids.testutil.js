@@ -23,14 +23,18 @@ export const ENTRIES = [
 
 const ZERO = Object.freeze({ in: 0, out: 0, balance: 0, by_code: {} });
 
+/** The hour NOW is in: the engine carries a running balance up to it and none after (review round 1). */
+export const NOW_HOUR = 6;
+
 function hours() {
-  const rows = Array.from({ length: 24 }, (_, h) => ({ start: iso(DAY_START + h * H), in: {}, out: {}, balance_cum: 0 }));
+  const rows = Array.from({ length: 24 }, (_, h) => ({
+    start: iso(DAY_START + h * H), in: {}, out: {}, in_ml: 0, out_ml: 0, balance_cum: 0,
+  }));
   const cum = [0, 130, 130, 630, 630];
-  rows.forEach((row, h) => { row.balance_cum = h < cum.length ? cum[h] : 430; });
-  rows[1].in = { iv_fluid_ml: 250 };
-  rows[1].out = { urine_output_ml: 120 };
-  rows[3].in = { crystalloid_bolus_ml: 500 };
-  rows[5].out = { urine_output_ml: 200 };
+  rows.forEach((row, h) => { row.balance_cum = h > NOW_HOUR ? null : h < cum.length ? cum[h] : 430; });
+  Object.assign(rows[1], { in: { iv_fluid_ml: 250 }, out: { urine_output_ml: 120 }, in_ml: 250, out_ml: 120 });
+  Object.assign(rows[3], { in: { crystalloid_bolus_ml: 500 }, in_ml: 500 });
+  Object.assign(rows[5], { out: { urine_output_ml: 200 }, out_ml: 200 });
   return rows;
 }
 
@@ -56,6 +60,7 @@ export function fluids(patientId = "S-001", over = {}) {
     weight_kg: 72, urine_ml_kg_h_last_6h: 0.74,
     sofa_renal_reference: { source: "sepsis-3-jama-2016", bands: [{ below_ml_day: 500, points: 3 }, { below_ml_day: 200, points: 4 }] },
     entries: ENTRIES,
+    truncated: false,
     ...over,
   };
 }
@@ -63,7 +68,7 @@ export function fluids(patientId = "S-001", over = {}) {
 /** An empty ledger: nothing charted in either day. */
 export function emptyFluids(patientId = "S-001") {
   return fluids(patientId, {
-    hours: hours().map((row) => ({ ...row, in: {}, out: {}, balance_cum: 0 })),
+    hours: hours().map((row, h) => ({ ...row, in: {}, out: {}, in_ml: 0, out_ml: 0, balance_cum: h > NOW_HOUR ? null : 0 })),
     totals: { today: ZERO, shift_a: ZERO, shift_b: ZERO, last_day: ZERO },
     urine_last_day_ml: 0, hours_with_urine_last_day: 0, weight_kg: null, urine_ml_kg_h_last_6h: null, entries: [],
   });

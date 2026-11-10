@@ -1551,4 +1551,21 @@ describe("the patient screen — the fluid box", () => {
     const box = screen.getByRole("heading", { level: 2, name: "Maye" }).closest(".rounded-box");
     expect(within(box).queryByRole("button", { name: "Giriş/çıxış əlavə et" })).toBeNull();
   });
+
+  // D11, D12: the Meds box's bolus is the same record the ledger sums, and its weight is what the urine rate divides
+  // by — a save there is followed by a read of the ledger, not left to the next minute's tick.
+  it("reads the ledger again after a Meds box save for this patient", async () => {
+    const { api } = await open({
+      payload: board([entry("S-001", [], FULL)]), perms: ["board.view", "alerts.ack", "clinical.chart"],
+      setup: (a) => a.chart.mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] }),
+    });
+    const reads = api.patientFluids.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Qeyd əlavə et" }));
+    const dialog = screen.getByRole("dialog", { name: "Dərman / maye qeydi · REA-01 · 2" });
+    fireEvent.change(within(dialog).getByLabelText(/Çəki/), { target: { value: "80" } });
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    expect(api.chart).toHaveBeenCalledTimes(1);
+    expect(api.patientFluids.mock.calls.length).toBe(reads + 1);
+    expect(api.patientFluids).toHaveBeenLastCalledWith("S-001");
+  });
 });

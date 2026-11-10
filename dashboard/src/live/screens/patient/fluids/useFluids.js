@@ -8,6 +8,8 @@
 // read as «nothing charted», a claim about the patient and a false one. NEVER ANOTHER PATIENT'S ANSWER: a move to
 // another patient shows nothing until that one answers, and an answer that is not this patient's ledger is not
 // shown. A sequence number drops an answer overtaken by a later read (a slow tick behind the read after a write).
+// A `refresh` kept from a patient the box has moved off — a dialog's save that lands after the move — reads nothing:
+// it would take the sequence from the shown patient's own first read and leave that box «reading…» for a minute.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../../session/SessionProvider.jsx";
 
@@ -25,7 +27,9 @@ export function useFluids(patientId, { everyMs = FLUIDS_POLL_MS } = {}) {
   const [state, setState] = useState({ forId: patientId, ...NOTHING });
   const alive = useRef(true);
   const seq = useRef(0);
+  const shownId = useRef(patientId);
   const read = useCallback(async () => {
+    if (shownId.current !== patientId) return;   // a patient left behind: its refresh lands nowhere
     const mine = ++seq.current;
     const current = () => alive.current && mine === seq.current;
     try {
@@ -39,6 +43,7 @@ export function useFluids(patientId, { everyMs = FLUIDS_POLL_MS } = {}) {
     }
   }, [store, patientId]);
   useEffect(() => {
+    shownId.current = patientId;
     alive.current = true;
     read();
     const timer = setInterval(read, everyMs);

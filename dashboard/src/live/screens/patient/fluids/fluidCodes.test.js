@@ -3,7 +3,8 @@ import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../../i18n/catalog.js";
 import { LANG_CODES } from "../../../i18n/langs.js";
 import { toLocalInput } from "../meds/medsFields.js";
-import { FLUID_CODES, INTAKE, OUTPUT, boundOf, checkRow, groupByTime, hourTotals, isFluidCode, labelKey, mlText, signedMlText } from "./fluidCodes.js";
+import * as fluidCodes from "./fluidCodes.js";
+import { FLUID_CODES, INTAKE, OUTPUT, boundOf, checkRow, groupByTime, isFluidCode, labelKey, mlText, signedMlText } from "./fluidCodes.js";
 
 describe("the fluid codes", () => {
   it("lists the intake and the output in the server's order, eight in all", () => {
@@ -36,9 +37,9 @@ describe("the fluid codes", () => {
     expect(signedMlText("tr", 0)).toBe("0");
   });
 
-  it("an hour's bar is the engine's per-code volumes laid end to end (display only)", () => {
-    expect(hourTotals({ in: { iv_fluid_ml: 250, enteral_ml: 100 }, out: { urine_output_ml: 120 } })).toEqual({ in: 350, out: 120 });
-    expect(hourTotals({})).toEqual({ in: 0, out: 0 });
+  // Review round 1 (spec D6): an hour's bar is the engine's `in_ml` / `out_ml` — the browser sums nothing.
+  it("offers no way to add an hour's volumes up in the browser", () => {
+    expect(fluidCodes.hourTotals).toBeUndefined();
   });
 });
 

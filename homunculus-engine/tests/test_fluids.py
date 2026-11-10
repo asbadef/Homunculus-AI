@@ -1,7 +1,9 @@
 """G3-03 (spec D5–D9): api/fluids.py — the fluid day, the window totals, the hourly ledger, the urine rate and
 the read of the trail. Synthetic patients and values only (CLAUDE.md rule 6)."""
+import math
 from datetime import datetime, timedelta, timezone
 
+from homunculus.api import fluids as fluids_module
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.clinical import RETRACT
 from homunculus.api.fluids import (
@@ -81,6 +83,16 @@ class TestTotals:
     def test_an_empty_window_is_all_zeros(self):
         assert totals(self.ENTRIES, _at(12), _at(24)) == {"in": 0.0, "out": 0.0, "balance": 0.0, "by_code": {}}
 
+    def test_a_sum_carries_no_float_noise_and_no_negative_zero(self):
+        """Review round 1: 0.1 + 0.2 is 0.30000000000000004 in a float; the answer is the volume the nurse charted.
+        A balance that comes out at −1e-13 is 0, not «−0»."""
+        t = totals([_e(1, "iv_fluid_ml", 0.1, _at(1)), _e(2, "enteral_ml", 0.2, _at(1)),
+                    _e(3, "urine_output_ml", 0.1, _at(2)), _e(4, "drain_output_ml", 0.2, _at(2))], DAY, _at(24))
+        assert (t["in"], t["out"], t["balance"]) == (0.3, 0.3, 0.0)
+        assert math.copysign(1.0, t["balance"]) == 1.0
+        rows = hourly([_e(1, "iv_fluid_ml", 0.1, _at(1)), _e(2, "enteral_ml", 0.2, _at(1))], DAY)
+        assert rows[1]["in_ml"] == 0.3 and rows[1]["balance_cum"] == 0.3
+
 
 class TestHourly:
     def test_twenty_four_rows_and_the_running_balance(self):
@@ -89,14 +101,38 @@ class TestHourly:
                        _e(3, "enteral_ml", 100, _at(3)),
                        _e(4, "drain_output_ml", 40, _at(3.5), WITHDRAWN)], DAY)
         assert len(rows) == 24
-        assert rows[0] == {"start": DAY.astimezone(timezone.utc).isoformat(), "in": {}, "out": {}, "balance_cum": 0.0}
+        assert rows[0] == {"start": DAY.astimezone(timezone.utc).isoformat(), "in": {}, "out": {},
+                           "in_ml": 0.0, "out_ml": 0.0, "balance_cum": 0.0}
         assert rows[1]["in"] == {"iv_fluid_ml": 250.0}             # 09:59 lands in the 09:00 row
         assert rows[1]["out"] == {"urine_output_ml": 120.0}
         assert rows[1]["balance_cum"] == 130.0
         assert rows[2]["balance_cum"] == 130.0
         assert rows[3] == {"start": _at(3).astimezone(timezone.utc).isoformat(), "in": {"enteral_ml": 100.0},
-                           "out": {}, "balance_cum": 230.0}
+                           "out": {}, "in_ml": 100.0, "out_ml": 0.0, "balance_cum": 230.0}
         assert rows[23]["balance_cum"] == 230.0
+
+    def test_each_hour_carries_its_intake_and_output_totals(self):
+        """Review round 1 (spec D6): the chart's bars are the engine's hour totals — the browser adds nothing. Every
+        code of the hour is in them; a withdrawn entry is not."""
+        rows = hourly([_e(1, "iv_fluid_ml", 250, _at(1) + timedelta(minutes=5)),
+                       _e(2, "crystalloid_bolus_ml", 500, _at(1) + timedelta(minutes=40)),
+                       _e(3, "blood_product_ml", 300, _at(1) + timedelta(minutes=50), WITHDRAWN),
+                       _e(4, "urine_output_ml", 120, _at(1) + timedelta(minutes=10)),
+                       _e(5, "drain_output_ml", 30, _at(1) + timedelta(minutes=20)),
+                       _e(6, "other_output_ml", 15, _at(2))], DAY)
+        assert (rows[1]["in_ml"], rows[1]["out_ml"]) == (750.0, 150.0)
+        assert (rows[2]["in_ml"], rows[2]["out_ml"]) == (0.0, 15.0)
+        assert rows[1]["in_ml"] == sum(rows[1]["in"].values()) and rows[1]["out_ml"] == sum(rows[1]["out"].values())
+        assert rows[2]["balance_cum"] == 750.0 - 150.0 - 15.0
+
+    def test_an_hour_not_yet_begun_carries_no_running_balance(self):
+        """Review round 1: the running balance stops at the hour `until` falls in — a line drawn flat to tomorrow
+        morning would be a balance for hours that have not happened. Its totals are zeros, as an empty hour's."""
+        rows = hourly([_e(1, "iv_fluid_ml", 250, _at(1))], DAY, until=_at(5) + timedelta(minutes=20))
+        assert [r["balance_cum"] for r in rows[:6]] == [0.0, 250.0, 250.0, 250.0, 250.0, 250.0]
+        assert all(r["balance_cum"] is None for r in rows[6:])
+        assert (rows[6]["in_ml"], rows[6]["out_ml"], rows[6]["in"], rows[6]["out"]) == (0.0, 0.0, {}, {})
+        assert hourly([], DAY, until=_at(6))[6]["balance_cum"] == 0.0     # the hour that begins at `until` has begun
 
 
 class TestUrine:
@@ -176,7 +212,8 @@ class TestPatientFluids:
         out, _ = self._read()
         assert set(out) == {"patient_id", "now", "day", "last_day", "shifts", "codes", "hours", "totals",
                             "urine_last_day_ml", "hours_with_urine_last_day", "weight_kg", "urine_ml_kg_h_last_6h",
-                            "sofa_renal_reference", "entries"}
+                            "sofa_renal_reference", "entries", "truncated"}
+        assert out["truncated"] is False
         assert out["patient_id"] == "S-001"
         assert out["now"] == "2026-11-09T10:00:00+00:00"
         assert out["day"] == {"start": "2026-11-09T04:00:00+00:00", "end": "2026-11-10T04:00:00+00:00"}
@@ -220,3 +257,72 @@ class TestPatientFluids:
         assert u4["retracted"]["by"] == "hem.zeynep"
         assert u4["retracted"]["at"] is not None
         assert all(e["retracted"] is None for e in out["entries"] if e["entry"] != ids["u4"])
+
+    def test_the_hours_carry_the_running_balance_up_to_now_only(self):
+        out, _ = self._read()
+        assert out["hours"][6]["balance_cum"] == 450.0               # 14:00 Baku: the hour now is in has begun
+        assert all(h["balance_cum"] is None for h in out["hours"][7:])
+
+
+def _ledger(rows, *, now, monkeypatch=None, limit=None):
+    """`patient_fluids` over a trail holding `rows` — (code, value, at) — for S-001 in h1, read at `now`."""
+    if limit is not None:
+        monkeypatch.setattr(fluids_module, "READ_LIMIT", limit)
+    audit = InMemoryAuditLog()
+    for code, value, at in rows:
+        audit.append(AuditEvent("h1", "chart", "S-001", code, {
+            "value": value, "unit": "mL", "obs_ts": at.astimezone(timezone.utc).isoformat(), "charted_by": "hem.ayse"}))
+    return patient_fluids(audit, hospital="h1", patient_id="S-001", now=now, zone=BAKU, start_a=8, start_b=20,
+                          weight_kg=None)
+
+
+class TestTheWindowEdges:
+    def test_an_entry_at_the_day_start_is_todays_and_not_the_last_days(self):
+        out = _ledger([("urine_output_ml", 100, DAY)], now=_at(1))
+        assert out["totals"]["today"]["out"] == 100.0 and out["totals"]["shift_a"]["out"] == 100.0
+        assert out["totals"]["last_day"]["out"] == 0.0 and out["hours_with_urine_last_day"] == 0
+        assert out["hours"][0]["out_ml"] == 100.0
+
+    def test_an_entry_at_the_shift_split_is_the_second_shifts(self):
+        out = _ledger([("urine_output_ml", 100, _at(12))], now=_at(13))
+        assert (out["totals"]["shift_a"]["out"], out["totals"]["shift_b"]["out"]) == (0.0, 100.0)
+
+    def test_an_entry_ahead_of_now_within_the_skew_is_todays(self):
+        """The door lets a time run BEDSIDE_SKEW ahead of its clock: such an entry is read and counted today."""
+        out = _ledger([("iv_fluid_ml", 250, _at(6) + timedelta(minutes=1))], now=_at(6))
+        assert out["totals"]["today"]["in"] == 250.0 and len(out["entries"]) == 1
+
+    def test_an_entry_past_the_day_end_within_the_skew_is_not_todays(self):
+        """Review round 1: a minute before 08:00 an entry stamped 08:01 is tomorrow's — today's total stops at the
+        day end, so it always equals the two shifts and the hourly rows (the last day never reads past its end)."""
+        now = _at(24) - timedelta(minutes=1)
+        out = _ledger([("iv_fluid_ml", 250, _at(23)), ("iv_fluid_ml", 100, _at(24) + timedelta(minutes=1))], now=now)
+        today, a, b = out["totals"]["today"], out["totals"]["shift_a"], out["totals"]["shift_b"]
+        assert today["in"] == 250.0 == a["in"] + b["in"] == sum(h["in_ml"] for h in out["hours"])
+        assert out["hours"][23]["balance_cum"] == today["balance"]
+
+    def test_the_last_day_is_not_widened_by_the_skew(self):
+        out = _ledger([("urine_output_ml", 300, DAY - timedelta(minutes=1)), ("urine_output_ml", 200, DAY)], now=_at(2))
+        assert out["totals"]["last_day"]["out"] == 300.0 and out["urine_last_day_ml"] == 300.0
+        assert out["totals"]["today"]["out"] == 200.0
+
+    def test_a_patient_never_charted_is_all_zeros(self):
+        out = _ledger([], now=_at(3))
+        assert out["totals"]["today"] == {"in": 0.0, "out": 0.0, "balance": 0.0, "by_code": {}}
+        assert (out["urine_last_day_ml"], out["hours_with_urine_last_day"], out["entries"]) == (0.0, 0, [])
+        assert out["truncated"] is False
+
+
+class TestTheReadLimit:
+    def test_a_read_at_the_limit_is_whole(self, monkeypatch):
+        rows = [("urine_output_ml", 10 * (i + 1), _at(i)) for i in range(3)]
+        out = _ledger(rows, now=_at(5), monkeypatch=monkeypatch, limit=3)
+        assert out["truncated"] is False and len(out["entries"]) == 3
+
+    def test_a_read_past_the_limit_says_so_and_keeps_the_newest(self, monkeypatch):
+        """Review round 1, as trends' `manual_truncated`: a cut loses the OLDEST rows — the last day's — and the
+        answer says it was cut, so a short total is not read as the patient's."""
+        rows = [("urine_output_ml", 10 * (i + 1), _at(i)) for i in range(4)]
+        out = _ledger(rows, now=_at(5), monkeypatch=monkeypatch, limit=3)
+        assert out["truncated"] is True
+        assert [e["value"] for e in out["entries"]] == [40.0, 30.0, 20.0]
