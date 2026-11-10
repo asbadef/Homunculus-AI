@@ -274,6 +274,9 @@ BOARD_EXPECTED = {
     # G2-B5 (D3): «RRT çağır» — whoever may call the rapid-response team; a device is additionally refused
     # (test_a_device_cannot_call_the_rrt, below).
     ("POST", "/alerts/rrt-call"): "alerts.escalate",
+    # G2-B5b (D2): «Ertele» — whoever may acknowledge an alarm; a device is additionally refused
+    # (test_a_device_cannot_snooze_an_alarm, below).
+    ("POST", "/alerts/snooze"): "alerts.ack",
     # Group 2's trend charts (api/trends.py), read with the board's own right.
     ("GET", "/patients/{patient_id}/trends"): "board.view",
     # G3-03: the fluid ledger (api/fluids.py), read with the board's own right.
@@ -377,3 +380,10 @@ async def test_a_device_cannot_call_the_rrt():
     res = await _call("POST", "/alerts/rrt-call", "tok")
     assert res.status_code == 403
     assert res.json()["detail"] == "RRT'yi bir kişi çağırır"
+
+
+async def test_a_device_cannot_snooze_an_alarm():
+    """G2-B5b (D2): a snooze is a person's decision, named in the trail, and the bridge's token names nobody."""
+    res = await _call("POST", "/alerts/snooze", "tok")
+    assert res.status_code == 403
+    assert res.json()["detail"] == "alarmı bir kişi erteler"
