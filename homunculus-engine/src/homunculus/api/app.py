@@ -623,6 +623,11 @@ def create_app(
     async def _escalation_cycle(now: datetime) -> None:
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
+            # G2-B5b (spec §2): a snooze whose `until` has come ends first. Its alarm waits for an answer again, on a
+            # fresh escalation clock from `until` and with the doctor's page cleared (`AckStore.expire_snoozes`),
+            # so the escalation below judges it as it now is. Its card is republished below: a screen without
+            # its own clock hears the alarm again within a cycle.
+            woke = {pid for pid, _kind in store.expire_snoozes(now)}
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
             # active finding, and does not escalate.
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
@@ -639,7 +644,8 @@ def create_app(
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
-            newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
+            newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after,
+                             snoozed=store.snoozes)               # G2-B5b: no escalation while snoozed
             changed: set[str] = set()
             if newly != store.escalated:
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
@@ -647,6 +653,10 @@ def create_app(
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
+            # G2-B5b: the cards of the alarms whose snooze just ended, unless sent above or retired.
+            for pid in sorted(woke - changed - set(gone)):
+                await broadcaster.publish(hospital, _card(hospital, pid, now=now))
+            changed |= woke
             # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
             # critical that latches and returns, or an alert that clears and returns within the
             # delay, is escalated again — but the doctor was told about this chain already (`paged`).

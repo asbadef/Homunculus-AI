@@ -452,3 +452,67 @@ def test_a_snooze_whose_audit_row_fails_is_a_500_and_leaves_no_snooze_and_the_re
         assert r.status_code == 200, r.text
         assert len(_rows(audit)) == 1
         assert _alerts(client)["news2"]["snooze"]["minutes"] == 15
+
+
+# --- the escalation cycle --------------------------------------------------------------------------------
+
+def _escalations(audit):
+    return audit.records(tenant="h1", event_type="escalation", limit=10_000)
+
+
+async def test_no_escalation_while_snoozed_then_a_fresh_clock_from_until(wall, audit):
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)                                          # a HIGH, immediate news2 first seen at WALL0
+    wall.at = WALL0 + timedelta(minutes=1)
+    assert _snooze(client, minutes=15).status_code == 200           # until WALL0+16
+    store = _store(app)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert NEWS2 not in store.escalated, "past the delay, but snoozed"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=15, seconds=59))
+    assert NEWS2 not in store.escalated and NEWS2 in store.snoozes
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=16))
+    assert NEWS2 not in store.snoozes, "its time came"
+    assert store.clock_from[NEWS2] == WALL0 + timedelta(minutes=16), "the clock starts again from until"
+    assert NEWS2 not in store.escalated, "and has only just started"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=20, seconds=59))
+    assert NEWS2 not in store.escalated
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=21))
+    assert NEWS2 in store.escalated, "unanswered for the delay after until: a new failure to answer"
+    assert len(_escalations(audit)) == 1
+
+
+async def test_an_escalated_alarm_leaves_the_set_keeps_its_page_and_is_paged_again_after_until(wall, audit):
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)                                          # first seen at WALL0
+    store = _store(app)
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=6))
+    assert NEWS2 in store.escalated and NEWS2 in store.paged and len(_escalations(audit)) == 1
+    wall.at = WALL0 + timedelta(minutes=7)
+    r = _snooze(client, minutes=5)                                  # until WALL0+12
+    assert r.status_code == 200, r.text
+    assert _on(r)["escalated"] is False, "it leaves the escalated set at once"
+    assert NEWS2 in store.paged, "the doctor's page stays sent"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=8))
+    assert NEWS2 not in store.escalated and len(_escalations(audit)) == 1
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=12))
+    assert NEWS2 not in store.snoozes and NEWS2 not in store.paged, "at until the page is cleared"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=17))
+    assert NEWS2 in store.escalated
+    assert len(_escalations(audit)) == 2, "and the doctor is paged again"
+
+
+async def test_the_cycle_republishes_the_card_when_a_snooze_ends(wall, audit):
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)
+    assert _snooze(client, minutes=5).status_code == 200            # at WALL0, until WALL0+5
+    frames = app.state.broadcaster.subscribe("h1")
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=4))
+    assert frames.empty(), "nothing changed yet"
+    await app.state.escalation_cycle(WALL0 + timedelta(minutes=5))
+    sent = [frames.get_nowait() for _ in range(frames.qsize())]
+    cards = [f for f in sent if f.get("patient_id") == "bed-3"]
+    assert cards, "a screen without its own clock hears the alarm again within a cycle"
+    assert next(a for a in cards[-1]["alerts"] if a["kind"] == "news2")["snooze"] is None
