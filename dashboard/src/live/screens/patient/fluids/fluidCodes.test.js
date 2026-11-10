@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../../i18n/catalog.js";
 import { LANG_CODES } from "../../../i18n/langs.js";
-import { FLUID_CODES, INTAKE, OUTPUT, boundOf, hourTotals, isFluidCode, labelKey, mlText, signedMlText } from "./fluidCodes.js";
+import { toLocalInput } from "../meds/medsFields.js";
+import { FLUID_CODES, INTAKE, OUTPUT, boundOf, checkRow, groupByTime, hourTotals, isFluidCode, labelKey, mlText, signedMlText } from "./fluidCodes.js";
 
 describe("the fluid codes", () => {
   it("lists the intake and the output in the server's order, eight in all", () => {
@@ -38,5 +39,42 @@ describe("the fluid codes", () => {
   it("an hour's bar is the engine's per-code volumes laid end to end (display only)", () => {
     expect(hourTotals({ in: { iv_fluid_ml: 250, enteral_ml: 100 }, out: { urine_output_ml: 120 } })).toEqual({ in: 350, out: 120 });
     expect(hourTotals({})).toEqual({ in: 0, out: 0 });
+  });
+});
+
+describe("a dialog row, checked as the door would", () => {
+  const NOW_MS = Date.parse("2026-10-08T10:00:00Z");
+  const row = (over = {}) => ({ code: "urine_output_ml", ml: "120", at: toLocalInput(NOW_MS), ...over });
+
+  it("sends a plain decimal with at most one place, a comma read as a point, at the row's own minute", () => {
+    expect(checkRow(row(), NOW_MS)).toEqual({ errors: {}, entry: { code: "urine_output_ml", value: 120 }, atIso: "2026-10-08T10:00:00.000Z" });
+    expect(checkRow(row({ ml: "12,5" }), NOW_MS).entry).toEqual({ code: "urine_output_ml", value: 12.5 });
+    expect(checkRow(row({ ml: "0" }), NOW_MS).entry).toEqual({ code: "urine_output_ml", value: 0 });
+  });
+
+  it("holds back an empty, a negative, a two-place or an out-of-bounds volume, naming the code's own ceiling", () => {
+    for (const ml of ["", "-1", "12.55", "abc", "5001"]) {
+      expect(checkRow(row({ ml }), NOW_MS).errors.ml, ml).toEqual({ key: "sivi.invalidMl", params: { max: 5000 } });
+    }
+    expect(checkRow(row({ code: "crystalloid_bolus_ml", ml: "10000" }), NOW_MS).errors).toEqual({});
+    expect(checkRow(row({ code: "crystalloid_bolus_ml", ml: "10001" }), NOW_MS).errors.ml).toEqual({ key: "sivi.invalidMl", params: { max: 10000 } });
+  });
+
+  it("holds back a time more than 24 hours back, ahead of the clock, or not a time at all", () => {
+    const H = 3_600_000;
+    expect(checkRow(row({ at: toLocalInput(NOW_MS - 23 * H) }), NOW_MS).errors).toEqual({});
+    for (const at of [toLocalInput(NOW_MS - 25 * H), toLocalInput(NOW_MS + 10 * 60_000), "", "dün"]) {
+      expect(checkRow(row({ at }), NOW_MS).errors.at, at).toEqual({ key: "sivi.invalidAt" });
+    }
+  });
+
+  it("groups the rows by their time, in the order they were written: one request per distinct time", () => {
+    const a = { entry: { code: "urine_output_ml", value: 120 }, atIso: "2026-10-08T10:00:00.000Z" };
+    const b = { entry: { code: "iv_fluid_ml", value: 250 }, atIso: "2026-10-08T08:00:00.000Z" };
+    const c = { entry: { code: "drain_output_ml", value: 40 }, atIso: "2026-10-08T10:00:00.000Z" };
+    expect(groupByTime([a, b, c])).toEqual([
+      { atIso: a.atIso, entries: [a.entry, c.entry], rows: [0, 2] },
+      { atIso: b.atIso, entries: [b.entry], rows: [1] },
+    ]);
   });
 });

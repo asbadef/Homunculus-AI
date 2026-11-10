@@ -10,13 +10,25 @@
 //
 // The hourly chart (FluidChart.jsx) and today's entries, newest first — a withdrawn one struck through and said as
 // such. The box reads on mount, once a minute and after a write or a withdrawal on this patient (useFluids.js).
-import React, { useId } from "react";
+//
+// WHAT IT WRITES, for a `clinical.chart` holder only — absent otherwise, never a disabled button: «Giriş/çıkış
+// ekle» (FluidEntryDialog.jsx) and, on each of today's entries not yet withdrawn, «Hatalı giriş» — G3-01's
+// withdrawal dialog (common/RetractDialog.jsx), the reason the clinician's, the engine rebuilding the patient
+// without the volume (D4). A withdrawal the dialog reports done strikes the row at once, before the read that
+// follows confirms it; the struck row takes the focus, since its button has left the page.
+//
+// The shell keeps the patient screen mounted across a move to another patient (no `key`), so the box remembers
+// WHOSE dialog it opened: one opened on a patient is never shown on the next (the Meds box's rule).
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { dayStamp, hhmm } from "../../../i18n/dates.js";
 import { numberText } from "../../../i18n/numbers.js";
 import { readErrorText } from "../../../apiErrors.js";
-import { Box, Button, Note } from "../../../ui/index.js";
+import { useBoard } from "../../../data/BoardProvider.jsx";
+import { Box, Button, FOCUS_RING, Note } from "../../../ui/index.js";
+import { RetractDialog } from "../../common/RetractDialog.jsx";
 import { FluidChart } from "./FluidChart.jsx";
+import { FluidEntryDialog } from "./FluidEntryDialog.jsx";
 import { isFluidCode, labelKey, mlText, signedMlText } from "./fluidCodes.js";
 import { useFluids } from "./useFluids.js";
 
@@ -49,10 +61,13 @@ function Totals({ label, totals, big = false, children }) {
   );
 }
 
-/** Today's entries, newest first (the engine's own order is kept, then made sure of). */
-function Entries({ data, nowMs }) {
+/** Today's entries, newest first (the engine's own order is kept, then made sure of). `withdrawn` holds the
+ *  entries this box saw withdrawn before a read said so; `onRetract(entry)` opens «Hatalı giriş» for one, and is
+ *  null without `clinical.chart`. `rowRef(entry, node)` keeps each row for the focus a struck row takes. */
+function Entries({ data, nowMs, withdrawn, onRetract, rowRef }) {
   const { t, lang } = useI18n();
   const headingId = useId();
+  const base = useId();
   const start = timeOf(data.day?.start);
   const today = data.entries
     .filter((e) => start === null || (timeOf(e.at) ?? -Infinity) >= start)
@@ -65,15 +80,26 @@ function Entries({ data, nowMs }) {
         <ul role="list" aria-labelledby={headingId} className="m-0 mt-1 list-none p-0 text-13">
           {today.map((e) => {
             const at = timeOf(e.at);
-            const struck = Boolean(e.retracted);
+            const id = Number.isInteger(e.entry) ? e.entry : null;
+            const struck = Boolean(e.retracted) || (id !== null && withdrawn.has(id));
             const volume = t("sivi.ml", { value: mlText(lang, e.value) });
+            const textId = `${base}-${id ?? e.at}`;
             return (
-              <li key={e.entry ?? `${e.code}-${e.at}`} data-entry={e.entry ?? ""} className="py-0.5">
-                <span className="font-data text-mute">{at === null ? "—" : dayStamp(at, nowMs)}</span>
-                {" · "}{isFluidCode(e.code) ? t(labelKey(e.code)) : String(e.code ?? "—")}
-                {" · "}{struck ? <s className="font-data">{volume}</s> : <span className="font-data">{volume}</span>}
-                {e.by ? <>{" · "}<span className="text-mute">{e.by}</span></> : null}
-                {struck ? <span className="ml-2 text-12 font-semibold text-mute">{t("sivi.withdrawn")}</span> : null}
+              <li
+                key={id ?? `${e.code}-${e.at}`} data-entry={id ?? ""} tabIndex={-1} ref={(node) => rowRef(id, node)}
+                className={`flex flex-wrap items-center gap-2 border-b border-line py-1 outline-none last:border-b-0 ${FOCUS_RING}`}
+              >
+                <span id={textId} className="min-w-0 flex-1">
+                  <span className="font-data text-mute">{at === null ? "—" : dayStamp(at, nowMs)}</span>
+                  {" · "}{isFluidCode(e.code) ? t(labelKey(e.code)) : String(e.code ?? "—")}
+                  {" · "}{struck ? <s className="font-data">{volume}</s> : <span className="font-data">{volume}</span>}
+                  {e.by ? <>{" · "}<span className="text-mute">{e.by}</span></> : null}
+                  {struck ? <span className="ml-2 text-12 font-semibold text-mute">{t("sivi.withdrawn")}</span> : null}
+                </span>
+                {onRetract && id !== null && !struck && isFluidCode(e.code) ? (
+                  // The name stays «Hatalı giriş»; the row's words tell the buttons apart for a screen reader.
+                  <Button size="sm" variant="ghost" icon="x" aria-describedby={textId} onClick={() => onRetract(e)}>{t("sivi.retract")}</Button>
+                ) : null}
               </li>
             );
           })}
@@ -85,7 +111,7 @@ function Entries({ data, nowMs }) {
   );
 }
 
-function Ledger({ data, nowMs }) {
+function Ledger({ data, nowMs, withdrawn, onRetract, rowRef }) {
   const { t, lang } = useI18n();
   const dayStart = timeOf(data.day?.start);
   const [shiftA, shiftB] = Array.isArray(data.shifts) ? data.shifts : [];
@@ -115,25 +141,95 @@ function Ledger({ data, nowMs }) {
         {typeof rate === "number" && Number.isFinite(rate) ? t("sivi.rate", { rate: numberText(lang, rate) }) : t("sivi.rateNone")}
       </p>
       <FluidChart day={data.day} hours={data.hours} />
-      <Entries data={data} nowMs={nowMs} />
+      <Entries data={data} nowMs={nowMs} withdrawn={withdrawn} onRetract={onRetract} rowRef={rowRef} />
     </>
   );
 }
 
-/** `patientId` is whose ledger this is; `bed` names the patient in the dialog and on its toasts (never the
+/** `patientId` is whose ledger this is; `bed` names the patient in the dialogs and on their toasts (never the
  *  patient's name, Decision 14); `nowMs` is the screen's clock, which says which stamps are today's; `canChart`
- *  (`clinical.chart`) offers «Giriş/çıkış ekle» — absent otherwise, never a disabled button. */
+ *  (`clinical.chart`) offers «Giriş/çıkış ekle» and «Hatalı giriş» — absent otherwise. */
 export function FluidsBox({ patientId, bed, nowMs = Date.now(), canChart = false }) {
-  const { t } = useI18n();
-  const { data, error } = useFluids(patientId);
-  const right = canChart ? <Button size="sm" icon="plus">{t("sivi.add")}</Button> : null;
+  const { t, lang } = useI18n();
+  const board = useBoard();
+  const { data, error, refresh } = useFluids(patientId);
+  // `{ id, opening }`: the patient the entry dialog was opened FOR and which opening this is, or null.
+  const [editing, setEditing] = useState(null);
+  // `{ id, row }`: the entry whose «Hatalı giriş» is open, and whose patient it is.
+  const [retracting, setRetracting] = useState(null);
+  // `{ id, entries }`: entries withdrawn here before a read said so, for the patient they belong to.
+  const [withdrawn, setWithdrawn] = useState({ id: patientId, entries: new Set() });
+  const openings = useRef(0);
+  const rows = useRef(new Map());
+  const struckNow = useRef(null);
+  useEffect(() => {
+    setEditing(null);
+    setRetracting(null);
+  }, [patientId]);
+  // After the commit that struck the row (and closed the dialog): the dialog's own cleanup has run by now.
+  useEffect(() => {
+    if (struckNow.current === null) return;
+    rows.current.get(struckNow.current)?.focus();
+    struckNow.current = null;
+  }, [withdrawn]);
+  const rowRef = (entry, node) => {
+    if (entry === null) return;
+    if (node) rows.current.set(entry, node);
+    else rows.current.delete(entry);
+  };
+  const struck = withdrawn.id === patientId ? withdrawn.entries : new Set();
+
+  function openDialog() {
+    openings.current += 1;
+    setEditing({ id: patientId, opening: openings.current });
+  }
+  const right = canChart ? <Button size="sm" icon="plus" onClick={openDialog}>{t("sivi.add")}</Button> : null;
+  const open = retracting && retracting.id === patientId ? retracting : null;
+  const what = open ? {
+    label: t(labelKey(open.row.code)),
+    value: t("sivi.ml", { value: mlText(lang, open.row.value) }),
+    time: timeOf(open.row.at) === null ? "—" : dayStamp(timeOf(open.row.at), nowMs),
+  } : null;
+
   return (
     <Box title={t("sivi.title")} icon="drop" level={2} right={right}>
       <p className="m-0 mb-2 text-11.5 text-mute">{t("sivi.intro")}</p>
       {/* A failed read keeps the last ledger and says so beside it — a static note, as the SOFA box says its own:
           a read once a minute must not interrupt a screen reader each time it fails. */}
       {error ? <Note tone="warn" icon="alert" className="mb-2">{t("sivi.readFailed", { reason: readErrorText(t, error) })}</Note> : null}
-      {data ? <Ledger data={data} nowMs={nowMs} /> : error ? null : <p className="m-0 text-13 text-mute">{t("sivi.reading")}</p>}
+      {data ? (
+        <Ledger data={data} nowMs={nowMs} withdrawn={struck} rowRef={rowRef}
+          onRetract={canChart ? (row) => setRetracting({ id: patientId, row }) : null} />
+      ) : error ? null : <p className="m-0 text-13 text-mute">{t("sivi.reading")}</p>}
+      {/* The dialogs are the box's last children whatever it shows, so a read that lands while one is open does not
+          remount it. */}
+      {editing && editing.id === patientId ? (
+        <FluidEntryDialog
+          key={editing.opening} bed={bed}
+          onChart={(entries, at) => board.store.chart(editing.id, entries, at)}
+          onSaved={refresh}
+          onClose={() => setEditing((current) => (current?.opening === editing.opening ? null : current))}
+        />
+      ) : null}
+      {open ? (
+        <RetractDialog
+          bed={bed} what={what}
+          onRetract={(reason) => board.store.retract(open.id, open.row.entry, reason)}
+          // «Already» is withdrawn too; an uncertain one keeps its button — a second try is answered «already». A
+          // refusal that wrote nothing (a discharged patient) sends no outcome at all. The box reads again either way.
+          onDone={(outcome) => {
+            if (outcome !== "uncertain") {
+              struckNow.current = open.row.entry;
+              setWithdrawn((current) => ({
+                id: open.id,
+                entries: new Set(current.id === open.id ? current.entries : []).add(open.row.entry),
+              }));
+            }
+            refresh();
+          }}
+          onClose={() => setRetracting(null)}
+        />
+      ) : null}
     </Box>
   );
 }

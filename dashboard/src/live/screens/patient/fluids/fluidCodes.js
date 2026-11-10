@@ -6,7 +6,7 @@
 // the engine's. The one sum here, `hourTotals`, lays an hour's per-code volumes end to end so a bar can be drawn
 // and titled — the answer carries the hour by code (spec §3) and no hour total.
 import { numberText } from "../../../i18n/numbers.js";
-import { BOLUS } from "../meds/medsFields.js";
+import { BACKDATE_MS, BOLUS, fromLocalInput } from "../meds/medsFields.js";
 
 export const INTAKE = Object.freeze(["iv_fluid_ml", "crystalloid_bolus_ml", "enteral_ml", "blood_product_ml", "other_intake_ml"]);
 export const OUTPUT = Object.freeze(["urine_output_ml", "drain_output_ml", "other_output_ml"]);
@@ -41,4 +41,43 @@ const sumOf = (byCode) => Object.values(byCode ?? {}).reduce((sum, v) => (typeof
 /** One hour row's intake and output, its per-code volumes laid end to end — for the bar and its title only. */
 export function hourTotals(hour) {
   return { in: sumOf(hour?.in), out: sumOf(hour?.out) };
+}
+
+/** A typed volume the door would take: a plain decimal with at most one place, a comma read as a point. */
+const ML_TEXT = /^\d+([.,]\d)?$/;
+/** A minute of skew between this browser's clock and the server's is not «ahead» (the Meds form's rule). */
+const SKEW_MS = 60_000;
+
+/** One dialog row `{ code, ml, at }` (`at` a `datetime-local` value) as of `now`: its problems by field — `ml`
+ *  `{ key: "sivi.invalidMl", params: { max } }`, `at` `{ key: "sivi.invalidAt" }` — the entry it would send and
+ *  the instant, as UTC ISO, it would be sent at. Mirrors the door (D2, D3) only to hold a slip back. */
+export function checkRow(row, now) {
+  const errors = {};
+  const raw = String(row?.ml ?? "").trim();
+  const max = boundOf(row?.code);
+  const value = ML_TEXT.test(raw) ? Number(raw.replace(",", ".")) : Number.NaN;
+  if (!Number.isFinite(value) || value < 0 || value > max) errors.ml = { key: "sivi.invalidMl", params: { max } };
+  const at = fromLocalInput(row?.at);
+  if (!Number.isFinite(at) || at > now + SKEW_MS || at < now - BACKDATE_MS) errors.at = { key: "sivi.invalidAt" };
+  return {
+    errors,
+    entry: errors.ml ? null : { code: row.code, value },
+    atIso: errors.at ? null : new Date(at).toISOString(),
+  };
+}
+
+/** Checked rows grouped by their instant, in the order the rows were written: one `/clinical` request per group,
+ *  every row of a group in it (all or nothing). `rows` are the indexes of the rows each group carries. */
+export function groupByTime(checked) {
+  const groups = [];
+  checked.forEach((c, i) => {
+    let group = groups.find((g) => g.atIso === c.atIso);
+    if (!group) {
+      group = { atIso: c.atIso, entries: [], rows: [] };
+      groups.push(group);
+    }
+    group.entries.push(c.entry);
+    group.rows.push(i);
+  });
+  return groups;
 }
