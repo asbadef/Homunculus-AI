@@ -114,3 +114,34 @@
 **Gates:**
 - Engine: the new file plus `tests/test_ack*`, `tests/test_rehydrate*` and `tests/test_alarm_quality.py`.
 - Dashboard: the whole suite and `vite build`.
+
+## 5. Review amendments (2026-11-10; commits 9e4e6f6c, 600f8264, 1a7333e2, 4ccb9dcb, 216760c0)
+
+- **D4: a call rides its X13 chain.** Without this, a flap (NEWS2 7 / 4 / 7 inside `escalate_after`) kept the
+  escalation clock and the doctor's page, but silently dropped the RRT call from the list and the badge.
+  - `Chain` now carries the call. A return that continues the chain gets the call back, and no second row is written.
+  - A return after the delay starts a new episode with no call.
+  - An acknowledged call is never carried.
+  - Restarts: chains are not replayed (the existing X13 limitation). After a restart, a call therefore does not cross
+    an episode that ended. A test names this as a limitation.
+- **Trail before memory is tested.** A failed `rrt_call` append answers 500 and leaves no call. The retry is the call,
+  with exactly one row.
+- **Replay cases are tested.** A latched call followed by a latched ack, a call followed by a discharge, and an episode
+  that ends.
+- **Audit comments.** They now say honestly that the trail carries no demographics, but an `rrt_call` row carries the
+  caller's free-text reason. The dialog's hint asks the caller not to write names or ID numbers.
+- **The nginx access-log map** lists `/alerts/rrt-call` among the routes logged as they are. It comes before the
+  `/alerts/:key` catch-all, as the drift guard requires.
+- **Route tables.** The board permission table and the tenant-isolation route list name the new route. A device is
+  refused (tested).
+- **A write with no answer is not a refusal.** A timeout, a 502/504 or a dropped connection (`mayHaveLanded`) gives a
+  warn toast: «yanıt gelmedi — RRT çağrılmış olabilir; yeniden çağırmak zararsızdır». It mirrors `RetractDialog`.
+- **A short reason moves focus to the reason field.**
+- **An earlier call by someone else is reported** («RRT zaten çağrılmış ({by}); gerekçeniz eklenmedi»), so a caller is
+  not told their reason was recorded when it was not.
+- **Copy.** The second list's empty text says «çağrısız» (it lists alarms without a call). The intro no longer
+  addresses the viewer as the called team.
+- **Accepted, not changed:**
+  - The tier-off sentence says «5 dk», the default `escalate_after`, which `prodserver.py` does not override.
+  - A new call raises no sound or push for the team (D10). The rail badge is the signal.
+  - Focus after a successful call falls to the page, as after «Gördüm» today.
