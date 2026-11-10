@@ -431,7 +431,10 @@ def test_every_other_refusal_has_a_stable_code():
                      "protocol_not_forward", "label_size", "label_too_narrow", "label_dpi",
                      "no_protocol",
                      # G2-B3a (spec D5, X1)
-                     "bed_reserved"}
+                     "bed_reserved",
+                     # G2-B1c (spec §5.6)
+                     "care_team_conflict", "care_team_not_physician",
+                     "care_team_attending_required"}
 
 
 # ---------------------------------------------------------------- the person (A-37)
