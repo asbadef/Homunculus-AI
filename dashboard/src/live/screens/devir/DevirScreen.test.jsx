@@ -48,20 +48,38 @@ const MINE_OPEN = handover("h-open", "OPEN", { outgoing: ME, incoming: LEYLA });
 /** An admission of my unit as GET /admissions answers it, keyed on the board as S-001. */
 const ADMISSION = admissionRow({ id: "a-2", board_key: "S-001", bed_label: "2", unit_name: "Reanimasiya", display_name: "Kamran Sentetik" });
 const NEW_SUBJECT = "2 · Reanimasiya";
+/** A second admission, on the board as S-002. */
+const OTHER = admissionRow({ id: "a-3", board_key: "S-002", bed_label: "5", unit_name: "Reanimasiya", display_name: "Rauf Sentetik" });
 
 const CARD = { identity: identity(), at: measured(30) };
 const CRITICAL = board([entry("S-001", [alarm("sepsis", "critical", { summary: "Sepsis criteria met" })], { ...CARD, risk: "critical" })]);
 const QUIET = board([entry("S-001", [], CARD)]);
+/** S-001 quiet, S-002 with an unanswered critical alarm. */
+const OTHER_CRITICAL = board([
+  entry("S-001", [], CARD),
+  entry("S-002", [alarm("sepsis", "critical", { summary: "Sepsis criteria met" })], { ...CARD, identity: identity({ patient_id: "S-002" }), risk: "critical" }),
+]);
+
+/** A promise the test settles itself. */
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 
 /** The screen in a real session and board store. `boxes` is what GET /handovers answers, by box — a function to
  *  answer differently once something was written. `payload` the board's cards. */
-async function open({ boxes = { incoming: [TO_ME], outgoing: [MINE_OPEN] }, payload = QUIET, perms = NURSE, setup } = {}) {
+async function open({
+  boxes = { incoming: [TO_ME], outgoing: [MINE_OPEN] }, payload = QUIET, perms = NURSE, connection = "live", setup,
+} = {}) {
   const answer = typeof boxes === "function" ? boxes : () => boxes;
   const mounted = await mount(<DevirScreen />, {
     access: token({ perms }),
     me: profile({ perms }),
     setup: (api) => {
-      api.boardPatients.mockResolvedValue(payload);
+      if (connection === "unavailable") api.boardPatients.mockRejectedValue(new Error("down"));
+      else api.boardPatients.mockResolvedValue(payload);
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
       api.handovers.mockImplementation((box) => Promise.resolve(answer()[box] ?? []));
       api.handoverColleagues.mockResolvedValue([LEYLA, { id: "u-murad", name: "Murad Sentetik" }]);
@@ -70,7 +88,9 @@ async function open({ boxes = { incoming: [TO_ME], outgoing: [MINE_OPEN] }, payl
     },
   });
   await act(async () => { await mounted.board.start(); });
-  await act(async () => { mounted.stream.open(); await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+  if (connection !== "unavailable") {
+    await act(async () => { mounted.stream.open(); await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+  }
   await settle();
   return mounted;
 }
@@ -172,6 +192,19 @@ describe("«Vardiya devri»", () => {
     expect(recent).toHaveTextContent(`əks-imza: ${hhmm(NOW)}`);
   });
 
+  // Review (7): the pressed button goes with its row; the focus goes to the row's list, never to <body>.
+  it("after a countersignature the focus goes to its list, not to the page", async () => {
+    let signed = false;
+    await open({
+      boxes: () => ({ incoming: signed ? [] : [TO_ME], outgoing: [] }),
+      setup: (fake) => fake.countersignHandover.mockImplementation(async () => { signed = true; return { id: "h-in" }; }),
+    });
+    const button = within(listOf(TO_COUNTERSIGN)).getByRole("button", { name: COUNTERSIGN });
+    button.focus();
+    await press(button);
+    expect(listOf(TO_COUNTERSIGN)).toHaveFocus();
+  });
+
   it("a refused countersignature is a toast naming the bed, and the handover stays to be countersigned", async () => {
     const { api } = await open({
       setup: (fake) => fake.countersignHandover.mockRejectedValue(
@@ -230,6 +263,45 @@ describe("«Vardiya devri»", () => {
       expect(api.signHandover).toHaveBeenCalledWith("h-open", NOTE);
     });
 
+    it("after its note step signs it, the focus goes to my list, not to the page", async () => {
+      let sent = false;
+      await open({
+        boxes: () => ({ incoming: [], outgoing: [sent ? { ...MINE_OPEN, status: "OUTGOING_SIGNED", outgoing_signed_at: ago(0) } : MINE_OPEN] }),
+        setup: (fake) => fake.signHandover.mockImplementation(async () => { sent = true; return { id: "h-open" }; }),
+      });
+      const button = within(listOf(MINE)).getByRole("button", { name: SIGN });
+      button.focus();
+      await press(button);
+      fireEvent.change(within(dialog()).getByRole("textbox", { name: "V · Vəziyyət" }), { target: { value: "Stabil gecə" } });
+      await press(within(dialog()).getByRole("button", { name: "İmza at" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await settle();
+      expect(listOf(MINE)).toHaveFocus();
+    });
+
+    // Review (9): a stored note does not get round the lock.
+    it("locked by the board, a row with a stored note is not signed either", async () => {
+      const { api } = await open({ boxes: { incoming: [], outgoing: [{ ...MINE_OPEN, note: NOTE }] }, payload: CRITICAL });
+      const sign = within(listOf(MINE)).getByRole("button", { name: SIGN });
+      expect(sign).toHaveAttribute("aria-disabled", "true");
+      await press(sign);
+      expect(api.signHandover).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    // Review (9): the note step reads the row's own patient on the board — an alarm that fires while it is open holds it.
+    it("its note step holds the signature when the board shows the row's patient a critical alarm", async () => {
+      const { api, stream } = await open({ boxes: { incoming: [], outgoing: [MINE_OPEN] } });
+      await press(within(listOf(MINE)).getByRole("button", { name: SIGN }));
+      fireEvent.change(within(dialog()).getByRole("textbox", { name: "V · Vəziyyət" }), { target: { value: "Stabil gecə" } });
+      await act(async () => { stream.frame(entry("S-001", [alarm("sepsis", "critical", { summary: "Sepsis criteria met" })], { ...CARD, risk: "critical" })); });
+      await settle();
+      expect(within(dialog()).getByText("İmzalana bilməz: bu xəstədə cavablanmamış kritik siqnal var.")).toBeInTheDocument();
+      expect(within(dialog()).getByRole("link", { name: "Siqnala keç" })).toHaveAttribute("href", "#/alarms");
+      await press(within(dialog()).getByRole("button", { name: "İmza at" }));
+      expect(api.signHandover).not.toHaveBeenCalled();
+    });
+
     it("past its 30-minute bridge, it says so and offers no signature", async () => {
       await open({ boxes: { incoming: [], outgoing: [{ ...MINE_OPEN, bridge_expires_at: ago(60) }] } });
       const row = within(listOf(MINE)).getByRole("link", { name: SUBJECT }).closest("li");
@@ -282,6 +354,14 @@ describe("«Vardiya devri»", () => {
     expect(within(row).queryAllByRole("button")).toHaveLength(0);
   });
 
+  // Review (6): a refresh by hand, and when the lists were read — there is no timer.
+  it("«Yenile» reads both boxes again, and the lists say when they were read", async () => {
+    const { api } = await open();
+    expect(screen.getByText(`Son oxunma ${hhmm(NOW)}`)).toBeInTheDocument();
+    await press(screen.getByRole("button", { name: "Yenilə" }));
+    expect(api.handovers).toHaveBeenCalledTimes(4);
+  });
+
   it("each list says when it is empty", async () => {
     await open({ boxes: { incoming: [], outgoing: [] } });
     expect(within(listOf(TO_COUNTERSIGN)).getByText("Əks-imzanızı gözləyən təhvil yoxdur.")).toBeInTheDocument();
@@ -308,6 +388,8 @@ describe("«Vardiya devri»", () => {
 
 describe("«Yeni devir»", () => {
   const openDialog = async () => { await press(screen.getByRole("button", { name: "Yeni təhvil" })); };
+  /** The screen with nothing of mine OPEN: a new handover is not held by an earlier one (review 4). */
+  const openNew = (options = {}) => open({ boxes: { incoming: [TO_ME], outgoing: [] }, ...options });
   const choose = (name, value) => fireEvent.change(within(dialog()).getByRole("combobox", { name }), { target: { value } });
   const write = (name, value) => fireEvent.change(within(dialog()).getByRole("textbox", { name }), { target: { value } });
   const SEND = "Təhvil ver və imzala";
@@ -320,7 +402,7 @@ describe("«Yeni devir»", () => {
   };
 
   it("offers the open admissions of my units and the colleagues I can hand over to, and the four parts of the note", async () => {
-    const { api } = await open();
+    const { api } = await openNew();
     await openDialog();
     expect(dialog()).toHaveAccessibleName("Yeni təhvil");
     expect(api.admissions).toHaveBeenCalledWith(["ACTIVE", "PENDING_DISCHARGE", "PENDING_TRANSFER"]);
@@ -335,7 +417,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("a patient the board shows an unanswered critical alarm cannot be handed over: the lock, a way to the alarm, nothing sent", async () => {
-    const { api } = await open({ payload: CRITICAL });
+    const { api } = await openNew({ payload: CRITICAL });
     await openDialog();
     fill();
     expect(within(dialog()).getByText("İmzalana bilməz: bu xəstədə cavablanmamış kritik siqnal var.")).toBeInTheDocument();
@@ -347,7 +429,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("a note with nothing written says so and takes the focus to its first part", async () => {
-    const { api } = await open();
+    const { api } = await openNew();
     await openDialog();
     choose("Xəstə", "a-2");
     choose("Təhvil alacaq şəxs", "u-leyla");
@@ -361,7 +443,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("a patient and a receiver are asked for before anything is sent", async () => {
-    const { api } = await open();
+    const { api } = await openNew();
     await openDialog();
     write("V · Vəziyyət", "Stabil gecə");
     await press(within(dialog()).getByRole("button", { name: SEND }));
@@ -372,7 +454,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("a valid send opens the handover, signs it with the note, says so naming the bed and reads the boxes again", async () => {
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => {
         fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
         fake.signHandover.mockResolvedValue({ id: "h-new", status: "OUTGOING_SIGNED" });
@@ -391,7 +473,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("a signature the server holds for a critical alarm leaves the handover OPEN, and the dialog says so in its own words", async () => {
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => {
         fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
         fake.signHandover.mockRejectedValue(
@@ -404,6 +486,9 @@ describe("«Yeni devir»", () => {
     expect(dialog()).toHaveTextContent(/^.*Təhvil açıldı, amma imzalanmadı: bu xəstədə cavablanmamış kritik siqnal var\./);
     expect(within(dialog()).getByRole("link", { name: "Siqnala keç" })).toHaveAttribute("href", "#/alarms");
     expect(dialog()).not.toHaveTextContent("evə yazılma");                 // not the discharge's sentence
+    // A Note does not announce itself: the refusal is on the toast too, in the handover's own words (review 1).
+    const said = toasts().getAllByText(`${NEW_SUBJECT}: təhvil imzalanmadı — bu xəstədə cavablanmamış kritik siqnal var`);
+    expect(said.map((n) => n.closest("[data-tone]")?.getAttribute("data-tone"))).toContain("error");
     expect(api.handovers).toHaveBeenCalledTimes(4);                         // the OPEN one is on the list behind it
     // Pressed again, it signs the handover already opened — it opens no second one.
     await press(within(dialog()).getByRole("button", { name: "İmza at" }));
@@ -415,7 +500,7 @@ describe("«Yeni devir»", () => {
   // A refused note (D5: a control character in a part — a coded 422) is the note's to fix: the handover is OPEN, the
   // dialog keeps the note, and the next press signs the one already opened.
   it("a note the server refuses keeps the dialog and the note; the handover opened is the one signed next", async () => {
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => {
         fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
         fake.signHandover.mockRejectedValueOnce(
@@ -435,11 +520,102 @@ describe("«Yeni devir»", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  // Review (3): what the server said last time is not left standing over a new answer.
+  it("a second refusal does not leave the first one's lock standing", async () => {
+    await openNew({
+      setup: (fake) => {
+        fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
+        fake.signHandover
+          .mockRejectedValueOnce(refusal(409, "Handover blocked.", { apiCode: "critical_alarm_open" }))
+          .mockRejectedValueOnce(refusal(422, "situation: Value error", { apiCode: "field_invalid:situation" }));
+      },
+    });
+    await openDialog();
+    fill();
+    await press(within(dialog()).getByRole("button", { name: SEND }));
+    expect(dialog()).toHaveTextContent("Təhvil açıldı, amma imzalanmadı");
+    await press(within(dialog()).getByRole("button", { name: "İmza at" }));
+    expect(dialog()).not.toHaveTextContent("Təhvil açıldı, amma imzalanmadı");
+  });
+
+  // Review (2): while the opening is out the choice is frozen, and once opened the handover is the one it opened —
+  // its patient's lock, its bed on every toast — whatever the select says.
+  it("the choice is frozen while the opening is out; the opened patient is the one signed and named", async () => {
+    const opening = deferred();
+    const { api } = await openNew({
+      payload: OTHER_CRITICAL,
+      setup: (fake) => {
+        fake.admissions.mockResolvedValue([ADMISSION, OTHER]);
+        fake.openHandover.mockReturnValue(opening.promise);
+        fake.signHandover
+          .mockRejectedValueOnce(refusal(409, "Handover blocked.", { apiCode: "critical_alarm_open" }))
+          .mockResolvedValue({ id: "h-new" });
+      },
+    });
+    await openDialog();
+    fill();
+    await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: SEND })); });
+    const patients = within(dialog()).getByRole("combobox", { name: "Xəstə" });
+    expect(patients).toBeDisabled();
+    expect(within(dialog()).getByRole("combobox", { name: "Təhvil alacaq şəxs" })).toBeDisabled();
+    fireEvent.change(patients, { target: { value: "a-3" } });           // what a frozen select must not change
+    await act(async () => { opening.resolve({ id: "h-new", status: "OPEN" }); });
+    await settle();
+    expect(toasts().getAllByText(`${NEW_SUBJECT}: təhvil imzalanmadı — bu xəstədə cavablanmamış kritik siqnal var`).length)
+      .toBeGreaterThan(0);
+    // S-002's alarm is not the opened patient's: the next press signs h-new.
+    await press(within(dialog()).getByRole("button", { name: "İmza at" }));
+    expect(api.openHandover).toHaveBeenCalledTimes(1);
+    expect(api.signHandover.mock.calls.map((call) => call[0])).toEqual(["h-new", "h-new"]);
+    expect(toasts().getAllByText(`${NEW_SUBJECT}: təhvil verildi və imzalandı; əks-imza gözlənilir.`).length).toBeGreaterThan(0);
+  });
+
+  // Review (4): a patient with an OPEN handover of mine gets no second one — the dialog points at its row.
+  it("a patient I already have an OPEN handover for is not handed over again: the dialog points at its row", async () => {
+    const { api } = await open({ boxes: { incoming: [], outgoing: [MINE_OPEN] } });
+    await openDialog();
+    fill();
+    expect(dialog()).toHaveTextContent("Bu xəstə üçün imzalanmamış təhviliniz artıq açıqdır (Leyla Sentetik).");
+    const send = within(dialog()).getByRole("button", { name: SEND });
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    await press(send);
+    expect(api.openHandover).not.toHaveBeenCalled();
+    expect(api.signHandover).not.toHaveBeenCalled();
+  });
+
+  it("an OPEN handover past its bridge does not hold a new one", async () => {
+    const { api } = await open({
+      boxes: { incoming: [], outgoing: [{ ...MINE_OPEN, bridge_expires_at: ago(60) }] },
+      setup: (fake) => {
+        fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
+        fake.signHandover.mockResolvedValue({ id: "h-new" });
+      },
+    });
+    await openDialog();
+    fill();
+    expect(dialog()).not.toHaveTextContent("artıq açıqdır");
+    await press(within(dialog()).getByRole("button", { name: SEND }));
+    expect(api.openHandover).toHaveBeenCalledTimes(1);
+  });
+
+  // Review (8): a board that is not LIVE rules no alarm out; the dialog says the server makes the check.
+  it("with the board not live, the dialog says the server makes the critical check", async () => {
+    await openNew({ connection: "unavailable" });
+    await openDialog();
+    expect(within(dialog()).getByText("Lövhə yenilənməyib; kritik siqnal yoxlamasını server aparır.")).toBeInTheDocument();
+  });
+
+  it("with the board live, it says nothing of the kind", async () => {
+    await openNew();
+    await openDialog();
+    expect(within(dialog()).queryByText("Lövhə yenilənməyib; kritik siqnal yoxlamasını server aparır.")).toBeNull();
+  });
+
   it.each([
     ["a timeout", () => Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })],
     ["a 502", () => refusal(502, "Bad Gateway")],
   ])("a send that got no answer (%s) may have gone through: a warning, the dialog closes, the boxes are read again", async (_, failure) => {
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => {
         fake.openHandover.mockResolvedValue({ id: "h-new", status: "OPEN" });
         fake.signHandover.mockRejectedValue(failure());
@@ -455,7 +631,7 @@ describe("«Yeni devir»", () => {
   });
 
   it("an opening the server refuses keeps the dialog and the note, and names the bed", async () => {
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => fake.openHandover.mockRejectedValue(
         refusal(403, "Admission is outside your units.", { apiCode: "out_of_scope" })),
     });
@@ -466,11 +642,12 @@ describe("«Yeni devir»", () => {
     expect(toasts().getAllByText(new RegExp(`^${NEW_SUBJECT}: təhvil açılmadı — Bu çarpayı sizin şöbələrinizdən birində deyil\\.`)).length)
       .toBeGreaterThan(0);
     expect(within(dialog()).getByRole("textbox", { name: "V · Vəziyyət" })).toHaveValue("Stabil, postoperatif 2. gün");
+    expect(api.admissions).toHaveBeenCalledTimes(2);                        // the patients are read again (review 5)
   });
 
   it("a patient or colleague list that cannot be read says so, with a retry", async () => {
     let fail = true;
-    const { api } = await open({
+    const { api } = await openNew({
       setup: (fake) => fake.handoverColleagues.mockImplementation(() => (fail
         ? Promise.reject(refusal(500, "Internal Server Error")) : Promise.resolve([LEYLA]))),
     });

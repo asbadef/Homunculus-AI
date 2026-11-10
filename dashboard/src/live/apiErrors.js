@@ -278,6 +278,10 @@ export const INVALID_FIELD_KEYS = new Map([
   ["background", "devir.invalid.background"],
   ["assessment", "devir.invalid.assessment"],
   ["recommendation", "devir.invalid.recommendation"],
+  // G2-B3b (D2): the receiver is another colleague who holds handover.sign — the open route's own check.
+  ["incoming_user_id", "devir.invalid.receiver"],
+  // G2-B3b (D5): the legacy plain-text note, which «Vardiya devri» never sends (it sends `note`).
+  ["narrative_note", NOT_ON_SCREEN],
   ["icd10_codes", NOT_ON_SCREEN],
   ["active_comorbidities", NOT_ON_SCREEN],
   ["active_medications_on_admission", NOT_ON_SCREEN],

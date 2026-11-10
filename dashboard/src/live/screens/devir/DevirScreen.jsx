@@ -8,8 +8,9 @@
 //   «Benim devrettiklerim» — mine: OPEN (the signature was refused, or not given yet) with «İmzala», and signed ones
 //     waiting for their receiver;
 //   «Son 24 saat» — completed or expired, either box, newest first.
-// They are read on arrival and again after every write — landed, refused or unanswered — and never on a timer: there
-// is no rail badge in this slice (D9), so nothing polls.
+// They are read on arrival, again after every write — landed, refused or unanswered — and on «Yenile», which shows
+// when they were last read; never on a timer: there is no rail badge in this slice (D9), so nothing polls. A write
+// that took away the button it was pressed on hands the focus to that row's list, never to <body>.
 //
 // AN OPEN HANDOVER OF MINE. Its «İmzala» opens the note step (NewHandoverDialog with the row) — or, when the row
 // already carries a note the server would take, signs with it as it is, the note on the row for her to see. While the
@@ -32,7 +33,7 @@ import { apiErrorText, readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, Note, StatusPill, riskStyle, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { dayStamp } from "../../i18n/dates.js";
-import { useBoardNow } from "../common/BoardState.jsx";
+import { boardKnown, useBoardNow } from "../common/BoardState.jsx";
 import { msOf } from "../common/elapsed.js";
 import { mayHaveLanded } from "../admin/refusal.js";
 import {
@@ -60,10 +61,11 @@ const VITALS = [
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** My two boxes, read together; the newest read wins. `phase`: "loading" (nothing read yet), "known", "failed"
- *  (nothing could be read), "stale" (a read again failed; the last lists stand). */
+ *  (nothing could be read), "stale" (a read again failed; the last lists stand). `readAt`: when the lists on screen
+ *  were read (this browser's clock), or null. */
 function useHandovers() {
   const { store } = useSession();
-  const [state, setState] = useState({ phase: "loading", boxes: null, error: null });
+  const [state, setState] = useState({ phase: "loading", boxes: null, error: null, readAt: null });
   const [reading, setReading] = useState(false);
   const seq = useRef(0);
   const mounted = useRef(false);
@@ -79,10 +81,12 @@ function useHandovers() {
       const [incoming, outgoing] = await Promise.all(
         ["incoming", "outgoing"].map((box) => store.track(() => store.api.handovers(box))),
       );
-      if (mounted.current && mine === seq.current) setState({ phase: "known", boxes: { incoming, outgoing }, error: null });
+      if (mounted.current && mine === seq.current) {
+        setState({ phase: "known", boxes: { incoming, outgoing }, error: null, readAt: Date.now() });
+      }
     } catch (error) {
       if (mounted.current && mine === seq.current) {
-        setState((prev) => ({ phase: prev.boxes ? "stale" : "failed", boxes: prev.boxes, error }));
+        setState((prev) => ({ ...prev, phase: prev.boxes ? "stale" : "failed", error }));
       }
     } finally {
       if (mounted.current && mine === seq.current) setReading(false);
@@ -301,8 +305,10 @@ function RecentRow({ row, nowMs }) {
   );
 }
 
-/** One list under its own heading, named by it for a screen reader's landmarks. `items` null: not read yet. */
-function Section({ titleKey, icon, items, emptyKey, renderRow }) {
+/** One list under its own heading, named by it for a screen reader's landmarks. `items` null: not read yet.
+ *  `sectionRef`: where the focus goes when a write took away the button it was on (it shows the ring, as Taburcu's
+ *  list does). `note`: a line above the list. */
+function Section({ titleKey, icon, items, emptyKey, renderRow, sectionRef, note = null }) {
   const { t } = useI18n();
   const titleId = useId();
   let body;
@@ -310,8 +316,9 @@ function Section({ titleKey, icon, items, emptyKey, renderRow }) {
   else if (items.length === 0) body = <Empty icon={icon}>{t(emptyKey)}</Empty>;
   else body = <ul className="m-0 list-none p-0">{items.map(renderRow)}</ul>;
   return (
-    <section aria-labelledby={titleId}>
-      <Box title={<span id={titleId}>{t(titleKey)}</span>} icon={icon} level={2}>{body}</Box>
+    <section ref={sectionRef} tabIndex={sectionRef ? -1 : undefined} aria-labelledby={titleId}
+      className={sectionRef ? `rounded-box ${FOCUS_RING}` : undefined}>
+      <Box title={<span id={titleId}>{t(titleKey)}</span>} icon={icon} level={2}>{note}{body}</Box>
     </section>
   );
 }
@@ -322,13 +329,30 @@ export function DevirScreen() {
   const { store } = useSession();
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
-  const { phase, boxes, error, reading, reload } = useHandovers();
+  const { phase, boxes, error, reading, readAt, reload } = useHandovers();
   const [dialog, setDialog] = useState(null);           // null, or {handover}: null for «Yeni devir», a row to sign
   const [busyId, setBusyId] = useState(null);           // the handover a write is out for — one at a time
   const groups = useMemo(() => (boxes ? groupHandovers(boxes) : null), [boxes]);
+  // My OPEN handovers still inside their bridge: the ones a new handover of the same patient would duplicate.
+  const signableOpen = (groups?.mineOpen ?? []).filter((row) => !bridgeExpired(row, nowMs));
 
-  /** One write from a row: its answer on the toast, naming the bed, then the lists read again (held till then). */
-  async function write(row, call, doneKey, refusedKey) {
+  // A write that took away the button it was pressed on — a countersigned row leaves its list, a signed one loses
+  // its «İmzala» — leaves the focus on <body>. It goes to that row's list instead, and only from there: a focus she
+  // has moved on is hers (Taburcu's `refocus`, Hasta Kabul's `focusIsIdle`; review 7).
+  const toCountersignRef = useRef(null);
+  const mineRef = useRef(null);
+  const [refocus, setRefocus] = useState(null);         // {to: "toCountersign" | "mine", n}
+  useEffect(() => {
+    if (!refocus) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    (refocus.to === "toCountersign" ? toCountersignRef : mineRef).current?.focus();
+  }, [refocus]);
+  const focusList = (to) => setRefocus((prev) => ({ to, n: (prev?.n ?? 0) + 1 }));
+
+  /** One write from a row: its answer on the toast, naming the bed, then the lists read again (held till then), and
+   *  the focus kept on the row's list. */
+  async function write(row, call, doneKey, refusedKey, list) {
     if (busyId !== null) return;
     const subject = subjectOf(row);
     setBusyId(row.id);
@@ -350,15 +374,21 @@ export function DevirScreen() {
       await reload();
     } finally {
       setBusyId(null);
+      focusList(list);
     }
   }
 
   const countersign = (row) => write(row, () => store.api.countersignHandover(row.id),
-    "devir.countersigned", "devir.countersignRefused");
+    "devir.countersigned", "devir.countersignRefused", "toCountersign");
   // A note the server would take is signed as it is; otherwise the note step.
   const sign = (row) => (noteValid(row.note)
-    ? write(row, () => store.api.signHandover(row.id, noteBody(row.note)), "devir.signed", "devir.signRefused")
+    ? write(row, () => store.api.signHandover(row.id, noteBody(row.note)), "devir.signed", "devir.signRefused", "mine")
     : setDialog({ handover: row }));
+  // Closed after its write, the dialog's opener may be gone with the row it was on: the focus goes to my list.
+  const closeDialog = () => {
+    setDialog(null);
+    focusList("mine");
+  };
 
   const rowBusy = (row) => busyId === row.id;
   return (
@@ -378,16 +408,28 @@ export function DevirScreen() {
         </Alert>
       ) : null}
 
+      {/* A refresh by hand, and when the lists were read: nothing reads them on a timer (no rail badge, D9). */}
+      {readAt !== null ? (
+        <div className="flex flex-wrap items-center justify-end gap-2.5 text-12.5 text-mute">
+          <span>{t("devir.readAt", { time: dayStamp(readAt, nowMs) })}</span>
+          <Button size="sm" busy={reading} onClick={reload}>{t("devir.refresh")}</Button>
+        </div>
+      ) : null}
+
       {/* An unread list is not an empty one: after a failed first read there are no lists at all, only the alert. */}
       {phase === "failed" ? null : (
         <>
           <Section
             titleKey="devir.toCountersignTitle" icon="clip" items={groups?.toCountersign ?? null} emptyKey="devir.toCountersignEmpty"
+            sectionRef={toCountersignRef}
             renderRow={(row) => <ToCountersignRow key={row.id} row={row} nowMs={nowMs} busy={rowBusy(row)} onCountersign={countersign} />}
           />
           <Section
             titleKey="devir.mineTitle" icon="swap" items={groups ? [...groups.mineOpen, ...groups.mineWaiting] : null}
-            emptyKey="devir.mineEmpty"
+            emptyKey="devir.mineEmpty" sectionRef={mineRef}
+            // The rows' lock reads the board: one that is not LIVE rules no alarm out (review 8).
+            note={signableOpen.length > 0 && !boardKnown(board.connection)
+              ? <Note tone="info" icon="eye" className="mb-2">{t("devir.boardNotLive")}</Note> : null}
             renderRow={(row) => <MineRow key={row.id} row={row} nowMs={nowMs} board={board} busy={rowBusy(row)} onSign={sign} />}
           />
           <Section
@@ -399,7 +441,8 @@ export function DevirScreen() {
 
       {/* A busy button reads only "unavailable"; the words come from here. */}
       <Announce text={busyId !== null ? t("devir.sending") : ""} />
-      <NewHandoverDialog open={dialog !== null} handover={dialog?.handover ?? null} onClose={() => setDialog(null)} onWritten={reload} />
+      <NewHandoverDialog open={dialog !== null} handover={dialog?.handover ?? null} mineOpen={signableOpen}
+        onClose={closeDialog} onWritten={reload} />
     </div>
   );
 }
