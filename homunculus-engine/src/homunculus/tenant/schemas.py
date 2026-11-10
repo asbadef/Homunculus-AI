@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
+# G2-B3a (M-4): a bed's note is checked as the admission form's texts are (`FormText`).
+from homunculus.admission.schemas import _form_text
 from homunculus.tenant.models import BedState, BedStateReason, UnitType
 
 # G2-B1a (amendment A-13): a new site's, unit's, room's or bed's name is trimmed, never blank, and
@@ -171,7 +173,11 @@ class StructureResponse(BaseModel):
 
 # ---------------------------------------------------------------- G2-B3a (Doluluk)
 # A note is trimmed and at most 200 characters (spec §3); blank is "no note" (None, at the route).
-_Note200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+# It is text as the admission form's is (final review M-4): the form's own check refuses a control
+# character other than tab or a line break, with the coded 422 `field_invalid:note`. After the
+# trim, so a note is measured and checked as it is stored.
+_Note200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200),
+                     AfterValidator(_form_text)]
 
 
 class BedReserve(BaseModel):

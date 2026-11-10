@@ -125,6 +125,28 @@ async def test_the_reason_other_needs_a_note_and_an_unknown_reason_is_refused(wa
     assert (await _stored(db_session, w.beds["3"].id))[0] == "AVAILABLE" and _rows(app) == []
 
 
+@pytest.mark.parametrize("control", ["\x00", "\x1b", "\x7f", "\x85"])
+async def test_a_note_with_a_control_character_is_a_coded_422_and_writes_nothing(ward, db_session,
+                                                                                   control):
+    """A note is text as the admission form's is (admission/schemas.py `FormText`, final review
+    M-4): a Unicode Cc control character other than tab or a line break — NUL a 500 at Postgres,
+    the others forging what a screen or an export shows — is refused, coded, and never repeated in
+    the answer. A note with lines is kept."""
+    w, client, app = ward
+    bed_id = w.beds["3"].id
+    note = f"Sentetik{control}arıza"
+    for route, body in (("reserve", {"note": note}), ("out-of-service", {"reason": "FAULT", "note": note})):
+        r = await client.post(f"/tenant/beds/{bed_id}/{route}", json=body, headers=w.auth["charge"])
+        detail = r.json().get("detail")
+        code = detail.get("code") if isinstance(detail, dict) else detail
+        assert (r.status_code, code) == (422, "field_invalid:note"), (route, r.text)
+        assert note not in r.text
+    assert (await _stored(db_session, bed_id))[0] == "AVAILABLE" and _rows(app) == []
+    r = await client.post(f"/tenant/beds/{bed_id}/reserve", json={"note": "Sentetik\tplanlı\r\nkabul"},
+                          headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+
+
 async def test_a_bed_in_maintenance_returns_to_service(ward, db_session):
     w, client, _ = ward
     await _set_state(db_session, w.beds["3"], BedState.MAINTENANCE)
