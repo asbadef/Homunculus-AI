@@ -547,3 +547,117 @@ def test_the_same_alarm_worse_sounds_again_and_is_held_to_its_own_cap(wall, audi
         assert card["severity"] == "high" and card["snooze"] is None
         assert _snooze(client, minutes=120).status_code == 422, "a HIGH alarm is held to 30 minutes"
         assert _snooze(client, minutes=30).status_code == 200
+
+
+# --- a restart ---------------------------------------------------------------------------------------------
+
+T0_ISO = "2026-07-14T10:00:00+00:00"
+AT = datetime(2026, 7, 14, 10, 1, tzinfo=timezone.utc)
+
+
+def _news2_rows(audit, rr=26.0):
+    for slug, val in (("heart_rate", 115.0), ("temperature", 39.5), ("resp_rate", rr)):
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", slug,
+                                {"value": val, "unit": "", "obs_ts": T0_ISO, "device": "mon"}))
+    audit.append(AuditEvent("HOSP1", "first_seen", "bed-3", "news2", {"at": T0_ISO}))
+    return audit
+
+
+def _shock_rows(audit):
+    for slug, val in [("suspected_infection", 1.0), ("weight_kg", 100.0), ("crystalloid_bolus_ml", 3000.0),
+                      ("map", 60.0), ("norepinephrine_rate", 0.12), ("lactate", 3.1)]:
+        audit.append(AuditEvent("HOSP1", "ingest", "bed-3", slug,
+                                {"value": val, "unit": "", "obs_ts": T0_ISO, "device": "mon"}))
+    return audit
+
+
+def _snooze_row(kind="news2", patient="bed-3", **payload):
+    body = {"role": "hem.leyla", "via": "user", "actor": "hem.leyla", "groups": ["nurse"], "minutes": 15,
+            "until": (AT + timedelta(minutes=15)).isoformat(), "reason": "ARTEFACT_OR_SIGNAL_NOISE",
+            "at": AT.isoformat()} | payload
+    return AuditEvent("HOSP1", "alert_snooze", patient, kind, body)
+
+
+def _replayed(audit, now):
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1"), now=now)
+    return engine, store
+
+
+def test_a_restart_brings_a_running_snooze_back_and_ends_a_spent_one_by_the_clock_rule():
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row())
+    _engine, store = _replayed(audit, now=AT + timedelta(minutes=5))
+    assert store.snoozes[NEWS2] == {"by": "hem.leyla", "at": AT, "until": AT + timedelta(minutes=15),
+                                    "minutes": 15, "reason": "ARTEFACT_OR_SIGNAL_NOISE", "reason_text": None,
+                                    "severity": "high"}
+    _engine, store = _replayed(audit, now=AT + timedelta(minutes=20))
+    assert store.snoozes == {}, "a snooze whose until has passed has no effect"
+    assert store.clock_from[NEWS2] == AT + timedelta(minutes=15), "but the clock rule at expiry applies"
+
+
+def test_what_ends_a_snooze_live_ends_it_in_the_replay():
+    later = AT + timedelta(minutes=3)
+    # an acknowledgement
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row())
+    audit.append(AuditEvent("HOSP1", "ack", "bed-3", "news2", {"role": "doctor", "at": T0_ISO}))
+    assert _replayed(audit, now=later)[1].snoozes == {}
+    # the episode's end: a respiratory rate of 16 clears it
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row())
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "resp_rate",
+                            {"value": 16.0, "unit": "", "obs_ts": "2026-07-14T10:02:00+00:00", "device": "mon"}))
+    assert _replayed(audit, now=later)[1].snoozes == {}
+    # a discharge
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row())
+    audit.append(AuditEvent("HOSP1", "alert_cleared", "bed-3", "news2",
+                            {"first_seen": T0_ISO, "at": T0_ISO, "reason": "discharged", "severity": "high"}))
+    assert _replayed(audit, now=later)[1].snoozes == {}
+    # a second snooze replaces the first
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(_snooze_row())
+    audit.append(_snooze_row(minutes=5, at=(AT + timedelta(minutes=2)).isoformat(), reason="CLINICAL_DECISION_MADE"))
+    snooze = _replayed(audit, now=later)[1].snoozes[NEWS2]
+    assert (snooze["until"], snooze["reason"]) == (AT + timedelta(minutes=7), "CLINICAL_DECISION_MADE")
+
+
+def test_a_row_the_live_door_would_have_refused_is_passed_over():
+    later = AT + timedelta(minutes=3)
+    audit = InMemoryAuditLog()
+    audit.append(_snooze_row())                                     # nothing is firing yet
+    _news2_rows(audit)
+    for bad in (_snooze_row("no_such_kind"), _snooze_row(patient="bed-9"), _snooze_row(minutes=31),
+                _snooze_row(minutes="15"), _snooze_row(reason="NOPE"), _snooze_row(reason="OTHER", reason_text="kısa"),
+                _snooze_row(at="not a time"), _snooze_row(at=None)):
+        audit.append(bad)
+    assert _replayed(audit, now=later)[1].snoozes == {}
+    audit.append(_snooze_row(minutes=10))                           # and a good row after them still counts
+    assert _replayed(audit, now=later)[1].snoozes[NEWS2]["minutes"] == 10
+    # an acknowledged alarm: the door answers 409, so a later row is not replayed either
+    audit = _news2_rows(InMemoryAuditLog())
+    audit.append(AuditEvent("HOSP1", "ack", "bed-3", "news2", {"role": "doctor", "at": T0_ISO}))
+    audit.append(_snooze_row())
+    assert _replayed(audit, now=later)[1].snoozes == {}
+    # a critical is never snoozed; a HIGH sepsis alarm on the same patient is
+    audit = _shock_rows(InMemoryAuditLog())
+    audit.append(_snooze_row("septic_shock", minutes=5))
+    audit.append(_snooze_row("sepsis", minutes=30))
+    assert set(_replayed(audit, now=later)[1].snoozes) == {("bed-3", "sepsis")}
+
+
+def test_a_running_app_restarts_with_its_running_snooze_and_without_a_spent_one(wall, audit):
+    with TestClient(_app(audit)) as live:
+        _vitals(live, rr=26)                                        # first seen at WALL0
+        wall.at = WALL0 + timedelta(minutes=1)
+        snooze = _on(_snooze(live, minutes=15))["snooze"]           # until WALL0+16
+    wall.at = WALL0 + timedelta(minutes=5)
+    with TestClient(_app(audit)) as restarted:
+        assert _alerts(restarted)["news2"]["snooze"] == snooze
+    wall.at = WALL0 + timedelta(minutes=17)
+    later = _app(audit)
+    with TestClient(later) as restarted:
+        assert _alerts(restarted)["news2"]["snooze"] is None, "its time ran out before this restart"
+        assert _store(later).clock_from[NEWS2] == WALL0 + timedelta(minutes=16), "the clock rule at expiry"
+    assert len(_rows(audit)) == 1, "a replay writes nothing"

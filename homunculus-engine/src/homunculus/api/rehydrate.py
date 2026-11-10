@@ -20,11 +20,18 @@ The escalation chain (X13) is not in the log: a replayed episode's clock (`clock
 chain starts over — the same limitation as `paged` and `escalated`, which are not replayed either.
 A call to the rapid-response team (G2-B5) rides its chain live, across a flap inside the escalation
 delay; so it is bound by the same limitation: a replayed `rrt_call` row stands only while its episode
-is open at that point of the log, and an episode that ended and returned replays without the call."""
+is open at that point of the log, and an episode that ended and returned replays without the call.
+
+`alert_snooze` rows (G2-B5b) replay a snooze under the live door's rules, for an alarm firing and unanswered at
+that point of the log. A later `ack` row, the episode's end, a worse reading or a discharge ends it, as live.
+Whether it still runs is judged once, at the end, against the restart's `now`: a spent one ends with the clock
+rule at expiry (`clock_from = until`). Limitation: a snooze the log shows ending at its `until` and the alarm
+worsening after it keeps, after a restart, the clock it had before the snooze. The escalation comes sooner, never
+later; `paged` is not replayed either."""
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import (
@@ -33,12 +40,13 @@ from homunculus.api.alert_lifecycle import (
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import RETRACT, profile_from_payload
 from homunculus.api.identity import bounded_role
+from homunculus.api.snooze import clean_reason, minutes_ok   # G2-B5b
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
 
 def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *,
-              skip: frozenset[int] = frozenset()) -> None:
+              skip: frozenset[int] = frozenset(), now: datetime | None = None) -> None:
     # Any iterable, read once, in id order (G2-A2, D12): the API hands it `audit.iter_records`,
     # which reads the log a page at a time, so no cap can drop the newest rows.
     # G3-01 (D12): `skip` is the `chart` rows a «hatalı giriş» withdrew (`retracted_entries`, read first by
@@ -62,6 +70,8 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
             _replay_ack(engine, store, rec)
         elif rec.event_type == "rrt_call":
             _replay_rrt_call(engine, store, rec)
+        elif rec.event_type == "alert_snooze":
+            _replay_snooze(store, rec)                               # G2-B5b
         elif rec.event_type == "first_seen":
             key = (rec.patient_id, rec.subject)
             # G3-01 (D12): a stamp only for an alert the replay has on the board, as `_replay_ack` guards. The
@@ -81,6 +91,9 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
     # continues one (the `first_seen` rows set their stamps directly). Carried past the restart, they
     # would continue a chain from its middle: the last replayed episode's first sight as its clock.
     store.recent.clear()
+    # G2-B5b (D3): a replayed snooze whose `until` the restart has passed ended live in the escalation cycle. It ends
+    # here, with the clock rule at expiry (`AckStore.expire_snoozes`), judged once at the restart's `now`.
+    store.expire_snoozes(now if now is not None else datetime.now(timezone.utc))
 
 
 def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
@@ -181,6 +194,29 @@ def _replay_rrt_call(engine: Engine, store: AckStore, rec: AuditRecord) -> None:
         return
     by = rec.payload.get("actor") or bounded_role(rec.payload.get("role"))
     store.call_rrt(rec.patient_id, rec.subject, str(by), str(rec.payload.get("reason") or ""), at)
+
+
+def _replay_snooze(store: AckStore, rec: AuditRecord) -> None:
+    """G2-B5b (D3): a snooze survives a restart under the live door's rules. It needs an alarm the replay has firing
+    at this point of the log (a latched critical is never snoozed) that nobody had acknowledged, of a severity that
+    may be snoozed, with minutes within its cap and a reason the door takes. A row the door could not have written
+    is passed over, and does not fail the replay."""
+    key = (rec.patient_id, rec.subject)
+    alert = store.firing.get(key)
+    if alert is None or key in store.acks:
+        return
+    payload = rec.payload
+    minutes = payload.get("minutes")
+    cleaned = clean_reason(payload.get("reason"), payload.get("reason_text"))
+    if cleaned is None or not minutes_ok(alert.severity, minutes):
+        return
+    try:
+        at = datetime.fromisoformat(payload["at"])
+    except (KeyError, TypeError, ValueError):
+        return
+    by = payload.get("actor") or bounded_role(payload.get("role"))
+    store.snooze(rec.patient_id, rec.subject, by=str(by), at=at, minutes=minutes, reason=cleaned[0],
+                 reason_text=cleaned[1], severity=alert.severity)
 
 
 #: G3-01 (D10): the kinds a patient's ENGINE state is rebuilt from — what `rehydrate` replays into the engine

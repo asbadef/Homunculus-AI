@@ -489,7 +489,8 @@ def create_app(
         withdrawn = retracted_entries(iter_records_of(audit, tenant=hospital, event_types={RETRACT},
                                                       page=REHYDRATE_PAGE))
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
-        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn)
+        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn,
+                  now=datetime.now(timezone.utc))          # G2-B5b: a snooze still running at the restart stands
         # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
         # was discharged is retired, whether or not the discharge's rows were written (a crash
         # between the tombstone write and the retire call; an audit that failed after the
