@@ -878,6 +878,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * One patient's fluid ledger (GET /patients/{id}/fluids, G3-03): the fluid day and the last complete one,
+     * the hourly intake and output with the cumulative balance, the totals per window, the entries, the last
+     * day's urine and how many of its hours carry an entry — every sum the engine's (api/fluids.py).
+     */
+    patientFluids(patientId) {
+      return authed(`/patients/${seg(patientId)}/fluids`);
+    },
+
+    /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
      * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list

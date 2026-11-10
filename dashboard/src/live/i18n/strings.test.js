@@ -193,6 +193,10 @@ const AZ_SAME_AS_TR = new Set([
   "gorevler.taskTitle", //   "{title} · {bed}"     — punctuation only (NEUTRAL above)
   "gorevler.refused", //     "{subject}: {reason}" — the same
 
+  // G3-03 (sivi) · az = tr
+  "sivi.fieldMl", //         mL — a unit symbol, not a word (as patient.medsBolusUnit)
+  "sivi.ml", //              "{value} mL" — a number and the unit symbol
+
 ]);
 
 describe("live UI dictionaries", () => {

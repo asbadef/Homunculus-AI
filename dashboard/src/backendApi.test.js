@@ -1725,3 +1725,21 @@ describe("G3-02 Görevlerim calls", () => {
     expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith("/t-1/skip"))[1].body)).toEqual({ reason: "ameliyatta" });
   });
 });
+
+// G3-03 — Sıvı dengesi: the patient's fluid ledger, summed by the engine (homunculus/api/fluids.py)
+describe("G3-03 Sıvı dengesi call", () => {
+  it("reads one patient's fluid ledger with an authed GET", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const answer = { patient_id: "S 1/x", totals: {} };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.patientFluids("S 1/x")).toEqual(answer);
+    expect(await api.patientFluids("S-001")).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/patients/S%201%2Fx/fluids");
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/patients/S-001/fluids");
+  });
+});
