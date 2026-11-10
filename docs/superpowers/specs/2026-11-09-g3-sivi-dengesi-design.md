@@ -119,6 +119,11 @@ After G3-02 is live: api + web images; no migration; rollback = previous image t
 
 ## 9. Amendments (implementation and review, 2026-11-10)
 
+- **Build note.** With B3a, B4/B6, B5, G3-02 and this slice together, the `LiveApp` chunk is 502.8 kB — 2.8 kB over
+  Rollup's 500 kB warning (a warning, the build passes; precache 20). A static `manualChunks` split was tried and
+  not kept (shared modules make chunk cycles possible, and no browser smoke could be run); the fix is a separate
+  slice: route-level lazy loading of the screens with a browser check (open item O6).
+
 - **A1 (D3)** The 24-hour time rule binds every fluid code at the server, so the meds form's bolus too (the
   browser already limited it); seven older tests that charted a bolus months back now chart it three hours back.
 - **A2 (§3)** The door refuses with **400** (as G3-01's bedside door), not 422.
