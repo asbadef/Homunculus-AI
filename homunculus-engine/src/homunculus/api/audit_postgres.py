@@ -67,9 +67,10 @@ POOL_TIMEOUT_S = 3
 # The audit engine's statement bound (D2), the widest of the engines': each append is two
 # statements (the chain's head, then the insert) on almost every request.
 AUDIT_STATEMENT_TIMEOUT_MS = 10_000
-# Its reads set their own, for their transaction (D2): GET /audit, /audit/verify (up to
-# AUDIT_VERIFY_LIMIT_MAX records in one read, re-hashed after it), the alarm-quality report and a
-# restart's replay are long by nature, and a bound meant for a stalled server must not cut them.
+# Its reads set their own, for their transaction (D2): GET /audit, /audit/verify (since G2 borç 3 the
+# whole chain, AUDIT_VERIFY_PAGE records a read, each read on a worker thread through this engine's
+# pool), the alarm-quality report and a restart's replay are long by nature, and a bound meant for a
+# stalled server must not cut them.
 AUDIT_READ_STATEMENT_TIMEOUT_MS = 30_000
 
 

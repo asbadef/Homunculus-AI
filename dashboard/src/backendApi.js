@@ -32,6 +32,13 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
  *
  *  It is NOT the bound on a whole import, which is why `LDAP_IMPORT_CHUNK` is what it is. */
 export const ADMIN_LDAP_TIMEOUT_MS = 30_000;
+/** How long `/audit/verify` waits (G2 borç 3, owner: «Tamamını doğrula»). The engine walks the WHOLE
+ *  chain, a page at a time off its event loop — about 4 s of CPU and 200 page reads a million rows — so
+ *  on a long trail it takes longer than an ordinary request's 15 s. 60 s is what nginx gives the API
+ *  location (it sets no `proxy_read_timeout`, and the default is 60 s): waiting longer here would only
+ *  wait for nginx's 504. A verification still running when this gives up finishes on the server, and a
+ *  press meanwhile is told one is already running (409), never started twice. */
+export const AUDIT_VERIFY_TIMEOUT_MS = 60_000;
 /** The most accounts one `/admin/ldap/import` call takes (the API's own cap). */
 export const LDAP_IMPORT_MAX = 50;
 /** The most rows a directory search or a group search answers with, whatever is asked
@@ -877,10 +884,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *
      * Unfiltered on purpose: a chain can only be verified as the complete run for one tenant,
      * because a filtered slice is missing its own predecessors and would report a break that is
-     * not there.
+     * not there. G2 borç 3: the WHOLE chain, so no `limit` is sent, and it is given
+     * AUDIT_VERIFY_TIMEOUT_MS; a verification already running for the hospital is a 409.
      */
-    verifyAudit(limit = 10000) {
-      return authed(`/audit/verify?limit=${encodeURIComponent(limit)}`);
+    verifyAudit() {
+      return authed("/audit/verify", { timeoutMs: AUDIT_VERIFY_TIMEOUT_MS });
     },
 
     /**

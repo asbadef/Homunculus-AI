@@ -1755,9 +1755,15 @@ uydurmadır.
 - **Zincir doğrulaması:** her denetim kaydı, kendinden önceki kaydın mührünü (hash) taşır. Arada bir kayıt silinir ya da
   değiştirilirse zincir o noktada kopar.
   - «Zinciri doğrula» mühürleri baştan yeniden hesaplar ve ilk kopan kaydı numarasıyla gösterir.
-  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). En çok 50 000 kaydı okur ve API'yi kısa bir süre meşgul eder.
+  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). 2026-11-10'dan beri (sahip kararı, «Tamamını doğrula»)
+    zincirin **tamamını** okur: en eskiden başlayarak 5 000'er kayıtlık sayfalarla, ilk kopukluğa kadar. Her sayfa
+    API'nin ana döngüsünün dışında okunur ve hesaplanır; ekranlar beklemez. Milyon kayıt başına yaklaşık 4 saniye
+    işlemci tutar.
+  - Bir hastanede aynı anda **tek doğrulama** çalışır. Biri sürerken basılan düğme «doğrulama zaten sürüyor» der;
+    ikinci bir doğrulama sıraya girmez.
   - Sonuç, doğrulamanın saatiyle görünür. Sayfadan çıkınca silinir: eski bir sonuç güncelmiş gibi gösterilmez.
-  - Kayıt 50 000'den uzunsa sonuç «ilk N kayıtta sağlam» der, zincirin tamamı için sağlam demez.
+  - Sonuçtaki kayıt sayısı, doğrulamanın baştan sona yürüdüğü kayıtlardır. Doğrulama sürerken yazılan bir kayıt
+    bu sayıya girebilir de girmeyebilir de.
 - **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
   - Sütunlar: no, zaman, tür, kim, hasta, konu.
   - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.

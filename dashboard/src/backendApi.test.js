@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  ADMIN_LDAP_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
+  ADMIN_LDAP_TIMEOUT_MS, AUDIT_VERIFY_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
   createBackendApi, retryAfterSeconds,
 } from "./backendApi.js";
 
@@ -393,6 +393,24 @@ describe("backendApi — a server that does not answer", () => {
 
     const outcome = api.ldapImport(["e-1"]).then(() => "answered", (err) => err);
     await vi.advanceTimersByTimeAsync(29_999);
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+  });
+
+  // G2 borç 3 (owner: «Tamamını doğrula»): the verification walks the whole chain, page by page, and
+  // on a long trail that takes longer than an ordinary request. It is given what nginx gives it: the
+  // API location sets no `proxy_read_timeout`, so its 60 s default is the binding limit — waiting longer
+  // here would only wait for nginx's 504. No `limit` is sent: the server walks every row.
+  it("verifies the whole chain: no limit sent, and 60 s to answer, not 15", async () => {
+    expect(AUDIT_VERIFY_TIMEOUT_MS).toBe(60_000);
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockImplementationOnce(hanging);
+
+    const outcome = api.verifyAudit().then(() => "answered", (err) => err);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe("/audit/verify");
     expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
     await vi.advanceTimersByTimeAsync(1);
     expect((await outcome).code).toBe(REQUEST_TIMEOUT);

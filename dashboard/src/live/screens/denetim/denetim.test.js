@@ -2,7 +2,7 @@
 // (owner D2), who did it (D6), what a verification answer reads as (D4), the labelled types (§4), the order.
 import { describe, it, expect } from "vitest";
 import {
-  ACTOR_KEYS, EVENTS_LIMIT, EVENT_TYPES, MASK, VERIFY_LIMIT, actorOf, maskPatient, newestFirst, reasonKey, typeKey, verdictOf,
+  ACTOR_KEYS, EVENTS_LIMIT, EVENT_TYPES, MASK, actorOf, maskPatient, newestFirst, reasonKey, typeKey, verdictOf,
 } from "./denetim.js";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { LANG_CODES } from "../../i18n/langs.js";
@@ -115,8 +115,8 @@ describe("the events, newest first (D5)", () => {
     expect(newestFirst({ records: "x" })).toEqual([]);
   });
 
-  it("asks for the server's own caps", () => {
-    expect(VERIFY_LIMIT).toBe(50000);   // AUDIT_VERIFY_LIMIT_MAX
+  // G2 borç 3: the verification has no cap to ask for any more — the server walks the whole chain.
+  it("asks for the server's own cap of events", () => {
     expect(EVENTS_LIMIT).toBe(200);
   });
 });

@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from itertools import islice
 from typing import TYPE_CHECKING
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
@@ -34,7 +35,7 @@ from homunculus.api.alert_lifecycle import (
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import (
-    AuditEvent, AuditLog, InMemoryAuditLog, iter_records, iter_records_of, verify_chain,
+    AuditEvent, AuditLog, ChainVerifier, InMemoryAuditLog, iter_records, iter_records_of,
 )
 from homunculus.api.board import (
     _news2, board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
@@ -117,10 +118,13 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
-#: Spec 2026-11-01: the most records one `/audit/verify` reads — one read under the audit's read
-#: bound, re-hashed on the event loop. A larger `limit` is clamped, and the answer says
-#: `complete: false` when the tenant's trail held more, as for any partial run.
-AUDIT_VERIFY_LIMIT_MAX = 50000
+#: G2 borç 3 (owner decision 2026-11-10, «Tamamını doğrula»): `/audit/verify` walks the hospital's WHOLE
+#: chain, oldest first, this many rows a read (`iter_records`, each read under the audit's read bound),
+#: every page read and re-hashed on a worker thread so the event loop never waits for it. It replaces
+#: spec 2026-11-01's cap (AUDIT_VERIFY_LIMIT_MAX, 50 000 rows in one read on the loop), which on a long
+#: trail checked the oldest rows only and never the newest. Measured cost: about 3.6 µs a seal — about
+#: 4 s of CPU and 200 page reads a million rows — run only when someone presses the button.
+AUDIT_VERIFY_PAGE = 5000
 
 #: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE. G3-01 (X7): MAP,
 #: once an extra bound here (the door did not take it), is in PLAUSIBLE now with the same 0–300 mmHg. An
@@ -401,6 +405,9 @@ def create_app(
     notifier = Notifier()
     hub = NotificationHub()
     tickets = TicketStore()
+    # G2 borç 3: the hospitals whose whole-chain verification is running — one at a time each.
+    # Checked and added on the event loop with no await between, so two requests cannot both pass.
+    verifying: set[str] = set()
     audit = audit or InMemoryAuditLog()
     identities = identities if identities is not None else InMemoryIdentityStore()
     tasks = tasks if tasks is not None else InMemoryTaskStore()      # G3-02: the task queue's rows
@@ -2201,21 +2208,46 @@ def create_app(
         return {**report.as_dict(), "days": days, "truncated": truncated}
 
     @app.get("/audit/verify")
-    async def verify_audit(limit: int = 10000, authorization: str | None = Header(default=None)):
+    async def verify_audit(limit: str | None = None, authorization: str | None = Header(default=None)):
         """Has this hospital's audit log been altered?
 
         Recomputes every seal from the genesis hash forward and names the first record that fails.
         Deliberately unfiltered: a chain can only be verified as the complete run for one tenant,
         because a filtered slice is missing its own predecessors by construction and would report a
-        break that is not there. `limit` bounds the work, and the response says how far it got so a
-        partial verification is never mistaken for a whole one.
+        break that is not there.
+
+        G2 borç 3 (owner decision 2026-11-10, «Tamamını doğrula»): the WHOLE chain, every row of the
+        hospital's trail, oldest first, AUDIT_VERIFY_PAGE rows a read (`iter_records`), stopping at the
+        first break. Each page is read and re-hashed on a worker thread (`asyncio.to_thread`): the
+        event loop — every ward screen's API — never waits for a verification. One at a time per
+        hospital: a second request while one runs is refused (409), never queued behind it. A row
+        appended while the walk runs may or may not be in it; `records` says how many rows were
+        walked. `complete` is true whenever the walk reached the end or stopped at a break — which is
+        every answer now; the field stays for the page's sake (D4). `limit` is accepted and ignored,
+        so an older client that still sends one is not refused.
         """
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
-        cap = min(limit, AUDIT_VERIFY_LIMIT_MAX)
-        recs = audit.records(tenant=hospital, limit=cap)
-        report = verify_chain(recs)
-        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < cap}
+        if hospital in verifying:
+            raise HTTPException(status_code=409, detail="denetim doğrulaması zaten sürüyor")
+        verifying.add(hospital)
+        try:
+            page = AUDIT_VERIFY_PAGE
+            verifier = ChainVerifier()
+            rows = iter_records(audit, tenant=hospital, page=page)
+
+            def walk_one_page() -> bool:
+                """One page of the walk, on a worker thread: its read (the next `iter_records` page)
+                and its seals. True while there may be more: a whole page walked, no break."""
+                before = verifier.records
+                verifier.feed(islice(rows, page))
+                return not verifier.broken and verifier.records - before == page
+
+            while await asyncio.to_thread(walk_one_page):
+                pass
+        finally:
+            verifying.discard(hospital)
+        return {**verifier.report().as_dict(), "records": verifier.records, "complete": True}
 
     return app

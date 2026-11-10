@@ -182,3 +182,19 @@ breakdown today, only `per_day` and the top ten patient ids, so B6 needs a backe
 - **D4 tightened.** An `ok: true` answer is read as `unreadable` when its `records` is not a number or its
   `complete` is not a boolean. It is never read as intact or empty.
 
+
+## 9. Amendment 2026-11-10 — the whole chain (owner decision «Tamamını doğrula», G2 borç 3)
+
+- **D4 changed.** `GET /audit/verify` no longer reads the oldest 50 000 records in one read on the event loop
+  (`AUDIT_VERIFY_LIMIT_MAX` is gone). It walks the hospital's WHOLE chain, oldest first, `AUDIT_VERIFY_PAGE`
+  (5 000) rows a read (`iter_records`), stopping at the first break. Each page is read and re-hashed on a worker
+  thread (`asyncio.to_thread`, `api/audit.py` `ChainVerifier`), so the event loop never waits for it. Measured
+  cost: about 3.6 µs a seal, about 4 s of CPU and 200 page reads a million rows — still only on the button (D1).
+- **One at a time per hospital.** A second request while one runs is refused 409 «denetim doğrulaması zaten
+  sürüyor» (dashboard `errors.auditVerifyBusy`, four languages), never queued.
+- **The answer keeps its shape.** `records` is the rows walked (up to and including a broken one). `complete` is
+  true whenever the walk reached the end or stopped at a break — every answer now; the page's `partial` verdict
+  stays for an answer that says otherwise. `limit` is accepted and ignored, so an older client is not refused.
+- **The call.** `verifyAudit()` sends no limit and waits `AUDIT_VERIFY_TIMEOUT_MS` (60 s, nginx's default
+  `proxy_read_timeout` for the API location) instead of the usual 15 s. §7's «a trail longer than that is
+  reported as partial» no longer happens.

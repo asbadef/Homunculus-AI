@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -91,30 +92,71 @@ class ChainReport:
                 "broken_at": self.broken_at, "reason": self.reason}
 
 
-def verify_chain(records: list[AuditRecord]) -> ChainReport:
+class ChainVerifier:
+    """`verify_chain`, a piece at a time (G2 borç 3, owner decision 2026-11-10, «Tamamını doğrula»).
+
+    `/audit/verify` walks a hospital's WHOLE trail, which on a long one does not fit one read: it
+    reads a page, hands it to `feed`, and reads the next. The verifier carries what one pass over
+    the run needs between pages — the last seal (`prev`), the counts — so the pages, fed in order,
+    give exactly the report the whole run would. It stops at the first break: from then on `feed`
+    walks nothing and answers False, and the reader stops reading.
+
+    The records fed must still be the complete, ascending-by-id run for ONE tenant, split anywhere.
+    `records` counts the rows walked: the sealed ones checked, the unsealed ones, and the one that
+    broke, if one did.
+    """
+
+    def __init__(self) -> None:
+        self._prev = GENESIS_HASH
+        self.checked = 0
+        self.unsealed = 0
+        self.records = 0
+        self._broken: ChainReport | None = None
+
+    @property
+    def broken(self) -> bool:
+        return self._broken is not None
+
+    def feed(self, records: Iterable[AuditRecord]) -> bool:
+        """Walk these records, the next in order after the ones fed before. False once the chain
+        has broken — in these or earlier: nothing after the first break is walked."""
+        if self._broken is not None:
+            return False
+        for rec in records:
+            self.records += 1
+            if not rec.hash:
+                self.unsealed += 1
+                continue
+            if rec.prev_hash != self._prev:
+                self._broken = ChainReport(False, self.checked, self.unsealed, rec.id,
+                                           "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir")
+                return False
+            expected = chain_hash(self._prev, ts=rec.ts, tenant=rec.tenant, event_type=rec.event_type,
+                                  patient_id=rec.patient_id, subject=rec.subject, payload=rec.payload)
+            if expected != rec.hash:
+                self._broken = ChainReport(False, self.checked, self.unsealed, rec.id,
+                                           "kaydın içeriği mührüyle uyuşmuyor — sonradan değiştirilmiş")
+                return False
+            self._prev = rec.hash
+            self.checked += 1
+        return True
+
+    def report(self) -> ChainReport:
+        """The first break, or — no break among the records walked — an intact run of them."""
+        return self._broken or ChainReport(True, self.checked, self.unsealed, None)
+
+
+def verify_chain(records: Iterable[AuditRecord]) -> ChainReport:
     """Recompute every seal in order and report the first one that does not match.
 
     Records must be the complete, ascending-by-id run for ONE tenant. A filtered slice (one patient,
     one event type) cannot be verified — its predecessors are missing by construction — and asking
-    this function to judge one would manufacture a break that is not there.
+    this function to judge one would manufacture a break that is not there. One `ChainVerifier`, fed
+    the whole run at once.
     """
-    prev = GENESIS_HASH
-    checked = unsealed = 0
-    for rec in records:
-        if not rec.hash:
-            unsealed += 1
-            continue
-        if rec.prev_hash != prev:
-            return ChainReport(False, checked, unsealed, rec.id,
-                               "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir")
-        expected = chain_hash(prev, ts=rec.ts, tenant=rec.tenant, event_type=rec.event_type,
-                              patient_id=rec.patient_id, subject=rec.subject, payload=rec.payload)
-        if expected != rec.hash:
-            return ChainReport(False, checked, unsealed, rec.id,
-                               "kaydın içeriği mührüyle uyuşmuyor — sonradan değiştirilmiş")
-        prev = rec.hash
-        checked += 1
-    return ChainReport(True, checked, unsealed, None)
+    verifier = ChainVerifier()
+    verifier.feed(records)
+    return verifier.report()
 
 
 def _now_iso() -> str:
@@ -253,6 +295,12 @@ class SqliteAuditLog:
     def __init__(self, path: str = ":memory:") -> None:
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
+        # G2 borç 3: `/audit/verify` reads its pages on a worker thread while the event loop goes on
+        # appending, and this log has ONE connection, whose transaction both share. A read between an
+        # append's INSERT and its COMMIT would read the uncommitted row; a COMMIT (or the retry's
+        # ROLLBACK) among a read's steps is a state neither was written for. So each holds this lock
+        # for its whole time on the connection — never across anything slow but the database itself.
+        self._lock = threading.Lock()
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -314,20 +362,21 @@ class SqliteAuditLog:
         # something other than contention is wrong, and looping forever would hide it.
         for _ in range(5):
             ts = _now_iso()
-            prev = self._head(event.tenant)
-            digest = chain_hash(prev, ts=ts, tenant=event.tenant, event_type=event.event_type,
-                                patient_id=event.patient_id, subject=event.subject, payload=payload)
-            try:
-                cur = self.connection.execute(
-                    "INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload,"
-                    " prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ts, event.tenant, event.event_type, event.patient_id, event.subject,
-                     json.dumps(payload), prev, digest),
-                )
-            except sqlite3.IntegrityError:
-                self.connection.rollback()
-                continue
-            self.connection.commit()
+            with self._lock:
+                prev = self._head(event.tenant)
+                digest = chain_hash(prev, ts=ts, tenant=event.tenant, event_type=event.event_type,
+                                    patient_id=event.patient_id, subject=event.subject, payload=payload)
+                try:
+                    cur = self.connection.execute(
+                        "INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload,"
+                        " prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (ts, event.tenant, event.event_type, event.patient_id, event.subject,
+                         json.dumps(payload), prev, digest),
+                    )
+                except sqlite3.IntegrityError:
+                    self.connection.rollback()
+                    continue
+                self.connection.commit()
             return AuditRecord(id=cur.lastrowid, ts=ts, tenant=event.tenant,
                                event_type=event.event_type, patient_id=event.patient_id,
                                subject=event.subject, payload=payload,
@@ -365,9 +414,10 @@ class SqliteAuditLog:
         # The newest N are read from the id end and handed back oldest first (G2-A2, D11): the
         # INTEGER PRIMARY KEY, walked backwards — no index of its own.
         order = "DESC" if newest else "ASC"
-        rows = self.connection.execute(
-            f"SELECT * FROM audit {where} ORDER BY id {order} LIMIT ?", params
-        ).fetchall()
+        with self._lock:
+            rows = self.connection.execute(
+                f"SELECT * FROM audit {where} ORDER BY id {order} LIMIT ?", params
+            ).fetchall()
         if newest:
             rows.reverse()
         return [AuditRecord(id=r["id"], ts=r["ts"], tenant=r["tenant"], event_type=r["event_type"],
