@@ -516,3 +516,34 @@ async def test_the_cycle_republishes_the_card_when_a_snooze_ends(wall, audit):
     cards = [f for f in sent if f.get("patient_id") == "bed-3"]
     assert cards, "a screen without its own clock hears the alarm again within a cycle"
     assert next(a for a in cards[-1]["alerts"] if a["kind"] == "news2")["snooze"] is None
+
+
+# --- the episode, through the doors ----------------------------------------------------------------------
+
+def test_an_episode_that_clears_takes_its_snooze_and_a_return_sounds(wall, audit):
+    app = _app(audit)
+    with TestClient(app) as client:
+        _vitals(client, rr=26)                                      # first seen at WALL0
+        wall.at = WALL0 + timedelta(minutes=1)
+        assert _snooze(client, minutes=30).status_code == 200
+        wall.at = WALL0 + timedelta(minutes=2)
+        _reading(client, "resp_rate", 16, minute=2)                 # NEWS2 4: cleared (HIGH does not latch)
+        assert "news2" not in _alerts(client) and _store(app).snoozes == {}
+        wall.at = WALL0 + timedelta(minutes=4)
+        _reading(client, "resp_rate", 26, minute=4)                 # back inside the escalation delay
+        card = _alerts(client)["news2"]
+        assert card["snooze"] is None, "a return is a new alarm, and sounds: no snooze rides the chain"
+        assert card["first_seen_at"] == wall.at.isoformat()
+        assert _store(app).clock_from[NEWS2] == WALL0, "its X13 chain goes on, on the chain's clock (plan note 2)"
+
+
+def test_the_same_alarm_worse_sounds_again_and_is_held_to_its_own_cap(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=22)                                      # NEWS2 6: MODERATE
+        assert _snooze(client, minutes=120).status_code == 200
+        wall.at = WALL0 + timedelta(minutes=1)
+        _reading(client, "resp_rate", 26, minute=1)                 # NEWS2 7: HIGH
+        card = _alerts(client)["news2"]
+        assert card["severity"] == "high" and card["snooze"] is None
+        assert _snooze(client, minutes=120).status_code == 422, "a HIGH alarm is held to 30 minutes"
+        assert _snooze(client, minutes=30).status_code == 200
