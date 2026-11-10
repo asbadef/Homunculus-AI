@@ -15,7 +15,9 @@ Settled decisions:
 
 PHI RULE (§5.2): patient-identifiable fields live on `Patient` and are stored
 encrypted at rest via `EncryptedString`. Clinical note fields on `Admission` are
-NOT PHI and are stored in the clear.
+NOT PHI and are stored in the clear. The one exception is `transfer_note` (G2-B1b D8):
+free text that may name a person, so it is encrypted (`EncryptedString`) like
+`beds.state_note`.
 
 CLINICAL RULE: this module records context and workflow state only. It never
 produces a diagnosis and never issues an imperative clinical instruction.
