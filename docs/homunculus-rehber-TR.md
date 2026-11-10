@@ -1146,8 +1146,9 @@ geldiğinde yalnız formu önceden dolduracak. Bu ekranlar kimin hangi yatakta y
 nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesaplamaz. Örneklerdeki
 numaralar ve yerler uydurmadır.
 
-**Üç sekme** — menüde "Hasta Kabul":
-- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* ad soyad\*, baba adı, cinsiyet\*, doğum
+**İki sekme** — menüde "Hasta Kabul" (B3a'dan önce üçüncü sekme «Yataklar»dı; artık ayrı «Doluluk»
+ekranı, bkz. 3.14):
+- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* soyad ad\* (koğuşun yazdığı sırayla), baba adı, cinsiyet\*, doğum
   tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
   *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
   "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
@@ -1159,8 +1160,6 @@ numaralar ve yerler uydurmadır.
   da oturumun kapanması temizler.
 - **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
   "Yatan hastalar".
-- **Yataklar:** birimlerinizin yatakları oda oda, durumlarıyla (Boş, Dolu, Taburcu bekliyor,
-  Temizlikte, Kapatılmış…); temizlikteki yatakta "Temizlik bitti · boş" düğmesi.
 
 **Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
 değiştirilebilir):
@@ -1230,7 +1229,7 @@ eski kabullere bakma ekranı sonraki dilimde gelecek. O numaraya sonradan gelen 
 numarayla gelirse hiçbir ekranda görünmez ve alarm vermez. Yeni hastaya kendi yeni numarası girilir.
 
 **Yatağın boşaltılması:** onaydan sonra yatak "Temizlikte"dir. Temizlik bitince hemşire ya da
-sorumlu hemşire Yataklar sekmesinde "Temizlik bitti · boş" der — gece yönetici olmadan da yatak
+sorumlu hemşire «Doluluk» ekranında "Temizlik bitti · boş" der (B3a'dan önce Hasta Kabul'ün Yataklar sekmesindeydi) — gece yönetici olmadan da yatak
 dönebilsin diye (D8). Yatak, son hastasının kartı panodan kalkmadan boşalmaz: sunucu kartı bir kez
 daha kaldırmayı dener, olmazsa "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı"
 der. Neden: eski kart dururken yatağa yeni hasta yatırılırsa aynı yatakta iki kart olur ve monitör
@@ -1743,9 +1742,87 @@ uydurmadır.
   bildirilebilir. Geri dönüş bloğu (R-1) bu yüzden önce kaç geri alma olduğunu sayar; sayı 0 değilse
   sahibin aynı sayıyı yazdığı bir onay olmadan hiçbir şeye dokunmaz (`G3-BEDSIDE-bloklari.txt`).
 
+### 3.13 «Denetim bütünlüğü» sayfası (Grup 2 · B4)
+
+- **Ne:** `/denetim`. `audit.view` yetkisi olanlar görür: denetçi grubu, satıcı desteği (`platform_support`) ve hastane
+  yöneticisi. Sayfa yalnız okur, hiçbir şey yazmaz. Menüde en sondadır; yalnız bu yetkiyi taşıyan biri girişte bu sayfaya
+  düşer.
+- **Zincir doğrulaması:** her denetim kaydı, kendinden önceki kaydın mührünü (hash) taşır. Arada bir kayıt silinir ya da
+  değiştirilirse zincir o noktada kopar.
+  - «Zinciri doğrula» mühürleri baştan yeniden hesaplar ve ilk kopan kaydı numarasıyla gösterir.
+  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). En çok 50 000 kaydı okur ve API'yi kısa bir süre meşgul eder.
+  - Sonuç, doğrulamanın saatiyle görünür. Sayfadan çıkınca silinir: eski bir sonuç güncelmiş gibi gösterilmez.
+  - Kayıt 50 000'den uzunsa sonuç «ilk N kayıtta sağlam» der, zincirin tamamı için sağlam demez.
+- **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
+  - Sütunlar: no, zaman, tür, kim, hasta, konu.
+  - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
+  - Olayın ayrıntısı (payload) ve mühürler gösterilmez.
+  - «Tür» süzgeci seçilen türü sunucudan ister. Böylece seyrek bir tür, sayıca çok olan ölçüm kayıtlarının arasında
+    kaybolmaz.
+- **Kapsam:** birim kapsamlı bir hesap denetim kaydının tamamını göremez ve sayfa bunu söyler. Zincir doğrulaması ise hasta
+  göstermediği için böyle bir hesaba da açıktır.
+- **Alarm yoğunluğu (B6):** aynı sayfada üçüncü kutu, «Haritayı göster» düğmesiyle gelir.
+  - Son 7 günde her hastanın hangi saatte kaç alarm olayı yaşadığını gösterir: satırlar hasta (maskeli), sütunlar
+    günün saatleri (00–23, yerel saat), en sonda toplam.
+  - Renk tonu yalnız tablodaki en yüksek sayıya göredir; klinik bir eşik değildir.
+  - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
+  - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
+- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
+
+### 3.14 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
+
+Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
+temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
+«Yataklar» sekmesi buraya taşındı. **Durum:** kodda (`feat/g2b-b3a-doluluk`); main'e ve hastane
+sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
+
+- **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
+  yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
+- **Birim başlığı.** Birimin adı ve türü (Erişkin YBÜ, Yenidoğan YBÜ gibi); altında «1 / 4 doludur»:
+  dolu yatak / kullanılabilir yatak. Kullanılabilir = açık, kullanım dışı ve bakımda olmayan; rezerve
+  yatak kullanılabilir sayılır (hastasını bekler). Yanında sıfır olmayan sayılar: boş, temizlikte,
+  rezervde, kullanım dışı, bakımda.
+- **Dolu yatakta yalnız kısa ad.** «Məmmədov Əli Rauf oğlu» → «Əli M.»: ikinci kelime tam, ilk
+  kelimenin baş harfi, çünkü koğuşta ad soyadı önce yazılır (sahibin kararı, 9 Kasım 2026). Baştaki
+  tire ya da ayrı karakter olarak gelen aksan işareti kısa adı bozmaz: «-Kaya Ayşe» → «Ayşe K.».
+  Kabul formundaki kutunun adı da bu yüzden «Soyad ad» (eksik alan uyarısı da böyle der). Numara,
+  doğum tarihi, tanı gösterilmez.
+- **Adlar nereden gelir.** Yalnız kendi kurumunuzun, yatakta hâlâ AÇIK olan kabulünden; aynı yatakta
+  birden çok açık kabul görünürse en yenisinden. Taburcusu tamamlanmış kabul ad vermez. Ad ve not ayrı
+  bir okumadan gelir (`GET /tenant/occupancy`); yapıyı okuyan ekranlar (Yapı, kapsam, monitör eşleme)
+  hasta adı almaz ve yatağın notunu hiç açmaz, okunamayan bir not onları düşüremez.
+- **Rezerv.** Sorumlu hemşire boş bir yatağı beklenen hasta için ayırır; isteğe bağlı not («kimin
+  için, neden», en çok 200 karakter). Not hasta adı taşıyabileceği için **şifreli** saklanır; denetim
+  kaydına yalnız «not yazıldı mı» düşer, metni düşmez. Rezerve yatağa kabul yasak değildir: kabul
+  formu yatağın rezerve olduğunu ve notunu gösterip hemşireye sorar, «Yenə də bu çarpayıya qəbul et»
+  denirse kabul eder. Bu «evet» tek yatak ve tek form içindir: başka bir yatakta ya da «Yeni qəbul»
+  sonrası yeni hastada yine sorulur. «Evet» düğmesi, not okunana (ya da okunamadığı söylenene) dek
+  bekler; hemşire notu görmeden karar vermez.
+- **Kullanım dışı.** Boş bir yatak her zaman bir **nedenle** kullanım dışı bırakılır: arıza, izolasyon
+  temizliği, personel yetersizliği ya da diğer («diğer» için not zorunlu). «Kullanıma aç» yatağı yeniden
+  boş yapar; bakımdaki yatak için de aynı düğme çıkar. Yatakta açık bir yatış varsa ya da son
+  hastanın kartı panodan inmemişse açılmaz (yatak boşaltmanın kuralları). Yönetici API'sinin ham yatak
+  geçişi rezerve ve kullanım dışı durumlarına ne girer ne onlardan çıkar (400): ikisinin de notu ya da
+  nedeni vardır, yalnız kendi denetimli yollarıyla (rezervi kaldır, kullanıma aç, onaylı kabul) değişir.
+- **Bir anda bir işlem.** Bir düğmeye basıldığında diğer yatakların düğmeleri işlem bitene dek
+  bekler; her işlemden sonra ekran yatakları ve adları yeniden okur. Adlar okunamazsa ekran bunu
+  söyler ve yatakları adsız gösterir; eski bir adı yanlış yatakta göstermektense hiç göstermez.
+  Her işlemin sonucu (yapıldı ya da reddedildi) bildirimin yanında başlığın altında da bir satır
+  olarak durur, sonraki işleme kadar; bildirimi kaçıran da ne olduğunu bulur. İşlemden sonra düğmesi
+  kalkan yatakta odak sayfanın başına düşmez, o yatağın kutusuna gider.
+- **«Bu çarpayıya xəstə qəbul et».** Yatağı oturumun kabul formuna koyar ve Hasta Kabul'ü açar.
+  Önceki kabul bittiyse yatak yeni bir forma girer, eski hastanın numarası ve bilgisi taşınmaz.
+  Formda gönderim yolda, bekletilmiş ya da yanıtsızsa forma dokunmaz ve bunu söyler.
+- **Yetki.** Rezerv ve kullanım dışı için yeni yetki `beds.manage_state` (sorumlu hemşire ve yönetici).
+  Temizlik bitti için eskisi gibi `beds.release`.
+- **Göç `0016`.** Yatak durumlarına «rezerve» eklenir; iki sütun gelir (neden, şifreli not). Geri
+  alınırsa rezerve yataklar boşa döner ve durum zamanı yeniden damgalanır, böylece «ne zamandan beri
+  boş» rezervin yaşını saymaz (Postgres bir durum değerini silemez, değer tipte kalır ama hiçbir yatak
+  taşımaz).
+
 ---
 
-### 3.14 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
+### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
 
 «Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
 bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** kodda hazır, hastane

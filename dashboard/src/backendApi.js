@@ -919,6 +919,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  card that did not leave the board off it again (A-32). */
     confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
     releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // G2-B3a — Doluluk (tenant/router.py). Names and notes come from their own read, never the
+    // structure (spec R1); the four moves answer the bed as BedResponse, and refuse with
+    // `err.apiCode` (`invalid_transition`, `bed_closed`, `out_of_scope`, `field_invalid:note`…).
+    /** {beds: [{bed_id, occupant_short, state_reason, state_note}]} — only the beds with something to say. */
+    occupancy() { return authed("/tenant/occupancy"); },
+    /** {note} — the note may be null. */
+    reserveBed(id, body) { return authed(`/tenant/beds/${seg(id)}/reserve`, { method: "POST", body }); },
+    unreserveBed(id) { return authed(`/tenant/beds/${seg(id)}/unreserve`, { method: "POST" }); },
+    /** {reason: FAULT | ISOLATION_CLEANING | STAFFING | OTHER, note} */
+    bedOutOfService(id, body) { return authed(`/tenant/beds/${seg(id)}/out-of-service`, { method: "POST", body }); },
+    bedReturnToService(id) { return authed(`/tenant/beds/${seg(id)}/return-to-service`, { method: "POST" }); },
     // G2-B1d — Yönetim › Protokol ve etiket, and an admission's label (spec §3, §6).
     /** {configured, next_no, last_issued, label_width_mm, label_height_mm, printer_dpi, updated_at} */
     protocolSettings() { return authed("/admin/protocol-settings"); },

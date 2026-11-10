@@ -200,6 +200,30 @@ class TestTheBreakdown:
         assert report.noisiest_beds[0] == {"patient_id": "bed-1", "episodes": 3}
 
 
+class TestTheHourlyBreakdown:
+    """G2-B6 (spec D2): the heatmap's buckets — episodes by patient and the UTC hour they began in."""
+
+    def test_episodes_are_counted_by_patient_and_the_utc_hour_they_began(self):
+        records = [
+            rec("first_seen", "bed-1", "news2", 5),
+            rec("alert", "bed-1", "news2", 6),          # a repeat inside the episode: not another one
+            rec("first_seen", "bed-1", "news2", 20),    # the same kind stamped again: a second episode
+            rec("first_seen", "bed-1", "spo2_low", 70),
+            rec("first_seen", "bed-2", "news2", 0),
+        ]
+        report = alarm_quality(records, _now(600))
+        assert report.per_patient_hour == [
+            {"patient_id": "bed-1", "hour": "2026-09-08T09:00:00+00:00", "episodes": 2},
+            {"patient_id": "bed-1", "hour": "2026-09-08T10:00:00+00:00", "episodes": 1},
+            {"patient_id": "bed-2", "hour": "2026-09-08T09:00:00+00:00", "episodes": 1},
+        ]
+        assert sum(c["episodes"] for c in report.per_patient_hour) == report.episodes
+
+    def test_no_episodes_gives_an_empty_breakdown(self):
+        assert alarm_quality([], _now(0)).per_patient_hour == []
+        assert alarm_quality([], _now(0)).as_dict()["per_patient_hour"] == []
+
+
 class TestTheEndpoint:
     @pytest.fixture()
     def client(self):
@@ -220,6 +244,18 @@ class TestTheEndpoint:
         # Nothing acknowledged yet and it just happened: pending, and the rate is unknown.
         assert body["pending"] >= 1
         assert body["answered_rate"] is None    # unknown, not 0%
+
+    def test_the_report_carries_its_hourly_breakdown(self, client):   # G2-B6 (spec D2)
+        client.post("/clinical/bed-1", json={"entries": [
+            {"code": "suspected_infection", "value": 1},
+            {"code": "platelets", "value": 80},
+            {"code": "creatinine", "value": 3.5},
+        ]}, headers=AUTH)
+        body = client.get("/alarm-quality", headers=AUTH).json()
+        cells = body["per_patient_hour"]
+        assert cells and {c["patient_id"] for c in cells} == {"bed-1"}
+        assert sum(c["episodes"] for c in cells) == body["episodes"]
+        assert all(c["hour"].endswith(":00:00+00:00") for c in cells)
 
 
 class TestChartingRaisesRealEpisodes:

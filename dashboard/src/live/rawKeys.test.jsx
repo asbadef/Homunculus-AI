@@ -201,6 +201,18 @@ const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", 
     vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
     tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
 const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
+/** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
+const AUDIT_ROWS = { records: [
+  { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
+    subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
+  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
+    subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
+] };
+const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
+  records: 2, complete: true };
+const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, window_from: "2026-11-08T06:00:00+00:00", per_patient_hour: [
+  { patient_id: "260109004821", hour: "2026-11-09T10:00:00+00:00", episodes: 2 },
+] };
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
@@ -226,6 +238,11 @@ async function openAt(path) {
       // G2-ESLEME: the monitor–bed list on «Monitörler» — a bound, a label-only, another unit's and
       // an absent monitor, so every row kind and both actions are drawn.
       api.deviceBeds.mockResolvedValue(MAPPING);
+
+      // G2-B4: «Denetim bütünlüğü» (screens/denetim)
+      api.audit.mockResolvedValue(AUDIT_ROWS);
+      api.verifyAudit.mockResolvedValue(BROKEN_CHAIN);
+      api.alarmQuality.mockResolvedValue(HEAT_REPORT);   // G2-B6
 
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
@@ -386,6 +403,23 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B4 — the audit page: its verdict appears only on the button (owner D1), so the sweep above never saw it.
+  it("the audit page's keys resolve on its events and on a broken chain's verdict", async () => {
+    const mounted = await openAt("/denetim");
+    expect(screen.getByRole("heading", { level: 1, name: "Audit bütövlüyü" })).toBeInTheDocument();   // denetim.title
+    // the label is also the filter's option, so ask for the events row's cell, not the first match
+    expect(screen.getAllByText("Siqnalın təsdiqi").some((el) => el.tagName === "TD")).toBe(true);   // denetim.type.ack
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
+    expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
+    expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəritəni göstər" })); await settle(); });
+    expect(screen.getByText(/klinik hədd deyil/)).toBeInTheDocument();                              // denetim.heat.legend
+    expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncatedFrom
+    expect(screen.getByText(/yalnız .* sonrakı hadisələr sayıldı/)).toBeInTheDocument();             // its {from} filled in, not left as a placeholder
+    expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });
 

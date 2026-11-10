@@ -116,6 +116,10 @@ class AlarmQuality:
     per_kind: list[KindStats] = field(default_factory=list)
     per_day: list[dict] = field(default_factory=list)
     noisiest_beds: list[dict] = field(default_factory=list)
+    # G2-B6 (spec D2): the heatmap's buckets — episodes by patient and the UTC hour they began in, sorted by
+    # patient then hour. UTC because every `ts`/`at` in the trail is UTC and the engine knows no hospital time
+    # zone: the browser turns each hour start into its own local hour of the day.
+    per_patient_hour: list[dict] = field(default_factory=list)
     repeats: int = 0
     window_from: str | None = None
     window_to: str | None = None
@@ -197,6 +201,7 @@ def summarise(episodes: list[Episode], now: datetime,
     per_kind: dict[str, KindStats] = {}
     per_day: dict[str, int] = {}
     per_bed: dict[str, int] = {}
+    per_hour: dict[tuple[str, str], int] = {}
     responses: list[float] = []
 
     for ep in episodes:
@@ -207,6 +212,8 @@ def summarise(episodes: list[Episode], now: datetime,
         report.repeats += ep.repeats
         per_day[ep.started.date().isoformat()] = per_day.get(ep.started.date().isoformat(), 0) + 1
         per_bed[ep.patient_id] = per_bed.get(ep.patient_id, 0) + 1
+        hour = ep.started.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()
+        per_hour[(ep.patient_id, hour)] = per_hour.get((ep.patient_id, hour), 0) + 1
         if ep.escalated:
             stats.escalated += 1
             report.escalated += 1
@@ -245,6 +252,8 @@ def summarise(episodes: list[Episode], now: datetime,
     report.noisiest_beds = [{"patient_id": p, "episodes": n}
                             for p, n in sorted(per_bed.items(), key=lambda kv: kv[1],
                                                reverse=True)[:10]]
+    report.per_patient_hour = [{"patient_id": p, "hour": h, "episodes": n}
+                               for (p, h), n in sorted(per_hour.items())]
     report.window_from = min(ep.started for ep in episodes).isoformat()
     report.window_to = max(ep.started for ep in episodes).isoformat()
     return report

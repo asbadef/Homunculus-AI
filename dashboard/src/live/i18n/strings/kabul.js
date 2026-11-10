@@ -9,9 +9,9 @@
 export default {
   tr: {
     nav: "Hasta Kabul", navShort: "Kabul",
-    title: "Hasta Kabul", sub: "Kabul, taburcu ve yatakların durumu — kendi birimleriniz.",
+    title: "Hasta Kabul", sub: "Kabul ve taburcu — kendi birimleriniz.",   // G2-B3a (X7): the beds moved to Doluluk
     sections: "Hasta kabul bölümleri", noAccess: "Bu ekranın hiçbir bölümüne yetkiniz yok.",
-    tabAdmit: "Kabul", tabDischarge: "Taburcu", tabBeds: "Yataklar",
+    tabAdmit: "Kabul", tabDischarge: "Taburcu",
     loading: "Yükleniyor…",
     noView: "Kabul kayıtlarını okuma yetkiniz yok.",
     listFailed: "Liste okunamadı: {reason}", listStale: "Liste yeniden okunamadı; son okunan gösteriliyor: {reason}",
@@ -19,7 +19,7 @@ export default {
     readOnly: "Görüntüleme yetkisiyle açtınız. Kabulü hemşire ve sorumlu hemşire yapar; hekim kabulü hasta ekranından imzalar.",
     groupIdentity: "Kimlik", groupAdmission: "Kabul", groupContact: "İletişim ve onam", groupBed: "Yatak",
     f: {
-      name: "Ad soyad", father: "Baba adı", sex: "Cinsiyet", dob: "Doğum tarihi", nationality: "Uyruk",
+      name: "Soyad ad", father: "Baba adı", sex: "Cinsiyet", dob: "Doğum tarihi", nationality: "Uyruk",
       fin: "FİN", passport: "Pasaport no", phone: "Telefon", type: "Kabul türü", source: "Kaynak",
       diagnosis: "Kabul tanısı", weight: "Kilo (kg)", height: "Boy (cm)", blood: "Kan grubu",
       allergy: "Bilinen alerji", comorbidities: "Eşlik eden hastalıklar",
@@ -49,7 +49,7 @@ export default {
     consent: { signed: "Kişisel veri onayı imzalandı", later: "Bilinci kapalı — onam sonra alınacak" },
     missingTitle: "Eksik alanlar", missingNone: "Zorunlu alanların hepsi dolu.",
     miss: {
-      name: "Ad soyad", sex: "Cinsiyet", dob: "Doğum tarihi", dobWrong: "Doğum tarihi geçerli değil",
+      name: "Soyad ad", sex: "Cinsiyet", dob: "Doğum tarihi", dobWrong: "Doğum tarihi geçerli değil",
       fin: "FİN 7 harf ya da rakam olmalı", type: "Kabul türü", diagnosis: "Kabul tanısı",
       weight: "Kilo bir sayı olmalı", height: "Boy bir sayı olmalı",
       allergy: "Alerji ya da «bilinen alerjisi yok» — ikisinden biri", consent: "Onam", bed: "Yatak",
@@ -81,7 +81,15 @@ export default {
     unitOrdinal: "Birim {n}", bedOrdinal: "Yatak {n}",
     namesPending: "Bazı birim ve yatak adları henüz gösterilemiyor; yapı yeniden okunuyor. Numaralı olanlar yalnız yer tutucudur.",
     state: { AVAILABLE: "Boş", OCCUPIED: "Dolu", PENDING_DISCHARGE: "Taburcu bekliyor",
-      PENDING_TRANSFER_OUT: "Transfer bekliyor", HOUSEKEEPING: "Temizlikte", MAINTENANCE: "Bakımda", BLOCKED: "Kapatılmış" },
+      PENDING_TRANSFER_OUT: "Transfer bekliyor", HOUSEKEEPING: "Temizlikte", MAINTENANCE: "Bakımda",
+      BLOCKED: "Kullanım dışı", RESERVED: "Rezerve" },   // G2-B3a (R4): "kapat" is Yapı's close
+    // G2-B3a (D5, X1): the question before an admission into a reserved bed.
+    reservedAsk: {
+      title: "Rezerve yatak · {bed}", body: "Bu yatak bir hasta için rezerve edilmiş.",
+      note: "Rezervasyon notu: {note}", noNote: "Rezervasyonun notu yok.",
+      noteLoading: "Rezervasyon notu okunuyor…", noteFailed: "Rezervasyon notu okunamadı: {reason}",
+      confirm: "Yine de bu yatağa kabul et",
+    },
     pendingTitle: "Taburcusu başlatılan", pendingNone: "Onay bekleyen taburcu yok.",
     lyingTitle: "Yatan hastalar", lyingNone: "Kapsamınızda yatan hasta yok.",
     badgeDraft: "Hekim imzası bekliyor",
@@ -107,8 +115,6 @@ export default {
     dischargedAlertsIncomplete: "taburcu onaylandı; alarmların kapanış kaydı eksik — sistem yöneticisine bildirin",
     retryBoard: "Panodan yeniden kaldır", boardCleared: "kart panodan kaldırıldı",
     retryingBoard: "{bed} · kart panodan yeniden kaldırılıyor…",
-    release: "Temizlik bitti · boş", released: "yatak boş", releasing: "{bed} · yatak boşaltılıyor…",
-    noRooms: "Bu birimde tanımlı oda yok.", noBeds: "Bu odada tanımlı yatak yok.",
     awaitingSignature: "Hekim imzası bekliyor — kart ve izlem imzayı beklemez; imza kabul kaydına yazılır.",
     sign: "Kabulü imzala", signed: "kabul imzalandı", signNoRight: "İmzayı yalnız kabulü onaylama yetkisi olan hekim atar.",
     signing: "Kabul imzalanıyor…",
@@ -129,6 +135,7 @@ export default {
     roomHint: "Yatak, oda eklendikten sonra odanın altında «Yatak ekle» ile eklenir.",
     err: {
       bedNotAvailable: "Bu yatak artık boş değil; başka bir yatak seçin.",
+      bedReserved: "Bu yatak rezerve edilmiş: kabul için rezervasyonu onaylayın.",
       bedHasMonitor: "Bu yatağa bir monitör bağlı — önce «Monitörler» ekranında bağlantıyı çözün.",
       bedClosed: "Bu yatak, odası ya da birimi kapalı.",
       outOfScope: "Bu yatak sizin birimlerinizden birinde değil.",
@@ -156,7 +163,7 @@ export default {
       transferUnavailable: "Transfer henüz kullanılamıyor.",
     },
     invalid: {
-      displayName: "Ad soyad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",
+      displayName: "Soyad ad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",   // G2-B3a (R9): surname first, as the field «Soyad ad»
       nationalId: "FİN 7 harf ya da rakam olmalı.", phone: "Telefon numarası geçerli değil.",
       relativePhone: "Yakınının telefon numarası geçerli değil.", admissionType: "Kabul türü gerekli.",
       diagnosis: "Kabul tanısı gerekli.", weight: "Kilo kabul edilebilir aralıkta değil.",
@@ -179,9 +186,9 @@ export default {
   },
   az: {
     nav: "Xəstə qəbulu", navShort: "Qəbul",
-    title: "Xəstə qəbulu", sub: "Qəbul, evə yazılma və çarpayıların vəziyyəti — öz şöbələriniz.",
+    title: "Xəstə qəbulu", sub: "Qəbul və evə yazılma — öz şöbələriniz.",
     sections: "Xəstə qəbulu bölmələri", noAccess: "Bu ekranın heç bir bölməsinə səlahiyyətiniz yoxdur.",
-    tabAdmit: "Qəbul", tabDischarge: "Evə yazılma", tabBeds: "Çarpayılar",
+    tabAdmit: "Qəbul", tabDischarge: "Evə yazılma",
     loading: "Yüklənir…",
     noView: "Qəbul qeydlərini oxumaq səlahiyyətiniz yoxdur.",
     listFailed: "Siyahı oxunmadı: {reason}", listStale: "Siyahı yenidən oxunmadı; son oxunan göstərilir: {reason}",
@@ -189,7 +196,7 @@ export default {
     readOnly: "Baxış səlahiyyəti ilə açmısınız. Qəbulu tibb bacısı və baş tibb bacısı edir; həkim qəbulu xəstə ekranından imzalayır.",
     groupIdentity: "Şəxsiyyət", groupAdmission: "Qəbul", groupContact: "Əlaqə və razılıq", groupBed: "Çarpayı",
     f: {
-      name: "Ad soyad", father: "Ata adı", sex: "Cins", dob: "Doğum tarixi", nationality: "Vətəndaşlıq",
+      name: "Soyad ad", father: "Ata adı", sex: "Cins", dob: "Doğum tarixi", nationality: "Vətəndaşlıq",
       fin: "FİN", passport: "Pasport nömrəsi", phone: "Telefon", type: "Qəbul növü", source: "Mənbə",
       diagnosis: "Qəbul diaqnozu", weight: "Çəki (kq)", height: "Boy (sm)", blood: "Qan qrupu",
       allergy: "Məlum allergiya", comorbidities: "Müşayiət edən xəstəliklər",
@@ -217,7 +224,7 @@ export default {
     consent: { signed: "Fərdi məlumatlara razılıq imzalandı", later: "Huşsuzdur — razılıq sonra alınacaq" },
     missingTitle: "Çatışmayan sahələr", missingNone: "Bütün məcburi sahələr doludur.",
     miss: {
-      name: "Ad soyad", sex: "Cins", dob: "Doğum tarixi", dobWrong: "Doğum tarixi düzgün deyil",
+      name: "Soyad ad", sex: "Cins", dob: "Doğum tarixi", dobWrong: "Doğum tarixi düzgün deyil",
       fin: "FİN 7 hərf və ya rəqəm olmalıdır", type: "Qəbul növü", diagnosis: "Qəbul diaqnozu",
       weight: "Çəki rəqəm olmalıdır", height: "Boy rəqəm olmalıdır",
       allergy: "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri", consent: "Razılıq", bed: "Çarpayı",
@@ -245,7 +252,14 @@ export default {
     unitOrdinal: "Şöbə {n}", bedOrdinal: "Çarpayı {n}",
     namesPending: "Bəzi şöbə və çarpayı adları hələ göstərilə bilmir; struktur yenidən oxunur. Nömrələnmiş olanlar yalnız yer tutucudur.",
     state: { AVAILABLE: "Boş", OCCUPIED: "Dolu", PENDING_DISCHARGE: "Evə yazılma gözləyir",
-      PENDING_TRANSFER_OUT: "Köçürmə gözləyir", HOUSEKEEPING: "Təmizlikdədir", MAINTENANCE: "Təmirdədir", BLOCKED: "Bağlanıb" },
+      PENDING_TRANSFER_OUT: "Köçürmə gözləyir", HOUSEKEEPING: "Təmizlikdədir", MAINTENANCE: "Təmirdədir",
+      BLOCKED: "İstifadədən kənar", RESERVED: "Rezervdədir" },
+    reservedAsk: {
+      title: "Rezerv edilmiş çarpayı · {bed}", body: "Bu çarpayı bir xəstə üçün rezerv edilib.",
+      note: "Rezerv qeydi: {note}", noNote: "Rezervin qeydi yoxdur.",
+      noteLoading: "Rezerv qeydi oxunur…", noteFailed: "Rezerv qeydi oxunmadı: {reason}",
+      confirm: "Yenə də bu çarpayıya qəbul et",
+    },
     pendingTitle: "Evə yazılması başladılanlar", pendingNone: "Təsdiq gözləyən evə yazılma yoxdur.",
     lyingTitle: "Yatan xəstələr", lyingNone: "Səlahiyyət dairənizdə yatan xəstə yoxdur.",
     badgeDraft: "Həkim imzası gözlənilir",
@@ -268,8 +282,6 @@ export default {
     dischargedAlertsIncomplete: "evə yazılma təsdiqləndi; siqnalların bağlanma qeydi natamamdır — sistem administratoruna bildirin",
     retryBoard: "Paneldən yenidən götür", boardCleared: "kart paneldən götürüldü",
     retryingBoard: "{bed} · kart paneldən yenidən götürülür…",
-    release: "Təmizlik bitdi · boş", released: "çarpayı boşdur", releasing: "{bed} · çarpayı boşaldılır…",
-    noRooms: "Bu şöbədə təyin olunmuş otaq yoxdur.", noBeds: "Bu otaqda təyin olunmuş çarpayı yoxdur.",
     awaitingSignature: "Həkim imzası gözlənilir — kart və izləmə imzanı gözləmir; imza qəbul qeydinə yazılır.",
     sign: "Qəbulu imzala", signed: "qəbul imzalandı", signNoRight: "İmzanı yalnız qəbulu təsdiqləmək səlahiyyəti olan həkim atır.",
     signing: "Qəbul imzalanır…",
@@ -290,6 +302,7 @@ export default {
     roomHint: "Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.",
     err: {
       bedNotAvailable: "Bu çarpayı artıq boş deyil; başqa çarpayı seçin.",
+      bedReserved: "Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.",
       bedHasMonitor: "Bu çarpayıya monitor qoşulub — əvvəlcə «Monitorlar» ekranında bağlantını kəsin.",
       bedClosed: "Bu çarpayı, onun otağı və ya şöbəsi bağlıdır.",
       outOfScope: "Bu çarpayı sizin şöbələrinizdən birində deyil.",
@@ -312,7 +325,7 @@ export default {
       transferUnavailable: "Köçürmə hələ mümkün deyil.",
     },
     invalid: {
-      displayName: "Ad soyad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
+      displayName: "Soyad ad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
       nationalId: "FİN 7 hərf və ya rəqəm olmalıdır.", phone: "Telefon nömrəsi düzgün deyil.",
       relativePhone: "Yaxınının telefon nömrəsi düzgün deyil.", admissionType: "Qəbul növü tələb olunur.",
       diagnosis: "Qəbul diaqnozu tələb olunur.", weight: "Çəki qəbul edilən həddə deyil.",
@@ -335,9 +348,9 @@ export default {
   },
   ru: {
     nav: "Приём пациентов", navShort: "Приём",
-    title: "Приём пациентов", sub: "Приём, выписка и состояние коек — ваши отделения.",
+    title: "Приём пациентов", sub: "Приём и выписка — ваши отделения.",
     sections: "Разделы приёма пациентов", noAccess: "У вас нет прав ни на один раздел этого экрана.",
-    tabAdmit: "Приём", tabDischarge: "Выписка", tabBeds: "Койки",
+    tabAdmit: "Приём", tabDischarge: "Выписка",
     loading: "Загрузка…",
     noView: "У вас нет права читать записи о приёме.",
     listFailed: "Список не прочитан: {reason}", listStale: "Список не перечитан; показан последний прочитанный: {reason}",
@@ -345,7 +358,7 @@ export default {
     readOnly: "Вы открыли экран с правом просмотра. Приём оформляют медсёстры и старшая медсестра; врач подписывает приём на экране пациента.",
     groupIdentity: "Личные данные", groupAdmission: "Приём", groupContact: "Контакты и согласие", groupBed: "Койка",
     f: {
-      name: "Имя и фамилия", father: "Отчество", sex: "Пол", dob: "Дата рождения", nationality: "Гражданство",
+      name: "Фамилия и имя", father: "Отчество", sex: "Пол", dob: "Дата рождения", nationality: "Гражданство",
       fin: "ФИН", passport: "Номер паспорта", phone: "Телефон", type: "Тип приёма", source: "Откуда поступил",
       diagnosis: "Диагноз при поступлении", weight: "Вес (кг)", height: "Рост (см)", blood: "Группа крови",
       allergy: "Известная аллергия", comorbidities: "Сопутствующие заболевания",
@@ -373,7 +386,7 @@ export default {
     consent: { signed: "Согласие на обработку данных подписано", later: "Без сознания — согласие будет получено позже" },
     missingTitle: "Не заполнено", missingNone: "Все обязательные поля заполнены.",
     miss: {
-      name: "Имя и фамилия", sex: "Пол", dob: "Дата рождения", dobWrong: "Дата рождения неверна",
+      name: "Фамилия и имя", sex: "Пол", dob: "Дата рождения", dobWrong: "Дата рождения неверна",
       fin: "ФИН — 7 букв или цифр", type: "Тип приёма", diagnosis: "Диагноз при поступлении",
       weight: "Вес должен быть числом", height: "Рост должен быть числом",
       allergy: "Аллергия или «известной аллергии нет» — одно из двух", consent: "Согласие", bed: "Койка",
@@ -401,7 +414,14 @@ export default {
     unitOrdinal: "Отделение {n}", bedOrdinal: "Койка {n}",
     namesPending: "Некоторые названия отделений и коек пока не удаётся показать; структура читается заново. Отделения и койки с номерами обозначены условно.",
     state: { AVAILABLE: "Свободна", OCCUPIED: "Занята", PENDING_DISCHARGE: "Ожидает выписки",
-      PENDING_TRANSFER_OUT: "Ожидает перевода", HOUSEKEEPING: "На уборке", MAINTENANCE: "На обслуживании", BLOCKED: "Заблокирована" },
+      PENDING_TRANSFER_OUT: "Ожидает перевода", HOUSEKEEPING: "На уборке", MAINTENANCE: "На обслуживании",
+      BLOCKED: "Не используется", RESERVED: "Зарезервирована" },
+    reservedAsk: {
+      title: "Зарезервированная койка · {bed}", body: "Эта койка зарезервирована для пациента.",
+      note: "Заметка резерва: {note}", noNote: "У резерва нет заметки.",
+      noteLoading: "Заметка резерва загружается…", noteFailed: "Не удалось прочитать заметку резерва: {reason}",
+      confirm: "Всё равно принять на эту койку",
+    },
     pendingTitle: "Начатые выписки", pendingNone: "Нет выписок, ожидающих подтверждения.",
     lyingTitle: "Госпитализированные пациенты", lyingNone: "В ваших отделениях нет госпитализированных пациентов.",
     badgeDraft: "Ждёт подписи врача",
@@ -424,8 +444,6 @@ export default {
     dischargedAlertsIncomplete: "выписка подтверждена; запись о закрытии тревог неполная — сообщите администратору системы",
     retryBoard: "Снять с панели повторно", boardCleared: "карточка снята с панели",
     retryingBoard: "{bed} · карточка снимается с панели повторно…",
-    release: "Уборка окончена · свободна", released: "койка свободна", releasing: "{bed} · койка освобождается…",
-    noRooms: "В этом отделении не заданы палаты.", noBeds: "В этой палате не заданы койки.",
     awaitingSignature: "Ждёт подписи врача — карточка и наблюдение не ждут подписи; подпись вносится в запись о приёме.",
     sign: "Подписать приём", signed: "приём подписан", signNoRight: "Подписывает только врач с правом подтверждать приём.",
     signing: "Приём подписывается…",
@@ -446,6 +464,7 @@ export default {
     roomHint: "Койки добавляются в палату после её создания — кнопкой «Добавить койку».",
     err: {
       bedNotAvailable: "Эта койка уже не свободна; выберите другую.",
+      bedReserved: "Эта койка зарезервирована: подтвердите резерв для приёма.",
       bedHasMonitor: "К этой койке привязан монитор — сначала отвяжите его на экране «Мониторы».",
       bedClosed: "Эта койка, её палата или отделение закрыты.",
       outOfScope: "Эта койка не в одном из ваших отделений.",
@@ -468,7 +487,7 @@ export default {
       transferUnavailable: "Перевод пока недоступен.",
     },
     invalid: {
-      displayName: "Нужны имя и фамилия.", dateOfBirth: "Дата рождения неверна.",
+      displayName: "Нужны фамилия и имя.", dateOfBirth: "Дата рождения неверна.",
       nationalId: "ФИН — 7 букв или цифр.", phone: "Номер телефона неверен.",
       relativePhone: "Номер телефона родственника неверен.", admissionType: "Нужен тип приёма.",
       diagnosis: "Нужен диагноз при поступлении.", weight: "Вес вне допустимых пределов.",
@@ -491,9 +510,9 @@ export default {
   },
   en: {
     nav: "Admissions", navShort: "Admit",
-    title: "Admissions", sub: "Admission, discharge and the state of the beds — your own units.",
+    title: "Admissions", sub: "Admission and discharge — your own units.",
     sections: "Admission sections", noAccess: "You have no right to any section of this screen.",
-    tabAdmit: "Admit", tabDischarge: "Discharge", tabBeds: "Beds",
+    tabAdmit: "Admit", tabDischarge: "Discharge",
     loading: "Loading…",
     noView: "You have no right to read admissions.",
     listFailed: "The list could not be read: {reason}", listStale: "The list could not be read again; the last one read is shown: {reason}",
@@ -501,7 +520,7 @@ export default {
     readOnly: "You opened this with the right to view. Nurses and charge nurses admit; a physician signs the admission on the patient screen.",
     groupIdentity: "Identity", groupAdmission: "Admission", groupContact: "Contact and consent", groupBed: "Bed",
     f: {
-      name: "Full name", father: "Father's name", sex: "Sex", dob: "Date of birth", nationality: "Nationality",
+      name: "Surname and name", father: "Father's name", sex: "Sex", dob: "Date of birth", nationality: "Nationality",
       fin: "FIN", passport: "Passport number", phone: "Phone", type: "Admission type", source: "Source",
       diagnosis: "Admission diagnosis", weight: "Weight (kg)", height: "Height (cm)", blood: "Blood group",
       allergy: "Known allergy", comorbidities: "Comorbidities",
@@ -529,7 +548,7 @@ export default {
     consent: { signed: "Data-processing consent signed", later: "Unconscious — consent to be taken later" },
     missingTitle: "Still missing", missingNone: "Every required field is filled in.",
     miss: {
-      name: "Full name", sex: "Sex", dob: "Date of birth", dobWrong: "The date of birth is not valid",
+      name: "Surname and name", sex: "Sex", dob: "Date of birth", dobWrong: "The date of birth is not valid",
       fin: "FIN must be 7 letters or digits", type: "Admission type", diagnosis: "Admission diagnosis",
       weight: "Weight must be a number", height: "Height must be a number",
       allergy: "An allergy, or «no known allergy» — one of the two", consent: "Consent", bed: "Bed",
@@ -557,7 +576,14 @@ export default {
     unitOrdinal: "Unit {n}", bedOrdinal: "Bed {n}",
     namesPending: "Some unit and bed names cannot be shown yet; the structure is being read again. The numbered ones are placeholders only.",
     state: { AVAILABLE: "Free", OCCUPIED: "Occupied", PENDING_DISCHARGE: "Awaiting discharge",
-      PENDING_TRANSFER_OUT: "Awaiting transfer", HOUSEKEEPING: "Being cleaned", MAINTENANCE: "In maintenance", BLOCKED: "Blocked" },
+      PENDING_TRANSFER_OUT: "Awaiting transfer", HOUSEKEEPING: "Being cleaned", MAINTENANCE: "In maintenance",
+      BLOCKED: "Out of service", RESERVED: "Reserved" },
+    reservedAsk: {
+      title: "Reserved bed · {bed}", body: "This bed is reserved for a patient.",
+      note: "Reservation note: {note}", noNote: "The reservation has no note.",
+      noteLoading: "Reading the reservation note…", noteFailed: "The reservation note could not be read: {reason}",
+      confirm: "Admit to this bed all the same",
+    },
     pendingTitle: "Discharges started", pendingNone: "No discharge is waiting for confirmation.",
     lyingTitle: "Inpatients", lyingNone: "No inpatients in your units.",
     badgeDraft: "Awaiting physician's signature",
@@ -580,8 +606,6 @@ export default {
     dischargedAlertsIncomplete: "discharge confirmed; the alarms' close-out record is incomplete — tell the system administrator",
     retryBoard: "Remove from the board again", boardCleared: "the card has left the board",
     retryingBoard: "{bed} · taking the card off the board again…",
-    release: "Cleaning done · free", released: "bed free", releasing: "{bed} · releasing the bed…",
-    noRooms: "No room is set up in this unit.", noBeds: "No bed is set up in this room.",
     awaitingSignature: "Awaiting the physician's signature — the card and monitoring do not wait for the signature; it is written to the admission record.",
     sign: "Sign the admission", signed: "admission signed", signNoRight: "Only a physician with the right to sign admissions signs it.",
     signing: "Signing the admission…",
@@ -601,6 +625,7 @@ export default {
     roomHint: "Beds are added under the room once it exists, with «Add bed».",
     err: {
       bedNotAvailable: "This bed is no longer free; choose another.",
+      bedReserved: "This bed is reserved: confirm the reservation to admit.",
       bedHasMonitor: "A monitor is assigned to this bed — unassign it first on the Monitors screen.",
       bedClosed: "This bed, its room or its unit is closed.",
       outOfScope: "This bed is not in one of your units.",
@@ -623,7 +648,7 @@ export default {
       transferUnavailable: "Transfer is not available yet.",
     },
     invalid: {
-      displayName: "The full name is required.", dateOfBirth: "The date of birth is not valid.",
+      displayName: "The surname and name are required.", dateOfBirth: "The date of birth is not valid.",
       nationalId: "FIN must be 7 letters or digits.", phone: "The phone number is not valid.",
       relativePhone: "The relative's phone number is not valid.", admissionType: "The admission type is required.",
       diagnosis: "The admission diagnosis is required.", weight: "The weight is outside the accepted range.",

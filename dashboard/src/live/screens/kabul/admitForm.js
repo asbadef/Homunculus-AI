@@ -123,8 +123,10 @@ const text = (value) => (blank(value) ? null : String(value).trim());
 
 /** The body POST /admissions takes (admission/schemas.py AdmissionCreate). `requestId` is the
  *  form's id (admitDraft.js, A-19): the same on every send of one filled form, so the server takes
- *  two sends of it for one admission. None given, none sent. */
-export function toBody(form, requestId) {
+ *  two sends of it for one admission. None given, none sent. `confirmReserved` (G2-B3a, X2): the
+ *  nurse saw the bed is reserved and admits all the same — sent only then, and outside the form's
+ *  digest on the server, so the send before her answer and the one after are one form. */
+export function toBody(form, requestId, { confirmReserved = false } = {}) {
   return {
     ...(typeof requestId === "string" && requestId ? { request_id: requestId } : null),
     patient: {
@@ -147,5 +149,6 @@ export function toBody(form, requestId) {
       comorbidity_codes: [...form.comorbidities],
       comorbidities_text: text(form.comorbiditiesText),
     },
+    ...(confirmReserved ? { confirm_reserved: true } : null),
   };
 }
