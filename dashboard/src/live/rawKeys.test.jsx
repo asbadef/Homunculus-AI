@@ -208,6 +208,26 @@ const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, window_from: "2026-
   { patient_id: "260109004821", hour: "2026-11-09T10:00:00+00:00", episodes: 2 },
 ] };
 
+/** G2-B3b: «Vardiya devri» — one handover in each box, each with its D-Ö-D-Ö note and its sealed summary (an open
+ *  alert in it), so a row of the lists, the note's parts and the summary's words are drawn; and the colleagues the
+ *  «Yeni devir» dialog offers. Synthetic people, the fixture's card. */
+const HANDOVER_PATIENT = { admission_id: "a-2", board_key: FIXTURE_ID, display_name: "Ayşe Sentetik", bed_label: "REA-01 · 2",
+  unit_name: "Reanimasiya" };
+const HANDOVER_NOTE = { situation: "Stabil", background: "Sentetik öykü", assessment: "Değerlendirme", recommendation: "Mobilizasyon" };
+const HANDOVER_SUMMARY = { risk: "high", news2: { total: 7, partial: true },
+  latest: { heart_rate: 96, map: 70, spo2: 91, resp_rate: 24, temperature: 38.1 }, on_pressor: true,
+  open_alerts: [{ kind: "news2", severity: "high", acknowledged: false }], captured_at: ago(300) };
+const handoverRow = (id, status, over) => ({ id, status, created_at: ago(900), bridge_expires_at: ago(-900),
+  outgoing_signed_at: ago(300), incoming_signed_at: null, outgoing: { id: "u-leyla", name: "Leyla Sentetik" },
+  incoming: { id: "u-ayse", name: "Ayşe Sentetik" }, patients: [HANDOVER_PATIENT], note: HANDOVER_NOTE,
+  summary: HANDOVER_SUMMARY, ...over });
+const HANDOVERS = {
+  incoming: [handoverRow("h-1", "OUTGOING_SIGNED")],
+  outgoing: [handoverRow("h-2", "COMPLETED", { incoming_signed_at: ago(60),
+    outgoing: { id: "u-ayse", name: "Ayşe Sentetik" }, incoming: { id: "u-leyla", name: "Leyla Sentetik" } })],
+};
+const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", name: "Murad Sentetik" }];
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -241,6 +261,10 @@ async function openAt(path) {
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
+
+      // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
+      api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
+      api.handoverColleagues.mockResolvedValue(COLLEAGUES);
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -424,6 +448,26 @@ describe("no screen shows a reader a translation key", () => {
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
     expect(within(rail).getByRole("link", { name: /Sürətli cavab/ })).toHaveAccessibleName(/1 açıq RRT çağırışı/); // rrt.badgeCount
     expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B3b — «Vardiya devri»: the note's parts and the summary are drawn only on a row that carries them, and the
+  // «Yeni devir» dialog only on its button, so the sweep above met the lists and never the dialog.
+  it("the handover screen's keys resolve on its lists, a row's note and summary, and the new handover's dialog", async () => {
+    const mounted = await openAt("/devir");
+    expect(screen.getByRole("heading", { level: 1, name: "Növbə təhvili" })).toBeInTheDocument();         // devir.title
+    for (const name of ["Əks-imzanızı gözləyənlər", "Mənim təhvil verdiklərim", "Son 24 saat ərzində"]) {     // the three lists
+      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
+    }
+    expect(screen.getByText("V · Vəziyyət")).toBeInTheDocument();                                          // devir.part.situation
+    expect(screen.getByText("Sistem xülasəsi · imza anındakı məlumat")).toBeInTheDocument();               // devir.summaryTitle
+    expect(screen.getByText("Tamamlanıb")).toBeInTheDocument();                                            // devir.status.COMPLETED
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni təhvil" })); await settle(); });
+    const dialog = screen.getByRole("dialog", { name: "Yeni təhvil" });
+    expect(dialog).toHaveTextContent("Təhvil alacaq şəxs");                                                 // devir.receiver
+    expect(within(dialog).getByRole("textbox", { name: "T · Tövsiyə" })).toBeInTheDocument();             // devir.part.recommendation
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });
   });
 

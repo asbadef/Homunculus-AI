@@ -36,6 +36,8 @@ import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
 
 import { RrtScreen } from "../screens/rrt/RrtScreen.jsx"; // G2-B5
 
+import { DevirScreen } from "../screens/devir/DevirScreen.jsx"; // G2-B3b
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -61,6 +63,8 @@ const SCREENS = Object.freeze({
   denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
 
   rrt: RrtScreen, // G2-B5 — the rapid-response team's calls and the unanswered urgent alarms
+
+  devir: DevirScreen, // G2-B3b — «Vardiya devri»: to countersign, mine, a new handover with its D-Ö-D-Ö note
 
   settings: SettingsScreen,
 });
@@ -112,6 +116,11 @@ export const ROUTES = Object.freeze([
   // home moves.
   route({ id: "rrt", path: "/rrt", icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort",
     perms: ["alerts.escalate"], work: true, nav: "main" }),
+
+  // G2-B3b (spec D9) — «Vardiya devri»: for whoever signs a handover (`handover.sign`: the nurse, the charge nurse,
+  // the physicians). After the RRT screen, so nobody's home moves; a session that only signs handovers lands here.
+  route({ id: "devir", path: "/devir", icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort",
+    perms: ["handover.sign"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

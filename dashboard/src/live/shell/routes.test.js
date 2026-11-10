@@ -178,7 +178,8 @@ describe("the audit page's route", () => {
     expect(screenOf(denetim())).not.toBeNull();
     expect(canReach(denetim(), ["board.view"])).toBe(false);
     // G2-B5: the RRT screen now comes after it (its own block below), still before settings.
-    expect(ROUTES.map((r) => r.id).slice(-2)).toEqual(["rrt", "settings"]);
+    // G2-B3b: and the handover screen after that (its own block below), still before settings.
+    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["rrt", "devir", "settings"]);
   });
 
   it("is the home of an audit.view-only session and moves nobody else's", () => {
@@ -199,7 +200,8 @@ describe("the RRT screen's route", () => {
     expect(rrt()).toMatchObject({ path: "/rrt", perms: ["alerts.escalate"], work: true, nav: "main",
       icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort" });
     expect(screenOf(rrt())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["denetim", "rrt", "settings"]);
+    // G2-B3b: the handover screen now comes after it (its own block below), still before settings.
+    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
   });
 
   it("is not the nurse's; whoever may call the team reaches it", () => {
@@ -213,6 +215,39 @@ describe("the RRT screen's route", () => {
     expect(homePath(RAPID_RESPONSE)).toBe("/beds");
     expect(navRoutes(RAPID_RESPONSE).main.map((r) => r.id).at(-1)).toBe("rrt");
     expect(homePath(["alerts.escalate"])).toBe("/rrt");
+  });
+});
+
+// G2-B3b (spec D9): «Vardiya devri» — for whoever signs a handover (handover.sign: the nurse, the charge nurse, the
+// physicians), after the RRT screen so nobody's home moves.
+describe("the handover screen's route", () => {
+  afterEach(() => resetScreens());
+  const devir = () => ROUTES.find((r) => r.id === "devir");
+  /** The nurse's group (`nurse`), as the engine seeds it (auth/permissions.py). */
+  const NURSE_GROUP = ["board.view", "alerts.ack", "admissions.view", "admissions.admit", "admissions.transfer.confirm",
+    "handover.sign", "clinical.chart", "beds.release"];
+  /** The auditor's group (`auditor`). */
+  const AUDITOR = ["board.view", "audit.view"];
+
+  it("is a work screen for handover.sign, on the main rail after the RRT screen, with its own names", () => {
+    expect(devir()).toMatchObject({ path: "/devir", perms: ["handover.sign"], work: true, nav: "main",
+      icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort" });
+    expect(screenOf(devir())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
+  });
+
+  it("a nurse reaches it from the rail, and her home is still the beds", () => {
+    expect(canReach(devir(), NURSE_GROUP)).toBe(true);
+    expect(navRoutes(NURSE_GROUP).main.map((r) => r.id)).toContain("devir");
+    expect(homePath(NURSE_GROUP)).toBe("/beds");
+    expect(hasWorkRoute(["handover.sign"])).toBe(true);
+    expect(homePath(["handover.sign"])).toBe("/devir");
+  });
+
+  it("is not the auditor's", () => {
+    expect(canReach(devir(), AUDITOR)).toBe(false);
+    expect(navRoutes(AUDITOR).main.map((r) => r.id)).not.toContain("devir");
+    expect(homePath(AUDITOR)).toBe("/beds");
   });
 });
 

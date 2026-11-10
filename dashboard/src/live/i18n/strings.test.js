@@ -56,6 +56,11 @@ const NEUTRAL = new Set([
   // G2-ESLEME (esleme) · neutral — an arrow between two names the screen fills in
   "esleme.confirm.bind",
 
+  // G2-B3b (devir) · neutral — the score's own name, a clinical abbreviation, and an arrow between two names
+  "devir.sum.news2", //            NEWS2
+  "devir.sum.spo2", //             SpO₂
+  "devir.fromTo", //               "{from} → {to}" — no word in it
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -186,6 +191,12 @@ const AZ_SAME_AS_TR = new Set([
   "rrt.seen", //             Gördüm — the alarm screen's own az word (alarms.seen), the same acknowledgement
   "rrt.seenLabel", //        "Gördüm: {bed}, {kind}" — the same word; the rest is the row's own names
   "rrt.callSend", //         Çağır — the imperative of "çağırmaq", spelled the same in Azerbaijani
+
+  // G2-B3b (devir) · az = tr
+  "devir.sum.risk", //       Risk — the same word in Azerbaijani (as risk.prefix)
+  "devir.sum.news2", //      NEWS2 — the score's own name
+  "devir.sum.spo2", //       SpO₂ — a clinical abbreviation
+  "devir.fromTo", //         "{from} → {to}" — no word in it
 
 ]);
 

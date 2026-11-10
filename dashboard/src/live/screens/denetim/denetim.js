@@ -45,6 +45,8 @@ export const EVENT_TYPES = Object.freeze([
   ["admission.discharge_start", "dischargeStart"], ["admission.discharge_confirm", "dischargeConfirm"],
   ["bed.release", "bedRelease"], ["device_bed.bind", "deviceBind"], ["device_bed.unbind", "deviceUnbind"],
   ["protocol.settings", "protocolSettings"],
+  // G2-B3b (spec D8): «Vardiya devri» — opened, signed by the outgoing person, countersigned by the receiver.
+  ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

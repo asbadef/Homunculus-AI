@@ -48,6 +48,8 @@ export default {
       admit: "Hasta kabul", signOff: "Kabul imzası", dischargeStart: "Taburcu başlatıldı", dischargeConfirm: "Taburcu onaylandı",
       bedRelease: "Yatak hazır (temizlik bitti)", deviceBind: "Monitör yatağa bağlandı", deviceUnbind: "Monitör yataktan ayrıldı",
       protocolSettings: "Protokol ayarları",
+      // G2-B3b (spec D8): the handover's three events
+      handoverOpen: "Devir açıldı", handoverSign: "Devir imzalandı", handoverCountersign: "Devir karşı imzalandı",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -107,6 +109,8 @@ export default {
       admit: "Xəstə qəbulu", signOff: "Qəbulun imzası", dischargeStart: "Evə yazılma başladıldı", dischargeConfirm: "Evə yazılma təsdiqləndi",
       bedRelease: "Çarpayı hazırdır (təmizlik bitdi)", deviceBind: "Monitor çarpayıya qoşuldu", deviceUnbind: "Monitorun çarpayı ilə bağlantısı kəsildi",
       protocolSettings: "Protokol parametrləri",
+      // G2-B3b (spec D8): the handover's three events
+      handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -166,6 +170,8 @@ export default {
       admit: "Приём пациента", signOff: "Подпись приёма", dischargeStart: "Выписка начата", dischargeConfirm: "Выписка подтверждена",
       bedRelease: "Койка готова (уборка завершена)", deviceBind: "Монитор привязан к койке", deviceUnbind: "Монитор отвязан от койки",
       protocolSettings: "Настройки протокола",
+      // G2-B3b (spec D8): the handover's three events
+      handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -225,6 +231,8 @@ export default {
       admit: "Admission", signOff: "Admission signed", dischargeStart: "Discharge started", dischargeConfirm: "Discharge confirmed",
       bedRelease: "Bed ready (cleaning done)", deviceBind: "Monitor assigned to bed", deviceUnbind: "Monitor unassigned from bed",
       protocolSettings: "Protocol settings",
+      // G2-B3b (spec D8): the handover's three events
+      handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
     },
     heat: {
       title: "Alarm density — last {days} days",

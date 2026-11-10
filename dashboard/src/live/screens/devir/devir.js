@@ -32,6 +32,16 @@ export function noteValid(note) {
   return substantial;
 }
 
+/** The note as `signHandover` sends it (`HandoverSign.note`): the four parts and nothing else, each trimmed, one left
+ *  blank as null — the engine reads an absent part as None, and a blank one says nothing a reader needs. */
+export function noteBody(note) {
+  const source = note && typeof note === "object" ? note : {};
+  return Object.fromEntries(NOTE_PARTS.map((part) => {
+    const text = typeof source[part] === "string" ? source[part].trim() : "";
+    return [part, text || null];
+  }));
+}
+
 /** How many critical alarms nobody has acknowledged this patient's card holds on the live board — the number the
  *  engine's gate counts too (admission/boardlink.py `count_open_critical`), so the dialog can say «İmzalanamaz» before
  *  the server has to. `board` is the board store's state (`useBoard()`: its `alerts`, whose `patientId` is the board
@@ -51,6 +61,31 @@ function ms(iso) {
   if (typeof iso !== "string") return null;
   const t = Date.parse(iso);
   return Number.isNaN(t) ? null : t;
+}
+
+/** The patient a handover covers (D1: one per handover) — its first, as the server lists them — or null. */
+export function patientOf(row) {
+  const first = Array.isArray(row?.patients) ? row.patients[0] : null;
+  return isRow(first) ? first : null;
+}
+
+/** What a toast and a button's name call a handover: the bed and the unit — never the patient's name (the RRT's and
+ *  Hasta Kabul's rule) — else the board key, else a dash. */
+export function subjectOf(row) {
+  const p = patientOf(row);
+  const named = [p?.bed_label, p?.unit_name].filter((part) => typeof part === "string" && part.trim() !== "");
+  if (named.length > 0) return named.join(" · ");
+  return typeof p?.board_key === "string" && p.board_key ? p.board_key : "—";
+}
+
+/** Has an OPEN handover's 30-minute bridge (S-24) run out by `nowMs`? The engine's own rule: a signature at or after
+ *  `bridge_expires_at` is refused and the handover turns EXPIRED — which it does only when someone tries, so a row can
+ *  still read OPEN past it. Anything else, or an end that cannot be read, is not said to have run out: the server
+ *  stays the judge. */
+export function bridgeExpired(row, nowMs) {
+  if (row?.status !== "OPEN" || !Number.isFinite(nowMs)) return false;
+  const end = ms(row.bridge_expires_at);
+  return end !== null && end <= nowMs;
 }
 
 /** When a row last changed hands: the receiver's signature for one completed, the end of the bridge for one that

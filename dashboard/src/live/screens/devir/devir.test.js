@@ -3,7 +3,10 @@ import { describe, it, expect } from "vitest";
 import { alertsFromPatients, patientsFromBoard } from "../../../liveAdapters.js";
 import { CONNECTION } from "../../../liveConnection.js";
 import { alarm, board, entry } from "../../data/board.testutil.js";
-import { NOTE_PARTS, PART_MAX, PART_MIN, emptyNote, groupHandovers, noteValid, openCriticalOnBoard } from "./devir.js";
+import {
+  NOTE_PARTS, PART_MAX, PART_MIN, bridgeExpired, emptyNote, groupHandovers, noteBody, noteValid, openCriticalOnBoard,
+  patientOf, subjectOf,
+} from "./devir.js";
 
 describe("the D-Ö-D-Ö note", () => {
   it("is four empty parts, a fresh object each time", () => {
@@ -186,5 +189,61 @@ describe("the handovers grouped for the screen", () => {
     expect(ids(g.toCountersign)).toEqual(["ok"]);
     expect(ids(g.mineOpen)).toEqual(["o"]);
     expect(g.recent).toEqual([]);
+  });
+});
+
+// G2-B3b (Task 3): what the screen reads off one row — its patient, the words a toast names it by, whether an OPEN one
+// is past its bridge — and the note as it is sent.
+describe("a row's patient and subject", () => {
+  const P = { admission_id: "a-1", board_key: "S-001", display_name: "Ayşe Sentetik", bed_label: "REA-01 · 2", unit_name: "Reanimasiya" };
+
+  it("is the row's first patient, or null", () => {
+    expect(patientOf({ patients: [P, { board_key: "S-002" }] })).toBe(P);
+    expect(patientOf({ patients: [] })).toBeNull();
+    expect(patientOf({ patients: "x" })).toBeNull();
+    expect(patientOf({ patients: [null] })).toBeNull();
+    expect(patientOf(null)).toBeNull();
+  });
+
+  // The subject of every toast: the bed and the unit — never the name (rrt.js, kabul's bedOf).
+  it("names the bed and the unit, never the patient's name", () => {
+    expect(subjectOf({ patients: [P] })).toBe("REA-01 · 2 · Reanimasiya");
+    expect(subjectOf({ patients: [{ ...P, unit_name: null }] })).toBe("REA-01 · 2");
+    expect(subjectOf({ patients: [{ board_key: "S-009" }] })).toBe("S-009");
+    expect(subjectOf({ patients: [] })).toBe("—");
+    expect(subjectOf({ patients: [P] })).not.toContain("Ayşe");
+  });
+});
+
+describe("the bridge of an OPEN handover (S-24)", () => {
+  const NOW_MS = Date.parse("2026-11-10T08:00:00Z");
+  const open = (end) => ({ status: "OPEN", bridge_expires_at: end });
+
+  // The engine's own rule (service.sign_handover_outgoing): `now >= bridge_expires_at` has expired.
+  it("has run out at its end and after it, not before", () => {
+    expect(bridgeExpired(open("2026-11-10T07:59:59Z"), NOW_MS)).toBe(true);
+    expect(bridgeExpired(open("2026-11-10T08:00:00Z"), NOW_MS)).toBe(true);
+    expect(bridgeExpired(open("2026-11-10T08:00:01Z"), NOW_MS)).toBe(false);
+  });
+
+  it("says nothing of a row that is not OPEN, or of an end it cannot read", () => {
+    expect(bridgeExpired({ status: "OUTGOING_SIGNED", bridge_expires_at: "2026-11-10T07:00:00Z" }, NOW_MS)).toBe(false);
+    expect(bridgeExpired(open(null), NOW_MS)).toBe(false);
+    expect(bridgeExpired(open("dün"), NOW_MS)).toBe(false);
+    expect(bridgeExpired(open("2026-11-10T07:00:00Z"), Number.NaN)).toBe(false);
+    expect(bridgeExpired(null, NOW_MS)).toBe(false);
+  });
+});
+
+describe("the note as it is sent (D5)", () => {
+  it("trims each part and sends an empty one as null", () => {
+    expect(noteBody({ situation: "  Stabil  ", background: "", assessment: " \n ", recommendation: "Mobilizasyon\n" }))
+      .toEqual({ situation: "Stabil", background: null, assessment: null, recommendation: "Mobilizasyon" });
+  });
+
+  it("keeps the line breaks inside a part, and sends only the four parts", () => {
+    expect(noteBody({ ...emptyNote(), situation: "bir\niki", extra: "x" }))
+      .toEqual({ situation: "bir\niki", background: null, assessment: null, recommendation: null });
+    expect(noteBody(null)).toEqual({ situation: null, background: null, assessment: null, recommendation: null });
   });
 });

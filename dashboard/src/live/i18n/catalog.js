@@ -67,6 +67,9 @@ import denetim from "./strings/denetim.js";
 // G2-B5: the rapid-response team — the RRT screen (screens/rrt), its rail badge, «RRT çağır».
 import rrt from "./strings/rrt.js";
 
+// G2-B3b: «Vardiya devri» — the shift handover screen (screens/devir), its dialog, the note and the summary.
+import devir from "./strings/devir.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -106,6 +109,8 @@ export const NAMESPACES = {
   denetim, // G2-B4
 
   rrt, // G2-B5
+
+  devir, // G2-B3b
 };
 
 function flattenInto(out, prefix, entries) {

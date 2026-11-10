@@ -273,6 +273,11 @@ export const INVALID_FIELD_KEYS = new Map([
   ["note", "kabul.invalid.note"],
   ["name", "kabul.invalid.name"],
   ["label", "kabul.invalid.label"],
+  // G2-B3b (D5): the handover note's four parts (`HandoverNote`) — refused for a control character in them.
+  ["situation", "devir.invalid.situation"],
+  ["background", "devir.invalid.background"],
+  ["assessment", "devir.invalid.assessment"],
+  ["recommendation", "devir.invalid.recommendation"],
   ["icd10_codes", NOT_ON_SCREEN],
   ["active_comorbidities", NOT_ON_SCREEN],
   ["active_medications_on_admission", NOT_ON_SCREEN],
