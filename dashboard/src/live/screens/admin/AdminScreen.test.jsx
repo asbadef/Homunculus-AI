@@ -46,8 +46,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function open({ perms = ["users.manage", "groups.manage"], setup, built = ["users", "roles", "source"] } = {}) {
-  tabsBuilt(built);
+/** `tabs` ({tabId: Component}) stands the given components in for the tabs, every other tab with
+ *  none — for a test whose subject is the tab's component itself rather than which tabs exist. */
+async function open({ perms = ["users.manage", "groups.manage"], setup, built = ["users", "roles", "source"], tabs } = {}) {
+  if (tabs) onlyTabs(tabs);
+  else tabsBuilt(built);
   const mounted = await mount(<AdminScreen />, {
     access: token({ perms }),
     me: profile({ perms }),
@@ -93,23 +96,37 @@ describe("which tabs a session sees", () => {
     expect(openTabs(["users.manage", "groups.manage"]).every((x) => tabScreenOf(x))).toBe(true);
   });
 
-  // G2-B1a — on this build's own tabs: Yapı is built, and `structure.manage` alone opens it.
-  it("offers the structure tab to structure.manage, and to no other right", () => {
+  // G2-B1a — on this build's own tabs: Yapı is built, and `structure.manage` alone opens it. A tab's
+  // code is fetched on first use (shell/lazyScreen.js): what `preload` answers is what it shows.
+  it("offers the structure tab to structure.manage, and to no other right", async () => {
     expect(openTabs(["structure.manage"]).map((x) => x.id)).toEqual(["structure", "protocol", "tasks"]);
-    expect(tabScreenOf(openTabs(["structure.manage"])[0])).toBe(StructureTab);
+    expect(await tabScreenOf(openTabs(["structure.manage"])[0]).preload()).toBe(StructureTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("structure");
   });
 
   // G2-B1d — Protokol ve etiket is built, and `structure.manage` alone opens it (spec D11).
-  it("offers the protocol tab to structure.manage, and to no other right", () => {
-    expect(tabScreenOf(openTabs(["structure.manage"])[1])).toBe(ProtocolTab);
+  it("offers the protocol tab to structure.manage, and to no other right", async () => {
+    expect(await tabScreenOf(openTabs(["structure.manage"])[1]).preload()).toBe(ProtocolTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("protocol");
   });
 
   // G3-02 — Görevler is built, and `structure.manage` alone opens it (spec D10).
-  it("offers the tasks tab to structure.manage, and to no other right", () => {
-    expect(tabScreenOf(openTabs(["structure.manage"])[2])).toBe(TasksTab);
+  it("offers the tasks tab to structure.manage, and to no other right", async () => {
+    expect(await tabScreenOf(openTabs(["structure.manage"])[2]).preload()).toBe(TasksTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("tasks");
+  });
+
+  // Every tab this build has is fetched on first use, and what arrives is a tab: an export named
+  // wrong on a tab's line would otherwise fail only when an administrator opens it.
+  it("fetches each built tab's code on first use, and what arrives is the tab", async () => {
+    const built = TABS.filter((x) => tabScreenOf(x));
+    expect(built.length).toBeGreaterThan(1);
+    for (const tab of built) {
+      // eslint-disable-next-line no-await-in-loop
+      const shown = await tabScreenOf(tab).preload();
+      expect(typeof shown, tab.id).toBe("function");
+      expect(shown.name, tab.id).toMatch(/Tab$/);
+    }
   });
 
   it("the seam refuses outside the test build, and gives the build's tabs back", () => {
@@ -189,6 +206,24 @@ describe("the administration screen", () => {
   it("says so when this build has nothing to show", async () => {
     await open({ built: [] });
     expect(screen.getByText("Bu bölməyə giriş səlahiyyətiniz yoxdur.")).toBeInTheDocument();
+  });
+
+  // Each tab's code is its own chunk (shell/lazyScreen.js), fetched the first time the tab is
+  // opened. While it travels the PANEL says so — the heading and the tabs stay where they are, so a
+  // keyboard user keeps her place — and the tab replaces the note when it arrives.
+  it("says a tab whose code is still on its way is loading, and keeps the heading and the tabs", async () => {
+    let arrive;
+    const chunk = new Promise((resolve) => { arrive = resolve; });
+    await open({ tabs: { users: React.lazy(() => chunk) } });
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Yüklənir…");
+    expect(screen.getByRole("heading", { level: 1, name: "İdarə" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "İstifadəçilər", selected: true })).toBeInTheDocument();
+    await act(async () => {
+      arrive({ default: ({ admin }) => <p>{`users: ${len(admin.data.users)}`}</p> });
+      await chunk;
+    });
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("users: 1");
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("Yüklənir…");
   });
 });
 

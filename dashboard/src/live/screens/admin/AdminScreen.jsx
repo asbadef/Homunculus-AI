@@ -19,28 +19,34 @@
 // other: the tabs it may not open are not shown, and the screen opens on the first it may. A
 // session that may open none of them cannot reach the route at all.
 //
-// HOW A WAVE ADDS ITS TAB: its own commented import below and its own line in `TABS` — two lines
+// HOW A WAVE ADDS ITS TAB: its own `lazyScreen` line below and its own line in `TABS` — two lines
 // nobody else touches, the same seam `shell/routes.js` and `i18n/catalog.js` have, so G1-12, G1-13
 // and G1-14 can be built on parallel branches. A tab with no component shows "not built yet" and
 // is NOT offered: never a dead tab.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+//
+// EACH TAB'S CODE IS ITS OWN CHUNK, fetched the first time the tab is opened (shell/lazyScreen.js,
+// as the shell's screens are): while it travels the PANEL says it is loading and the heading and
+// the tabs stay; a chunk that does not come reaches the shell's boundary, which offers a reload.
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, TabPanel, Tabs } from "../../ui/index.js";
 import { hasPerm } from "./catalogue.js";
 import { READS, useAdminData } from "./useAdminData.js";
-import { UsersTab } from "./UsersTab.jsx";
+import { lazyScreen } from "../../shell/lazyScreen.js";
 
-import { RolesTab } from "./RolesTab.jsx";
+const UsersTab = lazyScreen(() => import("./UsersTab.jsx"), "UsersTab");
 
-import { SourceTab } from "./SourceTab.jsx";
+const RolesTab = lazyScreen(() => import("./RolesTab.jsx"), "RolesTab");
 
-import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+const SourceTab = lazyScreen(() => import("./SourceTab.jsx"), "SourceTab");
 
-import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
+const StructureTab = lazyScreen(() => import("./StructureTab.jsx"), "StructureTab"); // G2-B1a
 
-import { TasksTab } from "./TasksTab.jsx"; // G3-02
+const ProtocolTab = lazyScreen(() => import("./ProtocolTab.jsx"), "ProtocolTab"); // G2-B1d
+
+const TasksTab = lazyScreen(() => import("./TasksTab.jsx"), "TasksTab"); // G3-02
 
 const TAB_ID = "admin";
 
@@ -222,7 +228,10 @@ export function AdminScreen() {
             {firstLoad ? (
               <Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>
             ) : (
-              <Shown admin={admin} />
+              // The tab's code may still be on its way (lazyScreen): the same note, in the panel.
+              <Suspense fallback={<Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>}>
+                <Shown admin={admin} />
+              </Suspense>
             )}
           </TabPanel>
         </>
