@@ -150,6 +150,24 @@ class CareTeamRole(str, enum.Enum):
     ONCALL_PHYSICIAN = "ONCALL_PHYSICIAN"
 
 
+class TransferReason(str, enum.Enum):
+    """G2-B1b (its spec D4, D8): why a patient moved to another bed. Stored as text on the
+    arriving admission and checked by `ck_admissions_transfer_reason`: a seventh reason is a
+    migration. The columns come with migration 0018, which B1c writes whole (D9); no route writes
+    them before B1b (G2-B1c, X2)."""
+    CLINICAL_NEED = "CLINICAL_NEED"
+    TO_ICU = "TO_ICU"
+    ICU_TO_WARD = "ICU_TO_WARD"
+    ISOLATION = "ISOLATION"
+    PATIENT_OR_FAMILY_REQUEST = "PATIENT_OR_FAMILY_REQUEST"
+    OTHER = "OTHER"
+
+
+#: G2-B1b (§5.9): the CHECK on `admissions.transfer_reason`, the same text as migration 0018's.
+TRANSFER_REASON_CHECK = "transfer_reason IS NULL OR transfer_reason IN ({})".format(
+    ", ".join(f"'{reason.value}'" for reason in TransferReason))
+
+
 #: The width of every encrypted column of `patients`. The request's `max_length` counts characters,
 #: and a character is up to four bytes of UTF-8; Fernet adds 57 bytes and pads to 16, base64 grows
 #: that by a third, and `enc::v1::` adds 9. The longest bound (`display_name`, 200 characters) in
@@ -329,6 +347,13 @@ class Admission(Base):
     # bedside device, what the label prints. In the clear: it is a key, as `Patient.patient_number`
     # is. NULL on an admission opened before 0015, which keeps its H-number key until discharge.
     protocol_no: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # G2-B1b (its spec D8, §5.9), written into migration 0018 by B1c (D9, X2): the move that made
+    # this row — its reason (`TransferReason`, CHECKed) and its note, encrypted at rest because a
+    # note may name a person (≤ 200 characters of plaintext; the column holds the ciphertext). NULL
+    # on every row a transfer did not write. No route writes them before B1b.
+    transfer_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    transfer_note: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH),
+                                                      nullable=True)
 
     # --- Workflow bookkeeping ---
     # S-26: reminder emitted once when a DRAFT is unreviewed for 2 hours.
@@ -364,6 +389,8 @@ class Admission(Base):
         # (E10). The migration creates it unconditionally.
         CheckConstraint(PROTOCOL_FORMAT_CHECK,
                         name="ck_admissions_protocol_no").ddl_if(dialect="postgresql"),
+        # G2-B1b (§5.9): plain SQL, so SQLite builds it too.
+        CheckConstraint(TRANSFER_REASON_CHECK, name="ck_admissions_transfer_reason"),
     )
 
     def transition_to(self, new_state: AdmissionState) -> None:
@@ -381,6 +408,14 @@ class Admission(Base):
 # ---------------------------------------------------------------------------
 # Care team (Dimension A — §3.1, §4.2–4.3)
 # ---------------------------------------------------------------------------
+#: G2-B1c (spec T6, T7): the care team's two partial unique indexes (migration 0018). The routes
+#: tell an IntegrityError at either apart by its name: a coded 409 `care_team_conflict`, never a 500.
+CARE_TEAM_ACTIVE_INDEX = "uq_care_team_active_member"
+CARE_TEAM_ATTENDING_INDEX = "uq_care_team_one_attending"
+_CARE_TEAM_ACTIVE = text("is_active")
+_CARE_TEAM_ATTENDING = text("is_active AND role = 'ATTENDING'")
+
+
 class CareTeamMember(Base):
     """A clinician linked to a specific admission for the duration of that stay."""
     __tablename__ = "care_team_members"
@@ -408,9 +443,15 @@ class CareTeamMember(Base):
     admission: Mapped[Admission] = relationship("Admission", back_populates="care_team")
 
     __table_args__ = (
-        # A user holds at most one active care-team row per admission.
-        UniqueConstraint("admission_id", "user_id", "is_active",
-                         name="uq_care_team_active_member"),
+        # G2-B1c (spec T6, F2): PARTIAL unique indexes, the same as migration 0018's. A member
+        # holds at most one ACTIVE row per admission, and any number of closed ones: the old
+        # constraint keyed `is_active` too, so ending a member twice broke it. An admission has one
+        # active ATTENDING (D2). `sqlite_where` as well: scripts/dev_local.py builds these models
+        # on SQLite (E10).
+        Index(CARE_TEAM_ACTIVE_INDEX, "admission_id", "user_id", unique=True,
+              postgresql_where=_CARE_TEAM_ACTIVE, sqlite_where=_CARE_TEAM_ACTIVE),
+        Index(CARE_TEAM_ATTENDING_INDEX, "admission_id", unique=True,
+              postgresql_where=_CARE_TEAM_ATTENDING, sqlite_where=_CARE_TEAM_ATTENDING),
     )
 
 
