@@ -164,10 +164,11 @@ def hospital_today(zone_name: str | None, now: datetime) -> date:
 def _request_digest(payload: AdmissionCreate) -> str:
     """What tells two sends of one form apart (amendment A-19): the keyed digest
     (`crypto.phi_digest`: the body holds PHI) of the body as the server read it — every field,
-    defaults written out, `request_id` left out — as one canonical JSON. A body that reads the
-    same (keys in another order, a default sent or left out) is the same form; any field changed
-    makes it another. So does the server: a resend that straddles a deploy changing the schema's
-    defaults, or a rotation of the PHI key, reads as another form — a 409 `request_conflict`."""
+    defaults written out, `request_id` and `confirm_reserved` left out — as one canonical JSON.
+    A body that reads the same (keys in another order, a default sent or left out) is the same
+    form; any field changed makes it another. So does the server: a resend that straddles a deploy
+    changing the schema's defaults, or a rotation of the PHI key, reads as another form — a 409
+    `request_conflict`."""
     # G2-B3a (X2): `confirm_reserved` is the nurse's answer about the bed, not the form.
     body = payload.model_dump(mode="json", exclude={"request_id", "confirm_reserved"})
     return crypto.phi_digest(json.dumps(body, sort_keys=True, separators=(",", ":"),
@@ -444,7 +445,8 @@ async def create_admission(
 ):
     """Group 2 · B1a (spec §3.1): one request, one transaction. The form is checked
     (admission/form.py) against the hospital's own date; the bed row is locked and must be in the
-    unit the form names, in the caller's units, open and AVAILABLE; the admission takes the
+    unit the form names, in the caller's units, open, and AVAILABLE, or RESERVED with
+    `confirm_reserved` (G2-B3a, D5); the admission takes the
     tenant's next protocol number (protocol/numbers.py — none set: `protocol_not_configured`,
     G2-B1d D5) and the patient a fresh H-number (admission/numbers.py); the admission is DRAFT and
     the bed OCCUPIED. After the commit the board gets its card under the admission's board key

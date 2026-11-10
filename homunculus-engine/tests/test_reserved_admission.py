@@ -128,6 +128,12 @@ async def test_the_confirmation_is_not_part_of_the_forms_digest(ward):
     r = await client.post("/admissions", json={**body, "confirm_reserved": True},
                           headers=w.auth["charge"])
     assert r.status_code == 201, r.text
+    # Over HTTP: the unconfirmed send again, same `request_id`, is the same form (A-19). It is
+    # answered with the admission the confirmed send made, not refused `request_conflict` and not
+    # `bed_reserved` again.
+    again = await client.post("/admissions", json=body, headers=w.auth["charge"])
+    assert again.status_code == 200, again.text
+    assert again.json()["id"] == r.json()["id"]
 
 
 async def test_a_reservation_and_an_admission_racing_for_one_bed_leave_one_winner(ward, db_session):
