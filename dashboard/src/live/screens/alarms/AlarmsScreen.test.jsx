@@ -337,6 +337,105 @@ describe("the alarms screen", () => {
     });
   });
 
+  // G2-B5 (spec D8): «RRT çağır» — a holder of alerts.escalate calls the rapid-response team to an alarm that
+  // waits for an answer, with a reason. Synthetic accounts and reasons only.
+  describe("calling the RRT", () => {
+    /** The rapid-response team's rights (catalogue `rapid_response`). */
+    const CALLER = ["board.view", "alerts.ack", "alerts.escalate"];
+    /** The row's button. Its accessible name also names the bed and the kind, so it is found by the words. */
+    const CALL = /RRT-ni çağır/;
+    const REASON = "Tənəffüs çətinləşir";
+    const ANSWERED = "Bu siqnal artıq cavablandırılıb; RRT çağırışı açılmadı.";
+    const dialog = () => screen.getByRole("dialog", { name: "RRT-ni çağır · REA-01 · 2" });
+    const toasts = () => within(screen.getByRole("region", { name: "Bildirişlər" }));
+    const rowOf = (summary) => screen.getByText(summary, { selector: "p" }).closest("li");
+
+    /** Opens the dialog from the row, writes `reason`, and presses «Çağır». */
+    async function callWith(reason) {
+      fireEvent.click(screen.getByRole("button", { name: CALL }));
+      fireEvent.change(within(dialog()).getByRole("textbox", { name: /Səbəb/ }), { target: { value: reason } });
+      await act(async () => {
+        fireEvent.click(within(dialog()).getByRole("button", { name: "Çağır" }));
+        await settle();
+      });
+    }
+
+    it("is offered on an alarm that waits for an answer, naming it — not on an answered one", async () => {
+      await open({
+        payload: withAlarms(
+          alarm("news2", "high", { summary: "NEWS2 7" }),
+          alarm("map", "high", { summary: "Answered", acknowledged: true, acknowledged_by: "ayse", acknowledged_at: ago(10) }),
+        ),
+        perms: CALLER,
+      });
+      const button = screen.getByRole("button", { name: CALL });       // one: the answered alarm has none
+      expect(button).toHaveTextContent("RRT-ni çağır");
+      expect(button).toHaveAccessibleName("RRT-ni çağır: REA-01 · 2, news2");
+      expect(within(rowOf("NEWS2 7")).getByRole("button", { name: CALL })).toBe(button);
+    });
+
+    it("is not offered without alerts.escalate", async () => {
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      expect(screen.getByRole("button", { name: SEEN })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: CALL })).toBeNull();
+    });
+
+    it("refuses a reason shorter than 3 characters without asking the server", async () => {
+      const { api } = await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })), perms: CALLER });
+      await callWith("  ab  ");
+      expect(within(dialog()).getByText("Səbəb ən azı 3 simvol olmalıdır.")).toBeInTheDocument();
+      expect(within(dialog()).getByRole("textbox", { name: /Səbəb/ })).toHaveAttribute("aria-invalid", "true");
+      expect(api.callRrt).not.toHaveBeenCalled();
+    });
+
+    it("sends the reason, puts the card the server answered with on the board, and says so", async () => {
+      const answered = entry("S-001", [alarm("news2", "high", {
+        summary: "NEWS2 7", rrt_call: { by: "leyla", at: ago(0), reason: REASON },
+      })], { ...CARD, risk: "high" });
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        perms: CALLER,
+        setup: (fake) => fake.callRrt.mockResolvedValue(answered),
+      });
+      await callWith(`  ${REASON} `);
+      expect(api.callRrt).toHaveBeenCalledWith("S-001", "news2", REASON);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const row = rowOf("NEWS2 7");
+      expect(row).toHaveTextContent(`RRT çağırılıb · leyla · ${hhmm(NOW)}`);
+      expect(within(row).queryByRole("button", { name: CALL })).toBeNull();
+      expect(toasts().getAllByText("REA-01 · 2 · news2: RRT çağırıldı.").length).toBeGreaterThan(0);
+    });
+
+    it("a refusal is a toast naming the alarm, in the reader's words — and nothing changes", async () => {
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        perms: CALLER,
+        setup: (fake) => fake.callRrt.mockRejectedValue(refusal(409, "alarm zaten yanıtlandı; RRT çağrısı açılmaz")),
+      });
+      await callWith(REASON);
+      expect(api.callRrt).toHaveBeenCalledWith("S-001", "news2", REASON);
+      expect(toasts().getAllByText(`REA-01 · 2 · news2: RRT çağırılmadı — ${ANSWERED}`).length).toBeGreaterThan(0);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const row = rowOf("NEWS2 7");
+      expect(row).not.toHaveTextContent("RRT çağırılıb");
+      expect(within(row).getByRole("button", { name: CALL })).toBeInTheDocument();
+    });
+
+    it("an alarm already called says who called it and when, and offers no second call", async () => {
+      await open({
+        payload: withAlarms(alarm("news2", "high", {
+          summary: "NEWS2 7", rrt_call: { by: "leyla", at: ago(120), reason: REASON },
+        })),
+        perms: CALLER,
+      });
+      const row = rowOf("NEWS2 7");
+      expect(row).toHaveTextContent(`RRT çağırılıb · leyla · ${hhmm(NOW - 120_000)}`);
+      expect(screen.queryByRole("button", { name: CALL })).toBeNull();
+      // A call is not an answer: the alarm still waits for its acknowledgement (spec D4).
+      expect(within(row).getByRole("button", { name: SEEN })).toBeInTheDocument();
+    });
+  });
+
   describe("what it refuses to imply", () => {
     it("a board that could not be loaded does not read as \"no alarms\"", async () => {
       await open({ connection: "unavailable" });

@@ -7,6 +7,7 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/board.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
 import { RrtScreen } from "./RrtScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -98,6 +99,27 @@ describe("the RRT screen", () => {
     expect(screen.queryByText("Not immediate")).toBeNull();
     expect(screen.queryByText("Answered one")).toBeNull();
     expect(within(listOf(CALLS)).getByText("Açıq RRT çağırışı yoxdur.")).toBeInTheDocument();
+  });
+
+  // G2-A1 (O17): a critical whose rule stopped before anyone answered stays, latched, until someone does. A called
+  // one must say so, as the alarm screen's row does — its sound has stopped, and the team should know why.
+  it("a called alarm whose condition passed unanswered says so, with the time it passed", async () => {
+    await open({
+      payload: withAlarms(alarm("septic_shock", "critical", {
+        summary: "Septic shock criteria met", rrt_call: CALL, resolved_at: ago(60),
+      })),
+    });
+    const row = within(listOf(CALLS)).getByText("Septic shock criteria met").closest("li");
+    expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
+    expect(row).toHaveTextContent(`keçdiyi saat: ${hhmm(NOW - 60_000)}`);
+    expect(row).toHaveTextContent("Əl ilə çağırılıb · leyla");
+    // Still answerable: latched is not answered.
+    expect(within(row).getByRole("button", { name: SEEN })).toBeInTheDocument();
+  });
+
+  it("a called alarm that still fires carries no such badge", async () => {
+    await open({ payload: withAlarms(called()) });
+    expect(screen.queryByText("keçdi · təsdiqlənməyib")).toBeNull();
   });
 
   it("each list says it is empty, on a LIVE board", async () => {

@@ -24,6 +24,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../apiErrors.js";
 import { Announce, Box, Button, Empty, Note, RiskPill, StatusPill, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
+import { hhmm } from "../../i18n/dates.js";
 import { BoardStrip, ScopeNote, pillRisk, summaryOf, useBoardNow } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 import { rrtQueue } from "./rrt.js";
@@ -61,7 +62,19 @@ function Row({ alarm, canAck, onAck, busy, meta, detail = null }) {
         </a>
         {/* The engine writes its summaries in English (reco/engine.py); the screen says so once, below. */}
         <p lang="en" className="m-0 text-13 text-ink">{summaryOf(alarm) ?? t("board.findingUnnamed")}</p>
-        <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-11.5 text-mute">{meta}</p>
+        <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-11.5 text-mute">
+          {meta}
+          {/* G2-A1 (O17), as on the alarm screen: a critical whose rule stopped before anyone answered it stays,
+              latched, until someone does. Its sound has stopped; the badge and the instant it passed say why it is
+              still here. In both lists — a latched alarm can be called, and one on its way can be latched. */}
+          {alarm.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
+          {alarm.status === "RESOLVED" && Number.isFinite(alarm.resolvedAtMs) ? (
+            <span>
+              <span className="sr-only">{`${t("alarms.resolvedAt")}: `}</span>
+              <span className="font-data">{hhmm(alarm.resolvedAtMs)}</span>
+            </span>
+          ) : null}
+        </p>
         {detail}
       </div>
       {canAck && alarm.status !== "ACKNOWLEDGED" ? (

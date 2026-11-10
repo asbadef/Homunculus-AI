@@ -4,9 +4,11 @@
 //   - the RRT comes only when called by hand, and the screen says plainly that the automatic RRT step is off
 //     (owner D1): an unanswered urgent alarm escalates to the doctor, not to the RRT;
 //   - a list the board cannot vouch for is never worded as a quiet ward (Decision 18);
-//   - a call carries the caller's name and reason, and is written to the audit trail;
+//   - a call carries the caller's name and reason, and is written to the audit trail — so the hint asks for no
+//     names or identity numbers in the reason;
 //   - a refusal and a toast name their subject first ({subject}: the bed and the kind, never a name).
-// «Gördüm» is the same acknowledgement as the alarm screen's; az uses that screen's own word (alarms.seen).
+// «Gördüm» is the same acknowledgement as the alarm screen's; az and ru use that screen's own word (alarms.seen),
+// so one action has one name.
 // TR is the source. AZ, RU and EN are Lane B's and await a native reading.
 export default {
   tr: {
@@ -33,7 +35,7 @@ export default {
     callLabel: "RRT çağır: {bed}, {kind}",
     callTitle: "RRT çağır · {bed}",
     callReason: "Gerekçe",
-    callHint: "Ekibe neden gerektiğini yazın (3–500 karakter). Çağrı denetim kaydına adınızla yazılır.",
+    callHint: "Ekibe neden gerektiğini yazın (3–500 karakter); ad ya da kimlik numarası yazmayın. Çağrı denetim kaydına adınızla yazılır.",
     callReasonShort: "Gerekçe en az 3 karakter olmalı.",
     callSend: "Çağır",
     callCancel: "Vazgeç",
@@ -65,7 +67,7 @@ export default {
     callLabel: "RRT-ni çağır: {bed}, {kind}",
     callTitle: "RRT-ni çağır · {bed}",
     callReason: "Səbəb",
-    callHint: "Komandaya niyə lazım olduğunu yazın (3–500 simvol). Çağırış audit jurnalına adınızla yazılır.",
+    callHint: "Komandaya niyə lazım olduğunu yazın (3–500 simvol); ad və ya şəxsiyyət nömrəsi yazmayın. Çağırış audit jurnalına adınızla yazılır.",
     callReasonShort: "Səbəb ən azı 3 simvol olmalıdır.",
     callSend: "Çağır",
     callCancel: "İmtina",
@@ -87,8 +89,8 @@ export default {
     escalatedToDoctor: "Эскалировано врачу",
     unansweredFor: "Без ответа {age}",
     calledAgo: "Вызвана {age} назад",
-    seen: "Вижу",
-    seenLabel: "Вижу: {bed}, {kind}",
+    seen: "Принято",
+    seenLabel: "Принято: {bed}, {kind}",
     unknown: "Панель может быть неактуальной; списки — последнее известное состояние.",
     unavailable: "Панель недоступна; списки БРР показать нельзя.",
     badgeCount: "Открытых вызовов БРР: {count}",
@@ -97,7 +99,7 @@ export default {
     callLabel: "Вызвать БРР: {bed}, {kind}",
     callTitle: "Вызвать БРР · {bed}",
     callReason: "Причина",
-    callHint: "Напишите, зачем нужна бригада (3–500 символов). Вызов записывается в журнал аудита под вашим именем.",
+    callHint: "Напишите, зачем нужна бригада (3–500 символов); не указывайте имён и номеров документов. Вызов записывается в журнал аудита под вашим именем.",
     callReasonShort: "Причина должна содержать не менее 3 символов.",
     callSend: "Вызвать",
     callCancel: "Отмена",
@@ -129,7 +131,7 @@ export default {
     callLabel: "Call the RRT: {bed}, {kind}",
     callTitle: "Call the RRT · {bed}",
     callReason: "Reason",
-    callHint: "Write why the team is needed (3–500 characters). The call is written to the audit trail under your name.",
+    callHint: "Write why the team is needed (3–500 characters); do not write names or ID numbers. The call is written to the audit trail under your name.",
     callReasonShort: "The reason must be at least 3 characters.",
     callSend: "Call",
     callCancel: "Cancel",

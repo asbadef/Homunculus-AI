@@ -22,6 +22,11 @@
 // `m:ss` under an hour, `h:mm:ss` above (never "318:30"), `0:00` for an instant that has not
 // arrived, and NO duration at all when the engine sent no first-seen time — never an invented one.
 // Nothing runs on the simulation's clock, which is gone.
+//
+// «RRT ÇAĞIR» (G2-B5, spec D8). A holder of `alerts.escalate` may call the rapid-response team to an alarm that
+// waits for an answer and has no call yet, with a reason (RrtCallDialog). The call is not an answer: the alarm
+// stays where it is, still asking for «Gördüm», and its row says who called the team and when — the
+// acknowledgement ends the call (spec D4). One dialog for the screen: `callFor`, the alarm it is open for, or null.
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
@@ -35,6 +40,7 @@ import {
   BoardStrip, ChronicExpected, ScopeNote, boardKnown, boardStale, pillRisk, summaryOf, useBoardNow,
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
+import { RrtCallDialog } from "../rrt/RrtCallDialog.jsx";
 
 /** The ages on this screen tick every second: how long an alarm nobody has answered has been open
  *  is the number this screen exists to show. `useNow` skips the tick while the tab is hidden. */
@@ -63,10 +69,13 @@ function worstFirst(a, b) {
     || oldestFirst(a, b);
 }
 
-function Row({ alarm, nowMs, canAck, onAck, busy }) {
+function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall }) {
   const { t } = useI18n();
   const age = elapsed(alarm.firstSeenAtMs, nowMs);
   const bed = alarm.bedLabel || alarm.patientId;
+  const ackable = canAck && alarm.status !== "ACKNOWLEDGED";
+  const callable = canCall && alarm.status !== "ACKNOWLEDGED" && !alarm.rrtCall;
+  const call = alarm.rrtCall;
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-t border-line px-3 py-2.5 first:border-t-0 max-[640px]:grid-cols-[auto_minmax(0,1fr)]">
       <RiskPill risk={pillRisk(alarm.severity)} measured />
@@ -92,6 +101,12 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
           )}
           {Number.isFinite(alarm.firstSeenAtMs) ? <span className="font-data">{hhmm(alarm.firstSeenAtMs)}</span> : null}
           {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
+          {/* G2-B5 (D8): the open call to the rapid-response team — who called it, and when. */}
+          {call ? (
+            <StatusPill tone="att" icon="zap">
+              {t("rrt.called", { by: call.by || "—", time: Number.isFinite(call.atMs) ? hhmm(call.atMs) : "—" })}
+            </StatusPill>
+          ) : null}
           {/* G2-A1 (O17): a critical whose condition passed before anyone acknowledged it stays
               here, waiting, until someone does. Its sound has stopped (signals.js); the badge and
               the instant it passed say why it is still on the list. */}
@@ -109,22 +124,33 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
           {Number.isFinite(alarm.ackAtMs) ? <span className="font-data">{hhmm(alarm.ackAtMs)}</span> : null}
         </p>
       </div>
-      {canAck && alarm.status !== "ACKNOWLEDGED" ? (
-        <>
-          <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}
-            aria-label={t("alarms.ackLabel", { bed, kind: alarm.kind })}>
-            {t("alarms.seen")}
-          </Button>
-          {/* A busy Button reads only "unavailable" to a screen reader; the words come from here
-              (Wave 1B's note for G1-10's first use of `busy`). */}
-          <Announce text={busy ? t("alarms.seeing") : ""} />
-        </>
+      {ackable || callable ? (
+        <div className="flex flex-wrap items-start justify-end gap-2">
+          {/* Named like «Gördüm»: the words the row shows, then the bed and the kind it is for. */}
+          {callable ? (
+            <Button size="sm" icon="zap" onClick={() => onCall(alarm)}
+              aria-label={t("rrt.callLabel", { bed, kind: alarm.kind })}>
+              {t("rrt.call")}
+            </Button>
+          ) : null}
+          {ackable ? (
+            <>
+              <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}
+                aria-label={t("alarms.ackLabel", { bed, kind: alarm.kind })}>
+                {t("alarms.seen")}
+              </Button>
+              {/* A busy Button reads only "unavailable" to a screen reader; the words come from here
+                  (Wave 1B's note for G1-10's first use of `busy`). */}
+              <Announce text={busy ? t("alarms.seeing") : ""} />
+            </>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );
 }
 
-function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, counted, level = 2 }) {
+function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, counted, level = 2 }) {
   const { t } = useI18n();
   const Heading = `h${level}`;
   return (
@@ -143,7 +169,8 @@ function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, cou
       ) : (
         <ul className="m-0 list-none rounded-box border border-line bg-card p-0">
           {alarms.map((a) => (
-            <Row key={a.id} alarm={a} nowMs={nowMs} canAck={canAck} onAck={onAck} busy={busyId === a.id} />
+            <Row key={a.id} alarm={a} nowMs={nowMs} canAck={canAck} onAck={onAck} busy={busyId === a.id}
+              canCall={canCall} onCall={onCall} />
           ))}
         </ul>
       )}
@@ -159,7 +186,9 @@ export function AlarmsScreen() {
   const nowMs = useBoardNow(TICK_MS);
   const [only, setOnly] = useState("all");
   const [busyId, setBusyId] = useState(null);
+  const [callFor, setCallFor] = useState(null);   // the alarm whose «RRT çağır» dialog is open, or null
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
+  const canCall = user?.perms?.includes("alerts.escalate") ?? false;
   const known = boardKnown(board.connection);
   const stale = boardStale(board.connection);
   // WHAT AN EMPTY SECTION IS ALLOWED TO SAY. "No alarm is awaiting a response" is a claim about
@@ -248,13 +277,16 @@ export function AlarmsScreen() {
       <Section
         titleKey="alarms.waiting" emptyKey={emptyKey("alarms.emptyWaiting")}
         alarms={waiting} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
+        canCall={canCall} onCall={setCallFor}
         counted={known || stale}
       />
       <Section
         titleKey="alarms.reviewing" emptyKey={emptyKey("alarms.emptyReviewing")}
         alarms={reviewing} nowMs={nowMs} canAck={false} onAck={acknowledge} busyId={busyId}
+        canCall={false} onCall={setCallFor}
         counted={known || stale}
       />
+      <RrtCallDialog alarm={callFor} open={callFor !== null} onClose={() => setCallFor(null)} />
 
       {/* Its own heading: this box is about CLOSED alarms, and titling it "Under review" put a
           second identical <h2> on the page. */}
