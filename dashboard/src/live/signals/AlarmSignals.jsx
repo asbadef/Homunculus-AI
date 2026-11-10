@@ -9,7 +9,8 @@
 //     after a click or a key press: until one happens a wanted sound is "waiting", and a button on
 //     every screen, the lock screen included, says so (and is announced) and starts it.
 //   * It plays the worst pattern among the alarms nobody has answered (signals.js), until they are
-//     answered — the old one also honoured a snooze, which the live system does not have. It acts
+//     answered — the old one also honoured a snooze, and since G2-B5b so does this: a snoozed
+//     alarm waits for nothing until its until (boardStore needsAnswer, by useSnoozeClock). It acts
 //     on any board that holds a ward it loaded: from the first load on (the old one sounded its
 //     first load), and, when the stream has dropped, on what the board last had (the old store kept
 //     its alarms then); on a board that never loaded, or whose load failed, it plays nothing.
@@ -37,6 +38,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBoard } from "../data/BoardProvider.jsx";
+import { useSnoozeClock } from "../data/useSnoozeClock.js";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
 import { useSession } from "../session/SessionProvider.jsx";
@@ -144,6 +146,9 @@ export function AlarmSignals({ children }) {
   const { t } = useI18n();
   const { phase, user } = useSession();
   const board = useBoard();
+  // G2-B5b (spec D4): a snoozed alarm makes no sound and raises no notification until its `until`. The clock
+  // holds still between snooze ends, so it can sit in the notification effect's dependencies.
+  const nowMs = useSnoozeClock();
   const active = seesBoard(phase, user);
   const locked = phase === PHASE.LOCKED;
 
@@ -188,7 +193,7 @@ export function AlarmSignals({ children }) {
   // The sound: the worst waiting pattern while this session may see the board, nothing otherwise.
   // The engine keeps it while the browser has the audio suspended and sounds it once the audio
   // runs again — by itself, since a suspend and a resume may reach React as no change at all.
-  const pattern = active && wanted ? soundFor(board) : null;
+  const pattern = active && wanted ? soundFor({ ...board, nowMs }) : null;
   useEffect(() => {
     if (pattern) engine.play(pattern);
     else engine.stop();
@@ -235,7 +240,7 @@ export function AlarmSignals({ children }) {
       for (const key of [...open.keys()]) close(key);
       return;
     }
-    const { known, items, ringing } = notifyFor({ alerts, connection, loaded });
+    const { known, items, ringing } = notifyFor({ alerts, connection, loaded, nowMs });
     const keys = locked ? (items.length ? [LOCKED] : []) : items.map((a) => a.episode);
     for (const key of [...open.keys()]) {
       const lockChanged = locked !== (key === LOCKED);
@@ -256,7 +261,7 @@ export function AlarmSignals({ children }) {
       keep(alarm.episode, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
         { tag: alarmTag(alarm.episode) }));
     }
-  }, [active, permission, alerts, connection, loaded, locked, hidden, t]);
+  }, [active, permission, alerts, connection, loaded, locked, hidden, t, nowMs]);
 
   const askNotify = useCallback(async () => {
     if (notifyState() !== "default") {

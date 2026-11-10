@@ -182,6 +182,31 @@ describe("the rail", () => {
     });
   });
 
+  // G2-B5b (spec D4): a snoozed alarm is out of the count until its time — the rail's badge and the bell — and back after.
+  describe("a snoozed alarm", () => {
+    const card = (untilMs) => ({ patient_id: "P-0", risk: "high", vitals: {}, alerts: [{ kind: "news2", severity: "high",
+      urgency: "immediate", summary: "NEWS2 7", acknowledged: false,
+      snooze: { by: "leyla", at: new Date(untilMs - 15 * 60_000).toISOString(), until: new Date(untilMs).toISOString(),
+        minutes: 15, reason: "PATIENT_BASELINE", reason_text: null } }] });
+
+    it("is out of the alarms entry's count and the bell while it is snoozed", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [card(Date.now() + 10 * 60_000)] });
+      await act(async () => { stream.open(); await settle(); });
+      const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+      expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+      expect(screen.getByRole("button", { name: /Cavab gözləyən siqnal yoxdur/ })).toBeInTheDocument();
+    });
+
+    it("is counted again once its time has passed", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [card(Date.now() - 60_000)] });
+      await act(async () => { stream.open(); await settle(); });
+      const entry = within(screen.getByRole("navigation", { name: "Əsas menyu" })).getByRole("link", { name: /Siqnallar/ });
+      expect(entry).toHaveAccessibleName(/1 siqnal cavab gözləyir/);
+    });
+  });
+
   it("shows an administrator the built admin screen", async () => {
     built({ admin: AdminProbe });
     await renderShell({ perms: ["users.manage"] });

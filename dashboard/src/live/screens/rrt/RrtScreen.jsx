@@ -156,7 +156,9 @@ export function RrtScreen() {
   const [busyId, setBusyId] = useState(null);
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const { alerts, connection } = board;
-  const { known, stale, called, waiting } = useMemo(() => rrtQueue({ alerts, connection }), [alerts, connection]);
+  // G2-B5b (spec §2): a snoozed alarm is not «on its way» until its `until`, by this screen's clock.
+  const { known, stale, called, waiting } = useMemo(() => rrtQueue({ alerts, connection, nowMs }),
+    [alerts, connection, nowMs]);
   // In place of a list's empty text when the board cannot vouch for it — never a sentence that reads as a quiet
   // ward (Decision 18; the alarm screen's `emptyKey`).
   const emptyText = (key) => {
