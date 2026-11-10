@@ -111,3 +111,46 @@ What ends a snooze early:
   - rawKeys;
   - the denetim label.
 - **Gates:** the engine's no-DB suite, the whole dashboard suite, and `vite build`.
+
+## 5. Plan and review amendments (2026-11-10)
+
+**A worse alarm ends its snooze.** `news2` keeps one key while its severity moves between moderate and high. The store
+records the severity a snooze was given at, and the alarm getting worse ends the snooze at once. Otherwise a 120-minute
+moderate snooze would silence a high alarm past the 30-minute cap. The alarm then sounds and waits as if never snoozed;
+its escalation clock does not restart.
+
+**Escalation only concerns `immediate` alarms.** The live system escalates only alarms whose urgency is `immediate`.
+Every moderate rule is `soon`, as are some high ones, so for most snoozed alarms «no escalation while snoozed» and «a new
+page after it» do not apply. The guide (§3.21) says so.
+
+**The severity the nurse saw.** `POST /alerts/snooze` takes an optional `seen_severity` (`high` | `moderate`). If the
+alarm's severity has changed since the dialog opened, the answer is 409 «alarmın önemi değişti; ertelemeyi yeniden
+seçin» and nothing is written. The dialog reads the live alarm and holds «Ertele» when it changed, was answered or left.
+An invalid value is 422 «geçersiz seen_severity».
+
+**Re-snooze stays as written.** A snooze given again before the first ends replaces it, so a high alarm can be kept
+quiet by repeated, named, capped snoozes. This is accepted: an acknowledgement already silences an alarm for good, and
+each snooze is a person's act in the trail. A test pins it.
+
+**Bounds against the clock.**
+- A snooze whose `at` lies in the future, or whose `until` is further away than its cap, ends at the next cycle (a server
+  clock stepped back).
+- The client honours a snooze only on a firing high or moderate alarm, and never for longer than the cap for the
+  alarm's current severity.
+
+**Replay.**
+- A row with no UTC offset, an `until` past year 9999, or an `at` after the restart's `now` is passed over; it never
+  fails the replay.
+- The audit row records the `severity`. On replay a snooze takes the milder of the recorded and the replayed severity
+  and must fit both caps, so a withdrawn chart value cannot bring back a snooze that ended live.
+
+**Cycle robustness.** Spent snoozes of every hospital end in a first pass. A woken patient stays pending until its card
+is published, so a cycle that fails midway sends the card on the next one.
+
+**Dashboard.**
+- `useSnoozeClock` re-arms on a counter, re-reads the clock when alerts change and when the page returns, and waits at
+  most 60 s.
+- After a snooze, focus moves to «Ertelenenler».
+- A dismissed critical notification may be raised again when the snooze clock re-reads, at most once a minute while a
+  snooze runs. This errs toward more alerting and is accepted.
+- The new az and ru wording for «severity» awaits a native reading.
