@@ -64,7 +64,7 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
     REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
 )
-from homunculus.api.snooze import clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
+from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -1635,9 +1635,12 @@ def create_app(
         - an alarm not on the board (404);
         - a latched critical, a critical, a low or an info alarm (409 `snooze_not_allowed`);
         - an answered alarm (409);
-        - minutes outside 1..cap, a reason the list does not hold, OTHER under 15 characters, or a text over 500 (422).
-        The reason is judged before the patient's scope, as the RRT call judges its reason: it names nothing of the
-        patient. A second snooze replaces the first, with its own `until`. The trail before memory, as `/ack`
+        - an alarm whose severity is no longer the `seen_severity` the dialog showed (409; review, item 7);
+        - minutes outside 1..cap, a reason the list does not hold, OTHER under 15 characters, a text over 500, or a
+          `seen_severity` neither high nor moderate (422).
+        The reason and `seen_severity` are judged before the patient's scope, as the RRT call judges its reason: they
+        name nothing of the patient. The changed severity is judged as soon as the alarm's is known, before the
+        minutes. A second snooze replaces the first, with its own `until`. The trail before memory, as `/ack`
         (spec 2026-11-01, D3).
         """
         caller = await _caller(authorization)
@@ -1655,6 +1658,10 @@ def create_app(
             raise HTTPException(status_code=422,
                                 detail="erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter")
         reason, reason_text = cleaned
+        # Review (item 7): the severity the dialog showed when the person chose, optional. Null is absent.
+        seen = body.get("seen_severity")
+        if seen is not None and (not isinstance(seen, str) or seen not in SNOOZE_CAPS):
+            raise HTTPException(status_code=422, detail="geçersiz seen_severity")
         who = _attribution(caller, body)
         await _require_patient(caller, authorization, patient_id)
         key = (patient_id, kind)
@@ -1666,6 +1673,10 @@ def create_app(
         if key in store.acks:
             raise HTTPException(status_code=409, detail="alarm zaten yanıtlandı; ertelenmez")
         severity = next(a.severity for a in engine.active_alerts(patient_id) if a.kind == kind)
+        if seen is not None and seen != severity:
+            # A frame changed the alarm while the dialog was open. Taken at the new severity, a snooze chosen on a
+            # moderate alarm would hold a high one — and never end by «worse» (plan note 1). The person chooses again.
+            raise HTTPException(status_code=409, detail="alarmın önemi değişti; ertelemeyi yeniden seçin")
         if snooze_cap(severity) is None:
             raise HTTPException(status_code=409, detail="snooze_not_allowed")
         minutes = body.get("minutes")

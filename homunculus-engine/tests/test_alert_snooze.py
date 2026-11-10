@@ -250,6 +250,8 @@ START = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
 WALL0 = datetime(2026, 10, 25, 9, 0, tzinfo=timezone.utc)
 REASON_RULE = "erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter"
 MINUTES_RULE = "erteleme süresi bu alarm için izin verilen aralıkta değil"
+SEVERITY_CHANGED = "alarmın önemi değişti; ertelemeyi yeniden seçin"
+SEEN_RULE = "geçersiz seen_severity"
 
 DEVICE = {"Authorization": "Bearer tok"}
 NURSE = {"Authorization": "Bearer nurse-jwt"}
@@ -317,11 +319,16 @@ def _drive_shock(client):
         assert client.post("/ingest", json=fhir, headers=DEVICE).status_code == 200
 
 
+_ABSENT = object()
+
+
 def _snooze(client, minutes=15, reason="ARTEFACT_OR_SIGNAL_NOISE", text=None, kind="news2", headers=NURSE,
-            patient="bed-3"):
+            patient="bed-3", seen=_ABSENT):
     body = {"patient_id": patient, "kind": kind, "minutes": minutes, "reason": reason}
     if text is not None:
         body["reason_text"] = text
+    if seen is not _ABSENT:
+        body["seen_severity"] = seen
     return client.post("/alerts/snooze", json=body, headers=headers)
 
 
@@ -481,6 +488,45 @@ def test_a_snooze_whose_audit_row_fails_is_a_500_and_leaves_no_snooze_and_the_re
         assert r.status_code == 200, r.text
         assert len(_rows(audit)) == 1
         assert _alerts(client)["news2"]["snooze"]["minutes"] == 15
+
+
+def test_a_snooze_chosen_on_a_severity_the_alarm_no_longer_has_is_refused_and_writes_nothing(wall, audit):
+    """Review (item 7): the dialog opened on a MODERATE news2, a frame made it HIGH, and the nurse chose. Taken at
+    HIGH, the snooze would never end by «worse» (plan note 1): a decision made on a moderate alarm would silence a
+    high, immediate one. The dialog says what it showed (`seen_severity`); a mismatch is refused, before the
+    minutes, and nothing is written."""
+    app = _app(audit)
+    with TestClient(app) as client:
+        _vitals(client, rr=26)                                      # HIGH now
+        r = _snooze(client, minutes=30, seen="moderate")
+        assert (r.status_code, r.json()["detail"]) == (409, SEVERITY_CHANGED)
+        r = _snooze(client, minutes=120, seen="moderate")
+        assert (r.status_code, r.json()["detail"]) == (409, SEVERITY_CHANGED), "judged before the minutes"
+        assert _rows(audit) == [] and _store(app).snoozes == {}
+        assert _alerts(client)["news2"]["snooze"] is None
+        r = _snooze(client, minutes=30, seen="high")
+        assert r.status_code == 200, r.text
+        assert _on(r)["snooze"]["minutes"] == 30 and _rows(audit)[0].payload["severity"] == "high"
+        _vitals(client, rr=22, minute=1)                            # MODERATE now
+        r = _snooze(client, minutes=120, seen="moderate")
+        assert r.status_code == 200, r.text
+        assert len(_rows(audit)) == 2
+
+
+def test_seen_severity_is_high_or_moderate_or_absent(wall, audit):
+    """Review (item 7): any other value is a 422, judged with the body before the patient's scope; absent — or
+    null — the door behaves as before the field existed."""
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        for bad in ("critical", "low", "info", "HIGH", "", 7, True, ["high"], {"s": "high"}):
+            r = _snooze(client, seen=bad)
+            assert (r.status_code, r.json()["detail"]) == (422, SEEN_RULE), bad
+        r = _snooze(client, seen="moderate", patient="bed-9")
+        assert r.status_code == 404, "a well-formed field reaches the patient's checks"
+        assert _rows(audit) == []
+        assert _snooze(client, seen=None).status_code == 200
+        assert _snooze(client).status_code == 200
+        assert len(_rows(audit)) == 2
 
 
 # --- the escalation cycle --------------------------------------------------------------------------------
