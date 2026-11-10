@@ -8,7 +8,16 @@ import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/bo
 import { hhmm } from "../../i18n/dates.js";
 import { AlarmsScreen } from "./AlarmsScreen.jsx";
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The real setTimeout, taken before any test fakes the timers: a test that drives the clock (a snooze ending, the
+// dialog's «sounds again at») still lets the answers land.
+const realSetTimeout = globalThis.setTimeout;
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
+/** Fake timers and a fixed clock, for a test that moves the clock itself. */
+const fakeClock = (at = NOW) => {
+  vi.useRealTimers();                                   // beforeEach mocked the date alone
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  vi.setSystemTime(at);
+};
 
 /** The acknowledge button. Its accessible name is "<bed> · <kind> siqnalı: gördüm" (it names the
  *  alarm it answers), so it is found by the word and not by the whole name. */
@@ -702,6 +711,19 @@ describe("the alarms screen", () => {
       expect(within(row).getByRole("button", { name: SNOOZE })).toBeInTheDocument();
     });
 
+    // Review (G2-B5b): the screen's own clock takes the alarm back at its until — no frame from the server needed.
+    it("a snoozed alarm comes back to the waiting on its own the moment its snooze ends", async () => {
+      fakeClock();
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7", snooze: { by: "leyla", at: ago(295),
+        until: new Date(NOW + 5_000).toISOString(), minutes: 5, reason: "PATIENT_BASELINE", reason_text: null } })) });
+      expect(within(sectionOf(/Təxirə salınanlar/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(within(sectionOf(/Cavab gözləyir/)).queryByText("NEWS2 7")).toBeNull();
+      act(() => { vi.advanceTimersByTime(5_100); });
+      expect(screen.queryByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeNull();
+      expect(within(sectionOf(/Cavab gözləyir/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(rowOf("NEWS2 7")).not.toHaveTextContent("Təxirə salınıb");
+    });
+
     it("a snooze whose time has passed is back among the waiting, with no snooze line", async () => {
       await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7", snooze: snoozedFor(-1) })) });
       expect(screen.queryByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeNull();
@@ -738,6 +760,81 @@ describe("the alarms screen", () => {
       );
       expect(said.map((n) => n.closest("[data-tone]")?.getAttribute("data-tone"))).toContain("warn");
       expect(toasts().queryAllByText(/təxirə salınmadı —/)).toHaveLength(0);
+    });
+
+    // Review (G2-B5b): a 502 from the proxy, or a network that dropped the request, is no refusal: the engine may have
+    // taken the snooze. A warning that says so, never «not snoozed».
+    for (const [what, failure] of [
+      ["a 502", () => refusal(502, "Bad Gateway")],
+      ["a network error", () => new Error("Failed to fetch")],
+    ]) {
+      it(`${what} may have landed: a warning, not a refusal`, async () => {
+        await open({
+          payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+          setup: (fake) => fake.snoozeAlert.mockRejectedValue(failure()),
+        });
+        fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+        fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+        await send();
+        const said = toasts().getAllByText(
+          "REA-01 · 2 · news2: cavab gəlmədi — siqnal təxirə salınmış ola bilər. Sətrə baxın; yenidən təxirə salmaq zərərsizdir.",
+        );
+        expect(said.map((n) => n.closest("[data-tone]")?.getAttribute("data-tone"))).toContain("warn");
+        expect(toasts().queryAllByText(/təxirə salınmadı —/)).toHaveLength(0);
+      });
+    }
+
+    it("a second press while the first is out sends nothing more", async () => {
+      let answer;
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockImplementation(() => new Promise((resolve) => { answer = resolve; })),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      const press = within(dialog()).getByRole("button", { name: "Təxirə sal" });
+      await act(async () => {
+        fireEvent.click(press);
+        fireEvent.click(press);
+        fireEvent.submit(press.closest("[role='dialog']").querySelector("form"));   // Enter in a box: the same send
+        await settle();
+      });
+      expect(api.snoozeAlert).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        answer(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { ...CARD, risk: "high" }));
+        await settle();
+      });
+      expect(api.snoozeAlert).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("takes at most 500 characters of explanation, and sends 500 whole", async () => {
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { ...CARD, risk: "high" })),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "OTHER" } });
+      const box = within(dialog()).getByRole("textbox", { name: /İzah/ });
+      expect(box).toHaveAttribute("maxlength", "500");
+      const longest = "Sintetik izah. ".repeat(40).slice(0, 500);
+      expect(longest).toHaveLength(500);
+      fireEvent.change(box, { target: { value: longest } });
+      await send();
+      expect(api.snoozeAlert).toHaveBeenCalledWith("S-001", "news2", 5, "OTHER", longest.trim(), "high");
+    });
+
+    // The minute the dialog names moves with the clock while it stays open (its own one-second tick).
+    it("says when the alarm sounds again by the clock as it moves", async () => {
+      const start = NOW + 55_000;                       // five seconds before the minute turns
+      fakeClock(start);
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(start + 5 * 60_000)}`)).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(10_000); });
+      expect(hhmm(start + 10_000 + 5 * 60_000)).not.toBe(hhmm(start + 5 * 60_000));
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(start + 10_000 + 5 * 60_000)}`))
+        .toBeInTheDocument();
     });
 
     // Review (G2-B5b): the dialog acts on the alarm as the board holds it NOW, not on the picture it opened with. A
