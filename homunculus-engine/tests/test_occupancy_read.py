@@ -122,6 +122,23 @@ async def test_whoever_may_open_doluluk_reads_it_and_nobody_else(ward):
     assert (await client.get("/tenant/occupancy", headers=w.auth["auditor"])).status_code == 403
 
 
+async def test_a_discharge_confirmer_alone_reads_her_units_beds_and_their_names(ward, db_session):
+    """D2 opens Doluluk to `admissions.discharge.confirm`. The screen is built from the structure
+    AND the names: a session holding that right alone reads both, or the screen waits for a tree
+    that never comes (final review M-3)."""
+    w, client, _ = ward
+    await _admit(client, w, "2")
+    auth = await _only(db_session, w, "admissions.discharge.confirm")
+    r = await client.get("/tenant/structure", headers=auth)
+    assert r.status_code == 200, r.text
+    beds = [b for s in r.json()["sites"] for u in s["units"] for room in u["rooms"]
+            for b in room["beds"]]
+    assert {b["label"] for b in beds} == {"1", "2", "10", "3"}            # Reanimasiya, her unit
+    r = await client.get("/tenant/occupancy", headers=auth)
+    assert r.status_code == 200, r.text
+    assert [b["occupant_short"] for b in r.json()["beds"]] == ["Hasta S."]
+
+
 async def test_a_user_manager_or_a_device_mapper_gets_no_name_and_no_note(ward, db_session):
     """R1: both read /tenant/structure, which carries no patient data and no note."""
     w, client, _ = ward

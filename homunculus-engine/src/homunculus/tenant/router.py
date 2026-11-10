@@ -399,12 +399,16 @@ async def structure(
     db: AsyncSession = Depends(get_db), caller_tenant: uuid.UUID = _tenant,
     principal: Principal = Depends(get_principal),
     _user: User = Depends(require_permission("admissions.view", "admissions.admit",
+                                             "admissions.discharge.confirm",
                                              "beds.release", "structure.manage", "users.manage",
                                              "devices.map_beds")),
 ) -> StructureResponse:
     """The tree a screen resolves every unit and bed NAME from (spec D9: no UUID on a screen).
     `users.manage` too: the scope editor names the units and beds it grants (plan X52).
     `devices.map_beds` too: the monitor→bed editor's picker names the beds (G2-ESLEME).
+    `admissions.discharge.confirm` too: D2 opens Doluluk to it, and the screen is built from this
+    tree (G2-B3a, final review M-3). The tree carries no patient data (R1), so no right reaches a
+    name through it.
 
     Limited to the caller's units: a unit she is granted with all its rooms and beds, a bed she is
     granted with its room and unit around it. An unrestricted caller sees every unit, and so does

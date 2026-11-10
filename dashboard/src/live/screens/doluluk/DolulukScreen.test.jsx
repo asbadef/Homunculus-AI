@@ -12,7 +12,7 @@ import React from "react";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { ROUTES, canReach } from "../../shell/routes.js";
-import { useStructure } from "../../data/StructureProvider.jsx";
+import { STRUCTURE_PERMS, useStructure } from "../../data/StructureProvider.jsx";
 import { admitDraftOf } from "../kabul/admitDraft.js";
 import { BED, CHARGE, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, settle, structure, toasts } from "../kabul/kabul.testutil.js";
 import { DolulukScreen } from "./DolulukScreen.jsx";
@@ -57,6 +57,17 @@ describe("DolulukScreen", () => {
     }
     expect(canReach(route, ["users.manage"])).toBe(false);
     expect(canReach(route, ["devices.map_beds"])).toBe(false);
+  });
+
+  // Final review M-3: the screen is built from the structure, so every right that opens it opens
+  // the structure's read too — else it says «Çarpayılar oxunur…» for ever.
+  it("shows the beds to a session holding only the right to confirm a discharge", async () => {
+    const route = ROUTES.find((r) => r.id === "doluluk");
+    expect(route.perms.filter((key) => !STRUCTURE_PERMS.includes(key))).toEqual([]);
+    const { api } = await mountScreen(["admissions.discharge.confirm"]);
+    expect(api.structure).toHaveBeenCalled();
+    expect(screen.queryByText("Çarpayılar oxunur…")).toBeNull();
+    expect(tile("Reanimasiya · Otaq 1", "1").getByText("Boş")).toBeTruthy();
   });
 
   it("shows every bed of the caller's units with its state in words, and no UUID", async () => {
