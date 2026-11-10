@@ -63,7 +63,9 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
     REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
 )
-from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router
+from homunculus.api.fluids import patient_fluids                  # G3-03
+from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
+from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
 from homunculus.api.tickets import TicketStore
 from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.admission.boardlink import BoardLink    # G2-B1a
@@ -1545,6 +1547,24 @@ def create_app(
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
                               patient_id=patient_id, hours=int(hours),
                               now=datetime.now(timezone.utc))
+
+    @app.get("/patients/{patient_id}/fluids")
+    async def fluids(patient_id: str, authorization: str | None = Header(default=None)):
+        """G3-03: the patient's fluid ledger, summed here (`api/fluids.py`) — the browser adds nothing (D6).
+        Read-only and not audited, as the trends read. The fluid day starts at Görevlerim's first shift start in
+        the tenant's zone (D5), the defaults when the tenant saved no settings; the weight is the last charted
+        one (the board's `meds.weight_kg`). Out of scope and unknown are one 404, as at /trends."""
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        scope = await _scope(authorization)
+        await _require_patient(caller, authorization, patient_id, scope=scope)
+        state = _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
+        settings = tasks.settings(caller.hospital) or DEFAULT_TASK_SETTINGS
+        weight = state.latest(SignalCode.WEIGHT_KG)
+        return patient_fluids(audit, hospital=caller.hospital, patient_id=patient_id,
+                              now=datetime.now(timezone.utc), zone=zone_of(tasks.timezone(caller.hospital)),
+                              start_a=settings.shift_start_a, start_b=settings.shift_start_b,
+                              weight_kg=None if weight is None else weight.value)
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants_now(hospital: str) -> dict[str, list[str]]:
