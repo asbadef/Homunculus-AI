@@ -513,6 +513,58 @@ def test_a_snooze_chosen_on_a_severity_the_alarm_no_longer_has_is_refused_and_wr
         assert len(_rows(audit)) == 2
 
 
+def test_a_malformed_body_is_400(wall, audit):
+    """Review (fix 5): a patient or a kind that is not a non-blank string is the caller's error, as at `/ack`."""
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        for body, detail in (({"kind": "news2"}, "geçersiz patient_id"),
+                             ({"patient_id": 5, "kind": "news2"}, "geçersiz patient_id"),
+                             ({"patient_id": "  ", "kind": "news2"}, "geçersiz patient_id"),
+                             ({"patient_id": "bed-3"}, "geçersiz kind"),
+                             ({"patient_id": "bed-3", "kind": ["news2"]}, "geçersiz kind")):
+            r = client.post("/alerts/snooze", json={"minutes": 15, "reason": "PATIENT_BASELINE"} | body,
+                            headers=NURSE)
+            assert (r.status_code, r.json()["detail"]) == (400, detail), body
+        assert _rows(audit) == []
+
+
+def test_a_low_news2_is_never_snoozed_and_the_minutes_are_judged_after_the_severity(wall, audit):
+    """Review (fix 5): a NEWS2 whose every scoring vital sits in the patient's charted baseline is LOW
+    (chronic-expected): it makes no sound, and there is nothing to snooze. The severity is judged before the
+    minutes, so a low or a critical alarm answers 409 whatever minutes were asked for."""
+    baselines = {"heart_rate": {"low": 110, "high": 120}, "temperature": {"low": 39, "high": 40},
+                 "resp_rate": {"low": 24, "high": 28}}
+    with TestClient(_app(audit)) as client:
+        r = client.put("/clinical/bed-3/profile", json={"baselines": baselines}, headers=DEVICE)
+        assert r.status_code == 200, r.text
+        _vitals(client, rr=26)
+        assert _alerts(client)["news2"]["severity"] == "low"
+        for minutes in (15, 0, 500):
+            r = _snooze(client, minutes=minutes)
+            assert (r.status_code, r.json()["detail"]) == (409, "snooze_not_allowed"), minutes
+        _drive_shock(client)
+        r = _snooze(client, kind="septic_shock", minutes=0)
+        assert (r.status_code, r.json()["detail"]) == (409, "snooze_not_allowed")
+        assert _rows(audit) == []
+
+
+async def test_a_chain_of_snoozes_is_the_owners_rule_each_named_capped_and_in_the_trail(wall, audit):
+    """A re-snooze replaces the running snooze (spec §2, the owner's «mevcut kurallar»): three 30-minute snoozes in
+    a row keep a HIGH, immediate alarm from escalating for 90 minutes. Pinned, not a gap: each is a person's named,
+    capped decision with its own trail row, and an acknowledgement already silences an alarm for good."""
+    app = _app(audit)
+    client = TestClient(app)
+    _vitals(client, rr=26)
+    store = _store(app)
+    for i in range(3):
+        wall.at = WALL0 + timedelta(minutes=30 * i)
+        assert _snooze(client, minutes=30, reason="CLINICAL_DECISION_MADE").status_code == 200
+        for minute in range(0, 30, 5):
+            await app.state.escalation_cycle(WALL0 + timedelta(minutes=30 * i + minute, seconds=59))
+            assert NEWS2 not in store.escalated
+    assert _escalations(audit) == [] and len(_rows(audit)) == 3
+
+
 def test_seen_severity_is_high_or_moderate_or_absent(wall, audit):
     """Review (item 7): any other value is a 422, judged with the body before the patient's scope; absent — or
     null — the door behaves as before the field existed."""
@@ -840,6 +892,22 @@ def test_a_snooze_row_the_replay_cannot_judge_is_passed_over_and_the_rest_still_
     _engine, store = _replayed(audit, now=later)
     assert store.firing[NEWS2].severity == "moderate", "the rows after it were replayed"
     assert (store.snoozes[NEWS2]["at"], store.snoozes[NEWS2]["minutes"]) == (AT, 10), "and a good row still counts"
+
+
+def test_a_worse_reading_ends_a_replayed_snooze_in_the_log_or_after_the_restart():
+    """Review (fix 5): a snooze the replay brought back is the live one — the same alarm worse ends it, whether the
+    worse reading is a later row of the log or the first one after the restart."""
+    later = AT + timedelta(minutes=3)
+    worse_rr = {"value": 26.0, "unit": "", "obs_ts": "2026-07-14T10:02:00+00:00", "device": "mon"}
+    audit = _news2_rows(InMemoryAuditLog(), rr=22.0)                # MODERATE
+    audit.append(_snooze_row(minutes=60, severity="moderate"))
+    engine, store = _replayed(audit, now=later)
+    assert store.snoozes[NEWS2]["severity"] == "moderate"
+    engine.ingest(Observation("bed-3", SignalCode.RESP_RATE, 26.0, "", later, "mon"), now=later)
+    sync_alerts(engine, store, "bed-3", later)                      # as the door runs it
+    assert store.firing[NEWS2].severity == "high" and store.snoozes == {}, "after the restart"
+    audit.append(AuditEvent("HOSP1", "ingest", "bed-3", "resp_rate", worse_rr))
+    assert _replayed(audit, now=later)[1].snoozes == {}, "a later row of the log"
 
 
 def test_a_replayed_snooze_is_held_to_the_milder_severity_and_to_both_caps():

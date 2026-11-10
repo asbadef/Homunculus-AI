@@ -383,6 +383,29 @@ class TestGThePermissionAndTheScopeBothHold:
         assert set(app.state.ack_stores["demo"].acks) == {("p-a1", "news2")}
         assert [r.patient_id for r in _rows(app, "ack")] == ["p-a1"]
 
+    def test_an_out_of_scope_snooze_is_refused_with_a_denial_and_stores_nothing(self):
+        """G2-B5b (review, fix 5): «Ertele» is held to the scope as `/ack` is — 404, one `scope_denied` row, no
+        snooze. The reason is judged before the scope (it names nothing of the patient): a bad one is a 422 and
+        writes no denial."""
+        def snooze(client, pid, reason="PATIENT_BASELINE"):
+            return client.post("/alerts/snooze", headers=NURSE,
+                               json={"patient_id": pid, "kind": "news2", "minutes": 15, "reason": reason})
+
+        app = app_with(ADULT)
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            _reading(client, "p-n1", spo2=85.0)    # a live NEWS2 alert on the NICU patient
+            _reading(client, "p-a1", spo2=85.0)    # and one the nurse may snooze
+            bad_reason = snooze(client, "p-n1", reason="NOPE")
+            assert bad_reason.status_code == 422 and not _rows(app, "scope_denied")
+            refused = snooze(client, "p-n1")
+            allowed = snooze(client, "p-a1")
+        assert (refused.status_code, refused.json()["detail"]) == (404, "hasta bulunamadı")
+        assert len(_rows(app, "scope_denied")) == 1
+        assert allowed.status_code == 200, allowed.text
+        assert set(app.state.ack_stores["demo"].snoozes) == {("p-a1", "news2")}
+        assert [r.patient_id for r in _rows(app, "alert_snooze")] == ["p-a1"]
+
     def test_the_audit_trail_of_an_out_of_scope_patient_is_not_served(self):
         app = app_with(ADULT, perms=NURSE_PERMS | {"audit.view"})
         with TestClient(app) as client:
@@ -476,6 +499,8 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
         ("GET", "/patients/p-a1/fluids", None, 200),     # G3-03
         ("POST", "/alerts/rrt-call", {"patient_id": "p-a1", "kind": "news2",
                                       "reason": "sentetik çağrı"}, 403),   # G2-B5: a person's call
+        ("POST", "/alerts/snooze", {"patient_id": "p-a1", "kind": "news2", "minutes": 15,
+                                    "reason": "PATIENT_BASELINE"}, 403),   # G2-B5b: a person's snooze
         ("GET", "/tasks", None, 200),                    # G3-02: the board's own read
         ("POST", "/clinical/p-a1", {"entries": [{"code": "suspected_infection", "value": 1}]}, 200),
         # G3-01: the bedside preview (D8), and «hatalı giriş» (D10), which a device never makes (X11).

@@ -137,8 +137,11 @@ class AckStore:
     def snooze(self, patient_id: str, kind: str, *, by: str, at: datetime, minutes: int, reason: str,
                reason_text: str | None, severity: str) -> dict:
         """Snooze one alarm until `at` + `minutes` (G2-B5b, D3). A snooze already running is replaced, with its own
-        `until`. The alarm leaves the escalated set (no escalation while snoozed), but the doctor's page stays sent:
-        `paged` is untouched. The rules are the caller's (`api/snooze.py`)."""
+        `until`, as the Postgres rule deactivated the previous one (the owner's «mevcut kurallar»): a chain of
+        snoozes opens no new hole, for each is a person's named, capped decision in the trail, and an
+        acknowledgement already silences an alarm for good. The alarm leaves the escalated set (no escalation while
+        snoozed), but the doctor's page stays sent: `paged` is untouched. The rules are the caller's
+        (`api/snooze.py`)."""
         key = (patient_id, kind)
         entry = {"by": by, "at": at, "until": at + timedelta(minutes=minutes), "minutes": minutes,
                  "reason": reason, "reason_text": reason_text, "severity": severity}
