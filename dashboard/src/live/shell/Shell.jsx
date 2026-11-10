@@ -9,9 +9,10 @@
 //
 // A screen's code is fetched the first time it is opened (routes.js, lazyScreen.js). While it
 // travels <main> says the PAGE is loading — never empty, and never words that could be read as
-// "there is no data"; a chunk that does not come (offline, or a deploy replaced the hashed file)
-// is said with a reload, and the rail and the other screens go on working. Soon after the shell
-// opens it fetches every screen's code, so an open page holds them all as the one chunk did.
+// "there is no data" — and a polite region says it too; a chunk that does not come (offline, or a
+// deploy replaced the hashed file) is said with a reload, and the rail and the other screens go on
+// working. The page fetches every screen's code soon after it opens (LiveApp.jsx), so this is
+// mostly a first visit's moment.
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
@@ -22,10 +23,10 @@ import { IDLE_SPOKEN_AGAIN_AT, IdleWarning } from "../session/IdleWarning.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
-import { Box, Icon } from "../ui/index.js";
+import { Announce, Box, Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
-import { preloadScreens } from "./lazyScreen.js";
+import { isChunkFailure, retryFailedScreens } from "./lazyScreen.js";
 import { ShellProvider } from "./ShellContext.jsx";
 import { StructureProvider } from "../data/StructureProvider.jsx";   // G2-B1a
 import { Sidebar } from "./Sidebar.jsx";
@@ -34,12 +35,6 @@ import { TopBar } from "./TopBar.jsx";
 /** The page's title when a screen is on it, and on its own when none is (LiveApp, on a lock or a
  *  sign-out: a shared workstation must not keep naming the last person's page). */
 export const PRODUCT = "Homunculus";
-
-/** How long after the shell opens it fetches every screen's code (lazyScreen.js preloadScreens):
- *  the first screen's own chunk goes first, the rest while the clinician reads it. Once they are
- *  here the page holds every screen, as the one chunk did — a deploy that replaces the hashed files
- *  later breaks no screen of a page already open, and no screen flashes its loading note. */
-export const PRELOAD_AFTER_MS = 2000;
 
 const pathOf = () => hashPath(window.location.hash);
 const isEmptyPath = (path) => path === "" || path === "/";
@@ -82,19 +77,25 @@ function Blocked({ icon, title, help, home, role, children }) {
 }
 
 /** While a screen's code travels: a sentence about the PAGE, so it cannot be read as "no beds",
- *  "no alarms" or any other "nothing here". */
-function ScreenLoading() {
+ *  "no alarms" or any other "nothing here". It tells the shell it is up (`onShown`), so the shell's
+ *  always-mounted polite region can say it — a region born with the note would not be announced. */
+function ScreenLoading({ onShown }) {
   const { t } = useI18n();
+  useEffect(() => {
+    onShown(true);
+    return () => onShown(false);
+  }, [onShown]);
   return <Box><p className="m-0 text-13 text-mute">{t("shell.screenLoading")}</p></Box>;
 }
 
-/** A screen's code that did not come: what src/LoadFailed.jsx says of the page's root, said in
- *  the shell's own words and look, with the reload that fixes it — a fresh page asks for the files
- *  this deploy has. The rail stays. */
-function ScreenFailed() {
+/** A screen that could not be shown, with the reload. What it says depends on why: a chunk that did
+ *  not come is what src/LoadFailed.jsx says of the page's root ("check your connection, nothing was
+ *  lost" — true, nothing was typed into a screen that never arrived); a screen that THREW may have
+ *  held a half-filled form, and is told as a screen that stopped with an error. The rail stays. */
+function ScreenFailed({ chunk }) {
   const { t } = useI18n();
   return (
-    <Blocked role="alert" icon="alert" title={t("shell.loadFailed")} help={t("shell.loadFailedHelp")}>
+    <Blocked role="alert" icon="alert" title={t("shell.loadFailed")} help={t(chunk ? "shell.loadFailedHelp" : "shell.screenFailedHelp")}>
       <button type="button" onClick={() => window.location.reload()} className={`${ACTION} ${FOCUS_RING}`}>
         {t("shell.reload")}
       </button>
@@ -105,26 +106,38 @@ function ScreenFailed() {
 /** Around one screen: a chunk that will not load — React throws it during render — or anything
  *  else the screen throws is shown as ScreenFailed, never as an empty <main> or an uncaught error.
  *  The error goes to the console, named after the screen: only that line tells a replaced chunk
- *  from a bug afterwards. Keyed by the route (below), so moving to another screen starts afresh. */
+ *  from a bug afterwards. Keyed by the route (below), and reset when the ADDRESS changes
+ *  (`resetKey`): a move from one patient to the next is the same screen and must not keep the
+ *  first one's failure. Once a failure is shown, a lazy screen whose chunk failed is armed to fetch
+ *  again on its next render (lazyScreen.js retryFailedScreens) — so moving away and back, or to
+ *  the next patient, tries again, and Reload is not the only way out once the network is back. */
 class ScreenBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { failed: false };
+    this.state = { failed: false, chunk: false, at: props.resetKey };
   }
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  // The reset happens BEFORE the render at the new address, not after its commit
+  // (componentDidUpdate): a screen that fails AT the new address — P-1 fine, P-2 throws — would
+  // otherwise be reset by the very update that showed its failure, rendered once more, and logged
+  // (and, for a chunk, fetched) twice.
+  static getDerivedStateFromProps(props, state) {
+    return props.resetKey === state.at ? null : { failed: false, chunk: false, at: props.resetKey };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { failed: true, chunk: isChunkFailure(error) };
   }
 
   componentDidCatch(error) {
     console.error(`Homunculus: the screen "${this.props.screen}" could not be rendered`, error);   // eslint-disable-line no-console
+    retryFailedScreens();
   }
 
   render() {
-    return this.state.failed ? <ScreenFailed /> : this.props.children;
+    return this.state.failed ? <ScreenFailed chunk={this.state.chunk} /> : this.props.children;
   }
 }
-
 
 export function Shell({ resume = "" }) {
   const { t } = useI18n();
@@ -172,12 +185,10 @@ export function Shell({ resume = "" }) {
     if (!isEmptyPath(from)) main.current?.focus();
   }, [path]);
 
-  const { secondsLeft, stay } = useIdleLock({ minutes: user.lockIdleMinutes, onIdle: () => store.lock("idle") });
+  // Whether a screen's loading note is up: the polite region in <main> says it while it is.
+  const [screenLoading, setScreenLoading] = useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => { preloadScreens(); }, PRELOAD_AFTER_MS);
-    return () => clearTimeout(timer);
-  }, []);
+  const { secondsLeft, stay } = useIdleLock({ minutes: user.lockIdleMinutes, onIdle: () => store.lock("idle") });
 
   useEffect(() => {
     // The key's place, not its letter: Alt+L on an Azerbaijani, Russian or Turkish layout — or a
@@ -205,10 +216,11 @@ export function Shell({ resume = "" }) {
   } else {
     title = t(match.route.labelKey);
     // Keyed by the route, not the address: a patient opened after another is the same screen,
-    // updated in place as before, while a move to another screen leaves a failure behind.
+    // updated in place as before, while a move to another screen starts afresh. A failure is left
+    // behind on ANY move, the next patient's included (`resetKey`).
     content = (
-      <ScreenBoundary key={match.route.id} screen={match.route.id}>
-        <Suspense fallback={<ScreenLoading />}>
+      <ScreenBoundary key={match.route.id} screen={match.route.id} resetKey={path}>
+        <Suspense fallback={<ScreenLoading onShown={setScreenLoading} />}>
           <Screen params={match.params} />
         </Suspense>
       </ScreenBoundary>
@@ -244,6 +256,8 @@ export function Shell({ resume = "" }) {
               every Chrome; reproduced headless at 1536×730, dpr 1.25: scroller 1525 px for 635 px, and 635
               with this). Positioned here, those spans are clipped and scrolled by <main> like everything else. */}
           <main ref={main} id="main" tabIndex={-1} className="relative min-h-0 overflow-auto px-5 pb-10 pt-[18px] outline-none max-[640px]:px-3 max-[640px]:pt-3.5">
+            {/* Always mounted, outside the Suspense: empty until a screen's code is on its way. */}
+            <Announce text={screenLoading ? t("shell.screenLoading") : ""} />
             {content}
           </main>
         </div>

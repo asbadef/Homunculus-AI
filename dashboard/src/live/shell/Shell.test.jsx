@@ -12,7 +12,7 @@ import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
 import { hashPath, homePath, resetScreens, stubScreens } from "./routes.js";
 import { onlyScreens } from "./screens.testutil.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
-import { IDLE_SPOKEN_AGAIN_AT, PRELOAD_AFTER_MS, Shell } from "./Shell.jsx";
+import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { lazyScreen } from "./lazyScreen.js";
 import { useShell } from "./ShellContext.jsx";
 
@@ -362,21 +362,71 @@ describe("a screen whose code is fetched on first use", () => {
     logged.mockRestore();
   });
 
-  // The one chunk held every screen once the page had loaded, so a deploy that replaced the files
-  // later broke nothing already open. The shell keeps that: soon after it opens it fetches every
-  // screen's code (lazyScreen.js preloadScreens) — and a screen fetched so opens without a note.
-  it("fetches every screen's code soon after it opens, so the open page holds them all as before", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const load = vi.fn(() => Promise.resolve({ AlarmsProbe }));
-    built({ alarms: lazyScreen(load, "AlarmsProbe") });
-    await renderShell({ start: false });
-    await act(async () => { vi.advanceTimersByTime(PRELOAD_AFTER_MS - 1); });
-    expect(load).not.toHaveBeenCalled();
-    await act(async () => { vi.advanceTimersByTime(1); });
-    expect(load).toHaveBeenCalledTimes(1);
+  // The note is SAID as well as shown: a polite region that is always on the page (outside the
+  // Suspense, so it is not born holding its text — ui/Alert.jsx) receives it while the fallback is
+  // up, and is emptied when the screen arrives. Focus is the shell's business, unchanged.
+  it("says the loading note politely while it is up, and goes quiet when the screen arrives", async () => {
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise) });
+    await renderShell({ hash: "#/beds" });
+    const said = () => screen.getAllByRole("status").map((el) => el.textContent).filter(Boolean);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
+    expect(said()).toContain("Səhifə yüklənir…");
+    await act(async () => { chunk.resolve({ default: BedsProbe }); await chunk.promise; });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
+    expect(said()).not.toContain("Səhifə yüklənir…");
+  });
+
+  // A screen that THROWS is not a chunk that did not come: "check your connection, no data was
+  // lost" would be false of a bug in a screen with a half-filled form. It gets its own sentence.
+  // And the card belongs to the ADDRESS: a move from one patient to the next (the bell, a link)
+  // is the same screen, and must not keep the first patient's failure.
+  it("says a screen that stopped with an error so, and leaves the failure behind on the next patient", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Fragile({ params }) {
+      if (params.id === "P-1") throw new Error("a bug on P-1's data");
+      return <h1>Xəstə {params.id}</h1>;
+    }
+    built({ patient: Fragile });
+    await renderShell({ hash: "#/patients/P-1" });
+    const alert = within(screen.getByRole("main")).getByRole("alert");
+    expect(alert).toHaveTextContent("Səhifə yüklənə bilmədi");
+    expect(alert).toHaveTextContent("Bu ekran xəta ilə dayandı. Səhifəni yenidən yükləyin; yadda saxlanmamış daxiletmələr itə bilər.");
+    expect(alert).not.toHaveTextContent(/Bağlantınızı yoxlayıb/);
+    expect(within(alert).getByRole("button", { name: "Yenidən yüklə" })).toBeInTheDocument();
+    go("#/patients/P-2");
+    expect(await screen.findByRole("heading", { level: 1, name: "Xəstə P-2" })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
+
+    // And the other way round: a screen that fails AT the new address shows its card, once — the
+    // move that brought it there does not reset it and render it again.
+    logged.mockClear();
+    go("#/patients/P-1");
+    expect(await within(screen.getByRole("main")).findByRole("alert")).toHaveTextContent("Bu ekran xəta ilə dayandı.");
+    await act(async () => { await settle(); });
+    expect(logged.mock.calls.filter(([text]) => String(text).includes("could not be rendered"))).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 1, name: "Xəstə P-1" })).toBeNull();
+    logged.mockRestore();
+  });
+
+  // React.lazy remembers a rejected import for good, so without help the card would come back on
+  // every visit, with no fetch, long after the network is back. A lazy screen whose chunk failed is
+  // fetched again the next time it is opened (lazyScreen.js): Reload is no longer the only way out.
+  it("fetches a failed screen's code again the next time it is opened", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const load = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch dynamically imported module: /assets/BedsScreen-x.js"))
+      .mockResolvedValue({ BedsProbe });
+    built({ beds: lazyScreen(load, "BedsProbe"), alarms: AlarmsProbe });
+    await renderShell({ hash: "#/beds" });
+    const alert = await within(screen.getByRole("main")).findByRole("alert");
+    expect(alert).toHaveTextContent(/Bağlantınızı yoxlayıb səhifəni yenidən yükləyin/);
     go("#/alarms");
-    expect(screen.getByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
-    expect(screen.getByRole("main")).not.toHaveTextContent("Səhifə yüklənir…");
+    await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" });
+    go("#/beds");
+    expect(await screen.findByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
   });
 });
 

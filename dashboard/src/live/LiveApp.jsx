@@ -26,6 +26,7 @@ import { createShadowStore, mayReadShadow } from "./data/shadowStore.js";
 import { AlarmSignals } from "./signals/AlarmSignals.jsx";
 import { hasWorkRoute, hashPath, resumePath } from "./shell/routes.js";
 import { PRODUCT, Shell } from "./shell/Shell.jsx";
+import { PRELOAD_AFTER_MS, preloadScreens } from "./shell/lazyScreen.js";
 import { SignIn } from "./auth/SignIn.jsx";
 import { MfaStep } from "./auth/MfaStep.jsx";
 import { PasswordStep } from "./auth/PasswordStep.jsx";
@@ -142,6 +143,14 @@ export default function LiveApp({ api = backendApi, openStream } = {}) {
       shadow.clear();
     };
   }, [session, board, shadow]);
+  // Every screen's code, fetched soon after the page opens — in EVERY phase, not only once a shell
+  // is up (shell/lazyScreen.js): a page left at the sign-in form, the TOTP step or the lock across a
+  // deploy would otherwise ask for hashed files the deploy has replaced the moment it opens its
+  // first screen. They are static files: no session is needed to fetch them.
+  useEffect(() => {
+    const timer = setTimeout(() => { preloadScreens(); }, PRELOAD_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <ThemeProvider>
       <I18nProvider>

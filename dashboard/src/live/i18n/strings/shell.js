@@ -2,8 +2,9 @@
 // warning. From the prototype's dictionary where it has them (shell.js tb_*, deny_*, idle_*; core.js
 // logout, lock, notifs; lg_day/lg_night). Written for this plan (AZ/RU/EN need a native speaker's
 // review before the pilot): skip, rail, account, version*, units*, bell*, notFound, exitFullscreen,
-// idleSpoken, screenLoading. loadFailed*, reload: the words src/LoadFailed.jsx says when the page's
-// root will not load, said here by the shell when ONE screen's code will not (Shell.jsx). Times and
+// idleSpoken, screenLoading, screenFailedHelp (a screen that threw: not a connection, and unsaved
+// input may be lost). loadFailed*, reload: the words src/LoadFailed.jsx says when the page's root
+// will not load, said here by the shell when ONE screen's code will not (Shell.jsx). Times and
 // counts stand after a label ("Since: 21:05"), never inside a word that would need a suffix or a
 // plural fitted to the number.
 export default {
@@ -46,6 +47,7 @@ export default {
     screenLoading: "Sayfa yükleniyor…",
     loadFailed: "Sayfa yüklenemedi",
     loadFailedHelp: "Bağlantınızı kontrol edip sayfayı yeniden yükleyin. Veriler kaybolmadı.",
+    screenFailedHelp: "Bu ekran bir hatayla durdu. Sayfayı yeniden yükleyin; kaydedilmemiş girişler kaybolabilir.",
     reload: "Yeniden yükle",
   },
   az: {
@@ -87,6 +89,7 @@ export default {
     screenLoading: "Səhifə yüklənir…",
     loadFailed: "Səhifə yüklənə bilmədi",
     loadFailedHelp: "Bağlantınızı yoxlayıb səhifəni yenidən yükləyin. Məlumatlar itməyib.",
+    screenFailedHelp: "Bu ekran xəta ilə dayandı. Səhifəni yenidən yükləyin; yadda saxlanmamış daxiletmələr itə bilər.",
     reload: "Yenidən yüklə",
   },
   ru: {
@@ -128,6 +131,7 @@ export default {
     screenLoading: "Страница загружается…",
     loadFailed: "Страница не загрузилась",
     loadFailedHelp: "Проверьте подключение и перезагрузите страницу. Данные не потеряны.",
+    screenFailedHelp: "Этот экран остановился из-за ошибки. Перезагрузите страницу; несохранённые данные могут быть потеряны.",
     reload: "Перезагрузить",
   },
   en: {
@@ -169,6 +173,7 @@ export default {
     screenLoading: "Loading the page…",
     loadFailed: "The page could not be loaded",
     loadFailedHelp: "Check your connection and reload the page. No data has been lost.",
+    screenFailedHelp: "This screen stopped with an error. Reload the page; anything not yet saved may be lost.",
     reload: "Reload",
   },
 };

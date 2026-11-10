@@ -6,6 +6,7 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { AdminScreen, TABS, onlyTabs, openTabs, resetTabs, tabScreenOf } from "./AdminScreen.jsx";
 import { READS } from "./useAdminData.js";
+import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 
 import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
 import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
@@ -218,12 +219,19 @@ describe("the administration screen", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Yüklənir…");
     expect(screen.getByRole("heading", { level: 1, name: "İdarə" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "İstifadəçilər", selected: true })).toBeInTheDocument();
+    // Said politely too, by the screen's one always-mounted region — and no longer once it is here.
+    const said = () => screen.getAllByRole("status").map((el) => el.textContent).filter(Boolean);
+    const announced = () => act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
+    await announced();
+    expect(said()).toContain("Yüklənir…");
     await act(async () => {
       arrive({ default: ({ admin }) => <p>{`users: ${len(admin.data.users)}`}</p> });
       await chunk;
     });
     expect(screen.getByRole("tabpanel")).toHaveTextContent("users: 1");
     expect(screen.getByRole("tabpanel")).not.toHaveTextContent("Yüklənir…");
+    await announced();
+    expect(said()).not.toContain("Yüklənir…");
   });
 });
 

@@ -153,6 +153,17 @@ export function openTabs(perms) {
   return TABS.filter((tab) => hasPerm(perms, tab.perm) && tabScreenOf(tab));
 }
 
+/** A tab whose code is still on its way: the note the first load shows, in the panel. It tells the
+ *  screen it is up (`onShown`), so the screen's one always-mounted polite region says it too. */
+function TabLoading({ onShown }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    onShown(true);
+    return () => onShown(false);
+  }, [onShown]);
+  return <Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>;
+}
+
 export function AdminScreen() {
   const { t } = useI18n();
   const { user } = useSession();
@@ -168,6 +179,8 @@ export function AdminScreen() {
   // "loading" over a table a clinician is reading would be noise, not information. Nothing has
   // answered yet exactly when every read's data is still null.
   const firstLoad = admin.loading && READS.every((read) => admin.data[read] === null);
+  // A tab's code on its way (TabLoading): said by the same region as the first load.
+  const [tabLoading, setTabLoading] = useState(false);
 
   // RETRY KEEPS ITS FOCUS. The failures stay while the reload runs (`useAdminData`), so the button
   // is still there, busy, holding a keyboard user's focus. When the reload answers, the Alert goes
@@ -199,7 +212,7 @@ export function AdminScreen() {
           born holding its text is not announced at all (ui/Alert.jsx, ANNOUNCE_DELAY_MS) — which is
           what a `<p role="status">{t("admin.loading")}</p>` rendered only while loading would be.
           The visible sentence below is therefore an ordinary paragraph, and this says it. */}
-      <Announce text={firstLoad ? t("admin.loading") : ""} />
+      <Announce text={firstLoad || tabLoading ? t("admin.loading") : ""} />
 
       {/* A refusal on ONE call does not empty the screen: it is shown, NAMED AFTER THE READ that
           failed, and whatever the other calls answered stands. A read that had answered before
@@ -229,7 +242,7 @@ export function AdminScreen() {
               <Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>
             ) : (
               // The tab's code may still be on its way (lazyScreen): the same note, in the panel.
-              <Suspense fallback={<Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>}>
+              <Suspense fallback={<TabLoading onShown={setTabLoading} />}>
                 <Shown admin={admin} />
               </Suspense>
             )}

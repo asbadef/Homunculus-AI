@@ -113,5 +113,9 @@ export default defineConfig({
     // yüklüyken sağlam testleri de düşürüyordu (aynı test tek başına 2 sn'de geçiyor). Zaman
     // aşımı bir performans ölçüsü değil, takılmayı yakalama ağıdır — 20 sn o işi görür.
     testTimeout: 20000,
+    // The same net for the hooks: setupTests.js's beforeAll fetches every lazy screen a test file's
+    // imports made (live/shell/lazyScreen.js), and on a loaded machine that may take more than the
+    // 10 s default — it was a test's job, in the static imports, before the split.
+    hookTimeout: 20000,
   },
 });
