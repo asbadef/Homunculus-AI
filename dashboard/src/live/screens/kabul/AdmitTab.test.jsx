@@ -1385,4 +1385,77 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     await sayYes();
     expect(api.admit).toHaveBeenCalledTimes(1);
   });
+
+  // Final review I-1: her yes is for the bed the question named, never for whatever bed the form
+  // holds when she gives it.
+  const BED5 = "5 · Otaq 2 · Reanimasiya";
+  /** The structure with each bed of `ns` reserved. */
+  const reservedTree = (...ns) => {
+    const tree = structure();
+    for (const unit of tree.sites[0].units) {
+      for (const room of unit.rooms) for (const bed of room.beds) if (ns.some((n) => bed.id === BED(n))) bed.state = "RESERVED";
+    }
+    return tree;
+  };
+  const pickReserved5 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 2" }))
+    .getByRole("button", { name: `${BED5} · Rezervdədir` }));
+  /** The bed the open question names, or null when none is open. */
+  const askedAbout = () => [BED1, BED5].find((bed) => screen.queryByRole("dialog", { name: `Rezerv edilmiş çarpayı · ${bed}` })) ?? null;
+  /** The sends that went to bed `n` with a yes. */
+  const yesTo = (api, n) => api.admit.mock.calls.filter(([body]) => body.note.bed_id === BED(n) && body.confirm_reserved === true);
+
+  it("never sends her yes to a bed she picked while the send was out: the refusal is told, and that bed is asked about on its own (I-1)", async () => {
+    let answer;
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(reservedTree(5));
+      reservedNote(a);
+      a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })).mockResolvedValue(admitted());
+    } });
+    fillRequired();                                                          // bed 1, free when read
+    await act(async () => { fireEvent.click(admitButton()); });              // on its way to bed 1
+    pickReserved5();                                                         // meanwhile she picks bed 5, reserved
+    api.structure.mockResolvedValue(reservedTree(1, 5));                     // and bed 1 was reserved meanwhile
+    await act(async () => { answer(reservedRefusal()); });
+    await settle();
+    // Whatever she is asked now, she says yes to it: no yes may reach bed 5 unless bed 5 was asked about.
+    const first = askedAbout();
+    if (ask()) {
+      await settle();                                                        // the note read: the yes is not held
+      await sayYes();
+    }
+    if (first !== BED5) expect(yesTo(api, 5), `asked about ${first}, yet bed 5 got a yes`).toEqual([]);
+    // The bed she left is not asked about: the toast says it was refused, and the form keeps bed 5.
+    expect(first).toBeNull();
+    expect(toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`).length).toBeGreaterThan(0);
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    await press();
+    expect(askedAbout()).toBe(BED5);                                         // bed 5 is asked about on its own
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(api.admit.mock.calls[1][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
+  });
+
+  it("holds a yes to the bed the question named: with the form on another bed by then, that bed is asked about, and nothing is sent (I-1)", async () => {
+    const { api, store } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(reservedTree(1, 5));
+      reservedNote(a);
+      a.admit.mockResolvedValue(admitted());
+    } });
+    fillRequired(["bed"]);
+    pickReserved1();
+    await press();
+    expect(askedAbout()).toBe(BED1);
+    // The form's bed moves while the question about bed 1 is open — the draft is the session's (A-21).
+    await act(async () => {
+      admitDraftOf(store).update((s) => ({ form: { ...s.form, bedId: BED(5), unitId: REA, bedLabel: BED5 } }));
+    });
+    await sayYes();
+    expect(yesTo(api, 5)).toEqual([]);
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(askedAbout()).toBe(BED5);
+    await sayYes();
+    expect(api.admit).toHaveBeenCalledTimes(1);
+    expect(api.admit.mock.calls[0][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
+  });
 });

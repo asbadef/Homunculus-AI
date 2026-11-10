@@ -353,9 +353,12 @@ export function AdmitTab() {
       await reload();
       if (!draft.live) return;
       setConfirmed(null);
-      if (!onScreen.current) {
+      if (!onScreen.current || normId(draft.get().form.bedId) !== normId(sent.bedId)) {
         // She left the tab meanwhile: no question can open, so the toast says the bed is reserved
         // (A-21). Back on the form, the re-read shows it reserved, and her next press asks.
+        // Or she picked another bed while the send was out (final review I-1): a question about the
+        // bed she left is not hers to answer now. The toast says it; the bed she holds is asked
+        // about on its own, when she presses again.
         toast(refusedFor(t, sent.bed, reasonOf(t, err)), "warn");
         return;
       }
@@ -413,7 +416,8 @@ export function AdmitTab() {
     await reload();
   }
 
-  async function submit(event, yes = false) {
+  /** `yesBed`: the bed the reserved-bed question named, when this send is her yes to it. */
+  async function submit(event, yesBed = null) {
     event?.preventDefault();
     const now = draft.get();
     if (now.sending) return;
@@ -435,9 +439,11 @@ export function AdmitTab() {
     // bed's in this form (review I-2), and goes out whatever the beds show now: after
     // `bed_reserved` a re-read that failed still shows the bed free, and without the flag the
     // server would refuse again, and ask again, round and round. On a free bed it is ignored.
+    // The yes she just gave counts only for the bed the question named (final review I-1): a form
+    // holding another bed by now has that bed asked about, never sent with her yes for the other.
     const reservedNow = index.beds.get(normId(form.bedId))?.state === "RESERVED";
-    const saidYes = yes || (confirmed !== null && normId(confirmed.bedId) === normId(form.bedId)
-      && confirmed.requestId === now.requestId);
+    const saidYes = (yesBed !== null && normId(yesBed) === normId(form.bedId))
+      || (confirmed !== null && normId(confirmed.bedId) === normId(form.bedId) && confirmed.requestId === now.requestId);
     if (reservedNow && !saidYes) {
       setAsk({ bedId: form.bedId, bed: bedText });
       return;
@@ -646,7 +652,7 @@ export function AdmitTab() {
           onConfirm={() => {
             setConfirmed({ bedId: ask.bedId, requestId: draft.get().requestId });
             setAsk(null);
-            submit(null, true);
+            submit(null, ask.bedId);           // her yes is for the bed asked about (final review I-1)
           }} />
       ) : null}
     </form>
