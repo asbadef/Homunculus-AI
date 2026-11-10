@@ -22,6 +22,20 @@ describe("the RRT queue", () => {
     expect(q.waiting.map((a) => a.id)).toEqual(["C"]);
   });
 
+  // The second list keeps the alarm queue's order (`waitingAlarms`, as the bell and the alarm screen): a severity this
+  // build does not know first, then the most severe, one that still fires before one that passed unanswered
+  // (RESOLVED, G2-A1), then the oldest.
+  it("orders the alarms on their way as the alarm queue does", () => {
+    const q = rrtQueue(live([
+      alarm("old-high", { severity: "high", firstSeenAtMs: 1000 }),
+      alarm("newer-high", { severity: "high", firstSeenAtMs: 5000 }),
+      alarm("passed-crit", { severity: "critical", status: "RESOLVED", firstSeenAtMs: 500 }),
+      alarm("crit", { severity: "critical", firstSeenAtMs: 9000 }),
+      alarm("unknown", { severity: "catastrophic", firstSeenAtMs: 9500 }),
+    ]));
+    expect(q.waiting.map((a) => a.id)).toEqual(["unknown", "crit", "passed-crit", "old-high", "newer-high"]);
+  });
+
   it("knows nothing when the board cannot be read", () => {
     expect(rrtQueue({ alerts: [alarm("A")], connection: CONNECTION.UNAVAILABLE }))
       .toMatchObject({ known: false, called: null, waiting: null });

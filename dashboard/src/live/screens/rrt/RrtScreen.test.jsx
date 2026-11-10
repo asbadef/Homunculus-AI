@@ -61,6 +61,9 @@ describe("the RRT screen", () => {
     await open({ payload: withAlarms(called()) });
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1, name: "Sürətli cavab komandası (RRT)" })).toBeInTheDocument();
+    // Charge nurses and physicians read it too: the intro speaks of the team, not to it.
+    expect(screen.getByText("Komandanın əl ilə çağırıldığı siqnallar və cavab gözləyən təcili siqnallar. Siyahı lövhədən canlı gəlir."))
+      .toBeInTheDocument();
     const note = screen.getAllByRole("note").find((n) => n.textContent.includes("Avtomatik RRT pilləsi bağlıdır"));
     expect(note).toHaveTextContent("cavabsız təcili siqnal 5 dəq sonra həkimə eskalasiya olunur");
     expect(note).toHaveTextContent("RRT yalnız əl ilə çağırılanda gəlir");
@@ -77,7 +80,7 @@ describe("the RRT screen", () => {
     expect(within(row).getByRole("link", { name: /REA-01 · 2/ })).toHaveAttribute("href", "#/patients/S-001");
     // A called alarm is not also «on its way»: the second list is what has no call yet.
     expect(within(listOf(WAITING)).queryByText("NEWS2 7")).toBeNull();
-    expect(within(listOf(WAITING)).getByText("Cavab gözləyən təcili siqnal yoxdur.")).toBeInTheDocument();
+    expect(within(listOf(WAITING)).getByText("Çağırışsız, cavab gözləyən təcili siqnal yoxdur.")).toBeInTheDocument();
   });
 
   it("lists the unanswered urgent alarms with no call; an escalated one says it went to the doctor", async () => {
@@ -125,7 +128,7 @@ describe("the RRT screen", () => {
   it("each list says it is empty, on a LIVE board", async () => {
     await open({ payload: board([entry("S-001", [], CARD)]) });
     expect(within(listOf(CALLS)).getByText("Açıq RRT çağırışı yoxdur.")).toBeInTheDocument();
-    expect(within(listOf(WAITING)).getByText("Cavab gözləyən təcili siqnal yoxdur.")).toBeInTheDocument();
+    expect(within(listOf(WAITING)).getByText("Çağırışsız, cavab gözləyən təcili siqnal yoxdur.")).toBeInTheDocument();
   });
 
   describe("«Gördüm»", () => {
@@ -200,7 +203,7 @@ describe("the RRT screen", () => {
       await open({ payload: withAlarms(called()), connection: "degraded" });
       expect(within(listOf(CALLS)).getByText("NEWS2 7")).toBeInTheDocument();
       expect(within(listOf(WAITING)).getByText(STALE)).toBeInTheDocument();
-      expect(screen.queryByText("Cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
+      expect(screen.queryByText("Çağırışsız, cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
       expect(screen.getAllByRole("note").map((n) => n.textContent).join(" ")).toContain("Canlı axın kəsildi");
     });
 
@@ -209,7 +212,7 @@ describe("the RRT screen", () => {
       expect(within(listOf(CALLS)).getByText(STALE)).toBeInTheDocument();
       expect(within(listOf(WAITING)).getByText(STALE)).toBeInTheDocument();
       expect(screen.queryByText("Açıq RRT çağırışı yoxdur.")).toBeNull();
-      expect(screen.queryByText("Cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
+      expect(screen.queryByText("Çağırışsız, cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
     });
 
     it("a board that cannot be read says so, in both lists, and nowhere that the ward is quiet", async () => {
@@ -217,7 +220,7 @@ describe("the RRT screen", () => {
       expect(within(listOf(CALLS)).getByText(UNREAD)).toBeInTheDocument();
       expect(within(listOf(WAITING)).getByText(UNREAD)).toBeInTheDocument();
       expect(screen.queryByText("Açıq RRT çağırışı yoxdur.")).toBeNull();
-      expect(screen.queryByText("Cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
+      expect(screen.queryByText("Çağırışsız, cavab gözləyən təcili siqnal yoxdur.")).toBeNull();
       const alerts = screen.getAllByRole("alert").filter((el) => !el.classList.contains("sr-only"));
       expect(alerts.map((a) => a.textContent).join(" ")).toContain("GƏLMİR");
     });
