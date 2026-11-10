@@ -10,6 +10,7 @@ import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../.
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, hand, point, trends } from "./trends/trends.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
+import { emptyFluids, fluids } from "./fluids/fluids.testutil.js";
 import { RETRACT_ARM_MS } from "../common/RetractDialog.jsx";
 import { SAVE_ARM_MS } from "../bedside/VitalsForm.jsx";
 import { PatientScreen } from "./PatientScreen.jsx";
@@ -43,6 +44,7 @@ async function open({ payload = board(), id = "S-001", connection = "live", setu
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
       api.view.mockResolvedValue({ ok: true });
       api.patientTrends.mockImplementation(answering());     // empty channels, for whoever is asked
+      api.patientFluids.mockImplementation((pid) => Promise.resolve(emptyFluids(pid)));   // G3-03: an empty ledger
       setup?.(api);
     },
   });
@@ -1526,5 +1528,27 @@ describe("the waveform panel on the patient screen", () => {
     const mounted = await withWaves(linked());
     expect(mounted.api.request).toHaveBeenCalled();
     expect(document.querySelector("[data-wave-panel]")).toBeNull();
+  });
+});
+
+// G3-03 (D10): the «Sıvı» box under the Meds box, reading the shown patient's ledger; «ekle» only with clinical.chart.
+describe("the patient screen — the fluid box", () => {
+  it("sits right after the Sepsis/Meds row and reads the shown patient's ledger", async () => {
+    const mounted = await open({
+      payload: board([entry("S-001", [], FULL)]), perms: ["board.view", "clinical.chart"],
+      setup: (api) => api.patientFluids.mockImplementation((pid) => Promise.resolve(fluids(pid))),
+    });
+    expect(mounted.api.patientFluids).toHaveBeenCalledWith("S-001");
+    const box = screen.getByRole("heading", { level: 2, name: "Maye" }).closest(".rounded-box");
+    const meds = screen.getByRole("heading", { level: 2, name: "Dərman və antibiotik" }).closest(".rounded-box");
+    expect(meds.parentElement.nextElementSibling).toBe(box);
+    expect(within(box).getAllByText("+430 mL").length).toBeGreaterThan(0);
+    expect(within(box).getByRole("button", { name: "Giriş/çıxış əlavə et" })).toBeInTheDocument();
+  });
+
+  it("offers no «ekle» without clinical.chart", async () => {
+    await open({ payload: board([entry("S-001", [], FULL)]) });
+    const box = screen.getByRole("heading", { level: 2, name: "Maye" }).closest(".rounded-box");
+    expect(within(box).queryByRole("button", { name: "Giriş/çıxış əlavə et" })).toBeNull();
   });
 });

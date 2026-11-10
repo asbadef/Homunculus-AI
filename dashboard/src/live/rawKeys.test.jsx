@@ -47,6 +47,7 @@ import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
+import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -234,6 +235,10 @@ async function openAt(path) {
       // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
       api.tasks.mockResolvedValue(TASKS_SWEEP);
       api.taskSettings.mockResolvedValue(TASK_SETTINGS_SWEEP);
+
+      // G3-03: the patient screen's «Sıvı» box — today's entries (one withdrawn), the shifts and the last day, so
+      // the sweep meets every word the box prints. Unstubbed it would say only that the ledger is unreadable.
+      api.patientFluids.mockImplementation((pid) => Promise.resolve(fluids(pid)));
     },
   });
   await act(async () => { await mounted.board.start(); });
