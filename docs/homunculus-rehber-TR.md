@@ -1878,7 +1878,7 @@ sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerle
 - **Ne yapmaz.** Hastanın ne sıklıkla ölçüleceğine karar vermez, ilaç / bakım planı / devir işlerini henüz
   göstermez (sonraki dilimler), kişiye atama yapmaz (bakım ekibi B1c'den sonra).
 
-### 3.15 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
+### 3.17 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
 
 Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** kodda
 hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok). Örneklerdeki değerler uydurmadır.
