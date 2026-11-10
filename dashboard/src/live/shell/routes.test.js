@@ -172,18 +172,47 @@ describe("the audit page's route", () => {
   afterEach(() => resetScreens());
   const denetim = () => ROUTES.find((r) => r.id === "denetim");
 
-  it("is a work screen for audit.view, last on the main rail, with its own names", () => {
+  it("is a work screen for audit.view, on the main rail, with its own names", () => {
     expect(denetim()).toMatchObject({ path: "/denetim", perms: ["audit.view"], work: true, nav: "main",
       icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort" });
     expect(screenOf(denetim())).not.toBeNull();
     expect(canReach(denetim(), ["board.view"])).toBe(false);
-    expect(ROUTES.map((r) => r.id).slice(-2)).toEqual(["denetim", "settings"]);
+    // G2-B5: the RRT screen now comes after it (its own block below), still before settings.
+    expect(ROUTES.map((r) => r.id).slice(-2)).toEqual(["rrt", "settings"]);
   });
 
   it("is the home of an audit.view-only session and moves nobody else's", () => {
     expect(homePath(["audit.view"])).toBe("/denetim");
     expect(homePath(["board.view", "audit.view"])).toBe("/beds");          // the auditor group keeps the board first
     expect(navRoutes(["board.view", "audit.view"]).main.map((r) => r.id)).toEqual(["beds", "alarms", "denetim"]);
+  });
+});
+
+// G2-B5 (spec D6): the RRT screen — for whoever may call the rapid-response team (alerts.escalate), not the nurse.
+describe("the RRT screen's route", () => {
+  afterEach(() => resetScreens());
+  const rrt = () => ROUTES.find((r) => r.id === "rrt");
+  /** The rapid-response team's group (`rapid_response`), as the engine seeds it (auth/permissions.py). */
+  const RAPID_RESPONSE = ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "break_glass.use", "clinical.chart"];
+
+  it("is a work screen for alerts.escalate, on the main rail after the audit page, with its own names", () => {
+    expect(rrt()).toMatchObject({ path: "/rrt", perms: ["alerts.escalate"], work: true, nav: "main",
+      icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort" });
+    expect(screenOf(rrt())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["denetim", "rrt", "settings"]);
+  });
+
+  it("is not the nurse's; whoever may call the team reaches it", () => {
+    expect(canReach(rrt(), NURSE)).toBe(false);
+    expect(navRoutes(NURSE).main.map((r) => r.id)).not.toContain("rrt");
+    expect(canReach(rrt(), ["alerts.escalate"])).toBe(true);
+    expect(hasWorkRoute(["alerts.escalate"])).toBe(true);
+  });
+
+  it("moves nobody's home: the RRT still lands on the beds, with its screen last on the rail", () => {
+    expect(homePath(RAPID_RESPONSE)).toBe("/beds");
+    expect(navRoutes(RAPID_RESPONSE).main.map((r) => r.id).at(-1)).toBe("rrt");
+    expect(homePath(["alerts.escalate"])).toBe("/rrt");
   });
 });
 

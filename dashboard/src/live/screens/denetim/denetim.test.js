@@ -89,8 +89,9 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(29);
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(29);
+    expect(EVENT_TYPES).toHaveLength(30);
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(30);
+    expect(typeKey("rrt_call")).toBe("denetim.type.rrtCall");   // G2-B5 (spec D9)
     expect(typeKey("ack")).toBe("denetim.type.ack");
     expect(typeKey("admission.admit")).toBe("denetim.type.admit");
     expect(typeKey("reading_dropped_discharged")).toBe("denetim.type.readingDropped");

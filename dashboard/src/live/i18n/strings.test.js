@@ -181,6 +181,12 @@ const AZ_SAME_AS_TR = new Set([
   "shadow.colOpened", //     Açılış — "opening", the verbal noun of "açılmaq", written the same in Azerbaijani
   "shadow.since", //         açılış {time} — "opening {time}", the same noun as colOpened; chosen over "{time}'den beri" / "{time}-dən bəri", whose suffix has to agree with the time's last vowel (reviewed 2026-10-27, Task 10)
 
+  // G2-B5 (rrt) · az = tr
+  "rrt.navShort", //         RRT — the team's abbreviation, kept as the hospital says it
+  "rrt.seen", //             Gördüm — the alarm screen's own az word (alarms.seen), the same acknowledgement
+  "rrt.seenLabel", //        "Gördüm: {bed}, {kind}" — the same word; the rest is the row's own names
+  "rrt.callSend", //         Çağır — the imperative of "çağırmaq", spelled the same in Azerbaijani
+
 ]);
 
 describe("live UI dictionaries", () => {

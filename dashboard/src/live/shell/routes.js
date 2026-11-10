@@ -34,6 +34,8 @@ import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
 
 import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
 
+import { RrtScreen } from "../screens/rrt/RrtScreen.jsx"; // G2-B5
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -57,6 +59,8 @@ const SCREENS = Object.freeze({
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
 
   denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
+
+  rrt: RrtScreen, // G2-B5 — the rapid-response team's calls and the unanswered urgent alarms
 
   settings: SettingsScreen,
 });
@@ -102,6 +106,12 @@ export const ROUTES = Object.freeze([
   // reads the audit trail lands here.
   route({ id: "denetim", path: "/denetim", icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort",
     perms: ["audit.view"], work: true, nav: "main" }),
+
+  // G2-B5 (spec D6) — the RRT screen: for whoever may call the rapid-response team (`alerts.escalate`: the RRT,
+  // charge nurses, physicians, the administrator) — not the nurse (roadmap). After the audit page, so nobody's
+  // home moves.
+  route({ id: "rrt", path: "/rrt", icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort",
+    perms: ["alerts.escalate"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

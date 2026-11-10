@@ -29,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { mount } from "./session/mount.testutil.jsx";
 import { profile, token } from "./session/testTokens.testutil.js";
@@ -138,7 +138,8 @@ const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
  *  three-valued antibiotic: the one place on that screen where a missing record must not be
  *  rendered as a deadline the ward missed. */
 const PAYLOAD = board([
-  entry(FIXTURE_ID, [alarm("news2", "high", { escalated: true })], {
+  // G2-B5: the alarm carries an open RRT call, so the RRT screen's row and the rail's RRT badge are drawn.
+  entry(FIXTURE_ID, [alarm("news2", "high", { escalated: true, rrt_call: { by: "leyla", at: ago(120), reason: "Solunum güçlüğü" } })], {
     identity: identity(),
     score: news2({ partial: true, missing: ["spo2"], red_param: true }),
     ...reading({ heart_rate: 96, spo2: 91 }, 30),
@@ -408,6 +409,20 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/klinik hədd deyil/)).toBeInTheDocument();                              // denetim.heat.legend
     expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncatedFrom
     expect(screen.getByText(/yalnız .* sonrakı hadisələr sayıldı/)).toBeInTheDocument();             // its {from} filled in, not left as a placeholder
+    expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B5 — the RRT screen: the fixture's alarm carries an open call, so its row, the tier-off note and the rail
+  // badge's words are drawn; a sweep over two empty lists would have proved nothing about them.
+  it("the RRT screen's keys resolve on its call row, its note and the rail's badge", async () => {
+    const mounted = await openAt("/rrt");
+    expect(screen.getByRole("heading", { level: 1, name: "Sürətli cavab komandası (RRT)" })).toBeInTheDocument(); // rrt.title
+    expect(screen.getByText(/^Avtomatik RRT pilləsi bağlıdır/)).toBeInTheDocument();                // rrt.tierOff
+    expect(screen.getByText("Əl ilə çağırılıb · leyla")).toBeInTheDocument();                        // rrt.calledBy, {by} filled in
+    expect(screen.getByText("Səbəb: Solunum güçlüğü")).toBeInTheDocument();                          // rrt.reason
+    const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+    expect(within(rail).getByRole("link", { name: /Sürətli cavab/ })).toHaveAccessibleName(/1 açıq RRT çağırışı/); // rrt.badgeCount
     expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });
