@@ -273,6 +273,8 @@ BOARD_EXPECTED = {
     ("GET", "/audit/verify"): "audit.view",
     # Group 2's trend charts (api/trends.py), read with the board's own right.
     ("GET", "/patients/{patient_id}/trends"): "board.view",
+    # G3-03: the fluid ledger (api/fluids.py), read with the board's own right.
+    ("GET", "/patients/{patient_id}/fluids"): "board.view",
     ("POST", "/infinity-shadow/readings"): SHADOW_TOKEN,
     ("GET", "/infinity-shadow/board"): BOARD_OR_DEVICES,
     # Aşama B's «uyarsaydı» list: the board's own right, checked before the stage (409 here).

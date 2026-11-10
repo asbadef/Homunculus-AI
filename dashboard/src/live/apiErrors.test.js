@@ -304,14 +304,14 @@ describe("apiErrorText", () => {
   // The sentence is the engine's RETRACT_REASON_LONG, byte for byte (the sweep above reads it from clinical.py).
   // X22: a withdrawal of a value outside the bedside form's set (a lactate) is refused by the engine with a 409.
   it("says the withdrawal's refusal of a value that is not a bedside measurement, in all four languages", () => {
-    const sentence = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir";
+    const sentence = "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir";
     expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractNotBedside", vars: {} });
     expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
-      .toBe("Yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir.");
-    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə səhv qeyd kimi işarələnə bilər.");
+      .toBe("Yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə və maye qeydi səhv qeyd kimi işarələnə bilər.");
     expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
-      .toBe("Ошибочной записью можно отметить только прикроватное измерение.");
-    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement can be marked as entered in error.");
+      .toBe("Ошибочной записью можно отметить только прикроватное измерение и запись жидкости.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement or a fluid entry can be marked as entered in error.");
   });
 
   it("says the withdrawal's refusal of a reason that is too long, in all four languages", () => {

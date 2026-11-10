@@ -108,7 +108,7 @@ export const API_MESSAGE_KEYS = new Map([
   ["bu hastada böyle bir elle girilmiş değer yok", "retractUnknown"],
   ["bu değer zaten hatalı giriş olarak işaretlenmiş", "retractAlready"],
   ["taburcu edilmiş bir hastada değer geri alınamaz", "retractDischarged"],
-  ["yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir", "retractNotBedside"],
+  ["yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir", "retractNotBedside"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.
