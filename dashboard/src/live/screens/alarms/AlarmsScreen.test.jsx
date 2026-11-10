@@ -646,6 +646,40 @@ describe("the alarms screen", () => {
         .toBeGreaterThan(0);
     });
 
+    // Review (G2-B5b): the snooze moves the row to «Təxirə salınanlar», and the button the dialog was opened from goes
+    // with it: the focus would fall to <body>. It goes to that list, where the alarm now is (DevirScreen's rule).
+    it("after a snooze, the focus goes to «Təxirə salınanlar», where the alarm went", async () => {
+      const until = new Date(NOW + 15 * 60_000).toISOString();
+      const answered = entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7",
+        snooze: { by: "ayse", at: ago(0), until, minutes: 15, reason: "PATIENT_BASELINE", reason_text: null } })],
+      { ...CARD, risk: "high" });
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(answered),
+      });
+      const opener = screen.getByRole("button", { name: SNOOZE });
+      opener.focus();
+      fireEvent.click(opener);
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      const snoozedList = sectionOf(/Təxirə salınanlar/);
+      expect(document.activeElement).toBe(snoozedList);
+      expect(snoozedList).toHaveAccessibleName(/Təxirə salınanlar/);
+    });
+
+    it("after a refusal the row stays where it was, and the focus goes back to its «Təxirə sal»", async () => {
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockRejectedValue(refusal(409, "alarm zaten yanıtlandı; ertelenmez")),
+      });
+      const opener = screen.getByRole("button", { name: SNOOZE });
+      opener.focus();
+      fireEvent.click(opener);
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      expect(document.activeElement).toBe(opener);
+    });
+
     it("sends «Digər» with its explanation, trimmed", async () => {
       const { api } = await open({
         payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),

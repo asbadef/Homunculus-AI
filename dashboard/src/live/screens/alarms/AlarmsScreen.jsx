@@ -34,7 +34,7 @@
 //     waiting on its own. Its row says until when, by whom and why.
 //   - A critical alarm is never snoozed, and the screen says so once, beside the first critical alarm that waits.
 //   - One dialog: `snoozeFor`.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { SEVERITY_ORDER } from "../../data/boardStore.js";
@@ -182,12 +182,16 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, on
   );
 }
 
-function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, canSnooze = false, onSnooze, critNoteId = null, counted, level = 2 }) {
+/** `sectionRef`: where the focus goes when a write took away the button it was on (DevirScreen's rule): the list is
+ *  then focusable, named by its heading, and shows the ring. */
+function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, canSnooze = false, onSnooze, critNoteId = null, counted, level = 2, sectionRef }) {
   const { t } = useI18n();
   const Heading = `h${level}`;
+  const titleId = useId();
   return (
-    <section className="grid gap-2">
-      <Heading className="m-0 flex items-center gap-2 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">
+    <section ref={sectionRef} tabIndex={sectionRef ? -1 : undefined} aria-labelledby={sectionRef ? titleId : undefined}
+      className={`grid gap-2 ${sectionRef ? `rounded-box ${FOCUS_RING}` : ""}`}>
+      <Heading id={titleId} className="m-0 flex items-center gap-2 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">
         {t(titleKey)}
         {/* `counted` is `known || stale`, and these are the two largest numbers on the screen. On
             an unreadable board `refresh()` has emptied it, so an ungated `alarms.length` printed
@@ -221,6 +225,17 @@ export function AlarmsScreen() {
   const [busyId, setBusyId] = useState(null);
   const [callFor, setCallFor] = useState(null);   // the alarm whose «RRT çağır» dialog is open, or null
   const [snoozeFor, setSnoozeFor] = useState(null); // the alarm whose «Ertele» dialog is open, or null (G2-B5b)
+  // A snooze moves its row to «Ertelenenler», and the button the dialog was opened from goes with it: the focus would
+  // fall to <body>. It goes to that list instead, and only from there — a focus she has moved on is hers (DevirScreen's
+  // `refocus`). A refusal leaves the row where it was, and the dialog gives the focus back to its button.
+  const snoozedRef = useRef(null);
+  const [refocus, setRefocus] = useState(0);
+  useEffect(() => {
+    if (!refocus) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    snoozedRef.current?.focus();
+  }, [refocus]);
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const canCall = user?.perms?.includes("alerts.escalate") ?? false;
   const known = boardKnown(board.connection);
@@ -326,7 +341,7 @@ export function AlarmsScreen() {
           answered, called or snoozed again. */}
       {snoozed.length > 0 ? (
         <Section
-          titleKey="ertele.groupTitle" emptyKey="ertele.groupEmpty"
+          titleKey="ertele.groupTitle" emptyKey="ertele.groupEmpty" sectionRef={snoozedRef}
           alarms={snoozed} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
           canCall={canCall} onCall={setCallFor}
           canSnooze={canAck} onSnooze={setSnoozeFor}
@@ -340,7 +355,8 @@ export function AlarmsScreen() {
         counted={known || stale}
       />
       <RrtCallDialog alarm={callFor} open={callFor !== null} onClose={() => setCallFor(null)} />
-      <SnoozeDialog alarm={snoozeFor} open={snoozeFor !== null} onClose={() => setSnoozeFor(null)} />
+      <SnoozeDialog alarm={snoozeFor} open={snoozeFor !== null} onClose={() => setSnoozeFor(null)}
+        onSnoozed={() => setRefocus((n) => n + 1)} />
 
       {/* Its own heading: this box is about CLOSED alarms, and titling it "Under review" put a
           second identical <h2> on the page. */}

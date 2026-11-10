@@ -71,13 +71,15 @@ function untilOn(entry, kind) {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** `alarm` the board alarm to snooze; `open` false renders nothing. A new alarm, or a new opening, starts afresh. */
-export function SnoozeDialog({ alarm, open, onClose }) {
+/** `alarm` the board alarm to snooze; `open` false renders nothing. A new alarm, or a new opening, starts afresh.
+ *  `onSnoozed`: told once the engine has taken the snooze, before `onClose` — the row has moved, and the screen
+ *  decides where the focus goes. */
+export function SnoozeDialog({ alarm, open, onClose, onSnoozed }) {
   if (!open || !alarm) return null;
-  return <SnoozeForm key={alarm.id} alarm={alarm} onClose={onClose} />;
+  return <SnoozeForm key={alarm.id} alarm={alarm} onClose={onClose} onSnoozed={onSnoozed} />;
 }
 
-function SnoozeForm({ alarm, onClose }) {
+function SnoozeForm({ alarm, onClose, onSnoozed }) {
   const { t } = useI18n();
   const board = useBoard();
   const toast = useToast();
@@ -121,9 +123,11 @@ function SnoozeForm({ alarm, onClose }) {
     sending.current = true;
     setBusy(true);
     let said = null;                             // [text, tone] once the server has answered
+    let taken = false;                           // the engine took the snooze
     try {
       const entry = await board.store.snooze(alarm.patientId, alarm.kind, minutes, reason, other ? text.trim() : null,
         seen);
+      taken = true;
       const until = untilOn(entry, alarm.kind);
       said = [t("ertele.done", { subject, time: until === null ? "—" : hhmm(until) })];
     } catch (err) {
@@ -136,6 +140,7 @@ function SnoozeForm({ alarm, onClose }) {
       setBusy(false);
     }
     if (said) toast(...said);
+    if (taken) onSnoozed?.();
     onClose();
   }
 
