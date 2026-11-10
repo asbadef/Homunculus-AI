@@ -7,6 +7,7 @@ describe("Tag", () => {
     ["neutral", "border-line2"],
     ["warn", "text-att-ink"],
     ["crit", "text-crit-ink"],
+    ["ok", "text-ok-ink"],
   ])("%s tone uses %s", (tone, cls) => {
     render(<Tag tone={tone}>Məcburi · qurulmayıb</Tag>);
     const tag = screen.getByText("Məcburi · qurulmayıb");
