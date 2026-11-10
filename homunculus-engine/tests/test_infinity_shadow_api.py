@@ -20,6 +20,7 @@ from homunculus.api.identity import Caller
 from homunculus.api.infinity_shadow import SCHEMA, SCHEMA_V1, ShadowSettings, shadow_settings_from_env
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
 from homunculus.scope import Scope, ScopeReason
+from homunculus.scope.resolver import UNKNOWN
 from homunculus.tenant.bedmap import BedMap, BedRef
 
 HOSPITAL = "HOSP1"
@@ -56,10 +57,19 @@ CALLERS = {
                          perms=frozenset({"devices.manage"})),
     "none-jwt": Caller(hospital=HOSPITAL, actor="synth-none"),
     "elsewhere-jwt": Caller(hospital="HOSP2", actor="x", groups=("nurse",), perms=frozenset({"board.view"})),
+    # Callers whose scope the resolver could not read (G2 borç 4).
+    "unknown-jwt": Caller(hospital=HOSPITAL, actor="synth-u1", groups=("nurse",), perms=frozenset({"board.view"})),
+    "unknown-both-jwt": Caller(hospital=HOSPITAL, actor="synth-u2", groups=("nurse", "biomedical"),
+                               perms=frozenset({"board.view", "devices.manage"})),
+    "unknown-biomed-jwt": Caller(hospital=HOSPITAL, actor="synth-u3", groups=("biomedical",),
+                                 perms=frozenset({"devices.manage"})),
 }
 SCOPES = {
     "scoped-jwt": Scope(False, ScopeReason.ASSIGNED, unit_ids=frozenset({"unit-1"})),
     "bedscoped-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-b2"})),
+    "unknown-jwt": UNKNOWN,
+    "unknown-both-jwt": UNKNOWN,
+    "unknown-biomed-jwt": UNKNOWN,
 }
 
 
@@ -485,6 +495,32 @@ def test_unrestricted_and_devices_manage_callers_see_every_device(tmp_path):
     for token in ("nurse-jwt", "biomed-jwt", DEVICE):
         board = _board(client, token)
         assert len(board["beds"]) == 3 and len(board["unassigned"]) == 2
+
+
+@pytest.mark.parametrize("token", ["unknown-jwt", "unknown-both-jwt"])
+def test_an_unreadable_scope_is_503_for_a_board_reader_not_an_empty_strip(tmp_path, token):
+    """G2 borç 4 (G2-A2, D13). A scope the resolver could not read answered 200 with an empty strip —
+    a quiet ward on the screen of a nurse whose look-up failed, and no patient on the bed of one
+    who also holds `devices.manage`. It is the board's 503 now, for every caller whose strip the
+    scope shapes."""
+    identities = InMemoryIdentityStore()
+    identities.apply(HOSPITAL, _record("p1"))
+    client, clock, _ = _app(tmp_path, identities=identities)
+    _post(client, clock)
+    r = client.get("/infinity-shadow/board", headers=_hdr(token))
+    assert (r.status_code, r.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
+
+
+def test_an_unreadable_scope_changes_nothing_for_devices_manage_alone(tmp_path):
+    """`devices.manage` without `board.view` sees every monitor and no patient whatever the scope
+    says, so a look-up that failed has nothing to withhold from that strip."""
+    identities = InMemoryIdentityStore()
+    identities.apply(HOSPITAL, _record("p1"))
+    client, clock, _ = _app(tmp_path, identities=identities)
+    _post(client, clock)
+    board = _board(client, "unknown-biomed-jwt")
+    assert len(board["beds"]) == 3 and len(board["unassigned"]) == 2
+    assert "p1" not in json.dumps(board)
 
 
 # --- the body --------------------------------------------------------------------------------------

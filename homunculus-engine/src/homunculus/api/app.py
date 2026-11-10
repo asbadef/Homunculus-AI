@@ -1751,6 +1751,12 @@ def create_app(
         if caller.hospital != shadow.hospital:
             return {"stage": "off"}
         scope = await _scope(authorization)
+        if viewer:
+            # G2 borç 4 (G2-A2, D13): a scope that could not be read is 503, not an empty strip — a
+            # quiet ward on the screen of a nurse whose look-up failed. `devices.manage` alone sees
+            # every monitor and no patient whatever the scope, so for it there is nothing to refuse.
+            # `/infinity-waves` asks this handler for its board, and so answers the same 503.
+            scope = _readable(scope)
         now = shadow_clock()
 
         def _at(card: dict, patient_id: str) -> bool:

@@ -456,8 +456,14 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
     now, the stream ticket's own answer, with no row; the device token, which is unscoped, still
     gets its answer."""
 
-    PERMS = NURSE_PERMS | {"audit.view", "scores.sign"}
+    PERMS = NURSE_PERMS | {"audit.view", "scores.sign", "alerts.escalate"}
     ROUTES = [
+        # G2 borç 4: the routes added since G2-A2 (D13), held to its rule.
+        ("GET", "/patients/p-a1/trends", None, 200),
+        ("GET", "/patients/p-a1/fluids", None, 200),     # G3-03
+        ("POST", "/alerts/rrt-call", {"patient_id": "p-a1", "kind": "news2",
+                                      "reason": "sentetik çağrı"}, 403),   # G2-B5: a person's call
+        ("GET", "/tasks", None, 200),                    # G3-02: the board's own read
         ("POST", "/clinical/p-a1", {"entries": [{"code": "suspected_infection", "value": 1}]}, 200),
         # G3-01: the bedside preview (D8), and «hatalı giriş» (D10), which a device never makes (X11).
         ("POST", "/clinical/p-a1/preview", {"entries": [{"code": "resp_rate", "value": 18}]}, 200),
