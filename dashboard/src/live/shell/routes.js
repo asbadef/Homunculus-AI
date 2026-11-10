@@ -11,36 +11,44 @@
 // another screen: a patient is opened from the beds — and while such a screen is open no rail
 // entry reads as current, see Sidebar.jsx).
 //
-// HOW A WAVE ADDS ITS SCREEN: its own import line below, and its own line in SCREENS — two lines
-// nobody else touches, so the parallel branches of Wave 3 do not meet. That is the ONLY way the
-// app gains a screen; `stubScreens` is a test seam and refuses to run outside the test build.
+// HOW A WAVE ADDS ITS SCREEN: its own `lazyScreen` line below, and its own line in SCREENS — two
+// lines nobody else touches, so the parallel branches of Wave 3 do not meet. That is the ONLY way
+// the app gains a screen; `stubScreens` is a test seam and refuses to run outside the test build.
 // ROUTES itself is frozen, entries and permission lists included: a route's id, address and
 // permissions are the same for every session and every test, and nothing can widen them at run
 // time.
-import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
-import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
+//
+// EACH SCREEN'S CODE IS ITS OWN CHUNK, fetched the first time the screen is opened (lazyScreen.js):
+// with every screen in it, the live UI's one chunk had grown past Vite's 500 kB. A screen's line
+// names its module by a literal path (so the reachability walk and the boundary rules read it as an
+// import) and the export the screen is. The shell shows a loading note while a chunk travels and a
+// reload when one does not come (Shell.jsx); the PWA precache holds every chunk (vite.config.js).
+import { lazyScreen } from "./lazyScreen.js";
 
-import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
+const SettingsScreen = lazyScreen(() => import("../screens/settings/SettingsScreen.jsx"), "SettingsScreen");
+const BedsScreen = lazyScreen(() => import("../screens/beds/BedsScreen.jsx"), "BedsScreen");
 
-import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
+const AlarmsScreen = lazyScreen(() => import("../screens/alarms/AlarmsScreen.jsx"), "AlarmsScreen");
 
-import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
+const PatientScreen = lazyScreen(() => import("../screens/patient/PatientScreen.jsx"), "PatientScreen");
 
-import { DevicesScreen } from "../screens/devices/DevicesScreen.jsx";
+const AdminScreen = lazyScreen(() => import("../screens/admin/AdminScreen.jsx"), "AdminScreen");
 
-import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
+const DevicesScreen = lazyScreen(() => import("../screens/devices/DevicesScreen.jsx"), "DevicesScreen");
 
-import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
+const KabulScreen = lazyScreen(() => import("../screens/kabul/KabulScreen.jsx"), "KabulScreen"); // G2-B1a
 
-import { GorevlerScreen } from "../screens/gorevler/GorevlerScreen.jsx"; // G3-02
+const BedsideScreen = lazyScreen(() => import("../screens/bedside/BedsideScreen.jsx"), "BedsideScreen"); // G3-01
 
-import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
+const GorevlerScreen = lazyScreen(() => import("../screens/gorevler/GorevlerScreen.jsx"), "GorevlerScreen"); // G3-02
 
-import { DolulukScreen } from "../screens/doluluk/DolulukScreen.jsx"; // G2-B3a
+const DenetimScreen = lazyScreen(() => import("../screens/denetim/DenetimScreen.jsx"), "DenetimScreen"); // G2-B4
 
-import { RrtScreen } from "../screens/rrt/RrtScreen.jsx"; // G2-B5
+const DolulukScreen = lazyScreen(() => import("../screens/doluluk/DolulukScreen.jsx"), "DolulukScreen"); // G2-B3a
 
-import { DevirScreen } from "../screens/devir/DevirScreen.jsx"; // G2-B3b
+const RrtScreen = lazyScreen(() => import("../screens/rrt/RrtScreen.jsx"), "RrtScreen"); // G2-B5
+
+const DevirScreen = lazyScreen(() => import("../screens/devir/DevirScreen.jsx"), "DevirScreen"); // G2-B3b
 
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and

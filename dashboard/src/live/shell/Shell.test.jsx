@@ -12,7 +12,8 @@ import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
 import { hashPath, homePath, resetScreens, stubScreens } from "./routes.js";
 import { onlyScreens } from "./screens.testutil.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
-import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
+import { IDLE_SPOKEN_AGAIN_AT, PRELOAD_AFTER_MS, Shell } from "./Shell.jsx";
+import { lazyScreen } from "./lazyScreen.js";
 import { useShell } from "./ShellContext.jsx";
 
 const NURSE_PERMS = ["board.view", "alerts.ack"];
@@ -290,6 +291,92 @@ describe("the router", () => {
     await renderShell();
     const main = screen.getByRole("main");
     for (const cls of ["relative", "min-h-0", "overflow-auto"]) expect(main.classList.contains(cls), cls).toBe(true);
+  });
+});
+
+// Each screen's code is its own chunk, fetched the first time the screen is opened (lazyScreen.js,
+// routes.js SCREENS). While it travels the page SAYS it is loading — never an empty <main>, and
+// never words a clinician could read as "there is nothing here"; a chunk that does not come
+// (offline, or a deploy replaced the hashed file) is said as well, with a reload, and the rail and
+// the other screens stay usable.
+describe("a screen whose code is fetched on first use", () => {
+  /** A screen's chunk in flight: it arrives, or fails, when the test says so. */
+  function inFlight() {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+  const go = (hash) => act(() => { window.location.hash = hash; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+
+  it("says the page is loading, in the person's language, under the screen's own name — then shows it", async () => {
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise) });
+    await renderShell({ hash: "#/beds" });
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent("Səhifə yüklənir…");
+    expect(document.title).toBe("Çarpayılar · Homunculus");
+    expect(within(main).queryByRole("alert")).toBeNull();
+    await act(async () => { chunk.resolve({ default: BedsProbe }); await chunk.promise; });
+    expect(screen.getByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
+    expect(main).not.toHaveTextContent("Səhifə yüklənir…");
+  });
+
+  it("in Russian too: the note is the dictionary's, not a word written into the shell", async () => {
+    localStorage.setItem("hmc.lang", "ru");
+    built({ beds: React.lazy(() => new Promise(() => {})) });
+    await renderShell({ hash: "#/beds" });
+    expect(screen.getByRole("main")).toHaveTextContent("Страница загружается…");
+  });
+
+  it("says a chunk that did not come could not be loaded, offers a reload, and leaves the rail and the other screens working", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise), alarms: AlarmsProbe });
+    await renderShell({ hash: "#/beds" });
+    await act(async () => {
+      chunk.reject(new TypeError("Failed to fetch dynamically imported module: /assets/BedsScreen-x.js"));
+      await chunk.promise.catch(() => {});
+    });
+    const main = screen.getByRole("main");
+    const alert = within(main).getByRole("alert");
+    expect(alert).toHaveTextContent("Səhifə yüklənə bilmədi");
+    expect(alert).toHaveTextContent(/Bağlantınızı yoxlayıb səhifəni yenidən yükləyin/);
+    expect(main).not.toHaveTextContent("Səhifə yüklənir…");
+    // The real error reaches the console, named after the screen it stopped: only that line tells a
+    // chunk a deploy replaced from a bug that throws, afterwards.
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('the screen "beds" could not be rendered'), expect.any(TypeError));
+
+    // The reload is what fixes it: a fresh page asks for the files this deploy has.
+    const reload = vi.fn();
+    const where = vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload });
+    fireEvent.click(within(alert).getByRole("button", { name: "Yenidən yüklə" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    where.mockRestore();
+
+    // The rest of the page is untouched by one screen's chunk.
+    expect(screen.getByRole("navigation", { name: "Əsas menyu" })).toBeInTheDocument();
+    go("#/alarms");
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
+    logged.mockRestore();
+  });
+
+  // The one chunk held every screen once the page had loaded, so a deploy that replaced the files
+  // later broke nothing already open. The shell keeps that: soon after it opens it fetches every
+  // screen's code (lazyScreen.js preloadScreens) — and a screen fetched so opens without a note.
+  it("fetches every screen's code soon after it opens, so the open page holds them all as before", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const load = vi.fn(() => Promise.resolve({ AlarmsProbe }));
+    built({ alarms: lazyScreen(load, "AlarmsProbe") });
+    await renderShell({ start: false });
+    await act(async () => { vi.advanceTimersByTime(PRELOAD_AFTER_MS - 1); });
+    expect(load).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(load).toHaveBeenCalledTimes(1);
+    go("#/alarms");
+    expect(screen.getByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    expect(screen.getByRole("main")).not.toHaveTextContent("Səhifə yüklənir…");
   });
 });
 

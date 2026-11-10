@@ -119,6 +119,22 @@ describe("the route table", () => {
     }
     expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBe(before);
   });
+
+  // Each built screen's code is its own chunk, fetched the first time the screen is opened
+  // (lazyScreen.js): the live UI's one chunk had grown past Vite's 500 kB. What arrives must be a
+  // component — an export named wrong on a screen's line would otherwise fail only when someone
+  // opens that screen, on the ward.
+  it("fetches each built screen's code on first use, and what arrives is the screen", async () => {
+    const built = ROUTES.filter((r) => screenOf(r));
+    expect(built.length).toBeGreaterThan(1);
+    for (const r of built) {
+      expect(typeof screenOf(r).preload, r.id).toBe("function");
+      // eslint-disable-next-line no-await-in-loop
+      const shown = await screenOf(r).preload();
+      expect(typeof shown, r.id).toBe("function");
+      expect(shown.name, r.id).toMatch(/Screen$/);
+    }
+  });
 });
 
 describe("who may open what", () => {

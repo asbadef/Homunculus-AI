@@ -6,7 +6,13 @@
 // of a later wave) is "no such page" — never a blank, never a silent jump elsewhere. The empty
 // address lands on the session's home (routes.js homePath). After a move between screens — back
 // to the first one too — focus goes to <main>, so a screen reader starts at the new screen.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+//
+// A screen's code is fetched the first time it is opened (routes.js, lazyScreen.js). While it
+// travels <main> says the PAGE is loading — never empty, and never words that could be read as
+// "there is no data"; a chunk that does not come (offline, or a deploy replaced the hashed file)
+// is said with a reload, and the rail and the other screens go on working. Soon after the shell
+// opens it fetches every screen's code, so an open page holds them all as the one chunk did.
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useIdleLock } from "../session/useIdleLock.js";
@@ -16,9 +22,10 @@ import { IDLE_SPOKEN_AGAIN_AT, IdleWarning } from "../session/IdleWarning.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
-import { Icon } from "../ui/index.js";
+import { Box, Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
+import { preloadScreens } from "./lazyScreen.js";
 import { ShellProvider } from "./ShellContext.jsx";
 import { StructureProvider } from "../data/StructureProvider.jsx";   // G2-B1a
 import { Sidebar } from "./Sidebar.jsx";
@@ -27,6 +34,12 @@ import { TopBar } from "./TopBar.jsx";
 /** The page's title when a screen is on it, and on its own when none is (LiveApp, on a lock or a
  *  sign-out: a shared workstation must not keep naming the last person's page). */
 export const PRODUCT = "Homunculus";
+
+/** How long after the shell opens it fetches every screen's code (lazyScreen.js preloadScreens):
+ *  the first screen's own chunk goes first, the rest while the clinician reads it. Once they are
+ *  here the page holds every screen, as the one chunk did — a deploy that replaces the hashed files
+ *  later breaks no screen of a page already open, and no screen flashes its loading note. */
+export const PRELOAD_AFTER_MS = 2000;
 
 const pathOf = () => hashPath(window.location.hash);
 const isEmptyPath = (path) => path === "" || path === "/";
@@ -43,23 +56,73 @@ function useHashPath() {
   return path;
 }
 
+/** The refusal pages' one action, a link or a button. */
+const ACTION = "inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri";
+
 /** The router's two refusals. `icon`: a shield for a page this session may not open, a sheet of
  *  paper for one that does not exist — the same picture for both would read every mistyped
- *  address as "you are not allowed in here". */
-function Blocked({ icon, title, help, home }) {
+ *  address as "you are not allowed in here". The same card, with a warning sign and a reload in
+ *  place of the way home (`children`), says a screen's code did not come (ScreenFailed). */
+function Blocked({ icon, title, help, home, role, children }) {
   const { t } = useI18n();
   return (
-    <div className="mx-auto my-[10vh] max-w-[460px] rounded-dlg border border-line bg-card px-6 py-7 text-center">
+    <div role={role} className="mx-auto my-[10vh] max-w-[460px] rounded-dlg border border-line bg-card px-6 py-7 text-center">
       <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-pri-soft text-pri">
         <Icon name={icon} size={26} />
       </div>
       <h1 className="m-0 mb-1.5 font-display text-20 font-bold">{title}</h1>
       {help ? <p className="m-0 mb-4 text-mute">{help}</p> : null}
-      <a href={`#${home}`} className={`inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri ${FOCUS_RING}`}>
-        {t("shell.home")}
-      </a>
+      {children ?? (
+        <a href={`#${home}`} className={`${ACTION} ${FOCUS_RING}`}>
+          {t("shell.home")}
+        </a>
+      )}
     </div>
   );
+}
+
+/** While a screen's code travels: a sentence about the PAGE, so it cannot be read as "no beds",
+ *  "no alarms" or any other "nothing here". */
+function ScreenLoading() {
+  const { t } = useI18n();
+  return <Box><p className="m-0 text-13 text-mute">{t("shell.screenLoading")}</p></Box>;
+}
+
+/** A screen's code that did not come: what src/LoadFailed.jsx says of the page's root, said in
+ *  the shell's own words and look, with the reload that fixes it — a fresh page asks for the files
+ *  this deploy has. The rail stays. */
+function ScreenFailed() {
+  const { t } = useI18n();
+  return (
+    <Blocked role="alert" icon="alert" title={t("shell.loadFailed")} help={t("shell.loadFailedHelp")}>
+      <button type="button" onClick={() => window.location.reload()} className={`${ACTION} ${FOCUS_RING}`}>
+        {t("shell.reload")}
+      </button>
+    </Blocked>
+  );
+}
+
+/** Around one screen: a chunk that will not load — React throws it during render — or anything
+ *  else the screen throws is shown as ScreenFailed, never as an empty <main> or an uncaught error.
+ *  The error goes to the console, named after the screen: only that line tells a replaced chunk
+ *  from a bug afterwards. Keyed by the route (below), so moving to another screen starts afresh. */
+class ScreenBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error(`Homunculus: the screen "${this.props.screen}" could not be rendered`, error);   // eslint-disable-line no-console
+  }
+
+  render() {
+    return this.state.failed ? <ScreenFailed /> : this.props.children;
+  }
 }
 
 
@@ -112,6 +175,11 @@ export function Shell({ resume = "" }) {
   const { secondsLeft, stay } = useIdleLock({ minutes: user.lockIdleMinutes, onIdle: () => store.lock("idle") });
 
   useEffect(() => {
+    const timer = setTimeout(() => { preloadScreens(); }, PRELOAD_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     // The key's place, not its letter: Alt+L on an Azerbaijani, Russian or Turkish layout — or a
     // Mac's Option+L, which types "¬" — is the same key.
     const onKey = (event) => {
@@ -136,7 +204,15 @@ export function Shell({ resume = "" }) {
     content = <Blocked icon="shield" title={title} help={t("shell.denyHelp")} home={home} />;
   } else {
     title = t(match.route.labelKey);
-    content = <Screen params={match.params} />;
+    // Keyed by the route, not the address: a patient opened after another is the same screen,
+    // updated in place as before, while a move to another screen leaves a failure behind.
+    content = (
+      <ScreenBoundary key={match.route.id} screen={match.route.id}>
+        <Suspense fallback={<ScreenLoading />}>
+          <Screen params={match.params} />
+        </Suspense>
+      </ScreenBoundary>
+    );
   }
 
   useEffect(() => {
