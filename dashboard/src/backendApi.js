@@ -631,12 +631,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** G2-B5b: snooze one active alarm for `minutes` with a reason from the engine's list. `reasonText` is the
      *  explanation, required for OTHER; null otherwise. The actor comes from the token, as with `acknowledge`.
      *  Resolves to the patient's board entry as it is AFTER the snooze.
-     *  409: answered, or a severity never snoozed (`snooze_not_allowed`).
+     *  `seenSeverity`: the severity the person was shown ("high" | "moderate"). The engine refuses (409) when the
+     *  alarm's severity is another by then, rather than snooze it on a picture that no longer holds. Sent only when
+     *  given.
+     *  409: answered, a severity never snoozed (`snooze_not_allowed`), or a severity that changed.
      *  422: minutes over the cap, or a reason the engine does not take. */
-    snoozeAlert(patientId, kind, minutes, reason, reasonText = null) {
-      return authed("/alerts/snooze", {
-        method: "POST", body: { patient_id: patientId, kind, minutes, reason, reason_text: reasonText },
-      });
+    snoozeAlert(patientId, kind, minutes, reason, reasonText = null, seenSeverity = null) {
+      const body = { patient_id: patientId, kind, minutes, reason, reason_text: reasonText };
+      if (seenSeverity) body.seen_severity = seenSeverity;
+      return authed("/alerts/snooze", { method: "POST", body });
     },
 
     // ---- G2-B3b: Vardiya devri (homunculus-engine admission/router.py, /handovers) ----

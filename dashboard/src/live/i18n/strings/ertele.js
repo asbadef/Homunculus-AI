@@ -42,12 +42,15 @@ export default {
     done: "{subject}: ertelendi, bitiş {time}.",
     failed: "{subject}: ertelenemedi — {reason}",
     mayHaveLanded: "{subject}: yanıt gelmedi — alarm ertelenmiş olabilir. Satıra bakın; yeniden ertelemek zararsızdır.",
+    changed: "Bu alarm pencere açıkken değişti; buradan ertelenemez. Pencereyi kapatıp alarma yeniden bakın.",
     err: {
       byPerson: "Alarmı bir kişi erteler; cihaz kimliğiyle ertelenemez.",
       notAllowed: "Bu alarm ertelenemez: kritik alarm hiç ertelenmez, düşük ve bilgi alarmı da ertelenmez.",
       answered: "Bu alarm zaten yanıtlanmış; ertelenmedi.",
       minutes: "Erteleme süresi bu alarm için izin verilen aralıkta değil (yüksek: en çok 30 dk, orta: en çok 120 dk).",
       reason: "Erteleme gerekçesi listeden seçilmeli; «Diğer» için açıklama 15–500 karakter olmalı.",
+      severityChanged: "Alarmın önemi değişti; ertelenmedi. Alarma yeniden bakıp ertelemeyi yeniden seçin.",
+      badSeenSeverity: "Erteleme isteğindeki alarm önemi geçersiz; ertelenmedi.",
     },
   },
   az: {
@@ -81,12 +84,15 @@ export default {
     done: "{subject}: təxirə salındı, bitmə {time}.",
     failed: "{subject}: təxirə salınmadı — {reason}",
     mayHaveLanded: "{subject}: cavab gəlmədi — siqnal təxirə salınmış ola bilər. Sətrə baxın; yenidən təxirə salmaq zərərsizdir.",
+    changed: "Bu siqnal pəncərə açıq ikən dəyişdi; buradan təxirə salına bilməz. Pəncərəni bağlayıb siqnala yenidən baxın.",
     err: {
       byPerson: "Siqnalı bir nəfər təxirə salır; cihaz kimliyi ilə təxirə salmaq olmaz.",
       notAllowed: "Bu siqnal təxirə salına bilməz: kritik siqnal heç vaxt, aşağı və məlumat siqnalı da təxirə salınmır.",
       answered: "Bu siqnal artıq cavablandırılıb; təxirə salınmadı.",
       minutes: "Təxirə salma müddəti bu siqnal üçün icazə verilən aralıqda deyil (yüksək: ən çox 30 dəq, orta: ən çox 120 dəq).",
       reason: "Təxirə salma səbəbi siyahıdan seçilməlidir; «Digər» üçün izah 15–500 simvol olmalıdır.",
+      severityChanged: "Siqnalın ağırlıq dərəcəsi dəyişdi; təxirə salınmadı. Siqnala yenidən baxıb təxirə salmanı yenidən seçin.",
+      badSeenSeverity: "Təxirə salma sorğusundakı siqnalın ağırlıq dərəcəsi yanlışdır; təxirə salınmadı.",
     },
   },
   ru: {
@@ -120,12 +126,15 @@ export default {
     done: "{subject}: отложено до {time}.",
     failed: "{subject}: не удалось отложить — {reason}",
     mayHaveLanded: "{subject}: ответа нет — тревога, возможно, отложена. Проверьте строку; повторная отсрочка безвредна.",
+    changed: "Эта тревога изменилась, пока окно было открыто; отсюда её отложить нельзя. Закройте окно и посмотрите на тревогу снова.",
     err: {
       byPerson: "Тревогу откладывает человек; с идентификатором устройства отложить нельзя.",
       notAllowed: "Эту тревогу отложить нельзя: критическую — никогда, низкую и информационную — тоже нет.",
       answered: "На эту тревогу уже ответили; она не отложена.",
       minutes: "Срок отсрочки вне допустимого для этой тревоги (высокая: не более 30 мин, средняя: не более 120 мин).",
       reason: "Причину отсрочки нужно выбрать из списка; для «Другое» пояснение — 15–500 символов.",
+      severityChanged: "Уровень тревоги изменился; она не отложена. Посмотрите на тревогу снова и выберите отсрочку заново.",
+      badSeenSeverity: "Уровень тревоги в запросе на отсрочку некорректен; она не отложена.",
     },
   },
   en: {
@@ -159,12 +168,15 @@ export default {
     done: "{subject}: snoozed until {time}.",
     failed: "{subject}: could not be snoozed — {reason}",
     mayHaveLanded: "{subject}: no answer — the alarm may have been snoozed. Check its row; snoozing again is harmless.",
+    changed: "This alarm changed while the window was open; it cannot be snoozed from here. Close the window and look at the alarm again.",
     err: {
       byPerson: "An alarm is snoozed by a person; a device cannot snooze one.",
       notAllowed: "This alarm cannot be snoozed: a critical alarm never, and low and info alarms neither.",
       answered: "This alarm has already been answered; it was not snoozed.",
       minutes: "The snooze duration is outside what this alarm allows (high: at most 30 min, moderate: at most 120 min).",
       reason: "Choose the snooze reason from the list; for «Other» the explanation must be 15–500 characters.",
+      severityChanged: "The alarm's severity changed; it was not snoozed. Look at the alarm again and choose the snooze anew.",
+      badSeenSeverity: "The alarm severity in the snooze request is not valid; it was not snoozed.",
     },
   },
 };

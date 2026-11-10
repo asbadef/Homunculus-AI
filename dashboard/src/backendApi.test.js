@@ -465,14 +465,17 @@ describe("backendApi — what the work screens call", () => {
     const entry = { patient_id: "S-001", risk: "high", alerts: [] };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
     const api = signedIn(fetchMock);
-    expect(await api.snoozeAlert("S-001", "news2", 15, "OTHER", "Hasta yıkanıyor, prob çıktı")).toEqual(entry);
+    expect(await api.snoozeAlert("S-001", "news2", 15, "OTHER", "Hasta yıkanıyor, prob çıktı", "high")).toEqual(entry);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/alerts/snooze");
     expect(init.method).toBe("POST");
+    // `seen_severity` (review): the severity the dialog was opened on; the engine refuses if the alarm's is another.
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2", minutes: 15, reason: "OTHER",
-      reason_text: "Hasta yıkanıyor, prob çıktı" });
+      reason_text: "Hasta yıkanıyor, prob çıktı", seen_severity: "high" });
     await api.snoozeAlert("S-001", "news2", 5, "PATIENT_BASELINE");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).reason_text).toBeNull();
+    const bare = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(bare.reason_text).toBeNull();
+    expect(bare).not.toHaveProperty("seen_severity");
   });
 
   // G2-B3b (D5, D7): «Vardiya devri». The actors come from the token; nothing about who is sent.

@@ -93,6 +93,9 @@ export const API_MESSAGE_KEYS = new Map([
   ["alarm zaten yanıtlandı; ertelenmez", "ertele.err.answered"],
   ["erteleme süresi bu alarm için izin verilen aralıkta değil", "ertele.err.minutes"],
   ["erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter", "ertele.err.reason"],
+  // The severity the dialog was opened on (`seen_severity`) is no longer the alarm's: nothing was written (review).
+  ["alarmın önemi değişti; ertelemeyi yeniden seçin", "ertele.err.severityChanged"],
+  ["geçersiz seen_severity", "ertele.err.badSeenSeverity"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   // GET /audit/verify (G2 borç 3): the whole chain is walked one verification at a time per hospital; a
   // second while one runs is refused (409), never queued behind it.

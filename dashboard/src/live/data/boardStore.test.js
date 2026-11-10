@@ -801,10 +801,10 @@ describe("an answer the API gave, put onto the board", () => {
     const track = vi.fn((fn) => fn());
     const store = createBoardStore({ api, track, openStream: vi.fn(), setTimer: vi.fn(), clearTimer: vi.fn() });
 
-    expect(await store.snooze("P-001", "news2", 15, "PATIENT_BASELINE", null)).toBe(card);
+    expect(await store.snooze("P-001", "news2", 15, "PATIENT_BASELINE", null, "high")).toBe(card);
 
     expect(track).toHaveBeenCalledTimes(1);
-    expect(api.snoozeAlert).toHaveBeenCalledWith("P-001", "news2", 15, "PATIENT_BASELINE", null);
+    expect(api.snoozeAlert).toHaveBeenCalledWith("P-001", "news2", 15, "PATIENT_BASELINE", null, "high");
     expect(store.getState().alerts[0].snooze)
       .toMatchObject({ by: "hem.leyla", untilMs: Date.parse(snooze.until), minutes: 15 });
   });

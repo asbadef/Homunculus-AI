@@ -21,14 +21,24 @@
 //   - it names the alarm: the bed and the kind, never a name.
 // Either way the dialog closes. A snooze that got NO ANSWER (`mayHaveLanded`) is not a refusal: the engine may have
 // recorded it. The toast says so, and that snoozing again is harmless, since a second snooze replaces the first.
+//
+// THE ALARM AS THE BOARD HOLDS IT NOW (review). The dialog opens on a picture of the alarm, and a stream frame may
+// change the alarm while it is open: a moderate one turns high, somebody answers it, it clears. So the form reads the
+// live alarm from the board by its id on every render, and shows it — its summary, the durations its severity allows.
+// If it is gone, answered, no longer one that may be snoozed, or its severity is not the one the dialog opened on,
+// the dialog says so and holds «Ertele» (held, not disabled: it keeps its focus and says why — NewHandoverDialog).
+// The request also carries the severity the person was shown (`seen_severity`), and the engine refuses it if the
+// alarm's is another by then: a moderate alarm that turned high is never snoozed for a moderate's minutes.
 import React, { useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
-import { OTHER, OTHER_MIN_CHARS, REASON_TEXT_MAX, SNOOZE_CHOICES, SNOOZE_REASONS } from "../../data/snooze.js";
+import {
+  OTHER, OTHER_MIN_CHARS, REASON_TEXT_MAX, SNOOZE_CHOICES, SNOOZE_REASONS, maySnooze,
+} from "../../data/snooze.js";
 import { apiErrorText } from "../../apiErrors.js";
 import { hhmm } from "../../i18n/dates.js";
-import { Announce, Button, Field, Input, Modal, Seg, Select, useToast } from "../../ui/index.js";
+import { Alert, Announce, Button, Field, Input, Modal, Seg, Select, useToast } from "../../ui/index.js";
 import { mayHaveLanded } from "../admin/refusal.js";
 import { summaryOf, useBoardNow } from "../common/BoardState.jsx";
 
@@ -72,8 +82,15 @@ function SnoozeForm({ alarm, onClose }) {
   const board = useBoard();
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
-  const choices = SNOOZE_CHOICES[alarm.severity] ?? [];
+  // The severity the dialog opened on: what the person was shown, and what the request vouches for (`seen_severity`).
+  const [seen] = useState(alarm.severity);
+  // The alarm as the board holds it now (see the header); the picture it opened on only once it is gone.
+  const live = board.alerts.find((a) => a.id === alarm.id) ?? null;
+  const changed = !live || !maySnooze(live) || live.severity !== seen;
+  const shown = live ?? alarm;
+  const choices = SNOOZE_CHOICES[shown.severity] ?? [];
   const [minutes, setMinutes] = useState(choices[0] ?? null);
+  const minutesOk = choices.includes(minutes);
   const [reason, setReason] = useState("");
   const [text, setText] = useState("");
   const [tried, setTried] = useState(false);   // a problem shows once she has pressed «Ertele»
@@ -83,6 +100,7 @@ function SnoozeForm({ alarm, onClose }) {
   const textBox = useRef(null);
   const formId = useId();
   const whatId = useId();
+  const changedId = useId();
   const bed = alarm.bedLabel || alarm.patientId;
   const subject = `${bed} · ${alarm.kind}`;
   const other = reason === OTHER;
@@ -90,7 +108,8 @@ function SnoozeForm({ alarm, onClose }) {
   const shortText = other && text.trim().length < OTHER_MIN_CHARS;
 
   async function send() {
-    if (sending.current || busy || minutes === null) return;
+    // Held while the alarm is not the one the dialog opened on (see the header): the dialog says why.
+    if (sending.current || busy || changed || !minutesOk) return;
     if (noReason || shortText) {
       // Said under its control, and the focus taken there; the server is not asked. flushSync: the problem must be in
       // the DOM, tied to the control, when the focus arrives (VitalsForm).
@@ -103,7 +122,8 @@ function SnoozeForm({ alarm, onClose }) {
     setBusy(true);
     let said = null;                             // [text, tone] once the server has answered
     try {
-      const entry = await board.store.snooze(alarm.patientId, alarm.kind, minutes, reason, other ? text.trim() : null);
+      const entry = await board.store.snooze(alarm.patientId, alarm.kind, minutes, reason, other ? text.trim() : null,
+        seen);
       const until = untilOn(entry, alarm.kind);
       said = [t("ertele.done", { subject, time: until === null ? "—" : hhmm(until) })];
     } catch (err) {
@@ -125,7 +145,10 @@ function SnoozeForm({ alarm, onClose }) {
       actions={(
         <>
           <Button variant="ghost" onClick={onClose} busy={busy}>{t("ertele.cancel")}</Button>
-          <Button variant="primary" icon="clock" onClick={send} busy={busy}>{t("ertele.send")}</Button>
+          <Button variant="primary" icon="clock" onClick={send} busy={busy}
+            aria-disabled={changed ? "true" : undefined} aria-describedby={changed ? changedId : undefined}>
+            {t("ertele.send")}
+          </Button>
         </>
       )}
     >
@@ -133,13 +156,15 @@ function SnoozeForm({ alarm, onClose }) {
       <form id={formId} noValidate onSubmit={(event) => { event.preventDefault(); send(); }}>
         {/* Which alarm, when a bed has more than one: the engine's own English summary, and its kind. */}
         <p id={whatId} className="m-0 mb-3 text-13 text-ink">
-          <span lang="en">{summaryOf(alarm) ?? t("board.findingUnnamed")}</span>
+          <span lang="en">{summaryOf(shown) ?? t("board.findingUnnamed")}</span>
           <span className="font-data text-mute">{` · ${alarm.kind}`}</span>
         </p>
+        {/* Said politely when it happens, and named as the reason «Ertele» is held. */}
+        {changed ? <Alert tone="warn" className="mb-3"><span id={changedId}>{t("ertele.changed")}</span></Alert> : null}
         <div className="mb-2.5 grid gap-1.5">
           <Seg label={t("ertele.duration")} value={minutes} onChange={setMinutes}
             options={choices.map((m) => ({ value: m, label: t("ertele.minutes", { count: m }) }))} />
-          {minutes !== null ? (
+          {!changed && minutesOk ? (
             <p className="m-0 text-12.5 text-mute">{t("ertele.soundsAgain", { time: hhmm(nowMs + minutes * 60_000) })}</p>
           ) : null}
         </div>

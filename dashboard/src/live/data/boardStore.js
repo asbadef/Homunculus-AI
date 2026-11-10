@@ -386,18 +386,19 @@ export function createBoardStore({
       return entry;
     },
     /**
-     * G2-B5b: snooze one alarm (`POST /alerts/snooze {patient_id, kind, minutes, reason, reason_text}`, permission
-     * `alerts.ack`) and put the board entry it answers with onto the board. The shape of `acknowledge`, for the same
-     * reasons:
+     * G2-B5b: snooze one alarm (`POST /alerts/snooze {patient_id, kind, minutes, reason, reason_text, seen_severity}`,
+     * permission `alerts.ack`) and put the board entry it answers with onto the board. `seenSeverity` is the severity
+     * the person was shown; the engine refuses if the alarm's is another by then. The shape of `acknowledge`, for the
+     * same reasons:
      * - through `track`;
      * - resolves with the entry;
      * - REJECTS with the API's own error having changed nothing: a snooze that may not have been made must not
      *   silence the alarm here;
      * - an answer after `clear()` is dropped.
      */
-    async snooze(patientId, kind, minutes, reason, reasonText) {
+    async snooze(patientId, kind, minutes, reason, reasonText, seenSeverity) {
       const mine = generation;
-      const entry = await track(() => api.snoozeAlert(patientId, kind, minutes, reason, reasonText));
+      const entry = await track(() => api.snoozeAlert(patientId, kind, minutes, reason, reasonText, seenSeverity));
       if (mine !== generation) return null;
       ingest(entry);
       return entry;

@@ -281,6 +281,11 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, Object.assign(
       new Error("erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter"), { status: 422 })))
       .toBe("Choose the snooze reason from the list; for «Other» the explanation must be 15–500 characters.");
+    // Review (G2-B5b): the severity the dialog was opened on (`seen_severity`) is no longer the alarm's.
+    expect(apiErrorText(en, Object.assign(new Error("alarmın önemi değişti; ertelemeyi yeniden seçin"), { status: 409 })))
+      .toBe("The alarm's severity changed; it was not snoozed. Look at the alarm again and choose the snooze anew.");
+    expect(apiErrorText(en, Object.assign(new Error("geçersiz seen_severity"), { status: 422 })))
+      .toBe("The alarm severity in the snooze request is not valid; it was not snoozed.");
   });
 
   // G2-A4 review 2 (C1–C2): the SOFA sign route's new refusals, pinned here as well as by the sweep above,
