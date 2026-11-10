@@ -32,7 +32,7 @@
 ## 3. Decisions taken in the spec
 
 - **D3 — the call: `POST /alerts/rrt-call`, body `{patient_id, kind, reason}`.**
-  - **Routing.** The prefix `alerts` is already proxied by nginx and vite, so no proxy line changes. nginx's access-log map writes it as `/alerts/:key`. No patient id is in the path; it travels in the body, as with `/ack`.
+  - **Routing.** The prefix `alerts` is already proxied by nginx and vite, so no proxy line changes. nginx's access-log map lists it among the routes logged as they are (one line in the «No parameter» block, before the `/alerts/:key` catch-all; `tests/test_access_log_redaction.py` holds the two together). No patient id is in the path; it travels in the body, as with `/ack`.
   - **Permission.** `alerts.escalate`, held by charge nurses, physicians, the rapid-response team and the hospital administrator, but not nurses. A device token is refused (403): the RRT is called by a person, named in the trail.
   - **Refusals:**
     - 400 when the reason, after trimming, is shorter than 3 or longer than 500 characters;
