@@ -151,3 +151,71 @@ def test_a_discharge_ends_the_snooze():
                  severity="moderate")
     store.forget_patient("p")
     assert set(store.snoozes) == {("q", "k")}
+
+
+# --- the card, and the same alarm worse (an Engine, as a door drives it) -----------------------------------
+#
+# Heart rate 115 and temperature 39.5 score 2 NEWS2 points each. A respiratory rate of 26 adds 3 (NEWS2 7, a HIGH,
+# immediate `news2`); one of 22 adds 2 (NEWS2 6, MODERATE). Made-up values on a synthetic bed.
+
+T0 = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+NEWS2 = ("bed-3", "news2")
+
+
+def _measure(engine, store, rr, at):
+    for code, value in ((SignalCode.HEART_RATE, 115.0), (SignalCode.TEMPERATURE, 39.5),
+                        (SignalCode.RESP_RATE, float(rr))):
+        engine.ingest(Observation("bed-3", code, value, "", at, "mon"), now=at)
+    sync_alerts(engine, store, "bed-3", at)
+
+
+def _news2_engine(rr):
+    engine, store = Engine(), AckStore()
+    _measure(engine, store, rr, T0)
+    store.stamp_first_seen("bed-3", "news2", T0)
+    return engine, store
+
+
+def _card_alert(engine, store, kind="news2"):
+    return next(a for a in patient_board(engine, "bed-3", store, now=T0)["alerts"] if a["kind"] == kind)
+
+
+def test_the_card_carries_the_snooze_and_none_without_one():
+    engine, store = _news2_engine(rr=26)
+    assert _card_alert(engine, store)["snooze"] is None
+    store.snooze("bed-3", "news2", by="hem.leyla", at=T0, minutes=15, reason="OTHER",
+                 reason_text="Hasta yıkanıyor, prob çıktı", severity="high")
+    assert _card_alert(engine, store)["snooze"] == {
+        "by": "hem.leyla", "at": T0.isoformat(), "until": (T0 + timedelta(minutes=15)).isoformat(), "minutes": 15,
+        "reason": "OTHER", "reason_text": "Hasta yıkanıyor, prob çıktı"}
+
+
+def test_a_latched_alert_on_the_card_has_no_snooze():
+    engine, store = _news2_engine(rr=26)
+    shock = Alert(patient_id="bed-3", kind="septic_shock", severity="critical", urgency="immediate", summary="",
+                  clinical_reasoning="", supporting_evidence=[], recommended_actions=[], confidence="")
+    store.resolved[("bed-3", "septic_shock")] = {"alert": asdict(shock), "resolved_at": T0, "first_seen": T0}
+    latched = _card_alert(engine, store, "septic_shock")
+    assert latched["resolved_at"] is not None and latched["snooze"] is None
+
+
+def test_the_same_alarm_worse_ends_its_snooze():
+    engine, store = _news2_engine(rr=22)
+    assert store.firing[NEWS2].severity == "moderate"
+    store.snooze("bed-3", "news2", by="u", at=T0, minutes=120, reason="PATIENT_BASELINE", reason_text=None,
+                 severity="moderate")
+    _measure(engine, store, 22, T0 + timedelta(minutes=1))
+    assert NEWS2 in store.snoozes, "the same severity: the snooze stands"
+    _measure(engine, store, 26, T0 + timedelta(minutes=2))
+    assert store.firing[NEWS2].severity == "high"
+    assert NEWS2 not in store.snoozes, "a worse alarm is not the one a person snoozed (plan note 1)"
+    assert store.clock_from[NEWS2] == T0, "and it waits as if never snoozed: its clock is its own"
+
+
+def test_a_milder_alarm_keeps_its_snooze():
+    engine, store = _news2_engine(rr=26)
+    store.snooze("bed-3", "news2", by="u", at=T0, minutes=30, reason="PATIENT_BASELINE", reason_text=None,
+                 severity="high")
+    _measure(engine, store, 22, T0 + timedelta(minutes=1))
+    assert store.firing[NEWS2].severity == "moderate"
+    assert NEWS2 in store.snoozes

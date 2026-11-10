@@ -236,6 +236,15 @@ def _rrt_call(call: dict | None) -> dict | None:
     return {"by": call["by"], "at": call["at"].isoformat(), "reason": call["reason"]}
 
 
+def _snooze(entry: dict | None) -> dict | None:
+    """G2-B5b (D3): the alarm's snooze as the card carries it (who, when, until when, for how long, why), or None.
+    The severity it was given at stays in the store (plan note 1); the card carries the spec's six fields."""
+    if not entry:
+        return None
+    return {"by": entry["by"], "at": entry["at"].isoformat(), "until": entry["until"].isoformat(),
+            "minutes": entry["minutes"], "reason": entry["reason"], "reason_text": entry["reason_text"]}
+
+
 def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
     key = (patient_id, alert.kind)
     ack = store.acks.get(key)
@@ -248,6 +257,7 @@ def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
         "first_seen_at": seen.isoformat() if seen is not None else None,
         "escalated": key in store.escalated,
         "rrt_call": _rrt_call(store.rrt_calls.get(key)),
+        "snooze": _snooze(store.snoozes.get(key)),                    # G2-B5b (D3)
         # G2-A1 (D10): when its rule stopped firing; None while it fires.
         "resolved_at": None,
     }
@@ -273,6 +283,7 @@ def _latched_alerts(patient_id: str, firing: list[Alert], store: AckStore) -> li
             "first_seen_at": seen.isoformat() if seen is not None else None,
             "escalated": False,
             "rrt_call": _rrt_call(store.rrt_calls.get(key)),
+            "snooze": None,          # G2-B5b (D3): a latched critical is never snoozed
             "resolved_at": entry["resolved_at"].isoformat(),
         })
     return out

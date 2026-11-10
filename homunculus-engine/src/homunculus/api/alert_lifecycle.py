@@ -33,6 +33,7 @@ some later reading:
   for the number are dropped at the doors (D3), so nothing else would ever end these alerts.
 * A «hatalı giriş» that leaves the patient with no reading (G3-01) ends each latch with the reason
   `entered_in_error` and the store forgets the patient: there is no card left for a latch to sit on.
+* A snoozed alarm whose severity rises (G2-B5b, plan note 1) loses its snooze here: the worse alarm sounds.
 
 The hook writes no audit row: it returns what it cleared, the door audits it (`alert_cleared`,
 D6), and the replay, which must write nothing, ignores it (D7).
@@ -47,6 +48,7 @@ from homunculus.api.audit import AuditEvent, AuditLog
 # What a tombstone is — a discharged `kabul` record — is said once, beside `KABUL` (A-25, O1);
 # imported here for the doors and the escalation cycle, which read it from this module.
 from homunculus.api.patient_identity import is_tombstone  # noqa: F401
+from homunculus.api.snooze import worse
 from homunculus.pipeline import Engine
 
 #: The one severity that latches (D2, the user's decision of 2026-10-25).
@@ -109,6 +111,11 @@ def sync_alerts(engine: Engine, store: AckStore, patient_id: str, now: datetime)
             store.resolved[key] = {"alert": asdict(alert), "resolved_at": now, "first_seen": seen}
     for kind, alert in firing_now.items():
         store.firing[(patient_id, kind)] = alert
+        # G2-B5b (plan note 1): a snooze was given at its alarm's severity. The same alarm worse (NEWS2 moderate ->
+        # high) is not the alarm a person snoozed: the snooze ends, and the alarm waits as if never snoozed.
+        snoozed = store.snoozes.get((patient_id, kind))
+        if snoozed is not None and worse(alert.severity, snoozed["severity"]):
+            del store.snoozes[(patient_id, kind)]
     # Pruned from the store's own view — what the hooks last saw firing, and what is latched — not
     # from a walk over every patient's evaluation: that walk made each row cost the ward's size.
     # With every hook run the store's view is the engine's. If an evaluation is ever not followed by
