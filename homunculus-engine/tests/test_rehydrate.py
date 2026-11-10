@@ -153,7 +153,8 @@ def test_a_latch_made_by_clinical_requests_survives_a_restart():
     still has it on its board, unacknowledged."""
     audit = InMemoryAuditLog()
     hdr = {"Authorization": "Bearer tok"}
-    start = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+    # G3-03 (D3): within the day — the fluid ledger's time rule bounds the bolus charted here to 24 h back.
+    start = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(hours=3)
 
     def boot():
         app = create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)

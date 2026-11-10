@@ -16,7 +16,8 @@ from homunculus.api.app import create_app
 
 TOKEN = "tok"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-T0 = datetime(2026, 9, 8, 9, 0, tzinfo=timezone.utc)
+# G3-03 (D3): within the day — the fluid ledger's time rule bounds the bolus these tests chart to 24 h back.
+T0 = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(hours=3)
 
 
 @pytest.fixture()

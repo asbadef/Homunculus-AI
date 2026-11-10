@@ -1196,7 +1196,8 @@ def create_app(
         - 400 for a reason shorter than 10 or longer than 200 characters after trim;
         - 409 for a discharged number, before anything is read;
         - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
-        - 409 for a chart row of a code the bedside form does not chart (X22: RETRACTABLE_CODES);
+        - 409 for a chart row of a code neither the bedside form nor the fluid ledger charts (X22, G3-03 D4:
+          RETRACTABLE_CODES);
         - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
           append raised left the engine still counting the value, and with the current card sent again either
           way (a withdrawal whose later step raised sent none).
@@ -1233,7 +1234,8 @@ def create_app(
         target = next((r for r in rows if r.id == wanted and r.event_type == "chart"), None)
         if target is None:
             raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
-        # X22 (the local walk): only the bedside form's values. A physician's suspected-infection mark, the SOFA
+        # X22 (the local walk): only the bedside form's values — and, since G3-03 (D4), the fluid ledger's volumes,
+        # the meds chart's bolus among them. A physician's suspected-infection mark, the SOFA
         # form's labs and the meds chart are chart rows too, but they are corrected by a new entry, not withdrawn —
         # the sepsis panel tells the user its mark «geri alınmaz». Before the «already» check: no rule of this
         # route reaches such a row.
