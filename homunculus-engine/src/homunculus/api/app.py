@@ -64,6 +64,7 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
     REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
 )
+from homunculus.api.snooze import clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -1596,6 +1597,67 @@ def create_app(
             audit.append(AuditEvent(hospital, "rrt_call", patient_id, kind,
                                     {**who, "reason": reason, "at": now.isoformat()}))
             store.call_rrt(patient_id, kind, who["actor"], reason, now)
+        board = _card(hospital, patient_id)
+        await broadcaster.publish(hospital, board)
+        return board
+
+    @app.post("/alerts/snooze")
+    async def snooze_alert(authorization: str | None = Header(default=None), body: dict = Body(...)):
+        """«Ertele»: a person snoozes one active alarm for a bounded time, with a named reason (G2-B5b, spec
+        2026-11-10; owner D1: critical never, high at most 30 minutes, moderate at most 120, low and info none).
+
+        Keyed like `/ack`: patient and kind in the body, never in the path the access log writes. Whoever may
+        acknowledge may snooze (`alerts.ack`, nurses included). A device is refused explicitly, since a device is
+        exempt from permission checks: a snooze is a person's decision, named in the trail.
+
+        Refused:
+        - an alarm not on the board (404);
+        - a latched critical, a critical, a low or an info alarm (409 `snooze_not_allowed`);
+        - an answered alarm (409);
+        - minutes outside 1..cap, a reason the list does not hold, OTHER under 15 characters, or a text over 500 (422).
+        The reason is judged before the patient's scope, as the RRT call judges its reason: it names nothing of the
+        patient. A second snooze replaces the first, with its own `until`. The trail before memory, as `/ack`
+        (spec 2026-11-01, D3).
+        """
+        caller = await _caller(authorization)
+        if caller.is_device:
+            raise HTTPException(status_code=403, detail="alarmı bir kişi erteler")
+        _require(caller, ALERTS_ACK)
+        hospital = caller.hospital
+        engine = _engine(hospital)
+        store = _store(hospital)
+        patient_id, kind = _body_patient_id(body), body.get("kind")
+        if not isinstance(kind, str):
+            raise HTTPException(status_code=400, detail="geçersiz kind")
+        cleaned = clean_reason(body.get("reason"), body.get("reason_text"))
+        if cleaned is None:
+            raise HTTPException(status_code=422,
+                                detail="erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter")
+        reason, reason_text = cleaned
+        who = _attribution(caller, body)
+        await _require_patient(caller, authorization, patient_id)
+        key = (patient_id, kind)
+        if key not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        if key in store.resolved:
+            # A latched critical (G2-A1): critical, and its rule has stopped. There is nothing left to silence.
+            raise HTTPException(status_code=409, detail="snooze_not_allowed")
+        if key in store.acks:
+            raise HTTPException(status_code=409, detail="alarm zaten yanıtlandı; ertelenmez")
+        severity = next(a.severity for a in engine.active_alerts(patient_id) if a.kind == kind)
+        if snooze_cap(severity) is None:
+            raise HTTPException(status_code=409, detail="snooze_not_allowed")
+        minutes = body.get("minutes")
+        if not minutes_ok(severity, minutes):
+            raise HTTPException(status_code=422, detail="erteleme süresi bu alarm için izin verilen aralıkta değil")
+        now = datetime.now(timezone.utc)
+        until = now + timedelta(minutes=minutes)
+        audit.append(AuditEvent(hospital, "alert_snooze", patient_id, kind,
+                                {**who, "minutes": minutes, "until": until.isoformat(), "reason": reason,
+                                 **({"reason_text": reason_text} if reason_text is not None else {}),
+                                 "at": now.isoformat()}))
+        store.snooze(patient_id, kind, by=who["actor"], at=now, minutes=minutes, reason=reason,
+                     reason_text=reason_text, severity=severity)
         board = _card(hospital, patient_id)
         await broadcaster.publish(hospital, board)
         return board

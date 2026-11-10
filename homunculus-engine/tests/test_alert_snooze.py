@@ -219,3 +219,236 @@ def test_a_milder_alarm_keeps_its_snooze():
     _measure(engine, store, 22, T0 + timedelta(minutes=1))
     assert store.firing[NEWS2].severity == "moderate"
     assert NEWS2 in store.snoozes
+
+
+# --- the door: POST /alerts/snooze -----------------------------------------------------------------------
+
+SCEN = Path(homunculus.scenarios.__file__).parent
+START = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+WALL0 = datetime(2026, 10, 25, 9, 0, tzinfo=timezone.utc)
+REASON_RULE = "erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter"
+MINUTES_RULE = "erteleme süresi bu alarm için izin verilen aralıkta değil"
+
+DEVICE = {"Authorization": "Bearer tok"}
+NURSE = {"Authorization": "Bearer nurse-jwt"}
+VIEWER = {"Authorization": "Bearer viewer-jwt"}
+PEOPLE = {
+    "nurse-jwt": Caller(hospital="h1", actor="hem.leyla", groups=("nurse",),
+                        perms=frozenset({"board.view", "alerts.ack"})),
+    "viewer-jwt": Caller(hospital="h1", actor="izleyici", groups=("viewer",), perms=frozenset({"board.view"})),
+}
+
+
+async def _resolve(credential: str):
+    return PEOPLE.get(credential)
+
+
+class _Wall(datetime):
+    """The doors' wall clock, set by the test: a snooze's `until`, and the escalation clock, are wall time."""
+    at = WALL0
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.at
+
+
+@pytest.fixture
+def wall(monkeypatch):
+    _Wall.at = WALL0                  # a test that failed half-way must not leak its time
+    monkeypatch.setattr(app_module, "datetime", _Wall)
+    return _Wall
+
+
+@pytest.fixture
+def audit():
+    return InMemoryAuditLog()
+
+
+def _app(audit):
+    return create_app({"tok": "h1"}, escalate_after=timedelta(minutes=5), run_escalation_loop=False, audit=audit,
+                      resolve_jwt=_resolve)
+
+
+def _reading(client, code, value, minute=0, patient="bed-3"):
+    fhir = {"resourceType": "Observation", "code": {"coding": [{"system": "x", "code": code}]},
+            "subject": {"reference": f"Patient/{patient}"},
+            "effectiveDateTime": (START + timedelta(minutes=minute)).isoformat(),
+            "valueQuantity": {"value": value, "unit": ""}}
+    assert client.post("/ingest", json=fhir, headers=DEVICE).status_code == 200
+
+
+def _vitals(client, rr, minute=0):
+    """HR 115, temperature 39.5 and respiratory rate `rr` on bed-3: RR 26 a HIGH `news2`, RR 22 a MODERATE one."""
+    for code, value in (("heart_rate", 115), ("temperature", 39.5), ("resp_rate", rr)):
+        _reading(client, code, value, minute)
+
+
+def _drive_shock(client):
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        assert client.post("/ingest", json=fhir, headers=DEVICE).status_code == 200
+
+
+def _snooze(client, minutes=15, reason="ARTEFACT_OR_SIGNAL_NOISE", text=None, kind="news2", headers=NURSE,
+            patient="bed-3"):
+    body = {"patient_id": patient, "kind": kind, "minutes": minutes, "reason": reason}
+    if text is not None:
+        body["reason_text"] = text
+    return client.post("/alerts/snooze", json=body, headers=headers)
+
+
+def _alerts(client, patient="bed-3"):
+    board = client.get("/patients", headers=DEVICE).json()["patients"]
+    return {a["kind"]: a for b in board if b["patient_id"] == patient for a in b["alerts"]}
+
+
+def _on(response, kind="news2"):
+    return next(a for a in response.json()["alerts"] if a["kind"] == kind)
+
+
+def _rows(audit):
+    return audit.records(tenant="h1", event_type="alert_snooze", limit=10_000)
+
+
+def _store(app):
+    return app.state.ack_stores["h1"]
+
+
+def test_a_snooze_puts_the_snooze_on_the_card_and_one_row_in_the_trail(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)                                      # NEWS2 7: a HIGH news2
+        wall.at = WALL0 + timedelta(minutes=1)
+        r = _snooze(client, minutes=15)
+        assert r.status_code == 200, r.text
+        snooze = _on(r)["snooze"]
+        assert snooze == {"by": "hem.leyla", "at": (WALL0 + timedelta(minutes=1)).isoformat(),
+                          "until": (WALL0 + timedelta(minutes=16)).isoformat(), "minutes": 15,
+                          "reason": "ARTEFACT_OR_SIGNAL_NOISE", "reason_text": None}
+        assert _alerts(client)["news2"]["snooze"] == snooze, "the board carries the same snooze"
+        [row] = _rows(audit)
+        assert (row.patient_id, row.subject) == NEWS2
+        assert row.payload == {"role": "hem.leyla", "via": "user", "actor": "hem.leyla", "groups": ["nurse"],
+                               "minutes": 15, "until": snooze["until"], "reason": "ARTEFACT_OR_SIGNAL_NOISE",
+                               "at": snooze["at"]}
+
+
+def test_who_may_snooze(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        r = _snooze(client, headers=VIEWER)
+        assert (r.status_code, r.json()["detail"]) == (403, "permission required: alerts.ack")
+        r = _snooze(client, headers=DEVICE)
+        assert (r.status_code, r.json()["detail"]) == (403, "alarmı bir kişi erteler")
+        assert _snooze(client, headers={}).status_code == 401
+        assert _rows(audit) == []
+
+
+def test_the_owners_caps_hold(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)                                      # HIGH: at most 30 minutes
+        for minutes in (0, -1, 31, "15", 15.5, True, None):
+            r = _snooze(client, minutes=minutes)
+            assert (r.status_code, r.json()["detail"]) == (422, MINUTES_RULE), minutes
+        assert _rows(audit) == []
+        assert _snooze(client, minutes=30).status_code == 200
+        _vitals(client, rr=22, minute=1)                            # the same alarm MODERATE: at most 120
+        assert _alerts(client)["news2"]["severity"] == "moderate"
+        assert _snooze(client, minutes=121).status_code == 422
+        r = _snooze(client, minutes=120)
+        assert r.status_code == 200, r.text
+        assert _on(r)["snooze"]["minutes"] == 120
+
+
+def test_a_critical_alarm_is_never_snoozed_firing_or_latched(audit):
+    with TestClient(_app(audit)) as client:
+        _drive_shock(client)
+        r = _snooze(client, kind="septic_shock", minutes=5)
+        assert (r.status_code, r.json()["detail"]) == (409, "snooze_not_allowed")
+        assert _snooze(client, kind="sepsis", minutes=30).status_code == 200, "a HIGH alarm that is not immediate may be"
+        _reading(client, "lactate", 1.5, minute=61)                 # back under 2: the shock latches, unacknowledged
+        assert _alerts(client)["septic_shock"]["resolved_at"] is not None
+        assert _alerts(client)["septic_shock"]["snooze"] is None
+        r = _snooze(client, kind="septic_shock", minutes=5)
+        assert (r.status_code, r.json()["detail"]) == (409, "snooze_not_allowed")
+        assert [row.subject for row in _rows(audit)] == ["sepsis"]
+
+
+def test_the_reason_is_from_the_list_and_other_is_explained(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        for reason, text in (("NOPE", None), ("OTHER", None), ("OTHER", "a" * 14), ("OTHER", "a" * 501),
+                             ("PATIENT_BASELINE", "a" * 501)):
+            r = _snooze(client, reason=reason, text=text)
+            assert (r.status_code, r.json()["detail"]) == (422, REASON_RULE), (reason, text)
+        assert _rows(audit) == []
+        r = _snooze(client, reason="OTHER", text="  Hasta yıkanıyor, prob çıktı  ")
+        assert r.status_code == 200, r.text
+        assert _on(r)["snooze"]["reason_text"] == "Hasta yıkanıyor, prob çıktı"
+        assert _rows(audit)[0].payload["reason_text"] == "Hasta yıkanıyor, prob çıktı"
+
+
+def test_an_unknown_alarm_is_404_and_an_answered_one_409(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        r = _snooze(client, kind="no_such_kind")
+        assert (r.status_code, r.json()["detail"]) == (404, "no such active alert")
+        assert _snooze(client, patient="bed-9").status_code == 404
+        ack = client.post("/ack", json={"patient_id": "bed-3", "kind": "news2", "role": "nurse"}, headers=DEVICE)
+        assert ack.status_code == 200
+        r = _snooze(client)
+        assert (r.status_code, r.json()["detail"]) == (409, "alarm zaten yanıtlandı; ertelenmez")
+        assert _rows(audit) == []
+
+
+def test_snoozing_again_replaces_the_snooze_with_its_own_until(wall, audit):
+    with TestClient(_app(audit)) as client:
+        _vitals(client, rr=26)
+        assert _snooze(client, minutes=30).status_code == 200
+        wall.at = WALL0 + timedelta(minutes=3)
+        r = _snooze(client, minutes=5, reason="CLINICAL_DECISION_MADE")
+        assert r.status_code == 200, r.text
+        assert _on(r)["snooze"]["until"] == (WALL0 + timedelta(minutes=8)).isoformat()
+        assert _on(r)["snooze"]["reason"] == "CLINICAL_DECISION_MADE"
+        assert len(_rows(audit)) == 2, "each snooze is its own row"
+
+
+def test_an_acknowledgement_ends_the_snooze(wall, audit):
+    app = _app(audit)
+    with TestClient(app) as client:
+        _vitals(client, rr=26)
+        assert _snooze(client).status_code == 200
+        r = client.post("/ack", json={"patient_id": "bed-3", "kind": "news2"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        assert _on(r)["acknowledged"] is True and _on(r)["snooze"] is None
+        assert _store(app).snoozes == {}
+
+
+class _TimesOut(InMemoryAuditLog):
+    """An audit whose append of `fail_on` raises once: the database timing out mid-request."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_on = None
+
+    def append(self, event):
+        if event.event_type == self.fail_on:
+            self.fail_on = None
+            raise RuntimeError("audit timed out")
+        return super().append(event)
+
+
+def test_a_snooze_whose_audit_row_fails_is_a_500_and_leaves_no_snooze_and_the_retry_is_the_snooze(wall):
+    """The trail before memory, as `/ack`. Applied first, a failed snooze would silence an alarm while the trail held
+    nothing, and a restart would silently un-snooze it."""
+    audit = _TimesOut()
+    app = _app(audit)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        _vitals(client, rr=26)
+        audit.fail_on = "alert_snooze"
+        assert _snooze(client).status_code == 500
+        assert _store(app).snoozes == {}
+        assert _alerts(client)["news2"]["snooze"] is None
+        assert _rows(audit) == []
+        r = _snooze(client)
+        assert r.status_code == 200, r.text
+        assert len(_rows(audit)) == 1
+        assert _alerts(client)["news2"]["snooze"]["minutes"] == 15
