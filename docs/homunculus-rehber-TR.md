@@ -1147,7 +1147,7 @@ nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesap
 numaralar ve yerler uydurmadır.
 
 **İki sekme** — menüde "Hasta Kabul" (B3a'dan önce üçüncü sekme «Yataklar»dı; artık ayrı «Doluluk»
-ekranı, bkz. 3.13):
+ekranı, bkz. 3.14):
 - **Kabul:** yeni hastayı yatırma formu. *Kimlik:* soyad ad\* (koğuşun yazdığı sırayla), baba adı, cinsiyet\*, doğum
   tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
   *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
