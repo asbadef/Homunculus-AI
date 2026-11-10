@@ -75,3 +75,79 @@ def test_worse_ranks_the_engines_severities():
     assert worse("high", "moderate") and worse("critical", "high") and worse("moderate", "low")
     assert not worse("high", "high") and not worse("moderate", "high")
     assert worse("unheard_of", "high"), "a severity this build does not know may be the worst"
+
+
+# --- the store (api/ackstore.py) -------------------------------------------------------------------------
+
+NOW = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+KEY = ("p", "k")
+
+
+def _snoozed(store, minutes=15, at=NOW, severity="high", reason="ARTEFACT_OR_SIGNAL_NOISE", text=None):
+    return store.snooze("p", "k", by="hem.leyla", at=at, minutes=minutes, reason=reason, reason_text=text,
+                        severity=severity)
+
+
+def test_a_snooze_is_kept_with_its_until_and_takes_the_alarm_out_of_the_escalated_set():
+    store = AckStore()
+    store.first_seen[KEY] = store.clock_from[KEY] = NOW - timedelta(minutes=10)
+    store.escalated.add(KEY)
+    store.paged.add(KEY)
+    entry = _snoozed(store)
+    assert entry == {"by": "hem.leyla", "at": NOW, "until": NOW + timedelta(minutes=15), "minutes": 15,
+                     "reason": "ARTEFACT_OR_SIGNAL_NOISE", "reason_text": None, "severity": "high"}
+    assert store.snoozes[KEY] is entry
+    assert KEY not in store.escalated, "no escalation while snoozed"
+    assert KEY in store.paged, "the doctor's page stays sent"
+
+
+def test_snoozing_again_replaces_the_snooze():
+    store = AckStore()
+    _snoozed(store, minutes=30)
+    _snoozed(store, minutes=5, at=NOW + timedelta(minutes=2))
+    assert store.snoozes[KEY]["until"] == NOW + timedelta(minutes=7)
+    assert store.snoozes[KEY]["minutes"] == 5
+
+
+def test_at_until_the_snooze_ends_with_a_fresh_clock_and_a_cleared_page():
+    store = AckStore()
+    store.first_seen[KEY] = store.clock_from[KEY] = NOW - timedelta(minutes=10)
+    store.paged.add(KEY)
+    _snoozed(store, minutes=15)
+    assert store.expire_snoozes(NOW + timedelta(minutes=14, seconds=59)) == []
+    assert KEY in store.snoozes
+    assert store.expire_snoozes(NOW + timedelta(minutes=15)) == [KEY]
+    assert store.snoozes == {}
+    assert store.clock_from[KEY] == NOW + timedelta(minutes=15), "the clock starts again from until"
+    assert KEY not in store.paged, "and the page is cleared: silence after it may page the doctor again"
+    assert store.first_seen[KEY] == NOW - timedelta(minutes=10), "the episode is the same one"
+
+
+def test_an_acknowledgement_ends_the_snooze():
+    store = AckStore()
+    _snoozed(store)
+    store.acknowledge("p", "k", "hem.leyla", NOW)
+    assert store.snoozes == {}
+
+
+def test_prune_ends_the_snooze_with_its_episode_and_no_chain_carries_it():
+    store = AckStore()
+    store.stamp_first_seen("p", "k", NOW - timedelta(minutes=3), chain_gap=timedelta(minutes=5))
+    _snoozed(store)
+    store.prune(live_keys={KEY})
+    assert KEY in store.snoozes, "the episode is still on the board"
+    store.prune(live_keys=set(), now=NOW + timedelta(minutes=1))
+    assert store.snoozes == {}
+    assert KEY in store.recent, "the episode ended unanswered: its X13 chain is kept"
+    assert store.stamp_first_seen("p", "k", NOW + timedelta(minutes=2), chain_gap=timedelta(minutes=5))
+    assert store.snoozes == {}, "a return is a new alarm, and sounds: no snooze rides the chain"
+    assert store.clock_from[KEY] == NOW - timedelta(minutes=3), "the chain's own clock goes on (plan note 2)"
+
+
+def test_a_discharge_ends_the_snooze():
+    store = AckStore()
+    _snoozed(store)
+    store.snooze("q", "k", by="u", at=NOW, minutes=5, reason="PATIENT_BASELINE", reason_text=None,
+                 severity="moderate")
+    store.forget_patient("p")
+    assert set(store.snoozes) == {("q", "k")}

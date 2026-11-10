@@ -15,7 +15,11 @@ An answer ends the chain (X13 review): only an episode that ended unanswered lea
 after an acknowledgement starts a new clock and can page the doctor anew.
 
 Since G2-B5 a chain also carries the call to the rapid-response team (`rrt_calls`), as it carries the
-page: a flap inside the escalation delay does not un-call the team."""
+page: a flap inside the escalation delay does not un-call the team.
+
+Since G2-B5b it keeps the snoozes (`snoozes`): a snoozed alarm waits for no answer and does not escalate
+until its `until`, when the escalation cycle ends it (`expire_snoozes`) with a fresh escalation clock and a
+cleared page. A snooze does NOT ride a chain: a return is a new alarm, and sounds."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -68,6 +72,13 @@ class AckStore:
     # return inside the escalation delay gets it back (`stamp_first_seen`), as it gets the page back. After a
     # gap longer than the delay, or an acknowledgement, the call is over.
     rrt_calls: dict[tuple[str, str], dict] = field(default_factory=dict)
+    # G2-B5b (spec 2026-11-10-g2b-b5b-ertele-design.md, D3): the snoozed alarms, one per episode —
+    # {"by": username, "at": datetime, "until": datetime, "minutes": int, "reason": code, "reason_text": text|None,
+    # "severity": the alarm's when it was snoozed}. While one runs, the alarm is out of the escalation (`escalate`
+    # is handed them) and the dashboard's waiting queue. An acknowledgement ends it (`acknowledge`), so do the
+    # episode's end (`prune`; no X13 chain carries it), a discharge (`forget_patient`), the same alarm worse
+    # (`alert_lifecycle.sync_alerts`, plan note 1) and its own time (`expire_snoozes`). A second snooze replaces it.
+    snoozes: dict[tuple[str, str], dict] = field(default_factory=dict)
 
     def stamp_first_seen(self, patient_id: str, kind: str, now: datetime,
                          chain_gap: timedelta | None = None) -> bool:
@@ -112,9 +123,35 @@ class AckStore:
         self.rrt_calls[key] = {"by": by, "at": now, "reason": reason}
         return True
 
+    def snooze(self, patient_id: str, kind: str, *, by: str, at: datetime, minutes: int, reason: str,
+               reason_text: str | None, severity: str) -> dict:
+        """Snooze one alarm until `at` + `minutes` (G2-B5b, D3). A snooze already running is replaced, with its own
+        `until`. The alarm leaves the escalated set (no escalation while snoozed), but the doctor's page stays sent:
+        `paged` is untouched. The rules are the caller's (`api/snooze.py`)."""
+        key = (patient_id, kind)
+        entry = {"by": by, "at": at, "until": at + timedelta(minutes=minutes), "minutes": minutes,
+                 "reason": reason, "reason_text": reason_text, "severity": severity}
+        self.snoozes[key] = entry
+        self.escalated.discard(key)
+        return entry
+
+    def expire_snoozes(self, now: datetime) -> list[tuple[str, str]]:
+        """End every snooze whose `until` is at or before `now`, and say whose (G2-B5b, spec §2). The alarm waits
+        for an answer again. Its escalation clock starts at `until`, as the Postgres rule re-fired with a fresh
+        `fired_at`, and its page is cleared: silence after a bounded decision is a new failure to answer, and it
+        may page the doctor again."""
+        due = sorted(key for key, entry in self.snoozes.items() if entry["until"] <= now)
+        for key in due:
+            until = self.snoozes.pop(key)["until"]
+            if key in self.clock_from:
+                self.clock_from[key] = until
+            self.paged.discard(key)
+        return due
+
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}
         self.rrt_calls.pop((patient_id, kind), None)   # G2-B5: an answer ends the call
+        self.snoozes.pop((patient_id, kind), None)     # G2-B5b: and the snooze
 
     def prune(self, live_keys: set[tuple[str, str]],
               firing_keys: set[tuple[str, str]] | None = None,
@@ -131,7 +168,7 @@ class AckStore:
         if now is not None:
             for key in [k for k in self.first_seen if k not in live_keys and k not in self.acks]:
                 self.remember_chain(key, now)
-        for mapping in (self.acks, self.first_seen, self.clock_from, self.rrt_calls):
+        for mapping in (self.acks, self.first_seen, self.clock_from, self.rrt_calls, self.snoozes):   # + G2-B5b
             for key in [k for k in mapping if k not in live_keys]:
                 del mapping[key]
         self.paged &= live_keys
@@ -148,7 +185,7 @@ class AckStore:
         every episode at once (`alert_lifecycle.retire_state`); nothing of them may answer a later
         number, and nothing is left for the escalation cycle to page."""
         for mapping in (self.acks, self.first_seen, self.clock_from, self.resolved, self.firing,
-                        self.recent, self.rrt_calls):
+                        self.recent, self.rrt_calls, self.snoozes):
             for key in [k for k in mapping if k[0] == patient_id]:
                 del mapping[key]
         self.escalated = {k for k in self.escalated if k[0] != patient_id}
