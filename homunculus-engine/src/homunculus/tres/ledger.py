@@ -3,7 +3,8 @@
 what is asked of the platform because of it.
 
 `deliver` takes ONE resource to the platform and writes the outcome on its row — the row of
-(tenant, environment, resource type, local id), made on first use:
+(tenant, environment, resource type, local id), made on first use and LOCKED until the outcome is
+committed, so that one key has one writer at a time (`_row`):
 
 * mode `validate` — the platform checks the resource and stores nothing; the row reads `validated`.
 * mode `send`, the same payload as the last `sent` — nothing is asked (D7: the digest is exact).
@@ -34,6 +35,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.crypto import phi_digest
@@ -79,16 +81,22 @@ def due(row: TresDelivery, now: datetime) -> bool:
 
 async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
                local_id: str, admission_id: uuid.UUID | None) -> TresDelivery:
-    row = (await db.execute(select(TresDelivery).where(
-        TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
-        TresDelivery.resource_type == resource_type,
-        TresDelivery.local_id == local_id))).scalar_one_or_none()
-    if row is None:
-        row = TresDelivery(tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-                           local_id=local_id, admission_id=admission_id, status="pending", attempts=0)
-        db.add(row)
-        await db.flush()
-    elif admission_id is not None and row.admission_id != admission_id:
+    """The row of this key, made if there is none, and LOCKED until the caller's commit — ONE
+    WRITER PER KEY (review #2). Two deliverers of one resource at once (a round and «Şimdi gönder»)
+    would otherwise both look the local id up, both find nothing and both POST: two national
+    records of one resource. `INSERT … ON CONFLICT DO NOTHING` on the key, then `SELECT … FOR
+    UPDATE` (protocol/router.py's pattern): the second waits for the first's commit and then reads
+    what it wrote — `populate_existing`, so a row this session already holds is read again, never
+    trusted from memory."""
+    key = (TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
+           TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id)
+    await db.execute(insert(TresDelivery).values(
+        id=uuid.uuid4(), tenant_id=tenant_id, environment=environment, resource_type=resource_type,
+        local_id=local_id, admission_id=admission_id, status="pending", attempts=0,
+    ).on_conflict_do_nothing(constraint="uq_tres_deliveries_key"))
+    row = (await db.execute(select(TresDelivery).where(*key).with_for_update()
+                            .execution_options(populate_existing=True))).scalar_one()
+    if admission_id is not None and row.admission_id != admission_id:
         row.admission_id = admission_id        # a person's row follows their latest stay
     return row
 
@@ -117,7 +125,12 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     """One resource to the platform, its outcome on its ledger row (the module's docstring).
     `resource_type` is the ledger's key (`vital`, `lab`, `patient`…); `fhir_type` the platform's
     (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
-    (`client.is_outage`), the row left as it was."""
+    (`client.is_outage`), the row left as it was.
+
+    The row is locked from `_row` to the commit, and the transaction SPANS THE HTTP CALLS — on
+    purpose: the lock is what keeps a second deliverer of the same key from asking the platform
+    while the first is still waiting for its answer. It is bounded by the client's timeouts on
+    every call, and it holds one row, never the tenant's ledger."""
     if mode not in ("validate", "send"):
         raise ValueError(f"deliver() is for the modes validate and send, not {mode!r}")
     now = now or datetime.now(timezone.utc)

@@ -5,9 +5,11 @@ platform id falling back to the search; `validate` storing nothing; a refusal ab
 counted, kept (encrypted) and left alone for 30 minutes, `stuck` at the fifth; an outage (a 429, a
 5xx, a dead line, no session) raised again and counted against no row; the environment in the key;
 a skip with its reason. The digest, the clip and `due` need no database; the rest runs on
-Postgres. Synthetic tenant, synthetic people."""
+Postgres; so do two deliverers of one key at once, which take turns (one writer per key).
+Synthetic tenant, synthetic people."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +17,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission.models import Admission, Patient
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
@@ -352,3 +355,63 @@ async def test_the_mode_off_never_reaches_the_ledger(world):
     with pytest.raises(ValueError):
         await send(mode="off")
     assert fake.requests == []
+
+
+# ---------------------------------------------------------------- one writer per key (review #2)
+@requires_db
+@pytest.mark.parametrize("earlier", [None, "failed"], ids=["brand-new key", "a row that failed before"])
+async def test_two_deliverers_of_one_key_take_turns_and_the_platform_holds_one_resource(db_session, earlier):
+    """A round and «Şimdi gönder» (F1) on the same stay, at the same moment, each on its own session
+    and its own client: the second waits for the first's commit, then reads its row — `sent`, the
+    same digest — and asks nothing. Without the lock both looked the id up, found nothing, and both
+    POSTed: two national records of one resource."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.flush()
+    if earlier is not None:
+        db_session.add(TresDelivery(tenant_id=tenant.id, environment="test", resource_type="patient",
+                                    local_id=LOCAL, status=earlier, attempts=1))
+    await db_session.commit()
+    tenant_id = tenant.id
+    fake = FakeTres()
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    searching: list[int] = []
+    both = asyncio.Event()
+    start = asyncio.Barrier(2)
+
+    async def platform(request: httpx.Request) -> httpx.Response:
+        # The search answers what the platform holds now, then holds the answer until BOTH
+        # deliverers have searched (or three seconds have passed): without one writer per key, both
+        # hear «none» before either has posted. With it, the second never searches before the
+        # first has committed, and the first goes on alone.
+        answer = fake.transport.handler(request)
+        if request.method == "GET" and request.url.path == "/fhir/Patient":
+            searching.append(1)
+            if len(searching) == 2:
+                both.set()
+            try:
+                await asyncio.wait_for(both.wait(), timeout=3.0)
+            except TimeoutError:
+                pass
+        return answer
+
+    async def one() -> TresDelivery:
+        client = TresClient(fake.account, transport=httpx.MockTransport(platform))
+        try:
+            async with maker() as db:
+                await db.connection()            # each on its own connection before the start
+                await start.wait()
+                return await deliver(db, client, tenant_id=tenant_id, environment="test", mode="send",
+                                     resource_type="patient", fhir_type="Patient", local_id=LOCAL,
+                                     resource=patient(), now=T0)
+        finally:
+            await client.aclose()
+
+    first, second = await asyncio.wait_for(asyncio.gather(one(), one()), timeout=60)
+    (stored,) = fake.stored("Patient")
+    assert first.remote_id == second.remote_id == stored["id"]
+    assert [line for line in fake.fhir_requests if line[0] == "POST"] == [("POST", "/fhir/Patient")]
+    rows = (await db_session.execute(
+        select(TresDelivery).execution_options(populate_existing=True))).scalars().all()
+    assert [(r.status, r.remote_id, r.attempts) for r in rows] == [("sent", stored["id"], 0)]
