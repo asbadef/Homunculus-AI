@@ -793,3 +793,37 @@ async def test_another_hospitals_waiting_handovers_are_not_counted(ward, db_sess
     assert [u["unit_name"] for u in (await pending(client, w.auth["admin"]))["units"]] == ["Reanimasiya"]
     assert [u["unit_name"] for u in (await pending(client, await bearer(db_session, their_admin)))["units"]] \
         == ["Omega YBÜ"]
+
+
+# ---------------------------------------------------------------- G4-02 review: the handover's unit is its beds'
+async def test_the_handovers_unit_is_its_patients_bed_unit_whatever_the_body_names(ward, db_session):
+    """G4-02 review: a handover is stored under its admissions' beds' unit (bed → room → unit, as
+    `_reach_admission` reads it, A-12), never under the body's `unit_id`. A body naming another unit of
+    the hospital is not refused — a nurse is never stopped from handing over by a stale unit on the
+    screen — but that unit is not stored, answered or counted: the summary counts the handover under
+    the unit its patient lies in."""
+    w, client, _ = ward
+    admission = await signed(w, client)                                  # bed 1, Reanimasiya
+    r = await client.post("/handovers", json=body(w, admission, unit="neo"), headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    assert r.json()["unit_id"] == str(w.units["rea"].id)
+    assert (await db_session.execute(select(Handover.unit_id))).scalars().all() == [w.units["rea"].id]
+
+    r = await sign(w, client, r.json())
+    assert r.status_code == 200, r.text
+    assert [(u["unit_name"], u["pending"]) for u in (await pending(client, w.auth["admin"]))["units"]] == \
+        [("Reanimasiya", 1)]
+
+
+async def test_admissions_whose_beds_lie_in_two_units_are_not_one_handover(ward, db_session):
+    """G4-02 review: a handover has one unit, its patients' beds'. The screen sends one admission; a
+    body naming two whose beds lie in two units — only a crafted one can — is refused on
+    `admission_ids`, and nothing is opened. The administrator reaches both beds, so the refusal is
+    this rule's, not the scope's."""
+    w, client, _ = ward
+    rea = await signed(w, client)
+    neo = await signed(w, client, "N1", "neo", who="nurse_b", signer="admin")
+    sent = {**body(w, rea), "admission_ids": [rea["id"], neo["id"]]}
+    refused(await client.post("/handovers", json=sent, headers=w.auth["admin"]),
+            422, "field_invalid:admission_ids")
+    assert await handovers_in(db_session) == 0

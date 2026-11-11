@@ -689,11 +689,12 @@ async def get_admission_patient(
 # Sign-off and discharge: what the three routes share (Group 2 · B1a, spec §3.2, §3.3)
 # ---------------------------------------------------------------------------
 async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: uuid.UUID,
-                           admission: Admission) -> None:
+                           admission: Admission) -> uuid.UUID:
     """403 `out_of_scope` unless the admission's bed is in the caller's units (spec §4.5). The
     unit is the bed's room's, read here — never the row's `admitting_unit_id`, which a transfer
     sets from its request body (A-12). The admission is the caller's tenant's already
-    (`_get_admission_or_404`), and so is its bed."""
+    (`_get_admission_or_404`), and so is its bed. Returns that unit: the one a handover of the
+    admission is stored under (G4-02 review), so the rule has one reader."""
     unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
                                 .where(Bed.id == admission.bed_id))).scalar_one()
     try:
@@ -701,6 +702,7 @@ async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: 
                                 unit_id=unit_id, bed_id=admission.bed_id)
     except Refusal as exc:
         raise exc.http() from None
+    return unit_id
 
 
 async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> Admission:
@@ -1250,7 +1252,14 @@ async def open_handover(
       tenant whose groups grant `handover.sign`), never the caller herself: otherwise 422
       `field_invalid:incoming_user_id`. The server holds the rule, not only the screen's list;
     * D4 — each admission's bed is in the caller's units (403 `out_of_scope`) and the admission is
-      open and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`).
+      open and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`);
+    * G4-02 review — the handover's unit is its admissions' beds' (bed → room → unit, as
+      `_reach_admission` reads it, A-12), never the body's: the body's `unit_id` is still checked
+      to be the tenant's (404) and a different unit there is not refused — a stale unit on the
+      screen never stops a nurse handing over — but it is not stored. `GET /handovers/pending`
+      groups and scopes by the stored unit, so it is the one the patients lie in. Admissions whose
+      beds lie in more than one unit are not one handover: 422 `field_invalid:admission_ids`.
+      Handovers opened before this rule keep the unit they were opened with.
 
     The body is the one it always was, a list of admissions — at least one (422) — which the
     screen fills with one (D1). Audited `handover.open` after the commit, under the first
@@ -1268,18 +1277,23 @@ async def open_handover(
                             "hospital (handover.sign).").http()
     admissions = [await _get_admission_or_404(db, admission_id, caller_tenant)
                   for admission_id in dict.fromkeys(payload.admission_ids)]
+    units: set[uuid.UUID] = set()
     for admission in admissions:
-        await _reach_admission(db, user.id, caller_tenant, admission)
+        units.add(await _reach_admission(db, user.id, caller_tenant, admission))
         if admission.state not in HANDOVER_STATES:
             raise Refusal(409, INVALID_TRANSITION,
                           f"Only an open admission is handed over (ACTIVE, PENDING_DISCHARGE or "
                           f"PENDING_TRANSFER); this one is {admission.state.value}.").http()
+    if len(units) > 1:
+        raise field_invalid("admission_ids", f"A handover is of one unit; these admissions' beds lie "
+                            f"in {len(units)} units. Hand each unit's patients over separately.").http()
+    (unit_id,) = units
     keys = [await _key_of(db, admission) for admission in admissions]
     hospital = await trail.hospital_of(db, caller_tenant)
     admission_ids = [str(admission.id) for admission in admissions]
     actor = user.username
     handover = await service.open_handover(
-        db, unit_id=payload.unit_id, outgoing_user_id=user.id,
+        db, unit_id=unit_id, outgoing_user_id=user.id,
         incoming_user_id=payload.incoming_user_id, admission_ids=payload.admission_ids,
     )
     await db.commit()
