@@ -19,7 +19,7 @@ import React, { useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
 import { numberText } from "../../i18n/numbers.js";
-import { apiErrorText, readErrorText } from "../../apiErrors.js";
+import { apiErrorKey, apiErrorText, readErrorText } from "../../apiErrors.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useUnmatched } from "../../data/UnmatchedProvider.jsx";
 import { Announce, Box, Button, Field, Input, Modal, Note, useToast } from "../../ui/index.js";
@@ -38,6 +38,13 @@ const timeOf = (iso) => {
 };
 const idsOf = (set) => (Array.isArray(set.readings) ? set.readings : []).map((r) => r.id).filter(Number.isInteger);
 const keyOf = (set) => `${set.received_key}|${set.source}|${set.observed_at}`;
+
+/** A refused link or rejection in the reader's words. A 403 is the missing right to link or reject
+ *  (`kayit.noRightLink`) — not the correction's «noRight» — except the engine's own person-only refusal (a device
+ *  credential names no actor), which keeps its sentence: it says why, and no right of hers would mend it. */
+const refusedText = (t, err) => (
+  err?.status === 403 && apiErrorKey(err)?.key !== "kayit.err.person" ? t("kayit.noRightLink") : apiErrorText(t, err)
+);
 
 /** A set's values as one line: «Nabız 88 /dk · SpO2 97 %» — the bedside form's names and units for the codes it
  *  knows, the engine's code and number for any other. */
@@ -91,7 +98,7 @@ function RejectDialog({ set, onReject, onClose }) {
       if (answer !== null) toast(t("kayit.umRejected", { subject }));
     } catch (err) {
       if (err?.superseded) return;
-      toast(t("kayit.umRejectRefused", { subject, reason: err?.status === 403 ? t("kayit.noRight") : apiErrorText(t, err) }), "error");
+      toast(t("kayit.umRejectRefused", { subject, reason: refusedText(t, err) }), "error");
       close = err?.apiCode !== "reading_reason_length";      // a reason the engine finds wrong keeps the dialog
     } finally {
       sending.current = false;
@@ -157,7 +164,7 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
     } catch (err) {
       if (!err?.superseded) {
         if (mayHaveLanded(err)) toast(t("kayit.umLinkMayHaveLanded", { subject }), "warn");
-        else toast(t("kayit.umLinkRefused", { subject, reason: err?.status === 403 ? t("kayit.noRight") : apiErrorText(t, err) }), "error");
+        else toast(t("kayit.umLinkRefused", { subject, reason: refusedText(t, err) }), "error");
       }
     } finally {
       sending.current = false;

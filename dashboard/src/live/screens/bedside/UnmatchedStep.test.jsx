@@ -19,6 +19,12 @@ const AYSE = entry("S-001", [], { identity: identity({ birth_date: "1970-05-05" 
 const VUSAL = entry("S-002", [], { identity: identity({ patient_id: "S-002", display_name: "Vüsal Sınaq", bed_label: "REA-01 · 1",
   bed_id: "REA-01-1", bed_key: "REA^01^1" }) });
 const WHY = "yanlış numara girilmiş, hasta bulunamadı";
+// A 403 on a link or a rejection: the missing right is said in the link's own words (never the correction's), but the
+// engine's person-only refusal keeps its own sentence — it says why, and no right of hers would mend it.
+const FORBIDDEN = [
+  ["a missing right", "permission required: clinical.chart", "Bu ölçməni bağlamaq və ya rədd etmək hüququnuz yoxdur."],
+  ["the person-only refusal", "a person links or rejects a reading: this credential names no actor", "Bu işi bir şəxs görür; bu kimlik bir şəxsi göstərmir."],
+];
 
 /** The page inside the shell's provider, the board LIVE, the list answering `sets`. */
 async function open({ sets = [ROUND, OLD], perms = CHART, rail = false, setup } = {}) {
@@ -70,7 +76,7 @@ describe("the list", () => {
     const [round, old] = setRows();
     expect(round).toHaveTextContent(`Daxil edilən nömrə ${TYPO}`);
     expect(round).toHaveTextContent("nömrə heç bir yatışla uyğun gəlmədi");
-    expect(round).toHaveTextContent("cihaz: CONNEX-3A");
+    expect(round).toHaveTextContent("cihaz CONNEX-3A");
     expect(round).toHaveTextContent(`ölçmə ${dayStamp(ROUND_AT, NOW)}`);
     expect(round).toHaveTextContent("Nəbz 88 /dəq");
     expect(round).toHaveTextContent("SpO2 97 %");
@@ -150,6 +156,14 @@ describe("linking a set to a patient", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" })).toBeInTheDocument();
   });
 
+  it.each(FORBIDDEN)("a 403 for %s is said in the link's words, named after the bed", async (_what, message, said) => {
+    const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockRejectedValue(refusal(403, message)) });
+    await press(button("Bəli, bağla"));
+    expect(toasted(`REA-01 · 2: xəstəyə bağlanmadı — ${said}`).length).toBeGreaterThan(0);
+    expect(api.assignReadings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/ölçməni düzəltmək hüququnuz yoxdur/)).toBeNull();      // never the correction's right
+  });
+
   it("a second press while the link is in flight sends nothing more", async () => {
     let finish;
     const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockImplementation(() => new Promise((resolve) => { finish = resolve; })) });
@@ -198,6 +212,20 @@ describe("rejecting a set", () => {
     expect(api.rejectReadings).toHaveBeenCalledTimes(1);
     expect(toasted(`Nömrə ${TYPO}: rədd edilmədi — Bu ölçmə artıq gözləmir: bağlanıb və ya rədd edilib.`).length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("rejecting a set — a 403", () => {
+  it.each(FORBIDDEN)("for %s is said in the rejection's words, named after the number", async (_what, message, said) => {
+    const mounted = await open({ setup: (a) => a.rejectReadings.mockRejectedValue(refusal(403, message)) });
+    await openList();
+    await press(within(setRows()[0]).getByRole("button", { name: "Rədd et" }));
+    const dialog = screen.getByRole("dialog");
+    await act(async () => { fireEvent.change(within(dialog).getByLabelText(/^Səbəb/), { target: { value: WHY } }); await settle(); });
+    await press(within(dialog).getByRole("button", { name: "Rədd et" }));
+    expect(mounted.api.rejectReadings).toHaveBeenCalledTimes(1);
+    expect(toasted(`Nömrə ${TYPO}: rədd edilmədi — ${said}`).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/ölçməni düzəltmək hüququnuz yoxdur/)).toBeNull();      // never the correction's right
   });
 });
 

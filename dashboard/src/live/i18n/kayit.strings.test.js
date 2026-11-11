@@ -103,4 +103,22 @@ describe("the measurement record's words (kayit)", () => {
       }
     }
   });
+
+  // W1 review: a 403 on a link or a rejection is not «you may not correct measurements» (kayit.noRight).
+  it("a refused link or rejection has its own words for the missing right, and they are not the correction's", () => {
+    for (const lang of LANG_CODES) {
+      const said = DICTIONARIES[lang]["kayit.noRightLink"];
+      expect(said, lang).toBeTruthy();
+      expect(said, lang).not.toBe(DICTIONARIES[lang]["kayit.noRight"]);
+      expect(said, lang).not.toMatch(/\{\w+\}/);
+    }
+    expect(DICTIONARIES.tr["kayit.noRightLink"]).toBe("Bu ölçümü bağlama ya da reddetme yetkiniz yok.");
+  });
+
+  // W1 review: the device follows its word with no colon in every language (az had one; tr, ru and en never did).
+  it("the device's name follows its word in the same way in every language", () => {
+    for (const lang of LANG_CODES) {
+      expect(fill(DICTIONARIES[lang]["kayit.umDevice"], { device: "CONNEX-3A" }), lang).toMatch(/^[^\s:]+ CONNEX-3A$/);
+    }
+  });
 });

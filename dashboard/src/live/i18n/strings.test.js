@@ -228,6 +228,7 @@ const AZ_SAME_AS_TR = new Set([
 
   // G3-05 (kayit) · az = tr — «saat» (hour) and «gün» (day) are Azerbaijani words too (as ozet.period.*)
   "kayit.w24", "kayit.w72", "kayit.w168", //  24 saat · 72 saat · 7 gün
+  "kayit.umDevice", //       "cihaz {device}" — «cihaz» (device) is an Azerbaijani word too (as nav.devices); no colon, as tr, ru and en
 
 ]);
 
