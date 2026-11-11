@@ -121,6 +121,27 @@ describe("TresTab — the form", () => {
     expect(api.saveTresSettings.mock.calls[1][0].test.password).toBe("");
   });
 
+  it("says under each address that changing it removes the stored password", async () => {
+    await mounted((a) => a.tresSettings.mockResolvedValue(SET));
+    const said = "https:// ilə başlamalıdır. Ünvanı dəyişmək qeyd olunmuş parolu silir; yeni parolu eyni yadda saxlamada yazın.";
+    for (const account of [sandbox(), live()]) {
+      expect(account.getByText(said)).toBeInTheDocument();
+      expect(account.getByLabelText(/^Server ünvanı/)).toHaveAccessibleDescription(said);
+    }
+  });
+
+  it("says by its code that the installation does not allow the address", async () => {
+    await mounted((a) => {
+      a.tresSettings.mockResolvedValue(UNSET);
+      a.saveTresSettings.mockRejectedValue(refusal(422, "The base URL's host is not allowed on this installation.",
+        { apiCode: "tres_host_not_allowed" }));
+    });
+    fireEvent.change(sandbox().getByLabelText(/^Server ünvanı/), { target: { value: "https://ehr.example.az" } });
+    await save();
+    expect(shown(/Bu ünvana bu quraşdırmada icazə verilmir \(TRES_HOSTS\)\./)).toHaveLength(1);
+    expect(sandbox().getByLabelText(/^Server ünvanı/).value).toBe("https://ehr.example.az");
+  });
+
   it("holds a bad wait and an address that is not https before anything is sent", async () => {
     const { api } = await mounted((a) => a.tresSettings.mockResolvedValue(UNSET));
     for (const typed of ["169", "-1", "2.5", ""]) {

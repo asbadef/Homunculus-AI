@@ -6,7 +6,8 @@ value of the right type that the rules refuse is a coded 422 (`settings_refusal`
 
 THE PASSWORD IS WRITE-ONLY. `TresAccountIn.password`: omitted or null keeps the stored one, an
 empty string clears it, anything else replaces it. `TresAccountOut` has no password field at all —
-only `password_set`. Every other account field is cleared by null or an empty string."""
+only `password_set`. Every other account field is cleared by null or an empty string. A changed
+base URL clears the stored password too unless the same body brings a new one (router.py)."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -14,8 +15,10 @@ from datetime import datetime
 import httpx
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
+from homunculus.tres.egress import address_allowed
 from homunculus.tres.errors import (
-    TRES_BASE_URL, TRES_ENVIRONMENT, TRES_FIELD_LENGTH, TRES_MODE, TRES_SETTLE_HOURS, TRES_TYPES,
+    TRES_BASE_URL, TRES_ENVIRONMENT, TRES_FIELD_LENGTH, TRES_HOST_NOT_ALLOWED, TRES_MODE,
+    TRES_SETTLE_HOURS, TRES_TYPES,
 )
 from homunculus.tres.models import ACCOUNT_FIELDS, ENVIRONMENTS, MODES, RESOURCE_TYPES
 
@@ -73,18 +76,23 @@ class TresTestOut(BaseModel):
 
 
 def base_url_ok(value: str) -> bool:
-    """https only (the credentials ride in a header), a host, no credentials in the address."""
-    if not value.startswith("https://") or len(value) > FIELD_MAX["base_url"]:
+    """https only (the credentials ride in a header), a host, and nothing that would ride along
+    with every request: no credentials, no query, no fragment, no port but 443 (review #4)."""
+    if (not value.startswith("https://") or len(value) > FIELD_MAX["base_url"] or "?" in value
+            or "#" in value):
         return False
     try:
         url = httpx.URL(value)
     except httpx.InvalidURL:
         return False
-    return bool(url.host) and not url.userinfo
+    # httpx reads «:443» on https as no port at all.
+    return bool(url.host) and not url.userinfo and url.port is None
 
 
-def settings_refusal(payload: TresSettingsIn) -> str | None:
-    """The code the body is refused with, or None. In the form's order: the first wrong value."""
+def settings_refusal(payload: TresSettingsIn, *, hosts: frozenset[str]) -> str | None:
+    """The code the body is refused with, or None. In the form's order: the first wrong value. A
+    base URL whose host is not among `hosts` — the install's (egress.allowed_hosts) — is
+    `tres_host_not_allowed`: where the data may go is not the tenant administrator's choice."""
     if payload.mode not in MODES:
         return TRES_MODE
     if payload.environment not in ENVIRONMENTS:
@@ -99,6 +107,8 @@ def settings_refusal(payload: TresSettingsIn) -> str | None:
         base_url = (account.base_url or "").strip()
         if base_url and not base_url_ok(base_url):
             return TRES_BASE_URL
+        if base_url and not address_allowed(base_url, hosts):
+            return TRES_HOST_NOT_ALLOWED
         for name in ACCOUNT_FIELDS:
             value = getattr(account, name)
             if value is not None and len(value) > FIELD_MAX[name]:

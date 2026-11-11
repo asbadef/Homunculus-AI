@@ -277,6 +277,7 @@ export const TRES_CODE_KEYS = new Map([
   ["tres_field_length", "tres.err.fieldLength"],
   ["egress_off", "tres.err.egressOff"],
   ["tres_account_incomplete", "tres.err.accountIncomplete"],
+  ["tres_host_not_allowed", "tres.err.hostNotAllowed"],
 ]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card

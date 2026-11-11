@@ -20,7 +20,9 @@ whole, one after the other, each on its own client:
 
 THE INSTALL'S LOCK (D2 (b)): with `egress` false `run_round` returns at once — no session is
 opened, no client is built, no connection is made, whatever a tenant's row says. `tres_loop` is
-started by the app's lifespan only when the lock is open, and a bad round never ends it.
+started by the app's lifespan only when the lock is open, and a bad round never ends it. The app's
+client factory is `egress.open_client` (the lock and the allowed hosts bound in): a tenant whose
+address the install does not allow is passed over, counted in `refused`.
 
 Log lines carry tenant ids, counts and exception classes — never a message, which may echo a
 value (D25).
@@ -40,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.tres.client import TresAccount, TresClient, TresError, TresSessionError
+from homunculus.tres.egress import TresEgressRefused
 from homunculus.tres.ledger import deliver, record_skip
 from homunculus.tres.models import TresDelivery, TresSettings, account_of
 
@@ -97,6 +100,7 @@ async def no_packages(db: AsyncSession, settings: TresSettings) -> AsyncIterator
 class RoundReport:
     tenants: int = 0                    # worked: mode not off, the account whole
     incomplete: int = 0                 # passed over: the selected environment's account is not whole
+    refused: int = 0                    # passed over: the install does not allow the account's address
     packages: int = 0                   # packages that ran to their end
     failed: int = 0                     # packages that raised
     retry_after: float | None = None    # the longest wait a 429 asked for; None when none came
@@ -171,6 +175,10 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 client = client_factory(account)
             except ValueError:          # a base URL that is not https (a row written past the route)
                 report.incomplete += 1
+                continue
+            except TresEgressRefused as exc:   # the lock, or an address the install does not allow
+                log.warning("TRƏS: tenant %s passed over (%s)", tenant_id, exc.code)
+                report.refused += 1
                 continue
             report.tenants += 1
             client.pace = _Pacer(sleep).wait

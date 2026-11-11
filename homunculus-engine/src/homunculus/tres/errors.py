@@ -22,21 +22,23 @@ TRES_BASE_URL = "tres_base_url"                      # not an https:// address o
 TRES_FIELD_LENGTH = "tres_field_length"              # an account field longer than its column
 EGRESS_OFF = "egress_off"                            # the install's lock is closed (D2 (b))
 TRES_ACCOUNT_INCOMPLETE = "tres_account_incomplete"  # the selected environment's account lacks a part
+TRES_HOST_NOT_ALLOWED = "tres_host_not_allowed"      # a host the install does not allow (TRES_HOSTS)
 
 CODES = frozenset({TRES_MODE, TRES_ENVIRONMENT, TRES_SETTLE_HOURS, TRES_TYPES, TRES_BASE_URL,
-                   TRES_FIELD_LENGTH, EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE})
+                   TRES_FIELD_LENGTH, EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_HOST_NOT_ALLOWED})
 
 WORDS = {
     TRES_MODE: "The mode is off, validate or send.",
     TRES_ENVIRONMENT: "The environment is test or live.",
     TRES_SETTLE_HOURS: "The wait after a discharge is 0–168 hours.",
     TRES_TYPES: "The resource types are a list of the eight known types, each at most once.",
-    TRES_BASE_URL: "A base URL starts with https://, names a host, carries no credentials and is "
-                   "at most 200 characters.",
+    TRES_BASE_URL: "A base URL starts with https://, names a host, carries no credentials, no query, "
+                   "no fragment and no port but 443, and is at most 200 characters.",
     TRES_FIELD_LENGTH: "An account field is longer than it may be.",
     EGRESS_OFF: "Outbound sending is closed on this installation (TRES_EGRESS is not on).",
     TRES_ACCOUNT_INCOMPLETE: "The selected environment's account is incomplete: the base URL, the "
                              "username, the password and the provider id are all needed.",
+    TRES_HOST_NOT_ALLOWED: "The base URL's host is not one this installation allows (TRES_HOSTS).",
 }
 
 

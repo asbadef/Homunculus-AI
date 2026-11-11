@@ -19,6 +19,7 @@ from sqlalchemy import func, select, text
 
 from homunculus.tenant.models import Tenant
 from homunculus.tres.client import TresClient
+from homunculus.tres.egress import DEFAULT_HOSTS
 from homunculus.tres.errors import CODES, WORDS
 from homunculus.tres.models import RESOURCE_TYPES, TresSettings
 from homunculus.tres.schemas import TresSettingsIn, base_url_ok, settings_refusal
@@ -32,6 +33,8 @@ EMPTY = {"base_url": None, "username": None, "provider_id": None, "organization_
          "organization_name": None}
 SANDBOX = {"base_url": "https://ehr-sandbox.example.az", "username": "sentetik", "password": "gizli-parola",
            "provider_id": "PRV-0001", "organization_id": "ORG-0001", "organization_name": "Sentetik Kabul Hastanesi"}
+#: What these tests' install allows (TRES_HOSTS): the synthetic hosts, and the stand-in's.
+HOSTS = frozenset({"ehr-sandbox.example.az", "ehr.example.az", "tres.test"})
 
 
 def body(**over) -> dict:
@@ -59,23 +62,42 @@ def body(**over) -> dict:
     (body(live={**EMPTY, "organization_id": "x" * 65}), "tres_field_length"),
     (body(live={**EMPTY, "organization_name": "x" * 201}), "tres_field_length"),
     (body(mode="on", settle_hours=999), "tres_mode"),                # the first wrong value, in the form's order
+    # review #4: nothing rides along with the address, and it points only where the install allows
+    (body(test={**EMPTY, "base_url": "https://ehr-sandbox.example.az/?x=1"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://ehr-sandbox.example.az/fhir?"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://ehr-sandbox.example.az/gizli#"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://ehr-sandbox.example.az:22"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://ehr-sandbox.example.az:8443"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://sentetik@ehr-sandbox.example.az"}), "tres_base_url"),
+    (body(test={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}), "tres_host_not_allowed"),
+    (body(live={**EMPTY, "base_url": "https://127.0.0.1"}), "tres_host_not_allowed"),
+    (body(live={**EMPTY, "base_url": "https://ehr.example.az.example.org"}), "tres_host_not_allowed"),
 ])
 def test_a_bad_body_has_its_code(sent, code):
-    assert settings_refusal(TresSettingsIn(**sent)) == code
+    assert settings_refusal(TresSettingsIn(**sent), hosts=HOSTS) == code
 
 
 @pytest.mark.parametrize("sent", [
     body(), body(mode="validate", environment="live", settle_hours=0, enabled_types=[]),
     body(mode="send", settle_hours=168, enabled_types=["lab", "patient"], test=SANDBOX),
     body(test={**EMPTY, "base_url": "  "}),                           # blank: cleared, not judged
+    body(live={**EMPTY, "base_url": "https://EHR.example.az:443/fhir-base"}),
 ])
 def test_a_good_body_has_none(sent):
-    assert settings_refusal(TresSettingsIn(**sent)) is None
+    assert settings_refusal(TresSettingsIn(**sent), hosts=HOSTS) is None
 
 
-def test_a_base_url_is_https_with_a_host_and_no_credentials():
-    assert base_url_ok("https://ehr.e-health.example.az") and base_url_ok("https://10.0.0.5:8443/api")
-    for bad in ("http://ehr.example.az", "https://", "https:///fhir", "https://u:p@ehr.example.az", "ftp://x"):
+def test_with_no_hosts_named_by_the_install_only_the_platforms_own_two_are_allowed():
+    for host in ("ehr-sandbox.e-health.gov.az", "ehr.e-health.gov.az"):
+        assert settings_refusal(TresSettingsIn(**body(test={**EMPTY, "base_url": f"https://{host}"})),
+                                hosts=DEFAULT_HOSTS) is None
+    assert settings_refusal(TresSettingsIn(**body(test=SANDBOX)), hosts=DEFAULT_HOSTS) == "tres_host_not_allowed"
+
+
+def test_a_base_url_is_https_with_a_host_and_nothing_but_a_path():
+    assert base_url_ok("https://ehr.e-health.example.az") and base_url_ok("https://10.0.0.5:443/api")
+    for bad in ("http://ehr.example.az", "https://", "https:///fhir", "https://u:p@ehr.example.az", "ftp://x",
+                "https://10.0.0.5:8443/api", "https://ehr.example.az/?x=", "https://ehr.example.az/a#b"):
         assert not base_url_ok(bad), bad
 
 
@@ -88,6 +110,7 @@ def test_every_code_has_its_words():
 async def ward(db_session, monkeypatch):
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
     monkeypatch.delenv("TRES_EGRESS", raising=False)
+    monkeypatch.setenv("TRES_HOSTS", ",".join(sorted(HOSTS)))
     built = await build_ward(db_session)
     async with ward_client(db_session) as (client, app):
         yield built, client, app
@@ -142,13 +165,49 @@ async def test_the_administrator_saves_and_the_password_never_comes_back(ward, d
     assert stored.startswith("enc::v1::") and "gizli" not in stored
     (row,) = (await db_session.execute(select(TresSettings))).scalars()
     assert (row.tenant_id, row.test_password, row.updated_by) == (w.tenant.id, "gizli-parola", w.users["admin"].id)
-    # audited: who, and the NAMES of what changed — no value, no password
+    # audited: who, the NAMES of what changed, and where a changed address now points (its host
+    # only) — no other value, no password
     (audit,) = _audit(app)
     assert audit.patient_id == ""
     assert audit.payload == {"actor": "admin@kabul.example.com", "changed": [
         "mode", "settle_hours", "enabled_types", "test.base_url", "test.username", "test.password",
-        "test.provider_id", "test.organization_id", "test.organization_name"]}
-    assert "gizli" not in json.dumps(audit.payload) and "sandbox" not in json.dumps(audit.payload)
+        "test.provider_id", "test.organization_id", "test.organization_name"],
+        "hosts": {"test": "ehr-sandbox.example.az"}}
+    assert "gizli" not in json.dumps(audit.payload) and "sentetik" not in json.dumps(audit.payload)
+    assert "PRV-0001" not in json.dumps(audit.payload)
+
+
+@requires_db
+async def test_a_changed_address_drops_the_stored_password_unless_a_new_one_comes_with_it(ward, db_session):
+    """Review #4: a stored password never follows the account to another server."""
+    w, client, app = ward
+    assert (await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])).status_code == 200
+    kept = {k: v for k, v in SANDBOX.items() if k != "password"}
+    moved = {**kept, "base_url": "https://sentetik:x@ehr.example.az/fhir-base"}
+    r = await client.put(URL, json=body(test=moved), headers=w.auth["admin"])
+    assert r.status_code == 422                                     # credentials in the address: refused
+    moved = {**kept, "base_url": "https://ehr.example.az/fhir-base"}
+    r = await client.put(URL, json=body(test=moved), headers=w.auth["admin"])
+    assert (r.status_code, r.json()["test"]["password_set"]) == (200, False), r.text
+    db_session.expire_all()
+    (row,) = (await db_session.execute(select(TresSettings))).scalars()
+    assert (row.test_base_url, row.test_password) == ("https://ehr.example.az/fhir-base", None)
+    audit = _audit(app)[-1].payload
+    assert audit["changed"] == ["test.base_url", "test.password"]
+    assert audit["hosts"] == {"test": "ehr.example.az"} and "fhir-base" not in json.dumps(audit)
+    # back, with a new password in the same save: it is kept
+    r = await client.put(URL, json=body(test={**SANDBOX, "password": "yeni-parola"}), headers=w.auth["admin"])
+    assert (r.status_code, r.json()["test"]["password_set"]) == (200, True)
+    db_session.expire_all()
+    (row,) = (await db_session.execute(select(TresSettings))).scalars()
+    assert row.test_password == "yeni-parola"
+    # the other environment's password is its own: the sandbox's move never touches live's
+    live = {**SANDBOX, "base_url": "https://ehr.example.az", "password": "canli-parola"}
+    assert (await client.put(URL, json=body(test=SANDBOX, live=live), headers=w.auth["admin"])).status_code == 200
+    r = await client.put(URL, json=body(test={**kept, "base_url": None}, live={**live, "password": None}),
+                         headers=w.auth["admin"])
+    assert (r.json()["test"]["password_set"], r.json()["live"]["password_set"]) == (False, True)
+    assert _audit(app)[-1].payload["hosts"] == {"test": None}
 
 
 @requires_db
@@ -193,6 +252,9 @@ async def test_an_empty_field_clears_and_a_save_that_changes_nothing_is_not_audi
     (body(enabled_types=["imaging"]), "tres_types"),
     (body(live={**EMPTY, "base_url": "http://ehr.example.az"}), "tres_base_url"),
     (body(test={**EMPTY, "username": "u" * 121}), "tres_field_length"),
+    (body(live={**EMPTY, "base_url": "https://ehr.example.az:8443"}), "tres_base_url"),
+    # the platform's own live host, but this install names others (TRES_HOSTS): refused
+    (body(live={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}), "tres_host_not_allowed"),
 ])
 async def test_a_bad_value_is_refused_with_its_code_and_writes_nothing(ward, db_session, sent, code):
     w, client, app = ward
@@ -261,6 +323,22 @@ async def test_with_the_lock_closed_the_test_is_refused_and_no_client_is_built(w
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "egress_off"), r.text
     assert built == []
+
+
+@requires_db
+async def test_an_address_the_install_no_longer_allows_is_refused_by_the_apps_own_factory(ward, db_session, monkeypatch):
+    """A row saved before TRES_HOSTS was narrowed: the route builds no client, nothing is asked."""
+    w, client, app = ward
+    app.state.tres_egress = True
+    built = []
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", lambda self, *a, **k: built.append(1))
+    db_session.add(TresSettings(tenant_id=w.tenant.id, mode="validate", environment="test",
+                                test_base_url="https://onceki.example.org", test_username="sentetik",
+                                test_password="gizli-parola", test_provider_id="PRV-0001"))
+    await db_session.commit()
+    r = await client.post(TEST_URL, headers=w.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "tres_host_not_allowed"), r.text
+    assert r.json()["detail"]["message"] == WORDS["tres_host_not_allowed"] and built == []
 
 
 @requires_db

@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from homunculus.api.app import create_app
 from homunculus.tenant.models import Tenant
 from homunculus.tres import worker
-from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient
+from homunculus.tres.client import LOCAL_ID_EXTENSION, TresAccount, TresClient
+from homunculus.tres.egress import TresEgressRefused, open_client
 from homunculus.tres.models import TresDelivery, TresSettings
 from homunculus.tres.worker import (
     MAX_CONSECUTIVE, PACE_S, ROUND_S, THROTTLED_S, RoundReport, no_packages, run_round, tres_loop,
@@ -84,7 +85,10 @@ def test_the_lifespan_starts_the_rounds_only_when_the_lock_is_open(monkeypatch):
         assert closed.state.tres_task is None
     monkeypatch.setenv("TRES_EGRESS", "on")
     opened = create_app({"t": "HOSP1"}, run_escalation_loop=False)
-    assert opened.state.tres_source is no_packages and opened.state.tres_client_factory is TresClient
+    assert opened.state.tres_source is no_packages
+    # the rounds get the app's guarded factory (egress.open_client), never a bare TresClient
+    with pytest.raises(TresEgressRefused):
+        opened.state.tres_client_factory(TresAccount("https://tres.test", "sentetik", "gizli-parola", "PRV-0001"))
     with TestClient(opened):
         task = opened.state.tres_task
         assert task is not None and not task.done()      # asleep until the first round, 5 minutes on
@@ -179,6 +183,23 @@ async def test_a_round_works_only_the_tenants_that_are_on_and_whose_account_is_w
     assert [c.account for c in clients] == [fake.account]
     assert clients[0]._client is None                      # closed; and it never connected
     assert fake.requests == [] and sleeps == []
+
+
+@requires_db
+async def test_a_tenant_whose_address_the_install_does_not_allow_is_passed_over(feed, db_session, caplog):
+    fake, tenants, _ = feed
+    built = []
+
+    def guarded(account):
+        built.append(account)
+        return open_client(account, egress=True, hosts=frozenset({"ehr-sandbox.e-health.gov.az"}))
+
+    with caplog.at_level("WARNING"):
+        report = await run_round(async_sessionmaker(db_session.bind, expire_on_commit=False), egress=True,
+                                 source=source_of(sends("hmn-p-0001")), now=T0, client_factory=guarded)
+    assert (report.tenants, report.incomplete, report.refused, report.packages) == (0, 1, 1, 0)
+    assert [a.base_url for a in built] == ["https://tres.test"] and fake.requests == []
+    assert "tres_host_not_allowed" in caplog.text and "tres.test" not in caplog.text
 
 
 @requires_db

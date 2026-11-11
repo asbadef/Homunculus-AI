@@ -113,6 +113,10 @@ services:
       # Unset, or anything but "on" = closed: the API opens no connection to the ministry's
       # platform, whatever a hospital's Yönetim › TRƏS settings say, and that tab says so.
       TRES_EGRESS: ${TRES_EGRESS:-}
+      # The hosts the feed may send to (comma-separated). Unset = the platform's own two,
+      # ehr-sandbox.e-health.gov.az and ehr.e-health.gov.az; any other address is refused at
+      # Yönetim › TRƏS and by every client the API builds. Always https on port 443.
+      TRES_HOSTS: ${TRES_HOSTS:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target

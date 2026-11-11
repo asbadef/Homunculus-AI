@@ -87,8 +87,8 @@ from homunculus.scope import (
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
-from homunculus.tres.client import TresClient       # TRƏS-01: the platform's client (the default factory)
-from homunculus.tres.egress import egress_on        # TRƏS-01 (spec D2): the install's lock
+from homunculus.tres.client import TresAccount, TresClient   # TRƏS-01: the platform's client
+from homunculus.tres.egress import allowed_hosts, egress_on, open_client   # TRƏS-01 (D2): the lock, the hosts
 from homunculus.tres.worker import no_packages, tres_loop   # TRƏS-01 (spec D21): the rounds
 
 if TYPE_CHECKING:
@@ -902,11 +902,18 @@ def create_app(
     # TRƏS-01 (spec D2): the install's lock on the national e-health feed, read once, here. Closed
     # unless TRES_EGRESS=on: the module then opens no connection, whatever a tenant's settings say.
     app.state.tres_egress = egress_on(os.environ)
+    # WHERE it may send: the hosts TRES_HOSTS names, or the platform's own two (egress.py, review #4).
+    app.state.tres_hosts = allowed_hosts(os.environ)
     # The feed's rounds (tres/worker.py, D21). WHAT is sent: phase F0 has no package builder, so
     # the source yields nothing and a round asks the platform nothing; F1 puts the stays here. The
-    # client: `TresClient`, unless a test stands a stand-in's transport in.
+    # client: ONLY through `open_client`, bound to this app's lock and hosts — a caller that forgets
+    # to ask whether the lock is open still gets no client (a test may stand a stand-in's in).
+
+    def _tres_client(account: TresAccount) -> TresClient:
+        return open_client(account, egress=app.state.tres_egress, hosts=app.state.tres_hosts)
+
     app.state.tres_source = no_packages
-    app.state.tres_client_factory = TresClient
+    app.state.tres_client_factory = _tres_client
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01

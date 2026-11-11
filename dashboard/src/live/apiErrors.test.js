@@ -845,7 +845,7 @@ describe("the task queue's refusals (G3-02)", () => {
 // TRƏS-01 — Yönetim › TRƏS: the routes' refusals, by code (err.apiCode; homunculus-engine tres/errors.py).
 describe("the national feed's refusals (TRƏS-01)", () => {
   const CODES = ["tres_mode", "tres_environment", "tres_settle_hours", "tres_types", "tres_base_url",
-    "tres_field_length", "egress_off", "tres_account_incomplete"];
+    "tres_field_length", "egress_off", "tres_account_incomplete", "tres_host_not_allowed"];
 
   it("maps each by its code, whatever the server's words", () => {
     expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
@@ -864,6 +864,8 @@ describe("the national feed's refusals (TRƏS-01)", () => {
     const t = createTranslator("az", DICTIONARIES);
     expect(apiErrorText(t, Object.assign(new Error("x"), { status: 409, apiCode: "egress_off" })))
       .toBe("Bu quraşdırmada xaricə göndəriş bağlıdır; bağlantı yoxlanılmadı.");
+    expect(apiErrorText(t, Object.assign(new Error("x"), { status: 422, apiCode: "tres_host_not_allowed" })))
+      .toBe("Bu ünvana bu quraşdırmada icazə verilmir (TRES_HOSTS).");
   });
 });
 
@@ -872,7 +874,7 @@ describe("the national feed's refusals (TRƏS-01)", () => {
 describe("the national feed's refusal codes are the engine's (TRƏS-01)", () => {
   it("the map holds every code tres/errors.py names, and nothing else", () => {
     const codes = [...pyConstants(py("tres/errors.py")).values()];
-    expect(codes.length).toBeGreaterThanOrEqual(8);
+    expect(codes.length).toBeGreaterThanOrEqual(9);
     expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...codes].sort());
   });
 });

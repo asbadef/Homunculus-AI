@@ -7,16 +7,22 @@ answer carries `egress`, the install's lock (D2 (b)), so the tab can say that no
 server whatever is set here — and NEVER a password: `password_set` only.
 
 PUT /admin/tres/settings — reads the body first (mode, environment, the wait, the types, each
-base URL https, the lengths: a coded 422, nothing written). Then it makes the tenant's row if
-there is none, locks it and writes what differs. A password omitted or null keeps the stored one;
-an empty string clears it. The change is audited `tres.settings` AFTER the commit with the NAMES
-of the fields that changed (`mode`, `test.password`…) and never a value (D24; A-26: never a 500
-for a committed change). A save that changes nothing writes no audit row.
+base URL https with nothing riding along, on a host the install allows (`TRES_HOSTS`,
+egress.py), the lengths: a coded 422, nothing written). Then it makes the tenant's row if there is
+none, locks it and writes what differs. A password omitted or null keeps the stored one — unless
+that environment's base URL changes, which clears it (review #4: a stored password never follows
+the account to another server); an empty string clears it. The change is audited `tres.settings`
+AFTER the commit with the NAMES of the fields that changed (`mode`, `test.password`…) and, for a
+changed base URL, the HOST it now points at (no path, no credentials) — never another value (D24;
+A-26: never a 500 for a committed change). A save that changes nothing writes no audit row.
 
 POST /admin/tres/test — one sign-in at the platform with the stored account of the selected
 environment: `{"ok": true}` or `{"ok": false, "message": <the platform's words>}`, never the
 session id. 409 `egress_off` while the install's lock is closed — the route then builds no client
-at all; 409 `tres_account_incomplete` while the account lacks a part. It is allowed in the mode
+at all; 409 `tres_host_not_allowed` for a stored address the install does not allow (a row saved
+before `TRES_HOSTS` was narrowed); 409 `tres_account_incomplete` while the account lacks a part.
+The client comes from `app.state.tres_client_factory` (egress.open_client, the lock and the hosts
+bound in), so the refusals hold even for a caller that forgot to ask. It is allowed in the mode
 `off`: an administrator tests before turning the feed on. Not audited: it writes nothing.
 
 No patient data anywhere in this file."""
@@ -24,7 +30,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from functools import partial
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -34,7 +42,8 @@ from homunculus.admission import trail
 from homunculus.auth.dependencies import caller_tenant_id, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
-from homunculus.tres.client import TresClient, TresError
+from homunculus.tres.client import TresError
+from homunculus.tres.egress import TresEgressRefused, open_client
 from homunculus.tres.errors import EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, refusal
 from homunculus.tres.models import (
     ACCOUNT_FIELDS, DEFAULT_SETTLE_HOURS, ENVIRONMENTS, RESOURCE_TYPES, TresSettings, account_of,
@@ -49,6 +58,22 @@ router = APIRouter(prefix="/admin/tres", tags=["tres"])
 def _egress(request: Request) -> bool:
     """The install's lock as the app read it at start-up; closed for an app that never read it."""
     return bool(getattr(request.app.state, "tres_egress", False))
+
+
+def _hosts(request: Request) -> frozenset[str]:
+    """The hosts the install allows, as the app read them at start-up; none at all for an app
+    that never read them."""
+    return getattr(request.app.state, "tres_hosts", frozenset())
+
+
+def _host(base_url: str | None) -> str | None:
+    """The host of a base URL and nothing else of it — what the audit row may name."""
+    if not base_url:
+        return None
+    try:
+        return httpx.URL(base_url).host or None
+    except httpx.InvalidURL:
+        return None
 
 
 def _account_out(row: TresSettings | None, prefix: str) -> TresAccountOut:
@@ -87,12 +112,13 @@ def _apply(row: TresSettings, payload: TresSettingsIn) -> list[str]:
     put("enabled_types", [key for key in RESOURCE_TYPES if key in payload.enabled_types], "enabled_types")
     for prefix in ENVIRONMENTS:
         account = getattr(payload, prefix)
+        moved = getattr(row, f"{prefix}_base_url") != ((account.base_url or "").strip() or None)
         for name in ACCOUNT_FIELDS:
             value = getattr(account, name)
             if name == "password":
-                if value is None:
-                    continue                    # omitted or null: the stored one stays
-                value = value or None           # an empty string clears it
+                if value is None and not moved:
+                    continue                    # omitted or null: the stored one stays…
+                value = value or None           # …unless the address changed; an empty string clears it
             else:
                 value = (value or "").strip() or None
             put(f"{prefix}_{name}", value, f"{prefix}.{name}")
@@ -117,7 +143,7 @@ async def write_settings(
     caller_tenant: uuid.UUID = Depends(caller_tenant_id),
     user: User = Depends(require_permission("tres.manage")),
 ) -> TresSettingsOut:
-    refused = settings_refusal(payload)
+    refused = settings_refusal(payload, hosts=_hosts(request))
     if refused is not None:
         raise refusal(422, refused).http()
 
@@ -128,13 +154,18 @@ async def write_settings(
         select(TresSettings).where(TresSettings.tenant_id == caller_tenant)
         .with_for_update().execution_options(populate_existing=True))).scalar_one()
     changed = _apply(row, payload)
+    audit: dict = {"actor": actor, "changed": changed}
+    hosts = {prefix: _host(getattr(row, f"{prefix}_base_url")) for prefix in ENVIRONMENTS
+             if f"{prefix}.base_url" in changed}
+    if hosts:
+        audit["hosts"] = hosts
     if changed:
         row.updated_at, row.updated_by = datetime.now(timezone.utc), user_id
     answer = _out(row, _egress(request))
     hospital = await trail.hospital_of(db, caller_tenant)
     await db.commit()
     if changed:
-        trail.record(request, hospital, "tres.settings", payload={"actor": actor, "changed": changed})
+        trail.record(request, hospital, "tres.settings", payload=audit)
     return answer
 
 
@@ -151,9 +182,12 @@ async def test_connection(
     account = account_of(row) if row is not None else None
     if account is None:
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http()
-    factory = getattr(request.app.state, "tres_client_factory", TresClient)
+    factory = getattr(request.app.state, "tres_client_factory", None) or partial(
+        open_client, egress=_egress(request), hosts=_hosts(request))
     try:
         client = factory(account)
+    except TresEgressRefused as exc:    # the lock, or an address the install does not allow
+        raise refusal(409, exc.code).http() from None
     except ValueError:                  # a base URL that is not https, written past this route
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
     try:

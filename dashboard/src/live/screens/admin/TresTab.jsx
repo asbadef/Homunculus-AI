@@ -8,7 +8,9 @@
 //
 // THE PASSWORD IS WRITE-ONLY (D3). The server never sends one back, only `password_set`; the field is always empty
 // when the form opens and shows «kayıtlı» as its placeholder when one is stored. Left empty it is left OUT of the
-// body, and the server keeps what it has; «Kayıtlı parolayı sil» sends an empty string, which clears it.
+// body, and the server keeps what it has; «Kayıtlı parolayı sil» sends an empty string, which clears it. A changed
+// server address clears it too, unless a new one is typed in the same save (the engine's rule; the address's hint says
+// so): a stored password never follows the hospital's account to another server.
 //
 // A FORM NEVER STANDS ON DEFAULTS IT DID NOT READ (ProtocolTab's rule): while no read has answered, the tab shows
 // the refusal and a retry, not the form. A refused save keeps what was typed — an account is six fields.
@@ -78,7 +80,8 @@ function AccountFields({ title, account, stored, error, onChange }) {
   return (
     <fieldset className="mb-3 rounded-ctl border border-line px-3 pb-1 pt-2">
       <legend className="px-1 font-text text-13.5 font-semibold text-mute">{title}</legend>
-      <Field label={t("tres.baseUrl")} hint={t("tres.baseUrlHint")} error={error ? t("tres.invalid.baseUrl") : undefined}>
+      <Field label={t("tres.baseUrl")} hint={`${t("tres.baseUrlHint")} ${t("tres.baseUrlClears")}`}
+        error={error ? t("tres.invalid.baseUrl") : undefined}>
         <Input value={account.base_url} maxLength={200} inputMode="url" onChange={(e) => set({ base_url: e.target.value })} />
       </Field>
       <Field label={t("tres.username")}>
