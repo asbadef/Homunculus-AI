@@ -10,13 +10,15 @@ unchanged (test_infinity_shadow_store.py pins its surface). Synthetic sources on
 from __future__ import annotations
 
 import inspect
+import json
 from datetime import datetime, timezone
 
 import pytest
 
+from homunculus.api.infinity_device_beds import DeviceBedTable, Row, TableState
 from homunculus.api.infinity_shadow import (
     FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, FeedLedger,
-    ShadowStore, reported_sources,
+    ShadowStore, board_view, reported_sources,
 )
 
 T0 = 1_800_000_000.0
@@ -188,3 +190,135 @@ def test_the_ledger_has_no_method_that_could_reach_the_clinical_side():
     assert set(inspect.signature(FeedLedger.observe).parameters) == {"self", "views", "reported"}
     assert set(inspect.signature(FeedLedger.view).parameters) == {"self"}
     assert set(inspect.signature(FeedLedger).parameters) == {"clock", "monotonic"}
+
+
+# --- the board (Task 2) --------------------------------------------------------------------------
+
+START = datetime(2026, 7, 1, tzinfo=timezone.utc)
+OLD_TOP = {"stage", "display_max_age_s", "generated_at", "table", "feed", "beds", "unassigned"}
+OLD_BED = {"bed_label", "bed_id", "unit_id", "method", "verified_at", "source", "group", "status", "status_age_s",
+           "packet_age_ms", "parameters", "link", "patient_id", "link_reason"}
+OLD_STRAY = {"source", "group", "status", "status_age_s", "packet_age_ms", "parameters", "reason", "note"}
+VANISHED_KEYS = {"source", "bed_label", "last_packet_at", "last_report_at"}
+
+
+def _table():
+    """B-1 (unit-1) and B-2 (unit-2) on beds; .12 in the table, its bed unresolved."""
+    rows = tuple(Row(source, f"239.20.1.{source.rsplit('.', 1)[1]}", 2050, label, bed_id, unit_id, "monitor_screen",
+                     "2026-07-14", START, None, "")
+                 for source, label, bed_id, unit_id in (("192.0.2.10", "B-1", "bed-b1", "unit-1"),
+                                                        ("192.0.2.11", "B-2", "bed-b2", "unit-2"),
+                                                        ("192.0.2.12", None, None, None)))
+    return TableState(DeviceBedTable(1, "synthetic", "test", "2026-07-14", rows), "ok", None, "0" * 64, 1)
+
+
+def _board(store, ledger, clock, *, visible=lambda card: True, show_unassigned=True, with_ledger=True, occupants=None):
+    extra = {"ledger": ledger.view()} if with_ledger else {}
+    return board_view(store.devices(clock.t), store.feed(clock.t), _table(), occupants=occupants, visible=visible,
+                      patient_visible=lambda card: True, show_unassigned=show_unassigned, now=clock.t, **extra)
+
+
+def test_without_a_ledger_the_board_is_exactly_what_it_was():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading()), device("192.0.2.12", reading())))
+    out = _board(store, ledger, clock, with_ledger=False)
+    assert set(out) == OLD_TOP
+    assert set(out["beds"][0]) == OLD_BED and set(out["unassigned"][0]) == OLD_STRAY
+
+
+def test_with_the_ledger_every_card_and_the_body_carry_it():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72), packet_age_ms=500.0),
+                             device("192.0.2.12", reading("spo2", 97, "%"))))
+    clock.t = T0 + 2
+    out = _board(store, ledger, clock)
+    assert set(out) == OLD_TOP | {"watching_since", "stale_list_after_s", "stale_list_until_s", "vanished"}
+    assert (out["watching_since"], out["stale_list_after_s"], out["stale_list_until_s"], out["vanished"]) == (
+        _iso(T0), STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, [])
+    bed, stray = out["beds"][0], out["unassigned"][0]
+    assert set(bed) == OLD_BED | {"last_packet_at", "silent_for_s", "channels_seen"}
+    assert set(stray) == OLD_STRAY | {"last_packet_at", "silent_for_s", "channels_seen"}
+    assert (bed["last_packet_at"], bed["silent_for_s"]) == (_iso(T0 - 0.5), None)          # streaming: no silence
+    assert bed["channels_seen"] == [{"parameter": "hr", "last_value_at": _iso(T0 - 0.5)}]
+    assert stray["channels_seen"] == [{"parameter": "spo2", "last_value_at": _iso(T0 - 0.5)}]
+
+
+def test_channels_seen_keeps_a_channel_the_store_has_forgotten():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72), reading("spo2", 97, "%"))))
+    for step in range(1, 27):                           # to T0 + 130: spo2's reading is past FORGET_AFTER_S
+        clock.t = T0 + 5 * step
+        post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=clock.t - 0.5)),
+                                 sent_at=clock.t))
+    card = _board(store, ledger, clock)["beds"][0]
+    assert "spo2" not in {p["parameter"] for p in card["parameters"]}
+    assert [ch["parameter"] for ch in card["channels_seen"]] == ["hr", "spo2"]
+    assert card["channels_seen"][1]["last_value_at"] == _iso(T0 - 0.5)
+
+
+def test_a_channel_silent_for_over_an_hour_stays_in_channels_seen():
+    # Spec D4's amendment: past stale_list_until_s the PAGE stops listing a channel; the board still carries it.
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72), reading("art_systolic", 120, "mmHg"))))
+    clock.t = T0 + STALE_LIST_UNTIL_S + 100             # the arterial line was taken out at T0
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=clock.t - 0.5)), sent_at=clock.t))
+    out = _board(store, ledger, clock)
+    card = out["beds"][0]
+    assert card["status"] == "streaming"
+    assert card["channels_seen"] == [{"parameter": "hr", "last_value_at": _iso(clock.t - 0.5)},
+                                     {"parameter": "art_systolic", "last_value_at": _iso(T0 - 0.5)}]
+    assert (out["stale_list_after_s"], out["stale_list_until_s"]) == (60.0, 3600.0)
+
+
+def test_silent_for_is_whole_seconds_since_the_last_packet_for_a_silent_or_unknown_monitor_only():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", status="stale", packet_age_ms=7_000.0),
+                             device("192.0.2.11", reading())))
+    clock.t = T0 + 0.9
+    beds = {c["source"]: c for c in _board(store, ledger, clock)["beds"]}
+    assert (beds["192.0.2.10"]["status"], beds["192.0.2.10"]["silent_for_s"]) == ("silent", 7)
+    assert beds["192.0.2.11"]["silent_for_s"] is None
+    clock.t = T0 + 30                                   # no post since T0: both unknown
+    beds = {c["source"]: c for c in _board(store, ledger, clock)["beds"]}
+    assert [(c["status"], c["silent_for_s"]) for c in beds.values()] == [("unknown", 37), ("unknown", 30)]
+
+
+def test_a_monitor_left_out_of_the_bodies_is_vanished_once_unknown_and_the_forwarders_silence_is_not():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading()), device("192.0.2.11", reading()),
+                             device("192.0.2.12", reading())))
+    clock.t = T0 + 10
+    post(store, ledger, body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), sent_at=clock.t))
+    assert _board(store, ledger, clock)["vanished"] == []                   # 10 s: not unknown yet
+    clock.t = T0 + 16
+    post(store, ledger, body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), sent_at=clock.t))
+    assert _board(store, ledger, clock)["vanished"] == [
+        {"source": "192.0.2.11", "bed_label": "B-2", "last_packet_at": _iso(T0 - 0.1), "last_report_at": _iso(T0)},
+        {"source": "192.0.2.12", "bed_label": None, "last_packet_at": _iso(T0 - 0.1), "last_report_at": _iso(T0)},
+    ]
+    clock.t = T0 + 40                                   # the posts stop: .10 is unknown too, but the last body listed it
+    assert [v["source"] for v in _board(store, ledger, clock)["vanished"]] == ["192.0.2.11", "192.0.2.12"]
+
+
+def test_vanished_reaches_only_what_the_cards_reach():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading()), device("192.0.2.11", reading()),
+                             device("192.0.2.12", reading())))
+    clock.t = T0 + 16
+    post(store, ledger, body(sent_at=clock.t))         # the hub lists none of them any more
+    scoped = _board(store, ledger, clock, visible=lambda card: card["unit_id"] == "unit-1", show_unassigned=False)
+    assert [c["source"] for c in scoped["beds"]] == ["192.0.2.10"] and scoped["unassigned"] == []
+    assert [v["source"] for v in scoped["vanished"]] == ["192.0.2.10"]
+    assert [v["source"] for v in _board(store, ledger, clock)["vanished"]] == ["192.0.2.10", "192.0.2.11", "192.0.2.12"]
+
+
+def test_the_new_fields_name_no_patient():
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading()), device("192.0.2.11", reading())))
+    clock.t = T0 + 16
+    post(store, ledger, body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), sent_at=clock.t))
+    out = _board(store, ledger, clock, occupants={"bed-b1": ["synth-p1"], "bed-b2": ["synth-p2"]})
+    assert [set(v) for v in out["vanished"]] == [VANISHED_KEYS]
+    assert "synth-p2" not in json.dumps(out["vanished"])
+    for card in out["beds"]:
+        assert all(set(ch) == {"parameter", "last_value_at"} for ch in card["channels_seen"])

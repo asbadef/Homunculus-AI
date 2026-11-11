@@ -619,11 +619,40 @@ def _address_key(source: str) -> tuple[int, ...]:
     return tuple(int(part) for part in source.split("."))
 
 
+QUIET_STATUSES = ("silent", "unknown")
+
+
+def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> dict:
+    """G4-01 (D3): the ledger on the cards this caller is shown, and the body's four new fields.
+
+    `vanished` is cut from those same cards, so it reaches exactly what they reach: a bed card only
+    through the approved table's row valid now and the caller's scope (`visible`), an unassigned one
+    only with `show_unassigned`. A vanished monitor is in the ledger, absent from the latest accepted
+    body, and unreported long enough to be `unknown` — the store keeps its card, so it is that card
+    worded differently. An `unknown` monitor the latest body still listed is the forwarder's silence,
+    not its own. `silent_for_s` counts from `last_packet_at` on the board's own clock. Nothing here
+    names a patient."""
+    vanished = []
+    for card in shown:
+        seen = ledger.devices.get(card["source"])
+        last = None if seen is None else seen.last_packet_at
+        card["last_packet_at"] = None if last is None else _iso(last)
+        card["silent_for_s"] = (int(max(0.0, now - last))
+                                if last is not None and card["status"] in QUIET_STATUSES else None)
+        card["channels_seen"] = ([] if seen is None else
+                                 [{"parameter": name, "last_value_at": _iso(at)} for name, at in seen.channels])
+        if seen is not None and not seen.reported and card["status"] == "unknown":
+            vanished.append({"source": card["source"], "bed_label": card.get("bed_label"),
+                             "last_packet_at": card["last_packet_at"], "last_report_at": _iso(seen.last_report_at)})
+    return {"watching_since": _iso(ledger.started_at), "stale_list_after_s": STALE_LIST_AFTER_S,
+            "stale_list_until_s": STALE_LIST_UNTIL_S, "vanished": vanished}
+
+
 def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState, *,
                occupants: Mapping[str, list[str]] | None,
                visible: Callable[[dict], bool],
                patient_visible: Callable[[dict], bool],
-               show_unassigned: bool, now: float) -> dict:
+               show_unassigned: bool, now: float, ledger: LedgerView | None = None) -> dict:
     """`GET /infinity-shadow/board`'s body. Pure: everything it needs is handed in.
 
     - A device sits on a bed only through the approved table's row valid now. A device the table
@@ -635,6 +664,10 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
       and its id; two or more `"ambiguous"` and no id; none, or a row without `bed_id`, `"none"`.
       A link the caller's scope does not reach (`patient_visible`) is reported as hidden.
     - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
+    - `ledger` (G4-01) is `FeedLedger.view()`, or None — the shadow engine's pass. With it every shown
+      card carries `last_packet_at`, `silent_for_s` and `channels_seen`, and the body
+      `watching_since`, `stale_list_after_s`, `stale_list_until_s` and `vanished` (`_ledger_fields`);
+      without it the body is exactly what it was.
     Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last (its states:
     `value`, `value_untimed`, `invalid`, `old` — `ShadowStore._nbp_view`), each copied as the store
     built it; beds by label, unassigned devices by address."""
@@ -687,8 +720,11 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
     counts = {"total": len(shown), **{s: sum(1 for c in shown if c["status"] == s) for s in COUNTED_STATUSES}}
     approved_at = table.table.approved_at if table.status == "ok" else None
     site = table.table.site if table.status == "ok" else None
-    return {"stage": "shadow", "display_max_age_s": DISPLAY_MAX_AGE_S, "generated_at": _iso(now),
+    body = {"stage": "shadow", "display_max_age_s": DISPLAY_MAX_AGE_S, "generated_at": _iso(now),
             "table": {"status": table.status, "reason": table.reason, "version": table.version,
                       "sha256": table.sha256, "approved_at": approved_at, "site": site},
             "feed": {**feed, "devices": counts, "unassigned": len(unassigned)},
             "beds": beds, "unassigned": unassigned}
+    if ledger is not None:
+        body.update(_ledger_fields(shown, ledger, now))
+    return body
