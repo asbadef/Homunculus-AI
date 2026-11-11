@@ -41,8 +41,9 @@ const withinBackdate = (nowMs, observedMs) => Number.isFinite(observedMs) && now
 
 const saidAlready = (err) => err?.status === 409 && String(err.message ?? "").trim() === RETRACT_ALREADY;
 
-/** A 403 that is the engine's «a person does this» refusal says so in its own words; any other is a missing right. */
-const saidPersonOnly = (err) => apiErrorKey(err)?.key === "kayit.err.person";
+/** A 403 that is the retract route's «a person does this» refusal (api/clinical.py RETRACT_NEEDS_PERSON: a device
+ *  credential cannot withdraw a value) says so in its own words; any other 403 is a missing right. */
+const saidPersonOnly = (err) => apiErrorKey(err)?.key === "errors.retractNeedsPerson";
 
 /** `bed` names the patient in the title and on the toasts. `what` is `{ code, label, value, time, source,
  *  observedMs }`: the engine's code, and the label, the value with its unit, the measurement time and the source as
@@ -98,9 +99,11 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
       if (!checked.skip) entries = [{ code: what.code, value: checked.value }];
     }
     // The bound again, on a fresh clock: the reading may have aged out while she typed. Nothing is sent, and the
-    // typed value stays in its box beside the reason; emptying the box withdraws only.
+    // typed value stays in its box beside the reason. A withdrawal takes a value out of every score, so it is never
+    // sent on the strength of a press that was meant to replace it: the note says to empty the box and confirm
+    // again, and only then the wrong value alone is withdrawn.
     if (entries !== null && !withinBackdate(Math.max(nowMs, opened.screen + (Date.now() - opened.wall)), what.observedMs)) {
-      setValueError(t("kayit.correctTooOld"));
+      setValueError(t("kayit.correctNowTooOld"));
       return;
     }
     setValueError(null);

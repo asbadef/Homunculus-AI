@@ -286,8 +286,9 @@ describe("«Düzelt» — the dialog", () => {
 
   it.each([
     ["a missing right", "permission required: clinical.chart", "ölçməni düzəltmək hüququnuz yoxdur"],
-    ["the engine's «a person does this»", "a person links or rejects a reading: this credential names no actor",
-      "Bu işi bir şəxs görür; bu kimlik bir şəxsi göstərmir."],
+    // The retract route's own sentence (api/clinical.py RETRACT_NEEDS_PERSON): a device credential cannot withdraw.
+    ["the retract route's «a person does this»", "geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz",
+      "Səhv qeyd işarəsini bir şəxs qoyur; cihaz kimliyi ilə edilə bilməz."],
   ])("a 403 for %s says its own sentence, charts nothing and closes", async (_what, message, sentence) => {
     const { api, onWritten } = await openDialog({ setup: (a) => { a.retractEntry.mockRejectedValue(refusal(403, message)); } });
     await arm();
@@ -376,7 +377,8 @@ describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
   const reasonBox = () => within(dialog()).getByLabelText(/^Səbəb/);
   const valueBox = () => within(dialog()).getByLabelText(/^Düzgün dəyər · Nəbz/);
   const confirm = () => press(within(dialog()).getByRole("button", { name: "Düzəlt" }));
-  const TOO_OLD = "Ölçmə 24 saatdan köhnədir";
+  const TOO_OLD = "Ölçmə 24 saatdan köhnədir";            // the note when the dialog opens on a reading already too old
+  const NOW_TOO_OLD = "Ölçmə artıq 24 saatdan köhnədir";   // the inline note when it aged out under the dialog
   const openAging = async (extra) => {
     const mounted = await open({ answer: aging, ...extra });
     await press(within(sets()[0].querySelector("[data-reading='21']")).getByRole("button", { name: "Düzəlt" }));
@@ -397,6 +399,7 @@ describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
     await press(screen.getByRole("button", { name: "tick" }));        // five minutes on: the reading is now too old
     expect(valueBox()).toBeInTheDocument();
     expect(dialog()).not.toHaveTextContent(TOO_OLD);
+    expect(dialog()).not.toHaveTextContent(NOW_TOO_OLD);              // said only when she confirms, not before
   });
 
   it("checks the bound again on confirm: a value typed for a reading that aged out is held back, said, and kept in its box", async () => {
@@ -408,10 +411,18 @@ describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
     await confirm();
     expect(api.retractEntry).not.toHaveBeenCalled();        // nothing was sent
     expect(api.chart).not.toHaveBeenCalled();
-    expect(dialog()).toHaveTextContent(TOO_OLD);            // the inline reason
+    expect(dialog()).toHaveTextContent(NOW_TOO_OLD);        // the inline reason: nothing sent, empty the box to go on
+    expect(dialog()).toHaveTextContent("Heç nə göndərilmədi");
     expect(valueBox()).toHaveValue("78");                   // not silently dropped
     expect(reasonBox()).toHaveValue(WHY);
+    // A press again with the value still typed sends nothing either: a withdrawal is never sent on the strength of a
+    // press that was meant to replace the value.
+    await confirm();
+    expect(api.retractEntry).not.toHaveBeenCalled();
+    expect(valueBox()).toHaveValue("78");
+    expect(dialog()).toHaveTextContent(NOW_TOO_OLD);
     await type(valueBox(), "");                             // she lets the value go: the withdrawal alone is still hers
+    expect(dialog()).not.toHaveTextContent(NOW_TOO_OLD);    // the note leaves with the edit
     await confirm();
     expect(api.retractEntry).toHaveBeenCalledTimes(1);
     expect(api.chart).not.toHaveBeenCalled();
@@ -425,7 +436,7 @@ describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
     await type(valueBox(), "78");
     await confirm();
     expect(api.retractEntry).not.toHaveBeenCalled();
-    expect(dialog()).toHaveTextContent(TOO_OLD);
+    expect(dialog()).toHaveTextContent(NOW_TOO_OLD);
     expect(valueBox()).toHaveValue("78");
   });
 

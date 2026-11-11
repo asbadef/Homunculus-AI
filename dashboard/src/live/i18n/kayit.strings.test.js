@@ -11,8 +11,8 @@ const kayit = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => key
 
 describe("the measurement record's words (kayit)", () => {
   // The sweeps below read every key of the namespace: on an empty namespace they would pass having read nothing.
-  it("has its 73 keys in every language", () => {
-    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(73);
+  it("has its 74 keys in every language", () => {
+    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(74);
   });
 
   it("says the spec's Turkish for the box, the two sources and the list", () => {
@@ -57,6 +57,17 @@ describe("the measurement record's words (kayit)", () => {
       expect(said, lang).toContain("09:40");
       expect(said, lang).not.toContain(NOT_SAVED[lang]);
       expect(said.toLowerCase(), lang).toContain(LOOK[lang]);
+    }
+  });
+
+  it("a reading that aged out under the dialog says nothing was sent, and how to go on", () => {
+    const NOTHING_SENT = { tr: "Hiçbir şey gönderilmedi", az: "Heç nə göndərilmədi", ru: "Ничего не отправлено", en: "Nothing was sent" };
+    const EMPTY_BOX = { tr: "Kutuyu boşaltıp yeniden onaylayın", az: "Qutunu boşaldıb yenidən təsdiqləyin", ru: "Очистите поле и подтвердите снова", en: "Empty the box and confirm again" };
+    for (const lang of LANG_CODES) {
+      const said = DICTIONARIES[lang]["kayit.correctNowTooOld"];
+      expect(said, lang).toContain(NOTHING_SENT[lang]);
+      expect(said, lang).toContain(EMPTY_BOX[lang]);
+      expect(said, lang).toContain("24");
     }
   });
 
