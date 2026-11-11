@@ -1771,8 +1771,10 @@ uydurmadır.
   - Sütunlar: no, zaman, tür, kim, hasta, konu.
   - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
   - **Kullanıcı kimliği de görünmez** (sahip kararı, 2026-11-11): kapsam ataması satırı bu sürümden beri değiştireni ve
-    erişimi değişeni adıyla yazar; daha eski satırlarda kimlik `kullanıcı ••••1a2b` olarak maskelenir.
-  - Motorun yazdığı her olay türünün bir adı vardır ve süzgeçte yer alır; yeni bir türün adı unutulursa testler kırılır.
+    erişimi değişeni adıyla yazar; daha eski satırlarda kimlik `kullanıcı ••••1a2b` olarak maskelenir. Başka satırlardaki
+    bir kimlik (örneğin görev satırlarında görevin kimliği, bir monitörün kimliği) «kullanıcı» demeden `••••a5b9` görünür.
+  - Motorun yazdığı her olay türünün bir adı vardır ve süzgeçte yer alır. Bir test motorun kaynağını okur: sayfanın adını
+    bilmediği bir tür yazılırsa ya da bir kaydın türünün nereden geldiğini okuyamazsa kırılır.
   - Olayın ayrıntısı (payload) ve mühürler gösterilmez.
   - «Tür» süzgeci seçilen türü sunucudan ister. Böylece seyrek bir tür, sayıca çok olan ölçüm kayıtlarının arasında
     kaybolmaz.

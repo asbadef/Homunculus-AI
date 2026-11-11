@@ -28,7 +28,7 @@ event types).
 ## 3. Design
 
 ### D1 — engine: the scope row carries names
-`PUT /scope/users/{user_id}` (the route that writes the `scope` row) adds, beside the existing keys:
+`PUT /scope/{user_id}` (the route that writes the `scope` row) adds, beside the existing keys:
 - `"actor"`: the administrator's `username` (read first by the page's `ACTOR_KEYS`);
 - `"user"`: the target user's `username` (read from `User` by `user_id`, in the caller's tenant; the route already
   checks membership).
@@ -44,6 +44,10 @@ shape only grows, so nothing that reads it breaks, and the id remains for an inv
   masked the same way. For every other type, a subject that is a UUID is masked the same way; any other subject is
   shown as now.
 - **No other change** to the patient mask (D2 of the parent spec), the filter or the verdicts.
+- **As built (2026-11-11, deviation).** «kullanıcı» is said only where the id is known to be a person's: a scope
+  row's subject and the actor keys that name a person. A UUID subject of any other type — a task's id on the
+  `task_*` rows — and a UUID under the actor key `device` (a monitor) are masked as an id, without the word:
+  `••••a5b9`. Calling a task or a monitor «kullanıcı» would be false.
 
 ### D3 — a label for every event type the engine writes
 - Inventory every `event_type` the engine writes (`trail.record`, `append_audit`, `AuditEvent(…)` and any helper that
@@ -51,6 +55,10 @@ shape only grows, so nothing that reads it breaks, and the id remains for an inv
   in `EVENT_TYPES` gets an entry and a label in four languages (`denetim.js` strings). Codes stay codes in storage.
 - A test pins the inventory: it reads the engine's sources (as `apiErrors.test.js` and the catalogue drift tests do)
   and fails when the engine writes a type the page does not name, so the next new type cannot slip through.
+  As built (`engineTypes.test.js`, after review): it reads every `AuditEvent(…)` and every call of a declared wrapper,
+  by the function each sits in; a type argument it cannot read — a parameter of an undeclared function, a nested
+  conditional, a loop or unpacked variable — fails the test rather than being skipped; and in the two modules whose
+  types come through a variable, every `structure.` / `device_bed.` literal must be a named type.
 - The table's rule for an unknown code (show the code) stays, for rows written by older versions.
 
 ### D4 — out of scope
