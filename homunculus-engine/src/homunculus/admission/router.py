@@ -55,7 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus import crypto
 from homunculus.admission import form, service, trail, transfer, unitscope
-from homunculus.admission.boardlink import board_link_of, kabul_record
+from homunculus.admission.boardlink import board_link_of, card_record
 from homunculus.admission.models import (
     CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX, OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX,
     Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
@@ -85,7 +85,6 @@ from homunculus.admission.service import WorkflowError
 from homunculus.auth.dependencies import Principal, caller_tenant_id, get_principal, require_permission
 from homunculus.auth.models import Group, GroupPermission, TenantMembership, User, UserGroup
 from homunculus.db import get_db
-from homunculus.api.patient_identity import IdentityRecord
 from homunculus.scope import Scope
 from homunculus.tenant import scope
 from homunculus.tenant.models import Bed, BedState, Room, Site, Tenant, Unit
@@ -226,16 +225,6 @@ async def _attempt(key: str, what: str, write) -> EngineWrite:
         return "failed"
 
 
-def _card(*, key: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
-          bed_id: uuid.UUID, unit_id: uuid.UUID) -> IdentityRecord:
-    """The admission's board identity: the card on its bed (`kabul_record`), under its board key
-    (`board_key`: the protocol number; a legacy admission's H-number)."""
-    return kabul_record(patient_number=key, display_name=display_name,
-                        birth_date=date.fromisoformat(date_of_birth), sex=sex,
-                        bed_label=bed_label, bed_id=str(bed_id), unit_id=str(unit_id),
-                        at=datetime.now(timezone.utc))
-
-
 async def _to_board(request: Request, hospital: str, *, card: dict, note: AdmissionNoteFields,
                     actor: str) -> EngineWrites:
     """After the admission is committed (spec §3.1 step 3): the card, the weight, the profile —
@@ -245,8 +234,8 @@ async def _to_board(request: Request, hospital: str, *, card: dict, note: Admiss
     reached nothing: the parts asked for are `failed`, logged at ERROR. Logged with the board key,
     never a name.
 
-    `card` is `_card`'s keywords as plain values, taken before the commit: nothing here reads the
-    session, which a failure after the commit may have rolled back (and so expired)."""
+    `card` is `card_record`'s keywords as plain values, taken before the commit: nothing here reads
+    the session, which a failure after the commit may have rolled back (and so expired)."""
     key = card["key"]
     link = board_link_of(request)
     if link is None:
@@ -255,7 +244,7 @@ async def _to_board(request: Request, hospital: str, *, card: dict, note: Admiss
         return _not_reached(weight_asked=note.weight_kg is not None,
                             profile_asked=bool(note.comorbidity_codes))
     board = await _attempt(key, "identity",
-                           lambda: link.put_identity(hospital, _card(**card)))
+                           lambda: link.put_identity(hospital, card_record(**card)))
     weight = ("skipped" if note.weight_kg is None else await _attempt(
         key, "weight", lambda: link.chart_weight(hospital, key, note.weight_kg, actor=actor)))
     profile = ("skipped" if not note.comorbidity_codes else await _attempt(
@@ -358,7 +347,7 @@ async def _board_again(db: AsyncSession, request: Request, hospital: str, admiss
         return _not_reached(weight_asked=weight_asked, profile_asked=bool(codes))
     log.warning("admission %s: its first send stopped before the board; the card and the "
                 "comorbidities are written again, the weight is not", key)
-    board = await _attempt(key, "identity (again)", lambda: link.put_identity(hospital, _card(
+    board = await _attempt(key, "identity (again)", lambda: link.put_identity(hospital, card_record(
         key=key, display_name=display_name, date_of_birth=date_of_birth, sex=sex,
         bed_label=bed_label, bed_id=bed_id, unit_id=unit_id)))
     profile = ("skipped" if not codes else await _attempt(
@@ -706,8 +695,7 @@ async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: 
     The admission is the caller's tenant's already (`_get_admission_or_404`), and so is its bed.
     Returns that unit: the one a handover of the admission is stored under (G4-02 review), so the
     rule has one reader."""
-    unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
-                                .where(Bed.id == admission.bed_id))).scalar_one()
+    unit_id = await transfer.unit_of(db, admission.bed_id)          # the one reader of the rule
     try:
         unitscope.require_reach(await unitscope.caller_scope(db, user_id, caller_tenant),
                                 unit_id=unit_id, bed_id=admission.bed_id)
@@ -1205,11 +1193,37 @@ async def care_team_candidates(
 #     visible to the duplicate refusal (A-37);
 #   * a handover still in hand names the arriving row, so B3b's critical gate reads her card's key
 #     (the owner, 2026-11-10; X17, `service.transfer_patient`).
-@router.post("/{admission_id}/transfer", response_model=TransferResponse, status_code=201)
+async def _transfer_again(db: AsyncSession, request: Request, response: Response, *,
+                          caller_tenant: uuid.UUID, source_id: uuid.UUID, arriving: Admission,
+                          left: tuple[uuid.UUID, uuid.UUID], actor: str) -> TransferResponse:
+    """T9 (spec §5.5): a transfer sent again after its card did not move — the source is
+    TRANSFERRED, its arriving row open on the body's bed. Nothing is written in the database: the
+    locks are let go first, the card is moved again (`transfer.move_card`: idempotent), and the
+    arriving row is answered, 200 (X1), with how that went and the critical count as it is now.
+    Audited `admission.transfer_board_retry`, `via: transfer`."""
+    hospital = await trail.hospital_of(db, caller_tenant)
+    card = await transfer.card_of(db, arriving.id)
+    written = AdmissionResponse.model_validate(arriving)
+    critical = _open_critical(request, hospital, card["key"])
+    await db.rollback()                   # nothing is written; the locks go before the board step
+    board = await transfer.move_card(request, hospital, card, left=left)
+    trail.record(request, hospital, "admission.transfer_board_retry", patient_id=card["key"],
+                 payload={"source_admission_id": str(source_id), "admission_id": str(written.id),
+                          "board": board, "via": "transfer", "actor": actor})
+    response.status_code = status.HTTP_200_OK
+    return TransferResponse(**written.model_dump(), board=board, critical_alarm_open=critical > 0)
+
+
+@router.post("/{admission_id}/transfer", response_model=TransferResponse, status_code=201,
+             responses={200: {"model": TransferResponse,
+                              "description": "The same transfer sent again after its card did "
+                                             "not move: the card moved again, nothing written "
+                                             "(G2-B1b, T9)."}})
 async def transfer_admission(
     admission_id: uuid.UUID,
     payload: TransferRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.move.initiate",
                                             "admissions.transfer.confirm")),
@@ -1263,6 +1277,13 @@ async def transfer_admission(
     except Refusal as exc:
         raise exc.http() from None
     admission = await _locked(db, admission, payload.target_bed_id)
+    if admission.state == AdmissionState.TRANSFERRED:                        # §5.2 step 6, T9
+        arriving = await transfer.arriving_of(db, admission.id)
+        if arriving is not None and arriving.bed_id == payload.target_bed_id \
+                and arriving.state in OPEN_ADMISSION_STATES:
+            return await _transfer_again(db, request, response, caller_tenant=caller_tenant,
+                                         source_id=admission.id, arriving=arriving,
+                                         left=(source_bed_id, source_unit), actor=actor)
     if admission.state != AdmissionState.ACTIVE:
         raise Refusal(409, INVALID_TRANSITION, "Only an ACTIVE admission is transferred: a draft "
                       "is signed first, and a discharge started is not moved.").http()
@@ -1294,7 +1315,7 @@ async def transfer_admission(
     card = {"key": key, "display_name": name, "date_of_birth": born, "sex": sex,
             "bed_label": bed.label, "bed_id": payload.target_bed_id, "unit_id": target_unit}
     await db.commit()
-    board = await transfer.move_card(request, hospital, card)
+    board = await transfer.move_card(request, hospital, card, left=(source_bed_id, source_unit))
     return TransferResponse(**written.model_dump(), board=board, critical_alarm_open=critical > 0)
 
 

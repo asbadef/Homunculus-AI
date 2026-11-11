@@ -69,7 +69,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
-from homunculus.admission import trail, unitscope
+from homunculus.admission import trail, transfer, unitscope
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.boardlink import board_link_of
 from homunculus.admission.errors import (
@@ -607,7 +607,16 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     stand.
 
     Each check reads the identity store once: one read per DISCHARGED admission the bed ever
-    held, a tombstone among them read and passed over."""
+    held, a tombstone among them read and passed over.
+
+    G2-B1b (spec §5.5, T9): the bed's TRANSFERRED admissions too. Each is followed forward
+    (`transfer.where_now`) to the patient's admission now. While her card still stands as admitted
+    on THIS bed (`BoardLink.stands_on`: the move's board step failed), it is moved to her bed now
+    (`transfer.move_card`), audited `admission.transfer_board_retry` with `via`; when it still
+    fails, the bed is refused `board_not_cleared` with her number. It is never taken off: she is
+    still admitted (A-37, O8). A card already elsewhere, or a tombstone, is passed over. One
+    exception (X4): when her stay has ended since and her discharge's board step failed too, the
+    card is a discharged patient's, and is taken off as above."""
     link = board_link_of(request)
     if link is None:
         return
@@ -627,9 +636,41 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
                               "board": board, "alerts": alerts, "via": via, "actor": actor})
         if board != "ok" and standing is None:
             standing = {"patient_number": number, "board_key": key}
+    # G2-B1b (spec §5.5, T9): the patients who moved FROM this bed. A move whose board step failed
+    # left the card standing as admitted here, though she lies elsewhere now.
+    transferred = (await db.execute(
+        select(Admission.id)
+        .where(Admission.bed_id == bed_id, Admission.state == AdmissionState.TRANSFERRED)
+        .order_by(Admission.updated_at.desc()))).scalars().all()
+    here = None
+    for source_id in transferred:
+        now_at = await transfer.where_now(db, source_id)
+        if now_at is None:
+            continue                                   # a move the closed routes left half done
+        now_id, now_state = now_at
+        card = await transfer.card_of(db, now_id)
+        key = card["key"]
+        if link.is_discharged(hospital, key) or not link.stands_on(hospital, key, str(bed_id)):
+            continue                                   # a tombstone, or a card already elsewhere
+        if now_state in OPEN_ADMISSION_STATES:         # still admitted: moved, never taken off
+            if here is None:
+                here = await transfer.unit_of(db, bed_id)
+            board = await transfer.move_card(request, hospital, card, left=(bed_id, here))
+            trail.record(request, hospital, "admission.transfer_board_retry", patient_id=key,
+                         payload={"source_admission_id": str(source_id),
+                                  "admission_id": str(now_id), "bed_id": str(bed_id),
+                                  "board": board, "via": via, "actor": actor})
+        else:                                          # X4: her stay ended since; the card is a
+            board, alerts = await link.take_off(hospital, key)      # discharged patient's
+            trail.record(request, hospital, "admission.discharge_board_retry", patient_id=key,
+                         payload={"admission_id": str(now_id), "bed_id": str(bed_id),
+                                  "board": board, "alerts": alerts, "via": via,
+                                  "actor": actor})
+        if board != "ok" and standing is None:
+            standing = {"patient_number": card["patient_number"], "board_key": key}
     if standing is not None:
-        raise Refusal(409, BOARD_NOT_CLEARED, "A patient of this bed is still on the board: the "
-                      "board refused the discharge.", extra=standing)
+        raise Refusal(409, BOARD_NOT_CLEARED, "A patient's card still stands on this bed: the "
+                      "board refused to move it or to take it off.", extra=standing)   # X11
 
 
 @router.post("/beds/{bed_id}/release", response_model=BedResponse,

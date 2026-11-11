@@ -18,7 +18,10 @@ Neonatal: bed N1.
 - The card follows (D3); the two-step routes are gone (T1)."""
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
+from contextlib import aclosing
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -26,16 +29,20 @@ import pytest_asyncio
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from homunculus.admission.boardlink import BoardLink
 from homunculus.admission.models import Admission, AdmissionState, CareTeamMember, CareTeamRole
+from homunculus.api.app import ScopedBoardView, sse_board_frames
 from homunculus.auth.groups import ensure_default_groups
+from homunculus.scope import build_scope
 from homunculus.scope import service as scope_service
 from homunculus.scope.models import StaffScope
 from homunculus.tenant.models import Bed, BedState, Room, Unit
 from tests.conftest import requires_db
-from tests.kabul_world import FIRST_PROTOCOL, SLUG, build_ward, ward_client
+from tests.kabul_world import BOARD, FIRST_PROTOCOL, SLUG, build_ward, ward_client
 from tests.signed_in import add_user, bearer
 from tests.test_discharge_api import (
-    _cards_on, _the_ward, admit, at_once, drain, form, signed, started,
+    _cards_on, _refused_tombstone, _the_ward, admit, at_once, audited, drain, form, septic_shock,
+    signed, started,
 )
 
 pytestmark = [requires_db]
@@ -221,6 +228,36 @@ async def test_each_note_rule_is_a_coded_422(ward, db_session, reason, note):
     await _refused_writing_nothing(
         db_session, app, lambda: transfer(w, client, source, reason=reason, **body),
         422, "field_invalid:note")
+
+
+async def test_a_note_of_exactly_200_characters_is_accepted_and_kept(ward, db_session):
+    """X3: the bound is inclusive — 200 characters pass, 201 are the coded 422 above."""
+    w, client, _ = ward
+    source = await signed(w, client)
+    answer = await moved(w, client, source, note="x" * 200)
+    ((kept,),) = await _fresh(db_session, select(Admission.transfer_note)
+                              .where(Admission.id == uuid.UUID(answer["id"])))
+    assert kept == "x" * 200
+
+
+async def test_a_note_with_a_control_character_is_the_coded_422_and_is_never_echoed(
+        ward, db_session):
+    """The body's text rule (a control character other than tab and line breaks is not text) is
+    answered as `field_invalid:note`, and the value is not repeated in the answer."""
+    w, client, app = ward
+    source = await signed(w, client)
+    r = await _refused_writing_nothing(
+        db_session, app, lambda: transfer(w, client, source, note=f"{NOTE}\x1b[31m"),
+        422, "field_invalid:note")
+    assert not any(part in r.text for part in ("\x1b", "\\u001b", "[31m", NOTE))
+
+
+async def test_confirm_reserved_is_a_real_boolean_a_string_is_refused(ward, db_session):
+    """B3a R5: the clinician's answer is `true`, not the text "true" (`StrictBool`)."""
+    w, client, app = ward
+    source = await signed(w, client)
+    await _refused_writing_nothing(
+        db_session, app, lambda: transfer(w, client, source, confirm_reserved="true"), 422, None)
 
 
 async def test_a_body_naming_a_unit_is_refused_the_unit_is_the_beds(ward, db_session):
@@ -454,3 +491,176 @@ async def test_the_two_step_routes_are_gone(ward, step):
                                 "target_unit_id": str(w.units["rea"].id)},
                           headers=w.auth["admin"])
     assert r.status_code in (404, 405)
+
+
+# ---------------------------------------------------------------- the card (T8, T9, §5.4, §5.5)
+async def _heard(frames: list[dict], scope, shown: set[str]) -> list[dict]:
+    """The frames a screen of `scope` that shows the cards `shown` is sent, in order, until the
+    stream falls quiet: what `/stream` sends a scoped subscriber (`sse_board_frames` with its
+    `ScopedBoardView`, G2 borç 1; X19)."""
+    queue: asyncio.Queue = asyncio.Queue()
+    for frame in frames:
+        await queue.put(frame)
+    sent = []
+    async with aclosing(sse_board_frames(queue, keepalive=0.05,
+                                         view=ScopedBoardView(scope, shown))) as stream:
+        async for chunk in stream:
+            if not chunk.startswith("data: "):
+                break
+            sent.append(json.loads(chunk[len("data: "):]))
+    return sent
+
+
+async def test_the_card_moves_under_its_key_and_the_old_place_is_told_first(ward):
+    """T8, F7: a removal for the old bed and unit, with no name, then the card at the new place.
+    Through the stream's view (X19): a screen of the old unit, which showed her card, hears the
+    move's own removal only; a screen of the new unit hears the card only; a screen of both hears
+    the two, in that order."""
+    w, client, app = ward
+    one, rea = str(w.beds["1"].id), str(w.units["rea"].id)
+    n1, neo = str(w.beds["N1"].id), str(w.units["neo"].id)
+    source = await signed(w, client)
+    key = source["board_key"]
+    queue = app.state.broadcaster.subscribe(SLUG)
+    answer = await moved(w, client, source, "N1", "admin")
+    assert answer["board"] == "ok"
+    removal, card = drain(queue)
+    assert removal == {"patient_id": key, "removed": True,
+                       "identity": {"bed_id": one, "unit_id": rea}}
+    assert "Sentetik" not in repr(removal)
+    assert (card["patient_id"], card["identity"]["bed_id"], card["identity"]["unit_id"]) == (
+        key, n1, neo)
+    assert await _cards_on(client, n1) == [key] and await _cards_on(client, one) == []
+    old, new = build_scope("MEMBER", unit_ids=[rea]), build_scope("MEMBER", unit_ids=[neo])
+    both = build_scope("MEMBER", unit_ids=[rea, neo])
+    assert await _heard([removal, card], old, {key}) == [removal]          # its place, not the view's
+    assert [f.get("removed", False) for f in await _heard([removal, card], new, set())] == [False]
+    assert [f.get("removed", False) for f in await _heard([removal, card], both, {key})] == [
+        True, False]
+
+
+async def test_the_strips_occupants_are_dropped_when_the_card_moves(ward, monkeypatch):
+    w, client, app = ward
+    source = await signed(w, client)
+    heard: list = []
+    monkeypatch.setattr(app.state.board_link, "_occupancy_reset", heard.append)
+    await moved(w, client, source)
+    assert heard == [SLUG]
+
+
+async def test_an_open_critical_alarm_holds_nothing_and_moves_with_the_patient(ward):
+    """D7: the move succeeds and says so; the alarm is on her card at the new bed."""
+    w, client, app = ward
+    two = str(w.beds["2"].id)
+    source = await signed(w, client)
+    key = source["board_key"]
+    await septic_shock(client, key)
+    answer = await moved(w, client, source)
+    assert (answer["critical_alarm_open"], answer["board"]) == (True, "ok")
+    (card,) = [c for c in (await client.get("/patients", headers=BOARD)).json()["patients"]
+               if c["patient_id"] == key]
+    assert card["identity"]["bed_id"] == two
+    assert "septic_shock" in {a["kind"] for a in card["alerts"]}
+    assert key in app.state.board_link._engine(SLUG).patient_ids()
+
+
+async def test_a_card_that_did_not_move_is_moved_by_the_same_request_writing_nothing(
+        ward, db_session, monkeypatch):
+    """T9, X1: the same request on the TRANSFERRED source whose arriving row is open on that bed
+    moves the card again and answers 200. Nothing is written in the database."""
+    w, client, app = ward
+    one, two = w.beds["1"].id, w.beds["2"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    real, refusals = BoardLink.move, []
+
+    async def refused_once(self, tenant, record, *, left):
+        if not refusals:
+            refusals.append(record.patient_id)
+            return "failed"
+        return await real(self, tenant, record, left=left)
+
+    monkeypatch.setattr(BoardLink, "move", refused_once)
+    first = await transfer(w, client, source)
+    assert (first.status_code, first.json()["board"]) == (201, "failed")
+    assert await _cards_on(client, one) == [key]                     # T9: never taken off
+    after_first = await _the_ward(db_session)
+    again = await transfer(w, client, source)
+    assert (again.status_code, again.json()["board"], again.json()["id"]) == (
+        200, "ok", first.json()["id"])
+    assert await _the_ward(db_session) == after_first
+    assert await _cards_on(client, two) == [key] and await _cards_on(client, one) == []
+    (retry,) = audited(app, "admission.transfer_board_retry")
+    assert (retry.patient_id, retry.payload["via"], retry.payload["board"]) == (
+        key, "transfer", "ok")
+
+
+async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never_takes_it_off(
+        ward, db_session, monkeypatch):
+    """T9, C-1: the old bed is not freed under a card left on it. Its release moves the card to
+    the patient's bed now, or is refused `board_not_cleared` with her key while it cannot."""
+    w, client, app = ward
+    one, two = w.beds["1"].id, w.beds["2"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    release = f"/tenant/beds/{one}/release"
+    with monkeypatch.context() as patched:
+        async def refused(self, tenant, record, *, left):
+            return "failed"
+
+        patched.setattr(BoardLink, "move", refused)
+        assert (await transfer(w, client, source)).json()["board"] == "failed"
+        r = await client.post(release, headers=w.auth["nurse"])
+        assert (r.status_code, r.json()["detail"]["code"], r.json()["detail"]["board_key"]) == (
+            409, "board_not_cleared", key)
+        state = (await db_session.execute(text("SELECT state::text FROM beds WHERE id = :id"),
+                                          {"id": one})).scalar_one()
+        assert state == "HOUSEKEEPING"
+    r = await client.post(release, headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, two) == [key] and await _cards_on(client, one) == []
+    assert not app.state.board_link.is_discharged(SLUG, key)
+    assert [(row.payload["via"], row.payload["board"])
+            for row in audited(app, "admission.transfer_board_retry")] == [
+        ("bed.release", "failed"), ("bed.release", "ok")]
+
+
+async def test_a_release_passes_over_a_patient_whose_card_moved(ward):
+    w, client, app = ward
+    one = w.beds["1"].id
+    source = await signed(w, client)
+    await moved(w, client, source)
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert audited(app, "admission.transfer_board_retry") == []
+
+
+async def test_a_release_takes_off_the_card_of_a_patient_moved_and_discharged_since(
+        ward, monkeypatch):
+    """X4: her move's and then her discharge's board steps both failed, so her card still stands
+    as admitted on the old bed though her stay has ended. The old bed's release takes it off, as a
+    discharged patient's, and frees the bed."""
+    w, client, app = ward
+    one = w.beds["1"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    with monkeypatch.context() as patched:
+        async def refused_move(self, tenant, record, *, left):
+            return "failed"
+
+        patched.setattr(BoardLink, "move", refused_move)
+        patched.setattr(BoardLink, "discharge_identity", _refused_tombstone)
+        arriving = await moved(w, client, source)
+        r = await client.post(f"/admissions/{arriving['id']}/discharge/initiate",
+                              json={"disposition": "HOME"}, headers=w.auth["doctor"])
+        assert r.status_code == 200, r.text
+        r = await client.post(f"/admissions/{arriving['id']}/discharge/confirm",
+                              headers=w.auth["charge"])
+        assert (r.status_code, r.json()["board"]) == (200, "failed")
+    assert await _cards_on(client, one) == [key]
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, one) == [] and app.state.board_link.is_discharged(SLUG, key)
+    (row,) = audited(app, "admission.discharge_board_retry")
+    assert (row.payload["admission_id"], row.payload["via"], row.payload["board"]) == (
+        arriving["id"], "bed.release", "ok")
