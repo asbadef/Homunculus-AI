@@ -9,7 +9,8 @@ snooze's `reason_text` and an RRT call's `reason` are not read at all).
 PLACING. An episode, a snooze and an RRT call are tied to a unit through their row's patient key. A key the map does
 not hold — a patient admitted elsewhere (HIS-fed), a monitor-only id, a legacy key admitted to two units — is
 UNPLACED. An unrestricted caller gets every unit and the unplaced block; a scoped caller gets her units only, no
-unplaced block, and `coverage` and `hospital` count only what she got.
+unplaced block, and `coverage` and `hospital` count only what she got. Every open unit she reaches is a row, a quiet
+one with zeros; a closed unit only when something happened in it (spec A3).
 
 Alarms are grouped and each group goes through `alarm_quality.summarise` unchanged: a unit's median and p90 are over
 its own episodes, `hospital`'s over every episode the caller may see — never a mean of the units' medians.
@@ -49,9 +50,13 @@ class HandoverFacts:
 
 @dataclass(frozen=True)
 class Reach:
-    """The units the caller reaches (id → name) and whether she is scoped (her unit grants, not unrestricted)."""
+    """The units the caller reaches (id → name), whether she is scoped (her unit grants, not unrestricted), and which
+    of those units are closed (`Unit.is_active` false). Spec A3: every open unit she reaches is a row of the answer,
+    with real zeros when nothing happened in it, so `units: []` means she reaches none; a closed unit is a row only
+    when something happened in it in the window."""
     units: Mapping[uuid.UUID, str]
     scoped: bool
+    closed: frozenset[uuid.UUID] = frozenset()
 
 
 @dataclass
@@ -169,7 +174,9 @@ def build_report(*, records: list[AuditRecord], key_units: Mapping[str, uuid.UUI
         if h.unit_id in units:
             units[h.unit_id].handovers.append(h)
 
-    rows = sorted(((unit_id, group) for unit_id, group in units.items() if group.counts_anything()),
+    # Spec A3: every open unit she reaches, a quiet one with zeros; a closed one only with something in the window.
+    rows = sorted(((unit_id, group) for unit_id, group in units.items()
+                   if unit_id not in reach.closed or group.counts_anything()),
                   key=lambda row: (reach.units[row[0]].casefold(), str(row[0])))
     seen = [group for _, group in rows] + ([] if reach.scoped else [unplaced])
     every = _Group(episodes=[e for g in seen for e in g.episodes], snoozes=[s for g in seen for s in g.snoozes],

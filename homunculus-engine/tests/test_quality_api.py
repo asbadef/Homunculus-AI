@@ -191,7 +191,9 @@ async def test_the_indicators_need_quality_view(ward):
         assert r.status_code == 403, (who, r.text)
     for who in ("auditor", "admin"):
         body = await quality(client, w.auth[who])
-        assert (body["days"], body["units"], body["scoped"]) == (7, [], False)
+        assert (body["days"], [u["unit_name"] for u in body["units"]], body["scoped"]) == (
+            7, ["Neonatal", "Reanimasiya"], False)                     # the quiet units, with zeros (spec A3)
+        assert [u["alarms"]["episodes"] for u in body["units"]] == [0, 0]
 
 
 async def test_days_is_one_seven_or_thirty(ward):
@@ -262,6 +264,26 @@ async def test_a_scoped_reader_sees_her_units_only_and_no_unplaced(ward, db_sess
     assert nothing["hospital"]["alarms"]["episodes"] == 0
 
 
+async def test_every_open_unit_she_reaches_is_listed_and_a_closed_one_only_with_something(ward, db_session):
+    """Spec A3: `units` is every active unit the caller reaches, a quiet one with zeros, so `units: []` means she
+    reaches none. A unit closed since is listed only when something happened in it in the window."""
+    w, client, app = ward
+    quiet = await quality(client, await quality_reader(db_session, w, unit="neo"))
+    assert ([u["unit_name"] for u in quiet["units"]], quiet["scoped"]) == (["Neonatal"], True)
+    assert (quiet["units"][0]["alarms"]["episodes"], quiet["units"][0]["handovers"]["opened"]) == (0, 0)
+
+    w.units["neo"].is_active = False                                   # Neonatal closed
+    await db_session.commit()
+    body = await quality(client, w.auth["admin"])
+    assert [u["unit_name"] for u in body["units"]] == ["Reanimasiya"]
+
+    legacy = await here(db_session, w, "neo", "N1")
+    write(app, "first_seen", legacy.patient_number, "news2", 30)
+    body = await quality(client, w.auth["admin"])
+    assert [u["unit_name"] for u in body["units"]] == ["Neonatal", "Reanimasiya"]
+    assert [u["alarms"]["episodes"] for u in body["units"]] == [1, 0]
+
+
 async def test_a_truncated_read_says_so_and_from_when(ward, db_session, monkeypatch):
     """Capped as /alarm-quality is: the newest rows, one more to know. Then `window_from` is the oldest row kept."""
     w, client, app = ward
@@ -319,7 +341,8 @@ async def test_another_hospitals_admissions_trail_and_handovers_are_not_counted(
     write(app, "first_seen", SHARED, "news2", 20, tenant=OTHER)
 
     ours = await quality(client, w.auth["admin"])
-    assert [u["unit_name"] for u in ours["units"]] == ["Reanimasiya"]
+    assert [u["unit_name"] for u in ours["units"]] == ["Neonatal", "Reanimasiya"]      # Neonatal: quiet, zeros
+    assert [u["alarms"]["episodes"] for u in ours["units"]] == [0, 1]
     assert ours["coverage"] == {"episodes": 1, "placed": 1, "unplaced": 0}
     assert ours["hospital"]["handovers"]["opened"] == 0
     theirs = await quality(client, await bearer(db_session, their_admin))

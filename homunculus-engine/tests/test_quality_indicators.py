@@ -91,7 +91,16 @@ def report(reach: Reach, *, records=TRAIL, handovers=HANDOVERS, truncated=False,
                         window_from=window_from, truncated=truncated)
 
 
-EVERYONE = Reach(units=ALL_UNITS, scoped=False)
+# Kardiyoloji is closed and quiet: left out (spec A3), so this answer is the one the dashboard's fixture copies.
+EVERYONE = Reach(units=ALL_UNITS, scoped=False, closed=frozenset({KARDIO}))
+QUIET = {"alarms": {"episodes": 0, "answered": 0, "answered_rate": None, "median_response_sec": None,
+                    "p90_response_sec": None, "escalated": 0, "unanswered": 0, "unanswered_resolved": 0, "pending": 0,
+                    "per_kind": []},
+         "snoozes": {"count": 0, "by_reason": {r: 0 for r in SNOOZE_REASONS}, "by_severity": {"high": 0, "moderate": 0},
+                     "median_minutes": None},
+         "rrt": {"count": 0},
+         "handovers": {"opened": 0, "countersigned": 0, "waiting": 0, "expired": 0, "median_countersign_sec": None,
+                       "p90_countersign_sec": None}}
 
 
 def test_the_answer_says_its_period_and_how_it_was_read():
@@ -119,10 +128,32 @@ def test_each_unit_counts_its_own_alarms_by_the_alarm_quality_rules():
     assert (neo["episodes"], neo["answered"], neo["median_response_sec"], neo["answered_rate"]) == (1, 1, 240.0, 1.0)
 
 
-def test_the_units_are_by_name_and_a_unit_with_nothing_is_left_out():
+def test_the_units_are_by_name_and_a_closed_unit_with_nothing_is_left_out():
     body = report(EVERYONE)
     assert [(u["unit_id"], u["unit_name"]) for u in body["units"]] == [(str(NEO), "Neonatal"), (str(REA), "Reanimasiya")]
     assert set(body["units"][0]) == {"unit_id", "unit_name", "alarms", "snoozes", "rrt", "handovers"}
+
+
+def test_an_open_unit_with_nothing_in_the_window_is_listed_with_real_zeros():
+    """Spec A3: every active unit the caller reaches is a row; a quiet one says 0 (and «—» where nothing settled)."""
+    body = report(Reach(units=ALL_UNITS, scoped=False))
+    assert [u["unit_name"] for u in body["units"]] == ["Kardiyoloji", "Neonatal", "Reanimasiya"]
+    assert body["units"][0] == {"unit_id": str(KARDIO), "unit_name": "Kardiyoloji", **QUIET}
+    assert body["coverage"] == {"episodes": 9, "placed": 7, "unplaced": 2}           # a quiet unit changes no sum
+
+
+def test_a_closed_unit_is_listed_only_when_something_happened_in_it():
+    """Spec A3: a unit closed since keeps the alarms it had; closed and quiet, it is no row."""
+    body = report(Reach(units=ALL_UNITS, scoped=False, closed=frozenset({REA, KARDIO})))
+    assert [u["unit_name"] for u in body["units"]] == ["Neonatal", "Reanimasiya"]
+    assert body["units"][1]["alarms"]["episodes"] == 6
+
+
+def test_a_scoped_caller_whose_units_were_quiet_still_sees_them():
+    """Spec A3: `units: []` means the caller reaches no unit — never that her units were quiet."""
+    body = report(Reach(units={KARDIO: "Kardiyoloji"}, scoped=True))
+    assert body["units"] == [{"unit_id": str(KARDIO), "unit_name": "Kardiyoloji", **QUIET}]
+    assert (body["coverage"], body["unplaced"]) == ({"episodes": 0, "placed": 0, "unplaced": 0}, None)
 
 
 def test_snoozes_by_reason_and_severity_and_rrt_calls_are_counted_per_unit():

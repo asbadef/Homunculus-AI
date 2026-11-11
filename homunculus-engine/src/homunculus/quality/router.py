@@ -99,7 +99,8 @@ async def get_quality(
 
     scope = await unitscope.caller_scope(db, user.id, caller_tenant)
     within = unitscope.unit_clause(scope, unit_id=Unit.id)
-    units = select(Unit.id, Unit.name).join(Site, Site.id == Unit.site_id).where(Site.tenant_id == caller_tenant)
+    units = (select(Unit.id, Unit.name, Unit.is_active).join(Site, Site.id == Unit.site_id)
+             .where(Site.tenant_id == caller_tenant))
     handovers = (select(Handover.unit_id, Handover.status, Handover.bridge_expires_at, Handover.outgoing_signed_at,
                         Handover.incoming_signed_at)
                  .join(Unit, Unit.id == Handover.unit_id)
@@ -107,8 +108,10 @@ async def get_quality(
                  .where(Site.tenant_id == caller_tenant, Handover.bridge_opened_at >= since))
     if within is not None:
         units, handovers = units.where(within), handovers.where(within)
-    reach = Reach(units={unit_id: name for unit_id, name in (await db.execute(units)).all()},
-                  scoped=not scope.unrestricted)
+    reached = (await db.execute(units)).all()
+    # Spec A3: every open unit she reaches is a row (zeros when quiet); a closed one only with something in it.
+    reach = Reach(units={unit_id: name for unit_id, name, _ in reached}, scoped=not scope.unrestricted,
+                  closed=frozenset(unit_id for unit_id, _, active in reached if not active))
     key_units = await units_of_keys(db, caller_tenant, {rec.patient_id for rec in kept})
     facts = [HandoverFacts(*row) for row in (await db.execute(handovers)).all()]
     return build_report(records=kept, key_units=key_units, reach=reach, handovers=facts, now=now, days=days,
