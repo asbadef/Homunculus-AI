@@ -28,7 +28,7 @@ API_PATHS = [
     "/infinity-shadow/board", "/infinity-shadow/readings", "/infinity-shadow/device-beds",
     "/infinity-waves/192.0.2.10", "/patients", "/pharmacy", "/ack",
     "/ingest", "/view", "/audit", "/audit/verify", "/health", "/stream", "/stream-ticket",
-    "/notifications",
+    "/notifications", "/readings/unmatched",       # G3-05: «Eşleşmeyen ölçümler»
 ]
 # Paths that must stay with the single-page app.
 SPA_PATHS = ["/", "/index.html", "/assets/index-abc.js", "/administrator-guide"]

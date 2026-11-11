@@ -68,8 +68,9 @@ from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
-    MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_UNMATCHED, REASON_DISCHARGED, REASON_UNKNOWN,
-    UNKNOWN_POLICIES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading,
+    MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_TARGET_DISCHARGED, READING_UNMATCHED, REASON_DISCHARGED,
+    REASON_UNKNOWN, UNKNOWN_POLICIES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source,
+    manual_reading, reading_refusal, readings_router,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -886,6 +887,17 @@ def create_app(
         return who, result.boards
     app.include_router(tasks_router(caller=lambda authorization: _caller(authorization),
                                     board=_tasks_board, audit=audit, store=tasks))
+    # G3-05: «Eşleşmeyen ölçümler» — the unmatched list, the link and the rejection, bound the same way: the
+    # closures below are read when a request arrives. `identity` is the link's second look at its target — read
+    # before each reading of a set, so a discharge between two of them stops the link (B3 review).
+    app.include_router(readings_router(
+        caller=lambda authorization: _caller(authorization),
+        sees=lambda who, authorization: _reading_visibility(who, authorization),
+        target=lambda who, authorization, patient_id: _link_target(who, authorization, patient_id),
+        identity=lambda hospital, patient_id: identities.get(hospital, patient_id),
+        admission_for=lambda hospital, record: _admission_for(hospital, record),
+        apply=lambda hospital, obs, record, now, reading: _apply_reading(hospital, obs, record, now, reading=reading),
+        audit=audit, store=readings))
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
@@ -1514,6 +1526,30 @@ def create_app(
         except Exception:
             log.exception("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s); ölçüm işlenir", hospital)
             return False
+
+    async def _reading_visibility(caller: Caller, authorization: str | None) -> Callable[[str], bool]:
+        """G3-05 (D11): «may this caller see the patient under this number» — for the unmatched sets of a
+        DISCHARGED number, which are shown only where the caller's scope reaches that patient's last unit (the
+        tombstone keeps it; `_scope_card` reads it there). The scope is resolved once per request; one that
+        cannot be read is 503, never an empty list (G2-A2, D13)."""
+        scope = _readable(await _scope(authorization))
+        if scope.unrestricted:
+            return lambda key: True
+        hospital = caller.hospital
+        return lambda key: sees_patient(_scope_card(hospital, key), scope)
+
+    async def _link_target(caller: Caller, authorization: str | None, patient_id: str):
+        """G3-05 (D11): the patient an unmatched reading may be linked to — in the caller's scope
+        (`_require_patient`: 404, audited), not discharged (409: linking to a closed stay is out of this slice),
+        and on the board: an identity record or a patient the engine has measured (404 otherwise — a link must
+        never create a card). Answers the identity record, None for a measured patient nobody named."""
+        await _require_patient(caller, authorization, patient_id)
+        record = identities.get(caller.hospital, patient_id)
+        if is_tombstone(record):
+            raise reading_refusal(409, READING_TARGET_DISCHARGED)
+        if record is None and patient_id not in set(_engine(caller.hospital).patient_ids()):
+            raise HTTPException(status_code=404, detail="hasta bulunamadı")
+        return record
 
     def _file_unmatched(hospital: str, obs, reason: str, dropped: str) -> dict:
         """G3-05 (D4, D8, D9): a device reading whose number matches nobody — a discharged admission's, or (under

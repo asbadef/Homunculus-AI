@@ -832,7 +832,15 @@ TASK_QUEUE = {
     ("GET", "/tasks/settings"),
     ("PUT", "/tasks/settings"),
 }
-UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE | {
+# G3-05: «Eşleşmeyen ölçümler» (api/readings.py) is a factory router bound to the app's `_caller`, its scope
+# and `_require_patient`: the caller's own hospital's rows only (the store is read by `who.hospital`), a
+# discharged number's set only inside the caller's scope, a link only to a patient in it.
+UNMATCHED_READINGS = {
+    ("GET", "/readings/unmatched"),
+    ("POST", "/readings/unmatched/assign"),
+    ("POST", "/readings/unmatched/reject"),
+}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE | UNMATCHED_READINGS | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -898,4 +906,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE - DEVICE_ONLY - TASK_QUEUE == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD - CALLER_ELSEWHERE - DEVICE_ONLY - TASK_QUEUE - UNMATCHED_READINGS == board

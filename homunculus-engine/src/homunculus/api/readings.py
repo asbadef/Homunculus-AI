@@ -17,13 +17,20 @@ patient is the board's number, as in the audit."""
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
+from fastapi import APIRouter, Body, Header, HTTPException
+
+from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.api.clinical import FLUID_CODES, RETRACTABLE_CODES
-from homunculus.canonical import Observation
+from homunculus.api.identity import Caller
+from homunculus.api.patient_identity import is_tombstone
+from homunculus.auth.permissions import validate_permissions
+from homunculus.canonical import Observation, SignalCode
+from homunculus.gateway.fhir import PATIENT_ID_MAX
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +70,42 @@ MANUAL_CODES = RETRACTABLE_CODES - FLUID_CODES
 #: door, so no device name can make a row unwritable — and D14 compares the source as it was kept.
 SOURCE_MAX = 64
 UNIT_MAX = 16
+
+(CLINICAL_CHART,) = validate_permissions(("clinical.chart",))
+#: The list shows what arrived in the last 7 days (spec §4); an older reading stays in the table.
+UNMATCHED_WINDOW = timedelta(days=7)
+#: D12, Q2: a reading measured longer ago than this cannot be linked, only rejected — G3-01 D7's back-dating
+#: bound for a hand entry (api/clinical.py BEDSIDE_BACKDATE). An engineering bound on what may enter a score
+#: late, not a clinical threshold.
+LINK_MAX_AGE = timedelta(hours=24)
+#: The most readings one link or rejection names: a set is one round's values of one patient.
+SET_MAX = 50
+REJECT_MIN_REASON_CHARS = 10
+REJECT_MAX_REASON_CHARS = 200
+
+# ----------------------------------------------------------------------------- refusal codes and words
+
+READING_NOT_UNMATCHED = "reading_not_unmatched"
+READING_SET_MIXED = "reading_set_mixed"
+READING_TOO_OLD = "reading_too_old"
+READING_TARGET_DISCHARGED = "reading_target_discharged"
+READING_REASON_LENGTH = "reading_reason_length"
+#: The server's words. The dashboard maps each code in `apiErrors.js` (Task W1).
+WORDS = {
+    READING_NOT_UNMATCHED: "The reading is no longer waiting: it was linked or rejected already.",
+    READING_SET_MIXED: "The readings are not one set: one number, one device, one time.",
+    READING_TOO_OLD: "A reading older than 24 hours cannot be linked; it can only be rejected.",
+    READING_TARGET_DISCHARGED: "The patient is discharged: a reading cannot be linked to a closed stay.",
+    READING_REASON_LENGTH: "The reason is 10–200 characters.",
+}
+READING_NEEDS_PERSON = "a person links or rejects a reading: this credential names no actor"
+READING_BODY = "`readings` is a list of 1–50 reading ids"
+READING_TARGET = "`patient_id` is required"
+
+
+def reading_refusal(status: int, code: str) -> HTTPException:
+    """A refusal with its code beside its words (`{"code", "message"}`), as the task queue answers one."""
+    return HTTPException(status_code=status, detail={"code": code, "message": WORDS[code]})
 
 
 @dataclass(frozen=True)
@@ -267,3 +310,198 @@ def manual_reading(tenant: str, obs: Observation, *, received_at: datetime, entr
                    unit=str(obs.unit or "")[:UNIT_MAX], observed_at=obs.timestamp, received_at=received_at,
                    origin=ORIGIN_MANUAL, source="clinician", state=STATE_RECORDED, patient_key=obs.patient_id,
                    recorded_by=recorded_by, audit_id=entry_id, entry_id=entry_id)
+
+
+# ----------------------------------------------------------------------------- the list's sets
+
+def _iso(at: datetime) -> str:
+    return at.astimezone(timezone.utc).isoformat()
+
+
+def set_key(row: Reading) -> tuple[str, str, datetime]:
+    """One set: one number, one device, one time (spec D10) — a round's values of one patient."""
+    return (row.received_key, row.source, row.observed_at)
+
+
+def unmatched_sets(rows: Iterable[Reading], now: datetime) -> list[dict]:
+    """The waiting rows as the list answers them (spec §4): one entry per set, the newest arrival first, each
+    reading by code. `linkable`: measured within LINK_MAX_AGE of `now` — the screen offers «bağla» only then
+    (the engine refuses an older one, READING_TOO_OLD), so the browser judges no age itself."""
+    grouped: dict[tuple, list[Reading]] = {}
+    for row in rows:
+        grouped.setdefault(set_key(row), []).append(row)
+    sets = []
+    for (received_key, source, observed_at), members in grouped.items():
+        members.sort(key=lambda r: (r.code, r.id))
+        sets.append({
+            "received_key": received_key, "reason": members[0].unmatched_reason, "source": source,
+            "observed_at": _iso(observed_at), "received_at": _iso(max(r.received_at for r in members)),
+            "linkable": now - observed_at <= LINK_MAX_AGE,
+            "readings": [{"id": r.id, "code": r.code, "value": r.value, "unit": r.unit} for r in members],
+        })
+    sets.sort(key=lambda s: (s["received_at"], s["received_key"], s["source"]), reverse=True)
+    return sets
+
+
+# ----------------------------------------------------------------------------- the router
+
+def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
+                    sees: Callable[[Caller, str | None], Awaitable[Callable[[str], bool]]],
+                    target: Callable[[Caller, str | None, str], Awaitable[object]],
+                    identity: Callable[[str, str], object],
+                    admission_for: Callable[[str, object], str | None],
+                    apply: Callable[..., Awaitable[tuple[list, object]]],
+                    audit: AuditLog, store: ReadingStore,
+                    clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> APIRouter:
+    """«Eşleşmeyen ölçümler» (spec §4, D10–D12), bound to the app as the task queue is: `caller` resolves the
+    credential; `sees(caller, authorization)` resolves the caller's scope once (503 when it cannot be read) and
+    answers «may this caller see the patient under this number» (D11); `target(caller, authorization, patient_id)`
+    is the link's target check — in scope (404), not discharged (409), on the board (404) — answering the
+    identity record; `identity(hospital, patient_id)` reads that record again, synchronously, before each reading
+    of a set goes in (the target may be discharged between two of them — see `assign`); `admission_for(hospital,
+    record)` is the stay a reading is stamped with (D8); `apply(hospital, obs, record, now, reading=id)` is the
+    device door's own tail (`_apply_reading`)."""
+    router = APIRouter(tags=["readings"])
+
+    def _person(who: Caller) -> str:
+        """`clinical.chart`, and a person: a device passes every permission check by being a device, and the
+        list is a person's work, named in the trail (D10)."""
+        if not who.can(CLINICAL_CHART):
+            raise HTTPException(status_code=403, detail=f"permission required: {CLINICAL_CHART}")
+        if who.is_device or not isinstance(who.actor, str) or not who.actor.strip():
+            raise HTTPException(status_code=403, detail=READING_NEEDS_PERSON)
+        return who.actor
+
+    def _ids(body: dict) -> list[int]:
+        raw = body.get("readings")
+        if (not isinstance(raw, list) or not 1 <= len(raw) <= SET_MAX or len(set(map(repr, raw))) != len(raw)
+                or any(not isinstance(i, int) or isinstance(i, bool) or i < 1 for i in raw)):
+            raise HTTPException(status_code=422, detail=READING_BODY)
+        return sorted(raw)
+
+    async def _one_set(who: Caller, authorization: str | None, ids: list[int]) -> list[Reading]:
+        """The rows named, when every one is waiting, visible to this caller (D11) and of one set — else the
+        refusal. A row the caller may not see answers as one that is not there."""
+        visible = await sees(who, authorization)
+        rows = [r for r in store.get(who.hospital, ids)
+                if r.state == STATE_UNMATCHED
+                and (r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key))]
+        if len(rows) != len(ids):
+            raise reading_refusal(409, READING_NOT_UNMATCHED)
+        if len({set_key(r) for r in rows}) != 1:
+            raise reading_refusal(422, READING_SET_MIXED)
+        return rows
+
+    def _claim(hospital: str, ids: list[int], actor: str, now: datetime) -> list[Reading]:
+        try:
+            return store.claim(hospital, ids, by=actor, at=now)
+        except ReadingNotUnmatched:                       # another hand got there between the read and the write
+            raise reading_refusal(409, READING_NOT_UNMATCHED) from None
+
+    def _release(hospital: str, ids: list[int]) -> None:
+        """A claim put back after a failed write — best effort: if this fails too, `reconcile` releases it."""
+        if not ids:
+            return
+        try:
+            store.release(hospital, ids)
+        except Exception:
+            log.exception("vital_readings: %d ölçümün kilidi bırakılamadı (hastane %s); reconcile bırakır",
+                          len(ids), hospital)
+
+    @router.get("/readings/unmatched")
+    async def list_unmatched(authorization: str | None = Header(default=None)):
+        who = await caller(authorization)
+        _person(who)
+        visible = await sees(who, authorization)
+        now = clock()
+        rows = [r for r in store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW)
+                if r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key)]
+        sets = unmatched_sets(rows, now)
+        return {"count": len(sets), "sets": sets}
+
+    @router.post("/readings/unmatched/assign")
+    async def assign(body: dict = Body(...), authorization: str | None = Header(default=None)):
+        who = await caller(authorization)
+        actor = _person(who)
+        hospital = who.hospital
+        ids = _ids(body)
+        patient_id = body.get("patient_id")
+        if not isinstance(patient_id, str) or not patient_id.strip() or len(patient_id) > PATIENT_ID_MAX:
+            raise HTTPException(status_code=422, detail=READING_TARGET)
+        record = await target(who, authorization, patient_id)
+        rows = await _one_set(who, authorization, ids)
+        now = clock()
+        if now - rows[0].observed_at > LINK_MAX_AGE:
+            raise reading_refusal(409, READING_TOO_OLD)
+        claimed = _claim(hospital, ids, actor, now)
+        # From here the rows are ours. Each reading goes into the engine as the device door would have put it
+        # (D12): its own time, the device as its source, an ordinary `ingest` row that names it.
+        #
+        # `waiting` is what has NOT been attempted. A reading leaves it the moment its turn comes, BEFORE `apply`
+        # runs, and from then on it is never released by this request: `apply` evaluates, then writes its
+        # `ingest` row, then its alert / cleared / first-seen / notification rows and the frame — a raise at any
+        # point after the first of those leaves the engine holding the value and, possibly, its `ingest` row
+        # written. Released, the reading could be linked a second time (a retry, or a link elsewhere) and write a
+        # second `ingest` row — replayed twice, or under two patients. It stays CLAIMED (`assigned`, no
+        # `patient_key`) and `reconcile` (Task B10) finalizes it from its `ingest` row, or releases it when
+        # CLAIM_STALE has passed with none (the B3 review). Readings of the set already applied stay linked.
+        # Only the readings not yet attempted go back to the list; the failure goes up (500).
+        #
+        # The target is read again before EACH reading (the B3 review): `apply` awaits, and a discharge between
+        # two readings of a set must not put the discharged patient back in the engine, publish a card or notify
+        # (D4: no alert for a discharged number). The read is synchronous and the check immediately precedes the
+        # `apply`, so a discharge can only land between two readings, never inside the decision.
+        waiting = [r.id for r in claimed]
+        alerts: list = []
+        discharged = False
+        try:
+            admission = admission_for(hospital, record)
+            for row in claimed:
+                record = identity(hospital, patient_id)
+                if is_tombstone(record):
+                    discharged = True
+                    break
+                waiting.remove(row.id)
+                obs = Observation(patient_id=patient_id, code=SignalCode(row.code), value=row.value, unit=row.unit,
+                                  timestamp=row.observed_at, source_device=row.source)
+                alerts, written = await apply(hospital, obs, record, now, reading=row.id)
+                store.finalize(hospital, row.id, patient_key=patient_id, admission_id=admission, entry_id=written.id)
+        except Exception:
+            _release(hospital, waiting)
+            raise
+        if discharged:
+            # What was applied stays applied and finalized; nothing more is written for this set (no
+            # `reading_assigned` row), and the rest return to the list.
+            _release(hospital, waiting)
+            raise reading_refusal(409, READING_TARGET_DISCHARGED)
+        first = claimed[0]
+        audit.append(AuditEvent(hospital, READING_ASSIGNED, patient_id, "reading", {
+            "readings": ids, "received_key": first.received_key, "reason": first.unmatched_reason,
+            "device": first.source, "obs_ts": _iso(first.observed_at), "actor": actor}))
+        return {"assigned": ids, "patient_id": patient_id, "alerts": [a.kind for a in alerts]}
+
+    @router.post("/readings/unmatched/reject")
+    async def reject(body: dict = Body(...), authorization: str | None = Header(default=None)):
+        who = await caller(authorization)
+        actor = _person(who)
+        hospital = who.hospital
+        ids = _ids(body)
+        raw = body.get("reason")
+        reason = raw.strip() if isinstance(raw, str) else ""
+        if not REJECT_MIN_REASON_CHARS <= len(reason) <= REJECT_MAX_REASON_CHARS:
+            raise reading_refusal(422, READING_REASON_LENGTH)
+        rows = await _one_set(who, authorization, ids)
+        _claim(hospital, ids, actor, clock())
+        first = rows[0]
+        # The audit row, then the table's (D7). An append that fails releases the claim: nothing was rejected.
+        try:
+            audit.append(AuditEvent(hospital, READING_REJECTED, first.received_key, "reading", {
+                "readings": ids, "received_key": first.received_key, "device": first.source,
+                "obs_ts": _iso(first.observed_at), "reason": reason, "actor": actor}))
+        except Exception:
+            _release(hospital, ids)
+            raise
+        store.reject(hospital, ids, reason=reason)
+        return {"rejected": ids}
+
+    return router

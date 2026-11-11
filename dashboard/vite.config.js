@@ -104,6 +104,7 @@ export default defineConfig({
       "/infinity-waves",    // Lane C (dalga): the live waveform panel's GET
       "/tasks",             // G3-02: Görevlerim — the queue and its settings
       "/pharmacy",          // G3-04: Eczane — the pharmacist's ward page
+      "/readings",          // G3-05: «Eşleşmeyen ölçümler» — the unmatched list, the link, the rejection
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {

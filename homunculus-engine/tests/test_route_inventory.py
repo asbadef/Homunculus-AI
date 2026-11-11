@@ -35,7 +35,12 @@ CALLER_RESOLVED_ROUTES = {("homunculus.api.edge_query", "POST", "/edge/patient-q
                           ("homunculus.api.tasks", "POST", "/tasks/{task_id}/skip"),
                           ("homunculus.api.tasks", "POST", "/tasks/vitals/{patient_id}/skip"),
                           ("homunculus.api.tasks", "GET", "/tasks/settings"),
-                          ("homunculus.api.tasks", "PUT", "/tasks/settings")}
+                          ("homunculus.api.tasks", "PUT", "/tasks/settings"),
+                          # G3-05: «Eşleşmeyen ölçümler» resolves its caller the same way — `clinical.chart`,
+                          # and a person only (tests/test_readings_api.py holds both)
+                          ("homunculus.api.readings", "GET", "/readings/unmatched"),
+                          ("homunculus.api.readings", "POST", "/readings/unmatched/assign"),
+                          ("homunculus.api.readings", "POST", "/readings/unmatched/reject")}
 
 
 def _calls(dependant) -> set:
