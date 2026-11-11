@@ -46,7 +46,7 @@ import re
 import uuid
 from contextlib import suppress
 from datetime import date, datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, NoReturn
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -933,7 +933,7 @@ def _team_conflict() -> HTTPException:
                    "This physician already holds a row on this care team.").http()
 
 
-async def _lost_at_an_index(db: AsyncSession, exc: IntegrityError) -> None:
+async def _lost_at_an_index(db: AsyncSession, exc: IntegrityError) -> NoReturn:
     """T7: a care-team write that met one of the two partial unique indexes (a writer the locks
     did not order) is the coded 409, told apart by the index's name as the admission route tells
     `uq_admissions_open_identity` apart. Anything else is raised as it is."""
