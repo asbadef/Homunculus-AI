@@ -673,7 +673,8 @@ async def pending(client, headers: dict[str, str]) -> dict:
 async def summary_reader(db_session, w, *, unit: str | None = None,
                          bed: str | None = None) -> dict[str, str]:
     """A member of a group the hospital made, holding `summary.view` alone (spec D2: the key can be given
-    on the Roles screen later), granted one unit or one bed. Her Authorization header."""
+    on the Roles screen later), granted one unit or one bed, or — neither named — no grant at all (an
+    unassigned member). Her Authorization header."""
     tag = uuid.uuid4().hex[:8]
     group = Group(tenant_id=w.tenant.id, slug=f"ozet-{tag}", name=f"Sentetik özet {tag}",
                   permissions=[GroupPermission(permission="summary.view")])
@@ -681,10 +682,11 @@ async def summary_reader(db_session, w, *, unit: str | None = None,
     await db_session.flush()
     user = await add_user(db_session, username=f"ozet-{tag}@kabul.example.com",
                           tenant_id=w.tenant.id, group=group)
-    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=user.id,
-                              unit_id=str(w.units[unit].id) if unit else "",
-                              bed_id=str(w.beds[bed].id) if bed else ""))
-    await db_session.commit()
+    if unit or bed:
+        db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=user.id,
+                                  unit_id=str(w.units[unit].id) if unit else "",
+                                  bed_id=str(w.beds[bed].id) if bed else ""))
+        await db_session.commit()
     return await bearer(db_session, user)
 
 
@@ -761,6 +763,35 @@ async def test_a_reader_given_the_key_sees_her_own_units_only(ward, db_session):
 
     assert [u["unit_name"] for u in (await pending(client, neo_reader))["units"]] == ["Neonatal"]
     assert (await pending(client, bed_reader))["units"] == []
+    assert [u["unit_name"] for u in (await pending(client, w.auth["admin"]))["units"]] == \
+        ["Neonatal", "Reanimasiya"]
+
+
+async def test_an_unassigned_reader_sees_every_unit_while_assignment_is_not_enforced(ward, db_session):
+    """G4-02 review: a reader given the key and no unit or bed grant is unrestricted while
+    `SCOPE_ENFORCE_UNASSIGNED` is off — the pilot's state (`scope.resolver.enforce_unassigned_default`)
+    — exactly as the board treats her."""
+    w, client, _ = ward
+    now = datetime.now(timezone.utc)
+    await waiting(db_session, w, "rea", signed_at=now)
+    await waiting(db_session, w, "neo", signed_at=now)
+    unassigned = await summary_reader(db_session, w)
+
+    assert [u["unit_name"] for u in (await pending(client, unassigned))["units"]] == \
+        ["Neonatal", "Reanimasiya"]
+
+
+async def test_an_unassigned_reader_sees_no_unit_once_assignment_is_enforced(ward, db_session, monkeypatch):
+    """G4-02 review: with `SCOPE_ENFORCE_UNASSIGNED` on, a reader with no grant reaches no unit and is
+    answered an empty list, not a 403; the administrator, unrestricted by role, still sees every unit."""
+    w, client, _ = ward
+    now = datetime.now(timezone.utc)
+    await waiting(db_session, w, "rea", signed_at=now)
+    await waiting(db_session, w, "neo", signed_at=now)
+    unassigned = await summary_reader(db_session, w)
+    monkeypatch.setenv("SCOPE_ENFORCE_UNASSIGNED", "1")
+
+    assert (await pending(client, unassigned))["units"] == []
     assert [u["unit_name"] for u in (await pending(client, w.auth["admin"]))["units"]] == \
         ["Neonatal", "Reanimasiya"]
 
