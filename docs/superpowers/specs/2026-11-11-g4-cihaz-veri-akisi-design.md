@@ -75,6 +75,17 @@ readings, their 120-s forgetting, and everything the shadow engine reads stay ex
 - Only the channels the board already knows.
 - `watching_since` is when the store started. A restart empties the ledger, and the page says so.
 
+**Amendment (2026-11-11, code review): eviction.** The ledger holds only devices the store holds. When the hub starts
+reporting more than `MAX_DEVICES` sources, the least recently reported devices are dropped first, from the store and the
+ledger alike, the vanished ones included.
+
+**Amendment (2026-11-11, code review): channel times.** A channel's `last_value_at` is the time of the last valid
+reading the store took. That includes a reading the collector's clock put up to `ARRIVAL_MAX_AHEAD_S` (2 s) ahead,
+which the strip withholds until the API's clock reaches it. For NBP it is the time the hub saw the value change, an
+upper bound of the cuff measurement. An untimed NBP (NBP-2) has only its packet's time. After the wall clock steps
+back, a channel time or `last_packet_at` more than `ARRIVAL_MAX_AHEAD_S` ahead is dropped and reads as unknown, as the
+store forgets such readings.
+
 ### D3 — the board carries it, additively
 
 `GET /infinity-shadow/board` keeps every field it has and adds:

@@ -185,6 +185,23 @@ def test_the_ledger_never_holds_a_device_the_store_has_let_go():
     assert set(seen) <= set(store.devices())
 
 
+def test_past_max_devices_the_least_recently_reported_go_first_a_vanished_one_included():
+    # Review 5 (spec D2 amendment): the store's eviction bounds both; a monitor the hub stopped listing is
+    # the least recently reported, so a new source pushes it out of the store and the ledger first.
+    clock, store, ledger = lane()
+    ward = [f"192.0.2.{i + 1}" for i in range(MAX_DEVICES)]
+    post(store, ledger, body(*[device(source, reading()) for source in ward]))
+    clock.t = T0 + 5                                    # .1 is taken away: the hub no longer lists it
+    post(store, ledger, body(*[device(source, reading(captured_at=clock.t - 0.5)) for source in ward[1:]],
+                             sent_at=clock.t))
+    clock.t = T0 + 10                                   # a new source: one too many for the store
+    post(store, ledger, body(*[device(source, reading(captured_at=clock.t - 0.5)) for source in ward[1:]],
+                             device("198.51.100.1", reading(captured_at=clock.t - 0.5)), sent_at=clock.t))
+    seen = ledger.view().devices
+    assert "192.0.2.1" not in store.devices() and "192.0.2.1" not in seen
+    assert set(seen) == set(ward[1:]) | {"198.51.100.1"} == set(store.devices())
+
+
 def test_the_ledger_has_no_method_that_could_reach_the_clinical_side():
     public = {name for name in dir(FeedLedger) if not name.startswith("_")}
     assert public == {"observe", "view"}

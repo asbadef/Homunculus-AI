@@ -577,8 +577,11 @@ class FeedLedger:
     valid reading the store held (`DeviceView.valid_at`: one the collector's clock put up to
     ARRIVAL_MAX_AHEAD_S ahead included, which the strip withholds that long; NBP at its change
     time — SeenView), kept after the store forgets the reading at FORGET_AFTER_S. Bounds: a device
-    is dropped LEDGER_KEEP_S after its last report, and with the store when the store lets it go, so
-    it never holds more than MAX_DEVICES; only the board's own channels (CHANNELS).
+    is dropped LEDGER_KEEP_S after its last report, and with the store when the store lets it go —
+    it holds only devices the store's latest views list, so never more than MAX_DEVICES, by the
+    store's own bound; only the board's own channels (CHANNELS). When the hub starts reporting more
+    than MAX_DEVICES sources, the store lets the least recently reported go first, the vanished
+    monitors among them, and the ledger drops them with it.
 
     A wall clock stepped back (an NTP step, a VM restore) leaves the times taken before it in the
     future. As the store forgets a reading further ahead than any arrival may be, the ledger drops a
@@ -643,8 +646,6 @@ class FeedLedger:
     def _prune(self, tick: float) -> None:
         for source in [s for s, held in self._seen.items() if tick - held.last_report_tick > LEDGER_KEEP_S]:
             del self._seen[source]
-        while len(self._seen) > MAX_DEVICES:
-            del self._seen[min(self._seen, key=lambda s: self._seen[s].last_report_tick)]
 
 
 # --- the board's answer --------------------------------------------------------------------------
