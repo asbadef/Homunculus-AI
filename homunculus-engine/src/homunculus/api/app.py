@@ -19,7 +19,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from itertools import islice
 from typing import TYPE_CHECKING
@@ -67,6 +67,9 @@ from homunculus.api.rehydrate import (
 from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
+from homunculus.api.readings import (                             # G3-05
+    MANUAL_CODES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading,
+)
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
 from homunculus.api.tickets import TicketStore
@@ -359,6 +362,7 @@ def create_app(
     samples: SampleStore | None = None,
     device_beds: DeviceBedSource | None = None,
     tasks: TaskStore | None = None,
+    readings: ReadingStore | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -387,6 +391,8 @@ def create_app(
     (`api/monitor_samples.py`, migration 0013); None keeps them in memory, which is all a stage
     below `rules` ever needs (it writes none). A durable store is pruned at every stage, so the
     rows of a `rules` run still expire after a rollback below it.
+    `readings` is the per-admission record of what was measured (G3-05, `api/readings.py`, migration 0021):
+    `PostgresReadingStore` in production; None keeps the rows in memory, which is what the no-DB suite runs on.
     At shutdown the lifespan releases `audit`, `identities`, `samples` and `device_beds`
     (`dispose`, `close`): an engine's pool reopens on its next use, but SQLite's identity file
     stays closed."""
@@ -419,6 +425,7 @@ def create_app(
     audit = audit or InMemoryAuditLog()
     identities = identities if identities is not None else InMemoryIdentityStore()
     tasks = tasks if tasks is not None else InMemoryTaskStore()      # G3-02: the task queue's rows
+    readings = readings if readings is not None else InMemoryReadingStore()   # G3-05: the readings record
     # No table is a working state, not an error: every location comes back unmatched and counted,
     # every patient still gets a card, and the discovery report is what tells the operator the
     # table has yet to be written.
@@ -794,7 +801,8 @@ def create_app(
                                          ("identities", identities, "close"),
                                          ("samples", samples, "dispose"),
                                          ("device_beds", device_beds, "dispose"),
-                                         ("tasks", tasks, "close")):           # G3-02
+                                         ("tasks", tasks, "close"),            # G3-02
+                                         ("readings", readings, "close")):     # G3-05
                 method = getattr(store, release, None)
                 if callable(method):
                     try:
@@ -881,6 +889,7 @@ def create_app(
     app.state.audit = audit
     app.state.tickets = tickets
     app.state.tasks = tasks                         # G3-02
+    app.state.readings = readings                   # G3-05
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01
@@ -1190,6 +1199,11 @@ def create_app(
 
         board = _card(hospital, patient_id, record)
         await broadcaster.publish(hospital, board)
+        # G3-05 (D6): the bedside set is filed in the record as «elle», each value with its `chart` row — after
+        # those rows (D7). `written` is in the request's order, as `charted` is.
+        _file_recorded(hospital, record, [
+            manual_reading(hospital, item.observation, received_at=now, entry_id=entry, recorded_by=item.charted_by)
+            for item, (code, entry) in zip(charted, written) if code in MANUAL_CODES])
         # G3-01 (X2): a newly immediate alert from a charted value tells the nurse, as /ingest's reading does —
         # the hand-entered NEWS2 was designed to alert like a device's (D9). The notifier's dedup sends nothing
         # for an alert already told.
@@ -1455,6 +1469,39 @@ def create_app(
         await broadcaster.publish(hospital, board)
         return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
 
+    def _admission_for(hospital: str, record) -> str | None:
+        """G3-05 (D8): the stay a reading is stamped with at arrival. An admission made here (`kabul`, admitted)
+        is found by its card key (`admission/boardkey.py`'s rule, read by the store); a HIS-fed patient and a
+        number with no record have none."""
+        if record is None or record.source != KABUL or is_tombstone(record):
+            return None
+        return readings.admission_of(hospital, record.patient_id)
+
+    def _file_recorded(hospital: str, record, rows: list[Reading]) -> None:
+        """G3-05 (D6, D7): the table rows of values the engine has taken, written AFTER their audit rows, each
+        stamped with the stay (D8). Never raises: the audit row is written and the engine holds the value, so a
+        table that cannot be written must not fail the request — a 500 would make the bridge send the reading
+        again and count it twice. The failure is logged (no number, no value) and `reconcile` files the row."""
+        if not rows:
+            return
+        try:
+            admission = _admission_for(hospital, record)
+            for row in rows:
+                readings.add(replace(row, admission_id=admission))
+        except Exception:
+            log.exception("vital_readings: %d satır yazılamadı (hastane %s); reconcile tamamlar", len(rows), hospital)
+
+    def _resent(hospital: str, obs) -> bool:
+        """G3-05 (D14): has the record this very reading already — the same number, code, time, device and
+        value? The Connex re-sends what it buffered and the uplink is at-least-once. A store that cannot answer
+        fails OPEN: the reading is ingested, never dropped on a doubt."""
+        try:
+            return readings.seen(hospital, obs.patient_id, obs.code.value, obs.timestamp, device_source(obs),
+                                 obs.value)
+        except Exception:
+            log.exception("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s); ölçüm işlenir", hospital)
+            return False
+
     async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,
                              reading: int | None = None) -> tuple[list, AuditRecord]:
         """One reading into the real engine, as the device door does it (G3-05, spec D12): the evaluation at the
@@ -1559,6 +1606,10 @@ def create_app(
         # per-reading 4xx on a monitor that keeps the old number would read as rejections in the
         # hub's counters. The one identity read a reading costs is reused for the frame below.
         record = identities.get(hospital, obs.patient_id)
+        # G3-05 (D14): a reading the record already holds is recognised before the engine — no engine entry, no
+        # audit row, no frame. 200, as every answer of this door: the bridge's uplink never blocks (D18).
+        if _resent(hospital, obs):
+            return {"patient_id": obs.patient_id, "duplicate": True}
         if is_tombstone(record):
             audit.append(AuditEvent(hospital, READING_DROPPED, obs.patient_id, obs.code.value,
                                     {"patient_id": obs.patient_id, "code": obs.code.value}))
@@ -1566,7 +1617,9 @@ def create_app(
         _engine(hospital)       # the tenant is rehydrated before the request's clock is read, as before the move
         # One wall-clock instant per request (G2-A2, X10): `_apply_reading` judges, stamps and frames at it.
         wall_now = datetime.now(timezone.utc)
-        alerts, _ = await _apply_reading(hospital, obs, record, wall_now)
+        alerts, written = await _apply_reading(hospital, obs, record, wall_now)
+        # G3-05 (D6, D7): the record's row, after the `ingest` row it points at.
+        _file_recorded(hospital, record, [device_reading(hospital, obs, received_at=wall_now, audit_id=written.id)])
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
     @app.post("/ack")

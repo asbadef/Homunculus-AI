@@ -654,7 +654,8 @@ class TestLAPatientWhoLeavesTheScopeLeavesTheScreen:
             wall_ticket = (await client.post("/stream-ticket", headers=TOKEN)).json()["ticket"]
             nurse = (await stream(token=None, ticket=nurse_ticket)).body_iterator
             wall = (await stream(token=None, ticket=wall_ticket)).body_iterator
-            await _async_reading(client, "p-n1")       # the NICU, never shown here: withheld
+            # Its own value: the very same reading sent twice is a duplicate since G3-05 (D14) and makes no frame.
+            await _async_reading(client, "p-n1", 96.0)       # the NICU, never shown here: withheld
             for body in (_encounter("p-a1", "in-progress", "YYB^12^A"),    # to the NICU
                          _encounter("p-a2", "finished"),                    # discharged by the HIS
                          _encounter("p-n1", "in-progress", "YB^304^1")):    # to the adult unit

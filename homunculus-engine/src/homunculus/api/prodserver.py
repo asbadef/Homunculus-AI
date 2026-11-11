@@ -537,4 +537,5 @@ app = create_app(
     samples=_samples(_database_url()),
     device_beds=_device_beds(_database_url(), _shadow.hospital),
     tasks=_tasks(_database_url()),
+    readings=_readings(_database_url()),
 )

@@ -22,6 +22,9 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Protocol
 
+from homunculus.api.clinical import FLUID_CODES, RETRACTABLE_CODES
+from homunculus.canonical import Observation
+
 log = logging.getLogger(__name__)
 
 #: «Since ever»: the start of a stay nobody gave a time for (the in-memory store), and a bound that excludes nothing.
@@ -40,6 +43,13 @@ STATE_REJECTED = "rejected"
 #: `unmatched_reason`: no identity record under the number, or a discharged admission's number.
 REASON_UNKNOWN = "unknown"
 REASON_DISCHARGED = "discharged"
+#: D6: the hand entries the record keeps — the bedside form's set, by the slug a `chart` row carries: what «hatalı
+#: giriş» may withdraw (api/clinical.py RETRACTABLE_CODES) minus the fluid volumes, which have their own ledger.
+MANUAL_CODES = RETRACTABLE_CODES - FLUID_CODES
+#: The widths of the table's `source` and `unit` columns (migration 0021). A feed's text is cut to them at the
+#: door, so no device name can make a row unwritable — and D14 compares the source as it was kept.
+SOURCE_MAX = 64
+UNIT_MAX = 16
 
 
 @dataclass(frozen=True)
@@ -214,3 +224,33 @@ class InMemoryReadingStore:
 
     def close(self) -> None:
         return None
+
+
+# ----------------------------------------------------------------------------- the doors' rows
+
+def device_source(obs: Observation) -> str:
+    """The device as the table keeps it and D14 compares it: as sent, cut to the column."""
+    return str(obs.source_device or "")[:SOURCE_MAX]
+
+
+def device_reading(tenant: str, obs: Observation, *, received_at: datetime, audit_id: int,
+                   reason: str | None = None) -> Reading:
+    """A device reading's row. `reason` None: the engine took it — `recorded` under its own number, `audit_id` its
+    `ingest` row, which is also the entry a withdrawal names. With a reason (REASON_UNKNOWN, REASON_DISCHARGED) it
+    waits in the list: `unmatched`, under nobody, `audit_id` its `reading_unmatched` row and no entry."""
+    matched = reason is None
+    return Reading(tenant=tenant, received_key=obs.patient_id, code=obs.code.value, value=obs.value,
+                   unit=str(obs.unit or "")[:UNIT_MAX], observed_at=obs.timestamp, received_at=received_at,
+                   origin=ORIGIN_DEVICE, source=device_source(obs),
+                   state=STATE_RECORDED if matched else STATE_UNMATCHED,
+                   patient_key=obs.patient_id if matched else None, unmatched_reason=reason,
+                   audit_id=audit_id, entry_id=audit_id if matched else None)
+
+
+def manual_reading(tenant: str, obs: Observation, *, received_at: datetime, entry_id: int,
+                   recorded_by: str) -> Reading:
+    """A hand entry's row: `recorded` under the patient it was charted for, `entry_id` its `chart` row."""
+    return Reading(tenant=tenant, received_key=obs.patient_id, code=obs.code.value, value=obs.value,
+                   unit=str(obs.unit or "")[:UNIT_MAX], observed_at=obs.timestamp, received_at=received_at,
+                   origin=ORIGIN_MANUAL, source="clinician", state=STATE_RECORDED, patient_key=obs.patient_id,
+                   recorded_by=recorded_by, audit_id=entry_id, entry_id=entry_id)
