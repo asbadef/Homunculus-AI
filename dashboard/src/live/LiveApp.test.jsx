@@ -8,6 +8,7 @@ import { fakeApi, profile, token } from "./session/testTokens.testutil.js";
 import { writeLock } from "./session/browserState.js";
 import { resetScreens, stubScreens } from "./shell/routes.js";
 import { onlyScreens } from "./shell/screens.testutil.js";
+import { PRELOAD_AFTER_MS, lazyScreen } from "./shell/lazyScreen.js";
 import { PRODUCT } from "./shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS, useToast } from "./ui/index.js";
 import { fakeAudio, onPage } from "./signals/fakeAudio.testutil.js";
@@ -200,6 +201,24 @@ describe("a page load", () => {
     expect(api.logout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Ayarlar" })).toBeInTheDocument();
+  });
+
+  // Each screen's code is its own chunk (shell/lazyScreen.js). The page fetches them all soon after
+  // it opens, WHATEVER its phase: a page left at the sign-in form, the TOTP step or the lock across
+  // a deploy must already hold every screen, or its first screen asks for a hashed file the deploy
+  // has replaced. They are static files, no session needed.
+  it("fetches every screen's code soon after it opens — at the sign-in form too", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const load = vi.fn(() => Promise.resolve({ BedsProbe }));
+    lazyScreen(load, "BedsProbe");
+    app();
+    await act(async () => {});
+    expect(screen.getByRole("heading", { level: 1, name: "Daxil olun" })).toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(PRELOAD_AFTER_MS - 1); });
+    expect(load).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Daxil olun" })).toBeInTheDocument();
   });
 });
 

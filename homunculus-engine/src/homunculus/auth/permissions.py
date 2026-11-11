@@ -59,6 +59,17 @@ PERMISSIONS: dict[str, str] = {
     "devices.map_beds": "Assign a bedside monitor to a bed, or unassign it, on the Monitörler "
                         "screen — beds in one's own units only; a bed with an admitted patient "
                         "asks for a second confirmation",
+
+    # G2-B3a — Doluluk (spec D4): the charge nurse holds a bed for an expected patient or takes it
+    # out of service, and undoes either. Not `structure.manage`, which builds and closes the wards.
+    "beds.manage_state": "Reserve a free bed for an expected patient or take it out of service, "
+                         "and undo either — in one's own units, on the Doluluk screen",
+
+    # G3-02 — Görevlerim (spec D8): the ward's task queue. `tasks.view` opens the screen and reads
+    # `/tasks`; `tasks.manage` writes a task, claims, closes or skips one, and skips a vital
+    # measurement for one interval with a reason.
+    "tasks.view": "Open the Görevlerim queue and read the ward's tasks in one's own units",
+    "tasks.manage": "Write, claim, close or skip a task; skip one vital measurement with a reason",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -100,7 +111,7 @@ def effective_permissions(permission_sets: Iterable[Iterable[str]]) -> frozenset
 _ATTENDING = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
-    "break_glass.use", "clinical.chart", "scores.sign",
+    "break_glass.use", "clinical.chart", "scores.sign", "tasks.view", "tasks.manage",
 )
 
 
@@ -146,7 +157,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "description": "Pano, alarm onayı ve eskalasyon, devir imzası, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "handover.sign", "break_glass.use", "clinical.chart", "scores.sign")},
+                     "handover.sign", "break_glass.use", "clinical.chart", "scores.sign",
+                     "tasks.view", "tasks.manage")},
     {"slug": "charge_nurse", "kind": "extra", "name": "Sorumlu Hemşire",
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
@@ -154,18 +166,18 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
-                     "devices.map_beds")},
+                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
                      "admissions.transfer.confirm", "handover.sign", "clinical.chart",
-                     "beds.release")},
+                     "beds.release", "tasks.view", "tasks.manage")},
     {"slug": "rapid_response", "kind": "extra", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "break_glass.use", "clinical.chart")},
+                     "break_glass.use", "clinical.chart", "tasks.view", "tasks.manage")},
     {"slug": "auditor", "kind": "role", "name": "Denetçi",
      "description": "Salt okunur: pano ve denetim kaydı.",
      "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view")},

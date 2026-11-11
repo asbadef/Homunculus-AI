@@ -1146,8 +1146,9 @@ geldiğinde yalnız formu önceden dolduracak. Bu ekranlar kimin hangi yatakta y
 nereye gittiğini kaydeder; klinik bir karar vermez, hiçbir klinik değer hesaplamaz. Örneklerdeki
 numaralar ve yerler uydurmadır.
 
-**Üç sekme** — menüde "Hasta Kabul":
-- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* ad soyad\*, baba adı, cinsiyet\*, doğum
+**İki sekme** — menüde "Hasta Kabul" (B3a'dan önce üçüncü sekme «Yataklar»dı; artık ayrı «Doluluk»
+ekranı, bkz. 3.14):
+- **Kabul:** yeni hastayı yatırma formu. *Kimlik:* soyad ad\* (koğuşun yazdığı sırayla), baba adı, cinsiyet\*, doğum
   tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
   *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
   "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
@@ -1159,8 +1160,6 @@ numaralar ve yerler uydurmadır.
   da oturumun kapanması temizler.
 - **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
   "Yatan hastalar".
-- **Yataklar:** birimlerinizin yatakları oda oda, durumlarıyla (Boş, Dolu, Taburcu bekliyor,
-  Temizlikte, Kapatılmış…); temizlikteki yatakta "Temizlik bitti · boş" düğmesi.
 
 **Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
 değiştirilebilir):
@@ -1230,7 +1229,7 @@ eski kabullere bakma ekranı sonraki dilimde gelecek. O numaraya sonradan gelen 
 numarayla gelirse hiçbir ekranda görünmez ve alarm vermez. Yeni hastaya kendi yeni numarası girilir.
 
 **Yatağın boşaltılması:** onaydan sonra yatak "Temizlikte"dir. Temizlik bitince hemşire ya da
-sorumlu hemşire Yataklar sekmesinde "Temizlik bitti · boş" der — gece yönetici olmadan da yatak
+sorumlu hemşire «Doluluk» ekranında "Temizlik bitti · boş" der (B3a'dan önce Hasta Kabul'ün Yataklar sekmesindeydi) — gece yönetici olmadan da yatak
 dönebilsin diye (D8). Yatak, son hastasının kartı panodan kalkmadan boşalmaz: sunucu kartı bir kez
 daha kaldırmayı dener, olmazsa "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı"
 der. Neden: eski kart dururken yatağa yeni hasta yatırılırsa aynı yatakta iki kart olur ve monitör
@@ -1769,6 +1768,159 @@ uydurmadır.
   - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
   - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
 - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
+
+### 3.14 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
+
+Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
+temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
+«Yataklar» sekmesi buraya taşındı. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0016). Örneklerdeki adlar uydurmadır.
+
+- **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
+  yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
+- **Birim başlığı.** Birimin adı ve türü (Erişkin YBÜ, Yenidoğan YBÜ gibi); altında «1 / 4 doludur»:
+  dolu yatak / kullanılabilir yatak. Kullanılabilir = açık, kullanım dışı ve bakımda olmayan; rezerve
+  yatak kullanılabilir sayılır (hastasını bekler). Yanında sıfır olmayan sayılar: boş, temizlikte,
+  rezervde, kullanım dışı, bakımda.
+- **Dolu yatakta yalnız kısa ad.** «Məmmədov Əli Rauf oğlu» → «Əli M.»: ikinci kelime tam, ilk
+  kelimenin baş harfi, çünkü koğuşta ad soyadı önce yazılır (sahibin kararı, 9 Kasım 2026). Baştaki
+  tire ya da ayrı karakter olarak gelen aksan işareti kısa adı bozmaz: «-Kaya Ayşe» → «Ayşe K.».
+  Kabul formundaki kutunun adı da bu yüzden «Soyad ad» (eksik alan uyarısı da böyle der). Numara,
+  doğum tarihi, tanı gösterilmez.
+- **Adlar nereden gelir.** Yalnız kendi kurumunuzun, yatakta hâlâ AÇIK olan kabulünden; aynı yatakta
+  birden çok açık kabul görünürse en yenisinden. Taburcusu tamamlanmış kabul ad vermez. Ad ve not ayrı
+  bir okumadan gelir (`GET /tenant/occupancy`); yapıyı okuyan ekranlar (Yapı, kapsam, monitör eşleme)
+  hasta adı almaz ve yatağın notunu hiç açmaz, okunamayan bir not onları düşüremez.
+- **Rezerv.** Sorumlu hemşire boş bir yatağı beklenen hasta için ayırır; isteğe bağlı not («kimin
+  için, neden», en çok 200 karakter). Not hasta adı taşıyabileceği için **şifreli** saklanır; denetim
+  kaydına yalnız «not yazıldı mı» düşer, metni düşmez. Rezerve yatağa kabul yasak değildir: kabul
+  formu yatağın rezerve olduğunu ve notunu gösterip hemşireye sorar, «Yenə də bu çarpayıya qəbul et»
+  denirse kabul eder. Bu «evet» tek yatak ve tek form içindir: başka bir yatakta ya da «Yeni qəbul»
+  sonrası yeni hastada yine sorulur. «Evet» düğmesi, not okunana (ya da okunamadığı söylenene) dek
+  bekler; hemşire notu görmeden karar vermez.
+- **Kullanım dışı.** Boş bir yatak her zaman bir **nedenle** kullanım dışı bırakılır: arıza, izolasyon
+  temizliği, personel yetersizliği ya da diğer («diğer» için not zorunlu). «Kullanıma aç» yatağı yeniden
+  boş yapar; bakımdaki yatak için de aynı düğme çıkar. Yatakta açık bir yatış varsa ya da son
+  hastanın kartı panodan inmemişse açılmaz (yatak boşaltmanın kuralları). Yönetici API'sinin ham yatak
+  geçişi rezerve ve kullanım dışı durumlarına ne girer ne onlardan çıkar (400): ikisinin de notu ya da
+  nedeni vardır, yalnız kendi denetimli yollarıyla (rezervi kaldır, kullanıma aç, onaylı kabul) değişir.
+- **Bir anda bir işlem.** Bir düğmeye basıldığında diğer yatakların düğmeleri işlem bitene dek
+  bekler; her işlemden sonra ekran yatakları ve adları yeniden okur. Adlar okunamazsa ekran bunu
+  söyler ve yatakları adsız gösterir; eski bir adı yanlış yatakta göstermektense hiç göstermez.
+  Her işlemin sonucu (yapıldı ya da reddedildi) bildirimin yanında başlığın altında da bir satır
+  olarak durur, sonraki işleme kadar; bildirimi kaçıran da ne olduğunu bulur. İşlemden sonra düğmesi
+  kalkan yatakta odak sayfanın başına düşmez, o yatağın kutusuna gider.
+- **«Bu çarpayıya xəstə qəbul et».** Yatağı oturumun kabul formuna koyar ve Hasta Kabul'ü açar.
+  Önceki kabul bittiyse yatak yeni bir forma girer, eski hastanın numarası ve bilgisi taşınmaz.
+  Formda gönderim yolda, bekletilmiş ya da yanıtsızsa forma dokunmaz ve bunu söyler.
+- **Yetki.** Rezerv ve kullanım dışı için yeni yetki `beds.manage_state` (sorumlu hemşire ve yönetici).
+  Temizlik bitti için eskisi gibi `beds.release`.
+- **Göç `0016`.** Yatak durumlarına «rezerve» eklenir; iki sütun gelir (neden, şifreli not). Geri
+  alınırsa rezerve yataklar boşa döner ve durum zamanı yeniden damgalanır, böylece «ne zamandan beri
+  boş» rezervin yaşını saymaz (Postgres bir durum değerini silemez, değer tipte kalır ama hiçbir yatak
+  taşımaz).
+
+### 3.15 RRT ekranı ve «RRT çağır» (Grup 2 · B5)
+
+- **İki eskalasyon sistemi:**
+  - **Canlı sistem.** Bellekte çalışır ve tek kademelidir: acil (`immediate`) bir alarm 5 dk cevapsız kalırsa «eskale» olur
+    ve hekime bir kez bildirim gider.
+  - **Postgres'teki üç kademeli sistem** (sorumlu hemşire → hekim → RRT) koddadır ama hiç çağrılmaz; VM'de tabloları hiç
+    yazılmadı.
+  - B5 canlı sistemin üzerine kuruldu; çalışmayan sisteme dokunulmadı.
+- **Sahip kararı:** RRT yalnız elle çağrılınca gelir; otomatik RRT kademesi kapalıdır ve RRT ekranı bunu açıkça yazar. Alarm
+  erteleme ayrı bir dilimdir.
+- **«RRT çağır» (Alarmlar ekranı):**
+  - **Kim çağırabilir:** `alerts.escalate` yetkisi olanlar, yani RRT, sorumlu hemşire, hekimler ve yönetici. Hemşire
+    çağıramaz; cihaz jetonu reddedilir, çünkü çağrıyı bir kişi yapar.
+  - **Gerekçe zorunludur** (3–500 karakter). Gerekçeye ad ya da kimlik numarası yazılmaz.
+  - **Kayıt:** çağrı denetim kaydına `rrt_call` olarak, çağıranın adıyla yazılır. Kayıt belleğe yazılmadan önce düşülür.
+  - **Yanıtlanmış alarm:** böyle bir alarm için çağrı açılmaz.
+  - **İkinci çağrı:** aynı alarm ikinci kez çağrılırsa hiçbir şey yazılmaz, ilk çağrı geçerli kalır.
+- **RRT ekranı (`/rrt`):**
+  - **İki liste:** «RRT çağrıları» (açık çağrılar) ve «Yoldaki cevapsız acil alarmlar» (çağrısız, cevap bekleyen acil
+    alarmlar; hekime eskale olmuşsa bu yazılır).
+  - **Menü rozeti** açık çağrı sayısını gösterir.
+  - **Pano canlı değilse** ekran hiçbir zaman «çağrı yok» demez.
+- **Çağrı ne zaman biter:** alarm «Gördüm» ile yanıtlanınca (yanıtlayan RRT üyesi de olabilir, hemşire de) ya da alarmın
+  bölümü kapanınca.
+- **Alarm gidip gelirse:** gecikme süresi içinde geri gelen bir alarmda çağrı, eskalasyon zinciriyle birlikte sürer.
+- **API yeniden başlarsa:** açık çağrı denetim kaydından geri gelir. Yeniden başlatma, gidip gelen bir alarmın zincirini
+  taşımaz; bu, mevcut zincir sınırlamasıdır.
+- **Bu dilimde olmayanlar:** RRT cihazlarına anlık bildirim (push) yok; RRT çağrıyı rozetten ve ekrandan görür.
+- **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b5-rrt-design.md`.
+
+### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
+
+«Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
+bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0017). Örneklerdeki değerler uydurmadır.
+
+- **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **elle girilen** NEWS2 değeridir (3.12'deki
+  form; geri alınan giriş sayılmaz). Monitörden ya da HBYS'den gelen değer dayanak değildir. Son 48 saatte elle
+  giriş yoksa dayanak kabul zamanıdır; o da yoksa ekran «ölçüm kaydı yok» der. Vade = dayanak + hastanın NEWS2
+  bandının aralığı. Ölçüm kaydedilince görev kendiliğinden ilerler.
+- **Aralığı hastane belirler, sistem değil.** Yönetim › Görevler sekmesinde (`structure.manage`) beş bant var:
+  NEWS2 0, 1–4, tek parametrede 3, 5–6, ≥ 7. Yalnız «0 → 720 dk» varsayılan doludur; kaynağı kasadaki NEWS2
+  belgesidir (RCP 2017: en az 12 saatte bir gözlem). Diğer bantlar boş gelir; hastane kendi protokolünü girer.
+  **Boş bant görev üretmez** — bu, «ölçüm gerekmiyor» demek değildir, «bu bant için aralık girilmedi» demektir.
+- **Durumlar.** planlı (vadesi gelmedi) · şimdi (vadesi geldi, gecikme payı içinde; pay varsayılan 30 dk) · gecikti ·
+  tamamlandı · uygulanmadı. Gecikmiş bir ölçüm «uygulanmadı» diye bir aralık için atlanabilir; bunun için neden
+  yazmak gerekir, ama metin saklanmaz — denetim kaydında yalnız «atlandı, kim, ne zamana kadar» olayı kalır.
+- **Elle görev.** «Görev ekle»: hasta, metin (en çok 200 karakter; hasta adı yazmayın, yatak yeter), vade (en çok
+  24 saat geri, 7 gün ileri), kime (hemşire / hekim / herkes). Üstlen · tamamla · uygulanmadı; her biri kimin
+  yaptığıyla denetim kaydına yazılır, metin yazılmaz (metin veritabanında şifrelidir).
+- **Görünüm.** Geniş ekranda nöbet başından (08:00 ya da 20:00) 24 saatlik ızgara, «şimdi» sütunu ve «Şimdiye git»;
+  tablette liste (gecikenler önce, tamamlananlar gizli). Üstte sayaçlar; süzgeçler: tür, yalnız gecikenler, yalnız
+  benim rolüm. Ekran 30 saniyede bir yenilenir; bildirim göndermez.
+- **Ne yapmaz.** Hastanın ne sıklıkla ölçüleceğine karar vermez, ilaç / bakım planı / devir işlerini henüz
+  göstermez (sonraki dilimler), kişiye atama yapmaz (bakım ekibi B1c'den sonra).
+
+### 3.17 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
+
+Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** 11 Kasım
+2026'dan beri hastane sunucusunda çalışıyor (göç yok). Örneklerdeki değerler uydurmadır.
+
+- **Ne girilir.** Aldığı: IV sıvı/infüzyon, kristaloid bolus, enteral/oral, kan ürünü, diğer. Çıkardığı: idrar,
+  dren, diğer (NG, kusma). Her giriş mL ve saatle; saat en çok 24 saat geri, ileri olamaz. «Giriş/çıkış ekle»
+  penceresinde birkaç satır birden girilir; yazma `clinical.chart` yetkisi ister.
+- **Bolus iki yerden girilebilir:** İlaç kutusunun formu ve Sıvı penceresi. İkisi aynı kayıttır, iki kez sayılmaz;
+  septik şok kuralı bolusu eskisi gibi okur.
+- **Toplamları sunucu hesaplar:** bugün (sıvı günü 08:00'de başlar — Görevlerim'in nöbet ayarı), iki nöbet ara
+  toplamı, son tamamlanan 24 saat, saatlik çubuk grafiği ve kümülatif denge. Tarayıcı toplama yapmaz.
+- **İdrar ve SOFA.** Son tamamlanan 24 saatin idrar toplamının yanında Sepsis-3'ün SOFA böbrek satırı yazar:
+  <500 mL/gün 3 puan, <200 mL/gün 4 puan. Sistem puan **vermez**, renk de kullanmaz; ekran o 24 saatin kaçında idrar
+  kaydı olduğunu söyler, çünkü eksik kayıt toplamı düşük gösterir. mL/kg/sa (son 6 saat) yalnız sayıdır: kasada
+  oligüri eşiği için kaynak yok.
+- **Hatalı giriş.** Yanlış bir hacim (bolus dahil) gerekçeyle geri alınır; toplamdan çıkar, listede üstü çizili kalır.
+  Bolus geri alınınca motor hastayı yeniden değerlendirir (septik şok kuralı dahil).
+- **Ne yapmaz.** Pompadan otomatik veri almaz, saatlik idrar hatırlatması yapmaz (Görevlerim'e sonra eklenebilir),
+  SOFA formuna idrar aktarmaz.
+
+### 3.18 Vardiya devri (Grup 2 · B3b)
+
+- **Ne:** `/devir`, «Vardiya devri». Devir yetkisi (`handover.sign`) olanlar görür: hemşire, sorumlu hemşire, hekim, yönetici.
+- **Hasta başına devir** (sahip kararı): her hasta için ayrı bir devir yapılır. Devrin notu D-Ö-D-Ö düzenindedir:
+  Durum · Öykü · Değerlendirme · Öneri. Taslak tanı içermez; nota ad ya da kimlik numarası yazılmaz.
+- **İki imza:**
+  - Giden kişi devri açar ve imzalar; teslim alan kişi karşı imzalar.
+  - Teslim alan kişiyi giden kişi seçer (sahip kararı). Seçilebilecekler, devir yetkisi olan başka meslektaşlardır.
+  - Yalnız seçilen kişi karşı imzalayabilir. Sunucu kişinin kendine ya da yetkisiz birine devretmesini reddeder.
+- **Kritik alarm kilidi:**
+  - Hastada yanıtlanmamış kritik alarm (çalan ya da kilitli kalan) varsa giden imza atılamaz.
+  - Kontrol canlı panodan okunur; eskiden VM'de hiç yazılmayan bir tablodan okunuyordu.
+  - Ekran da imzadan önce panoya bakar, ama son söz sunucunundur.
+  - Pano canlı değilse ekran bunu söyler: «kritik alarm denetimini sunucu yapar».
+- **Sistem özeti:**
+  - Giden imza anında sistem panodan bir özet mühürler: risk, NEWS2, son vitaller, vazopresör ve açık alarmlar.
+  - Özette ad yoktur. Teslim alan kişi notu ve özeti görür; güncel veri için hastayı açar.
+- **Listeler:**
+  - Üç liste var: «Karşı imzanızı bekleyenler», «Benim devrettiklerim» ve «Son 24 saat».
+  - Liste kendiliğinden yenilenmez; «Yenile» düğmesi ve son okuma saati vardır.
+  - Açık bir devrin 30 dakikalık süresi dolarsa devir «Süresi doldu» olur; yeni devir açılır.
+- **Denetim kaydı:** açma, imza ve karşı imza denetim kaydına yazılır. Notun metni kayda yazılmaz.
+- **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
+- **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
 
 ---
 

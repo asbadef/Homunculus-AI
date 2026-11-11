@@ -72,12 +72,20 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("POST", "/tenant/beds/{bed_id}/transition"): ANY(_S),
     # G2-B1a (Hasta Kabul): the names every screen reads, the administrator's rename / close /
     # reopen, and a nurse's "cleaning done, bed free" (spec §4.4, D8)
-    ("GET", "/tenant/structure"): ANY("admissions.view", "admissions.admit", "beds.release", _S, _U,
+    ("GET", "/tenant/structure"): ANY("admissions.view", "admissions.admit",
+                                      "admissions.discharge.confirm", "beds.release", _S, _U,
                                       "devices.map_beds"),
     ("PATCH", "/tenant/units/{unit_id}"): ANY(_S),
     ("PATCH", "/tenant/rooms/{room_id}"): ANY(_S),
     ("PATCH", "/tenant/beds/{bed_id}"): ANY(_S),
     ("POST", "/tenant/beds/{bed_id}/release"): ANY("beds.release"),
+    # G2-B3a (Doluluk): the four bed moves (spec §4, D4)
+    ("POST", "/tenant/beds/{bed_id}/reserve"): ANY("beds.manage_state"),
+    ("POST", "/tenant/beds/{bed_id}/unreserve"): ANY("beds.manage_state"),
+    ("POST", "/tenant/beds/{bed_id}/out-of-service"): ANY("beds.manage_state"),
+    ("POST", "/tenant/beds/{bed_id}/return-to-service"): ANY("beds.manage_state"),
+    ("GET", "/tenant/occupancy"): ANY("admissions.view", "admissions.admit",
+                                      "admissions.discharge.confirm", "beds.release"),
     # admission/router.py
     ("POST", "/admissions"): ANY("admissions.admit"),
     ("GET", "/admissions"): ANY("admissions.view"),
@@ -100,6 +108,8 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("POST", "/handovers"): ANY("handover.sign"),
     ("POST", "/handovers/{handover_id}/sign-outgoing"): ANY("handover.sign"),
     ("POST", "/handovers/{handover_id}/countersign"): ANY("handover.sign"),
+    ("GET", "/handovers"): ANY("handover.sign"),               # G2-B3b (D7): my handovers
+    ("GET", "/handovers/colleagues"): ANY("handover.sign"),    # G2-B3b (D7): who I hand over to
     # escalation/router.py
     ("POST", "/alerts"): ANY("alerts.escalate"),
     ("POST", "/alerts/{alert_id}/escalate"): ANY("alerts.escalate"),
@@ -223,7 +233,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 65
+    assert len(EXPECTED) == 72      # G2-B3a: +4, the bed moves; +1, GET /tenant/occupancy; G2-B3b: + GET /handovers, GET /handovers/colleagues
 
 
 def test_no_guarded_route_is_missing_from_the_table():

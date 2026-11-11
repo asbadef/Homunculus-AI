@@ -69,6 +69,17 @@ export function fakeApi(vi, { access = null } = {}) {
     // G3-01: the bedside form's preview and the «hatalı giriş» withdrawal (screens/bedside, trends)
     previewChart: vi.fn(),
     retractEntry: vi.fn(),
+    // G3-02: Görevlerim — the queue, its writes and the settings tab
+    tasks: vi.fn(),
+    createTask: vi.fn(),
+    claimTask: vi.fn(),
+    doneTask: vi.fn(),
+    skipTask: vi.fn(),
+    skipVitalTask: vi.fn(),
+    taskSettings: vi.fn(),
+    saveTaskSettings: vi.fn(),
+    // G3-03: Sıvı dengesi — the patient screen's fluid box (screens/patient/fluids)
+    patientFluids: vi.fn(),
 
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),
@@ -78,6 +89,12 @@ export function fakeApi(vi, { access = null } = {}) {
     startDischarge: vi.fn(),
     confirmDischarge: vi.fn(),
     releaseBed: vi.fn(),
+    // G2-B3a: Doluluk — the names read and the four moves
+    occupancy: vi.fn(),
+    reserveBed: vi.fn(),
+    unreserveBed: vi.fn(),
+    bedOutOfService: vi.fn(),
+    bedReturnToService: vi.fn(),
     createSite: vi.fn(),
     createUnit: vi.fn(),
     createRoom: vi.fn(),
@@ -100,6 +117,16 @@ export function fakeApi(vi, { access = null } = {}) {
     audit: vi.fn(),
     verifyAudit: vi.fn(),
     alarmQuality: vi.fn(),
+
+    // G2-B5: «RRT çağır» (screens/alarms, screens/rrt)
+    callRrt: vi.fn(),
+
+    // G2-B3b: Vardiya devri (screens/devir)
+    handovers: vi.fn(),
+    handoverColleagues: vi.fn(),
+    openHandover: vi.fn(),
+    signHandover: vi.fn(),
+    countersignHandover: vi.fn(),
 
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),

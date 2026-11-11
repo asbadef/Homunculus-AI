@@ -22,6 +22,11 @@ export const Select = forwardRef(function Select({ className = "", children, ...
   );
 });
 
+/** A multi-line text field with the same look, focus and invalid marks as Input (G2-B3b: the handover note). */
+export const Textarea = forwardRef(function Textarea({ className = "", rows = 3, ...rest }, ref) {
+  return <textarea ref={ref} rows={rows} className={`${CONTROL} resize-y ${className}`} {...rest} />;
+});
+
 /** One labelled control. The label is tied to it (htmlFor/id: the child's own id, else a
  *  generated one); layout: "row" — label beside the control above 860 px, as the prototype — or
  *  "col", label above.

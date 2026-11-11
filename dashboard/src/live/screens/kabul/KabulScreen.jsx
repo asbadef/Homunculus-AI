@@ -1,6 +1,6 @@
 // src/live/screens/kabul/KabulScreen.jsx — "Hasta Kabul" (Group 2 · B1a, spec §5.1): Kabul ·
-// Taburcu · Yataklar, each gated by the rights it acts with. The route opens to any of
-// `admissions.view`, `admissions.admit`, `admissions.discharge.confirm`, `beds.release`
+// Taburcu, each gated by the rights it acts with (the beds moved to Doluluk, G2-B3a). The route
+// opens to any of `admissions.view`, `admissions.admit`, `admissions.discharge.confirm`
 // (shell/routes.js); a tab this session may not open is not shown, and the screen opens on the
 // first it may. Writes inside a tab are gated again by their own right; the server checks all.
 //
@@ -16,15 +16,13 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { Empty, TabPanel, Tabs } from "../../ui/index.js";
 import { AdmitTab } from "./AdmitTab.jsx";
 import { DischargeTab } from "./DischargeTab.jsx";
-import { BedsTab } from "./BedsTab.jsx";
 
 const TAB_ID = "kabul";
 
-/** The three tabs, in order: the id, the rights that open it (any one), its label, its screen. */
+/** The two tabs, in order: the id, the rights that open it (any one), its label, its screen. */
 export const KABUL_TABS = Object.freeze([
   Object.freeze({ id: "admit", perms: Object.freeze(["admissions.admit", "admissions.view"]), labelKey: "kabul.tabAdmit", Tab: AdmitTab }),
   Object.freeze({ id: "discharge", perms: Object.freeze(["admissions.view", "admissions.discharge.confirm"]), labelKey: "kabul.tabDischarge", Tab: DischargeTab }),
-  Object.freeze({ id: "beds", perms: Object.freeze(["admissions.view", "beds.release"]), labelKey: "kabul.tabBeds", Tab: BedsTab }),
 ]);
 
 export const kabulTabs = (perms) => KABUL_TABS.filter((tab) => tab.perms.some((key) => perms?.includes(key)));

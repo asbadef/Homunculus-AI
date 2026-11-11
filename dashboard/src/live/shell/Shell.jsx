@@ -6,7 +6,14 @@
 // of a later wave) is "no such page" — never a blank, never a silent jump elsewhere. The empty
 // address lands on the session's home (routes.js homePath). After a move between screens — back
 // to the first one too — focus goes to <main>, so a screen reader starts at the new screen.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+//
+// A screen's code is fetched the first time it is opened (routes.js, lazyScreen.js). While it
+// travels <main> says the PAGE is loading — never empty, and never words that could be read as
+// "there is no data" — and a polite region says it too; a chunk that does not come (offline, or a
+// deploy replaced the hashed file) is said with a reload, and the rail and the other screens go on
+// working. The page fetches every screen's code soon after it opens (LiveApp.jsx), so this is
+// mostly a first visit's moment.
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useIdleLock } from "../session/useIdleLock.js";
@@ -16,9 +23,10 @@ import { IDLE_SPOKEN_AGAIN_AT, IdleWarning } from "../session/IdleWarning.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
-import { Icon } from "../ui/index.js";
+import { Announce, Box, Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
+import { isChunkFailure, retryFailedScreens } from "./lazyScreen.js";
 import { ShellProvider } from "./ShellContext.jsx";
 import { StructureProvider } from "../data/StructureProvider.jsx";   // G2-B1a
 import { Sidebar } from "./Sidebar.jsx";
@@ -43,25 +51,93 @@ function useHashPath() {
   return path;
 }
 
+/** The refusal pages' one action, a link or a button. */
+const ACTION = "inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri";
+
 /** The router's two refusals. `icon`: a shield for a page this session may not open, a sheet of
  *  paper for one that does not exist — the same picture for both would read every mistyped
- *  address as "you are not allowed in here". */
-function Blocked({ icon, title, help, home }) {
+ *  address as "you are not allowed in here". The same card, with a warning sign and a reload in
+ *  place of the way home (`children`), says a screen's code did not come (ScreenFailed). */
+function Blocked({ icon, title, help, home, role, children }) {
   const { t } = useI18n();
   return (
-    <div className="mx-auto my-[10vh] max-w-[460px] rounded-dlg border border-line bg-card px-6 py-7 text-center">
+    <div role={role} className="mx-auto my-[10vh] max-w-[460px] rounded-dlg border border-line bg-card px-6 py-7 text-center">
       <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-pri-soft text-pri">
         <Icon name={icon} size={26} />
       </div>
       <h1 className="m-0 mb-1.5 font-display text-20 font-bold">{title}</h1>
       {help ? <p className="m-0 mb-4 text-mute">{help}</p> : null}
-      <a href={`#${home}`} className={`inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri ${FOCUS_RING}`}>
-        {t("shell.home")}
-      </a>
+      {children ?? (
+        <a href={`#${home}`} className={`${ACTION} ${FOCUS_RING}`}>
+          {t("shell.home")}
+        </a>
+      )}
     </div>
   );
 }
 
+/** While a screen's code travels: a sentence about the PAGE, so it cannot be read as "no beds",
+ *  "no alarms" or any other "nothing here". It tells the shell it is up (`onShown`), so the shell's
+ *  always-mounted polite region can say it — a region born with the note would not be announced. */
+function ScreenLoading({ onShown }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    onShown(true);
+    return () => onShown(false);
+  }, [onShown]);
+  return <Box><p className="m-0 text-13 text-mute">{t("shell.screenLoading")}</p></Box>;
+}
+
+/** A screen that could not be shown, with the reload. What it says depends on why: a chunk that did
+ *  not come is what src/LoadFailed.jsx says of the page's root ("check your connection, nothing was
+ *  lost" — true, nothing was typed into a screen that never arrived); a screen that THREW may have
+ *  held a half-filled form, and is told as a screen that stopped with an error. The rail stays. */
+function ScreenFailed({ chunk }) {
+  const { t } = useI18n();
+  return (
+    <Blocked role="alert" icon="alert" title={t("shell.loadFailed")} help={t(chunk ? "shell.loadFailedHelp" : "shell.screenFailedHelp")}>
+      <button type="button" onClick={() => window.location.reload()} className={`${ACTION} ${FOCUS_RING}`}>
+        {t("shell.reload")}
+      </button>
+    </Blocked>
+  );
+}
+
+/** Around one screen: a chunk that will not load — React throws it during render — or anything
+ *  else the screen throws is shown as ScreenFailed, never as an empty <main> or an uncaught error.
+ *  The error goes to the console, named after the screen: only that line tells a replaced chunk
+ *  from a bug afterwards. Keyed by the route (below), and reset when the ADDRESS changes
+ *  (`resetKey`): a move from one patient to the next is the same screen and must not keep the
+ *  first one's failure. Once a failure is shown, a lazy screen whose chunk failed is armed to fetch
+ *  again on its next render (lazyScreen.js retryFailedScreens) — so moving away and back, or to
+ *  the next patient, tries again, and Reload is not the only way out once the network is back. */
+class ScreenBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false, chunk: false, at: props.resetKey };
+  }
+
+  // The reset happens BEFORE the render at the new address, not after its commit
+  // (componentDidUpdate): a screen that fails AT the new address — P-1 fine, P-2 throws — would
+  // otherwise be reset by the very update that showed its failure, rendered once more, and logged
+  // (and, for a chunk, fetched) twice.
+  static getDerivedStateFromProps(props, state) {
+    return props.resetKey === state.at ? null : { failed: false, chunk: false, at: props.resetKey };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { failed: true, chunk: isChunkFailure(error) };
+  }
+
+  componentDidCatch(error) {
+    console.error(`Homunculus: the screen "${this.props.screen}" could not be rendered`, error);   // eslint-disable-line no-console
+    retryFailedScreens();
+  }
+
+  render() {
+    return this.state.failed ? <ScreenFailed chunk={this.state.chunk} /> : this.props.children;
+  }
+}
 
 export function Shell({ resume = "" }) {
   const { t } = useI18n();
@@ -109,6 +185,9 @@ export function Shell({ resume = "" }) {
     if (!isEmptyPath(from)) main.current?.focus();
   }, [path]);
 
+  // Whether a screen's loading note is up: the polite region in <main> says it while it is.
+  const [screenLoading, setScreenLoading] = useState(false);
+
   const { secondsLeft, stay } = useIdleLock({ minutes: user.lockIdleMinutes, onIdle: () => store.lock("idle") });
 
   useEffect(() => {
@@ -136,7 +215,16 @@ export function Shell({ resume = "" }) {
     content = <Blocked icon="shield" title={title} help={t("shell.denyHelp")} home={home} />;
   } else {
     title = t(match.route.labelKey);
-    content = <Screen params={match.params} />;
+    // Keyed by the route, not the address: a patient opened after another is the same screen,
+    // updated in place as before, while a move to another screen starts afresh. A failure is left
+    // behind on ANY move, the next patient's included (`resetKey`).
+    content = (
+      <ScreenBoundary key={match.route.id} screen={match.route.id} resetKey={path}>
+        <Suspense fallback={<ScreenLoading onShown={setScreenLoading} />}>
+          <Screen params={match.params} />
+        </Suspense>
+      </ScreenBoundary>
+    );
   }
 
   useEffect(() => {
@@ -168,6 +256,8 @@ export function Shell({ resume = "" }) {
               every Chrome; reproduced headless at 1536×730, dpr 1.25: scroller 1525 px for 635 px, and 635
               with this). Positioned here, those spans are clipped and scrolled by <main> like everything else. */}
           <main ref={main} id="main" tabIndex={-1} className="relative min-h-0 overflow-auto px-5 pb-10 pt-[18px] outline-none max-[640px]:px-3 max-[640px]:pt-3.5">
+            {/* Always mounted, outside the Suspense: empty until a screen's code is on its way. */}
+            <Announce text={screenLoading ? t("shell.screenLoading") : ""} />
             {content}
           </main>
         </div>

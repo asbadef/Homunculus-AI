@@ -13,6 +13,7 @@ import { hashPath, homePath, resetScreens, stubScreens } from "./routes.js";
 import { onlyScreens } from "./screens.testutil.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
+import { lazyScreen } from "./lazyScreen.js";
 import { useShell } from "./ShellContext.jsx";
 
 const NURSE_PERMS = ["board.view", "alerts.ack"];
@@ -31,6 +32,9 @@ function PatientProbe({ params }) {
 }
 function AlarmsProbe() {
   return <h1>Siqnal ekranı</h1>;
+}
+function RrtProbe() {
+  return <h1>RRT ekranı</h1>;
 }
 // `built` adds a screen to whatever this build has; `only` pins the registry to a known set, for
 // a test whose subject IS which screens exist (the rail's list, where an empty address lands,
@@ -135,6 +139,46 @@ describe("the rail", () => {
       await act(async () => { stream.open(); await settle(); });
       const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
       expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+    });
+  });
+
+  // G2-B5 (spec D7): the RRT entry counts the open calls, under the alarms entry's rule — a number only from a
+  // LIVE board, a dot from a stale one — and an answered call drops out. Its words are its own.
+  describe("the RRT entry's count", () => {
+    const RRT_PERMS = ["board.view", "alerts.ack", "alerts.escalate"];
+    const card = (alert) => ({ patient_id: "P-0", risk: "high", vitals: {}, alerts: [alert] });
+    const CALLED = { kind: "news2", severity: "high", urgency: "immediate", summary: "NEWS2 7", acknowledged: false,
+      rrt_call: { by: "leyla", at: "2026-11-09T10:00:00Z", reason: "Solunum güçlüğü" } };
+    // What `/ack` answers with: acknowledged, and the call gone with it (spec D4).
+    const ANSWERED = { ...CALLED, acknowledged: true, acknowledged_by: "leyla", rrt_call: null };
+    const rrtEntry = () => within(screen.getByRole("navigation", { name: "Əsas menyu" }))
+      .getByRole("link", { name: /Sürətli cavab/ });
+
+    it("counts the open calls on a LIVE board, in a badge AND in the entry's name; an answered call drops out", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      const { stream } = await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)] });
+      await act(async () => { stream.open(); await settle(); });
+      expect(rrtEntry().querySelector("[data-rail-badge='count']")).toHaveTextContent("1");
+      expect(rrtEntry()).toHaveAccessibleName(/1 açıq RRT çağırışı/);
+      act(() => { stream.frame(card(ANSWERED)); });
+      expect(rrtEntry().querySelector("[data-rail-badge]")).toBeNull();
+      expect(rrtEntry()).not.toHaveAccessibleName(/çağırışı/);
+    });
+
+    it("a board that may be out of date shows a dot, never a number", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      const { stream } = await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)] });
+      await act(async () => { stream.open(); await settle(); });
+      act(() => { stream.drop(); });
+      expect(rrtEntry().querySelector("[data-rail-badge='count']")).toBeNull();
+      expect(rrtEntry().querySelector("[data-rail-badge='stale']")).toBeInTheDocument();
+      expect(rrtEntry()).toHaveAccessibleName(/RRT çağırışları yenilənməmiş ola bilər/);
+    });
+
+    it("a board that cannot know shows nothing", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
+      await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)], start: false });
+      expect(rrtEntry().querySelector("[data-rail-badge]")).toBeNull();
     });
   });
 
@@ -247,6 +291,142 @@ describe("the router", () => {
     await renderShell();
     const main = screen.getByRole("main");
     for (const cls of ["relative", "min-h-0", "overflow-auto"]) expect(main.classList.contains(cls), cls).toBe(true);
+  });
+});
+
+// Each screen's code is its own chunk, fetched the first time the screen is opened (lazyScreen.js,
+// routes.js SCREENS). While it travels the page SAYS it is loading — never an empty <main>, and
+// never words a clinician could read as "there is nothing here"; a chunk that does not come
+// (offline, or a deploy replaced the hashed file) is said as well, with a reload, and the rail and
+// the other screens stay usable.
+describe("a screen whose code is fetched on first use", () => {
+  /** A screen's chunk in flight: it arrives, or fails, when the test says so. */
+  function inFlight() {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+  const go = (hash) => act(() => { window.location.hash = hash; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+
+  it("says the page is loading, in the person's language, under the screen's own name — then shows it", async () => {
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise) });
+    await renderShell({ hash: "#/beds" });
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent("Səhifə yüklənir…");
+    expect(document.title).toBe("Çarpayılar · Homunculus");
+    expect(within(main).queryByRole("alert")).toBeNull();
+    await act(async () => { chunk.resolve({ default: BedsProbe }); await chunk.promise; });
+    expect(screen.getByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
+    expect(main).not.toHaveTextContent("Səhifə yüklənir…");
+  });
+
+  it("in Russian too: the note is the dictionary's, not a word written into the shell", async () => {
+    localStorage.setItem("hmc.lang", "ru");
+    built({ beds: React.lazy(() => new Promise(() => {})) });
+    await renderShell({ hash: "#/beds" });
+    expect(screen.getByRole("main")).toHaveTextContent("Страница загружается…");
+  });
+
+  it("says a chunk that did not come could not be loaded, offers a reload, and leaves the rail and the other screens working", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise), alarms: AlarmsProbe });
+    await renderShell({ hash: "#/beds" });
+    await act(async () => {
+      chunk.reject(new TypeError("Failed to fetch dynamically imported module: /assets/BedsScreen-x.js"));
+      await chunk.promise.catch(() => {});
+    });
+    const main = screen.getByRole("main");
+    const alert = within(main).getByRole("alert");
+    expect(alert).toHaveTextContent("Səhifə yüklənə bilmədi");
+    expect(alert).toHaveTextContent(/Bağlantınızı yoxlayıb səhifəni yenidən yükləyin/);
+    expect(main).not.toHaveTextContent("Səhifə yüklənir…");
+    // The real error reaches the console, named after the screen it stopped: only that line tells a
+    // chunk a deploy replaced from a bug that throws, afterwards.
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('the screen "beds" could not be rendered'), expect.any(TypeError));
+
+    // The reload is what fixes it: a fresh page asks for the files this deploy has.
+    const reload = vi.fn();
+    const where = vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload });
+    fireEvent.click(within(alert).getByRole("button", { name: "Yenidən yüklə" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    where.mockRestore();
+
+    // The rest of the page is untouched by one screen's chunk.
+    expect(screen.getByRole("navigation", { name: "Əsas menyu" })).toBeInTheDocument();
+    go("#/alarms");
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
+    logged.mockRestore();
+  });
+
+  // The note is SAID as well as shown: a polite region that is always on the page (outside the
+  // Suspense, so it is not born holding its text — ui/Alert.jsx) receives it while the fallback is
+  // up, and is emptied when the screen arrives. Focus is the shell's business, unchanged.
+  it("says the loading note politely while it is up, and goes quiet when the screen arrives", async () => {
+    const chunk = inFlight();
+    built({ beds: React.lazy(() => chunk.promise) });
+    await renderShell({ hash: "#/beds" });
+    const said = () => screen.getAllByRole("status").map((el) => el.textContent).filter(Boolean);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
+    expect(said()).toContain("Səhifə yüklənir…");
+    await act(async () => { chunk.resolve({ default: BedsProbe }); await chunk.promise; });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
+    expect(said()).not.toContain("Səhifə yüklənir…");
+  });
+
+  // A screen that THROWS is not a chunk that did not come: "check your connection, no data was
+  // lost" would be false of a bug in a screen with a half-filled form. It gets its own sentence.
+  // And the card belongs to the ADDRESS: a move from one patient to the next (the bell, a link)
+  // is the same screen, and must not keep the first patient's failure.
+  it("says a screen that stopped with an error so, and leaves the failure behind on the next patient", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Fragile({ params }) {
+      if (params.id === "P-1") throw new Error("a bug on P-1's data");
+      return <h1>Xəstə {params.id}</h1>;
+    }
+    built({ patient: Fragile });
+    await renderShell({ hash: "#/patients/P-1" });
+    const alert = within(screen.getByRole("main")).getByRole("alert");
+    expect(alert).toHaveTextContent("Səhifə yüklənə bilmədi");
+    expect(alert).toHaveTextContent("Bu ekran xəta ilə dayandı. Səhifəni yenidən yükləyin; yadda saxlanmamış daxiletmələr itə bilər.");
+    expect(alert).not.toHaveTextContent(/Bağlantınızı yoxlayıb/);
+    expect(within(alert).getByRole("button", { name: "Yenidən yüklə" })).toBeInTheDocument();
+    go("#/patients/P-2");
+    expect(await screen.findByRole("heading", { level: 1, name: "Xəstə P-2" })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
+
+    // And the other way round: a screen that fails AT the new address shows its card, once — the
+    // move that brought it there does not reset it and render it again.
+    logged.mockClear();
+    go("#/patients/P-1");
+    expect(await within(screen.getByRole("main")).findByRole("alert")).toHaveTextContent("Bu ekran xəta ilə dayandı.");
+    await act(async () => { await settle(); });
+    expect(logged.mock.calls.filter(([text]) => String(text).includes("could not be rendered"))).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 1, name: "Xəstə P-1" })).toBeNull();
+    logged.mockRestore();
+  });
+
+  // React.lazy remembers a rejected import for good, so without help the card would come back on
+  // every visit, with no fetch, long after the network is back. A lazy screen whose chunk failed is
+  // fetched again the next time it is opened (lazyScreen.js): Reload is no longer the only way out.
+  it("fetches a failed screen's code again the next time it is opened", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const load = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch dynamically imported module: /assets/BedsScreen-x.js"))
+      .mockResolvedValue({ BedsProbe });
+    built({ beds: lazyScreen(load, "BedsProbe"), alarms: AlarmsProbe });
+    await renderShell({ hash: "#/beds" });
+    const alert = await within(screen.getByRole("main")).findByRole("alert");
+    expect(alert).toHaveTextContent(/Bağlantınızı yoxlayıb səhifəni yenidən yükləyin/);
+    go("#/alarms");
+    await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" });
+    go("#/beds");
+    expect(await screen.findByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
   });
 });
 

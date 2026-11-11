@@ -614,6 +614,31 @@ describe("an answer the API gave, put onto the board", () => {
     expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
   });
 
+  // G2-B5: «RRT çağır» takes the road an acknowledgement does — through `track`, nothing shown before the server
+  // has taken it, and the card it answers with is what lands on the board.
+  it("calls the RRT through the session's wrapper and puts the card it answers with onto the board", async () => {
+    const call = { by: "sorumlu.hem", at: "2026-11-09T10:00:00+00:00", reason: "Ekip gelsin" };
+    const card = entry("P-001", [alert("news2", "high", { rrt_call: call })]);
+    const api = { callRrt: vi.fn().mockResolvedValue(card) };
+    const track = vi.fn((fn) => fn());
+    const store = createBoardStore({ api, track, openStream: vi.fn(), setTimer: vi.fn(), clearTimer: vi.fn() });
+
+    expect(await store.callRrt("P-001", "news2", "Ekip gelsin")).toBe(card);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(api.callRrt).toHaveBeenCalledWith("P-001", "news2", "Ekip gelsin");
+    expect(store.getState().alerts[0].rrtCall)
+      .toEqual({ by: "sorumlu.hem", atMs: Date.parse(call.at), reason: "Ekip gelsin" });
+  });
+
+  it("changes nothing on the board when the server refuses the call", async () => {
+    const { api, store, state } = setup();
+    await store.start();
+    api.callRrt = vi.fn().mockRejectedValue(new Error("alarm zaten yanıtlandı; RRT çağrısı açılmaz"));
+    await expect(store.callRrt("P-001", "news2", "Ekip gelsin")).rejects.toThrow(/zaten yanıtlandı/);
+    expect(state().alerts[0].rrtCall).toBeNull();
+  });
+
   it("is replayed over a snapshot still on its way, so a reload cannot undo it", async () => {
     // The same guarantee a stream frame has: the load's snapshot was taken by the server before
     // the acknowledgement, and must not come back and un-acknowledge it.

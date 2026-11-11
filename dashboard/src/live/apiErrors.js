@@ -82,6 +82,10 @@ export const API_MESSAGE_KEYS = new Map([
   ["malformed identity resource", "badIdentityResource"],
   ["identity source 'kabul' is reserved for the admission", "kabulSourceReserved"],
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
+  // POST /alerts/rrt-call (G2-B5): a device is refused, the reason is 3–500 characters, an answered alarm opens no call.
+  ["RRT'yi bir kişi çağırır", "rrtByPerson"],
+  ["RRT çağrısının gerekçesi 3–500 karakter olmalı", "rrtReasonLength"],
+  ["alarm zaten yanıtlandı; RRT çağrısı açılmaz", "rrtAnswered"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
@@ -108,7 +112,7 @@ export const API_MESSAGE_KEYS = new Map([
   ["bu hastada böyle bir elle girilmiş değer yok", "retractUnknown"],
   ["bu değer zaten hatalı giriş olarak işaretlenmiş", "retractAlready"],
   ["taburcu edilmiş bir hastada değer geri alınamaz", "retractDischarged"],
-  ["yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir", "retractNotBedside"],
+  ["yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir", "retractNotBedside"],
   // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
   ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
   // GET /infinity-shadow/findings (Aşama B, Settings' «Uyarsaydı — son 7 gün»): a window outside 1–7 days.
@@ -155,7 +159,23 @@ export const API_MESSAGE_KEYS = new Map([
   ["kullanıcı bulunamadı", "userNotFound"],
   ["kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız", "scopeAdminOnly"],
   ["bir atama ya bir ünite ya bir yatak belirtir, ikisi birden değil", "scopeGrantShape"],
+
+  // G3-02 — Görevlerim: homunculus/api/tasks.py WORDS, TASK_NOT_FOUND, PERSON_REQUIRED (spec D11). Full keys:
+  // their texts live in the `gorevler` namespace with the rest of the slice (`fullKey` below).
+  ["Intervals are 5–1440 minutes, the grace 0–240 minutes, shift hours 0–23 and different.", "gorevler.err.settingsRange"],
+  ["The task text is 1–200 characters.", "gorevler.err.titleLength"],
+  ["The due time is at most 24 hours back and 7 days ahead.", "gorevler.err.dueWindow"],
+  ["The target role is nurse, physician or any.", "gorevler.err.role"],
+  ["The task is already closed.", "gorevler.err.notOpen"],
+  ["The reason is 1–200 characters.", "gorevler.err.reasonLength"],
+  ["No vital measurement is due for this patient.", "gorevler.err.vitalNotDue"],
+  ["görev bulunamadı", "gorevler.err.taskNotFound"],
+  ["a person signs a task: this credential names no actor", "gorevler.err.person"],
 ]);
+
+/** A mapped message's dictionary key: a bare name lives under `errors.`; a key with a dot is already whole
+ *  (G3-02's `gorevler.err.*`, beside the coded maps below, which are whole keys too). */
+const fullKey = (key) => (key.includes(".") ? key : `errors.${key}`);
 
 /** backendApi.js `err.code`s; they win over the text. */
 export const API_CODE_KEYS = new Map([
@@ -210,6 +230,22 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["label_too_narrow", "protokol.err.tooNarrow"],
   ["label_dpi", "protokol.err.dpi"],
   ["no_protocol", "protokol.err.noProtocol"],
+
+  // G2-B3a — Doluluk (spec D5). `bed_reserved` opens the reserved-bed question in the Kabul form
+  // (ReservedAsk.jsx); its sentence is said only where a screen shows the refusal itself.
+  ["bed_reserved", "kabul.err.bedReserved"],
+]);
+
+/** G3-02 — Görevlerim (homunculus/api/tasks.py WORDS, spec D11): the queue's refusals by their code
+ *  (`err.apiCode`, as the admission codes). Its own map: ADMISSION_CODE_KEYS is held to admission/errors.py. */
+export const TASK_CODE_KEYS = new Map([
+  ["task_settings_range", "gorevler.err.settingsRange"],
+  ["task_title_length", "gorevler.err.titleLength"],
+  ["task_due_window", "gorevler.err.dueWindow"],
+  ["task_role_unknown", "gorevler.err.role"],
+  ["task_not_open", "gorevler.err.notOpen"],
+  ["task_reason_length", "gorevler.err.reasonLength"],
+  ["vital_not_due", "gorevler.err.vitalNotDue"],
 ]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card
@@ -269,6 +305,15 @@ export const INVALID_FIELD_KEYS = new Map([
   ["note", "kabul.invalid.note"],
   ["name", "kabul.invalid.name"],
   ["label", "kabul.invalid.label"],
+  // G2-B3b (D5): the handover note's four parts (`HandoverNote`) — refused for a control character in them.
+  ["situation", "devir.invalid.situation"],
+  ["background", "devir.invalid.background"],
+  ["assessment", "devir.invalid.assessment"],
+  ["recommendation", "devir.invalid.recommendation"],
+  // G2-B3b (D2): the receiver is another colleague who holds handover.sign — the open route's own check.
+  ["incoming_user_id", "devir.invalid.receiver"],
+  // G2-B3b (D5): the legacy plain-text note, which «Vardiya devri» never sends (it sends `note`).
+  ["narrative_note", NOT_ON_SCREEN],
   ["icd10_codes", NOT_ON_SCREEN],
   ["active_comorbidities", NOT_ON_SCREEN],
   ["active_medications_on_admission", NOT_ON_SCREEN],
@@ -291,6 +336,7 @@ function admissionCodeKey(err) {
     return { key: (PROTOCOL_NO.test(number) ? WITH_PROTOCOL : WITH_NUMBER).get(code), vars: { number } };
   }
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
+  if (TASK_CODE_KEYS.has(code)) return { key: TASK_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };
   }
@@ -435,7 +481,7 @@ export function apiErrorKey(err) {
   }
   const text = messageOf(err).trim();
   let hit = null;
-  if (API_MESSAGE_KEYS.has(text)) hit = { key: `errors.${API_MESSAGE_KEYS.get(text)}`, vars: {} };
+  if (API_MESSAGE_KEYS.has(text)) hit = { key: fullKey(API_MESSAGE_KEYS.get(text)), vars: {} };
   else {
     const failed = REQUEST_FAILED.exec(text);
     const permission = PERMISSION_REQUIRED.exec(text);

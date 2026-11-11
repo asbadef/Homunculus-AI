@@ -11,28 +11,44 @@
 // another screen: a patient is opened from the beds — and while such a screen is open no rail
 // entry reads as current, see Sidebar.jsx).
 //
-// HOW A WAVE ADDS ITS SCREEN: its own import line below, and its own line in SCREENS — two lines
-// nobody else touches, so the parallel branches of Wave 3 do not meet. That is the ONLY way the
-// app gains a screen; `stubScreens` is a test seam and refuses to run outside the test build.
+// HOW A WAVE ADDS ITS SCREEN: its own `lazyScreen` line below, and its own line in SCREENS — two
+// lines nobody else touches, so the parallel branches of Wave 3 do not meet. That is the ONLY way
+// the app gains a screen; `stubScreens` is a test seam and refuses to run outside the test build.
 // ROUTES itself is frozen, entries and permission lists included: a route's id, address and
 // permissions are the same for every session and every test, and nothing can widen them at run
 // time.
-import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
-import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
+//
+// EACH SCREEN'S CODE IS ITS OWN CHUNK, fetched the first time the screen is opened (lazyScreen.js):
+// with every screen in it, the live UI's one chunk had grown past Vite's 500 kB. A screen's line
+// names its module by a literal path (so the reachability walk and the boundary rules read it as an
+// import) and the export the screen is. The shell shows a loading note while a chunk travels and a
+// reload when one does not come (Shell.jsx); the PWA precache holds every chunk (vite.config.js).
+import { lazyScreen } from "./lazyScreen.js";
 
-import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
+const SettingsScreen = lazyScreen(() => import("../screens/settings/SettingsScreen.jsx"), "SettingsScreen");
+const BedsScreen = lazyScreen(() => import("../screens/beds/BedsScreen.jsx"), "BedsScreen");
 
-import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
+const AlarmsScreen = lazyScreen(() => import("../screens/alarms/AlarmsScreen.jsx"), "AlarmsScreen");
 
-import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
+const PatientScreen = lazyScreen(() => import("../screens/patient/PatientScreen.jsx"), "PatientScreen");
 
-import { DevicesScreen } from "../screens/devices/DevicesScreen.jsx";
+const AdminScreen = lazyScreen(() => import("../screens/admin/AdminScreen.jsx"), "AdminScreen");
 
-import { KabulScreen } from "../screens/kabul/KabulScreen.jsx"; // G2-B1a
+const DevicesScreen = lazyScreen(() => import("../screens/devices/DevicesScreen.jsx"), "DevicesScreen");
 
-import { BedsideScreen } from "../screens/bedside/BedsideScreen.jsx"; // G3-01
+const KabulScreen = lazyScreen(() => import("../screens/kabul/KabulScreen.jsx"), "KabulScreen"); // G2-B1a
 
-import { DenetimScreen } from "../screens/denetim/DenetimScreen.jsx"; // G2-B4
+const BedsideScreen = lazyScreen(() => import("../screens/bedside/BedsideScreen.jsx"), "BedsideScreen"); // G3-01
+
+const GorevlerScreen = lazyScreen(() => import("../screens/gorevler/GorevlerScreen.jsx"), "GorevlerScreen"); // G3-02
+
+const DenetimScreen = lazyScreen(() => import("../screens/denetim/DenetimScreen.jsx"), "DenetimScreen"); // G2-B4
+
+const DolulukScreen = lazyScreen(() => import("../screens/doluluk/DolulukScreen.jsx"), "DolulukScreen"); // G2-B3a
+
+const RrtScreen = lazyScreen(() => import("../screens/rrt/RrtScreen.jsx"), "RrtScreen"); // G2-B5
+
+const DevirScreen = lazyScreen(() => import("../screens/devir/DevirScreen.jsx"), "DevirScreen"); // G2-B3b
 
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
@@ -56,7 +72,15 @@ const SCREENS = Object.freeze({
 
   olcum: BedsideScreen, // G3-01 — Yatak başı ölçüm: the bedside set by hand
 
+  gorevler: GorevlerScreen, // G3-02 — Görevlerim: the ward's task queue
+
   denetim: DenetimScreen, // G2-B4 — «Denetim bütünlüğü»: the audit chain's verification and the newest events
+
+  doluluk: DolulukScreen, // G2-B3a — Doluluk: the ward's beds, their states and moves
+
+  rrt: RrtScreen, // G2-B5 — the rapid-response team's calls and the unanswered urgent alarms
+
+  devir: DevirScreen, // G2-B3b — «Vardiya devri»: to countersign, mine, a new handover with its D-Ö-D-Ö note
 
   settings: SettingsScreen,
 });
@@ -87,9 +111,14 @@ export const ROUTES = Object.freeze([
   route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
     perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main" }),   // G2-ESLEME: + the editor's key
 
-  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits, confirms a discharge or
-  // releases a bed. After the board's screens in the table, so nobody's home moves.
+  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits or confirms a discharge
+  // (releasing a bed moved to Doluluk, X7). After the board's screens in the table, so nobody's home moves.
   route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
+    perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm"], work: true, nav: "main" }),   // G2-B3a (X7)
+
+  // G2-B3a — Doluluk (spec D2): for whoever reads admissions, admits, confirms a discharge or releases
+  // a bed — the right to its names (GET /tenant/occupancy). After Kabul, so nobody's home moves.
+  route({ id: "doluluk", path: "/doluluk", icon: "bed", labelKey: "doluluk.nav", shortKey: "doluluk.navShort",
     perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm", "beds.release"], work: true, nav: "main" }),
 
   // G3-01 (D3, D14) — Yatak başı ölçüm: for whoever charts (`clinical.chart`). After the ward's other screens,
@@ -97,11 +126,27 @@ export const ROUTES = Object.freeze([
   route({ id: "olcum", path: "/olcum", icon: "heart", labelKey: "olcum.nav", shortKey: "olcum.navShort",
     perms: ["clinical.chart"], work: true, nav: "main" }),
 
+  // G3-02 (D12) — Görevlerim: for whoever reads the queue (`tasks.view`). After Ölçüm, so nobody's home moves;
+  // a session that only reads tasks lands here.
+  route({ id: "gorevler", path: "/gorevler", icon: "clip", labelKey: "gorevler.nav", shortKey: "gorevler.navShort",
+    perms: ["tasks.view"], work: true, nav: "main" }),
+
   // G2-B4 (spec D3) — «Denetim bütünlüğü»: for whoever reads the audit trail (`audit.view`: the auditor group,
   // vendor support, the hospital administrator). Last on the rail, so nobody's home moves; a session that only
   // reads the audit trail lands here.
   route({ id: "denetim", path: "/denetim", icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort",
     perms: ["audit.view"], work: true, nav: "main" }),
+
+  // G2-B5 (spec D6) — the RRT screen: for whoever may call the rapid-response team (`alerts.escalate`: the RRT,
+  // charge nurses, physicians, the administrator) — not the nurse (roadmap). After the audit page, so nobody's
+  // home moves.
+  route({ id: "rrt", path: "/rrt", icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort",
+    perms: ["alerts.escalate"], work: true, nav: "main" }),
+
+  // G2-B3b (spec D9) — «Vardiya devri»: for whoever signs a handover (`handover.sign`: the nurse, the charge nurse,
+  // the physicians). After the RRT screen, so nobody's home moves; a session that only signs handovers lands here.
+  route({ id: "devir", path: "/devir", icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort",
+    perms: ["handover.sign"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

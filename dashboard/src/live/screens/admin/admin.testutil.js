@@ -111,6 +111,12 @@ export const PERMISSION_TEXTS = Object.freeze({
 
   // G2-ESLEME
   "devices.map_beds": "Assign a bedside monitor to a bed, or unassign it, on the Monitörler screen — beds in one's own units only; a bed with an admitted patient asks for a second confirmation",
+
+  // G2-B3a
+  "beds.manage_state": "Reserve a free bed for an expected patient or take it out of service, and undo either — in one's own units, on the Doluluk screen",
+  // G3-02
+  "tasks.view": "Open the Görevlerim queue and read the ward's tasks in one's own units",
+  "tasks.manage": "Write, claim, close or skip a task; skip one vital measurement with a reason",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 

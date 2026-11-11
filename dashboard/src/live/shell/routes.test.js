@@ -32,6 +32,19 @@ describe("the route table", () => {
     expect(new Set(ROUTES.map((r) => r.path)).size).toBe(ROUTES.length);
   });
 
+  // G2-B3a (the browser walk): at 390 px the rail shows only the short labels, so two routes
+  // sharing one — Doluluk's «Койки» / «Beds» beside the board's — are two items nobody can tell apart.
+  it("gives every route a short label of its own, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const seen = new Map();
+      for (const r of ROUTES) {
+        const text = DICTIONARIES[lang][r.shortKey];
+        expect(seen.get(text), `${lang} «${text}»: ${seen.get(text)} and ${r.id}`).toBeUndefined();
+        seen.set(text, r.id);
+      }
+    }
+  });
+
   // Wave 2 builds the shell and the settings; Wave 3 fills the others in. Until then their
   // addresses answer "no such page" and the rail does not show them: no dead links.
   it("shows only built screens in the rail", () => {
@@ -106,6 +119,22 @@ describe("the route table", () => {
     }
     expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBe(before);
   });
+
+  // Each built screen's code is its own chunk, fetched the first time the screen is opened
+  // (lazyScreen.js): the live UI's one chunk had grown past Vite's 500 kB. What arrives must be a
+  // component — an export named wrong on a screen's line would otherwise fail only when someone
+  // opens that screen, on the ward.
+  it("fetches each built screen's code on first use, and what arrives is the screen", async () => {
+    const built = ROUTES.filter((r) => screenOf(r));
+    expect(built.length).toBeGreaterThan(1);
+    for (const r of built) {
+      expect(typeof screenOf(r).preload, r.id).toBe("function");
+      // eslint-disable-next-line no-await-in-loop
+      const shown = await screenOf(r).preload();
+      expect(typeof shown, r.id).toBe("function");
+      expect(shown.name, r.id).toMatch(/Screen$/);
+    }
+  });
 });
 
 describe("who may open what", () => {
@@ -172,18 +201,82 @@ describe("the audit page's route", () => {
   afterEach(() => resetScreens());
   const denetim = () => ROUTES.find((r) => r.id === "denetim");
 
-  it("is a work screen for audit.view, last on the main rail, with its own names", () => {
+  it("is a work screen for audit.view, on the main rail, with its own names", () => {
     expect(denetim()).toMatchObject({ path: "/denetim", perms: ["audit.view"], work: true, nav: "main",
       icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort" });
     expect(screenOf(denetim())).not.toBeNull();
     expect(canReach(denetim(), ["board.view"])).toBe(false);
-    expect(ROUTES.map((r) => r.id).slice(-2)).toEqual(["denetim", "settings"]);
+    // G2-B5: the RRT screen now comes after it (its own block below), still before settings.
+    // G2-B3b: and the handover screen after that (its own block below), still before settings.
+    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["rrt", "devir", "settings"]);
   });
 
   it("is the home of an audit.view-only session and moves nobody else's", () => {
     expect(homePath(["audit.view"])).toBe("/denetim");
     expect(homePath(["board.view", "audit.view"])).toBe("/beds");          // the auditor group keeps the board first
     expect(navRoutes(["board.view", "audit.view"]).main.map((r) => r.id)).toEqual(["beds", "alarms", "denetim"]);
+  });
+});
+
+// G2-B5 (spec D6): the RRT screen — for whoever may call the rapid-response team (alerts.escalate), not the nurse.
+describe("the RRT screen's route", () => {
+  afterEach(() => resetScreens());
+  const rrt = () => ROUTES.find((r) => r.id === "rrt");
+  /** The rapid-response team's group (`rapid_response`), as the engine seeds it (auth/permissions.py). */
+  const RAPID_RESPONSE = ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "break_glass.use", "clinical.chart"];
+
+  it("is a work screen for alerts.escalate, on the main rail after the audit page, with its own names", () => {
+    expect(rrt()).toMatchObject({ path: "/rrt", perms: ["alerts.escalate"], work: true, nav: "main",
+      icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort" });
+    expect(screenOf(rrt())).not.toBeNull();
+    // G2-B3b: the handover screen now comes after it (its own block below), still before settings.
+    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
+  });
+
+  it("is not the nurse's; whoever may call the team reaches it", () => {
+    expect(canReach(rrt(), NURSE)).toBe(false);
+    expect(navRoutes(NURSE).main.map((r) => r.id)).not.toContain("rrt");
+    expect(canReach(rrt(), ["alerts.escalate"])).toBe(true);
+    expect(hasWorkRoute(["alerts.escalate"])).toBe(true);
+  });
+
+  it("moves nobody's home: the RRT still lands on the beds, with its screen last on the rail", () => {
+    expect(homePath(RAPID_RESPONSE)).toBe("/beds");
+    expect(navRoutes(RAPID_RESPONSE).main.map((r) => r.id).at(-1)).toBe("rrt");
+    expect(homePath(["alerts.escalate"])).toBe("/rrt");
+  });
+});
+
+// G2-B3b (spec D9): «Vardiya devri» — for whoever signs a handover (handover.sign: the nurse, the charge nurse, the
+// physicians), after the RRT screen so nobody's home moves.
+describe("the handover screen's route", () => {
+  afterEach(() => resetScreens());
+  const devir = () => ROUTES.find((r) => r.id === "devir");
+  /** The nurse's group (`nurse`), as the engine seeds it (auth/permissions.py). */
+  const NURSE_GROUP = ["board.view", "alerts.ack", "admissions.view", "admissions.admit", "admissions.transfer.confirm",
+    "handover.sign", "clinical.chart", "beds.release"];
+  /** The auditor's group (`auditor`). */
+  const AUDITOR = ["board.view", "audit.view"];
+
+  it("is a work screen for handover.sign, on the main rail after the RRT screen, with its own names", () => {
+    expect(devir()).toMatchObject({ path: "/devir", perms: ["handover.sign"], work: true, nav: "main",
+      icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort" });
+    expect(screenOf(devir())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
+  });
+
+  it("a nurse reaches it from the rail, and her home is still the beds", () => {
+    expect(canReach(devir(), NURSE_GROUP)).toBe(true);
+    expect(navRoutes(NURSE_GROUP).main.map((r) => r.id)).toContain("devir");
+    expect(homePath(NURSE_GROUP)).toBe("/beds");
+    expect(hasWorkRoute(["handover.sign"])).toBe(true);
+    expect(homePath(["handover.sign"])).toBe("/devir");
+  });
+
+  it("is not the auditor's", () => {
+    expect(canReach(devir(), AUDITOR)).toBe(false);
+    expect(navRoutes(AUDITOR).main.map((r) => r.id)).not.toContain("devir");
+    expect(homePath(AUDITOR)).toBe("/beds");
   });
 });
 
@@ -283,5 +376,16 @@ describe("the path inside an address's hash", () => {
     expect(matchRoute("/beds?unit=NICU")).toBeNull();
     expect(matchRoute("/beds#top")).toBeNull();
     expect(matchRoute("/patients/P%3F1")).toMatchObject({ params: { id: "P?1" } });
+  });
+});
+
+// G3-02 — Görevlerim: the ward's task queue, for whoever reads it.
+describe("G3-02 — Görevlerim", () => {
+  it("opens with tasks.view, after Ölçüm, and is a work screen", () => {
+    expect(navRoutes(["tasks.view"]).main.map((r) => r.id)).toEqual(["gorevler"]);
+    expect(homePath(["tasks.view"])).toBe("/gorevler");
+    expect(homePath(["clinical.chart", "tasks.view"])).toBe("/olcum");
+    const ids = ROUTES.filter((r) => r.nav === "main").map((r) => r.id);
+    expect(ids.indexOf("gorevler")).toBe(ids.indexOf("olcum") + 1);
   });
 });

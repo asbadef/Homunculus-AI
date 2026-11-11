@@ -23,7 +23,7 @@ export { riskStyle, ENGINE_RISKS } from "./riskStyle.js";
 export { RiskPill } from "./RiskPill.jsx";
 export { Seg } from "./Seg.jsx";
 export { Tabs, TabPanel } from "./Tabs.jsx";
-export { Field, Input, Select } from "./Field.jsx";
+export { Field, Input, Select, Textarea } from "./Field.jsx";
 export { Table } from "./Table.jsx";
 export { Modal, MODAL_EXEMPT, MODAL_OPEN } from "./Modal.jsx";
 export { ToastProvider, useToast, TOAST_MS, TOAST_WARN_MS, TOAST_MAX } from "./Toast.jsx";

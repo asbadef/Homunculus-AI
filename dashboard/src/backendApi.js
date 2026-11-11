@@ -614,6 +614,46 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/ack", { method: "POST", body: { patient_id: patientId, kind } });
     },
 
+    /** G2-B5: call the rapid-response team to one active alarm (owner D1: only by hand). The actor comes from the
+     *  token, as with `acknowledge`; the reason is the caller's. Resolves to the patient's board entry as it is
+     *  AFTER the call, so a screen shows the server's answer. 409: the alarm was already answered. */
+    callRrt(patientId, kind, reason) {
+      return authed("/alerts/rrt-call", { method: "POST", body: { patient_id: patientId, kind, reason } });
+    },
+
+    // ---- G2-B3b: Vardiya devri (homunculus-engine admission/router.py, /handovers) ----
+    // The caller is the token's: nobody's id but the receiver's is ever sent. A refusal carries `err.apiCode`
+    // (admission/errors.py): `critical_alarm_open` (409, the live board holds an unanswered critical alarm for this
+    // patient), `out_of_scope`, `invalid_transition`.
+
+    /** My handovers of one box — "incoming" (I am to countersign) or "outgoing" (I handed over) —: OPEN and
+     *  OUTGOING_SIGNED ones, and the COMPLETED and EXPIRED of the last 24 hours, newest first, at most 100. Each row
+     *  {id, status, created_at, bridge_expires_at, outgoing_signed_at, incoming_signed_at, outgoing: {id, name},
+     *  incoming: {id, name}, patients: [{admission_id, board_key, display_name, bed_label, unit_name}],
+     *  note: {situation, background, assessment, recommendation} | null, summary}. Nothing but the two words goes on
+     *  the address. */
+    handovers(box) {
+      if (box !== "incoming" && box !== "outgoing") throw new TypeError("handovers: box is 'incoming' or 'outgoing'");
+      return authed(`/handovers?box=${box}`);
+    },
+    /** [{id, name}] — the people I can hand over to, by name (my tenant's, holding `handover.sign`, not me). */
+    handoverColleagues() { return authed("/handovers/colleagues"); },
+    /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
+    openHandover({ unitId, incomingUserId, admissionId }) {
+      return authed("/handovers", {
+        method: "POST", body: { unit_id: unitId, incoming_user_id: incomingUserId, admission_ids: [admissionId] },
+      });
+    },
+    /** The outgoing signature, with the D-Ö-D-Ö note ({situation, background, assessment, recommendation}). The
+     *  server seals the system summary at this moment. 409 `critical_alarm_open`: the handover stays OPEN. */
+    signHandover(id, note) {
+      return authed(`/handovers/${seg(id)}/sign-outgoing`, { method: "POST", body: { note } });
+    },
+    /** The receiver's countersignature; the handover is COMPLETED. */
+    countersignHandover(id) {
+      return authed(`/handovers/${seg(id)}/countersign`, { method: "POST" });
+    },
+
     /** Record that a clinician opened this patient — the audit line an inspection asks for.
      *  Sent for a patient the screen actually shows: the server answers 404 for one outside the
      *  caller's scope AND for one that does not exist (deliberately the same answer), and logs
@@ -878,6 +918,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * One patient's fluid ledger (GET /patients/{id}/fluids, G3-03): the fluid day and the last complete one,
+     * the hourly intake and output with the cumulative balance, the totals per window, the entries, the last
+     * day's urine and how many of its hours carry an entry — every sum the engine's (api/fluids.py).
+     */
+    patientFluids(patientId) {
+      return authed(`/patients/${seg(patientId)}/fluids`);
+    },
+
+    /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
      * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list
@@ -919,11 +968,37 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  card that did not leave the board off it again (A-32). */
     confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
     releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
+    // G2-B3a — Doluluk (tenant/router.py). Names and notes come from their own read, never the
+    // structure (spec R1); the four moves answer the bed as BedResponse, and refuse with
+    // `err.apiCode` (`invalid_transition`, `bed_closed`, `out_of_scope`, `field_invalid:note`…).
+    /** {beds: [{bed_id, occupant_short, state_reason, state_note}]} — only the beds with something to say. */
+    occupancy() { return authed("/tenant/occupancy"); },
+    /** {note} — the note may be null. */
+    reserveBed(id, body) { return authed(`/tenant/beds/${seg(id)}/reserve`, { method: "POST", body }); },
+    unreserveBed(id) { return authed(`/tenant/beds/${seg(id)}/unreserve`, { method: "POST" }); },
+    /** {reason: FAULT | ISOLATION_CLEANING | STAFFING | OTHER, note} */
+    bedOutOfService(id, body) { return authed(`/tenant/beds/${seg(id)}/out-of-service`, { method: "POST", body }); },
+    bedReturnToService(id) { return authed(`/tenant/beds/${seg(id)}/return-to-service`, { method: "POST" }); },
     // G2-B1d — Yönetim › Protokol ve etiket, and an admission's label (spec §3, §6).
     /** {configured, next_no, last_issued, label_width_mm, label_height_mm, printer_dpi, updated_at} */
     protocolSettings() { return authed("/admin/protocol-settings"); },
     /** {next_no, label_width_mm, label_height_mm, printer_dpi} → as protocolSettings() */
     saveProtocolSettings(body) { return authed("/admin/protocol-settings", { method: "PUT", body }); },
+    // G3-02: Görevlerim — the task queue, its writes and the hospital's settings (homunculus/api/tasks.py).
+    tasks(from = null, to = null) {
+      const q = new URLSearchParams();
+      if (from) q.set("from", from);
+      if (to) q.set("to", to);
+      const s = q.toString();
+      return authed(`/tasks${s ? `?${s}` : ""}`);
+    },
+    createTask(body) { return authed("/tasks", { method: "POST", body }); },
+    claimTask(id) { return authed(`/tasks/${seg(id)}/claim`, { method: "POST" }); },
+    doneTask(id) { return authed(`/tasks/${seg(id)}/done`, { method: "POST" }); },
+    skipTask(id, reason) { return authed(`/tasks/${seg(id)}/skip`, { method: "POST", body: { reason } }); },
+    skipVitalTask(patientId, reason) { return authed(`/tasks/vitals/${seg(patientId)}/skip`, { method: "POST", body: { reason } }); },
+    taskSettings() { return authed("/tasks/settings"); },
+    saveTaskSettings(body) { return authed("/tasks/settings", { method: "PUT", body }); },
     /** {protocol_no, display_name, date_of_birth, sex, unit_name, bed_label, label: {width_mm,
      *  height_mm, printer_dpi}} — every call is an audited print (`reprint`: not the first). */
     admissionLabel(id, reprint = false) {

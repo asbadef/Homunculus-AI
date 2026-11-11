@@ -430,6 +430,91 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "sepsis" });
   });
 
+  it("calls the RRT to an alarm by patient, kind and reason, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [{ kind: "news2_high",
+      rrt_call: { by: "sorumlu.hem", at: "2026-11-09T10:00:00+00:00", reason: "Ekip gelsin" } }] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.callRrt("S-001", "news2_high", "Ekip gelsin")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/alerts/rrt-call");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
+  });
+
+  // G2-B3b (D5, D7): «Vardiya devri». The actors come from the token; nothing about who is sent.
+  it("reads my handovers of one box with an authed GET /handovers?box=…, and nothing but a box", async () => {
+    const rows = [{ id: "h-1", status: "OUTGOING_SIGNED" }];
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(rows));
+    const api = signedIn(fetchMock);
+    expect(await api.handovers("incoming")).toEqual(rows);
+    await api.handovers("outgoing");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers?box=incoming");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/handovers?box=outgoing");
+    // nothing else goes on the address
+    for (const box of ["incoming&x=1", "../colleagues", "", null, undefined, 3]) {
+      expect(() => api.handovers(box), String(box)).toThrow(TypeError);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the people I can hand over to with an authed GET /handovers/colleagues", async () => {
+    const people = [{ id: "u-2", name: "Sentetik Hemşire" }];
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(people));
+    const api = signedIn(fetchMock);
+    expect(await api.handoverColleagues()).toEqual(people);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/colleagues");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+
+  it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
+    const row = { id: "h-1", status: "OPEN" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));
+    const api = signedIn(fetchMock);
+    expect(await api.openHandover({ unitId: "u-1", incomingUserId: "u-2", admissionId: "a-1" })).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ unit_id: "u-1", incoming_user_id: "u-2", admission_ids: ["a-1"] });
+  });
+
+  it("signs out with the D-Ö-D-Ö note: POST /handovers/{id}/sign-outgoing {note}", async () => {
+    const row = { id: "h 1", status: "OUTGOING_SIGNED" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row));
+    const api = signedIn(fetchMock);
+    const note = { situation: "Sentetik durum", background: "", assessment: "", recommendation: "" };
+    expect(await api.signHandover("h 1", note)).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/h%201/sign-outgoing");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ note });
+  });
+
+  it("countersigns: POST /handovers/{id}/countersign, with no body", async () => {
+    const row = { id: "h-1", status: "COMPLETED" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row));
+    const api = signedIn(fetchMock);
+    expect(await api.countersignHandover("h-1")).toEqual(row);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/h-1/countersign");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+  });
+
+  // The gate (D3) answers 409 with the admission code beside its words; the screen maps the code.
+  it("a signature refused for an open critical alarm carries its code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "critical_alarm_open", message: "A critical alert nobody acknowledged is open.",
+    } }, { ok: false, status: 409 }));
+    const err = await signedIn(fetchMock).signHandover("h-1", {}).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "critical_alarm_open" });
+  });
+
   it("reads Aşama A's monitor strip with an authed GET /infinity-shadow/board", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ stage: "off" }));
     const api = signedIn(fetchMock);
@@ -1621,6 +1706,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
   });
 
+  it("reads the beds' names and notes and moves a bed by its own routes (G2-B3a)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.occupancy();
+    await api.reserveBed("b/1", { note: "Sentetik planlı kabul" });
+    await api.unreserveBed("b-1");
+    await api.bedOutOfService("b-1", { reason: "FAULT", note: null });
+    await api.bedReturnToService("b-1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/tenant/occupancy"], ["POST", "/tenant/beds/b%2F1/reserve"], ["POST", "/tenant/beds/b-1/unreserve"],
+      ["POST", "/tenant/beds/b-1/out-of-service"], ["POST", "/tenant/beds/b-1/return-to-service"],
+    ]);
+    expect(sent(fetchMock, 1).body).toEqual({ note: "Sentetik planlı kabul" });
+    expect(sent(fetchMock, 3).body).toEqual({ reason: "FAULT", note: null });
+  });
+
   it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     const api = signedIn(fetchMock);
@@ -1692,5 +1793,54 @@ describe("backendApi — the monitor→bed editor", () => {
     expect(without.occupied).toBeUndefined();
     const stray = await refuse({ code: "mapping_changed", message: "The mapping changed.", occupied: [{ bed_id: "b-1", patient_id: "H2600042" }] });
     expect(stray.occupied).toBeUndefined();
+  });
+});
+
+// G3-02 — Görevlerim: the task queue, its writes and the hospital's settings (homunculus/api/tasks.py)
+describe("G3-02 Görevlerim calls", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+
+  it("reads the queue, writes a task and its three verbs, skips a vital and reads/saves the settings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const api = signedIn(fetchMock);
+    await api.tasks();
+    await api.tasks("2026-11-09T04:00:00Z", "2026-11-10T04:00:00Z");
+    await api.createTask({ patient_id: "S-001", title: "Pansuman", due_at: "2026-11-09T12:00:00Z", target_role: "nurse" });
+    await api.claimTask("t-1");
+    await api.doneTask("t-1");
+    await api.skipTask("t-1", "ameliyatta");
+    await api.skipVitalTask("S-001", "görüntülemede");
+    await api.taskSettings();
+    await api.saveTaskSettings({ grace_min: 30 });
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/tasks")).map(([url, init]) => [String(url), init.method ?? "GET"]);
+    expect(calls).toEqual([
+      ["/tasks", "GET"],
+      ["/tasks?from=2026-11-09T04%3A00%3A00Z&to=2026-11-10T04%3A00%3A00Z", "GET"],
+      ["/tasks", "POST"], ["/tasks/t-1/claim", "POST"], ["/tasks/t-1/done", "POST"], ["/tasks/t-1/skip", "POST"],
+      ["/tasks/vitals/S-001/skip", "POST"], ["/tasks/settings", "GET"], ["/tasks/settings", "PUT"],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith("/t-1/skip"))[1].body)).toEqual({ reason: "ameliyatta" });
+  });
+});
+
+// G3-03 — Sıvı dengesi: the patient's fluid ledger, summed by the engine (homunculus/api/fluids.py)
+describe("G3-03 Sıvı dengesi call", () => {
+  it("reads one patient's fluid ledger with an authed GET", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const answer = { patient_id: "S 1/x", totals: {} };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.patientFluids("S 1/x")).toEqual(answer);
+    expect(await api.patientFluids("S-001")).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/patients/S%201%2Fx/fluids");
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/patients/S-001/fluids");
   });
 });

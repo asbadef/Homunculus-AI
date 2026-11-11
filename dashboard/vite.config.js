@@ -102,6 +102,7 @@ export default defineConfig({
       "/infinity-research",
       "/infinity-shadow",   // Aşama A's monitor strip (the board GET; the POST is the hub forwarder's)
       "/infinity-waves",    // Lane C (dalga): the live waveform panel's GET
+      "/tasks",             // G3-02: Görevlerim — the queue and its settings
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {
@@ -112,5 +113,9 @@ export default defineConfig({
     // yüklüyken sağlam testleri de düşürüyordu (aynı test tek başına 2 sn'de geçiyor). Zaman
     // aşımı bir performans ölçüsü değil, takılmayı yakalama ağıdır — 20 sn o işi görür.
     testTimeout: 20000,
+    // The same net for the hooks: setupTests.js's beforeAll fetches every lazy screen a test file's
+    // imports made (live/shell/lazyScreen.js), and on a loaded machine that may take more than the
+    // 10 s default — it was a test's job, in the static imports, before the split.
+    hookTimeout: 20000,
   },
 });

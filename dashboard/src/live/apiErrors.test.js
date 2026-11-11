@@ -152,7 +152,9 @@ describe("the auth surface's messages are translated", () => {
 
   it("every mapped key has its text in the four languages", () => {
     for (const key of new Set(API_MESSAGE_KEYS.values())) {
-      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][`errors.${key}`], `${lang} ${key}`).toBeTruthy();
+      // a bare name lives under `errors.`; a key with a dot (G3-02's gorevler.err.*) is already whole
+      const full = key.includes(".") ? key : `errors.${key}`;
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][full], `${lang} ${key}`).toBeTruthy();
     }
   });
 });
@@ -302,14 +304,14 @@ describe("apiErrorText", () => {
   // The sentence is the engine's RETRACT_REASON_LONG, byte for byte (the sweep above reads it from clinical.py).
   // X22: a withdrawal of a value outside the bedside form's set (a lactate) is refused by the engine with a 409.
   it("says the withdrawal's refusal of a value that is not a bedside measurement, in all four languages", () => {
-    const sentence = "yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir";
+    const sentence = "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir";
     expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.retractNotBedside", vars: {} });
     expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
-      .toBe("Yalnız yatak başı ölçümü hatalı giriş olarak işaretlenebilir.");
-    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə səhv qeyd kimi işarələnə bilər.");
+      .toBe("Yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Yalnız çarpayı başında ölçmə və maye qeydi səhv qeyd kimi işarələnə bilər.");
     expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
-      .toBe("Ошибочной записью можно отметить только прикроватное измерение.");
-    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement can be marked as entered in error.");
+      .toBe("Ошибочной записью можно отметить только прикроватное измерение и запись жидкости.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("Only a bedside measurement or a fluid entry can be marked as entered in error.");
   });
 
   it("says the withdrawal's refusal of a reason that is too long, in all four languages", () => {
@@ -319,6 +321,38 @@ describe("apiErrorText", () => {
     expect(apiErrorText(az, new Error(sentence))).toBe("Səbəb ən çoxu 200 simvol ola bilər.");
     expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence))).toBe("Причина может содержать не более 200 символов.");
     expect(apiErrorText(en, new Error(sentence))).toBe("The reason can be at most 200 characters.");
+  });
+
+  // G2-B5 (D3): the RRT call's 409 on an alarm somebody already answered — nothing was opened, and it says so.
+  it("says the RRT call's refusal on an answered alarm, in all four languages", () => {
+    const sentence = "alarm zaten yanıtlandı; RRT çağrısı açılmaz";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.rrtAnswered", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(sentence)))
+      .toBe("Bu alarm zaten yanıtlanmış; RRT çağrısı açılmadı.");
+    expect(apiErrorText(az, new Error(sentence))).toBe("Bu siqnal artıq cavablandırılıb; RRT çağırışı açılmadı.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(sentence)))
+      .toBe("На эту тревогу уже ответили; вызов БРР не создан.");
+    expect(apiErrorText(en, new Error(sentence))).toBe("This alarm has already been answered; no RRT call was opened.");
+  });
+
+  // …and its other two refusals, which api/app.py states beside it (the sweep above holds them mapped).
+  it("says the RRT call's refusal of a device and of a reason outside 3–500 characters, in all four languages", () => {
+    const person = "RRT'yi bir kişi çağırır";
+    const length = "RRT çağrısının gerekçesi 3–500 karakter olmalı";
+    expect(apiErrorKey(new Error(person))).toEqual({ key: "errors.rrtByPerson", vars: {} });
+    expect(apiErrorKey(new Error(length))).toEqual({ key: "errors.rrtReasonLength", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(person)))
+      .toBe("RRT çağrısını bir kişi açar; cihaz kimliğiyle çağrı yapılamaz.");
+    expect(apiErrorText(az, new Error(person))).toBe("RRT çağırışını bir nəfər açır; cihaz kimliyi ilə çağırış etmək olmaz.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(person)))
+      .toBe("Вызов БРР открывает человек; с идентификатором устройства вызвать нельзя.");
+    expect(apiErrorText(en, new Error(person))).toBe("An RRT call is opened by a person; a device cannot make one.");
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), new Error(length)))
+      .toBe("RRT çağrısının gerekçesi 3–500 karakter olmalıdır.");
+    expect(apiErrorText(az, new Error(length))).toBe("RRT çağırışının səbəbi 3–500 simvol olmalıdır.");
+    expect(apiErrorText(createTranslator("ru", DICTIONARIES), new Error(length)))
+      .toBe("Причина вызова БРР должна содержать от 3 до 500 символов.");
+    expect(apiErrorText(en, new Error(length))).toBe("The reason for an RRT call must be 3–500 characters.");
   });
 
   it("translates a known message, whatever whitespace surrounds it", () => {
@@ -555,8 +589,9 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // `board_not_cleared` (A-32, Task 9's review), `transfer_unavailable` and
     // `duplicate_open_admission` (A-37, the final review).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
-    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block).
-    expect(CODES).toHaveLength(29);
+    // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
+    // `bed_reserved` (D5, X1).
+    expect(CODES).toHaveLength(30);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -607,6 +642,22 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
   });
 
+  // G2-B3b (D3, D4): the handover routes refuse with codes of this map, not with words of their own — a signature
+  // while a critical alarm is open (409), an admission of another unit (403), an admission that is not open (409).
+  // Their texts are the admission screen's; «Vardiya devri» says the critical lock in its own words where it knows
+  // the route (the dialog), and every other screen reads the code here.
+  it.each(["critical_alarm_open", "out_of_scope", "invalid_transition"])(
+    "the handover routes' %s is a mapped code, said in the four languages", (code) => {
+      expect(ADMISSION_CODE_KEYS.has(code)).toBe(true);
+      const hit = apiErrorKey(coded(code));
+      expect(hit.key).toMatch(/^kabul\.err\./);
+      for (const lang of LANG_CODES) {
+        expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+        const t = createTranslator(lang, DICTIONARIES);
+        expect(apiErrorText(t, coded(code)), lang).not.toMatch(/English words/);
+      }
+    });
+
   // G2-ESLEME: the editor's four device codes are said by its own namespace; Yapı's `bed_has_monitor`
   // stays in `kabul`. The namespace is pinned per code, so neither can drift into the other's.
   const ESLEME = ["monitor_lane_off", "device_unknown", "bed_occupied", "mapping_changed"];
@@ -621,6 +672,15 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     const hit = apiErrorKey(coded(`field_invalid:${field}`));
     expect(hit.key).not.toBe("kabul.invalid.other");
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+  });
+
+  // G2-B3a (R9): the name is asked surname first («Soyad ad»), and its refusal says it the same way.
+  it("field_invalid:display_name says the surname first, as the field «Soyad ad» does (R9)", () => {
+    const said = Object.fromEntries(LANG_CODES.map((lang) => [lang,
+      apiErrorText(createTranslator(lang, DICTIONARIES), coded("field_invalid:display_name"))]));
+    expect(said).toEqual({
+      tr: "Soyad ad gerekli.", az: "Soyad ad tələb olunur.", ru: "Нужны фамилия и имя.", en: "The surname and name are required.",
+    });
   });
 
   it("an unknown field still reads a sentence, and the server's English never reaches the reader", () => {
@@ -741,6 +801,22 @@ describe("a 422 for a field the server does not take, or a number that is not on
       for (const key of ["kabul.invalid.extraField", "kabul.invalid.number"]) {
         expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
       }
+    }
+  });
+});
+
+// G3-02 — Görevlerim: the queue's refusals, by code (err.apiCode) and by the server's words.
+describe("the task queue's refusals (G3-02)", () => {
+  it("maps the task queue's refusals by code and by words", () => {
+    expect(apiErrorKey(Object.assign(new Error("The task is already closed."), { status: 409, apiCode: "task_not_open" })).key).toBe("gorevler.err.notOpen");
+    expect(apiErrorKey(Object.assign(new Error("görev bulunamadı"), { status: 404 })).key).toBe("gorevler.err.taskNotFound");
+    expect(apiErrorKey(Object.assign(new Error("a person signs a task: this credential names no actor"), { status: 403 })).key).toBe("gorevler.err.person");
+  });
+  it("every coded refusal of the queue has its text in the four languages", () => {
+    for (const code of ["task_settings_range", "task_title_length", "task_due_window", "task_role_unknown", "task_not_open", "task_reason_length", "vital_not_due"]) {
+      const hit = apiErrorKey(Object.assign(new Error("x"), { status: 422, apiCode: code }));
+      expect(hit?.key, code).toMatch(/^gorevler\.err\./);
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
     }
   });
 });

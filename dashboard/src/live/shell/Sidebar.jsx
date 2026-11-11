@@ -12,34 +12,51 @@
 // so the claim is not only implied (G1-11's decision; the deferred note of Wave 2).
 //
 // The alarms entry carries the count of unanswered alarms, under the same rule as the bell: a
-// number only from a LIVE board.
+// number only from a LIVE board. The RRT entry (G2-B5, spec D7) carries the open calls under the
+// same rule, in its own words.
 import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { waitingAlarms } from "../data/boardStore.js";
+import { rrtQueue } from "../screens/rrt/rrt.js";
 import { Icon } from "../ui/Icon.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
 import { homePath, navRoutes } from "./routes.js";
 
-/** The alarms entry's count: the alarms nobody has acknowledged, and ONLY from a LIVE board
- *  (`waitingAlarms` has Wave 2's Decision 18 applied). A board that may be out of date shows the dot
- *  bell wears rather than a number — a count a reader would take for current is worse than none —
- *  and one that cannot know shows nothing at all. A badge is never the only signal: the entry's
- *  accessible name says the same thing in words. */
-function AlarmBadge({ routeId }) {
+/** The entries that carry a count, by route id: what each counts — `{known, stale, items}`, items null
+ *  when the board cannot know — and the words its accessible name says it in. Every other entry has
+ *  none. The alarms entry counts the alarms nobody has acknowledged (`waitingAlarms`); the RRT entry the
+ *  open calls nobody has answered (`rrtQueue(board).called`, which an acknowledgement empties). */
+const BADGES = Object.freeze({
+  alarms: { read: waitingAlarms, countKey: "shell.bellCount", staleKey: "shell.bellStale" },
+  rrt: {
+    read: (board) => {
+      const { known, stale, called } = rrtQueue(board);
+      return { known, stale, items: called };
+    },
+    countKey: "rrt.badgeCount", staleKey: "rrt.badgeStale",
+  },
+});
+
+/** An entry's count, and ONLY from a LIVE board (both readers have Wave 2's Decision 18 applied). A
+ *  board that may be out of date shows the dot the bell wears rather than a number — a count a reader
+ *  would take for current is worse than none — and one that cannot know shows nothing at all. A badge
+ *  is never the only signal: the entry's accessible name says the same thing in words. */
+function RailBadge({ routeId }) {
   const { t } = useI18n();
   const board = useBoard();
-  // The hooks above run for every rail entry — they must, unconditionally — but `waitingAlarms`
-  // filters and sorts the whole alert list, and only the alarms entry has any use for the answer.
+  // The hooks above run for every rail entry — they must, unconditionally — but each reader filters
+  // and sorts the whole alert list, and only the entries with a badge have any use for the answer.
   // It was being computed once per entry on every render of the rail.
-  if (routeId !== "alarms") return null;
-  const { known, stale, items } = waitingAlarms(board);
+  const badge = BADGES[routeId];
+  if (!badge) return null;
+  const { known, stale, items } = badge.read(board);
   const count = items?.length ?? 0;
   if (known && count > 0) {
     return (
       <>
         <span aria-hidden="true" data-rail-badge="count" className="absolute right-1 top-1 min-w-[16px] rounded-full bg-crit px-1 font-text text-10 font-bold leading-[14px] text-oncrit">{count}</span>
-        <span className="sr-only">{` · ${t("shell.bellCount", { count })}`}</span>
+        <span className="sr-only">{` · ${t(badge.countKey, { count })}`}</span>
       </>
     );
   }
@@ -47,7 +64,7 @@ function AlarmBadge({ routeId }) {
     return (
       <>
         <span aria-hidden="true" data-rail-badge="stale" className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-mid" />
-        <span className="sr-only">{` · ${t("shell.bellStale", { count })}`}</span>
+        <span className="sr-only">{` · ${t(badge.staleKey, { count })}`}</span>
       </>
     );
   }
@@ -67,7 +84,7 @@ function RailLink({ route, current }) {
         <Icon name={route.icon} size={21} />
         <span className="max-[640px]:hidden">{t(route.labelKey)}</span>
         <span className="hidden text-10 max-[640px]:block">{t(route.shortKey)}</span>
-        <AlarmBadge routeId={route.id} />
+        <RailBadge routeId={route.id} />
       </a>
     </li>
   );

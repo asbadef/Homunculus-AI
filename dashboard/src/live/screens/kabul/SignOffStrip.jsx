@@ -30,7 +30,7 @@ import { boardKeyOf } from "./boardKey.js"; // G2-B1d
 
 const DRAFT = ["DRAFT"];
 const EVERY_MS = 60_000;
-/** The bed as the slice names it (DischargeTab's `bedOf`, BedsTab's subject). */
+/** The bed as the slice names it (DischargeTab's `bedOf`, DolulukScreen's subject). */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
 
 /** `patientId`: the board's key — for a `kabul` patient, its admission's `board_key` (the protocol

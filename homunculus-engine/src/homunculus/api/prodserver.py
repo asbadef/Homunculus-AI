@@ -48,6 +48,8 @@ from homunculus.api.infinity_shadow import shadow_settings_from_env
 from homunculus.api.device_beds_postgres import PostgresDeviceBeds
 from homunculus.api.infinity_device_beds import DeviceBedSource
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
+from homunculus.api.tasks import InMemoryTaskStore, TaskStore
+from homunculus.api.tasks_postgres import PostgresTaskStore
 from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import (
     MEMBERSHIP_INACTIVE, NO_TENANT, PASSWORD_CHANGE_REQUIRED,
@@ -491,6 +493,13 @@ def _samples(url: str) -> SampleStore:
     return InMemorySamples()
 
 
+def _tasks(url: str) -> TaskStore:
+    """The task queue's rows (G3-02): Postgres in production, in memory elsewhere — `_samples`' rule."""
+    if not _is_production(url):
+        return InMemoryTaskStore()
+    return PostgresTaskStore(url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+
+
 def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:
     """G2-ESLEME (spec D6): the device→bed table from the database (migration 0014, seeded by
     scripts/import_device_beds.py) on a Postgres deployment, for the lane's hospital, with the
@@ -517,4 +526,5 @@ app = create_app(
     shadow=_shadow,
     samples=_samples(_database_url()),
     device_beds=_device_beds(_database_url(), _shadow.hospital),
+    tasks=_tasks(_database_url()),
 )

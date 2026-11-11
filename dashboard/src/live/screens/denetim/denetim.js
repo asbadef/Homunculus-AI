@@ -38,13 +38,18 @@ export const EVENT_TYPES = Object.freeze([
   ["chart", "chart"], ["chart_retract", "chartRetract"], ["profile", "profile"],
   ["score", "score"], ["score_signed", "scoreSigned"],
   ["alert", "alert"], ["first_seen", "firstSeen"], ["alert_cleared", "alertCleared"],
-  ["escalation", "escalation"], ["notification", "notification"],
+  ["escalation", "escalation"], ["rrt_call", "rrtCall"], ["notification", "notification"],   // rrt_call: G2-B5 (spec D9)
   ["identity", "identity"], ["ingest", "ingest"], ["reading_dropped_discharged", "readingDropped"],
   ["shadow_alert", "shadowAlert"], ["shadow_alert_cleared", "shadowCleared"],
   ["admission.admit", "admit"], ["admission.sign_off", "signOff"],
   ["admission.discharge_start", "dischargeStart"], ["admission.discharge_confirm", "dischargeConfirm"],
   ["bed.release", "bedRelease"], ["device_bed.bind", "deviceBind"], ["device_bed.unbind", "deviceUnbind"],
   ["protocol.settings", "protocolSettings"],
+  // G2-B3a (Doluluk, final review M-7): the four bed moves (tenant/router.py).
+  ["bed.reserve", "bedReserve"], ["bed.unreserve", "bedUnreserve"],
+  ["bed.out_of_service", "bedOutOfService"], ["bed.return_to_service", "bedReturnToService"],
+  // G2-B3b (spec D8): «Vardiya devri» — opened, signed by the outgoing person, countersigned by the receiver.
+  ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

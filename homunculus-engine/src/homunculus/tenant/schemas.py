@@ -4,9 +4,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
-from homunculus.tenant.models import BedState, UnitType
+# G2-B3a (M-4): a bed's note is checked as the admission form's texts are (`FormText`).
+from homunculus.admission.schemas import _form_text
+from homunculus.tenant.models import BedState, BedStateReason, UnitType
 
 # G2-B1a (amendment A-13): a new site's, unit's, room's or bed's name is trimmed, never blank, and
 # never longer than its column (a longer one was a 500 from the database).
@@ -134,6 +136,8 @@ class StructureBed(BaseModel):
     label: str
     state: BedState
     is_active: bool
+    # G2-B3a: when the bed entered its state (`beds.state_updated_at`) — "temizlikte · 25 dk".
+    state_since: datetime | None = None
 
 
 class StructureRoom(BaseModel):
@@ -165,3 +169,40 @@ class StructureResponse(BaseModel):
     screen ever shows a UUID (spec D9). `tenant_id` is the parent a new site is created under."""
     tenant_id: uuid.UUID
     sites: list[StructureSite]
+
+
+# ---------------------------------------------------------------- G2-B3a (Doluluk)
+# A note is trimmed and at most 200 characters (spec §3); blank is "no note" (None, at the route).
+# It is text as the admission form's is (final review M-4): the form's own check refuses a control
+# character other than tab or a line break, with the coded 422 `field_invalid:note`. After the
+# trim, so a note is measured and checked as it is stored.
+_Note200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200),
+                     AfterValidator(_form_text)]
+
+
+class BedReserve(BaseModel):
+    """Hold a free bed: for whom and why — optional, and stored encrypted (R8)."""
+    model_config = ConfigDict(extra="forbid")
+    note: _Note200 | None = None
+
+
+class BedOutOfService(BaseModel):
+    """Take a free bed out of service: always a reason (D4), a note too for OTHER (X3)."""
+    model_config = ConfigDict(extra="forbid")
+    reason: BedStateReason
+    note: _Note200 | None = None
+
+
+class OccupancyBed(BaseModel):
+    """One bed of GET /tenant/occupancy. It carries the short name of its patient while an
+    admission holds the bed (R7), and the out-of-service reason and the note (R8). Nothing else
+    about the patient."""
+    bed_id: uuid.UUID
+    occupant_short: str | None = None
+    state_reason: BedStateReason | None = None
+    state_note: str | None = None
+
+
+class OccupancyResponse(BaseModel):
+    """GET /tenant/occupancy (R1): only the caller's beds that have something to say."""
+    beds: list[OccupancyBed]

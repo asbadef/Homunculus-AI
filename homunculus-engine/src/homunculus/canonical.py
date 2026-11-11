@@ -46,6 +46,13 @@ class SignalCode(Enum):
     EPINEPHRINE_RATE = "epinephrine_rate"         # ug/kg/min
     DOBUTAMINE_RATE = "dobutamine_rate"           # ug/kg/min
     CRYSTALLOID_BOLUS_ML = "crystalloid_bolus_ml" # mL given in this event
+    # G3-03 Sıvı dengesi: the nurse's fluid ledger, mL per entry (spec D2). No rule reads them.
+    IV_FLUID_ML = "iv_fluid_ml"                   # IV fluid / infusion volume since the last entry
+    ENTERAL_ML = "enteral_ml"                     # enteral or oral intake
+    BLOOD_PRODUCT_ML = "blood_product_ml"         # blood product given
+    OTHER_INTAKE_ML = "other_intake_ml"
+    DRAIN_OUTPUT_ML = "drain_output_ml"
+    OTHER_OUTPUT_ML = "other_output_ml"           # NG, vomit, stool estimate
     WEIGHT_KG = "weight_kg"
     # Clinical context (not computable from telemetry — provided by the clinician/record)
     SUSPECTED_INFECTION = "suspected_infection"   # 1.0 = infection suspected

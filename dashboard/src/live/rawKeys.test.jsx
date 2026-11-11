@@ -29,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { mount } from "./session/mount.testutil.jsx";
 import { profile, token } from "./session/testTokens.testutil.js";
@@ -47,6 +47,7 @@ import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
+import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -138,7 +139,8 @@ const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
  *  three-valued antibiotic: the one place on that screen where a missing record must not be
  *  rendered as a deadline the ward missed. */
 const PAYLOAD = board([
-  entry(FIXTURE_ID, [alarm("news2", "high", { escalated: true })], {
+  // G2-B5: the alarm carries an open RRT call, so the RRT screen's row and the rail's RRT badge are drawn.
+  entry(FIXTURE_ID, [alarm("news2", "high", { escalated: true, rrt_call: { by: "leyla", at: ago(120), reason: "Solunum güçlüğü" } })], {
     identity: identity(),
     score: news2({ partial: true, missing: ["spo2"], red_param: true }),
     ...reading({ heart_rate: 96, spo2: 91 }, 30),
@@ -194,6 +196,13 @@ const ADMISSIONS = [
 const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
   label_height_mm: 30, printer_dpi: 203, updated_at: null };
 
+// G3-02: one patient with a late vital and one open hand task, so the sweep meets every state word.
+const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-09T04:00:00Z" }, now: "2026-10-08T10:00:00Z",
+  settings: { grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null } },
+  patients: [{ patient_id: "S-001", bed_key: "REA^01^2", unit_id: "REA-01",
+    vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
+    tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
+const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
 /** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
 const AUDIT_ROWS = { records: [
   { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
@@ -206,6 +215,26 @@ const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason:
 const HEAT_REPORT = { episodes: 2, truncated: true, days: 7, window_from: "2026-11-08T06:00:00+00:00", per_patient_hour: [
   { patient_id: "260109004821", hour: "2026-11-09T10:00:00+00:00", episodes: 2 },
 ] };
+
+/** G2-B3b: «Vardiya devri» — one handover in each box, each with its D-Ö-D-Ö note and its sealed summary (an open
+ *  alert in it), so a row of the lists, the note's parts and the summary's words are drawn; and the colleagues the
+ *  «Yeni devir» dialog offers. Synthetic people, the fixture's card. */
+const HANDOVER_PATIENT = { admission_id: "a-2", board_key: FIXTURE_ID, display_name: "Ayşe Sentetik", bed_label: "REA-01 · 2",
+  unit_name: "Reanimasiya" };
+const HANDOVER_NOTE = { situation: "Stabil", background: "Sentetik öykü", assessment: "Değerlendirme", recommendation: "Mobilizasyon" };
+const HANDOVER_SUMMARY = { risk: "high", news2: { total: 7, partial: true },
+  latest: { heart_rate: 96, map: 70, spo2: 91, resp_rate: 24, temperature: 38.1 }, on_pressor: true,
+  open_alerts: [{ kind: "news2", severity: "high", acknowledged: false }], captured_at: ago(300) };
+const handoverRow = (id, status, over) => ({ id, status, created_at: ago(900), bridge_expires_at: ago(-900),
+  outgoing_signed_at: ago(300), incoming_signed_at: null, outgoing: { id: "u-leyla", name: "Leyla Sentetik" },
+  incoming: { id: "u-ayse", name: "Ayşe Sentetik" }, patients: [HANDOVER_PATIENT], note: HANDOVER_NOTE,
+  summary: HANDOVER_SUMMARY, ...over });
+const HANDOVERS = {
+  incoming: [handoverRow("h-1", "OUTGOING_SIGNED")],
+  outgoing: [handoverRow("h-2", "COMPLETED", { incoming_signed_at: ago(60),
+    outgoing: { id: "u-ayse", name: "Ayşe Sentetik" }, incoming: { id: "u-leyla", name: "Leyla Sentetik" } })],
+};
+const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", name: "Murad Sentetik" }];
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
@@ -240,6 +269,18 @@ async function openAt(path) {
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
+
+      // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
+      api.tasks.mockResolvedValue(TASKS_SWEEP);
+      api.taskSettings.mockResolvedValue(TASK_SETTINGS_SWEEP);
+
+      // G3-03: the patient screen's «Sıvı» box — today's entries (one withdrawn), the shifts and the last day, so
+      // the sweep meets every word the box prints. Unstubbed it would say only that the ledger is unreadable.
+      api.patientFluids.mockImplementation((pid) => Promise.resolve(fluids(pid)));
+
+      // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
+      api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
+      api.handoverColleagues.mockResolvedValue(COLLEAGUES);
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -409,6 +450,40 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/rəqəmlər natamamdır/)).toBeInTheDocument();                            // denetim.heat.truncatedFrom
     expect(screen.getByText(/yalnız .* sonrakı hadisələr sayıldı/)).toBeInTheDocument();             // its {from} filled in, not left as a placeholder
     expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B5 — the RRT screen: the fixture's alarm carries an open call, so its row, the tier-off note and the rail
+  // badge's words are drawn; a sweep over two empty lists would have proved nothing about them.
+  it("the RRT screen's keys resolve on its call row, its note and the rail's badge", async () => {
+    const mounted = await openAt("/rrt");
+    expect(screen.getByRole("heading", { level: 1, name: "Sürətli cavab komandası (RRT)" })).toBeInTheDocument(); // rrt.title
+    expect(screen.getByText(/^Avtomatik RRT pilləsi bağlıdır/)).toBeInTheDocument();                // rrt.tierOff
+    expect(screen.getByText("Əl ilə çağırılıb · leyla")).toBeInTheDocument();                        // rrt.calledBy, {by} filled in
+    expect(screen.getByText("Səbəb: Solunum güçlüğü")).toBeInTheDocument();                          // rrt.reason
+    const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+    expect(within(rail).getByRole("link", { name: /Sürətli cavab/ })).toHaveAccessibleName(/1 açıq RRT çağırışı/); // rrt.badgeCount
+    expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B3b — «Vardiya devri»: the note's parts and the summary are drawn only on a row that carries them, and the
+  // «Yeni devir» dialog only on its button, so the sweep above met the lists and never the dialog.
+  it("the handover screen's keys resolve on its lists, a row's note and summary, and the new handover's dialog", async () => {
+    const mounted = await openAt("/devir");
+    expect(screen.getByRole("heading", { level: 1, name: "Növbə təhvili" })).toBeInTheDocument();         // devir.title
+    for (const name of ["Əks-imzanızı gözləyənlər", "Mənim təhvil verdiklərim", "Son 24 saat ərzində"]) {     // the three lists
+      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
+    }
+    expect(screen.getByText("V · Vəziyyət")).toBeInTheDocument();                                          // devir.part.situation
+    expect(screen.getByText("Sistem xülasəsi · imza anındakı məlumat")).toBeInTheDocument();               // devir.summaryTitle
+    expect(screen.getByText("Tamamlanıb")).toBeInTheDocument();                                            // devir.status.COMPLETED
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni təhvil" })); await settle(); });
+    const dialog = screen.getByRole("dialog", { name: "Yeni təhvil" });
+    expect(dialog).toHaveTextContent("Təhvil alacaq şəxs");                                                 // devir.receiver
+    expect(within(dialog).getByRole("textbox", { name: "T · Tövsiyə" })).toBeInTheDocument();             // devir.part.recommendation
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });
   });
 

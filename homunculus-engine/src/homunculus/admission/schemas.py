@@ -21,7 +21,8 @@ from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator,
+    AfterValidator, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo, field_validator,
+    model_validator,
 )
 
 from homunculus.admission.errors import field_invalid
@@ -205,6 +206,9 @@ class AdmissionCreate(BaseModel):
     patient: PatientIdentity
     note: AdmissionNoteFields
     request_id: uuid.UUID | None = None
+    # G2-B3a (spec D5, X2): the nurse saw the bed is reserved and admits into it all the same. A
+    # real boolean, beside the form and not in it: `_request_digest` leaves it out.
+    confirm_reserved: StrictBool = False
 
 
 class AdmissionResponse(BaseModel):
@@ -430,13 +434,101 @@ class DischargeStart(BaseModel):
 # Handover — §4.5, S-07, S-24
 # ---------------------------------------------------------------------------
 class HandoverOpen(BaseModel):
+    """`incoming_user_id` is one of the caller's colleagues (G2-B3b, D2: checked by the route);
+    `admission_ids` names at least one admission (a handover is of a patient, D1)."""
     unit_id: uuid.UUID
     incoming_user_id: uuid.UUID
-    admission_ids: list[uuid.UUID] = Field(default_factory=list)
+    admission_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+#: G2-B3b (D5): the most one part of the D-Ö-D-Ö note holds.
+NOTE_PART_MAX = 2000
+#: G2-B3b (D5): the shortest part, trimmed, that counts as written.
+NOTE_PART_MIN = 3
+
+
+class HandoverNote(BaseModel):
+    """G2-B3b (D5): the D-Ö-D-Ö note — Durum · Öykü · Değerlendirme · Öneri. Each part at most
+    `NOTE_PART_MAX` characters, with no control character but tab and the line breaks
+    (`OptionalFormText`); at least one part holds `NOTE_PART_MIN` characters once trimmed. A part
+    it does not have is an error, not a value quietly dropped."""
+    model_config = ConfigDict(extra="forbid")
+
+    situation: OptionalFormText = Field(default=None, max_length=NOTE_PART_MAX)
+    background: OptionalFormText = Field(default=None, max_length=NOTE_PART_MAX)
+    assessment: OptionalFormText = Field(default=None, max_length=NOTE_PART_MAX)
+    recommendation: OptionalFormText = Field(default=None, max_length=NOTE_PART_MAX)
+
+    @model_validator(mode="after")
+    def _something_written(self) -> HandoverNote:
+        parts = (self.situation, self.background, self.assessment, self.recommendation)
+        if not any(isinstance(p, str) and len(p.strip()) >= NOTE_PART_MIN for p in parts):
+            raise ValueError(f"at least one part of the handover note holds {NOTE_PART_MIN} "
+                             "characters")
+        return self
+
+
+class HandoverNoteOut(BaseModel):
+    """The note as it is read back (D5): the four parts, None where nothing was written. No
+    validator: a legacy plain-text note — its `situation` — may be shorter than a new one may
+    be."""
+    situation: str | None = None
+    background: str | None = None
+    assessment: str | None = None
+    recommendation: str | None = None
+
+
+#: G2-B3b review: the most the legacy plain-text note holds.
+NARRATIVE_NOTE_MAX = 8000
 
 
 class HandoverSign(BaseModel):
-    narrative_note: str | None = None
+    """The outgoing signature's body. `note` (D5) wins over the legacy `narrative_note` when both
+    come; the legacy text is bounded and held to the form's texts' rule (no control character but
+    tab and the line breaks — a NUL would be a 500 at Postgres). A field the body does not have
+    (`notes` for `note`) is a 422, never a signature with no note."""
+    model_config = ConfigDict(extra="forbid")
+
+    narrative_note: OptionalFormText = Field(default=None, max_length=NARRATIVE_NOTE_MAX)
+    note: HandoverNote | None = None
+
+
+class HandoverPerson(BaseModel):
+    """G2-B3b (D7): a party to a handover — `name` is the full name, else the user name."""
+    id: uuid.UUID
+    name: str
+
+
+class HandoverPatient(BaseModel):
+    """G2-B3b (D7): the patient a handover covers, as the screen names her: board key, name, bed
+    and unit — what `GET /admissions` shows a holder of `admissions.view`."""
+    admission_id: uuid.UUID
+    board_key: str
+    display_name: str | None = None
+    bed_label: str | None = None
+    unit_name: str | None = None
+
+
+class HandoverRow(BaseModel):
+    """G2-B3b (D7): one of the caller's handovers. `status` is EXPIRED for an OPEN one past its
+    bridge; `summary` is what the board showed at the outgoing signature (D6), never the present."""
+    id: uuid.UUID
+    status: HandoverStatus
+    created_at: datetime
+    bridge_expires_at: datetime | None = None
+    outgoing_signed_at: datetime | None = None
+    incoming_signed_at: datetime | None = None
+    outgoing: HandoverPerson
+    incoming: HandoverPerson
+    patients: list[HandoverPatient]
+    note: HandoverNoteOut | None = None
+    summary: dict | None = None
+
+
+class Colleague(BaseModel):
+    """G2-B3b (D7): someone the caller can hand over to."""
+    id: uuid.UUID
+    name: str
 
 
 class HandoverResponse(BaseModel):

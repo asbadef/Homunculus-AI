@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createRef } from "react";
 import { render, screen } from "@testing-library/react";
-import { Field, Input, Select } from "./Field.jsx";
+import { Field, Input, Select, Textarea } from "./Field.jsx";
 
 describe("Field", () => {
   it("ties its label to the control", () => {
@@ -78,5 +78,25 @@ describe("Input and Select", () => {
     render(<><Input ref={input} placeholder="ör. hs.aygun" /><Select ref={select} defaultValue="b"><option value="a">A</option><option value="b">B</option></Select></>);
     expect(input.current).toHaveAttribute("placeholder", "ör. hs.aygun");
     expect(select.current.value).toBe("b");
+  });
+});
+
+// G2-B3b: the handover note's four parts — a Field ties its label, hint and error to it as to an Input.
+describe("Textarea", () => {
+  it("is labelled, described and marked invalid by its Field, with the controls' critical border", () => {
+    render(<Field label="D · Durum" hint="ad yazmayın" error="Notu yazın"><Textarea id="part" /></Field>);
+    const box = screen.getByRole("textbox", { name: "D · Durum" });
+    expect(box.tagName).toBe("TEXTAREA");
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(box.getAttribute("aria-describedby")).toBe("part-error part-hint");
+    expect(box.className).toContain("aria-[invalid=true]:border-crit");
+    expect(box).toHaveAttribute("rows", "3");
+  });
+
+  it("forwards its ref and props", () => {
+    const ref = createRef();
+    render(<Textarea ref={ref} aria-label="n" maxLength={2000} rows={5} />);
+    expect(ref.current).toHaveAttribute("maxlength", "2000");
+    expect(ref.current).toHaveAttribute("rows", "5");
   });
 });

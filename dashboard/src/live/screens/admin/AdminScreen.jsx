@@ -19,26 +19,34 @@
 // other: the tabs it may not open are not shown, and the screen opens on the first it may. A
 // session that may open none of them cannot reach the route at all.
 //
-// HOW A WAVE ADDS ITS TAB: its own commented import below and its own line in `TABS` — two lines
+// HOW A WAVE ADDS ITS TAB: its own `lazyScreen` line below and its own line in `TABS` — two lines
 // nobody else touches, the same seam `shell/routes.js` and `i18n/catalog.js` have, so G1-12, G1-13
 // and G1-14 can be built on parallel branches. A tab with no component shows "not built yet" and
 // is NOT offered: never a dead tab.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+//
+// EACH TAB'S CODE IS ITS OWN CHUNK, fetched the first time the tab is opened (shell/lazyScreen.js,
+// as the shell's screens are): while it travels the PANEL says it is loading and the heading and
+// the tabs stay; a chunk that does not come reaches the shell's boundary, which offers a reload.
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, TabPanel, Tabs } from "../../ui/index.js";
 import { hasPerm } from "./catalogue.js";
 import { READS, useAdminData } from "./useAdminData.js";
-import { UsersTab } from "./UsersTab.jsx";
+import { lazyScreen } from "../../shell/lazyScreen.js";
 
-import { RolesTab } from "./RolesTab.jsx";
+const UsersTab = lazyScreen(() => import("./UsersTab.jsx"), "UsersTab");
 
-import { SourceTab } from "./SourceTab.jsx";
+const RolesTab = lazyScreen(() => import("./RolesTab.jsx"), "RolesTab");
 
-import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
+const SourceTab = lazyScreen(() => import("./SourceTab.jsx"), "SourceTab");
 
-import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
+const StructureTab = lazyScreen(() => import("./StructureTab.jsx"), "StructureTab"); // G2-B1a
+
+const ProtocolTab = lazyScreen(() => import("./ProtocolTab.jsx"), "ProtocolTab"); // G2-B1d
+
+const TasksTab = lazyScreen(() => import("./TasksTab.jsx"), "TasksTab"); // G3-02
 
 const TAB_ID = "admin";
 
@@ -64,6 +72,9 @@ export const TABS = Object.freeze([
 
   // G2-B1d — Yönetim › Protokol ve etiket: the next protocol number and the label (spec D11)
   Object.freeze({ id: "protocol", perm: "structure.manage", labelKey: "protokol.tab" }),
+
+  // G3-02 — Yönetim › Görevler: shift starts, grace and the vital interval per NEWS2 band (spec D10)
+  Object.freeze({ id: "tasks", perm: "structure.manage", labelKey: "gorevler.settingsTab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -83,6 +94,8 @@ const TAB_SCREENS = Object.freeze({
   structure: StructureTab, // G2-B1a
 
   protocol: ProtocolTab, // G2-B1d
+
+  tasks: TasksTab, // G3-02
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */
@@ -140,6 +153,17 @@ export function openTabs(perms) {
   return TABS.filter((tab) => hasPerm(perms, tab.perm) && tabScreenOf(tab));
 }
 
+/** A tab whose code is still on its way: the note the first load shows, in the panel. It tells the
+ *  screen it is up (`onShown`), so the screen's one always-mounted polite region says it too. */
+function TabLoading({ onShown }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    onShown(true);
+    return () => onShown(false);
+  }, [onShown]);
+  return <Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>;
+}
+
 export function AdminScreen() {
   const { t } = useI18n();
   const { user } = useSession();
@@ -155,6 +179,8 @@ export function AdminScreen() {
   // "loading" over a table a clinician is reading would be noise, not information. Nothing has
   // answered yet exactly when every read's data is still null.
   const firstLoad = admin.loading && READS.every((read) => admin.data[read] === null);
+  // A tab's code on its way (TabLoading): said by the same region as the first load.
+  const [tabLoading, setTabLoading] = useState(false);
 
   // RETRY KEEPS ITS FOCUS. The failures stay while the reload runs (`useAdminData`), so the button
   // is still there, busy, holding a keyboard user's focus. When the reload answers, the Alert goes
@@ -186,7 +212,7 @@ export function AdminScreen() {
           born holding its text is not announced at all (ui/Alert.jsx, ANNOUNCE_DELAY_MS) — which is
           what a `<p role="status">{t("admin.loading")}</p>` rendered only while loading would be.
           The visible sentence below is therefore an ordinary paragraph, and this says it. */}
-      <Announce text={firstLoad ? t("admin.loading") : ""} />
+      <Announce text={firstLoad || tabLoading ? t("admin.loading") : ""} />
 
       {/* A refusal on ONE call does not empty the screen: it is shown, NAMED AFTER THE READ that
           failed, and whatever the other calls answered stands. A read that had answered before
@@ -215,7 +241,10 @@ export function AdminScreen() {
             {firstLoad ? (
               <Box><p className="m-0 text-13 text-mute">{t("admin.loading")}</p></Box>
             ) : (
-              <Shown admin={admin} />
+              // The tab's code may still be on its way (lazyScreen): the same note, in the panel.
+              <Suspense fallback={<TabLoading onShown={setTabLoading} />}>
+                <Shown admin={admin} />
+              </Suspense>
             )}
           </TabPanel>
         </>
