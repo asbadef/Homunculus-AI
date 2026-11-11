@@ -6,6 +6,7 @@
 //   Sign-in source   G1-14   `users.manage` (reading)            /admin/ldap/*
 //   Structure        G2-B1a  `structure.manage`                  /tenant/structure, /tenant/*
 //   Protocol, label  G2-B1d  `structure.manage`                  /admin/protocol-settings
+//   TRƏS             TRƏS-01 `tres.manage`                       /admin/tres/*
 //
 // THE TAB IS HELD IN STATE, NOT IN THE ADDRESS. The hash belongs to the router, and a query inside
 // it belongs to the screen (`routes.js hashPath`) — but reading one would need a second
@@ -15,8 +16,8 @@
 // listener, and an address that survives a lock into a shell that settled elsewhere).
 //
 // EVERY TAB IS GATED SEPARATELY, and the gate is the session's own rights. The route opens to
-// `users.manage` OR `groups.manage` (routes.js), so a session can arrive holding one and not the
-// other: the tabs it may not open are not shown, and the screen opens on the first it may. A
+// `users.manage`, `groups.manage` OR `tres.manage` (routes.js), so a session can arrive holding one and
+// not the others: the tabs it may not open are not shown, and the screen opens on the first it may. A
 // session that may open none of them cannot reach the route at all.
 //
 // HOW A WAVE ADDS ITS TAB: its own `lazyScreen` line below and its own line in `TABS` — two lines
@@ -48,6 +49,8 @@ const ProtocolTab = lazyScreen(() => import("./ProtocolTab.jsx"), "ProtocolTab")
 
 const TasksTab = lazyScreen(() => import("./TasksTab.jsx"), "TasksTab"); // G3-02
 
+const TresTab = lazyScreen(() => import("./TresTab.jsx"), "TresTab"); // TRƏS-01
+
 const TAB_ID = "admin";
 
 /** Each read's name, for the Alert that says which one failed. Written out, never built from the
@@ -75,6 +78,9 @@ export const TABS = Object.freeze([
 
   // G3-02 — Yönetim › Görevler: shift starts, grace and the vital interval per NEWS2 band (spec D10)
   Object.freeze({ id: "tasks", perm: "structure.manage", labelKey: "gorevler.settingsTab" }),
+
+  // TRƏS-01 — Yönetim › TRƏS: the national e-health feed's settings and its connection test (spec D23)
+  Object.freeze({ id: "tres", perm: "tres.manage", labelKey: "tres.tab" }),
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
@@ -96,6 +102,8 @@ const TAB_SCREENS = Object.freeze({
   protocol: ProtocolTab, // G2-B1d
 
   tasks: TasksTab, // G3-02
+
+  tres: TresTab, // TRƏS-01
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */

@@ -111,8 +111,9 @@ export const ROUTES = Object.freeze([
   route({ id: "patient", path: "/patients/:id", icon: "user", labelKey: "nav.patient", shortKey: "nav.patient",
     perms: ["board.view"], work: false, nav: false, under: "beds" }),
 
+  // TRƏS-01 (spec §8): + `tres.manage` — a session that holds it alone opens the screen on its one tab, Yönetim › TRƏS.
   route({ id: "admin", path: "/admin", icon: "shield", labelKey: "nav.admin", shortKey: "nav.adminShort",
-    perms: ["users.manage", "groups.manage"], work: true, nav: "main" }),
+    perms: ["users.manage", "groups.manage", "tres.manage"], work: true, nav: "main" }),
 
   // Aşama A (Decision 12): the monitors for the people who own the device→bed table — biomedical and
   // the vendor's support group sign in to this alone; it shows no patient.

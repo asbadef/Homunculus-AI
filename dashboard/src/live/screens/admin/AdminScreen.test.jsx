@@ -11,6 +11,7 @@ import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { StructureTab } from "./StructureTab.jsx"; // G2-B1a
 import { ProtocolTab } from "./ProtocolTab.jsx"; // G2-B1d
 import { TasksTab } from "./TasksTab.jsx"; // G3-02
+import { TresTab } from "./TresTab.jsx"; // TRƏS-01
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A list's length, or "null" for a read that has no answer — never 0 for "no answer". */
@@ -74,6 +75,7 @@ describe("which tabs a session sees", () => {
       ["structure", "structure.manage"], // G2-B1a
       ["protocol", "structure.manage"], // G2-B1d
       ["tasks", "structure.manage"], // G3-02
+      ["tres", "tres.manage"], // TRƏS-01
     ]);
   });
 
@@ -115,6 +117,25 @@ describe("which tabs a session sees", () => {
   it("offers the tasks tab to structure.manage, and to no other right", async () => {
     expect(await tabScreenOf(openTabs(["structure.manage"])[2]).preload()).toBe(TasksTab);
     expect(openTabs(["users.manage", "groups.manage"]).map((x) => x.id)).not.toContain("tasks");
+  });
+
+  // TRƏS-01 — TRƏS is built, and `tres.manage` alone opens it (spec D23): no other right does.
+  it("offers the TRƏS tab to tres.manage, and to no other right", async () => {
+    expect(openTabs(["tres.manage"]).map((x) => x.id)).toEqual(["tres"]);
+    expect(await tabScreenOf(openTabs(["tres.manage"])[0]).preload()).toBe(TresTab);
+    expect(openTabs(["users.manage", "groups.manage", "structure.manage"]).map((x) => x.id)).not.toContain("tres");
+  });
+
+  // TRƏS-01 (spec §8): the route opens for `tres.manage` alone too. Such a session sees one tab, and none of the
+  // administration's four reads is made for it — a refused read would otherwise stand above a tab that needs none.
+  it("a session holding tres.manage alone opens on the TRƏS tab, and no other read is made", async () => {
+    const { api } = await open({ perms: ["tres.manage"], tabs: { tres: () => <p>the feed's tab</p> } });
+    expect(screen.getAllByRole("tab").map((x) => x.textContent)).toEqual(["TRƏS (e-Səhiyyə)"]);
+    expect(screen.getByText("the feed's tab")).toBeInTheDocument();
+    for (const read of [api.adminUsers, api.adminGroups, api.adminPermissions, api.unassignedScopes]) {
+      expect(read).not.toHaveBeenCalled();
+    }
+    expect(document.querySelector("[role='alert'][data-tone='crit']")).toBeNull();     // no failed read above the tab
   });
 
   // Every tab this build has is fetched on first use, and what arrives is a tab: an export named

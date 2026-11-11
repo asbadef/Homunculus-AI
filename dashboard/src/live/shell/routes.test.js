@@ -470,3 +470,23 @@ describe("G3-02 — Görevlerim", () => {
     expect(ids.indexOf("gorevler")).toBe(ids.indexOf("olcum") + 1);
   });
 });
+
+// TRƏS-01 (spec §8, D23): the administration screen also opens for `tres.manage` alone — Yönetim › TRƏS is then its
+// one tab (screens/admin/AdminScreen.jsx gates each tab by its own right).
+describe("the administration route and the national feed's key", () => {
+  afterEach(() => resetScreens());
+  const admin = () => ROUTES.find((r) => r.id === "admin");
+
+  it("opens for users.manage, groups.manage or tres.manage, and for no other right", () => {
+    expect(admin().perms).toEqual(["users.manage", "groups.manage", "tres.manage"]);
+    expect(canReach(admin(), ["tres.manage"])).toBe(true);
+    expect(canReach(admin(), ["structure.manage"])).toBe(false);
+    expect(canReach(admin(), NURSE)).toBe(false);
+  });
+
+  it("is a tres.manage session's one work screen and its home", () => {
+    expect(hasWorkRoute(["tres.manage"])).toBe(true);
+    expect(navRoutes(["tres.manage"]).main.map((r) => r.id)).toEqual(["admin"]);
+    expect(homePath(["tres.manage"])).toBe("/admin");
+  });
+});

@@ -225,6 +225,16 @@ const ADMISSIONS = [
 const PROTOCOL_SETTINGS = { configured: false, next_no: null, last_issued: null, label_width_mm: 50,
   label_height_mm: 30, printer_dpi: 203, updated_at: null };
 
+/** TRƏS-01: GET /admin/tres/settings — the feed in «validate» with the install's lock closed and half a sandbox
+ *  account, so the sweep meets the closed-lock note, the incomplete-account note and the stored-password words. */
+const TRES_SETTINGS_SWEEP = { mode: "validate", environment: "test", settle_hours: 24,
+  enabled_types: ["patient", "practitioner", "encounter", "condition", "procedure", "vital", "lab", "composition"],
+  test: { base_url: "https://ehr-sandbox.example.az", username: "sentetik", password_set: true, provider_id: null,
+    organization_id: null, organization_name: null },
+  live: { base_url: null, username: null, password_set: false, provider_id: null, organization_id: null,
+    organization_name: null },
+  egress: false, updated_at: "2026-10-08T09:00:00Z" };
+
 // G3-02: one patient with a late vital and one open hand task, so the sweep meets every state word.
 const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-09T04:00:00Z" }, now: "2026-10-08T10:00:00Z",
   settings: { grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null } },
@@ -307,6 +317,9 @@ async function openAt(path, extra) {
       // G2-B1d: Yönetim › Protokol ve etiket reads its settings — unstubbed it would draw a form
       // on defaults, and the sweep would not meet the «no start number» note.
       api.protocolSettings.mockResolvedValue(PROTOCOL_SETTINGS);
+
+      // TRƏS-01: Yönetim › TRƏS reads its settings — unstubbed the tab would say only that they could not be read.
+      api.tresSettings.mockResolvedValue(TRES_SETTINGS_SWEEP);
 
       // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
       api.tasks.mockResolvedValue(TASKS_SWEEP);
@@ -622,6 +635,20 @@ describe("no screen shows a reader a translation key", () => {
     await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Protokol və etiket" })); await settle(); });
     expect(screen.getByText(/^Başlanğıc nömrəsi daxil edilməyib/)).toBeInTheDocument();  // protokol.notConfigured
     expect(screen.getByText(/^Barkod sığır: /)).toBeInTheDocument();                       // protokol.fits
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // TRƏS-01 — the same anchor for Yönetim › TRƏS: the closed-lock note, the incomplete-account note and the
+  // stored-password words are drawn only for this fixture's answer.
+  it("the TRƏS keys resolve on its tab", async () => {
+    const mounted = await openAt("/admin");
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "TRƏS (e-Səhiyyə)" })); await settle(); });
+    expect(screen.getByText(/^Bu quraşdırmada xaricə göndəriş bağlıdır/)).toBeInTheDocument();   // tres.egressOff
+    expect(screen.getByText(/^Seçilmiş mühitin hesabı natamamdır/)).toBeInTheDocument();          // tres.incomplete
+    expect(screen.getByText(/^Parol qeyd olunub\./)).toBeInTheDocument();                         // tres.passwordSet
+    expect(screen.getByText(/^Son dəyişiklik: /)).toBeInTheDocument();                            // tres.updated
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });
