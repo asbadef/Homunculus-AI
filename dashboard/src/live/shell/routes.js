@@ -119,11 +119,13 @@ export const ROUTES = Object.freeze([
   route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
     perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main" }),   // G2-ESLEME: + the editor's key
 
-  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits, confirms a discharge or
-  // moves a patient — G2-B1b (X5), by either of its two keys (releasing a bed moved to Doluluk, X7). After the board's screens in the table, so nobody's home moves.
+  // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits or confirms a discharge
+  // (releasing a bed moved to Doluluk, X7) — and, G2-B1b (X5), for whoever moves a patient, by either
+  // of its two keys. After the board's screens in the table, so nobody's home moves.
   route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
     perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm",
-      "admissions.move.initiate", "admissions.transfer.confirm"], work: true, nav: "main" }),   // G2-B3a (X7); G2-B1b (X5)
+      "admissions.move.initiate", "admissions.transfer.confirm"],   // G2-B1b (X5)
+    work: true, nav: "main" }),   // G2-B3a (X7)
 
   // G2-B3a — Doluluk (spec D2): for whoever reads admissions, admits, confirms a discharge or releases
   // a bed — the right to its names (GET /tenant/occupancy). After Kabul, so nobody's home moves.

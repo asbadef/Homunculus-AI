@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { CONNECTION } from "../../../liveConnection.js";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { FOCUS_RING } from "../../ui/focus.js";
+import { ANNOUNCE_DELAY_MS } from "../../ui/Alert.jsx";
 import { alarm, board, entry } from "../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { DischargeTab } from "./DischargeTab.jsx";
@@ -739,12 +740,18 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
   const anyMove = new RegExp(`^${MOVE}: `);
   const arrived = (over = {}) => ({ ...row({ id: "a-9", bed_id: BED(1), bed_label: "1" }), board: "ok", critical_alarm_open: false, ...over });
 
-  /** Open «Nakil» on the admitted row; choose «İntensiv terapiyaya» and bed 1; send. */
-  async function moveToBedOne() {
-    fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
-    const dialog = within(screen.getByRole("dialog", { name: `${MOVE} · ${FROM}` }));
+  const anyRetry = new RegExp("^Kartı yenidən keçir: ");
+  const NOT_MOVED = /Kart yeni çarpayıya keçirilmədi/;
+  const NOT_MOVED_TO = `${TO} · Kart yeni çarpayıya keçirilmədi.`;
+  const FIVE = "5 · Otaq 2 · Reanimasiya";
+
+  /** Open «Nakil» on the admitted row (`from`'s bed line); choose «İntensiv terapiyaya» and the bed
+   *  `to`; send. By default: from bed 2 to bed 1. */
+  async function moveToBedOne(from = FROM, to = TO) {
+    fireEvent.click(screen.getByRole("button", { name: `${MOVE}: ${from}` }));
+    const dialog = within(screen.getByRole("dialog", { name: `${MOVE} · ${from}` }));
     fireEvent.change(dialog.getByRole("combobox", { name: "Səbəb" }), { target: { value: "TO_ICU" } });
-    fireEvent.click(dialog.getByRole("button", { name: TO }));
+    fireEvent.click(dialog.getByRole("button", { name: to }));
     await act(async () => { fireEvent.click(dialog.getByRole("button", { name: "Köçür" })); });
     await settle();
   }
@@ -767,6 +774,10 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
     expect(api.admissions.mock.calls.length).toBeGreaterThan(reads);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getAllByText(`${FROM} → ${TO}; ${FROM} təmizliyə verildi`).length).toBeGreaterThan(0);
+    // T9: a move whose card moved leaves nothing behind — no note, no retry (a mutant that always
+    // kept the note stayed green).
+    expect(screen.queryByRole("button", { name: anyRetry })).toBeNull();
+    expect(screen.queryAllByText(NOT_MOVED)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
@@ -782,6 +793,104 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
     expect(api.transfer.mock.calls[1]).toEqual(api.transfer.mock.calls[0]);
     expect(screen.queryByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeNull();
     expect(screen.getAllByText(`${TO} · kart yeni çarpayıya keçirildi`).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the note and its button when the retry's card does not move either, says so on a warning, and sends the same move", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer
+      .mockResolvedValueOnce(arrived({ board: "failed" }))
+      .mockResolvedValueOnce(arrived({ board: "failed" })));
+    await moveToBedOne();
+    expect(toasts().queryAllByText(NOT_MOVED_TO)).toEqual([]);             // the move's own toast says it otherwise
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })); });
+    await settle();
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(api.transfer.mock.calls[1]).toEqual(api.transfer.mock.calls[0]);
+    expect(toasts().getAllByText(NOT_MOVED_TO).length).toBeGreaterThan(0);  // the retry's warning
+    const retry = screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` });
+    expect(retry.getAttribute("aria-disabled")).toBeNull();                 // free to be pressed again
+    expect(screen.getAllByText(NOT_MOVED_TO).length).toBeGreaterThan(0);    // and the note stands
+  });
+
+  // A note whose retry can never land goes: the server refuses it `invalid_transition` once her
+  // arriving row is no longer open on that bed — she moved again, or she was discharged. Any other
+  // refusal says nothing of that, and the note stays for another try.
+  it("drops the note when its retry is refused as an invalid transition, and keeps it for any other refusal", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer
+      .mockResolvedValueOnce(arrived({ board: "failed" }))
+      .mockRejectedValueOnce(refusal(503, "Service Unavailable"))
+      .mockRejectedValueOnce(refusal(409, "Only an ACTIVE admission is transferred.", { apiCode: "invalid_transition" })));
+    await moveToBedOne();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })); });
+    await settle();
+    expect(toasts().getAllByText(new RegExp(`^${TO}: `)).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeTruthy();   // a hiccup: try again
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })); });
+    await settle();
+    expect(api.transfer).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole("button", { name: anyRetry })).toBeNull();                      // she has moved on
+    expect(screen.queryAllByText(NOT_MOVED)).toEqual([]);
+  });
+
+  it("drops the note of a move whose arriving row has been moved on: that retry could only be refused", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer
+      .mockResolvedValueOnce(arrived({ board: "failed" }))                                         // a-1 → bed 1, the card stays
+      .mockResolvedValueOnce(arrived({ id: "a-10", bed_id: BED(5), bed_label: "5", room_name: "Otaq 2" })));   // a-9 → bed 5
+    api.admissions.mockResolvedValue([ROWS[1], ROWS[2], arrived()]);                              // a-9 lies at bed 1
+    await moveToBedOne();
+    expect(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeTruthy();
+    await moveToBedOne(TO, FIVE);
+    expect(api.transfer.mock.calls[1][0]).toBe("a-9");                                            // moved from the arriving row
+    expect(screen.queryByRole("button", { name: anyRetry })).toBeNull();
+    expect(screen.queryAllByText(NOT_MOVED)).toEqual([]);
+  });
+
+  // Two notes, each with its retry: while one is out, the other is held — said in words, as the
+  // discharge's notes say it — and the retry is announced politely, as the discharge's is.
+  describe("two cards left behind (accessibility)", () => {
+    const SECOND = row({ id: "a-4", patient_number: "H2600004", bed_label: "5", room_name: "Otaq 2", bed_id: BED(5),
+      display_name: "Sentetik Dörd", state: "ACTIVE" });
+    const RETRYING = `${TO} · Kart yeni çarpayıya yenidən keçirilir…`;
+
+    async function twoNotes(answers) {
+      const mounted = await open(DOCTOR, (a) => {
+        a.admissions.mockResolvedValue([...ROWS, SECOND]);
+        a.transfer.mockResolvedValueOnce(arrived({ board: "failed" }))
+          .mockResolvedValueOnce(arrived({ id: "a-11", board: "failed" }))
+          .mockImplementationOnce(() => new Promise((resolve) => { answers.land = resolve; }));
+      });
+      await moveToBedOne();
+      await moveToBedOne(FIVE, TO);
+      return mounted;
+    }
+
+    it("holds the other note's retry while one is out, describes it by the reason, and sends one retry", async () => {
+      const answers = {};
+      const { api } = await twoNotes(answers);
+      const [first, other] = screen.getAllByRole("button", { name: anyRetry });
+      await act(async () => { fireEvent.click(first); });
+      expect(other.getAttribute("aria-disabled")).toBe("true");
+      expect(other.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent))
+        .toContain(RETRYING);
+      await act(async () => { fireEvent.click(other); });
+      expect(api.transfer).toHaveBeenCalledTimes(3);                         // two moves, one retry
+      await act(async () => { answers.land(arrived({ board: "ok" })); });
+      await settle();
+      expect(screen.getAllByRole("button", { name: anyRetry })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: anyRetry }).getAttribute("aria-disabled")).toBeNull();
+    });
+
+    it("announces the retry while it runs, and says nothing before or after", async () => {
+      const answers = {};
+      await twoNotes(answers);
+      const said = () => screen.getAllByRole("status").map((el) => el.textContent);
+      expect(said()).not.toContain(RETRYING);
+      await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: anyRetry })[0]); });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS + 60)); });
+      expect(said()).toContain(RETRYING);
+      await act(async () => { answers.land(arrived({ board: "ok" })); });
+      await settle();
+      expect(said()).not.toContain(RETRYING);
+    });
   });
 
   // After a landed move the source row's button is gone (her admission is TRANSFERRED), so the
@@ -858,5 +967,42 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
     await open(DOCTOR, undefined, { start: false });
     fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
     expect(screen.queryByText(WARNING)).toBeNull();
+  });
+
+  // D7's «hint, not hold» reads what the board shows. A failed load EMPTIES the board's alarms and
+  // says UNAVAILABLE (boardStore: never yesterday's patients), so a board that had a critical alarm
+  // and then lost its load shows none: the dialog says nothing, and nothing is held. A board that is
+  // only DEGRADED — its stream dropped — keeps the alarms it last had, as the discharge's hold reads
+  // them, and the dialog still warns. (`known` in `warnsOf` is the belt to the store's braces: a
+  // board that is not known never holds an alarm to warn of.)
+  describe("the warning follows the board's state", () => {
+    const CRITICAL_BOARD = (a) => a.boardPatients.mockResolvedValue(board([entry("H2600001", [alarm("septic_shock", "critical")])]));
+    /** Open «Nakil» on the row, see whether it warns, and close it again. */
+    const warns = () => {
+      fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
+      const shown = screen.queryByText(WARNING) !== null;
+      fireEvent.click(screen.getByRole("button", { name: "İmtina" }));
+      return shown;
+    };
+
+    it("still warns by the alarms a DEGRADED board last had", async () => {
+      const { board: store, stream } = await open(DOCTOR, CRITICAL_BOARD);
+      expect(store.getState()).toMatchObject({ connection: CONNECTION.LIVE, loaded: true });
+      expect(warns()).toBe(true);
+      act(() => { stream.drop(); });
+      expect(store.getState()).toMatchObject({ connection: CONNECTION.DEGRADED, loaded: true });
+      expect(warns()).toBe(true);
+    });
+
+    it("says nothing once a failed load has emptied a board that had the alarm, and holds nothing", async () => {
+      const { api, board: store, stream } = await open(DOCTOR, CRITICAL_BOARD);
+      expect(warns()).toBe(true);
+      api.boardPatients.mockRejectedValue(refusal(503, "Service Unavailable"));
+      await act(async () => { stream.open(); });                           // the stream's open reloads, and the load fails
+      await settle();
+      expect(store.getState()).toMatchObject({ connection: CONNECTION.UNAVAILABLE, loaded: false, alerts: [] });
+      expect(warns()).toBe(false);
+      expect(screen.getByRole("button", { name: MOVE_ROW }).getAttribute("aria-disabled")).toBeNull();
+    });
   });
 });
