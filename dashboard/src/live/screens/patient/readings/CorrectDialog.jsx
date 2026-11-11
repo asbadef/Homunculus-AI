@@ -8,31 +8,41 @@
 //      so the record shows it as «elle» — never as the device's.
 // The right value is optional (an empty box only withdraws) and is held to the bedside form's own check
 // (`checkVital`: a slipped digit, not a clinical bound). The engine takes a hand entry at most 24 hours back, so for
-// an older reading the box is not offered and the dialog says why — the withdrawal still works.
+// an older reading the box is not offered and the dialog says why — the withdrawal still works. Whether the box is
+// offered is decided ONCE, when the dialog opens (the screen's clock ticks every 30 s and must not take a box away
+// while she types); the bound is checked again, on a fresh clock, when she confirms: a value typed for a reading
+// that has become too old since is held back with the reason and kept in the box — never silently dropped.
 //
 // THE ENGINE DECIDES, and each ending is said on a toast named after the bed:
 //   both done → «düzeltildi»; only the withdrawal asked → «hatalı giriş olarak işaretlendi»;
-//   withdrawn but the right value refused or unanswered → the PARTIAL message, which says which half happened and
-//     where to enter the value (never a plain failure: the wrong value IS out of the scores);
+//   withdrawn but the right value REFUSED (an answer) → the PARTIAL message, which says which half happened and
+//     where and AT WHAT TIME to enter the value (never a plain failure: the wrong value IS out of the scores);
+//   withdrawn but the chart got NO ANSWER (a timeout, a dropped line, a 502) → UNCERTAIN: the value may have been
+//     written, so she is told to look at the record before she enters it again — never «not written»;
 //   the withdrawal refused → nothing is charted; «already withdrawn» closes and the host re-reads; a reason the
 //     engine finds short keeps the dialog open; a withdrawal with no answer may have landed — she is told to look.
 // `onDone(outcome)`: "corrected" | "retracted" | "partial" | "already" | "uncertain". The button ignores a press for
 // RETRACT_ARM_MS after the dialog opens and a double click's second press (RetractDialog's rule).
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { apiErrorText } from "../../../apiErrors.js";
+import { apiErrorKey, apiErrorText } from "../../../apiErrors.js";
 import { Announce, Button, Field, Input, Modal, Note, useToast } from "../../../ui/index.js";
 import { mayHaveLanded } from "../../admin/refusal.js";
-import { checkVital, specOf } from "../../bedside/vitalsFields.js";
+import { BACKDATE_MS, SKEW_MS, checkVital, specOf } from "../../bedside/vitalsFields.js";
 import {
   RETRACT_ALREADY, RETRACT_ARM_MS, RETRACT_MAX_REASON_CHARS, RETRACT_MIN_REASON_CHARS,
 } from "../../common/RetractDialog.jsx";
 
-/** The engine takes a hand entry at most this far back (api/clinical.py BEDSIDE_BACKDATE); a minute is kept inside
- *  the edge, as the bedside form keeps it (vitalsFields.js SKEW_MS). */
-export const CORRECT_BACKDATE_MS = 24 * 3_600_000 - 60_000;
+/** The engine takes a hand entry at most a day back (api/clinical.py BEDSIDE_BACKDATE); the skew's minute is kept
+ *  inside the edge, as the bedside form keeps it — the browser is the stricter side. */
+export const CORRECT_BACKDATE_MS = BACKDATE_MS - SKEW_MS;
+
+const withinBackdate = (nowMs, observedMs) => Number.isFinite(observedMs) && nowMs - observedMs <= CORRECT_BACKDATE_MS;
 
 const saidAlready = (err) => err?.status === 409 && String(err.message ?? "").trim() === RETRACT_ALREADY;
+
+/** A 403 that is the engine's «a person does this» refusal says so in its own words; any other is a missing right. */
+const saidPersonOnly = (err) => apiErrorKey(err)?.key === "kayit.err.person";
 
 /** `bed` names the patient in the title and on the toasts. `what` is `{ code, label, value, time, source,
  *  observedMs }`: the engine's code, and the label, the value with its unit, the measurement time and the source as
@@ -69,8 +79,10 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
   // A value of a kind the bedside form types as a number can be re-entered here; a choice (oxygen, ACVPU) is
   // corrected on the bedside form itself, where its options are.
   const typable = Boolean(spec) && spec.kind === "number";
-  const recent = Number.isFinite(what.observedMs) && nowMs - what.observedMs <= CORRECT_BACKDATE_MS;
-  const offerValue = typable && recent;
+  // Decided once, as the dialog opens (the host mounts a new dialog for each value). `opened` lets confirm() read a
+  // fresh clock: the screen's own, or that one advanced by the time this dialog has been open — whichever is later.
+  const [offerValue] = useState(() => typable && withinBackdate(nowMs, what.observedMs));
+  const [opened] = useState(() => ({ wall: Date.now(), screen: nowMs }));
   const count = reason.trim().length;
   const short = count < RETRACT_MIN_REASON_CHARS;
 
@@ -84,6 +96,12 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
         return;
       }
       if (!checked.skip) entries = [{ code: what.code, value: checked.value }];
+    }
+    // The bound again, on a fresh clock: the reading may have aged out while she typed. Nothing is sent, and the
+    // typed value stays in its box beside the reason; emptying the box withdraws only.
+    if (entries !== null && !withinBackdate(Math.max(nowMs, opened.screen + (Date.now() - opened.wall)), what.observedMs)) {
+      setValueError(t("kayit.correctTooOld"));
+      return;
     }
     setValueError(null);
     sending.current = true;
@@ -101,8 +119,11 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
           done = { say: [t("kayit.correctDone", { subject: bed, label: what.label })], outcome: "corrected", close: true };
         } catch (err) {
           if (err?.superseded) return;
-          // The wrong value IS withdrawn: say which half happened, never a plain failure.
-          done = { say: [t("kayit.correctPartial", { subject: bed, reason: apiErrorText(t, err) }), "warn"], outcome: "partial", close: true };
+          // The wrong value IS withdrawn: say which half happened, never a plain failure. A chart with no answer may
+          // have landed — only an answer (a refusal) means «not written»; entering it again unseen could double it.
+          done = mayHaveLanded(err)
+            ? { say: [t("kayit.correctChartMayHaveLanded", { subject: bed, time: what.time }), "warn"], outcome: "uncertain", close: true }
+            : { say: [t("kayit.correctPartial", { subject: bed, reason: apiErrorText(t, err), time: what.time }), "warn"], outcome: "partial", close: true };
         }
       }
     } catch (err) {
@@ -110,7 +131,7 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
       if (mayHaveLanded(err)) {
         done = { say: [t("kayit.correctMayHaveLanded", { subject: bed }), "warn"], outcome: "uncertain", close: true };
       } else {
-        const said = err?.status === 403 ? t("kayit.noRight") : apiErrorText(t, err);
+        const said = err?.status === 403 && !saidPersonOnly(err) ? t("kayit.noRight") : apiErrorText(t, err);
         done = {
           say: [t("kayit.correctRefused", { subject: bed, reason: said }), "error"],
           outcome: saidAlready(err) ? "already" : null,
@@ -140,7 +161,11 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
           </p>
           <div className="ml-auto flex shrink-0 gap-2">
             <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
-            <Button variant="danger" onClick={confirm} busy={busy}
+            {/* The button is the form's submit button (`form`), so Enter in either box presses it — the browser
+                clicks it for the form. onClick takes the press itself and cancels the native submit, so one press
+                is one confirm(). */}
+            <Button variant="danger" type="submit" form={formId} busy={busy}
+              onClick={(event) => { event.preventDefault(); confirm(event); }}
               aria-disabled={short || arming ? "true" : undefined} aria-describedby={countId}>
               {t("kayit.correctConfirm")}
             </Button>
@@ -148,7 +173,7 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
         </div>
       )}
     >
-      {/* Enter in a box presses the button: the same checks, and no `detail`. */}
+      {/* A submit that reaches the form without the button (requestSubmit, a test): the same checks, no `detail`. */}
       <form id={formId} noValidate onSubmit={(event) => { event.preventDefault(); confirm(); }}>
         <p id={whatId} className="m-0 font-data text-14.5 font-semibold">
           {t("kayit.correctWhat", { label: what.label, value: what.value, time: what.time, source: what.source })}
@@ -167,7 +192,7 @@ export function CorrectDialog({ bed, what, nowMs = Date.now(), onRetract, onChar
                 onChange={(event) => { setRaw(event.target.value); setValueError(null); }} />
             </Field>
           ) : null}
-          {typable && !recent ? <p className="m-0 text-12.5 text-mute">{t("kayit.correctTooOld")}</p> : null}
+          {typable && !offerValue ? <p className="m-0 text-12.5 text-mute">{t("kayit.correctTooOld")}</p> : null}
         </div>
       </form>
       <Announce text={busy ? t("kayit.saving") : ""} />

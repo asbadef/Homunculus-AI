@@ -11,8 +11,8 @@ const kayit = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => key
 
 describe("the measurement record's words (kayit)", () => {
   // The sweeps below read every key of the namespace: on an empty namespace they would pass having read nothing.
-  it("has its 72 keys in every language", () => {
-    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(72);
+  it("has its 73 keys in every language", () => {
+    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(73);
   });
 
   it("says the spec's Turkish for the box, the two sources and the list", () => {
@@ -37,14 +37,27 @@ describe("the measurement record's words (kayit)", () => {
     }
   });
 
-  it("a partial correction says which half happened", () => {
+  it("a partial correction says which half happened, and at what time the right value goes in", () => {
     for (const lang of LANG_CODES) {
-      const said = fill(DICTIONARIES[lang]["kayit.correctPartial"], { subject: "REA-01 · 2", reason: "x" });
+      const said = fill(DICTIONARIES[lang]["kayit.correctPartial"], { subject: "REA-01 · 2", reason: "x", time: "09:40" });
       expect(said.startsWith("REA-01 · 2: "), `${lang}: ${said}`).toBe(true);
       expect(said, lang).toContain("x");
+      expect(said, lang).toContain("09:40");
     }
     expect(DICTIONARIES.tr["kayit.correctPartial"]).toContain("yanlış değer işaretlendi");
     expect(DICTIONARIES.tr["kayit.correctPartial"]).toContain("doğru değer kaydedilmedi");
+  });
+
+  it("an unanswered chart is «may have been written» — it never says the value was not saved, and it says to look first", () => {
+    const NOT_SAVED = { tr: "kaydedilmedi", az: "yazılmadı", ru: "не записано", en: "was not saved" };
+    const LOOK = { tr: "ölçüm kaydına bakın", az: "ölçmə qeydinə baxın", ru: "проверьте запись измерений", en: "check the measurement record" };
+    for (const lang of LANG_CODES) {
+      const template = DICTIONARIES[lang]["kayit.correctChartMayHaveLanded"];
+      const said = fill(template, { subject: "REA-01 · 2", time: "09:40" });
+      expect(said, lang).toContain("09:40");
+      expect(said, lang).not.toContain(NOT_SAVED[lang]);
+      expect(said.toLowerCase(), lang).toContain(LOOK[lang]);
+    }
   });
 
   it("the list says the values are not lost, and a rejection says they are kept", () => {
@@ -57,8 +70,8 @@ describe("the measurement record's words (kayit)", () => {
   });
 
   it("every refusal and every toast names its subject first", () => {
-    const named = ["correctDone", "correctWithdrawn", "correctPartial", "correctRefused", "correctMayHaveLanded",
-      "umLinked", "umLinkRefused", "umLinkMayHaveLanded", "umRejected", "umRejectRefused"];
+    const named = ["correctDone", "correctWithdrawn", "correctPartial", "correctChartMayHaveLanded", "correctRefused",
+      "correctMayHaveLanded", "umLinked", "umLinkRefused", "umLinkMayHaveLanded", "umRejected", "umRejectRefused"];
     for (const lang of LANG_CODES) {
       for (const key of named) expect(DICTIONARIES[lang][`kayit.${key}`], `${lang} ${key}`).toMatch(/^\{subject\}: /);
     }

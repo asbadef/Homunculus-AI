@@ -7,7 +7,7 @@ import { mount, refusal } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
 import { NOW, board, entry } from "../../../data/board.testutil.js";
 import { dayStamp } from "../../../i18n/dates.js";
-import { RETRACT_ARM_MS } from "../../common/RetractDialog.jsx";
+import { RETRACT_ALREADY, RETRACT_ARM_MS } from "../../common/RetractDialog.jsx";
 import { HAND_AT, LATE_AT, MIN, ROUND_AT, emptyReadings, readings } from "./readings.testutil.js";
 import { ReadingsBox } from "./ReadingsBox.jsx";
 import { READINGS_POLL_MS } from "./useReadings.js";
@@ -87,15 +87,16 @@ describe("the measurement record — what was measured, and by what", () => {
   });
 
   it("says so when the window holds nothing, and why when the read fails — keeping the last answer", async () => {
-    const { api } = await open({ answer: emptyReadings });
+    await open({ answer: emptyReadings });
     expect(screen.getByText("Bu dövrdə ölçmə qeydi yoxdur.")).toBeInTheDocument();
     cleanup();
-    const again = await open();
-    again.api.patientReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    const { api } = await open();
+    api.patientReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    const before = api.patientReadings.mock.calls.length;
     await act(async () => { vi.advanceTimersByTime(READINGS_POLL_MS); await settle(); });
+    expect(api.patientReadings.mock.calls.length).toBe(before + 1);   // the read that failed was made
     expect(screen.getByText(/^Ölçmə qeydi oxunmadı: /)).toBeInTheDocument();
     expect(sets()).toHaveLength(3);                       // the last answer stays beside the note
-    expect(api.patientReadings).toHaveBeenCalled();
   });
 
   it("reads again once a minute", async () => {
@@ -218,8 +219,8 @@ describe("«Düzelt» — the dialog", () => {
     expect(dialog()).toHaveTextContent("0–300 aralığında olmalıdır.");
   });
 
-  it("a withdrawal that landed and a chart that did not says which half happened", async () => {
-    const { api } = await openDialog({ setup: (a) => { a.chart.mockRejectedValue(refusal(400, "ölçüm saati en çok 24 saat geriye alınabilir")); } });
+  it("a withdrawal that landed and a chart the engine refused says which half happened, and at what time to enter it", async () => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.chart.mockRejectedValue(refusal(400, "ölçüm saati en çok 24 saat geriye alınabilir")); } });
     await arm();
     await type(reasonBox(), WHY);
     await type(valueBox(), "78");
@@ -227,7 +228,118 @@ describe("«Düzelt» — the dialog", () => {
     expect(api.retractEntry).toHaveBeenCalledTimes(1);
     const said = toasted(/^REA-01 · 2: səhv dəyər işarələndi, lakin düzgün dəyər yazılmadı — /);
     expect(said.length).toBeGreaterThan(0);
+    expect(said[0]).toHaveTextContent(`${dayStamp(ROUND_AT, NOW)} ölçmə vaxtına yazın`);   // the reading's own time
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).toHaveBeenCalledWith("S-001");
+  });
+
+  // No answer is not a refusal: the chart may have been written, and entering it again unseen could double it.
+  it.each([
+    ["a 502 from the proxy", () => refusal(502, "bad gateway")],
+    ["the client's own timeout", () => Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })],
+    ["a connection that dropped", () => new TypeError("Failed to fetch")],
+  ])("a chart with no answer (%s) after a withdrawal is «may have been written» — never «not written»", async (_what, failure) => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.chart.mockRejectedValue(failure()); } });
+    const reads = api.patientReadings.mock.calls.length;
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
+    expect(api.chart).toHaveBeenCalledTimes(1);
+    const said = toasted(/^REA-01 · 2: səhv dəyər işarələndi; düzgün dəyər üçün cavab gəlmədi — yazılmış ola bilər\. Əvvəl ölçmə qeydinə baxın; /);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toHaveTextContent(`yoxdursa ${dayStamp(ROUND_AT, NOW)} ölçmə vaxtına yazın`);
+    expect(toasted(/yazılmadı/)).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).toHaveBeenCalledWith("S-001");
+    expect(api.patientReadings.mock.calls.length).toBeGreaterThan(reads);   // the box read again, to show what is there
+  });
+
+  it("a withdrawal that got no answer may have landed: she is told to look, nothing is charted, the box reads again", async () => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.retractEntry.mockRejectedValue(refusal(503, "down")); } });
+    const reads = api.patientReadings.mock.calls.length;
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(toasted(`${BED}: cavab gəlmədi — işarələnmiş ola bilər. Ölçmə qeydinə baxın.`)).toHaveLength(1);
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).toHaveBeenCalledWith("S-001");
+    expect(api.patientReadings.mock.calls.length).toBeGreaterThan(reads);
+  });
+
+  it("a value another desk had already withdrawn closes the dialog, says so, and reads again", async () => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.retractEntry.mockRejectedValue(refusal(409, RETRACT_ALREADY)); } });
+    const reads = api.patientReadings.mock.calls.length;
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(toasted(`${BED}: düzəldilmədi — Bu dəyər artıq səhv qeyd kimi işarələnib.`)).toHaveLength(1);
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).toHaveBeenCalledWith("S-001");
+    expect(api.patientReadings.mock.calls.length).toBeGreaterThan(reads);
+  });
+
+  it.each([
+    ["a missing right", "permission required: clinical.chart", "ölçməni düzəltmək hüququnuz yoxdur"],
+    ["the engine's «a person does this»", "a person links or rejects a reading: this credential names no actor",
+      "Bu işi bir şəxs görür; bu kimlik bir şəxsi göstərmir."],
+  ])("a 403 for %s says its own sentence, charts nothing and closes", async (_what, message, sentence) => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.retractEntry.mockRejectedValue(refusal(403, message)); } });
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(toasted(`${BED}: düzəldilmədi — ${sentence}`)).toHaveLength(1);
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).not.toHaveBeenCalled();
+  });
+
+  it("a 400 on the withdrawal keeps the dialog open with what she typed, and she can press again", async () => {
+    const { api, onWritten } = await openDialog({ setup: (a) => { a.retractEntry.mockRejectedValueOnce(refusal(400, "gerekçe kabul edilmedi")); } });
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(toasted(`${BED}: düzəldilmədi — gerekçe kabul edilmedi`)).toHaveLength(1);
+    expect(dialog()).toBeInTheDocument();
+    expect(reasonBox()).toHaveValue(WHY);
+    expect(valueBox()).toHaveValue("78");
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(onWritten).not.toHaveBeenCalled();
+    await confirm();                                        // the second answer is the default: a withdrawal
+    expect(api.retractEntry).toHaveBeenCalledTimes(2);
+    expect(api.chart).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onWritten).toHaveBeenCalledWith("S-001");
+  });
+
+  it("the confirm button is the form's submit button: one press cancels the native submit, a submit that reaches the form confirms once", async () => {
+    const { api } = await openDialog();
+    const button = within(dialog()).getByRole("button", { name: "Düzəlt" });
+    const form = dialog().querySelector("form");
+    expect(button).toHaveAttribute("type", "submit");
+    expect(button).toHaveAttribute("form", form.id);
+    await arm();
+    await type(reasonBox(), WHY);
+    await act(async () => { fireEvent.submit(form); await settle(); });   // Enter in a box, in a renderer that submits
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a press on the button is one confirmation and leaves nothing for the native submit", async () => {
+    const { api } = await openDialog();
+    await arm();
+    await type(reasonBox(), WHY);
+    let proceeded = true;
+    await act(async () => { proceeded = fireEvent.click(within(dialog()).getByRole("button", { name: "Düzəlt" })); await settle(); });
+    expect(proceeded).toBe(false);                          // default prevented: the form is not also submitted
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
   });
 
   it("a refused withdrawal charts nothing and says the engine's reason", async () => {
@@ -252,5 +364,78 @@ describe("«Düzelt» — the dialog", () => {
     await confirm();
     expect(api.retractEntry).toHaveBeenCalledTimes(1);
     expect(api.chart).not.toHaveBeenCalled();
+  });
+});
+
+describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
+  // Two minutes inside the bound as the dialog opens (the bound is 24 h less the skew's minute): it is too old two
+  // minutes later. Values: heart_rate 88 of the round, withdrawn here.
+  const AGING_AT = NOW - (24 * 60 - 2) * MIN;
+  const aging = (pid, hours) => readings(pid, hours, { sets: [{ ...readings().sets[1], observed_at: new Date(AGING_AT).toISOString() }] });
+  const dialog = () => screen.getByRole("dialog");
+  const reasonBox = () => within(dialog()).getByLabelText(/^Səbəb/);
+  const valueBox = () => within(dialog()).getByLabelText(/^Düzgün dəyər · Nəbz/);
+  const confirm = () => press(within(dialog()).getByRole("button", { name: "Düzəlt" }));
+  const TOO_OLD = "Ölçmə 24 saatdan köhnədir";
+  const openAging = async (extra) => {
+    const mounted = await open({ answer: aging, ...extra });
+    await press(within(sets()[0].querySelector("[data-reading='21']")).getByRole("button", { name: "Düzəlt" }));
+    return mounted;
+  };
+
+  // The screen's clock ticks every 30 s: it must not take the value box away from under her hands.
+  function Ticking() {
+    const [now, setNow] = React.useState(NOW);
+    return (<><button type="button" onClick={() => setNow(NOW + 5 * MIN)}>tick</button>
+      <ReadingsBox patientId="S-001" bed={BED} nowMs={now} canChart /></>);
+  }
+
+  it("offers the right-value box once, as the dialog opens: a later tick of the screen's clock does not take it away", async () => {
+    await openAging({ host: <Ticking /> });
+    expect(valueBox()).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent(TOO_OLD);
+    await press(screen.getByRole("button", { name: "tick" }));        // five minutes on: the reading is now too old
+    expect(valueBox()).toBeInTheDocument();
+    expect(dialog()).not.toHaveTextContent(TOO_OLD);
+  });
+
+  it("checks the bound again on confirm: a value typed for a reading that aged out is held back, said, and kept in its box", async () => {
+    const { api } = await openAging({ host: <Ticking /> });
+    await press(screen.getByRole("button", { name: "tick" }));
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(api.retractEntry).not.toHaveBeenCalled();        // nothing was sent
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(dialog()).toHaveTextContent(TOO_OLD);            // the inline reason
+    expect(valueBox()).toHaveValue("78");                   // not silently dropped
+    expect(reasonBox()).toHaveValue(WHY);
+    await type(valueBox(), "");                             // she lets the value go: the withdrawal alone is still hers
+    await confirm();
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
+    expect(api.chart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("reads the clock that has run while the dialog was open, even when the screen's own did not tick", async () => {
+    const { api } = await openAging();                      // nowMs stays NOW: only the wall clock moves
+    await act(async () => { vi.advanceTimersByTime(3 * MIN); await settle(); });
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(api.retractEntry).not.toHaveBeenCalled();
+    expect(dialog()).toHaveTextContent(TOO_OLD);
+    expect(valueBox()).toHaveValue("78");
+  });
+
+  it("still charts a value for a reading that is inside the bound when she confirms", async () => {
+    const { api } = await openAging();
+    await arm();
+    await type(reasonBox(), WHY);
+    await type(valueBox(), "78");
+    await confirm();
+    expect(api.retractEntry).toHaveBeenCalledTimes(1);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "heart_rate", value: 78 }], new Date(AGING_AT).toISOString());
   });
 });
