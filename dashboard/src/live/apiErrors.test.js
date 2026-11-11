@@ -866,3 +866,13 @@ describe("the national feed's refusals (TRƏS-01)", () => {
       .toBe("Bu quraşdırmada xaricə göndəriş bağlıdır; bağlantı yoxlanılmadı.");
   });
 });
+
+// TRƏS-01 (the gate of phase F0, when both halves are in one tree): the map is the engine's own list — its
+// tres/errors.py, read as text like every other engine source here. A code added there fails here until it is mapped.
+describe("the national feed's refusal codes are the engine's (TRƏS-01)", () => {
+  it("the map holds every code tres/errors.py names, and nothing else", () => {
+    const codes = [...pyConstants(py("tres/errors.py")).values()];
+    expect(codes.length).toBeGreaterThanOrEqual(8);
+    expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...codes].sort());
+  });
+});
