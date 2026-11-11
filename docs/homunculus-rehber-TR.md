@@ -530,11 +530,13 @@ Dalga 3'te geldi: 3.6.
 - *Girişten sonra nereye düşülür:* Herkes kendi ana ekranına — menüsünün açtığı ilk ekrana:
   panoyu görme yetkisi (`board.view`) olan herkes **Yataklar**'a (Azerbaycanca arayüzde
   "Çarpayılar"): hekim, hemşire, sorumlu hemşire, hızlı yanıt ekibi, denetçi, eczacı ve Sistem
-  Yöneticisi. Panoyu görmeyen ama kullanıcı ya da grup yöneten biri **Yönetim**'e. Yetkileri yeni
-  arayüzün hiçbir ekranını açmayan bir hesap — varsayılan gruplarda Biyomedikal Teknisyen ve
-  Üretici Destek: ikisinde de yalnız cihaz ve denetim yetkisi var — içeri alınmaz; giriş ekranı
-  bunu söyler ("Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor (ör. yalnız
-  cihaz yönetimi). Sistem yöneticinizle görüşün."). Cihaz sayfası Grup 4'te gelecek. **Ayarlar**
+  Yöneticisi. Panoyu görmeyen ama kullanıcı ya da grup yöneten biri **Yönetim**'e. Panoyu görme ve
+  yönetim yetkisi olmayan ama cihaz yönetimi yetkisi (`devices.manage`) olan biri — varsayılan
+  gruplarda Biyomedikal Teknisyen ve Üretici Destek — **Cihazlar**'a («Cihaz & Veri Akışı», aşağıda
+  3.22); Üretici Destek'in menüsünde ikinci sırada «Denetim bütünlüğü» de vardır (3.13). Yetkileri
+  yeni arayüzün hiçbir ekranını açmayan bir hesap içeri alınmaz; giriş ekranı bunu söyler
+  ("Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor. Sistem yöneticinizle
+  görüşün."). **Ayarlar**
   herkese açık, menünün en altında. Bir yer imiyle ya da bağlantıyla açılan adres girişten sonra
   bir kez kullanılır — kişi o ekranı açabiliyorsa; bir **hastanın** adresi ise girişten sonra
   açılmaz, ana ekrana düşülür (kilit açılınca olduğu gibi: yukarıda "Kilit ekranı").
@@ -1172,13 +1174,14 @@ değiştirilebilir):
 | İş | Kim | İzin |
 |---|---|---|
 | Kabul et | Hemşire, Sorumlu Hemşire | `admissions.admit` |
-| Kabulü imzala (hasta ekranından) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
+| Kabulü imzala (hasta ekranından; hekim adı geçmeyen taslağı yalnız bir hekim imzalar, 3.19) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
 | Taburcuyu başlat | Sorumlu Hekim, Ünite Hekimi | `admissions.move.initiate` |
 | Hasta çıktı · onayla | Sorumlu Hemşire | `admissions.discharge.confirm` |
 | Temizlik bitti · boş | Hemşire, Sorumlu Hemşire | `beds.release` |
 | Yönetim › Yapı | Sistem Yöneticisi | `structure.manage` |
 
-Sistem Yöneticisi bütün izinleri taşır. Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
+Sistem Yöneticisi bütün izinleri taşır, ama hekim adı geçmeyen bir taslağı imzalayamaz: imzalayan
+sorumlu hekim olur ve sorumlu hekim bir hekim olmalıdır (3.19). Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
 salt okunur bir notla görür. "Hekim" grubu kabul kayıtlarını görür ama imzalamaz ve taburcu
 başlatmaz. Herkes yalnız kendi birimlerinin yataklarında işlem yapar (birim kapsamı); birimi
 atanmamış hesap (pilot ayarı) ve yönetici her yere ulaşır.
@@ -1286,7 +1289,8 @@ bildirimde (toast) görünür.
   denetimli — sonraki dilim).
 - Taburcu sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
   (rozet yalnız kartta).
-- İmza, imzalayan hekimi bakım ekibine eklemez (B1c).
+- İmza, imzalayan hekimi bakım ekibine eklemez (B1c). *B1c'de kapandı: imzalayan hekim sorumlu
+  hekim olur ve ekip satırı yazılır (3.19).*
 - Kabul, Taburcu, Yataklar ve Yapı'nın Azerbaycanca, Rusça ve İngilizce metinleri yerel bir
   okuyucunun okumasını bekliyor.
 - **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak; orada önce
@@ -1417,8 +1421,8 @@ liste ise Yapı'daki adıyla. Bugünkü tablonun v2'den gelen satırları «BED0
    satır kapanır, aynı monitör aynı yatakta yeni etiketle açılır (`device_bed.relabel`): tablonun
    sürümü bir artar, özeti değişir, şerit yeni etiketi gösterir.
 
-**Monitörü bağlı bir yatak kapatılamaz.** Yapı «Bu yatağa bir monitör bağlı — önce «Monitörler»
-ekranında bağlantıyı çözün.» der (bildirim yatağın adıyla başlar): önce «Monitörler»de bağlantıyı
+**Monitörü bağlı bir yatak kapatılamaz.** Yapı «Bu yatağa bir monitör bağlı — önce «Cihazlar»
+ekranında bağlantıyı çözün.» der (bildirim yatağın adıyla başlar): önce «Cihazlar»da bağlantıyı
 çözün, sonra kapatın. Oda ve birim ancak bütün yatakları kapalıyken kapandığı için onlar da buna
 bağlıdır. Aynı dilimde Yapı'da iki düzeltme (B1a dağıtımının dersleri): boş bir kutunun düğmesi (ör.
 «Yatak ekle») neden tutulduğunu artık kutunun altında görünür biçimde söyler, basıldıktan sonra hata
@@ -1941,6 +1945,99 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 - **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
 
+### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
+
+Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
+kodda (`feat/g2b-b1c-bakim-ekibi`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Örneklerdeki
+adlar uydurmadır.
+
+- **Yalnız hekimler.** Ekipte üç rol var: **sorumlu hekim** (her an tek kişi), **yardımcı hekim** ve
+  **nöbetçi hekim** (başlangıcı ve bitişi olan, en çok 48 saatlik bir pencereyle). Hemşireler ekipte
+  değildir; hemşirenin yatakla bağı ayrı bir kayıttır. Kimin hekim olduğunu kişinin rol grubu söyler:
+  Sorumlu Hekim, Ünite Hekimi ya da Hekim (hesap etkin ve kurumun üyesi olmalı). Hekim olmayan biri
+  ekibe eklenemez, sorumlu hekim yapılamaz, «Sorumlu hekim ol» diyemez: sunucu 409 `care_team_not_physician`
+  verir, ekran bunu okuyanın dilinde söyler.
+- **İmzalayan sorumlu hekim olur.** Kabulü imzalayan hekim, formda başka bir sorumlu hekim adı yoksa,
+  aynı işlemde sorumlu hekim olur ve ekipteki satırı yazılır; biri başarısız olursa ikisi de yazılmaz.
+  Formda bir hekim adı varsa sorumlu hekim odur; formda hekim olmayan biri adlandırılırsa kabul açılırken
+  reddedilir (422 `field_invalid:attending_physician_id`; Kabul ekranı hekim adı göndermez). Sorumlu hekim
+  (formdaki, yoksa imzalayan) hekim değilse imza reddedilir: bir yönetici hesabı, hekim adı geçmeyen bir taslağı artık imzalayamaz; ekran «hekim
+  değil» der. Kabul bu yüzden hekim hesabıyla imzalanır. (3.8'deki «İmza, imzalayan hekimi bakım ekibine
+  eklemez» sınırı bununla kapandı.)
+- **Kutu.** Hasta ekranında «Bakım ekibi»: her üyenin adı, rolü, nöbetçinin penceresi (geçtiyse
+  «süresi doldu») ve onu kimin eklediği. Eski üyeler «Önceki üyeler» altında katlıdır, ne zaman
+  çıktıklarıyla. Kimlik numarası gösterilmez. Kabul henüz imzalanmadıysa kutu yalnız «Sorumlu hekim,
+  kabul imzalanınca atanır.» der. Hasta ekranı açık kabulleri bir kez okur (dakikada bir yeniler) ve imza
+  şeridi, etiket ve kutu aynı okumayı kullanır; imza atılır atılmaz kutu ekibi gösterir. Kabuller hiç
+  okunamadıysa kutu bunu tek satırla söyler.
+- **Düğmeler.**
+  - «Sorumlu hekim ol»: `care_team.claim` sahibi bir hekim, sorumlu hekim değilse.
+  - «Ekibe ekle»: `care_team.assign` sahibi. Seçici kurumdaki bütün hekimleri adla sunar (kimlik numarası
+    yok); başka birimden bir nöbetçi meslektaş da çıkar. Ekipte etkin satırı olan hekim sunulmaz; süresi
+    dolmuş bir nöbetçi yeniden sunulur. Nöbetçi için başlangıç ve bitiş gerekir: bitiş başlangıçtan
+    sonra, gelecekte ve en çok 48 saat sonra olmalıdır; başka rolün penceresi olmaz. Sunucu bunları
+    ayrıca denetler (422).
+  - «Sorumlu hekim yap» ve «Ekipten çıkar»: `care_team.assign` sahibi, sorumlu hekimin satırı dışında.
+  - «Ekipten ayrıl»: üyenin kendisi, kendi satırında; sunucu için yalnız `admissions.view` yeter. Ama
+    kutu, hasta ekranının birim kapsamlı kabul okumasına bağlıdır: kendi birimlerinin dışındaki bir nöbetçi
+    hekimin kutusu yoktur, bu düğmeyi göremez. Satırını ekibi yöneten biri «Ekipten çıkar» ile bitirir
+    (üyeyi tanıyan bir okuma sonraki dilimdir).
+
+  Varsayılan gruplarda `care_team.claim` ve `care_team.assign` yalnız Sorumlu Hekim grubundadır (ve bütün
+  izinleri taşıyan Sistem Yöneticisi grubunda); Ünite Hekimi ile Hekim ekibi değiştirmez. Ekip imzadan
+  taburcuya kadar yazılır: taslak ya da kapanmış bir kabulde ekibe yazılmaz (409).
+- **Sorumlu hekimin satırı.** Yeni bir sorumlu hekim atanırken ekran bir kez sorar: «X sorumlu hekim
+  olur; Y ekipten çıkar.» (önceki yoksa yalnız «X sorumlu hekim olur.»). Soru «Sorumlu hekim ol»da,
+  «Sorumlu hekim yap»ta ve «Ekibe ekle»de rol sorumlu hekimse sorulur; düğme cevaptır. Yeni sorumlu hekim
+  öncekinin satırını bitirir; terfi eden yardımcının kendi eski satırı da kapanır, yani bir hekimin kabulde
+  tek satırı kalır. Sorumlu hekimin satırı tek başına kaldırılamaz (409 `care_team_attending_required`;
+  ekran «yeni bir sorumlu hekim atayın» der): yeni sorumlu hekim atanınca ya da taburcuda biter. Taburcu
+  ekibin tamamını kapatır, kapanmış satırlar geçmişte kalır. İki hekim aynı anda «Sorumlu hekim ol» derse
+  ikisi de geçer, sırayla; sonuncu sorumlu hekim kalır. Bir hekimin kendi ikinci basışı ve ekipte zaten
+  olan birinin eklenmesi 409 `care_team_conflict` verir. Süresi dolmuş bir nöbetçi yeniden eklenebilir:
+  eski satırı kapanır, yenisi yazılır. Nakil yolları henüz kapalıdır (B1b); ekibin nakilde ne olacağı onun
+  işidir.
+- **Kendi hastası.** Ekipteki hekim hastasını panoda kendi birimlerinin dışında da görür; nöbetçi
+  yalnız penceresi içinde. Ekipten çıkan artık görmez. Açık bir pano bağlantısı yeni üyeyi yeniden
+  bağlanınca alır; diğer okumalar hemen. Ekip okuması, üyenin kendi satırı etkin olduğu sürece ona açıktır.
+  Birimi dışındaki bir üye hastayı panoda görür, ama o hastanın ekranında kutu çıkmaz (sonraki dilim).
+- **Sorumlu hemşire.** Sorumlu hemşire grubu `care_team.claim` yetkisini kaybetti: ekip hekimlerindir,
+  hemşirenin bu düğmesi her zaman reddedilirdi. Grubun açıklamasından da «bakım ekibi» çıktı. Göçten
+  önce giriş yapmış bir sorumlu hemşire, jetonu yenilenene dek yetkiyi jetonunda taşır; kutu ona düğme
+  sunmaz, isteği yine reddedilir.
+- **Denetim.** Her değişiklik denetim kaydına yazılır: kim, kimi, hangi yolla (imza, üstlenme, ekleme),
+  hangi rolle ve hangi satırı bitirerek; hastanın adı yazılmaz. «Denetim bütünlüğü» sayfası (3.13) bu üç
+  olayı adıyla gösterir ve «Tür» süzgecinde sunar: «Sorumlu hekim atandı», «Bakım ekibine eklendi»,
+  «Bakım ekibinden çıkış».
+- **Göç `0018`** (G3-02'nin `0017`'sinin ardından). Eski kısıt, bir üyenin aynı kabulden ikinci kez
+  çıkarılmasını engelliyordu. Yerine iki kısmi tekil dizin gelir: kabul başına üye için bir etkin satır,
+  kabul başına bir sorumlu hekim. Göç önce var olan satırları düzeltir:
+  - kapanmış kabullerin (taburcu, nakil) açık satırlarını kapatır;
+  - bir kabulde iki etkin sorumlu hekim satırı varsa en yenisini bırakır, ötekini kapatır;
+  - imzalı açık kabulün etkin sorumlu hekim satırı yoksa adı geçen sorumlu hekim için yazar (hekimin o
+    kabulde başka bir etkin satırı varsa o satır sorumlu hekim satırına dönüşür);
+  - sorumlu hemşire grubundan `care_team.claim`'i alır ve grubun açıklaması varsayılan metinse
+    «bakım ekibi»ni çıkarır; hastanenin kendi yazdığı açıklamaya dokunmaz.
+
+  B1b'nin (nakil) iki sütunu da bu göçle gelir: `admissions.transfer_reason` ve `transfer_note`; henüz
+  hiçbir yol onları yazmaz. **Geri alma** (`alembic downgrade 0017`) bu iki sütunu düşürür: B1b çıktıktan
+  sonra her nakil nedeni ve şifreli notu kaybolur. Bir üyenin aynı kabulde iki kapalı satırı varsa eski
+  kısıt geri kurulamaz ve geri alma bütünüyle durur. Göçün kapattığı ya da yazdığı satırlar geri
+  alınmaz. Önce api, sonra web çıkar; eski bir imaj `0018`'e karşı yalnız iki yolda 500 verir (eski
+  «üstlen» ve sorumlu hekim rolüyle ekleme), eski web ikisini de çağırmaz.
+- **Sunucuya çıkmadan önce.** İki salt okunur sayım yapılır (yalnız sayı; ad ve kimlik yok): imzalı açık
+  kabullerde adı geçen sorumlu hekimlerden hekim olmayanların sayısı (göç onlara da sorumlu hekim satırı
+  yazar) ve kapanmamış kabullerde etkin sorumlu hekim satırı olup hekim olmayanların sayısı (eski
+  «üstlen» yolu bir sorumlu hemşirenin hastayı almasına izin veriyordu). Sayı sıfır değilse çıkış durmaz:
+  kutu o satırları olduğu gibi gösterir; sonra bir hekim hastayı üstlenir ya da bir sorumlu hekim onu
+  sorumlu hekim rolüyle ekler, bu öncekinin satırını bitirir. Hangi hastanın önce bir hekime verileceğine
+  sahip karar verir. Sorgular planın «Deploy notes» bölümündedir.
+- **Bu dilimde olmayanlar:** süresi dolan nöbetçi satırlarının kendiliğinden kapanması (yeniden eklemek
+  ya da «Ekipten çıkar» gerekir), birimi dışındaki üye için hasta ekranında kutu, açık pano akışına yeni
+  üyeyi hemen bildirmek, ekibin nakilde taşınması (B1b).
+- **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md` ve
+  `docs/superpowers/plans/2026-11-09-g2b-b1c-bakim-ekibi.md`.
+
 ### 3.21 Alarm erteleme: «Ertele» (Grup 2 · B5b)
 
 - **Ne:** Alarmlar ekranında bir alarmı sınırlı bir süre için susturmak. Erteleme bir kişinin gerekçeli ve süreli
@@ -1974,6 +2071,108 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 - **Bu dilimde olmayanlar:** birime göre erteleme kuralları, kritik alarmı erteleme, hasta ekranından erteleme,
   erteleme raporu. Postgres'teki eski `escalation/` modülüne dokunulmadı.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b5b-ertele-design.md`.
+
+### 3.22 «Cihaz & Veri Akışı»: veri geliyor mu? (Grup 4 · G4-01)
+
+- **Ne:** Sol raydaki **«Cihazlar»** sayfası (eski adı «Monitörler»; Azerbaycanca «Cihazlar», Rusça
+  «Устройства» — telefonun dar rayında «Устр.» —, İngilizce «Devices») önce tek bir soruyu yanıtlar:
+  **veri geliyor mu?** Sayfanın başlığı «Cihaz & Veri Akışı». Adresi (`/devices`), simgesi ve yetkileri
+  değişmedi; rehberin önceki bölümleri (ör. 3.9, 3.11) ekranı eski adıyla anar, aynı ekrandır.
+- **Durum:** kodda (`feat/g4-cihaz-akis`); main'e ve hastane sunucusuna sahibin sözüyle çıkar.
+- **Kim görür:** cihaz yönetimi yetkisi (`devices.manage`: Biyomedikal Teknisyen, Üretici Destek;
+  Sistem Yöneticisi her yetkiyi taşır) ya da monitör–yatak eşleme yetkisi (`devices.map_beds`: Sorumlu
+  Hemşire) olan herkes. Biyomedikal Teknisyen ve Üretici Destek girişte bu sayfaya düşer. Yalnız panoyu
+  görme yetkisi (`board.view`) olan hekim ve hemşire ekranı görmez. Kapsamı birimleriyle sınırlı biri
+  (ör. sorumlu hemşire) yalnız kendi yataklarının monitörlerini görür, sayılar da yalnız onları sayar;
+  atanmamış cihazları yalnız cihaz yönetimi yetkisi ya da sınırsız kapsamı olan görür. Eşleme yetkisi
+  olup ne cihaz yönetimi ne pano yetkisi olan bir oturum ilk dört bölümü görmez: yerlerinde «Veri akışı
+  bölümleri cihaz yönetimi ya da pano görüntüleme yetkisi ister» notu durur; 5. bölümü ve eşleme
+  bölümünü görür. Sayfa hiçbir hasta bilgisi göstermez.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **«Veri geliyor mu?»** Tek satırlık hüküm, altında sayılar ve izleme satırı.
+     - Önce veri zinciri. Zincir kopuksa hüküm zincirindir: «Veri gelmiyor: aktarıcı 4 dk'dır sessiz»,
+       «Veri gelmiyor: toplayıcı bağlı değil», «Henüz hiç veri gelmedi»; zincirin durumu tanınmıyorsa
+       «Veri akışının durumu okunamıyor». O zaman bütün monitörler aynı nedenle susar; 2. ve 3. bölüm
+       onları tek tek arıza diye listelemez.
+     - Zincir çalışıyorsa hüküm monitörlerindir. En az bir monitör veri gönderiyorsa «Veri akıyor · 5/6
+       monitör veri gönderiyor»; hiçbiri göndermiyorsa «Zincir çalışıyor, ama hiçbir monitör veri
+       göndermiyor»; bu görünümde hiç monitör yoksa (hub hiç bildirmiyor ya da yetkinizin olduğu
+       yataklarda monitör yok) «Bu görünümde monitör yok»; monitör sayıları yanıtta okunamıyorsa «Zincir çalışıyor; monitör sayıları
+       okunamıyor».
+     - Sayılar yalnız ilk iki hükmün altında yazılır, yalnız sıfırdan büyükler, bu sırayla: sessiz,
+       eskiyen kanal (3. bölümde listelenenler), beklemede, veri bekliyor, atanmamış.
+     - En altta: «İzleme başlangıcı 10:42 · sistem yeniden başlayınca sıfırlanır».
+  2. **«Sessiz monitörler».** Sessiz monitörler (hub o monitörden 3 saniyedir paket almıyor) ve haber
+     alınamayanlar (Infinity sunucusu — hub — onu 15 saniyeden uzun süredir bildirmiyor; hub'ın
+     listesinden çıkan monitör böyledir); en uzun süredir susan en üstte, son verisinin zamanı
+     bilinmeyen en altta. Her satır: yatağın adı (yatağı yoksa cihazın adresi), «{n} dk'dır veri yok ·
+     son veri {SS:DD}». Hub'ın listesinden çıkan monitörün satırında «hub artık bildirmiyor» da yazar;
+     sunucu onun zamanlarını son bildiriminden sonra 24 saat tutar, sonra satır API yeniden başlayana
+     dek yalnız «son verinin zamanı bilinmiyor» der.
+  3. **«Eskiyen kanallar».** Veri gönderen bir monitörün en az bir dakikadır geçerli değer taşımayan
+     kanalları (ör. ART S, SpO₂), bir saat dolana dek. Her satır bir monitördür: yatağın adı (yatağı
+     yoksa adresi), ardından kanalları — «ART S · 4 dk'dır değer yok» —, en eskisi önce; en eski kanalı
+     olan monitör en üstte. 15 saniyeyi aşan her boşluğu şerit zaten gösterir; burada yalnız bir
+     dakikayı bulanlar listelenir. Bir saat dolunca kanal listeden çıkar: o kadar uzun susan bir kanal
+     büyük olasılıkla bilerek çıkarılmıştır (ör. arter kateteri alınınca ART). Bölüm böyle kanalları
+     sonda tek satırda sayar — «2 kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış
+     olabilir)» —; hiç yoksa ya da bölüm listeleyemiyorsa bu satır yazılmaz. Sunucu kanalı unutmaz;
+     yalnız liste onu artık göstermez. **NBP ne listelenir ne sayılır** (değeri yalnız manşon ölçünce
+     gelir). Yalnız veri gönderen monitörün kanalları listelenir: beklemedeki monitörün (açık ama
+     ölçmüyor) eskiyen kanalı olmaz, o 1. bölümde ayrıca sayılır; susan monitör 2. bölümdedir.
+  4. **«Veri zinciri».** Toplayıcı (bağlı mı, son sinyal ne kadar önce), aktarıcı (son gönderi,
+     gönderilen ve başarısız), Infinity sunucusunun aldığı ve eski ya da yinelenen paketler, nedenine
+     göre reddedilen değerler (bu sürümün tanımadığı nedenler «diğer» diye toplanır). Her satırın durum
+     sözcüğü vardır: normal, durmuş, dikkat (reddedilen değer varsa), bilinmiyor. Zincir kopukken de
+     görünür: hangi halkanın durduğunu bu bölüm söyler.
+  5. **«Tabloda var, hiç görülmedi».** Cihaz→yatak tablosunda olup hub'ın, sistem açıldığından beri hiç
+     bildirmediği monitörler: yatak ve cihaz adresiyle. Liste, aşağıdaki eşleme bölümünün okuduğu
+     listedir; sayfa onu bir kez ister. Bu bölüm şeritten bağımsızdır: şerit kapalıyken, henüz
+     okunmamışken ya da oturum şeridi göremezken de görünür. Liste yüklenirken «Eşleme listesi
+     yükleniyor…» der; «Tabloda olup hiç görülmeyen monitör yok» sözünü yalnız yanıt veren bir liste
+     söyler; liste okunamazsa ya da monitör hattı kapalıysa son satırlarını korur ve «Eşleme listesi
+     okunamadı; birazdan yeniden denenecek.» der.
+  6. Sonra, değişmeden: monitör–yatak eşleme bölümü (3.9) ve her monitörün şeridi. Şerit kapalıyken ya
+     da henüz hiç okunamamışken ilk dört bölüm görünmez.
+- **2. ve 3. bölüm listeleyemezse** nedenini söyler, asla «yok» demez:
+  - zincir kopuksa: «Veri zinciri kesik: monitörler tek tek listelenmiyor»;
+  - zincirin durumu ya da monitör sayıları bilinmiyorsa: «Veri akışının durumu bilinmiyor: monitörler
+    tek tek değerlendirilemiyor»;
+  - bu görünümde monitör yoksa: «Bu görünümde monitör olmadığı için değerlendirilemiyor»;
+  - yanıtta «ne zamandan beri» bilgisi yoksa (eski bir API sürümü ya da sunucunun okuyamadığı hafıza,
+    aşağıda): «Bu sürüm «ne zamandan beri» bilgisini vermiyor» — 2. bölüm sessiz monitörleri o zaman
+    yalnız durumlarıyla, zamansız listeler;
+  - yanıtın zamanı yoksa: «Yanıtın zamanı yok: süreler hesaplanamıyor».
+- **Süreler:** 1–3. bölümlerde tam dakika, aşağı yuvarlanarak («4 dk'dır» en az 4 dakika demektir); bir
+  dakikadan kısa süre «<1 dk'dır». Süreler sunucunun saatiyle sayılır ve pano güncelken iki okuma
+  arasında da ilerler; tarayıcının saati yanlış olsa da bir sessizliği kısaltamaz. Veri zincirinin
+  yaşları şeritteki gibi saniye ya da dakikayla yazılır. Saatler (SS:DD) bu tarayıcının yerel saatidir.
+- **Pano güncel değilse** (son başarılı okuma 15 saniyeden eskiyse ya da son okuma başarısızsa) sayfa
+  «her şey yolunda» demez:
+  - «Veri geliyor mu?» bölümü «Pano güncel değil · son yanıt 10:47» satırıyla başlar; son hüküm geçmiş
+    zamanla gelir («Son yanıtta veri akıyordu · 5/6 monitör veri gönderiyordu»).
+  - Listeler, sayılar ve süreler son yanıtın anında donar: son yanıtın söylemediği hiçbir kanal, sayı
+    ya da dakika eklenmez.
+  - Veri zincirinin satırları son değerlerini korur; durum sözcükleri «bilinmiyor» olur.
+  - Sessiz monitörler, eskiyen kanallar ve veri zinciri bölümlerinin altında «Pano güncel değil ·
+    10:47» yazar ve hiçbiri «yok» demez — boş bir listeyi yalnız güncel bir okuma söyleyebilir. 5. bölüm
+    kendi listesine bakar (yukarıda).
+- **Ekran okuyucu:** görünmeyen bir durum satırı yalnız hükmü — dakika ve sayı olmadan — ve pano güncel
+  değilse «Pano güncel değil»i taşır; ekran okuyucu böylece durum değişince konuşur, her dakika değil.
+- **Neyi hatırlar:** sunucu her monitörü ve her kanalını en son ne zaman gördüğünü yalnız bellekte
+  tutar. Veritabanına bir şey yazılmaz, göç (migration) yoktur, hub değişmedi. API yeniden başlarsa bu
+  hafıza sıfırlanır; sayfa bunu «İzleme başlangıcı …» satırıyla söyler. NBP için tutulan zaman,
+  değerinin son değiştiği andır: manşon o an ya da daha önce ölçmüştür (NBP yine hiçbir listeye
+  girmez). Sunucunun saati geri alınırsa (NTP düzeltmesi, sanal makinenin geri yüklenmesi), saatin
+  2 saniyeden fazla ilerisinde kalan zamanlar silinir ve bilinmiyor sayılır. Hafıza okunamazsa pano
+  G4-01'den önceki gibi yanıt verir: hemşirelerin şeridi etkilenmez, bu sayfa yukarıdaki «ne zamandan
+  beri» nedenini söyler. Değerlerin kendisi, 120 saniyelik unutma süresi ve gölge motorun okuduğu
+  hiçbir şey değişmedi.
+- **Bu dilimde olmayanlar:** cihaz envanteri ve bakım (tip, seri numarası, bakım, kalibrasyon, arıza,
+  pil), alarm kalitesi paneli, yeniden başlatmalar arası sessizlik geçmişi, sessiz monitör için
+  bildirim ya da ray rozeti, klinik panonun «besleme sağlığı» göstergesinin biyomedikale açılması, hub
+  ya da toplayıcı değişikliği.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-cihaz-veri-akisi-design.md`.
 
 ---
 

@@ -247,6 +247,11 @@ export const ADMISSION_CODE_KEYS = new Map([
   // G2-B3a — Doluluk (spec D5). `bed_reserved` opens the reserved-bed question in the Kabul form
   // (ReservedAsk.jsx); its sentence is said only where a screen shows the refusal itself.
   ["bed_reserved", "kabul.err.bedReserved"],
+
+  // G2-B1c — Bakım ekibi (spec §5.6): the care-team box and its dialog say them, in `ekip`.
+  ["care_team_conflict", "ekip.err.conflict"],
+  ["care_team_not_physician", "ekip.err.notPhysician"],
+  ["care_team_attending_required", "ekip.err.attendingRequired"],
 ]);
 
 /** G3-02 — Görevlerim (homunculus/api/tasks.py WORDS, spec D11): the queue's refusals by their code
@@ -312,6 +317,7 @@ export const INVALID_FIELD_KEYS = new Map([
   ["comorbidities_text", "kabul.invalid.comorbiditiesText"],
   ["consent", "kabul.invalid.consent"],
   ["admitting_unit_id", "kabul.invalid.unit"],
+  ["attending_physician_id", "kabul.invalid.attending"],   // G2-B1c, T1: a form naming a non-physician attending
   ["institution", "kabul.invalid.institution"],
   ["reported_by", "kabul.invalid.reportedBy"],
   ["discharge_at", "kabul.invalid.dischargeAt"],
@@ -327,6 +333,9 @@ export const INVALID_FIELD_KEYS = new Map([
   ["incoming_user_id", "devir.invalid.receiver"],
   // G2-B3b (D5): the legacy plain-text note, which «Vardiya devri» never sends (it sends `note`).
   ["narrative_note", NOT_ON_SCREEN],
+  // G2-B1c: the on-call window (admission/router.py `_check_window`).
+  ["window_start", "ekip.invalid.windowStart"],
+  ["window_end", "ekip.invalid.windowEnd"],
   ["icd10_codes", NOT_ON_SCREEN],
   ["active_comorbidities", NOT_ON_SCREEN],
   ["active_medications_on_admission", NOT_ON_SCREEN],

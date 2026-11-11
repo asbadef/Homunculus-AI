@@ -26,6 +26,7 @@ def test_a_failing_store_is_logged_with_the_allow_listed_ids_and_nothing_else(ca
         _request(_StoreDown()), "sentetik-hastane", "admission.admit", patient_id="H9900001",
         payload={"kind": "bed", "id": "x-1", "admission_id": "a-1", "bed_id": "b-1",
                  "unit_id": "u-1", "room_id": "r-1", "site_id": "s-1",
+                 "member_id": "m-1",      # G2-B1c (X14): the care-team rows (`care_team.*`)
                  # Keys no allow-list names: an id that identifies a person, a name, a decision.
                  "national_id": "AZE-SENTETIK-1234567", "display_name": "Sentetik Ad",
                  "disposition": "home", "actor": "nurse@sentetik.example.com"})
@@ -34,7 +35,7 @@ def test_a_failing_store_is_logged_with_the_allow_listed_ids_and_nothing_else(ca
     message = logged.getMessage()
     for shown in ("admission.admit", "sentetik-hastane", "H9900001", "kind=bed", "id=x-1",
                   "admission_id=a-1", "bed_id=b-1", "unit_id=u-1", "room_id=r-1", "site_id=s-1",
-                  "nurse@sentetik.example.com", "RuntimeError"):
+                  "member_id=m-1", "nurse@sentetik.example.com", "RuntimeError"):
         assert shown in message, (shown, message)
     for hidden in ("national_id", "AZE-SENTETIK", "Sentetik Ad", "disposition", "home",
                    "audit store down"):

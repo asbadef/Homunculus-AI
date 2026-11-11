@@ -6,6 +6,9 @@ time as a 403 nobody can explain.
 """
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from homunculus.auth.permissions import (
@@ -73,7 +76,7 @@ def test_the_legacy_rights_are_preserved_group_by_group():
     assert "care_team.claim" not in by_slug["unit_physician"]
     assert "care_team.claim" not in by_slug["physician"]
     assert "care_team.claim" not in by_slug["nurse"]
-    assert "care_team.claim" in by_slug["charge_nurse"]
+    assert "care_team.claim" not in by_slug["charge_nurse"]     # G2-B1c (D7): it could only fail (T1)
     assert "admissions.sign_off" in by_slug["unit_physician"]
     assert "admissions.sign_off" not in by_slug["physician"]
     assert "shifts.manage" in by_slug["charge_nurse"] and "shifts.manage" not in by_slug["nurse"]
@@ -127,7 +130,7 @@ SPEC_GROUPS = {
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
-                                    "care_team.claim", "handover.sign", "shifts.manage",
+                                    "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
                                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
@@ -192,6 +195,32 @@ def test_a_cleaned_bed_is_released_by_the_wards_nurses_and_no_one_else_by_defaul
 def test_the_charge_nurse_and_only_she_among_the_ward_groups_manages_bed_states():
     holders = {g["slug"] for g in DEFAULT_GROUPS if "beds.manage_state" in g["permissions"]}
     assert holders == {"hospital_admin", "charge_nurse"}
+
+
+def test_the_care_team_is_claimed_and_assigned_by_physicians_alone_by_default():
+    """G2-B1c (D7, T1): the care team is physicians'. A charge nurse's claim could only be refused
+    (`care_team_not_physician`), so she no longer holds the key, and her group no longer says
+    «bakım ekibi». Assigning stays the attending's ("Ünite Hekimi … bakım ekibi atamaz"); the
+    system group holds every key by rule."""
+    by_slug = {g["slug"]: g for g in DEFAULT_GROUPS}
+    claim = {slug for slug, g in by_slug.items() if "care_team.claim" in g["permissions"]}
+    assign = {slug for slug, g in by_slug.items() if "care_team.assign" in g["permissions"]}
+    assert claim == assign == {"hospital_admin", "attending"}
+    assert "bakım ekibi" not in by_slug["charge_nurse"]["description"]
+
+
+def test_the_charge_nurse_text_a_new_tenant_gets_is_the_text_migration_0018_leaves():
+    """G2-B1c (X3): migration 0018 rewrites the default description of the tenants seeded before
+    it, and `DEFAULT_GROUPS` seeds the new ones. The two are one text, or a migrated hospital and
+    a new one would show different words for the same group. No database: the migration file is
+    loaded by its path (its name starts with a digit, so it is not importable)."""
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0018_care_team_transfer.py"
+    spec = importlib.util.spec_from_file_location("migration_0018_care_team_transfer", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    charge = next(g for g in DEFAULT_GROUPS if g["slug"] == "charge_nurse")
+    assert charge["description"] == migration.CHARGE_AFTER
+    assert charge["description"] != migration.CHARGE_BEFORE
 
 
 def test_legacy_pharmacist_and_biomedical_convert():

@@ -379,12 +379,12 @@ describe("StructureTab", () => {
 
   // Item 3 (A-4): `kabul.err.bedHasMonitor` has no {bed}, so the toast's own subject — the bed as the
   // tab names it everywhere — says which bed it means. No new code: the pin of a behaviour Task 16 mapped.
-  it("says a bed with a monitor is unbound on «Monitorlar» first, named after the bed", async () => {
+  it("says a bed with a monitor is unbound on «Cihazlar» first, named after the bed", async () => {
     const { api } = await mountKabul(<StructureTab />, { perms: ADMIN,
       setup: (a) => a.patchBed.mockRejectedValue(refusal(409, "A monitor is bound to this bed.", { apiCode: "bed_has_monitor" })) });
     await press("Bağla: 5 · Otaq 2 · Reanimasiya");
     expect(api.patchBed).toHaveBeenCalledWith(BED(5), { is_active: false });
-    expect(toasts().getAllByText("5 · Otaq 2 · Reanimasiya: Bu çarpayıya monitor qoşulub — əvvəlcə «Monitorlar» ekranında bağlantını kəsin.").length)
+    expect(toasts().getAllByText("5 · Otaq 2 · Reanimasiya: Bu çarpayıya monitor qoşulub — əvvəlcə «Cihazlar» ekranında bağlantını kəsin.").length)
       .toBeGreaterThan(0);
     expect(document.body.textContent).not.toContain("A monitor is bound to this bed.");
     expect(document.body.textContent).not.toMatch(UUID_TEXT);

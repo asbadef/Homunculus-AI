@@ -171,6 +171,24 @@ const STRIP = strip({
   unassigned: [unassigned("192.0.2.28"), unassigned("192.0.2.34", "not_in_table", [param("pls", 70)], { status: "streaming" })],
 });
 
+/** G4-01: a strip with the device page's ledger (api/infinity_shadow.py board_view): a silent monitor, a vanished
+ *  one, and on a streaming one a channel with no value for four minutes and one for an hour and a half. STRIP carries no ledger, so the sweep
+ *  meets only the sections' empty words; this is where the rest are drawn. Synthetic devices only. */
+const minutesBefore = (n) => new Date(NOW - n * 60_000).toISOString();
+const FEED_STRIP = {
+  ...strip({
+    beds: [
+      bed("REA-01 · 1", [param("hr", 96)], { last_packet_at: minutesBefore(0),
+        channels_seen: [{ parameter: "hr", last_value_at: minutesBefore(0) }, { parameter: "art_systolic", last_value_at: minutesBefore(4) },
+          { parameter: "art_mean", last_value_at: minutesBefore(90) }] }),
+      bed("REA-01 · 5", [], { status: "silent", last_packet_at: minutesBefore(7), silent_for_s: 420, channels_seen: [] }),
+      bed("REA-01 · 6", [], { status: "unknown", last_packet_at: minutesBefore(3), silent_for_s: 180, channels_seen: [] }),
+    ],
+  }),
+  watching_since: minutesBefore(120), stale_list_after_s: 60,
+  vanished: [{ source: "192.0.2.6", bed_label: "REA-01 · 6", last_packet_at: minutesBefore(3), last_report_at: minutesBefore(3) }],
+};
+
 /** The trend charts (Group 2 · slice 1), reaching every card state: a red frame with the
  *  own-normal pill and a delta, a single reading, an amber frame, the two-series pressure card, a
  *  thinned channel and a lactate never measured; and both kinds of mark for the dialog. */
@@ -240,7 +258,7 @@ const HANDOVERS = {
 const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", name: "Murad Sentetik" }];
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
-async function openAt(path) {
+async function openAt(path, extra) {
   window.location.hash = `#${path}`;
   const mounted = await mount(<ThemeProvider><Shell resume={hashPath(`#${path}`)} /></ThemeProvider>, {
     access: token({ perms: PERMS }),
@@ -284,6 +302,7 @@ async function openAt(path) {
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
       api.handoverColleagues.mockResolvedValue(COLLEAGUES);
+      extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -437,6 +456,28 @@ describe("no screen shows a reader a translation key", () => {
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });
+  });
+
+  // G4-01 — «Cihaz & Veri Akışı»: the device page's sections on a ward with a silent, a vanished and a stale-channel
+  // monitor, and a table row whose monitor was never seen — states the sweep's STRIP and MAPPING do not reach.
+  it("the device page's feed keys resolve on every section", async () => {
+    const mounted = await openAt("/devices", (api) => {
+      api.shadowBoard.mockResolvedValue(FEED_STRIP);
+      api.deviceBeds.mockResolvedValue(mappingList([...MAPPING.devices,
+        device("192.0.2.21", { row_id: 6, seen: false, status: null, last_seen_at: null, device_bed_label: "BED09" })]));
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Məlumat gəlirmi?" })).toBeInTheDocument();          // cihaz.verdictTitle
+    expect(screen.getByText(/^Məlumat axır · \d+\/\d+ monitordan məlumat gəlir$/)).toBeInTheDocument();         // cihaz.verdictFlowing
+    expect(screen.getByText(/^İzləmə başlanğıcı \d\d:\d\d · /)).toBeInTheDocument();                           // cihaz.watchingSince
+    const silent = screen.getByRole("region", { name: "Səssiz monitorlar" });
+    expect(silent).toHaveTextContent("dəqiqədir məlumat yoxdur · son məlumat");                                // cihaz.silentFor, forMinutes
+    expect(silent).toHaveTextContent("hub artıq bildirmir");                                                   // cihaz.vanished
+    expect(screen.getByRole("region", { name: "Köhnələn kanallar" })).toHaveTextContent("dəqiqədir dəyər yoxdur"); // cihaz.staleChannel
+    expect(screen.getByRole("region", { name: "Köhnələn kanallar" })).toHaveTextContent("çıxarılmış ola bilər"); // cihaz.staleLongCount
+    expect(screen.getByRole("region", { name: "Məlumat zənciri" })).toHaveTextContent("Ötürücü · son göndəriş"); // cihaz.chainForwarder
+    expect(screen.getByRole("region", { name: "Cədvəldə var, heç görünməyib" })).toHaveTextContent("192.0.2.21 (BED09)"); // cihaz.neverTitle
+    expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); mounted.shadow.clear(); });
   });
 
   // G2-B4 — the audit page: its verdict appears only on the button (owner D1), so the sweep above never saw it.

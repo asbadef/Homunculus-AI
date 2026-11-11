@@ -11,10 +11,10 @@
 // The values are UNVALIDATED research decoding, labelled so on every strip (MonitorStrip.jsx), and
 // feed nothing. A count is printed only from a read the screen can vouch for (the last poll
 // answered); an unreadable or not-yet-read strip says so in its own words.
-import React from "react";
+import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { SHADOW_PHASE } from "../../data/shadowStore.js";
+import { SHADOW_PHASE, mayReadShadow } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf, reasonKey } from "../common/monitor.js";
@@ -24,6 +24,8 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { waveFeedFor } from "../../session/feeds.js";
 import { canSeeMapping, verifiedText } from "./deviceMap.js";
 import { MappingSection } from "./MappingSection.jsx";
+// G4-01: «veri geliyor mu?» first, above the editor and the strips (spec 2026-11-11 D5)
+import { FeedSections } from "./FeedSections.jsx";
 
 /** A device with no patient in it: whatever the answer carried about a link is not drawn here. */
 const withoutPatient = (card) => ({ ...card, patient_id: null, link: "hidden", link_reason: null });
@@ -100,6 +102,7 @@ export function DevicesScreen() {
   const { user, store: session } = useSession();
   const waveFeed = waveFeedFor(session);       // I1: the waves get this one GET, never the session
   const shadow = useShadow();
+  const [mapping, setMapping] = useState(null);    // G4-01: the editor's list, for «Tabloda var, hiç görülmedi»
   const { data, phase } = shadow;
   let body = null;
   if (stripOn(data)) body = <Strip shadow={shadow} feed={waveFeed} />;
@@ -110,10 +113,11 @@ export function DevicesScreen() {
   return (
     <div className="flex min-h-0 max-w-[1200px] flex-col gap-3">
       <div>
-        <h1 className="m-0 font-display text-23 font-bold">{t("nav.devices")}</h1>
+        <h1 className="m-0 font-display text-23 font-bold">{t("cihaz.title")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
-      {canSeeMapping(user?.perms) ? <MappingSection /> : null}
+      <FeedSections shadow={shadow} mapping={mapping} mayRead={mayReadShadow(user?.perms)} />
+      {canSeeMapping(user?.perms) ? <MappingSection onList={setMapping} /> : null}
       {body}
     </div>
   );

@@ -71,8 +71,15 @@ import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 import { LabelReprint } from "../kabul/label/LabelReprint.jsx"; // G2-B1d: the protocol label, again
+import { CareTeamBox } from "./careTeam/CareTeamBox.jsx"; // G2-B1c: who is responsible for the patient
+import { OPEN } from "./careTeam/careTeam.js"; // G2-B1c: the admissions the sign-off, the label and the team look among
+import { useAdmissions } from "../kabul/useAdmissions.js"; // G2-B1c: the patient screen's one read of them
+import { boardKeyOf } from "../kabul/boardKey.js"; // G2-B1d: the card key of an admission row
 
 const TICK_MS = 30_000;
+/** The patient screen's one read of the open admissions is made again this often (as the strip's and the box's
+ *  own reads were). */
+const ADMISSIONS_EVERY_MS = 60_000;
 
 /** One input of the shadow engine (Aşama B): the bedside monitor's UNVALIDATED number as the rules read
  *  it, in the shape of the engine's own cards and marked as the monitor's. Three things keep it from
@@ -284,6 +291,30 @@ function Sepsis({ sepsis, canChart, onChart, pending }) {
   );
 }
 
+/** The three things the patient's OPEN ADMISSION decides — the sign-off strip (while it is a DRAFT), the label
+ *  reprint (when it has a protocol) and the care team's box — over ONE read of the open admissions (G2-B1c,
+ *  Task 16 review). Each of them used to read the list for itself: two reads at open (three with
+ *  `admissions.admit`) and as many a minute after, each of up to 500 rows with decrypted fields that none of
+ *  them shows. The row of this card is matched once (`boardKeyOf`) and handed down. The sign-off hands the
+ *  read back for a re-read (`onSigned`), so the box beside it turns from the DRAFT's line to the team at once.
+ *  A session without `admissions.view` reads nothing, as every one of them did alone.
+ *
+ *  Rendered as a fragment: the three stand in the screen's column, one gap apart, as before. Keyed by the
+ *  patient (below): the list is read again for the next patient, and a write in flight stays with its own. */
+function PatientAdmission({ patientId, nowMs }) {
+  const { rows, phase, reload } = useAdmissions(OPEN, { every: ADMISSIONS_EVERY_MS });
+  const admission = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
+  return (
+    <>
+      <SignOffStrip patientId={patientId} admission={admission} onSigned={reload} />{/* G2-B1a (screens/kabul) */}
+      <LabelReprint patientId={patientId} admission={admission} phase={phase} />{/* G2-B1d (spec §6): an open admission's protocol label, again */}
+      {/* G2-B1c (spec §4): the care team. Like the sign-off strip, it writes the admission's workflow, not the
+          clinical record, so `patient.onlyWrite` does not count it. */}
+      <CareTeamBox patientId={patientId} nowMs={nowMs} admission={admission} phase={phase} />
+    </>
+  );
+}
+
 /** `params.id` comes from the address (shell/Shell.jsx). The patient is read from the board this
  *  session already has: there is no per-patient endpoint, and `/patients` is already filtered by
  *  the engine's scope — so a card this board does not hold is one this session may not see OR one
@@ -409,8 +440,7 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} nowMs={nowMs} />
             </div>
           </header>
-          <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
-          <LabelReprint key={`label-${id}`} patientId={id} />{/* G2-B1d (spec §6): an open admission's protocol label, again */}
+          <PatientAdmission key={`admission-${id}`} patientId={id} nowMs={nowMs} />{/* G2-B1a/B1d/B1c: the sign-off, the label, the care team; keyed: a sign in flight stays with its patient */}
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without

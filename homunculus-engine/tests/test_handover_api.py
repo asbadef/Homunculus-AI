@@ -30,6 +30,7 @@ from homunculus.tenant.models import Site, Tenant, Unit, UnitType
 from tests.conftest import requires_db
 from tests.kabul_world import BOARD, SLUG, build_ward, ward_client
 from tests.signed_in import add_user, bearer
+from tests.test_care_team_service import add_physician
 
 pytestmark = [requires_db]
 
@@ -300,7 +301,9 @@ async def test_a_closed_or_draft_admission_is_not_handed_over(ward, db_session):
 
 async def test_a_patient_outside_the_callers_units_is_out_of_scope(ward, db_session):
     w, client, _ = ward
-    neo = await signed(w, client, "N1", "neo", who="nurse_b", signer="admin")
+    # G2-B1c (T1): the signer becomes the attending, and the administrator is no physician.
+    await add_physician(db_session, w, "neodoc", group="attending", unit="neo")
+    neo = await signed(w, client, "N1", "neo", who="nurse_b", signer="neodoc")
     r = await client.post("/handovers", json=body(w, neo, unit="neo"), headers=w.auth["nurse"])
     refused(r, 403, "out_of_scope")
     assert (await db_session.execute(select(func.count(Handover.id)))).scalar_one() == 0

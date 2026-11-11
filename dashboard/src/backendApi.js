@@ -1026,6 +1026,22 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     admissionLabel(id, reprint = false) {
       return authed(`/admissions/${seg(id)}/label`, { method: "POST", body: { reprint: Boolean(reprint) } });
     },
+    // G2-B1c — Bakım ekibi (admission/router.py). People are named by `full_name` (staff, never a
+    // patient). Refusals carry `err.apiCode`: `care_team_conflict`, `care_team_not_physician`,
+    // `care_team_attending_required`, `invalid_transition`, `out_of_scope`, `field_invalid:window_*`.
+    /** [{id, user_id, full_name, role, window_start, window_end, granted_by_name, is_active, in_force,
+     *  created_at, closed_at, …}] — the active rows first, each group newest first. */
+    careTeam(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team`); },
+    /** [{user_id, full_name}] — the tenant's physicians the picker offers (spec D8). */
+    careTeamCandidates(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team/candidates`); },
+    claimAttending(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team/claim`, { method: "POST" }); },
+    /** {user_id, role, window_start?, window_end?} — the window for an on-call physician only. */
+    addCareTeamMember(admissionId, body) {
+      return authed(`/admissions/${seg(admissionId)}/care-team`, { method: "POST", body });
+    },
+    endCareTeamMember(admissionId, memberId) {
+      return authed(`/admissions/${seg(admissionId)}/care-team/${seg(memberId)}/end`, { method: "POST" });
+    },
     // The administrator's structure tab: add under a parent, rename / close / reopen.
     createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },
     createUnit(siteId, body) { return authed(`/tenant/sites/${seg(siteId)}/units`, { method: "POST", body }); },

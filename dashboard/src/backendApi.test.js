@@ -1758,6 +1758,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 3).body).toEqual({ reason: "FAULT", note: null });
   });
 
+  it("reads, claims, adds to and ends the care team by its own routes (G2-B1c)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.careTeam("a 1");
+    await api.careTeamCandidates("a-1");
+    await api.claimAttending("a-1");
+    await api.addCareTeamMember("a-1", { user_id: "u-1", role: "ASSOCIATE_PHYSICIAN" });
+    await api.endCareTeamMember("a-1", "m/1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/admissions/a%201/care-team"], ["GET", "/admissions/a-1/care-team/candidates"],
+      ["POST", "/admissions/a-1/care-team/claim"], ["POST", "/admissions/a-1/care-team"],
+      ["POST", "/admissions/a-1/care-team/m%2F1/end"],
+    ]);
+    expect(sent(fetchMock, 3).body).toEqual({ user_id: "u-1", role: "ASSOCIATE_PHYSICIAN" });
+  });
+
   it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     const api = signedIn(fetchMock);

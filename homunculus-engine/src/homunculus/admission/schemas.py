@@ -21,8 +21,8 @@ from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo, field_validator,
-    model_validator,
+    AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, ValidationInfo,
+    field_validator, model_validator,
 )
 
 from homunculus.admission.errors import field_invalid
@@ -345,24 +345,43 @@ class DischargeConfirmResponse(AdmissionResponse):
 # Care team — §4.2–4.3
 # ---------------------------------------------------------------------------
 class CareTeamAdd(BaseModel):
+    """POST …/care-team (G2-B1c, §5.2): a physician of the tenant and her role. An on-call row
+    needs a window (the route's rules: its end after its start, in the future, at most 48 hours
+    after it); any other role takes none. The two ends carry their offset (X9): a naive time is a
+    422, never compared with the server's clock. An unknown field is refused, as B1a's forms are."""
+    model_config = ConfigDict(extra="forbid")
+
     user_id: uuid.UUID
     role: CareTeamRole
-    window_start: datetime | None = None   # required for ONCALL_PHYSICIAN
-    window_end: datetime | None = None
+    window_start: AwareDatetime | None = None   # required for ONCALL_PHYSICIAN
+    window_end: AwareDatetime | None = None
 
 
 class CareTeamMemberResponse(BaseModel):
+    """One care-team row (G2-B1c, §5.2): who, as what, from and until when, who added her, and
+    when it ended. People are named by `users.full_name`: staff, never a patient. `in_force`:
+    active and, for an on-call row, inside its window; this is what the board's own-patient rule
+    grants on."""
     id: uuid.UUID
     admission_id: uuid.UUID
     user_id: uuid.UUID
+    full_name: str
     role: CareTeamRole
     granted_by_id: uuid.UUID | None
+    granted_by_name: str | None
     window_start: datetime | None
     window_end: datetime | None
     is_active: bool
+    in_force: bool
     created_at: datetime
+    closed_at: datetime | None
 
-    model_config = {"from_attributes": True}
+
+class CareTeamCandidate(BaseModel):
+    """GET …/care-team/candidates (G2-B1c, D8): a physician the picker offers, by her id and her
+    name and nothing else."""
+    user_id: uuid.UUID
+    full_name: str
 
 
 # ---------------------------------------------------------------------------

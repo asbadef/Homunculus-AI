@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -151,6 +151,16 @@ DISPLAY_MAX_AGE_S, FORGET_AFTER_S, SILENT_AFTER_S = 15.0, 120.0, 15.0
 MIN_POST_SPACING_S = 1.0
 LAG_BUCKETS_MS = (10, 50, 100, 250, 500, 1000, 3000)      # the 0a histogram's edges
 REJECTIONS = ("too_old", "clock", "unit", "range", "unknown_parameter", "duplicate")
+# G4-01 (spec 2026-11-11 D2, D4 and its amendment): the last-seen ledger's bounds. A device the hub stopped
+# reporting is kept LEDGER_KEEP_S after its last report. A channel is stale once its last valid value is
+# DISPLAY_MAX_AGE_S old — the strip already shows every such gap — and the device page LISTS it from
+# STALE_LIST_AFTER_S until STALE_LIST_UNTIL_S: silent longer, it has more likely been removed on purpose (an
+# arterial line taken out) than lost, and the page counts it on one line instead. The ledger keeps it either
+# way. The page reads both numbers from the board (`stale_list_after_s`, `stale_list_until_s`), so they are
+# said here once.
+LEDGER_KEEP_S = 24 * 3600.0
+STALE_LIST_AFTER_S = 60.0
+STALE_LIST_UNTIL_S = 3600.0
 _LIMIT = 10**15
 _TOP = frozenset({"schema", "sent_at", "forwarder", "hub", "devices"})
 _FORWARDER = frozenset({"interval_s", "sent", "failed", "decoder"})
@@ -177,6 +187,9 @@ class DeviceView:
     status_age_s: float
     packet_age_ms: float | None
     parameters: tuple[dict, ...]  # in PARAMETERS order; NBP's three folded into `nbp`, last
+    # G4-01: per board channel, when the reading held now carried a valid value (`ShadowStore._valid_at`).
+    # For the last-seen ledger only: `board_view` never copies it, the shadow engine never reads it.
+    valid_at: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass
@@ -367,7 +380,7 @@ class ShadowStore:
             if held.readings and (self._nbp_lane or any(name in held.readings for name in NBP_PARTS)):
                 parameters += (self._nbp_view(held.readings, now),)
             views[source] = DeviceView(source, held.group, PORT, status, round(max(0.0, age), 1),
-                                       held.packet_age_ms, parameters)
+                                       held.packet_age_ms, parameters, self._valid_at(held.readings))
         return views
 
     def feed(self, now: float | None = None) -> dict:
@@ -414,6 +427,23 @@ class ShadowStore:
         if previous is not None and captured <= previous.captured_at:
             return "duplicate"
         return None
+
+    @staticmethod
+    def _valid_at(readings: Mapping[str, _Held]) -> tuple[tuple[str, float], ...]:
+        """G4-01: per board channel (in CHANNELS' order), when the reading held now carried a valid
+        value — what the last-seen ledger notes, never what the strip shows. A valid reading counts as
+        soon as the store takes it, so one the collector's clock put up to ARRIVAL_MAX_AHEAD_S ahead
+        counts at once, although `_view` withholds it as `old` until the API's clock reaches it. NBP is
+        one channel, on `_nbp_view`'s own condition — three held parts, one change time, all valid — at
+        that change time (the hub's `changed_at`, an upper bound of the cuff's measurement), and so
+        also once the two hours withhold it; untimed (NBP-2), at its packet's time, the only one it has."""
+        out = tuple((name, readings[name].captured_at) for name in PARAMETERS
+                    if name not in NBP_PARTS and name in readings and readings[name].valid)
+        parts = [readings.get(name) for name in NBP_PARTS]
+        if all(part is not None and part.valid for part in parts) and len({part.changed_at for part in parts}) == 1:
+            changed = parts[0].changed_at
+            out += ((NBP, min(part.captured_at for part in parts) if changed is None else changed),)
+        return out
 
     @staticmethod
     def _view(name: str, held: _Held, now: float) -> dict:
@@ -495,6 +525,129 @@ class ShadowStore:
         self._lag[2 + slot] += 1
 
 
+# --- G4-01: the last-seen ledger -----------------------------------------------------------------
+
+CHANNELS = tuple(name for name in PARAMETERS if name not in NBP_PARTS) + (NBP,)   # the board's own, in its order
+
+
+def reported_sources(body: Mapping) -> list[str]:
+    """The devices an ACCEPTED body reported, by address. Only after `ShadowStore.ingest` took the
+    body: it has been validated whole, so every entry has a unicast `source`."""
+    return [unicast_ipv4(item["source"]) for item in body["devices"]]
+
+
+@dataclass
+class _Seen:
+    first_seen_at: float                      # wall clock
+    last_report_at: float                     # wall clock
+    last_report_tick: float                   # monotonic: LEDGER_KEEP_S is measured on it
+    last_packet_at: float | None = None       # wall clock: the report's time less the hub's packet age
+    channels: dict[str, float] = field(default_factory=dict)   # channel -> when it last carried a valid value
+
+
+@dataclass(frozen=True)
+class SeenView:
+    """One device as the ledger holds it. Wall-clock epochs; `channels` in the board's order (CHANNELS).
+
+    A channel's time (the board's `channels_seen[].last_value_at`) is when it last carried a valid
+    value: the reading's capture time — for `nbp` the time the hub saw its value change, an upper
+    bound of the cuff's measurement, and for an untimed NBP (NBP-2) its packet's time, the only one
+    it has (`ShadowStore._valid_at`)."""
+    first_seen_at: float
+    last_report_at: float
+    last_packet_at: float | None
+    channels: tuple[tuple[str, float], ...]
+    reported: bool                            # listed in the latest accepted body
+
+
+@dataclass(frozen=True)
+class LedgerView:
+    started_at: float                         # the board's `watching_since`: when this API began watching
+    devices: Mapping[str, SeenView]
+
+
+class FeedLedger:
+    """G4-01 (spec 2026-11-11 D2): when the lane last saw each monitor and each of its channels.
+
+    Memory only, beside `ShadowStore` and fed from it: after each accepted body the POST route hands
+    `observe` what the store now shows (`ShadowStore.devices()`) and the addresses the body listed
+    (`reported_sources`). So it remembers only what the store took: a device's last report, its
+    last packet (the report's time less the hub's `packet_age_ms`; a report with no age — a device
+    the hub has had no packet from — leaves it where it was), and per channel the time of the last
+    valid reading the store held (`DeviceView.valid_at`: one the collector's clock put up to
+    ARRIVAL_MAX_AHEAD_S ahead included, which the strip withholds that long; NBP at its change
+    time — SeenView), kept after the store forgets the reading at FORGET_AFTER_S. Bounds: a device
+    is dropped LEDGER_KEEP_S after its last report, and with the store when the store lets it go —
+    it holds only devices the store's latest views list, so never more than MAX_DEVICES, by the
+    store's own bound; only the board's own channels (CHANNELS). When the hub starts reporting more
+    than MAX_DEVICES sources, the store lets the least recently reported go first, the vanished
+    monitors among them, and the ledger drops them with it.
+
+    A wall clock stepped back (an NTP step, a VM restore) leaves the times taken before it in the
+    future. As the store forgets a reading further ahead than any arrival may be, the ledger drops a
+    channel time or a last packet more than ARRIVAL_MAX_AHEAD_S ahead (`_expire`): kept, the newest-
+    wins rule would freeze a live channel and hide a stopped one until the clock caught up. Dropped,
+    it reads as unknown — which it is, on the new clock. `first_seen_at` and `last_report_at` keep
+    the time the clock said then.
+
+    The store, its readings and everything the shadow engine reads are untouched; nothing here is
+    written anywhere. A restart empties it, and `started_at` says since when it has watched. Two
+    clocks, as the store's: the wall clock for the times the board prints, the monotonic one for how
+    long ago a device was last reported. A test that injects only the wall clock gets it for both."""
+
+    def __init__(self, clock: Callable[[], float] = time.time, monotonic: Callable[[], float] | None = None):
+        self._clock = clock
+        self._monotonic = monotonic or (time.monotonic if clock is time.time else clock)
+        self._started_at = clock()
+        self._seen: dict[str, _Seen] = {}
+        self._reported: frozenset[str] = frozenset()
+
+    def observe(self, views: Mapping[str, DeviceView], reported: Iterable[str]) -> None:
+        """Note one accepted body: `views` the store's devices right after it, `reported` its addresses."""
+        now, tick = self._clock(), self._monotonic()
+        for source in [s for s in self._seen if s not in views]:
+            del self._seen[source]                    # the store let it go (MAX_DEVICES): so does the ledger
+        self._expire(now)
+        listed = frozenset(source for source in reported if source in views)
+        for source in listed:
+            view = views[source]
+            held = self._seen.get(source)
+            if held is None:
+                held = self._seen[source] = _Seen(now, now, tick)
+            held.last_report_at, held.last_report_tick = now, tick
+            if view.packet_age_ms is not None:
+                held.last_packet_at = now - view.packet_age_ms / 1000.0
+            for name, at in view.valid_at:
+                if name in CHANNELS and at > held.channels.get(name, float("-inf")):
+                    held.channels[name] = at
+        self._reported = listed
+        self._prune(tick)
+
+    def view(self) -> LedgerView:
+        """What the ledger holds now, once what is past LEDGER_KEEP_S, or in the future, is dropped."""
+        self._expire(self._clock())
+        self._prune(self._monotonic())
+        return LedgerView(self._started_at, {
+            source: SeenView(held.first_seen_at, held.last_report_at, held.last_packet_at,
+                             tuple((name, held.channels[name]) for name in CHANNELS if name in held.channels),
+                             source in self._reported)
+            for source, held in self._seen.items()})
+
+    def _expire(self, now: float) -> None:
+        """Drop what a wall clock stepped back has left further ahead than any arrival may be (the
+        store's `_expire` rule, ARRIVAL_MAX_AHEAD_S): a last packet, a channel's time."""
+        limit = now + ARRIVAL_MAX_AHEAD_S
+        for held in self._seen.values():
+            if held.last_packet_at is not None and held.last_packet_at > limit:
+                held.last_packet_at = None
+            for name in [name for name, at in held.channels.items() if at > limit]:
+                del held.channels[name]
+
+    def _prune(self, tick: float) -> None:
+        for source in [s for s, held in self._seen.items() if tick - held.last_report_tick > LEDGER_KEEP_S]:
+            del self._seen[source]
+
+
 # --- the board's answer --------------------------------------------------------------------------
 
 COUNTED_STATUSES = ("streaming", "standby", "silent", "waiting", "unsupported", "unknown")
@@ -504,11 +657,43 @@ def _address_key(source: str) -> tuple[int, ...]:
     return tuple(int(part) for part in source.split("."))
 
 
+QUIET_STATUSES = ("silent", "unknown")
+
+
+def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> tuple[list[dict], dict]:
+    """G4-01 (D3): the ledger's fields for each card this caller is shown, in `shown`'s order, and
+    the body's four new fields. Built whole before any card is touched (`board_view` lays them on
+    only when this returns), so a failure leaves no card half-worded.
+
+    `vanished` is cut from those same cards, so it reaches exactly what they reach: a bed card only
+    through the approved table's row valid now and the caller's scope (`visible`), an unassigned one
+    only with `show_unassigned`. A vanished monitor is in the ledger, absent from the latest accepted
+    body, and unreported long enough to be `unknown` — the store keeps its card, so it is that card
+    worded differently. An `unknown` monitor the latest body still listed is the forwarder's silence,
+    not its own. `silent_for_s` counts from `last_packet_at` on the board's own clock. Nothing here
+    names a patient."""
+    per_card, vanished = [], []
+    for card in shown:
+        seen = ledger.devices.get(card["source"])
+        last = None if seen is None else seen.last_packet_at
+        fields = {"last_packet_at": None if last is None else _iso(last),
+                  "silent_for_s": (int(max(0.0, now - last))
+                                   if last is not None and card["status"] in QUIET_STATUSES else None),
+                  "channels_seen": ([] if seen is None else
+                                    [{"parameter": name, "last_value_at": _iso(at)} for name, at in seen.channels])}
+        per_card.append(fields)
+        if seen is not None and not seen.reported and card["status"] == "unknown":
+            vanished.append({"source": card["source"], "bed_label": card.get("bed_label"),
+                             "last_packet_at": fields["last_packet_at"], "last_report_at": _iso(seen.last_report_at)})
+    return per_card, {"watching_since": _iso(ledger.started_at), "stale_list_after_s": STALE_LIST_AFTER_S,
+                      "stale_list_until_s": STALE_LIST_UNTIL_S, "vanished": vanished}
+
+
 def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState, *,
                occupants: Mapping[str, list[str]] | None,
                visible: Callable[[dict], bool],
                patient_visible: Callable[[dict], bool],
-               show_unassigned: bool, now: float) -> dict:
+               show_unassigned: bool, now: float, ledger: LedgerView | None = None) -> dict:
     """`GET /infinity-shadow/board`'s body. Pure: everything it needs is handed in.
 
     - A device sits on a bed only through the approved table's row valid now. A device the table
@@ -520,6 +705,11 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
       and its id; two or more `"ambiguous"` and no id; none, or a row without `bed_id`, `"none"`.
       A link the caller's scope does not reach (`patient_visible`) is reported as hidden.
     - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
+    - `ledger` (G4-01) is `FeedLedger.view()`, or None — the shadow engine's pass. With it every shown
+      card carries `last_packet_at`, `silent_for_s` and `channels_seen`, and the body
+      `watching_since`, `stale_list_after_s`, `stale_list_until_s` and `vanished` (`_ledger_fields`);
+      without it the body is exactly what it was — and exactly that too when the ledger's fields
+      cannot be built: the failure is logged, never the viewer's strip (display memory only).
     Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last (its states:
     `value`, `value_untimed`, `invalid`, `old` — `ShadowStore._nbp_view`), each copied as the store
     built it; beds by label, unassigned devices by address."""
@@ -572,8 +762,18 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
     counts = {"total": len(shown), **{s: sum(1 for c in shown if c["status"] == s) for s in COUNTED_STATUSES}}
     approved_at = table.table.approved_at if table.status == "ok" else None
     site = table.table.site if table.status == "ok" else None
-    return {"stage": "shadow", "display_max_age_s": DISPLAY_MAX_AGE_S, "generated_at": _iso(now),
+    body = {"stage": "shadow", "display_max_age_s": DISPLAY_MAX_AGE_S, "generated_at": _iso(now),
             "table": {"status": table.status, "reason": table.reason, "version": table.version,
                       "sha256": table.sha256, "approved_at": approved_at, "site": site},
             "feed": {**feed, "devices": counts, "unassigned": len(unassigned)},
             "beds": beds, "unassigned": unassigned}
+    if ledger is not None:
+        try:
+            per_card, extra = _ledger_fields(shown, ledger, now)
+        except Exception:                      # noqa: BLE001 — the strip is shown without the ledger, as before G4-01
+            log.exception("G4-01: the device ledger's fields could not be built; the board goes without them")
+        else:
+            for card, fields in zip(shown, per_card):
+                card.update(fields)
+            body.update(extra)
+    return body

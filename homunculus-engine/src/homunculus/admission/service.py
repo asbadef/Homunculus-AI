@@ -25,6 +25,8 @@ from homunculus.admission.models import (
     Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
     HandoverStatus, NurseBedAssignment, OPEN_ADMISSION_STATES, Patient,
 )
+from homunculus.auth.models import Group, TenantMembership, User, UserGroup
+from homunculus.scope.service import _window_open
 from homunculus.tenant.models import Bed, BedState, Unit
 
 # --- Settled timing decisions ---
@@ -196,29 +198,17 @@ async def find_stale_draft_admissions(db: AsyncSession) -> list[Admission]:
 # ---------------------------------------------------------------------------
 # Care team — §4.2–4.3, §3.3
 # ---------------------------------------------------------------------------
-async def claim_attending(
-    db: AsyncSession, admission: Admission, *, attending_id: uuid.UUID,
-    granted_by_id: uuid.UUID | None = None,
-) -> CareTeamMember:
-    """§4.2 — an attending takes the patient (or is assigned on their behalf)."""
-    admission.attending_physician_id = attending_id
-    member = CareTeamMember(
-        admission_id=admission.id,
-        user_id=attending_id,
-        role=CareTeamRole.ATTENDING,
-        granted_by_id=granted_by_id or attending_id,
-    )
-    db.add(member)
-    await db.flush()
-    return member
-
-
 async def add_care_team_member(
     db: AsyncSession, admission: Admission, *, user_id: uuid.UUID,
     role: CareTeamRole, granted_by_id: uuid.UUID,
     window_start: datetime | None = None, window_end: datetime | None = None,
 ) -> CareTeamMember:
-    """§4.3 — attending adds an associate or a time-boxed on-call physician."""
+    """§4.3 — attending adds an associate or a time-boxed on-call physician. Never an ATTENDING:
+    G2-B1c (T4, X15) `set_attending` is the one writer of that row, because it ends the previous
+    attending's row and names her on the admission; a second row written past it would meet the
+    one-attending index as a 500."""
+    if role == CareTeamRole.ATTENDING:
+        raise WorkflowError("An ATTENDING row is written by set_attending only (T4).")
     if role == CareTeamRole.ONCALL_PHYSICIAN:
         if window_start is None or window_end is None:
             raise WorkflowError("ONCALL_PHYSICIAN requires window_start and window_end (§3.3).")
@@ -238,6 +228,104 @@ async def add_care_team_member(
     db.add(member)
     await db.flush()
     return member
+
+
+# ---------------------------------------------------------------------------
+# Care team — Group 2 · B1c (spec D1–D4, T1, T4, T8)
+# ---------------------------------------------------------------------------
+#: G2-B1c (T1): the default ROLE groups whose members are physicians. The role group says what a
+#: person is; a permission cannot, because the system group holds every key by rule. The dashboard
+#: holds a copy (screens/patient/careTeam/careTeam.js); its test holds the two equal.
+PHYSICIAN_GROUPS = ("attending", "unit_physician", "physician")
+
+
+def physician_ids(tenant_id: uuid.UUID):
+    """SELECT the ids of the tenant's physicians (T1): an active account with an active membership
+    in this tenant and a group of this tenant among `PHYSICIAN_GROUPS`. One statement for the
+    checks and for the picker's candidates (D8)."""
+    return (
+        select(User.id)
+        .join(TenantMembership, TenantMembership.user_id == User.id)
+        .join(UserGroup, UserGroup.user_id == User.id)
+        .join(Group, Group.id == UserGroup.group_id)
+        .where(User.is_active.is_(True), TenantMembership.tenant_id == tenant_id,
+               TenantMembership.is_active.is_(True), Group.tenant_id == tenant_id,
+               Group.slug.in_(PHYSICIAN_GROUPS))
+        .distinct()
+    )
+
+
+async def is_physician(db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    """T1: whether `user_id` is a physician of this tenant. The routes refuse a member, a claimer
+    or an attending a sign-off would make who is not: 409 `care_team_not_physician`."""
+    found = await db.execute(physician_ids(tenant_id).where(User.id == user_id))
+    return found.first() is not None
+
+
+async def active_rows(db: AsyncSession, admission_id: uuid.UUID) -> list[CareTeamMember]:
+    """The admission's ACTIVE care-team rows, oldest first, read afresh (`populate_existing`). The
+    routes read them under `_locked`, and a row this session loaded before would otherwise come
+    back as it was."""
+    result = await db.execute(
+        select(CareTeamMember)
+        .where(CareTeamMember.admission_id == admission_id, CareTeamMember.is_active.is_(True))
+        .order_by(CareTeamMember.created_at, CareTeamMember.id)
+        .execution_options(populate_existing=True))
+    return list(result.scalars().all())
+
+
+def in_force(member: CareTeamMember, now: datetime) -> bool:
+    """G2-B1c (§5.2): an active row, inside its window when it has one. This is what the board's
+    own-patient rule grants on; `_window_open` is that rule's one copy (scope/service.py)."""
+    return bool(member.is_active) and _window_open(member.window_start, member.window_end, now)
+
+
+def expired(member: CareTeamMember, now: datetime) -> bool:
+    """G2-B1c (T8): an on-call row whose window has passed. It grants nothing (F9), and an add of
+    the same physician renews it instead of refusing her (X4)."""
+    return (member.role == CareTeamRole.ONCALL_PHYSICIAN and member.window_end is not None
+            and member.window_end < now)
+
+
+async def end_care_team_member(db: AsyncSession, member: CareTeamMember, *,
+                               now: datetime | None = None) -> None:
+    """G2-B1c (§5.2): a row ends (`is_active` false, `closed_at` now) and is kept: the history
+    stays (D4). Flushed, so a row written after it in the same transaction never meets it at an
+    index."""
+    member.is_active = False
+    member.closed_at = now or _now()
+    await db.flush()
+
+
+async def set_attending(
+    db: AsyncSession, admission: Admission, *, user_id: uuid.UUID,
+    granted_by_id: uuid.UUID | None, now: datetime | None = None,
+) -> tuple[CareTeamMember, list[uuid.UUID]]:
+    """G2-B1c (T4, D2, D3, D4): `user_id` becomes the admission's attending: at sign-off, by a
+    claim, or by an add with role ATTENDING. It is one function, so the three cannot differ:
+      * the previous attending's row ends (one responsible physician at a time; the history stays);
+      * her own other active row ends too (a promoted associate holds one row, not two);
+      * `attending_physician_id` names her;
+      * her ATTENDING row is written, granted by `granted_by_id`.
+    The ends are flushed before the insert, so neither partial index meets the rows it replaces.
+    Returns the new row and the ids of the rows it ended. The caller holds `_locked`, and has
+    checked the state (T3) and that she is a physician (T1)."""
+    now = now or _now()
+    ended: list[uuid.UUID] = []
+    for member in await active_rows(db, admission.id):
+        if member.role == CareTeamRole.ATTENDING or member.user_id == user_id:
+            member.is_active = False
+            member.closed_at = now
+            ended.append(member.id)
+    if ended:
+        await db.flush()
+    admission.attending_physician_id = user_id
+    member = CareTeamMember(admission_id=admission.id, user_id=user_id,
+                            role=CareTeamRole.ATTENDING, granted_by_id=granted_by_id,
+                            is_active=True, created_at=now)
+    db.add(member)
+    await db.flush()
+    return member, ended
 
 
 # ---------------------------------------------------------------------------

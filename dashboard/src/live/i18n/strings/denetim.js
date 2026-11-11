@@ -53,6 +53,8 @@ export default {
       bedOutOfService: "Yatak kullanım dışı bırakıldı", bedReturnToService: "Yatak kullanıma açıldı",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Devir açıldı", handoverSign: "Devir imzalandı", handoverCountersign: "Devir karşı imzalandı",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -116,6 +118,8 @@ export default {
       bedOutOfService: "Çarpayı istifadədən çıxarıldı", bedReturnToService: "Çarpayı istifadəyə verildi",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -179,6 +183,8 @@ export default {
       bedOutOfService: "Койка выведена из использования", bedReturnToService: "Койка возвращена в использование",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -242,6 +248,8 @@ export default {
       bedOutOfService: "Bed taken out of service", bedReturnToService: "Bed returned to service",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
     },
     heat: {
       title: "Alarm density — last {days} days",
