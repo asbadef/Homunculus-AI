@@ -111,6 +111,12 @@ export function fakeApi(vi, { access = null } = {}) {
     protocolSettings: vi.fn(),
     saveProtocolSettings: vi.fn(),
     admissionLabel: vi.fn(),
+    // G2-B1c: the patient screen's «Bakım ekibi» box and its dialog
+    careTeam: vi.fn(),
+    careTeamCandidates: vi.fn(),
+    claimAttending: vi.fn(),
+    addCareTeamMember: vi.fn(),
+    endCareTeamMember: vi.fn(),
 
     // G2-B4: «Denetim bütünlüğü» — the newest events, the chain's verification (screens/denetim); and the
     // alarm-quality report the heatmap slice (B6) will read
