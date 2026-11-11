@@ -101,11 +101,13 @@ describe("the monitor screen", () => {
 
   it("heads each device one level under the screen's own heading", async () => {
     await open(WARD);
-    // The four strips, and (G2-ESLEME) the monitor–bed section above them, which is a level-2 heading too.
-    const [section, ...strips] = screen.getAllByRole("heading", { level: 2 });
-    expect(section).toHaveTextContent("Monitor–çarpayı uyğunlaşdırması");
+    // G4-01: the page's own sections come first (DevicesScreen.feed.test.jsx pins them), then (G2-ESLEME) the
+    // monitor–bed section, then the four strips — every one of them a level-2 heading.
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    const strips = headings.filter((heading) => heading.closest("[data-monitor-strip]"));
     expect(strips).toHaveLength(4);
-    for (const heading of strips) expect(heading.closest("[data-monitor-strip]")).not.toBeNull();
+    expect(headings.slice(-4)).toEqual(strips);
+    expect(headings[headings.length - 5]).toHaveTextContent("Monitor–çarpayı uyğunlaşdırması");
     expect(screen.queryAllByRole("heading", { level: 3 })).toEqual([]);
   });
 

@@ -24,6 +24,8 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { waveFeedFor } from "../../session/feeds.js";
 import { canSeeMapping, verifiedText } from "./deviceMap.js";
 import { MappingSection } from "./MappingSection.jsx";
+// G4-01: «veri geliyor mu?» first, above the editor and the strips (spec 2026-11-11 D5)
+import { FeedSections } from "./FeedSections.jsx";
 
 /** A device with no patient in it: whatever the answer carried about a link is not drawn here. */
 const withoutPatient = (card) => ({ ...card, patient_id: null, link: "hidden", link_reason: null });
@@ -113,6 +115,7 @@ export function DevicesScreen() {
         <h1 className="m-0 font-display text-23 font-bold">{t("nav.devices")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
+      <FeedSections shadow={shadow} />
       {canSeeMapping(user?.perms) ? <MappingSection /> : null}
       {body}
     </div>
