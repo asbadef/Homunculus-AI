@@ -87,7 +87,9 @@ from homunculus.scope import (
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
+from homunculus.tres.client import TresClient       # TRƏS-01: the platform's client (the default factory)
 from homunculus.tres.egress import egress_on        # TRƏS-01 (spec D2): the install's lock
+from homunculus.tres.worker import no_packages, tres_loop   # TRƏS-01 (spec D21): the rounds
 
 if TYPE_CHECKING:
     from homunculus.auth.ldap import LdapRuntime
@@ -778,6 +780,14 @@ def create_app(
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
         prune = (asyncio.create_task(_prune_loop())                           # Aşama B (D8)
                  if samples.durable or shadow.rules else None)
+        # TRƏS-01 (spec D2, D21): the national feed's rounds — ONLY when the install's lock is
+        # open. Closed, no task exists and nothing in this process connects to the platform.
+        tres = None
+        if app.state.tres_egress:
+            from homunculus.db import AsyncSessionLocal
+            tres = asyncio.create_task(tres_loop(AsyncSessionLocal, source=app.state.tres_source,
+                                                 client_factory=app.state.tres_client_factory))
+        app.state.tres_task = tres
         try:
             yield
         finally:
@@ -785,6 +795,8 @@ def create_app(
                 task.cancel()
             if prune is not None:
                 prune.cancel()
+            if tres is not None:
+                tres.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
             # The stores' connection pools go back now rather than at the server's idle timeout
@@ -886,6 +898,11 @@ def create_app(
     # TRƏS-01 (spec D2): the install's lock on the national e-health feed, read once, here. Closed
     # unless TRES_EGRESS=on: the module then opens no connection, whatever a tenant's settings say.
     app.state.tres_egress = egress_on(os.environ)
+    # The feed's rounds (tres/worker.py, D21). WHAT is sent: phase F0 has no package builder, so
+    # the source yields nothing and a round asks the platform nothing; F1 puts the stays here. The
+    # client: `TresClient`, unless a test stands a stand-in's transport in.
+    app.state.tres_source = no_packages
+    app.state.tres_client_factory = TresClient
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01

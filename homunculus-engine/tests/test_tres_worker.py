@@ -1,0 +1,274 @@
+# homunculus-engine/tests/test_tres_worker.py
+"""TRƏS-01 (spec D2, D21): the rounds — with the install's lock closed nothing at all is touched
+and no client is ever built; the loop is started by the lifespan only when the lock is open, waits
+five minutes between rounds, survives a bad one and backs off after a 429; a round works only the
+tenants whose mode is not `off` and whose account is whole, hands each package a `Sender`, spaces
+the requests 300 ms apart, ends a tenant's round on a 429 and after five failures in a row. The
+lock, the loop and the lifespan need no database; the rounds run on Postgres against the stand-in
+(tests/fake_tres.py). Synthetic tenants, synthetic people."""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+
+import httpx
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from homunculus.api.app import create_app
+from homunculus.tenant.models import Tenant
+from homunculus.tres import worker
+from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient
+from homunculus.tres.models import TresDelivery, TresSettings
+from homunculus.tres.worker import (
+    MAX_CONSECUTIVE, PACE_S, ROUND_S, THROTTLED_S, RoundReport, no_packages, run_round, tres_loop,
+)
+from tests.conftest import requires_db
+from tests.fake_tres import FakeTres
+
+T0 = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
+
+
+def patient(local_id: str, given: str = "Ayşe") -> dict:
+    return {"resourceType": "Patient", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-patient"]},
+            "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}],
+            "name": [{"family": "Sentetik", "given": [given]}]}
+
+
+def sends(local_id: str):
+    """A package of one resource."""
+    async def package(sender) -> None:
+        await sender.send(resource_type="patient", fhir_type="Patient", local_id=local_id,
+                          resource=patient(local_id))
+    return package
+
+
+async def breaks(sender) -> None:
+    raise RuntimeError("Sentetik Ayşe")          # a message that must never reach a log line
+
+
+def source_of(*packages):
+    async def source(db, settings):
+        for package in packages:
+            yield package
+    return source
+
+
+def never(*_args, **_kwargs):
+    raise AssertionError("touched with the install's lock closed")
+
+
+# ---------------------------------------------------------------- the lock (no database)
+async def test_with_the_lock_closed_a_round_touches_nothing_and_builds_no_client(monkeypatch):
+    built = []
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", lambda self, *a, **k: built.append(1))
+    report = await run_round(never, egress=False, source=never, now=T0, client_factory=never, sleep=never)
+    assert report == RoundReport() and built == []
+    assert (report.tenants, report.incomplete, report.packages, report.failed, report.retry_after) == (
+        0, 0, 0, 0, None)
+
+
+async def test_phase_f0s_source_yields_nothing():
+    assert [package async for package in no_packages(None, None)] == []
+
+
+def test_the_lifespan_starts_the_rounds_only_when_the_lock_is_open(monkeypatch):
+    monkeypatch.delenv("TRES_EGRESS", raising=False)
+    closed = create_app({"t": "HOSP1"}, run_escalation_loop=False)
+    with TestClient(closed):
+        assert closed.state.tres_task is None
+    monkeypatch.setenv("TRES_EGRESS", "on")
+    opened = create_app({"t": "HOSP1"}, run_escalation_loop=False)
+    assert opened.state.tres_source is no_packages and opened.state.tres_client_factory is TresClient
+    with TestClient(opened):
+        task = opened.state.tres_task
+        assert task is not None and not task.done()      # asleep until the first round, 5 minutes on
+    assert task.done()                                   # cancelled at shutdown
+
+
+# ---------------------------------------------------------------- the loop (no database)
+class Clock:
+    """A sleep that only records, and ends the loop after `rounds` sleeps."""
+
+    def __init__(self, rounds: int) -> None:
+        self.sleeps: list[float] = []
+        self._rounds = rounds
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        if len(self.sleeps) > self._rounds:
+            raise asyncio.CancelledError
+
+
+async def test_the_loop_waits_five_minutes_survives_a_bad_round_and_backs_off_after_a_429(monkeypatch, caplog):
+    answers = [RoundReport(tenants=1), RuntimeError("Sentetik Ayşe"), RoundReport(retry_after=1200.0),
+               RoundReport(retry_after=30.0), RoundReport()]
+    seen = []
+
+    async def fake_round(session_factory, **kwargs):
+        seen.append(kwargs)
+        answer = answers[len(seen) - 1]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(worker, "run_round", fake_round)
+    clock = Clock(rounds=5)
+    with pytest.raises(asyncio.CancelledError), caplog.at_level("ERROR"):
+        await tres_loop(never, source=no_packages, client_factory=never, sleep=clock.sleep, clock=lambda: T0)
+    # before the first round; after a good one; after the bad one; after 429 + 1200 s; after 429 + 30 s
+    # (never less than a round); after a quiet one.
+    assert clock.sleeps == [ROUND_S, ROUND_S, ROUND_S, 1200.0, ROUND_S, ROUND_S]
+    assert len(seen) == 5 and all(k["egress"] is True and k["now"] == T0 for k in seen)
+    assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
+
+
+# ---------------------------------------------------------------- the rounds (Postgres)
+@pytest_asyncio.fixture
+async def feed(db_session):
+    """Three tenants — `off`, `validate` with half an account, `send` with a whole one — the
+    stand-in, and `round_(source)`, which runs one round and answers (report, sleeps, clients)."""
+    fake = FakeTres()
+    whole = {"test_base_url": fake.account.base_url, "test_username": fake.account.username,
+             "test_password": fake.account.password, "test_provider_id": fake.account.provider_id}
+    tenants = {}
+    for slug, mode, account in (("kapali", "off", whole), ("yarim", "validate", {**whole, "test_password": None}),
+                                ("acik", "send", whole)):
+        tenant = Tenant(name=f"Sentetik {slug}", slug=slug, country_code="AZ")
+        db_session.add(tenant)
+        await db_session.flush()
+        db_session.add(TresSettings(tenant_id=tenant.id, mode=mode, environment="test", **account))
+        tenants[slug] = tenant
+    await db_session.commit()
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def round_(source):
+        sleeps, clients = [], []
+
+        async def sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        def factory(account):
+            clients.append(TresClient(account, transport=fake.transport))
+            return clients[-1]
+
+        report = await run_round(maker, egress=True, source=source, now=T0, client_factory=factory, sleep=sleep)
+        return report, sleeps, clients
+
+    return fake, tenants, round_
+
+
+@requires_db
+async def test_a_round_works_only_the_tenants_that_are_on_and_whose_account_is_whole(feed, db_session):
+    fake, tenants, round_ = feed
+    asked = []
+
+    async def source(db, settings):
+        asked.append((settings.tenant_id, settings.mode))
+        return
+        yield
+
+    report, sleeps, clients = await round_(source)
+    assert (report.tenants, report.incomplete, report.packages, report.failed) == (1, 1, 0, 0)
+    assert asked == [(tenants["acik"].id, "send")]
+    assert [c.account for c in clients] == [fake.account]
+    assert clients[0]._client is None                      # closed; and it never connected
+    assert fake.requests == [] and sleeps == []
+
+
+@requires_db
+async def test_each_package_is_handed_a_sender_and_the_requests_are_spaced(feed, db_session):
+    fake, tenants, round_ = feed
+    report, sleeps, clients = await round_(source_of(sends("hmn-p-0001"), sends("hmn-p-0002")))
+    assert (report.packages, report.failed, report.retry_after) == (2, 0, None)
+    # token, then find + create for each of the two: five requests, four gaps.
+    assert fake.requests == [("POST", "/auth/token"), ("GET", "/fhir/Patient"), ("POST", "/fhir/Patient"),
+                             ("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]
+    assert sleeps == [PACE_S] * 4 and PACE_S >= 0.3
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.tenant_id, r.environment, r.local_id, r.status, r.remote_id) for r in rows] == [
+        (tenants["acik"].id, "test", "hmn-p-0001", "sent", "7001"),
+        (tenants["acik"].id, "test", "hmn-p-0002", "sent", "7002")]
+    assert clients[0]._client is None                      # closed at the end of the tenant's round
+
+
+@requires_db
+async def test_a_tenant_in_validate_mode_asks_only_for_validation(feed, db_session):
+    fake, tenants, round_ = feed
+    row = (await db_session.execute(select(TresSettings).where(
+        TresSettings.tenant_id == tenants["acik"].id))).scalar_one()
+    row.mode = "validate"
+    await db_session.commit()
+    report, _, _ = await round_(source_of(sends("hmn-p-0001")))
+    assert report.packages == 1 and fake.fhir_requests == [("POST", "/fhir/Patient/$validate")]
+    assert fake.stored("Patient") == []
+    (saved,) = (await db_session.execute(select(TresDelivery))).scalars()
+    assert (saved.status, saved.operation) == ("validated", "validate")
+
+
+@requires_db
+@pytest.mark.parametrize("said, waits", [(120, 120.0), (None, THROTTLED_S)])
+async def test_a_429_ends_the_tenants_round_and_says_how_long_to_wait(feed, db_session, said, waits):
+    fake, _, round_ = feed
+    fake.throttle(1, retry_after=said)
+    report, _, clients = await round_(source_of(sends("hmn-p-0001"), sends("hmn-p-0002")))
+    assert (report.packages, report.failed, report.retry_after) == (0, 1, waits)
+    assert fake.fhir_requests == [("GET", "/fhir/Patient")]          # the second package never ran
+    (row,) = (await db_session.execute(select(TresDelivery))).scalars()
+    assert (row.local_id, row.status, row.attempts) == ("hmn-p-0001", "failed", 1)
+    assert clients[0]._client is None
+
+
+@requires_db
+async def test_five_failures_in_a_row_end_the_round_and_a_success_starts_the_count_again(feed, caplog):
+    fake, _, round_ = feed
+    with caplog.at_level("WARNING"):
+        report, _, _ = await round_(source_of(*[breaks] * 4, sends("hmn-p-0001"), *[breaks] * 7))
+    assert MAX_CONSECUTIVE == 5
+    assert (report.packages, report.failed) == (1, 4 + 5)            # the last two were never run
+    assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
+
+
+@requires_db
+async def test_a_sender_records_a_skip_and_a_refusal_is_a_row_not_an_exception(feed, db_session):
+    fake, tenants, round_ = feed
+
+    async def package(sender) -> None:
+        await sender.skip(resource_type="patient", local_id="hmn-p-0001", reason="fin_missing")
+        broken = {k: v for k, v in patient("hmn-p-0002").items() if k != "meta"}
+        row = await sender.send(resource_type="patient", fhir_type="Patient", local_id="hmn-p-0002", resource=broken)
+        assert (row.status, row.attempts) == ("failed", 1)           # the package goes on, or stops, as it likes
+
+    report, _, _ = await round_(source_of(package))
+    assert (report.packages, report.failed) == (1, 0)
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.local_id, r.status, r.reason) for r in rows] == [
+        ("hmn-p-0001", "skipped", "fin_missing"), ("hmn-p-0002", "failed", None)]
+
+
+@requires_db
+async def test_a_dead_line_counts_as_a_failure_and_five_of_them_end_the_round(db_session):
+    tenant = Tenant(name="Sentetik acik", slug="acik", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.flush()
+    db_session.add(TresSettings(tenant_id=tenant.id, mode="send", environment="test",
+                                test_base_url="https://tres.test", test_username="sentetik",
+                                test_password="gizli-parola", test_provider_id="PRV-0001"))
+    await db_session.commit()
+
+    def refuse(request):
+        raise httpx.ConnectError("connection refused", request=request)
+
+    async def quiet(seconds: float) -> None:
+        return None
+
+    report = await run_round(
+        async_sessionmaker(db_session.bind, expire_on_commit=False), egress=True, now=T0, sleep=quiet,
+        source=source_of(*[sends(f"hmn-p-{n:04d}") for n in range(8)]),
+        client_factory=lambda account: TresClient(account, transport=httpx.MockTransport(refuse)))
+    assert (report.packages, report.failed, report.retry_after) == (0, 5, None)
+    rows = (await db_session.execute(select(TresDelivery))).scalars().all()
+    assert len(rows) == 5 and {r.last_error for r in rows} == {"ConnectError"}
