@@ -1942,3 +1942,35 @@ describe("G3-04 Eczane call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 });
+
+// TRƏS-01 — Yönetim › TRƏS: the settings and the connection test (homunculus-engine tres/router.py)
+describe("TRƏS-01 calls", () => {
+  it("reads and saves the settings and tests the connection, each with the session's token", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true, message: null }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const account = { base_url: "https://ehr-sandbox.example.az", username: "sentetik", password: "gizli-parola",
+      provider_id: "PRV-0001", organization_id: null, organization_name: null };
+    const empty = { base_url: null, username: null, provider_id: null, organization_id: null, organization_name: null };
+    const body = { mode: "validate", environment: "test", settle_hours: 24, enabled_types: ["patient"], test: account, live: empty };
+    await api.tresSettings();
+    await api.saveTresSettings(body);
+    expect(await api.testTres()).toEqual({ ok: true, message: null });
+    expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init.method])).toEqual([
+      ["/admin/tres/settings", "GET"], ["/admin/tres/settings", "PUT"], ["/admin/tres/test", "POST"],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(body);
+    for (const [, init] of fetchMock.mock.calls) expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+
+  it("a coded refusal carries its code", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "egress_off", message: "Outbound sending is closed on this installation (TRES_EGRESS is not on).",
+    } }, { ok: false, status: 409 }));
+    const err = await createBackendApi({ baseUrl: "", fetchImpl: fetchMock }).testTres().catch((e) => e);
+    expect(err).toMatchObject({ status: 409, apiCode: "egress_off" });
+  });
+});

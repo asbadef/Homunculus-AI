@@ -1020,6 +1020,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     protocolSettings() { return authed("/admin/protocol-settings"); },
     /** {next_no, label_width_mm, label_height_mm, printer_dpi} → as protocolSettings() */
     saveProtocolSettings(body) { return authed("/admin/protocol-settings", { method: "PUT", body }); },
+    // TRƏS-01 — Yönetim › TRƏS (homunculus-engine tres/router.py), `tres.manage`. The password is write-only: an
+    // account's `password` left out (or null) keeps the stored one, "" clears it; the answer says `password_set`.
+    // Refusals carry `err.apiCode` (tres/errors.py): `tres_mode`, `tres_base_url`, `egress_off` …
+    /** {mode, environment, settle_hours, enabled_types, test: {base_url, username, password_set, provider_id,
+     *  organization_id, organization_name}, live: {…}, egress, updated_at} — never a password. */
+    tresSettings() { return authed("/admin/tres/settings"); },
+    /** {mode, environment, settle_hours, enabled_types, test: {…, password?}, live: {…, password?}} → as tresSettings() */
+    saveTresSettings(body) { return authed("/admin/tres/settings", { method: "PUT", body }); },
+    /** One sign-in at the platform with the stored account of the selected environment:
+     *  {ok: true, message: null} | {ok: false, message}. 409 `egress_off`, 409 `tres_account_incomplete`. */
+    testTres() { return authed("/admin/tres/test", { method: "POST" }); },
     // G3-02: Görevlerim — the task queue, its writes and the hospital's settings (homunculus/api/tasks.py).
     tasks(from = null, to = null) {
       const q = new URLSearchParams();

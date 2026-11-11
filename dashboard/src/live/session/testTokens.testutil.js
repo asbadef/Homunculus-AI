@@ -114,6 +114,10 @@ export function fakeApi(vi, { access = null } = {}) {
     protocolSettings: vi.fn(),
     saveProtocolSettings: vi.fn(),
     admissionLabel: vi.fn(),
+    // TRƏS-01: Yönetim › TRƏS — the settings and the connection test (screens/admin/TresTab.jsx)
+    tresSettings: vi.fn(),
+    saveTresSettings: vi.fn(),
+    testTres: vi.fn(),
     // G2-B1c: the patient screen's «Bakım ekibi» box and its dialog
     careTeam: vi.fn(),
     careTeamCandidates: vi.fn(),
