@@ -1666,7 +1666,8 @@ uydurmadır.
   (arter hattı ya da monitörün NBP ortalaması).
 - **İki giriş, tek form.**
   - «Yatak başı ölçüm» sayfası (`/olcum`, `clinical.chart` yetkisi; tablet ve telefon için): hasta
-    seçilir, ad soyad ve doğum yılıyla kimlik onaylanır (doğum tarihi kayıtlı değilse ekran bunu
+    seçilir, soyad ad ve doğum yılıyla kimlik onaylanır (koğuşun yazdığı sırayla, sahibin kararı 10 Kasım
+    2026; doğum tarihi kayıtlı değilse ekran bunu
     söyler ve yine sorar), form doldurulur. «Hayır, eşleşmiyor» seçimi iptal eder ve sorumlu
     hemşireye bildirmeyi söyler; hiçbir şey kaydedilmez.
   - Hasta ekranındaki «Ölçüm gir» (yalnız `clinical.chart` yetkisi olana görünür) aynı formu bir
@@ -1786,11 +1787,18 @@ uydurmadır.
 
 Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
 temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
-«Yataklar» sekmesi buraya taşındı. **Durum:** kodda (`feat/g2b-b3a-doluluk`); main'e ve hastane
-sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
+«Yataklar» sekmesi buraya taşındı. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0016); yeşil/kırmızı yatak renkleri ve kimlik sorusundaki «soyad ad» sırası
+main'de (11 Kasım 2026), sunucuya sonraki çıkışla gelir. Örneklerdeki adlar uydurmadır.
 
 - **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
   yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
+- **Renkler.** Boş yatak **yeşil**, dolu yatak **kırmızı**: durum etiketi ve kutunun sol kenarı
+  (sahibin kararı, 10 Kasım 2026). Temizlikte, taburcu ya da nakil bekleyen yatak amber; rezerve
+  yatağın kenarı mavi, kullanım dışı ve bakımdaki gri; kapalı yatak renksiz. Renk tek işaret
+  değildir, etiket durumu sözle de söyler. Buradaki yeşil ve kırmızı yatağın durumudur, hastanın
+  risk düzeyi değil (risk hapları ayrı kurallarla boyanır, bkz. risk hapı bölümü). Birim
+  başlığındaki «boş» sayısı da yeşildir.
 - **Birim başlığı.** Birimin adı ve türü (Erişkin YBÜ, Yenidoğan YBÜ gibi); altında «1 / 4 doludur»:
   dolu yatak / kullanılabilir yatak. Kullanılabilir = açık, kullanım dışı ve bakımda olmayan; rezerve
   yatak kullanılabilir sayılır (hastasını bekler). Yanında sıfır olmayan sayılar: boş, temizlikte,
@@ -1866,8 +1874,8 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
 ### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
 
 «Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
-bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** kodda hazır, hastane
-sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerler uydurmadır.
+bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0017). Örneklerdeki değerler uydurmadır.
 
 - **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **elle girilen** NEWS2 değeridir (3.12'deki
   form; geri alınan giriş sayılmaz). Monitörden ya da HBYS'den gelen değer dayanak değildir. Son 48 saatte elle
@@ -1891,8 +1899,8 @@ sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerle
 
 ### 3.17 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
 
-Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** kodda
-hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok). Örneklerdeki değerler uydurmadır.
+Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** 11 Kasım
+2026'dan beri hastane sunucusunda çalışıyor (göç yok). Örneklerdeki değerler uydurmadır.
 
 - **Ne girilir.** Aldığı: IV sıvı/infüzyon, kristaloid bolus, enteral/oral, kan ürünü, diğer. Çıkardığı: idrar,
   dren, diğer (NG, kusma). Her giriş mL ve saatle; saat en çok 24 saat geri, ileri olamaz. «Giriş/çıkış ekle»

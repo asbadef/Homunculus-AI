@@ -6,9 +6,11 @@ const TAG = {
   neutral: "border-line2 text-mute", //                                                    .tag
   warn: "border-att-line bg-att text-att-ink", //                                          .tag.w
   crit: "border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)] bg-crit-soft text-crit-ink", // .tag.c
+  // A free bed (Doluluk, owner 2026-11-10): the ok pill's ink on its 14 % tint, edged as crit is.
+  ok: "border-[color:color-mix(in_srgb,var(--ok)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--ok)_14%,transparent)] text-ok-ink",
 };
 
-/** An outlined label: a unit name, "first sign-in", "2FA required". tone: neutral | warn | crit. */
+/** An outlined label: a unit name, "first sign-in", "2FA required". tone: neutral | warn | crit | ok. */
 export function Tag({ tone = "neutral", icon, className = "", children }) {
   const t = TAG[tone] ? tone : "neutral";
   return (
