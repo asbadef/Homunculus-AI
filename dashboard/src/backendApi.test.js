@@ -508,6 +508,20 @@ describe("backendApi — what the work screens call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 
+  // G4-02 (spec D4): «Yönetici özeti» — each unit's handovers waiting for a countersignature, counts and times only.
+  it("reads the units' waiting handovers with an authed GET /handovers/pending, with nothing on the address", async () => {
+    const answer = { units: [{ unit_id: "u-1", unit_name: "Reanimasiya", pending: 2,
+      oldest_outgoing_signed_at: "2026-11-09T08:00:00+00:00" }], generated_at: "2026-11-11T08:00:00+00:00" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = signedIn(fetchMock);
+    expect(await api.pendingHandovers()).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/pending");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(init.body).toBeUndefined();
+  });
+
   it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
     const row = { id: "h-1", status: "OPEN" };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));

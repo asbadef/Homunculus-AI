@@ -127,6 +127,8 @@ export function fakeApi(vi, { access = null } = {}) {
     // G2-B3b: Vardiya devri (screens/devir)
     handovers: vi.fn(),
     handoverColleagues: vi.fn(),
+    // G4-02: «Yönetici özeti» (screens/ozet) — each unit's handovers waiting for a countersignature
+    pendingHandovers: vi.fn(),
     openHandover: vi.fn(),
     signHandover: vi.fn(),
     countersignHandover: vi.fn(),

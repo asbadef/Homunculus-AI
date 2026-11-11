@@ -659,6 +659,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
     /** [{id, name}] — the people I can hand over to, by name (my tenant's, holding `handover.sign`, not me). */
     handoverColleagues() { return authed("/handovers/colleagues"); },
+    /** G4-02 (spec D4), `summary.view`: per unit, the handovers the outgoing person signed that wait for the
+     *  countersignature — {units: [{unit_id, unit_name, pending, oldest_outgoing_signed_at}], generated_at}. Units
+     *  with none are left out. Counts and times only: no patient, no note, no person. Nothing goes on the address. */
+    pendingHandovers() { return authed("/handovers/pending"); },
     /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
     openHandover({ unitId, incomingUserId, admissionId }) {
       return authed("/handovers", {
