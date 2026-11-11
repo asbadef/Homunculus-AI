@@ -47,6 +47,14 @@ export function serverNowMs(data, nowMs, fetchedAtMs) {
   return at + (nowMs - fetchedAtMs);
 }
 
+/** The instant every section is measured at. A fresh answer: the server's now (serverNowMs), so the durations tick
+ *  between polls. One that is not (a poll that hangs or fails, a hidden tab shown again before its poll lands): the
+ *  answer's own `generated_at`, frozen there — so a page that lost its feed never lists a channel, a count or a
+ *  minute of silence the last answer did not carry. Null for an answer with no time. */
+export function measuredAtMs(data, fresh, nowMs, fetchedAtMs) {
+  return fresh ? serverNowMs(data, nowMs, fetchedAtMs) : msOf(data?.generated_at);
+}
+
 /** Whole minutes in `ms`, floored; 0 is under a minute («<1 dk»). Null for no duration. */
 export function minutesOf(ms) {
   return Number.isFinite(ms) ? Math.floor(Math.max(0, ms) / MINUTE_MS) : null;

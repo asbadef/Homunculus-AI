@@ -15,7 +15,7 @@ import { readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { ageText, maxAgeOf } from "../common/monitor.js";
 import { bedText, monitorName } from "./deviceMap.js";
 import {
-  chainLines, countsOf, listingOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf,
+  chainLines, countsOf, listingOf, measuredAtMs, neverSeenRows, silentRows, staleLongCount, staleRows, verdictOf,
 } from "./deviceFeed.js";
 
 const WORD = Object.freeze({ ok: "cihaz.wordOk", down: "cihaz.wordDown", warn: "cihaz.wordWarn", unknown: "cihaz.wordUnknown" });
@@ -158,7 +158,10 @@ export function FeedSections({ shadow, mapping = null }) {
   const fresh = shadow.phase === SHADOW_PHASE.OK && !readUnknown(shadow, nowMs, maxAgeOf(data));
   const stamp = Date.parse(data.generated_at ?? "");
   const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: Number.isFinite(stamp) ? hhmm(stamp) : "—" })}</Note>;
-  const now = serverNowMs(data, nowMs, fetchedAtMs);
+  // A fresh answer is measured at the server's now; one that is not, frozen at its own instant (measuredAtMs). The
+  // chain's ages likewise: aged since the answer arrived only while it is fresh.
+  const now = measuredAtMs(data, fresh, nowMs, fetchedAtMs);
+  const chainNowMs = fresh ? nowMs : fetchedAtMs;
   const verdict = verdictOf(data, now);
   const listing = listingOf(data, verdict, now);
   // Section 2 lists under a ledger, and by status alone from an API before it; section 3 only under a ledger.
@@ -188,7 +191,7 @@ export function FeedSections({ shadow, mapping = null }) {
         {mark}
       </Section>
       <Section title={t("cihaz.chainTitle")}>
-        <ChainList t={t} lines={chainLines(data, nowMs, fetchedAtMs)} />
+        <ChainList t={t} lines={chainLines(data, chainNowMs, fetchedAtMs)} />
         {mark}
       </Section>
       {mapping ? (

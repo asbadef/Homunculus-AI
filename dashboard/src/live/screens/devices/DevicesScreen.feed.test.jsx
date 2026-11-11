@@ -14,7 +14,16 @@ import { pinZone } from "./zone.testutil.js";
 
 pinZone();     // Baku, UTC+4: AT (10:00Z) reads 14:00
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
+afterEach(() => {
+  cleanup(); vi.restoreAllMocks(); localStorage.clear();
+  delete document.visibilityState; delete document.hidden;       // hide(): back to jsdom's own (visible)
+});
+
+/** Hide or show the tab for real: both of the page's own signals, as a browser sets them (shadowStore, useNow). */
+function hide(hidden) {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+}
 
 const before = (minutes) => new Date(Date.parse(AT) - minutes * 60_000).toISOString();
 const seen = (...channels) => channels.map(([parameter, minutes]) => ({ parameter, last_value_at: before(minutes) }));
@@ -260,12 +269,49 @@ describe("«Tabloda var, hiç görülmedi»", () => {
 // Decision 18: only a fresh answer may say a list is empty. One that is not — a poll that hangs past the display
 // limit, a poll that failed — keeps what it said, marked with the answer's own time.
 describe("a board that is not fresh (Decision 18)", () => {
-  const stall = async (mounted) => {
+  const stall = async (mounted, ms = 18_000) => {
     mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));         // the next poll never answers
-    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 18_000);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + ms);
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
   };
   const MARK = "Lövhə yenilənməyib · 14:00";
+
+  // A sending monitor whose two channels carried a value a moment ago, and a monitor silent for two minutes: a page
+  // that kept measuring after its last answer would list both channels as stale within minutes, and count them past
+  // the hour — silences the answer never reported.
+  const LIVELY = withLedger(strip({ beds: [
+    bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: before(0), channels_seen: seen(["hr", 0], ["spo2", 0.5]) }),
+    bed("REA-01 · 5", [], { status: "silent", last_packet_at: before(2), silent_for_s: 120, channels_seen: [] }),
+  ] }));
+  const frozen = () => {
+    expect(within(region("Köhnələn kanallar")).queryAllByRole("listitem")).toEqual([]);
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("çıxarılmış ola bilər");
+    expect(items("Səssiz monitorlar")).toEqual(["REA-01 · 5 · 2 dəqiqədir məlumat yoxdur · son məlumat 13:58"]);
+    expect(items("Məlumat zənciri")[1]).toMatch(/son göndəriş 2 san əvvəl/);       // the answer's own age, not aged on
+    expect(region("Səssiz monitorlar")).toHaveTextContent(MARK);
+  };
+
+  for (const minutes of [5, 70]) {
+    it(`measures at the last answer's own instant after a stall of ${minutes} min: no new stale channel, no count line, durations frozen`, async () => {
+      const mounted = await open(LIVELY);
+      expect(items("Səssiz monitorlar")).toEqual(["REA-01 · 5 · 2 dəqiqədir məlumat yoxdur · son məlumat 13:58"]);
+      await stall(mounted, minutes * 60_000);
+      frozen();
+    });
+  }
+
+  it("measures at the last answer when a hidden tab is shown again before its poll lands", async () => {
+    const mounted = await open(LIVELY);
+    hide(true);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    const asked = mounted.api.shadowBoard.mock.calls.length;
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));          // the poll on showing never lands
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 70 * 60_000);
+    hide(false);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(mounted.api.shadowBoard.mock.calls.length).toBe(asked + 1);         // it asked again on showing
+    frozen();
+  });
 
   it("keeps each section's last answer, marked with the answer's time", async () => {
     const mounted = await open(WARD);

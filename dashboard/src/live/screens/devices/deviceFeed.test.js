@@ -4,8 +4,8 @@
 import { describe, it, expect } from "vitest";
 import { AT, bed, strip, unassigned } from "../../data/shadow.testutil.js";
 import {
-  STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, chainLines, countsOf, listingOf, minutesOf, neverSeenRows, serverNowMs,
-  silentRows, staleAfterOf, staleLongCount, staleRows, staleUntilOf, verdictOf,
+  STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, chainLines, countsOf, listingOf, measuredAtMs, minutesOf, neverSeenRows,
+  serverNowMs, silentRows, staleAfterOf, staleLongCount, staleRows, staleUntilOf, verdictOf,
 } from "./deviceFeed.js";
 
 const AT_MS = Date.parse(AT);
@@ -21,6 +21,15 @@ describe("the server's clock", () => {
     expect(serverNowMs(data, FETCHED + 30_000, FETCHED)).toBe(AT_MS + 30_000);
     expect(serverNowMs(data, FETCHED - 1, FETCHED)).toBe(AT_MS);              // a clock stepped back: never younger
     expect(serverNowMs({ ...data, generated_at: undefined }, FETCHED, FETCHED)).toBeNull();
+  });
+
+  it("is frozen at the answer's own instant while the answer is not fresh: a stall never makes a silence it did not report", () => {
+    const data = strip();
+    expect(measuredAtMs(data, true, FETCHED + 10_000, FETCHED)).toBe(AT_MS + 10_000);
+    expect(measuredAtMs(data, false, FETCHED + 5 * 60_000, FETCHED)).toBe(AT_MS);
+    expect(measuredAtMs(data, false, FETCHED + 70 * 60_000, FETCHED)).toBe(AT_MS);
+    expect(measuredAtMs({ ...data, generated_at: undefined }, false, FETCHED, FETCHED)).toBeNull();
+    expect(measuredAtMs({ ...data, generated_at: undefined }, true, FETCHED, FETCHED)).toBeNull();
   });
 
   it("counts whole minutes, «<1 dk» being 0", () => {
