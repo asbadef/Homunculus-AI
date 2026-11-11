@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from homunculus.api.app import create_app
 from homunculus.api.identity import Caller
 from homunculus.api.tasks import DEFAULT_SETTINGS, TASK_NOT_OPEN, VITAL_SKIPPED, InMemoryTaskStore
+from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
+from homunculus.tenant.bedmap import BedMap
 
 TOKEN = "tok"
 DEVICE = {"Authorization": f"Bearer {TOKEN}"}
@@ -363,3 +365,28 @@ def test_the_task_store_is_released_at_shutdown():
     with TestClient(app):
         assert closed == []
     assert closed == [True]
+
+
+def test_each_patient_carries_the_unit_and_bed_key_its_card_sits_on():
+    """G4-02 (spec D4): the card keeps its unit and its bed key under `identity` (api/board.py
+    `_bed_resolution`); `/tasks` reads them from there — a top-level field the card does not carry was
+    always null. A card with no identity has neither. Synthetic patients and a synthetic bed map."""
+    identities = InMemoryIdentityStore()
+    identities.apply("h1", IdentityRecord(patient_id="S-010", given="Sentetik", family="Hasta",
+                                          unit="YB", room="304", bed="1", source="comed", updated_at=NOW))
+    bedmap = BedMap.from_dict({"beds": {"YB^304^1": {"bed_id": "bed-a1", "unit_id": "unit-adult"}}})
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, identities=identities,
+                     bedmap=bedmap, tasks=InMemoryTaskStore(zones={"h1": "UTC"}))
+    with TestClient(app) as c:
+        _ingest(c, "S-010", "heart_rate", 80, datetime.now(timezone.utc) - timedelta(minutes=3))
+        _ingest(c, "S-011", "heart_rate", 80, datetime.now(timezone.utc) - timedelta(minutes=3))
+        board = {p["patient_id"]: p for p in c.get("/patients", headers=DEVICE).json()["patients"]}
+        r = _tasks(c, DEVICE)
+    assert r.status_code == 200, r.text
+    cards = {p["patient_id"]: p for p in r.json()["patients"]}
+    assert board["S-010"]["identity"]["unit_id"] == "unit-adult"            # the board resolved it
+    assert cards["S-010"]["unit_id"] == "unit-adult"
+    assert cards["S-010"]["bed_key"] == board["S-010"]["identity"]["bed_key"]
+    assert cards["S-010"]["bed_key"] is not None
+    assert board["S-011"]["identity"] is None                                 # a device-only card
+    assert cards["S-011"]["unit_id"] is None and cards["S-011"]["bed_key"] is None

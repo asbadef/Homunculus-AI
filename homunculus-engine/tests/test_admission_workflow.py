@@ -235,7 +235,7 @@ async def test_transfer_creates_new_active_and_closes_source(db_session):
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
     await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    await service.claim_attending(db_session, adm, attending_id=attending.id)
+    await service.set_attending(db_session, adm, user_id=attending.id, granted_by_id=attending.id)
 
     await service.initiate_transfer(
         db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)

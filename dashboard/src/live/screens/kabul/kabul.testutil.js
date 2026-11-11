@@ -74,13 +74,13 @@ export const settle = () => act(async () => {
 /** Mount `ui` in the providers the shell gives a screen, the structure's included. `shell`
  *  ({ units, scope }) puts the shell's own ShellProvider around the structure's, as Shell.jsx
  *  nests them — what the top bar, the bed board and the provider's own re-read read. */
-export async function mountKabul(ui, { perms, setup, shell } = {}) {
+export async function mountKabul(ui, { perms, groups, setup, shell } = {}) {
   const inner = React.createElement(StructureProvider, null, ui);
   const framed = shell
     ? React.createElement(ShellProvider, { units: shell.units, scope: shell.scope ?? "known" }, inner)
     : inner;
   const mounted = await mount(framed, {
-    access: token({ perms }), me: profile({ perms }),
+    access: token({ perms }), me: profile({ perms, ...(groups ? { groups } : {}) }),
     setup: (api) => {
       api.structure.mockResolvedValue(structure());
       api.admissions.mockResolvedValue([]);
@@ -96,4 +96,9 @@ export const toasts = () => within(screen.getByRole("region", { name: "Bildiriş
 export const NURSE = ["board.view", "admissions.view", "admissions.admit", "beds.release", "clinical.chart"];
 export const CHARGE = [...NURSE, "admissions.discharge.confirm"];
 export const DOCTOR = ["board.view", "admissions.view", "admissions.sign_off", "admissions.move.initiate", "clinical.chart"];
+/** The signed-in user's role groups (/auth/me `groups`) — a physician (T1: attending / unit_physician / physician), and
+ *  the system administrator, who holds `admissions.sign_off` by rule but is not one. A session mounted without
+ *  `groups` is the nurse of `profile()`. */
+export const PHYSICIAN = [{ slug: "physician", name: "Hekim" }];
+export const SYS_ADMIN = [{ slug: "hospital_admin", name: "Sistem Yöneticisi" }];
 export const ADMIN = ["board.view", "admissions.view", "admissions.admit", "structure.manage", "users.manage", "groups.manage"];

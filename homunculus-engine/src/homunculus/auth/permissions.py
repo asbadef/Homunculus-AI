@@ -70,6 +70,11 @@ PERMISSIONS: dict[str, str] = {
     # measurement for one interval with a reason.
     "tasks.view": "Open the Görevlerim queue and read the ward's tasks in one's own units",
     "tasks.manage": "Write, claim, close or skip a task; skip one vital measurement with a reason",
+
+    # G4-02 — Yönetici özeti (spec D2, D3): the hospital at a glance. In no default group: the system
+    # group holds it by rule, so no migration; a hospital may give it to another group on the Roles screen.
+    "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a "
+                    "countersignature (GET /handovers/pending), as counts and times only",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -159,12 +164,15 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "handover.sign", "break_glass.use", "clinical.chart", "scores.sign",
                      "tasks.view", "tasks.manage")},
+    # G2-B1c (D7): no `care_team.claim`. The care team is physicians' (T1), and a charge nurse's
+    # claim could only be refused. Migration 0018 takes the key, and «bakım ekibi» from the default
+    # description, from the tenants seeded before it.
     {"slug": "charge_nurse", "kind": "extra", "name": "Sorumlu Hemşire",
-     "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
+     "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
-                     "admissions.discharge.confirm", "care_team.claim", "handover.sign",
+                     "admissions.discharge.confirm", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
                      "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
