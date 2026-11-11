@@ -590,8 +590,8 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // `duplicate_open_admission` (A-37, the final review).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
     // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
-    // `bed_reserved` (D5, X1).
-    expect(CODES).toHaveLength(30);
+    // `bed_reserved` (D5, X1); G2-B1c's three care-team codes (§5.6).
+    expect(CODES).toHaveLength(33);
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -663,8 +663,8 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
   const ESLEME = ["monitor_lane_off", "device_unknown", "bed_occupied", "mapping_changed"];
   it.each(CODES)("%s has a text in the four languages", (code) => {
     const hit = apiErrorKey(coded(code));
-    // G2-B1d's codes speak in `protokol`.
-    expect(hit.key).toMatch(ESLEME.includes(code) ? /^esleme\.err\./ : /^(kabul|protokol)\.err\./);
+    // G2-B1d's codes speak in `protokol`, G2-B1c's in `ekip` (the care-team box).
+    expect(hit.key).toMatch(ESLEME.includes(code) ? /^esleme\.err\./ : /^(kabul|protokol|ekip)\.err\./);
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
   });
 

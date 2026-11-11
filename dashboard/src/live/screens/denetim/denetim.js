@@ -50,6 +50,8 @@ export const EVENT_TYPES = Object.freeze([
   ["bed.out_of_service", "bedOutOfService"], ["bed.return_to_service", "bedReturnToService"],
   // G2-B3b (spec D8): «Vardiya devri» — opened, signed by the outgoing person, countersigned by the receiver.
   ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
+  // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
+  ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

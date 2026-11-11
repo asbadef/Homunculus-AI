@@ -78,6 +78,9 @@ import rrt from "./strings/rrt.js";
 // G2-B3b: «Vardiya devri» — the shift handover screen (screens/devir), its dialog, the note and the summary.
 import devir from "./strings/devir.js";
 
+// G2-B1c: Bakım ekibi, the care-team box on the patient screen (screens/patient/careTeam).
+import ekip from "./strings/ekip.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -125,6 +128,8 @@ export const NAMESPACES = {
   rrt, // G2-B5
 
   devir, // G2-B3b
+
+  ekip, // G2-B1c
 };
 
 function flattenInto(out, prefix, entries) {
