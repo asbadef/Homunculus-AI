@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 import React from "react";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { refusal } from "../../session/mount.testutil.jsx";
+import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { TRANSFER_REASONS, TransferDialog, transferBody } from "./TransferDialog.jsx";
 import { BED, CHARGE, expectNoUuid, mountKabul, row, settle, structure } from "./kabul.testutil.js";
 
@@ -28,6 +29,12 @@ const arrived = (over = {}) => ({ ...row({ id: "a-9", bed_id: BED(1), bed_label:
 const reservedOne = () => {
   const tree = structure();
   tree.sites[0].units[0].rooms[0].beds[0].state = "RESERVED";
+  return tree;
+};
+/** The ward with bed 1 taken: what a re-read shows after someone — or she herself — is there. */
+const occupiedOne = () => {
+  const tree = structure();
+  tree.sites[0].units[0].rooms[0].beds[0].state = "OCCUPIED";
   return tree;
 };
 
@@ -135,9 +142,11 @@ describe("TransferDialog", () => {
   });
 
   it.each([
-    ["field_invalid:note", 422, "Köçürmə qeydi düzgün deyil"],
+    ["field_invalid:note", 422, "Köçürmə qeydi yanlışdır"],
     ["bed_not_available", 409, "Bu çarpayı artıq boş deyil"],
     ["out_of_scope", 403, "Bu çarpayı sizin şöbələrinizdən birində deyil"],
+    ["bed_closed", 409, "Bu çarpayı, onun otağı və ya şöbəsi bağlıdır"],
+    ["invalid_transition", 409, "Qeyd bu əməliyyat üçün uyğun vəziyyətdə deyil"],
   ])("says a %s refusal in words on the toast, and lets the tab read again", async (code, status, words) => {
     const { onRefused } = await openDialog({ setup: (a) => a.transfer.mockRejectedValue(refusal(status, "English words", { apiCode: code })) });
     fireEvent.change(reasonBox(), { target: { value: "ISOLATION" } });
@@ -151,12 +160,6 @@ describe("TransferDialog", () => {
 
 // What B1c's dialog (AddMemberDialog) taught, held here too (Task 9 lessons).
 describe("TransferDialog: what B1c's dialog taught", () => {
-  const occupiedOne = () => {
-    const tree = structure();
-    tree.sites[0].units[0].rooms[0].beds[0].state = "OCCUPIED";
-    return tree;
-  };
-
   it("moves the focus to the first control at fault: the reason, then the note, then the bed", async () => {
     await openDialog();
     await send();
@@ -245,8 +248,7 @@ describe("TransferDialog: what B1c's dialog taught", () => {
 
   it("says a move that landed once and calls nothing a refusal; the tab is handed the answer once", async () => {
     // onDone sits outside the write's try (AddMemberDialog's lesson): only the write's own failure is a refusal.
-    // Its throwing is not driven here — a rejection nobody awaits would fail the whole run; the contract is
-    // in the component's header: onDone handles its own read failure.
+    // Its throwing is driven in the review's tests below.
     const { api, onDone, onRefused } = await openDialog({ setup: (a) => a.transfer.mockResolvedValue(arrived()) });
     fireEvent.change(reasonBox(), { target: { value: "ISOLATION" } });
     fireEvent.click(dialog().getByRole("button", { name: TO }));
@@ -255,5 +257,209 @@ describe("TransferDialog: what B1c's dialog taught", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onRefused).not.toHaveBeenCalled();
     expect(screen.queryAllByText(/^2 · Otaq 1 · Reanimasiya: /)).toHaveLength(0);
+  });
+});
+
+// The review of Task 9: a send with no answer goes again as it was, the reserved yes is for its bed, the
+// beds are read again before the buttons are given back, and a failing tab read is nobody's refusal.
+describe("TransferDialog: the review of Task 9", () => {
+  const RESEND = "Son göndərişə cavab alınmadı; köçürmə baş vermiş ola bilər. Düyməyə basılsa, eyni köçürmə bir daha göndərilir; forma buna görə kilidlənib.";
+  const bedGroup = () => dialog().getByRole("group", { name: "Yeni çarpayı" });
+  const pick = (reasonValue = "ISOLATION") => {
+    fireEvent.change(reasonBox(), { target: { value: reasonValue } });
+    fireEvent.click(dialog().getByRole("button", { name: TO }));
+  };
+
+  it("bounds the note at 200 characters", async () => {
+    await openDialog();
+    expect(noteBox().maxLength).toBe(200);
+  });
+
+  it("sends nothing when the reserved question is cancelled, and gives the focus back to the button", async () => {
+    const { api } = await openDialog({ setup: (a) => {
+      a.structure.mockResolvedValue(reservedOne());
+      a.occupancy.mockResolvedValue({ beds: [] });
+    } });
+    fireEvent.change(reasonBox(), { target: { value: "CLINICAL_NEED" } });
+    fireEvent.click(dialog().getByRole("button", { name: `${TO} · Rezervdədir` }));
+    const button = dialog().getByRole("button", { name: "Köçür" });
+    button.focus();                                      // a press leaves the focus on the button; a bare click event does not
+    await send();
+    expect(ask()).toBeTruthy();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: "İmtina" })); });
+    await settle();
+    expect(ask()).toBeNull();
+    expect(api.transfer).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("sends the same body again after a send that got no answer, with the form locked and her pick on show, whatever the re-read says", async () => {
+    const { api, onDone } = await openDialog({ setup: (a) => a.transfer
+      .mockRejectedValueOnce(refusal(504, "Gateway Timeout"))
+      .mockResolvedValue(arrived()) });
+    pick();
+    fireEvent.change(noteBox(), { target: { value: "Sentetik nakil notu" } });
+    api.structure.mockResolvedValue(occupiedOne());      // she is at bed 1 by now: the re-read shows it taken
+    await send();
+    expect(api.transfer).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText((text) => text.startsWith(`${FROM}: `) && text.includes("Dəyişiklik yenə də tətbiq olunmuş ola bilər")).length).toBeGreaterThan(0);
+    expect(dialog().getByText(RESEND)).toBeTruthy();
+    expect(dialog().getByRole("button", { name: "Köçür" })).toHaveAccessibleDescription(expect.stringContaining(RESEND));
+    expect(reasonBox().disabled).toBe(true);
+    expect(noteBox().readOnly).toBe(true);
+    expect(bedGroup().disabled).toBe(true);
+    // The re-read has shown bed 1 taken, and it stays on show as hers.
+    expect(dialog().getByRole("button", { name: /^1 · Otaq 1 · Reanimasiya · / }).getAttribute("aria-pressed")).toBe("true");
+    await send();
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(api.transfer.mock.calls[1]).toEqual(api.transfer.mock.calls[0]);
+    expect(api.transfer.mock.calls[1][1]).toEqual({ target_bed_id: BED(1), reason: "ISOLATION", note: "Sentetik nakil notu" });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("resends her yes to a reserved bed as it went, without asking again", async () => {
+    const { api } = await openDialog({ setup: (a) => {
+      a.structure.mockResolvedValue(reservedOne());
+      a.occupancy.mockResolvedValue({ beds: [] });
+      a.transfer
+        .mockRejectedValueOnce(refusal(504, "Gateway Timeout"))
+        .mockResolvedValue(arrived());
+    } });
+    fireEvent.change(reasonBox(), { target: { value: "CLINICAL_NEED" } });
+    fireEvent.click(dialog().getByRole("button", { name: `${TO} · Rezervdədir` }));
+    await send();
+    await settle();                                      // the note's read: the yes waits for it (X16)
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: YES })); });
+    await settle();
+    expect(api.transfer).toHaveBeenCalledTimes(1);
+    expect(api.transfer.mock.calls[0][1].confirm_reserved).toBe(true);
+    await send();                                        // the bed is still reserved on the screen: the question is not asked twice
+    expect(ask()).toBeNull();
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(api.transfer.mock.calls[1]).toEqual(api.transfer.mock.calls[0]);
+  });
+
+  it("ends the lock when the resent move is answered with a refusal, and asks for a bed again", async () => {
+    const { api } = await openDialog({ setup: (a) => a.transfer
+      .mockRejectedValueOnce(refusal(504, "Gateway Timeout"))
+      .mockRejectedValueOnce(refusal(409, "English words", { apiCode: "invalid_transition" }))
+      .mockResolvedValue(arrived()) });
+    pick();
+    api.structure.mockResolvedValue(occupiedOne());
+    await send();
+    expect(bedGroup().disabled).toBe(true);
+    await send();                                        // answered: the first move did not land
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(RESEND)).toBeNull();
+    expect(reasonBox().disabled).toBe(false);
+    expect(bedGroup().disabled).toBe(false);
+    await send();                                        // bed 1 shows taken now: it is not sent
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(dialog().getByText("Yeni çarpayını seçin.")).toBeTruthy();
+  });
+
+  it("keeps a resend when the resent move gets no answer either", async () => {
+    const { api } = await openDialog({ setup: (a) => a.transfer
+      .mockRejectedValueOnce(refusal(504, "Gateway Timeout"))
+      .mockRejectedValueOnce(refusal(502, "Bad Gateway"))
+      .mockResolvedValue(arrived()) });
+    pick();
+    await send();
+    await send();
+    expect(dialog().getByText(RESEND)).toBeTruthy();
+    await send();
+    expect(api.transfer).toHaveBeenCalledTimes(3);
+    expect(new Set(api.transfer.mock.calls.map((c) => JSON.stringify(c))).size).toBe(1);
+  });
+
+  it("takes her yes for the bed the question named: another reserved bed is asked about, not sent with it (I-1)", async () => {
+    const tree = reservedOne();
+    tree.sites[0].units[0].rooms[1].beds[0].state = "RESERVED";       // bed 5 as well
+    const { api } = await openDialog({ setup: (a) => {
+      a.structure.mockResolvedValue(tree);
+      a.occupancy.mockResolvedValue({ beds: [] });
+      a.transfer.mockResolvedValue(arrived());
+    } });
+    fireEvent.change(reasonBox(), { target: { value: "CLINICAL_NEED" } });
+    fireEvent.click(dialog().getByRole("button", { name: `${TO} · Rezervdədir` }));
+    await send();
+    expect(ask()).toBeTruthy();
+    // Under the question the form is inert for a user; a stray press on another reserved bed is what this models.
+    fireEvent.click(dialog().getByRole("button", { name: "5 · Otaq 2 · Reanimasiya · Rezervdədir" }));
+    await settle();
+    await settle();
+    await act(async () => { fireEvent.click(within(ask()).getByRole("button", { name: YES })); });
+    await settle();
+    expect(api.transfer).not.toHaveBeenCalled();         // her yes was for bed 1
+    expect(screen.getByRole("dialog", { name: /^Rezerv edilmiş çarpayı · 5 · / })).toBeTruthy();
+  });
+
+  it("does not ask after bed_reserved when the re-read shows the bed taken: it says so and takes her to the bed", async () => {
+    const { api, onRefused } = await openDialog({ setup: (a) => a.transfer
+      .mockRejectedValue(refusal(409, "English words", { apiCode: "bed_reserved" })) });
+    pick();
+    api.structure.mockResolvedValue(occupiedOne());
+    await send();
+    expect(ask()).toBeNull();
+    expect(api.transfer).toHaveBeenCalledTimes(1);
+    expect(onRefused).toHaveBeenCalled();
+    expect(screen.getAllByText((text) => text.startsWith(`${FROM}: Bu çarpayı artıq boş deyil`)).length).toBeGreaterThan(0);
+    expect(dialog().getByText("Yeni çarpayını seçin.")).toBeTruthy();
+    expect(document.activeElement.id).toBe("transfer-bed");
+  });
+
+  it("asks after bed_reserved when the re-read itself fails: it cannot say the bed is gone", async () => {
+    const { api } = await openDialog({ setup: (a) => {
+      a.occupancy.mockResolvedValue({ beds: [] });
+      a.transfer.mockRejectedValueOnce(refusal(409, "English words", { apiCode: "bed_reserved" }));
+    } });
+    pick("CLINICAL_NEED");
+    api.structure.mockRejectedValue(new Error("down"));
+    await send();
+    expect(ask()).toBeTruthy();
+  });
+
+  it("holds the buttons until the beds have been read again after a refusal", async () => {
+    let land;
+    const { api } = await openDialog({ setup: (a) => a.transfer
+      .mockRejectedValue(refusal(409, "English words", { apiCode: "bed_not_available" })) });
+    pick();
+    api.structure.mockImplementationOnce(() => new Promise((resolve) => { land = () => resolve(structure()); }));
+    await send();
+    expect(screen.getAllByText((text) => text.startsWith(`${FROM}: Bu çarpayı artıq boş deyil`)).length).toBeGreaterThan(0);
+    expect(dialog().getByRole("button", { name: "Köçür" }).getAttribute("aria-busy")).toBe("true");
+    expect(bedGroup().disabled).toBe(true);              // the beds are being read: nothing is given back yet
+    await act(async () => { land(); });
+    await settle();
+    expect(dialog().getByRole("button", { name: "Köçür" }).getAttribute("aria-busy")).toBeNull();
+    expect(bedGroup().disabled).toBe(false);
+  });
+
+  it("takes a rejection from onDone as the tab's own: no refusal, no unhandled rejection, and the dialog is given back", async () => {
+    const { api, onDone, onRefused } = await openDialog({ setup: (a) => a.transfer.mockResolvedValue(arrived()) });
+    onDone.mockRejectedValue(new Error("Sentetik okuma hatası"));
+    pick();
+    await send();
+    expect(api.transfer).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onRefused).not.toHaveBeenCalled();
+    expect(screen.queryAllByText(/Sentetik okuma hatası/)).toHaveLength(0);
+    expect(screen.getAllByText(`${FROM} → ${TO}; ${FROM} təmizliyə verildi`).length).toBeGreaterThan(0);
+    expect(bedGroup().disabled).toBe(false);
+    expect(dialog().getByRole("button", { name: "Köçür" }).getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("announces the wait politely while the move is held", async () => {
+    let finish;
+    const { onDone } = await openDialog({ setup: (a) => a.transfer.mockResolvedValue(arrived()) });
+    onDone.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    pick();
+    const said = () => screen.getAllByRole("status").map((el) => el.textContent);
+    expect(said()).not.toContain("Köçürmə qeyd olunur…");
+    await send();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS + 60)); });
+    expect(said()).toContain("Köçürmə qeyd olunur…");
+    await act(async () => { finish(); });
+    expect(said()).not.toContain("Köçürmə qeyd olunur…");
   });
 });
