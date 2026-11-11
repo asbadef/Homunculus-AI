@@ -30,11 +30,12 @@ SPEC_KEYS = {
     "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
     "summary.view",       # G4-02 Yönetici özeti (spec D2, D3): the page, GET /handovers/pending
     "pharmacy.view",      # G3-04 Eczane (spec D2): the page, GET /pharmacy
+    "quality.view",       # G4-03 Kalite göstergeleri (spec D2, D3): the page, GET /quality
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_eight_keys():
-    assert len(SPEC_KEYS) == 28
+def test_the_catalogue_is_exactly_the_specified_twenty_nine_keys():
+    assert len(SPEC_KEYS) == 29
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -87,7 +88,7 @@ def test_the_legacy_rights_are_preserved_group_by_group():
     assert "admissions.transfer.confirm" in by_slug["charge_nurse"]
     assert "admissions.discharge.confirm" in by_slug["charge_nurse"]
     assert "admissions.admit" in by_slug["nurse"]
-    assert by_slug["auditor"] == {"board.view", "audit.view"}
+    assert by_slug["auditor"] == {"board.view", "audit.view", "quality.view"}     # + G4-03 (spec D2)
     assert by_slug["biomedical"] == {"devices.manage"}
 
 
@@ -141,7 +142,7 @@ SPEC_GROUPS = {
     "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                       "admissions.view", "break_glass.use", "clinical.chart",
                                       "tasks.view", "tasks.manage"}),
-    "auditor": (False, False, {"board.view", "audit.view"}),
+    "auditor": (False, False, {"board.view", "audit.view", "quality.view"}),     # G4-03 (spec D2)
     "platform_support": (True, False, {"audit.view", "devices.manage"}),
     "pharmacist": (False, False, {"board.view", "admissions.view", "pharmacy.view"}),
     "biomedical": (False, False, {"devices.manage"}),
@@ -252,4 +253,15 @@ def test_the_pharmacy_page_is_the_pharmacists_and_the_physicians_by_default():
     assert holders == {"hospital_admin", "pharmacist", "attending", "unit_physician", "physician"}
     assert PERMISSIONS["pharmacy.view"].startswith("Open the Eczane page")
     assert PERMISSIONS["pharmacy.view"].endswith("read-only")
-    assert list(PERMISSIONS)[-1] == "pharmacy.view"          # appended after summary.view: the mirrors' order
+    keys = list(PERMISSIONS)                                 # G4-03: quality.view is the last key now
+    assert keys[keys.index("summary.view") + 1] == "pharmacy.view"   # appended after summary.view: the mirrors' order
+
+
+def test_the_quality_indicators_are_the_auditors_and_the_system_administrators_by_default():
+    """G4-03 (spec D2, D7): `quality.view` is in the default auditor group («Denetçi») — migration 0020 gives it to
+    the tenants seeded before it, `DEFAULT_GROUPS` to the ones made after — and the system group holds it by rule.
+    Any other group can be given it on the Roles screen."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "quality.view" in g["permissions"]}
+    assert holders == {"hospital_admin", "auditor"}
+    assert PERMISSIONS["quality.view"].startswith("Open the Kalite göstergeleri page")
+    assert list(PERMISSIONS)[-1] == "quality.view"           # appended after pharmacy.view: the mirrors' order
