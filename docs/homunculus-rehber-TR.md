@@ -1980,27 +1980,33 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 ### 3.22 «Cihaz & Veri Akışı»: veri geliyor mu? (Grup 4 · G4-01)
 
 - **Ne:** Sol raydaki **«Cihazlar»** sayfası (eski adı «Monitörler»; Azerbaycanca «Cihazlar», Rusça
-  «Устройства», İngilizce «Devices») önce tek bir soruyu yanıtlar: **veri geliyor mu?** Sayfanın başlığı
-  «Cihaz & Veri Akışı». Adresi (`/devices`), simgesi ve yetkileri değişmedi; rehberin önceki bölümleri
-  (ör. 3.9, 3.11) ekranı eski adıyla anar, aynı ekrandır.
+  «Устройства» — telefonun dar rayında «Устр.» —, İngilizce «Devices») önce tek bir soruyu yanıtlar:
+  **veri geliyor mu?** Sayfanın başlığı «Cihaz & Veri Akışı». Adresi (`/devices`), simgesi ve yetkileri
+  değişmedi; rehberin önceki bölümleri (ör. 3.9, 3.11) ekranı eski adıyla anar, aynı ekrandır.
+- **Durum:** kodda (`feat/g4-cihaz-akis`); main'e ve hastane sunucusuna sahibin sözüyle çıkar.
 - **Kim görür:** cihaz yönetimi yetkisi (`devices.manage`: Biyomedikal Teknisyen, Üretici Destek;
   Sistem Yöneticisi her yetkiyi taşır) ya da monitör–yatak eşleme yetkisi (`devices.map_beds`: Sorumlu
   Hemşire) olan herkes. Biyomedikal Teknisyen ve Üretici Destek girişte bu sayfaya düşer. Yalnız panoyu
   görme yetkisi (`board.view`) olan hekim ve hemşire ekranı görmez. Kapsamı birimleriyle sınırlı biri
   (ör. sorumlu hemşire) yalnız kendi yataklarının monitörlerini görür, sayılar da yalnız onları sayar;
-  atanmamış cihazları yalnız cihaz yönetimi yetkisi ya da sınırsız kapsamı olan görür. Sayfa hiçbir
-  hasta bilgisi göstermez.
+  atanmamış cihazları yalnız cihaz yönetimi yetkisi ya da sınırsız kapsamı olan görür. Eşleme yetkisi
+  olup ne cihaz yönetimi ne pano yetkisi olan bir oturum ilk dört bölümü görmez: yerlerinde «Veri akışı
+  bölümleri cihaz yönetimi ya da pano görüntüleme yetkisi ister» notu durur; 5. bölümü ve eşleme
+  bölümünü görür. Sayfa hiçbir hasta bilgisi göstermez.
 - **Sayfanın sırası (yukarıdan aşağı):**
-  1. **«Veri geliyor mu?»** Tek satırlık hüküm, ardından sayılar.
-     - Önce veri zinciri: zincir kopuksa hüküm zincirindir — «Veri gelmiyor: aktarıcı 4 dk'dır sessiz»,
-       «Veri gelmiyor: toplayıcı bağlı değil», «Henüz hiç veri gelmedi» (zincirin durumu okunamazsa «Veri
-       akışının durumu okunamıyor»). O zaman bütün monitörler aynı nedenle susar: hükmün altında sayı
-       yazılmaz, 2. ve 3. bölüm monitörleri tek tek arıza diye listelemez, «Veri zinciri kesik:
-       monitörler tek tek listelenmiyor» der.
-     - Zincir sağlamsa: «Veri akıyor · 5/6 monitör veri gönderiyor», ardından yalnız sıfırdan büyük
-       sayılar, bu sırayla: sessiz, eskiyen kanal (3. bölümde listelenenler), beklemede, veri bekliyor,
-       atanmamış.
-     - Altında: «İzleme 10:42'den beri; sistem yeniden başlayınca sıfırlanır».
+  1. **«Veri geliyor mu?»** Tek satırlık hüküm, altında sayılar ve izleme satırı.
+     - Önce veri zinciri. Zincir kopuksa hüküm zincirindir: «Veri gelmiyor: aktarıcı 4 dk'dır sessiz»,
+       «Veri gelmiyor: toplayıcı bağlı değil», «Henüz hiç veri gelmedi»; zincirin durumu tanınmıyorsa
+       «Veri akışının durumu okunamıyor». O zaman bütün monitörler aynı nedenle susar; 2. ve 3. bölüm
+       onları tek tek arıza diye listelemez.
+     - Zincir çalışıyorsa hüküm monitörlerindir. En az bir monitör veri gönderiyorsa «Veri akıyor · 5/6
+       monitör veri gönderiyor»; hiçbiri göndermiyorsa «Zincir çalışıyor, ama hiçbir monitör veri
+       göndermiyor»; hub sayfanın gösterebileceği hiçbir monitörü bildirmiyorsa «Hub hiç monitör
+       bildirmiyor»; monitör sayıları yanıtta okunamıyorsa «Zincir çalışıyor; monitör sayıları
+       okunamıyor».
+     - Sayılar yalnız ilk iki hükmün altında yazılır, yalnız sıfırdan büyükler, bu sırayla: sessiz,
+       eskiyen kanal (3. bölümde listelenenler), beklemede, veri bekliyor, atanmamış.
+     - En altta: «İzleme başlangıcı 10:42 · sistem yeniden başlayınca sıfırlanır».
   2. **«Sessiz monitörler».** Sessiz monitörler (hub o monitörden 3 saniyedir paket almıyor) ve haber
      alınamayanlar (Infinity sunucusu — hub — onu 15 saniyeden uzun süredir bildirmiyor; hub'ın
      listesinden çıkan monitör böyledir); en uzun süredir susan en üstte, son verisinin zamanı
@@ -2015,32 +2021,58 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
      dakikayı bulanlar listelenir. Bir saat dolunca kanal listeden çıkar: o kadar uzun susan bir kanal
      büyük olasılıkla bilerek çıkarılmıştır (ör. arter kateteri alınınca ART). Bölüm böyle kanalları
      sonda tek satırda sayar — «2 kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış
-     olabilir)» —; hiç yoksa ya da zincir kopuksa bu satır yazılmaz. Sunucu kanalı unutmaz; yalnız liste
-     onu artık göstermez. **NBP ne listelenir ne sayılır** (değeri yalnız manşon ölçünce gelir).
-     Yalnız veri gönderen monitörün kanalları listelenir: beklemedeki monitörün (açık ama ölçmüyor)
-     eskiyen kanalı olmaz, o 1. bölümde ayrıca sayılır; susan monitör 2. bölümdedir.
+     olabilir)» —; hiç yoksa ya da bölüm listeleyemiyorsa bu satır yazılmaz. Sunucu kanalı unutmaz;
+     yalnız liste onu artık göstermez. **NBP ne listelenir ne sayılır** (değeri yalnız manşon ölçünce
+     gelir). Yalnız veri gönderen monitörün kanalları listelenir: beklemedeki monitörün (açık ama
+     ölçmüyor) eskiyen kanalı olmaz, o 1. bölümde ayrıca sayılır; susan monitör 2. bölümdedir.
   4. **«Veri zinciri».** Toplayıcı (bağlı mı, son sinyal ne kadar önce), aktarıcı (son gönderi,
      gönderilen ve başarısız), Infinity sunucusunun aldığı ve eski ya da yinelenen paketler, nedenine
-     göre reddedilen değerler. Her satırın durum sözcüğü vardır: normal, durmuş, dikkat (reddedilen
-     değer varsa), bilinmiyor. Zincir kopukken de görünür: hangi halkanın durduğunu bu bölüm söyler.
+     göre reddedilen değerler (bu sürümün tanımadığı nedenler «diğer» diye toplanır). Her satırın durum
+     sözcüğü vardır: normal, durmuş, dikkat (reddedilen değer varsa), bilinmiyor. Zincir kopukken de
+     görünür: hangi halkanın durduğunu bu bölüm söyler.
   5. **«Tabloda var, hiç görülmedi».** Cihaz→yatak tablosunda olup hub'ın, sistem açıldığından beri hiç
      bildirmediği monitörler: yatak ve cihaz adresiyle. Liste, aşağıdaki eşleme bölümünün okuduğu
-     listedir; sayfa onu bir kez ister.
-  6. Sonra, değişmeden: monitör–yatak eşleme bölümü (3.9) ve her monitörün şeridi. Monitör şeridi
-     kapalıyken üstteki beş bölüm hiç görünmez.
+     listedir; sayfa onu bir kez ister. Bu bölüm şeritten bağımsızdır: şerit kapalıyken, henüz
+     okunmamışken ya da oturum şeridi göremezken de görünür. Liste yüklenirken «Eşleme listesi
+     yükleniyor…» der; «Tabloda olup hiç görülmeyen monitör yok» sözünü yalnız yanıt veren bir liste
+     söyler; liste okunamazsa ya da monitör hattı kapalıysa son satırlarını korur ve «Eşleme listesi
+     okunamadı; birazdan yeniden denenecek.» der.
+  6. Sonra, değişmeden: monitör–yatak eşleme bölümü (3.9) ve her monitörün şeridi. Şerit kapalıyken ya
+     da henüz hiç okunamamışken ilk dört bölüm görünmez.
+- **2. ve 3. bölüm listeleyemezse** nedenini söyler, asla «yok» demez:
+  - zincir kopuksa: «Veri zinciri kesik: monitörler tek tek listelenmiyor»;
+  - zincirin durumu ya da monitör sayıları bilinmiyorsa: «Veri akışının durumu bilinmiyor: monitörler
+    tek tek değerlendirilemiyor»;
+  - hub monitör bildirmiyorsa: «Hub monitör bildirmediği için değerlendirilemiyor»;
+  - yanıtta «ne zamandan beri» bilgisi yoksa (eski bir API sürümü ya da sunucunun okuyamadığı hafıza,
+    aşağıda): «Bu sürüm «ne zamandan beri» bilgisini vermiyor» — 2. bölüm sessiz monitörleri o zaman
+    yalnız durumlarıyla, zamansız listeler;
+  - yanıtın zamanı yoksa: «Yanıtın zamanı yok: süreler hesaplanamıyor».
 - **Süreler:** 1–3. bölümlerde tam dakika, aşağı yuvarlanarak («4 dk'dır» en az 4 dakika demektir); bir
-  dakikadan kısa süre «<1 dk'dır». Süreler sunucunun saatiyle sayılır ve iki okuma arasında da ilerler;
-  tarayıcının saati yanlış olsa da bir sessizliği kısaltamaz. Veri zincirinin yaşları şeritteki gibi
-  saniye ya da dakikayla yazılır. Saatler (SS:DD) bu tarayıcının yerel saatidir.
-- **Pano güncel değilse** (son başarılı okuma 15 saniyeden eskiyse ya da son okuma başarısızsa): 1–4.
-  bölümler son söylediklerini korur, «Pano güncel değil · {SS:DD}» işaretiyle (son okumanın saati), ve
-  hiçbiri «yok» demez — boş bir listeyi yalnız güncel bir okuma söyleyebilir. 5. bölüm kendi listesine
-  bakar: «yok»u yalnız yanıt veren bir liste söyler; liste okunamazsa son satırlarını korur ve «Eşleme
-  listesi okunamadı; birazdan yeniden denenecek.» der.
+  dakikadan kısa süre «<1 dk'dır». Süreler sunucunun saatiyle sayılır ve pano güncelken iki okuma
+  arasında da ilerler; tarayıcının saati yanlış olsa da bir sessizliği kısaltamaz. Veri zincirinin
+  yaşları şeritteki gibi saniye ya da dakikayla yazılır. Saatler (SS:DD) bu tarayıcının yerel saatidir.
+- **Pano güncel değilse** (son başarılı okuma 15 saniyeden eskiyse ya da son okuma başarısızsa) sayfa
+  «her şey yolunda» demez:
+  - «Veri geliyor mu?» bölümü «Pano güncel değil · son yanıt 10:47» satırıyla başlar; son hüküm geçmiş
+    zamanla gelir («Son yanıtta veri akıyordu · 5/6 monitör veri gönderiyordu»).
+  - Listeler, sayılar ve süreler son yanıtın anında donar: son yanıtın söylemediği hiçbir kanal, sayı
+    ya da dakika eklenmez.
+  - Veri zincirinin satırları son değerlerini korur; durum sözcükleri «bilinmiyor» olur.
+  - Sessiz monitörler, eskiyen kanallar ve veri zinciri bölümlerinin altında «Pano güncel değil ·
+    10:47» yazar ve hiçbiri «yok» demez — boş bir listeyi yalnız güncel bir okuma söyleyebilir. 5. bölüm
+    kendi listesine bakar (yukarıda).
+- **Ekran okuyucu:** görünmeyen bir durum satırı yalnız hükmü — dakika ve sayı olmadan — ve pano güncel
+  değilse «Pano güncel değil»i taşır; ekran okuyucu böylece durum değişince konuşur, her dakika değil.
 - **Neyi hatırlar:** sunucu her monitörü ve her kanalını en son ne zaman gördüğünü yalnız bellekte
   tutar. Veritabanına bir şey yazılmaz, göç (migration) yoktur, hub değişmedi. API yeniden başlarsa bu
-  hafıza sıfırlanır; sayfa bunu «İzleme … beri» satırıyla söyler. Değerlerin kendisi, 120 saniyelik
-  unutma süresi ve gölge motorun okuduğu hiçbir şey değişmedi.
+  hafıza sıfırlanır; sayfa bunu «İzleme başlangıcı …» satırıyla söyler. NBP için tutulan zaman,
+  değerinin son değiştiği andır: manşon o an ya da daha önce ölçmüştür (NBP yine hiçbir listeye
+  girmez). Sunucunun saati geri alınırsa (NTP düzeltmesi, sanal makinenin geri yüklenmesi), saatin
+  2 saniyeden fazla ilerisinde kalan zamanlar silinir ve bilinmiyor sayılır. Hafıza okunamazsa pano
+  G4-01'den önceki gibi yanıt verir: hemşirelerin şeridi etkilenmez, bu sayfa yukarıdaki «ne zamandan
+  beri» nedenini söyler. Değerlerin kendisi, 120 saniyelik unutma süresi ve gölge motorun okuduğu
+  hiçbir şey değişmedi.
 - **Bu dilimde olmayanlar:** cihaz envanteri ve bakım (tip, seri numarası, bakım, kalibrasyon, arıza,
   pil), alarm kalitesi paneli, yeniden başlatmalar arası sessizlik geçmişi, sessiz monitör için
   bildirim ya da ray rozeti, klinik panonun «besleme sağlığı» göstergesinin biyomedikale açılması, hub
