@@ -77,13 +77,17 @@ def _rows(app, event_type, patient=None):
 
 class TestAReadingForADischargedNumber:
     def test_is_dropped_before_the_engine_with_one_audit_row(self, app, client):
+        """G3-05 (D4) changed the row, not the rule: the reading still never reaches the engine, but its row is
+        `reading_unmatched` and keeps the value — it waits in the unmatched list (tests/test_readings_unmatched.py)."""
         _kabul(app.state.test_identities, "H-1", state="discharged")
         queue = app.state.broadcaster.subscribe("h1")
         r = client.post("/ingest", json=_obs("heart_rate", 140, "H-1"), headers=HEAD)
         assert r.status_code == 200 and r.json() == {"patient_id": "H-1", "dropped": "discharged"}
-        [row] = _rows(app, "reading_dropped_discharged")
+        assert _rows(app, "reading_dropped_discharged") == []
+        [row] = _rows(app, "reading_unmatched")
         assert row.patient_id == "H-1" and row.subject == "heart_rate"
-        assert row.payload == {"patient_id": "H-1", "code": "heart_rate"}
+        assert row.payload == {"value": 140.0, "unit": "u", "obs_ts": WHEN.isoformat(), "device": "nce",
+                               "reason": "discharged"}
         assert _rows(app, "ingest", "H-1") == [] and _rows(app, "alert", "H-1") == []
         assert queue.empty(), "nothing is published for a dropped reading"
         assert client.get("/alerts/H-1", headers=HEAD).json()["alerts"] == []

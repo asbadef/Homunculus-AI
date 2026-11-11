@@ -68,7 +68,8 @@ from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
-    MANUAL_CODES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading,
+    MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_UNMATCHED, REASON_DISCHARGED, REASON_UNKNOWN,
+    UNKNOWN_POLICIES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -363,6 +364,7 @@ def create_app(
     device_beds: DeviceBedSource | None = None,
     tasks: TaskStore | None = None,
     readings: ReadingStore | None = None,
+    unknown_readings: str = POLICY_CARD,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -393,9 +395,14 @@ def create_app(
     rows of a `rules` run still expire after a rollback below it.
     `readings` is the per-admission record of what was measured (G3-05, `api/readings.py`, migration 0021):
     `PostgresReadingStore` in production; None keeps the rows in memory, which is what the no-DB suite runs on.
+    `unknown_readings` (G3-05, D9) is what `/ingest` does with a number no identity record exists for: `"card"`
+    (the default — the reading is applied and makes a nameless card, as before) or `"unmatched"` (production: the
+    reading is kept in the unmatched list, with no engine entry and no card). Any other word is a ValueError.
     At shutdown the lifespan releases `audit`, `identities`, `samples` and `device_beds`
     (`dispose`, `close`): an engine's pool reopens on its next use, but SQLite's identity file
     stays closed."""
+    if unknown_readings not in UNKNOWN_POLICIES:
+        raise ValueError(f"unknown_readings must be one of {UNKNOWN_POLICIES}, not {unknown_readings!r}")
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -1494,13 +1501,35 @@ def create_app(
     def _resent(hospital: str, obs) -> bool:
         """G3-05 (D14): has the record this very reading already — the same number, code, time, device and
         value? The Connex re-sends what it buffered and the uplink is at-least-once. A store that cannot answer
-        fails OPEN: the reading is ingested, never dropped on a doubt."""
+        fails OPEN: the reading is ingested, never dropped on a doubt.
+
+        The store calls on this path are deliberately synchronous: nothing between `_resent` and `_file_recorded`
+        yields the event loop (the only awaits in `_apply_reading` are `put`s on the broadcaster's and the hub's
+        unbounded queues, which complete without suspending), and that is what keeps check-then-file atomic
+        under one worker. Wrapping the calls in `asyncio.to_thread` — or giving those queues a bound — would open
+        a seen→add race: a re-send arriving in the gap would be filed twice."""
         try:
             return readings.seen(hospital, obs.patient_id, obs.code.value, obs.timestamp, device_source(obs),
                                  obs.value)
         except Exception:
             log.exception("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s); ölçüm işlenir", hospital)
             return False
+
+    def _file_unmatched(hospital: str, obs, reason: str, dropped: str) -> dict:
+        """G3-05 (D4, D8, D9): a device reading whose number matches nobody — a discharged admission's, or (under
+        the policy `unmatched`) one with no identity record. It is kept WITH its value: one `reading_unmatched`
+        row, then the list's table row. Nothing reaches the engine: no evaluation, no hook, no stamp, no frame,
+        no notification, no card. The answer is 200 (`dropped`), as the door has answered a discharged number
+        since G2-A11: a per-reading 4xx on a device that keeps an old number would read as rejections in the
+        hub's counters. A table write that FAILS is not swallowed here (D7): the list is the only place a nurse
+        will see this reading, so the request fails (500) and the bridge sends it again."""
+        written = audit.append(AuditEvent(hospital, READING_UNMATCHED, obs.patient_id, obs.code.value,
+                                          {"value": obs.value, "unit": obs.unit,
+                                           "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device,
+                                           "reason": reason}))
+        readings.add(device_reading(hospital, obs, received_at=datetime.now(timezone.utc), audit_id=written.id,
+                                    reason=reason))
+        return {"patient_id": obs.patient_id, "dropped": dropped}
 
     async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,
                              reading: int | None = None) -> tuple[list, AuditRecord]:
@@ -1599,21 +1628,22 @@ def create_app(
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        # G2-A11 (D3): a reading for a number whose admission here was discharged is dropped
-        # before the engine — one audit row, no evaluation, no hook, no stamp, no frame, no
-        # notification. The owner's decision (2026-10-26): no alert and no page may come of it.
-        # 200, not 4xx: the input is well-formed and the server chose not to apply it, and a
-        # per-reading 4xx on a monitor that keeps the old number would read as rejections in the
-        # hub's counters. The one identity read a reading costs is reused for the frame below.
+        # G2-A11 (D3), as G3-05 (D4) changed it: a reading for a number whose admission here was discharged
+        # never reaches the engine — no evaluation, no hook, no stamp, no frame, no notification. The owner's
+        # decision (2026-10-26) stands: no alert and no page may come of it. Since G3-05 its VALUE is kept, in
+        # the unmatched list (`_file_unmatched`). 200, not 4xx: the input is well-formed and the server chose
+        # not to apply it. The one identity read a reading costs is reused for the frame.
         record = identities.get(hospital, obs.patient_id)
         # G3-05 (D14): a reading the record already holds is recognised before the engine — no engine entry, no
         # audit row, no frame. 200, as every answer of this door: the bridge's uplink never blocks (D18).
         if _resent(hospital, obs):
             return {"patient_id": obs.patient_id, "duplicate": True}
         if is_tombstone(record):
-            audit.append(AuditEvent(hospital, READING_DROPPED, obs.patient_id, obs.code.value,
-                                    {"patient_id": obs.patient_id, "code": obs.code.value}))
-            return {"patient_id": obs.patient_id, "dropped": DISCHARGED}
+            return _file_unmatched(hospital, obs, REASON_DISCHARGED, DISCHARGED)
+        # G3-05 (D9): a number nobody is admitted under. In the hospital it is listed and makes no card (it
+        # overrides B1d D4 there); under the default policy it is applied as before.
+        if record is None and unknown_readings == POLICY_UNMATCHED:
+            return _file_unmatched(hospital, obs, REASON_UNKNOWN, POLICY_UNMATCHED)
         _engine(hospital)       # the tenant is rehydrated before the request's clock is read, as before the move
         # One wall-clock instant per request (G2-A2, X10): `_apply_reading` judges, stamps and frames at it.
         wall_now = datetime.now(timezone.utc)

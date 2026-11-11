@@ -179,7 +179,9 @@ def reading(code: str = "spo2", value: float = 97.0, at: datetime = T0 + timedel
 
 
 def dropped_rows(audit: InMemoryAuditLog) -> list:
-    return audit.records(tenant="h1", event_type="reading_dropped_discharged", limit=100)
+    """The rows `/ingest` writes for a tombstone's number: `reading_unmatched` since G3-05 (D4) — the reading
+    still never reaches the engine, and its value is now kept for the unmatched list."""
+    return audit.records(tenant="h1", event_type="reading_unmatched", limit=100)
 
 
 def test_a_reading_for_a_discharged_number_through_ingest_is_dropped_before_the_engine():
@@ -200,7 +202,8 @@ def test_a_reading_for_a_discharged_number_through_ingest_is_dropped_before_the_
         assert queue.empty()
         (row,) = dropped_rows(audit)
         assert (row.patient_id, row.subject, row.payload) == \
-            ("H2600001", "spo2", {"patient_id": "H2600001", "code": "spo2"})
+            ("H2600001", "spo2", {"value": 97.0, "unit": "u", "obs_ts": (T0 + timedelta(hours=2)).isoformat(),
+                                  "device": "nce", "reason": "discharged"})
         assert client.get("/patients", headers=HEAD).json()["patients"] == []
 
 

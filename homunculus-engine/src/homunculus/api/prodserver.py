@@ -21,6 +21,11 @@ Env:
                    production the API reads the device→bed table from the database
                    (`PostgresDeviceBeds`), not from INFINITY_DEVICE_BEDS_PATH; the file stays the
                    lab's source and the import's input
+    READINGS_UNKNOWN_KEY
+                   G3-05 (D9): on a Postgres deployment a device reading whose number has no identity
+                   record goes to the «Eşleşmeyen ölçümler» list and makes no card; `card` turns that
+                   back (the reading is applied and makes a nameless card) — for a replay of recorded
+                   data only (`_unknown_readings`)
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -48,7 +53,9 @@ from homunculus.api.infinity_shadow import shadow_settings_from_env
 from homunculus.api.device_beds_postgres import PostgresDeviceBeds
 from homunculus.api.infinity_device_beds import DeviceBedSource
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
-from homunculus.api.readings import InMemoryReadingStore, ReadingStore            # G3-05
+from homunculus.api.readings import (                                             # G3-05
+    POLICY_CARD, POLICY_UNMATCHED, InMemoryReadingStore, ReadingStore,
+)
 from homunculus.api.readings_postgres import PostgresReadingStore
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore
 from homunculus.api.tasks_postgres import PostgresTaskStore
@@ -510,6 +517,17 @@ def _readings(url: str) -> ReadingStore:
     return PostgresReadingStore(url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
 
 
+def _unknown_readings(url: str, env=None) -> str:
+    """G3-05 (D9): what `/ingest` does with a number no identity record exists for. On a Postgres deployment —
+    the hospital — the reading goes to the unmatched list and makes no card; READINGS_UNKNOWN_KEY=card turns
+    that back, for a replay of recorded data into a deployment with no admissions. Anywhere else the reading is
+    applied and makes a card, as before: a development start has no admissions to match against."""
+    env = os.environ if env is None else env
+    if not _is_production(url):
+        return POLICY_CARD
+    return POLICY_CARD if str(env.get("READINGS_UNKNOWN_KEY", "")).strip().lower() == POLICY_CARD else POLICY_UNMATCHED
+
+
 def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:
     """G2-ESLEME (spec D6): the device→bed table from the database (migration 0014, seeded by
     scripts/import_device_beds.py) on a Postgres deployment, for the lane's hospital, with the
@@ -538,4 +556,5 @@ app = create_app(
     device_beds=_device_beds(_database_url(), _shadow.hospital),
     tasks=_tasks(_database_url()),
     readings=_readings(_database_url()),
+    unknown_readings=_unknown_readings(_database_url()),
 )

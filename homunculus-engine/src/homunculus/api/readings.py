@@ -43,6 +43,19 @@ STATE_REJECTED = "rejected"
 #: `unmatched_reason`: no identity record under the number, or a discharged admission's number.
 REASON_UNKNOWN = "unknown"
 REASON_DISCHARGED = "discharged"
+#: The audit rows of the list (spec §4). `reading_unmatched`: a device reading that matched nobody, WITH its value
+#: — `{value, unit, obs_ts, device, reason}`, patient_id the number as received, subject the code (written by
+#: `/ingest`, api/app.py). `reading_assigned` / `reading_rejected`: one row per set a person linked or rejected
+#: (the router below, Task B6). The dashboard's «Denetim» page names all three (engineTypes.test.js reads these).
+READING_UNMATCHED = "reading_unmatched"
+READING_ASSIGNED = "reading_assigned"
+READING_REJECTED = "reading_rejected"
+#: D9: what `/ingest` does with a number no identity record exists for. `card`: today's behaviour — the reading
+#: is applied and makes a nameless card (the default: the test suite, scripts/replay.py and the seed scripts
+#: ingest without an identity). `unmatched`: the reading is listed, with no engine entry and no card (production).
+POLICY_CARD = "card"
+POLICY_UNMATCHED = "unmatched"
+UNKNOWN_POLICIES = (POLICY_CARD, POLICY_UNMATCHED)
 #: D6: the hand entries the record keeps — the bedside form's set, by the slug a `chart` row carries: what «hatalı
 #: giriş» may withdraw (api/clinical.py RETRACTABLE_CODES) minus the fluid volumes, which have their own ledger.
 MANUAL_CODES = RETRACTABLE_CODES - FLUID_CODES
