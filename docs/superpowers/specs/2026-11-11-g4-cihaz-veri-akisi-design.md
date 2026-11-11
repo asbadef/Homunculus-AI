@@ -64,7 +64,8 @@ readings, their 120-s forgetting, and everything the shadow engine reads stay ex
 
 **Per device (`source`):**
 - `first_seen_at`;
-- `last_packet_at`: the report's time minus its `packet_age_ms`, or the report's time when the age is absent;
+- `last_packet_at`: the report's time minus its `packet_age_ms`; a report with no packet age leaves it unchanged
+  (plan N5: the hub sends no age only when it has never had a packet from that monitor);
 - `last_report_at`.
 
 **Per device and channel:** `last_value_at`, the last time the channel carried a valid value (`state: value`).
@@ -249,8 +250,8 @@ come from the same review; they are referred to here, not repeated.
 - **New verdicts.** «Veri akıyor · {streaming}/{total} monitör veri gönderiyor» only while at least one monitor sends.
   Otherwise a working chain says:
   - none sending: «Zincir çalışıyor, ama hiçbir monitör veri göndermiyor» (sections 2 and 3 list; the counts follow);
-  - no monitor in the answer (`total` 0, which for a scoped caller means none on its beds): «Hub hiç monitör
-    bildirmiyor»;
+  - no monitor in the answer (`total` 0: the hub reports none, or a scoped caller has none on its beds; the board has
+    no hub-wide count to tell them apart): «Bu görünümde monitör yok»;
   - counts the answer does not carry, or not as whole numbers (`chipCounts` null): «Zincir çalışıyor; monitör sayıları
     okunamıyor». A count it was not told is no count, never a zero.
 
@@ -259,7 +260,7 @@ come from the same review; they are referred to here, not repeated.
 - **Unknown, never empty.** When sections 2 and 3 cannot list, they say why and never «yok» (`listingOf`):
   - a broken chain: «Veri zinciri kesik: monitörler tek tek listelenmiyor» (as in D5);
   - an unknown feed state or unread counts: «Veri akışının durumu bilinmiyor: monitörler tek tek değerlendirilemiyor»;
-  - no monitors: «Hub monitör bildirmediği için değerlendirilemiyor»;
+  - no monitors: «Bu görünümde monitör olmadığı için değerlendirilemiyor»;
   - an answer without the ledger (an API before G4-01, or the GET containment above): «Bu sürüm «ne zamandan beri»
     bilgisini vermiyor». Section 2 still lists the silent and unknown cards by their status, without a time; section 3
     lists nothing;

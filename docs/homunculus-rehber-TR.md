@@ -2001,8 +2001,8 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
        onları tek tek arıza diye listelemez.
      - Zincir çalışıyorsa hüküm monitörlerindir. En az bir monitör veri gönderiyorsa «Veri akıyor · 5/6
        monitör veri gönderiyor»; hiçbiri göndermiyorsa «Zincir çalışıyor, ama hiçbir monitör veri
-       göndermiyor»; hub sayfanın gösterebileceği hiçbir monitörü bildirmiyorsa «Hub hiç monitör
-       bildirmiyor»; monitör sayıları yanıtta okunamıyorsa «Zincir çalışıyor; monitör sayıları
+       göndermiyor»; bu görünümde hiç monitör yoksa (hub hiç bildirmiyor ya da yetkinizin olduğu
+       yataklarda monitör yok) «Bu görünümde monitör yok»; monitör sayıları yanıtta okunamıyorsa «Zincir çalışıyor; monitör sayıları
        okunamıyor».
      - Sayılar yalnız ilk iki hükmün altında yazılır, yalnız sıfırdan büyükler, bu sırayla: sessiz,
        eskiyen kanal (3. bölümde listelenenler), beklemede, veri bekliyor, atanmamış.
@@ -2043,7 +2043,7 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   - zincir kopuksa: «Veri zinciri kesik: monitörler tek tek listelenmiyor»;
   - zincirin durumu ya da monitör sayıları bilinmiyorsa: «Veri akışının durumu bilinmiyor: monitörler
     tek tek değerlendirilemiyor»;
-  - hub monitör bildirmiyorsa: «Hub monitör bildirmediği için değerlendirilemiyor»;
+  - bu görünümde monitör yoksa: «Bu görünümde monitör olmadığı için değerlendirilemiyor»;
   - yanıtta «ne zamandan beri» bilgisi yoksa (eski bir API sürümü ya da sunucunun okuyamadığı hafıza,
     aşağıda): «Bu sürüm «ne zamandan beri» bilgisini vermiyor» — 2. bölüm sessiz monitörleri o zaman
     yalnız durumlarıyla, zamansız listeler;
