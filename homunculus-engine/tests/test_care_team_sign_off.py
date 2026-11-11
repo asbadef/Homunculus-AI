@@ -6,17 +6,21 @@
   names a nurse, is refused `care_team_not_physician`, and nothing is written;
 - the role group decides, not a care-team key: a unit physician, who assigns nobody, becomes the
   attending she signs for;
-- the signer then sees the patient as her own (O45 closed).
+- the signer then sees the patient as her own (O45 closed);
+- the same rule stands at admit (final review, T1): a form that names a non-physician as the
+  attending is refused 422 `field_invalid:attending_physician_id`, so no new DRAFT names one.
 Postgres. Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
 import uuid
 
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from homunculus.admission import service
-from homunculus.admission.models import Admission, AdmissionState, CareTeamMember, CareTeamRole
+from homunculus.admission.models import (
+    Admission, AdmissionState, CareTeamMember, CareTeamRole, Patient,
+)
 from homunculus.admission.service import WorkflowError
 from homunculus.scope.service import read_own_patient_ids
 from tests.conftest import requires_db
@@ -103,10 +107,53 @@ async def test_an_administrator_signing_a_draft_that_names_nobody_is_refused(war
     assert audited(app, "admission.sign_off") == audited(app, "care_team.attending") == []
 
 
-async def test_a_form_naming_a_nurse_as_attending_is_refused_whoever_signs(ward, db_session):
+async def _counts(db) -> tuple[int, int]:
+    """(admissions, patients) held: a refused admit writes neither."""
+    return (await db.scalar(select(func.count()).select_from(Admission)),
+            await db.scalar(select(func.count()).select_from(Patient)))
+
+
+async def test_a_form_naming_a_nurse_as_attending_is_refused_at_admit(ward, db_session):
+    """T1 at admit (final review): the route that makes the DRAFT refuses a non-physician
+    attending, so the sign-off's refusal is only ever for old data. 422 naming the field;
+    nothing is written: no admission, no patient."""
     w, client, app = ward
     nurse = w.users["nurse"].id
-    admission = await _admit_naming(w, client, nurse)
+    before = await _counts(db_session)
+    body = form(w)
+    body["note"]["attending_physician_id"] = str(nurse)
+    r = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (
+        422, "field_invalid:attending_physician_id")
+    assert await _counts(db_session) == before
+    assert audited(app, "admission.admit") == []
+
+
+async def test_a_form_naming_a_physician_as_attending_is_accepted_at_admit(ward, db_session):
+    w, client, _ = ward
+    named = await add_physician(db_session, w, "adli")
+    admission = await _admit_naming(w, client, named)
+    assert admission["state"] == "DRAFT"
+    assert admission["attending_physician_id"] == str(named)
+
+
+async def test_a_form_naming_nobody_is_accepted_at_admit(ward):
+    """The Kabul screen names none; the signer becomes the attending."""
+    w, client, _ = ward
+    admission = await admit(w, client)
+    assert (admission["state"], admission["attending_physician_id"]) == ("DRAFT", None)
+
+
+async def test_a_draft_naming_a_nurse_is_refused_at_sign_off_whoever_signs(ward, db_session):
+    """Old data. The admit route no longer lets a DRAFT name a non-physician (the test above),
+    so this DRAFT is made naming nobody and then given the nurse directly in the database, as a
+    DRAFT written before that rule would hold her. The sign-off still refuses it."""
+    w, client, app = ward
+    nurse = w.users["nurse"].id
+    admission = await admit(w, client)
+    await db_session.execute(update(Admission).where(Admission.id == uuid.UUID(admission["id"]))
+                             .values(attending_physician_id=nurse))
+    await db_session.commit()
     r = await client.post(f"/admissions/{admission['id']}/sign-off", headers=w.auth["doctor"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "care_team_not_physician")
     assert await _signature(db_session, admission["id"]) == (AdmissionState.DRAFT, None, nurse)

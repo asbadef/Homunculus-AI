@@ -420,9 +420,11 @@ async def test_the_callers_own_ids_in_a_body_get_past_the_scoping(world, name):
 
 # ---------------------------------------------------------------- users named in a BODY
 USERS: dict[str, InBody] = {
+    # G2-B1c (T1, X15): a member of the tenant gets past the tenant check; a nurse is no physician,
+    # and the admit route refuses her as the attending: 422 `field_invalid:attending_physician_id`.
     "admitting attending": InBody(
         "POST", lambda a: "/admissions",
-        lambda a, u: _admission_body(a.unit, a.free_bed, attending=u), 201),
+        lambda a, u: _admission_body(a.unit, a.free_bed, attending=u), 422),
     # G2-B1c (T1): a member of the tenant gets past the tenant check; a nurse is no physician.
     "care-team member": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/care-team",
@@ -455,6 +457,8 @@ async def test_a_member_of_the_callers_tenant_in_a_body_is_accepted(world, name)
     case = USERS[name]
     r = await _call(world, case.method, case.path(world.a), case.body(world.a, world.a.member))
     assert r.status_code == case.control, r.text
+    # A 422 control (the admitting attending, a nurse) must not be the tenant check's own 422.
+    assert r.json().get("detail") != NOT_A_MEMBER
 
 
 @requires_db

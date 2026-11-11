@@ -508,6 +508,13 @@ async def create_admission(
                 await _earlier(db, caller_tenant, payload.request_id) is not None:
             await db.rollback()
             return await answer_again()
+        # G2-B1c (T1, X15; final review): the attending a form names is a physician, as the one a
+        # sign-off or a claim makes. A DRAFT naming a nurse could be signed by nobody and mended
+        # by no claim or add (T3). After the look-up above, so a form sent again is still answered
+        # (A-19); before the protocol is issued, so nothing is spent on a refusal.
+        named = payload.note.attending_physician_id
+        if named is not None and not await service.is_physician(db, caller_tenant, named):
+            raise field_invalid("attending_physician_id", "The attending must be a physician.")
         if identity is not None and \
                 (found := await _open_admission_of(db, caller_tenant, identity)) is not None:
             raise _duplicate(found, reach)

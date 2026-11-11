@@ -203,7 +203,12 @@ async def add_care_team_member(
     role: CareTeamRole, granted_by_id: uuid.UUID,
     window_start: datetime | None = None, window_end: datetime | None = None,
 ) -> CareTeamMember:
-    """§4.3 — attending adds an associate or a time-boxed on-call physician."""
+    """§4.3 — attending adds an associate or a time-boxed on-call physician. Never an ATTENDING:
+    G2-B1c (T4, X15) `set_attending` is the one writer of that row, because it ends the previous
+    attending's row and names her on the admission; a second row written past it would meet the
+    one-attending index as a 500."""
+    if role == CareTeamRole.ATTENDING:
+        raise WorkflowError("An ATTENDING row is written by set_attending only (T4).")
     if role == CareTeamRole.ONCALL_PHYSICIAN:
         if window_start is None or window_end is None:
             raise WorkflowError("ONCALL_PHYSICIAN requires window_start and window_end (§3.3).")
