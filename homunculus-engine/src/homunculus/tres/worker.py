@@ -16,7 +16,10 @@ whole, one after the other, each on its own client:
   round at once — every next package would ask the same token route the same question;
 * MAX_CONSECUTIVE packages failing in a row (a 5xx, a dead line, a package's own exception) end
   the tenant's round too — the platform, or the line to it, is not well, and the next round will
-  find out. None of these is counted against a ledger row (ledger.py: an outage).
+  find out. None of these is counted against a ledger row (ledger.py: an outage);
+* THE TENANT'S SWITCHES HOLD DURING ITS ROUND (review #5): its settings row is read again before
+  every package — switched off, or its mode or environment changed, and its round ends; its types
+  as they are now go to the `Sender`, which skips (`type_off`) any resource of a type switched off.
 
 THE INSTALL'S LOCK (D2 (b)): with `egress` false `run_round` returns at once — no session is
 opened, no client is built, no connection is made, whatever a tenant's row says. `tres_loop` is
@@ -34,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -56,20 +59,31 @@ PACE_S = 0.3
 THROTTLED_S = 900.0
 #: The packages failing in a row after which a tenant's round ends (D21).
 MAX_CONSECUTIVE = 5
+#: The skip reason of a resource whose type the tenant has switched off (Yönetim › TRƏS).
+TYPE_OFF = "type_off"
 
 
 class Sender:
     """What a package is handed: `send` takes one built resource to the platform through the
     ledger (its row comes back, `remote_id` on it), `skip` records why one was not built. Bound to
-    one tenant, its selected environment and its mode, for one round."""
+    one tenant, its selected environment and its mode, for one round.
+
+    THE TENANT'S TYPE SWITCHES ARE ENFORCED HERE, the one door every resource goes through (review
+    #5): `send` of a type the tenant has switched off asks the platform nothing and records a skip
+    with the reason TYPE_OFF — whatever the package builder forgot. The round refreshes
+    `enabled_types` before each package (`_work`)."""
 
     def __init__(self, db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
-                 environment: str, mode: str, now: datetime) -> None:
+                 environment: str, mode: str, now: datetime, enabled_types: Iterable[str]) -> None:
         self._db, self._client = db, client
         self.tenant_id, self.environment, self.mode, self.now = tenant_id, environment, mode, now
+        self.enabled_types = frozenset(enabled_types)
 
     async def send(self, *, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                    admission_id: uuid.UUID | None = None, force: bool = False) -> TresDelivery:
+        if resource_type not in self.enabled_types:
+            return await self.skip(resource_type=resource_type, local_id=local_id, reason=TYPE_OFF,
+                                   admission_id=admission_id)
         return await deliver(self._db, self._client, tenant_id=self.tenant_id,
                              environment=self.environment, mode=self.mode,
                              resource_type=resource_type, fhir_type=fhir_type, local_id=local_id,
@@ -118,12 +132,31 @@ class _Pacer:
         self._started = True
 
 
+async def _still_on(db: AsyncSession, sender: Sender) -> bool:
+    """Reads the tenant's settings row again (by its key, `populate_existing`: the row held in
+    memory is refreshed, not trusted) — an administrator may have saved the tab since the round
+    began (review #5). False when the feed was switched off, or its mode or environment changed:
+    the tenant's round ends there, and the next one starts on what is set now. Otherwise the
+    sender takes the types as they are now."""
+    current = await db.get(TresSettings, sender.tenant_id, populate_existing=True)
+    if current is None or current.mode != sender.mode or current.environment != sender.environment:
+        log.warning("TRƏS: tenant %s's mode or environment changed during its round; its round ends",
+                    sender.tenant_id)
+        return False
+    sender.enabled_types = frozenset(current.enabled_types or ())
+    return True
+
+
 async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: TresSettings,
                 source: PackageSource, report: RoundReport) -> None:
-    """One tenant's packages, until they end, a 429 or a refused session comes, or MAX_CONSECUTIVE
-    fail in a row."""
+    """One tenant's packages, until they end, a 429 or a refused session comes, MAX_CONSECUTIVE
+    fail in a row, or the tenant's settings change under it (re-read before every package)."""
     consecutive = 0
+    if not await _still_on(db, sender):
+        return
     async for package in source(db, settings):
+        if not await _still_on(db, sender):
+            return
         try:
             await package(sender)
         except TresError as exc:
@@ -144,6 +177,10 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
             consecutive += 1
             log.error("TRƏS: a package failed for tenant %s (%s)", sender.tenant_id, type(exc).__name__)
             await db.rollback()
+            # The rollback expired every row this session held, the settings the source reads
+            # among them: read them again before the source runs on.
+            if not await _still_on(db, sender):
+                return
         else:
             report.packages += 1
             consecutive = 0
@@ -182,7 +219,8 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 continue
             report.tenants += 1
             client.pace = _Pacer(sleep).wait
-            sender = Sender(db, client, tenant_id=tenant_id, environment=environment, mode=mode, now=now)
+            sender = Sender(db, client, tenant_id=tenant_id, environment=environment, mode=mode, now=now,
+                            enabled_types=())        # `_work` reads the tenant's types before each package
             try:
                 await _work(db, client, sender, settings, source, report)
             finally:

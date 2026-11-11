@@ -4,7 +4,9 @@ and no client is ever built; the loop is started by the lifespan only when the l
 five minutes between rounds, survives a bad one and backs off after a 429; a round works only the
 tenants whose mode is not `off` and whose account is whole, hands each package a `Sender`, spaces
 the requests 300 ms apart, ends a tenant's round at once on a 429 or a refused session and after
-five failures in a row (a 5xx, a dead line), and an outage counts against no ledger row. The
+five failures in a row (a 5xx, a dead line), and an outage counts against no ledger row; a
+type the tenant switched off is skipped at the sender, and a tenant switched off or moved to
+another environment during its round is sent no further package. The
 lock, the loop and the lifespan need no database; the rounds run on Postgres against the stand-in
 (tests/fake_tres.py). Synthetic tenants, synthetic people."""
 from __future__ import annotations
@@ -363,3 +365,75 @@ async def test_a_dead_line_counts_as_a_failure_and_five_of_them_end_the_round(db
     rows = (await db_session.execute(select(TresDelivery))).scalars().all()
     # counted against the round, never against a row: five brand-new rows, still `pending`
     assert len(rows) == 5 and {(r.status, r.attempts, r.last_error) for r in rows} == {("pending", 0, None)}
+
+
+# ---------------------------------------------------------------- the tenant's switches (review #5)
+def practitioner(local_id: str) -> dict:
+    return {"resourceType": "Practitioner", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-practitioner"]},
+            "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}]}
+
+
+@requires_db
+async def test_a_type_switched_off_is_skipped_at_the_sender_and_never_asked_for(feed, db_session):
+    fake, tenants, round_ = feed
+    settings = await db_session.get(TresSettings, tenants["acik"].id)
+    settings.enabled_types = ["patient"]
+    await db_session.commit()
+
+    async def package(sender) -> None:
+        row = await sender.send(resource_type="practitioner", fhir_type="Practitioner", local_id="hmn-pr-0001",
+                                resource=practitioner("hmn-pr-0001"))
+        assert (row.status, row.reason) == ("skipped", "type_off")
+        await sender.send(resource_type="patient", fhir_type="Patient", local_id="hmn-p-0001",
+                          resource=patient("hmn-p-0001"))
+
+    report, _, _ = await round_(source_of(package))
+    assert report.packages == 1
+    assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]   # no Practitioner at all
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.local_id, r.status, r.reason) for r in rows] == [
+        ("hmn-p-0001", "sent", None), ("hmn-pr-0001", "skipped", "type_off")]
+
+
+async def _change_settings(maker, tenant_id, **values) -> None:
+    """What an administrator's save does, from another session, while the round runs."""
+    async with maker() as other:
+        row = await other.get(TresSettings, tenant_id)
+        for name, value in values.items():
+            setattr(row, name, value)
+        await other.commit()
+
+
+@requires_db
+@pytest.mark.parametrize("change", [{"mode": "off"}, {"environment": "live"}, {"mode": "validate"}],
+                         ids=["mode-off", "environment-live", "send-to-validate"])
+async def test_a_tenant_switched_off_or_moved_during_its_round_is_not_sent_another_package(feed, db_session, change):
+    fake, tenants, round_ = feed
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    tenant_id = tenants["acik"].id
+
+    async def then_switched(sender) -> None:
+        await sends("hmn-p-0001")(sender)
+        await _change_settings(maker, tenant_id, **change)
+
+    report, _, _ = await round_(source_of(then_switched, sends("hmn-p-0002"), sends("hmn-p-0003")))
+    assert (report.packages, report.failed) == (1, 0)
+    assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]   # the first package only
+
+
+@requires_db
+async def test_types_switched_during_a_round_apply_to_the_next_package(feed, db_session):
+    fake, tenants, round_ = feed
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    tenant_id = tenants["acik"].id
+
+    async def then_patients_off(sender) -> None:
+        await sends("hmn-p-0001")(sender)
+        await _change_settings(maker, tenant_id, enabled_types=["practitioner"])
+
+    report, _, _ = await round_(source_of(then_patients_off, sends("hmn-p-0002")))
+    assert report.packages == 2
+    assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.local_id, r.status, r.reason) for r in rows] == [
+        ("hmn-p-0001", "sent", None), ("hmn-p-0002", "skipped", "type_off")]
