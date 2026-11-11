@@ -507,7 +507,7 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText("Müddət gedir · 20 dəq qalıb")).toBeInTheDocument();                         // eczane.ab.running
     expect(screen.getByText("noradrenalin 0.12 mkq/kq/dəq · 20 dəq əvvəl")).toBeInTheDocument();         // patient.medsRunning, reused
     expect(screen.getAllByText("Bu gün qeyd yoxdur").length).toBeGreaterThan(0);                         // eczane.fluid.none
-    expect(screen.getByText("antibiotik qeydi yoxdur: 2")).toBeInTheDocument();                          // eczane.count.noRecord
+    expect(screen.getByText("sayılan tətbiq qeydi yoxdur: 2")).toBeInTheDocument();                          // eczane.count.noRecord
     expect(rawKeys(document.body)).toEqual([]);
     fail = true;
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });   // the page reads again

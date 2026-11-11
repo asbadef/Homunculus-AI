@@ -33,7 +33,7 @@ describe("the pharmacy page's words (eczane)", () => {
     const tr = DICTIONARIES.tr;
     expect(["running", "missed", "onPressor", "recognized"].map((k) => tr[`eczane.count.${k}`]))
       .toEqual(["Süre işliyor", "Süre aştı", "Vazopresör / inotrop alan", "Sepsis tanınan"]);
-    expect(fill(tr["eczane.count.noRecord"], { n: 2 })).toBe("antibiyotik kaydı yok: 2");
+    expect(fill(tr["eczane.count.noRecord"], { n: 2 })).toBe("sayılan uygulama kaydı yok: 2");
   });
 
   it("words the six states, the second line and the two past-tense twins as the spec does", () => {

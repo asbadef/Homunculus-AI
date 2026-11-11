@@ -2205,7 +2205,7 @@ adlar uydurmadır.
 - **Sayfanın sırası (yukarıdan aşağı):**
   1. **Başlık** «Eczane» ve tek cümlesi.
   2. **Dört sayaç** (sayıları sunucu gönderir): «Süre işliyor», «Süre aştı», «Vazopresör / inotrop alan» ve «Sepsis
-     tanınan» (altında «antibiyotik kaydı yok: n»; n her zaman ilk iki sayacın toplamıdır, çünkü sepsisi tanınmış ve
+     tanınan» (altında «sayılan uygulama kaydı yok: n»; n her zaman ilk iki sayacın toplamıdır, çünkü sepsisi tanınmış ve
      sayılan bir uygulaması olmayan hasta tam olarak süresi işleyen ya da aşan hastadır).
   3. **Not** (sayfada her durumda durur): «“Kayıt yok” ve “uygulama kaydı yok”, bu sisteme antibiyotik uygulaması
      kaydedilmediğini söyler; verilmediği anlamına gelmez.» Yani bu sözler «verilmedi» demek değildir: antibiyotik

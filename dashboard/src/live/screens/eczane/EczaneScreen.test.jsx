@@ -66,7 +66,7 @@ describe("the pharmacy page", () => {
   it("shows the server's four counters, and the part of the fourth", async () => {
     await open();
     expect(["clock_running", "clock_missed", "on_pressor", "recognized"].map(tile)).toEqual(["1", "1", "1", "4"]);
-    expect(tile("recognized_no_record")).toBe("antibiotik qeydi yoxdur: 2");
+    expect(tile("recognized_no_record")).toBe("sayılan tətbiq qeydi yoxdur: 2");
     const labels = [...document.querySelectorAll("[data-counters] [data-testid]")].map((el) => el.nextElementSibling?.textContent);
     expect(labels.slice(0, 4)).toEqual(["Müddət gedir", "Müddət keçib", "Vazopressor / inotrop alan", "Sepsis aşkar edilən"]);
     expect(document.querySelector("[data-as-of]")).toBeNull();
