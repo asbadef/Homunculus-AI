@@ -109,6 +109,11 @@ services:
       # an unassigned user sees the whole hospital). Turn it on only once assignments exist —
       # on an empty assignment table it blacks out every clinical screen at once.
       SCOPE_ENFORCE_UNASSIGNED: ${SCOPE_ENFORCE_UNASSIGNED:-}
+      # What POST /ingest does with a device reading under a number no admission or HIS record
+      # exists for (G3-05, D9). Unset = the «Eşleşmeyen ölçümler» list: the reading is kept, with its
+      # value, and makes no card. `card` = a nameless card is made, as before — for replays and
+      # demos into a stack with no admissions (scripts/replay.py). Read at start.
+      READINGS_UNKNOWN_KEY: ${READINGS_UNKNOWN_KEY:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target

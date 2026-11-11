@@ -1521,14 +1521,24 @@ def create_app(
         row, then the list's table row. Nothing reaches the engine: no evaluation, no hook, no stamp, no frame,
         no notification, no card. The answer is 200 (`dropped`), as the door has answered a discharged number
         since G2-A11: a per-reading 4xx on a device that keeps an old number would read as rejections in the
-        hub's counters. A table write that FAILS is not swallowed here (D7): the list is the only place a nurse
-        will see this reading, so the request fails (500) and the bridge sends it again."""
+        hub's counters.
+
+        A table write that FAILS does not fail the request (D7, as amended in the B5 review): the audit row, with
+        the value, is already written, and `reconcile` files every `reading_unmatched` row into the table at
+        start and hourly. A 500 would be worse than the gap it closes: the bridge's uplink is serial, so on a
+        500 it stops and retries every 2 s — one listed reading would stall the feed for EVERY patient (no new
+        values, no alerts) and each retry would write another `reading_unmatched` row. The failure is logged with
+        the class and the reason, never the number or the value, and the answer is the normal 200."""
         written = audit.append(AuditEvent(hospital, READING_UNMATCHED, obs.patient_id, obs.code.value,
                                           {"value": obs.value, "unit": obs.unit,
                                            "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device,
                                            "reason": reason}))
-        readings.add(device_reading(hospital, obs, received_at=datetime.now(timezone.utc), audit_id=written.id,
-                                    reason=reason))
+        try:
+            readings.add(device_reading(hospital, obs, received_at=datetime.now(timezone.utc), audit_id=written.id,
+                                        reason=reason))
+        except Exception as exc:
+            log.error("vital_readings: eşleşmeyen ölçümün satırı yazılamadı (hastane %s, neden %s, %s); "
+                      "reconcile tamamlar", hospital, reason, type(exc).__name__)
         return {"patient_id": obs.patient_id, "dropped": dropped}
 
     async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,

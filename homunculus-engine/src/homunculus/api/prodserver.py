@@ -521,11 +521,24 @@ def _unknown_readings(url: str, env=None) -> str:
     """G3-05 (D9): what `/ingest` does with a number no identity record exists for. On a Postgres deployment —
     the hospital — the reading goes to the unmatched list and makes no card; READINGS_UNKNOWN_KEY=card turns
     that back, for a replay of recorded data into a deployment with no admissions. Anywhere else the reading is
-    applied and makes a card, as before: a development start has no admissions to match against."""
+    applied and makes a card, as before: a development start has no admissions to match against.
+
+    The policy in effect is logged once, at start. A value that is neither empty, `card` nor `unmatched` (a typo
+    such as `kart`) is warned about and the list stays in effect: the safe policy never turns itself off by a
+    misspelling, and the operator is told that the switch did nothing."""
     env = os.environ if env is None else env
     if not _is_production(url):
-        return POLICY_CARD
-    return POLICY_CARD if str(env.get("READINGS_UNKNOWN_KEY", "")).strip().lower() == POLICY_CARD else POLICY_UNMATCHED
+        policy = POLICY_CARD
+    else:
+        raw = str(env.get("READINGS_UNKNOWN_KEY", "")).strip().lower()
+        policy = POLICY_CARD if raw == POLICY_CARD else POLICY_UNMATCHED
+        if raw not in ("", POLICY_CARD, POLICY_UNMATCHED):
+            logger.warning("READINGS_UNKNOWN_KEY=%r is not `card`: ignored — a reading under a number with no "
+                           "identity record still goes to the unmatched list", raw)
+    logger.info("readings: a device reading under a number with no identity record is %s",
+                "applied and makes a nameless card (policy card)" if policy == POLICY_CARD
+                else "kept in the unmatched list and makes no card (policy unmatched)")
+    return policy
 
 
 def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:

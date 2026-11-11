@@ -5,6 +5,7 @@ policy. Nothing of it reaches the engine: no alert, no frame, no page, no card. 
 only (CLAUDE.md rule 6)."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -181,19 +182,27 @@ class TestTheNamelessCardOfTheDeployDay:
         assert [(r.value, r.unmatched_reason) for r in store.unmatched("h1", since=WEEK)] == [(91.0, REASON_UNKNOWN)]
 
 
-class TestTheListIsTheOnlyPlace:
-    def test_a_table_write_that_fails_answers_500_so_the_bridge_sends_it_again(self):
-        app, store, audit, _ = _world(policy=POLICY_UNMATCHED)
+class TestTheTableOfTheList:
+    @pytest.mark.parametrize("discharged, number, dropped", [(False, TYPO, "unmatched"), (True, KEY, "discharged")])
+    def test_a_table_write_that_fails_still_answers_200_and_the_audit_row_stands(self, caplog, discharged, number,
+                                                                                 dropped):
+        """B5 review (amends D7): the bridge's uplink is serial — on a 500 it stops and retries every 2 s, so one
+        listed reading would stall the feed for every patient and each retry would write another audit row. The
+        audit row, with the value, is written first and `reconcile` (Task B10) files it into the table; the
+        failure is logged with its class and reason, never the number or the value."""
+        app, store, audit, identities = _world(policy=POLICY_UNMATCHED)
+        if discharged:
+            _admit(identities, state="discharged")
         store.fail = {"add"}
-        with TestClient(app, raise_server_exceptions=False) as client:
-            r = client.post("/ingest", json=obs("spo2", 97, TYPO, WHEN), headers=DEVICE)
-            assert r.status_code == 500
-            assert len(audit.records(tenant="h1", event_type=READING_UNMATCHED, limit=10)) == 1   # the row came first
-            store.fail = set()
-            again = client.post("/ingest", json=obs("spo2", 97, TYPO, WHEN), headers=DEVICE)      # the bridge's retry
-            assert again.status_code == 200 and again.json() == {"patient_id": TYPO, "dropped": "unmatched"}
-        assert len(store.unmatched("h1", since=WEEK)) == 1
-        assert len(audit.records(tenant="h1", event_type=READING_UNMATCHED, limit=10)) == 2
+        with caplog.at_level(logging.ERROR, logger="homunculus.api.app"), TestClient(app) as client:
+            r = client.post("/ingest", json=obs("spo2", 97, number, WHEN), headers=DEVICE)
+            assert r.status_code == 200 and r.json() == {"patient_id": number, "dropped": dropped}
+        [row] = audit.records(tenant="h1", event_type=READING_UNMATCHED, limit=10)       # exactly one: no retry loop
+        assert (row.patient_id, row.payload["value"]) == (number, 97.0)
+        assert store.unmatched("h1", since=WEEK) == []                                    # the table's row is reconcile's
+        [logged] = [rec.getMessage() for rec in caplog.records if rec.name == "homunculus.api.app"]
+        assert "RuntimeError" in logged and "h1" in logged
+        assert number not in logged and "97" not in logged and "readings down" not in logged
 
     def test_a_re_sent_unmatched_reading_is_a_duplicate(self):
         app, store, audit, _ = _world(policy=POLICY_UNMATCHED)
@@ -237,3 +246,31 @@ class TestTheProductionPolicy:
     def test_a_development_start_keeps_the_card(self):
         assert prodserver._unknown_readings("", {}) == POLICY_CARD
         assert prodserver._unknown_readings("sqlite:///x.db", {"READINGS_UNKNOWN_KEY": "unmatched"}) == POLICY_CARD
+
+    @pytest.mark.parametrize("url, env, policy", [
+        ("postgresql+asyncpg://u:p@db.invalid:5432/homunculus", {}, "unmatched"),
+        ("postgresql+asyncpg://u:p@db.invalid:5432/homunculus", {"READINGS_UNKNOWN_KEY": "card"}, "card"),
+        ("", {}, "card"),
+    ])
+    def test_the_policy_in_effect_is_logged_once_and_a_clean_setting_warns_of_nothing(self, caplog, url, env, policy):
+        with caplog.at_level(logging.INFO, logger="homunculus.api.prodserver"):
+            prodserver._unknown_readings(url, env)
+        [info] = [r for r in caplog.records if r.name == "homunculus.api.prodserver"]
+        assert info.levelno == logging.INFO and f"(policy {policy})" in info.getMessage()
+
+    @pytest.mark.parametrize("typo", ["kart", "Cards", "1", "off"])
+    def test_a_misspelt_switch_warns_and_the_list_stays(self, caplog, typo):
+        url = "postgresql+asyncpg://u:p@db.invalid:5432/homunculus"
+        with caplog.at_level(logging.INFO, logger="homunculus.api.prodserver"):
+            assert prodserver._unknown_readings(url, {"READINGS_UNKNOWN_KEY": typo}) == POLICY_UNMATCHED
+        warned = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warned) == 1 and "READINGS_UNKNOWN_KEY" in warned[0].getMessage()
+        assert repr(typo.strip().lower()) in warned[0].getMessage()
+        assert "(policy unmatched)" in caplog.records[-1].getMessage()           # and the verdict is still logged once
+
+    def test_the_policys_own_names_are_no_typo(self, caplog):
+        url = "postgresql+asyncpg://u:p@db.invalid:5432/homunculus"
+        with caplog.at_level(logging.INFO, logger="homunculus.api.prodserver"):
+            assert prodserver._unknown_readings(url, {"READINGS_UNKNOWN_KEY": "unmatched"}) == POLICY_UNMATCHED
+            assert prodserver._unknown_readings(url, {"READINGS_UNKNOWN_KEY": "  "}) == POLICY_UNMATCHED
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

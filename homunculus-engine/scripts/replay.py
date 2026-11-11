@@ -11,6 +11,10 @@ line, where it would land in a shell's history and in every process listing; wit
 server's "dev-token" (one note on stderr says so, naming the variable and never a value). `--now`
 moves the scenario so its last event is now (`loader.rebased`): the trend charts' window ends at the
 server's clock and the scenarios are written at fixed dates, so an unmoved replay draws an empty chart.
+
+On a Postgres stack every replayed reading under a number with no identity record now goes to the
+«Eşleşmeyen ölçümler» list instead of making a card, unless the API runs with READINGS_UNKNOWN_KEY=card
+(deploy/local/.env.example); a development server (no DATABASE_URL) still makes the card.
 """
 import argparse
 import json
