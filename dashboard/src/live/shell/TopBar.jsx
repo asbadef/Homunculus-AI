@@ -9,6 +9,7 @@ import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { waitingAlarms } from "../data/boardStore.js";
+import { useSnoozeClock } from "../data/useSnoozeClock.js";
 import { CONNECTION } from "../../liveConnection.js";
 import { Icon, RiskPill, StatusPill } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
@@ -172,7 +173,9 @@ function BellFoot() {
 function Bell() {
   const { t } = useI18n();
   const board = useBoard();
-  const { known, stale, items } = waitingAlarms(board);
+  // G2-B5b (spec D4): a snoozed alarm is out of the bell until its `until`, by the board's clock (useSnoozeClock).
+  const nowMs = useSnoozeClock();
+  const { known, stale, items } = waitingAlarms({ ...board, nowMs });
   const waiting = items ?? [];
   let status;
   if (known) status = waiting.length ? t("shell.bellCount", { count: waiting.length }) : t("shell.bellNone");

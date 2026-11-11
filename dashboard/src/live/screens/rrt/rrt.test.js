@@ -22,6 +22,13 @@ describe("the RRT queue", () => {
     expect(q.waiting.map((a) => a.id)).toEqual(["C"]);
   });
 
+  // G2-B5b (spec §2): a snoozed alarm is not «on its way» until its time; then it is.
+  it("leaves a snoozed alarm out of the waiting list until its time, by the board's clock", () => {
+    const snoozed = alarm("S", { snooze: { atMs: 0, untilMs: 5_000 } });
+    expect(rrtQueue({ alerts: [snoozed], connection: CONNECTION.LIVE, nowMs: 4_999 }).waiting).toEqual([]);
+    expect(rrtQueue({ alerts: [snoozed], connection: CONNECTION.LIVE, nowMs: 5_000 }).waiting).toEqual([snoozed]);
+  });
+
   // The second list keeps the alarm queue's order (`waitingAlarms`, as the bell and the alarm screen): a severity this
   // build does not know first, then the most severe, one that still fires before one that passed unanswered
   // (RESOLVED, G2-A1), then the oldest.

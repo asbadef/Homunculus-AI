@@ -270,7 +270,7 @@ def _recorded_audit(monkeypatch):
 
 
 def test_the_audits_reads_set_their_own_statement_bound_first(monkeypatch):
-    """GET /audit, /audit/verify (up to AUDIT_VERIFY_LIMIT_MAX rows), the alarm-quality report and a
+    """GET /audit, /audit/verify (AUDIT_VERIFY_PAGE rows a read), the alarm-quality report and a
     restart's replay all read through `records`: 30 s, where the appends keep the engine's 10 s."""
     log, engine = _recorded_audit(monkeypatch)
     log.records(tenant="h1", limit=50_000)

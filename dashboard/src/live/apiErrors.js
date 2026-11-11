@@ -86,7 +86,20 @@ export const API_MESSAGE_KEYS = new Map([
   ["RRT'yi bir kişi çağırır", "rrtByPerson"],
   ["RRT çağrısının gerekçesi 3–500 karakter olmalı", "rrtReasonLength"],
   ["alarm zaten yanıtlandı; RRT çağrısı açılmaz", "rrtAnswered"],
+  // POST /alerts/snooze (G2-B5b): a device is refused; critical, latched, low and info are never snoozed; an answered
+  // alarm is not; minutes within the owner's cap; a reason from the list. Whole keys, in the slice's own namespace.
+  ["alarmı bir kişi erteler", "ertele.err.byPerson"],
+  ["snooze_not_allowed", "ertele.err.notAllowed"],
+  ["alarm zaten yanıtlandı; ertelenmez", "ertele.err.answered"],
+  ["erteleme süresi bu alarm için izin verilen aralıkta değil", "ertele.err.minutes"],
+  ["erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter", "ertele.err.reason"],
+  // The severity the dialog was opened on (`seen_severity`) is no longer the alarm's: nothing was written (review).
+  ["alarmın önemi değişti; ertelemeyi yeniden seçin", "ertele.err.severityChanged"],
+  ["geçersiz seen_severity", "ertele.err.badSeenSeverity"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
+  // GET /audit/verify (G2 borç 3): the whole chain is walked one verification at a time per hospital; a
+  // second while one runs is refused (409), never queued behind it.
+  ["denetim doğrulaması zaten sürüyor", "auditVerifyBusy"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
   // POST /scores/sofa/{id} and /scores/sofa/{id}/preview (G2-A4 review 2, C1–C2): a `preview` key sent to the
   // sign route; a signature without the preview's fingerprint (`expect`); and the 409 of a record that moved

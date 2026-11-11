@@ -18,6 +18,7 @@ import { useSession } from "../session/SessionProvider.jsx";
 import { PHASE, UNLOCK_ATTEMPTS } from "../session/sessionStore.js";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { lockSummary } from "../data/boardStore.js";
+import { useSnoozeClock } from "../data/useSnoozeClock.js";
 import { apiErrorKey, apiErrorText } from "../apiErrors.js";
 import { Alert, Announce, Button, CapsWarning, Icon, StatusPill, useCapsLock } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
@@ -41,7 +42,10 @@ const PILLS = [["unknown", "att"], ["critical", "crit"], ["high", "high"], ["mod
 
 function OpenAlarms() {
   const { t } = useI18n();
-  const { known, stale, open, waiting } = lockSummary(useBoard());
+  const board = useBoard();
+  // G2-B5b (spec D4): a snoozed alarm is not counted as waiting until its `until` (useSnoozeClock).
+  const nowMs = useSnoozeClock();
+  const { known, stale, open, waiting } = lockSummary({ ...board, nowMs });
   return (
     <section aria-label={t("lock.region")} aria-live="polite"
       className="flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-box border border-line2 bg-card px-4 py-2.5 text-13.5">

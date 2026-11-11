@@ -3,8 +3,6 @@
 // (D6), what one `/audit/verify` answer reads as (D4), the event types the page names (§4), and the order
 // the events are shown in (D5).
 
-/** The most records one verification asks for: the server's own cap (`AUDIT_VERIFY_LIMIT_MAX`, D4). */
-export const VERIFY_LIMIT = 50000;
 /** The newest events the page reads (D5). */
 export const EVENTS_LIMIT = 200;
 export const MASK = "••••";
@@ -39,6 +37,7 @@ export const EVENT_TYPES = Object.freeze([
   ["score", "score"], ["score_signed", "scoreSigned"],
   ["alert", "alert"], ["first_seen", "firstSeen"], ["alert_cleared", "alertCleared"],
   ["escalation", "escalation"], ["rrt_call", "rrtCall"], ["notification", "notification"],   // rrt_call: G2-B5 (spec D9)
+  ["alert_snooze", "alertSnooze"],   // G2-B5b (spec D4): «Ertele»
   ["identity", "identity"], ["ingest", "ingest"], ["reading_dropped_discharged", "readingDropped"],
   ["shadow_alert", "shadowAlert"], ["shadow_alert_cleared", "shadowCleared"],
   ["admission.admit", "admit"], ["admission.sign_off", "signOff"],
@@ -74,7 +73,8 @@ const count = (value) => (Number.isFinite(value) ? value : 0);
 
 /** D4: what one `/audit/verify` answer reads as — `kind` broken | unreadable | empty | partial | ok, with
  *  `unsealed` (records written before the seal existed) riding along. An answer without a boolean `ok` is
- *  `unreadable`: never "intact", never "empty". */
+ *  `unreadable`: never "intact", never "empty". Since G2 borç 3 the engine walks the whole chain and every
+ *  answer is `complete: true`; `partial` stays for an answer that says otherwise, never worded as a whole. */
 export function verdictOf(report) {
   const r = report && typeof report === "object" ? report : {};
   const unsealed = count(r.unsealed);

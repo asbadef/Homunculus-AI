@@ -175,10 +175,10 @@ function msFromTimestamp(iso) {
  *  one. `firedAtSec` stays null: it was the old workspace's simulation clock, which ran at 60x and
  *  aged a real alarm a minute per second.
  *
- *  Escalation-chain fields (`currentStep`, `events`, `snooze`, `mutedUntil`) stay at their "just
+ *  Escalation-chain fields (`currentStep`, `events`, `mutedUntil`) stay at their "just
  *  fired" defaults: escalation for live alerts happens server-side (the engine's own escalation
  *  loop). `source: "device"` marks that explicitly — the old workspace's AlertCard drew its own
- *  local escalation countdown for anything without it. */
+ *  local escalation countdown for anything without it. `snooze` is the engine's own since G2-B5b. */
 export function alertsFromPatients(patients) {
   const list = Array.isArray(patients) ? patients : [];
   const out = [];
@@ -240,7 +240,15 @@ export function alertsFromPatients(patients) {
         ack: a.acknowledged
           ? { by: a.acknowledged_by ?? null, reason: null, note: null }
           : null,
-        snooze: null,
+        // G2-B5b (D3): the alarm's snooze — who, when, until when, for how long, why — or null. The board store's
+        // waiting queue leaves the alarm out until `untilMs`, by the board's clock (data/snooze.js).
+        snooze: a.snooze && typeof a.snooze === "object"
+          ? {
+            by: a.snooze.by ?? null, atMs: msFromTimestamp(a.snooze.at), untilMs: msFromTimestamp(a.snooze.until),
+            minutes: Number.isFinite(a.snooze.minutes) ? a.snooze.minutes : null, reason: a.snooze.reason ?? null,
+            reasonText: a.snooze.reason_text ?? null,
+          }
+          : null,
         mutedUntil: null,
         auto: false,
         trigger: null,

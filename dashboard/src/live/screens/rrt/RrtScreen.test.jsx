@@ -10,7 +10,9 @@ import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/bo
 import { hhmm } from "../../i18n/dates.js";
 import { RrtScreen } from "./RrtScreen.jsx";
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The real setTimeout, taken before any test fakes the timers: a test that drives the clock still lets answers land.
+const realSetTimeout = globalThis.setTimeout;
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 
 /** The rapid-response team's rights (catalogue `rapid_response`): it may answer an alarm and call the team. */
 const RRT = ["board.view", "alerts.ack", "alerts.escalate"];
@@ -102,6 +104,21 @@ describe("the RRT screen", () => {
     expect(screen.queryByText("Not immediate")).toBeNull();
     expect(screen.queryByText("Answered one")).toBeNull();
     expect(within(listOf(CALLS)).getByText("Açıq RRT çağırışı yoxdur.")).toBeInTheDocument();
+  });
+
+  // G2-B5b (spec §2; review): a snoozed alarm is not «on its way» until its until — and is from that moment, by the
+  // screen's own clock, with no frame from the server.
+  it("leaves a snoozed alarm off the list on its way until its snooze ends, and lists it from then", async () => {
+    vi.useRealTimers();                                 // beforeEach mocked the date alone
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(NOW);
+    await open({
+      payload: withAlarms(alarm("news2", "high", { summary: "Snoozed one", snooze: { by: "leyla", at: ago(295),
+        until: new Date(NOW + 5_000).toISOString(), minutes: 5, reason: "PATIENT_BASELINE", reason_text: null } })),
+    });
+    expect(within(listOf(WAITING)).queryByText("Snoozed one")).toBeNull();
+    act(() => { vi.advanceTimersByTime(5_100); });
+    expect(within(listOf(WAITING)).getByText("Snoozed one")).toBeInTheDocument();
   });
 
   // G2-A1 (O17): a critical whose rule stopped before anyone answered stays, latched, until someone does. A called

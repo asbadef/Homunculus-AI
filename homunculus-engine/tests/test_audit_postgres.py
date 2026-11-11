@@ -98,6 +98,33 @@ def test_the_trail_cannot_be_rewritten(audit_log):
 
 
 @requires_db
+def test_the_whole_chain_is_verified_page_by_page_off_the_event_loop(audit_log, monkeypatch):
+    """G2 borç 3 (owner: «Tamamını doğrula»): `/audit/verify` walks every row of the hospital's trail
+    on this backend, a page at a time, each page read on a worker thread through the engine's pool
+    — and a row rewritten past the first pages is named by its id."""
+    from fastapi.testclient import TestClient
+
+    import homunculus.api.app as app_module
+    from homunculus.api.app import create_app
+
+    monkeypatch.setattr(app_module, "AUDIT_VERIFY_PAGE", 3)
+    rows = [audit_log.append(_event(patient_id=f"bed-{i}")) for i in range(8)]
+    audit_log.append(_event(tenant="HOSP2"))
+    auth = {"Authorization": "Bearer tok"}
+    with TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit_log)) as c:
+        whole = c.get("/audit/verify", headers=auth).json()
+        assert (whole["ok"], whole["checked"], whole["records"], whole["complete"]) == (True, 8, 8, True)
+        target = rows[6]                                   # on the third page of three
+        with audit_log._engine.begin() as conn:            # noqa: SLF001 — the administrator's edit
+            conn.execute(text("ALTER TABLE audit DISABLE TRIGGER USER"))
+            conn.execute(text("UPDATE audit SET subject = 'forged' WHERE id = :id"), {"id": target.id})
+            conn.execute(text("ALTER TABLE audit ENABLE TRIGGER USER"))
+        broken = c.get("/audit/verify", headers=auth).json()
+    assert (broken["ok"], broken["broken_at"], broken["checked"]) == (False, target.id, 6)
+    assert "mührüyle uyuşmuyor" in broken["reason"]
+
+
+@requires_db
 def test_survives_a_new_connection(audit_log):
     """The point of moving off local disk: the record outlives the process that wrote it."""
     audit_log.append(_event())

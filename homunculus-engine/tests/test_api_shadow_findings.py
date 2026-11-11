@@ -21,6 +21,7 @@ from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, Sam
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
 from homunculus.canonical import SignalCode
 from homunculus.scope import Scope, ScopeReason
+from homunculus.scope.resolver import UNKNOWN
 from homunculus.tenant.bedmap import BedMap, BedRef
 from tests.test_infinity_shadow_equivalence import SCEN, _encounter, load_scenario
 from tests.test_infinity_shadow_isolation import TABLE, _body as _strip_body
@@ -41,10 +42,12 @@ JWTS = {
     # G3-01: a named chartist — a withdrawal is a person's (X11).
     "chart-jwt": Caller(hospital=HOSPITAL, actor="hem.ayse", groups=("nurse",),
                         perms=frozenset({"board.view", "clinical.chart"})),
+    "unknown-jwt": Caller(hospital=HOSPITAL, actor="synth-u1", groups=("nurse",), perms=frozenset({"board.view"})),
 }
 CHART = {"Authorization": "Bearer chart-jwt"}
 SCOPES = {"bed-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-b1"})),
-          "other-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-x9"}))}
+          "other-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-x9"})),
+          "unknown-jwt": UNKNOWN}       # a scope the resolver could not read (G2 borç 4)
 
 
 class Clock:
@@ -215,6 +218,9 @@ def test_the_findings_route_is_scoped_like_the_board(tmp_path):
         assert [p["patient_id"] for p in get("bed-jwt", "/patients").json()["patients"]] == ["bed-1"]
         assert get("other-jwt", "/patients").json()["patients"] == []
         assert get("tech-jwt").status_code == 403
+        # G2 borç 4: a scope that could not be read is the board's 503, never an empty list.
+        unread = get("unknown-jwt")
+        assert (unread.status_code, unread.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
 
 
 def test_below_rules_nothing_of_it_exists(tmp_path):

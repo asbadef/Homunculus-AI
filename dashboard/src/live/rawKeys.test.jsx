@@ -149,7 +149,10 @@ const PAYLOAD = board([
       antibiotic_clock: null, weight_kg: 72, creatinine: 1.9,
     },
   }),
-  entry("S-002", [], reading({ heart_rate: 88 }, 30)),
+  // G2-B5b: a snoozed alarm, so the alarm screen draws «Ertelenenler», its row's snooze line, and the dialog.
+  entry("S-002", [alarm("acute_change", "moderate", { urgency: "soon", summary: "Acute change from baseline",
+    snooze: { by: "leyla", at: ago(300), until: new Date(NOW + 10 * 60_000).toISOString(), minutes: 15,
+      reason: "PATIENT_BASELINE", reason_text: null } })], reading({ heart_rate: 88 }, 30)),
 ]);
 
 /** Aşama A's monitor strip, on: a monitor on the fixture's card (a value, a `***`, a partly checked
@@ -463,6 +466,20 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText("Səbəb: Solunum güçlüğü")).toBeInTheDocument();                          // rrt.reason
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
     expect(within(rail).getByRole("link", { name: /Sürətli cavab/ })).toHaveAccessibleName(/1 açıq RRT çağırışı/); // rrt.badgeCount
+    expect(rawKeys(document.body)).toEqual([]);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G2-B5b — «Ertele»: the snoozed group and its row's line are drawn only while an alarm is snoozed, and the dialog
+  // (with «Digər»'s explanation box) only on a click, so the sweep above never met them.
+  it("the snooze keys resolve on the snoozed group, its row and in the dialog", async () => {
+    const mounted = await openAt("/alarms");
+    expect(screen.getByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeInTheDocument(); // ertele.groupTitle
+    expect(screen.getByText(/^Təxirə salınıb · bitmə /)).toBeInTheDocument();                        // ertele.snoozedRow
+    fireEvent.click(screen.getAllByRole("button", { name: /^Təxirə sal:/ })[0]);                       // ertele.snoozeLabel
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "OTHER" } });
+    expect(within(dialog).getByRole("textbox")).toBeInTheDocument();                                 // ertele.text, its hint
     expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });

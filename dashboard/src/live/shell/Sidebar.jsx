@@ -18,6 +18,7 @@ import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { waitingAlarms } from "../data/boardStore.js";
+import { useSnoozeClock } from "../data/useSnoozeClock.js";
 import { rrtQueue } from "../screens/rrt/rrt.js";
 import { Icon } from "../ui/Icon.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
@@ -43,14 +44,19 @@ const BADGES = Object.freeze({
  *  would take for current is worse than none — and one that cannot know shows nothing at all. A badge
  *  is never the only signal: the entry's accessible name says the same thing in words. */
 function RailBadge({ routeId }) {
+  // Only the entries with a badge have any use for the board: each reader filters and sorts the whole alert list,
+  // and it was once computed for every entry on every render of the rail. So the hooks live in `Badge`, which
+  // only those entries render (G2-B5b: the snooze clock with them).
+  const badge = BADGES[routeId];
+  return badge ? <Badge badge={badge} /> : null;
+}
+
+function Badge({ badge }) {
   const { t } = useI18n();
   const board = useBoard();
-  // The hooks above run for every rail entry — they must, unconditionally — but each reader filters
-  // and sorts the whole alert list, and only the entries with a badge have any use for the answer.
-  // It was being computed once per entry on every render of the rail.
-  const badge = BADGES[routeId];
-  if (!badge) return null;
-  const { known, stale, items } = badge.read(board);
+  // G2-B5b (spec D4): a snoozed alarm is out of the count until its `until`, by the board's clock (useSnoozeClock).
+  const nowMs = useSnoozeClock();
+  const { known, stale, items } = badge.read({ ...board, nowMs });
   const count = items?.length ?? 0;
   if (known && count > 0) {
     return (

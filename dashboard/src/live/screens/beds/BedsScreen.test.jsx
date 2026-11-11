@@ -10,8 +10,10 @@ import { NOW, ago, alarm, board, entry, identity, measured, news2, scopedTo } fr
 import { STAGE_OFF, bed as monitorBed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { BedsScreen } from "./BedsScreen.jsx";
 
-/** Let every answer already given land. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Let every answer already given land. The real setTimeout, taken before any test fakes the timers: a test that
+ *  drives the clock (a snooze ending) still lets the answers land. */
+const realSetTimeout = globalThis.setTimeout;
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 
 /** The screen inside a real session and board store, with the shell's unit context around it.
  *  `connection`: "live" opens the stream and lets its reload land; "degraded" opens it and drops
@@ -117,6 +119,25 @@ describe("the bed board", () => {
       });
       expect(screen.getByText("Cavab gözləyən siqnal: 2")).toBeInTheDocument();
       expect(screen.getByText("Ən köhnəsi 4:07 əvvəl açılıb")).toBeInTheDocument();
+    });
+
+    // G2-B5b (spec D4; review): a snoozed alarm is not waiting until its until — and is from that moment, by the
+    // line's snooze clock, not its 30-second tick, with no frame from the server.
+    it("leaves a snoozed alarm out of the line until its snooze ends, and counts it from then", async () => {
+      vi.useRealTimers();                               // beforeEach mocked the date alone
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+      vi.setSystemTime(NOW);
+      await open({
+        payload: board([
+          entry("S-001", [alarm("news2", "high", { snooze: { by: "leyla", at: ago(295),
+            until: new Date(NOW + 5_000).toISOString(), minutes: 5, reason: "PATIENT_BASELINE", reason_text: null } })],
+          { ...CARD, risk: "high" }),
+          entry("S-002", [alarm("acute_change", "moderate")], { at: measured(30), risk: "moderate" }),
+        ]),
+      });
+      expect(screen.getByText("Cavab gözləyən siqnal: 1")).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(5_100); });
+      expect(screen.getByText("Cavab gözləyən siqnal: 2")).toBeInTheDocument();
     });
 
     it("only a LIVE board says nothing is waiting", async () => {
