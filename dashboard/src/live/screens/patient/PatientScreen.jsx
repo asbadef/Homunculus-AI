@@ -67,6 +67,7 @@ import { MedsBox } from "./meds/MedsBox.jsx";
 import { VitalsEntry } from "./VitalsEntry.jsx"; // G3-01 (D3b)
 import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
 import { FluidsBox } from "./fluids/FluidsBox.jsx"; // G3-03 (D10)
+import { ReadingsBox } from "./readings/ReadingsBox.jsx"; // G3-05 (D16)
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
@@ -449,6 +450,7 @@ export function PatientScreen({ params }) {
             right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
+          <ReadingsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} onWritten={sofaMayHaveMoved} />{/* G3-05 (D16): the measurement record */}
 
           {monitor ? (
             <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}

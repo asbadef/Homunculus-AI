@@ -48,6 +48,7 @@ import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
+import { readings } from "./screens/patient/readings/readings.testutil.js"; // G3-05
 import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
@@ -308,6 +309,10 @@ async function openAt(path, extra) {
       // G3-03: the patient screen's «Sıvı» box — today's entries (one withdrawn), the shifts and the last day, so
       // the sweep meets every word the box prints. Unstubbed it would say only that the ledger is unreadable.
       api.patientFluids.mockImplementation((pid) => Promise.resolve(fluids(pid)));
+
+      // G3-05: the patient screen's «Ölçüm kaydı» box — a hand entry, a device round with a withdrawn value and a
+      // late arrival, so the sweep meets both sources, the struck value and «alındı».
+      api.patientReadings.mockImplementation((pid, hours) => Promise.resolve(readings(pid, hours)));
 
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
