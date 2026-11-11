@@ -953,6 +953,29 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * G3-05 «Ölçüm kaydı» (GET /patients/{id}/readings, `board.view`): what was measured in this stay and by what —
+     * {patient_id, hours, since, until, sets: [{observed_at, received_at, received_late, origin, source, recorded_by,
+     * readings: [{id, code, value, unit, origin, source, recorded_by, entry, voided}]}]}, the newest set first
+     * (homunculus-engine api/readings.py `patient_readings`). `hours` is 24, 72 or 168; the API refuses any other.
+     */
+    patientReadings(patientId, hours = 24) {
+      return authed(`/patients/${seg(patientId)}/readings?hours=${encodeURIComponent(hours)}`);
+    },
+    // G3-05 «Eşleşmeyen ölçümler» (`clinical.chart`, a person only). Refusals carry `err.apiCode`:
+    // `reading_not_unmatched`, `reading_set_mixed`, `reading_too_old`, `reading_target_discharged`,
+    // `reading_reason_length`. Numbers and ids travel in the body, never on the address.
+    /** {count, sets: [{received_key, reason, source, observed_at, received_at, linkable, readings: [{id, code, value, unit}]}]} */
+    unmatchedReadings() { return authed("/readings/unmatched"); },
+    /** One set's readings linked to a patient → {assigned: [ids], patient_id, alerts: [kinds]} */
+    assignReadings(readings, patientId) {
+      return authed("/readings/unmatched/assign", { method: "POST", body: { readings, patient_id: patientId } });
+    },
+    /** One set's readings closed with a reason (10–200 characters) → {rejected: [ids]} */
+    rejectReadings(readings, reason) {
+      return authed("/readings/unmatched/reject", { method: "POST", body: { readings, reason } });
+    },
+
+    /**
      * G3-04 «Eczane» (GET /pharmacy, `pharmacy.view`): one row per patient of the caller's scoped board —
      * vasopressors, the antibiotic state, creatinine, today's fluid balance — sorted and counted by the engine
      * (api/pharmacy.py): {now, antibiotic_window_min, antibiotic_window_source, fluid_day, fluid_truncated,

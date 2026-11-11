@@ -184,6 +184,8 @@ export const API_MESSAGE_KEYS = new Map([
   ["No vital measurement is due for this patient.", "gorevler.err.vitalNotDue"],
   ["görev bulunamadı", "gorevler.err.taskNotFound"],
   ["a person signs a task: this credential names no actor", "gorevler.err.person"],
+  // G3-05 — «Eşleşmeyen ölçümler»: homunculus/api/readings.py READING_NEEDS_PERSON (a 403 with no code).
+  ["a person links or rejects a reading: this credential names no actor", "kayit.err.person"],
 ]);
 
 /** A mapped message's dictionary key: a bare name lives under `errors.`; a key with a dot is already whole
@@ -264,6 +266,17 @@ export const TASK_CODE_KEYS = new Map([
   ["task_not_open", "gorevler.err.notOpen"],
   ["task_reason_length", "gorevler.err.reasonLength"],
   ["vital_not_due", "gorevler.err.vitalNotDue"],
+]);
+
+/** G3-05 — «Eşleşmeyen ölçümler» and «Ölçüm kaydı» (homunculus/api/readings.py WORDS): the readings' refusals by
+ *  their code (`err.apiCode`), as the task queue's. apiErrors.test.js holds the codes to the engine's. */
+export const READING_CODE_KEYS = new Map([
+  ["reading_not_unmatched", "kayit.err.notUnmatched"],
+  ["reading_set_mixed", "kayit.err.setMixed"],
+  ["reading_too_old", "kayit.err.tooOld"],
+  ["reading_target_discharged", "kayit.err.targetDischarged"],
+  ["reading_reason_length", "kayit.err.reasonLength"],
+  ["reading_hours", "kayit.err.hours"],
 ]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card
@@ -361,6 +374,7 @@ function admissionCodeKey(err) {
   }
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (TASK_CODE_KEYS.has(code)) return { key: TASK_CODE_KEYS.get(code), vars: {} };
+  if (READING_CODE_KEYS.has(code)) return { key: READING_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };
   }

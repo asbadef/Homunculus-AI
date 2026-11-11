@@ -358,6 +358,24 @@ describe("the board store", () => {
     expect(await late).toBeNull();
   });
 
+  // G3-05 (D12): a linked set entered the engine, so the card changed and the board reloads; a rejected one changed
+  // no card. A refusal reaches the caller as the API's own error and nothing is reloaded.
+  it("links an unmatched set and reloads, rejects one without reloading, and passes a refusal on", async () => {
+    const { api, store } = setup();
+    api.assignReadings = vi.fn().mockResolvedValue({ assigned: [7, 8], patient_id: "S-001", alerts: [] });
+    api.rejectReadings = vi.fn().mockResolvedValue({ rejected: [9] });
+    expect(await store.assignReadings([7, 8], "S-001")).toMatchObject({ assigned: [7, 8] });
+    expect(api.assignReadings).toHaveBeenLastCalledWith([7, 8], "S-001");
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);
+    expect(await store.rejectReadings([9], "yanlış numara girilmiş")).toEqual({ rejected: [9] });
+    expect(api.rejectReadings).toHaveBeenLastCalledWith([9], "yanlış numara girilmiş");
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // no reload after a rejection
+    const refused = Object.assign(new Error("x"), { status: 409, apiCode: "reading_not_unmatched" });
+    api.assignReadings.mockRejectedValue(refused);
+    await expect(store.assignReadings([7], "S-001")).rejects.toBe(refused);
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);                // … nor after a refusal
+  });
+
   // G3-01 (D10), review of Task 8: the engine's refusal of a withdrawal (here «already withdrawn», a 409) reaches the
   // caller as the API's own error, and the board is not read again — the engine rebuilt nothing, so no card changed.
   it("a refused withdrawal rejects with the API's own error and does not reload the board", async () => {

@@ -226,6 +226,9 @@ const AZ_SAME_AS_TR = new Set([
   "eczane.col.creatinine", //  Kreatinin — the same word in Azerbaijani (as patient.creatinine's first word)
   "eczane.fluid.balance", //   "{value} mL" — a number and the unit symbol (as sivi.ml)
 
+  // G3-05 (kayit) · az = tr — «saat» (hour) and «gün» (day) are Azerbaijani words too (as ozet.period.*)
+  "kayit.w24", "kayit.w72", "kayit.w168", //  24 saat · 72 saat · 7 gün
+
 ]);
 
 describe("live UI dictionaries", () => {

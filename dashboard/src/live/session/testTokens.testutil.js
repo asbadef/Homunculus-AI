@@ -81,6 +81,12 @@ export function fakeApi(vi, { access = null } = {}) {
     // G3-03: Sıvı dengesi — the patient screen's fluid box (screens/patient/fluids)
     patientFluids: vi.fn(),
 
+    // G3-05: Cihaz ölçüm kaydı — the patient's record box and the unmatched list (screens/patient/readings, bedside)
+    patientReadings: vi.fn(),
+    unmatchedReadings: vi.fn(),
+    assignReadings: vi.fn(),
+    rejectReadings: vi.fn(),
+
     // G3-04: Eczane — the pharmacist's ward page (screens/eczane)
     pharmacy: vi.fn(),
 

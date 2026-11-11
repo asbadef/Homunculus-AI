@@ -469,6 +469,22 @@ export function createBoardStore({
       await refresh();
       return answer;
     },
+    // G3-05 (D12): one unmatched set linked to a patient. The engine took each reading at its own time, so the
+    // patient's card changed (and may carry a new alarm): the board reloads, as after a chart. A refusal rejects
+    // with the API's own error (`err.apiCode`), having changed nothing here.
+    async assignReadings(readings, patientId) {
+      const mine = generation;
+      const answer = await track(() => api.assignReadings(readings, patientId));
+      if (mine !== generation) return null;
+      await refresh();
+      return answer;
+    },
+    // G3-05 (D10): one unmatched set rejected. Nothing reached the engine and no card changed: no reload.
+    async rejectReadings(readings, reason) {
+      const mine = generation;
+      const answer = await track(() => api.rejectReadings(readings, reason));
+      return mine === generation ? answer : null;
+    },
     /**
      * The SOFA severity form of one patient (G2-A4, `GET /scores/sofa/{id}`, permission `board.view`):
      * the engine's filled form with its `last_signed` and `min_reason_chars` (D7). A read — the engine

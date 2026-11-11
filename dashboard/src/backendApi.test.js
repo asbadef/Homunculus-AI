@@ -1942,3 +1942,30 @@ describe("G3-04 Eczane call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 });
+
+// G3-05 — Cihaz ölçüm kaydı: the patient's measurement record and the unmatched list (homunculus/api/readings.py)
+describe("G3-05 Cihaz ölçüm kaydı calls", () => {
+  it("reads a patient's record for a window, the unmatched list, and sends a link and a rejection", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ ok: true })));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.patientReadings("S 1/x");
+    await api.patientReadings("202600000001", 168);
+    await api.unmatchedReadings();
+    await api.assignReadings([7, 8], "202600000001");
+    await api.rejectReadings([9], "yanlış numara girilmiş");
+    const calls = fetchMock.mock.calls.map(([url, init]) => [String(url), init.method ?? "GET"]);
+    expect(calls).toEqual([
+      ["/patients/S%201%2Fx/readings?hours=24", "GET"],
+      ["/patients/202600000001/readings?hours=168", "GET"],
+      ["/readings/unmatched", "GET"],
+      ["/readings/unmatched/assign", "POST"],
+      ["/readings/unmatched/reject", "POST"],
+    ]);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer acc-1");
+    // Numbers and ids travel in the body, never on the address (spec §4).
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ readings: [7, 8], patient_id: "202600000001" });
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual({ readings: [9], reason: "yanlış numara girilmiş" });
+  });
+});
