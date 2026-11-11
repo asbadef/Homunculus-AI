@@ -78,25 +78,27 @@ def _grant_uuids(keys: frozenset[str]) -> list[uuid.UUID]:
     return found
 
 
+def unit_clause(scope: Scope, *, unit_id: ColumnElement) -> ColumnElement | None:
+    """`reach_clause` for a row that belongs to a unit and to no bed — a handover (G4-02, spec D4): None
+    when the scope is unrestricted (no filter), else "the unit granted". A bed grant reaches no such row:
+    it names one bed, not the unit around it. The column must be the row's own unit, proven this
+    tenant's by the query (see the module's docstring). `reach_clause` is this, or the bed itself."""
+    if scope.unrestricted:
+        return None
+    return unit_id.in_(_grant_uuids(scope.unit_ids))
+
+
 def reach_clause(scope: Scope, *, unit_id: ColumnElement,
                  bed_id: ColumnElement) -> ColumnElement | None:
     """`reaches` as SQL over a query's unit and bed id columns, so a list is filtered by the
     database rather than after it: None when the scope is unrestricted (no filter), else "the
     unit granted, or the bed itself" — false for a scope that grants neither. The columns must be
-    the bed's own id and its room's unit (see the module's docstring)."""
-    if scope.unrestricted:
+    the bed's own id and its room's unit (see the module's docstring). The unrestricted case and
+    the unit half are `unit_clause`'s (G4-02 review: the rule is written once)."""
+    unit = unit_clause(scope, unit_id=unit_id)
+    if unit is None:
         return None
-    return or_(unit_id.in_(_grant_uuids(scope.unit_ids)), bed_id.in_(_grant_uuids(scope.bed_ids)))
-
-
-def unit_clause(scope: Scope, *, unit_id: ColumnElement) -> ColumnElement | None:
-    """`reach_clause` for a row that belongs to a unit and to no bed — a handover (G4-02, spec D4): None
-    when the scope is unrestricted (no filter), else "the unit granted". A bed grant reaches no such row:
-    it names one bed, not the unit around it. The column must be the row's own unit, proven this
-    tenant's by the query (see the module's docstring)."""
-    if scope.unrestricted:
-        return None
-    return unit_id.in_(_grant_uuids(scope.unit_ids))
+    return or_(unit, bed_id.in_(_grant_uuids(scope.bed_ids)))
 
 
 def require_reach(scope: Scope, *, unit_id: uuid.UUID | str | None,
