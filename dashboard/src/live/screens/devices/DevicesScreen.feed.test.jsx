@@ -19,6 +19,9 @@ afterEach(() => {
   delete document.visibilityState; delete document.hidden;       // hide(): back to jsdom's own (visible)
 });
 
+/** A refusal shaped as the API's own (backendApi.js `failure`): an Error with its detail and status, and its code. */
+const refusal = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
+
 /** Hide or show the tab for real: both of the page's own signals, as a browser sets them (shadowStore, useNow). */
 function hide(hidden) {
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
@@ -36,7 +39,8 @@ async function open(answer, perms = ["devices.manage"], list = EMPTY_LIST) {
     setup: (api) => {
       if (list instanceof Error) api.deviceBeds.mockRejectedValue(list);
       else api.deviceBeds.mockResolvedValue(list);
-      api.shadowBoard.mockResolvedValue(answer);
+      if (answer instanceof Error) api.shadowBoard.mockRejectedValue(answer);
+      else api.shadowBoard.mockResolvedValue(answer);
     },
   });
   await act(async () => { mounted.shadow.start(perms); await settle(); });
@@ -46,6 +50,7 @@ async function open(answer, perms = ["devices.manage"], list = EMPTY_LIST) {
 
 const NO_LEDGER = DICTIONARIES.az["cihaz.listNoLedger"];
 const LIST_UNKNOWN = DICTIONARIES.az["cihaz.listUnknown"];
+const NEVER_NONE = "Cədvəldə olub heç görünməyən monitor yoxdur";
 
 const region = (name) => screen.getByRole("region", { name });
 const items = (name) => within(region(name)).getAllByRole("listitem").map((li) => li.textContent);
@@ -295,6 +300,32 @@ describe("«Tabloda var, hiç görülmedi»", () => {
     const mounted = await open(WARD, ["board.view"]);
     expect(screen.queryByRole("region", { name: "Cədvəldə var, heç görünməyib" })).toBeNull();
     expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
+  });
+
+  it("answers a session that holds only devices.map_beds: the never-seen rows, and a note that the rest needs the device or board right", async () => {
+    const mounted = await open(WARD, ["devices.map_beds"], LIST);
+    expect(screen.getByText(DICTIONARIES.az["cihaz.needsRight"])).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Məlumat gəlirmi?" })).toBeNull();
+    expect(items("Cədvəldə var, heç görünməyib")).toEqual(["9 · Otaq 1 · Reanimasiya · 192.0.2.21 (BED09)", "qoşulmayıb · 192.0.2.22"]);
+    expect(mounted.api.shadowBoard).not.toHaveBeenCalled();                    // the strip is not this session's to read
+  });
+
+  it("answers whatever the strip does: a board that never answered still leaves the list's rows", async () => {
+    await open(refusal(503, "kapsam şu anda okunamıyor"), ["devices.manage"], LIST);
+    expect(screen.queryByRole("region", { name: "Məlumat gəlirmi?" })).toBeNull();
+    expect(items("Cədvəldə var, heç görünməyib")).toHaveLength(2);
+  });
+
+  it("says the list is loading while it loads, and nothing about its rows", async () => {
+    await open(WARD, ["devices.manage"], new Promise(() => {}));
+    expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.loading"]);
+    expect(region("Cədvəldə var, heç görünməyib")).not.toHaveTextContent(NEVER_NONE);
+  });
+
+  it("treats a lane that is off like a list it cannot read", async () => {
+    await open(WARD, ["devices.manage"], refusal(409, "Monitor zolağı bu xəstəxanada söndürülüb", { apiCode: "monitor_lane_off" }));
+    expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.unreadable"]);
+    expect(region("Cədvəldə var, heç görünməyib")).not.toHaveTextContent(NEVER_NONE);
   });
 });
 

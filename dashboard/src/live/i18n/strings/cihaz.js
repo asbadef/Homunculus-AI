@@ -74,6 +74,7 @@ export default {
     wordUnknown: "bilinmiyor",
     neverTitle: "Tabloda var, hiç görülmedi",
     neverNone: "Tabloda olup hiç görülmeyen monitör yok",
+    needsRight: "Veri akışı bölümleri cihaz yönetimi ya da pano görüntüleme yetkisi ister",
   },
   az: {
     title: "Cihaz & Məlumat Axını",
@@ -138,6 +139,7 @@ export default {
     wordUnknown: "məlum deyil",
     neverTitle: "Cədvəldə var, heç görünməyib",
     neverNone: "Cədvəldə olub heç görünməyən monitor yoxdur",
+    needsRight: "Məlumat axını bölmələri cihaz idarəsi və ya lövhəyə baxış səlahiyyəti tələb edir",
   },
   ru: {
     title: "Устройства и поток данных",
@@ -202,6 +204,7 @@ export default {
     wordUnknown: "неизвестно",
     neverTitle: "Есть в таблице, ни разу не замечен",
     neverNone: "В таблице нет мониторов, которые ни разу не были замечены",
+    needsRight: "Разделам потока данных нужно право на управление устройствами или на просмотр панели",
   },
   en: {
     title: "Devices & Data Flow",
@@ -266,5 +269,6 @@ export default {
     wordUnknown: "unknown",
     neverTitle: "In the table, never seen",
     neverNone: "No monitor in the table that was never seen",
+    needsRight: "The data-flow sections need the device-management or board-view right",
   },
 };

@@ -14,7 +14,7 @@
 import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { SHADOW_PHASE } from "../../data/shadowStore.js";
+import { SHADOW_PHASE, mayReadShadow } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf, reasonKey } from "../common/monitor.js";
@@ -116,7 +116,7 @@ export function DevicesScreen() {
         <h1 className="m-0 font-display text-23 font-bold">{t("cihaz.title")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
-      <FeedSections shadow={shadow} mapping={mapping} />
+      <FeedSections shadow={shadow} mapping={mapping} mayRead={mayReadShadow(user?.perms)} />
       {canSeeMapping(user?.perms) ? <MappingSection onList={setMapping} /> : null}
       {body}
     </div>

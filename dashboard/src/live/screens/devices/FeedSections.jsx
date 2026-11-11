@@ -173,9 +173,13 @@ function ChainList({ t, lines, fresh }) {
  *  answered; a list that could not be read keeps its last rows and says so. */
 function NeverSeen({ t, mapping }) {
   const rows = neverSeenRows(mapping.body);
-  const unread = mapping.phase === "unreadable" ? <Note>{t("esleme.unreadable")}</Note> : null;
+  // A lane that is off (409 monitor_lane_off) answers no list either: said as a list that could not be read.
+  const failed = mapping.phase === "unreadable" || mapping.phase === "off";
+  const unread = failed ? <Note>{t("esleme.unreadable")}</Note> : null;
   if (rows.length === 0) {
-    return mapping.phase === "ok" ? <p className="m-0 text-13 text-mute">{t("cihaz.neverNone")}</p> : unread;
+    if (mapping.phase === "ok") return <p className="m-0 text-13 text-mute">{t("cihaz.neverNone")}</p>;
+    if (mapping.phase === "loading") return <p className="m-0 text-13 text-mute">{t("esleme.loading")}</p>;
+    return unread;
   }
   return (
     <>
@@ -193,10 +197,22 @@ function NeverSeen({ t, mapping }) {
   );
 }
 
-export function FeedSections({ shadow, mapping = null }) {
+/** `mayRead`: whether the session may read the strip (shadowStore mayReadShadow: board.view or devices.manage). A
+ *  charge nurse with devices.map_beds alone reaches the page and its editor, but not the strip: sections 1–4 are then
+ *  a note saying what they need. Section 5 is the editor's list, not the strip's, and answers whatever the strip
+ *  does — off, not yet read, unreadable, or not this session's. */
+export function FeedSections({ shadow, mapping = null, mayRead = true }) {
   const { t } = useI18n();
   const { data, nowMs, fetchedAtMs } = shadow;
-  if (!stripOn(data)) return null;
+  const never = mapping ? (
+    <Section title={t("cihaz.neverTitle")}>
+      <NeverSeen t={t} mapping={mapping} />
+    </Section>
+  ) : null;
+  if (!mayRead || !stripOn(data)) {
+    const right = mayRead ? null : <Note tone="info">{t("cihaz.needsRight")}</Note>;
+    return right || never ? <div className="flex flex-col gap-2.5" data-feed-sections>{right}{never}</div> : null;
+  }
   // Decision 18: only a fresh answer may say a list is empty, and one that is not is marked.
   const fresh = shadow.phase === SHADOW_PHASE.OK && !readUnknown(shadow, nowMs, maxAgeOf(data));
   const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: stampText(data) })}</Note>;
@@ -236,11 +252,7 @@ export function FeedSections({ shadow, mapping = null }) {
         <ChainList t={t} lines={chainLines(data, chainNowMs, fetchedAtMs)} fresh={fresh} />
         {mark}
       </Section>
-      {mapping ? (
-        <Section title={t("cihaz.neverTitle")}>
-          <NeverSeen t={t} mapping={mapping} />
-        </Section>
-      ) : null}
+      {never}
     </div>
   );
 }
