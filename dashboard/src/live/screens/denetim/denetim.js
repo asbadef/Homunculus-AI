@@ -1,7 +1,8 @@
 // src/live/screens/denetim/denetim.js — the «Denetim bütünlüğü» page's rules, apart from React (G2-B4, spec
 // docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md): the masked patient id (owner D2), who did it
 // (D6), what one `/audit/verify` answer reads as (D4), the event types the page names (§4), and the order
-// the events are shown in (D5).
+// the events are shown in (D5). Follow-up 2026-11-11 (docs/superpowers/specs/2026-11-11-g2b-b4-denetim-adlar-design.md):
+// a user id is masked (D2), and every type the engine writes has a label (D3).
 
 /** The newest events the page reads (D5). */
 export const EVENTS_LIMIT = 200;
@@ -14,18 +15,45 @@ export function maskPatient(id) {
   return text.length <= 4 ? MASK : `${MASK}${text.slice(-4)}`;
 }
 
+/** The engine's ids are UUIDs. Where one stands in for a person (a scope row written before the follow-up's D1
+ *  holds nothing else), the page masks it. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value) => typeof value === "string" && UUID.test(value.trim());
+
+/** G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a user id is never printed — «kullanıcı ••••» and its last
+ *  four characters, the patient id's mask with the word that says whose id it is. `t` is the page's translator. */
+export const maskUser = (t, id) => t("denetim.maskedUser", { id: maskPatient(id) });
+
+const nameOrMask = (t, value) => (isUuid(value) ? maskUser(t, value) : value.trim());
+
 /** D6: the payload keys the engine's writers use for who did it, in the order they are read. */
 export const ACTOR_KEYS = Object.freeze([
   "actor", "charted_by", "read_by", "signed_by", "retracted_by", "by", "user", "device", "login",
 ]);
 
-export function actorOf(payload) {
+/** Who did it: the first non-empty key's value — a username as it is, a user id masked (follow-up D2). A scope row
+ *  names its administrator in `actor` since D1, read before `by`, its id; an older one shows the mask. */
+export function actorOf(payload, t) {
   const p = payload && typeof payload === "object" ? payload : {};
   for (const key of ACTOR_KEYS) {
     const value = p[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "string" && value.trim()) return nameOrMask(t, value);
   }
   return "—";
+}
+
+/** The «Konu» cell (follow-up D2). A scope row's subject is the id of the user whose access changed: the page shows
+ *  that user's name from the payload (written since D1), else the id masked as a user's. A UUID subject of any other
+ *  type is masked as an id, without the word — the page cannot tell whose id it is (a task's, say). Anything else
+ *  shows as it is. */
+export function subjectOf(rec, t) {
+  const subject = typeof rec?.subject === "string" ? rec.subject.trim() : "";
+  if (rec?.event_type === "scope") {
+    const user = rec?.payload?.user;
+    if (typeof user === "string" && user.trim()) return nameOrMask(t, user);
+    return subject ? maskUser(t, subject) : "—";
+  }
+  return isUuid(subject) ? maskPatient(subject) : rec?.subject || "—";
 }
 
 /** §4: the engine's event types the page has a label for. Any other code shows as itself and is not offered

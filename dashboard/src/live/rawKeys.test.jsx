@@ -230,6 +230,10 @@ const AUDIT_ROWS = { records: [
     subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
   { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
     subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
+  // G2-B4 follow-up D2: a scope row written before the engine wrote names — both its user ids masked
+  { id: 3, ts: "2026-11-09T10:03:00+00:00", tenant: "demo-hastanesi", event_type: "scope", patient_id: "",
+    subject: "22222222-2222-4222-8222-2222222261a2", payload: { by: "11111111-1111-4111-8111-11111111ad01", before: [], after: [] },
+    prev_hash: "", hash: "" },
 ] };
 const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
   records: 2, complete: true };
@@ -486,6 +490,7 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Audit bütövlüyü" })).toBeInTheDocument();   // denetim.title
     // the label is also the filter's option, so ask for the events row's cell, not the first match
     expect(screen.getAllByText("Siqnalın təsdiqi").some((el) => el.tagName === "TD")).toBe(true);   // denetim.type.ack
+    expect(screen.getByText("istifadəçi ••••ad01")).toBeInTheDocument();                           // denetim.maskedUser
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
     expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
     expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed

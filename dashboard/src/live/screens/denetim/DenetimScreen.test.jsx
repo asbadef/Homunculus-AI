@@ -97,6 +97,28 @@ describe("the audit page's events", () => {
     }
   });
 
+  // G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a scope row names who changed it and whose access changed;
+  // one written before the engine wrote names shows both ids masked. No user id is ever printed.
+  it("shows a scope row's two names, and masks the two ids of a row written before the names", async () => {
+    const ADMIN_ID = "11111111-1111-4111-8111-11111111ad01";
+    const NURSE_ID = "22222222-2222-4222-8222-2222222261a2";
+    await open((a) => a.audit.mockResolvedValue({ records: [
+      rec(1, { event_type: "scope", patient_id: "", subject: NURSE_ID,
+        payload: { by: ADMIN_ID, before: [], after: ["unit-adult"] } }),
+      rec(2, { event_type: "scope", patient_id: "", subject: NURSE_ID,
+        payload: { actor: "admin", user: "ayse.sentetik", by: ADMIN_ID, before: ["unit-adult"], after: [] } }),
+    ] }));
+    const [named, old] = bodyRows();                                   // newest first
+    const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells(named)[2]).toBe("Əhatə təyinatı");
+    expect(cells(named)[3]).toBe("admin");
+    expect(cells(named)[5]).toBe("ayse.sentetik");
+    expect(cells(old)[3]).toBe("istifadəçi ••••ad01");
+    expect(cells(old)[5]).toBe("istifadəçi ••••61a2");
+    expect(document.body).not.toHaveTextContent(ADMIN_ID);
+    expect(document.body).not.toHaveTextContent(NURSE_ID);
+  });
+
   it("asks the server for the chosen type, and reads again on «Yenilə»", async () => {
     const { api } = await open();
     fireEvent.change(screen.getByLabelText("Növ"), { target: { value: "admission.admit" } });

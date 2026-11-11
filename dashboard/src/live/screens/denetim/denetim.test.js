@@ -2,10 +2,16 @@
 // (owner D2), who did it (D6), what a verification answer reads as (D4), the labelled types (§4), the order.
 import { describe, it, expect } from "vitest";
 import {
-  ACTOR_KEYS, EVENTS_LIMIT, EVENT_TYPES, MASK, actorOf, maskPatient, newestFirst, reasonKey, typeKey, verdictOf,
+  ACTOR_KEYS, EVENTS_LIMIT, EVENT_TYPES, MASK, actorOf, isUuid, maskPatient, maskUser, newestFirst, reasonKey, subjectOf,
+  typeKey, verdictOf,
 } from "./denetim.js";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { LANG_CODES } from "../../i18n/langs.js";
+import { createTranslator } from "../../i18n/translate.js";
+
+const tr = createTranslator("tr", DICTIONARIES);
+const ADMIN_ID = "11111111-1111-4111-8111-11111111ad01";    // synthetic user ids
+const NURSE_ID = "22222222-2222-4222-8222-2222222261a2";
 
 describe("the masked patient id (owner D2)", () => {
   it("shows four dots and the id's last four characters", () => {
@@ -38,6 +44,57 @@ describe("who did it (D6)", () => {
     expect(actorOf({ actor: null, charted_by: "", read_by: 7, user: "u-2" })).toBe("u-2");
     expect(actorOf({})).toBe("—");
     expect(actorOf(undefined)).toBe("—");
+  });
+
+  // G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a user id is never printed.
+  it("masks a user id as «kullanıcı ••••» and its last four characters, and keeps a username as it is", () => {
+    expect(actorOf({ by: ADMIN_ID, before: [], after: [] }, tr)).toBe("kullanıcı ••••ad01");      // a scope row before D1
+    expect(actorOf({ actor: "admin", user: "ayse.sentetik", by: ADMIN_ID }, tr)).toBe("admin");   // a scope row since D1
+    expect(actorOf({ by: ` ${ADMIN_ID.toUpperCase()} ` }, tr)).toBe("kullanıcı ••••AD01");
+    expect(actorOf({ actor: "ayse.sentetik" }, tr)).toBe("ayse.sentetik");
+    expect(maskUser(tr, NURSE_ID)).toBe(`kullanıcı ${MASK}61a2`);
+  });
+});
+
+describe("a user id (follow-up D2)", () => {
+  it("is a UUID; a username, a code or anything else is not", () => {
+    expect(isUuid(ADMIN_ID)).toBe(true);
+    expect(isUuid(` ${NURSE_ID.toUpperCase()} `)).toBe(true);
+    for (const other of ["admin", "ayse.sentetik", "user.update", "news2_high", "260109004821", "", null, undefined, 42,
+      "11111111-1111-4111-8111-11111111ad0", "11111111111141118111111111111ad01", `${ADMIN_ID}x`]) {
+      expect(isUuid(other), String(other)).toBe(false);
+    }
+  });
+
+  it("says the masked user in every language, with the mask itself in it", () => {
+    for (const lang of LANG_CODES) {
+      const said = maskUser(createTranslator(lang, DICTIONARIES), ADMIN_ID);
+      expect(said, lang).toContain(`${MASK}ad01`);
+      expect(said, lang).not.toContain(ADMIN_ID);
+      expect(said.length, lang).toBeGreaterThan(`${MASK}ad01`.length);
+    }
+  });
+});
+
+describe("the subject (follow-up D2)", () => {
+  const row = (over) => ({ id: 1, event_type: "scope", patient_id: "", subject: NURSE_ID, payload: {}, ...over });
+
+  it("names whose access a scope row changed: the payload's user since D1, else the subject masked as a user", () => {
+    expect(subjectOf(row({ payload: { actor: "admin", user: "ayse.sentetik", by: ADMIN_ID } }), tr)).toBe("ayse.sentetik");
+    expect(subjectOf(row({ payload: { by: ADMIN_ID, before: [], after: ["unit-adult"] } }), tr)).toBe("kullanıcı ••••61a2");
+    expect(subjectOf(row({ payload: { user: "  " } }), tr)).toBe("kullanıcı ••••61a2");
+    expect(subjectOf(row({ payload: { user: 7 } }), tr)).toBe("kullanıcı ••••61a2");
+    expect(subjectOf(row({ payload: undefined }), tr)).toBe("kullanıcı ••••61a2");
+    expect(subjectOf(row({ payload: { user: NURSE_ID } }), tr)).toBe("kullanıcı ••••61a2");     // an id where the name goes
+    expect(subjectOf(row({ subject: "", payload: {} }), tr)).toBe("—");
+  });
+
+  it("masks a UUID subject of any other type as an id — the page cannot tell whose it is — and shows any other as it is", () => {
+    expect(subjectOf(row({ event_type: "task_done", subject: NURSE_ID }), tr)).toBe(`${MASK}61a2`);
+    expect(subjectOf(row({ event_type: "admin", subject: "user.update" }), tr)).toBe("user.update");
+    expect(subjectOf(row({ event_type: "ack", subject: "news2_high" }), tr)).toBe("news2_high");
+    expect(subjectOf(row({ event_type: "view", subject: "" }), tr)).toBe("—");
+    expect(subjectOf(undefined, tr)).toBe("—");
   });
 });
 
@@ -125,7 +182,8 @@ describe("the events, newest first (D5)", () => {
 describe("the page's words", () => {
   it("has every type label, reason and verdict in every language", () => {
     const keys = [...EVENT_TYPES.map((e) => e.key), "denetim.reasonDeleted", "denetim.reasonAltered", "denetim.reasonOther",
-      "denetim.verdictOk", "denetim.verdictPartial", "denetim.verdictBroken", "denetim.verdictEmpty", "denetim.verdictUnreadable"];
+      "denetim.verdictOk", "denetim.verdictPartial", "denetim.verdictBroken", "denetim.verdictEmpty", "denetim.verdictUnreadable",
+      "denetim.maskedUser"];
     for (const lang of LANG_CODES) for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
   });
 });

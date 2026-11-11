@@ -36,6 +36,8 @@ export default {
     retry: "Yeniden dene",
     caption: "Denetim olayları, yeniden eskiye",
     colNo: "No", colTime: "Zaman", colType: "Tür", colActor: "Kim", colPatient: "Hasta", colSubject: "Konu",
+    // follow-up 2026-11-11 D2: a user id in «Kim» or «Konu», masked ({id} is «••••1a2b»)
+    maskedUser: "kullanıcı {id}",
     type: {
       auth: "Oturum açma", admin: "Yönetim", scope: "Kapsam ataması", scopeDenied: "Kapsam reddi",
       ack: "Alarm onayı", view: "Hasta açıldı",
@@ -100,6 +102,7 @@ export default {
     retry: "Yenidən cəhd et",
     caption: "Audit hadisələri, yenidən köhnəyə",
     colNo: "№", colTime: "Vaxt", colType: "Növ", colActor: "İcraçı", colPatient: "Xəstə", colSubject: "Mövzu",
+    maskedUser: "istifadəçi {id}",
     type: {
       auth: "Sistemə giriş", admin: "İdarəetmə", scope: "Əhatə təyinatı", scopeDenied: "Əhatədən imtina",
       ack: "Siqnalın təsdiqi", view: "Xəstə açıldı",
@@ -163,6 +166,7 @@ export default {
     retry: "Повторить",
     caption: "События аудита, от новых к старым",
     colNo: "Номер", colTime: "Время", colType: "Тип", colActor: "Кто", colPatient: "Пациент", colSubject: "Объект",
+    maskedUser: "пользователь {id}",
     type: {
       auth: "Вход в систему", admin: "Администрирование", scope: "Назначение области", scopeDenied: "Отказ по области",
       ack: "Подтверждение тревоги", view: "Пациент открыт",
@@ -226,6 +230,7 @@ export default {
     retry: "Try again",
     caption: "Audit events, newest first",
     colNo: "No.", colTime: "Time", colType: "Type", colActor: "Who", colPatient: "Patient", colSubject: "Subject",
+    maskedUser: "user {id}",
     type: {
       auth: "Sign-in", admin: "Administration", scope: "Scope assignment", scopeDenied: "Scope refusal",
       ack: "Alarm acknowledged", view: "Patient opened",
