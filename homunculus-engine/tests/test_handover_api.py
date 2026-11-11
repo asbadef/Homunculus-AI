@@ -856,7 +856,9 @@ async def test_admissions_whose_beds_lie_in_two_units_are_not_one_handover(ward,
     this rule's, not the scope's."""
     w, client, _ = ward
     rea = await signed(w, client)
-    neo = await signed(w, client, "N1", "neo", who="nurse_b", signer="admin")
+    # G2-B1c (T1): the signer becomes the attending, and the administrator is no physician.
+    await add_physician(db_session, w, "neodoc", group="attending", unit="neo")
+    neo = await signed(w, client, "N1", "neo", who="nurse_b", signer="neodoc")
     sent = {**body(w, rea), "admission_ids": [rea["id"], neo["id"]]}
     refused(await client.post("/handovers", json=sent, headers=w.auth["admin"]),
             422, "field_invalid:admission_ids")
