@@ -6,7 +6,9 @@
   `out_of_scope`;
 - `GET …/care-team/candidates`: every physician of the tenant from every unit, active accounts and
   memberships only, by name and nothing else, sorted by name. A member whose row is in force is
-  left out; an expired on-call member is offered again (T8, X4). The assigner's, in her units.
+  left out, and so is one whose on-call window is still to come; an expired on-call member and an
+  ended one are offered again (T8, X4). A guest of another tenant never is (T1). The assigner's, in
+  her units.
 Postgres. Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
@@ -134,3 +136,79 @@ async def test_the_picker_is_the_assigners_and_only_in_her_units(ward, db_sessio
     assert (r.status_code, r.json()["detail"]) == (403, "permission required: care_team.assign")
     r = await client.get(url, headers=w.auth["uzak-sorumlu"])
     assert (r.status_code, r.json()["detail"]["code"]) == (403, "out_of_scope")
+
+
+async def test_an_expired_oncall_row_still_opens_the_read_until_it_is_ended(ward, db_session):
+    """X10: the member exception reads `is_active`, not «in force». An on-call physician of another
+    unit whose window has passed still reads the team she is on, as long as her row is active;
+    once it is ended (`is_active` false, `closed_at` set), her reach is her units' alone."""
+    w, client, _ = ward
+    doctor = w.users["doctor"].id
+    oncall = await add_physician(db_session, w, "nobetci", unit="neo")
+    admission = await signed(w, client)
+    aid = uuid.UUID(admission["id"])
+    adm = await db_session.get(Admission, aid)
+    now = datetime.now(timezone.utc)
+    await service.add_care_team_member(db_session, adm, user_id=oncall,
+                                       role=CareTeamRole.ONCALL_PHYSICIAN, granted_by_id=doctor,
+                                       window_start=now - 10 * HOUR, window_end=now - 2 * HOUR)
+    await db_session.commit()
+    url = f"/admissions/{aid}/care-team"
+    r = await client.get(url, headers=w.auth["nobetci"])
+    assert r.status_code == 200, r.text
+    mine = [m for m in r.json() if m["full_name"] == "nobetci"]
+    assert [(m["is_active"], m["in_force"]) for m in mine] == [(True, False)]   # active, expired
+    [row] = [m for m in await service.active_rows(db_session, aid) if m.user_id == oncall]
+    await service.end_care_team_member(db_session, row, now=now)
+    await db_session.commit()
+    r = await client.get(url, headers=w.auth["nobetci"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "out_of_scope")
+    r = await client.get(url, headers=w.auth["nurse"])                     # her units still read it
+    assert r.status_code == 200, r.text
+    ended = [m for m in r.json() if m["full_name"] == "nobetci"]
+    assert [(m["is_active"], m["closed_at"] is not None) for m in ended] == [(False, True)]
+
+
+async def test_the_picker_leaves_a_future_oncall_out_and_offers_an_ended_member_again(
+        ward, db_session):
+    """X4: left out is a physician whose active row is in force or still to come (a window ahead);
+    a row that was ENDED counts for nothing, so its physician is offered again."""
+    w, client, _ = ward
+    doctor = w.users["doctor"].id
+    soon = await add_physician(db_session, w, "yarin")
+    back = await add_physician(db_session, w, "geri-donen")
+    admission = await signed(w, client)
+    aid = uuid.UUID(admission["id"])
+    adm = await db_session.get(Admission, aid)
+    now = datetime.now(timezone.utc)
+    await service.add_care_team_member(db_session, adm, user_id=soon,
+                                       role=CareTeamRole.ONCALL_PHYSICIAN, granted_by_id=doctor,
+                                       window_start=now + 2 * HOUR, window_end=now + 10 * HOUR)
+    await service.add_care_team_member(db_session, adm, user_id=back,
+                                       role=CareTeamRole.ASSOCIATE_PHYSICIAN, granted_by_id=doctor)
+    await db_session.commit()
+    url = f"/admissions/{aid}/care-team/candidates"
+    r = await client.get(url, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    assert r.json() == []                       # the attending, the future on-call and the associate
+    [row] = [m for m in await service.active_rows(db_session, aid) if m.user_id == back]
+    await service.end_care_team_member(db_session, row, now=now)
+    await db_session.commit()
+    r = await client.get(url, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    assert r.json() == [{"user_id": str(back), "full_name": "geri-donen"}]
+
+
+async def test_the_picker_never_offers_a_guest_of_another_tenant(ward, db_session):
+    """T1: a physician of ANOTHER tenant who is also an active member of this one, in none of its
+    groups, is no physician here: only the group's own tenant keeps her out of the picker."""
+    w, client, _ = ward
+    tenant_id = w.tenant.id
+    local = await add_physician(db_session, w, "yerli")
+    guest = await physician_elsewhere(db_session, member_of=tenant_id)
+    admission = await signed(w, client)
+    r = await client.get(f"/admissions/{admission['id']}/care-team/candidates",
+                         headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    assert r.json() == [{"user_id": str(local), "full_name": "yerli"}]
+    assert str(guest) not in r.text
