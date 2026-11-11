@@ -106,7 +106,7 @@ def test_postgres_samples_through_the_migration():
     #   - an index on (hospital, patient_id, captured_at) — the install's 24 h replay;
     #   - an index on received_at — the hourly prune deletes by it;
     #   - on the `audit` table, an index on (tenant, event_type, id) — the lane reads its two kinds newest
-    #     first and /alarm-quality its five (deploy/infinity/README.md, "Migration 0013").
+    #     first and /alarm-quality its four, five before G4-03 (deploy/infinity/README.md, "Migration 0013").
     # The audit table is built first by 0004 and 0008, and dropped after, as the `audit_log` fixture of
     # tests/test_audit_postgres.py does in this same database: 0013 indexes it.
     from sqlalchemy import text
