@@ -47,7 +47,7 @@ function Row({ device, onAct }) {
   );
 }
 
-export function MappingSection() {
+export function MappingSection({ onList } = {}) {
   const { t } = useI18n();
   const { store } = useSession();
   const headId = useId();
@@ -110,6 +110,9 @@ export function MappingSection() {
     const row = [...(root.current?.querySelectorAll("tr[data-source]") ?? [])].find((tr) => tr.dataset.source === source);
     row?.querySelector("button")?.focus();
   }, [dialog]);
+
+  // G4-01: the page's «Tabloda var, hiç görülmedi» reads this same list, so the page asks for it once (D5 §5).
+  useEffect(() => { onList?.(state); }, [state, onList]);
 
   const { phase, body } = state;
   return (

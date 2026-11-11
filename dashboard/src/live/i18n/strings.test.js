@@ -94,6 +94,8 @@ const AZ_SAME_AS_TR = new Set([
   "account.lock", //         Ekran kilidi — "screen lock" in Azerbaijani too (shell.js lk_title "Ekran kilidlənib")
   "nav.settings", //         Ayarlar — the prototype's AZ dictionary (core.js m_settings)
   "nav.settingsShort", //    Ayarlar — the same word
+  "nav.devices", //          Cihazlar — the spec's az word (G4-01 D5), the same in Turkish
+  "nav.devicesShort", //     Cihazlar — the same word on the narrow rail
   // Wave 3's screens. Each branch adds ITS OWN lines under its own heading, so the three parallel
   // branches do not meet in the middle of this list. `· az = tr` distinguishes these headings from
   // NEUTRAL's identical seven, so each arm's anchor is unique in the file.
@@ -212,6 +214,9 @@ const AZ_SAME_AS_TR = new Set([
   "devir.sum.news2", //      NEWS2 — the score's own name
   "devir.sum.spo2", //       SpO₂ — a clinical abbreviation
   "devir.fromTo", //         "{from} → {to}" — no word in it
+
+  // G4-01 (cihaz) · az = tr
+  "cihaz.wordOk", //         normal — the same word in Azerbaijani (a link's state word on the device page)
 
 ]);
 
