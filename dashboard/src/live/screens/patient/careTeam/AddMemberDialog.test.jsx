@@ -102,8 +102,12 @@ describe("AddMemberDialog", () => {
     set(START, now);
     set(END, now + 49 * HOUR);
     await submit();
-    // The hint under the end says it, and so does the refusal.
-    expect(within(dialog()).getAllByText("Növbə ən çox 48 saat davam edir.")).toHaveLength(2);
+    // The hint under the end states the limit; the refusal says what to do — never the same sentence twice.
+    const HINT = "Növbə ən çox 48 saat davam edir.";
+    const TOO_LONG = "Növbə 48 saatdan uzun ola bilməz; sonu daha tez seçin.";
+    expect(within(dialog()).getAllByText(HINT)).toHaveLength(1);
+    expect(within(dialog()).getAllByText(TOO_LONG)).toHaveLength(1);
+    expect(HINT).not.toBe(TOO_LONG);
     expect(api.addCareTeamMember).not.toHaveBeenCalled();
     set(END, now + 12 * HOUR);
     await submit();

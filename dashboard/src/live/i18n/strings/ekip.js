@@ -53,7 +53,7 @@ export default {
         end: "Bitişi seçin.",
         order: "Bitiş başlangıçtan sonra olmalı.",
         future: "Bitiş gelecekte olmalı.",
-        long: "Nöbet en çok 48 saat sürer.",
+        long: "Nöbet 48 saatten uzun olamaz; bitişi daha erken seçin.",
       },
     },
     err: {
@@ -113,7 +113,7 @@ export default {
         end: "Sonu seçin.",
         order: "Son başlanğıcdan sonra olmalıdır.",
         future: "Son gələcəkdə olmalıdır.",
-        long: "Növbə ən çox 48 saat davam edir.",
+        long: "Növbə 48 saatdan uzun ola bilməz; sonu daha tez seçin.",
       },
     },
     err: {
@@ -173,7 +173,7 @@ export default {
         end: "Выберите конец.",
         order: "Конец должен быть позже начала.",
         future: "Конец должен быть в будущем.",
-        long: "Дежурство длится не более 48 часов.",
+        long: "Дежурство не может длиться больше 48 часов; выберите более раннее окончание.",
       },
     },
     err: {
@@ -234,7 +234,7 @@ export default {
         end: "Choose the end.",
         order: "The end must be after the start.",
         future: "The end must be in the future.",
-        long: "An on-call window lasts 48 hours at most.",
+        long: "An on-call window cannot be longer than 48 hours; choose an earlier end.",
       },
     },
     err: {
