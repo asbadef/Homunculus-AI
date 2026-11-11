@@ -1,7 +1,8 @@
 // ozet.test.js — G4-02 «Yönetici özeti» (spec D5), the pure half: the per-unit join of every source, the «Birimi belli
 // olmayan» row, «—» with a reason for a missing, failed or stale source (never 0), the oldest handover's age, the cards,
-// and the alarm-quality box's figures; the caller's reach (the board's scope) over the units table; and the shape a read
-// must have to be counted at all. A fixed clock; synthetic units, cards and monitors only.
+// and the alarm-quality box's figures; the caller's reach over the units table (GET /scope/me, and the live board's own
+// scope for its alarm column); and the shape a read must have to be counted at all. A fixed clock; synthetic units,
+// cards and monitors only.
 import { describe, it, expect } from "vitest";
 import { CONNECTION } from "../../../liveConnection.js";
 import { SHADOW_PHASE } from "../../data/shadowStore.js";
@@ -9,8 +10,8 @@ import { bed, strip, unassigned } from "../../data/shadow.testutil.js";
 import { scopedTo } from "../../data/board.testutil.js";
 import { NEO, REA, structure } from "../kabul/kabul.testutil.js";
 import {
-  NO_UNIT, WHY, ageOf, boardSource, durationOf, isPendingAnswer, isTasksAnswer, lateOf, noSource, okSource, qualityView,
-  reachSource, readSource, rightsOf, shadowSource, structureSource, summarise,
+  NO_UNIT, WHY, ageOf, boardReachSource, boardSource, durationOf, isPendingAnswer, isScopeAnswer, isTasksAnswer, lateOf,
+  noSource, okSource, qualityView, reachSource, readSource, rightsOf, shadowSource, structureSource, summarise,
 } from "./ozet.js";
 
 const NOW = Date.parse("2026-11-11T10:00:00Z");
@@ -61,10 +62,16 @@ const REPORT = {
 };
 // The board's scope block (GET /patients `scope`): an administrator's, which reaches every unit.
 const UNRESTRICTED = { unrestricted: true, reason: "unrestricted_role", unit_ids: [], bed_ids: [], own_patients: 0 };
+// GET /scope/me (scope/schemas.py ScopeView), built as the board's scope is: an administrator's, and a scoped caller's.
+const ME_ALL = { user_id: "u-1", role: "hospital_admin", unrestricted: true, reason: "role", unit_ids: [], bed_ids: [],
+  grants: [], own_patients: 0 };
+const meScoped = (unitIds, over = {}) => ({ ...ME_ALL, role: "nurse", unrestricted: false, reason: "assigned",
+  unit_ids: unitIds, ...over });
+const reachOf = (me) => reachSource(okSource(me, NOW));
 const SOURCES = {
   tree: structure(), occupancy: okSource(structure()), board: liveBoard(), tasks: okSource(TASKS, NOW),
   pending: okSource(PENDING, NOW), shadow: shadowSource(fresh(STRIP), true), quality: okSource(REPORT, NOW),
-  reach: reachSource(UNRESTRICTED, liveBoard()), wholeTree: false,
+  reach: reachOf(ME_ALL), boardReach: boardReachSource(UNRESTRICTED, liveBoard()), wholeTree: false,
 };
 /** Every per-unit cell of a row that is out of the caller's reach. */
 const NO_RIGHT = { why: WHY.noRight };
@@ -114,7 +121,7 @@ describe("the «Unutulan işler» cards", () => {
       late: { value: 3 },
       silent: { value: 2, longest: 7, noMonitors: false },
     });
-    expect(summarise(SOURCES).scoped).toBe(false);          // an unrestricted caller's counts are the hospital's
+    expect(summarise(SOURCES).reachNote).toBeNull();         // an unrestricted caller's counts are the hospital's
   });
 
   it("say the unanswered count came from a truncated read — an incomplete count is not a complete one", () => {
@@ -204,69 +211,108 @@ describe("«—» with a reason, never an invented 0 (Decision 18)", () => {
 // Every source but the tree is cut to the caller's reach by the server (the board and /tasks by her scope, the waiting
 // handovers by her unit grants, the shadow board by her beds); the tree is cut too — except for `structure.manage`,
 // which sees the whole hospital, and a unit reached through a bed grant alone is listed with that bed only. So a unit
-// outside her unit grants is no answer about that unit: «yetki yok», never a 0 (Decision 18).
+// outside her unit grants is no answer about that unit: «yetki yok», never a 0 (Decision 18). The reach is read from
+// GET /scope/me, which any signed-in user may call; the alarm column keeps the live board's own scope, from the same
+// answer as its counts.
 describe("the caller's reach over the units table", () => {
-  const scoped = (scope, over = {}) => summarise({ ...SOURCES, reach: reachSource(scope, liveBoard()), ...over });
   const COUNTED = ["waiting", "late", "pending", "silent"];
+  /** A caller whose /scope/me and board scope agree, as they are built alike. */
+  const scoped = (me, over = {}) => summarise({ ...SOURCES, reach: reachOf(me),
+    boardReach: boardReachSource(me.unrestricted ? UNRESTRICTED : scopedTo(me.unit_ids, { bed_ids: me.bed_ids }), liveBoard()),
+    ...over });
 
-  it("an unrestricted scope reaches every unit: the table and the cards as they are", () => {
-    const summary = scoped(UNRESTRICTED);
+  it("an unrestricted scope reaches every unit: the table and the cards as they are, no caveat", () => {
+    const summary = scoped(ME_ALL);
     expect(summary.rows).toEqual(summarise(SOURCES).rows);
     expect(summary.rows[1]).toMatchObject({ waiting: { value: 1 }, late: { value: 0 }, silent: { value: 0 } });
     expect(summary.unplaced).not.toBeNull();
-    expect(summary.scoped).toBe(false);
+    expect(summary.reachNote).toBeNull();
   });
 
   it("a unit grant: the granted unit counts; another says «yetki yok» in every column, its beds too", () => {
-    const summary = scoped(scopedTo([REA.toUpperCase()]));                 // the grant as the scope holds it, any case
+    const summary = scoped(meScoped([REA.toUpperCase()]));               // the grant as the scope holds it, any case
     const [rea, neo] = summary.rows;
     expect(rea).toEqual(summarise(SOURCES).rows[0]);
     expect(neo).toEqual({ key: NEO, name: "Neonatal", closed: true, occupancy: NO_RIGHT,
       waiting: NO_RIGHT, late: NO_RIGHT, pending: NO_RIGHT, silent: NO_RIGHT });
     expect(summary.unplaced).toBeNull();                                   // a row no unit of hers claims is not hers to count
     expect(summary.cards).toEqual(summarise(SOURCES).cards);               // the cards count what she was sent…
-    expect(summary.scoped).toBe(true);                                     // …and say it is only her reach
+    expect(summary.reachNote).toBe("scoped");                              // …and say it is only her reach
   });
 
   it("a bed grant alone reaches no unit whole: every unit says «yetki yok», its beds too", () => {
-    const summary = scoped(scopedTo([], { bed_ids: ["44444444-4444-4444-8444-444444444402"] }));
+    const summary = scoped(meScoped([], { bed_ids: ["44444444-4444-4444-8444-444444444402"] }));
     for (const row of summary.rows) {
       expect(row).toMatchObject({ occupancy: NO_RIGHT, waiting: NO_RIGHT, late: NO_RIGHT, pending: NO_RIGHT, silent: NO_RIGHT });
     }
     expect(summary.unplaced).toBeNull();
-    expect(summary.scoped).toBe(true);
+    expect(summary.reachNote).toBe("scoped");
   });
 
   it("structure.manage with a unit grant: the tree is whole, so another unit's beds are counted, and nothing else", () => {
-    const summary = scoped(scopedTo([REA]), { wholeTree: true });
+    const summary = scoped(meScoped([REA]), { wholeTree: true });
     const [rea, neo] = summary.rows;
     expect(rea).toEqual(summarise(SOURCES).rows[0]);
     expect(neo.occupancy).toEqual(summarise(SOURCES).rows[1].occupancy);
     for (const cell of COUNTED) expect(neo[cell], cell).toEqual(NO_RIGHT);
   });
 
-  it("an unknown scope is no answer either: every unit cell says why, the tree's beds only when it is whole", () => {
-    const connecting = liveBoard({ connection: CONNECTION.CONNECTING });
-    const unknown = { ...SOURCES, board: connecting, reach: reachSource(null, connecting) };
-    const summary = summarise(unknown);
-    for (const row of summary.rows) {
-      expect(row).toMatchObject({ occupancy: { why: WHY.loading }, waiting: { why: WHY.loading }, late: { why: WHY.loading },
-        pending: { why: WHY.loading }, silent: { why: WHY.loading } });
-    }
-    expect(summary.unplaced).toBeNull();
-    expect(summary.scoped).toBe(true);
-    expect(summarise({ ...unknown, wholeTree: true }).rows[0].occupancy).toEqual(summarise(SOURCES).rows[0].occupancy);
+  it("without board.view: only the alarm column says «yetki yok»; tasks, handovers, monitors and beds are real", () => {
+    const noBoard = noSource(WHY.noRight);
+    const summary = summarise({ ...SOURCES, board: noBoard, boardReach: boardReachSource(UNRESTRICTED, noBoard) });
+    const [rea, neo] = summary.rows;
+    expect(rea).toEqual({ ...summarise(SOURCES).rows[0], waiting: NO_RIGHT });
+    expect(neo).toMatchObject({ waiting: NO_RIGHT, late: { value: 0 }, pending: { value: 0, age: null }, silent: { value: 0 } });
+    expect(neo.occupancy).toEqual(summarise(SOURCES).rows[1].occupancy);
+    expect(summary.cards).toEqual(summarise(SOURCES).cards);
+    expect(summary.reachNote).toBeNull();
   });
 
-  it("reads the scope from the board: no right with the board's, the board's reason while it has none", () => {
-    expect(reachSource(UNRESTRICTED, liveBoard())).toEqual(okSource({ all: true, units: null }));
-    expect(reachSource(scopedTo([" REA-01 ", "Neo"]), liveBoard()).data.units).toEqual(new Set(["rea-01", "neo"]));
+  it("the live board unavailable for an unrestricted administrator: only the alarm column says why", () => {
+    const down = liveBoard({ connection: CONNECTION.UNAVAILABLE });
+    const summary = summarise({ ...SOURCES, board: down, boardReach: boardReachSource(null, down) });
+    for (const [i, row] of summary.rows.entries()) {
+      expect(row).toEqual({ ...summarise(SOURCES).rows[i], waiting: { why: WHY.failed } });
+    }
+    expect(summary.cards).toEqual(summarise(SOURCES).cards);
+    expect(summary.reachNote).toBeNull();
+  });
+
+  it("while /scope/me has not answered: the cells it decides say «okunuyor…», the alarms follow the board, no caveat", () => {
+    const loading = { ...SOURCES, reach: reachSource(noSource(WHY.loading)) };
+    const summary = summarise(loading);
+    for (const row of summary.rows) {
+      expect(row).toMatchObject({ occupancy: { why: WHY.loading }, late: { why: WHY.loading }, pending: { why: WHY.loading },
+        silent: { why: WHY.loading } });
+    }
+    expect(summary.rows.map((row) => row.waiting)).toEqual(summarise(SOURCES).rows.map((row) => row.waiting));
+    expect(summary.unplaced).toBeNull();
+    expect(summary.reachNote).toBeNull();                                  // nothing flashes before the reach is known
+    expect(summary.cards).toEqual(summarise(SOURCES).cards);
+    // A whole tree's beds need no reach.
+    expect(summarise({ ...loading, wholeTree: true }).rows[0].occupancy).toEqual(summarise(SOURCES).rows[0].occupancy);
+  });
+
+  it("when /scope/me failed: its own reason in those cells, and a neutral caveat on the cards", () => {
+    const summary = summarise({ ...SOURCES, reach: reachSource(noSource(WHY.failed)) });
+    for (const row of summary.rows) {
+      expect(row).toMatchObject({ occupancy: { why: WHY.failed }, late: { why: WHY.failed }, pending: { why: WHY.failed },
+        silent: { why: WHY.failed } });
+    }
+    expect(summary.reachNote).toBe("unknown");
+  });
+
+  it("reads the reach from /scope/me, and the alarm column's from the board's own scope", () => {
+    expect(reachOf(ME_ALL)).toEqual(okSource({ all: true, units: null }));
+    expect(reachOf(meScoped([" REA-01 ", "Neo"])).data.units).toEqual(new Set(["rea-01", "neo"]));
+    expect(reachSource(noSource(WHY.failed))).toEqual(noSource(WHY.failed));
+    expect(reachSource(okSource({ unrestricted: "yes" }, NOW))).toEqual(noSource(WHY.failed));
+    expect(boardReachSource(UNRESTRICTED, liveBoard())).toEqual(okSource({ all: true, units: null }));
     // A scope kept from the last load still holds while the board is not LIVE.
-    expect(reachSource(UNRESTRICTED, liveBoard({ connection: CONNECTION.DEGRADED })).ok).toBe(true);
-    expect(reachSource(UNRESTRICTED, noSource(WHY.noRight))).toEqual(noSource(WHY.noRight));
-    expect(reachSource(null, liveBoard({ connection: CONNECTION.UNAVAILABLE }))).toEqual(noSource(WHY.failed));
-    expect(reachSource(null, liveBoard())).toEqual(noSource(WHY.unknown));                  // an answer without its scope
-    expect(reachSource({ unrestricted: false }, liveBoard())).toEqual(noSource(WHY.unknown));
+    expect(boardReachSource(UNRESTRICTED, liveBoard({ connection: CONNECTION.DEGRADED })).ok).toBe(true);
+    expect(boardReachSource(UNRESTRICTED, noSource(WHY.noRight))).toEqual(noSource(WHY.noRight));
+    expect(boardReachSource(null, liveBoard({ connection: CONNECTION.UNAVAILABLE }))).toEqual(noSource(WHY.failed));
+    expect(boardReachSource(null, liveBoard())).toEqual(noSource(WHY.unknown));               // an answer without its scope
   });
 });
 
@@ -298,6 +344,15 @@ describe("the shape a read must have to be counted", () => {
       { units: [{ ...unit, oldest_outgoing_signed_at: "long ago" }], generated_at: iso(0) },
     ]) expect(isPendingAnswer(bad), JSON.stringify(bad)).toBe(false);
     expect(isPendingAnswer({ units: [{ ...unit, oldest_outgoing_signed_at: null }], generated_at: iso(0) })).toBe(true);
+  });
+
+  it("/scope/me: whether the scope is unrestricted, and its unit grants as text", () => {
+    expect(isScopeAnswer(ME_ALL)).toBe(true);
+    expect(isScopeAnswer(meScoped([REA]))).toBe(true);
+    for (const bad of [
+      null, {}, [], { ...ME_ALL, unrestricted: "true" }, { ...ME_ALL, unrestricted: undefined },
+      { ...ME_ALL, unit_ids: null }, { ...ME_ALL, unit_ids: "rea" }, meScoped([REA, 7]),
+    ]) expect(isScopeAnswer(bad), JSON.stringify(bad)).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { ddmmhhmm } from "../../i18n/dates.js";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { scopedTo } from "../../data/board.testutil.js";
+import { scopeView } from "../admin/admin.testutil.js";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
 import { ADMIN, BOARD, PATIENT_ID, PATIENT_NAME, REA, REPORT, mountOzet, settle } from "./ozet.testutil.jsx";
 
@@ -83,7 +84,11 @@ describe("the summary page", () => {
 // The rows are the tree's, and the tree is the whole hospital's for structure.manage; every other source is cut to
 // the caller's reach by the server. So a unit outside her unit grants says «yetki yok», never 0 (Decision 18).
 describe("a caller whose scope is restricted", () => {
-  const scopedBoard = (api) => api.boardPatients.mockResolvedValue({ ...BOARD, scope: scopedTo([REA]) });
+  // Her /scope/me and her board's scope, built alike by the engine: one unit granted.
+  const scopedBoard = (api) => {
+    api.boardPatients.mockResolvedValue({ ...BOARD, scope: scopedTo([REA]) });
+    api.myScope.mockResolvedValue(scopeView({ grants: [{ unit_id: REA }] }));
+  };
   const NO_RIGHT = "— səlahiyyət yoxdur";
 
   it("sees «yetki yok» for a unit outside her reach — its beds still counted from the whole tree — and cards said to be hers", async () => {
@@ -102,6 +107,56 @@ describe("a caller whose scope is restricted", () => {
   it("without structure.manage the tree lists only her granted beds there, so their count is not hers either", async () => {
     const { board } = await mountOzet({ perms: ADMIN.filter((key) => key !== "structure.manage"), setup: scopedBoard });
     expect(unitRows()[1]).toEqual(["Neonatal · bağlıdır", NO_RIGHT, NO_RIGHT, NO_RIGHT, NO_RIGHT, NO_RIGHT]);
+    act(() => { board.clear(); });
+  });
+});
+
+// The reach is the caller's own /scope/me, read with the page's reads — not the live board's scope, which only the
+// alarm column (its own source) depends on.
+describe("the reach, from /scope/me", () => {
+  const CAVEATS = /əhatənizdəkilər|əhatəniz oxunmadı/;
+
+  it("without board.view, tasks and handovers are real numbers: only the alarm column says «yetki yok»", async () => {
+    const { board } = await mountOzet({ perms: ADMIN.filter((key) => key !== "board.view") });
+    expect(unitRows()).toEqual([
+      ["Reanimasiya", "1 / 4 doludur", "— səlahiyyət yoxdur", "2", "2 · ən köhnəsi 2 gün əvvəl", "1"],
+      ["Neonatal · bağlıdır", "0 / 0 doludur", "— səlahiyyət yoxdur", "0", "0", "0"],
+    ]);
+    expect(card("Gecikən iş").querySelector("[data-card-value]").textContent).toBe("2");
+    expect(card("Əks-imza gözləyən təhvil").querySelector("[data-card-value]").textContent).toBe("2");
+    expect(document.body.textContent).not.toMatch(CAVEATS);
+    act(() => { board.clear(); });
+  });
+
+  it("the live board unavailable for an unrestricted administrator: only the alarm column says why", async () => {
+    const { board } = await mountOzet({ setup: (api) => api.boardPatients.mockRejectedValue(refusal(503, "down")) });
+    expect(unitRows()).toEqual([
+      ["Reanimasiya", "1 / 4 doludur", "— oxunmadı", "2", "2 · ən köhnəsi 2 gün əvvəl", "1"],
+      ["Neonatal · bağlıdır", "0 / 0 doludur", "— oxunmadı", "0", "0", "0"],
+    ]);
+    expect(card("Gecikən iş").querySelector("[data-card-value]").textContent).toBe("2");
+    expect(card("Əks-imza gözləyən təhvil").querySelector("[data-card-value]").textContent).toBe("2");
+    expect(document.body.textContent).not.toMatch(CAVEATS);
+    act(() => { board.clear(); });
+  });
+
+  it("before /scope/me answers: no caveat on the cards, and the cells it decides say «okunur…»", async () => {
+    const { board } = await mountOzet({ perms: ADMIN.filter((key) => key !== "structure.manage"),
+      setup: (api) => api.myScope.mockReturnValue(new Promise(() => {})) });
+    expect(document.body.textContent).not.toMatch(CAVEATS);
+    expect(unitRows()[0]).toEqual(["Reanimasiya", "— oxunur…", "2 (1 kritik · 1 yüksək)", "— oxunur…", "— oxunur…", "— oxunur…"]);
+    expect(card("Gecikən iş").querySelector("[data-card-value]").textContent).toBe("2");
+    expect(document.querySelector("[data-as-of]")).toHaveTextContent("Hələ tam oxunuş yoxdur");
+    act(() => { board.clear(); });
+  });
+
+  it("when /scope/me fails: its own reason in those cells, and a neutral caveat on cards 2–4", async () => {
+    const { board } = await mountOzet({ setup: (api) => api.myScope.mockRejectedValue(refusal(503, "down")) });
+    expect(unitRows()[0]).toEqual(["Reanimasiya", "1 / 4 doludur", "2 (1 kritik · 1 yüksək)", "— oxunmadı", "— oxunmadı", "— oxunmadı"]);
+    for (const name of ["Əks-imza gözləyən təhvil", "Gecikən iş", "Səssiz monitor"]) {
+      expect(card(name), name).toHaveTextContent("əhatəniz oxunmadı: bütün xəstəxana olmaya bilər");
+    }
+    expect(card("Cavabsız qalan siqnal · son 7 gün")).not.toHaveTextContent("əhatəniz");
     act(() => { board.clear(); });
   });
 });

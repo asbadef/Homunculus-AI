@@ -11,11 +11,14 @@
 // unit of the tree claims — a card on no bed, an unassigned monitor, a unit the tree does not hold — is the «Birimi
 // belli olmayan» row (NO_UNIT), drawn only when it has something to count.
 //
-// THE CALLER'S REACH (`reachSource`, the live board's `scope`). Every source but the tree is cut to the caller's reach
-// by the server; the tree is cut too, except for `structure.manage` (the whole hospital), and a unit reached through a
-// bed grant alone is listed with that bed only. So a unit outside her unit grants is no answer about that unit: its
-// cells say «yetki yok», its beds too unless the tree is whole — never a 0. An unknown scope (the board not loaded yet)
-// is no answer either. The cards then count only what she was sent, and say so (`scoped`).
+// THE CALLER'S REACH. Every source but the tree is cut to the caller's reach by the server; the tree is cut too, except
+// for `structure.manage` (the whole hospital), and a unit reached through a bed grant alone is listed with that bed
+// only. So a unit outside her unit grants is no answer about that unit: its cells say «yetki yok», its beds too unless
+// the tree is whole — never a 0. The reach is GET /scope/me (`reachSource`: any signed-in user may ask it, and it is
+// built as the board's scope is), one of the page's own reads; until it answers, the cells it decides say why. The
+// alarm column alone keeps the live board's own `scope` (`boardReachSource`): its counts and their cut are one answer,
+// and without `board.view` it is «yetki yok» from its own source, not the others. The cards then count only what she
+// was sent, and say so (`reachNote`).
 //
 // No patient here and no clinical threshold: counts, times and the engine's own severities.
 import { normId } from "../../data/structure.js";
@@ -133,18 +136,40 @@ export function boardSource({ connection, patients, alerts, nowMs }, mayRead) {
   return noSource(connection === CONNECTION.UNAVAILABLE ? WHY.failed : WHY.loading);
 }
 
-/** The caller's reach, from the live board's `scope` (GET /patients: `{unrestricted, unit_ids, bed_ids, …}`) and the
- *  board as a source (`boardSource`): `{all: true}` for an unrestricted scope, else the unit grants (normId). A scope
- *  kept from the last load holds while the board is not LIVE; a board this session may not read is «yetki yok»; one
- *  that has not brought a scope yet gives its own reason (still loading, failed), or «bilinmiyor» for an answer
- *  without one. Only a unit grant reaches a unit: a bed grant names one bed, not the unit around it. */
-export function reachSource(scope, board) {
-  if (!board.ok && board.why === WHY.noRight) return noSource(WHY.noRight);
-  if (scope?.unrestricted === true) return okSource({ all: true, units: null });
+/** A scope (`{unrestricted, unit_ids, …}`: GET /scope/me, or the board's own block) as a reach: `{all: true}` when
+ *  unrestricted, else its unit grants (normId); null for one that is neither. Only a unit grant reaches a unit: a bed
+ *  grant names one bed, not the unit around it. */
+function reachOfScope(scope) {
+  if (scope?.unrestricted === true) return { all: true, units: null };
   if (scope?.unrestricted === false && Array.isArray(scope.unit_ids)) {
     const units = scope.unit_ids.filter((id) => typeof id === "string").map(normId).filter((id) => id !== NO_UNIT);
-    return okSource({ all: false, units: new Set(units) });
+    return { all: false, units: new Set(units) };
   }
+  return null;
+}
+
+/** GET /scope/me as this page reads it: whether the scope is unrestricted, and its unit grants as text. Anything
+ *  else is a failed read (plan N10). */
+export function isScopeAnswer(answer) {
+  return isObject(answer) && typeof answer.unrestricted === "boolean" && Array.isArray(answer.unit_ids)
+    && answer.unit_ids.every((id) => typeof id === "string");
+}
+
+/** The caller's reach, from GET /scope/me read as a source (`readSource`): the reach, or the read's own reason while
+ *  it has not answered or failed (and «okunamadı» for an answer that is not a scope). */
+export function reachSource(scopeRead) {
+  if (!scopeRead.ok) return noSource(scopeRead.why);
+  const reach = reachOfScope(scopeRead.data);
+  return reach ? okSource(reach) : noSource(WHY.failed);
+}
+
+/** The alarm column's reach: the live board's own `scope` (GET /patients), so its counts and their cut come from one
+ *  answer. A scope kept from the last load holds while the board is not LIVE; a board this session may not read is
+ *  «yetki yok»; one that has not brought a scope gives its own reason, or «bilinmiyor» for an answer without one. */
+export function boardReachSource(scope, board) {
+  if (!board.ok && board.why === WHY.noRight) return noSource(WHY.noRight);
+  const reach = reachOfScope(scope);
+  if (reach) return okSource(reach);
   return noSource(board.ok ? WHY.unknown : board.why);
 }
 
@@ -240,20 +265,26 @@ const sumOf = (map, pick) => [...map.values()].reduce((sum, value) => sum + pick
 
 /** The cards and the units table. `tree`: the last tree held (rows are read from it even when its latest read failed:
  *  `occupancy`, the tree's own source, then says why); null when none was ever read — `rows` is then null and the page
- *  says why it cannot draw them. `reach`: the caller's reach (`reachSource`); `wholeTree`: the tree is the whole
- *  hospital's (`rightsOf().wholeTree`). The others are sources (okSource / noSource).
+ *  says why it cannot draw them. `reach`: the caller's reach (`reachSource`, GET /scope/me); `boardReach`: the alarm
+ *  column's (`boardReachSource`, the board's own scope); `wholeTree`: the tree is the whole hospital's
+ *  (`rightsOf().wholeTree`). The others are sources (okSource / noSource).
  *
- *  A unit outside the reach says «yetki yok» in every counted cell, and in its occupancy unless the tree is whole; an
- *  unknown reach gives every unit cell its reason. The «Birimi belli olmayan» row is drawn only for an unrestricted
- *  reach. `scoped`: the cards count only what this caller was sent, not the hospital (any reach but a known
- *  unrestricted one). Card 1's `truncated`: the report's own flag — its count is then incomplete. */
+ *  A unit outside the reach says «yetki yok» in every counted cell, and in its occupancy unless the tree is whole;
+ *  while the reach is not known, the cells it decides (overdue work, waiting handovers, silent monitors, and the beds
+ *  unless the tree is whole) give the scope read's reason. The «Birimi belli olmayan» row is drawn only for a known
+ *  unrestricted reach. `reachNote`: "scoped" — the cards count only what this caller was sent, not the hospital (a
+ *  known, restricted reach); "unknown" — the scope read failed, so nobody can say; null — the hospital's, or the scope
+ *  is still being read (nothing is claimed either way). Card 1's `truncated`: the report's own flag — its count is
+ *  then incomplete. */
 export function summarise({ tree, occupancy, board, tasks, pending, shadow, quality, reach = noSource(WHY.unknown),
-  wholeTree = false }) {
+  boardReach = reach, wholeTree = false }) {
   const late = tasks.ok ? lateByUnit(tasks.data) : null;
   const waits = pending.ok ? pendingByUnit(pending.data) : null;
   const generatedMs = pending.ok ? msOf(pending.data?.generated_at) : null;
   const unanswered = quality.ok ? countOf(quality.data?.unanswered) : null;
-  const scoped = !(reach.ok && reach.data.all);
+  let reachNote = null;
+  if (reach.ok && !reach.data.all) reachNote = "scoped";
+  else if (!reach.ok && reach.why !== WHY.loading) reachNote = "unknown";
   const cards = {
     unanswered: !quality.ok ? { why: quality.why } : unanswered === null ? { why: WHY.unknown }
       : { value: unanswered, truncated: quality.data?.truncated === true },
@@ -263,7 +294,7 @@ export function summarise({ tree, occupancy, board, tasks, pending, shadow, qual
     silent: shadow.ok ? { value: shadow.data.rows.length, longest: longestMinutes(shadow.data.rows),
       noMonitors: shadow.data.noMonitors } : { why: shadow.why },
   };
-  if (!tree) return { cards, rows: null, unplaced: null, scoped };
+  if (!tree) return { cards, rows: null, unplaced: null, reachNote };
 
   const units = unitsOf(tree);
   const known = new Set(units.map((unit) => unit.key));
@@ -290,28 +321,30 @@ export function summarise({ tree, occupancy, board, tasks, pending, shadow, qual
     silent: shadow.ok ? { value: silentBy.get(key) ?? 0 } : { why: shadow.why },
   });
   // A unit outside the reach is no answer about that unit (Decision 18); an unknown reach is no answer about any.
-  const outOfReach = (key) => reach.ok && !reach.data.all && !reach.data.units.has(key);
-  const gate = (key, cell) => {
-    if (outOfReach(key)) return { why: WHY.noRight };
+  const outOf = (which, key) => which.ok && !which.data.all && !which.data.units.has(key);
+  const gate = (which, key, cell) => {
+    if (outOf(which, key)) return { why: WHY.noRight };
     if ("why" in cell) return cell;
-    return reach.ok ? cell : { why: reach.why };
+    return which.ok ? cell : { why: which.why };
   };
   const occupancyOf = (unit) => {
-    if (!wholeTree && outOfReach(unit.key)) return { why: WHY.noRight };   // the tree lists only her granted beds there
+    if (!wholeTree && outOf(reach, unit.key)) return { why: WHY.noRight };   // the tree lists only her granted beds there
     if (!occupancy.ok) return { why: occupancy.why };
     return wholeTree || reach.ok ? { ...unit.counts } : { why: reach.why };
   };
-  const rows = units.map((unit) => {
-    const cells = cellsOf(unit.key);
+  const gated = (key) => {
+    const cells = cellsOf(key);
     return {
-      key: unit.key, name: unit.name, closed: unit.closed, occupancy: occupancyOf(unit),
-      waiting: gate(unit.key, cells.waiting), late: gate(unit.key, cells.late), pending: gate(unit.key, cells.pending),
-      silent: gate(unit.key, cells.silent),
+      waiting: gate(boardReach, key, cells.waiting), late: gate(reach, key, cells.late),
+      pending: gate(reach, key, cells.pending), silent: gate(reach, key, cells.silent),
     };
-  });
-  const rest = cellsOf(NO_UNIT);
-  const any = !scoped && Object.values(rest).some((cell) => (cell.value ?? 0) > 0);
-  return { cards, rows, unplaced: any ? { key: NO_UNIT, occupancy: null, ...rest } : null, scoped };
+  };
+  const rows = units.map((unit) => ({
+    key: unit.key, name: unit.name, closed: unit.closed, occupancy: occupancyOf(unit), ...gated(unit.key),
+  }));
+  const rest = gated(NO_UNIT);
+  const any = reach.ok && reach.data.all && Object.values(rest).some((cell) => (cell.value ?? 0) > 0);
+  return { cards, rows, unplaced: any ? { key: NO_UNIT, occupancy: null, ...rest } : null, reachNote };
 }
 
 /** A response time in seconds as whole minutes and seconds (`m` null under a minute); null for none. */

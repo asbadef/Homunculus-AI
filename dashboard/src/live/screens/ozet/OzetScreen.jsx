@@ -14,7 +14,8 @@ import { useSnoozeClock } from "../../data/useSnoozeClock.js";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Icon, KV, KVList, Note, Seg, Table } from "../../ui/index.js";
 import {
-  DEFAULT_PERIOD, PERIODS, WHY, boardSource, dayOf, qualityView, reachSource, readSource, rightsOf, shadowSource,
+  DEFAULT_PERIOD, PERIODS, WHY, boardReachSource, boardSource, dayOf, qualityView, reachSource, readSource, rightsOf,
+  shadowSource,
   structureSource, summarise,
 } from "./ozet.js";
 import { useQuality, useSummaryReads } from "./useSummaryReads.js";
@@ -62,14 +63,18 @@ function Card({ t, icon, title, what, cell, extra, caveat, atMs }) {
   );
 }
 
-function Cards({ t, cards, scoped, period, atMs }) {
+/** The line under cards 2–4 for the caller's reach (`summarise().reachNote`): only her reach, or — the scope read
+ *  failed — maybe not the whole hospital. None for the hospital's counts, and none while the scope is being read. */
+const REACH_NOTE = Object.freeze({ scoped: "ozet.cards.scoped", unknown: "ozet.cards.scopeUnknown" });
+
+function Cards({ t, cards, reachNote, period, atMs }) {
   const { unanswered, pending, late, silent } = cards;
   const oldest = "value" in pending && pending.value > 0 ? ageText(t, pending.age) : null;
   let silentExtra = null;
   if ("value" in silent && silent.noMonitors) silentExtra = t("ozet.cards.silentNoMonitors");
   else if ("value" in silent && silent.value > 0 && silent.longest !== null) silentExtra = t("ozet.cards.silentLongest", { for: forText(t, silent.longest) });
   // Card 1 is the server's whole-hospital report (it refuses a scoped caller); the other three count what her reach sent.
-  const reach = scoped ? t("ozet.cards.scoped") : null;
+  const reach = REACH_NOTE[reachNote] ? t(REACH_NOTE[reachNote]) : null;
   return (
     <section aria-labelledby="ozet-cards" className="flex flex-col gap-2">
       <h2 id="ozet-cards" className="m-0 font-display text-17 font-bold">{t("ozet.cards.title")}</h2>
@@ -267,8 +272,10 @@ export function OzetScreen() {
     pending: readSource(reads.pending, rights.pending),
     shadow: shadowSource(shadow, rights.shadow),
     quality: readSource(quality, rights.quality),
-    // The caller's reach over the units table: the scope the engine applied to her board (ozet.js `reachSource`).
-    reach: reachSource(board.scope, boardSrc),
+    // The caller's reach over the units table: her own GET /scope/me (any signed-in user may read it). The alarm
+    // column keeps the scope the engine applied to her board, from the same answer as its counts (ozet.js).
+    reach: reachSource(readSource(reads.scope, true)),
+    boardReach: boardReachSource(board.scope, boardSrc),
     wholeTree: rights.wholeTree,
   };
   const summary = summarise(sources);
@@ -286,7 +293,7 @@ export function OzetScreen() {
         <Button size="sm" icon="clock" busy={reads.busy} onClick={reads.refresh}>{t("ozet.refresh")}</Button>
       </div>
       <p className="m-0 text-13 text-mute">{t("ozet.intro")}</p>
-      <Cards t={t} cards={summary.cards} scoped={summary.scoped} period={period} atMs={atMs} />
+      <Cards t={t} cards={summary.cards} reachNote={summary.reachNote} period={period} atMs={atMs} />
       <QualityBox t={t} may={rights.quality} period={period} setPeriod={setPeriod} read={quality} />
       <UnitsBox t={t} summary={summary} occupancy={sources.occupancy} />
     </div>

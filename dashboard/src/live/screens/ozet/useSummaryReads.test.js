@@ -12,6 +12,9 @@ const MIN = 60_000;
 const TASKS = (id = "S-1") => ({ patients: [{ patient_id: id, unit_id: null, vital: null, tasks: [{ id: "t1", late: true }] }] });
 const PENDING = { generated_at: "2026-11-11T10:00:00+00:00", units: [] };
 const REPORT = (days) => ({ episodes: days, unanswered: 0 });
+// GET /scope/me (scope/schemas.py ScopeView): an administrator's.
+const ME = { user_id: "u-1", role: "hospital_admin", unrestricted: true, reason: "role", unit_ids: [], bed_ids: [],
+  grants: [], own_patients: 0 };
 const ALL = Object.freeze({ structure: true, tasks: true, pending: true });
 
 function deferred() {
@@ -26,6 +29,7 @@ function fakeStore() {
   const api = {
     tasks: vi.fn().mockResolvedValue(TASKS()),
     pendingHandovers: vi.fn().mockResolvedValue(PENDING),
+    myScope: vi.fn().mockResolvedValue(ME),
     alarmQuality: vi.fn().mockImplementation((days) => Promise.resolve(REPORT(days))),
   };
   return { api, track: (call) => call() };
@@ -50,26 +54,27 @@ describe("the page's own reads (useSummaryReads)", () => {
     const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
     const { unmount } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 1000 }));
     await flush();
-    const counts = () => [reloadStructure, store.api.tasks, store.api.pendingHandovers].map((read) => read.mock.calls.length);
-    expect(counts()).toEqual([1, 1, 1]);
+    const counts = () => [reloadStructure, store.api.tasks, store.api.pendingHandovers, store.api.myScope]
+      .map((read) => read.mock.calls.length);
+    expect(counts()).toEqual([1, 1, 1, 1]);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-    expect(counts()).toEqual([2, 2, 2]);
+    expect(counts()).toEqual([2, 2, 2, 2]);
 
     hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); document.dispatchEvent(new Event("visibilitychange")); });
-    expect(counts()).toEqual([2, 2, 2]);                       // hidden: no poll, and hiding is no reason to read
+    expect(counts()).toEqual([2, 2, 2, 2]);                    // hidden: no poll, and hiding is no reason to read
 
     hidden.mockReturnValue("visible");
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(0); });
-    expect(counts()).toEqual([3, 3, 3]);                       // shown again: at once
+    expect(counts()).toEqual([3, 3, 3, 3]);                    // shown again: at once
 
     unmount();
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); document.dispatchEvent(new Event("visibilitychange")); });
-    expect(counts()).toEqual([3, 3, 3]);
+    expect(counts()).toEqual([3, 3, 3, 3]);
   });
 
-  it("reads only what the session may read", async () => {
+  it("reads only what the session may read — and the caller's own scope, which every signed-in user may", async () => {
     const store = fakeStore();
     const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
     const rights = { structure: false, tasks: false, pending: true };
@@ -78,7 +83,23 @@ describe("the page's own reads (useSummaryReads)", () => {
     expect(reloadStructure).not.toHaveBeenCalled();
     expect(store.api.tasks).not.toHaveBeenCalled();
     expect(result.current.pending.phase).toBe("ok");
+    expect(result.current.scope).toMatchObject({ phase: "ok", data: ME });
     expect(result.current.fullAt).toBe(T0);                    // every source this session may read answered
+  });
+
+  it("counts the scope read in the full round, and refuses a scope of the wrong shape", async () => {
+    const store = fakeStore();
+    store.api.myScope.mockResolvedValueOnce({ unrestricted: "yes", unit_ids: [] });
+    const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
+    const { result } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 60 * MIN }));
+    await flush();
+    expect(result.current.scope).toMatchObject({ phase: "failed", data: null });
+    expect(result.current.tasks.phase).toBe("ok");
+    expect(result.current.fullAt).toBeNull();
+    vi.setSystemTime(T0 + MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.scope).toMatchObject({ phase: "ok", data: ME });
+    expect(result.current.fullAt).toBe(T0 + MIN);
   });
 
   it("never lets a round overtaken by a newer one win", async () => {

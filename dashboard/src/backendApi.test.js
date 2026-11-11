@@ -706,6 +706,20 @@ describe("backendApi — what the work screens call", () => {
     ]);
   });
 
+  // G4-02: «Yönetici özeti» reads the caller's own reach here too (any signed-in user may), as the users desk does.
+  it("reads the caller's own scope with an authed GET /scope/me, with nothing on the address", async () => {
+    const answer = { user_id: "u-1", role: "hospital_admin", unrestricted: true, reason: "role", unit_ids: [], bed_ids: [],
+      grants: [], own_patients: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = signedIn(fetchMock);
+    expect(await api.myScope()).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/scope/me");
+    expect(init.method ?? "GET").toBe("GET");
+    expect(init.headers.Authorization).toMatch(/^Bearer /);
+    expect(init.body).toBeUndefined();
+  });
+
   it("reads one user's scope, which the scope editor needs and /scope/me cannot answer", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ user_id: "u-1", grants: [] }));
     const api = signedIn(fetchMock);

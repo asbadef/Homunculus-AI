@@ -11,6 +11,7 @@ import { StructureProvider } from "../../data/StructureProvider.jsx";
 import { alarm, board, entry, identity } from "../../data/board.testutil.js";
 import { AT, bed, strip } from "../../data/shadow.testutil.js";
 import { PERMISSION_KEYS } from "../admin/catalogue.js";
+import { SCOPE_ADMIN } from "../admin/admin.testutil.js";
 import { NEO, REA, structure } from "../kabul/kabul.testutil.js";
 import { OzetScreen } from "./OzetScreen.jsx";
 
@@ -68,6 +69,7 @@ export async function mountOzet({ perms = ADMIN, setup, live = true } = {}) {
       api.pendingHandovers.mockResolvedValue(PENDING);
       api.alarmQuality.mockResolvedValue(REPORT);
       api.shadowBoard.mockResolvedValue(STRIP);
+      api.myScope.mockResolvedValue(SCOPE_ADMIN);   // GET /scope/me: the units table's reach — the administrator's, unrestricted
       setup?.(api);
     },
   });

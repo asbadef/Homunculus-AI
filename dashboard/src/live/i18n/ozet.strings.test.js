@@ -31,6 +31,7 @@ describe("the summary page's words (ozet)", () => {
     ]);
     // Review fixes: a scoped caller's cards, a truncated count, the tree still loading, a report of the wrong shape.
     expect(tr["ozet.cards.scoped"]).toBe("yalnız kapsamınızdakiler, hastanenin tamamı değil");
+    expect(tr["ozet.cards.scopeUnknown"]).toBe("kapsamınız okunamadı: hastanenin tamamı olmayabilir");
     expect(tr["ozet.cards.truncated"]).toBe("eksik okuma: yalnız en yeni kayıtlar sayıldı");
     expect(tr["ozet.units.loading"]).toBe("Birimler okunuyor…");
     expect(tr["ozet.q.unreadable"]).toBe("Alarm kalitesi okunamadı.");
