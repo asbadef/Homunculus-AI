@@ -35,7 +35,10 @@ AND `admissions.transfer_note`: once B1b has shipped, every transfer's reason an
 note are lost, and nothing here saves them. The deploy notes' rollback block counts the reasons
 first. The last step FAILS LOUDLY when a member holds two closed rows on one admission, and the
 whole downgrade rolls back with it; the deploy notes' rollback block counts those too. Rows closed
-or written by steps 2–4 stay as they are.
+or written by steps 2–4 stay as they are. The downgrade gives `care_team.claim` back to EVERY
+`charge_nurse` group, including one whose hospital had taken it away before 0018 ran; the upgrade
+leaves no record of which groups held it, so that cannot be told apart. The difference is
+negligible, and stated here so that it is not a surprise.
 
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013).
 
