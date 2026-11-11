@@ -1664,7 +1664,8 @@ uydurmadır.
   (arter hattı ya da monitörün NBP ortalaması).
 - **İki giriş, tek form.**
   - «Yatak başı ölçüm» sayfası (`/olcum`, `clinical.chart` yetkisi; tablet ve telefon için): hasta
-    seçilir, ad soyad ve doğum yılıyla kimlik onaylanır (doğum tarihi kayıtlı değilse ekran bunu
+    seçilir, soyad ad ve doğum yılıyla kimlik onaylanır (koğuşun yazdığı sırayla, sahibin kararı 10 Kasım
+    2026; doğum tarihi kayıtlı değilse ekran bunu
     söyler ve yine sorar), form doldurulur. «Hayır, eşleşmiyor» seçimi iptal eder ve sorumlu
     hemşireye bildirmeyi söyler; hiçbir şey kaydedilmez.
   - Hasta ekranındaki «Ölçüm gir» (yalnız `clinical.chart` yetkisi olana görünür) aynı formu bir
@@ -1785,10 +1786,17 @@ uydurmadır.
 Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
 temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
 «Yataklar» sekmesi buraya taşındı. **Durum:** 11 Kasım 2026'dan beri hastane
-sunucusunda çalışıyor (göç 0016). Örneklerdeki adlar uydurmadır.
+sunucusunda çalışıyor (göç 0016); yeşil/kırmızı yatak renkleri ve kimlik sorusundaki «soyad ad» sırası
+main'de (11 Kasım 2026), sunucuya sonraki çıkışla gelir. Örneklerdeki adlar uydurmadır.
 
 - **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
   yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
+- **Renkler.** Boş yatak **yeşil**, dolu yatak **kırmızı**: durum etiketi ve kutunun sol kenarı
+  (sahibin kararı, 10 Kasım 2026). Temizlikte, taburcu ya da nakil bekleyen yatak amber; rezerve
+  yatağın kenarı mavi, kullanım dışı ve bakımdaki gri; kapalı yatak renksiz. Renk tek işaret
+  değildir, etiket durumu sözle de söyler. Buradaki yeşil ve kırmızı yatağın durumudur, hastanın
+  risk düzeyi değil (risk hapları ayrı kurallarla boyanır, bkz. risk hapı bölümü). Birim
+  başlığındaki «boş» sayısı da yeşildir.
 - **Birim başlığı.** Birimin adı ve türü (Erişkin YBÜ, Yenidoğan YBÜ gibi); altında «1 / 4 doludur»:
   dolu yatak / kullanılabilir yatak. Kullanılabilir = açık, kullanım dışı ve bakımda olmayan; rezerve
   yatak kullanılabilir sayılır (hastasını bekler). Yanında sıfır olmayan sayılar: boş, temizlikte,

@@ -83,6 +83,23 @@ describe("DolulukScreen", () => {
     expect(document.body.innerHTML).not.toMatch(UUID_TEXT);
   });
 
+  it("marks a free bed green and an occupied bed red — tag and tile edge — and other states as before (owner, 2026-11-10)", async () => {
+    await mountScreen(NURSE);
+    const tag = (region, label, state) => tile(region, label).getByText(state);
+    expect(tag("Reanimasiya · Otaq 1", "1", "Boş")).toHaveAttribute("data-tone", "ok");
+    expect(tag("Reanimasiya · Otaq 2", "5", "Boş")).toHaveAttribute("data-tone", "ok");
+    expect(tag("Reanimasiya · Otaq 1", "2", "Dolu")).toHaveAttribute("data-tone", "crit");
+    expect(tag("Reanimasiya · Otaq 1", "3", "Təmizlikdədir")).toHaveAttribute("data-tone", "warn");
+    expect(tileOf("Reanimasiya · Otaq 1", "1")).toHaveClass("border-l-ok");
+    expect(tileOf("Reanimasiya · Otaq 1", "2")).toHaveClass("border-l-crit");
+    expect(tileOf("Reanimasiya · Otaq 1", "3")).not.toHaveClass("border-l-ok");
+    expect(tileOf("Reanimasiya · Otaq 1", "3")).not.toHaveClass("border-l-crit");
+    // A closed bed is never coloured as free, whatever its stored state.
+    expect(tileOf("Neonatal · N-1", "N1")).not.toHaveClass("border-l-ok");
+    const box = screen.getByRole("region", { name: "Reanimasiya · Otaq 1" }).closest("section").parentElement;
+    expect(within(box).getByText("boş: 2")).toHaveAttribute("data-tone", "ok");
+  });
+
   it("heads each unit with occupied of usable and the counts that are not zero", async () => {
     await mountScreen(NURSE);
     const box = screen.getByRole("region", { name: "Reanimasiya · Otaq 1" }).closest("section").parentElement;
