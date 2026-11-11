@@ -173,10 +173,10 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
   const [taken, setTaken] = useState(null);       // { base, ids } | null
   const latest = useRef(sets);
   latest.current = sets;
-  const take = (ids) => setTaken((prev) => {
-    const base = latest.current;
-    return { base, ids: prev?.base === base ? [...prev.ids, ...ids] : ids };
-  });
+  // `base` is read when the call is made (not when React gets to the update): the answer the write was made against.
+  const take = (ids, base = latest.current) => setTaken((prev) => (
+    { base, ids: prev?.base === base ? [...prev.ids, ...ids] : ids }
+  ));
   const shown = taken && taken.base === sets
     ? sets.filter((set) => { const ids = idsOf(set); return !(ids.length > 0 && ids.every((id) => taken.ids.includes(id))); })
     : sets;
@@ -297,8 +297,11 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
             set={rejecting}
             onReject={(reason) => board.store.rejectReadings(idsOf(rejecting), reason)}
             onDone={async (done) => {
+              // The answer the rejection was made against, kept before the read: only a read that REPLACES it can bring
+              // the set back — a render that lands meanwhile cannot. The set leaves with the dialog, after the read.
+              const base = latest.current;
               await reload();
-              if (done) take(idsOf(rejecting));      // the engine took it, whether or not that read answered
+              if (done) take(idsOf(rejecting), base);      // the engine took it, whether or not that read answered
               setRejecting(null);
             }}
             onClose={() => setRejecting(null)}

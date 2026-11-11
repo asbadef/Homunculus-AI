@@ -235,11 +235,17 @@ describe("linking a set to a patient", () => {
   it("a link that got no answer says it may have landed, and reads the list again", async () => {
     const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
     const reads = api.unmatchedReadings.mock.calls.length;
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
     await press(button("Bəli, bağla"));
     expect(toasted("REA-01 · 2: cavab gəlmədi — bağlanmış ola bilər. Siyahıya və xəstə ekranına baxın.").length).toBeGreaterThan(0);
     expect(screen.queryByText(/xəstəyə bağlanmadı/)).toBeNull();                    // never «not linked» for a link with no answer
     expect(api.unmatchedReadings.mock.calls.length).toBeGreaterThan(reads);
     expect(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" })).toBeInTheDocument();
+    // It may not have landed: the set stays listed while the read is out — only the engine's answer takes it off.
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
+    await act(async () => { release(unmatched([OLD])); await settle(); });
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
   });
 
   it("names the bed the patient has when the question is answered, not the one it had when chosen", async () => {
@@ -370,6 +376,21 @@ describe("rejecting a set — the dialog's endings", () => {
     expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
   });
 
+  // The set is taken against the list the rejection was made from: a read that REPLACES that list has the last word,
+  // as for a link — whatever it says, and whenever React renders it.
+  it("lists a rejected set again if the read that follows says it still waits: the engine's answer is the last word", async () => {
+    const { api } = await toDialog();
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await type(WHY);
+    await press(confirmButton());
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+    expect(dialog()).toBeInTheDocument();                                                      // the read is out
+    await act(async () => { release(unmatched([ROUND, OLD])); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
+  });
+
   it("a rejection the engine refused leaves the set listed", async () => {
     const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockRejectedValue(
       refusal(409, "The reading is no longer waiting: it was linked or rejected already.", { apiCode: "reading_not_unmatched" })) });
@@ -404,12 +425,19 @@ describe("rejecting a set — the dialog's endings", () => {
   it("a rejection that got no answer says it may have been recorded — never that it was not — and reads the list again", async () => {
     const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
     const reads = api.unmatchedReadings.mock.calls.length;
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
     await type(WHY);
     await press(confirmButton());
     expect(toasted(`Nömrə ${TYPO}: cavab gəlmədi — rədd edilmiş ola bilər. Siyahıya baxın.`).length).toBeGreaterThan(0);
     expect(screen.queryByText(/rədd edilmədi/)).toBeNull();
-    expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.unmatchedReadings.mock.calls.length).toBeGreaterThan(reads);
+    // It may not have been recorded: the dialog waits for the read and the set stays listed meanwhile.
+    expect(dialog()).toBeInTheDocument();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
+    await act(async () => { release(unmatched([OLD])); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
   });
 });
 
