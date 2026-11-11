@@ -463,3 +463,28 @@ async def test_an_audit_store_failing_after_the_commit_still_writes_and_logs_the
         assert f"member_id={answer.json()['id']}" in message, message
         assert f"admission_id={aid}" in message and "doctor2@kabul.example.com" in message, message
         assert "Sentetik" not in message and "audit store down" not in message, message
+
+
+# ---------------------------------------------------------------- the discharge (F6, §5.4)
+async def test_the_discharge_closes_the_whole_team_and_keeps_every_closed_row(ward, db_session):
+    """F6, §5.4: the discharge confirmation closes every active row, the attending's included. A
+    member ended twice before keeps both rows and loses a third (F2: the old constraint broke
+    here)."""
+    w, client, _ = ward
+    doctor = w.users["doctor"].id
+    helper = await add_physician(db_session, w, "yardimci")
+    admission = await signed(w, client)
+    aid = admission["id"]
+    for _ in range(2):
+        member_id = (await _add(client, w, aid, helper)).json()["id"]
+        assert (await client.post(f"/admissions/{aid}/care-team/{member_id}/end",
+                                  headers=w.auth["doctor"])).status_code == 200
+    assert (await _add(client, w, aid, helper)).status_code == 201
+    r = await client.post(f"/admissions/{aid}/discharge/initiate", json={"disposition": "HOME"},
+                          headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/admissions/{aid}/discharge/confirm", headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert [(u, active, closed) for u, _, active, closed in
+            await team_of(db_session, uuid.UUID(aid))] == [
+        (doctor, False, True), (helper, False, True), (helper, False, True), (helper, False, True)]
