@@ -162,8 +162,10 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(55);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js)
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(55);
+    expect(EVENT_TYPES).toHaveLength(57);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + G2-B1b's move and its board retry
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(57);
+    expect(typeKey("admission.transfer")).toBe("denetim.type.transfer");                           // G2-B1b (spec §5.6, X14)
+    expect(typeKey("admission.transfer_board_retry")).toBe("denetim.type.transferBoardRetry");     // named too, as the discharge's retry is (engineTypes.test.js, D3)
     expect(typeKey("care_team.attending")).toBe("denetim.type.careTeamAttending");   // G2-B1c (spec §5.5)
     expect(typeKey("care_team.add")).toBe("denetim.type.careTeamAdd");
     expect(typeKey("care_team.end")).toBe("denetim.type.careTeamEnd");

@@ -221,8 +221,6 @@ export const ADMISSION_CODE_KEYS = new Map([
   // A-32: a bed's release while its last patient's card is still on the board; with that patient's
   // number when the detail carries it (`err.patientNumber`), `kabul.err.boardNotClearedNumber`.
   ["board_not_cleared", "kabul.err.boardNotCleared"],
-  // A-37: the transfer routes are closed for now (no screen calls them).
-  ["transfer_unavailable", "kabul.err.transferUnavailable"],
   // A-37: a second open admission of the same person (name and birth date); with the open
   // admission's number when the detail carries it, `kabul.err.duplicateOpenAdmissionNumber`.
   ["duplicate_open_admission", "kabul.err.duplicateOpenAdmission"],
@@ -322,6 +320,7 @@ export const INVALID_FIELD_KEYS = new Map([
   ["reported_by", "kabul.invalid.reportedBy"],
   ["discharge_at", "kabul.invalid.dischargeAt"],
   ["note", "kabul.invalid.note"],
+  ["target_bed_id", "kabul.invalid.targetBed"],     // G2-B1b (X7): the patient's own bed chosen
   ["name", "kabul.invalid.name"],
   ["label", "kabul.invalid.label"],
   // G2-B3b (D5): the handover note's four parts (`HandoverNote`) — refused for a control character in them.

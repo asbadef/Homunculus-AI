@@ -49,7 +49,7 @@ const WEIGHT_FAILED = "Çəki mühərrikə çatmadı — qəbul yazılıb; siste
 const PROFILE_FAILED = "Müşayiət edən xəstəliklər mühərrikə çatmadı — qəbul yazılıb; sistem administratoruna bildirin.";
 const BOARD_FAILED = "Kart paneldə görünmürsə, sistem administratoruna bildirin — qəbul yazılıb.";
 const RECORDED = "Serverin cavabı gəlmədi, amma qəbul yazılıb. Kartın panelə, çəki və müşayiət edən xəstəliklərin mühərrikə çatıb-çatmadığı bilinmir; kart paneldə görünmürsə, sistem administratoruna bildirin.";
-const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
+const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Köçürmə / Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
 const EARLIER = `Bu nömrə formadakı xəstəyə aid deyil: Sentetik Hasta (${BED1}) üçün əvvəl göndərilən, cavabı gəlməyən qəbul yazılıb. Formadakı qəbul hələ göndərilməyib.`;
 const EARLIER_TITLE = "Başqa xəstənin qəbulu yazılıb";
@@ -640,7 +640,7 @@ describe("AdmitTab", () => {
   describe("the request id (A-19)", () => {
     const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
     const CONFLICT = "Bu forma ilə artıq qəbul yazılıb (xəstə nömrəsi H2600042); forma yenidən göndərilmədi. "
-      + "«Evə yazılma › Yatan xəstələr» siyahısına baxın.";
+      + "«Köçürmə / Evə yazılma › Yatan xəstələr» siyahısına baxın.";
     const conflict = () => refusal(409, "This request id came before with another admission form.",
       { apiCode: "request_conflict", patientNumber: "H2600042" });
 
@@ -835,14 +835,14 @@ describe("AdmitTab", () => {
       });
       fillRequired();
       await act(async () => { fireEvent.click(admitButton()); });           // on its way
-      await openTab("Evə yazılma");                                          // where the hold's text sends her
+      await openTab("Köçürmə / Evə yazılma");                                          // where the hold's text sends her
       await openTab("Qəbul");                                                // back while it is still on its way
       expect(nameField().value).toBe("Sentetik Hasta");
       expect(admitButton().getAttribute("aria-busy")).toBe("true");
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);                            // a press meanwhile sends nothing
 
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await act(async () => { answer(admitted()); });                        // the answer lands with the tab closed
       await settle();
       await openTab("Qəbul");
@@ -857,7 +857,7 @@ describe("AdmitTab", () => {
       fillRequired();
       await press();                                                         // no answer; bed 1 still free: no hold
       expect(panel().queryByText(HELD)).toBeNull();
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await openTab("Qəbul");
       expect(nameField().value).toBe("Sentetik Hasta");                      // the form is where she left it
       expect(screen.getByText(`Seçilən: ${BED1}`)).toBeTruthy();
@@ -881,7 +881,7 @@ describe("AdmitTab", () => {
       api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       const tab = screen.getByRole("tab", { name: "Qəbul" });
       tab.focus();                                                           // by the keyboard, onto the tab
       await act(async () => { fireEvent.click(tab); });                      // another instance of the tab
@@ -940,7 +940,7 @@ describe("AdmitTab", () => {
       api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await act(async () => { looked([]); });                                // held while no Qəbul tab is mounted
       await settle();
       expect(toasts().getAllByText(HELD).length).toBeGreaterThan(0);
@@ -1026,8 +1026,8 @@ describe("AdmitTab", () => {
       fillRequired();
       await press();
       expect(document.activeElement).toBe(doneHeading());                   // news: the box takes the focus
-      await openTab("Evə yazılma");
-      const away = screen.getByRole("tab", { name: "Evə yazılma" });
+      await openTab("Köçürmə / Evə yazılma");
+      const away = screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" });
       away.focus();
       await act(async () => { fireEvent.keyDown(away, { key: "ArrowLeft" }); });
       await settle();
@@ -1350,7 +1350,7 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     fillRequired();
     api.structure.mockResolvedValue(RESERVED_1());                           // reserved meanwhile
     await act(async () => { fireEvent.click(admitButton()); });              // on its way
-    await openTab("Evə yazılma");
+    await openTab("Köçürmə / Evə yazılma");
     await act(async () => { answer(reservedRefusal()); });
     await settle();
     const told = toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`);

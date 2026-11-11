@@ -34,12 +34,12 @@ describe("KabulScreen", () => {
   it("opens on Kabul for a nurse, with one h1, and moves between the tabs", async () => {
     await mountKabul(<KabulScreen />, { perms: NURSE });
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual(["Xəstə qəbulu"]);
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
     expect(screen.getByRole("tab", { name: "Qəbul" }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" }));
-    expect(screen.getByRole("tab", { name: "Evə yazılma" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }));
+    expect(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby"))
-      .toBe(screen.getByRole("tab", { name: "Evə yazılma" }).id);
+      .toBe(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }).id);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
@@ -58,10 +58,10 @@ describe("KabulScreen", () => {
 
   it("shows a physician and a charge nurse both tabs", async () => {
     await mountKabul(<KabulScreen />, { perms: DOCTOR });
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
     cleanup();
     await mountKabul(<KabulScreen />, { perms: CHARGE });
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
   });
 
   it("says so to a session that may open none of them", async () => {
