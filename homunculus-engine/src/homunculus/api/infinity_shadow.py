@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -151,6 +151,16 @@ DISPLAY_MAX_AGE_S, FORGET_AFTER_S, SILENT_AFTER_S = 15.0, 120.0, 15.0
 MIN_POST_SPACING_S = 1.0
 LAG_BUCKETS_MS = (10, 50, 100, 250, 500, 1000, 3000)      # the 0a histogram's edges
 REJECTIONS = ("too_old", "clock", "unit", "range", "unknown_parameter", "duplicate")
+# G4-01 (spec 2026-11-11 D2, D4 and its amendment): the last-seen ledger's bounds. A device the hub stopped
+# reporting is kept LEDGER_KEEP_S after its last report. A channel is stale once its last valid value is
+# DISPLAY_MAX_AGE_S old — the strip already shows every such gap — and the device page LISTS it from
+# STALE_LIST_AFTER_S until STALE_LIST_UNTIL_S: silent longer, it has more likely been removed on purpose (an
+# arterial line taken out) than lost, and the page counts it on one line instead. The ledger keeps it either
+# way. The page reads both numbers from the board (`stale_list_after_s`, `stale_list_until_s`), so they are
+# said here once.
+LEDGER_KEEP_S = 24 * 3600.0
+STALE_LIST_AFTER_S = 60.0
+STALE_LIST_UNTIL_S = 3600.0
 _LIMIT = 10**15
 _TOP = frozenset({"schema", "sent_at", "forwarder", "hub", "devices"})
 _FORWARDER = frozenset({"interval_s", "sent", "failed", "decoder"})
@@ -493,6 +503,111 @@ class ShadowStore:
         self._lag[0] += 1
         self._lag[1] += amount
         self._lag[2 + slot] += 1
+
+
+# --- G4-01: the last-seen ledger -----------------------------------------------------------------
+
+CHANNELS = tuple(name for name in PARAMETERS if name not in NBP_PARTS) + (NBP,)   # the board's own, in its order
+SHOWN_VALUE = frozenset({"value", "value_untimed"})     # a board entry carrying a valid value (NBP-2's untimed too)
+
+
+def reported_sources(body: Mapping) -> list[str]:
+    """The devices an ACCEPTED body reported, by address. Only after `ShadowStore.ingest` took the
+    body: it has been validated whole, so every entry has a unicast `source`."""
+    return [unicast_ipv4(item["source"]) for item in body["devices"]]
+
+
+def _epoch(iso: str) -> float:
+    return datetime.fromisoformat(iso).timestamp()
+
+
+@dataclass
+class _Seen:
+    first_seen_at: float                      # wall clock
+    last_report_at: float                     # wall clock
+    last_report_tick: float                   # monotonic: LEDGER_KEEP_S is measured on it
+    last_packet_at: float | None = None       # wall clock: the report's time less the hub's packet age
+    channels: dict[str, float] = field(default_factory=dict)   # channel -> when it last carried a valid value
+
+
+@dataclass(frozen=True)
+class SeenView:
+    """One device as the ledger holds it. Wall-clock epochs; `channels` in the board's order (CHANNELS)."""
+    first_seen_at: float
+    last_report_at: float
+    last_packet_at: float | None
+    channels: tuple[tuple[str, float], ...]
+    reported: bool                            # listed in the latest accepted body
+
+
+@dataclass(frozen=True)
+class LedgerView:
+    started_at: float                         # the board's `watching_since`: when this API began watching
+    devices: Mapping[str, SeenView]
+
+
+class FeedLedger:
+    """G4-01 (spec 2026-11-11 D2): when the lane last saw each monitor and each of its channels.
+
+    Memory only, beside `ShadowStore` and fed from it: after each accepted body the POST route hands
+    `observe` what the store now shows (`ShadowStore.devices()`) and the addresses the body listed
+    (`reported_sources`). So it remembers only what the board showed: a device's last report, its
+    last packet (the report's time less the hub's `packet_age_ms`; a report with no age — a device
+    the hub has had no packet from — leaves it where it was), and per channel the time of the last
+    entry that carried a valid value (`value`, or NBP's `value_untimed`), kept after the store forgets
+    the reading at FORGET_AFTER_S. Bounds: a device is dropped LEDGER_KEEP_S after its last report,
+    and with the store when the store lets it go, so it never holds more than MAX_DEVICES; only the
+    board's own channels (CHANNELS).
+
+    The store, its readings and everything the shadow engine reads are untouched; nothing here is
+    written anywhere. A restart empties it, and `started_at` says since when it has watched. Two
+    clocks, as the store's: the wall clock for the times the board prints, the monotonic one for how
+    long ago a device was last reported. A test that injects only the wall clock gets it for both."""
+
+    def __init__(self, clock: Callable[[], float] = time.time, monotonic: Callable[[], float] | None = None):
+        self._clock = clock
+        self._monotonic = monotonic or (time.monotonic if clock is time.time else clock)
+        self._started_at = clock()
+        self._seen: dict[str, _Seen] = {}
+        self._reported: frozenset[str] = frozenset()
+
+    def observe(self, views: Mapping[str, DeviceView], reported: Iterable[str]) -> None:
+        """Note one accepted body: `views` the store's devices right after it, `reported` its addresses."""
+        now, tick = self._clock(), self._monotonic()
+        for source in [s for s in self._seen if s not in views]:
+            del self._seen[source]                    # the store let it go (MAX_DEVICES): so does the ledger
+        listed = frozenset(source for source in reported if source in views)
+        for source in listed:
+            view = views[source]
+            held = self._seen.get(source)
+            if held is None:
+                held = self._seen[source] = _Seen(now, now, tick)
+            held.last_report_at, held.last_report_tick = now, tick
+            if view.packet_age_ms is not None:
+                held.last_packet_at = now - view.packet_age_ms / 1000.0
+            for entry in view.parameters:
+                name = entry.get("parameter")
+                if name in CHANNELS and entry.get("state") in SHOWN_VALUE and entry.get("last_at"):
+                    at = _epoch(entry["last_at"])
+                    if at > held.channels.get(name, float("-inf")):
+                        held.channels[name] = at
+        self._reported = listed
+        self._prune(tick)
+
+    def view(self) -> LedgerView:
+        """What the ledger holds now, once what is past LEDGER_KEEP_S is dropped."""
+        self._prune(self._monotonic())
+        return LedgerView(self._started_at, {
+            source: SeenView(held.first_seen_at, held.last_report_at, held.last_packet_at,
+                             tuple((name, held.channels[name]) for name in CHANNELS if name in held.channels),
+                             source in self._reported)
+            for source, held in self._seen.items()})
+
+    def _prune(self, tick: float) -> None:
+        for source in [s for s, held in self._seen.items() if tick - held.last_report_tick > LEDGER_KEEP_S]:
+            del self._seen[source]
+        while len(self._seen) > MAX_DEVICES:
+            del self._seen[min(self._seen, key=lambda s: self._seen[s].last_report_tick)]
 
 
 # --- the board's answer --------------------------------------------------------------------------
