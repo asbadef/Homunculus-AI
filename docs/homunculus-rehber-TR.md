@@ -2342,7 +2342,8 @@ adlar uydurmadır.
   3. **«Alarm kalitesi»:** dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün); bu kutuyu ve ilk kartı
      değiştirir. «Bugün» takvim günü değil, son 24 saattir; kutu ve kart bunu «son 24 saat» diye yazar. Hastane
      geneli, denetim kaydından; birim birim değil (denetim kaydındaki alarmın yatağı yok; birim birim alarm kalitesi
-     sonraki bir dilimdir). Sayılar: alarm olayı; yanıtlanan ve oranı (hiçbir olay yerleşmediyse «henüz yerleşen
+     sonraki bir dilimdir). Sayılar: alarm olayı; yanıtlanan ve oranı (tam yüzde: «%100» yalnız yerleşen her olay
+     yanıtlandıysa, «%0» yalnız hiçbiri yanıtlanmadıysa yazılır, §3.25; hiçbir olay yerleşmediyse «henüz yerleşen
      yok»); yanıt süresinin ortancası ve p90'ı; eskale edilen; yanıtsız kalan; bekleyen (10 dakikası dolmamış).
      «Günlük alarm sayısı»: her gün için bir çubuk ve sayısı; günler UTC takvimine göredir; «geçen haftaya göre»
      eğilimi yok. Altında türe göre küçük bir tablo. Sunucunun okuma sınırı aşılırsa kutu bunu ve sayılan dönemin
@@ -2415,10 +2416,13 @@ adlar uydurmadır.
   değişmedi.
 - **Kapsam:** birim atanmış bir kullanıcı (Yönetim › Kullanıcılar) yalnız **birim** atamalarının birimlerini görür;
   bir yatak ataması o yatağın birimini kapsamaz. Ona «Birimi belli olmayan» satırı yazılmaz; kartlar ve «Toplam»
-  yalnız onun birimlerini toplar ve kartların başlığı «Kapsamınızdaki birimler · {dönem}» olur. Hiçbir birimi yoksa
-  tablonun yerinde «Kapsamınızda birim yok.» yazar. Ataması olmayan bir hesap (ör. birim atanmamış bir Denetçi) bugün
-  kısıtsızdır ve bütün birimleri görür (§3.5, «Birimler»); sunucu ataması olmayanları kısıtlayacak biçimde
-  ayarlanırsa (`SCOPE_ENFORCE_UNASSIGNED`) yönetici olmayan böyle bir hesap «Kapsamınızda birim yok.» okur.
+  yalnız onun birimlerini toplar ve kartların başlığı «Kapsamınızdaki birimler · {dönem}» olur. Kapsamındaki her açık
+  birim, dönemde hiçbir şey olmasa da sıfırlarıyla yazılır. Kapsamında hiç birim yoksa (ör. yalnız bir yatak
+  ataması) tablonun yerinde bir kez «Kapsamınızda birim yok.» yazar; kapsam satırı, «Erteleme nedenleri» ve «Türe göre
+  alarmlar» o zaman çizilmez, kartlar yanıtın kendi sıfırlarını gösterir. Ataması olmayan bir hesap (ör. birim
+  atanmamış bir Denetçi) bugün kısıtsızdır ve bütün birimleri görür (§3.5, «Birimler»); sunucu ataması olmayanları
+  kısıtlayacak biçimde ayarlanırsa (`SCOPE_ENFORCE_UNASSIGNED`) yönetici olmayan böyle bir hesap «Kapsamınızda birim
+  yok.» okur.
 - **Sayfanın sırası (yukarıdan aşağı):**
   1. **Başlık:** «Kalite göstergeleri», «Süreç ölçülür, kişi değil», yanıtın sunucuda üretildiği an («10:42
      itibarıyla»; henüz yanıt yoksa «Henüz okunmadı»), dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün;
@@ -2426,21 +2430,29 @@ adlar uydurmadır.
      sayfanın ne olduğunu söyleyen kısa bir paragraf.
   2. **Kapsam satırı:** «Bu dönemde 9 alarm olayından 7 tanesi bir birime bağlanabildi. Birime bağlanamayanlar: bu
      sistemde kabul kaydı olmayan (HBYS'den gelen ya da kimliği olmayan monitör) hastalar.» Kapsamı kısıtlı bir
-     kullanıcıda: «Yalnız kapsamınızdaki birimler: bu dönemde bu birimlere 7 alarm olayı bağlandı.» Sunucunun okuma
+     kullanıcıda: «Yalnız kapsamınızdaki birimler: bu dönemde bu birimlere 7 alarm olayı bağlandı.» Dönemde hiç alarm
+     olayı yoksa satır bunu düz söyler: «Bu dönemde alarm olayı yok.» (kısıtlı kapsamda «Yalnız kapsamınızdaki
+     birimler: bu dönemde bu birimlerde alarm olayı yok.»); «0 alarm olayından 0 tanesi» yazılmaz. Sunucunun okuma
      sınırı aşıldıysa altında bir not alarm, erteleme ve RRT sayılarının hangi andan (gün, ay, saat) başladığını
      söyler; devirler yine dönemin tamamından sayılır.
   3. **Kartlar («Hastane geneli · son 7 gün»; kısıtlı kapsamda «Kapsamınızdaki birimler · son 7 gün»):** «Alarm yanıt
      süresi (ortanca)»; «Yanıtlanan alarm» («%82» ve altında «yerleşen 11 alarm olayından 9 tanesi»); «Eskale edilen
      alarm»; «Yanıtsız kalan alarm» (altında «1 tanesi kendiliğinden düzeldi»); «Ertelenen alarm» (altında «1 yüksek
      · 1 orta»); «RRT çağrısı»; «Devir karşı imza süresi (ortanca)». Alt satırlar yalnız kendi sayıları sıfırdan
-     büyükken yazılır.
-  4. **«Birimlere göre»:** her birim için bir satır, ada göre (dönemde sayacak bir şeyi olmayan birim yazılmaz;
-     sonradan kapatılmış bir birim adıyla yazılır), sonra **«Birimi belli olmayan»** (yalnız kısıtsız kapsamda; sayacak
-     bir şey olmasa da sıfırlarıyla), sonra **«Toplam»**. Sütunlar: «Birim» · «Alarm» · «Yanıt ortancası» · «Yanıt
-     p90» · «Yanıtlanan» · «Eskale» · «Yanıtsız (kendiliğinden düzelen)» · «Ertele» · «RRT çağrısı» · «Devir (açılan
-     / karşı imzalı / bekleyen)» · «Karşı imza ortancası». «Birimi belli olmayan»ın iki devir hücresi boştur: her
-     devrin birimi bellidir. Bir satırın adına dokunmak onu seçer (sayfa değişmez); «Birimi belli olmayan» ve
-     «Toplam» da seçilir. Açılışta «Toplam» seçilidir; yeni bir okumada seçilen satır yoksa seçim «Toplam»a döner.
+     büyükken yazılır. Oran tam yüzdedir ve kenarlarında abartmaz: «%100» yalnız yerleşen her olay yanıtlandıysa,
+     «%0» yalnız hiçbiri yanıtlanmadıysa yazılır; yerleşen 300 olaydan 299 tanesi yanıtlandıysa «%99», 1 tanesi
+     yanıtlandıysa «%1» (düz yuvarlama «%100» ve «%0» derdi). Aynı kural tablodaki «Yanıtlanan» sütununda ve «Yönetici
+     özeti»nin «Alarm kalitesi» kutusunda da geçerlidir. Henüz bir yanıt yokken (okunurken, okunamadığında) başlık
+     kimin toplamı olduğunu söylemez: «Göstergeler · son 7 gün».
+  4. **«Birimlere göre»:** kapsamdaki her açık birim için bir satır, ada göre; dönemde hiçbir şeyi olmayan birim de
+     yazılır, gerçek sıfırlarıyla (sayıları 0, oranı «— henüz yerleşen yok», süreleri «—»). Sonradan kapatılmış bir
+     birim yalnız dönemde sayacak bir şeyi varsa, adıyla yazılır. Sonra **«Birimi belli olmayan»** (yalnız kısıtsız
+     kapsamda; sayacak bir şey olmasa da sıfırlarıyla), sonra **«Toplam»**. Sütunlar: «Birim» · «Alarm» · «Yanıt
+     ortancası» · «Yanıt p90» · «Yanıtlanan» · «Eskale» · «Yanıtsız (kendiliğinden düzelen)» · «Ertele» · «RRT
+     çağrısı» · «Devir (açılan / karşı imzalı / bekleyen)» · «Karşı imza ortancası». «Birimi belli olmayan»ın iki
+     devir hücresinde «—» yazar: her devrin birimi bellidir. Bir satırın adına dokunmak onu seçer (sayfa değişmez);
+     «Birimi belli olmayan» ve «Toplam» da seçilir. Açılışta «Toplam» seçilidir; yeni bir okumada seçilen satır yoksa
+     seçim «Toplam»a döner.
   5. **«Erteleme nedenleri»:** beş neden, alarm ekranının «Ertele» penceresindeki sözcüklerle (§3.21: «Klinik karar
      verildi», «Artefakt ya da sinyal gürültüsü», «İşlem sürüyor», «Hastanın kendi normali», «Diğer») × sayı; sonra
      «Toplam» ve «Ortanca süre» («12,5 dk»). İlk sütun «Hastane geneli»dir (kısıtlı kapsamda «Kapsamınızdaki
@@ -2468,7 +2480,8 @@ adlar uydurmadır.
     içinde): yanıtsız kalanlardan, kuralı kendiliğinden durmuş olanlar, yani motorun kuralı artık tetiklenmediği için
     kapattığı alarmlar. Kimsenin onaylamadığı ve «geçti · onaylanmadı» durumunda kalan kritik alarm da sayılır: kuralı
     durmuştur. Yalnız taburcu ile ya da ölçümün «hatalı giriş» olarak işaretlenmesiyle (§3.12) kapanan alarm
-    sayılmaz: orada hasta ayrılmış ya da değer geri çekilmiştir, alarm kendiliğinden düzelmemiştir.
+    sayılmaz: orada hasta ayrılmış ya da değer geri çekilmiştir, alarm kendiliğinden düzelmemiştir. Bu sınır sahibin
+    kararıdır (2026-11-11, «Yalnız kural durduysa»).
   - **Hastane geneli** (kartlar ve «Toplam»): ortanca ve p90 bütün olaylar üzerinden hesaplanır (kısıtsız kapsamda
     «Birimi belli olmayan»ınkiler dahil); birim ortancalarının ortalaması değildir.
   - **Ertelemeler:** sayı; nedene ve önem derecesine göre (yalnız yüksek ve orta ertelenebilir, §3.21); ortanca
@@ -2484,22 +2497,26 @@ adlar uydurmadır.
   «okunamadı», «yetki yok»); asla 0 yazılmaz. Tablonun yerinde okunurken «Kalite göstergeleri okunuyor…», sonra
   «Tablo yazılamıyor · okunamadı» (ya da «· yetki yok») yazar; kapsam satırı, «Erteleme nedenleri» ve «Türe göre
   alarmlar» o zaman çizilmez. Okuma başarısızsa (ret dışında) başlığın altında bir uyarı «Kalite göstergeleri
-  okunamadı: {neden}» der; yeniden denemek «Yenile»dir (ikinci bir düğme yok). Biçimi beklenmeyen bir yanıt (tek bir
-  bozuk sayı bile) okunamamış sayılır: «Kalite göstergeleri okunamadı.» Yerleşen hiçbir olayın olmadığı bir oran
-  «— henüz yerleşen yok»; üzerinde hiçbir şey olmayan bir ortanca hücrede «—», kartta «— yanıtlanan yok» ya da
-  «— karşı imzalanan yok» olarak yazılır.
+  okunamadı: {neden}» der; yeniden denemek «Yenile»dir (ikinci bir düğme yok). Başarısız bir okuma önceki yanıttan
+  hiçbir şey bırakmaz: kartlar «— okunamadı» der, birim satırı yazılmaz. Biçimi beklenmeyen bir yanıt (tek bir bozuk
+  sayı bile; ya da istenen dönemin değil başka bir dönemin yanıtı) okunamamış sayılır: «Kalite göstergeleri
+  okunamadı.» Yerleşen hiçbir olayın olmadığı bir oran «— henüz yerleşen yok»; üzerinde hiçbir şey olmayan bir
+  ortanca hücrede «—», kartta «— yanıtlanan yok» ya da «— karşı imzalanan yok» olarak yazılır.
 - **Ne zaman okunur:** sayfa açılınca, dönem değişince ve «Yenile»de; zamanlayıcı yoktur (sunucu dönemin her olayını
   denetim kaydından yeniden kurar). En yeni okuma kazanır: dönem art arda değiştirilirse yalnız son seçilen dönemin
-  yanıtı yazılır. «Yenile» aynı dönemi yeniden okur; okuma sürerken kartlar «— okunuyor…» der.
+  yanıtı yazılır. «Yenile» aynı dönemi yeniden okur; okuma sürerken kartlar «— okunuyor…» der. Dönem değişince de
+  öyle: yeni dönemin yanıtı gelene kadar eski dönemin sayıları gösterilmez.
 - **Sunucuda:**
   - yeni `GET /quality?days=1|7|30` (`quality.view`; başka bir değer 422): birim başına sayılar ve süreler, birimin
-    kimliği ve adıyla; yalnız çağıranın kurumu ve birim atamaları (bir yatak ataması bir birimi kapsamaz); hasta
-    anahtarı, kişi ya da serbest metin yok. Denetim kaydının dönemdeki en yeni 20 000 satırını okur (alarm olayları,
-    ertelemeler ve RRT çağrıları bu sınırı paylaşır); devirleri kendi tablosundan, dönemin tamamından okur. Yanıt,
-    sayfanın bu sürümde yazmadığı iki sayıyı da taşır: süresi dolan devirler (30 dakikalık süresi devredenin imzası
-    olmadan dolan) ve karşı imza süresinin p90'ı;
+    kimliği ve adıyla; kapsamdaki her açık birim, sessiz olsa da sıfırlarıyla (kısıtlı bir kullanıcıda boş bir birim
+    listesi kapsamın boş olduğu demektir); yalnız çağıranın kurumu ve birim atamaları (bir yatak ataması bir birimi
+    kapsamaz); hasta anahtarı, kişi ya da serbest metin yok. Denetim kaydının dönemdeki en yeni 20 000 satırını okur
+    (alarm olayları, ertelemeler ve RRT çağrıları bu sınırı paylaşır); devirleri kendi tablosundan, dönemin tamamından
+    okur. Yanıt, sayfanın bu sürümde yazmadığı iki sayıyı da taşır: süresi dolan devirler (30 dakikalık süresi
+    devredenin imzası olmadan dolan) ve karşı imza süresinin p90'ı;
   - `GET /alarm-quality` yanıtına yeni bir alan, `unanswered_resolved` (kendiliğinden düzelen yanıtsız alarmlar);
-    başka bir alan değişmedi;
+    türe göre dökümden (`per_kind`) `repeats` alanı kalktı, `/quality`'ninkinden de (iki yol da artık denetim
+    kaydının `alert` satırlarını okumuyor; hiçbir sayfa onu yazmıyordu); başka bir alan değişmedi;
   - göç `0020`: her hastanenin Denetçi grubuna `quality.view` (0019'dan sonra gelir; yalnız yetki satırı yazar, tablo
     ya da sütun eklemez);
   - nginx ve geliştirme sunucusu `/quality`'yi API'ye iletir.
@@ -2508,9 +2525,7 @@ adlar uydurmadır.
   «Güvenlik olayları», «İncelenecek olaylar», cihaz kesintisi); «Rapor al» ya da dışa aktarma; HBYS'den gelen
   hastaların birime bağlanması (konum geçmişi ister); nakiller (açılırsa anahtar → birim eşlemesi zamana bağlı
   olmalı: her kabulün her birimdeki başlangıcı ve sonu).
-- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor. «Kendiliğinden düzelen»in sınırı
-  (taburcu ve «hatalı giriş» ile kapananlar sayılmaz) tasarım belgesindekinden dardır; plan bunu sahibin onayına
-  bırakır.
+- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-kalite-gostergeleri-design.md`; plan
   `docs/superpowers/plans/2026-11-11-g4-kalite-gostergeleri.md`.
 
