@@ -35,7 +35,7 @@ from homunculus.api.alert_lifecycle import (
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import (
-    AuditEvent, AuditLog, ChainVerifier, InMemoryAuditLog, iter_records, iter_records_of,
+    AuditEvent, AuditLog, AuditRecord, ChainVerifier, InMemoryAuditLog, iter_records, iter_records_of,
 )
 from homunculus.api.board import (
     _news2, board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
@@ -1455,6 +1455,55 @@ def create_app(
         await broadcaster.publish(hospital, board)
         return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
 
+    async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,
+                             reading: int | None = None) -> tuple[list, AuditRecord]:
+        """One reading into the real engine, as the device door does it (G3-05, spec D12): the evaluation at the
+        reading's own time, the lifecycle hook, the shadow mirror, the `ingest` row, the alert, clear and
+        first-seen rows, the card's frame, the nurse's notification. `/ingest` runs it for a matched reading;
+        the link of an unmatched one (api/readings.py) runs it for each reading of the set, with `reading` — the
+        `vital_readings` row linked — written into the `ingest` payload. `record` is the identity the caller
+        already read; `wall_now` the request's one instant. Answers the evaluation's alerts and the `ingest` row."""
+        engine = _engine(hospital)
+        store = _store(hospital)
+        # The rules judge at the reading's own time but never past the wall clock (G2-A2, X10): judged at a
+        # stamp in the future, every other input would be aged to it. The audit row keeps the stamp; the replay
+        # judges at min(the stamp, the row's write time) (rehydrate, X10b).
+        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
+        # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
+        # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
+        # if the audit fails from here on, an unacknowledged critical is still on the board.
+        # Before the stamps too: a kind that came back after clearing has had its old stamp pruned,
+        # so it is stamped anew, a new episode (D5).
+        # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
+        cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
+        # Aşama B (D1): the same observation into the shadow engine, after the real evaluation and
+        # its lifecycle hook — guarded, so nothing the lane does can fail this request.
+        lane.guard("mirror", lambda: lane.mirror_observation(hospital, obs, now=wall_now, real=engine))
+        payload = {"value": obs.value, "unit": obs.unit,
+                   "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}
+        if reading is not None:
+            payload["reading"] = reading
+        written = audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value, payload))
+        for a in alerts:
+            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
+                                    {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
+                                     "source": a.source, "evidence": a.supporting_evidence}))
+        _audit_cleared(hospital, cleared, wall_now)
+        # A return within `escalate_after` of an unanswered clear continues its escalation chain
+        # (X13); a return after an acknowledgement starts a new one.
+        for a in engine.active_alerts(obs.patient_id):
+            if store.stamp_first_seen(obs.patient_id, a.kind, wall_now, chain_gap=escalate_after):
+                audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
+                                        {"at": wall_now.isoformat()}))
+        await broadcaster.publish(hospital, _card(hospital, obs.patient_id, record))
+        # Push a notification for any newly-appeared immediate alert (nurse audience).
+        for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
+            await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
+        notifier.prune(hospital, live_keys(engine, store))
+        return alerts, written
+
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
         caller = await _caller(authorization)
@@ -1514,45 +1563,10 @@ def create_app(
             audit.append(AuditEvent(hospital, READING_DROPPED, obs.patient_id, obs.code.value,
                                     {"patient_id": obs.patient_id, "code": obs.code.value}))
             return {"patient_id": obs.patient_id, "dropped": DISCHARGED}
-        engine = _engine(hospital)
-        store = _store(hospital)
-        # One wall-clock instant per request. The rules judge at the reading's own time but never
-        # past the wall clock (G2-A2, X10): judged at a stamp in the future, every other input
-        # would be aged to it. The audit row keeps the stamp; the replay judges at min(the stamp,
-        # the row's write time) (rehydrate, X10b).
+        _engine(hospital)       # the tenant is rehydrated before the request's clock is read, as before the move
+        # One wall-clock instant per request (G2-A2, X10): `_apply_reading` judges, stamps and frames at it.
         wall_now = datetime.now(timezone.utc)
-        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
-        # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
-        # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
-        # if the audit fails from here on, an unacknowledged critical is still on the board.
-        # Before the stamps too: a kind that came back after clearing has had its old stamp pruned,
-        # so it is stamped anew, a new episode (D5).
-        # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
-        cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
-        # Aşama B (D1): the same observation into the shadow engine, after the real evaluation and
-        # its lifecycle hook — guarded, so nothing the lane does can fail this request.
-        lane.guard("mirror", lambda: lane.mirror_observation(hospital, obs, now=wall_now, real=engine))
-        audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
-                                {"value": obs.value, "unit": obs.unit,
-                                 "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}))
-        for a in alerts:
-            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
-                                    {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
-                                     "source": a.source, "evidence": a.supporting_evidence}))
-        _audit_cleared(hospital, cleared, wall_now)
-        # A return within `escalate_after` of an unanswered clear continues its escalation chain
-        # (X13); a return after an acknowledgement starts a new one.
-        for a in engine.active_alerts(obs.patient_id):
-            if store.stamp_first_seen(obs.patient_id, a.kind, wall_now, chain_gap=escalate_after):
-                audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
-                                        {"at": wall_now.isoformat()}))
-        await broadcaster.publish(hospital, _card(hospital, obs.patient_id, record))
-        # Push a notification for any newly-appeared immediate alert (nurse audience).
-        for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
-            await hub.publish(hospital, note)
-            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
-                                    {"audience": note.audience, "trigger": note.trigger}))
-        notifier.prune(hospital, live_keys(engine, store))
+        alerts, _ = await _apply_reading(hospital, obs, record, wall_now)
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
     @app.post("/ack")
