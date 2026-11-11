@@ -2510,7 +2510,8 @@ adlar uydurmadır.
   - yeni `GET /quality?days=1|7|30` (`quality.view`; başka bir değer 422): birim başına sayılar ve süreler, birimin
     kimliği ve adıyla; kapsamdaki her açık birim, sessiz olsa da sıfırlarıyla (kısıtlı bir kullanıcıda boş bir birim
     listesi kapsamın boş olduğu demektir); yalnız çağıranın kurumu ve birim atamaları (bir yatak ataması bir birimi
-    kapsamaz); hasta anahtarı, kişi ya da serbest metin yok. Denetim kaydının dönemdeki en yeni 20 000 satırını okur
+    kapsamaz); hasta anahtarı, kişi ya da serbest metin yok. Kullanıcının kapsamı o an okunamazsa yanıt boş bir kapsam
+    değil, 503'tür («kapsam şu anda okunamıyor»): sayfa «Kalite göstergeleri okunamadı: …» yazar. Denetim kaydının dönemdeki en yeni 20 000 satırını okur
     (alarm olayları, ertelemeler ve RRT çağrıları bu sınırı paylaşır); devirleri kendi tablosundan, dönemin tamamından
     okur. Yanıt, sayfanın bu sürümde yazmadığı iki sayıyı da taşır: süresi dolan devirler (30 dakikalık süresi
     devredenin imzası olmadan dolan) ve karşı imza süresinin p90'ı;
