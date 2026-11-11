@@ -1,6 +1,7 @@
-// src/live/screens/kabul/KabulScreen.jsx — "Hasta Kabul" (Group 2 · B1a, spec §5.1): Kabul ·
+// src/live/screens/kabul/KabulScreen.jsx — "Hasta Kabul" (Group 2 · B1a, spec §5.1): Kabul · Nakil /
 // Taburcu, each gated by the rights it acts with (the beds moved to Doluluk, G2-B3a). The route
-// opens to any of `admissions.view`, `admissions.admit`, `admissions.discharge.confirm`
+// opens to any of `admissions.view`, `admissions.admit`, `admissions.discharge.confirm` and, for
+// «Nakil» (G2-B1b, X5), `admissions.move.initiate` and `admissions.transfer.confirm`
 // (shell/routes.js); a tab this session may not open is not shown, and the screen opens on the
 // first it may. Writes inside a tab are gated again by their own right; the server checks all.
 //
@@ -22,7 +23,9 @@ const TAB_ID = "kabul";
 /** The two tabs, in order: the id, the rights that open it (any one), its label, its screen. */
 export const KABUL_TABS = Object.freeze([
   Object.freeze({ id: "admit", perms: Object.freeze(["admissions.admit", "admissions.view"]), labelKey: "kabul.tabAdmit", Tab: AdmitTab }),
-  Object.freeze({ id: "discharge", perms: Object.freeze(["admissions.view", "admissions.discharge.confirm"]), labelKey: "kabul.tabDischarge", Tab: DischargeTab }),
+  // G2-B1b (spec §4): «Nakil / Taburcu» — also for whoever moves a patient, by either key.
+  Object.freeze({ id: "discharge", perms: Object.freeze(["admissions.view", "admissions.discharge.confirm",
+    "admissions.move.initiate", "admissions.transfer.confirm"]), labelKey: "kabul.tabDischarge", Tab: DischargeTab }),
 ]);
 
 export const kabulTabs = (perms) => KABUL_TABS.filter((tab) => tab.perms.some((key) => perms?.includes(key)));

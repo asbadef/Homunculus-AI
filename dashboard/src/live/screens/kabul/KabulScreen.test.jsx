@@ -15,7 +15,8 @@ describe("KabulScreen", () => {
   it("is a route for the admission rights, and no other", () => {
     const route = ROUTES.find((r) => r.id === "kabul");
     expect(route.path).toBe("/kabul");
-    for (const perms of [["admissions.view"], ["admissions.admit"], ["admissions.discharge.confirm"]]) {
+    for (const perms of [["admissions.view"], ["admissions.admit"], ["admissions.discharge.confirm"],
+      ["admissions.move.initiate"], ["admissions.transfer.confirm"]]) {                 // G2-B1b (X5)
       expect(canReach(route, perms), perms[0]).toBe(true);
     }
     expect(canReach(route, ["board.view", "alerts.ack"])).toBe(false);
@@ -28,6 +29,9 @@ describe("KabulScreen", () => {
     expect(kabulTabs(["beds.release"]).map((tab) => tab.id)).toEqual([]);
     expect(kabulTabs(["admissions.admit"]).map((tab) => tab.id)).toEqual(["admit"]);
     expect(kabulTabs(["admissions.discharge.confirm"]).map((tab) => tab.id)).toEqual(["discharge"]);
+    // G2-B1b (spec §4): «Nakil / Taburcu» opens for whoever moves a patient, by either key.
+    expect(kabulTabs(["admissions.move.initiate"]).map((tab) => tab.id)).toEqual(["discharge"]);
+    expect(kabulTabs(["admissions.transfer.confirm"]).map((tab) => tab.id)).toEqual(["discharge"]);
     expect(kabulTabs([]).map((tab) => tab.id)).toEqual([]);
   });
 

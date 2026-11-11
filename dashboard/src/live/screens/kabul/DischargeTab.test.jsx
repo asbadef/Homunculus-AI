@@ -12,7 +12,7 @@ import { alarm, board, entry } from "../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { DischargeTab } from "./DischargeTab.jsx";
 import { fromLocalInput, localInput } from "./DischargeDialog.jsx";
-import { CHARGE, DOCTOR, UUID_TEXT, mountKabul, row, settle, toasts } from "./kabul.testutil.js";
+import { BED, CHARGE, DOCTOR, UUID_TEXT, mountKabul, row, settle, toasts } from "./kabul.testutil.js";
 
 const ROWS = [
   row({ id: "a-1", patient_number: "H2600001", bed_label: "2", state: "ACTIVE" }),
@@ -723,5 +723,83 @@ describe("DischargeTab · the protocol (G2-B1d)", () => {
       a.boardPatients.mockResolvedValue(board([entry("H2600001", [alarm("septic_shock", "critical")])]));
     });
     expect(startAllowed()).toBe(true);
+  });
+});
+
+// G2-B1b — Nakil (spec §4): «Nakil» on each admitted row for whoever moves a patient, never held;
+// the dialog's warning when the loaded board shows a critical alarm; the note a card left behind
+// keeps until «Kartı yeniden taşı» lands. Toasts are drawn twice (B3a lesson 3).
+describe("DischargeTab · Nakil (G2-B1b)", () => {
+  const MOVE = "Köçürmə";
+  const FROM = "2 · Otaq 1 · Reanimasiya";
+  const TO = "1 · Otaq 1 · Reanimasiya";
+  const MOVE_ROW = `${MOVE}: ${FROM}`;
+  const NURSE_MOVER = [...CHARGE, "admissions.transfer.confirm"];
+  const WARNING = "Bu xəstədə təsdiqlənməmiş kritik siqnal var. Köçürmə dayandırılmır; siqnallar xəstə ilə birlikdə yeni çarpayıya keçir.";
+  const anyMove = new RegExp(`^${MOVE}: `);
+  const arrived = (over = {}) => ({ ...row({ id: "a-9", bed_id: BED(1), bed_label: "1" }), board: "ok", critical_alarm_open: false, ...over });
+
+  /** Open «Nakil» on the admitted row; choose «İntensiv terapiyaya» and bed 1; send. */
+  async function moveToBedOne() {
+    fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
+    const dialog = within(screen.getByRole("dialog", { name: `${MOVE} · ${FROM}` }));
+    fireEvent.change(dialog.getByRole("combobox", { name: "Səbəb" }), { target: { value: "TO_ICU" } });
+    fireEvent.click(dialog.getByRole("button", { name: TO }));
+    await act(async () => { fireEvent.click(dialog.getByRole("button", { name: "Köçür" })); });
+    await settle();
+  }
+
+  it.each([
+    ["a physician", DOCTOR, 1],
+    ["a nurse who moves patients", NURSE_MOVER, 1],
+    ["a charge nurse without either key", CHARGE, 0],
+  ])("gives %s «Nakil» on the admitted row only — none on a DRAFT or a started discharge", async (_who, perms, count) => {
+    await open(perms);
+    expect(screen.queryAllByRole("button", { name: anyMove })).toHaveLength(count);
+    if (count) expect(screen.getByRole("button", { name: MOVE_ROW }).getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("moves the patient through the dialog, says so on the toast, and reads the list again", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer.mockResolvedValue(arrived()));
+    const reads = api.admissions.mock.calls.length;
+    await moveToBedOne();
+    expect(api.transfer).toHaveBeenCalledWith("a-1", { target_bed_id: BED(1), reason: "TO_ICU", note: null });
+    expect(api.admissions.mock.calls.length).toBeGreaterThan(reads);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getAllByText(`${FROM} → ${TO}; ${FROM} təmizliyə verildi`).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
+  it("keeps a note when the card did not reach the new bed, and «Kartı yenidən keçir» sends the same move again", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer
+      .mockResolvedValueOnce(arrived({ board: "failed" }))
+      .mockResolvedValueOnce(arrived()));
+    await moveToBedOne();
+    expect(screen.getAllByText(`${TO} · Kart yeni çarpayıya keçirilmədi.`).length).toBeGreaterThan(0);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })); });
+    await settle();
+    expect(api.transfer).toHaveBeenCalledTimes(2);
+    expect(api.transfer.mock.calls[1]).toEqual(api.transfer.mock.calls[0]);
+    expect(screen.queryByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeNull();
+    expect(screen.getAllByText(`${TO} · kart yeni çarpayıya keçirildi`).length).toBeGreaterThan(0);
+  });
+
+  it("warns in the dialog of a critical alarm nobody acknowledged, and holds neither the row's button nor the move", async () => {
+    const { api } = await open(DOCTOR, (a) => {
+      a.boardPatients.mockResolvedValue(board([entry("H2600001", [alarm("septic_shock", "critical")])]));
+      a.transfer.mockResolvedValue(arrived({ critical_alarm_open: true }));
+    });
+    expect(screen.getByRole("button", { name: MOVE_ROW }).getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
+    expect(screen.getByText(WARNING)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "İmtina" }));
+    await moveToBedOne();
+    expect(api.transfer).toHaveBeenCalledTimes(1);
+  });
+
+  it("says nothing of alarms before the board has loaded: a hint, not a hold", async () => {
+    await open(DOCTOR, undefined, { start: false });
+    fireEvent.click(screen.getByRole("button", { name: MOVE_ROW }));
+    expect(screen.queryByText(WARNING)).toBeNull();
   });
 });
