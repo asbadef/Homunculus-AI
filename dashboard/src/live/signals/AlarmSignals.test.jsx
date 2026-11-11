@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../session/mount.testutil.jsx";
-import { ago, alarm, board, entry, identity } from "../data/board.testutil.js";
+import { NOW, ago, alarm, board, entry, identity } from "../data/board.testutil.js";
 import { ANNOUNCE_DELAY_MS, Modal } from "../ui/index.js";
 import { alarmTag, useAlarmSignals } from "./AlarmSignals.jsx";
 import { fakeAudio, fakeNotifications, onPage } from "./fakeAudio.testutil.js";
@@ -45,9 +45,10 @@ const reaBed = (id, alarms, over = {}) => entry(id, alarms, { identity: identity
  *  `notifications: false` is a browser with no Notification at all. `dialog: true` opens a Modal
  *  over the page (which makes the rest of it inert). */
 async function ward(patients, {
-  sound = true, permission = "granted", secure = true, load, open = true, notifications = true, dialog = false,
+  sound = true, permission = "granted", secure = true, load, open = true, notifications = true, dialog = false, now,
 } = {}) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  if (now !== undefined) vi.setSystemTime(now);   // G2-B5b: a snooze's until is read against this clock
   if (sound) localStorage.setItem("hmc.alarmSound", "on");
   const audio = fakeAudio();
   const notes = fakeNotifications(permission);
@@ -111,6 +112,21 @@ describe("the alarm sound", () => {
     act(() => { stream.frame(reaBed("S-001", [alarm("septic_shock", "critical", { acknowledged: true, acknowledged_by: "ayse" })])); });
     tick(10000);
     expect(audio.pulses()).toHaveLength(10);
+  });
+
+  // G2-B5b (spec §2, D4): a snoozed alarm makes no sound until its `until`, by the board's clock — then it sounds again
+  // without waiting for the server's republish.
+  it("plays nothing for a snoozed alarm, and sounds it again when the snooze ends", async () => {
+    const snooze = { by: "ayse", at: ago(0), until: new Date(NOW + 60_000).toISOString(), minutes: 1,
+      reason: "ARTEFACT_OR_SIGNAL_NOISE", reason_text: null };
+    const { audio } = await ward([reaBed("S-001", [alarm("news2", "high", { snooze })])], { now: NOW });
+    fireEvent.click(document.body);
+    await flush();
+    expect(state()).toBe("on granted");
+    expect(audio.pulses()).toEqual([]);
+    tick(61_000);
+    await flush();
+    expect(audio.pulses()).toContain(640);
   });
 
   // G2-A1 (O17): the condition passed, nobody has acknowledged it yet — the screens keep it, the

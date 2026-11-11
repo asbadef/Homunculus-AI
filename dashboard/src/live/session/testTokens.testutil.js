@@ -127,6 +127,9 @@ export function fakeApi(vi, { access = null } = {}) {
     // G2-B5: «RRT çağır» (screens/alarms, screens/rrt)
     callRrt: vi.fn(),
 
+    // G2-B5b: «Ertele» (screens/alarms)
+    snoozeAlert: vi.fn(),
+
     // G2-B3b: Vardiya devri (screens/devir)
     handovers: vi.fn(),
     handoverColleagues: vi.fn(),

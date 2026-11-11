@@ -720,6 +720,7 @@ from homunculus.api.identity import Caller  # noqa: E402
 from homunculus.api.infinity_shadow import SCHEMA as SHADOW_SCHEMA, ShadowSettings  # noqa: E402
 from homunculus.api.patient_identity import InMemoryIdentityStore  # noqa: E402
 from homunculus.scope import Scope, ScopeReason  # noqa: E402
+from homunculus.scope.resolver import UNKNOWN  # noqa: E402
 
 HOSPITAL, DEVICE_TOKEN, SHADOW = "HOSP1", "tok-device-00000000000000000000000000", "s" * 40
 T0 = 1_800_000_000.0
@@ -740,8 +741,10 @@ CALLERS = {
     "biomed-jwt": Caller(hospital=HOSPITAL, actor="ahmet", groups=("biomedical",), perms=frozenset({"devices.manage"})),
     "none-jwt": Caller(hospital=HOSPITAL, actor="synth-none"),
     "elsewhere-jwt": Caller(hospital="HOSP2", actor="x", groups=("nurse",), perms=frozenset({"board.view"})),
+    "unknown-jwt": Caller(hospital=HOSPITAL, actor="synth-u1", groups=("nurse",), perms=frozenset({"board.view"})),
 }
-SCOPES = {"scoped-jwt": Scope(False, ScopeReason.ASSIGNED, unit_ids=frozenset({"unit-1"}))}
+SCOPES = {"scoped-jwt": Scope(False, ScopeReason.ASSIGNED, unit_ids=frozenset({"unit-1"})),
+          "unknown-jwt": UNKNOWN}       # a scope the resolver could not read (G2 borç 4)
 
 
 async def _resolve_jwt(token):
@@ -882,6 +885,15 @@ def test_a_monitor_the_callers_scope_does_not_reach_is_a_404_like_an_unknown_one
             assert response.status_code == 404 and response.json()["detail"] == {"reason": "no_device"}
         assert _get(client, "192.0.2.99", "biomed-jwt").status_code == 404
     assert [r.url.params["device"] for r in hub.requests] == [BED]
+
+
+def test_an_unreadable_scope_is_the_boards_503_not_a_missing_monitor(tmp_path):
+    """G2 borç 4: the strip board answers 503 for a scope it could not read, and this route takes
+    the board's answer — never «no such monitor» for a monitor the look-up failed to place."""
+    with _client(tmp_path) as (client, hub):
+        response = _get(client, BED, "unknown-jwt")
+    assert (response.status_code, response.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
+    assert hub.requests == []
 
 
 def test_an_unassigned_monitor_is_served_to_those_the_board_shows_it(tmp_path):

@@ -49,7 +49,8 @@ let running = null;
 
 /** Everything already queued: the board's reload after the stream opened, and the renders it
  *  causes. Inside act(), so nothing updates React behind the test's back. */
-const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+const realSetTimeout = globalThis.setTimeout;   // taken before any test fakes the timers (a snooze ending, G2-B5b)
+const settle = () => new Promise((resolve) => { realSetTimeout(resolve, 0); });
 
 /** The shell as LiveApp nests it (mount.testutil), with the board started unless a test asks it not
  *  to be: `start: false` leaves the stream alone, which a fake-timer test wants. */
@@ -179,6 +180,49 @@ describe("the rail", () => {
       only({ beds: BedsProbe, alarms: AlarmsProbe, rrt: RrtProbe });
       await renderShell({ perms: RRT_PERMS, patients: [card(CALLED)], start: false });
       expect(rrtEntry().querySelector("[data-rail-badge]")).toBeNull();
+    });
+  });
+
+  // G2-B5b (spec D4): a snoozed alarm is out of the count until its time — the rail's badge and the bell — and back after.
+  describe("a snoozed alarm", () => {
+    const card = (untilMs) => ({ patient_id: "P-0", risk: "high", vitals: {}, alerts: [{ kind: "news2", severity: "high",
+      urgency: "immediate", summary: "NEWS2 7", acknowledged: false,
+      snooze: { by: "leyla", at: new Date(untilMs - 15 * 60_000).toISOString(), until: new Date(untilMs).toISOString(),
+        minutes: 15, reason: "PATIENT_BASELINE", reason_text: null } }] });
+
+    it("is out of the alarms entry's count and the bell while it is snoozed", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [card(Date.now() + 10 * 60_000)] });
+      await act(async () => { stream.open(); await settle(); });
+      const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+      expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+      expect(screen.getByRole("button", { name: /Cavab gözləyən siqnal yoxdur/ })).toBeInTheDocument();
+    });
+
+    it("is counted again once its time has passed", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [card(Date.now() - 60_000)] });
+      await act(async () => { stream.open(); await settle(); });
+      const entry = within(screen.getByRole("navigation", { name: "Əsas menyu" })).getByRole("link", { name: /Siqnallar/ });
+      expect(entry).toHaveAccessibleName(/1 siqnal cavab gözləyir/);
+    });
+
+    // Review (G2-B5b): the rail and the bell take the alarm back the moment its snooze ends, on their own clock
+    // (useSnoozeClock) — no frame from the server needed.
+    it("is counted again by the rail and the bell the moment its snooze ends, while they are on screen", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+      const now = Date.parse("2026-11-10T10:00:00Z");
+      vi.setSystemTime(now);
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [card(now + 5_000)] });
+      await act(async () => { stream.open(); await settle(); });
+      const rail = () => screen.getByRole("navigation", { name: "Əsas menyu" });
+      expect(rail().querySelector("[data-rail-badge]")).toBeNull();
+      expect(screen.getByRole("button", { name: /Cavab gözləyən siqnal yoxdur/ })).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(5_100); });
+      expect(within(rail()).getByRole("link", { name: /Siqnallar/ })).toHaveAccessibleName(/1 siqnal cavab gözləyir/);
+      expect(rail().querySelector("[data-rail-badge='count']")).toHaveTextContent("1");
+      expect(screen.getByRole("button", { name: /1 siqnal cavab gözləyir/ })).toBeInTheDocument();
     });
   });
 

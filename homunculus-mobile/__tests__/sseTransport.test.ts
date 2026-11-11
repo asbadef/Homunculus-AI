@@ -358,6 +358,148 @@ describe("createSseTransport", () => {
     transport.stop();
   });
 
+  // G2 borç 1b (owner: «Süre sınırı»): the server ends every stream after 15 minutes with a named
+  // `rotate` event, so the scope a ticket fixed is read again. A planned end: no backoff, never
+  // "reconnecting" — the same resnapshot-then-fresh-tickets cycle, at once.
+  it("a planned rotate reconnects at once: no backoff, never 'reconnecting', resnapshot before the new tickets", async () => {
+    const clock = fakeClock();
+    const api = fakeAuthedFetch();
+    let patientsCalls = 0;
+    api.on("/patients", () => {
+      patientsCalls += 1;
+      return jsonResponse(200, { patients: [board("bed-3", patientsCalls)] });
+    });
+    let ticketN = 0;
+    api.on("/stream-ticket", () => {
+      ticketN += 1;
+      return jsonResponse(200, { ticket: `ticket-${ticketN}`, expires_in: 60 });
+    });
+    const boardStreams: ControllableStream[] = [];
+    api.on("/stream", () => {
+      const cs = controllableStreamResponse();
+      boardStreams.push(cs);
+      return cs.response;
+    });
+    const notifStreams: ControllableStream[] = [];
+    api.on("/notifications", () => {
+      const cs = controllableStreamResponse();
+      notifStreams.push(cs);
+      return cs.response;
+    });
+
+    const boards: PatientBoard[] = [];
+    const states: ConnectionState[] = [];
+    const transport = createSseTransport({
+      authedFetch: api.authedFetch,
+      role: nurse,
+      onSessionExpired: jest.fn(),
+      onConnectionChange: (s) => states.push(s),
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    transport.subscribe({ onBoard: (b) => boards.push(b), onNotification: () => {} });
+    transport.start();
+    await flush();
+    expect(patientsCalls).toBe(1);
+
+    boardStreams[0].push("event: rotate\ndata: {}\n\n");
+    await flush();
+
+    expect(clock.pendingDelays()).toEqual([]); // nothing waited out
+    expect(patientsCalls).toBe(2);
+    expect(boards.at(-1)!.latest.sofa).toBe(2); // the resnapshot reached listeners
+    expect(boardStreams).toHaveLength(2);
+    expect(notifStreams).toHaveLength(2); // both streams, one cycle
+    expect(states).toEqual(["open"]);
+    expect(transport.connectionState()).toBe("open");
+    const paths = api.calls.map((c) => c.path);
+    const patientsIndices = paths.reduce<number[]>((acc, p, i) => (p === "/patients" ? [...acc, i] : acc), []);
+    const ticketIndices = paths.reduce<number[]>((acc, p, i) => (p === "/stream-ticket" ? [...acc, i] : acc), []);
+    expect(ticketIndices).toHaveLength(4);
+    expect(patientsIndices[1]).toBeLessThan(ticketIndices[2]);
+
+    // The sibling's own rotate, arriving on the stream the cycle already tore down, starts nothing more.
+    notifStreams[0].push("event: rotate\ndata: {}\n\n");
+    await flush();
+    expect(patientsCalls).toBe(2);
+    transport.stop();
+  });
+
+  // G2 borç 1c: each cycle's snapshot is the whole board. A listener that takes it whole (onSnapshot)
+  // is given it in one call, so it can drop the patients the snapshot no longer carries; stream
+  // frames still arrive one by one through onBoard.
+  it("hands each cycle's snapshot to onSnapshot whole, before the streams, and stream frames to onBoard", async () => {
+    const clock = fakeClock();
+    const api = fakeAuthedFetch();
+    const snapshots = [
+      [board("bed-3", 1), board("bed-5", 1)],
+      [board("bed-5", 2)], // bed-3 left the scope the rotation read again
+    ];
+    let patientsCalls = 0;
+    api.on("/patients", () => jsonResponse(200, { patients: snapshots[patientsCalls++] }));
+    api.on("/stream-ticket", () => jsonResponse(200, { ticket: "t", expires_in: 60 }));
+    const boardStreams: ControllableStream[] = [];
+    api.on("/stream", () => {
+      const cs = controllableStreamResponse();
+      boardStreams.push(cs);
+      return cs.response;
+    });
+    api.on("/notifications", () => controllableStreamResponse().response);
+
+    const seen: string[] = [];
+    const transport = createSseTransport({
+      authedFetch: api.authedFetch,
+      role: nurse,
+      onSessionExpired: jest.fn(),
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    transport.subscribe({
+      onBoard: (b) => seen.push(`board ${b.patient_id}`),
+      onSnapshot: (boards) => seen.push(`snapshot ${boards.map((b) => b.patient_id).join(",")}`),
+      onNotification: () => {},
+    });
+    transport.start();
+    await flush();
+    boardStreams[0].push(`data: ${JSON.stringify(board("bed-5", 9))}\n\n`);
+    await flush();
+    boardStreams[0].push("event: rotate\ndata: {}\n\n");
+    await flush();
+
+    expect(seen).toEqual(["snapshot bed-3,bed-5", "board bed-5", "snapshot bed-5"]);
+    transport.stop();
+  });
+
+  it("a rotation whose resnapshot fails falls back to the backoff reconnect", async () => {
+    const clock = fakeClock();
+    const api = fakeAuthedFetch();
+    let patientsCalls = 0;
+    api.on("/patients", () => {
+      patientsCalls += 1;
+      return patientsCalls === 2 ? jsonResponse(503, {}) : jsonResponse(200, { patients: [] });
+    });
+    api.on("/stream-ticket", () => jsonResponse(200, { ticket: "t", expires_in: 60 }));
+    const boardStream = controllableStreamResponse();
+    api.on("/stream", () => boardStream.response);
+    api.on("/notifications", () => controllableStreamResponse().response);
+
+    const transport = createSseTransport({
+      authedFetch: api.authedFetch,
+      role: nurse,
+      onSessionExpired: jest.fn(),
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    transport.start();
+    await flush();
+    boardStream.push("event: rotate\ndata: {}\n\n");
+    await flush();
+    expect(patientsCalls).toBe(2);
+    expect(transport.connectionState()).toBe("reconnecting");
+    expect(clock.pendingDelays()).toEqual([1000]);
+    transport.stop();
+  });
+
   it("doubles the backoff on each consecutive failure, capping at 30s", async () => {
     const clock = fakeClock();
     const api = fakeAuthedFetch();

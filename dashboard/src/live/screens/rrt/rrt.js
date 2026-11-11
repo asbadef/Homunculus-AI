@@ -4,9 +4,10 @@
 import { waitingAlarms } from "../../data/boardStore.js";
 
 /** {known, stale, called, waiting}: `called` the alarms with an open call that nobody has acknowledged, the
- *  oldest call first; `waiting` the alarms that wait for an answer (`waitingAlarms`, its order) with urgency
- *  `immediate` and no call. `called`/`waiting` are null when the board cannot be read — never an empty list a
- *  reader would take for a quiet ward (Decision 18). */
+ *  oldest call first; `waiting` the alarms that wait for an answer (`waitingAlarms`, its order) — a snoozed one
+ *  not, until its `until` by the board's `nowMs` (G2-B5b) — with urgency `immediate` and no call.
+ *  `called`/`waiting` are null when the board cannot be read — never an empty list a reader would take for a
+ *  quiet ward (Decision 18). */
 export function rrtQueue(board) {
   const { known, stale, items } = waitingAlarms(board);
   if (items === null) return { known, stale, called: null, waiting: null };

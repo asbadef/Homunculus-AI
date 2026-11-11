@@ -81,6 +81,9 @@ import devir from "./strings/devir.js";
 // G2-B1c: Bakım ekibi, the care-team box on the patient screen (screens/patient/careTeam).
 import ekip from "./strings/ekip.js";
 
+// G2-B5b: «Ertele» — snoozing an alarm (screens/alarms: the button, the dialog, «Ertelenenler»; the refusals).
+import ertele from "./strings/ertele.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -130,6 +133,8 @@ export const NAMESPACES = {
   devir, // G2-B3b
 
   ekip, // G2-B1c
+
+  ertele, // G2-B5b
 };
 
 function flattenInto(out, prefix, entries) {

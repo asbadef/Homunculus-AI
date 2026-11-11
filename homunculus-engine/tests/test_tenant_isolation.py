@@ -834,6 +834,7 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE
     ("POST", "/ingest"),
     ("POST", "/ack"),
     ("POST", "/alerts/rrt-call"),   # G2-B5 (D3): «RRT çağır» — the Caller, alerts.escalate, _require_patient, as /ack
+    ("POST", "/alerts/snooze"),     # G2-B5b (D2): «Ertele» — the Caller, alerts.ack, _require_patient, as /ack
     ("POST", "/view"),
     ("GET", "/patients"),
     ("GET", "/alerts/{patient_id}"),

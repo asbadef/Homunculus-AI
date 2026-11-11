@@ -204,6 +204,9 @@ emit frames rather than printing nothing and exiting:
 curl -N "http://172.100.101.72/stream?token=$TENANT_TOKEN"
 ```
 
+Since 2026-11-10 (G2 borç 1b) the server ends every stream after 15 minutes with `event: rotate`,
+so a `curl` left running prints that frame and exits then. That is the planned end, not buffering.
+
 ## Active Directory sign-in (optional)
 
 Clinicians can sign in with their hospital (Active Directory) account instead of a Homunculus

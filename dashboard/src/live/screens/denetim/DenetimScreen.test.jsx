@@ -144,7 +144,7 @@ describe("the audit page's events", () => {
     await press("Yenidən cəhd et");
     expect(api.audit).toHaveBeenCalledTimes(2);
     await press("Zənciri yoxla");
-    expect(api.verifyAudit).toHaveBeenCalledWith(50000);
+    expect(api.verifyAudit).toHaveBeenCalledWith();                    // G2 borç 3: the whole chain, no limit
     expect(screen.getByText("Zəncir bütövdür — 3 qeyd yoxlanıldı.")).toBeInTheDocument();
   });
 });
@@ -225,6 +225,15 @@ describe("the chain's verification (owner D1, D4)", () => {
     await act(async () => { await new Promise((resolve) => { setTimeout(resolve, ANNOUNCE_DELAY_MS + 20); }); });
     expect(theAlert()).toHaveTextContent("Zəncir qırılıb");
     expect(statuses().filter(Boolean)).toEqual([]);                   // nothing else speaks for a broken verdict
+  });
+
+  // G2 borç 3: one whole-chain verification per hospital at a time; another person's press while one runs is
+  // refused (409) in a fixed sentence, said here in the page's language.
+  it("says, in the reader's language, that a verification is already running", async () => {
+    await open((a) => a.verifyAudit.mockRejectedValueOnce(refusal(409, "denetim doğrulaması zaten sürüyor")));
+    await press("Zənciri yoxla");
+    expect(theAlert()).toHaveTextContent("Yoxlama aparılmadı: Bu xəstəxana üçün audit yoxlaması artıq gedir");
+    expect(theAlert()).not.toHaveTextContent("zaten sürüyor");
   });
 
   it("says why a verification failed, and the button tries again", async () => {

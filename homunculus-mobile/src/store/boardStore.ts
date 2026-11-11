@@ -36,6 +36,7 @@ export const initialBoardState: BoardState = {
 
 export type BoardAction =
   | { type: "board"; board: PatientBoard; now: number }
+  | { type: "snapshot"; boards: PatientBoard[]; now: number }
   | { type: "notification"; note: BoardNotification }
   | { type: "ack"; patientId: string; kind: string; role: Role; now: number }
   | { type: "loop" };
@@ -46,6 +47,13 @@ const emptySeries = (): VitalSeries => ({
 
 const push = (series: number[], value: number | null): number[] =>
   value === null ? series : [...series, value].slice(-SERIES_CAP);
+
+/** The entries of `byId` whose patient is in `ids`. */
+function onlyOf<T>(byId: Record<string, T>, ids: ReadonlySet<string>): Record<string, T> {
+  const kept: Record<string, T> = {};
+  for (const id of Object.keys(byId)) if (ids.has(id)) kept[id] = byId[id];
+  return kept;
+}
 
 export function boardReducer(state: BoardState, action: BoardAction): BoardState {
   switch (action.type) {
@@ -81,6 +89,23 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
           },
         },
       };
+    }
+    case "snapshot": {
+      // G2 borç 1c: the board becomes exactly the snapshot, as the dashboard's reload makes it. A
+      // patient it does not carry leaves with its series (as a `removed` frame takes it off); one it
+      // carries keeps its series and is applied as a frame would be. A `removed` entry is no card.
+      // Nothing else puts patients here — the live transport's snapshot and frames, or the replay's
+      // frames — so nothing another source showed is dropped; notifications and acknowledgements
+      // are not patients and stay.
+      const { boards, now } = action;
+      const kept = new Set(boards.filter((b) => !b.removed).map((b) => b.patient_id));
+      const base: BoardState = {
+        ...state, patients: onlyOf(state.patients, kept), series: onlyOf(state.series, kept),
+      };
+      return boards.reduce<BoardState>(
+        (next, board) => (board.removed ? next : boardReducer(next, { type: "board", board, now })),
+        base,
+      );
     }
     case "notification":
       return {

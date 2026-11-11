@@ -73,3 +73,49 @@ async def test_notifications_are_tenant_isolated():
             await c.post("/ingest", json=_fhir("bed-3", slug, val, t),
                          headers={"Authorization": "Bearer tok1"})
     assert other.qsize() == 0
+
+
+# G2 borç 1b: the notification stream resolves its scope once at open, as the board stream does,
+# so it is held to the same life (STREAM_MAX_AGE) and ends the same way.
+ROTATE = "event: rotate\ndata: {}\n\n"
+
+
+@pytest.mark.anyio
+async def test_sse_notification_frames_end_past_their_age_with_one_rotate_event():
+    q = asyncio.Queue()
+    gen = sse_notification_frames(q, keepalive=5.0, max_age=0.05)
+    assert await asyncio.wait_for(gen.__anext__(), timeout=1.0) == ROTATE
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+
+
+@pytest.mark.anyio
+async def test_sse_notification_frames_rotate_a_busy_stream_by_its_clock():
+    now = [0.0]
+    q = asyncio.Queue()
+    for i in range(2):
+        await q.put({"body": f"bed-{i}: x"})
+    gen = sse_notification_frames(q, keepalive=5.0, max_age=900, clock=lambda: now[0])
+    assert (await gen.__anext__()).startswith("data:")
+    now[0] = 900.0
+    assert await gen.__anext__() == ROTATE
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+
+
+@pytest.mark.anyio
+async def test_sse_notification_frames_still_keep_alive_within_their_life():
+    gen = sse_notification_frames(asyncio.Queue(), keepalive=0.01, max_age=5.0)
+    assert (await gen.__anext__()).startswith(": keep-alive")
+
+
+@pytest.mark.anyio
+async def test_the_notification_route_ends_with_rotate_and_unsubscribes(monkeypatch):
+    import homunculus.api.app as app_module
+    monkeypatch.setattr(app_module, "STREAM_MAX_AGE", 0.05)
+    app = create_app({"tok": "HOSP1"}, run_escalation_loop=False)
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await asyncio.wait_for(c.get("/notifications?token=tok"), timeout=5.0)
+    assert r.status_code == 200
+    assert r.text.endswith(ROTATE)
+    assert app.state.notification_hub._subs.get("HOSP1", []) == []   # noqa: SLF001 — unsubscribed

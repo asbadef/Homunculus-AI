@@ -1,7 +1,7 @@
 // src/live/screens/denetim/DenetimScreen.jsx — «Denetim bütünlüğü» (G2-B4, spec
 // docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md), for `audit.view`. Three boxes:
-//   - the chain's verification, ON ITS BUTTON ONLY (owner D1): it re-hashes up to 50 000 records on the API's
-//     event loop, and that load is asked for, never paid on every visit. The verdict stays with the local time it
+//   - the chain's verification, ON ITS BUTTON ONLY (owner D1): it re-hashes the WHOLE chain, page by page off the
+//     API's event loop (G2 borç 3), and that load is asked for, never paid on every visit. The verdict stays with the local time it
 //     was taken, in this component only — a verdict from an earlier visit shown as current is the one thing this
 //     page must never do; a failed run replaces it rather than sitting beside it;
 //   - the alarm heatmap (G2-B6, HeatBox.jsx), also on its button: masked patients by hour of day, last 7 days;
@@ -14,7 +14,7 @@ import { readErrorText } from "../../apiErrors.js";
 import { ddmmhhmm } from "../../i18n/dates.js";
 import { Alert, Announce, Box, Button, Field, Note, Select, Table } from "../../ui/index.js";
 import {
-  EVENTS_LIMIT, EVENT_TYPES, VERIFY_LIMIT, actorOf, maskPatient, newestFirst, typeKey, verdictOf,
+  EVENTS_LIMIT, EVENT_TYPES, actorOf, maskPatient, newestFirst, typeKey, verdictOf,
 } from "./denetim.js";
 import { HeatBox } from "./HeatBox.jsx";
 
@@ -82,7 +82,7 @@ function VerifyBox() {
     // verdict is announced again
     setResult(null);
     try {
-      const answer = await store.track(() => store.api.verifyAudit(VERIFY_LIMIT));
+      const answer = await store.track(() => store.api.verifyAudit());
       if (alive.current) setResult({ verdict: verdictOf(answer), at: Date.now() });
     } catch (error) {
       if (alive.current) setResult({ error });
