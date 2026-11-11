@@ -161,7 +161,7 @@ describe("dialogs", () => {
     await open({ tasks: partial });
     await press(screen.getByRole("button", { name: /gecikdi/ }));
     const dialog = screen.getByRole("dialog", { name: "Vital ölçmə · REA-01 · 2" });
-    expect(within(dialog).getByText("NEWS2 natamamdır: cihaz tənəffüs sayını və şüuru göndərmir; bunlar əl ilə daxil edilir.")).toBeInTheDocument();
+    expect(within(dialog).getByText("NEWS2 natamamdır: bəzi göstəricilər çatışmır. Cihaz turu tənəffüs sayını və şüuru göndərmir; bunlar əl ilə daxil edilir.")).toBeInTheDocument();
     cleanup();
     await open();
     await press(screen.getByRole("button", { name: /gecikdi/ }));
