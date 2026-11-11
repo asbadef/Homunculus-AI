@@ -2,10 +2,12 @@
 
 Group 3, slice 4 (roadmap `2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`, Grup 3: «eczane»; carried behaviour
 `pharmacyView`, line 664). Lane A. Owner's decisions of 2026-11-11: «evet» (the slice), scope **A** («a maddesi
-uygundur.»: a read-only ward page built only from what the system already holds), the design («1- evet»). Builds on
+uygundur.»: a read-only ward page built only from what the system already holds), the design («1- evet»),
+this written spec with O1–O3 as it words them («2 evet»). Builds on
 G2-A3 (the Meds chart and the board's `meds` block), G2-A1 (the antibiotic clock's anchor), G3-02 (task settings: shift
 start, tenant zone; the `_board_for` reader), G3-03 (the fluid ledger) and the Group 1 shell. Branch `feat/g3-eczane`,
-cut from main `e0850fb1`. Guide section at implementation: §3.23.
+cut from main `e0850fb1` and merged with the main that carries G2-B1c (migration `0018`) and G4-02 («Yönetici özeti»).
+Guide section at implementation: §3.23.
 
 ## 1. Why
 
@@ -45,12 +47,12 @@ or advise a dose.
 | D13 | **Fluid balance**: the current fluid day's intake − output (G3-03 D5: from `task_settings.shift_start_a`, default 08:00, in the tenant's zone), summed by the server with `api/fluids.py` `fluid_day` and `totals`. One tenant-wide read of the day's `chart` / `chart_retract` rows per request (not one per patient); withdrawn entries are in no sum. A patient with no entry in the day has `fluid: null` and reads «Bugün kayıt yok» — never «0 mL». Shown as the signed balance, intake, output and the last entry's time. No colour, no target. | The approved column; an uncharted day is not a zero balance. |
 | D14 | **Tones mirror the engine's severities and nothing else**: `missed` is drawn `crit` and `running` `high`, the severities `rules/antibiotic_clock.py` gives `antibiotic_overdue` and `antibiotic_due`; every other state, creatinine and the fluid balance are neutral. Nothing is green. | The screen adds no judgement of its own (riskStyle's rule). |
 | D15 | **No audit row for the list read**, as `/patients`, `/tasks`, `/patients/{id}/trends` and `/fluids` write none (a poll would bury the record). Opening a patient from a row is the patient screen's usual `POST /view`, which writes `view`. | The code's existing convention. |
-| D16 | **Screen** `/eczane` (route id `eczane`, rail after `devir` and before `settings`, icon `pill`, `perms: ["pharmacy.view"]`, `work: true`, `nav: "main"`). Header «Eczane» with «Bu ekran izleme içindir; doz önermez, order vermez.»; the counters; D8's note; the table; the source line (D9); the footer note (D19). The table scrolls sideways on a narrow screen (`ui/Table`). | The prototype's page, with the live system's data. |
+| D16 | **Screen** `/eczane` (route id `eczane`, rail after `devir` and before `ozet` (G4-02's page; the rail then ends `eczane`, `ozet`, `settings`), icon `pill`, `perms: ["pharmacy.view"]`, `work: true`, `nav: "main"`). Header «Eczane» with «Bu ekran izleme içindir; doz önermez, order vermez.»; the counters; D8's note; the table; the source line (D9); the footer note (D19). The table scrolls sideways on a narrow screen (`ui/Table`). | The prototype's page, with the live system's data. |
 | D17 | **Refresh** every 30 s (`usePharmacy`, the shape of `useTasks`). While the answer is fresh, the antibiotic durations and the vasopressor ages are computed from the server's ISO times against the board's skew-corrected clock (`useBoardNow`), so they move between polls; the state word is always the server's. | Ward tempo; G2-A2: the API sends the stamp, never an age. |
 | D18 | **A list that is not fresh never reads as today's.** §6: a failed read keeps the last answer under «Eczane listesi güncel değil · son yanıt {saat}», durations are frozen and worded in the past tense, and nothing is called empty; with no answer at all the page says «Eczane listesi okunamadı» and draws no counter and no table. | Decision 18 (only a live answer may say «nothing»); G4-01's rule for a board that is not fresh. |
 | D19 | **Out of this slice, and said on the page**: orders, allergies, cultures, the drug-interaction lookup, counting antibiotic treatment days, dose advice. Footer note: «Bu sayfada yok: order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu, antibiyotik tedavi günü, doz önerisi. Homunculus tanı koymaz, order vermez.» Also out: any write from this page, notifications, a rail badge, printing, the last complete day's balance (O4). | One slice; hard rule 5. |
 | D20 | **i18n** `src/live/i18n/strings/eczane.js`, four languages; nav label tr «Eczane», az «Aptek», ru «Аптека», en «Pharmacy». Reused as they are: the drug names and the two pressor sentences (`patient.medsDrug*`, `patient.medsRunning`, `patient.medsStopped`), `ageText` (`patient.vitalAge`, `board.ageS/M/H`), `nameOf` (`board.identityPending`), `ScopeNote`'s strings. The Meds box's four antibiotic sentences are whole sentences that begin «Antibiyotik…» and do not fit a cell under an «Antibiyotik» heading; the cells get short keys of their own in the same vocabulary. | Shell rule; one vocabulary. |
-| D21 | **Migration `0019_pharmacy_view.py`**: `revision = "0019"`, `down_revision = "0017"`. Only `group_permissions` rows — `pharmacy.view` for the four non-system default groups of every tenant, by slug, `ON CONFLICT DO NOTHING` (0017's statement); `hospital_admin` needs no row (0016's and 0017's precedent). Downgrade deletes the key's rows. No table, no column. **Coordination:** the care-team branch's `0018_care_team_transfer` (today `down_revision = "0017"`) re-points to `"0019"` when it merges after this slice; if it merges first, this file re-points to `"0018"`. Whoever merges second checks `alembic heads` = one head (`test_migration_chain_has_a_single_head`). | Alembic is a single chain; `ensure_default_groups` creates missing groups only. |
+| D21 | **Migration `0019_pharmacy_view.py`**: `revision = "0019"`, `down_revision = "0018"`. Only `group_permissions` rows — `pharmacy.view` for the four non-system default groups of every tenant, by slug, `ON CONFLICT DO NOTHING` (0017's statement); `hospital_admin` needs no row (0016's and 0017's precedent). Downgrade deletes the key's rows. No table, no column. **Order:** the care-team slice's `0018_care_team_transfer` reached main first (2026-11-11), so this file follows it; `alembic heads` stays one head (`test_migration_chain_has_a_single_head`). | Alembic is a single chain; `ensure_default_groups` creates missing groups only. |
 | D22 | **nginx**: `pharmacy` joins the API prefix list of `deploy/local/web/nginx.conf` (without it the page receives `index.html`). The redacted access log needs **no** map entry: the path has no parameter and carries no patient key, so `default $uri` logs it as it is. | `test_every_app_route_prefix_is_proxied`; `test_routes_without_a_parameter_are_logged_as_they_are`. |
 | D23 | **Deploy**: api + web images and `alembic upgrade head` (0019: permission rows only, no table or column); hub, bridge and nce untouched. On the owner's «onay» only. | No device-side change. |
 
@@ -187,7 +189,8 @@ okuma sınırını aştı.»
 - `dashboard/src/live/screens/admin/catalogue.js` (`PERMISSION_KEYS`), `admin.testutil.js` (`PERMISSION_TEXTS`, the
   backend's sentence) and `src/live/i18n/strings/perms.js` (`pharmacy: { view }` in four languages; tr: «“Eczane”
   sayfasını açar: kendi birimlerindeki hastaların vazopresörlerini, antibiyotik süresini, kreatininini ve günün sıvı
-  dengesini salt okunur görür»).
+  dengesini salt okunur görür»). In all four mirrors (`PERMISSIONS`, `catalogue.js`, `admin.testutil.js`, `perms.js`) the
+  key follows `summary.view`, in the same order.
 
 ### 5.1 Durations
 
@@ -231,16 +234,16 @@ whose deadline passes between two polls reads «Süre işliyor · <1 dk kaldı»
   - `tests/test_api_board_meds.py` — `creatinine_at`.
   - `tests/test_board_permissions.py` — `("GET", "/pharmacy"): "pharmacy.view"` in `BOARD_EXPECTED` (its two
     parametrized tests then cover the 403 and the open case).
-  - `tests/test_permissions.py` — 27 keys; `SPEC_GROUPS` for `attending`, `unit_physician`, `physician`, `pharmacist`.
+  - `tests/test_permissions.py` — 28 keys (G4-02's `summary.view` made 27); `SPEC_GROUPS` for `attending`, `unit_physician`, `physician`, `pharmacist`.
   - `tests/test_nginx_routes.py` — `/pharmacy` in `API_PATHS`; `tests/test_access_log_redaction.py` passes unchanged.
 - Engine, Postgres part: `tests/test_migration_0019_pharmacy_view.py`, in the shape of `test_tasks_postgres.py`'s three
-  migration tests — upgrade to `0017`, a tenant with `pharmacist`, `physician` and `nurse` groups, upgrade to `0019`:
-  the two get the row, the nurse none; the statement is idempotent; downgrade to `0017` removes the rows and leaves
+  migration tests — upgrade to `0018`, a tenant with `pharmacist`, `physician` and `nurse` groups, upgrade to `0019`:
+  the two get the row, the nurse none; the statement is idempotent; downgrade to `0018` removes the rows and leaves
   the groups and their other rows.
 - Dashboard: `pharmacyModel.test.js` (durations at 0, 59 s, 119 min, 120 min; each state's key and tone; the stale
   twins; no tone on creatinine or fluid), `EczaneScreen.test.jsx` (the counters and the rows in the server's order;
   the six states; «Kayıt yok» never «verilmedi»; the link only with `board.view`; the notes of D8, D9 and D19 present;
-  fresh, not fresh, failed first read, empty), `shell/routes.test.js` (the route, its place before `settings`, the
+  fresh, not fresh, failed first read, empty), `shell/routes.test.js` (the route, its place between `devir` and `ozet`, the
   nurse and the auditor cannot reach it, `pharmacy.view` alone lands on `/eczane`; the pinned route tails updated),
   `admin/catalogue.test.js` and `admin.testutil.test.js` (the mirrors), `i18n/strings.test.js` (four languages, same
   keys and placeholders), `rawKeys.test.jsx` (sweeps the new screen).
@@ -250,19 +253,20 @@ whose deadline passes between two polls reads «Süre işliyor · <1 dk kaldı»
 ## 8. Deploy
 
 As its own release, after the owner's «main'e al» and «onay»: bundle → `alembic upgrade head` (0019) → api + web
-images (the web image carries `nginx.conf`). Rollback: `alembic downgrade` to the previous revision from this
+images (the web image carries `nginx.conf`). If G2-B1c's `0018` is not on the server yet, the same
+`upgrade head` runs it first, and that release then also carries B1c's deploy notes. Rollback: `alembic downgrade` to the previous revision from this
 release's image, then the previous image tags. Rights travel in the token: a session opened before the deploy shows
 the page once its token is renewed. Blocks one at a time; the owner walks the page with a pharmacist account.
 
 ## 9. Open items
 
 - O1 The fourth counter. As approved («no antibiotic record among sepsis-recognised patients») it always equals
-  running + missed; this spec shows «Sepsis tanınan» with that number as its second line (D11). Owner to confirm.
+  running + missed; this spec shows «Sepsis tanınan» with that number as its second line (D11). Owner confirmed, 2026-11-11.
 - O2 A dose charted before recognition does not stop the clock (the engine's rule), so that patient reads «Süre
   işliyor» / «Süre aştı» here as in the alarm. Whether an earlier dose should count is a question about time zero,
-  which [[antimicrobial-timing-sepsis]] leaves open ([[open-questions]]); no change without a source.
+  which [[antimicrobial-timing-sepsis]] leaves open ([[open-questions]]); no change without a source. Owner: no change, 2026-11-11.
 - O3 A clock nobody answers stays «Süre aştı» until infection is charted absent or the patient is discharged, and
-  sorts first. Kept as approved; to be looked at after the pilot's first week (e.g. marking rows whose sepsis alarm no
+  sorts first. Kept (owner, 2026-11-11); to be looked at after the pilot's first week (e.g. marking rows whose sepsis alarm no
   longer fires).
 - O4 The last complete day's balance beside today's (right after the day turns the column is empty).
 - O5 A renal-dosing threshold for creatinine, a fluid-balance target, and how old a vasopressor rate may be before it
