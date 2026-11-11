@@ -22,7 +22,7 @@
 //   * the bed is taken, or its state could not be read — the admissions are read, a DRAFT or one a
 //     physician has signed since (ACTIVE, M-1): one on that bed under the name she sent is the
 //     send that landed, and its number box is shown; none, and "Kabul et" is held, with the bed
-//     and the list to look in ("Evə yazılma › Yatan xəstələr"), until she says she has looked.
+//     and the list to look in ("Köçürmə / Evə yazılma › Yatan xəstələr"), until she says she has looked.
 //     The hold says only that the outcome is not known.
 // Every send that got no answer is remembered until its admission is found (A-19):
 //   * before EVERY later send its admission is looked for — also after «go on», which only marks the
@@ -82,7 +82,7 @@ const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** Where an admission that may have landed is looked for: "Evə yazılma › Yatan xəstələr". */
+/** Where an admission that may have landed is looked for: "Köçürmə / Evə yazılma › Yatan xəstələr". */
 const whereOf = (t) => `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
 
 /** Two sends for the same bed under the same name — a retry of one send, under its own request id (A-24 I-1). */

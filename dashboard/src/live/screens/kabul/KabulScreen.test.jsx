@@ -44,15 +44,16 @@ describe("KabulScreen", () => {
   });
 
   // G2-B3a (X7, the browser walk): the beds moved to Doluluk, so the subtitle names admission and
-  // discharge only — in every language.
-  it("says under its title that it is for admission and discharge, not the beds' state", async () => {
+  // discharge only — in every language. G2-B1b (Tasks 7–8 review): and the transfer, now that the
+  // second tab is «Nakil / Taburcu».
+  it("says under its title that it is for admission, transfer and discharge, not the beds' state", async () => {
     await mountKabul(<KabulScreen />, { perms: NURSE });
-    expect(screen.getByText("Qəbul və evə yazılma — öz şöbələriniz.")).toBeTruthy();
+    expect(screen.getByText("Qəbul, köçürmə və evə yazılma — öz şöbələriniz.")).toBeTruthy();
     expect(Object.fromEntries(LANG_CODES.map((lang) => [lang, DICTIONARIES[lang]["kabul.sub"]]))).toEqual({
-      tr: "Kabul ve taburcu — kendi birimleriniz.",
-      az: "Qəbul və evə yazılma — öz şöbələriniz.",
-      ru: "Приём и выписка — ваши отделения.",
-      en: "Admission and discharge — your own units.",
+      tr: "Kabul, nakil ve taburcu — kendi birimleriniz.",
+      az: "Qəbul, köçürmə və evə yazılma — öz şöbələriniz.",
+      ru: "Приём, перевод и выписка — ваши отделения.",
+      en: "Admission, transfer and discharge — your own units.",
     });
   });
 

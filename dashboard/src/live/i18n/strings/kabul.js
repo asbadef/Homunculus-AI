@@ -1,4 +1,4 @@
-// Group 2 · B1a — Hasta Kabul: the admission screen (Kabul · Taburcu · Yataklar), the sign-off
+// Group 2 · B1a — Hasta Kabul: the admission screen (Kabul · Nakil / Taburcu), the sign-off
 // strip and the bed card's badge, the unit and bed names of the top bar, Yönetim › Yapı, and the
 // words of the admission routes' coded refusals (apiErrors.js `ADMISSION_CODE_KEYS`).
 //
@@ -9,7 +9,7 @@
 export default {
   tr: {
     nav: "Hasta Kabul", navShort: "Kabul",
-    title: "Hasta Kabul", sub: "Kabul ve taburcu — kendi birimleriniz.",   // G2-B3a (X7): the beds moved to Doluluk
+    title: "Hasta Kabul", sub: "Kabul, nakil ve taburcu — kendi birimleriniz.",   // G2-B3a (X7): the beds moved to Doluluk
     sections: "Hasta kabul bölümleri", noAccess: "Bu ekranın hiçbir bölümüne yetkiniz yok.",
     tabAdmit: "Kabul", tabDischarge: "Nakil / Taburcu",
     loading: "Yükleniyor…",
@@ -81,7 +81,7 @@ export default {
     unitOrdinal: "Birim {n}", bedOrdinal: "Yatak {n}",
     namesPending: "Bazı birim ve yatak adları henüz gösterilemiyor; yapı yeniden okunuyor. Numaralı olanlar yalnız yer tutucudur.",
     state: { AVAILABLE: "Boş", OCCUPIED: "Dolu", PENDING_DISCHARGE: "Taburcu bekliyor",
-      PENDING_TRANSFER_OUT: "Transfer bekliyor", HOUSEKEEPING: "Temizlikte", MAINTENANCE: "Bakımda",
+      PENDING_TRANSFER_OUT: "Nakil bekliyor", HOUSEKEEPING: "Temizlikte", MAINTENANCE: "Bakımda",
       BLOCKED: "Kullanım dışı", RESERVED: "Rezerve" },   // G2-B3a (R4): "kapat" is Yapı's close
     // G2-B3a (D5, X1): the question before an admission into a reserved bed.
     reservedAsk: {
@@ -209,7 +209,7 @@ export default {
   },
   az: {
     nav: "Xəstə qəbulu", navShort: "Qəbul",
-    title: "Xəstə qəbulu", sub: "Qəbul və evə yazılma — öz şöbələriniz.",
+    title: "Xəstə qəbulu", sub: "Qəbul, köçürmə və evə yazılma — öz şöbələriniz.",
     sections: "Xəstə qəbulu bölmələri", noAccess: "Bu ekranın heç bir bölməsinə səlahiyyətiniz yoxdur.",
     tabAdmit: "Qəbul", tabDischarge: "Köçürmə / Evə yazılma",
     loading: "Yüklənir…",
@@ -285,10 +285,10 @@ export default {
     },
     transfer: {
       action: "Köçürmə", title: "Köçürmə · {bed}",
-      now: "İndi: {bed}. Köhnə çarpayı təmizliyə keçir.",
+      now: "Hazırda: {bed}. Əvvəlki çarpayı təmizliyə verilir.",
       reason: "Səbəb", choose: "Səbəbi seçin…",
       reasons: {
-        CLINICAL_NEED: "Klinik ehtiyac", TO_ICU: "İntensiv terapiyaya", ICU_TO_WARD: "İntensiv terapiyadan şöbəyə",
+        CLINICAL_NEED: "Klinik ehtiyac", TO_ICU: "Reanimasiyaya", ICU_TO_WARD: "Reanimasiyadan şöbəyə",
         ISOLATION: "İzolyasiya", PATIENT_OR_FAMILY_REQUEST: "Xəstənin və ya yaxınının istəyi", OTHER: "Digər",
       },
       note: "Qeyd", noteHint: "İstəyə bağlı; «Digər» üçün məcburidir. Ən çox 200 simvol.",
@@ -299,7 +299,7 @@ export default {
       done: "{from} → {to}; {from} təmizliyə verildi",
       doneBoardFailed: "{from} → {to}; kart yeni çarpayıya keçirilmədi",
       cardNotMoved: "Kart yeni çarpayıya keçirilmədi.",
-      retry: "Kartı yenidən köçür", cardMoved: "kart yeni çarpayıya keçirildi",
+      retry: "Kartı yenidən keçir", cardMoved: "kart yeni çarpayıya keçirildi",
       noteInvalid: "Köçürmə qeydi düzgün deyil: «Digər» üçün məcburidir, ən çox 200 simvol ola bilər.",
       reservedConfirm: "Yenə də bu çarpayıya köçür",
     },
@@ -393,7 +393,7 @@ export default {
   },
   ru: {
     nav: "Приём пациентов", navShort: "Приём",
-    title: "Приём пациентов", sub: "Приём и выписка — ваши отделения.",
+    title: "Приём пациентов", sub: "Приём, перевод и выписка — ваши отделения.",
     sections: "Разделы приёма пациентов", noAccess: "У вас нет прав ни на один раздел этого экрана.",
     tabAdmit: "Приём", tabDischarge: "Перевод / Выписка",
     loading: "Загрузка…",
@@ -469,22 +469,22 @@ export default {
     },
     transfer: {
       action: "Перевод", title: "Перевод · {bed}",
-      now: "Сейчас: {bed}. Прежняя койка уходит на уборку.",
+      now: "Сейчас: {bed}. Прежняя койка отправляется на уборку.",
       reason: "Причина", choose: "Выберите причину…",
       reasons: {
-        CLINICAL_NEED: "Клиническая необходимость", TO_ICU: "В реанимацию", ICU_TO_WARD: "Из реанимации в отделение",
+        CLINICAL_NEED: "По клиническим показаниям", TO_ICU: "В реанимацию", ICU_TO_WARD: "Из реанимации в отделение",
         ISOLATION: "Изоляция", PATIENT_OR_FAMILY_REQUEST: "Просьба пациента или родственников", OTHER: "Другое",
       },
-      note: "Заметка", noteHint: "Необязательно; для «Другое» обязательно. Не более 200 символов.",
+      note: "Примечание", noteHint: "Необязательно; при причине «Другое» — обязательно. Не более 200 символов.",
       bed: "Новая койка", bedNeeded: "Выберите новую койку.",
-      reasonNeeded: "Выберите причину.", noteNeeded: "Для «Другое» напишите заметку.",
+      reasonNeeded: "Выберите причину.", noteNeeded: "Для причины «Другое» напишите примечание.",
       critical: "У этого пациента есть неподтверждённая критическая тревога. Перевод не блокируется; тревоги переходят вместе с пациентом на новую койку.",
       submit: "Перевести",
       done: "{from} → {to}; {from} отправлена на уборку",
       doneBoardFailed: "{from} → {to}; карточку не удалось перенести на новую койку",
       cardNotMoved: "Карточку не удалось перенести на новую койку.",
-      retry: "Перенести карточку снова", cardMoved: "карточка перенесена на новую койку",
-      noteInvalid: "Заметка к переводу заполнена неверно: для «Другое» она обязательна, не более 200 символов.",
+      retry: "Перенести карточку повторно", cardMoved: "карточка перенесена на новую койку",
+      noteInvalid: "Примечание к переводу заполнено неверно: при причине «Другое» оно обязательно, не более 200 символов.",
       reservedConfirm: "Всё равно перевести на эту койку",
     },
     pendingTitle: "Начатые выписки", pendingNone: "Нет выписок, ожидающих подтверждения.",
@@ -577,7 +577,7 @@ export default {
   },
   en: {
     nav: "Admissions", navShort: "Admit",
-    title: "Admissions", sub: "Admission and discharge — your own units.",
+    title: "Admissions", sub: "Admission, transfer and discharge — your own units.",
     sections: "Admission sections", noAccess: "You have no right to any section of this screen.",
     tabAdmit: "Admit", tabDischarge: "Transfer / Discharge",
     loading: "Loading…",
@@ -657,18 +657,18 @@ export default {
       reason: "Reason", choose: "Choose a reason…",
       reasons: {
         CLINICAL_NEED: "Clinical need", TO_ICU: "To intensive care", ICU_TO_WARD: "From intensive care to the ward",
-        ISOLATION: "Isolation", PATIENT_OR_FAMILY_REQUEST: "Patient's or family's request", OTHER: "Other",
+        ISOLATION: "Isolation", PATIENT_OR_FAMILY_REQUEST: "Patient or family request", OTHER: "Other",
       },
       note: "Note", noteHint: "Optional; required for «Other». 200 characters at most.",
       bed: "New bed", bedNeeded: "Choose the new bed.",
       reasonNeeded: "Choose a reason.", noteNeeded: "Write a note for «Other».",
-      critical: "This patient has a critical alarm nobody acknowledged. The transfer is not held; the alarms move with the patient to the new bed.",
+      critical: "This patient has a critical alarm nobody acknowledged. The transfer is not blocked; the alarms move with the patient to the new bed.",
       submit: "Transfer",
       done: "{from} → {to}; {from} sent to cleaning",
       doneBoardFailed: "{from} → {to}; the card could not be moved to the new bed",
       cardNotMoved: "The card could not be moved to the new bed.",
       retry: "Move the card again", cardMoved: "the card has moved to the new bed",
-      noteInvalid: "The transfer note is not valid: it is required for «Other», at most 200 characters.",
+      noteInvalid: "The transfer note is not valid: it is required for «Other» and may be at most 200 characters.",
       reservedConfirm: "Transfer to this bed all the same",
     },
     pendingTitle: "Discharges started", pendingNone: "No discharge is waiting for confirmation.",

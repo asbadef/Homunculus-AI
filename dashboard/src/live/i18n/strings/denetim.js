@@ -282,14 +282,14 @@ export default {
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
       structureCreate: "Structure: added", structureRename: "Structure: renamed",
       structureClose: "Structure: closed", structureReopen: "Structure: reopened",
-      labelPrint: "Label printed", dischargeBoardRetry: "Removing the card from the board retried",
+      labelPrint: "Label printed", dischargeBoardRetry: "Card removal from the board retried",
       deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",
       taskCreated: "Task added", taskClaimed: "Task claimed", taskDone: "Task finished",
       taskSkipped: "Task closed as not done", vitalSkipped: "Vital measurement skipped", taskSettings: "Task settings changed",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
       // G2-B1b (spec §5.6): the one-step transfer, and the retry of her card's move
-      transfer: "Patient moved to another bed", transferBoardRetry: "Moving the card to the new bed retried",
+      transfer: "Patient moved to another bed", transferBoardRetry: "Card move to the new bed retried",
     },
     heat: {
       title: "Alarm density — last {days} days",

@@ -97,8 +97,9 @@ export const EVENT_TYPES = Object.freeze([
   // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
   ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
   // G2-B1b (spec §5.6, X14): a patient moved to another bed in one step, and the retry of her card's move
-  // (`admission.transfer_board_retry`, from the same screen or at the old bed's release) — named, as the discharge's
-  // retry above is, because engineTypes.test.js fails on any type the engine writes that this list does not name.
+  // (`admission.transfer_board_retry`: from the transfer's own resend, `via: "transfer"`, or when a bed is freed —
+  // `bed.release`, `bed.transition`, `bed.return_to_service`) — named, as the discharge's retry above is, because
+  // engineTypes.test.js fails on any type the engine writes that this list does not name.
   ["admission.transfer", "transfer"], ["admission.transfer_board_retry", "transferBoardRetry"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 

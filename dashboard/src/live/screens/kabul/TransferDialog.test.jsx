@@ -51,7 +51,7 @@ describe("TransferDialog", () => {
 
   it("says where the patient lies, offers the six reasons, and opens the picker on her unit with her own bed not offered", async () => {
     await openDialog();
-    expect(dialog().getByText(`İndi: ${FROM}. Köhnə çarpayı təmizliyə keçir.`)).toBeTruthy();
+    expect(dialog().getByText(`Hazırda: ${FROM}. Əvvəlki çarpayı təmizliyə verilir.`)).toBeTruthy();
     expect(within(reasonBox()).getAllByRole("option").map((o) => o.value)).toEqual(["", ...TRANSFER_REASONS]);
     expect(dialog().getByRole("button", { name: TO })).toBeTruthy();                  // the unit is open
     expect(dialog().getByRole("button", { name: /^2 · Otaq 1 · Reanimasiya · / }).getAttribute("aria-disabled")).toBe("true");
@@ -221,13 +221,13 @@ describe("TransferDialog: what B1c's dialog taught", () => {
   it("describes the button that moves her by what it does", async () => {
     await openDialog();
     expect(dialog().getByRole("button", { name: "Köçür" }))
-      .toHaveAccessibleDescription(`İndi: ${FROM}. Köhnə çarpayı təmizliyə keçir.`);
+      .toHaveAccessibleDescription(`Hazırda: ${FROM}. Əvvəlki çarpayı təmizliyə verilir.`);
   });
 
   it("describes the button by the critical warning too, when it shows", async () => {
     await openDialog({ critical: true });
     expect(dialog().getByRole("button", { name: "Köçür" }))
-      .toHaveAccessibleDescription(`İndi: ${FROM}. Köhnə çarpayı təmizliyə keçir. ${WARNING}`);
+      .toHaveAccessibleDescription(`Hazırda: ${FROM}. Əvvəlki çarpayı təmizliyə verilir. ${WARNING}`);
   });
 
   it("holds the picker with the write, and hands the tab a card that did not move as a warning", async () => {
