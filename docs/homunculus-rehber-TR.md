@@ -2102,8 +2102,8 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   açmıyor…» der, §3.5); ona bir çalışma yetkisi de (ör. panoyu görme, `board.view`) verilmelidir.
 - **Sayfanın sırası (yukarıdan aşağı):**
   1. **Başlık:** «Yönetici özeti», son tam okumanın saati («10:42 itibarıyla») ve «Yenile» düğmesi. Tam okuma,
-     sayfanın kendi okumalarından (yapı, görevler, bekleyen devirler) oturumun okuyabildiği her birinin yanıt
-     verdiği son turdur; henüz yoksa «Henüz tam bir okuma yok» yazar.
+     sayfanın kendi okumalarından (yapı, görevler, bekleyen devirler, kullanıcının kendi kapsamı) oturumun
+     okuyabildiği her birinin yanıt verdiği son turdur; henüz yoksa «Henüz tam bir okuma yok» yazar.
   2. **«Unutulan işler»:** dört kart; her biri bir sayı, neyi saydığını söyleyen bir satır ve kaynağının okunduğu
      saat («son okuma 10:42»).
      - **«Yanıtsız kalan alarm · {dönem}»:** seçilen dönemde hiç yanıtlanmamış ve en az 10 dakikalık alarm olayları.
@@ -2116,9 +2116,10 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
      - **«Sessiz monitör»:** şimdi: sessiz ya da haber alınamayan monitörler («Cihazlar» sayfasının kurallarıyla,
        §3.22) ve «en uzunu {n} dk»; görünümde hiç monitör yoksa 0 ve «Bu görünümde monitör yok». «1 saatten uzun
        sessiz» gibi bir eşik yok: kaynağı yok.
-     - Kapsamı kısıtlı bir kullanıcıda (aşağıda, «Birimler») son üç kart yalnız onun kapsamına gönderilenleri sayar ve
-       bunu «yalnız kapsamınızdakiler, hastanenin tamamı değil» diye söyler. İlk kart hep hastane genelidir: sunucu
-       alarm kalitesini kısıtlı bir kapsama vermez.
+     - Kapsamı kısıtlı olduğu bilinen bir kullanıcıda (aşağıda, «Birimler») son üç kart yalnız onun kapsamına
+       gönderilenleri sayar ve bunu «yalnız kapsamınızdakiler, hastanenin tamamı değil» diye söyler. Kapsam okunamadıysa
+       aynı yerde «kapsamınız okunamadı: hastanenin tamamı olmayabilir» yazar; kapsam henüz okunurken ve kısıtsız bir
+       kapsamda bir şey yazmaz. İlk kart hep hastane genelidir: sunucu alarm kalitesini kısıtlı bir kapsama vermez.
   3. **«Alarm kalitesi»:** dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün); bu kutuyu ve ilk kartı
      değiştirir. «Bugün» takvim günü değil, son 24 saattir; kutu ve kart bunu «son 24 saat» diye yazar. Hastane
      geneli, denetim kaydından; birim birim değil (denetim kaydındaki alarmın yatağı yok; birim birim alarm kalitesi
@@ -2146,8 +2147,14 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
        birimin satırı bu dört sütunda sayı yerine «— yetki yok» der, asla 0 değil; birimden yalnız bir yatak atanmışsa
        da öyle (birimin bütünü onun değildir). Doluluk, yapıyı yönetme yetkisi (`structure.manage`) varsa yine yazılır
        (o zaman sunucu yapının tamamını verir); yoksa o da «— yetki yok», çünkü yapı yalnız onun yataklarını listeler.
-       Kapsam canlı panodan okunur; pano henüz yüklenmediyse birim hücreleri nedeniyle «—» der. «Birimi belli
-       olmayan» satırı yalnız kısıtsız bir kapsamda yazılır.
+       Kapsam, kullanıcının kendi kapsam okumasıdır (`GET /scope/me`; her oturum açmış kullanıcı okuyabilir ve pano
+       ile aynı kuralla kurulur), sayfanın kendi okumalarıyla birlikte okunur. O yanıt vermeden ya da okunamadıysa
+       geciken iş, bekleyen devir, sessiz monitör ve (yapıyı yönetme yetkisi yoksa) doluluk hücreleri kapsam
+       okumasının kendi nedeniyle «—» der («okunuyor…», «okunamadı»). Yanıt bekleyen alarm sütunu ise panonun kendi
+       kapsamına bakar (sayıları da kapsamı da aynı yanıttan gelir): panoyu görme yetkisi (`board.view`) olmayan bir
+       grupta yalnız bu sütun «— yetki yok» der, görevler ve devirler gerçek sayılarıyla yazılır; pano okunamazsa da
+       yalnız bu sütun nedenini söyler. «Birimi belli olmayan» satırı yalnız kısıtsız olduğu bilinen bir kapsamda
+       yazılır.
 - **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Henüz okunmamış, okunamamış, güncel olmayan ya da
   yetkiniz olmayan bir kaynak, kendi sütununda ya da kartında «—» ve kısa nedeniyle yazılır: «okunuyor…»,
   «okunamadı», «pano güncel değil», «yetki yok», «veri zinciri kesik», «bilinmiyor», «monitör şeridi kapalı»,
@@ -2157,8 +2164,8 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   sayısı da bugünün sayısı gibi gösterilmez. Biçimi beklenmeyen bir yanıt (tek bir bozuk kayıt bile) okunamamış
   sayılır: bozuk kaydı atlayıp birimine 0 yazmak da uydurmak olurdu.
 - **Ne zaman okunur:** canlı pano ve cihaz panosu uygulamanın kendi sürekli okumalarıdır, sayfa onlara bakar. Yapı,
-  görevler ve bekleyen devirler sayfa açılınca, «Yenile»de, sayfa görünürken her 60 saniyede bir ve sayfa yeniden
-  görünür olunca hemen okunur.
+  görevler, bekleyen devirler ve kullanıcının kendi kapsamı sayfa açılınca, «Yenile»de, sayfa görünürken her 60
+  saniyede bir ve sayfa yeniden görünür olunca hemen okunur.
 - **Sunucuda iki küçük değişiklik:**
   - yeni `GET /handovers/pending` (`summary.view`): birim başına karşı imza bekleyen devir sayısı ve en eskisinin imza
     zamanı; yalnız sayılar ve zamanlar (hasta, not ya da kişi yok); çağıranın kurumu ve birimleriyle sınırlı;
