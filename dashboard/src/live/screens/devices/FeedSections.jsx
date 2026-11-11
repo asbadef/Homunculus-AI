@@ -14,7 +14,9 @@ import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { ageText, maxAgeOf } from "../common/monitor.js";
 import { bedText, monitorName } from "./deviceMap.js";
-import { chainLines, countsOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
+import {
+  chainLines, countsOf, listingOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf,
+} from "./deviceFeed.js";
 
 const WORD = Object.freeze({ ok: "cihaz.wordOk", down: "cihaz.wordDown", warn: "cihaz.wordWarn", unknown: "cihaz.wordUnknown" });
 const TONE = Object.freeze({ ok: "ok", down: "att", warn: "att", unknown: "neutral" });
@@ -37,13 +39,25 @@ function Section({ title, children }) {
   );
 }
 
+/** Why sections 2 and 3 do not list (deviceFeed.js listingOf): said instead of a list, and never the «none» sentence. */
+const REASON = Object.freeze({
+  chain: "cihaz.chainBlocks", unknown: "cihaz.listUnknown", noMonitors: "cihaz.listNoMonitors",
+  noLedger: "cihaz.listNoLedger", noClock: "cihaz.listNoClock",
+});
+
+/** The verdict's words: the forwarder's silence carries its minutes, «the data flows» its two counts. */
+function verdictText(t, verdict, key = verdict.key) {
+  if (verdict.kind === "forwarder") return t(key, verdict.minutes === null ? undefined : { for: forText(t, verdict.minutes) });
+  if (verdict.kind === "flowing" || verdict.kind === "noneSending") return t(key, { streaming: verdict.streaming, total: verdict.total });
+  return t(key);
+}
+
 function Verdict({ t, data, verdict, counts }) {
   const watching = Date.parse(data.watching_since ?? "");
-  const text = verdict.chain
-    ? t(verdict.key, verdict.minutes === null ? undefined : { for: forText(t, verdict.minutes) })
-    : t(verdict.key, { streaming: verdict.streaming, total: verdict.total });
-  // Only the counts above zero: a «0» would be a list called empty, which is Decision 18's to allow.
-  const parts = verdict.chain ? []
+  const text = verdictText(t, verdict);
+  // Only the counts above zero: a «0» would be a list called empty, which is Decision 18's to allow; and none at all
+  // under a verdict that does not list (a broken chain, an unknown state or count, an empty hub).
+  const parts = counts === null ? []
     : COUNTS.filter(([name]) => counts[name] > 0).map(([name, key]) => t(key, { count: counts[name] }));
   return (
     <>
@@ -146,13 +160,16 @@ export function FeedSections({ shadow, mapping = null }) {
   const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: Number.isFinite(stamp) ? hhmm(stamp) : "—" })}</Note>;
   const now = serverNowMs(data, nowMs, fetchedAtMs);
   const verdict = verdictOf(data, now);
-  const silent = verdict.chain ? [] : silentRows(data, now);
-  const stale = verdict.chain ? [] : staleRows(data, now);
+  const listing = listingOf(data, verdict, now);
+  // Section 2 lists under a ledger, and by status alone from an API before it; section 3 only under a ledger.
+  const silent = listing === "rows" || listing === "noLedger" ? silentRows(data, now) : [];
+  const stale = listing === "rows" ? staleRows(data, now) : [];
   // D4's amendment: the channels silent an hour or more are not listed, only counted, and only when there are some.
-  const staleLong = verdict.chain ? 0 : staleLongCount(data, now);
-  const counts = countsOf(data, silent, stale);
-  const blocked = <p className="m-0 text-13">{t("cihaz.chainBlocks")}</p>;
-  const none = (key) => (fresh ? <p className="m-0 text-13 text-mute">{t(key)}</p> : null);
+  const staleLong = listing === "rows" ? staleLongCount(data, now) : 0;
+  const counts = verdict.listing === "rows" ? countsOf(data, silent, stale) : null;
+  const reason = listing === "rows" ? null : <p className="m-0 text-13">{t(REASON[listing])}</p>;
+  // Only a list that may be empty says so: a fresh answer whose monitors are listed one by one (Decision 18).
+  const none = (key) => (fresh && listing === "rows" ? <p className="m-0 text-13 text-mute">{t(key)}</p> : null);
   return (
     <div className="flex flex-col gap-2.5" data-feed-sections>
       <Section title={t("cihaz.verdictTitle")}>
@@ -160,11 +177,13 @@ export function FeedSections({ shadow, mapping = null }) {
         {mark}
       </Section>
       <Section title={t("cihaz.silentTitle")}>
-        {verdict.chain ? blocked : silent.length > 0 ? <SilentList t={t} rows={silent} /> : none("cihaz.silentNone")}
+        {silent.length > 0 ? <SilentList t={t} rows={silent} /> : none("cihaz.silentNone")}
+        {reason}
         {mark}
       </Section>
       <Section title={t("cihaz.staleTitle")}>
-        {verdict.chain ? blocked : stale.length > 0 ? <StaleList t={t} rows={stale} /> : none("cihaz.staleNone")}
+        {stale.length > 0 ? <StaleList t={t} rows={stale} /> : none("cihaz.staleNone")}
+        {reason}
         {staleLong > 0 ? <p className="m-0 text-12.5 text-mute">{t("cihaz.staleLongCount", { n: staleLong })}</p> : null}
         {mark}
       </Section>

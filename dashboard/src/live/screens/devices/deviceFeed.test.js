@@ -4,8 +4,8 @@
 import { describe, it, expect } from "vitest";
 import { AT, bed, strip, unassigned } from "../../data/shadow.testutil.js";
 import {
-  STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, chainLines, countsOf, minutesOf, neverSeenRows, serverNowMs, silentRows,
-  staleAfterOf, staleLongCount, staleRows, staleUntilOf, verdictOf,
+  STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, chainLines, countsOf, listingOf, minutesOf, neverSeenRows, serverNowMs,
+  silentRows, staleAfterOf, staleLongCount, staleRows, staleUntilOf, verdictOf,
 } from "./deviceFeed.js";
 
 const AT_MS = Date.parse(AT);
@@ -30,19 +30,65 @@ describe("the server's clock", () => {
 });
 
 describe("the verdict", () => {
-  it("says the data flows, with the server's counts, when the chain is ok", () => {
+  it("says the data flows, with the server's counts, when the chain is ok and a monitor sends", () => {
     const data = strip({ beds: [bed("REA-01 · 2"), bed("REA-01 · 3", [], { status: "silent" })] });
-    expect(verdictOf(data, NOW)).toEqual({ chain: false, key: "cihaz.verdictFlowing", streaming: 1, total: 2 });
+    expect(verdictOf(data, NOW)).toEqual({ kind: "flowing", key: "cihaz.verdictFlowing", listing: "rows", streaming: 1, total: 2 });
+  });
+
+  it("never says the data flows on a zero: a chain that works with no monitor sending, or a hub that reports none", () => {
+    const quiet = strip({ beds: [bed("REA-01 · 3", [], { status: "silent" }), bed("REA-01 · 4", [], { status: "standby" })] });
+    expect(verdictOf(quiet, NOW)).toEqual({ kind: "noneSending", key: "cihaz.verdictNoneSending", listing: "rows", streaming: 0, total: 2 });
+    expect(verdictOf(strip(), NOW)).toEqual({ kind: "noMonitors", key: "cihaz.verdictNoMonitors", listing: "noMonitors" });
+  });
+
+  it("reads a count the answer does not carry as unknown, never as zero (as chipCounts does)", () => {
+    const ward = strip({ beds: [bed("REA-01 · 2")] });
+    const without = (feed) => ({ ...ward, feed: { ...ward.feed, ...feed } });
+    const { streaming: _dropped, ...noStreaming } = ward.feed.devices;
+    const unknown = { kind: "countsUnknown", key: "cihaz.verdictCountsUnknown", listing: "unknown" };
+    expect(verdictOf(without({ devices: undefined }), NOW)).toEqual(unknown);
+    expect(verdictOf(without({ devices: noStreaming }), NOW)).toEqual(unknown);
+    expect(verdictOf(without({ devices: { ...ward.feed.devices, total: null } }), NOW)).toEqual(unknown);
+    expect(verdictOf(without({ unassigned: undefined }), NOW)).toEqual(unknown);
   });
 
   it("is the chain's when the feed is not ok: the forwarder's silence and since when, the collector, never", () => {
     expect(verdictOf(strip({ feed: { state: "forwarder_silent", last_post_at: before(4 * 60 + 10) } }), NOW))
-      .toEqual({ chain: true, key: "cihaz.verdictForwarder", minutes: 4 });
+      .toEqual({ kind: "forwarder", key: "cihaz.verdictForwarder", listing: "chain", minutes: 4 });
     expect(verdictOf(strip({ feed: { state: "forwarder_silent", last_post_at: null } }), NOW))
-      .toEqual({ chain: true, key: "cihaz.verdictForwarderNoTime", minutes: null });
-    expect(verdictOf(strip({ feed: { state: "collector_disconnected" } }), NOW)).toMatchObject({ chain: true, key: "cihaz.verdictCollector" });
-    expect(verdictOf(strip({ feed: { state: "never" } }), NOW)).toMatchObject({ chain: true, key: "cihaz.verdictNever" });
-    expect(verdictOf(strip({ feed: { state: "something_new" } }), NOW)).toMatchObject({ chain: true, key: "cihaz.verdictUnknown" });
+      .toEqual({ kind: "forwarder", key: "cihaz.verdictForwarderNoTime", listing: "chain", minutes: null });
+    expect(verdictOf(strip({ feed: { state: "collector_disconnected" } }), NOW))
+      .toEqual({ kind: "collector", key: "cihaz.verdictCollector", listing: "chain", minutes: null });
+    expect(verdictOf(strip({ feed: { state: "never" } }), NOW)).toEqual({ kind: "never", key: "cihaz.verdictNever", listing: "chain", minutes: null });
+  });
+
+  it("is unknown for a feed state this build does not know — neither a broken chain nor a flowing feed", () => {
+    expect(verdictOf(strip({ feed: { state: "something_new" } }), NOW)).toEqual({ kind: "unknown", key: "cihaz.verdictUnknown", listing: "unknown" });
+    expect(verdictOf({ stage: "shadow" }, NOW)).toEqual({ kind: "unknown", key: "cihaz.verdictUnknown", listing: "unknown" });
+  });
+});
+
+describe("what «Sessiz monitörler» and «Eskiyen kanallar» may say", () => {
+  const listing = (data, now = NOW) => listingOf(data, verdictOf(data, now), now);
+
+  it("lists the monitors one by one from a working chain, the server's ledger and a time to measure from", () => {
+    expect(listing(withLedger(strip({ beds: [bed("REA-01 · 2", [], { channels_seen: [] })] })))).toBe("rows");
+    expect(listing(withLedger(strip({ beds: [bed("REA-01 · 3", [], { status: "silent", channels_seen: [] })] })))).toBe("rows");
+  });
+
+  it("cannot tell «since when» from an answer without the ledger (an API before G4-01), nor anything without a time", () => {
+    expect(listing(strip({ beds: [bed("REA-01 · 2")] }))).toBe("noLedger");
+    expect(listing(withLedger(strip({ beds: [bed("REA-01 · 2")] })))).toBe("noLedger");                 // a card with no channels_seen
+    expect(listing({ ...withLedger(strip({ beds: [bed("REA-01 · 2", [], { channels_seen: [] })] })), watching_since: undefined })).toBe("noLedger");
+    expect(listing(withLedger(strip({ beds: [bed("REA-01 · 2", [], { channels_seen: [] })] })), null)).toBe("noClock");
+  });
+
+  it("gives the chain's, the unknown state's and the empty hub's reason before any of those", () => {
+    expect(listing(withLedger(strip({ feed: { state: "never" } })))).toBe("chain");
+    expect(listing(strip({ feed: { state: "forwarder_silent" } }), null)).toBe("chain");
+    expect(listing(withLedger(strip({ feed: { state: "something_new" } })))).toBe("unknown");
+    expect(listing(withLedger(strip({ beds: [bed("REA-01 · 2", [], { channels_seen: [] })], feed: { devices: undefined } })))).toBe("unknown");
+    expect(listing(withLedger(strip()))).toBe("noMonitors");
   });
 });
 

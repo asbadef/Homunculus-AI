@@ -28,6 +28,22 @@ describe("the device page's words (cihaz)", () => {
     expect(fill(tr["cihaz.notFresh"], { time: "10:42" })).toBe("Pano güncel değil · 10:42");
   });
 
+  it("never says the data flows on a zero, and says why a list cannot be drawn rather than calling it empty", () => {
+    const tr = DICTIONARIES.tr;
+    expect(tr["cihaz.verdictNoneSending"]).toBe("Zincir çalışıyor, ama hiçbir monitör veri göndermiyor");
+    expect(tr["cihaz.verdictNoMonitors"]).toBe("Hub hiç monitör bildirmiyor");
+    expect(tr["cihaz.verdictCountsUnknown"]).toBe("Zincir çalışıyor; monitör sayıları okunamıyor");
+    expect(tr["cihaz.listNoLedger"]).toBe("Bu sürüm «ne zamandan beri» bilgisini vermiyor");
+    for (const lang of LANG_CODES) {
+      const d = DICTIONARIES[lang];
+      // A reason is never the «none» sentence of the list it stands in for.
+      for (const key of ["cihaz.listUnknown", "cihaz.listNoMonitors", "cihaz.listNoLedger", "cihaz.listNoClock", "cihaz.chainBlocks"]) {
+        expect(d[key], `${lang} ${key}`).toBeTruthy();
+        expect([d["cihaz.silentNone"], d["cihaz.staleNone"]], `${lang} ${key}`).not.toContain(d[key]);
+      }
+    }
+  });
+
   it("carries a duration as one phrase, in every language", () => {
     for (const lang of LANG_CODES) {
       const d = DICTIONARIES[lang];

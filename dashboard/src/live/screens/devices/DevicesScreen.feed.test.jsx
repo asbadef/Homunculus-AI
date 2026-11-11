@@ -35,6 +35,9 @@ async function open(answer, perms = ["devices.manage"], list = EMPTY_LIST) {
   return mounted;
 }
 
+const NO_LEDGER = DICTIONARIES.az["cihaz.listNoLedger"];
+const LIST_UNKNOWN = DICTIONARIES.az["cihaz.listUnknown"];
+
 const region = (name) => screen.getByRole("region", { name });
 const items = (name) => within(region(name)).getAllByRole("listitem").map((li) => li.textContent);
 
@@ -128,10 +131,75 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
     expect(region("Köhnələn kanallar")).toHaveTextContent("Köhnələn kanal yoxdur");
   });
 
-  it("reads an answer with no ledger: the silent card with no time, and no watching line", async () => {
-    await open(strip({ beds: [bed("REA-01 · 5", [], { status: "silent" })] }));
+  it("reads an answer with no ledger: the silent card with no time, no watching line, and «since when» unknown in both lists", async () => {
+    await open(strip({ beds: [bed("REA-01 · 5", [], { status: "silent" }), bed("REA-01 · 2", [param("hr", 72)])] }));
     expect(items("Səssiz monitorlar")).toEqual(["REA-01 · 5 · son məlumatın vaxtı məlum deyil"]);
     expect(region("Məlumat gəlirmi?")).not.toHaveTextContent("İzləmə");
+    for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) expect(region(name)).toHaveTextContent(NO_LEDGER);
+    expect(within(region("Köhnələn kanallar")).queryAllByRole("listitem")).toEqual([]);
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("Köhnələn kanal yoxdur");
+  });
+
+  it("never calls a list empty from an answer with no ledger, even one with no silent card", async () => {
+    await open(strip({ beds: [bed("REA-01 · 2", [param("hr", 72)])] }));
+    expect(region("Səssiz monitorlar")).toHaveTextContent(NO_LEDGER);
+    expect(region("Səssiz monitorlar")).not.toHaveTextContent("Səssiz monitor yoxdur");
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("Köhnələn kanal yoxdur");
+  });
+
+  it("cannot time anything from an answer with no generated_at, and says so instead of listing", async () => {
+    await open({ ...WARD, generated_at: undefined });
+    for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) {
+      expect(region(name)).toHaveTextContent(DICTIONARIES.az["cihaz.listNoClock"]);
+      expect(within(region(name)).queryAllByRole("listitem")).toEqual([]);
+    }
+    expect(region("Səssiz monitorlar")).not.toHaveTextContent("Səssiz monitor yoxdur");
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("Köhnələn kanal yoxdur");
+  });
+
+  it("says the chain works but no monitor sends — never «flowing» — and still lists the silent ones", async () => {
+    await open(withLedger(strip({ beds: [
+      bed("REA-01 · 5", [], { status: "silent", last_packet_at: before(12.5), channels_seen: [] }),
+      bed("REA-01 · 7", [], { status: "standby", last_packet_at: before(0), channels_seen: [] }),
+    ] })));
+    const verdict = region("Məlumat gəlirmi?");
+    expect(verdict).toHaveTextContent("Zəncir işləyir, amma heç bir monitordan məlumat gəlmir");
+    expect(verdict).not.toHaveTextContent("Məlumat axır");
+    expect(verdict).toHaveTextContent("1 səssiz · 1 gözləmə rejimində");
+    expect(items("Səssiz monitorlar")).toEqual(["REA-01 · 5 · 12 dəqiqədir məlumat yoxdur · son məlumat 13:47"]);
+  });
+
+  it("says the hub reports no monitor, and calls neither list empty", async () => {
+    await open(withLedger(strip()));
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Hub heç bir monitor bildirmir");
+    expect(region("Məlumat gəlirmi?")).not.toHaveTextContent("Məlumat axır");
+    for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) {
+      expect(region(name)).toHaveTextContent(DICTIONARIES.az["cihaz.listNoMonitors"]);
+    }
+    expect(region("Səssiz monitorlar")).not.toHaveTextContent("Səssiz monitor yoxdur");
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("Köhnələn kanal yoxdur");
+  });
+
+  it("reads a count the answer does not carry as unknown: no «flowing», no counts, no list called empty", async () => {
+    await open({ ...WARD, feed: { ...WARD.feed, devices: undefined } });
+    const verdict = region("Məlumat gəlirmi?");
+    expect(verdict).toHaveTextContent("Zəncir işləyir; monitor sayları oxunmur");
+    expect(verdict).not.toHaveTextContent("Məlumat axır");
+    expect(verdict).not.toHaveTextContent("səssiz");
+    for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) {
+      expect(region(name)).toHaveTextContent(LIST_UNKNOWN);
+      expect(within(region(name)).queryAllByRole("listitem")).toEqual([]);
+    }
+  });
+
+  it("says a feed state this build does not know is unknown — not that the chain is broken", async () => {
+    await open({ ...WARD, feed: { ...WARD.feed, state: "something_new" } });
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Məlumat axınının vəziyyəti oxunmur");
+    for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) {
+      expect(region(name)).toHaveTextContent(LIST_UNKNOWN);
+      expect(region(name)).not.toHaveTextContent("Məlumat zənciri qırılıb");
+      expect(within(region(name)).queryAllByRole("listitem")).toEqual([]);
+    }
   });
 
   it("shows no patient, even to a session that also holds board.view", async () => {

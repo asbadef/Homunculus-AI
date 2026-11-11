@@ -10,7 +10,7 @@
 // Whole minutes, floored: «4 dk» is a true lower bound, and 0 is «<1 dk».
 //
 // No patient and no value here — which monitor, which channel, since when — and no threshold on a value.
-import { displayAge } from "../common/monitor.js";
+import { chipCounts, displayAge } from "../common/monitor.js";
 
 /** The API sends `stale_list_after_s` (D4: a channel is listed once it has had no valid value this long); this
  *  is what it sends, for an answer from an API that sends none. */
@@ -22,8 +22,10 @@ export const STALE_LIST_UNTIL_S = 3600;
 
 const MINUTE_MS = 60_000;
 const QUIET = new Set(["silent", "unknown"]);
-const CHAIN_KEY = Object.freeze({
-  never: "cihaz.verdictNever", forwarder_silent: "cihaz.verdictForwarder", collector_disconnected: "cihaz.verdictCollector",
+// A link of the chain that is down: its verdict, and every monitor is silent for that one reason.
+const CHAIN = Object.freeze({
+  never: { kind: "never", key: "cihaz.verdictNever" },
+  collector_disconnected: { kind: "collector", key: "cihaz.verdictCollector" },
 });
 const FORWARDER_WORD = Object.freeze({ ok: "ok", collector_disconnected: "ok", forwarder_silent: "down", never: "unknown" });
 
@@ -68,20 +70,49 @@ function cardsOf(data) {
     ...listOf(data?.unassigned).map((card) => ({ card, label: null }))];
 }
 
-/** Section 1's verdict. The chain comes first: a feed that is not `ok` is the chain's verdict — the forwarder's
- *  silence with its minutes, the collector, «never», or a state this build does not know — and every monitor is
- *  then silent for that one reason. Otherwise the data flows, with the server's own counts. */
+/** Section 1's verdict (`kind`, its words' `key`), and how sections 2 and 3 may answer under it (`listing`):
+ *    "rows"        the monitors one by one — a chain that works, the server's counts read;
+ *    "chain"       a link is down (the forwarder's silence with its minutes, the collector, «never»): every monitor
+ *                  is silent for that one reason, and none is listed as a fault;
+ *    "unknown"     a feed state this build does not know, or a count the answer does not carry — a count it was
+ *                  not told is no count, never a zero (chipCounts): nothing is listed, and nothing called fine;
+ *    "noMonitors"  the hub reports no monitor: there is nothing to list, which is not «none silent».
+ *  «The data flows» only while a monitor sends: a working chain with none sending says so. */
 export function verdictOf(data, now) {
   const feed = data?.feed ?? {};
   if (feed.state === "ok") {
-    return { chain: false, key: "cihaz.verdictFlowing", streaming: feed.devices?.streaming ?? 0, total: feed.devices?.total ?? 0 };
+    if (chipCounts(data) === null) return { kind: "countsUnknown", key: "cihaz.verdictCountsUnknown", listing: "unknown" };
+    const { streaming, total } = feed.devices;
+    if (total === 0) return { kind: "noMonitors", key: "cihaz.verdictNoMonitors", listing: "noMonitors" };
+    if (streaming === 0) return { kind: "noneSending", key: "cihaz.verdictNoneSending", listing: "rows", streaming, total };
+    return { kind: "flowing", key: "cihaz.verdictFlowing", listing: "rows", streaming, total };
   }
   if (feed.state === "forwarder_silent") {
     const last = msOf(feed.last_post_at);
     const minutes = last !== null && now !== null ? minutesOf(now - last) : null;
-    return { chain: true, key: minutes === null ? "cihaz.verdictForwarderNoTime" : "cihaz.verdictForwarder", minutes };
+    const key = minutes === null ? "cihaz.verdictForwarderNoTime" : "cihaz.verdictForwarder";
+    return { kind: "forwarder", key, listing: "chain", minutes };
   }
-  return { chain: true, key: CHAIN_KEY[feed.state] ?? "cihaz.verdictUnknown", minutes: null };
+  const link = CHAIN[feed.state];
+  if (link) return { ...link, listing: "chain", minutes: null };
+  return { kind: "unknown", key: "cihaz.verdictUnknown", listing: "unknown" };
+}
+
+/** Whether the answer carries the server's last-seen ledger (G4-01): `watching_since`, and `channels_seen` on every
+ *  card. An API before it sends neither, and cannot say «since when». */
+export function hasLedger(data) {
+  return msOf(data?.watching_since) !== null && cardsOf(data).every(({ card }) => Array.isArray(card.channels_seen));
+}
+
+/** How sections 2 and 3 may answer: the verdict's listing; under a verdict that lists, "noClock" when there is no
+ *  time to measure from (`now` null: an answer with no `generated_at`), and "noLedger" when the answer has no ledger —
+ *  section 2 then lists the silent cards by their status alone, and section 3 nothing. Only "rows" may ever say a
+ *  list is empty. */
+export function listingOf(data, verdict, now) {
+  if (verdict.listing !== "rows") return verdict.listing;
+  if (now === null) return "noClock";
+  if (!hasLedger(data)) return "noLedger";
+  return "rows";
 }
 
 function quietRow(source, label, lastIso, vanished, now) {
