@@ -530,11 +530,13 @@ Dalga 3'te geldi: 3.6.
 - *Girişten sonra nereye düşülür:* Herkes kendi ana ekranına — menüsünün açtığı ilk ekrana:
   panoyu görme yetkisi (`board.view`) olan herkes **Yataklar**'a (Azerbaycanca arayüzde
   "Çarpayılar"): hekim, hemşire, sorumlu hemşire, hızlı yanıt ekibi, denetçi, eczacı ve Sistem
-  Yöneticisi. Panoyu görmeyen ama kullanıcı ya da grup yöneten biri **Yönetim**'e. Yetkileri yeni
-  arayüzün hiçbir ekranını açmayan bir hesap — varsayılan gruplarda Biyomedikal Teknisyen ve
-  Üretici Destek: ikisinde de yalnız cihaz ve denetim yetkisi var — içeri alınmaz; giriş ekranı
-  bunu söyler ("Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor (ör. yalnız
-  cihaz yönetimi). Sistem yöneticinizle görüşün."). Cihaz sayfası Grup 4'te gelecek. **Ayarlar**
+  Yöneticisi. Panoyu görmeyen ama kullanıcı ya da grup yöneten biri **Yönetim**'e. Panoyu görme ve
+  yönetim yetkisi olmayan ama cihaz yönetimi yetkisi (`devices.manage`) olan biri — varsayılan
+  gruplarda Biyomedikal Teknisyen ve Üretici Destek — **Cihazlar**'a («Cihaz & Veri Akışı», aşağıda
+  3.22); Üretici Destek'in menüsünde ikinci sırada «Denetim bütünlüğü» de vardır (3.13). Yetkileri
+  yeni arayüzün hiçbir ekranını açmayan bir hesap içeri alınmaz; giriş ekranı bunu söyler
+  ("Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor. Sistem yöneticinizle
+  görüşün."). **Ayarlar**
   herkese açık, menünün en altında. Bir yer imiyle ya da bağlantıyla açılan adres girişten sonra
   bir kez kullanılır — kişi o ekranı açabiliyorsa; bir **hastanın** adresi ise girişten sonra
   açılmaz, ana ekrana düşülür (kilit açılınca olduğu gibi: yukarıda "Kilit ekranı").
@@ -1417,8 +1419,8 @@ liste ise Yapı'daki adıyla. Bugünkü tablonun v2'den gelen satırları «BED0
    satır kapanır, aynı monitör aynı yatakta yeni etiketle açılır (`device_bed.relabel`): tablonun
    sürümü bir artar, özeti değişir, şerit yeni etiketi gösterir.
 
-**Monitörü bağlı bir yatak kapatılamaz.** Yapı «Bu yatağa bir monitör bağlı — önce «Monitörler»
-ekranında bağlantıyı çözün.» der (bildirim yatağın adıyla başlar): önce «Monitörler»de bağlantıyı
+**Monitörü bağlı bir yatak kapatılamaz.** Yapı «Bu yatağa bir monitör bağlı — önce «Cihazlar»
+ekranında bağlantıyı çözün.» der (bildirim yatağın adıyla başlar): önce «Cihazlar»da bağlantıyı
 çözün, sonra kapatın. Oda ve birim ancak bütün yatakları kapalıyken kapandığı için onlar da buna
 bağlıdır. Aynı dilimde Yapı'da iki düzeltme (B1a dağıtımının dersleri): boş bir kutunun düğmesi (ör.
 «Yatak ekle») neden tutulduğunu artık kutunun altında görünür biçimde söyler, basıldıktan sonra hata
@@ -1966,6 +1968,76 @@ hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok).
 - **Bu dilimde olmayanlar:** birime göre erteleme kuralları, kritik alarmı erteleme, hasta ekranından erteleme,
   erteleme raporu. Postgres'teki eski `escalation/` modülüne dokunulmadı.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b5b-ertele-design.md`.
+
+### 3.22 «Cihaz & Veri Akışı»: veri geliyor mu? (Grup 4 · G4-01)
+
+- **Ne:** Sol raydaki **«Cihazlar»** sayfası (eski adı «Monitörler»; Azerbaycanca «Cihazlar», Rusça
+  «Устройства», İngilizce «Devices») önce tek bir soruyu yanıtlar: **veri geliyor mu?** Sayfanın başlığı
+  «Cihaz & Veri Akışı». Adresi (`/devices`), simgesi ve yetkileri değişmedi; rehberin önceki bölümleri
+  (ör. 3.9, 3.11) ekranı eski adıyla anar, aynı ekrandır.
+- **Kim görür:** cihaz yönetimi yetkisi (`devices.manage`: Biyomedikal Teknisyen, Üretici Destek;
+  Sistem Yöneticisi her yetkiyi taşır) ya da monitör–yatak eşleme yetkisi (`devices.map_beds`: Sorumlu
+  Hemşire) olan herkes. Biyomedikal Teknisyen ve Üretici Destek girişte bu sayfaya düşer. Yalnız panoyu
+  görme yetkisi (`board.view`) olan hekim ve hemşire ekranı görmez. Kapsamı birimleriyle sınırlı biri
+  (ör. sorumlu hemşire) yalnız kendi yataklarının monitörlerini görür, sayılar da yalnız onları sayar;
+  atanmamış cihazları yalnız cihaz yönetimi yetkisi ya da sınırsız kapsamı olan görür. Sayfa hiçbir
+  hasta bilgisi göstermez.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **«Veri geliyor mu?»** Tek satırlık hüküm, ardından sayılar.
+     - Önce veri zinciri: zincir kopuksa hüküm zincirindir — «Veri gelmiyor: aktarıcı 4 dk'dır sessiz»,
+       «Veri gelmiyor: toplayıcı bağlı değil», «Henüz hiç veri gelmedi» (zincirin durumu okunamazsa «Veri
+       akışının durumu okunamıyor»). O zaman bütün monitörler aynı nedenle susar: hükmün altında sayı
+       yazılmaz, 2. ve 3. bölüm monitörleri tek tek arıza diye listelemez, «Veri zinciri kesik:
+       monitörler tek tek listelenmiyor» der.
+     - Zincir sağlamsa: «Veri akıyor · 5/6 monitör veri gönderiyor», ardından yalnız sıfırdan büyük
+       sayılar, bu sırayla: sessiz, eskiyen kanal (3. bölümde listelenenler), beklemede, veri bekliyor,
+       atanmamış.
+     - Altında: «İzleme 10:42'den beri; sistem yeniden başlayınca sıfırlanır».
+  2. **«Sessiz monitörler».** Sessiz monitörler (hub o monitörden 3 saniyedir paket almıyor) ve haber
+     alınamayanlar (Infinity sunucusu — hub — onu 15 saniyeden uzun süredir bildirmiyor; hub'ın
+     listesinden çıkan monitör böyledir); en uzun süredir susan en üstte, son verisinin zamanı
+     bilinmeyen en altta. Her satır: yatağın adı (yatağı yoksa cihazın adresi), «{n} dk'dır veri yok ·
+     son veri {SS:DD}». Hub'ın listesinden çıkan monitörün satırında «hub artık bildirmiyor» da yazar;
+     sunucu onun zamanlarını son bildiriminden sonra 24 saat tutar, sonra satır API yeniden başlayana
+     dek yalnız «son verinin zamanı bilinmiyor» der.
+  3. **«Eskiyen kanallar».** Veri gönderen bir monitörün en az bir dakikadır geçerli değer taşımayan
+     kanalları (ör. ART S, SpO₂), bir saat dolana dek. Her satır bir monitördür: yatağın adı (yatağı
+     yoksa adresi), ardından kanalları — «ART S · 4 dk'dır değer yok» —, en eskisi önce; en eski kanalı
+     olan monitör en üstte. 15 saniyeyi aşan her boşluğu şerit zaten gösterir; burada yalnız bir
+     dakikayı bulanlar listelenir. Bir saat dolunca kanal listeden çıkar: o kadar uzun susan bir kanal
+     büyük olasılıkla bilerek çıkarılmıştır (ör. arter kateteri alınınca ART). Bölüm böyle kanalları
+     sonda tek satırda sayar — «2 kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış
+     olabilir)» —; hiç yoksa ya da zincir kopuksa bu satır yazılmaz. Sunucu kanalı unutmaz; yalnız liste
+     onu artık göstermez. **NBP ne listelenir ne sayılır** (değeri yalnız manşon ölçünce gelir).
+     Yalnız veri gönderen monitörün kanalları listelenir: beklemedeki monitörün (açık ama ölçmüyor)
+     eskiyen kanalı olmaz, o 1. bölümde ayrıca sayılır; susan monitör 2. bölümdedir.
+  4. **«Veri zinciri».** Toplayıcı (bağlı mı, son sinyal ne kadar önce), aktarıcı (son gönderi,
+     gönderilen ve başarısız), Infinity sunucusunun aldığı ve eski ya da yinelenen paketler, nedenine
+     göre reddedilen değerler. Her satırın durum sözcüğü vardır: normal, durmuş, dikkat (reddedilen
+     değer varsa), bilinmiyor. Zincir kopukken de görünür: hangi halkanın durduğunu bu bölüm söyler.
+  5. **«Tabloda var, hiç görülmedi».** Cihaz→yatak tablosunda olup hub'ın, sistem açıldığından beri hiç
+     bildirmediği monitörler: yatak ve cihaz adresiyle. Liste, aşağıdaki eşleme bölümünün okuduğu
+     listedir; sayfa onu bir kez ister.
+  6. Sonra, değişmeden: monitör–yatak eşleme bölümü (3.9) ve her monitörün şeridi. Monitör şeridi
+     kapalıyken üstteki beş bölüm hiç görünmez.
+- **Süreler:** 1–3. bölümlerde tam dakika, aşağı yuvarlanarak («4 dk'dır» en az 4 dakika demektir); bir
+  dakikadan kısa süre «<1 dk'dır». Süreler sunucunun saatiyle sayılır ve iki okuma arasında da ilerler;
+  tarayıcının saati yanlış olsa da bir sessizliği kısaltamaz. Veri zincirinin yaşları şeritteki gibi
+  saniye ya da dakikayla yazılır. Saatler (SS:DD) bu tarayıcının yerel saatidir.
+- **Pano güncel değilse** (son başarılı okuma 15 saniyeden eskiyse ya da son okuma başarısızsa): 1–4.
+  bölümler son söylediklerini korur, «Pano güncel değil · {SS:DD}» işaretiyle (son okumanın saati), ve
+  hiçbiri «yok» demez — boş bir listeyi yalnız güncel bir okuma söyleyebilir. 5. bölüm kendi listesine
+  bakar: «yok»u yalnız yanıt veren bir liste söyler; liste okunamazsa son satırlarını korur ve «Eşleme
+  listesi okunamadı; birazdan yeniden denenecek.» der.
+- **Neyi hatırlar:** sunucu her monitörü ve her kanalını en son ne zaman gördüğünü yalnız bellekte
+  tutar. Veritabanına bir şey yazılmaz, göç (migration) yoktur, hub değişmedi. API yeniden başlarsa bu
+  hafıza sıfırlanır; sayfa bunu «İzleme … beri» satırıyla söyler. Değerlerin kendisi, 120 saniyelik
+  unutma süresi ve gölge motorun okuduğu hiçbir şey değişmedi.
+- **Bu dilimde olmayanlar:** cihaz envanteri ve bakım (tip, seri numarası, bakım, kalibrasyon, arıza,
+  pil), alarm kalitesi paneli, yeniden başlatmalar arası sessizlik geçmişi, sessiz monitör için
+  bildirim ya da ray rozeti, klinik panonun «besleme sağlığı» göstergesinin biyomedikale açılması, hub
+  ya da toplayıcı değişikliği.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-cihaz-veri-akisi-design.md`.
 
 ---
 
