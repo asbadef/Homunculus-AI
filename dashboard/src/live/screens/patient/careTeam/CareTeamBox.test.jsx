@@ -122,13 +122,13 @@ describe("CareTeamBox", () => {
     expectNoUuid();
   });
 
-  it("offers an assigner «Komandaya əlavə et», and «Məsul həkim et» and «Komandadan çıxar» on another's row — never on the attending's", async () => {
+  it("offers an assigner «Komandaya əlavə et», and «Məsul həkim təyin et» and «Komandadan çıxar» on another's row — never on the attending's", async () => {
     await open();
     expect(screen.getByRole("button", { name: "Komandaya əlavə et" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Komandadan çıxar: Sentetik Köməkçi" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Məsul həkim et: Sentetik Köməkçi" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Məsul həkim təyin et: Sentetik Köməkçi" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Komandadan çıxar: Sentetik Həkim" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Məsul həkim et: Sentetik Həkim" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Məsul həkim təyin et: Sentetik Həkim" })).toBeNull();
   });
 
   it("lets a member without care_team.assign leave her own row, and do nothing else", async () => {
@@ -136,7 +136,7 @@ describe("CareTeamBox", () => {
     await open({ perms: READER, groups: PHYSICIAN_GROUP, team: [own, ASSOCIATE, ATTENDING] });
     expect(screen.getByRole("button", { name: "Komandadan ayrıl: Ayşe Sentetik" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Komandadan çıxar/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Məsul həkim et/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Məsul həkim təyin et/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Komandaya əlavə et" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Məsul həkim ol" })).toBeNull();
   });
@@ -162,7 +162,7 @@ describe("CareTeamBox", () => {
     const ask = screen.getByRole("dialog", { name: "Yeni məsul həkim" });
     expect(within(ask).getByText("Ayşe Sentetik məsul həkim olur; Sentetik Həkim komandadan çıxır.")).toBeTruthy();
     expect(api.claimAttending).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.click(within(ask).getByRole("button", { name: "Təsdiq et" })); });
+    await act(async () => { fireEvent.click(within(ask).getByRole("button", { name: "Təsdiqlə" })); });
     await settle();
     expect(api.claimAttending).toHaveBeenCalledWith(ADM);
     expect(toasts().getAllByText(`${BED_2} · Ayşe Sentetik məsul həkim oldu.`).length).toBeGreaterThan(0);
@@ -171,10 +171,10 @@ describe("CareTeamBox", () => {
 
   it("makes an associate the attending after the same question", async () => {
     const { api } = await open({ setup: (a) => a.addCareTeamMember.mockResolvedValue({}) });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Məsul həkim et: Sentetik Köməkçi" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Məsul həkim təyin et: Sentetik Köməkçi" })); });
     const ask = screen.getByRole("dialog", { name: "Yeni məsul həkim" });
     expect(within(ask).getByText("Sentetik Köməkçi məsul həkim olur; Sentetik Həkim komandadan çıxır.")).toBeTruthy();
-    await act(async () => { fireEvent.click(within(ask).getByRole("button", { name: "Təsdiq et" })); });
+    await act(async () => { fireEvent.click(within(ask).getByRole("button", { name: "Təsdiqlə" })); });
     await settle();
     expect(api.addCareTeamMember).toHaveBeenCalledWith(ADM, { user_id: ASC, role: "ATTENDING" });
   });
@@ -211,7 +211,7 @@ describe("CareTeamBox", () => {
       refusal(409, "English words", { apiCode: "care_team_conflict" })) });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Komandadan çıxar: Sentetik Köməkçi" })); });
     await settle();
-    expect(toasts().getAllByText(`${BED_2}: Bu həkim artıq komandadadır, ya da komanda eyni anda dəyişdi.`).length).toBeGreaterThan(0);
+    expect(toasts().getAllByText(`${BED_2}: Bu həkim artıq komandadadır və ya komanda eyni anda dəyişdi; komanda yenidən oxundu.`).length).toBeGreaterThan(0);
     expect(api.careTeam).toHaveBeenCalledTimes(2);
   });
 

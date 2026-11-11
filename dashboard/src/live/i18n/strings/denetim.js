@@ -249,7 +249,7 @@ export default {
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
       // G2-B1c (spec §5.5): the care team's three events
-      careTeamAttending: "Attending physician made", careTeamAdd: "Added to the care team", careTeamEnd: "Left the care team",
+      careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
     },
     heat: {
       title: "Alarm density — last {days} days",

@@ -132,7 +132,7 @@ describe("AddMemberDialog", () => {
     pick("Sentetik Köməkçi");
     await submit();
     await settle();
-    expect(toasts().getAllByText(`${SUBJECT}: Baxım komandasına yalnız həkimlər daxil olur.`).length).toBeGreaterThan(0);
+    expect(toasts().getAllByText(`${SUBJECT}: Bu şəxs həkim deyil: baxım komandasına yalnız həkimlər daxil olur və qəbulu imzalayan məsul həkim olur.`).length).toBeGreaterThan(0);
     expect(refused).toHaveBeenCalledTimes(1);
     expect(done).not.toHaveBeenCalled();
   });
