@@ -184,6 +184,9 @@ async def put_scope(
         await db.rollback()                       # nothing written; the lock goes with it
         raise HTTPException(status.HTTP_409_CONFLICT, detail=CONCURRENT_CHANGE)
     before = sorted(g.target for g in held)
+    # G2-B4 follow-up D1: the row names whose access changed, read here under the lock (the
+    # membership check above already placed this user in the caller's tenant).
+    username = (await db.execute(select(User.username).where(User.id == user_id))).scalar_one()
     rows = await service.replace_grants(
         db, tenant_id=tenant_id, user_id=user_id,
         grants=[(g.unit_id.strip(), g.bed_id.strip()) for g in body.grants],
@@ -197,9 +200,12 @@ async def put_scope(
         # `patient_id` stays empty on purpose: a scope change concerns no patient, and putting a
         # user id in that column would make it answer the wrong question for every reader of the
         # audit screen. The subject of this event is the user whose access changed.
+        # `actor` and `user` are names (G2-B4 follow-up D1, owner «Ad yaz, eskiyi maskele»): the
+        # audit screen shows them instead of the ids, which stay in `by` and the subject for an
+        # investigator. The row's shape only grows.
         audit.append(AuditEvent(
             slug, "scope", "", str(user_id),
-            {"by": str(admin.id), "before": before,
+            {"actor": admin.username, "user": username, "by": str(admin.id), "before": before,
              "after": sorted(g.target for g in rows)},
         ))
     return await _view(db, user_id, tenant_id)

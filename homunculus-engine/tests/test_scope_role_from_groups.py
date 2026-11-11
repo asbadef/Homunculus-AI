@@ -190,6 +190,27 @@ async def test_hospital_admin_reads_and_writes_scope_in_own_tenant(db_session, w
     assert r.json()["tenant"] == "demo-hastanesi"
 
 
+async def test_the_scope_row_names_who_changed_it_and_whose_access_changed(db_session, world, client):
+    """G2-B4 follow-up D1 (owner «Ad yaz, eskiyi maskele»): the row carries the administrator's
+    username as `actor` and the target's as `user`, beside what it always held — the administrator's
+    id in `by`, `before`, `after`, and the target's id as the subject. The shape only grows."""
+    headers = await _headers(db_session, world["admin"])
+    nurse = world["nurse"]
+    await client.put(f"/scope/{nurse.id}", headers=headers, json={"grants": [{"unit_id": "unit-adult"}]})
+    r = await client.put(f"/scope/{nurse.id}", headers=headers,
+                         json={"grants": [{"bed_id": "bed-a1"}]})
+    assert r.status_code == 200, r.text
+    row = client.app.state.audit.records(tenant="demo-hastanesi", event_type="scope")[-1]
+    assert row.payload["actor"] == "admin"
+    assert row.payload["user"] == "ayse"
+    assert row.payload["by"] == str(world["admin"].id)
+    assert row.payload["before"] == ["unit-adult"]
+    assert row.payload["after"] == ["bed-a1"]
+    assert row.subject == str(nurse.id)
+    assert row.patient_id == ""
+    assert set(row.payload) == {"actor", "user", "by", "before", "after"}
+
+
 async def test_users_manage_without_unrestricted_scope_cannot_assign(db_session, world, client):
     t = world["tenant"]
     g = Group(tenant_id=t.id, slug="kullanici-yoneticisi", name="ky", is_system=False,
