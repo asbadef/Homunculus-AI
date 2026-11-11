@@ -10,8 +10,9 @@ import React, { useId } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
 import { Note, StatusPill } from "../../ui/index.js";
-import { stripOn } from "../common/MonitorStrip.jsx";
-import { ageText } from "../common/monitor.js";
+import { SHADOW_PHASE } from "../../data/shadowStore.js";
+import { readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { ageText, maxAgeOf } from "../common/monitor.js";
 import { bedText, monitorName } from "./deviceMap.js";
 import { chainLines, countsOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
 
@@ -140,8 +141,9 @@ export function FeedSections({ shadow, mapping = null }) {
   const { data, nowMs, fetchedAtMs } = shadow;
   if (!stripOn(data)) return null;
   // Decision 18: only a fresh answer may say a list is empty, and one that is not is marked.
-  const fresh = true;
-  const mark = null;
+  const fresh = shadow.phase === SHADOW_PHASE.OK && !readUnknown(shadow, nowMs, maxAgeOf(data));
+  const stamp = Date.parse(data.generated_at ?? "");
+  const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: Number.isFinite(stamp) ? hhmm(stamp) : "—" })}</Note>;
   const now = serverNowMs(data, nowMs, fetchedAtMs);
   const verdict = verdictOf(data, now);
   const silent = verdict.chain ? [] : silentRows(data, now);

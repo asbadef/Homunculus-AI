@@ -188,3 +188,39 @@ describe("«Tabloda var, hiç görülmedi»", () => {
     expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
   });
 });
+
+// Decision 18: only a fresh answer may say a list is empty. One that is not — a poll that hangs past the display
+// limit, a poll that failed — keeps what it said, marked with the answer's own time.
+describe("a board that is not fresh (Decision 18)", () => {
+  const stall = async (mounted) => {
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));         // the next poll never answers
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 18_000);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+  };
+  const MARK = "Lövhə yenilənməyib · 14:00";
+
+  it("keeps each section's last answer, marked with the answer's time", async () => {
+    const mounted = await open(WARD);
+    expect(screen.queryByText(MARK)).toBeNull();
+    await stall(mounted);
+    expect(screen.getAllByText(MARK)).toHaveLength(4);
+    expect(items("Səssiz monitorlar")).toHaveLength(2);
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Məlumat axır · 2/5 monitordan məlumat gəlir");
+  });
+
+  it("says nothing is empty from an answer it cannot vouch for", async () => {
+    const mounted = await open(withLedger(strip({ beds: [bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: before(0), channels_seen: seen(["hr", 0]) })] })));
+    expect(screen.getByText("Səssiz monitor yoxdur")).toBeInTheDocument();
+    await stall(mounted);
+    expect(screen.queryByText("Səssiz monitor yoxdur")).toBeNull();
+    expect(screen.queryByText("Köhnələn kanal yoxdur")).toBeNull();
+    expect(region("Səssiz monitorlar")).toHaveTextContent(MARK);
+  });
+
+  it("marks a failed poll the same way", async () => {
+    const mounted = await open(WARD);
+    mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.getAllByText(MARK)).toHaveLength(4);
+  });
+});
