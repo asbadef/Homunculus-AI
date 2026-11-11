@@ -48,6 +48,8 @@ from homunculus.api.infinity_shadow import shadow_settings_from_env
 from homunculus.api.device_beds_postgres import PostgresDeviceBeds
 from homunculus.api.infinity_device_beds import DeviceBedSource
 from homunculus.api.monitor_samples import InMemorySamples, PostgresSamples, SampleStore
+from homunculus.api.readings import InMemoryReadingStore, ReadingStore            # G3-05
+from homunculus.api.readings_postgres import PostgresReadingStore
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore
 from homunculus.api.tasks_postgres import PostgresTaskStore
 from homunculus.auth import jwt as auth_jwt
@@ -498,6 +500,14 @@ def _tasks(url: str) -> TaskStore:
     if not _is_production(url):
         return InMemoryTaskStore()
     return PostgresTaskStore(url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+
+
+def _readings(url: str) -> ReadingStore:
+    """The per-admission record of what was measured (G3-05): Postgres in production, in memory elsewhere —
+    `_tasks`' rule."""
+    if not _is_production(url):
+        return InMemoryReadingStore()
+    return PostgresReadingStore(url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
 
 
 def _device_beds(url: str, hospital: str) -> DeviceBedSource | None:

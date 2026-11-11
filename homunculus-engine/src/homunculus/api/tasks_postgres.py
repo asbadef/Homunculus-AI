@@ -10,6 +10,7 @@ from datetime import datetime
 
 from sqlalchemy import create_engine, text
 
+from homunculus.api.admission_keys import NEWEST_FIRST, OPEN_ADMISSION_OF_KEY      # G3-05 (D8)
 from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
 from homunculus.api.tasks import BAND_KEYS, TaskNotOpen, TaskRow, TaskSettings
 from homunculus.crypto import decrypt_phi, encrypt_phi
@@ -18,8 +19,8 @@ STATEMENT_TIMEOUT_MS = 2000
 _COLUMNS = ("id", "tenant", "patient_id", "title", "due_at", "target_role", "created_by", "created_at", "state",
             "claimed_by", "claimed_at", "closed_by", "closed_at", "skip_reason")
 _SELECT = "SELECT " + ", ".join(_COLUMNS) + " FROM tasks"
-#: admission/models.py OPEN_ADMISSION_STATES, as the enum's values
-_OPEN_STATES = "('DRAFT','ACTIVE','PENDING_DISCHARGE','PENDING_TRANSFER')"
+#: When the open admission of a card key began (G3-05: the fragment is api/admission_keys.py's, shared).
+ADMITTED_AT = "SELECT a.admission_datetime " + OPEN_ADMISSION_OF_KEY + NEWEST_FIRST
 
 
 def _uuid(task_id) -> str | None:
@@ -119,11 +120,7 @@ class PostgresTaskStore:
 
     def admitted_at(self, tenant: str, patient_id: str) -> datetime | None:
         with self._engine.connect() as conn:
-            return conn.execute(text(
-                "SELECT a.admission_datetime FROM admissions a JOIN patients p ON p.id = a.patient_id "
-                "JOIN tenants t ON t.id = a.tenant_id WHERE t.slug = :tenant AND CAST(a.state AS text) IN " + _OPEN_STATES +
-                " AND (a.protocol_no = :key OR (a.protocol_no IS NULL AND p.patient_number = :key)) "
-                "ORDER BY a.admission_datetime DESC LIMIT 1"), {"tenant": tenant, "key": patient_id}).scalar_one_or_none()
+            return conn.execute(text(ADMITTED_AT), {"tenant": tenant, "key": patient_id}).scalar_one_or_none()
 
     def timezone(self, tenant: str) -> str:
         with self._engine.connect() as conn:
