@@ -224,11 +224,11 @@ const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", 
     vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
     tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
 const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
-/** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
+/** G2-B4: the audit page's newest events (a labelled type, a code no version names, a masked id) and a broken chain. */
 const AUDIT_ROWS = { records: [
   { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
     subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
-  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
+  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "legacy.made_up", patient_id: "",
     subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
   // G2-B4 follow-up D2: a scope row written before the engine wrote names — both its user ids masked
   { id: 3, ts: "2026-11-09T10:03:00+00:00", tenant: "demo-hastanesi", event_type: "scope", patient_id: "",

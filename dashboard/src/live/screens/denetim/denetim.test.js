@@ -146,8 +146,8 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(38);   // … + G2-B5b's alert_snooze
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(38);
+    expect(EVENT_TYPES).toHaveLength(52);   // … + G2-B5b's alert_snooze; + the follow-up's 14 (D3, engineTypes.test.js)
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(52);
     expect(typeKey("rrt_call")).toBe("denetim.type.rrtCall");   // G2-B5 (spec D9)
     expect(typeKey("alert_snooze")).toBe("denetim.type.alertSnooze");   // G2-B5b (spec D4)
     expect(typeKey("handover.open")).toBe("denetim.type.handoverOpen");                 // G2-B3b (spec D8)
@@ -161,7 +161,24 @@ describe("the labelled types (§4)", () => {
     expect(typeKey("bed.return_to_service")).toBe("denetim.type.bedReturnToService");
     expect(typeKey("admission.admit")).toBe("denetim.type.admit");
     expect(typeKey("reading_dropped_discharged")).toBe("denetim.type.readingDropped");
-    expect(typeKey("structure.create")).toBeNull();
+    // Follow-up D3: every type the engine writes is named — Yapı's four, the admission's two, the monitor table's two,
+    // and «Görevlerim»'s six.
+    expect(typeKey("structure.create")).toBe("denetim.type.structureCreate");
+    expect(typeKey("structure.rename")).toBe("denetim.type.structureRename");
+    expect(typeKey("structure.close")).toBe("denetim.type.structureClose");
+    expect(typeKey("structure.reopen")).toBe("denetim.type.structureReopen");
+    expect(typeKey("admission.label_print")).toBe("denetim.type.labelPrint");
+    expect(typeKey("admission.discharge_board_retry")).toBe("denetim.type.dischargeBoardRetry");
+    expect(typeKey("device_bed.relabel")).toBe("denetim.type.deviceRelabel");
+    expect(typeKey("device_bed.import")).toBe("denetim.type.deviceImport");
+    expect(typeKey("task_created")).toBe("denetim.type.taskCreated");
+    expect(typeKey("task_claimed")).toBe("denetim.type.taskClaimed");
+    expect(typeKey("task_done")).toBe("denetim.type.taskDone");
+    expect(typeKey("task_skipped")).toBe("denetim.type.taskSkipped");
+    expect(typeKey("vital_skipped")).toBe("denetim.type.vitalSkipped");
+    expect(typeKey("task_settings_changed")).toBe("denetim.type.taskSettings");
+    // A code the page does not name (a row an older version wrote) shows as itself.
+    expect(typeKey("legacy.made_up")).toBeNull();
     expect(typeKey(undefined)).toBeNull();
   });
 });

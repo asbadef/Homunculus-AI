@@ -55,6 +55,15 @@ export default {
       bedOutOfService: "Yatak kullanım dışı bırakıldı", bedReturnToService: "Yatak kullanıma açıldı",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Devir açıldı", handoverSign: "Devir imzalandı", handoverCountersign: "Devir karşı imzalandı",
+      // follow-up 2026-11-11 D3: every other type the engine writes — Yapı's four in the Yapı tab's words (kabul.js),
+      // the label in Protokol ve etiket's (protokol.js), the board retry in the discharge's (kabul.retryBoard), the
+      // monitor table in Monitör–yatak eşleme's (esleme.js), «Görevlerim» in its own (gorevler.js)
+      structureCreate: "Yapı: eklendi", structureRename: "Yapı: adı değişti",
+      structureClose: "Yapı: kapatıldı", structureReopen: "Yapı: yeniden açıldı",
+      labelPrint: "Etiket yazdırıldı", dischargeBoardRetry: "Kart panodan yeniden kaldırılmaya çalışıldı",
+      deviceRelabel: "Monitör eşlemesi yatağın yeni adını aldı", deviceImport: "Monitör–yatak eşlemesi içe aktarıldı",
+      taskCreated: "Görev eklendi", taskClaimed: "Görev üstlenildi", taskDone: "Görev tamamlandı",
+      taskSkipped: "Görev «uygulanmadı» olarak kapandı", vitalSkipped: "Vital ölçüm atlandı", taskSettings: "Görev ayarları değişti",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -119,6 +128,12 @@ export default {
       bedOutOfService: "Çarpayı istifadədən çıxarıldı", bedReturnToService: "Çarpayı istifadəyə verildi",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
+      structureCreate: "Struktur: əlavə edildi", structureRename: "Struktur: adı dəyişdi",
+      structureClose: "Struktur: bağlandı", structureReopen: "Struktur: yenidən açıldı",
+      labelPrint: "Etiket çap edildi", dischargeBoardRetry: "Kartın paneldən yenidən götürülməsinə cəhd edildi",
+      deviceRelabel: "Monitorun uyğunlaşdırması çarpayının yeni adını aldı", deviceImport: "Monitor–çarpayı uyğunlaşdırması idxal edildi",
+      taskCreated: "Tapşırıq əlavə edildi", taskClaimed: "Tapşırıq öhdəyə götürüldü", taskDone: "Tapşırıq tamamlandı",
+      taskSkipped: "Tapşırıq «tətbiq edilmədi» kimi bağlandı", vitalSkipped: "Vital ölçmə ötürüldü", taskSettings: "Tapşırıq ayarları dəyişdi",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -183,6 +198,12 @@ export default {
       bedOutOfService: "Койка выведена из использования", bedReturnToService: "Койка возвращена в использование",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
+      structureCreate: "Структура: добавлено", structureRename: "Структура: переименовано",
+      structureClose: "Структура: закрыто", structureReopen: "Структура: открыто снова",
+      labelPrint: "Этикетка напечатана", dischargeBoardRetry: "Повторная попытка снять карточку с панели",
+      deviceRelabel: "Привязка монитора получила новое название койки", deviceImport: "Привязка мониторов к койкам импортирована",
+      taskCreated: "Задача добавлена", taskClaimed: "Задача взята", taskDone: "Задача выполнена",
+      taskSkipped: "Задача закрыта как «не выполнено»", vitalSkipped: "Измерение витальных пропущено", taskSettings: "Настройки задач изменены",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -247,6 +268,12 @@ export default {
       bedOutOfService: "Bed taken out of service", bedReturnToService: "Bed returned to service",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
+      structureCreate: "Structure: added", structureRename: "Structure: renamed",
+      structureClose: "Structure: closed", structureReopen: "Structure: reopened",
+      labelPrint: "Label printed", dischargeBoardRetry: "Removing the card from the board retried",
+      deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",
+      taskCreated: "Task added", taskClaimed: "Task claimed", taskDone: "Task finished",
+      taskSkipped: "Task closed as not done", vitalSkipped: "Vital measurement skipped", taskSettings: "Task settings changed",
     },
     heat: {
       title: "Alarm density — last {days} days",

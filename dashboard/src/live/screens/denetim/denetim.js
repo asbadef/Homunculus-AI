@@ -77,6 +77,17 @@ export const EVENT_TYPES = Object.freeze([
   ["bed.out_of_service", "bedOutOfService"], ["bed.return_to_service", "bedReturnToService"],
   // G2-B3b (spec D8): «Vardiya devri» — opened, signed by the outgoing person, countersigned by the receiver.
   ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
+  // Follow-up 2026-11-11 D3: every other type the engine writes (engineTypes.test.js reads the engine and fails on
+  // one this list does not name). Yapı's four (tenant/router.py), in the Yapı tab's own words:
+  ["structure.create", "structureCreate"], ["structure.rename", "structureRename"],
+  ["structure.close", "structureClose"], ["structure.reopen", "structureReopen"],
+  // the admission's label and its board retry (admission/router.py, tenant/router.py):
+  ["admission.label_print", "labelPrint"], ["admission.discharge_board_retry", "dischargeBoardRetry"],
+  // the monitor–bed table: a bed's new label followed, and the one-time import (devicebeds/seed.py):
+  ["device_bed.relabel", "deviceRelabel"], ["device_bed.import", "deviceImport"],
+  // G3-02 «Görevlerim» (api/tasks.py), in its own words:
+  ["task_created", "taskCreated"], ["task_claimed", "taskClaimed"], ["task_done", "taskDone"],
+  ["task_skipped", "taskSkipped"], ["vital_skipped", "vitalSkipped"], ["task_settings_changed", "taskSettings"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));
