@@ -14,8 +14,14 @@
 //
 // THE ENGINE DECIDES: a refusal is said on the toast in the reader's words (apiErrors.js maps its code), named after
 // the bed for a link and after the number for a rejection, and the list is read again either way — another desk may
-// have got there first. A link with no answer may have landed: she is told where to look.
-import React, { useId, useRef, useState } from "react";
+// have got there first. A link or a rejection with no answer may have landed: she is told where to look.
+//
+// THE QUESTION'S PATIENT may leave the board while it is asked (discharged, out of scope): as on the page's own
+// identity step, the step says so and goes back to the list; on a board that is not LIVE the question waits, since
+// that list is old, not empty. A link goes back to the list BEFORE the list is read again, and a rejection holds its
+// dialog until it has been — a second press in between would send a second write. Each view takes the focus when it
+// opens, on its heading, so a keyboard and a screen reader follow the step.
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
 import { numberText } from "../../i18n/numbers.js";
@@ -76,7 +82,9 @@ function SetFacts({ set, nowMs }) {
   );
 }
 
-function RejectDialog({ set, onReject, onClose }) {
+/** `onReject(reason)` writes; `onDone()` reads the list again and closes the dialog — resolved, so that the rejected set
+ *  leaves the screen together with it; `onClose()` only closes (Cancel, Escape). */
+function RejectDialog({ set, onReject, onDone, onClose }) {
   const { t } = useI18n();
   const toast = useToast();
   const [reason, setReason] = useState("");
@@ -97,14 +105,20 @@ function RejectDialog({ set, onReject, onClose }) {
       const answer = await onReject(reason.trim());
       if (answer !== null) toast(t("kayit.umRejected", { subject }));
     } catch (err) {
-      if (err?.superseded) return;
-      toast(t("kayit.umRejectRefused", { subject, reason: refusedText(t, err) }), "error");
-      close = err?.apiCode !== "reading_reason_length";      // a reason the engine finds wrong keeps the dialog
+      if (err?.superseded) close = false;       // its session is gone: nothing is said into the one that replaced it
+      else {
+        if (mayHaveLanded(err)) toast(t("kayit.umRejectMayHaveLanded", { subject }), "warn");
+        else toast(t("kayit.umRejectRefused", { subject, reason: refusedText(t, err) }), "error");
+        close = err?.apiCode !== "reading_reason_length";      // a reason the engine finds wrong keeps the dialog
+      }
+    }
+    // The guards are held until the list has been read again: a second press in between sends nothing.
+    try {
+      if (close) await onDone();
     } finally {
       sending.current = false;
       setBusy(false);
     }
-    if (close) onClose();
   }
 
   return (
@@ -146,18 +160,39 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
   const board = useBoard();
   const toast = useToast();
   const { sets, phase, error, reload } = useUnmatched();
-  // { name: "list" } | { name: "pick", set } | { name: "confirm", set, id, bed }
+  // { name: "list", gone? } | { name: "pick", set } | { name: "confirm", set, id }: `gone` is the notice that the
+  // patient chosen to link to left the board, and belongs to the list it was raised for.
   const [view, setView] = useState({ name: "list" });
   const [rejecting, setRejecting] = useState(null);
   const [linking, setLinking] = useState(false);
   const sending = useRef(false);
+  const root = useRef(null);
+  const seen = useRef(view.name);
   const target = view.name === "confirm" ? patients.find((p) => p.patient_id === view.id) ?? null : null;
 
+  // The patient may leave a LIVE board under the open question: say so and go back to the list (BedsideScreen's rule
+  // for its identity step). Not while the link is out — its own answer is what is said then.
+  useEffect(() => {
+    if (view.name === "confirm" && known && !target && !linking) setView({ name: "list", gone: true });
+  }, [view.name, known, target, linking]);
+
+  // Only a CHANGE of view moves the focus, to the new view's heading: the step opening is the page's to follow.
+  useEffect(() => {
+    if (seen.current === view.name) return;
+    seen.current = view.name;
+    const heading = root.current?.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.classList.add("outline-none");
+      heading.focus();
+    }
+  }, [view.name]);
+
   async function link() {
-    if (sending.current) return;
+    if (sending.current || !target) return;
     sending.current = true;
     setLinking(true);
-    const subject = view.bed;
+    const subject = bedOf(target);
     try {
       const answer = await board.store.assignReadings(idsOf(view.set), view.id);
       if (answer !== null) toast(t("kayit.umLinked", { subject }));
@@ -170,13 +205,15 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
       sending.current = false;
       setLinking(false);
     }
-    // Every ending reads the list again and goes back to it: the set is gone, or another desk got there first.
-    await reload();
+    // Every ending goes back to the list FIRST and then reads it again: the identity question must not stay on screen,
+    // enabled, while that read is out. The set is gone, or another desk got there first.
     setView({ name: "list" });
+    reload();
   }
 
+  let body;
   if (view.name === "pick") {
-    return (
+    body = (
       <>
         <h2 className="m-0 mb-2 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("kayit.umPickTitle")}</h2>
         <div className="mb-2 rounded-box border border-line bg-card px-4 py-3">
@@ -184,13 +221,13 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
           <SetValues set={view.set} />
         </div>
         <PickList patients={patients} nowMs={nowMs} known={known}
-          onPick={(p) => setView({ name: "confirm", set: view.set, id: p.patient_id, bed: bedOf(p) })} />
+          onPick={(p) => setView({ name: "confirm", set: view.set, id: p.patient_id })} />
         <div className="mt-3"><Button icon="chevL" onClick={() => setView({ name: "list" })}>{t("kayit.umBack")}</Button></div>
       </>
     );
-  }
-  if (view.name === "confirm" && target) {
-    return (
+  } else if (view.name === "confirm") {
+    // No patient to ask about (the board is not LIVE, or the effect above is about to leave): nothing, not the list.
+    body = target ? (
       <IdentityStep patient={target} busy={linking} onYes={link} onNo={() => setView({ name: "list" })}
         title={t("kayit.umConfirmTitle")} ask={t("kayit.umConfirmAsk")} yes={t("kayit.umConfirmYes")} no={t("kayit.umConfirmNo")}>
         <div className="mt-3 border-t border-line pt-2">
@@ -199,42 +236,48 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
         </div>
         <Announce text={linking ? t("kayit.umLinking") : ""} />
       </IdentityStep>
+    ) : null;
+  } else {
+    body = (
+      <Box title={t("kayit.umTitle")} icon="link" level={2}>
+        <p className="m-0 mb-2 text-12.5 text-mute">{t("kayit.umIntro")}</p>
+        {view.gone ? <Note tone="warn" icon="alert" className="mb-2">{t("olcum.gone")}</Note> : null}
+        {/* The Note is a static aside: said here as well, politely, so a screen reader hears why the question closed. */}
+        <Announce text={view.gone ? t("olcum.gone") : ""} />
+        {error ? <Note tone="warn" icon="alert" className="mb-2">{t("kayit.umReadFailed", { reason: readErrorText(t, error) })}</Note> : null}
+        {phase === "loading" ? <p className="m-0 text-13 text-mute">{t("kayit.umReading")}</p> : null}
+        {phase === "known" && sets.length === 0 ? <p className="m-0 text-13 text-mute">{t("kayit.umEmpty")}</p> : null}
+        {sets.length > 0 ? (
+          // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
+          <ul role="list" className="m-0 list-none p-0">
+            {sets.map((set) => (
+              <li key={keyOf(set)} data-um-set={set.received_key} className="flex flex-wrap items-center gap-2 border-b border-line py-2.5 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <SetFacts set={set} nowMs={nowMs} />
+                  <SetValues set={set} />
+                  {set.linkable === true ? null : <span className="mt-1 block text-12 font-semibold text-mute">{t("kayit.umTooOld")}</span>}
+                </span>
+                <span className="flex shrink-0 flex-wrap gap-2">
+                  {set.linkable === true ? (
+                    <Button variant="primary" icon="link" onClick={() => setView({ name: "pick", set })}>{t("kayit.umLink")}</Button>
+                  ) : null}
+                  <Button variant="ghost" icon="x" onClick={() => setRejecting(set)}>{t("kayit.umReject")}</Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-3"><Button icon="chevL" onClick={onBack}>{t("kayit.umBack")}</Button></div>
+        {rejecting ? (
+          <RejectDialog
+            set={rejecting}
+            onReject={(reason) => board.store.rejectReadings(idsOf(rejecting), reason)}
+            onDone={async () => { await reload(); setRejecting(null); }}
+            onClose={() => setRejecting(null)}
+          />
+        ) : null}
+      </Box>
     );
   }
-  return (
-    <Box title={t("kayit.umTitle")} icon="link" level={2}>
-      <p className="m-0 mb-2 text-12.5 text-mute">{t("kayit.umIntro")}</p>
-      {error ? <Note tone="warn" icon="alert" className="mb-2">{t("kayit.umReadFailed", { reason: readErrorText(t, error) })}</Note> : null}
-      {phase === "loading" ? <p className="m-0 text-13 text-mute">{t("kayit.umReading")}</p> : null}
-      {phase === "known" && sets.length === 0 ? <p className="m-0 text-13 text-mute">{t("kayit.umEmpty")}</p> : null}
-      {sets.length > 0 ? (
-        // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
-        <ul role="list" className="m-0 list-none p-0">
-          {sets.map((set) => (
-            <li key={keyOf(set)} data-um-set={set.received_key} className="flex flex-wrap items-center gap-2 border-b border-line py-2.5 last:border-b-0">
-              <span className="min-w-0 flex-1">
-                <SetFacts set={set} nowMs={nowMs} />
-                <SetValues set={set} />
-                {set.linkable === true ? null : <span className="mt-1 block text-12 font-semibold text-mute">{t("kayit.umTooOld")}</span>}
-              </span>
-              <span className="flex shrink-0 flex-wrap gap-2">
-                {set.linkable === true ? (
-                  <Button variant="primary" icon="link" onClick={() => setView({ name: "pick", set })}>{t("kayit.umLink")}</Button>
-                ) : null}
-                <Button variant="ghost" icon="x" onClick={() => setRejecting(set)}>{t("kayit.umReject")}</Button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="mt-3"><Button icon="chevL" onClick={onBack}>{t("kayit.umBack")}</Button></div>
-      {rejecting ? (
-        <RejectDialog
-          set={rejecting}
-          onReject={(reason) => board.store.rejectReadings(idsOf(rejecting), reason)}
-          onClose={() => { setRejecting(null); reload(); }}
-        />
-      ) : null}
-    </Box>
-  );
+  return <div ref={root}>{body}</div>;
 }

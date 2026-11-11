@@ -109,6 +109,20 @@ describe("the list", () => {
   });
 });
 
+describe("the focus", () => {
+  it("is not taken when the list opens, and follows each view to its heading", async () => {
+    await open();
+    await openList();
+    expect(document.activeElement.tagName).not.toBe("H2");          // the page's own step took it, not this one
+    await press(within(setRows()[0]).getByRole("button", { name: "Xəstəyə bağla" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Bu ölçmə hansı xəstənindir?" }));
+    await press(document.querySelector("[data-pick='S-001']"));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Bağlamanı təsdiqləyin" }));
+    await press(button("Xeyr, imtina"));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" }));
+  });
+});
+
 describe("linking a set to a patient", () => {
   async function toConfirm(extra) {
     const mounted = await open(extra);
@@ -164,6 +178,37 @@ describe("linking a set to a patient", () => {
     expect(screen.queryByText(/ölçməni düzəltmək hüququnuz yoxdur/)).toBeNull();      // never the correction's right
   });
 
+  it("goes back to the list before the list is read again, so no second link can be pressed meanwhile", async () => {
+    const { api } = await toConfirm();
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await press(button("Bəli, bağla"));
+    expect(api.assignReadings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Bəli, bağla" })).toBeNull();      // the question left while the read is out
+    expect(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" })).toBeInTheDocument();
+    await act(async () => { release(unmatched([OLD])); await settle(); });
+    expect(api.assignReadings).toHaveBeenCalledTimes(1);
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  it("a link that got no answer says it may have landed, and reads the list again", async () => {
+    const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
+    const reads = api.unmatchedReadings.mock.calls.length;
+    await press(button("Bəli, bağla"));
+    expect(toasted("REA-01 · 2: cavab gəlmədi — bağlanmış ola bilər. Siyahıya və xəstə ekranına baxın.").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/xəstəyə bağlanmadı/)).toBeNull();                    // never «not linked» for a link with no answer
+    expect(api.unmatchedReadings.mock.calls.length).toBeGreaterThan(reads);
+    expect(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" })).toBeInTheDocument();
+  });
+
+  it("names the bed the patient has when the question is answered, not the one it had when chosen", async () => {
+    const { stream } = await toConfirm();
+    act(() => { stream.frame(entry("S-001", [], { identity: identity({ birth_date: "1970-05-05", bed_label: "REA-01 · 3" }) })); });
+    await press(button("Bəli, bağla"));
+    expect(toasted("REA-01 · 3: ölçmə xəstəyə bağlandı.").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: ölçmə xəstəyə bağlandı.")).toHaveLength(0);
+  });
+
   it("a second press while the link is in flight sends nothing more", async () => {
     let finish;
     const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockImplementation(() => new Promise((resolve) => { finish = resolve; })) });
@@ -171,6 +216,36 @@ describe("linking a set to a patient", () => {
     fireEvent.click(button("Bəli, bağla"));
     await act(async () => { finish({ assigned: [7, 8], patient_id: "S-001", alerts: [] }); await settle(); });
     expect(api.assignReadings).toHaveBeenCalledTimes(1);
+  });
+
+  // The page's own rule for its identity step (BedsideScreen.test.jsx «a patient who leaves the board»).
+  const LEFT = "Seçilmiş xəstə artıq siyahıda deyil (evə yazılıb və ya əhatə xaricindədir). Yenidən seçin.";
+
+  it("a patient who leaves the board under the question is said, and the step goes back to the list", async () => {
+    const { api, stream } = await toConfirm();
+    await act(async () => { stream.frame({ patient_id: "S-001", removed: true }); await settle(); });
+    expect(screen.getByText(LEFT)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Uyğunlaşmayan ölçmələr" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Bağlamanı təsdiqləyin" })).toBeNull();
+    expect(setRows()).toHaveLength(2);
+    expect(api.assignReadings).not.toHaveBeenCalled();
+    await press(within(setRows()[0]).getByRole("button", { name: "Xəstəyə bağla" }));       // the notice goes with the next step
+    expect(screen.queryByText(LEFT)).toBeNull();
+  });
+
+  it("on a board that is not LIVE the question waits — the list is not shown in its place — and is there when the card is back", async () => {
+    const { api, board: store, stream } = await toConfirm();
+    act(() => { stream.drop(); });
+    api.boardPatients.mockResolvedValue(board([VUSAL]));
+    await act(async () => { await store.refresh(); await settle(); });
+    expect(store.getState().connection).toBe("degraded");
+    expect(store.getState().patients.map((p) => p.patient_id)).toEqual(["S-002"]);
+    expect(screen.queryByRole("heading", { name: "Bağlamanı təsdiqləyin" })).toBeNull();
+    expect(setRows()).toHaveLength(0);
+    expect(screen.queryByText(LEFT)).toBeNull();
+    api.boardPatients.mockResolvedValue(board([AYSE, VUSAL]));
+    await act(async () => { await store.refresh(); await settle(); });
+    expect(screen.getByRole("heading", { level: 2, name: "Bağlamanı təsdiqləyin" })).toBeInTheDocument();
   });
 });
 
@@ -212,6 +287,66 @@ describe("rejecting a set", () => {
     expect(api.rejectReadings).toHaveBeenCalledTimes(1);
     expect(toasted(`Nömrə ${TYPO}: rədd edilmədi — Bu ölçmə artıq gözləmir: bağlanıb və ya rədd edilib.`).length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("rejecting a set — the dialog's endings", () => {
+  const dialog = () => screen.getByRole("dialog");
+  async function toDialog(extra) {
+    const mounted = await open(extra);
+    await openList();
+    await press(within(setRows()[0]).getByRole("button", { name: "Rədd et" }));
+    return mounted;
+  }
+  const type = (text) => act(async () => { fireEvent.change(within(dialog()).getByLabelText(/^Səbəb/), { target: { value: text } }); await settle(); });
+  const confirmButton = () => within(dialog()).getByRole("button", { name: "Rədd et" });
+
+  it("holds the dialog until the list is read again, so the rejected set leaves with it and a press meanwhile sends nothing", async () => {
+    const { api } = await toDialog();
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await type(WHY);
+    await press(confirmButton());
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+    expect(dialog()).toBeInTheDocument();                       // the read is out: the dialog is still there …
+    expect(setRows()).toHaveLength(2);                          // … and so is the set
+    await press(confirmButton());
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+    await act(async () => { release(unmatched([OLD])); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  it("a double press sends one request", async () => {
+    let finish;
+    const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockImplementation(() => new Promise((resolve) => { finish = resolve; })) });
+    await type(WHY);
+    fireEvent.click(confirmButton());
+    fireEvent.click(confirmButton());
+    await act(async () => { finish({ rejected: [7, 8] }); await settle(); });
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+  });
+
+  it("a reason the engine finds wrong keeps the dialog open with what she typed", async () => {
+    const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockRejectedValue(
+      refusal(422, "The reason must be 10–200 characters.", { apiCode: "reading_reason_length" })) });
+    await type(WHY);
+    await press(confirmButton());
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+    expect(toasted(`Nömrə ${TYPO}: rədd edilmədi — Səbəb 10–200 simvol olmalıdır.`).length).toBeGreaterThan(0);
+    expect(dialog()).toBeInTheDocument();
+    expect(within(dialog()).getByLabelText(/^Səbəb/)).toHaveValue(WHY);
+  });
+
+  it("a rejection that got no answer says it may have been recorded — never that it was not — and reads the list again", async () => {
+    const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
+    const reads = api.unmatchedReadings.mock.calls.length;
+    await type(WHY);
+    await press(confirmButton());
+    expect(toasted(`Nömrə ${TYPO}: cavab gəlmədi — rədd edilmiş ola bilər. Siyahıya baxın.`).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/rədd edilmədi/)).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.unmatchedReadings.mock.calls.length).toBeGreaterThan(reads);
   });
 });
 

@@ -50,6 +50,13 @@ describe("the unmatched readings, read once for the shell", () => {
     expect(UNMATCHED_POLL_MS).toBe(60_000);
   });
 
+  it("stops reading when the shell goes away", async () => {
+    const { api } = await open();
+    cleanup();
+    await act(async () => { vi.advanceTimersByTime(UNMATCHED_POLL_MS * 3); await settle(); });
+    expect(api.unmatchedReadings).toHaveBeenCalledTimes(1);
+  });
+
   it("a failed read keeps the last sets but no count: a number that may be old is not a count", async () => {
     const { api } = await open();
     api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
