@@ -44,6 +44,24 @@ describe("the device page's words (cihaz)", () => {
     }
   });
 
+  it("says each verdict in the past tense too, for an answer that is no longer fresh — with the same placeholders", () => {
+    const tr = DICTIONARIES.tr;
+    expect(fill(tr["cihaz.notFreshLead"], { time: "10:42" })).toBe("Pano güncel değil · son yanıt 10:42");
+    expect(fill(tr["cihaz.pastFlowing"], { streaming: 3, total: 5 })).toBe("Son yanıtta veri akıyordu · 3/5 monitör veri gönderiyordu");
+    const verdicts = Object.keys(tr).filter((key) => key.startsWith("cihaz.verdict") && key !== "cihaz.verdictTitle");
+    expect(verdicts.length).toBeGreaterThanOrEqual(9);
+    const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+    for (const lang of LANG_CODES) {
+      const d = DICTIONARIES[lang];
+      for (const key of verdicts) {
+        const past = key.replace("cihaz.verdict", "cihaz.past");
+        expect(d[past], `${lang} ${past}`).toBeTruthy();
+        expect(d[past], `${lang} ${past}`).not.toBe(d[key]);
+        expect(holes(d[past]), `${lang} ${past}`).toEqual(holes(d[key]));
+      }
+    }
+  });
+
   it("carries a duration as one phrase, in every language", () => {
     for (const lang of LANG_CODES) {
       const d = DICTIONARIES[lang];

@@ -275,6 +275,7 @@ describe("a board that is not fresh (Decision 18)", () => {
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
   };
   const MARK = "Lövhə yenilənməyib · 14:00";
+  const LEAD = "Lövhə yenilənməyib · son cavab 14:00";
 
   // A sending monitor whose two channels carried a value a moment ago, and a monitor silent for two minutes: a page
   // that kept measuring after its last answer would list both channels as stale within minutes, and count them past
@@ -313,13 +314,35 @@ describe("a board that is not fresh (Decision 18)", () => {
     frozen();
   });
 
-  it("keeps each section's last answer, marked with the answer's time", async () => {
+  it("leads the verdict with «not up to date · last answer», says the old verdict in the past tense, and marks the rest", async () => {
     const mounted = await open(WARD);
     expect(screen.queryByText(MARK)).toBeNull();
+    expect(screen.queryByText(LEAD)).toBeNull();
     await stall(mounted);
-    expect(screen.getAllByText(MARK)).toHaveLength(4);
+    const verdict = region("Məlumat gəlirmi?");
+    expect(verdict.textContent.startsWith(`Məlumat gəlirmi?${LEAD}`)).toBe(true);           // the section leads with it
+    expect(verdict).toHaveTextContent("Son cavabda məlumat axırdı · 2/5 monitordan məlumat gəlirdi");
+    expect(verdict).not.toHaveTextContent("Məlumat axır ·");                                 // no present-tense «all fine»
+    expect(screen.getAllByText(MARK)).toHaveLength(3);                                       // sections 2, 3 and 4
     expect(items("Səssiz monitorlar")).toHaveLength(2);
-    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Məlumat axır · 2/5 monitordan məlumat gəlir");
+  });
+
+  it("says a broken chain's verdict in the past tense too", async () => {
+    const mounted = await open(withLedger(strip({ beds: WARD.beds, unassigned: WARD.unassigned,
+      feed: { state: "forwarder_silent", last_post_at: before(4.2), last_post_age_s: 252 } })));
+    await stall(mounted);
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Son cavabda məlumat gəlmirdi: ötürücü 4 dəqiqədir susurdu");
+    expect(region("Məlumat gəlirmi?")).not.toHaveTextContent("Məlumat gəlmir:");
+  });
+
+  it("keeps the chain's last values as detail, but calls every link's state unknown", async () => {
+    const mounted = await open(WARD);
+    expect(items("Məlumat zənciri").every((line) => line.startsWith("normal "))).toBe(true);
+    await stall(mounted);
+    const lines = items("Məlumat zənciri");
+    for (const line of lines) expect(line).toMatch(/^məlum deyil /);
+    expect(lines[1]).toMatch(/^məlum deyil Ötürücü · son göndəriş 2 san əvvəl · 11 göndərildi, 0 uğursuz$/);
+    expect(lines[2]).toBe("məlum deyil Infinity serveri · 1000 paket alınıb · 0 köhnə və ya təkrar");
   });
 
   it("says nothing is empty from an answer it cannot vouch for", async () => {
@@ -335,6 +358,7 @@ describe("a board that is not fresh (Decision 18)", () => {
     const mounted = await open(WARD);
     mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
-    expect(screen.getAllByText(MARK)).toHaveLength(4);
+    expect(screen.getByText(LEAD)).toBeInTheDocument();
+    expect(screen.getAllByText(MARK)).toHaveLength(3);
   });
 });

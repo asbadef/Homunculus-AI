@@ -52,15 +52,33 @@ function verdictText(t, verdict, key = verdict.key) {
   return t(key);
 }
 
-function Verdict({ t, data, verdict, counts }) {
+/** Each verdict's past-tense twin, said of an answer that is no longer fresh (cihaz.strings.test.js pins the pairs). */
+const PAST = Object.freeze({
+  "cihaz.verdictFlowing": "cihaz.pastFlowing", "cihaz.verdictNoneSending": "cihaz.pastNoneSending",
+  "cihaz.verdictNoMonitors": "cihaz.pastNoMonitors", "cihaz.verdictCountsUnknown": "cihaz.pastCountsUnknown",
+  "cihaz.verdictForwarder": "cihaz.pastForwarder", "cihaz.verdictForwarderNoTime": "cihaz.pastForwarderNoTime",
+  "cihaz.verdictCollector": "cihaz.pastCollector", "cihaz.verdictNever": "cihaz.pastNever",
+  "cihaz.verdictUnknown": "cihaz.pastUnknown",
+});
+
+/** The answer's own time, «HH:MM», for the marks of an answer that is not fresh; «—» for one with none. */
+const stampText = (data) => {
+  const stamp = Date.parse(data?.generated_at ?? "");
+  return Number.isFinite(stamp) ? hhmm(stamp) : "—";
+};
+
+function Verdict({ t, data, verdict, counts, fresh }) {
   const watching = Date.parse(data.watching_since ?? "");
-  const text = verdictText(t, verdict);
+  // An answer that is not fresh is never today's «all fine»: the section leads with «not up to date · last answer»,
+  // and the verdict follows in the past tense, as what that answer said.
+  const text = verdictText(t, verdict, fresh ? verdict.key : PAST[verdict.key]);
   // Only the counts above zero: a «0» would be a list called empty, which is Decision 18's to allow; and none at all
   // under a verdict that does not list (a broken chain, an unknown state or count, an empty hub).
   const parts = counts === null ? []
     : COUNTS.filter(([name]) => counts[name] > 0).map(([name, key]) => t(key, { count: counts[name] }));
   return (
     <>
+      {fresh ? null : <Note>{t("cihaz.notFreshLead", { time: stampText(data) })}</Note>}
       <p className="m-0 text-13 font-semibold">{text}</p>
       {parts.length > 0 ? <p className="m-0 text-13">{parts.join(" · ")}</p> : null}
       {Number.isFinite(watching) ? <p className="m-0 text-12.5 text-mute">{t("cihaz.watchingSince", { time: hhmm(watching) })}</p> : null}
@@ -111,12 +129,14 @@ function chainText(t, line) {
   return line.rejected ? t("cihaz.chainRejected", line.rejected) : t("cihaz.chainRejectedNone");
 }
 
-function ChainList({ t, lines }) {
+/** The chain's links. From an answer that is not fresh each keeps its last values as detail, but its state is
+ *  «unknown»: a link that was up then is not known to be up now. */
+function ChainList({ t, lines, fresh }) {
   return (
     <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
       {lines.map((line) => (
         <li key={line.id} data-chain={line.id} className="flex flex-wrap items-center gap-2 text-13">
-          <StatusPill tone={TONE[line.word]}>{t(WORD[line.word])}</StatusPill>
+          <StatusPill tone={TONE[fresh ? line.word : "unknown"]}>{t(WORD[fresh ? line.word : "unknown"])}</StatusPill>
           {" "}
           <span>{chainText(t, line)}</span>
         </li>
@@ -156,8 +176,7 @@ export function FeedSections({ shadow, mapping = null }) {
   if (!stripOn(data)) return null;
   // Decision 18: only a fresh answer may say a list is empty, and one that is not is marked.
   const fresh = shadow.phase === SHADOW_PHASE.OK && !readUnknown(shadow, nowMs, maxAgeOf(data));
-  const stamp = Date.parse(data.generated_at ?? "");
-  const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: Number.isFinite(stamp) ? hhmm(stamp) : "—" })}</Note>;
+  const mark = fresh ? null : <Note>{t("cihaz.notFresh", { time: stampText(data) })}</Note>;
   // A fresh answer is measured at the server's now; one that is not, frozen at its own instant (measuredAtMs). The
   // chain's ages likewise: aged since the answer arrived only while it is fresh.
   const now = measuredAtMs(data, fresh, nowMs, fetchedAtMs);
@@ -176,8 +195,7 @@ export function FeedSections({ shadow, mapping = null }) {
   return (
     <div className="flex flex-col gap-2.5" data-feed-sections>
       <Section title={t("cihaz.verdictTitle")}>
-        <Verdict t={t} data={data} verdict={verdict} counts={counts} />
-        {mark}
+        <Verdict t={t} data={data} verdict={verdict} counts={counts} fresh={fresh} />
       </Section>
       <Section title={t("cihaz.silentTitle")}>
         {silent.length > 0 ? <SilentList t={t} rows={silent} /> : none("cihaz.silentNone")}
@@ -191,7 +209,7 @@ export function FeedSections({ shadow, mapping = null }) {
         {mark}
       </Section>
       <Section title={t("cihaz.chainTitle")}>
-        <ChainList t={t} lines={chainLines(data, chainNowMs, fetchedAtMs)} />
+        <ChainList t={t} lines={chainLines(data, chainNowMs, fetchedAtMs)} fresh={fresh} />
         {mark}
       </Section>
       {mapping ? (
