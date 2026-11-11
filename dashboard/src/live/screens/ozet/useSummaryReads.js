@@ -7,14 +7,16 @@
 // back — the header's «HH:MM itibarıyla».
 //
 // `useQuality`: `/alarm-quality` for one period, read when the page opens and when the period changes — never on a
-// timer (spec D5 §3: the API rebuilds every episode of the window from the audit trail). The newest read wins.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { SUMMARY_POLL_MS } from "./ozet.js";
+// timer (spec D5 §3: the API rebuilds every episode of the window from the audit trail) — and again on «Yeniden dene»
+// (`retry`, a user's action after a failure). The newest read wins.
+//
+// An answer of the wrong shape — one malformed entry is enough — is a failed read, never a partial count (plan N10;
+// ozet.js `isTasksAnswer`, `isPendingAnswer`).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SUMMARY_POLL_MS, isPendingAnswer, isTasksAnswer } from "./ozet.js";
 
 export const LOADING = Object.freeze({ phase: "loading", data: null, atMs: null, error: null });
 const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
-const isTasks = (answer) => Array.isArray(answer?.patients);
-const isPending = (answer) => Array.isArray(answer?.units);
 const isReport = (answer) => Number.isInteger(answer?.episodes);
 
 export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMMARY_POLL_MS }) {
@@ -44,8 +46,8 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
     };
     const answered = await Promise.all([
       rights.structure ? reloadStructure().then((tree) => tree !== null, () => false) : true,
-      one(rights.tasks, () => store.api.tasks(), isTasks, setTasks),
-      one(rights.pending, () => store.api.pendingHandovers(), isPending, setPending),
+      one(rights.tasks, () => store.api.tasks(), isTasksAnswer, setTasks),
+      one(rights.pending, () => store.api.pendingHandovers(), isPendingAnswer, setPending),
     ]);
     if (current()) {
       if (answered.every(Boolean)) setFullAt(Date.now());
@@ -71,7 +73,9 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
 
 export function useQuality({ store, may, period }) {
   const [read, setRead] = useState(LOADING);
+  const [attempt, setAttempt] = useState(0);
   const seq = useRef(0);
+  const retry = useCallback(() => { setAttempt((n) => n + 1); }, []);
   useEffect(() => {
     if (!may) return undefined;
     seq.current += 1;
@@ -87,6 +91,6 @@ export function useQuality({ store, may, period }) {
       (error) => { if (alive && mine === seq.current) setRead({ phase: "failed", data: null, atMs: null, error }); },
     );
     return () => { alive = false; };
-  }, [store, may, period]);
-  return read;
+  }, [store, may, period, attempt]);
+  return useMemo(() => ({ ...read, retry }), [read, retry]);
 }
