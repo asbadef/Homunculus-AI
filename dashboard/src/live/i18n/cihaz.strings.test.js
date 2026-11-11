@@ -45,4 +45,19 @@ describe("the device page's words (cihaz)", () => {
     expect(az["cihaz.chainForwarder"]).not.toMatch(/Alınan göndəriş/);       // the strip's monitor.feedPosts
     for (const key of ["cihaz.chainCollector", "cihaz.chainCollectorNone"]) expect(az[key]).not.toMatch(/siqnal/i);
   });
+
+  it("names the rail entry «Cihazlar», and every text that names the screen follows it", () => {
+    expect(LANG_CODES.map((lang) => DICTIONARIES[lang]["nav.devices"])).toEqual(
+      LANG_CODES.map((lang) => ({ tr: "Cihazlar", az: "Cihazlar", ru: "Устройства", en: "Devices" })[lang]));
+    for (const lang of LANG_CODES) {
+      const d = DICTIONARIES[lang];
+      expect(d["nav.devicesShort"], lang).toBe(d["nav.devices"]);
+      for (const key of ["kabul.err.bedHasMonitor", "perms.devices.map_beds"]) {
+        expect(d[key], `${lang} ${key}`).toContain(d["nav.devices"]);
+        expect(d[key], `${lang} ${key}`).not.toMatch(/Monitörler|Monitorlar|Мониторы|Monitors/);
+      }
+      // devices.manage opens a screen now: the login screen's «only device management» example is gone.
+      expect(d["auth.notice.noScreen"], lang).not.toMatch(/cihaz|устройств|device/i);
+    }
+  });
 });

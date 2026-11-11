@@ -136,7 +136,7 @@ export default {
     err: {
       bedNotAvailable: "Bu yatak artık boş değil; başka bir yatak seçin.",
       bedReserved: "Bu yatak rezerve edilmiş: kabul için rezervasyonu onaylayın.",
-      bedHasMonitor: "Bu yatağa bir monitör bağlı — önce «Monitörler» ekranında bağlantıyı çözün.",
+      bedHasMonitor: "Bu yatağa bir monitör bağlı — önce «Cihazlar» ekranında bağlantıyı çözün.",
       bedClosed: "Bu yatak, odası ya da birimi kapalı.",
       outOfScope: "Bu yatak sizin birimlerinizden birinde değil.",
       criticalAlarmOpen: "Onaylanmamış kritik alarm var; taburcu başlatılamaz. Önce alarmı görün.",
@@ -303,7 +303,7 @@ export default {
     err: {
       bedNotAvailable: "Bu çarpayı artıq boş deyil; başqa çarpayı seçin.",
       bedReserved: "Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.",
-      bedHasMonitor: "Bu çarpayıya monitor qoşulub — əvvəlcə «Monitorlar» ekranında bağlantını kəsin.",
+      bedHasMonitor: "Bu çarpayıya monitor qoşulub — əvvəlcə «Cihazlar» ekranında bağlantını kəsin.",
       bedClosed: "Bu çarpayı, onun otağı və ya şöbəsi bağlıdır.",
       outOfScope: "Bu çarpayı sizin şöbələrinizdən birində deyil.",
       criticalAlarmOpen: "Təsdiqlənməmiş kritik siqnal var; evə yazılma başladıla bilməz. Əvvəlcə siqnala baxın.",
@@ -465,7 +465,7 @@ export default {
     err: {
       bedNotAvailable: "Эта койка уже не свободна; выберите другую.",
       bedReserved: "Эта койка зарезервирована: подтвердите резерв для приёма.",
-      bedHasMonitor: "К этой койке привязан монитор — сначала отвяжите его на экране «Мониторы».",
+      bedHasMonitor: "К этой койке привязан монитор — сначала отвяжите его на экране «Устройства».",
       bedClosed: "Эта койка, её палата или отделение закрыты.",
       outOfScope: "Эта койка не в одном из ваших отделений.",
       criticalAlarmOpen: "Есть неподтверждённая критическая тревога; выписку начать нельзя. Сначала просмотрите тревогу.",
@@ -626,7 +626,7 @@ export default {
     err: {
       bedNotAvailable: "This bed is no longer free; choose another.",
       bedReserved: "This bed is reserved: confirm the reservation to admit.",
-      bedHasMonitor: "A monitor is assigned to this bed — unassign it first on the Monitors screen.",
+      bedHasMonitor: "A monitor is assigned to this bed — unassign it first on the Devices screen.",
       bedClosed: "This bed, its room or its unit is closed.",
       outOfScope: "This bed is not in one of your units.",
       criticalAlarmOpen: "A critical alarm nobody acknowledged is open; the discharge cannot start. See the alarm first.",

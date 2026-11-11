@@ -45,7 +45,7 @@ const WARD = strip({
 describe("the monitor screen", () => {
   it("names itself and says it shows no patient", async () => {
     await open(WARD);
-    expect(screen.getByRole("heading", { level: 1, name: "Monitorlar" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Cihaz & Məlumat Axını" })).toBeInTheDocument();   // G4-01
     expect(screen.getByText(/Xəstə məlumatı göstərilmir/)).toBeInTheDocument();
   });
 

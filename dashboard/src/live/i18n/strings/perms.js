@@ -41,7 +41,7 @@ export default {
     groups: { manage: "Grupları ve yetki kümelerini yönetir" },
     structure: { manage: "Kurum, tesis, birim, oda ve yatak yapılandırması" },
     devices: { manage: "Cihaz ekranını ve araştırma penceresini açar: başucu monitörlerinin trafiğinden çözülen, cihaz başına canlı değerler — DOĞRULANMAMIŞ. Aşama A bunları klinisyenlere «doğrulanmamış» etiketli bir şerit olarak gösterir; hiçbir zaman gözlem değildir ve bunlardan kural, skor, alarm, bildirim ya da denetim kaydı üretilmez. Hasta göstermez. Varsayılan olarak biyomedikal grubunda ve üreticinin destek grubunda vardır",
-      map_beds: "«Monitörler» ekranında bir başucu monitörünü bir yatağa bağlar ya da bağlantısını çözer — yalnız kendi birimlerindeki yataklar; yatan hastası olan yatak ikinci bir onay ister" },
+      map_beds: "«Cihazlar» ekranında bir başucu monitörünü bir yatağa bağlar ya da bağlantısını çözer — yalnız kendi birimlerindeki yataklar; yatan hastası olan yatak ikinci bir onay ister" },
     // G3-02 — Görevlerim
     tasks: {
       view: "«Görevlerim» kuyruğunu açar; kendi birimlerindeki görevleri ve bir sonraki vital ölçümü okur",
@@ -80,7 +80,7 @@ export default {
     groups: { manage: "Qrupları və səlahiyyət dəstlərini idarə edir" },
     structure: { manage: "Təşkilat, bina, şöbə, otaq və çarpayı konfiqurasiyası" },
     devices: { manage: "Cihaz ekranını və tədqiqat pəncərəsini açır: çarpayı yanındakı monitorların trafikindən deşifrə olunan, hər cihaz üzrə canlı dəyərlər — TƏSDİQLƏNMƏMİŞ. Mərhələ A onları klinik heyətə «təsdiqlənməmiş» işarəli zolaq kimi göstərir; heç vaxt müşahidə deyil və onlardan qayda, bal, siqnal, bildiriş və ya audit qeydi yaradılmır. Xəstə göstərmir. Standart olaraq biotibbi texniklər qrupunda və istehsalçının dəstək qrupunda var",
-      map_beds: "«Monitorlar» ekranında çarpayı yanındakı monitoru çarpayıya qoşur və ya bağlantısını kəsir — yalnız öz şöbələrindəki çarpayılar; xəstəsi yatan çarpayı ikinci təsdiq istəyir" },
+      map_beds: "«Cihazlar» ekranında çarpayı yanındakı monitoru çarpayıya qoşur və ya bağlantısını kəsir — yalnız öz şöbələrindəki çarpayılar; xəstəsi yatan çarpayı ikinci təsdiq istəyir" },
     // G3-02 — Görevlerim
     tasks: {
       view: "«Tapşırıqlarım» növbəsini açır; öz şöbələrindəki tapşırıqları və növbəti vital ölçməni oxuyur",
@@ -119,7 +119,7 @@ export default {
     groups: { manage: "Управляет группами и их наборами прав" },
     structure: { manage: "Настройка организации, корпусов, отделений, палат и коек" },
     devices: { manage: "Открывает экран устройств и окно исследования: значения по каждому устройству в реальном времени, декодированные из трафика прикроватных мониторов, — НЕ ВАЛИДИРОВАНЫ. На этапе A они показываются клиницистам как блок с пометкой «не валидировано»; это никогда не наблюдение, и из них не создаются ни правила, ни шкалы, ни тревоги, ни уведомления, ни записи аудита. Пациентов не показывает. По умолчанию это право есть у группы биомедицинских техников и у группы поддержки производителя",
-      map_beds: "Привязывает прикроватный монитор к койке или отвязывает его на экране «Мониторы» — только койки своих отделений; для койки с госпитализированным пациентом нужно второе подтверждение" },
+      map_beds: "Привязывает прикроватный монитор к койке или отвязывает его на экране «Устройства» — только койки своих отделений; для койки с госпитализированным пациентом нужно второе подтверждение" },
     // G3-02 — Görevlerim
     tasks: {
       view: "Открывает очередь «Мои задачи»; читает задачи своих отделений и следующее измерение витальных",
@@ -158,7 +158,7 @@ export default {
     groups: { manage: "Manage groups and their permission sets" },
     structure: { manage: "Configure the tenant, sites, units, rooms and beds" },
     devices: { manage: "Open the device screen and the research window: live per-device values decoded from bedside-monitor traffic — UNVALIDATED. Stage A shows them to clinicians as a strip labelled unvalidated; they are never an observation, and no rule, score, alert, notification or audit row is made from them. Shows no patient. By default the biomedical group and the vendor's support group hold it",
-      map_beds: "Assign a bedside monitor to a bed, or unassign it, on the Monitors screen — beds in their own units only; a bed with an admitted patient asks for a second confirmation" },
+      map_beds: "Assign a bedside monitor to a bed, or unassign it, on the Devices screen — beds in their own units only; a bed with an admitted patient asks for a second confirmation" },
     // G3-02 — Görevlerim
     tasks: {
       view: "Open the «My tasks» queue; read the tasks of one's own units and the next vital measurement",

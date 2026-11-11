@@ -8,7 +8,7 @@ export default {
     alarms: "Alarmlar", alarmsShort: "Alarm",
     patient: "Hasta",
     admin: "Yönetim", adminShort: "Yönetim",
-    devices: "Monitörler", devicesShort: "Monitörler", // Aşama A: biomedical's device-only screen
+    devices: "Cihazlar", devicesShort: "Cihazlar", // G4-01: «Cihaz & Veri Akışı» (cihaz.title) — was «Monitörler»
     settings: "Ayarlar", settingsShort: "Ayarlar",
   },
   az: {
@@ -16,7 +16,7 @@ export default {
     alarms: "Siqnallar", alarmsShort: "Siqnal",
     patient: "Xəstə",
     admin: "İdarə", adminShort: "İdarə",
-    devices: "Monitorlar", devicesShort: "Monitorlar",
+    devices: "Cihazlar", devicesShort: "Cihazlar",
     settings: "Ayarlar", settingsShort: "Ayarlar",
   },
   ru: {
@@ -24,7 +24,7 @@ export default {
     alarms: "Тревоги", alarmsShort: "Тревоги",
     patient: "Пациент",
     admin: "Управление", adminShort: "Управл.",
-    devices: "Мониторы", devicesShort: "Мониторы",
+    devices: "Устройства", devicesShort: "Устройства",
     settings: "Настройки", settingsShort: "Настр.",
   },
   en: {
@@ -32,7 +32,7 @@ export default {
     alarms: "Alarms", alarmsShort: "Alarms",
     patient: "Patient",
     admin: "Admin", adminShort: "Admin",
-    devices: "Monitors", devicesShort: "Monitors",
+    devices: "Devices", devicesShort: "Devices",
     settings: "Settings", settingsShort: "Settings",
   },
 };

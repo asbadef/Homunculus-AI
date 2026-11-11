@@ -64,7 +64,7 @@ export default {
       lockExpired: "Ekran çok uzun süre kilitli kaldı; oturum kapatıldı. Yeniden giriş yapın.",
       passwordReset: "Şifreniz yönetici tarafından sıfırlandı; oturum kapatıldı. Size verilen geçici şifreyle yeniden giriş yapın.",
       noPermissions: "Hesabınıza bu hastanede bir yetki tanımlanmamış. Sistem yöneticinizle görüşün.",
-      noScreen: "Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor (ör. yalnız cihaz yönetimi). Sistem yöneticinizle görüşün.",
+      noScreen: "Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor. Sistem yöneticinizle görüşün.",
     },
   },
   az: {
@@ -123,7 +123,7 @@ export default {
       lockExpired: "Ekran çox uzun müddət kilidli qaldı; sessiya bağlandı. Yenidən daxil olun.",
       passwordReset: "Şifrəniz administrator tərəfindən sıfırlanıb; sessiya bağlandı. Sizə verilən müvəqqəti şifrə ilə yenidən daxil olun.",
       noPermissions: "Hesabınıza bu xəstəxanada heç bir səlahiyyət təyin edilməyib. Sistem administratorunuza müraciət edin.",
-      noScreen: "Hesabınızın səlahiyyətləri bu interfeysdəki ekranların heç birini açmır (məs. yalnız cihaz idarəsi). Sistem administratorunuza müraciət edin.",
+      noScreen: "Hesabınızın səlahiyyətləri bu interfeysdəki ekranların heç birini açmır. Sistem administratorunuza müraciət edin.",
     },
   },
   ru: {
@@ -182,7 +182,7 @@ export default {
       lockExpired: "Экран был заблокирован слишком долго; сеанс закрыт. Войдите снова.",
       passwordReset: "Администратор сбросил ваш пароль; сеанс закрыт. Войдите снова с выданным вам временным паролем.",
       noPermissions: "Вашей учётной записи не назначены права в этой больнице. Обратитесь к системному администратору.",
-      noScreen: "Права вашей учётной записи не открывают ни одного экрана этого интерфейса (например, только управление устройствами). Обратитесь к системному администратору.",
+      noScreen: "Права вашей учётной записи не открывают ни одного экрана этого интерфейса. Обратитесь к системному администратору.",
     },
   },
   en: {
@@ -241,7 +241,7 @@ export default {
       lockExpired: "The screen stayed locked too long; the session was closed. Please sign in again.",
       passwordReset: "An administrator reset your password; the session was closed. Sign in again with the temporary password you were given.",
       noPermissions: "Your account has no rights in this hospital. Contact your system administrator.",
-      noScreen: "Your account's rights open none of this interface's screens (for example, device management only). Contact your system administrator.",
+      noScreen: "Your account's rights open none of this interface's screens. Contact your system administrator.",
     },
   },
 };

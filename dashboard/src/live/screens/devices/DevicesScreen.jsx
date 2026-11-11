@@ -113,7 +113,7 @@ export function DevicesScreen() {
   return (
     <div className="flex min-h-0 max-w-[1200px] flex-col gap-3">
       <div>
-        <h1 className="m-0 font-display text-23 font-bold">{t("nav.devices")}</h1>
+        <h1 className="m-0 font-display text-23 font-bold">{t("cihaz.title")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
       <FeedSections shadow={shadow} mapping={mapping} />
