@@ -663,6 +663,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  countersignature — {units: [{unit_id, unit_name, pending, oldest_outgoing_signed_at}], generated_at}. Units
      *  with none are left out. Counts and times only: no patient, no note, no person. Nothing goes on the address. */
     pendingHandovers() { return authed("/handovers/pending"); },
+    /** G4-03 (spec D4), `quality.view`: «Kalite göstergeleri» over the last `days` (1, 7 or 30) — per unit, alarm
+     *  response, snoozes, RRT calls and handover countersignatures; the unplaced and the hospital's sums. Counts and
+     *  times only: no patient, no person, no free text. */
+    qualityIndicators(days = 7) { return authed(`/quality?days=${encodeURIComponent(days)}`); },
     /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
     openHandover({ unitId, incomingUserId, admissionId }) {
       return authed("/handovers", {

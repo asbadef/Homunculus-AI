@@ -522,6 +522,21 @@ describe("backendApi — what the work screens call", () => {
     expect(init.body).toBeUndefined();
   });
 
+  // G4-03 (spec D4): «Kalite göstergeleri» — per unit, alarm response, snoozes, RRT calls, handover countersignatures.
+  it("reads the quality indicators for a period with an authed GET /quality?days=, 7 by default", async () => {
+    const answer = { days: 30, units: [] };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(answer)));
+    const api = signedIn(fetchMock);
+    expect(await api.qualityIndicators(30)).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/quality?days=30");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(init.body).toBeUndefined();
+    await api.qualityIndicators();
+    expect(fetchMock.mock.calls[1][0]).toBe("/quality?days=7");
+  });
+
   it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
     const row = { id: "h-1", status: "OPEN" };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));

@@ -138,6 +138,8 @@ export function fakeApi(vi, { access = null } = {}) {
     handoverColleagues: vi.fn(),
     // G4-02: «Yönetici özeti» (screens/ozet) — each unit's handovers waiting for a countersignature
     pendingHandovers: vi.fn(),
+    // G4-03: «Kalite göstergeleri» (screens/kalite)
+    qualityIndicators: vi.fn(),
     openHandover: vi.fn(),
     signHandover: vi.fn(),
     countersignHandover: vi.fn(),
