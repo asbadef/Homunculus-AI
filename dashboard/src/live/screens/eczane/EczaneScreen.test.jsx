@@ -128,7 +128,7 @@ describe("the pharmacy page", () => {
     expect(cell("S-003", "antibiotic").querySelector("[data-tone]").dataset.tone).toBe("crit");
     // S-004's record is `false` — something was charted that the rule does not count — so its second line says what
     // is missing (review F5); the state word and the tone are those of a row with no record at all.
-    expect(cell("S-004", "antibiotic")).toHaveTextContent(`Müddət gedir · 20 dəq qalıbaşkarlanma ${clock(40)} · aşkarlanmadan sonra sayılan tətbiq qeydi yoxdur`);
+    expect(cell("S-004", "antibiotic")).toHaveTextContent(`Müddət gedir · 20 dəq qalıbaşkarlanma ${clock(39.5)} · aşkarlanmadan sonra sayılan tətbiq qeydi yoxdur`);
     expect(cell("S-004", "antibiotic").querySelector("[data-tone]").dataset.tone).toBe("high");
     expect(cell("S-003", "antibiotic").textContent).not.toContain("sayılan");          // `given` null: nothing was charted
     expect(cell("S-001", "antibiotic").textContent).toBe(`Yerinə yetirilib · ${clock(170)}`);
@@ -280,10 +280,10 @@ describe("a list that is not fresh", () => {
     expect(document.querySelector("[data-as-of]").textContent).toBe(`son cavab ${clock(0)} vəziyyətinə görə`);
     expect(bodyRows()).toHaveLength(6);
     expect(cell("S-003", "antibiotic")).toHaveTextContent(`Son cavabda müddət keçmişdi · bitmə ${clock(25)}`);
-    expect(cell("S-004", "antibiotic")).toHaveTextContent(`Son cavabda müddət gedirdi · bitmə ${clock(-20)}`);
+    expect(cell("S-004", "antibiotic")).toHaveTextContent(`Son cavabda müddət gedirdi · bitmə ${clock(-20.5)}`);
     // the second lines stand as they were: the plain one for no record at all, the qualified one for a `false` record (F5)
     expect(cell("S-003", "antibiotic").lastElementChild.textContent).toBe(`aşkarlanma ${clock(85)} · tətbiq qeydi yoxdur`);
-    expect(cell("S-004", "antibiotic").lastElementChild.textContent).toBe(`aşkarlanma ${clock(40)} · aşkarlanmadan sonra sayılan tətbiq qeydi yoxdur`);
+    expect(cell("S-004", "antibiotic").lastElementChild.textContent).toBe(`aşkarlanma ${clock(39.5)} · aşkarlanmadan sonra sayılan tətbiq qeydi yoxdur`);
     expect(table().textContent).not.toMatch(/Müddət keçib ·|Müddət gedir ·|dəq qalıb|əvvəl/);
     expect([...cell("S-001", "pressors").children].map((el) => el.textContent)).toEqual([
       `noradrenalin 0.12 mkq/kq/dəq · ${clock(20)}`, `dopamin dayandırıldı · ${clock(180)}`]);

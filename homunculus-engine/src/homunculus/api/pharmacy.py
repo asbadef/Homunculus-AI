@@ -32,6 +32,7 @@ ANTIBIOTIC_WINDOW_SOURCE = "surviving-sepsis-campaign-2026"
 #: The two states whose clock is still unanswered: they lead the page and carry `remaining_sec` (spec D10, §3.1).
 CLOCK_OPEN = ("running", "missed")
 _DIGITS = re.compile(r"(\d+)")
+_NO_DECOMPOSITION = str.maketrans({"ı": "i", "ə": "e"})
 
 
 def _iso(at: datetime | None) -> str | None:
@@ -110,8 +111,11 @@ def row_of(card: dict, fluid: dict | None) -> dict:
 
 def _base(text: str) -> str:
     """Letters as the board's collator compares them at `sensitivity: "base"`: no diacritic and no case — «Ç» with
-    «C», «Ö» with «O». The combining marks are dropped from the canonical decomposition, then the case is folded."""
-    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)).casefold()
+    «C», «Ö» with «O». The combining marks are dropped from the canonical decomposition, then the case is folded.
+    «ı» and «ə» have no decomposition and would stay after «z»; the collator puts them beside i and e, so they are
+    folded by hand (Turkish and Azerbaijani bed labels)."""
+    folded = "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)).casefold()
+    return folded.translate(_NO_DECOMPOSITION)
 
 
 def _natural(label: str) -> tuple:

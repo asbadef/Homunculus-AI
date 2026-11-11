@@ -243,6 +243,16 @@ class TestTheOrder:
                 _row("S-5", bed="ic 1", unit="u1")]
         assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-5", "S-4", "S-3", "S-1", "S-2"]
 
+    def test_dotless_i_and_schwa_order_with_i_and_e(self):
+        """«ı» and «ə» have no canonical decomposition, so dropping combining marks leaves them after «z»; the
+        board's collator puts them beside i and e — «Ki 3, Kısım 2, Kz 1», «Ce 2, Cərrahi 1, Cz 1»."""
+        rows = [_row("S-1", bed="Kz 1", unit="u1"), _row("S-2", bed="Kısım 2", unit="u1"),
+                _row("S-3", bed="Ki 3", unit="u1")]
+        assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-3", "S-2", "S-1"]
+        rows = [_row("S-1", bed="Cz 1", unit="u1"), _row("S-2", bed="Cərrahi 1", unit="u1"),
+                _row("S-3", bed="Ce 2", unit="u1"), _row("S-4", bed="CƏRRAHİ 3", unit="u1")]
+        assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-3", "S-2", "S-4", "S-1"]
+
     def test_a_label_of_digits_and_one_of_letters_compare_without_an_error(self):
         rows = [_row("S-1", bed="B", unit="u1"), _row("S-2", bed="12", unit="u1"), _row("S-3", bed="²", unit="u1")]
         assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-2", "S-1", "S-3"]
