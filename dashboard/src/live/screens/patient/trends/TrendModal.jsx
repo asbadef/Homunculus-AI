@@ -36,7 +36,7 @@ import { Announce, Modal, Seg } from "../../../ui/index.js";
 import { nameOf } from "../../common/BoardState.jsx";
 import { RetractDialog } from "../../common/RetractDialog.jsx";
 import { CorrectDialog } from "../readings/CorrectDialog.jsx";
-import { sourceText } from "../readings/ReadingsBox.jsx";
+import { sourceText, wordsOf } from "../readings/ReadingsBox.jsx";
 import { cardTitle, channelsOf } from "./cards.js";
 import { TrendChart } from "./TrendChart.jsx";
 import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
@@ -134,8 +134,11 @@ function step(key, stops, ms) {
   return null;
 }
 
-export function TrendModal({ card, patient, bed, onClose, canRetract = false, onRetract, onChart }) {
-  const { t } = useI18n();
+/** `nowMs` is the patient screen's clock (the box's, as the record box hands its own to the same dialog); a dialog
+ *  mounted without a finite one falls back to the browser's. */
+export function TrendModal({ card, patient, bed, onClose, canRetract = false, onRetract, onChart, nowMs }) {
+  const { t, lang } = useI18n();
+  const clockMs = Number.isFinite(nowMs) ? nowMs : Date.now();
   const hintId = useId();
   const controls = useRef(null);
   const [hours, setHours] = useState(24);
@@ -316,11 +319,11 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
       ) : null}
       {correcting ? (
         <CorrectDialog
-          bed={bed} nowMs={Date.now()}
+          bed={bed} nowMs={clockMs}
+          // The value is named and written as the record box names it (`wordsOf`), so the dialog reads alike from both.
           what={{
-            code: correcting.series.key, label: t(correcting.series.labelKey),
-            value: `${correcting.entry.value} ${t(correcting.series.unitKey)}`,
-            time: dayStamp(correcting.entry.ms, Date.now()), observedMs: correcting.entry.ms,
+            code: correcting.series.key, ...wordsOf(t, lang, { code: correcting.series.key, value: correcting.entry.value }),
+            time: dayStamp(correcting.entry.ms, clockMs), observedMs: correcting.entry.ms,
             source: sourceText(t, "device", correcting.entry.source, null),
           }}
           onRetract={(reason) => onRetract(correcting.entry.entry, reason)}

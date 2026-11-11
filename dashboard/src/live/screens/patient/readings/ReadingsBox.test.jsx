@@ -450,3 +450,28 @@ describe("«Düzelt» — the 24 hour bound while the dialog is open", () => {
     expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "heart_rate", value: 78 }], new Date(AGING_AT).toISOString());
   });
 });
+
+describe("a write made elsewhere on the screen (the trend table's «Düzelt»)", () => {
+  // The screen counts such writes, as it does for the SOFA and fluid boxes: `{ id, n }`.
+  function Host() {
+    const [reread, setReread] = React.useState({ id: "S-001", n: 0 });
+    return (
+      <>
+        <button type="button" onClick={() => setReread((r) => ({ id: "S-001", n: r.n + 1 }))}>mine</button>
+        <button type="button" onClick={() => setReread((r) => ({ id: "S-009", n: r.n + 1 }))}>another's</button>
+        <ReadingsBox patientId="S-001" bed={BED} nowMs={NOW} canChart reread={reread} />
+      </>
+    );
+  }
+
+  it("reads the record again for this patient — not on mount, and not for another patient's write", async () => {
+    const { api } = await open({ host: <Host /> });
+    const mounted = api.patientReadings.mock.calls.length;
+    await press(screen.getByRole("button", { name: "another's" }));
+    expect(api.patientReadings.mock.calls.length).toBe(mounted);
+    await press(screen.getByRole("button", { name: "mine" }));
+    expect(api.patientReadings.mock.calls.length).toBe(mounted + 1);
+    await press(screen.getByRole("button", { name: "mine" }));
+    expect(api.patientReadings.mock.calls.length).toBe(mounted + 2);
+  });
+});

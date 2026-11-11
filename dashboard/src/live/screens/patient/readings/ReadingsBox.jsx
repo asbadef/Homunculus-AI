@@ -15,7 +15,7 @@
 //
 // The shell keeps the patient screen mounted across a move to another patient (no `key`), so the box remembers
 // WHOSE dialog it opened: one opened on a patient is never shown on the next (the fluid box's rule).
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../../i18n/dates.js";
 import { numberText } from "../../../i18n/numbers.js";
@@ -42,8 +42,9 @@ export function sourceText(t, origin, source, recordedBy) {
   return source ? t("kayit.sourceDevice", { device: source }) : t("kayit.sourceDeviceUnnamed");
 }
 
-/** A value's name and text: the bedside form's own for a code it knows; else the engine's code and number. */
-function wordsOf(t, lang, reading) {
+/** A value's name and text: the bedside form's own for a code it knows; else the engine's code and number. The trend
+ *  table's «Düzelt» dialog names a value with this too, so the dialog reads the same from either screen. */
+export function wordsOf(t, lang, reading) {
   const spec = specOf(reading.code);
   if (spec) return { label: t(spec.labelKey), value: valueText(t, reading.code, reading.value, lang) };
   const number = typeof reading.value === "number" ? numberText(lang, reading.value) : "—";
@@ -114,12 +115,22 @@ function Sets({ data, nowMs, onCorrect }) {
 
 /** `patientId` is whose record this is; `bed` names the patient in the dialog and on its toasts (never the
  *  patient's name, Decision 14); `nowMs` is the screen's clock; `canChart` (`clinical.chart`) offers «Düzelt» —
- *  absent otherwise. `onWritten(patientId)` tells the screen a value moved (the SOFA box and the trends re-read). */
-export function ReadingsBox({ patientId, bed, nowMs = Date.now(), canChart = false, onWritten }) {
+ *  absent otherwise. `onWritten(patientId)` tells the screen a value moved (the SOFA box and the trends re-read).
+ *  `reread` is `{ id, n }`: the screen's word that a write made elsewhere on it (a withdrawal or a corrected device
+ *  reading in the trend table) landed for patient `id` — the record reads again, as the fluid box's `reread`. */
+export function ReadingsBox({ patientId, bed, nowMs = Date.now(), canChart = false, onWritten, reread = null }) {
   const { t } = useI18n();
   const board = useBoard();
   const [hours, setHours] = useState(24);
   const { data, error, refresh } = useReadings(patientId, hours);
+  // Read again after a write elsewhere on the screen for THIS patient. Not on mount, not for one count twice.
+  const seenReread = useRef(reread?.n ?? 0);
+  useEffect(() => {
+    const n = reread?.n ?? 0;
+    if (n === seenReread.current) return;
+    seenReread.current = n;
+    if (reread.id === patientId) refresh();
+  }, [reread?.n]);
   // `{ id, what, entry }`: the value whose «Düzelt» is open, and whose patient it is.
   const [correcting, setCorrecting] = useState(null);
   useEffect(() => { setCorrecting(null); }, [patientId]);

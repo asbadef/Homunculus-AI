@@ -25,7 +25,9 @@ import { TrendCard } from "./TrendCard.jsx";
 import { TrendModal } from "./TrendModal.jsx";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
-/** `onWritten(patientId)` is told when a withdrawal the engine took has answered (G3-01): the screen's SOFA box reads again. */
+/** `onWritten(patientId)` is told when a write from the big chart's table has answered (G3-01's withdrawal, and G3-05's
+ *  corrected device reading: its withdrawal, and its right value as a hand entry): the screen's SOFA box and its
+ *  measurement record read again. */
 export function TrendsBox({ patient, bed, nowMs, onWritten }) {
   const { t } = useI18n();
   const { user } = useSession();
@@ -107,7 +109,7 @@ export function TrendsBox({ patient, bed, nowMs, onWritten }) {
         // The box reads its own 24 hours again after a withdrawal, whatever its ending: a value that was not the latest
         // moves no measured instant, so the card would keep a delta from it, and its mini chart an axis stretched by
         // it (X16), until the next poll. The store's own promise goes back to the dialog — its answer or its error.
-        <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} canRetract={canRetract}
+        <TrendModal card={card} patient={patient} bed={bed} nowMs={nowMs} onClose={() => setOpen(null)} canRetract={canRetract}
           onRetract={(entry, reason) => board.store.retract(patient.patient_id, entry, reason)
             .then((answer) => {
               if (answer !== null) onWritten?.(patient.patient_id);

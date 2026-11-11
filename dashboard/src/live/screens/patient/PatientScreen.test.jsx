@@ -8,7 +8,8 @@ import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
-import { answering, channel, hand, point, trends } from "./trends/trends.testutil.js";
+import { answering, channel, dev, hand, point, trends } from "./trends/trends.testutil.js";
+import { readings } from "./readings/readings.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
 import { emptyFluids, fluids } from "./fluids/fluids.testutil.js";
 import { RETRACT_ARM_MS } from "../common/RetractDialog.jsx";
@@ -264,6 +265,31 @@ describe("the patient screen", () => {
       expect(api.retractEntry).toHaveBeenCalledWith("S-001", 41, "yazım hatası, 80 idi");
       expect(api.severityForm.mock.calls.length).toBe(reads + 1);
       expect(sofaBox()).toHaveTextContent(/Forma cəmi\s*1/);
+    });
+
+    // G3-05 (D16): the record box is told too: a correction made in the trend table moved what it lists.
+    it("reads the measurement record again after a «Düzelt» from the trend chart's table", async () => {
+      const { api } = await open({
+        payload: TWO(), perms: CHART,
+        setup: (a) => {
+          a.patientReadings.mockImplementation((pid, hours) => Promise.resolve(readings(pid, hours)));
+          a.patientTrends.mockImplementation(answering((pid, hours) => trends(pid, [
+            channel("heart_rate", [point(120, 84, 0)], { device: [dev(71, 120, 84)] })], { hours })));
+          a.retractEntry.mockResolvedValue({ retracted: 71, code: "heart_rate", alerts: [] });
+        },
+      });
+      await press(screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ }));
+      const chartDialog = screen.getByRole("dialog", { name: /Nəbz$/ });
+      await press(within(chartDialog).getByRole("button", { name: "Cədvəl" }));
+      const reads = api.patientReadings.mock.calls.length;
+      await press(within(chartDialog).getByRole("button", { name: "Düzəlt" }));
+      const correct = screen.getByRole("dialog", { name: "Düzəlt · REA-01 · 2" });
+      fireEvent.change(within(correct).getByLabelText(/^Səbəb/), { target: { value: "yazım hatası, 80 idi" } });
+      await wait(RETRACT_ARM_MS + 50);
+      await press(within(correct).getByRole("button", { name: "Düzəlt" }));
+      expect(api.retractEntry).toHaveBeenCalledWith("S-001", 71, "yazım hatası, 80 idi");
+      expect(api.patientReadings.mock.calls.length).toBe(reads + 1);
+      expect(api.patientReadings).toHaveBeenLastCalledWith("S-001", 24);
     });
 
     it("takes the focus into the saved step when the form gives way to it, instead of dropping it on the page", async () => {

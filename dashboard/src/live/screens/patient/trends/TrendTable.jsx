@@ -15,13 +15,15 @@
 //
 // G3-05 (D16): a reading a device sent says «cihaz», and to a `clinical.chart` holder offers «Düzelt» (the host
 // opens it, `onCorrect`) on a value of the bedside set. A withdrawn device reading is a struck row like a hand
-// entry's, and says «cihaz». A reading that is both lists (the same instant and value) is shown as the hand entry.
+// entry's, and says «cihaz». The points carry no id, so each trail entry is given to ONE point (`entriesOfPoints`):
+// of two points at one instant with one value — two devices', or a hand entry's beside a device's — each row names
+// its own entry and says its own word, and «Düzelt» / «Hatalı giriş» on it aims at that entry.
 import React, { useId } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Button, FOCUS_RING, Table } from "../../../ui/index.js";
 import { isBedsideCode } from "../../bedside/vitalsFields.js";
 import { cardTitle } from "./cards.js";
-import { deviceEntryOf, handEntryOf } from "./trendGeometry.js";
+import { entriesOfPoints } from "./trendGeometry.js";
 import { markText, pointsText, whenText } from "./trendText.js";
 
 /** The table's rows, newest first. A reading with no value is not one (the chart draws no dot for it).
@@ -39,12 +41,15 @@ function rowsOf(card, series, markers) {
     return n === 0 ? base : `${base}#${n}`;
   };
   const rows = [
-    ...card.series.flatMap((s, i) => (series[i]?.points ?? []).flatMap((p, j) => (
-      Number.isFinite(p.value) && Number.isFinite(p.ms)
-        ? [{ ms: p.ms, rank: i, order: j, key: keyed(`${s.key}-${p.iso}`), series: s, p, hand: handEntryOf(series[i]?.manual, p),
-          device: deviceEntryOf(series[i]?.device, p) }]
-        : []
-    ))),
+    ...card.series.flatMap((s, i) => {
+      const points = series[i]?.points ?? [];
+      const entries = entriesOfPoints(points, series[i]?.manual, series[i]?.device);
+      return points.flatMap((p, j) => (
+        Number.isFinite(p.value) && Number.isFinite(p.ms)
+          ? [{ ms: p.ms, rank: i, order: j, key: keyed(`${s.key}-${p.iso}`), series: s, p, hand: entries[j].hand, device: entries[j].device }]
+          : []
+      ));
+    }),
     // G3-01 (D13): after the readings of its instant, each withdrawn hand entry of the series.
     ...card.series.flatMap((s, i) => (series[i]?.withdrawn ?? []).map((m) => (
       { ms: m.ms, rank: i, order: -1, key: keyed(`${s.key}-withdrawn-${m.entry}`), series: s, withdrawn: m }))),

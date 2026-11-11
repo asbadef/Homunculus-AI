@@ -114,10 +114,41 @@ export function parseDevice(raw) {
 }
 
 /** The device reading a drawn point is — not withdrawn, at its instant, with its value — or null (`handEntryOf`'s
- *  rule, for the other source). */
+ *  rule, for the other source). It answers for ONE point alone and gives the same entry to every point that fits:
+ *  the table, which lists every point, asks `entriesOfPoints` instead. */
 export function deviceEntryOf(device, point) {
   if (!point || !Array.isArray(device)) return null;
   return device.find((d) => d.retracted === null && d.ms === point.ms && d.value === point.value) ?? null;
+}
+
+/** G3-05 (D16, review): WHICH trail entry each drawn point is, one to one. `handEntryOf` and `deviceEntryOf` answer
+ *  for one point alone, so two points that share an instant and a value (two devices; a hand entry beside a device's
+ *  reading) would all find the FIRST entry that fits: the second one unreachable, «Düzelt» on either aimed at the
+ *  first. Here an entry is given to ONE point: for each point, in order, the first unused hand entry that fits, else
+ *  the first unused device reading that fits. The candidates are kept by `instant|value` so the pass is linear.
+ *  Returns, per point, `{ hand, device }` — at most one of them an entry, the other null. */
+export function entriesOfPoints(points, manual, device) {
+  const keyOf = (ms, value) => `${ms}|${value}`;
+  const byInstant = (entries) => {
+    const map = new Map();
+    for (const e of Array.isArray(entries) ? entries : []) {
+      if (e.retracted !== null) continue;       // a withdrawn entry is drawn nowhere as a point
+      const key = keyOf(e.ms, e.value);
+      const list = map.get(key);
+      if (list) list.push(e);
+      else map.set(key, [e]);
+    }
+    return map;
+  };
+  const hands = byInstant(manual);
+  const devices = byInstant(device);
+  // Taking the head of the list is what marks an entry used: it is in no list the next point looks at.
+  const take = (map, point) => map.get(keyOf(point.ms, point.value))?.shift() ?? null;
+  return (Array.isArray(points) ? points : []).map((p) => {
+    if (!p || !Number.isFinite(p.ms) || !Number.isFinite(p.value)) return { hand: null, device: null };
+    const hand = take(hands, p);
+    return { hand, device: hand ? null : take(devices, p) };
+  });
 }
 
 /** [sinceMs, untilMs] onto [left, right]. */

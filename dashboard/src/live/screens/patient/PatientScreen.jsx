@@ -331,6 +331,13 @@ export function PatientScreen({ params }) {
   // writers say so, with whose it was; the SOFA box reads again for the patient it shows (sofa/SofaBox.jsx `reread`).
   const [sofaReread, setSofaReread] = useState({ id: null, n: 0 });
   const sofaMayHaveMoved = useCallback((patientId) => setSofaReread((last) => ({ id: patientId, n: last.n + 1 })), []);
+  // G3-05 (D16): a withdrawal or a corrected device reading made in the trend table changes the measurement record too:
+  // the record box reads again for the patient it shows (readings/ReadingsBox.jsx `reread`), beside the SOFA box.
+  const [readingsReread, setReadingsReread] = useState({ id: null, n: 0 });
+  const trendWritten = useCallback((patientId) => {
+    sofaMayHaveMoved(patientId);
+    setReadingsReread((last) => ({ id: patientId, n: last.n + 1 }));
+  }, [sofaMayHaveMoved]);
   // G3-03 (D12): a Meds box save (the bolus — the same record the fluid ledger sums — or the weight its urine rate
   // divides by) is followed by a read of the Sıvı box, for the patient it was written for, as the SOFA box's reread.
   const [fluidsReread, setFluidsReread] = useState({ id: null, n: 0 });
@@ -450,7 +457,7 @@ export function PatientScreen({ params }) {
             right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
-          <ReadingsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} onWritten={sofaMayHaveMoved} />{/* G3-05 (D16): the measurement record */}
+          <ReadingsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} onWritten={sofaMayHaveMoved} reread={readingsReread} />{/* G3-05 (D16): the measurement record */}
 
           {monitor ? (
             <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}
@@ -496,7 +503,7 @@ export function PatientScreen({ params }) {
               patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
           <SofaBox patientId={id} bed={bed} nowMs={nowMs} reread={sofaReread} />
 
-          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} />
+          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} onWritten={trendWritten} />
         </>
       )}
     </div>
