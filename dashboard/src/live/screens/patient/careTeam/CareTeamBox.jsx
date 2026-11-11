@@ -4,10 +4,15 @@
 // Who is responsible for this patient: the attending (one, D2), the associates and the on-call
 // physicians, by name and never by id.
 //
-// - A session without `admissions.view` reads nothing and shows nothing. The box finds the admission as
-//   SignOffStrip does: the open admission of the caller's units whose board key is this card's. Another
-//   unit's patient, whom the board may show a member from outside her units, has no box (spec §7).
-// - A DRAFT says the attending comes with the signature (D3).
+// - A session without `admissions.view` reads nothing and shows nothing. The admission is the open one of
+//   the caller's units whose board key is this card's. The patient screen reads the open admissions ONCE
+//   and hands the box the row (`admission`, a row or null) and the read's `phase`, as it hands them to the
+//   sign-off strip and the label reprint (G2-B1c, Task 16 review); without `admission` (undefined) the box
+//   reads them itself. Another unit's patient, whom the board may show a member from outside her units,
+//   has no box (spec §7). If the admissions could not be read at all, one muted line says so, rather than
+//   the box not being there without a word (as LabelReprint's F-18).
+// - A DRAFT says the attending comes with the signature (D3). The team is read again when the admission's
+//   state or its attending changes: the admissions list is the one thing polled, and it carries both.
 // - Each active member: her name, her role, an on-call window with «süresi doldu» once it has passed,
 //   and who added her. The attending's row has no remove: it ends when another attending is made (T5).
 // - «Önceki üyeler (n)», folded: the closed rows, each with when it ended.
@@ -16,11 +21,13 @@
 // - One write at a time. The pressed button is held until its write AND the re-read after it are in
 //   (A-17); a second press does nothing. A success is said on the toast and under the list; a refusal
 //   on the toast alone (screens/admin/refusal.js, X7). The team is read again after either. The re-read
-//   never throws: AddMemberDialog awaits `onDone` inside the try of its add, and a throw from here would
-//   be told to the reader as a refusal of an add that had landed. A read that fails says so in the box.
-// - When a write takes the pressed button away (its row left the team), the focus that fell to <body>
-//   goes to the box's heading. A focus the reader has moved since is left where it is. The add dialog
-//   gives the focus back to its opener on its own (Modal); the heading takes it only if the opener is gone.
+//   never throws: a failure is said in the box (`team.error`), so `onDone`, which AddMemberDialog awaits
+//   after its add, always returns and the dialog always lets go. A success line under the list stands
+//   until the next write starts, or is refused.
+// - When a write takes the pressed button away (its row left the team — also when the write was refused and
+//   the re-read shows the row gone), the focus that fell to <body> goes to the box's heading. A focus the
+//   reader has moved since is left where it is. The add dialog gives the focus back to its opener on its
+//   own (Modal); the heading takes it after an add only if the opener is gone.
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { useSession } from "../../../session/SessionProvider.jsx";
@@ -35,7 +42,8 @@ import { AddMemberDialog } from "./AddMemberDialog.jsx";
 import { OPEN, actionsFor, activeRows, attendingOf, canClaim, closedRows, expired } from "./careTeam.js";
 
 /** The admissions are read again every minute, as the sign-off strip reads them: a signature given on
- *  another screen turns the DRAFT's line into the team within the minute. */
+ *  another screen turns the DRAFT's line into the team within the minute. (The box's own read, used when
+ *  it stands alone; on the patient screen the one shared read has this same period.) */
 const EVERY_MS = 60_000;
 /** The bed as the slice names it (SignOffStrip's `bedOf`). */
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
@@ -44,17 +52,29 @@ const stamp = (iso) => {
   return Number.isFinite(ms) ? ddmmhhmm(ms) : "—";
 };
 
-/** `patientId`: the board's key of the card shown. `nowMs`: the screen's clock («süresi doldu»). */
-export function CareTeamBox({ patientId, nowMs }) {
+/** `patientId`: the board's key of the card shown. `nowMs`: the screen's clock («süresi doldu»).
+ *  `admission`: the row of that card from the patient screen's one read of the open admissions, or null;
+ *  undefined = read them here. `phase`: that read's phase (`useAdmissions`), for the unread line. */
+export function CareTeamBox({ patientId, nowMs, admission, phase }) {
   const { user } = useSession();
   if (!(user?.perms?.includes("admissions.view") ?? false)) return null;
-  return <Finder patientId={patientId} nowMs={nowMs} />;
+  if (admission !== undefined) return <Found admission={admission} phase={phase} nowMs={nowMs} />;
+  return <ReadsItself patientId={patientId} nowMs={nowMs} />;
 }
 
-function Finder({ patientId, nowMs }) {
-  const { rows } = useAdmissions(OPEN, { every: EVERY_MS });
+function ReadsItself({ patientId, nowMs }) {
+  const { rows, phase } = useAdmissions(OPEN, { every: EVERY_MS });
   const admission = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
-  return admission ? <Team key={admission.id} admission={admission} nowMs={nowMs ?? Date.now()} /> : null;
+  return <Found admission={admission} phase={phase} nowMs={nowMs} />;
+}
+
+/** The box of the admission found; or, when the admissions could not be read at all (`phase` "failed": no
+ *  list was ever read), one muted line that says so — never the box missing without a word. An admission
+ *  the list does not hold, and a read that failed over a list already read ("stale"), say nothing. */
+function Found({ admission, phase, nowMs }) {
+  const { t } = useI18n();
+  if (admission) return <Team key={admission.id} admission={admission} nowMs={nowMs ?? Date.now()} />;
+  return phase === "failed" ? <p className="m-0 text-13 text-mute">{t("ekip.admissionUnread")}</p> : null;
 }
 
 /** One active member: her name, her role, her window, who added her, and the row's buttons. */
@@ -105,6 +125,7 @@ function Team({ admission, nowMs }) {
   const headingId = useId();
   const heading = useRef(null);
   const seq = useRef(0);
+  const latest = useRef(null);              // the newest team read begun: what an overtaken one waits for
   const [team, setTeam] = useState({ rows: null, error: null });
   const [busy, setBusy] = useState(null);       // the write in flight: "claim", or "<kind>:<row id>"
   const [asking, setAsking] = useState(null);   // the new-attending question: {kind: "claim"} | {kind: "promote", row}
@@ -117,17 +138,36 @@ function Team({ admission, nowMs }) {
   const perms = user?.perms ?? [];
 
   // A read answered after a newer one began is dropped. It never rejects: a failure is said in `team.error`.
+  // It resolves once the list on screen is AT LEAST AS NEW as the read it began, not merely once its own
+  // request has answered: a write's re-read can be overtaken by the read below (the shared minute's poll
+  // saw the attending move), and the button the write holds must not be freed over the list from before
+  // the write (the same rule as `useAdmissions`, A-22).
   const reload = useCallback(async () => {
     const mine = seq.current + 1;
     seq.current = mine;
-    try {
-      const rows = await store.track(() => store.api.careTeam(admission.id));
-      if (seq.current === mine) setTeam({ rows: Array.isArray(rows) ? rows : [], error: null });
-    } catch (error) {
-      if (seq.current === mine) setTeam((prev) => ({ rows: prev.rows, error }));    }
+    const read = (async () => {
+      try {
+        const rows = await store.track(() => store.api.careTeam(admission.id));
+        if (seq.current === mine) setTeam({ rows: Array.isArray(rows) ? rows : [], error: null });
+      } catch (error) {
+        if (seq.current === mine) setTeam((prev) => ({ rows: prev.rows, error }));
+      }
+    })();
+    latest.current = read;
+    let waited = read;
+    await waited;
+    while (latest.current !== waited) {
+      waited = latest.current;
+      await waited;                                  // eslint-disable-line no-await-in-loop
+    }
   }, [store, admission.id]);
 
-  useEffect(() => { if (!draft) reload(); }, [draft, reload]);
+  // The team is read when the box first shows it, and again when the admission's state or its attending
+  // moves under the shared minute's read: the team itself is never polled, and a signature or a claim made
+  // on another screen shows in the admissions list first (Task 16 review). The two are triggers, not inputs.
+  useEffect(() => {
+    if (admission.state !== "DRAFT") reload();
+  }, [admission.state, admission.attending_physician_id, reload]);
 
   useEffect(() => {
     if (landed === 0) return;
@@ -142,17 +182,18 @@ function Team({ admission, nowMs }) {
   async function run(key, write, text) {
     if (busy !== null) return;
     setBusy(key);
-    let ok = false;
+    setSaid("");                 // the last write's line is not this one's result
     try {
       await store.track(write);
       toast(doneFor(t, subject, text));
       setSaid(text);
-      ok = true;
     } catch (err) {
       toast(refusedFor(t, subject, reasonOf(t, err)), "error");
     } finally {
       await reload();
-      if (ok) setLanded((n) => n + 1);
+      // Whatever the answer: a refused write's re-read can take the pressed row away too (someone ended it
+      // first), and the focus that fell to <body> with its button goes to the heading.
+      setLanded((n) => n + 1);
       setBusy(null);
     }
   }
@@ -205,7 +246,7 @@ function Team({ admission, nowMs }) {
           {team.rows === null && !team.error ? <p className="m-0 text-13 text-mute">{t("ekip.loading")}</p> : null}
           {team.rows !== null && active.length === 0 ? <p className="m-0 text-13 text-mute">{t("ekip.empty")}</p> : null}
           {active.length > 0 ? (
-            <ul className="m-0 grid list-none gap-2 p-0">
+            <ul role="list" className="m-0 grid list-none gap-2 p-0">
               {active.map((row) => (
                 <Member key={row.id} row={row} nowMs={nowMs} acts={actionsFor(row, { user, perms })} busy={busy}
                   onPromote={() => ask({ kind: "promote", row })} onEnd={(kind) => end(row, kind)} />
@@ -220,7 +261,7 @@ function Team({ admission, nowMs }) {
                 {t("ekip.previous", { n: closed.length })}
               </button>
               {history ? (
-                <ul className="m-0 mt-1.5 grid list-none gap-1 p-0">
+                <ul role="list" className="m-0 mt-1.5 grid list-none gap-1 p-0">
                   {closed.map((row) => (
                     <li key={row.id} className="text-12.5 text-mute">
                       <b className="text-ink">{row.full_name}</b> · {t(`ekip.role.${row.role}`)} · {t("ekip.ended", { at: stamp(row.closed_at) })}
@@ -259,7 +300,7 @@ function Team({ admission, nowMs }) {
             setAdding(false);
             setLanded((n) => n + 1);   // the heading takes the focus only if the opener is gone (the effect above)
           }}
-          onRefused={() => { reload(); }} />
+          onRefused={() => { setSaid(""); reload(); }} />
       ) : null}
     </section>
   );

@@ -314,6 +314,60 @@ describe("the patient screen's strip", () => {
   });
 });
 
+// G2-B1c, Task 16 review: the patient screen reads the open admissions ONCE and hands the strip the row of its
+// card; the strip reads nothing, shows only while that row is a DRAFT, and tells `onSigned` after a press.
+describe("SignOffStrip over the read it is handed", () => {
+  const strip = (admission, onSigned) => <SignOffStrip patientId="H2600007" admission={admission} onSigned={onSigned} />;
+
+  it("reads nothing itself, and shows only while the row it is handed is a DRAFT", async () => {
+    const { api } = await mountKabul(strip(DRAFT[0]), { perms: DOCTOR });
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    expect(api.admissions).not.toHaveBeenCalled();
+    cleanup();
+    await mountKabul(strip({ ...DRAFT[0], state: "ACTIVE" }), { perms: DOCTOR });
+    expect(screen.queryByText(WAITS)).toBeNull();
+    cleanup();
+    await mountKabul(strip(null), { perms: DOCTOR });
+    expect(screen.queryByText(WAITS)).toBeNull();
+  });
+
+  it("signs, tells onSigned, holds the button until it has read again, and says the signature once the row is no longer a DRAFT", async () => {
+    let reread;
+    const onSigned = vi.fn(() => new Promise((resolve) => { reread = resolve; }));
+    function Handed() {
+      const [admission, setAdmission] = React.useState(DRAFT[0]);
+      return strip(admission, async () => { await onSigned(); setAdmission({ ...DRAFT[0], state: "ACTIVE" }); });
+    }
+    const { api } = await mountKabul(<Handed />, {
+      perms: DOCTOR, setup: (a) => a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" }) });
+    const button = screen.getByRole("button", { name: SIGN });
+    button.focus();
+    await act(async () => { fireEvent.click(button); });
+    await settle();
+    expect(api.signOffAdmission).toHaveBeenCalledWith("a-7");
+    expect(onSigned).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: SIGN })).toHaveAttribute("aria-busy", "true");   // the list is not read again yet
+    await act(async () => { reread(); });
+    await settle();
+    expect(screen.queryByText(WAITS)).toBeNull();
+    expect(document.activeElement).toHaveTextContent(`${BED_2} · qəbul imzalandı`);
+    expect(api.admissions).not.toHaveBeenCalled();
+  });
+
+  it("tells onSigned after a refusal too, and keeps the strip while the row is still a DRAFT", async () => {
+    const onSigned = vi.fn(async () => {});
+    const { api } = await mountKabul(strip(DRAFT[0], onSigned), {
+      perms: DOCTOR,
+      setup: (a) => a.signOffAdmission.mockRejectedValue(refusal(409, "English words", { apiCode: "invalid_transition" })) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+    await settle();
+    expect(api.signOffAdmission).toHaveBeenCalledTimes(1);
+    expect(onSigned).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    expect(screen.getByRole("button", { name: SIGN })).not.toHaveAttribute("aria-busy");
+  });
+});
+
 describe("the bed card's badge", () => {
   const card = (draft) => render(
     <I18nProvider><ul><BedCard patient={patientFromBoard(kabulCard("H2600007", "2"))} draft={draft} /></ul></I18nProvider>);

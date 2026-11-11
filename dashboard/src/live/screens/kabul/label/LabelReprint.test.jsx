@@ -82,6 +82,37 @@ describe("LabelReprint", () => {
     expect(screen.queryByRole("button", { name: REPRINT })).toBeNull();
   });
 
+  // G2-B1c, Task 16 review: the patient screen reads the open admissions ONCE and hands the row of its card
+  // and the read's phase; nothing is read here.
+  it("reads nothing itself when handed the card's row: the reprint for one with a protocol, nothing for one without", async () => {
+    const { api } = await mountKabul(<LabelReprint patientId={PROTOCOL} admission={OPEN[0]} phase="known" />, { perms: NURSE });
+    expect(screen.getByRole("button", { name: REPRINT })).toBeTruthy();
+    expect(api.admissions).not.toHaveBeenCalled();
+    cleanup();
+    await mountKabul(<LabelReprint patientId="H2600008" admission={LEGACY[0]} phase="known" />, { perms: NURSE });
+    expect(screen.queryByRole("button", { name: REPRINT })).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+    cleanup();
+    await mountKabul(<LabelReprint patientId={PROTOCOL} admission={null} phase="known" />, { perms: NURSE });
+    expect(screen.queryByRole("button", { name: REPRINT })).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it("says the unread line when the read it is handed failed outright, and not when it only went stale", async () => {
+    await mountKabul(<LabelReprint patientId={PROTOCOL} admission={null} phase="failed" />, { perms: NURSE });
+    expect(screen.getByText(UNREAD).className).toContain("text-mute");
+    expect(screen.queryByRole("button", { name: REPRINT })).toBeNull();
+    cleanup();
+    await mountKabul(<LabelReprint patientId={PROTOCOL} admission={OPEN[0]} phase="stale" />, { perms: NURSE });
+    expect(screen.queryByText(UNREAD)).toBeNull();
+    expect(screen.getByRole("button", { name: REPRINT })).toBeTruthy();
+  });
+
+  it("asks nothing and offers nothing, handed a row, to a session without admissions.admit", async () => {
+    await mountKabul(<LabelReprint patientId={PROTOCOL} admission={OPEN[0]} phase="known" />, { perms: DOCTOR });
+    expect(screen.queryByRole("button", { name: REPRINT })).toBeNull();
+  });
+
   it("stands on the patient screen of a protocol-keyed card", async () => {
     const card = entry(PROTOCOL, [], {
       identity: identity({ patient_id: PROTOCOL, display_name: "Sentetik Hasta", bed_label: "2", source: "kabul",

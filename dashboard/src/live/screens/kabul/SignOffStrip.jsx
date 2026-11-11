@@ -19,6 +19,13 @@
 // would fall to <body>, and the result would be said only on the toast. So where the strip stood a
 // line says the signature, and takes the focus — when the focus fell with the button, never over
 // a focus the physician has since moved (spec §5.7, A-22).
+//
+// Two ways to find the admission (G2-B1c, Task 16 review). The patient screen reads the open
+// admissions ONCE and hands this strip the row of its card (`admission`, a row or null): the strip then
+// reads nothing, shows only while that row is a DRAFT, and tells `onSigned` — the shared read's
+// `reload` — after a press, so the care team's box beside it sees the signed admission at once instead
+// of at its next minute. Without `admission` (undefined) the strip reads the DRAFT list itself, as it
+// always did.
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -34,17 +41,31 @@ const EVERY_MS = 60_000;
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
 
 /** `patientId`: the board's key — for a `kabul` patient, its admission's `board_key` (the protocol
- *  since G2-B1d; a legacy admission's H-number). */
-export function SignOffStrip({ patientId }) {
+ *  since G2-B1d; a legacy admission's H-number). `admission`: the row of that card from the patient
+ *  screen's one read of the open admissions, or null; undefined = read the DRAFT list here. `onSigned`:
+ *  the shared read's `reload`, awaited after a press. */
+export function SignOffStrip({ patientId, admission, onSigned }) {
+  if (admission !== undefined) {
+    return <Strip row={admission?.state === "DRAFT" ? admission : null} reload={onSigned} />;
+  }
+  return <ReadsItself patientId={patientId} />;
+}
+
+function ReadsItself({ patientId }) {
+  const { rows, reload } = useAdmissions(DRAFT, { every: EVERY_MS });
+  const row = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
+  return <Strip row={row} reload={reload} />;
+}
+
+/** `row`: the DRAFT admission of this card, or null. */
+function Strip({ row, reload }) {
   const { t } = useI18n();
   const { user, store } = useSession();
   const toast = useToast();
-  const { rows, reload } = useAdmissions(DRAFT, { every: EVERY_MS });
   const [busy, setBusy] = useState(false);
   const [signed, setSigned] = useState(null);       // the bed of the admission signed here
   const said = useRef(null);
-  const row = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
-  const gone = signed !== null && row === null;     // signed, and the list no longer holds it
+  const gone = signed !== null && row === null;     // signed, and it is no longer a DRAFT on the list
   useEffect(() => {
     if (!gone) return;
     const active = document.activeElement;
@@ -73,7 +94,7 @@ export function SignOffStrip({ patientId }) {
     } catch (err) {
       toast(refusedFor(t, subject, reasonOf(t, err)), "error");
     } finally {
-      await reload();
+      await reload?.();
       if (landed) setSigned(subject);
       setBusy(false);
     }
