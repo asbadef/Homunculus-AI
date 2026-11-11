@@ -99,12 +99,11 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("GET", "/admissions/{admission_id}/care-team/candidates"): ANY("care_team.assign"),   # G2-B1c (D8)
     ("POST", "/admissions/{admission_id}/care-team/{member_id}/end"):
         ANY("care_team.assign", "admissions.view"),          # G2-B1c: an assigner, or the member herself
-    ("POST", "/admissions/{admission_id}/transfer/initiate"):
-        ANY("admissions.move.initiate"),
+    # G2-B1b: one step, for the physician or the nurse who moves the patient (spec D5).
+    ("POST", "/admissions/{admission_id}/transfer"):
+        ANY("admissions.move.initiate", "admissions.transfer.confirm"),
     ("POST", "/admissions/{admission_id}/discharge/initiate"):
         ANY("admissions.move.initiate"),
-    ("POST", "/admissions/{admission_id}/transfer/confirm"):
-        ANY("admissions.transfer.confirm"),
     ("POST", "/admissions/{admission_id}/discharge/confirm"):
         ANY("admissions.discharge.confirm"),
     ("POST", "/shift-schedule"): ANY("shifts.manage"),
@@ -236,7 +235,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 74      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end
+    assert len(EXPECTED) == 73      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end; G2-B1b: −2 +1, the one transfer route
 
 
 def test_no_guarded_route_is_missing_from_the_table():

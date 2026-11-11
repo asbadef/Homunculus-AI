@@ -374,32 +374,8 @@ async def create_shift_schedule(
 
 
 # ---------------------------------------------------------------------------
-# Transfer — §4.6, S-27
+# Transfer — §4.6; Group 2 · B1b: one step (spec D1)
 # ---------------------------------------------------------------------------
-async def initiate_transfer(
-    db: AsyncSession, admission: Admission, *,
-    target_bed_id: uuid.UUID, target_unit_id: uuid.UUID,
-) -> Admission:
-    if admission.state != AdmissionState.ACTIVE:
-        raise WorkflowError("Only an ACTIVE admission can be transferred.")
-    target_bed = await db.get(Bed, target_bed_id)
-    if target_bed is None:
-        raise WorkflowError("Target bed not found.")
-    if target_bed.state != BedState.AVAILABLE:
-        raise WorkflowError(
-            f"Target bed is not AVAILABLE (state: {target_bed.state.value}).",
-            errors.BED_NOT_AVAILABLE,
-        )
-
-    admission.transition_to(AdmissionState.PENDING_TRANSFER)
-    # Source bed transitions to PENDING_TRANSFER_OUT (§4.6 step 4).
-    source_bed = await db.get(Bed, admission.bed_id)
-    if source_bed is not None:
-        source_bed.transition_to(BedState.PENDING_TRANSFER_OUT)
-    await db.flush()
-    return admission
-
-
 #: G2-B1b (spec T6, X8): the columns an arriving admission does NOT take from its source — its own
 #: identity, state, place and time; the admission form's send bookkeeping (A-19), which belongs to
 #: the source's admission; the move's own link, deadline, reason and note; and the protocol, which
