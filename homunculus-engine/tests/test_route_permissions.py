@@ -110,6 +110,7 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("POST", "/handovers/{handover_id}/countersign"): ANY("handover.sign"),
     ("GET", "/handovers"): ANY("handover.sign"),               # G2-B3b (D7): my handovers
     ("GET", "/handovers/colleagues"): ANY("handover.sign"),    # G2-B3b (D7): who I hand over to
+    ("GET", "/handovers/pending"): ANY("summary.view"),        # G4-02 (D4): waiting for a countersignature
     # escalation/router.py
     ("POST", "/alerts"): ANY("alerts.escalate"),
     ("POST", "/alerts/{alert_id}/escalate"): ANY("alerts.escalate"),
@@ -233,7 +234,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 72      # G2-B3a: +4, the bed moves; +1, GET /tenant/occupancy; G2-B3b: + GET /handovers, GET /handovers/colleagues
+    assert len(EXPECTED) == 73      # G2-B3a: +4, the bed moves; +1, GET /tenant/occupancy; G2-B3b: + GET /handovers, GET /handovers/colleagues; G4-02: + GET /handovers/pending
 
 
 def test_no_guarded_route_is_missing_from_the_table():
