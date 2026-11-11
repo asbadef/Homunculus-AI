@@ -23,8 +23,20 @@
 // HEARTBEAT_MS of silence (api/app.py `sse_board_frames`); a stream that says nothing — no frame,
 // no heartbeat — for STREAM_SILENCE_MS is dropped like a failed one: DEGRADED, a reconnect, and
 // LIVE again only through its open and that open's reload.
+//
+// And a stream has a bounded life (G2 borç 1b, owner: «Süre sınırı»). The scope the board is
+// streamed under is the ticket's, read once; so the server ends every stream after STREAM_MAX_AGE
+// (api/app.py, 15 minutes) with a named `rotate` event. That end is PLANNED, not a failure: the old
+// EventSource is closed (or the browser would retry with the spent ticket), a fresh ticket is asked
+// for at once — no RECONNECT_DELAY_MS, no DEGRADED, no «may be out of date» — and the new open
+// reloads the board as every open does, which is what brings a changed scope onto the screen. A
+// LIVE board stays LIVE through that gap; any load landing in it keeps the connection it found. The
+// gap is bounded by what bounds any stream here: a ticket that fails or times out takes the error
+// path (DEGRADED, one scheduled reconnect), and a stream that never opens is dropped by the silence
+// watchdog — so LIVE is never held without a stream for longer than the store already tolerates.
 import { patientFromBoard, patientsFromBoard, alertsFromPatients, alertsEqual } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
+import { isSnoozed } from "./snooze.js";
 
 export const RECONNECT_DELAY_MS = 5000;
 /** The server's heartbeat cadence (api/app.py `sse_board_frames`, keepalive=15.0). */
@@ -33,6 +45,8 @@ export const HEARTBEAT_MS = 15_000;
 export const STREAM_SILENCE_MS = 3 * HEARTBEAT_MS;
 /** The heartbeat's event name; the board's frames are unnamed (`message`). */
 export const HEARTBEAT_EVENT = "heartbeat";
+/** The server's planned end of a stream (api/app.py `ROTATE_FRAME`, at STREAM_MAX_AGE): reconnect now. */
+export const ROTATE_EVENT = "rotate";
 
 // `loaded`: the board holds a ward it LOADED (the last whole load succeeded), whatever the stream
 // is doing. It is what tells "connecting, with the first load landed" — `start` loads first and
@@ -52,6 +66,8 @@ function defaultOpenStream(url, handlers) {
   source.onmessage = handlers.onmessage;
   source.onerror = handlers.onerror;
   source.addEventListener(HEARTBEAT_EVENT, handlers.onheartbeat);
+  // Named, so `onmessage` never hears it: an `addEventListener` of its own, as the heartbeat has.
+  source.addEventListener(ROTATE_EVENT, handlers.onrotate);
   return () => source.close();
 }
 
@@ -78,6 +94,7 @@ export function createBoardStore({
   let reloadRetry = null;           // a reload that failed under an open stream, tried again
   let opened = 0;                   // the stream's opens so far: a load counts for the one it began in
   let streamOpen = false;
+  let rotating = false;             // a planned reconnect (`rotate`) whose open's reload has not landed
   let loadsBegun = 0;               // a load overtaken by a later one that landed first is dropped
   let loadLanded = 0;
   // A load's snapshot is taken by the server when the request arrives; a frame that comes while
@@ -157,13 +174,16 @@ export function createBoardStore({
     if (patients) {
       cancelReloadRetry();
       // LIVE only for a load that began after the stream (still) open had opened; otherwise the
-      // data is shown but not vouched for: still connecting at the start, DEGRADED after.
+      // data is shown but not vouched for: still connecting at the start, DEGRADED after — except
+      // in a planned rotation's gap, where a LIVE board keeps LIVE until the new open's reload lands.
       const live = streamOpen && during === opened;
-      const connection = live ? CONNECTION.LIVE
+      if (live) rotating = false;
+      const connection = live || (rotating && state.connection === CONNECTION.LIVE) ? CONNECTION.LIVE
         : state.connection === CONNECTION.CONNECTING ? CONNECTION.CONNECTING : CONNECTION.DEGRADED;
       withPatients(newer.reduce(applyFrame, patients),
         { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection, loaded: true });
     } else {
+      rotating = false;
       // An empty list with the reason, never the last one: a board that stopped updating must
       // not look like a ward that is calm.
       withPatients([], { scope: null, scopeNote: null, connection: CONNECTION.UNAVAILABLE, loaded: false });
@@ -227,6 +247,7 @@ export function createBoardStore({
     closeSource();                                // or the browser retries with the spent ticket
     if (mine !== generation) return;
     streamOpen = false;
+    rotating = false;                             // a failed rotation is a failure like any other
     quiet();
     cancelReloadRetry();                          // the reconnect's open reloads instead
     // A board whose load failed stays UNAVAILABLE (empty, and says so); any other is DEGRADED.
@@ -236,6 +257,20 @@ export function createBoardStore({
       reconnect = null;
       if (mine === generation) connect(mine);
     }, RECONNECT_DELAY_MS);
+  }
+
+  /** The server ended the stream at its age (`rotate`, G2 borç 1b): planned, so no DEGRADED and no
+   *  waiting — the old one closed, a fresh ticket now (`connect`), and that open reloads the board. A
+   *  reconnect that fails is `connect`'s, and so the error path's. */
+  function onRotate(mine) {
+    if (mine !== generation) return;              // a cleared board's stream was closed with it
+    closeSource();                                // before the browser retries with the spent ticket
+    closeSource = () => {};
+    streamOpen = false;
+    rotating = true;
+    quiet();                                      // the new stream is watched from its own opening
+    cancelReloadRetry();                          // the new open reloads instead
+    connect(mine);
   }
 
   /** Anything heard from the stream (its open, a frame, a heartbeat) starts its silence over. */
@@ -260,6 +295,7 @@ export function createBoardStore({
         onopen: () => { if (mine === generation) { heard(mine); onOpen(); } },
         onmessage: (event) => { if (mine === generation) { heard(mine); onMessage(event); } },
         onheartbeat: () => { if (mine === generation) heard(mine); },
+        onrotate: () => onRotate(mine),
         onerror: () => onError(mine),
       });
       heard(mine);                                // watched from here: one that never opens is dead too
@@ -276,6 +312,7 @@ export function createBoardStore({
     closeSource();
     closeSource = () => {};
     streamOpen = false;
+    rotating = false;
     loading.clear();
     frames = [];
   }
@@ -344,6 +381,24 @@ export function createBoardStore({
     async callRrt(patientId, kind, reason) {
       const mine = generation;
       const entry = await track(() => api.callRrt(patientId, kind, reason));
+      if (mine !== generation) return null;
+      ingest(entry);
+      return entry;
+    },
+    /**
+     * G2-B5b: snooze one alarm (`POST /alerts/snooze {patient_id, kind, minutes, reason, reason_text, seen_severity}`,
+     * permission `alerts.ack`) and put the board entry it answers with onto the board. `seenSeverity` is the severity
+     * the person was shown; the engine refuses if the alarm's is another by then. The shape of `acknowledge`, for the
+     * same reasons:
+     * - through `track`;
+     * - resolves with the entry;
+     * - REJECTS with the API's own error having changed nothing: a snooze that may not have been made must not
+     *   silence the alarm here;
+     * - an answer after `clear()` is dropped.
+     */
+    async snooze(patientId, kind, minutes, reason, reasonText, seenSeverity) {
+      const mine = generation;
+      const entry = await track(() => api.snoozeAlert(patientId, kind, minutes, reason, reasonText, seenSeverity));
       if (mine !== generation) return null;
       ingest(entry);
       return entry;
@@ -544,12 +599,14 @@ export const isChronicExpected = (a) => a?.downgraded === true && !NEVER_SUPPRES
 // A RESOLVED alarm (G2-A1: a critical whose rule stopped before anyone acknowledged it) is never
 // acknowledged — an acknowledgement removes it — so it needs an answer, and the bell, the rail and
 // the lock screen count it. Only the sound and the notification's vibration stop (signals.js).
-const needsAnswer = (a) => !a.ack && !isChronicExpected(a);
+// G2-B5b (spec D4): a SNOOZED alarm does not, until its `until` by `nowMs`, the board's clock the caller
+// passes (data/useSnoozeClock.js). Without one, no snooze is honoured (data/snooze.js `isSnoozed`).
+const needsAnswer = (a, nowMs) => !a.ack && !isChronicExpected(a) && !isSnoozed(a, nowMs);
 
 /** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or
  *  not), by severity (`unknown`: a severity this build does not know); `waiting` those nobody has
  *  acknowledged AND that the engine has not marked chronic-expected (`needsAnswer`). */
-export function alarmCounts({ alerts = [], connection } = {}) {
+export function alarmCounts({ alerts = [], connection, nowMs } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, open: null, waiting: null };
   const open = { total: 0, unknown: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
@@ -557,7 +614,7 @@ export function alarmCounts({ alerts = [], connection } = {}) {
   for (const a of alerts) {
     open.total += 1;
     open[SEVERITY_ORDER.includes(a.severity) ? a.severity : "unknown"] += 1;
-    if (needsAnswer(a)) waiting += 1;
+    if (needsAnswer(a, nowMs)) waiting += 1;
   }
   return { known, stale, open, waiting };
 }
@@ -567,18 +624,18 @@ export function alarmCounts({ alerts = [], connection } = {}) {
  *  fires before one that passed unacknowledged (RESOLVED), then the oldest first.
  *  A chronic-expected finding is not among them (`needsAnswer`); it is still on the card and in
  *  the alarms list. */
-export function waitingAlarms({ alerts = [], connection } = {}) {
+export function waitingAlarms({ alerts = [], connection, nowMs } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, items: null };
-  return { known, stale, items: queue(alerts) };
+  return { known, stale, items: queue(alerts, nowMs) };
 }
 
 /** The alarms somebody must answer (`needsAnswer`), unknown severity first, then the most severe,
  *  firing before RESOLVED, then the oldest. The one ordering `waitingAlarms` and `alarmsToSignal` share. */
-function queue(alerts) {
+function queue(alerts, nowMs) {
   const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
   // After severity, one that still fires before one that passed unacknowledged (RESOLVED, G2-A1).
-  return alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
+  return alerts.filter((a) => needsAnswer(a, nowMs)).sort((a, b) => rank(a) - rank(b)
     || (a.status === "RESOLVED") - (b.status === "RESOLVED")
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
 }
@@ -590,9 +647,9 @@ function queue(alerts) {
  *  previous workspace sounded its first load). A board that never loaded, or whose load failed,
  *  gives no items. `known` is LIVE only, as everywhere: only a LIVE board may say an alarm stopped
  *  waiting. Not for the bell or a count — those still wait for LIVE (Decision 18). */
-export function alarmsToSignal({ alerts = [], connection, loaded } = {}) {
+export function alarmsToSignal({ alerts = [], connection, loaded, nowMs } = {}) {
   if (loaded !== true || connection === CONNECTION.UNAVAILABLE) return { known: false, items: [] };
-  return { known: connection === CONNECTION.LIVE, items: queue(alerts) };
+  return { known: connection === CONNECTION.LIVE, items: queue(alerts, nowMs) };
 }
 
 /** All the lock screen may show of the ward (Decision 3): the open alarms in the session's units,

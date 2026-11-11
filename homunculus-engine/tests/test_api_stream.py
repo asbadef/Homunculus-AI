@@ -122,3 +122,76 @@ async def test_stream_rejects_unknown_token():
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
         r = await client.get("/stream?token=nope")
         assert r.status_code == 401
+
+
+# --- G2 borç 1b: a live stream has a bounded life (owner: «Süre sınırı», 15 minutes) -------------
+# The scope is resolved once, from the ticket, and kept for the connection's life: a nurse moved to
+# another unit, or a bed map edited, would keep the old view on an open stream until it reconnected.
+# So every stream ends after STREAM_MAX_AGE with one named `rotate` event, and the client reconnects
+# with a fresh ticket — and so a freshly resolved scope.
+ROTATE = "event: rotate\ndata: {}\n\n"
+
+
+def test_a_stream_lives_fifteen_minutes_at_most():
+    import homunculus.api.app as app_module
+    assert app_module.STREAM_MAX_AGE == 900
+    assert app_module.ROTATE_FRAME == ROTATE
+
+
+@pytest.mark.anyio
+async def test_sse_frames_end_an_idle_stream_past_its_age_with_one_rotate_event():
+    q: asyncio.Queue = asyncio.Queue()
+    frames = sse_board_frames(q, keepalive=5.0, max_age=0.05)
+    assert await asyncio.wait_for(frames.__anext__(), timeout=1.0) == ROTATE
+    with pytest.raises(StopAsyncIteration):
+        await frames.__anext__()
+
+
+@pytest.mark.anyio
+async def test_sse_frames_rotate_a_busy_stream_too_by_the_clock_it_was_opened_on():
+    # A stream that is sent a board every moment is never idle; its age is still its age.
+    now = [100.0]
+    q: asyncio.Queue = asyncio.Queue()
+    for i in range(3):
+        await q.put({"patient_id": f"bed-{i}"})
+    frames = sse_board_frames(q, keepalive=1000.0, max_age=900, clock=lambda: now[0])
+    assert (await frames.__anext__()).startswith("data: ")
+    now[0] += 899.9
+    assert (await frames.__anext__()).startswith("data: ")
+    now[0] += 0.1
+    assert await frames.__anext__() == ROTATE                # boards still queued: the life is over
+    with pytest.raises(StopAsyncIteration):
+        await frames.__anext__()
+
+
+@pytest.mark.anyio
+async def test_sse_frames_rotate_a_subscriber_whose_boards_are_all_out_of_scope():
+    # The wait for the next board is bounded by the stream's remaining life, not only by the
+    # keep-alive: a busy hospital never leaves the queue idle for a nurse it sends nothing to.
+    q: asyncio.Queue = asyncio.Queue()
+
+    async def busy_ward():
+        while True:
+            await q.put({"patient_id": "elsewhere"})
+            await asyncio.sleep(0.005)
+
+    publisher = asyncio.create_task(busy_ward())
+    try:
+        frames = sse_board_frames(q, keepalive=5.0, max_age=0.05, view=lambda board: None)
+        assert await asyncio.wait_for(frames.__anext__(), timeout=1.0) == ROTATE
+    finally:
+        publisher.cancel()
+
+
+@pytest.mark.anyio
+async def test_the_stream_route_ends_with_rotate_and_unsubscribes(monkeypatch):
+    """Over HTTP: the route passes STREAM_MAX_AGE (read when the stream opens), the response ends
+    after the rotate event, and the `finally` that unsubscribes still runs."""
+    import homunculus.api.app as app_module
+    monkeypatch.setattr(app_module, "STREAM_MAX_AGE", 0.05)
+    app = create_app({"tok": "HOSP1"}, run_escalation_loop=False)
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        r = await asyncio.wait_for(client.get("/stream?token=tok"), timeout=5.0)
+    assert r.status_code == 200
+    assert r.text.endswith(ROTATE) and r.text.count("event: rotate") == 1
+    assert app.state.broadcaster._subs == {}                   # noqa: SLF001 — unsubscribed

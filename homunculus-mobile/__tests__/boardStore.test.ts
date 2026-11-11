@@ -109,6 +109,49 @@ describe("boardReducer", () => {
   });
 });
 
+// G2 borç 1c: a (re)connect's snapshot is the WHOLE board, as the dashboard's reload is. A patient it
+// does not carry has left this user's screen — out of a scope the rotation just read again, or
+// discharged while the stream was down — and must not stay on it as a card nobody will update.
+describe("boardReducer — a snapshot", () => {
+  it("makes the board exactly the snapshot: a patient it does not carry leaves, with its series", () => {
+    let state = boardReducer(initialBoardState, { type: "board", board: board("bed-3", 2), now: 100 });
+    state = boardReducer(state, { type: "board", board: board("bed-5", 4), now: 100 });
+    state = boardReducer(state, { type: "snapshot", boards: [board("bed-5", 5), board("bed-7", 1)], now: 200 });
+    expect(Object.keys(state.patients).sort()).toEqual(["bed-5", "bed-7"]);
+    expect(state.series["bed-3"]).toBeUndefined();
+    expect(state.patients["bed-5"].latest.sofa).toBe(5);
+  });
+
+  it("keeps the series of a patient it carries and adds its point, and stamps first-seen as a frame would", () => {
+    let state = boardReducer(initialBoardState, {
+      type: "board", board: board("bed-3", 2, [alert("septic_shock")]), now: 100,
+    });
+    state = boardReducer(state, {
+      type: "snapshot", boards: [board("bed-3", 6, [alert("septic_shock"), alert("news2_high")])], now: 900,
+    });
+    expect(state.series["bed-3"].sofa).toEqual([2, 6]);
+    expect(state.firstSeen["bed-3|septic_shock"]).toBe(100);
+    expect(state.firstSeen["bed-3|news2_high"]).toBe(900);
+  });
+
+  it("takes a removed entry in a snapshot as a patient who has left, not as a card", () => {
+    let state = boardReducer(initialBoardState, { type: "board", board: board("bed-3", 2), now: 100 });
+    state = boardReducer(state, { type: "snapshot", boards: [{ ...board("bed-3", null), removed: true }], now: 200 });
+    expect(state.patients).toEqual({});
+    expect(state.series).toEqual({});
+  });
+
+  it("empties the ward for an empty snapshot, and leaves notifications and acknowledgements alone", () => {
+    let state = boardReducer(initialBoardState, { type: "board", board: board("bed-3", 2), now: 100 });
+    state = boardReducer(state, { type: "notification", note });
+    state = boardReducer(state, { type: "ack", patientId: "bed-3", kind: "septic_shock", role: "nurse", now: 150 });
+    state = boardReducer(state, { type: "snapshot", boards: [], now: 200 });
+    expect(state.patients).toEqual({});
+    expect(state.notifications).toEqual([note]);
+    expect(state.acknowledged).toEqual(["bed-3|septic_shock"]);
+  });
+});
+
 describe("selectWard", () => {
   it("orders by risk and derives escalation from the app's clock", () => {
     let state = boardReducer(initialBoardState, {

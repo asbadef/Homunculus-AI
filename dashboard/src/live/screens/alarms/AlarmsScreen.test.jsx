@@ -8,7 +8,16 @@ import { NOW, ago, alarm, board, entry, identity, measured } from "../../data/bo
 import { hhmm } from "../../i18n/dates.js";
 import { AlarmsScreen } from "./AlarmsScreen.jsx";
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// The real setTimeout, taken before any test fakes the timers: a test that drives the clock (a snooze ending, the
+// dialog's «sounds again at») still lets the answers land.
+const realSetTimeout = globalThis.setTimeout;
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
+/** Fake timers and a fixed clock, for a test that moves the clock itself. */
+const fakeClock = (at = NOW) => {
+  vi.useRealTimers();                                   // beforeEach mocked the date alone
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  vi.setSystemTime(at);
+};
 
 /** The acknowledge button. Its accessible name is "<bed> · <kind> siqnalı: gördüm" (it names the
  *  alarm it answers), so it is found by the word and not by the whole name. */
@@ -534,6 +543,361 @@ describe("the alarms screen", () => {
       expect(screen.queryByRole("button", { name: CALL })).toBeNull();
       // A call is not an answer: the alarm still waits for its acknowledgement (spec D4).
       expect(within(row).getByRole("button", { name: SEEN })).toBeInTheDocument();
+    });
+  });
+
+  describe("snoozing («Ertele», G2-B5b)", () => {
+    /** The row's button. Its accessible name also names the bed and the kind, so it is found by the words and the colon. */
+    const SNOOZE = /Təxirə sal:/;
+    const dialog = () => screen.getByRole("dialog", { name: "Təxirə sal · REA-01 · 2" });
+    const toasts = () => within(screen.getByRole("region", { name: "Bildirişlər" }));
+    const rowOf = (summary) => screen.getByText(summary, { selector: "p" }).closest("li");
+    const sectionOf = (name) => screen.getByRole("heading", { level: 2, name }).closest("section");
+    const send = async () => {
+      await act(async () => {
+        fireEvent.click(within(dialog()).getByRole("button", { name: "Təxirə sal" }));
+        await settle();
+      });
+    };
+    const snoozedFor = (minutesLeft, over = {}) => ({ by: "leyla", at: ago(300),
+      until: new Date(NOW + minutesLeft * 60_000).toISOString(), minutes: 5 + minutesLeft,
+      reason: "ARTEFACT_OR_SIGNAL_NOISE", reason_text: null, ...over });
+
+    it("is offered on an unanswered high or moderate alarm — not on a critical, an answered or a low one", async () => {
+      await open({ payload: withAlarms(
+        alarm("news2", "high", { summary: "NEWS2 7" }),
+        alarm("acute_change", "moderate", { summary: "Moderate one" }),
+        alarm("septic_shock", "critical", { summary: "Shock" }),
+        alarm("map", "high", { summary: "Answered", acknowledged: true, acknowledged_by: "ayse", acknowledged_at: ago(10) }),
+        alarm("hr_low", "low", { summary: "Low one" }),
+      ) });
+      expect(within(rowOf("NEWS2 7")).getByRole("button", { name: SNOOZE }))
+        .toHaveAccessibleName("Təxirə sal: REA-01 · 2, news2");
+      expect(within(rowOf("Moderate one")).getByRole("button", { name: SNOOZE })).toBeInTheDocument();
+      expect(within(rowOf("Shock")).queryByRole("button", { name: SNOOZE })).toBeNull();
+      expect(within(rowOf("Answered")).queryByRole("button", { name: SNOOZE })).toBeNull();
+      expect(within(rowOf("Low one")).queryByRole("button", { name: SNOOZE })).toBeNull();
+    });
+
+    it("says once that a critical alarm cannot be snoozed, beside the first critical one", async () => {
+      await open({ payload: withAlarms(
+        alarm("septic_shock", "critical", { summary: "Shock" }),
+        alarm("antibiotic_overdue", "critical", { summary: "Overdue" }),
+      ) });
+      expect(screen.getAllByText("Kritik siqnal təxirə salına bilməz.")).toHaveLength(1);
+    });
+
+    it("is not offered without alerts.ack, and the critical note is not said either", async () => {
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" }), alarm("septic_shock", "critical", { summary: "Shock" })),
+        perms: ["board.view"],
+      });
+      expect(screen.queryByRole("button", { name: SNOOZE })).toBeNull();
+      expect(screen.queryByText("Kritik siqnal təxirə salına bilməz.")).toBeNull();
+    });
+
+    it("offers a high alarm the durations within 30 minutes, the reasons, and says when it sounds again", async () => {
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      const durations = within(dialog()).getByRole("group", { name: "Müddət" });
+      expect(within(durations).getAllByRole("button").map((b) => b.textContent)).toEqual(["5 dəq", "10 dəq", "15 dəq", "30 dəq"]);
+      expect(within(durations).getByRole("button", { name: "5 dəq" })).toHaveAttribute("aria-pressed", "true");
+      const reasons = within(dialog()).getByRole("combobox", { name: /Səbəb/ });
+      expect([...reasons.options].map((o) => o.textContent)).toEqual(["Səbəb seçin", "Klinik qərar verilib",
+        "Artefakt və ya siqnal küyü", "Prosedur gedir", "Xəstənin öz norması", "Digər"]);
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(NOW + 5 * 60_000)}`)).toBeInTheDocument();
+      fireEvent.click(within(durations).getByRole("button", { name: "30 dəq" }));
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(NOW + 30 * 60_000)}`)).toBeInTheDocument();
+    });
+
+    it("offers a moderate alarm up to 120 minutes", async () => {
+      await open({ payload: withAlarms(alarm("acute_change", "moderate", { summary: "Moderate one" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      const durations = within(dialog()).getByRole("group", { name: "Müddət" });
+      expect(within(durations).getAllByRole("button").map((b) => b.textContent)).toEqual(["15 dəq", "30 dəq", "60 dəq", "120 dəq"]);
+    });
+
+    it("asks for a reason, and for «Digər» at least 15 characters, without asking the server", async () => {
+      const { api } = await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      await send();
+      expect(within(dialog()).getByText("Siyahıdan bir səbəb seçin.")).toBeInTheDocument();
+      expect(document.activeElement).toBe(within(dialog()).getByRole("combobox", { name: /Səbəb/ }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "OTHER" } });
+      const text = within(dialog()).getByRole("textbox", { name: /İzah/ });
+      expect(text).toHaveAccessibleDescription(/şəxsiyyət nömrəsi yazmayın/);
+      fireEvent.change(text, { target: { value: "  qısa izah  " } });
+      await send();
+      expect(within(dialog()).getByText("İzah ən azı 15 simvol olmalıdır.")).toBeInTheDocument();
+      expect(document.activeElement).toBe(text);
+      expect(api.snoozeAlert).not.toHaveBeenCalled();
+    });
+
+    it("sends the snooze, puts the card the server answered with on the board, and moves the alarm to «Təxirə salınanlar»", async () => {
+      const until = new Date(NOW + 15 * 60_000).toISOString();
+      const answered = entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7",
+        snooze: { by: "ayse", at: ago(0), until, minutes: 15, reason: "PATIENT_BASELINE", reason_text: null } })],
+      { ...CARD, risk: "high" });
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(answered),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.click(within(within(dialog()).getByRole("group", { name: "Müddət" })).getByRole("button", { name: "15 dəq" }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      expect(api.snoozeAlert).toHaveBeenCalledWith("S-001", "news2", 15, "PATIENT_BASELINE", null, "high");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const row = within(sectionOf(/Təxirə salınanlar/)).getByText("NEWS2 7", { selector: "p" }).closest("li");
+      expect(row).toHaveTextContent(`Təxirə salınıb · bitmə ${hhmm(NOW + 15 * 60_000)} · ayse · Xəstənin öz norması`);
+      expect(within(sectionOf(/Cavab gözləyir/)).queryByText("NEWS2 7")).toBeNull();
+      expect(toasts().getAllByText(`REA-01 · 2 · news2: təxirə salındı, bitmə ${hhmm(NOW + 15 * 60_000)}.`).length)
+        .toBeGreaterThan(0);
+    });
+
+    // Review (G2-B5b): the snooze moves the row to «Təxirə salınanlar», and the button the dialog was opened from goes
+    // with it: the focus would fall to <body>. It goes to that list, where the alarm now is (DevirScreen's rule).
+    it("after a snooze, the focus goes to «Təxirə salınanlar», where the alarm went", async () => {
+      const until = new Date(NOW + 15 * 60_000).toISOString();
+      const answered = entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7",
+        snooze: { by: "ayse", at: ago(0), until, minutes: 15, reason: "PATIENT_BASELINE", reason_text: null } })],
+      { ...CARD, risk: "high" });
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(answered),
+      });
+      const opener = screen.getByRole("button", { name: SNOOZE });
+      opener.focus();
+      fireEvent.click(opener);
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      const snoozedList = sectionOf(/Təxirə salınanlar/);
+      expect(document.activeElement).toBe(snoozedList);
+      expect(snoozedList).toHaveAccessibleName(/Təxirə salınanlar/);
+    });
+
+    it("after a refusal the row stays where it was, and the focus goes back to its «Təxirə sal»", async () => {
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockRejectedValue(refusal(409, "alarm zaten yanıtlandı; ertelenmez")),
+      });
+      const opener = screen.getByRole("button", { name: SNOOZE });
+      opener.focus();
+      fireEvent.click(opener);
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it("sends «Digər» with its explanation, trimmed", async () => {
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { ...CARD, risk: "high" })),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "OTHER" } });
+      fireEvent.change(within(dialog()).getByRole("textbox", { name: /İzah/ }), { target: { value: "  Xəstə yuyulur, sensor çıxıb " } });
+      await send();
+      expect(api.snoozeAlert).toHaveBeenCalledWith("S-001", "news2", 5, "OTHER", "Xəstə yuyulur, sensor çıxıb", "high");
+    });
+
+    it("a snoozed alarm says until when, by whom and why, and can still be answered or snoozed again", async () => {
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7",
+        snooze: snoozedFor(10, { reason: "OTHER", reason_text: "Xəstə yuyulur, sensor çıxıb" }) })) });
+      const row = rowOf("NEWS2 7");
+      expect(row).toHaveTextContent(`Təxirə salınıb · bitmə ${hhmm(NOW + 10 * 60_000)} · leyla · Xəstə yuyulur, sensor çıxıb`);
+      expect(within(sectionOf(/Təxirə salınanlar/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(within(row).getByRole("button", { name: SEEN })).toBeInTheDocument();
+      expect(within(row).getByRole("button", { name: SNOOZE })).toBeInTheDocument();
+    });
+
+    // Review (G2-B5b): the screen's own clock takes the alarm back at its until — no frame from the server needed.
+    it("a snoozed alarm comes back to the waiting on its own the moment its snooze ends", async () => {
+      fakeClock();
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7", snooze: { by: "leyla", at: ago(295),
+        until: new Date(NOW + 5_000).toISOString(), minutes: 5, reason: "PATIENT_BASELINE", reason_text: null } })) });
+      expect(within(sectionOf(/Təxirə salınanlar/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(within(sectionOf(/Cavab gözləyir/)).queryByText("NEWS2 7")).toBeNull();
+      act(() => { vi.advanceTimersByTime(5_100); });
+      expect(screen.queryByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeNull();
+      expect(within(sectionOf(/Cavab gözləyir/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(rowOf("NEWS2 7")).not.toHaveTextContent("Təxirə salınıb");
+    });
+
+    it("a snooze whose time has passed is back among the waiting, with no snooze line", async () => {
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7", snooze: snoozedFor(-1) })) });
+      expect(screen.queryByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeNull();
+      expect(within(sectionOf(/Cavab gözləyir/)).getByText("NEWS2 7", { selector: "p" })).toBeInTheDocument();
+      expect(rowOf("NEWS2 7")).not.toHaveTextContent("Təxirə salınıb");
+    });
+
+    it("a refusal is a toast naming the alarm, in the reader's words — and nothing changes", async () => {
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockRejectedValue(refusal(409, "alarm zaten yanıtlandı; ertelenmez")),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "CLINICAL_DECISION_MADE" } });
+      await send();
+      expect(api.snoozeAlert).toHaveBeenCalledWith("S-001", "news2", 5, "CLINICAL_DECISION_MADE", null, "high");
+      expect(toasts().getAllByText("REA-01 · 2 · news2: təxirə salınmadı — Bu siqnal artıq cavablandırılıb; təxirə salınmadı.").length)
+        .toBeGreaterThan(0);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("heading", { level: 2, name: /Təxirə salınanlar/ })).toBeNull();
+    });
+
+    it("a snooze that got no answer may have landed: a warning, not a refusal", async () => {
+      const timedOut = Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" });
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockRejectedValue(timedOut),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PROCEDURE_IN_PROGRESS" } });
+      await send();
+      const said = toasts().getAllByText(
+        "REA-01 · 2 · news2: cavab gəlmədi — siqnal təxirə salınmış ola bilər. Sətrə baxın; yenidən təxirə salmaq zərərsizdir.",
+      );
+      expect(said.map((n) => n.closest("[data-tone]")?.getAttribute("data-tone"))).toContain("warn");
+      expect(toasts().queryAllByText(/təxirə salınmadı —/)).toHaveLength(0);
+    });
+
+    // Review (G2-B5b): a 502 from the proxy, or a network that dropped the request, is no refusal: the engine may have
+    // taken the snooze. A warning that says so, never «not snoozed».
+    for (const [what, failure] of [
+      ["a 502", () => refusal(502, "Bad Gateway")],
+      ["a network error", () => new Error("Failed to fetch")],
+    ]) {
+      it(`${what} may have landed: a warning, not a refusal`, async () => {
+        await open({
+          payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+          setup: (fake) => fake.snoozeAlert.mockRejectedValue(failure()),
+        });
+        fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+        fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+        await send();
+        const said = toasts().getAllByText(
+          "REA-01 · 2 · news2: cavab gəlmədi — siqnal təxirə salınmış ola bilər. Sətrə baxın; yenidən təxirə salmaq zərərsizdir.",
+        );
+        expect(said.map((n) => n.closest("[data-tone]")?.getAttribute("data-tone"))).toContain("warn");
+        expect(toasts().queryAllByText(/təxirə salınmadı —/)).toHaveLength(0);
+      });
+    }
+
+    it("a second press while the first is out sends nothing more", async () => {
+      let answer;
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockImplementation(() => new Promise((resolve) => { answer = resolve; })),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      const press = within(dialog()).getByRole("button", { name: "Təxirə sal" });
+      await act(async () => {
+        fireEvent.click(press);
+        fireEvent.click(press);
+        fireEvent.submit(press.closest("[role='dialog']").querySelector("form"));   // Enter in a box: the same send
+        await settle();
+      });
+      expect(api.snoozeAlert).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        answer(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { ...CARD, risk: "high" }));
+        await settle();
+      });
+      expect(api.snoozeAlert).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("takes at most 500 characters of explanation, and sends 500 whole", async () => {
+      const { api } = await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockResolvedValue(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { ...CARD, risk: "high" })),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "OTHER" } });
+      const box = within(dialog()).getByRole("textbox", { name: /İzah/ });
+      expect(box).toHaveAttribute("maxlength", "500");
+      const longest = "Sintetik izah. ".repeat(40).slice(0, 500);
+      expect(longest).toHaveLength(500);
+      fireEvent.change(box, { target: { value: longest } });
+      await send();
+      expect(api.snoozeAlert).toHaveBeenCalledWith("S-001", "news2", 5, "OTHER", longest.trim(), "high");
+    });
+
+    // The minute the dialog names moves with the clock while it stays open (its own one-second tick).
+    it("says when the alarm sounds again by the clock as it moves", async () => {
+      const start = NOW + 55_000;                       // five seconds before the minute turns
+      fakeClock(start);
+      await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(start + 5 * 60_000)}`)).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(10_000); });
+      expect(hhmm(start + 10_000 + 5 * 60_000)).not.toBe(hhmm(start + 5 * 60_000));
+      expect(within(dialog()).getByText(`Siqnal yenidən səslənəcək: ${hhmm(start + 10_000 + 5 * 60_000)}`))
+        .toBeInTheDocument();
+    });
+
+    // Review (G2-B5b): the dialog acts on the alarm as the board holds it NOW, not on the picture it opened with. A
+    // moderate alarm that turns high while it is open must not be snoozed for a moderate's minutes; one answered or
+    // gone is not snoozed at all. «Ertele» is held, saying why, and nothing is sent.
+    const CHANGED = "Bu siqnal pəncərə açıq ikən dəyişdi; buradan təxirə salına bilməz. Pəncərəni bağlayıb siqnala yenidən baxın.";
+    const sendButton = () => within(dialog()).getByRole("button", { name: "Təxirə sal" });
+    const durationsOf = () => within(within(dialog()).getByRole("group", { name: "Müddət" })).getAllByRole("button")
+      .map((b) => b.textContent);
+
+    it("an alarm that worsens while the dialog is open is shown as it is now, and «Ertele» is held, saying why", async () => {
+      const { api, stream } = await open({ payload: withAlarms(alarm("acute_change", "moderate", { summary: "Moderate one" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      expect(durationsOf()).toEqual(["15 dəq", "30 dəq", "60 dəq", "120 dəq"]);
+      fireEvent.click(within(within(dialog()).getByRole("group", { name: "Müddət" })).getByRole("button", { name: "120 dəq" }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      expect(sendButton()).not.toHaveAttribute("aria-disabled");
+      act(() => { stream.frame(entry("S-001", [alarm("acute_change", "high", { summary: "Worse one" })], { ...CARD, risk: "high" })); });
+      expect(within(dialog()).getByText("Worse one")).toBeInTheDocument();
+      expect(durationsOf()).toEqual(["5 dəq", "10 dəq", "15 dəq", "30 dəq"]);
+      expect(sendButton()).toHaveAttribute("aria-disabled", "true");
+      expect(sendButton()).toHaveAccessibleDescription(CHANGED);
+      expect(within(dialog()).queryByText(/Siqnal yenidən səslənəcək/)).toBeNull();
+      await send();
+      expect(api.snoozeAlert).not.toHaveBeenCalled();
+      expect(dialog()).toBeInTheDocument();
+    });
+
+    it("an alarm answered while the dialog is open is not snoozed: «Ertele» is held, saying why", async () => {
+      const { api, stream } = await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      act(() => {
+        stream.frame(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse",
+          acknowledged_at: ago(0) })], { ...CARD, risk: "high" }));
+      });
+      expect(sendButton()).toHaveAttribute("aria-disabled", "true");
+      expect(sendButton()).toHaveAccessibleDescription(CHANGED);
+      await send();
+      expect(api.snoozeAlert).not.toHaveBeenCalled();
+    });
+
+    it("an alarm gone from the board while the dialog is open is not snoozed either", async () => {
+      const { api, stream } = await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      act(() => { stream.frame(entry("S-001", [], CARD)); });
+      expect(within(dialog()).getByText("NEWS2 7")).toBeInTheDocument();   // the alarm it was, for the reader
+      expect(sendButton()).toHaveAttribute("aria-disabled", "true");
+      await send();
+      expect(api.snoozeAlert).not.toHaveBeenCalled();
+    });
+
+    it("the engine's refusal of a severity that changed under the request is said in the reader's words", async () => {
+      await open({
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
+        setup: (fake) => fake.snoozeAlert.mockRejectedValue(refusal(409, "alarmın önemi değişti; ertelemeyi yeniden seçin")),
+      });
+      fireEvent.click(screen.getByRole("button", { name: SNOOZE }));
+      fireEvent.change(within(dialog()).getByRole("combobox", { name: /Səbəb/ }), { target: { value: "PATIENT_BASELINE" } });
+      await send();
+      expect(toasts().getAllByText("REA-01 · 2 · news2: təxirə salınmadı — Siqnalın ağırlıq dərəcəsi dəyişdi; təxirə "
+        + "salınmadı. Siqnala yenidən baxıb təxirə salmanı yenidən seçin.").length).toBeGreaterThan(0);
     });
   });
 

@@ -267,6 +267,27 @@ describe("apiErrorText", () => {
   const az = createTranslator("az", DICTIONARIES);
   const en = createTranslator("en", DICTIONARIES);
 
+  // G2-B5b: «Ertele»'s refusals (POST /alerts/snooze), pinned here as well as by the sweep above, which finds them in
+  // api/app.py only once the engine's half of the slice is in the same tree.
+  it("says the snooze refusals in the reader's words", () => {
+    expect(apiErrorText(az, Object.assign(new Error("alarmı bir kişi erteler"), { status: 403 })))
+      .toBe("Siqnalı bir nəfər təxirə salır; cihaz kimliyi ilə təxirə salmaq olmaz.");
+    expect(apiErrorText(en, Object.assign(new Error("snooze_not_allowed"), { status: 409 })))
+      .toBe("This alarm cannot be snoozed: a critical alarm never, and low and info alarms neither.");
+    expect(apiErrorText(az, Object.assign(new Error("alarm zaten yanıtlandı; ertelenmez"), { status: 409 })))
+      .toBe("Bu siqnal artıq cavablandırılıb; təxirə salınmadı.");
+    expect(apiErrorText(en, Object.assign(new Error("erteleme süresi bu alarm için izin verilen aralıkta değil"), { status: 422 })))
+      .toBe("The snooze duration is outside what this alarm allows (high: at most 30 min, moderate: at most 120 min).");
+    expect(apiErrorText(en, Object.assign(
+      new Error("erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter"), { status: 422 })))
+      .toBe("Choose the snooze reason from the list; for «Other» the explanation must be 15–500 characters.");
+    // Review (G2-B5b): the severity the dialog was opened on (`seen_severity`) is no longer the alarm's.
+    expect(apiErrorText(en, Object.assign(new Error("alarmın önemi değişti; ertelemeyi yeniden seçin"), { status: 409 })))
+      .toBe("The alarm's severity changed; it was not snoozed. Look at the alarm again and choose the snooze anew.");
+    expect(apiErrorText(en, Object.assign(new Error("geçersiz seen_severity"), { status: 422 })))
+      .toBe("The alarm severity in the snooze request is not valid; it was not snoozed.");
+  });
+
   // G2-A4 review 2 (C1–C2): the SOFA sign route's new refusals, pinned here as well as by the sweep above,
   // which finds them in api/app.py only once the engine's side of the round is in the same tree.
   it("says the SOFA preview and signature refusals of the preview route's round, each saying nothing was signed", () => {

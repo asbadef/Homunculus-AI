@@ -86,6 +86,11 @@ export interface TransportListener {
   onBoard(board: PatientBoard): void;
   onNotification(note: BoardNotification): void;
   onLoop?(): void;
+  /** The live transport's snapshot (GET /patients) at each connect, reconnect and rotation: the
+   * WHOLE board as the server shows it to this user now (G2 borç 1c). A patient it does not carry has
+   * left the screen — out of the scope a rotation read again, or discharged while the stream was
+   * down. A listener without it is handed the snapshot's boards one by one through onBoard. */
+  onSnapshot?(boards: PatientBoard[]): void;
 }
 
 /** The seam: M1 replays a recording, M2 will read SSE. Screens never know which. */

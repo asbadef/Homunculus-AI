@@ -79,4 +79,14 @@ describe("createSseParser", () => {
     expect(p.push('event: message\ndata: {"a":1}\n\n')).toEqual([{ a: 1 }]);
     expect(p.push('event:heartbeat\ndata: {}\n\n')).toEqual([]);
   });
+
+  // G2 borç 1b: the server ends a stream at its age with `event: rotate` (api/app.py ROTATE_FRAME).
+  // Still no payload — but the transport must hear it, so a named event is reported by its name.
+  it("reports a named event such as the server's rotate by name, and never as a payload", () => {
+    const named: string[] = [];
+    const p = createSseParser({ onNamedEvent: (name) => named.push(name) });
+    expect(p.push('data: {"a":1}\n\nevent: heartbeat\ndata: {}\n\nevent: rot')).toEqual([{ a: 1 }]);
+    expect(p.push("ate\r\ndata: {}\r\n\r\n")).toEqual([]);
+    expect(named).toEqual(["heartbeat", "rotate"]);
+  });
 });

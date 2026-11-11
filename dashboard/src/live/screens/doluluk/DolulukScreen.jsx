@@ -35,10 +35,16 @@ import { freshForm, useAdmitDraft } from "../kabul/admitDraft.js";
 import { BedStateDialog } from "./BedStateDialog.jsx";
 import { actionsFor, shownOf, sinceKey, unitCounts, withOpen } from "./occupancy.js";
 
-// Red is for alarms. A bed waiting for something (cleaning, a discharge, a transfer) is warned. A
-// reserved, out-of-service or maintenance bed says so in words, and its tile's edge marks it.
-const TONE = { HOUSEKEEPING: "warn", PENDING_DISCHARGE: "warn", PENDING_TRANSFER_OUT: "warn" };
-const EDGE = { RESERVED: "border-l-4 border-l-pri", BLOCKED: "border-l-4 border-l-line2", MAINTENANCE: "border-l-4 border-l-line2" };
+// The owner's colours (2026-11-10): a free bed is green, an occupied bed red, tag and tile edge.
+// A bed waiting for something (cleaning, a discharge, a transfer) is warned. A reserved,
+// out-of-service or maintenance bed says so in words, and its tile's edge marks it. The colour
+// is never the only signal: the tag says the state in words. A closed bed takes no colour.
+const TONE = { AVAILABLE: "ok", OCCUPIED: "crit", HOUSEKEEPING: "warn", PENDING_DISCHARGE: "warn", PENDING_TRANSFER_OUT: "warn" };
+const EDGE = {
+  AVAILABLE: "border-l-4 border-l-ok", OCCUPIED: "border-l-4 border-l-crit",
+  RESERVED: "border-l-4 border-l-pri", BLOCKED: "border-l-4 border-l-line2", MAINTENANCE: "border-l-4 border-l-line2",
+};
+const COUNT_TONE = { free: "ok", cleaning: "warn" };
 const ICON = { admit: "userPlus", reserve: "clock", outOfService: "x", unreserve: "x", returnToService: "ok", release: "ok" };
 const COUNT_KEYS = ["free", "cleaning", "reserved", "outOfService", "maintenance"];
 const NO_NAMES = new Map();
@@ -233,7 +239,7 @@ export function DolulukScreen() {
             <p className="m-0 mb-2 flex flex-wrap items-center gap-2 text-13">
               <b className="font-data">{t("doluluk.occupied", { occupied: counts.occupied, usable: counts.usable })}</b>
               {COUNT_KEYS.filter((key) => counts[key] > 0).map((key) => (
-                <Tag key={key} tone={key === "cleaning" ? "warn" : "neutral"}>{t(`doluluk.counts.${key}`, { n: counts[key] })}</Tag>
+                <Tag key={key} tone={COUNT_TONE[key] ?? "neutral"}>{t(`doluluk.counts.${key}`, { n: counts[key] })}</Tag>
               ))}
             </p>
             {(unit.rooms ?? []).length === 0 ? <p className="m-0 text-13 text-mute">{t("doluluk.noRooms")}</p> : null}

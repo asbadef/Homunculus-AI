@@ -542,6 +542,11 @@ Dalga 3'te geldi: 3.6.
   işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
   ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
   "sakin servis" gibi okunmaz.
+- *Akışın ömrü (sahip kararı, 2026-11-10, «Süre sınırı»):* Sunucu her pano ve bildirim akışını en
+  geç 15 dakikada bir kendisi kapatır (`rotate`). Kişinin birim kapsamı akış açılırken bir kez
+  okunur; bu kapanış sayesinde birimi değişen bir hemşirenin ya da düzenlenen bir yapının ekranı
+  en geç 15 dakikada yeni kapsama geçer. Tarayıcı hemen yeni bir biletle bağlanır ve panoyu
+  yeniden yükler; bu planlı bir yenilemedir, ekranda "güncel olmayabilir" şeridi çıkmaz.
 - *Ana ekrana eklenen uygulama:* Uygulama **gerçek sistemle** kurulur — Dalga 2'den önce kısayol
   simülasyonu (`?demo=1`) açıyordu. Ana ekranda zaten duran eski bir kısayol, tarayıcı uygulama
   tanımını yeniden okuyana kadar eski adresi açar; G1-16'dan beri o adres de gerçek sistemi açar
@@ -908,8 +913,8 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   hiçbir şey değişmez: "Gördü: …" bir kişi hakkında bir iddiadır, olmamış bir onay için yazılmaz.
   Pano güncel değilken düğme kalır (onay sunucuya gider, liste eski olabilir — ekran bunu yazar).
 - *Eskalasyon:* Motorun işidir; ekran yalnız motorun bildirdiği "Eskale edildi" durumunu gösterir.
-  Prototipteki 3/5/10 dakikalık basamaklar canlı sistemde yoktur. Erteleme ve elle eskalasyon
-  Grup 2'de.
+  Prototipteki 3/5/10 dakikalık basamaklar canlı sistemde yoktur. Elle eskalasyon «RRT çağır»
+  (§3.15), erteleme «Ertele» (§3.21) ile geldi.
 - *Hastanın kendi normaline göre düşürülen bulgu:* Motor bir bulguyu hastanın kayıtlı kronik
   normaline göre düşürdüyse yanında nötr bir "Hastanın kendi normaline göre beklenen" hapı durur;
   motorun açıklaması hasta ekranındadır. Bulgu kartta ve listede kalır, ama "yanıt bekleyen"
@@ -1659,7 +1664,8 @@ uydurmadır.
   (arter hattı ya da monitörün NBP ortalaması).
 - **İki giriş, tek form.**
   - «Yatak başı ölçüm» sayfası (`/olcum`, `clinical.chart` yetkisi; tablet ve telefon için): hasta
-    seçilir, ad soyad ve doğum yılıyla kimlik onaylanır (doğum tarihi kayıtlı değilse ekran bunu
+    seçilir, soyad ad ve doğum yılıyla kimlik onaylanır (koğuşun yazdığı sırayla, sahibin kararı 10 Kasım
+    2026; doğum tarihi kayıtlı değilse ekran bunu
     söyler ve yine sorar), form doldurulur. «Hayır, eşleşmiyor» seçimi iptal eder ve sorumlu
     hemşireye bildirmeyi söyler; hiçbir şey kaydedilmez.
   - Hasta ekranındaki «Ölçüm gir» (yalnız `clinical.chart` yetkisi olana görünür) aynı formu bir
@@ -1750,9 +1756,15 @@ uydurmadır.
 - **Zincir doğrulaması:** her denetim kaydı, kendinden önceki kaydın mührünü (hash) taşır. Arada bir kayıt silinir ya da
   değiştirilirse zincir o noktada kopar.
   - «Zinciri doğrula» mühürleri baştan yeniden hesaplar ve ilk kopan kaydı numarasıyla gösterir.
-  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). En çok 50 000 kaydı okur ve API'yi kısa bir süre meşgul eder.
+  - Doğrulama **yalnız düğmeyle** çalışır (sahip kararı). 2026-11-10'dan beri (sahip kararı, «Tamamını doğrula»)
+    zincirin **tamamını** okur: en eskiden başlayarak 5 000'er kayıtlık sayfalarla, ilk kopukluğa kadar. Her sayfa
+    API'nin ana döngüsünün dışında okunur ve hesaplanır; ekranlar beklemez. Milyon kayıt başına yaklaşık 4 saniye
+    işlemci tutar.
+  - Bir hastanede aynı anda **tek doğrulama** çalışır. Biri sürerken basılan düğme «doğrulama zaten sürüyor» der;
+    ikinci bir doğrulama sıraya girmez.
   - Sonuç, doğrulamanın saatiyle görünür. Sayfadan çıkınca silinir: eski bir sonuç güncelmiş gibi gösterilmez.
-  - Kayıt 50 000'den uzunsa sonuç «ilk N kayıtta sağlam» der, zincirin tamamı için sağlam demez.
+  - Sonuçtaki kayıt sayısı, doğrulamanın baştan sona yürüdüğü kayıtlardır. Doğrulama sürerken yazılan bir kayıt
+    bu sayıya girebilir de girmeyebilir de.
 - **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
   - Sütunlar: no, zaman, tür, kim, hasta, konu.
   - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
@@ -1773,11 +1785,18 @@ uydurmadır.
 
 Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
 temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
-«Yataklar» sekmesi buraya taşındı. **Durum:** kodda (`feat/g2b-b3a-doluluk`); main'e ve hastane
-sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
+«Yataklar» sekmesi buraya taşındı. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0016); yeşil/kırmızı yatak renkleri ve kimlik sorusundaki «soyad ad» sırası
+main'de (11 Kasım 2026), sunucuya sonraki çıkışla gelir. Örneklerdeki adlar uydurmadır.
 
 - **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
   yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
+- **Renkler.** Boş yatak **yeşil**, dolu yatak **kırmızı**: durum etiketi ve kutunun sol kenarı
+  (sahibin kararı, 10 Kasım 2026). Temizlikte, taburcu ya da nakil bekleyen yatak amber; rezerve
+  yatağın kenarı mavi, kullanım dışı ve bakımdaki gri; kapalı yatak renksiz. Renk tek işaret
+  değildir, etiket durumu sözle de söyler. Buradaki yeşil ve kırmızı yatağın durumudur, hastanın
+  risk düzeyi değil (risk hapları ayrı kurallarla boyanır, bkz. risk hapı bölümü). Birim
+  başlığındaki «boş» sayısı da yeşildir.
 - **Birim başlığı.** Birimin adı ve türü (Erişkin YBÜ, Yenidoğan YBÜ gibi); altında «1 / 4 doludur»:
   dolu yatak / kullanılabilir yatak. Kullanılabilir = açık, kullanım dışı ve bakımda olmayan; rezerve
   yatak kullanılabilir sayılır (hastasını bekler). Yanında sıfır olmayan sayılar: boş, temizlikte,
@@ -1829,7 +1848,7 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
     yazılmadı.
   - B5 canlı sistemin üzerine kuruldu; çalışmayan sisteme dokunulmadı.
 - **Sahip kararı:** RRT yalnız elle çağrılınca gelir; otomatik RRT kademesi kapalıdır ve RRT ekranı bunu açıkça yazar. Alarm
-  erteleme ayrı bir dilimdir.
+  erteleme ayrı bir dilimdir (§3.21).
 - **«RRT çağır» (Alarmlar ekranı):**
   - **Kim çağırabilir:** `alerts.escalate` yetkisi olanlar, yani RRT, sorumlu hemşire, hekimler ve yönetici. Hemşire
     çağıramaz; cihaz jetonu reddedilir, çünkü çağrıyı bir kişi yapar.
@@ -1853,8 +1872,8 @@ sunucusuna sahibin sözüyle çıkar. Örneklerdeki adlar uydurmadır.
 ### 3.16 Görevlerim: nöbetin iş kuyruğu (Grup 3 · G3-02)
 
 «Görevlerim» ekranı (`/gorevler`, `tasks.view` yetkisi) bu nöbetin işlerini tek yerde gösterir. İki kaynak var:
-bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** kodda hazır, hastane
-sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerler uydurmadır.
+bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** 11 Kasım 2026'dan beri hastane
+sunucusunda çalışıyor (göç 0017). Örneklerdeki değerler uydurmadır.
 
 - **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **elle girilen** NEWS2 değeridir (3.12'deki
   form; geri alınan giriş sayılmaz). Monitörden ya da HBYS'den gelen değer dayanak değildir. Son 48 saatte elle
@@ -1878,8 +1897,8 @@ sunucusunda değil (göç 0017, B3a'dan sonra çıkacak). Örneklerdeki değerle
 
 ### 3.17 Sıvı dengesi: giriş/çıkış defteri (Grup 3 · G3-03)
 
-Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** kodda
-hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok). Örneklerdeki değerler uydurmadır.
+Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki sıvı çizelgesinin yerini alır. **Durum:** 11 Kasım
+2026'dan beri hastane sunucusunda çalışıyor (göç yok). Örneklerdeki değerler uydurmadır.
 
 - **Ne girilir.** Aldığı: IV sıvı/infüzyon, kristaloid bolus, enteral/oral, kan ürünü, diğer. Çıkardığı: idrar,
   dren, diğer (NG, kusma). Her giriş mL ve saatle; saat en çok 24 saat geri, ileri olamaz. «Giriş/çıkış ekle»
@@ -1921,6 +1940,40 @@ hazır, hastane sunucusunda değil (Görevlerim'den sonra çıkacak; göç yok).
 - **Denetim kaydı:** açma, imza ve karşı imza denetim kaydına yazılır. Notun metni kayda yazılmaz.
 - **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
+
+### 3.21 Alarm erteleme: «Ertele» (Grup 2 · B5b)
+
+- **Ne:** Alarmlar ekranında bir alarmı sınırlı bir süre için susturmak. Erteleme bir kişinin gerekçeli ve süreli
+  kararıdır; alarm panodan kalkmaz.
+- **Sahip kararı (kurallar):**
+  - **Kritik alarm hiç ertelenmez.** Ekran bunu bir kez, cevap bekleyen ilk kritik alarmın yanında yazar: «Kritik
+    alarm ertelenemez».
+  - **Yüksek alarm** en çok 30 dk ertelenir (5/10/15/30 dk), **orta alarm** en çok 120 dk (15/30/60/120 dk).
+  - **Düşük ve bilgi alarmı ertelenmez;** zaten ses çıkarmazlar.
+  - **Gerekçe zorunludur** ve listeden seçilir: klinik karar verildi, artefakt ya da sinyal gürültüsü, işlem sürüyor,
+    hastanın kendi normali, diğer. «Diğer» 15–500 karakterlik bir açıklama ister; açıklamaya ad ya da kimlik
+    numarası yazılmaz.
+  - **Kim:** alarmı onaylayabilen (`alerts.ack`) herkes, hemşire dahil. Cihaz jetonu reddedilir; ertelemeyi bir kişi
+    yapar.
+- **Ertelenen alarm:**
+  - Ses çıkarmaz; zilde, menü rozetinde, kilit ekranının sayısında, Yataklar ekranının «Yanıt bekleyen alarm»
+    satırında ve RRT ekranının «yoldaki» listesinde sayılmaz.
+  - Eskale olmaz. Önceden eskale olduysa «Eskale edildi» işareti kalkar; hekime giden bildirim geri alınmaz.
+  - Alarmlar ekranında «Ertelenenler» grubuna geçer: bitiş saati, erteleyen ve gerekçesiyle. «Gördüm», «RRT çağır»
+    ve «Ertele» yine kullanılabilir.
+- **Süre bitince:** alarm yeniden cevap bekler ve çalar. Ekran bunu kendi saatiyle yapar, sunucuyu beklemez; sunucu da
+  kartı yeniden yayınlar. Eskalasyon saati bitişten yeniden başlar ve hekim bildirimi sıfırlanır: alarm bundan sonra
+  5 dk cevapsız kalırsa eskale olur ve hekime yeniden bildirim gider, erteleme öncesinde bildirim gitmiş olsa bile.
+  Eskale olan yalnız acil (`immediate`) alarmlardır (§3.15).
+- **Erteleme erken biter:** «Gördüm» ile; alarm kapanınca (gidip gelen alarm yeni bir alarmdır ve çalar, erteleme
+  eskalasyon zinciriyle taşınmaz); taburcu ile; aynı alarm kötüleşince (ör. NEWS2 orta → yüksek: kötüleşen alarm
+  hemen çalar, eskalasyon saati yeniden başlamaz); yeniden ertelemeyle (yenisi eskisinin yerine geçer).
+- **Kayıt:** her erteleme denetim kaydına `alert_snooze` olarak, erteleyenin adı, süre, bitiş ve gerekçeyle yazılır;
+  kayıt belleğe yazılmadan önce düşülür. Denetim sayfasında «Alarm ertelendi» olarak görünür.
+- **API yeniden başlarsa:** süresi dolmamış erteleme denetim kaydından geri gelir; süresi dolmuş olan geri gelmez.
+- **Bu dilimde olmayanlar:** birime göre erteleme kuralları, kritik alarmı erteleme, hasta ekranından erteleme,
+  erteleme raporu. Postgres'teki eski `escalation/` modülüne dokunulmadı.
+- **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b5b-ertele-design.md`.
 
 ---
 

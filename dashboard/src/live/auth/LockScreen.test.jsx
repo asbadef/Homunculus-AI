@@ -179,6 +179,30 @@ describe("LockScreen", () => {
     act(() => { board.clear(); });
   });
 
+  // G2-B5b (spec D4; review): a snoozed alarm is open but not waiting until its until — and waits from that moment,
+  // on the lock screen's own clock (useSnoozeClock), with no frame from the server.
+  it("counts a snoozed alarm as unacknowledged only once its snooze has ended", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve, 0); }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-11-10T10:00:00Z");
+    vi.setSystemTime(now);
+    const snoozed = { ...alarm("high"), snooze: { by: "leyla", at: new Date(now - 295_000).toISOString(),
+      until: new Date(now + 5_000).toISOString(), minutes: 5, reason: "PATIENT_BASELINE", reason_text: null } };
+    const view = await mount(<LockScreen />, { setup: (api) => {
+      api.boardPatients.mockResolvedValue({ patients: [entry("S-001", [snoozed])], scope: { unrestricted: true, unit_ids: [] } });
+      api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+    } });
+    await act(async () => { view.store.lock(); await view.board.start(); });
+    await act(async () => { view.stream.open(); });
+    await flush();
+    expect(counts()).toHaveTextContent("Bölmələrinizdəki açıq siqnal: 1");
+    expect(counts()).toHaveTextContent("Təsdiqlənməmiş: 0");
+    act(() => { vi.advanceTimersByTime(5_100); });
+    expect(counts()).toHaveTextContent("Təsdiqlənməmiş: 1");
+    act(() => { view.board.clear(); });
+  });
+
   it("counts the open alarms by severity, a severity it does not know first — and no patient", async () => {
     const { board } = await mountLive([
       entry("S-001", [alarm("critical"), alarm("plasma-storm")]),

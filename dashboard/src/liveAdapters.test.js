@@ -147,6 +147,19 @@ describe("alertsFromPatients", () => {
     expect(alertsFromPatients([patientFromBoard(entry)])[0].rrtCall).toBeNull();
   });
 
+  // G2-B5b (D3): a snooze rides on the card's alert — who, when, until when, why — as instants in milliseconds.
+  it("carries a snooze — who, when, until when, why — and null when there is none", () => {
+    const at = "2026-11-10T10:00:00+00:00";
+    const until = "2026-11-10T10:15:00+00:00";
+    const snoozed = { ...entry, alerts: [{ ...entry.alerts[0],
+      snooze: { by: "hem.leyla", at, until, minutes: 15, reason: "OTHER", reason_text: "Hasta yıkanıyor, prob çıktı" } }] };
+    expect(alertsFromPatients([patientFromBoard(snoozed)])[0].snooze).toEqual({
+      by: "hem.leyla", atMs: Date.parse(at), untilMs: Date.parse(until), minutes: 15, reason: "OTHER",
+      reasonText: "Hasta yıkanıyor, prob çıktı",
+    });
+    expect(alertsFromPatients([patientFromBoard(entry)])[0].snooze).toBeNull();
+  });
+
   it("maps the engine's severity onto the tier the alarm UI colors by", () => {
     const critical = { ...entry, alerts: [{ ...entry.alerts[0], severity: "critical" }] };
     expect(alertsFromPatients([patientFromBoard(critical)])[0].tier).toBe("CRITICAL");

@@ -17,10 +17,11 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from itertools import islice
 from typing import TYPE_CHECKING
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
@@ -34,7 +35,7 @@ from homunculus.api.alert_lifecycle import (
     live_keys, retire_patient, retire_state, sync_alerts,
 )
 from homunculus.api.audit import (
-    AuditEvent, AuditLog, InMemoryAuditLog, iter_records, iter_records_of, verify_chain,
+    AuditEvent, AuditLog, ChainVerifier, InMemoryAuditLog, iter_records, iter_records_of,
 )
 from homunculus.api.board import (
     _news2, board_snapshot, freshness_turned, identity_only_board, patient_board, tombstone_board,
@@ -63,6 +64,7 @@ from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
     REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
 )
+from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -117,10 +119,13 @@ SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 AUDIT_LIMIT_MAX = 1000
 ALARM_QUALITY_LIMIT_MAX = 20000
 REHYDRATE_PAGE = 5000
-#: Spec 2026-11-01: the most records one `/audit/verify` reads — one read under the audit's read
-#: bound, re-hashed on the event loop. A larger `limit` is clamped, and the answer says
-#: `complete: false` when the tenant's trail held more, as for any partial run.
-AUDIT_VERIFY_LIMIT_MAX = 50000
+#: G2 borç 3 (owner decision 2026-11-10, «Tamamını doğrula»): `/audit/verify` walks the hospital's WHOLE
+#: chain, oldest first, this many rows a read (`iter_records`, each read under the audit's read bound),
+#: every page read and re-hashed on a worker thread so the event loop never waits for it. It replaces
+#: spec 2026-11-01's cap (AUDIT_VERIFY_LIMIT_MAX, 50 000 rows in one read on the loop), which on a long
+#: trail checked the oldest rows only and never the newest. Measured cost: about 3.6 µs a seal — about
+#: 4 s of CPU and 200 page reads a million rows — run only when someone presses the button.
+AUDIT_VERIFY_PAGE = 5000
 
 #: G2-A4 review: the slip bounds a SOFA correction is held to — the charting door's PLAUSIBLE. G3-01 (X7): MAP,
 #: once an extra bound here (the door did not take it), is in PLAUSIBLE now with the same 0–300 mmHg. An
@@ -187,51 +192,131 @@ def _device_role(value: object) -> str:
 #: reader of unnamed `message` events only — the old workspace, the mobile app — never sees it.
 HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
+#: G2 borç 1b (owner decision 2026-11-10, «Süre sınırı»): the longest one live stream is kept open, in
+#: seconds. `/stream` and `/notifications` resolve the caller's scope ONCE, from the ticket, and keep it
+#: for the connection's whole life — so a nurse moved to another unit, a role changed, or a bed map or
+#: structure edited would leave an open screen on the old view until it happened to reconnect, which
+#: on a ward tablet can be days. Bounding the life bounds that: past this age the server ends the
+#: stream with ROTATE_FRAME, and the client reconnects with a fresh ticket — and so a scope read again
+#: — and reloads the board. Every subscriber, scoped or not: an unscoped one's role can change too.
+STREAM_MAX_AGE = 900
+#: The last frame of a stream that reached STREAM_MAX_AGE: a NAMED event, so a reader of unnamed
+#: `message` events only never takes it for a board. A planned end, not a failure — the dashboard
+#: reconnects at once and does not show the board as possibly out of date (boardStore.js).
+ROTATE_FRAME = "event: rotate\ndata: {}\n\n"
+
+
+class ScopedBoardView:
+    """What one scoped subscriber of the board stream is sent for each board (G2 borç 1): the board
+    when it is in the scope, a removal when it is not and its patient is one this subscriber holds a
+    card for, otherwise nothing.
+
+    Dropping every board outside the scope left a card on a scoped screen for good once its patient
+    left the scope — a HIS transfer to another unit, a HIS discharge (which frees the bed), a removal
+    that knows no last place: the patient's next board lies outside the scope, and no frame ever
+    told the screen the card was gone, though a reload no longer showed it.
+
+    So the view remembers whom this subscriber holds a card for: `shown`, the patients in scope when
+    the stream opened (the dashboard reloads the board on every open), and every patient sent since.
+    One who leaves the scope is sent ONCE as a removal carrying the id alone — the id the screen
+    already holds, never where the patient went. A patient this subscriber never held stays
+    withheld, as before: that a patient exists elsewhere in the ward is itself the thing withheld.
+    """
+
+    def __init__(self, scope: Scope, shown: Iterable[str] = ()) -> None:
+        self._scope = scope
+        self._shown = set(shown)
+
+    def __call__(self, board: dict) -> dict | None:
+        patient_id = str(board.get("patient_id") or "")
+        if sees_patient(board, self._scope):
+            if board.get("removed"):
+                self._shown.discard(patient_id)
+            else:
+                self._shown.add(patient_id)
+            return board
+        if patient_id in self._shown:
+            self._shown.discard(patient_id)
+            return {"patient_id": patient_id, "removed": True, "identity": None}
+        return None
+
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
-                           allow: Callable[[dict], bool] | None = None):
+                           allow: Callable[[dict], bool] | None = None,
+                           view: Callable[[dict], dict | None] | None = None, *,
+                           max_age: float = STREAM_MAX_AGE,
+                           clock: Callable[[], float] | None = None):
     """Yield SSE frames for boards arriving on `queue`; on idle, a keep-alive comment and then
     HEARTBEAT_FRAME. Tested directly (httpx ASGITransport cannot read an unbounded stream).
     Cancellation (client disconnect, via Starlette) interrupts the wait; the caller's finally
     unsubscribes. Do NOT read request.receive.
 
-    `allow` is the subscriber's scope. The broadcaster publishes one board per tenant to every
+    `max_age` (G2 borç 1b): once that many seconds have passed since the stream opened, one
+    ROTATE_FRAME and the generator returns, which ends the response — the caller's finally still
+    unsubscribes. A busy stream is held to it as an idle one is: the age is checked before every
+    frame, and the wait for the next board never outlasts the life that is left. `clock` is the
+    time it is measured on (the loop's by default); a test passes its own.
+
+    `allow` is a scope as a plain filter. The broadcaster publishes one board per tenant to every
     subscriber of that tenant, so without a per-subscriber filter here the live feed would carry
     every patient in the hospital to a nurse whose `/patients` response was filtered a second
     earlier. A board that does not pass is dropped silently rather than replaced by a placeholder:
     the fact that a patient exists elsewhere in the ward is itself the thing being withheld.
+    `view` is what `/stream` passes a scoped subscriber (`ScopedBoardView`): the frame this
+    subscriber is sent for the board, or None — the filter, and the removal of a card whose patient
+    left the scope (G2 borç 1).
 
     Idle means nothing SENT to this subscriber for `keepalive` seconds — not an empty queue: a
     nurse scoped to a quiet unit of a busy hospital is sent none of the boards the queue keeps
     bringing, and still gets her heartbeat (the dashboard drops a stream silent for three of them).
     """
-    loop = asyncio.get_running_loop()
-    last_sent = loop.time()
+    now = clock or asyncio.get_running_loop().time
+    opened = last_sent = now()
     while True:
-        wait = keepalive - (loop.time() - last_sent)
+        left = max_age - (now() - opened)
+        if left <= 0:
+            yield ROTATE_FRAME
+            return
+        wait = keepalive - (now() - last_sent)
         if wait <= 0:
             yield ": keep-alive\n\n"
             yield HEARTBEAT_FRAME
-            last_sent = loop.time()
+            last_sent = now()
             continue
         try:
-            board = await asyncio.wait_for(queue.get(), timeout=wait)
+            board = await asyncio.wait_for(queue.get(), timeout=min(wait, left))
         except asyncio.TimeoutError:
             continue
         if allow is not None and not allow(board):
             continue
-        yield f"data: {json.dumps(board)}\n\n"
-        last_sent = loop.time()
+        frame = board if view is None else view(board)
+        if frame is None:
+            continue
+        yield f"data: {json.dumps(frame)}\n\n"
+        last_sent = now()
 
 
 async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
-                                  allow: Callable[[dict], bool] | None = None):
-    """Same shape as sse_board_frames, for the /notifications stream. Tested directly."""
+                                  allow: Callable[[dict], bool] | None = None, *,
+                                  max_age: float = STREAM_MAX_AGE,
+                                  clock: Callable[[], float] | None = None):
+    """Same shape as sse_board_frames, for the /notifications stream. Tested directly.
+
+    Held to the same `max_age` (G2 borç 1b): its scope, too, is the ticket's, read once at open.
+    Its keep-alive is still a comment on an idle queue; a wait cut short by the end of the life is
+    no keep-alive, only the way to the ROTATE_FRAME."""
+    now = clock or asyncio.get_running_loop().time
+    opened = now()
     while True:
+        left = max_age - (now() - opened)
+        if left <= 0:
+            yield ROTATE_FRAME
+            return
         try:
-            note = await asyncio.wait_for(queue.get(), timeout=keepalive)
+            note = await asyncio.wait_for(queue.get(), timeout=min(keepalive, left))
         except asyncio.TimeoutError:
-            yield ": keep-alive\n\n"
+            if now() - opened < max_age:
+                yield ": keep-alive\n\n"
             continue
         if allow is not None and not allow(note):
             continue
@@ -321,6 +406,9 @@ def create_app(
     notifier = Notifier()
     hub = NotificationHub()
     tickets = TicketStore()
+    # G2 borç 3: the hospitals whose whole-chain verification is running — one at a time each.
+    # Checked and added on the event loop with no await between, so two requests cannot both pass.
+    verifying: set[str] = set()
     audit = audit or InMemoryAuditLog()
     identities = identities if identities is not None else InMemoryIdentityStore()
     tasks = tasks if tasks is not None else InMemoryTaskStore()      # G3-02: the task queue's rows
@@ -401,7 +489,8 @@ def create_app(
         withdrawn = retracted_entries(iter_records_of(audit, tenant=hospital, event_types={RETRACT},
                                                       page=REHYDRATE_PAGE))
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
-        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn)
+        rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn,
+                  now=datetime.now(timezone.utc))          # G2-B5b: a snooze still running at the restart stands
         # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
         # was discharged is retired, whether or not the discharge's rows were written (a crash
         # between the tombstone write and the retire call; an audit that failed after the
@@ -533,6 +622,16 @@ def create_app(
                 await broadcaster.publish(hospital, _card(hospital, pid, now=now))
 
     async def _escalation_cycle(now: datetime) -> None:
+        # G2-B5b (spec §2): a snooze whose `until` has come ends first. Its alarm waits for an answer again, on a
+        # fresh escalation clock from `until` and with the doctor's page cleared (`AckStore.expire_snoozes`), so
+        # the escalation below judges it as it now is. Every hospital's end here, before anything in any hospital
+        # can raise — an identity read, a retire, an audit append (review, fix 3): one hospital's failure, which
+        # still stops the cycle and is logged by the loop, keeps no other hospital's alarm silent past its `until`.
+        # Their patients wait in `woken` until their card is republished below: a screen without its own clock
+        # hears the alarm again within a cycle, or the next one if this one raises first.
+        for hospital in list(engines):
+            store = _store(hospital)
+            store.woken.update(pid for pid, _kind in store.expire_snoozes(now))
         for hospital, engine in list(engines.items()):
             store = _store(hospital)
             # The firing alerts only (G2-A1, D8): a latched one is a to-do, not an unanswered
@@ -551,7 +650,8 @@ def create_app(
             # The chain's clock, not the episode's first sight (X13): an alert that clears
             # unanswered and returns within `escalate_after` is still unanswered on the clock it
             # started.
-            newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after)
+            newly = escalate(alerts, store.acks, store.clock_from, now, escalate_after,
+                             snoozed=store.snoozes)               # G2-B5b: no escalation while snoozed
             changed: set[str] = set()
             if newly != store.escalated:
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
@@ -559,6 +659,15 @@ def create_app(
                 for pid in changed:
                     # Judged at the cycle's instant, as the freshness republish below (G2-A2, X2).
                     await broadcaster.publish(hospital, _card(hospital, pid, now=now))
+            # G2-B5b: the cards of the alarms whose snooze ended — this cycle, or one that raised before here —
+            # each sent once, unless sent above, retired, or no longer in the engine (`_card` would create it),
+            # and only then let go.
+            measured = set(engine.patient_ids())
+            for pid in sorted(store.woken):
+                if pid not in changed and pid not in gone and pid in measured:
+                    await broadcaster.publish(hospital, _card(hospital, pid, now=now))
+                    changed.add(pid)
+                store.woken.discard(pid)
             # One page per chain (G2-A1 final review, X13): `escalated` follows the clock, so a
             # critical that latches and returns, or an alert that clears and returns within the
             # delay, is escalated again — but the doctor was told about this chain already (`paged`).
@@ -910,6 +1019,28 @@ def create_app(
             raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
         return scope
 
+    def _scope_card(hospital: str, patient_id: str, record=_READ, *, counted: bool = True) -> dict:
+        """The card every scope check reads (`_require_patient`, the notification stream): only
+        what `sees_patient` reads — the id, and the bed and unit the board publishes for that
+        patient (same identity, same bed map). `record` is the identity the caller already holds;
+        left out, it is read here. `counted` False: the bed is resolved without counting a miss.
+
+        It is NOT built with `patient_board`: that reads `engine.state()`, which creates the
+        patient, so a refused probe for a made-up id would put that id on every board in the
+        hospital — and it scores a whole card to read two ids (G2 borç 5).
+        """
+        record = identities.get(hospital, patient_id) if record is _READ else record
+        if is_tombstone(record):
+            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
+            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
+            # the route, whose discharged-number drop answers; another unit's still get the 404.
+            identity = tombstone_board(record)["identity"]
+        elif record is not None:
+            identity = identity_only_board(record, bedmap if counted else uncounted_bedmap)["identity"]
+        else:
+            identity = None
+        return {"patient_id": patient_id, "identity": identity}
+
     async def _require_patient(caller: Caller, authorization: str | None,
                                patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
@@ -937,26 +1068,13 @@ def create_app(
         blip to turn a readable scope into an unreadable one. Every other route leaves it out and
         the scope is resolved here.
 
-        The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
-        the board publishes for that patient (same identity, same bed map). It is NOT built with
-        `patient_board`: that reads `engine.state()`, which creates the patient, so a refused
-        probe for a made-up id would put that id on every board in the hospital.
+        The card it checks is `_scope_card`'s, never `patient_board`'s.
         """
         hospital = caller.hospital
         scope = _readable(scope if scope is not None else await _scope(authorization))
         if scope.unrestricted:
             return
-        record = identities.get(hospital, patient_id)
-        if is_tombstone(record):
-            # G2-B1a (A-25, Lane A's note 5): a discharged admission sits on no bed, so it is
-            # read at its last bed and unit — its removal frame's. That unit's clinicians reach
-            # the route, whose discharged-number drop answers; another unit's still get the 404.
-            identity = tombstone_board(record)["identity"]
-        else:
-            identity = (identity_only_board(record, bedmap)["identity"]
-                        if record is not None else None)
-        card = {"patient_id": patient_id, "identity": identity}
-        if sees_patient(card, scope):
+        if sees_patient(_scope_card(hospital, patient_id), scope):
             return
         audit.append(AuditEvent(hospital, "scope_denied", patient_id, scope.reason,
                                 {"units": sorted(scope.unit_ids), "beds": sorted(scope.bed_ids),
@@ -1504,6 +1622,80 @@ def create_app(
         await broadcaster.publish(hospital, board)
         return board
 
+    @app.post("/alerts/snooze")
+    async def snooze_alert(authorization: str | None = Header(default=None), body: dict = Body(...)):
+        """«Ertele»: a person snoozes one active alarm for a bounded time, with a named reason (G2-B5b, spec
+        2026-11-10; owner D1: critical never, high at most 30 minutes, moderate at most 120, low and info none).
+
+        Keyed like `/ack`: patient and kind in the body, never in the path the access log writes. Whoever may
+        acknowledge may snooze (`alerts.ack`, nurses included). A device is refused explicitly, since a device is
+        exempt from permission checks: a snooze is a person's decision, named in the trail.
+
+        Refused:
+        - an alarm not on the board (404);
+        - a latched critical, a critical, a low or an info alarm (409 `snooze_not_allowed`);
+        - an answered alarm (409);
+        - an alarm whose severity is no longer the `seen_severity` the dialog showed (409; review, item 7);
+        - minutes outside 1..cap, a reason the list does not hold, OTHER under 15 characters, a text over 500, or a
+          `seen_severity` neither high nor moderate (422).
+        The reason and `seen_severity` are judged before the patient's scope, as the RRT call judges its reason: they
+        name nothing of the patient. The changed severity is judged as soon as the alarm's is known, before the
+        minutes. A second snooze replaces the first, with its own `until`. The trail before memory, as `/ack`
+        (spec 2026-11-01, D3).
+        """
+        caller = await _caller(authorization)
+        if caller.is_device:
+            raise HTTPException(status_code=403, detail="alarmı bir kişi erteler")
+        _require(caller, ALERTS_ACK)
+        hospital = caller.hospital
+        engine = _engine(hospital)
+        store = _store(hospital)
+        patient_id, kind = _body_patient_id(body), body.get("kind")
+        if not isinstance(kind, str):
+            raise HTTPException(status_code=400, detail="geçersiz kind")
+        cleaned = clean_reason(body.get("reason"), body.get("reason_text"))
+        if cleaned is None:
+            raise HTTPException(status_code=422,
+                                detail="erteleme gerekçesi listeden olmalı; «Diğer» için açıklama 15–500 karakter")
+        reason, reason_text = cleaned
+        # Review (item 7): the severity the dialog showed when the person chose, optional. Null is absent.
+        seen = body.get("seen_severity")
+        if seen is not None and (not isinstance(seen, str) or seen not in SNOOZE_CAPS):
+            raise HTTPException(status_code=422, detail="geçersiz seen_severity")
+        who = _attribution(caller, body)
+        await _require_patient(caller, authorization, patient_id)
+        key = (patient_id, kind)
+        if key not in live_keys(engine, store):
+            raise HTTPException(status_code=404, detail="no such active alert")
+        if key in store.resolved:
+            # A latched critical (G2-A1): critical, and its rule has stopped. There is nothing left to silence.
+            raise HTTPException(status_code=409, detail="snooze_not_allowed")
+        if key in store.acks:
+            raise HTTPException(status_code=409, detail="alarm zaten yanıtlandı; ertelenmez")
+        severity = next(a.severity for a in engine.active_alerts(patient_id) if a.kind == kind)
+        if seen is not None and seen != severity:
+            # A frame changed the alarm while the dialog was open. Taken at the new severity, a snooze chosen on a
+            # moderate alarm would hold a high one — and never end by «worse» (plan note 1). The person chooses again.
+            raise HTTPException(status_code=409, detail="alarmın önemi değişti; ertelemeyi yeniden seçin")
+        if snooze_cap(severity) is None:
+            raise HTTPException(status_code=409, detail="snooze_not_allowed")
+        minutes = body.get("minutes")
+        if not minutes_ok(severity, minutes):
+            raise HTTPException(status_code=422, detail="erteleme süresi bu alarm için izin verilen aralıkta değil")
+        now = datetime.now(timezone.utc)
+        until = now + timedelta(minutes=minutes)
+        # `severity` is what it was given at (review, fix 4): a restart holds the snooze to it, so a withdrawal that
+        # made the alarm worse — and so ended the snooze live — does not bring the snooze back.
+        audit.append(AuditEvent(hospital, "alert_snooze", patient_id, kind,
+                                {**who, "minutes": minutes, "until": until.isoformat(), "reason": reason,
+                                 **({"reason_text": reason_text} if reason_text is not None else {}),
+                                 "severity": severity, "at": now.isoformat()}))
+        store.snooze(patient_id, kind, by=who["actor"], at=now, minutes=minutes, reason=reason,
+                     reason_text=reason_text, severity=severity)
+        board = _card(hospital, patient_id)
+        await broadcaster.publish(hospital, board)
+        return board
+
     @app.post("/view")
     async def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
         """Record that a clinician opened a patient — attributed from the token."""
@@ -1742,6 +1934,12 @@ def create_app(
         if caller.hospital != shadow.hospital:
             return {"stage": "off"}
         scope = await _scope(authorization)
+        if viewer:
+            # G2 borç 4 (G2-A2, D13): a scope that could not be read is 503, not an empty strip — a
+            # quiet ward on the screen of a nurse whose look-up failed. `devices.manage` alone sees
+            # every monitor and no patient whatever the scope, so for it there is nothing to refuse.
+            # `/infinity-waves` asks this handler for its board, and so answers the same 503.
+            scope = _readable(scope)
         now = shadow_clock()
 
         def _at(card: dict, patient_id: str) -> bool:
@@ -1828,14 +2026,38 @@ def create_app(
         return {"ticket": tickets.issue(caller.hospital, now=time.monotonic(), scope=scope),
                 "expires_in": 60}
 
+    def _shown_to(hospital: str, scope: Scope) -> set[str]:
+        """The patients whose card a subscriber under `scope` holds as its stream opens — the ones
+        `/patients` shows it (G2 borç 1): the board's patients, a discharged admission's tombstone
+        not among them, each read as `_scope_card` reads it — no card built, no patient created,
+        no miss counted (this is not the board's own read)."""
+        engine = engines.get(hospital)
+        ids = set(identities.patient_ids(hospital))
+        if engine is not None:
+            ids.update(engine.patient_ids())
+        shown = set()
+        for patient_id in ids:
+            record = identities.get(hospital, patient_id)
+            if is_tombstone(record):
+                continue
+            if sees_patient(_scope_card(hospital, patient_id, record, counted=False), scope):
+                shown.add(patient_id)
+        return shown
+
     @app.get("/stream")
     async def stream(token: str | None = None, ticket: str | None = None):
         hospital, scope = _stream_hospital(token, ticket)
+        # An unrestricted subscriber is sent every board as it is. A scoped one is sent what its
+        # `ScopedBoardView` makes of each (G2 borç 1): read before subscribing, with no await
+        # between the two, so no board is published in the gap and a failed read leaves no queue.
+        view = None if scope.unrestricted else ScopedBoardView(scope, _shown_to(hospital, scope))
         queue = broadcaster.subscribe(hospital)
 
         async def events():
+            # G2 borç 1b: the stream ends at STREAM_MAX_AGE (read here, as it opens) with a `rotate`
+            # event; the client comes back with a fresh ticket, and so with the scope as it is then.
             try:
-                async for frame in sse_board_frames(queue, allow=lambda b: sees_patient(b, scope)):
+                async for frame in sse_board_frames(queue, view=view, max_age=STREAM_MAX_AGE):
                     yield frame
             finally:
                 broadcaster.unsubscribe(hospital, queue)
@@ -1852,16 +2074,18 @@ def create_app(
 
             Its body is `"{patient_id}: {summary}"`, which means letting an out-of-scope
             notification through would hand over the identifier *and* the finding — more than
-            the board itself would have shown.
+            the board itself would have shown. Judged on `_scope_card`, as every patient route is
+            (G2 borç 5).
             """
             if scope.unrestricted:
                 return True
             pid = str(note.get("patient_id") or "")
-            return sees_patient(_card(hospital, pid), scope)
+            return sees_patient(_scope_card(hospital, pid), scope)
 
         async def events():
+            # Held to the board stream's life (G2 borç 1b): its scope is the ticket's too.
             try:
-                async for frame in sse_notification_frames(queue, allow=allow):
+                async for frame in sse_notification_frames(queue, allow=allow, max_age=STREAM_MAX_AGE):
                     yield frame
             finally:
                 hub.unsubscribe(hospital, role, queue)
@@ -2080,21 +2304,46 @@ def create_app(
         return {**report.as_dict(), "days": days, "truncated": truncated}
 
     @app.get("/audit/verify")
-    async def verify_audit(limit: int = 10000, authorization: str | None = Header(default=None)):
+    async def verify_audit(limit: str | None = None, authorization: str | None = Header(default=None)):
         """Has this hospital's audit log been altered?
 
         Recomputes every seal from the genesis hash forward and names the first record that fails.
         Deliberately unfiltered: a chain can only be verified as the complete run for one tenant,
         because a filtered slice is missing its own predecessors by construction and would report a
-        break that is not there. `limit` bounds the work, and the response says how far it got so a
-        partial verification is never mistaken for a whole one.
+        break that is not there.
+
+        G2 borç 3 (owner decision 2026-11-10, «Tamamını doğrula»): the WHOLE chain, every row of the
+        hospital's trail, oldest first, AUDIT_VERIFY_PAGE rows a read (`iter_records`), stopping at the
+        first break. Each page is read and re-hashed on a worker thread (`asyncio.to_thread`): the
+        event loop — every ward screen's API — never waits for a verification. One at a time per
+        hospital: a second request while one runs is refused (409), never queued behind it. A row
+        appended while the walk runs may or may not be in it; `records` says how many rows were
+        walked. `complete` is true whenever the walk reached the end or stopped at a break — which is
+        every answer now; the field stays for the page's sake (D4). `limit` is accepted and ignored,
+        so an older client that still sends one is not refused.
         """
         caller = await _caller(authorization)
         _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
-        cap = min(limit, AUDIT_VERIFY_LIMIT_MAX)
-        recs = audit.records(tenant=hospital, limit=cap)
-        report = verify_chain(recs)
-        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < cap}
+        if hospital in verifying:
+            raise HTTPException(status_code=409, detail="denetim doğrulaması zaten sürüyor")
+        verifying.add(hospital)
+        try:
+            page = AUDIT_VERIFY_PAGE
+            verifier = ChainVerifier()
+            rows = iter_records(audit, tenant=hospital, page=page)
+
+            def walk_one_page() -> bool:
+                """One page of the walk, on a worker thread: its read (the next `iter_records` page)
+                and its seals. True while there may be more: a whole page walked, no break."""
+                before = verifier.records
+                verifier.feed(islice(rows, page))
+                return not verifier.broken and verifier.records - before == page
+
+            while await asyncio.to_thread(walk_one_page):
+                pass
+        finally:
+            verifying.discard(hospital)
+        return {**verifier.report().as_dict(), "records": verifier.records, "complete": True}
 
     return app

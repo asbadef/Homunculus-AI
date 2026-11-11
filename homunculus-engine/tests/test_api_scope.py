@@ -231,6 +231,19 @@ class TestDTheLiveFeed:
         _hospital, scope = app.state.tickets.consume(ticket, now=0.0)
         assert scope.unrestricted is True
 
+    def test_a_scoped_stream_ends_after_its_life_so_the_next_ticket_reads_the_scope_again(
+            self, adult_nurse, monkeypatch):
+        """G2 borç 1b (owner: «Süre sınırı»): the scope a ticket carries is the scope of that
+        connection's whole life — so the life is bounded. A reassignment reaches an open screen at
+        the next rotation, through a fresh ticket, instead of never."""
+        import homunculus.api.app as app_module
+        monkeypatch.setattr(app_module, "STREAM_MAX_AGE", 0.05)
+        app, client = adult_nurse
+        ticket = client.post("/stream-ticket", headers=NURSE).json()["ticket"]
+        body = client.get(f"/stream?ticket={ticket}").text
+        assert body.endswith("event: rotate\ndata: {}\n\n")
+        assert app.state.broadcaster._subs == {}                # noqa: SLF001 — unsubscribed
+
     async def test_the_frame_generator_drops_out_of_scope_boards(self):
         """The filter has to sit in the generator: the broadcaster fans one board out to every
         subscriber of the tenant, so there is nowhere earlier that knows who is listening."""
@@ -370,6 +383,29 @@ class TestGThePermissionAndTheScopeBothHold:
         assert set(app.state.ack_stores["demo"].acks) == {("p-a1", "news2")}
         assert [r.patient_id for r in _rows(app, "ack")] == ["p-a1"]
 
+    def test_an_out_of_scope_snooze_is_refused_with_a_denial_and_stores_nothing(self):
+        """G2-B5b (review, fix 5): «Ertele» is held to the scope as `/ack` is — 404, one `scope_denied` row, no
+        snooze. The reason is judged before the scope (it names nothing of the patient): a bad one is a 422 and
+        writes no denial."""
+        def snooze(client, pid, reason="PATIENT_BASELINE"):
+            return client.post("/alerts/snooze", headers=NURSE,
+                               json={"patient_id": pid, "kind": "news2", "minutes": 15, "reason": reason})
+
+        app = app_with(ADULT)
+        with TestClient(app) as client:
+            _admit_everyone(client)
+            _reading(client, "p-n1", spo2=85.0)    # a live NEWS2 alert on the NICU patient
+            _reading(client, "p-a1", spo2=85.0)    # and one the nurse may snooze
+            bad_reason = snooze(client, "p-n1", reason="NOPE")
+            assert bad_reason.status_code == 422 and not _rows(app, "scope_denied")
+            refused = snooze(client, "p-n1")
+            allowed = snooze(client, "p-a1")
+        assert (refused.status_code, refused.json()["detail"]) == (404, "hasta bulunamadı")
+        assert len(_rows(app, "scope_denied")) == 1
+        assert allowed.status_code == 200, allowed.text
+        assert set(app.state.ack_stores["demo"].snoozes) == {("p-a1", "news2")}
+        assert [r.patient_id for r in _rows(app, "alert_snooze")] == ["p-a1"]
+
     def test_the_audit_trail_of_an_out_of_scope_patient_is_not_served(self):
         app = app_with(ADULT, perms=NURSE_PERMS | {"audit.view"})
         with TestClient(app) as client:
@@ -456,8 +492,16 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
     now, the stream ticket's own answer, with no row; the device token, which is unscoped, still
     gets its answer."""
 
-    PERMS = NURSE_PERMS | {"audit.view", "scores.sign"}
+    PERMS = NURSE_PERMS | {"audit.view", "scores.sign", "alerts.escalate"}
     ROUTES = [
+        # G2 borç 4: the routes added since G2-A2 (D13), held to its rule.
+        ("GET", "/patients/p-a1/trends", None, 200),
+        ("GET", "/patients/p-a1/fluids", None, 200),     # G3-03
+        ("POST", "/alerts/rrt-call", {"patient_id": "p-a1", "kind": "news2",
+                                      "reason": "sentetik çağrı"}, 403),   # G2-B5: a person's call
+        ("POST", "/alerts/snooze", {"patient_id": "p-a1", "kind": "news2", "minutes": 15,
+                                    "reason": "PATIENT_BASELINE"}, 403),   # G2-B5b: a person's snooze
+        ("GET", "/tasks", None, 200),                    # G3-02: the board's own read
         ("POST", "/clinical/p-a1", {"entries": [{"code": "suspected_infection", "value": 1}]}, 200),
         # G3-01: the bedside preview (D8), and «hatalı giriş» (D10), which a device never makes (X11).
         ("POST", "/clinical/p-a1/preview", {"entries": [{"code": "resp_rate", "value": 18}]}, 200),
@@ -516,3 +560,133 @@ class TestJAnUnreadableScopeIsUnavailableNotNotFound:
         with TestClient(app_with(UNKNOWN)) as client:
             r = client.post("/ack", headers=NURSE, json={"patient_id": {"x": 1}, "kind": "news2"})
         assert (r.status_code, r.json()["detail"]) == (400, "geçersiz patient_id")
+
+
+# --- the streams, read through their own handlers ---------------------------------------------------
+
+def _endpoint(app, path: str):
+    """A route's own handler. A stream is read through it: httpx's ASGITransport cannot read an
+    unbounded response, and the handler hands back the StreamingResponse whose body is the frames."""
+    (route,) = [r for r in app.routes if getattr(r, "path", None) == path]
+    return route.endpoint
+
+
+async def _async_reading(client, pid: str, spo2: float = 97.0) -> None:
+    """`_reading`, for an httpx client on the app's own loop."""
+    r = await client.post("/ingest", headers=TOKEN, json={
+        "resourceType": "Observation", "subject": {"reference": f"Patient/{pid}"},
+        "effectiveDateTime": WHEN.isoformat(), "code": {"coding": [{"code": "spo2"}]},
+        "valueQuantity": {"value": spo2, "unit": "%"}})
+    assert r.status_code == 200, r.text
+
+
+def _note(pid: str):
+    from homunculus.api.notify import Notification
+    return Notification(tenant="demo", patient_id=pid, kind="news2", severity="high",
+                        urgency="immediate", audience="nurse", trigger="new", title="synthetic",
+                        body=f"{pid}: synthetic", ts=WHEN.isoformat())
+
+
+class TestKTheNotificationStreamReadsTheScopeCard:
+    """G2 borç 5. The notification stream decided scope on `_card` — `patient_board`, which creates
+    the patient it is asked about (`engine.state()`) and scores a whole card to read two ids. It
+    reads the card every other check reads, `_require_patient`'s: the id, and the bed and unit the
+    board publishes for that patient."""
+
+    async def test_a_note_is_judged_on_its_bed_and_unit_and_creates_no_patient(self):
+        import asyncio
+
+        import httpx
+
+        app = app_with(ADULT)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://t") as client:
+            for pid in EVERYONE:
+                await _async_reading(client, pid)
+            ticket = (await client.post("/stream-ticket", headers=NURSE)).json()["ticket"]
+            response = await _endpoint(app, "/notifications")(token=None, ticket=ticket,
+                                                               role="nurse")
+            frames = response.body_iterator
+            for pid in ("ghost-n", "p-n1", "p-a1"):     # unknown, out of scope, in scope
+                await app.state.notification_hub.publish("demo", _note(pid))
+            first = await asyncio.wait_for(anext(frames), timeout=2)
+            await frames.aclose()
+            board = (await client.get("/patients", headers=TOKEN)).json()["patients"]
+        assert '"patient_id": "p-a1"' in first
+        assert sorted(p["patient_id"] for p in board) == EVERYONE     # no ghost on the wall board
+
+
+def _encounter(pid: str, status: str, location: str = "") -> dict:
+    """The HIS feed's location message, five minutes after the first one (`_identities`)."""
+    later = WHEN.replace(minute=5).isoformat()
+    return {"resourceType": "Encounter", "status": status, "subject": {"reference": f"Patient/{pid}"},
+            "location": [{"location": {"display": location}}], "period": {"start": later},
+            "meta": {"lastUpdated": later, "source": "comed"}}
+
+
+async def _frame(frames) -> dict:
+    import asyncio
+    import json
+
+    raw = await asyncio.wait_for(anext(frames), timeout=2)
+    assert raw.startswith("data: "), raw
+    return json.loads(raw.removeprefix("data: "))
+
+
+class TestLAPatientWhoLeavesTheScopeLeavesTheScreen:
+    """G2 borç 1. The live feed drops a board outside the subscriber's scope. Alone, that left a card
+    on a scoped screen for good once its patient left the scope — a HIS transfer to another unit, a
+    HIS discharge (which frees the bed): the patient's next frame lies outside the scope and was
+    dropped, so no frame ever told the screen the card was gone, though a reload no longer showed
+    it. A patient this stream showed — in scope when it opened, or sent since — who leaves the scope
+    is sent once as a removal carrying only the id; one it never showed stays withheld."""
+
+    async def test_a_transfer_out_and_a_discharge_are_removals_and_a_transfer_in_is_a_card(self):
+        import httpx
+
+        app = app_with(ADULT)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://t") as client:
+            for pid in EVERYONE:
+                await _async_reading(client, pid)
+            stream = _endpoint(app, "/stream")
+            nurse_ticket = (await client.post("/stream-ticket", headers=NURSE)).json()["ticket"]
+            wall_ticket = (await client.post("/stream-ticket", headers=TOKEN)).json()["ticket"]
+            nurse = (await stream(token=None, ticket=nurse_ticket)).body_iterator
+            wall = (await stream(token=None, ticket=wall_ticket)).body_iterator
+            await _async_reading(client, "p-n1")       # the NICU, never shown here: withheld
+            for body in (_encounter("p-a1", "in-progress", "YYB^12^A"),    # to the NICU
+                         _encounter("p-a2", "finished"),                    # discharged by the HIS
+                         _encounter("p-n1", "in-progress", "YB^304^1")):    # to the adult unit
+                r = await client.post("/ingest", headers=TOKEN, json=body)
+                assert r.json()["identity"] == "ok", r.text
+            seen = [await _frame(nurse) for _ in range(3)]
+            walled = [await _frame(wall) for _ in range(4)]
+            await nurse.aclose()
+            await wall.aclose()
+        assert seen[:2] == [{"patient_id": "p-a1", "removed": True, "identity": None},
+                            {"patient_id": "p-a2", "removed": True, "identity": None}]
+        assert (seen[2]["patient_id"], seen[2]["identity"]["unit_id"]) == ("p-n1", "unit-adult")
+        assert "removed" not in seen[2]
+        # The wall board sees the whole hospital: every frame is the card itself, never a removal.
+        assert [f["patient_id"] for f in walled] == ["p-n1", "p-a1", "p-a2", "p-n1"]
+        assert not any(f.get("removed") for f in walled)
+        assert walled[1]["identity"]["unit_id"] == "unit-nicu"
+
+    async def test_a_removal_is_sent_once_and_a_patient_who_returns_is_a_card_again(self):
+        import asyncio
+
+        from homunculus.api.app import ScopedBoardView, sse_board_frames
+
+        adult = {"bed_id": "bed-a1", "unit_id": "unit-adult"}
+        nicu = {"bed_id": "bed-n1", "unit_id": "unit-nicu"}
+        queue: asyncio.Queue = asyncio.Queue()
+        for board in ({"patient_id": "p-a1", "identity": nicu},     # left: removed
+                      {"patient_id": "p-a1", "identity": nicu},     # still away: nothing more
+                      {"patient_id": "p-x", "identity": nicu},      # never shown: nothing
+                      {"patient_id": "p-a1", "identity": adult}):   # back: the card
+            await queue.put(board)
+        frames = sse_board_frames(queue, keepalive=5, view=ScopedBoardView(ADULT, shown={"p-a1"}))
+        assert await _frame(frames) == {"patient_id": "p-a1", "removed": True, "identity": None}
+        assert await _frame(frames) == {"patient_id": "p-a1", "identity": adult}
+        await frames.aclose()

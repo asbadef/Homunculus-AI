@@ -6,6 +6,7 @@ import * as SecureStore from "expo-secure-store";
 
 import { BoardProvider, useBoard } from "../src/store/BoardProvider";
 import type { BoardContextValue } from "../src/store/BoardProvider";
+import type { PatientBoard, TransportListener } from "../src/transport/types";
 
 jest.useFakeTimers();
 
@@ -310,6 +311,35 @@ describe("BoardProvider", () => {
     expect(screen.getByLabelText("mode").props.children).toBe("replay");
     expect(screen.getByLabelText("connection").props.children).toBe("demo");
     expect(live.stop).toHaveBeenCalled();
+  });
+
+  // G2 borç 1c: the live transport's snapshot is the whole ward — a bed it no longer carries (out of
+  // the scope a rotation read again, discharged while the stream was down) leaves the screen.
+  it("makes the ward exactly each live snapshot, and still applies stream frames on top", async () => {
+    const probe = await renderProbe();
+    await act(async () => {
+      await probe.current().setServerUrl("http://10.0.0.5");
+    });
+    mockAuthBehavior.hasSession.mockResolvedValue(true);
+    await act(async () => {
+      await probe.current().goLive();
+    });
+    const listener = mockSseInstances[0].subscribe.mock.calls[0][0] as TransportListener;
+    const bed = (id: string): PatientBoard => ({
+      patient_id: id, risk: "none", alerts: [],
+      latest: { heart_rate: null, map: null, spo2: null, temperature: null, resp_rate: null, lactate: null, sofa: 0 },
+    });
+
+    await act(() => {
+      listener.onSnapshot?.([bed("bed-3"), bed("bed-5")]);
+      listener.onBoard(bed("bed-7"));
+    });
+    expect(screen.getByLabelText("count").props.children).toBe("3");
+    await act(() => {
+      listener.onSnapshot?.([bed("bed-5")]);
+    });
+    expect(screen.getByLabelText("count").props.children).toBe("1");
+    expect(screen.getByLabelText("top").props.children).toBe("bed-5");
   });
 
   it("mirrors connection state from the live transport's onConnectionChange", async () => {

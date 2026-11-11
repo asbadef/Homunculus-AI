@@ -48,3 +48,14 @@ def test_escalates_exactly_at_threshold_boundary_is_gte():
     first_seen = {("bed-3", "septic_shock"): T0}
     now = T0 + THRESH
     assert escalate(alerts, acks={}, first_seen=first_seen, now=now, threshold=THRESH) == {("bed-3", "septic_shock")}
+
+
+def test_a_snoozed_alert_does_not_escalate():
+    """G2-B5b: no escalation while snoozed. The snoozed keys are handed in, as the acks are."""
+    alerts = [("bed-3", _alert("septic_shock", "immediate"))]
+    first_seen = {("bed-3", "septic_shock"): T0}
+    now = T0 + timedelta(minutes=6)
+    assert escalate(alerts, acks={}, first_seen=first_seen, now=now, threshold=THRESH,
+                    snoozed={("bed-3", "septic_shock"): {}}) == set()
+    assert escalate(alerts, acks={}, first_seen=first_seen, now=now, threshold=THRESH,
+                    snoozed={}) == {("bed-3", "septic_shock")}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  ADMIN_LDAP_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
+  ADMIN_LDAP_TIMEOUT_MS, AUDIT_VERIFY_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
   createBackendApi, retryAfterSeconds,
 } from "./backendApi.js";
 
@@ -398,6 +398,24 @@ describe("backendApi — a server that does not answer", () => {
     expect((await outcome).code).toBe(REQUEST_TIMEOUT);
   });
 
+  // G2 borç 3 (owner: «Tamamını doğrula»): the verification walks the whole chain, page by page, and
+  // on a long trail that takes longer than an ordinary request. It is given what nginx gives it: the
+  // API location sets no `proxy_read_timeout`, so its 60 s default is the binding limit — waiting longer
+  // here would only wait for nginx's 504. No `limit` is sent: the server walks every row.
+  it("verifies the whole chain: no limit sent, and 60 s to answer, not 15", async () => {
+    expect(AUDIT_VERIFY_TIMEOUT_MS).toBe(60_000);
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockImplementationOnce(hanging);
+
+    const outcome = api.verifyAudit().then(() => "answered", (err) => err);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe("/audit/verify");
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+  });
+
   it("a caller may make a call more patient, never less", async () => {
     // The client's limit is the floor: a screen cannot shorten a route's wait, only lengthen it.
     const fetchMock = vi.fn();
@@ -440,6 +458,24 @@ describe("backendApi — what the work screens call", () => {
     expect(url).toBe("/alerts/rrt-call");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2_high", reason: "Ekip gelsin" });
+  });
+
+  // G2-B5b: «Ertele». The actor comes from the token; the body names the alarm, the minutes and the reason.
+  it("snoozes an alarm with an authed POST /alerts/snooze, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.snoozeAlert("S-001", "news2", 15, "OTHER", "Hasta yıkanıyor, prob çıktı", "high")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/alerts/snooze");
+    expect(init.method).toBe("POST");
+    // `seen_severity` (review): the severity the dialog was opened on; the engine refuses if the alarm's is another.
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "news2", minutes: 15, reason: "OTHER",
+      reason_text: "Hasta yıkanıyor, prob çıktı", seen_severity: "high" });
+    await api.snoozeAlert("S-001", "news2", 5, "PATIENT_BASELINE");
+    const bare = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(bare.reason_text).toBeNull();
+    expect(bare).not.toHaveProperty("seen_severity");
   });
 
   // G2-B3b (D5, D7): «Vardiya devri». The actors come from the token; nothing about who is sent.

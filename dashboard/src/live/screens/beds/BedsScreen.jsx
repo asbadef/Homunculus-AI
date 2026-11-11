@@ -28,6 +28,7 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { waitingAlarms } from "../../data/boardStore.js";
+import { useSnoozeClock } from "../../data/useSnoozeClock.js";
 import { useShell } from "../../shell/ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -117,7 +118,9 @@ function Waiting({ nowMs }) {
   const { t } = useI18n();
   const { user } = useSession();
   const board = useBoard();
-  const { known, stale, items } = waitingAlarms(board);
+  // G2-B5b (spec D4): a snoozed alarm is not waiting until its `until`: the snooze clock, not this line's 30 s tick.
+  const queueNowMs = useSnoozeClock();
+  const { known, stale, items } = waitingAlarms({ ...board, nowMs: queueNowMs });
   const waiting = items ?? [];
   const href = alarmsHref(user?.perms);
   const oldest = waiting
