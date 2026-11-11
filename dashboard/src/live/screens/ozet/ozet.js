@@ -11,6 +11,12 @@
 // unit of the tree claims — a card on no bed, an unassigned monitor, a unit the tree does not hold — is the «Birimi
 // belli olmayan» row (NO_UNIT), drawn only when it has something to count.
 //
+// THE CALLER'S REACH (`reachSource`, the live board's `scope`). Every source but the tree is cut to the caller's reach
+// by the server; the tree is cut too, except for `structure.manage` (the whole hospital), and a unit reached through a
+// bed grant alone is listed with that bed only. So a unit outside her unit grants is no answer about that unit: its
+// cells say «yetki yok», its beds too unless the tree is whole — never a 0. An unknown scope (the board not loaded yet)
+// is no answer either. The cards then count only what she was sent, and say so (`scoped`).
+//
 // No patient here and no clinical threshold: counts, times and the engine's own severities.
 import { normId } from "../../data/structure.js";
 import { STRUCTURE_PERMS } from "../../data/StructureProvider.jsx";
@@ -30,16 +36,18 @@ export const PERIODS = Object.freeze([1, 7, 30]);
 export const DEFAULT_PERIOD = 7;
 /** The «Birimi belli olmayan» row's key: what a missing unit id reads as (normId). A unit's own key is its UUID. */
 export const NO_UNIT = "";
-/** Why a source gives no number; each has its words (`ozet.why.*`). */
+/** Why a source gives no number; each has its words (`ozet.why.*`). `stale` is the live board's (not LIVE),
+ *  `stripStale` the shadow board's (past its display limit, or its last poll failed). */
 export const WHY = Object.freeze({
   loading: "loading", failed: "failed", stale: "stale", noRight: "noRight", chain: "chain", unknown: "unknown",
-  stripOff: "stripOff",
+  stripOff: "stripOff", stripStale: "stripStale",
 });
 
 export const okSource = (data, atMs = null) => ({ ok: true, data, atMs });
 export const noSource = (why) => ({ ok: false, why });
 
 const MINUTE_MS = 60_000;
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const listOf = (value) => (Array.isArray(value) ? value : []);
 const countOf = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
 const secondsOf = (value) => (Number.isFinite(value) && value >= 0 ? value : null);
@@ -51,13 +59,34 @@ function msOf(iso) {
 }
 
 /** Which sources these rights may read, by the API's own rules: the tree, the live board, the task queue, the
- *  waiting handovers (this page's own key), the shadow board, and the audit trail alarm quality is read from. */
+ *  waiting handovers (this page's own key), the shadow board, and the audit trail alarm quality is read from.
+ *  `wholeTree`: the tree is the whole hospital's whatever the scope (`GET /tenant/structure` for `structure.manage`). */
 export function rightsOf(perms) {
   const has = (key) => Array.isArray(perms) && perms.includes(key);
   return {
     structure: STRUCTURE_PERMS.some(has), board: has("board.view"), tasks: has("tasks.view"),
     pending: has("summary.view"), shadow: mayReadShadow(perms), quality: has("audit.view"),
+    wholeTree: has("structure.manage"),
   };
+}
+
+/** `/tasks` as this page reads it: a list of patients, each with its unit (text or none), its vital task (an object
+ *  with a state, or none) and a list of hand tasks that each say whether they are late. Anything else is a failed
+ *  read (plan N10): skipping one malformed entry would show its unit a 0. */
+export function isTasksAnswer(answer) {
+  return Array.isArray(answer?.patients) && answer.patients.every((p) => isObject(p)
+    && (p.unit_id == null || typeof p.unit_id === "string")
+    && (p.vital == null || (isObject(p.vital) && typeof p.vital.state === "string"))
+    && Array.isArray(p.tasks) && p.tasks.every((task) => isObject(task) && typeof task.late === "boolean"));
+}
+
+/** `/handovers/pending` as this page reads it: the server's time, and units each with an id, a whole count and the
+ *  oldest signature's time (or none). Anything else is a failed read (plan N10). */
+export function isPendingAnswer(answer) {
+  return isObject(answer) && msOf(answer.generated_at) !== null && Array.isArray(answer.units)
+    && answer.units.every((u) => isObject(u) && typeof u.unit_id === "string" && u.unit_id.trim() !== ""
+      && Number.isInteger(u.pending) && u.pending >= 0
+      && (u.oldest_outgoing_signed_at == null || msOf(u.oldest_outgoing_signed_at) !== null));
 }
 
 /** One of the page's own reads (`/tasks`, `/handovers/pending`, `/alarm-quality`) — `{phase: "loading" | "ok" |
@@ -69,11 +98,12 @@ export function readSource(read, mayRead) {
   return noSource(WHY.loading);
 }
 
-/** The tree (StructureProvider: `useStructure()`) as a source: only a read that just succeeded («known») counts. */
-export function structureSource({ phase, structure }, mayRead) {
+/** The tree (StructureProvider: `useStructure()`) as a source: only a read that just succeeded («known») counts. A
+ *  refused read (403) is «yetki yok», another failure «okunamadı». */
+export function structureSource({ phase, structure, error }, mayRead) {
   if (!mayRead || phase === "unasked") return noSource(WHY.noRight);
   if (phase === "known") return okSource(structure);
-  if (phase === "stale" || phase === "failed") return noSource(WHY.failed);
+  if (phase === "stale" || phase === "failed") return noSource(error?.status === 403 ? WHY.noRight : WHY.failed);
   return noSource(WHY.loading);
 }
 
@@ -103,6 +133,21 @@ export function boardSource({ connection, patients, alerts, nowMs }, mayRead) {
   return noSource(connection === CONNECTION.UNAVAILABLE ? WHY.failed : WHY.loading);
 }
 
+/** The caller's reach, from the live board's `scope` (GET /patients: `{unrestricted, unit_ids, bed_ids, …}`) and the
+ *  board as a source (`boardSource`): `{all: true}` for an unrestricted scope, else the unit grants (normId). A scope
+ *  kept from the last load holds while the board is not LIVE; a board this session may not read is «yetki yok»; one
+ *  that has not brought a scope yet gives its own reason (still loading, failed), or «bilinmiyor» for an answer
+ *  without one. Only a unit grant reaches a unit: a bed grant names one bed, not the unit around it. */
+export function reachSource(scope, board) {
+  if (!board.ok && board.why === WHY.noRight) return noSource(WHY.noRight);
+  if (scope?.unrestricted === true) return okSource({ all: true, units: null });
+  if (scope?.unrestricted === false && Array.isArray(scope.unit_ids)) {
+    const units = scope.unit_ids.filter((id) => typeof id === "string").map(normId).filter((id) => id !== NO_UNIT);
+    return okSource({ all: false, units: new Set(units) });
+  }
+  return noSource(board.ok ? WHY.unknown : board.why);
+}
+
 /** The silent rows (deviceFeed `silentRows`) by the unit of their card; an unassigned monitor has none. */
 export function silentByUnit(data, rows) {
   const unitOf = new Map(listOf(data?.beds).filter((card) => typeof card?.source === "string")
@@ -129,7 +174,7 @@ export function shadowSource({ phase, data, fetchedAtMs, nowMs }, mayRead) {
   if (!data) return noSource(phase === SHADOW_PHASE.UNREADABLE ? WHY.failed : WHY.loading);
   if (!stripOn(data)) return noSource(WHY.stripOff);
   const fresh = phase === SHADOW_PHASE.OK && !readUnknown({ phase, fetchedAtMs }, nowMs, maxAgeOf(data));
-  if (!fresh) return noSource(WHY.stale);
+  if (!fresh) return noSource(WHY.stripStale);
   const now = measuredAtMs(data, true, nowMs, fetchedAtMs);
   const listing = listingOf(data, verdictOf(data, now), now);
   if (listing === "chain") return noSource(WHY.chain);
@@ -195,21 +240,30 @@ const sumOf = (map, pick) => [...map.values()].reduce((sum, value) => sum + pick
 
 /** The cards and the units table. `tree`: the last tree held (rows are read from it even when its latest read failed:
  *  `occupancy`, the tree's own source, then says why); null when none was ever read — `rows` is then null and the page
- *  says why it cannot draw them. The others are sources (okSource / noSource). */
-export function summarise({ tree, occupancy, board, tasks, pending, shadow, quality }) {
+ *  says why it cannot draw them. `reach`: the caller's reach (`reachSource`); `wholeTree`: the tree is the whole
+ *  hospital's (`rightsOf().wholeTree`). The others are sources (okSource / noSource).
+ *
+ *  A unit outside the reach says «yetki yok» in every counted cell, and in its occupancy unless the tree is whole; an
+ *  unknown reach gives every unit cell its reason. The «Birimi belli olmayan» row is drawn only for an unrestricted
+ *  reach. `scoped`: the cards count only what this caller was sent, not the hospital (any reach but a known
+ *  unrestricted one). Card 1's `truncated`: the report's own flag — its count is then incomplete. */
+export function summarise({ tree, occupancy, board, tasks, pending, shadow, quality, reach = noSource(WHY.unknown),
+  wholeTree = false }) {
   const late = tasks.ok ? lateByUnit(tasks.data) : null;
   const waits = pending.ok ? pendingByUnit(pending.data) : null;
   const generatedMs = pending.ok ? msOf(pending.data?.generated_at) : null;
   const unanswered = quality.ok ? countOf(quality.data?.unanswered) : null;
+  const scoped = !(reach.ok && reach.data.all);
   const cards = {
-    unanswered: !quality.ok ? { why: quality.why } : unanswered === null ? { why: WHY.unknown } : { value: unanswered },
+    unanswered: !quality.ok ? { why: quality.why } : unanswered === null ? { why: WHY.unknown }
+      : { value: unanswered, truncated: quality.data?.truncated === true },
     pending: waits ? { value: sumOf(waits, (row) => row.pending),
       age: ageOf([...waits.values()].reduce((at, row) => minMs(at, row.oldestMs), null), generatedMs) } : { why: pending.why },
     late: late ? { value: sumOf(late, (n) => n) } : { why: tasks.why },
     silent: shadow.ok ? { value: shadow.data.rows.length, longest: longestMinutes(shadow.data.rows),
       noMonitors: shadow.data.noMonitors } : { why: shadow.why },
   };
-  if (!tree) return { cards, rows: null, unplaced: null };
+  if (!tree) return { cards, rows: null, unplaced: null, scoped };
 
   const units = unitsOf(tree);
   const known = new Set(units.map((unit) => unit.key));
@@ -235,13 +289,29 @@ export function summarise({ tree, occupancy, board, tasks, pending, shadow, qual
       age: ageOf(pendingBy.get(key)?.oldestMs ?? null, generatedMs) } : { why: pending.why },
     silent: shadow.ok ? { value: silentBy.get(key) ?? 0 } : { why: shadow.why },
   });
-  const rows = units.map((unit) => ({
-    key: unit.key, name: unit.name, closed: unit.closed,
-    occupancy: occupancy.ok ? { ...unit.counts } : { why: occupancy.why }, ...cellsOf(unit.key),
-  }));
+  // A unit outside the reach is no answer about that unit (Decision 18); an unknown reach is no answer about any.
+  const outOfReach = (key) => reach.ok && !reach.data.all && !reach.data.units.has(key);
+  const gate = (key, cell) => {
+    if (outOfReach(key)) return { why: WHY.noRight };
+    if ("why" in cell) return cell;
+    return reach.ok ? cell : { why: reach.why };
+  };
+  const occupancyOf = (unit) => {
+    if (!wholeTree && outOfReach(unit.key)) return { why: WHY.noRight };   // the tree lists only her granted beds there
+    if (!occupancy.ok) return { why: occupancy.why };
+    return wholeTree || reach.ok ? { ...unit.counts } : { why: reach.why };
+  };
+  const rows = units.map((unit) => {
+    const cells = cellsOf(unit.key);
+    return {
+      key: unit.key, name: unit.name, closed: unit.closed, occupancy: occupancyOf(unit),
+      waiting: gate(unit.key, cells.waiting), late: gate(unit.key, cells.late), pending: gate(unit.key, cells.pending),
+      silent: gate(unit.key, cells.silent),
+    };
+  });
   const rest = cellsOf(NO_UNIT);
-  const any = Object.values(rest).some((cell) => (cell.value ?? 0) > 0);
-  return { cards, rows, unplaced: any ? { key: NO_UNIT, occupancy: null, ...rest } : null };
+  const any = !scoped && Object.values(rest).some((cell) => (cell.value ?? 0) > 0);
+  return { cards, rows, unplaced: any ? { key: NO_UNIT, occupancy: null, ...rest } : null, scoped };
 }
 
 /** A response time in seconds as whole minutes and seconds (`m` null under a minute); null for none. */

@@ -14,8 +14,8 @@ import { useSnoozeClock } from "../../data/useSnoozeClock.js";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Icon, KV, KVList, Note, Seg, Table } from "../../ui/index.js";
 import {
-  DEFAULT_PERIOD, PERIODS, WHY, boardSource, dayOf, qualityView, readSource, rightsOf, shadowSource, structureSource,
-  summarise,
+  DEFAULT_PERIOD, PERIODS, WHY, boardSource, dayOf, qualityView, reachSource, readSource, rightsOf, shadowSource,
+  structureSource, summarise,
 } from "./ozet.js";
 import { useQuality, useSummaryReads } from "./useSummaryReads.js";
 
@@ -238,14 +238,18 @@ export function OzetScreen() {
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
   const quality = useQuality({ store, may: rights.quality, period });
 
+  const boardSrc = boardSource({ connection: board.connection, patients: board.patients, alerts: board.alerts, nowMs: boardNowMs }, rights.board);
   const sources = {
     tree: tree.known ? tree.structure : null,
     occupancy: structureSource(tree, rights.structure),
-    board: boardSource({ connection: board.connection, patients: board.patients, alerts: board.alerts, nowMs: boardNowMs }, rights.board),
+    board: boardSrc,
     tasks: readSource(reads.tasks, rights.tasks),
     pending: readSource(reads.pending, rights.pending),
     shadow: shadowSource(shadow, rights.shadow),
     quality: readSource(quality, rights.quality),
+    // The caller's reach over the units table: the scope the engine applied to her board (ozet.js `reachSource`).
+    reach: reachSource(board.scope, boardSrc),
+    wholeTree: rights.wholeTree,
   };
   const summary = summarise(sources);
   const atMs = { quality: quality.atMs, pending: reads.pending.atMs, tasks: reads.tasks.atMs, shadow: shadow.fetchedAtMs };

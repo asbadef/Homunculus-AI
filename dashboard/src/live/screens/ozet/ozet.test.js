@@ -1,14 +1,16 @@
 // ozet.test.js — G4-02 «Yönetici özeti» (spec D5), the pure half: the per-unit join of every source, the «Birimi belli
 // olmayan» row, «—» with a reason for a missing, failed or stale source (never 0), the oldest handover's age, the cards,
-// and the alarm-quality box's figures. A fixed clock; synthetic units, cards and monitors only.
+// and the alarm-quality box's figures; the caller's reach (the board's scope) over the units table; and the shape a read
+// must have to be counted at all. A fixed clock; synthetic units, cards and monitors only.
 import { describe, it, expect } from "vitest";
 import { CONNECTION } from "../../../liveConnection.js";
 import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { bed, strip, unassigned } from "../../data/shadow.testutil.js";
+import { scopedTo } from "../../data/board.testutil.js";
 import { NEO, REA, structure } from "../kabul/kabul.testutil.js";
 import {
-  NO_UNIT, WHY, ageOf, boardSource, durationOf, lateOf, noSource, okSource, qualityView, readSource, rightsOf,
-  shadowSource, structureSource, summarise,
+  NO_UNIT, WHY, ageOf, boardSource, durationOf, isPendingAnswer, isTasksAnswer, lateOf, noSource, okSource, qualityView,
+  reachSource, readSource, rightsOf, shadowSource, structureSource, summarise,
 } from "./ozet.js";
 
 const NOW = Date.parse("2026-11-11T10:00:00Z");
@@ -57,10 +59,15 @@ const REPORT = {
   per_day: [{ date: "2026-11-09", episodes: 4 }, { date: "2026-11-10", episodes: 8 }],
   noisiest_beds: [{ patient_id: "S-1", episodes: 5 }], per_patient_hour: [],
 };
+// The board's scope block (GET /patients `scope`): an administrator's, which reaches every unit.
+const UNRESTRICTED = { unrestricted: true, reason: "unrestricted_role", unit_ids: [], bed_ids: [], own_patients: 0 };
 const SOURCES = {
   tree: structure(), occupancy: okSource(structure()), board: liveBoard(), tasks: okSource(TASKS, NOW),
   pending: okSource(PENDING, NOW), shadow: shadowSource(fresh(STRIP), true), quality: okSource(REPORT, NOW),
+  reach: reachSource(UNRESTRICTED, liveBoard()), wholeTree: false,
 };
+/** Every per-unit cell of a row that is out of the caller's reach. */
+const NO_RIGHT = { why: WHY.noRight };
 
 describe("the units table: every source joined per unit", () => {
   it("counts each unit's beds, waiting alarms, overdue work, waiting handovers and silent monitors", () => {
@@ -102,11 +109,17 @@ describe("the units table: every source joined per unit", () => {
 describe("the «Unutulan işler» cards", () => {
   it("count from each source: unanswered for the period, waiting handovers and the oldest's age, overdue work, silent monitors", () => {
     expect(summarise(SOURCES).cards).toEqual({
-      unanswered: { value: 2 },
+      unanswered: { value: 2, truncated: false },
       pending: { value: 2, age: { unit: "day", n: 2 } },
       late: { value: 3 },
       silent: { value: 2, longest: 7, noMonitors: false },
     });
+    expect(summarise(SOURCES).scoped).toBe(false);          // an unrestricted caller's counts are the hospital's
+  });
+
+  it("say the unanswered count came from a truncated read — an incomplete count is not a complete one", () => {
+    const truncated = okSource({ ...REPORT, truncated: true }, NOW);
+    expect(summarise({ ...SOURCES, quality: truncated }).cards.unanswered).toEqual({ value: 2, truncated: true });
   });
 
   it("say a view with no monitor has none silent, from a fresh answer", () => {
@@ -120,6 +133,7 @@ describe("«—» with a reason, never an invented 0 (Decision 18)", () => {
     const summary = summarise({
       tree: structure(), occupancy: noSource(WHY.failed), board: noSource(WHY.stale), tasks: noSource(WHY.loading),
       pending: noSource(WHY.failed), shadow: noSource(WHY.chain), quality: noSource(WHY.noRight),
+      reach: SOURCES.reach, wholeTree: false,
     });
     expect(summary.cards).toEqual({ unanswered: { why: WHY.noRight }, pending: { why: WHY.failed },
       late: { why: WHY.loading }, silent: { why: WHY.chain } });
@@ -147,8 +161,9 @@ describe("«—» with a reason, never an invented 0 (Decision 18)", () => {
     expect(shadowSource({ phase: SHADOW_PHASE.LOADING, data: null, fetchedAtMs: null, nowMs: NOW }, true)).toEqual(noSource(WHY.loading));
     expect(shadowSource({ phase: SHADOW_PHASE.UNREADABLE, data: null, fetchedAtMs: null, nowMs: NOW }, true)).toEqual(noSource(WHY.failed));
     expect(shadowSource(fresh({ stage: "off" }), true)).toEqual(noSource(WHY.stripOff));
-    expect(shadowSource(fresh(STRIP, { nowMs: NOW + 20_000 }), true)).toEqual(noSource(WHY.stale));           // past 15 s
-    expect(shadowSource(fresh(STRIP, { phase: SHADOW_PHASE.UNREADABLE }), true)).toEqual(noSource(WHY.stale)); // the last poll failed
+    // Not fresh: the strip's own reason, never the live board's «pano güncel değil».
+    expect(shadowSource(fresh(STRIP, { nowMs: NOW + 20_000 }), true)).toEqual(noSource(WHY.stripStale));           // past 15 s
+    expect(shadowSource(fresh(STRIP, { phase: SHADOW_PHASE.UNREADABLE }), true)).toEqual(noSource(WHY.stripStale)); // the last poll failed
     expect(shadowSource(fresh(ledger(STRIP.beds, [], { state: "forwarder_silent" })), true)).toEqual(noSource(WHY.chain));
     expect(shadowSource(fresh(ledger(STRIP.beds, [], { state: "some_new_state" })), true)).toEqual(noSource(WHY.unknown));
   });
@@ -169,12 +184,120 @@ describe("«—» with a reason, never an invented 0 (Decision 18)", () => {
     expect(structureSource({ phase: "stale", structure: { sites: [] } }, true)).toEqual(noSource(WHY.failed));
     expect(structureSource({ phase: "loading", structure: null }, true)).toEqual(noSource(WHY.loading));
     expect(structureSource({ phase: "unasked", structure: null }, true)).toEqual(noSource(WHY.noRight));
+    // A refused tree is no right, not a failure — with or without an older tree held.
+    const refused = Object.assign(new Error("x"), { status: 403 });
+    expect(structureSource({ phase: "stale", structure: { sites: [] }, error: refused }, true)).toEqual(noSource(WHY.noRight));
+    expect(structureSource({ phase: "failed", structure: null, error: refused }, true)).toEqual(noSource(WHY.noRight));
+    expect(structureSource({ phase: "failed", structure: null, error: Object.assign(new Error("x"), { status: 503 }) }, true))
+      .toEqual(noSource(WHY.failed));
   });
 
-  it("knows which sources a session may read", () => {
-    expect(rightsOf(["summary.view"])).toEqual({ structure: false, board: false, tasks: false, pending: true, shadow: false, quality: false });
+  it("knows which sources a session may read, and whether its tree is the whole hospital's", () => {
+    expect(rightsOf(["summary.view"])).toEqual({ structure: false, board: false, tasks: false, pending: true, shadow: false,
+      quality: false, wholeTree: false });
     expect(rightsOf(["summary.view", "board.view", "audit.view", "tasks.view", "admissions.view"]))
-      .toEqual({ structure: true, board: true, tasks: true, pending: true, shadow: true, quality: true });
+      .toEqual({ structure: true, board: true, tasks: true, pending: true, shadow: true, quality: true, wholeTree: false });
+    expect(rightsOf(["summary.view", "structure.manage"])).toMatchObject({ structure: true, wholeTree: true });
+  });
+});
+
+// Every source but the tree is cut to the caller's reach by the server (the board and /tasks by her scope, the waiting
+// handovers by her unit grants, the shadow board by her beds); the tree is cut too — except for `structure.manage`,
+// which sees the whole hospital, and a unit reached through a bed grant alone is listed with that bed only. So a unit
+// outside her unit grants is no answer about that unit: «yetki yok», never a 0 (Decision 18).
+describe("the caller's reach over the units table", () => {
+  const scoped = (scope, over = {}) => summarise({ ...SOURCES, reach: reachSource(scope, liveBoard()), ...over });
+  const COUNTED = ["waiting", "late", "pending", "silent"];
+
+  it("an unrestricted scope reaches every unit: the table and the cards as they are", () => {
+    const summary = scoped(UNRESTRICTED);
+    expect(summary.rows).toEqual(summarise(SOURCES).rows);
+    expect(summary.rows[1]).toMatchObject({ waiting: { value: 1 }, late: { value: 0 }, silent: { value: 0 } });
+    expect(summary.unplaced).not.toBeNull();
+    expect(summary.scoped).toBe(false);
+  });
+
+  it("a unit grant: the granted unit counts; another says «yetki yok» in every column, its beds too", () => {
+    const summary = scoped(scopedTo([REA.toUpperCase()]));                 // the grant as the scope holds it, any case
+    const [rea, neo] = summary.rows;
+    expect(rea).toEqual(summarise(SOURCES).rows[0]);
+    expect(neo).toEqual({ key: NEO, name: "Neonatal", closed: true, occupancy: NO_RIGHT,
+      waiting: NO_RIGHT, late: NO_RIGHT, pending: NO_RIGHT, silent: NO_RIGHT });
+    expect(summary.unplaced).toBeNull();                                   // a row no unit of hers claims is not hers to count
+    expect(summary.cards).toEqual(summarise(SOURCES).cards);               // the cards count what she was sent…
+    expect(summary.scoped).toBe(true);                                     // …and say it is only her reach
+  });
+
+  it("a bed grant alone reaches no unit whole: every unit says «yetki yok», its beds too", () => {
+    const summary = scoped(scopedTo([], { bed_ids: ["44444444-4444-4444-8444-444444444402"] }));
+    for (const row of summary.rows) {
+      expect(row).toMatchObject({ occupancy: NO_RIGHT, waiting: NO_RIGHT, late: NO_RIGHT, pending: NO_RIGHT, silent: NO_RIGHT });
+    }
+    expect(summary.unplaced).toBeNull();
+    expect(summary.scoped).toBe(true);
+  });
+
+  it("structure.manage with a unit grant: the tree is whole, so another unit's beds are counted, and nothing else", () => {
+    const summary = scoped(scopedTo([REA]), { wholeTree: true });
+    const [rea, neo] = summary.rows;
+    expect(rea).toEqual(summarise(SOURCES).rows[0]);
+    expect(neo.occupancy).toEqual(summarise(SOURCES).rows[1].occupancy);
+    for (const cell of COUNTED) expect(neo[cell], cell).toEqual(NO_RIGHT);
+  });
+
+  it("an unknown scope is no answer either: every unit cell says why, the tree's beds only when it is whole", () => {
+    const connecting = liveBoard({ connection: CONNECTION.CONNECTING });
+    const unknown = { ...SOURCES, board: connecting, reach: reachSource(null, connecting) };
+    const summary = summarise(unknown);
+    for (const row of summary.rows) {
+      expect(row).toMatchObject({ occupancy: { why: WHY.loading }, waiting: { why: WHY.loading }, late: { why: WHY.loading },
+        pending: { why: WHY.loading }, silent: { why: WHY.loading } });
+    }
+    expect(summary.unplaced).toBeNull();
+    expect(summary.scoped).toBe(true);
+    expect(summarise({ ...unknown, wholeTree: true }).rows[0].occupancy).toEqual(summarise(SOURCES).rows[0].occupancy);
+  });
+
+  it("reads the scope from the board: no right with the board's, the board's reason while it has none", () => {
+    expect(reachSource(UNRESTRICTED, liveBoard())).toEqual(okSource({ all: true, units: null }));
+    expect(reachSource(scopedTo([" REA-01 ", "Neo"]), liveBoard()).data.units).toEqual(new Set(["rea-01", "neo"]));
+    // A scope kept from the last load still holds while the board is not LIVE.
+    expect(reachSource(UNRESTRICTED, liveBoard({ connection: CONNECTION.DEGRADED })).ok).toBe(true);
+    expect(reachSource(UNRESTRICTED, noSource(WHY.noRight))).toEqual(noSource(WHY.noRight));
+    expect(reachSource(null, liveBoard({ connection: CONNECTION.UNAVAILABLE }))).toEqual(noSource(WHY.failed));
+    expect(reachSource(null, liveBoard())).toEqual(noSource(WHY.unknown));                  // an answer without its scope
+    expect(reachSource({ unrestricted: false }, liveBoard())).toEqual(noSource(WHY.unknown));
+  });
+});
+
+// Plan N10: an answer of the wrong shape is a failed read, never a partial count — one malformed entry and the whole
+// read says «okunamadı», because skipping it would show its unit a 0.
+describe("the shape a read must have to be counted", () => {
+  it("/tasks: a list of patients, each with a list of hand tasks that say whether they are late, and a vital or none", () => {
+    expect(isTasksAnswer(TASKS)).toBe(true);
+    expect(isTasksAnswer({ patients: [] })).toBe(true);
+    const patient = TASKS.patients[0];
+    for (const bad of [
+      null, {}, { patients: {} }, { patients: [null] },
+      { patients: [{ ...patient, tasks: null }] }, { patients: [{ ...patient, tasks: "t1" }] },
+      { patients: [{ ...patient, tasks: [{ id: "t1" }] }] }, { patients: [{ ...patient, tasks: [{ id: "t1", late: "yes" }] }] },
+      { patients: [{ ...patient, vital: "late" }] }, { patients: [{ ...patient, vital: {} }] },
+      { patients: [{ ...patient, unit_id: 7 }] },
+    ]) expect(isTasksAnswer(bad), JSON.stringify(bad)).toBe(false);
+  });
+
+  it("/handovers/pending: units with a whole count and a readable time, and the server's time", () => {
+    expect(isPendingAnswer(PENDING)).toBe(true);
+    expect(isPendingAnswer({ units: [], generated_at: iso(0) })).toBe(true);
+    const unit = PENDING.units[0];
+    for (const bad of [
+      null, {}, { units: [] }, { units: [], generated_at: "yesterday" }, { units: {}, generated_at: iso(0) },
+      { units: [null], generated_at: iso(0) }, { units: [{ ...unit, pending: "2" }], generated_at: iso(0) },
+      { units: [{ ...unit, pending: 1.5 }], generated_at: iso(0) }, { units: [{ ...unit, pending: -1 }], generated_at: iso(0) },
+      { units: [{ ...unit, unit_id: null }], generated_at: iso(0) },
+      { units: [{ ...unit, oldest_outgoing_signed_at: "long ago" }], generated_at: iso(0) },
+    ]) expect(isPendingAnswer(bad), JSON.stringify(bad)).toBe(false);
+    expect(isPendingAnswer({ units: [{ ...unit, oldest_outgoing_signed_at: null }], generated_at: iso(0) })).toBe(true);
   });
 });
 

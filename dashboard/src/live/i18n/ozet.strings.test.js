@@ -6,7 +6,7 @@ import { LANG_CODES } from "./langs.js";
 
 const fill = (template, vars) => template.replace(/\{(\w+)\}/g, (_, name) => String(vars[name]));
 const ozet = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => key.startsWith("ozet."));
-const WHY = ["loading", "failed", "stale", "noRight", "chain", "unknown", "stripOff"];
+const WHY = ["loading", "failed", "stale", "noRight", "chain", "unknown", "stripOff", "stripStale"];
 
 describe("the summary page's words (ozet)", () => {
   it("says the spec's Turkish", () => {
@@ -27,7 +27,13 @@ describe("the summary page's words (ozet)", () => {
     expect(tr["ozet.units.unplaced"]).toBe("Birimi belli olmayan");
     expect(WHY.map((w) => tr[`ozet.why.${w}`])).toEqual([
       "okunuyor…", "okunamadı", "pano güncel değil", "yetki yok", "veri zinciri kesik", "bilinmiyor", "monitör şeridi kapalı",
+      "monitör verisi güncel değil",
     ]);
+    // Review fixes: a scoped caller's cards, a truncated count, the tree still loading, a report of the wrong shape.
+    expect(tr["ozet.cards.scoped"]).toBe("yalnız kapsamınızdakiler, hastanenin tamamı değil");
+    expect(tr["ozet.cards.truncated"]).toBe("eksik okuma: yalnız en yeni kayıtlar sayıldı");
+    expect(tr["ozet.units.loading"]).toBe("Birimler okunuyor…");
+    expect(tr["ozet.q.unreadable"]).toBe("Alarm kalitesi okunamadı.");
   });
 
   it("says why a number is missing with a word of its own, in every language", () => {

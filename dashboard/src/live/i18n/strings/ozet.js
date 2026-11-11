@@ -17,6 +17,7 @@ export default {
     why: {
       loading: "okunuyor…", failed: "okunamadı", stale: "pano güncel değil", noRight: "yetki yok",
       chain: "veri zinciri kesik", unknown: "bilinmiyor", stripOff: "monitör şeridi kapalı",
+      stripStale: "monitör verisi güncel değil",
     },
     cards: {
       title: "Unutulan işler",
@@ -31,6 +32,8 @@ export default {
       silentWhat: "Şimdi: sessiz ya da haber alınamayan monitörler, Cihazlar sayfasındaki gibi.",
       silentLongest: "en uzunu {for}",
       silentNoMonitors: "Bu görünümde monitör yok",
+      scoped: "yalnız kapsamınızdakiler, hastanenin tamamı değil",
+      truncated: "eksik okuma: yalnız en yeni kayıtlar sayıldı",
     },
     age: { min: "{n} dk önce", hour: "{n} saat önce", day: "{n} gün önce" },
     for: { minutes: "{n} dk", underMinute: "<1 dk" },
@@ -43,6 +46,7 @@ export default {
       intro: "Denetim kaydından, hastane geneli, {period}. Sayfa açılınca ve dönem değişince okunur; kendiliğinden yenilenmez.",
       loading: "Alarm kalitesi okunuyor…",
       failed: "Alarm kalitesi okunamadı: {reason}",
+      unreadable: "Alarm kalitesi okunamadı.",
       noRight: "Alarm kalitesi, denetim kaydını okuma yetkisi (audit.view) ve bütün hastaneyi kapsayan bir kapsam ister.",
       episodes: "Alarm olayı", answered: "Yanıtlanan", rate: "oran %{pct}", unsettled: "henüz yerleşen yok",
       median: "Yanıt süresi (ortanca)", p90: "Yanıt süresi (p90)", escalated: "Eskale edilen",
@@ -66,6 +70,7 @@ export default {
       unplaced: "Birimi belli olmayan",
       unplacedNote: "«Birimi belli olmayan»: yatağı olmayan ya da yapıda bulunmayan bir birimdeki hasta ve monitörler.",
       missing: "Birim satırları yazılamıyor · {why}",
+      loading: "Birimler okunuyor…",
     },
   },
   az: {
@@ -79,6 +84,7 @@ export default {
     why: {
       loading: "oxunur…", failed: "oxunmadı", stale: "lövhə yenilənməyib", noRight: "səlahiyyət yoxdur",
       chain: "məlumat zənciri qırılıb", unknown: "məlum deyil", stripOff: "monitor zolağı bağlıdır",
+      stripStale: "monitor məlumatı yenilənməyib",
     },
     cards: {
       title: "Unudulan işlər",
@@ -93,6 +99,8 @@ export default {
       silentWhat: "İndi: səssiz və ya xəbər alınmayan monitorlar, Cihazlar səhifəsindəki kimi.",
       silentLongest: "ən uzunu {for}",
       silentNoMonitors: "Bu görünüşdə monitor yoxdur",
+      scoped: "yalnız əhatənizdəkilər, bütün xəstəxana deyil",
+      truncated: "natamam oxunuş: yalnız ən yeni qeydlər sayıldı",
     },
     age: { min: "{n} dəq əvvəl", hour: "{n} saat əvvəl", day: "{n} gün əvvəl" },
     for: { minutes: "{n} dəq", underMinute: "<1 dəq" },
@@ -105,6 +113,7 @@ export default {
       intro: "Audit jurnalından, bütün xəstəxana üzrə, {period}. Səhifə açılanda və dövr dəyişəndə oxunur; özü yenilənmir.",
       loading: "Siqnal keyfiyyəti oxunur…",
       failed: "Siqnal keyfiyyəti oxunmadı: {reason}",
+      unreadable: "Siqnal keyfiyyəti oxunmadı.",
       noRight: "Siqnal keyfiyyəti audit jurnalını oxuma səlahiyyəti (audit.view) və bütün xəstəxananı əhatə edən əhatə dairəsi tələb edir.",
       episodes: "Siqnal epizodu", answered: "Cavablanan", rate: "nisbət {pct}%", unsettled: "hələ yekunlaşan yoxdur",
       median: "Cavab müddəti (median)", p90: "Cavab müddəti (p90)", escalated: "Eskalasiya edilən",
@@ -128,6 +137,7 @@ export default {
       unplaced: "Şöbəsi bəlli olmayan",
       unplacedNote: "«Şöbəsi bəlli olmayan»: çarpayısı olmayan və ya strukturda olmayan şöbədəki xəstə və monitorlar.",
       missing: "Şöbə sətirləri yazıla bilmir · {why}",
+      loading: "Şöbələr oxunur…",
     },
   },
   ru: {
@@ -141,6 +151,7 @@ export default {
     why: {
       loading: "читается…", failed: "не прочитано", stale: "данные не обновлены", noRight: "нет права",
       chain: "цепочка данных прервана", unknown: "неизвестно", stripOff: "блок монитора выключен",
+      stripStale: "данные мониторов не обновлены",
     },
     cards: {
       title: "Забытые задачи",
@@ -155,6 +166,8 @@ export default {
       silentWhat: "Сейчас: молчащие мониторы и мониторы без связи, как на странице «Устройства».",
       silentLongest: "дольше всех {for}",
       silentNoMonitors: "В этом представлении нет мониторов",
+      scoped: "только в вашей зоне, не по всей больнице",
+      truncated: "неполное чтение: учтены только самые новые записи",
     },
     age: { min: "{n} мин назад", hour: "{n} ч назад", day: "{n} дн. назад" },
     for: { minutes: "{n} мин", underMinute: "<1 мин" },
@@ -167,6 +180,7 @@ export default {
       intro: "По журналу аудита, по всей больнице, {period}. Читается при открытии страницы и при смене периода; само не обновляется.",
       loading: "Качество тревог читается…",
       failed: "Качество тревог не прочитано: {reason}",
+      unreadable: "Качество тревог не прочитано.",
       noRight: "Качеству тревог нужно право на чтение журнала аудита (audit.view) и область, охватывающая всю больницу.",
       episodes: "Эпизоды тревог", answered: "С ответом", rate: "доля {pct} %", unsettled: "завершённых ещё нет",
       median: "Время ответа (медиана)", p90: "Время ответа (p90)", escalated: "Эскалировано",
@@ -190,6 +204,7 @@ export default {
       unplaced: "Отделение не определено",
       unplacedNote: "«Отделение не определено»: пациенты и мониторы без койки или в отделении, которого нет в структуре.",
       missing: "Строки отделений не построить · {why}",
+      loading: "Отделения читаются…",
     },
   },
   en: {
@@ -203,6 +218,7 @@ export default {
     why: {
       loading: "reading…", failed: "could not be read", stale: "board not up to date", noRight: "no right",
       chain: "data chain broken", unknown: "unknown", stripOff: "monitor strip off",
+      stripStale: "monitor data not up to date",
     },
     cards: {
       title: "Forgotten work",
@@ -217,6 +233,8 @@ export default {
       silentWhat: "Now: silent monitors and monitors not heard from, as on the Devices page.",
       silentLongest: "longest {for}",
       silentNoMonitors: "No monitor in this view",
+      scoped: "only within your scope, not the whole hospital",
+      truncated: "incomplete read: only the newest records were counted",
     },
     age: { min: "{n} min ago", hour: "{n} h ago", day: "{n} d ago" },
     for: { minutes: "{n} min", underMinute: "<1 min" },
@@ -229,6 +247,7 @@ export default {
       intro: "From the audit trail, hospital-wide, {period}. Read when the page opens and when the period changes; it does not refresh by itself.",
       loading: "Reading alarm quality…",
       failed: "Alarm quality could not be read: {reason}",
+      unreadable: "Alarm quality could not be read.",
       noRight: "Alarm quality needs the right to read the audit trail (audit.view) and a scope covering the whole hospital.",
       episodes: "Alarm episodes", answered: "Answered", rate: "rate {pct}%", unsettled: "none settled yet",
       median: "Response time (median)", p90: "Response time (p90)", escalated: "Escalated",
@@ -252,6 +271,7 @@ export default {
       unplaced: "Unit not known",
       unplacedNote: "«Unit not known»: patients and monitors on no bed, or in a unit the structure does not hold.",
       missing: "Unit rows cannot be drawn · {why}",
+      loading: "Reading the units…",
     },
   },
 };
