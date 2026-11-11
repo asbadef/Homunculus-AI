@@ -2,8 +2,9 @@
 
 **Date:** 2026-11-11 · **Branch:** `feat/g3-cihaz-olcum-kaydi` (from main `331df704`) · **Migration:** `0021`
 (after Kalite's `0020`; `down_revision` is fixed by whoever merges second, `alembic heads` stays one)
-**Status:** the owner's five decisions are taken (2026-11-11, §2 D1–D5). The design below awaits the owner's
-«evet»; four points are marked **owner to confirm** (§9). No plan and no code before that.
+**Status:** the owner's five decisions are taken (2026-11-11, §2 D1–D5) and the four design points put to
+the owner are confirmed the same day (§10 Q1–Q4). The design as a whole awaits the owner's «evet». No plan
+and no code before that.
 
 ## 1. Why
 
@@ -42,12 +43,12 @@ way to correct a wrong one, and lets them satisfy the vital task.
 | D7 | **The audit trail stays the source of truth; the table is its projection.** The engine, the restart replay and "who did what" keep reading audit. Every table row is derivable from audit rows. Write order is always the audit row, then the table row. A failed table write is logged and does not fail the request — except on the unmatched path, which answers 500 so the bridge retries, because there the table is the only place the nurse will see the reading. An idempotent `reconcile` (audit → table, `ON CONFLICT DO NOTHING` on `(tenant, audit_id)`) runs at start and hourly over the last 48 h. | `PostgresAuditLog.append` owns its engine, transaction and chain retry; one shared transaction would change the audit protocol across three backends. A 500 after the engine took a value would make the bridge resend and count it twice. |
 | D8 | **The admission is resolved and stamped at arrival**, from the identity record `/ingest` already reads: a `kabul` record in state admitted → matched, `admission_id` set by the rule `tasks_postgres.admitted_at` uses (open states, DRAFT included; `protocol_no = key OR (protocol_no IS NULL AND patient_number = key)`); a `kabul` tombstone → unmatched, reason `discharged`; a record of another source (a HIS-fed patient) → today's path, `admission_id` NULL; no record → D9. The SQL fragment moves to one shared module. `boardkey.py` is untouched. | The `kabul` card exists from POST /admissions (DRAFT), so a draft is a valid target. Legacy H-number keys resolve by the second arm. After a transfer the new readings get the new admission row; `patient_key` spans the stay. |
 | D9 | **Unknown number: a policy switch.** `create_app(unknown_readings=…)` takes `"card"` or `"unmatched"`, default `card` (today's behaviour, so the test suite, `replay.py` and the seed scripts keep working). `prodserver` sets `unmatched` on Postgres; env `READINGS_UNKNOWN_KEY=card` turns it back for a replay. In `unmatched` any number with no identity record is listed: no engine entry, no card, answer `{"patient_id", "dropped": "unmatched"}`, always 200. | Many test files (the design read counted 33) and the scripts `replay.py` and `dev_seed_ward.py` ingest without an identity. A "12 digits only" rule would miss the 11- and 13-digit typos, which are exactly the cases the list is for. |
-| D10 | **The list and its two actions** (§4): `GET /readings/unmatched`, `POST /readings/unmatched/assign`, `POST /readings/unmatched/reject`. Permission `clinical.chart`, a person only (a device token is refused). Readings are grouped into sets (one number, one device, one time). **Owner to confirm (§9 Q1).** | A `clinical.chart` holder can already type the same values back-dated for any patient in scope, so linking is the weaker act. No new permission, no permission migration. |
+| D10 | **The list and its two actions** (§4): `GET /readings/unmatched`, `POST /readings/unmatched/assign`, `POST /readings/unmatched/reject`. Permission `clinical.chart`, a person only (a device token is refused). Readings are grouped into sets (one number, one device, one time). **Confirmed by the owner (§10 Q1).** | A `clinical.chart` holder can already type the same values back-dated for any patient in scope, so linking is the weaker act. No new permission, no permission migration. |
 | D11 | **Who sees what in the list.** A set under an unknown number has no patient, so every `clinical.chart` holder sees it (number as typed, values, device, times — no name exists). A set under a discharged number is shown only to users whose scope covered that patient's last unit. The assign target must pass `_require_patient` and must not be discharged, and the screen repeats the bedside page's identity question before linking. | Hiding unknown sets from scoped users, as nameless cards are hidden today, would leave the list unworked. |
-| D12 | **Linking puts the reading into the real engine at its own time.** `/ingest`'s tail becomes one function `_apply_reading(hospital, obs, record, wall_now)`; assign calls it per reading with the original measurement time and the device as source, which writes a normal `ingest` row carrying `"reading": id`, then one `reading_assigned` row per set. The row is claimed first (`unmatched → assigned`, conditional update), a failure releases the claim, and `reconcile` releases orphaned claims. A reading older than 24 h cannot be linked, only rejected. **Owner to confirm (§9 Q2).** | Not through the hand door: that would print «elle» and apply the hand form's bounds. Alert behaviour equals a back-dated hand entry: judged at its own time, and NEWS2 inputs go stale after 1–2 h. 24 h is G3-01 D7's back-dating bound. Rows are never deleted. |
-| D13 | **Correction reuses «hatalı giriş».** `POST /clinical/{id}/entries/{entry}/retract` also accepts an `ingest` row whose code is in `RETRACTABLE_CODES`: same permission, person only, reason 10–200 characters, same rebuild (every score as if the value had never arrived). The audit event stays `chart_retract`, its payload gains `"origin": "device"` and the device. The corrected value is a normal hand entry at the reading's own time, offered in the same dialog (within 24 h). The original stays in the record, struck through, with reason, name and time. **Owner to confirm (§9 Q3).** | One withdrawal event means every existing reader honours it: `rehydrate`, `rebuild_patient`, trends, fluids, pharmacy, tasks. The trail keeps both values. |
+| D12 | **Linking puts the reading into the real engine at its own time.** `/ingest`'s tail becomes one function `_apply_reading(hospital, obs, record, wall_now)`; assign calls it per reading with the original measurement time and the device as source, which writes a normal `ingest` row carrying `"reading": id`, then one `reading_assigned` row per set. The row is claimed first (`unmatched → assigned`, conditional update), a failure releases the claim, and `reconcile` releases orphaned claims. A reading older than 24 h cannot be linked, only rejected. **Confirmed by the owner (§10 Q2).** | Not through the hand door: that would print «elle» and apply the hand form's bounds. Alert behaviour equals a back-dated hand entry: judged at its own time, and NEWS2 inputs go stale after 1–2 h. 24 h is G3-01 D7's back-dating bound. Rows are never deleted. |
+| D13 | **Correction reuses «hatalı giriş».** `POST /clinical/{id}/entries/{entry}/retract` also accepts an `ingest` row whose code is in `RETRACTABLE_CODES`: same permission, person only, reason 10–200 characters, same rebuild (every score as if the value had never arrived). The audit event stays `chart_retract`, its payload gains `"origin": "device"` and the device. The corrected value is a normal hand entry at the reading's own time, offered in the same dialog (within 24 h). The original stays in the record, struck through, with reason, name and time. **Confirmed by the owner (§10 Q3).** | One withdrawal event means every existing reader honours it: `rehydrate`, `rebuild_patient`, trends, fluids, pharmacy, tasks. The trail keeps both values. |
 | D14 | **A re-sent reading is recognised.** Before the engine: `readings.seen(tenant, received_key, code, observed_at, source, value)`; a hit answers `{"duplicate": true}` with no engine entry and no audit row; a store error fails open (the reading is ingested). A unique index on the same columns for device rows backs it. | The Connex re-sends buffered readings and the uplink is at-least-once. Without this a re-send would bring back a withdrawn value or re-create a rejected or linked one. |
-| D15 | **Vital task.** The anchor reads `chart` and `ingest` rows minus withdrawn ones; any NEWS2 input counts. `NEWS2_HAND_CODES` becomes `NEWS2_INPUT_CODES` (alias kept). The device sends SpO₂, systolic pressure, pulse and temperature but **no respiration rate and no consciousness**, so after a device round the task resets and the card says the NEWS2 is partial. **Owner to confirm (§9 Q4).** | An unmatched reading writes no `ingest` row under a patient, so it resets nothing; a linked one does, at its own time. |
+| D15 | **Vital task.** The anchor reads `chart` and `ingest` rows minus withdrawn ones; any NEWS2 input counts. `NEWS2_HAND_CODES` becomes `NEWS2_INPUT_CODES` (alias kept). The device sends SpO₂, systolic pressure, pulse and temperature but **no respiration rate and no consciousness**, so after a device round the task resets and the card says the NEWS2 is partial. **Confirmed by the owner (§10 Q4).** | An unmatched reading writes no `ingest` row under a patient, so it resets nothing; a linked one does, at its own time. |
 | D16 | **Patient screen: «Ölçüm kaydı» box** under «Ölçülen değerler». One row per measurement set, newest first, 24 h / 72 h / 7 days; source «cihaz · {device}» or «elle · {user}»; a withdrawn value struck through with its reason; an «alındı» time when arrival and measurement differ by more than 5 minutes; «Düzelt» per value for `clinical.chart` holders. Trends: each channel gains `device: […]` beside `manual`, and the trend table prints «cihaz» and offers «Düzelt». | One place to read what was measured in this stay and by what. |
 | D17 | **«Eşleşmeyen ölçümler» lives inside the bedside page (`/olcum`)** as a step that reuses its patient list and identity question. The `olcum` rail item shows a count badge (polled every 60 s, neutral tone). | `/devices` is the biomedical page and shows no patient. No new route, no new lazy chunk. |
 | D18 | **Device query: nothing changes** in `edge/pdq.py`, `pdq_client.py`, `bridge.py`, `mllp.py`, `api/edge_query.py`, `edge/adt.py`. `/ingest` keeps answering 200, so the bridge's uplink never blocks. | The HBYS input (§7) freezes that path until the HBYS decisions. |
@@ -161,11 +162,21 @@ does not reach either. A test pins that.
   duplicate; `rehydrate` and `rebuild_patient` both skip it; the existing "device value cannot be withdrawn"
   test flips;
 - vital task: a device reading anchors, a withdrawn one does not, a future-stamped one is ignored;
-- `reconcile`: a missing recorded row, a missing void, an orphaned claim, idempotent when run twice.
+- `reconcile`: a missing recorded row, a missing void, an orphaned claim, idempotent when run twice;
+- the other readers of withdrawals (Lane A, 2026-11-11): `fluids._entries_by_patient`, Eczane's
+  `read_entries_by_patient` and `tasks._stamps_by_patient` pair a withdrawal with its (patient, entry); a
+  `chart_retract` of a device row with a non-fluid code changes none of their answers;
+- restart after a device withdrawal: the wider skip in `rehydrate` does not bring back an old
+  acknowledgement for an alert that the replay now raises differently (the known "replay never prunes" risk);
+  the test shows the episode's state equals the live rebuild's.
 
-**Pins** (values at 331df704; re-read at branch time): `EXPECTED` 75 (+ the new routes), `BOARD_EXPECTED`
-27 → 28, `test_route_inventory` +3 caller-resolved routes, nginx `API_PATHS` 32 → 33, `SPEC_KEYS` 28
-unchanged, dashboard `EVENT_TYPES` +3, precache 67 unchanged.
+**Pins** (values at 331df704; re-read at branch time, other lanes move them): routes defined in `app.py` are
+pinned by `test_board_permissions.py` `BOARD_EXPECTED` (27 → 28 with the patient readings route), routes of a
+router by `test_route_permissions.py` `EXPECTED` (75 → 78) and `test_tenant_isolation.py`;
+`test_route_inventory` +3 caller-resolved routes; nginx `API_PATHS` 32 → 33 (34 if Kalite's `/quality`
+lands first) and the masked log line for `/patients/{id}/readings` (`test_access_log_redaction.py`);
+`devProxy.test.js`; `SPEC_KEYS` 28 unchanged; dashboard `EVENT_TYPES` +3 with labels in four languages
+(`engineTypes.test.js`); precache 67 unchanged.
 
 **Dashboard:** client calls; `ReadingsBox` (sets, source, struck value, «alındı»); `CorrectDialog` (order of
 the two calls, partial failure, hidden after 24 h); the trend tag; the unmatched step and the badge; the
@@ -185,7 +196,26 @@ migrations, `alembic heads`); dashboard vitest; `vite build`.
    the same ORU: nothing returns.
 5. Restart the API: the same picture.
 
-## 8. Not in this slice
+## 8. Deploy
+
+Main and the VM are the owner's word, through Lane A, which writes the blocks. What they must say:
+
+- **Migration `0021`.** One statement per `op.execute`. Building `ix_audit_tenant_patient_id` locks the
+  `audit` table, so audit writes wait for the build (the VM's table is small, about 2 400 rows). The deploy
+  note says so. `down_revision` is `"0020"` if Kalite is on main first.
+- **What the live board shows changes.** Today the VM has no policy switch: a reading under an unknown number
+  makes a nameless card, and a reading for a discharged number vanishes. After the deploy, in production:
+  - a new reading under an unknown number goes to the list and makes **no** card;
+  - a nameless card that exists on the day stays (the restart replays its old `ingest` rows) but receives
+    nothing new — the plan verifies this in a test and the guide says where such readings now go;
+  - a reading for a discharged number appears in the list with its value.
+  Block A-1 counts today's nameless cards so the owner knows what will stop updating.
+- **The ward is told beforehand:** the «Eşleşmeyen ölçümler» list and its badge, «Düzelt» on a device value,
+  and that a device round now clears the vital task while the NEWS2 stays partial without respiration rate
+  and consciousness.
+- **Rollback:** D20.
+
+## 9. Not in this slice
 
 - **Comed's protocol number** typed on the device (D1).
 - **Ward unit types.** `UnitType` has the five ICU kinds only; servis units are HBYS H4. A ward patient can
@@ -200,20 +230,22 @@ migrations, `alembic heads`); dashboard vitest; `vite build`.
   which also settles what the device does on NF. Until then this slice is proven on the local stack only.
 - **`visits`** (H2; §3 says how the table follows).
 
-## 9. Open items
+## 10. Open items
 
-**For the owner, with the default the design assumes:**
-- **Q1.** Who may link or reject an unmatched reading? Default: everyone who can chart (`clinical.chart`),
-  each action audited. Alternative: a new permission for charge nurses (`readings.match`: four places, a
-  permission migration, `SPEC_KEYS` +1).
-- **Q2.** How old may a reading be and still be linked? Default: 24 h. Older ones stay listed and can only be
-  rejected; the value is kept either way.
+**Put to the owner and confirmed, 2026-11-11:**
+
+- **Q1.** Who may link or reject an unmatched reading: everyone who can chart (`clinical.chart`), each action
+  audited. (Not chosen: a new permission for charge nurses.)
+- **Q2.** How old a reading may be and still be linked: 24 h. Older ones stay listed and can only be
+  rejected; the value is kept either way. (Not chosen: 72 h, no limit.)
 - **Q3.** Correction: the wrong value stays visible, struck through; a reason of at least 10 characters is
-  required; the corrected value is recorded as «elle» at the reading's time. Default: yes, as hand entries.
-- **Q4.** A device round carries no respiration rate and no consciousness. Does it still reset the vital
-  timer? Default: yes, and the card shows the NEWS2 as partial until they are entered by hand.
+  required; the corrected value is recorded as «elle» at the reading's time.
+- **Q4.** A device round with no respiration rate and no consciousness still resets the vital timer, and the
+  card shows the NEWS2 as partial until they are entered by hand.
 
-**Others:**
+**Still open:**
+
+- **O0.** The owner's «evet» on the design as a whole.
 - **O1.** Tests that post one identical reading twice now see a duplicate (D14). The fallout is known only
   when the task runs; each is fixed by giving the second reading its own time, never by weakening the rule.
 - **O2.** An empty `device.display` replays as "replay", so the shadow lane's removal and the «already» repair
