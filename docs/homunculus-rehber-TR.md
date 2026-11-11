@@ -2195,7 +2195,7 @@ adlar uydurmadır.
   tanı koymaz. Başlığın altında bunu söyler: «Bu ekran izleme içindir; doz önermez, order vermez.» Sistem yeni bir
   veri toplamaz; sayfa, zaten tuttuklarını (panodaki ilaç bloğu ve sıvı defteri) bir araya getirir. Örneklerdeki
   değerler uydurmadır.
-- **Durum:** kodda (`feat/g3-eczane`); main'e ve hastane sunucusuna sahibin sözüyle çıkar (göç 0019).
+- **Durum:** main'de (11 Kasım 2026; göç 0019); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
 - **Kim görür:** yeni yetki `pharmacy.view` olan. Varsayılan olarak Eczacı, Sorumlu Hekim, Ünite Hekimi ve Hekim
   gruplarında; Sistem Yöneticisi her yetkiyi kural gereği taşır. Hemşire, Sorumlu Hemşire, Hızlı Yanıt Ekibi,
   Denetçi, Biyomedikal Teknisyen ve Üretici Destek görmez. Başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz
