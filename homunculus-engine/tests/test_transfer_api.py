@@ -31,7 +31,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission import transfer as transfer_module
 from homunculus.admission.boardlink import BoardLink
-from homunculus.admission.models import Admission, AdmissionState, CareTeamMember, CareTeamRole
+from homunculus.admission.models import (
+    Admission, AdmissionState, CareTeamMember, CareTeamRole, Handover,
+)
 from homunculus.api.app import ScopedBoardView, sse_board_frames
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.scope import build_scope
@@ -842,3 +844,59 @@ async def test_a_handover_in_hand_follows_the_patient_and_its_critical_gate_stil
         in (await outgoing())["summary"]["open_alerts"]
     (sealed,) = audited(app, "handover.sign_outgoing")
     assert sealed.patient_id == key
+
+
+async def _handed(w, client, admission: dict) -> str:
+    """The nurse opens a handover of this patient to the charge nurse (G2-B3b); its id."""
+    r = await client.post("/handovers", json={
+        "unit_id": str(w.units["rea"].id), "incoming_user_id": str(w.users["charge"].id),
+        "admission_ids": [admission["id"]]}, headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+async def test_the_audit_row_names_the_handovers_that_followed_in_handover_id_order(
+        ward, db_session):
+    """X21 (controller): two handovers in hand on the patient both follow her, and the row names
+    them in the order of their ids — the order the service locks and answers them in — not the
+    order they were opened in. Their ids are set here so the two orders differ: the first opened
+    holds the larger id."""
+    w, client, app = ward
+    source = await signed(w, client)
+    first, second = uuid.UUID(await _handed(w, client, source)), uuid.UUID(
+        await _handed(w, client, source))
+    high = uuid.UUID("ffffffff-0000-4000-8000-000000000001")
+    low = uuid.UUID("00000000-0000-4000-8000-000000000002")
+    await _set(db_session, Handover, first, id=high)
+    await _set(db_session, Handover, second, id=low)
+    await moved(w, client, source)
+    (row,) = audited(app, "admission.transfer")
+    assert row.payload["handovers_moved"] == 2
+    assert row.payload["handover_ids"] == sorted([str(high), str(low)]) == [str(low), str(high)]
+
+
+async def test_a_handover_in_hand_takes_the_patients_new_unit_and_the_waiting_count_follows(
+        ward, db_session):
+    """X22 (controller, on G4-02): a handover's unit is its patients' beds', and
+    `GET /handovers/pending` counts by it. A handover the nurse signed on bed 1 waits for the
+    countersignature in Reanimasiya; the patient moves to the neonatal unit, the handover follows
+    her (X17) and is counted there, no longer in the old unit."""
+    w, client, app = ward
+    neo = w.units["neo"].id
+    source = await signed(w, client)
+    handover = await _handed(w, client, source)
+    r = await client.post(f"/handovers/{handover}/sign-outgoing", json={"note": HANDOVER_NOTE},
+                          headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["status"]) == (200, "OUTGOING_SIGNED")
+
+    async def waiting() -> list:
+        r = await client.get("/handovers/pending", headers=w.auth["admin"])
+        assert r.status_code == 200, r.text
+        return [(u["unit_name"], u["pending"]) for u in r.json()["units"]]
+
+    assert await waiting() == [("Reanimasiya", 1)]
+    answer = await moved(w, client, source, "N1", "admin")
+    assert await waiting() == [("Neonatal", 1)]
+    ((unit_id, named),) = await _fresh(db_session, select(Handover.unit_id, Handover.admission_ids)
+                                       .where(Handover.id == uuid.UUID(handover)))
+    assert (unit_id, list(named)) == (neo, [answer["id"]])

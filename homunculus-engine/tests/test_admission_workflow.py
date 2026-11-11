@@ -467,6 +467,60 @@ async def test_a_handover_in_hand_follows_the_patient_and_a_closed_one_stays(db_
     assert named["elsewhere"] == [beside]
 
 
+async def test_a_handover_in_hand_takes_the_patients_new_unit_once_all_its_patients_lie_there(
+        db_session):
+    """G2-B1b (X22, the controller's rule on G4-02): a handover's unit is its admissions' beds'
+    (`GET /handovers/pending` counts by it), so a handover that follows a patient into another unit
+    takes that unit — when EVERY admission it names lies there. One naming only her moves with her;
+    one naming a patient who stays behind, or an id that is no admission, keeps its unit until the
+    move that brings the last patient over."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session, n_beds=3)
+    tenant = await db_session.get(Tenant, adm.tenant_id)
+    neighbour = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=await _new_patient(db_session, tenant),
+        note_fields=_note(unit, beds[1], attending))
+    await service.sign_off_admission(db_session, neighbour, signing_user_id=attending.id)
+    other = Unit(site_id=unit.site_id, name="Yenidoğan YBÜ", unit_type=UnitType.NICU)
+    db_session.add(other)
+    await db_session.flush()
+    far_room = Room(unit_id=other.id, name="Oda N")
+    db_session.add(far_room)
+    await db_session.flush()
+    far = [Bed(room_id=far_room.id, label=f"N{i}", state=BedState.AVAILABLE) for i in (1, 2)]
+    db_session.add_all(far)
+    await db_session.flush()
+    mover, ghost = adm.id, str(uuid.uuid4())            # ids named; `ghost` is no admission
+    handovers = {name: await service.open_handover(
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=named) for name, named in (
+            ("alone", [mover]), ("pair", [mover, neighbour.id]), ("ghost", [mover, ghost]))}
+    for handover in handovers.values():
+        handover.status = HandoverStatus.OUTGOING_SIGNED
+    await db_session.flush()
+    ids, home, there = {n: h.id for n, h in handovers.items()}, unit.id, other.id
+
+    async def stored() -> dict:
+        """What the database holds: each handover's unit and the admissions it names."""
+        rows = {i: (u, list(a)) for i, u, a in (await db_session.execute(
+            select(Handover.id, Handover.unit_id, Handover.admission_ids))).all()}
+        return {name: rows[i] for name, i in ids.items()}
+
+    first, _t, followed = await service.transfer_patient(
+        db_session, adm, target_bed=far[0], target_unit_id=there, reason="CLINICAL_NEED", note=None)
+    assert followed == sorted(ids.values())
+    now = await stored()
+    assert now["alone"] == (there, [str(first.id)])
+    assert now["pair"] == (home, [str(first.id), str(neighbour.id)])      # her neighbour stays behind
+    assert now["ghost"] == (home, [str(first.id), ghost])                 # no admission to lie there
+    second, _t, followed = await service.transfer_patient(
+        db_session, neighbour, target_bed=far[1], target_unit_id=there, reason="CLINICAL_NEED",
+        note=None)
+    assert followed == [ids["pair"]]
+    now = await stored()
+    assert now["pair"] == (there, [str(first.id), str(second.id)])        # the last one came over
+    assert now["ghost"] == (home, [str(first.id), ghost])
+
+
 # ---------------------------------------------------------------------------
 # Discharge (§4.7)
 # ---------------------------------------------------------------------------

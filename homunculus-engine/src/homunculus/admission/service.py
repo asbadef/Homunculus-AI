@@ -27,7 +27,7 @@ from homunculus.admission.models import (
 )
 from homunculus.auth.models import Group, TenantMembership, User, UserGroup
 from homunculus.scope.service import _window_open
-from homunculus.tenant.models import Bed, BedState, Site, Unit
+from homunculus.tenant.models import Bed, BedState, Room, Site, Unit
 
 # --- Settled timing decisions ---
 DRAFT_REVIEW_TIMEOUT = timedelta(hours=2)        # S-26
@@ -393,6 +393,22 @@ _OWN_TO_EACH_ROW = frozenset({
 })
 
 
+async def _all_lie_in(db: AsyncSession, admission_ids: list[str], unit_id: uuid.UUID) -> bool:
+    """G2-B1b (X22): whether every admission a handover names lies on a bed of `unit_id` — bed →
+    room → unit, as the handover route reads a bed's unit (`_reach_admission`, A-12). An id that is
+    no admission of ours, or whose admission has no bed, does not lie there."""
+    try:
+        wanted = {uuid.UUID(a) for a in admission_ids}
+    except ValueError:
+        return False
+    units = dict((await db.execute(
+        select(Admission.id, Room.unit_id)
+        .join(Bed, Bed.id == Admission.bed_id)
+        .join(Room, Room.id == Bed.room_id)
+        .where(Admission.id.in_(wanted)))).all())
+    return bool(wanted) and wanted <= units.keys() and all(u == unit_id for u in units.values())
+
+
 async def transfer_patient(
     db: AsyncSession, admission: Admission, *, target_bed: Bed, target_unit_id: uuid.UUID,
     reason: str, note: str | None, reserved_ok: bool = False,
@@ -426,8 +442,10 @@ async def transfer_patient(
        read afresh (`populate_existing`) — in the order of their ids, so two transfers in one
        tenant lock them in one order and cannot deadlock; a signature at the same moment waits for
        the move and reads the new admission. COMPLETED and EXPIRED handovers stay as they were
-       written. `admission_ids` is JSON (JSONB on Postgres, JSON on SQLite for
-       scripts/dev_local.py), so the match is made here, not in SQL."""
+       written. The handover's unit follows her when every admission it names lies in the
+       arriving unit now (X22; the others of a handover of several patients decide it).
+       `admission_ids` is JSON (JSONB on Postgres, JSON on SQLite for scripts/dev_local.py), so
+       the match is made here, not in SQL."""
     if admission.state != AdmissionState.ACTIVE:
         raise WorkflowError(
             f"Only an ACTIVE admission is transferred (current: {admission.state.value}).")
@@ -493,8 +511,17 @@ async def transfer_patient(
         named = [str(a) for a in (handover.admission_ids or [])]
         if source_id in named:
             # A new list, assigned: an edit in place is not tracked and would never be written.
-            handover.admission_ids = [arriving_id if a == source_id else a for a in named]
+            named = [arriving_id if a == source_id else a for a in named]
+            handover.admission_ids = named
             followed.append(handover.id)
+            # X22 (controller): a handover's unit is its admissions' beds' (G4-02: the handover
+            # route stores the unit its admissions lie in, and `GET /handovers/pending` counts by
+            # it), so it follows the patient into her new unit — but only when EVERY admission it
+            # names lies there now. A handover of several patients whose others stay behind keeps
+            # its unit (the patients now lie in two): it moves with the move that brings the last
+            # one over. A handover that names one patient always moves with her.
+            if handover.unit_id != target_unit_id and await _all_lie_in(db, named, target_unit_id):
+                handover.unit_id = target_unit_id
     await db.flush()
     return arriving, len(team), followed
 

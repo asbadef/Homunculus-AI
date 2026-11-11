@@ -1192,7 +1192,8 @@ async def care_team_candidates(
 #   * the arriving row carries the person's `identity_digest` (T6): her open admission stays
 #     visible to the duplicate refusal (A-37);
 #   * a handover still in hand names the arriving row, so B3b's critical gate reads her card's key
-#     (the owner, 2026-11-10; X17, `service.transfer_patient`).
+#     (the owner, 2026-11-10; X17, `service.transfer_patient`), and takes her new unit when all its
+#     patients lie there (G4-02's rule: a handover's unit is its admissions' beds'; X22).
 async def _transfer_again(db: AsyncSession, request: Request, response: Response, *,
                           caller_tenant: uuid.UUID, source_id: uuid.UUID, arriving: Admission,
                           left: tuple[uuid.UUID, uuid.UUID], actor: str) -> TransferResponse:
