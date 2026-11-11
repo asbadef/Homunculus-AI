@@ -1278,13 +1278,14 @@ async def transfer_admission(
         select(Patient.display_name, Patient.date_of_birth, Patient.sex)
         .where(Patient.id == admission.patient_id))).one()
     try:
-        arriving, team_moved, handovers_moved = await service.transfer_patient(
+        arriving, team_moved, handovers_followed = await service.transfer_patient(
             db, admission, target_bed=bed, target_unit_id=target_unit,
             reason=payload.reason.value, note=note, reserved_ok=payload.confirm_reserved)
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
+    handovers_moved = len(handovers_followed)         # the audit row's count (Task 5); the ids follow
     # Everything the answer, the audit row and the card need, as plain values before the commit.
     written = AdmissionResponse.model_validate(arriving)
     card = {"key": key, "display_name": name, "date_of_birth": born, "sex": sex,

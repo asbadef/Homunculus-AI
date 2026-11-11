@@ -16,7 +16,7 @@ from homunculus.admission import service
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.models import (
     Admission, AdmissionState, AdmissionType, BloodGroup, CareTeamMember, CareTeamRole,
-    DischargeDisposition, HandoverStatus, Patient,
+    DischargeDisposition, Handover, HandoverStatus, Patient,
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.auth.models import User
@@ -233,11 +233,14 @@ async def test_shift_schedule_soft_overcapacity_warning(db_session):
 #: A synthetic protocol number (G2-B1d: twelve digits; each test's tenant is its own, so no clash).
 PROTOCOL = "202600000001"
 #: The columns each row keeps its own (spec T6, X8); every other column of the stay is carried.
+#: The discharge's five stay with the row it was decided on (Task 2 review).
+DISCHARGE = ("discharge_disposition", "discharge_institution", "discharge_reported_by",
+             "discharge_at", "discharge_note")
 OWN = frozenset({
     "id", "state", "bed_id", "admitting_unit_id", "admission_datetime", "request_id",
     "request_digest", "engine_writes", "draft_reminder_sent", "source_admission_id",
     "transfer_confirm_deadline", "transfer_reason", "transfer_note", "protocol_no",
-    "created_at", "updated_at",
+    "created_at", "updated_at", *DISCHARGE,
 })
 
 
@@ -258,8 +261,8 @@ async def _active(db, *, n_beds=3, protocol_no=None):
 
 
 async def _move(db, adm, bed, unit, *, reason="CLINICAL_NEED", note=None, reserved_ok=False):
-    """The arriving row and how many care-team rows moved. The handovers' count, the service's
-    third answer (X17), is read by its own test below."""
+    """The arriving row and how many care-team rows moved. The ids of the handovers that followed
+    her, the service's third answer (X17), are read by its own test below."""
     arriving, team, _handovers = await service.transfer_patient(
         db, adm, target_bed=bed, target_unit_id=unit.id, reason=reason, note=note,
         reserved_ok=reserved_ok)
@@ -297,10 +300,16 @@ async def test_a_transfer_moves_the_patient_in_one_step(db_session):
 async def test_the_arriving_row_is_the_stay_whole_with_the_moves_own_reason_and_note(db_session):
     """T6, F4, D8, X8: every column of the stay is carried — the identity digest and B1a's form
     fields among them. The reason and the note are this move's: a later move writes its own and
-    copies neither."""
+    copies neither. The discharge's fields stay with the row they were decided on: a row that
+    carries them (a discharge started, then cancelled) does not hand them to the arriving one."""
     unit, beds, attending, nurse, p, adm = await _active(db_session)
+    adm.discharge_disposition, adm.discharge_note = DischargeDisposition.HOME, "Sentetik not"
+    await db_session.flush()
     arriving, _ = await _move(db_session, adm, beds[1], unit, reason="OTHER",
                               note="Sentetik nakil notu")
+    assert [getattr(arriving, c) for c in DISCHARGE] == [None] * len(DISCHARGE)
+    assert (adm.discharge_disposition, adm.discharge_note) == (DischargeDisposition.HOME,
+                                                               "Sentetik not")
     for column in Admission.__table__.columns:
         if column.key not in OWN:
             assert getattr(arriving, column.key) == getattr(adm, column.key), column.key
@@ -378,6 +387,24 @@ async def test_only_an_active_admission_moves(db_session, started):
     assert beds[1].state == BedState.AVAILABLE
 
 
+async def test_a_source_bed_that_is_not_occupied_is_refused_before_anything_moves(db_session):
+    """Task 2 review: the source bed is checked up front, so the house refusal (`WorkflowError`,
+    not the bed machine's `ValueError`) comes before any in-memory transition: the admission, the
+    protocol, the care team and the target are as they were."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session, protocol_no=PROTOCOL)
+    beds[0].state = BedState.MAINTENANCE                # the patient's own bed, out of step
+    db_session.add(CareTeamMember(admission_id=adm.id, user_id=nurse.id,
+                                  role=CareTeamRole.ASSOCIATE_PHYSICIAN,
+                                  granted_by_id=attending.id))
+    await db_session.flush()
+    with pytest.raises(WorkflowError) as refused:
+        await _move(db_session, adm, beds[1], unit)
+    assert refused.value.code == "invalid_transition"
+    assert (adm.state, adm.protocol_no, beds[0].state, beds[1].state) == (
+        AdmissionState.ACTIVE, PROTOCOL, BedState.MAINTENANCE, BedState.AVAILABLE)
+    assert len(await _team(db_session, adm.id, active=True)) >= 1
+
+
 async def test_the_care_team_is_closed_on_the_source_and_copied_onto_the_arriving_row(db_session):
     """T7: the source keeps no active row — its key is the H-number now (O8), and an open row on
     it would point the own-patient scope away from the card. The arriving row holds the same
@@ -408,26 +435,36 @@ async def test_a_handover_in_hand_follows_the_patient_and_a_closed_one_stays(db_
     """Owner 2026-11-10 (X17): a handover still in hand — OPEN inside its bridge, or
     OUTGOING_SIGNED — names the arriving row after the move, in the source's place and nothing
     else changed. A COMPLETED one, an EXPIRED one and an OPEN one past its bridge (which reads
-    EXPIRED, S-24) keep the source, as they were written. The count is answered."""
+    EXPIRED, S-24) keep the source, as they were written. A handover in hand that names only
+    another patient is left alone. The ids of the two that followed are answered, by handover id.
+    What is read back is the database's, not the session's objects: a JSON list edited in place
+    is not tracked, so the objects would show it and the row would never change."""
     unit, beds, attending, nurse, p, adm = await _active(db_session)
     beside = str(uuid.uuid4())                          # another admission the handovers name
     handovers = {name: await service.open_handover(
         db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
         admission_ids=[beside, adm.id]) for name in ("open", "signed", "completed", "expired",
                                                      "lapsed")}
+    handovers["elsewhere"] = await service.open_handover(   # in hand, another patient's only
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=[beside])
     handovers["signed"].status = HandoverStatus.OUTGOING_SIGNED
     handovers["completed"].status = HandoverStatus.COMPLETED
     handovers["expired"].status = HandoverStatus.EXPIRED
     handovers["lapsed"].bridge_expires_at = _now() - timedelta(minutes=1)
     await db_session.flush()
     source_id = str(adm.id)
+    ids = {name: h.id for name, h in handovers.items()}
     arriving, _team_moved, followed = await service.transfer_patient(
         db_session, adm, target_bed=beds[1], target_unit_id=unit.id, reason="CLINICAL_NEED",
         note=None)
-    named = {name: list(h.admission_ids) for name, h in handovers.items()}
-    assert followed == 2
+    stored = dict((await db_session.execute(
+        select(Handover.id, Handover.admission_ids))).all())
+    named = {name: list(stored[i]) for name, i in ids.items()}
+    assert followed == sorted([ids["open"], ids["signed"]])
     assert named["open"] == named["signed"] == [beside, str(arriving.id)]
     assert named["completed"] == named["expired"] == named["lapsed"] == [beside, source_id]
+    assert named["elsewhere"] == [beside]
 
 
 # ---------------------------------------------------------------------------

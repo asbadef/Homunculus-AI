@@ -379,25 +379,29 @@ async def create_shift_schedule(
 #: G2-B1b (spec T6, X8): the columns an arriving admission does NOT take from its source — its own
 #: identity, state, place and time; the admission form's send bookkeeping (A-19), which belongs to
 #: the source's admission; the move's own link, deadline, reason and note; and the protocol, which
-#: moves explicitly (O8). Every other column is the stay's and is carried whole, so a column added
-#: later is carried unless it is named here.
+#: moves explicitly (O8); and the discharge's five fields, which stay with the row the discharge was
+#: decided on (a started discharge that was cancelled must not hand them to the arriving row).
+#: Every other column is the stay's and is carried whole, so a column added later is carried unless
+#: it is named here.
 _OWN_TO_EACH_ROW = frozenset({
     "id", "state", "bed_id", "admitting_unit_id", "admission_datetime", "request_id",
     "request_digest", "engine_writes", "draft_reminder_sent", "source_admission_id",
     "transfer_confirm_deadline", "transfer_reason", "transfer_note", "protocol_no",
     "created_at", "updated_at",
+    "discharge_disposition", "discharge_institution", "discharge_reported_by", "discharge_at",
+    "discharge_note",
 })
 
 
 async def transfer_patient(
     db: AsyncSession, admission: Admission, *, target_bed: Bed, target_unit_id: uuid.UUID,
     reason: str, note: str | None, reserved_ok: bool = False,
-) -> tuple[Admission, int, int]:
+) -> tuple[Admission, int, list[uuid.UUID]]:
     """Group 2 · B1b (spec D1, T3–T7, §5.3): the patient moves to `target_bed` in one step, inside
     the caller's transaction. The route has locked the source bed, the target bed and the
     admission (`_locked`), proved the target open and in the caller's units, and read
     `target_unit_id` from the bed (T2). Returns the arriving admission, how many care-team rows
-    moved and how many handovers in hand followed her.
+    moved and the ids of the handovers in hand that followed her, in the order of their ids.
 
     1. The source walks ACTIVE → PENDING_TRANSFER → TRANSFERRED and its bed OCCUPIED →
        PENDING_TRANSFER_OUT → HOUSEKEEPING (T3): no machine changes, and no pending state is
@@ -418,10 +422,12 @@ async def transfer_patient(
        names the arriving row in its place (owner 2026-11-10, X17). B3b reads a handover's patient
        through the admission it names: its critical gate, its sealed summary, its audit rows and
        the screen's box and "already open" check. The source's key is the H-number now (O8), and
-       the card's is the arriving row's. The rows are locked as `_locked_handover` locks one, so a
-       signature at the same moment waits for the move and reads the new admission. COMPLETED
-       and EXPIRED handovers stay as they were written. `admission_ids` is JSON (JSONB on
-       Postgres, JSON on SQLite for scripts/dev_local.py), so the match is made here, not in SQL."""
+       the card's is the arriving row's. The rows are locked as `_locked_handover` locks one — and
+       read afresh (`populate_existing`) — in the order of their ids, so two transfers in one
+       tenant lock them in one order and cannot deadlock; a signature at the same moment waits for
+       the move and reads the new admission. COMPLETED and EXPIRED handovers stay as they were
+       written. `admission_ids` is JSON (JSONB on Postgres, JSON on SQLite for
+       scripts/dev_local.py), so the match is made here, not in SQL."""
     if admission.state != AdmissionState.ACTIVE:
         raise WorkflowError(
             f"Only an ACTIVE admission is transferred (current: {admission.state.value}).")
@@ -430,7 +436,13 @@ async def transfer_patient(
         raise WorkflowError(
             f"Target bed is not AVAILABLE (state: {target_bed.state.value}).",
             errors.BED_NOT_AVAILABLE)
+    # The patient's own bed, checked before anything changes in memory: the bed machine would raise
+    # its ValueError only after the admission had walked on (Task 2 review).
     source_bed = await db.get(Bed, admission.bed_id)
+    if source_bed is None or source_bed.state != BedState.OCCUPIED:
+        raise WorkflowError(
+            "The patient's bed is not OCCUPIED "
+            f"(state: {source_bed.state.value if source_bed is not None else 'missing'}).")
     now = _now()
 
     admission.transition_to(AdmissionState.PENDING_TRANSFER)
@@ -439,9 +451,7 @@ async def transfer_patient(
     source_bed.transition_to(BedState.HOUSEKEEPING)
 
     moved_protocol, admission.protocol_no = admission.protocol_no, None
-    team = list((await db.execute(select(CareTeamMember).where(
-        CareTeamMember.admission_id == admission.id,
-        CareTeamMember.is_active.is_(True)))).scalars().all())
+    team = await active_rows(db, admission.id)
     for member in team:
         member.is_active = False
         member.closed_at = now
@@ -475,13 +485,16 @@ async def transfer_patient(
                or_(Handover.status == HandoverStatus.OUTGOING_SIGNED,
                    and_(Handover.status == HandoverStatus.OPEN,
                         Handover.bridge_expires_at > now)))
-        .with_for_update(of=Handover))).scalars().all()
-    followed = 0
+        .order_by(Handover.id)
+        .with_for_update(of=Handover)
+        .execution_options(populate_existing=True))).scalars().all()
+    followed: list[uuid.UUID] = []
     for handover in in_hand:
         named = [str(a) for a in (handover.admission_ids or [])]
         if source_id in named:
+            # A new list, assigned: an edit in place is not tracked and would never be written.
             handover.admission_ids = [arriving_id if a == source_id else a for a in named]
-            followed += 1
+            followed.append(handover.id)
     await db.flush()
     return arriving, len(team), followed
 
