@@ -1956,6 +1956,13 @@ def create_app(
             # `/infinity-waves` asks this handler for its board, and so answers the same 503.
             scope = _readable(scope)
         now = shadow_clock()
+        # G4-01 (D3): the last-seen ledger is display memory. One that cannot be read costs this answer
+        # only its new fields — the nurses' strip, the device page and /infinity-waves stay as before.
+        try:
+            seen = shadow_ledger.view()
+        except Exception:                      # noqa: BLE001 — logged; the board is answered without it
+            log.exception("G4-01: the device ledger could not be read; the board goes without it")
+            seen = None
 
         def _at(card: dict, patient_id: str) -> bool:
             return sees_patient({"patient_id": patient_id,
@@ -1970,7 +1977,7 @@ def create_app(
             patient_visible=lambda card: _at(card, "") and _at(card, card["patient_id"]),
             show_unassigned=scope.unrestricted or manager, now=now,
             # G4-01 (D3): the last-seen ledger, on the cards this caller is shown and nowhere else.
-            ledger=shadow_ledger.view())
+            ledger=seen)
         if shadow.rules:
             # Aşama B: the running stage (`board_view` answers "shadow", the strip it builds), and
             # the shadow engine's word for the device screen — «gölge motor: hata» while failing.

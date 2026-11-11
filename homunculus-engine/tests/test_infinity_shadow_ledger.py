@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -18,7 +19,7 @@ import pytest
 from homunculus.api.infinity_device_beds import DeviceBedTable, Row, TableState
 from homunculus.api.infinity_shadow import (
     FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, FeedLedger,
-    ShadowStore, board_view, reported_sources,
+    LedgerView, ShadowStore, board_view, reported_sources,
 )
 
 T0 = 1_800_000_000.0
@@ -322,3 +323,19 @@ def test_the_new_fields_name_no_patient():
     assert "synth-p2" not in json.dumps(out["vanished"])
     for card in out["beds"]:
         assert all(set(ch) == {"parameter", "last_value_at"} for ch in card["channels_seen"])
+
+
+# --- review fixes --------------------------------------------------------------------------------
+
+def test_a_ledger_that_cannot_be_worded_leaves_the_board_exactly_as_it_was(caplog):
+    # Review 1: the ledger is display memory; it never costs a viewer the strip. A time that cannot be
+    # printed, on the LAST card shown, must not leave the cards before it half-worded either.
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading()), device("192.0.2.12", reading())))
+    seen = ledger.view()
+    broken = LedgerView(seen.started_at, {**seen.devices,
+                                          "192.0.2.12": replace(seen.devices["192.0.2.12"], last_packet_at=float("inf"))})
+    out = board_view(store.devices(clock.t), store.feed(clock.t), _table(), occupants=None, visible=lambda card: True,
+                     patient_visible=lambda card: True, show_unassigned=True, now=clock.t, ledger=broken)
+    assert out == _board(store, ledger, clock, with_ledger=False)
+    assert "ledger" in caplog.text

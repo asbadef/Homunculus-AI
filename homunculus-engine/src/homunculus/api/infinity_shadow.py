@@ -622,8 +622,10 @@ def _address_key(source: str) -> tuple[int, ...]:
 QUIET_STATUSES = ("silent", "unknown")
 
 
-def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> dict:
-    """G4-01 (D3): the ledger on the cards this caller is shown, and the body's four new fields.
+def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> tuple[list[dict], dict]:
+    """G4-01 (D3): the ledger's fields for each card this caller is shown, in `shown`'s order, and
+    the body's four new fields. Built whole before any card is touched (`board_view` lays them on
+    only when this returns), so a failure leaves no card half-worded.
 
     `vanished` is cut from those same cards, so it reaches exactly what they reach: a bed card only
     through the approved table's row valid now and the caller's scope (`visible`), an unassigned one
@@ -632,20 +634,21 @@ def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> dict:
     worded differently. An `unknown` monitor the latest body still listed is the forwarder's silence,
     not its own. `silent_for_s` counts from `last_packet_at` on the board's own clock. Nothing here
     names a patient."""
-    vanished = []
+    per_card, vanished = [], []
     for card in shown:
         seen = ledger.devices.get(card["source"])
         last = None if seen is None else seen.last_packet_at
-        card["last_packet_at"] = None if last is None else _iso(last)
-        card["silent_for_s"] = (int(max(0.0, now - last))
-                                if last is not None and card["status"] in QUIET_STATUSES else None)
-        card["channels_seen"] = ([] if seen is None else
-                                 [{"parameter": name, "last_value_at": _iso(at)} for name, at in seen.channels])
+        fields = {"last_packet_at": None if last is None else _iso(last),
+                  "silent_for_s": (int(max(0.0, now - last))
+                                   if last is not None and card["status"] in QUIET_STATUSES else None),
+                  "channels_seen": ([] if seen is None else
+                                    [{"parameter": name, "last_value_at": _iso(at)} for name, at in seen.channels])}
+        per_card.append(fields)
         if seen is not None and not seen.reported and card["status"] == "unknown":
             vanished.append({"source": card["source"], "bed_label": card.get("bed_label"),
-                             "last_packet_at": card["last_packet_at"], "last_report_at": _iso(seen.last_report_at)})
-    return {"watching_since": _iso(ledger.started_at), "stale_list_after_s": STALE_LIST_AFTER_S,
-            "stale_list_until_s": STALE_LIST_UNTIL_S, "vanished": vanished}
+                             "last_packet_at": fields["last_packet_at"], "last_report_at": _iso(seen.last_report_at)})
+    return per_card, {"watching_since": _iso(ledger.started_at), "stale_list_after_s": STALE_LIST_AFTER_S,
+                      "stale_list_until_s": STALE_LIST_UNTIL_S, "vanished": vanished}
 
 
 def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState, *,
@@ -667,7 +670,8 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
     - `ledger` (G4-01) is `FeedLedger.view()`, or None — the shadow engine's pass. With it every shown
       card carries `last_packet_at`, `silent_for_s` and `channels_seen`, and the body
       `watching_since`, `stale_list_after_s`, `stale_list_until_s` and `vanished` (`_ledger_fields`);
-      without it the body is exactly what it was.
+      without it the body is exactly what it was — and exactly that too when the ledger's fields
+      cannot be built: the failure is logged, never the viewer's strip (display memory only).
     Parameters are in PARAMETERS order with NBP's three as one `nbp` entry last (its states:
     `value`, `value_untimed`, `invalid`, `old` — `ShadowStore._nbp_view`), each copied as the store
     built it; beds by label, unassigned devices by address."""
@@ -726,5 +730,12 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
             "feed": {**feed, "devices": counts, "unassigned": len(unassigned)},
             "beds": beds, "unassigned": unassigned}
     if ledger is not None:
-        body.update(_ledger_fields(shown, ledger, now))
+        try:
+            per_card, extra = _ledger_fields(shown, ledger, now)
+        except Exception:                      # noqa: BLE001 — the strip is shown without the ledger, as before G4-01
+            log.exception("G4-01: the device ledger's fields could not be built; the board goes without them")
+        else:
+            for card, fields in zip(shown, per_card):
+                card.update(fields)
+            body.update(extra)
     return body

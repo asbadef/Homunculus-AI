@@ -202,3 +202,23 @@ def test_a_ledger_that_fails_never_refuses_an_accepted_body(tmp_path, monkeypatc
     assert _post(client, clock, _device("192.0.2.10"))["accepted"] == 1
     assert _cards(_board(client))["192.0.2.10"]["status"] == "streaming"
     assert "ledger" in caplog.text
+
+
+# --- review fixes --------------------------------------------------------------------------------
+
+def test_a_ledger_that_cannot_be_read_leaves_the_board_as_it_was_for_every_viewer(tmp_path, monkeypatch, caplog):
+    # Review 1: the nurses' strip, the biomedical page and /infinity-waves all read this board; a ledger
+    # that fails costs them only the new fields.
+    client, clock = _app(tmp_path)
+    _post(client, clock, _device("192.0.2.10"), _device("192.0.2.13"))
+
+    def boom():
+        raise RuntimeError("synthetic ledger failure")
+
+    monkeypatch.setattr(client.app.state.shadow_ledger, "view", boom)
+    for token in ("nurse-jwt", "biomed-jwt"):           # board.view, devices.manage
+        board = _board(client, token)
+        assert set(board) == {"stage", "display_max_age_s", "generated_at", "table", "feed", "beds", "unassigned"}
+        assert all(not NEW_CARD & set(card) for card in _cards(board).values())
+        assert _cards(board)["192.0.2.10"]["status"] == "streaming"
+    assert "ledger" in caplog.text
