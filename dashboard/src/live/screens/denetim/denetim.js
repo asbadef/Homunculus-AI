@@ -21,8 +21,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value) => typeof value === "string" && UUID.test(value.trim());
 
 /** G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a user id is never printed — «kullanıcı ••••» and its last
- *  four characters, the patient id's mask with the word that says whose id it is. `t` is the page's translator. */
-export const maskUser = (t, id) => t("denetim.maskedUser", { id: maskPatient(id) });
+ *  four characters, the patient id's mask with the word that says whose id it is. `t`, the page's translator, is
+ *  required; without one the plain mask is shown — the id still never is, and nothing throws. */
+export const maskUser = (t, id) => (typeof t === "function" ? t("denetim.maskedUser", { id: maskPatient(id) }) : maskPatient(id));
 
 const nameOrMask = (t, value) => (isUuid(value) ? maskUser(t, value) : value.trim());
 
@@ -31,13 +32,18 @@ export const ACTOR_KEYS = Object.freeze([
   "actor", "charted_by", "read_by", "signed_by", "retracted_by", "by", "user", "device", "login",
 ]);
 
-/** Who did it: the first non-empty key's value — a username as it is, a user id masked (follow-up D2). A scope row
- *  names its administrator in `actor` since D1, read before `by`, its id; an older one shows the mask. */
+/** The actor key that names no person: a monitor. A UUID under it is masked as an id, without «kullanıcı». */
+const DEVICE_KEY = "device";
+
+/** Who did it: the first non-empty key's value — a name as it is, a UUID masked (follow-up D2): a person's with
+ *  «kullanıcı», a device's as an id. A scope row names its administrator in `actor` since D1, read before `by`, its
+ *  id; an older one shows the mask. `t` is required (see maskUser). */
 export function actorOf(payload, t) {
   const p = payload && typeof payload === "object" ? payload : {};
   for (const key of ACTOR_KEYS) {
     const value = p[key];
-    if (typeof value === "string" && value.trim()) return nameOrMask(t, value);
+    if (typeof value !== "string" || !value.trim()) continue;
+    return key === DEVICE_KEY && isUuid(value) ? maskPatient(value) : nameOrMask(t, value);
   }
   return "—";
 }

@@ -54,6 +54,22 @@ describe("who did it (D6)", () => {
     expect(actorOf({ actor: "ayse.sentetik" }, tr)).toBe("ayse.sentetik");
     expect(maskUser(tr, NURSE_ID)).toBe(`kullanıcı ${MASK}61a2`);
   });
+
+  // review: «kullanıcı» says whose id it is, so only a key that names a person carries it; `device` names a monitor.
+  it("masks a UUID under `device` as an id, without the word — a monitor is not a user", () => {
+    expect(actorOf({ device: NURSE_ID }, tr)).toBe(`${MASK}61a2`);
+    expect(actorOf({ device: "bed05-mon" }, tr)).toBe("bed05-mon");
+    for (const person of ACTOR_KEYS.filter((key) => key !== "device")) {
+      expect(actorOf({ [person]: NURSE_ID }, tr), person).toBe(`kullanıcı ${MASK}61a2`);
+    }
+  });
+
+  // review: `t` is required; a caller that forgets it still never prints the id, and never throws.
+  it("falls back to the plain mask without a translator, and never throws", () => {
+    expect(actorOf({ by: ADMIN_ID })).toBe(`${MASK}ad01`);
+    expect(maskUser(undefined, NURSE_ID)).toBe(`${MASK}61a2`);
+    expect(subjectOf({ event_type: "scope", subject: NURSE_ID, payload: {} })).toBe(`${MASK}61a2`);
+  });
 });
 
 describe("a user id (follow-up D2)", () => {
