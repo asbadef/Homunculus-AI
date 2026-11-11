@@ -108,7 +108,11 @@ None of these fields names a patient.
 ### D4 — what counts as silent and stale
 
 The server's existing words are kept:
-- A device is **silent** when its status is `silent`, i.e. the hub says no packet for over 5 s.
+- A device is **silent** when its status is `silent`, i.e. the hub has had no packet from it for 3 s or more. The hub's
+  live view marks a device `stale` once `packet_age >= STALE_AFTER_MS` (3000 ms, `edge/infinity_live.py`
+  `LiveResearchView.snapshot`); the forwarder sends that word unchanged (`edge/infinity_shadow.py` `thin`), and the store
+  shows it as `silent` (`SHOWN_STATUS`). *Corrected 2026-11-11 (review): this line first said «no packet for over 5 s»,
+  which is the hub's own `/v1/status` page (`age > 5`, `edge/infinity_hub.py`); the shadow lane does not read it.*
 - A device is **unknown** when the hub has not reported it for 15 s (`SILENT_AFTER_S`).
 
 A channel is **stale** when its `last_value_at` is more than `DISPLAY_MAX_AGE_S` (15 s) old while its device still sends.
@@ -203,3 +207,83 @@ last answer, marked «Pano güncel değil · {HH:MM}», and say nothing is empty
 - `rawKeys`, `strings`, `routes.test.js` (label key unchanged).
 
 **Gates:** the engine's no-DB suite, the whole dashboard suite, `vite build`.
+
+## 5. Review amendments (2026-11-11)
+
+The code review of both lanes, folded into the code before the gates. D2's two amendments («eviction», «channel times»)
+come from the same review; they are referred to here, not repeated.
+
+**Engine.**
+- **GET containment.** The ledger is display memory: a failure in it may cost the board only its G4-01 fields.
+  `GET /infinity-shadow/board` reads `FeedLedger.view()` inside a guard, and `board_view` builds every shown card's
+  ledger fields before it lays any on, so no card is half-worded. A failure is logged, and the nurses' strip, the device
+  page and `/infinity-waves` get the board as it was before G4-01. The page reads such an answer as one without a
+  ledger («Unknown, never empty» below).
+- **The clock-step drop** (D2, «channel times»). After the wall clock steps back (an NTP step, a VM restore), a channel
+  time or `last_packet_at` more than `ARRIVAL_MAX_AHEAD_S` (2 s) ahead is dropped, in `observe` and in `view`, and reads
+  as unknown. Kept, the newest-wins rule would freeze a live channel and hide a stopped one until the clock caught up.
+  `first_seen_at` and `last_report_at` keep what the clock said then.
+- **The collector's lead, counted via `valid_at`.** The ledger no longer reads the board's entries (D2's «`state:
+  value`»). The store hands it, per channel, when the reading it holds carried a valid value (`DeviceView.valid_at`,
+  built by `ShadowStore._valid_at`; `board_view` never copies it and the shadow engine never reads it). A valid reading
+  counts as soon as the store takes it, so one the collector's clock put up to 2 s ahead, which the strip withholds as
+  `old` that long, never freezes a live channel.
+- **NBP at the cuff time.** NBP is one channel, seen on `_nbp_view`'s own condition (three valid parts with one change
+  time) at that change time: when the hub saw the value change, an upper bound of the cuff's measurement. An untimed
+  NBP (NBP-2) has its packet's time. NBP stays out of the page's lists (D4).
+- **One `devices()` per POST.** An accepted shadow body builds the store's devices once, at one `now`, for the ledger
+  and Aşama B's sampling pass alike: same instant, same picture. If they cannot be built, the failure is logged, the
+  ledger misses that body, and the pass builds its own inside its guard as before.
+
+**Dashboard.**
+- **A board that is not fresh is frozen at its last answer.** «Not fresh» is Decision 18's: the last poll failed, or the
+  answer it holds is older than the display limit (15 s). Every section is then measured at that answer's own
+  `generated_at` (`deviceFeed.js` `measuredAtMs`), not at the browser's now: a stall of 5 or 70 min, a failed poll, or a
+  hidden tab shown again before its poll lands lists no stale channel, count or minute the answer did not carry. The
+  chain's ages stay as the answer gave them. A fresh answer still ticks between polls (D5, «Durations»).
+- **Not fresh leads with the stale line, in the past tense.** Section 1 opens with «Pano güncel değil · son yanıt
+  {HH:MM}» and gives the last verdict in the past tense («Son yanıtta veri akıyordu · {streaming}/{total} monitör veri
+  gönderiyordu»; every verdict has its past twin, in four languages). The chain's links keep their last values with the
+  state word «bilinmiyor»: a link that was up then is not known to be up now. Sections 2–4 keep the mark «Pano güncel
+  değil · {HH:MM}». A board that is not fresh never reads as today's «all fine».
+- **New verdicts.** «Veri akıyor · {streaming}/{total} monitör veri gönderiyor» only while at least one monitor sends.
+  Otherwise a working chain says:
+  - none sending: «Zincir çalışıyor, ama hiçbir monitör veri göndermiyor» (sections 2 and 3 list; the counts follow);
+  - no monitor in the answer (`total` 0, which for a scoped caller means none on its beds): «Hub hiç monitör
+    bildirmiyor»;
+  - counts the answer does not carry, or not as whole numbers (`chipCounts` null): «Zincir çalışıyor; monitör sayıları
+    okunamıyor». A count it was not told is no count, never a zero.
+
+  Counts follow only «Veri akıyor» and the none-sending verdict. A feed state this build does not know stays «Veri
+  akışının durumu okunamıyor».
+- **Unknown, never empty.** When sections 2 and 3 cannot list, they say why and never «yok» (`listingOf`):
+  - a broken chain: «Veri zinciri kesik: monitörler tek tek listelenmiyor» (as in D5);
+  - an unknown feed state or unread counts: «Veri akışının durumu bilinmiyor: monitörler tek tek değerlendirilemiyor»;
+  - no monitors: «Hub monitör bildirmediği için değerlendirilemiyor»;
+  - an answer without the ledger (an API before G4-01, or the GET containment above): «Bu sürüm «ne zamandan beri»
+    bilgisini vermiyor». Section 2 still lists the silent and unknown cards by their status, without a time; section 3
+    lists nothing;
+  - an answer without `generated_at`: «Yanıtın zamanı yok: süreler hesaplanamıyor».
+
+  Only a fresh answer whose monitors are listed one by one may say «Sessiz monitör yok» or «Eskiyen kanal yok».
+- **A live region.** A visually hidden polite status (`role="status"`) holds the verdict with no minute and no count
+  (the forwarder's silence without its minutes, «Veri akıyor» without its counts) and, for a board that is not fresh,
+  «Pano güncel değil» before it. It is mounted empty and filled a moment later (`useAnnounced`), so a screen reader
+  hears it when the state changes, not every minute.
+- **A session with `devices.map_beds` only.** It reaches the page and the editor (the route takes either key) but may
+  not read the strip (`board.view` or `devices.manage`: `shadowStore.mayReadShadow`). Sections 1–4 are replaced by one
+  note, «Veri akışı bölümleri cihaz yönetimi ya da pano görüntüleme yetkisi ister»; section 5 is shown.
+- **Section 5's states.** It is the editor's list, not the strip's, so it answers whatever the strip does: off, not yet
+  read, unreadable, or not this session's hospital. It says «Eşleme listesi yükleniyor…» while the list loads; «Tabloda
+  olup hiç görülmeyen monitör yok» only from a list that answered; and a list that fails, a lane that is off (409
+  `monitor_lane_off`) included, keeps its last rows with «Eşleme listesi okunamadı; birazdan yeniden denenecek.». With
+  the strip off or never read, sections 1–4 are not drawn.
+- **Wording rules.**
+  - No Turkish or Azerbaijani suffix is glued to a time, since it would have to follow the time's last syllable
+    («10:42'den», «10:40'tan»). The watching line becomes «İzleme başlangıcı {HH:MM} · sistem yeniden başlayınca
+    sıfırlanır», replacing D5's «İzleme {HH:MM}'den beri; …».
+  - English counts follow their label («Stale channels: {n}»), as the Russian ones do.
+  - The refused-values line never prints a raw placeholder: a reason the answer lacks reads 0, and the reasons this
+    build does not know are summed as «diğer {n}», so a «dikkat» always has its reason in the text.
+  - The Russian rail's short word, on a phone, is «Устр.»; the full label stays «Устройства» (D5, «Names»).
+  - AZ, RU and EN still await a native speaker's reading before the pilot.
