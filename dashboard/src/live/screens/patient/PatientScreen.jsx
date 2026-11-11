@@ -71,6 +71,7 @@ import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
 import { SignOffStrip } from "../kabul/SignOffStrip.jsx"; // G2-B1a: a DRAFT admission waits for the physician's signature
 import { LabelReprint } from "../kabul/label/LabelReprint.jsx"; // G2-B1d: the protocol label, again
+import { CareTeamBox } from "./careTeam/CareTeamBox.jsx"; // G2-B1c: who is responsible for the patient
 
 const TICK_MS = 30_000;
 
@@ -411,6 +412,9 @@ export function PatientScreen({ params }) {
           </header>
           <SignOffStrip key={id} patientId={id} />{/* G2-B1a (screens/kabul); keyed: a sign in flight stays with its patient */}
           <LabelReprint key={`label-${id}`} patientId={id} />{/* G2-B1d (spec §6): an open admission's protocol label, again */}
+          {/* G2-B1c (spec §4): the care team. Like the sign-off strip, it writes the admission's workflow, not the
+              clinical record, so `patient.onlyWrite` does not count it. Keyed: a write in flight stays with its patient. */}
+          <CareTeamBox key={`team-${id}`} patientId={id} nowMs={nowMs} />
           <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without
