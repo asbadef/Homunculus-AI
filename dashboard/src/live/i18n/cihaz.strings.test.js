@@ -18,7 +18,7 @@ describe("the device page's words (cihaz)", () => {
     expect(tr["cihaz.verdictCollector"]).toBe("Veri gelmiyor: toplayıcı bağlı değil");
     expect(tr["cihaz.verdictNever"]).toBe("Henüz hiç veri gelmedi");
     expect(fill(tr["cihaz.verdictFlowing"], { streaming: 3, total: 5 })).toBe("Veri akıyor · 3/5 monitör veri gönderiyor");
-    expect(fill(tr["cihaz.watchingSince"], { time: "10:42" })).toBe("İzleme 10:42'den beri; sistem yeniden başlayınca sıfırlanır");
+    expect(fill(tr["cihaz.watchingSince"], { time: "10:42" })).toBe("İzleme başlangıcı 10:42 · sistem yeniden başlayınca sıfırlanır");
     expect(fill(tr["cihaz.silentFor"], { for: forOf(4), time: "10:42" })).toBe("4 dk'dır veri yok · son veri 10:42");
     expect(fill(tr["cihaz.silentFor"], { for: forOf(0), time: "10:42" })).toBe("<1 dk'dır veri yok · son veri 10:42");
     expect(tr["cihaz.vanished"]).toBe("hub artık bildirmiyor");
@@ -95,9 +95,11 @@ describe("the device page's words (cihaz)", () => {
   it("names the rail entry «Cihazlar», and every text that names the screen follows it", () => {
     expect(LANG_CODES.map((lang) => DICTIONARIES[lang]["nav.devices"])).toEqual(
       LANG_CODES.map((lang) => ({ tr: "Cihazlar", az: "Cihazlar", ru: "Устройства", en: "Devices" })[lang]));
+    // The narrow rail's word: the full one, but in Russian an abbreviation like «Управл.» and «Настр.» beside it.
+    expect(LANG_CODES.map((lang) => DICTIONARIES[lang]["nav.devicesShort"])).toEqual(
+      LANG_CODES.map((lang) => ({ tr: "Cihazlar", az: "Cihazlar", ru: "Устр.", en: "Devices" })[lang]));
     for (const lang of LANG_CODES) {
       const d = DICTIONARIES[lang];
-      expect(d["nav.devicesShort"], lang).toBe(d["nav.devices"]);
       for (const key of ["kabul.err.bedHasMonitor", "perms.devices.map_beds"]) {
         expect(d[key], `${lang} ${key}`).toContain(d["nav.devices"]);
         expect(d[key], `${lang} ${key}`).not.toMatch(/Monitörler|Monitorlar|Мониторы|Monitors/);
@@ -105,5 +107,29 @@ describe("the device page's words (cihaz)", () => {
       // devices.manage opens a screen now: the login screen's «only device management» example is gone.
       expect(d["auth.notice.noScreen"], lang).not.toMatch(/cihaz|устройств|device/i);
     }
+  });
+
+  it("glues no suffix to a time in Turkish or Azerbaijani, whatever the hour reads", () => {
+    for (const lang of ["tr", "az"]) {
+      for (const [key, value] of Object.entries(DICTIONARIES[lang])) {
+        if (key.startsWith("cihaz.")) expect(value, `${lang} ${key}`).not.toMatch(/\{time\}[^\s·;,.)]/);
+      }
+    }
+  });
+
+  it("puts every English count after its label, so no plural is ever wrong", () => {
+    const en = DICTIONARIES.en;
+    expect(en["cihaz.countStale"]).toBe("Stale channels: {count}");
+    expect(en["cihaz.staleLongCount"]).toBe("Channels silent for over 1 hour: {n} (possibly removed)");
+    for (const key of ["cihaz.countSilent", "cihaz.countStale", "cihaz.countStandby", "cihaz.countWaiting", "cihaz.countUnassigned"]) {
+      expect(en[key], key).toMatch(/^[A-Z][^{]*: \{count\}$/);
+    }
+    for (const key of ["cihaz.verdictFlowing", "cihaz.pastFlowing"]) expect(en[key], key).toMatch(/: \{streaming\}\/\{total\}$/);
+    expect(en["cihaz.chainHub"]).toMatch(/: \{accepted\} · [^{]*: \{old\}$/);
+  });
+
+  it("names a refused value's reason this build does not know as «other», never as a raw placeholder", () => {
+    expect(DICTIONARIES.tr["cihaz.chainRejectedOther"]).toBe("diğer {n}");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["cihaz.chainRejectedOther"], lang).toContain("{n}");
   });
 });

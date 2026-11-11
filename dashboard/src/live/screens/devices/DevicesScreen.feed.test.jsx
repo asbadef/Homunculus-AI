@@ -84,7 +84,7 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
     expect(verdict).toHaveTextContent("Məlumat axır · 2/5 monitordan məlumat gəlir");
     expect(verdict).toHaveTextContent("2 səssiz · 2 köhnələn kanal · 1 gözləmə rejimində · 1 təyin edilməmiş");
     expect(verdict).not.toHaveTextContent("məlumat gözləyir");                  // no monitor waiting: no «0»
-    expect(verdict).toHaveTextContent("İzləmə 11:00-dan bəri; sistem yenidən başlayanda sıfırlanır");
+    expect(verdict).toHaveTextContent("İzləmə başlanğıcı 11:00 · sistem yenidən başlayanda sıfırlanır");
   });
 
   it("lists the silent monitors, the longest silence first, and says which one the hub no longer reports", async () => {
@@ -119,6 +119,13 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
     expect(lines[1]).toMatch(/^normal Ötürücü · son göndəriş \d+ san əvvəl · 11 göndərildi, 0 uğursuz$/);
     expect(lines[2]).toBe("normal Infinity serveri · 1000 paket alınıb · 0 köhnə və ya təkrar");
     expect(lines[3]).toBe("normal Qəbul edilməyən dəyərlər · çox köhnə 0 · saat 0 · vahid 0 · diapazon 0 · naməlum 0 · təkrar 0");
+  });
+
+  it("says why it calls the refused values «diqqət»: a missing reason reads 0, one this build does not know «digər»", async () => {
+    await open({ ...WARD, feed: { ...WARD.feed, rejected: { too_old: 1, checksum: 3 } } });
+    const line = items("Məlumat zənciri")[3];
+    expect(line).toBe("diqqət Qəbul edilməyən dəyərlər · çox köhnə 1 · saat 0 · vahid 0 · diapazon 0 · naməlum 0 · təkrar 0 · digər 3");
+    expect(line).not.toMatch(/[{}]/);
   });
 
   it("gives the chain's verdict when no data arrives, and lists no monitor as a fault then", async () => {

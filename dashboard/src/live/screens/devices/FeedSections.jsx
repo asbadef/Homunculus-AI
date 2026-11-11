@@ -149,7 +149,9 @@ function chainText(t, line) {
   if (line.id === "hub") {
     return line.accepted === null ? t("cihaz.chainHubNone") : t("cihaz.chainHub", { accepted: line.accepted, old: line.old ?? "—" });
   }
-  return line.rejected ? t("cihaz.chainRejected", line.rejected) : t("cihaz.chainRejectedNone");
+  if (!line.rejected) return t("cihaz.chainRejectedNone");
+  const other = line.other > 0 ? ` · ${t("cihaz.chainRejectedOther", { n: line.other })}` : "";
+  return `${t("cihaz.chainRejected", line.rejected)}${other}`;
 }
 
 /** The chain's links. From an answer that is not fresh each keeps its last values as detail, but its state is

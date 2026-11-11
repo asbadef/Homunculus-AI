@@ -24,7 +24,7 @@ export default {
     alarms: "Тревоги", alarmsShort: "Тревоги",
     patient: "Пациент",
     admin: "Управление", adminShort: "Управл.",
-    devices: "Устройства", devicesShort: "Устройства",
+    devices: "Устройства", devicesShort: "Устр.",
     settings: "Настройки", settingsShort: "Настр.",
   },
   en: {

@@ -222,6 +222,15 @@ describe("«Veri zinciri»", () => {
       .toEqual({ collector: "unknown", forwarder: "unknown", hub: "unknown", rejected: "ok" });
     expect(words({ rejected: { too_old: 2, clock: 0, unit: 0, range: 0, unknown_parameter: 0, duplicate: 0 } }).rejected).toBe("warn");
   });
+
+  it("never leaves a refused value's reason unsaid: a missing reason reads 0, one this build does not know is «other»", () => {
+    const rejectedOf = (rejected) => chainLines(strip({ feed: { rejected } }), FETCHED, FETCHED)[3];
+    const ZERO = { too_old: 0, clock: 0, unit: 0, range: 0, unknown_parameter: 0, duplicate: 0 };
+    expect(rejectedOf({ too_old: 2 })).toEqual({ id: "rejected", word: "warn", rejected: { ...ZERO, too_old: 2 }, other: 0 });
+    expect(rejectedOf({ ...ZERO, checksum: 3, framing: 1 })).toEqual({ id: "rejected", word: "warn", rejected: ZERO, other: 4 });
+    expect(rejectedOf({ too_old: null, clock: "2", unit: -1, range: 1.5 })).toEqual({ id: "rejected", word: "ok", rejected: ZERO, other: 0 });
+    expect(rejectedOf(null)).toEqual({ id: "rejected", word: "unknown", rejected: null, other: 0 });
+  });
 });
 
 describe("«Tabloda var, hiç görülmedi»", () => {

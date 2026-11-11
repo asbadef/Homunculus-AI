@@ -28,6 +28,8 @@ const CHAIN = Object.freeze({
   collector_disconnected: { kind: "collector", key: "cihaz.verdictCollector" },
 });
 const FORWARDER_WORD = Object.freeze({ ok: "ok", collector_disconnected: "ok", forwarder_silent: "down", never: "unknown" });
+// The refusal reasons the hub counts (the board's `feed.rejected`), in the order the chain's sentence names them.
+const REFUSAL_REASONS = Object.freeze(["too_old", "clock", "unit", "range", "unknown_parameter", "duplicate"]);
 
 const listOf = (value) => (Array.isArray(value) ? value : []);
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -217,9 +219,8 @@ export function chainLines(data, nowMs, fetchedAtMs) {
   const feed = data?.feed ?? {};
   const aged = (seconds) => (Number.isFinite(seconds) ? displayAge({ age_s: seconds }, nowMs, fetchedAtMs) : null);
   const forwarder = FORWARDER_WORD[feed.state] ?? "unknown";
-  const rejected = feed.rejected && typeof feed.rejected === "object" ? feed.rejected : null;
-  const refused = rejected === null ? null
-    : Object.values(rejected).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+  const { rejected, other } = refusedOf(feed.rejected);
+  const refused = rejected === null ? null : Object.values(rejected).reduce((sum, value) => sum + value, 0) + other;
   return [
     { id: "collector", word: feed.collector_connected === true ? "ok" : feed.collector_connected === false ? "down" : "unknown",
       heard: Number.isFinite(feed.collector_age_s), ageS: aged(feed.collector_age_s) },
@@ -227,8 +228,20 @@ export function chainLines(data, nowMs, fetchedAtMs) {
       sent: feed.forwarder?.sent ?? null, failed: feed.forwarder?.failed ?? null },
     { id: "hub", word: feed.hub && forwarder === "ok" ? "ok" : "unknown",
       accepted: feed.hub?.accepted_packets ?? null, old: feed.hub?.old_or_duplicate_packets ?? null },
-    { id: "rejected", word: refused === null ? "unknown" : refused === 0 ? "ok" : "warn", rejected },
+    { id: "rejected", word: refused === null ? "unknown" : refused === 0 ? "ok" : "warn", rejected, other },
   ];
+}
+
+/** The refused values by reason, as the sentence names them: each reason this build knows, a count it was not sent
+ *  (or not as a whole number) reading 0 — the sentence never prints a raw placeholder — and every reason it does not
+ *  know summed into `other`, so a «warn» always has its reason in the text. `rejected` null: no counters at all. */
+function refusedOf(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { rejected: null, other: 0 };
+  const count = (n) => (Number.isInteger(n) && n >= 0 ? n : 0);
+  const rejected = Object.fromEntries(REFUSAL_REASONS.map((reason) => [reason, count(value[reason])]));
+  const other = Object.entries(value).filter(([reason]) => !REFUSAL_REASONS.includes(reason))
+    .reduce((sum, [, n]) => sum + count(n), 0);
+  return { rejected, other };
 }
 
 /** Section 5 «Tabloda var, hiç görülmedi»: the editor list's table rows (`row_id`) whose monitor the API has never

@@ -468,7 +468,7 @@ describe("no screen shows a reader a translation key", () => {
     });
     expect(screen.getByRole("heading", { level: 2, name: "Məlumat gəlirmi?" })).toBeInTheDocument();          // cihaz.verdictTitle
     expect(screen.getByText(/^Məlumat axır · \d+\/\d+ monitordan məlumat gəlir$/)).toBeInTheDocument();         // cihaz.verdictFlowing
-    expect(screen.getByText(/^İzləmə \d\d:\d\d-dan bəri/)).toBeInTheDocument();                                // cihaz.watchingSince
+    expect(screen.getByText(/^İzləmə başlanğıcı \d\d:\d\d · /)).toBeInTheDocument();                           // cihaz.watchingSince
     const silent = screen.getByRole("region", { name: "Səssiz monitorlar" });
     expect(silent).toHaveTextContent("dəqiqədir məlumat yoxdur · son məlumat");                                // cihaz.silentFor, forMinutes
     expect(silent).toHaveTextContent("hub artıq bildirmir");                                                   // cihaz.vanished
