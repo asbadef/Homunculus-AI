@@ -8,6 +8,7 @@ alarm raised forty seconds ago as ignored, and reporting "0% answered" when the 
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,7 +17,7 @@ from fastapi.testclient import TestClient
 from homunculus.api.alarm_quality import alarm_quality, build_episodes
 from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
-from homunculus.api.audit import AuditEvent, AuditRecord
+from homunculus.api.audit import AuditEvent, AuditRecord, InMemoryAuditLog
 
 T0 = datetime(2026, 9, 8, 9, 0, tzinfo=timezone.utc)
 TOKEN = "tok"
@@ -325,6 +326,32 @@ class TestTheEndpoint:
             audit.append(AuditEvent("h1", "alert", "bed-1", "news2", {"at": (at + timedelta(minutes=2 + n)).isoformat()}))
         body = client.get("/alarm-quality", params={"limit": 2}, headers=AUTH).json()
         assert (body["truncated"], body["episodes"], body["answered"], body["median_response_sec"]) == (False, 1, 1, 60.0)
+
+    def test_the_audit_read_runs_off_the_event_loop(self):
+        """The audit store's read is synchronous (psycopg2 on Postgres): run on the event loop, it would hold the
+        board stream, SSE and the hub's `/ingest` while it reads. It runs on a worker thread, as `/quality`'s does —
+        a thread with no event loop running in it."""
+
+        class _Spy(InMemoryAuditLog):
+            def __init__(self):
+                super().__init__()
+                self.on_loop: list[bool] = []
+
+            def records(self, **kwargs):
+                try:
+                    asyncio.get_running_loop()
+                    self.on_loop.append(True)
+                except RuntimeError:
+                    self.on_loop.append(False)
+                return super().records(**kwargs)
+
+        audit = _Spy()
+        with TestClient(create_app({TOKEN: "h1"}, run_escalation_loop=False, audit=audit)) as c:
+            audit.on_loop.clear()
+            r = c.get("/alarm-quality", headers=AUTH)
+            reads = list(audit.on_loop)
+        assert r.status_code == 200, r.text
+        assert reads == [False]
 
 
 class TestChartingRaisesRealEpisodes:
