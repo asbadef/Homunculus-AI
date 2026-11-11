@@ -784,6 +784,23 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
     expect(screen.getAllByText(`${TO} · kart yeni çarpayıya keçirildi`).length).toBeGreaterThan(0);
   });
 
+  // The retry's button goes with its note, and the focus that fell with it must not stay on <body>:
+  // the discharge retry's refocus puts it on the started discharges' list (spec §5.7).
+  it("gives the focus back when a successful card retry takes the note and its button away", async () => {
+    await open(DOCTOR, (a) => a.transfer
+      .mockResolvedValueOnce(arrived({ board: "failed" }))
+      .mockResolvedValueOnce(arrived()));
+    await moveToBedOne();
+    const retry = screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` });
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+    await act(async () => { fireEvent.click(retry); });
+    await settle();
+    expect(screen.queryByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
+  });
+
   it("warns in the dialog of a critical alarm nobody acknowledged, and holds neither the row's button nor the move", async () => {
     const { api } = await open(DOCTOR, (a) => {
       a.boardPatients.mockResolvedValue(board([entry("H2600001", [alarm("septic_shock", "critical")])]));

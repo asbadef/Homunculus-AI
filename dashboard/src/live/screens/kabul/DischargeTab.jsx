@@ -290,6 +290,7 @@ export function DischargeTab() {
     } finally {
       await reload();
       setMovingAgain(null);
+      setRefocus((k) => k + 1);                       // a landed retry takes its note and button away, as retry()'s does
     }
   }
 
