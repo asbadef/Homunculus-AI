@@ -121,6 +121,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a countersignature (GET /handovers/pending), as counts and times only",
   // G3-04
   "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the antibiotic clock, creatinine and the day's fluid balance; read-only",
+  // G4-03
+  "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators (GET /quality), as counts and times only",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 
