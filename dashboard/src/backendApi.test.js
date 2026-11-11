@@ -508,6 +508,20 @@ describe("backendApi — what the work screens call", () => {
     expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
 
+  // G4-02 (spec D4): «Yönetici özeti» — each unit's handovers waiting for a countersignature, counts and times only.
+  it("reads the units' waiting handovers with an authed GET /handovers/pending, with nothing on the address", async () => {
+    const answer = { units: [{ unit_id: "u-1", unit_name: "Reanimasiya", pending: 2,
+      oldest_outgoing_signed_at: "2026-11-09T08:00:00+00:00" }], generated_at: "2026-11-11T08:00:00+00:00" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = signedIn(fetchMock);
+    expect(await api.pendingHandovers()).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/handovers/pending");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(init.body).toBeUndefined();
+  });
+
   it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
     const row = { id: "h-1", status: "OPEN" };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));
@@ -690,6 +704,20 @@ describe("backendApi — what the work screens call", () => {
       "GET /admin/ldap/groups?q=YB",
       "GET /admin/ldap/group-mappings",
     ]);
+  });
+
+  // G4-02: «Yönetici özeti» reads the caller's own reach here too (any signed-in user may), as the users desk does.
+  it("reads the caller's own scope with an authed GET /scope/me, with nothing on the address", async () => {
+    const answer = { user_id: "u-1", role: "hospital_admin", unrestricted: true, reason: "role", unit_ids: [], bed_ids: [],
+      grants: [], own_patients: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = signedIn(fetchMock);
+    expect(await api.myScope()).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/scope/me");
+    expect(init.method ?? "GET").toBe("GET");
+    expect(init.headers.Authorization).toMatch(/^Bearer /);
+    expect(init.body).toBeUndefined();
   });
 
   it("reads one user's scope, which the scope editor needs and /scope/me cannot answer", async () => {
@@ -1756,6 +1784,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     ]);
     expect(sent(fetchMock, 1).body).toEqual({ note: "Sentetik planlı kabul" });
     expect(sent(fetchMock, 3).body).toEqual({ reason: "FAULT", note: null });
+  });
+
+  it("reads, claims, adds to and ends the care team by its own routes (G2-B1c)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.careTeam("a 1");
+    await api.careTeamCandidates("a-1");
+    await api.claimAttending("a-1");
+    await api.addCareTeamMember("a-1", { user_id: "u-1", role: "ASSOCIATE_PHYSICIAN" });
+    await api.endCareTeamMember("a-1", "m/1");
+    expect(fetchMock.mock.calls.map((_, at) => [sent(fetchMock, at).method, sent(fetchMock, at).url])).toEqual([
+      ["GET", "/admissions/a%201/care-team"], ["GET", "/admissions/a-1/care-team/candidates"],
+      ["POST", "/admissions/a-1/care-team/claim"], ["POST", "/admissions/a-1/care-team"],
+      ["POST", "/admissions/a-1/care-team/m%2F1/end"],
+    ]);
+    expect(sent(fetchMock, 3).body).toEqual({ user_id: "u-1", role: "ASSOCIATE_PHYSICIAN" });
   });
 
   it("builds the structure under its parents and renames, closes and reopens by PATCH", async () => {

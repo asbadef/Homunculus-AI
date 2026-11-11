@@ -1,9 +1,13 @@
 // src/live/screens/kabul/SignOffStrip.jsx — "Hekim imzası bekliyor" on the patient screen of a
 // DRAFT admission (Group 2 · B1a, spec D3, §3.2, §5.5). The card and the monitoring started at
 // admission; the signature is the physician's later step, and until it is given the screen says
-// so. A holder of `admissions.sign_off` signs here (POST /admissions/{id}/sign-off): the server
-// makes her the attending when none is set. A session without `admissions.view` reads no
-// admission and shows no strip (X61).
+// so. A holder of `admissions.sign_off` signs here (POST /admissions/{id}/sign-off) — when she is a
+// physician, or the form already names one (G2-B1c, spec §5.3, T1): the signer must be a physician
+// unless the form names one, and the server refuses otherwise (409 `care_team_not_physician`). The system
+// administrator holds the right by rule but is no physician, so on a DRAFT naming nobody the strip says,
+// in one muted line, that a physician signs — in place of a button that would only earn a refusal on a
+// toast. The refusal keeps its words for a race (a role changed after the screen read). A session
+// without `admissions.view` reads no admission and shows no strip (X61).
 //
 // The list is read again every minute, as the bed board's badge is: a signature given on another
 // screen takes the strip away within the minute, instead of leaving it to say the patient still
@@ -19,6 +23,13 @@
 // would fall to <body>, and the result would be said only on the toast. So where the strip stood a
 // line says the signature, and takes the focus — when the focus fell with the button, never over
 // a focus the physician has since moved (spec §5.7, A-22).
+//
+// Two ways to find the admission (G2-B1c, Task 16 review). The patient screen reads the open
+// admissions ONCE and hands this strip the row of its card (`admission`, a row or null): the strip then
+// reads nothing, shows only while that row is a DRAFT, and tells `onSigned` — the shared read's
+// `reload` — after a press, so the care team's box beside it sees the signed admission at once instead
+// of at its next minute. Without `admission` (undefined) the strip reads the DRAFT list itself, as it
+// always did.
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -27,6 +38,7 @@ import { FOCUS_RING } from "../../ui/focus.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { useAdmissions } from "./useAdmissions.js";
 import { boardKeyOf } from "./boardKey.js"; // G2-B1d
+import { isPhysician } from "../patient/careTeam/careTeam.js"; // G2-B1c: T1, the session's role groups
 
 const DRAFT = ["DRAFT"];
 const EVERY_MS = 60_000;
@@ -34,17 +46,31 @@ const EVERY_MS = 60_000;
 const bedOf = (row) => `${row.bed_label} · ${row.room_name} · ${row.unit_name}`;
 
 /** `patientId`: the board's key — for a `kabul` patient, its admission's `board_key` (the protocol
- *  since G2-B1d; a legacy admission's H-number). */
-export function SignOffStrip({ patientId }) {
+ *  since G2-B1d; a legacy admission's H-number). `admission`: the row of that card from the patient
+ *  screen's one read of the open admissions, or null; undefined = read the DRAFT list here. `onSigned`:
+ *  the shared read's `reload`, awaited after a press. */
+export function SignOffStrip({ patientId, admission, onSigned }) {
+  if (admission !== undefined) {
+    return <Strip row={admission?.state === "DRAFT" ? admission : null} reload={onSigned} />;
+  }
+  return <ReadsItself patientId={patientId} />;
+}
+
+function ReadsItself({ patientId }) {
+  const { rows, reload } = useAdmissions(DRAFT, { every: EVERY_MS });
+  const row = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
+  return <Strip row={row} reload={reload} />;
+}
+
+/** `row`: the DRAFT admission of this card, or null. */
+function Strip({ row, reload }) {
   const { t } = useI18n();
   const { user, store } = useSession();
   const toast = useToast();
-  const { rows, reload } = useAdmissions(DRAFT, { every: EVERY_MS });
   const [busy, setBusy] = useState(false);
   const [signed, setSigned] = useState(null);       // the bed of the admission signed here
   const said = useRef(null);
-  const row = rows?.find((r) => boardKeyOf(r) === patientId) ?? null;
-  const gone = signed !== null && row === null;     // signed, and the list no longer holds it
+  const gone = signed !== null && row === null;     // signed, and it is no longer a DRAFT on the list
   useEffect(() => {
     if (!gone) return;
     const active = document.activeElement;
@@ -59,7 +85,10 @@ export function SignOffStrip({ patientId }) {
       </p>
     ) : null;
   }
-  const canSign = user?.perms?.includes("admissions.sign_off") ?? false;
+  const hasRight = user?.perms?.includes("admissions.sign_off") ?? false;
+  // The server refuses a non-physician's sign-off of a DRAFT that names no physician (§5.3); this only keeps the
+  // button from offering what it knows will be refused — it checks again, and the 409 below still has its words.
+  const canSign = hasRight && (isPhysician(user) || row.attending_physician_id != null);
   const subject = bedOf(row);
 
   async function sign() {
@@ -73,7 +102,7 @@ export function SignOffStrip({ patientId }) {
     } catch (err) {
       toast(refusedFor(t, subject, reasonOf(t, err)), "error");
     } finally {
-      await reload();
+      await reload?.();
       if (landed) setSigned(subject);
       setBusy(false);
     }
@@ -88,7 +117,7 @@ export function SignOffStrip({ patientId }) {
           {t("kabul.sign")}
         </Button>
       ) : (
-        <span className="text-12 font-normal">{t("kabul.signNoRight")}</span>
+        <span className="text-12 font-normal">{t(hasRight ? "kabul.signPhysician" : "kabul.signNoRight")}</span>
       )}
       {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
       <Announce text={busy ? t("kabul.signing") : ""} />

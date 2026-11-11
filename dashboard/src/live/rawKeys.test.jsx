@@ -261,6 +261,11 @@ const HANDOVERS = {
 };
 const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", name: "Murad Sentetik" }];
 
+/** G4-02: «Yönetici özeti» — one unit of the ward with a handover waiting since three hours before the answer, so the
+ *  card's and the cell's «oldest» words are drawn. Counts and times only, as the API sends them. */
+const PENDING_SWEEP = { generated_at: "2026-10-08T10:00:00+00:00", units: [{ unit_id: WARD.sites[0].units[0].id,
+  unit_name: WARD.sites[0].units[0].name, pending: 1, oldest_outgoing_signed_at: "2026-10-08T07:00:00+00:00" }] };
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path, extra) {
   window.location.hash = `#${path}`;
@@ -306,6 +311,9 @@ async function openAt(path, extra) {
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
       api.handoverColleagues.mockResolvedValue(COLLEAGUES);
+
+      // G4-02: «Yönetici özeti» (screens/ozet) — the units' waiting handovers.
+      api.pendingHandovers.mockResolvedValue(PENDING_SWEEP);
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -457,6 +465,24 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getAllByText("qoşulmayıb").length).toBeGreaterThan(0);                                  // esleme.unbound
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Başqa çarpayıya qoş: 192.0.2.11 (BED05)" })); await settle(); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Çarpayılar");                                    // esleme.pick.legend
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G4-02 — «Yönetici özeti»: the sweep's report is the heatmap's (no figures, no days, no kinds); here a whole one, so
+  // the quality box's figures, its daily bars and its kinds are drawn, beside the cards and the units table.
+  it("the summary page's keys resolve on its cards, its quality box and its units table", async () => {
+    const mounted = await openAt("/ozet", (api) => {
+      api.alarmQuality.mockResolvedValue({ episodes: 3, answered: 2, unanswered: 1, escalated: 1, pending: 0,
+        answered_rate: 0.6667, median_response_sec: 75, p90_response_sec: 75, days: 7, truncated: false, window_from: null,
+        per_kind: [{ kind: "news2", episodes: 3, answered: 2, escalated: 1, median_response_sec: 75 }],
+        per_day: [{ date: "2026-10-07", episodes: 3 }], noisiest_beds: [], per_patient_hour: [] });
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Unudulan işlər" })).toBeInTheDocument();     // ozet.cards.title
+    expect(screen.getByRole("table", { name: "Şöbələr, indi" })).toBeInTheDocument();                 // ozet.units.caption
+    expect(screen.getByText("07.10: 3 epizod")).toBeInTheDocument();                                  // ozet.q.dayCount
+    expect(screen.getByText("Şöbəsi bəlli olmayan")).toBeInTheDocument();                            // ozet.units.unplaced
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

@@ -659,6 +659,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
     /** [{id, name}] — the people I can hand over to, by name (my tenant's, holding `handover.sign`, not me). */
     handoverColleagues() { return authed("/handovers/colleagues"); },
+    /** G4-02 (spec D4), `summary.view`: per unit, the handovers the outgoing person signed that wait for the
+     *  countersignature — {units: [{unit_id, unit_name, pending, oldest_outgoing_signed_at}], generated_at}. Units
+     *  with none are left out. Counts and times only: no patient, no note, no person. Nothing goes on the address. */
+    pendingHandovers() { return authed("/handovers/pending"); },
     /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
     openHandover({ unitId, incomingUserId, admissionId }) {
       return authed("/handovers", {
@@ -1025,6 +1029,22 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  height_mm, printer_dpi}} — every call is an audited print (`reprint`: not the first). */
     admissionLabel(id, reprint = false) {
       return authed(`/admissions/${seg(id)}/label`, { method: "POST", body: { reprint: Boolean(reprint) } });
+    },
+    // G2-B1c — Bakım ekibi (admission/router.py). People are named by `full_name` (staff, never a
+    // patient). Refusals carry `err.apiCode`: `care_team_conflict`, `care_team_not_physician`,
+    // `care_team_attending_required`, `invalid_transition`, `out_of_scope`, `field_invalid:window_*`.
+    /** [{id, user_id, full_name, role, window_start, window_end, granted_by_name, is_active, in_force,
+     *  created_at, closed_at, …}] — the active rows first, each group newest first. */
+    careTeam(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team`); },
+    /** [{user_id, full_name}] — the tenant's physicians the picker offers (spec D8). */
+    careTeamCandidates(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team/candidates`); },
+    claimAttending(admissionId) { return authed(`/admissions/${seg(admissionId)}/care-team/claim`, { method: "POST" }); },
+    /** {user_id, role, window_start?, window_end?} — the window for an on-call physician only. */
+    addCareTeamMember(admissionId, body) {
+      return authed(`/admissions/${seg(admissionId)}/care-team`, { method: "POST", body });
+    },
+    endCareTeamMember(admissionId, memberId) {
+      return authed(`/admissions/${seg(admissionId)}/care-team/${seg(memberId)}/end`, { method: "POST" });
     },
     // The administrator's structure tab: add under a parent, rename / close / reopen.
     createSite(tenantId, body) { return authed(`/tenant/tenants/${seg(tenantId)}/sites`, { method: "POST", body }); },

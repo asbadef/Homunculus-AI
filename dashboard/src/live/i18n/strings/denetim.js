@@ -64,6 +64,8 @@ export default {
       deviceRelabel: "Monitör eşlemesi yatağın yeni adını aldı", deviceImport: "Monitör–yatak eşlemesi içe aktarıldı",
       taskCreated: "Görev eklendi", taskClaimed: "Görev üstlenildi", taskDone: "Görev tamamlandı",
       taskSkipped: "Görev «uygulanmadı» olarak kapandı", vitalSkipped: "Vital ölçüm atlandı", taskSettings: "Görev ayarları değişti",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -134,6 +136,8 @@ export default {
       deviceRelabel: "Monitorun uyğunlaşdırması çarpayının yeni adını aldı", deviceImport: "Monitor–çarpayı uyğunlaşdırması idxal edildi",
       taskCreated: "Tapşırıq əlavə edildi", taskClaimed: "Tapşırıq öhdəyə götürüldü", taskDone: "Tapşırıq tamamlandı",
       taskSkipped: "Tapşırıq «tətbiq edilmədi» kimi bağlandı", vitalSkipped: "Vital ölçmə ötürüldü", taskSettings: "Tapşırıq ayarları dəyişdi",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -204,6 +208,8 @@ export default {
       deviceRelabel: "Привязка монитора получила новое название койки", deviceImport: "Привязка мониторов к койкам импортирована",
       taskCreated: "Задача добавлена", taskClaimed: "Задача взята", taskDone: "Задача выполнена",
       taskSkipped: "Задача закрыта как «не выполнено»", vitalSkipped: "Измерение витальных пропущено", taskSettings: "Настройки задач изменены",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -274,6 +280,8 @@ export default {
       deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",
       taskCreated: "Task added", taskClaimed: "Task claimed", taskDone: "Task finished",
       taskSkipped: "Task closed as not done", vitalSkipped: "Vital measurement skipped", taskSettings: "Task settings changed",
+      // G2-B1c (spec §5.5): the care team's three events
+      careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
     },
     heat: {
       title: "Alarm density — last {days} days",

@@ -94,6 +94,8 @@ export const EVENT_TYPES = Object.freeze([
   // G3-02 «Görevlerim» (api/tasks.py), in its own words:
   ["task_created", "taskCreated"], ["task_claimed", "taskClaimed"], ["task_done", "taskDone"],
   ["task_skipped", "taskSkipped"], ["vital_skipped", "vitalSkipped"], ["task_settings_changed", "taskSettings"],
+  // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
+  ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

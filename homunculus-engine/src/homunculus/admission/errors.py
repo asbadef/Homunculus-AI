@@ -68,6 +68,12 @@ CODES = CODES | frozenset({
 BED_RESERVED = "bed_reserved"                          # a RESERVED bed, and no confirm_reserved
 CODES = CODES | frozenset({BED_RESERVED})
 
+# G2-B1c — Bakım ekibi (spec §5.6). Its own block after B3a's, which it widens the same way.
+CARE_TEAM_CONFLICT = "care_team_conflict"              # already on the team, or lost at an index (T7)
+CARE_TEAM_NOT_PHYSICIAN = "care_team_not_physician"    # the member, claimer or attending made (T1)
+CARE_TEAM_ATTENDING_REQUIRED = "care_team_attending_required"   # the ATTENDING row never ends alone (T5)
+CODES = CODES | frozenset({CARE_TEAM_CONFLICT, CARE_TEAM_NOT_PHYSICIAN, CARE_TEAM_ATTENDING_REQUIRED})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen

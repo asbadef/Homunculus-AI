@@ -40,6 +40,10 @@ export const PERMISSION_KEYS = freeze([
   "beds.manage_state",
   // G3-02 — Görevlerim (spec D8): open the queue and read the ward's tasks; write, claim, close or skip one
   "tasks.view", "tasks.manage",
+
+  // G4-02 — Yönetici özeti (spec D2, D3): the page and GET /handovers/pending; in no default group, the system one
+  // holds it by rule
+  "summary.view",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the
