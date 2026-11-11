@@ -213,6 +213,9 @@ const AZ_SAME_AS_TR = new Set([
   "devir.sum.spo2", //       SpO₂ — a clinical abbreviation
   "devir.fromTo", //         "{from} → {to}" — no word in it
 
+  // G4-01 (cihaz) · az = tr
+  "cihaz.wordOk", //         normal — the same word in Azerbaijani (a link's state word on the device page)
+
 ]);
 
 describe("live UI dictionaries", () => {

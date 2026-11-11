@@ -1,0 +1,48 @@
+// G4-01 «Cihaz & Veri Akışı» (spec 2026-11-11 D5): the device page's words (strings/cihaz.js) — the spec's own
+// Turkish, one duration phrase for every sentence that has one, and the words that must not collide with the
+// strip's below them (DevicesScreen.test.jsx finds those by text) or with the az word for an alarm.
+import { describe, it, expect } from "vitest";
+import { DICTIONARIES } from "./catalog.js";
+import { LANG_CODES } from "./langs.js";
+
+const fill = (template, vars) => template.replace(/\{(\w+)\}/g, (_, name) => String(vars[name]));
+
+describe("the device page's words (cihaz)", () => {
+  it("says the spec's Turkish", () => {
+    const tr = DICTIONARIES.tr;
+    const forOf = (n) => (n === 0 ? tr["cihaz.forUnderMinute"] : fill(tr["cihaz.forMinutes"], { n }));
+    expect(tr["cihaz.title"]).toBe("Cihaz & Veri Akışı");
+    expect([tr["cihaz.verdictTitle"], tr["cihaz.silentTitle"], tr["cihaz.staleTitle"], tr["cihaz.chainTitle"], tr["cihaz.neverTitle"]])
+      .toEqual(["Veri geliyor mu?", "Sessiz monitörler", "Eskiyen kanallar", "Veri zinciri", "Tabloda var, hiç görülmedi"]);
+    expect(fill(tr["cihaz.verdictForwarder"], { for: forOf(4) })).toBe("Veri gelmiyor: aktarıcı 4 dk'dır sessiz");
+    expect(tr["cihaz.verdictCollector"]).toBe("Veri gelmiyor: toplayıcı bağlı değil");
+    expect(tr["cihaz.verdictNever"]).toBe("Henüz hiç veri gelmedi");
+    expect(fill(tr["cihaz.verdictFlowing"], { streaming: 3, total: 5 })).toBe("Veri akıyor · 3/5 monitör veri gönderiyor");
+    expect(fill(tr["cihaz.watchingSince"], { time: "10:42" })).toBe("İzleme 10:42'den beri; sistem yeniden başlayınca sıfırlanır");
+    expect(fill(tr["cihaz.silentFor"], { for: forOf(4), time: "10:42" })).toBe("4 dk'dır veri yok · son veri 10:42");
+    expect(fill(tr["cihaz.silentFor"], { for: forOf(0), time: "10:42" })).toBe("<1 dk'dır veri yok · son veri 10:42");
+    expect(tr["cihaz.vanished"]).toBe("hub artık bildirmiyor");
+    expect([tr["cihaz.silentNone"], tr["cihaz.staleNone"]]).toEqual(["Sessiz monitör yok", "Eskiyen kanal yok"]);
+    expect(fill(tr["cihaz.staleChannel"], { channel: "SpO₂", for: forOf(4) })).toBe("SpO₂ · 4 dk'dır değer yok");
+    expect(fill(tr["cihaz.staleLongCount"], { n: 2 })).toBe("2 kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış olabilir)");
+    expect(fill(tr["cihaz.notFresh"], { time: "10:42" })).toBe("Pano güncel değil · 10:42");
+  });
+
+  it("carries a duration as one phrase, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const d = DICTIONARIES[lang];
+      for (const key of ["cihaz.verdictForwarder", "cihaz.silentFor", "cihaz.staleChannel"]) expect(d[key], `${lang} ${key}`).toContain("{for}");
+      expect(d["cihaz.forMinutes"], lang).toContain("{n}");
+      expect(d["cihaz.staleLongCount"], lang).toContain("{n}");          // the closing count of D4's amendment
+      expect(d["cihaz.forUnderMinute"], lang).toMatch(/^<1 /);
+    }
+  });
+
+  it("leaves the strip's own words to the strip, and never calls the az heartbeat «siqnal»", () => {
+    const az = DICTIONARIES.az;
+    expect(az["cihaz.verdictFlowing"]).not.toMatch(/məlumat göndərir/);      // the strip's chip (DevicesScreen.test.jsx)
+    expect(az["cihaz.chainRejected"]).not.toMatch(/rədd edilən oxunuş/i);    // the strip's monitor.feedRejected
+    expect(az["cihaz.chainForwarder"]).not.toMatch(/Alınan göndəriş/);       // the strip's monitor.feedPosts
+    for (const key of ["cihaz.chainCollector", "cihaz.chainCollectorNone"]) expect(az[key]).not.toMatch(/siqnal/i);
+  });
+});
