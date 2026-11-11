@@ -1,7 +1,7 @@
 # G4-02 — «Yönetici özeti»: the hospital at a glance, from real data only
 
 **Date:** 2026-11-11 · **Lane:** B (session homunculus-ai-c4), assigned by Lane A · **Branch:** `feat/g4-yonetici-ozeti`,
-cut from `e0850fb1` (G4-01, on top of main `b6d2c1b2`) · **Guide section:** §3.23
+cut from `e0850fb1` (G4-01, on top of main `b6d2c1b2`) · **Guide section:** §3.24
 
 **Origin.** The design prototype's «summary» screen (`origin/tasarim/prototip`, `tasarim-taslaklari/app/screens.js`
 2773–2792, perm `summary`, role «Başhekim / yönetici») shows four «Unutulan işler» cards, a daily alarm count, an
