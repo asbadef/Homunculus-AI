@@ -232,4 +232,30 @@ describe("one read for a period (usePeriodRead)", () => {
     expect(result.current).toMatchObject({ phase: "failed", data: null, error: null });
     expect(store.api.alarmQuality.mock.calls.map(([days]) => days)).toEqual([30, 7]);
   });
+
+  // G4-03 review: the render right after a period change, before the new read starts, must not hand the page the
+  // other period's answer (or failure) as this period's — it is loading. And «Yenile» on an answer is loading again.
+  it("never gives one period's answer as another's, and a retry is a read in progress until it lands", async () => {
+    const store = fakeStore();
+    const seen = [];
+    const again = deferred();
+    const { result, rerender } = renderHook(({ period }) => {
+      const read = usePeriodRead({ store, may: true, period, read: READ, valid: EVEN });
+      seen.push([period, read.phase, read.data?.episodes ?? null]);
+      return read;
+    }, { initialProps: { period: 30 } });
+    await flush();
+    expect(result.current).toMatchObject({ phase: "ok", data: REPORT(30) });
+    seen.length = 0;
+    store.api.alarmQuality.mockImplementation(() => again.promise);
+    rerender({ period: 1 });
+    await flush();
+    expect(seen.every(([period, phase, episodes]) => period === 1 && phase === "loading" && episodes === null)).toBe(true);
+    await act(async () => { again.resolve(REPORT(2)); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current).toMatchObject({ phase: "ok", data: REPORT(2) });
+    const later = deferred();
+    store.api.alarmQuality.mockImplementation(() => later.promise);
+    await act(async () => { result.current.retry(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current).toMatchObject({ phase: "loading", data: null });
+  });
 });

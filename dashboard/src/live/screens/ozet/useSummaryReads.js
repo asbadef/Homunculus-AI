@@ -77,7 +77,9 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
 /** One read of a page for a period, `read(api, period)`: on open, on a period change and on `retry` (a user's action —
  *  «Yeniden dene», «Yenile»), never on a timer. The newest read wins; an answer `valid` refuses is a failed read (plan
  *  N10). `read` and `valid` must be module constants: a new function each render would read again each render.
- *  G4-03: «Kalite göstergeleri» reads `/quality` through it, as `useQuality` reads `/alarm-quality`. */
+ *  G4-03: «Kalite göstergeleri» reads `/quality` through it, as `useQuality` reads `/alarm-quality`.
+ *  An answer or a failure is kept with the period it was read for: in the render right after a period change, before
+ *  the new read starts, it is not this period's, so the hook says «loading» (G4-03 review). */
 export function usePeriodRead({ store, may, period, read, valid }) {
   const [state, setState] = useState(LOADING);
   const [attempt, setAttempt] = useState(0);
@@ -92,14 +94,15 @@ export function usePeriodRead({ store, may, period, read, valid }) {
     store.track(() => read(store.api, period)).then(
       (data) => {
         if (!alive || mine !== seq.current) return;
-        setState(valid(data) ? { phase: "ok", data, atMs: Date.now(), error: null }
-          : { phase: "failed", data: null, atMs: null, error: null });
+        setState(valid(data) ? { phase: "ok", data, atMs: Date.now(), error: null, period }
+          : { phase: "failed", data: null, atMs: null, error: null, period });
       },
-      (error) => { if (alive && mine === seq.current) setState({ phase: "failed", data: null, atMs: null, error }); },
+      (error) => { if (alive && mine === seq.current) setState({ phase: "failed", data: null, atMs: null, error, period }); },
     );
     return () => { alive = false; };
   }, [store, may, period, attempt, read, valid]);
-  return useMemo(() => ({ ...state, retry }), [state, retry]);
+  return useMemo(() => ({ ...(state.phase === "loading" || state.period === period ? state : LOADING), retry }),
+    [state, period, retry]);
 }
 
 const readAlarmQuality = (api, days) => api.alarmQuality(days);
