@@ -9,7 +9,7 @@ import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { answering, channel, dev, hand, point, trends } from "./trends/trends.testutil.js";
-import { readings } from "./readings/readings.testutil.js";
+import { emptyReadings, readings } from "./readings/readings.testutil.js";
 import { sofaForm } from "./sofa/sofa.testutil.js";
 import { emptyFluids, fluids } from "./fluids/fluids.testutil.js";
 import { RETRACT_ARM_MS } from "../common/RetractDialog.jsx";
@@ -265,6 +265,22 @@ describe("the patient screen", () => {
       expect(api.retractEntry).toHaveBeenCalledWith("S-001", 41, "yazım hatası, 80 idi");
       expect(api.severityForm.mock.calls.length).toBe(reads + 1);
       expect(sofaBox()).toHaveTextContent(/Forma cəmi\s*1/);
+    });
+
+    // G3-05 (D16): the record box is told too — a bedside save is in the record at once, not at the next poll (a nurse
+    // who does not see her entry would enter it again).
+    it("reads the measurement record again after a save through «Ölçmə daxil et»: the new entry is listed at once", async () => {
+      let charted = false;
+      const { api } = await saved({
+        setup: (a) => {
+          a.patientReadings.mockImplementation((pid, hours) => Promise.resolve(charted ? readings(pid, hours) : emptyReadings(pid, hours)));
+          a.chart.mockImplementation(() => new Promise((resolve) => setTimeout(() => { charted = true; resolve(ANSWER); }, 30)));
+        },
+      });
+      const recordBox = screen.getByRole("heading", { level: 2, name: "Ölçmə qeydi" }).closest(".rounded-box");
+      expect(api.patientReadings).toHaveBeenLastCalledWith("S-001", 24);
+      expect(recordBox).not.toHaveTextContent("Bu dövrdə ölçmə qeydi yoxdur.");
+      expect(recordBox).toHaveTextContent("88 /dəq");
     });
 
     // G3-05 (D16): the record box is told too: a correction made in the trend table moved what it lists.

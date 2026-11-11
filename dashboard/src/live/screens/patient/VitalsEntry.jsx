@@ -19,7 +19,8 @@ import { VitalsForm } from "../bedside/VitalsForm.jsx";
 
 /** `patientId` is the patient shown; `bed` names them in the title and on every toast; `nowMs` is the patient
  *  screen's clock (the server's), as MedsBox and SofaBox take it. `onWritten(patientId)` is told when a save or a
- *  withdrawal the engine took has answered, for the patient it was made for — the screen's SOFA box reads again. */
+ *  withdrawal the engine took has answered, for the patient it was made for — the screen's SOFA box and its
+ *  measurement record read again. */
 export function VitalsEntry({ patientId, bed, nowMs, onWritten }) {
   const { t } = useI18n();
   const board = useBoard();

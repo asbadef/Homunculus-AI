@@ -331,10 +331,11 @@ export function PatientScreen({ params }) {
   // writers say so, with whose it was; the SOFA box reads again for the patient it shows (sofa/SofaBox.jsx `reread`).
   const [sofaReread, setSofaReread] = useState({ id: null, n: 0 });
   const sofaMayHaveMoved = useCallback((patientId) => setSofaReread((last) => ({ id: patientId, n: last.n + 1 })), []);
-  // G3-05 (D16): a withdrawal or a corrected device reading made in the trend table changes the measurement record too:
-  // the record box reads again for the patient it shows (readings/ReadingsBox.jsx `reread`), beside the SOFA box.
+  // G3-05 (D16): a value written on this screen — a bedside entry («Ölçüm gir»), or a withdrawal or corrected device
+  // reading in the trend table — is in the measurement record too: the record box reads again for the patient it
+  // shows (readings/ReadingsBox.jsx `reread`), beside the SOFA box. Without it a save shows only at the next poll.
   const [readingsReread, setReadingsReread] = useState({ id: null, n: 0 });
-  const trendWritten = useCallback((patientId) => {
+  const valueWritten = useCallback((patientId) => {
     sofaMayHaveMoved(patientId);
     setReadingsReread((last) => ({ id: patientId, n: last.n + 1 }));
   }, [sofaMayHaveMoved]);
@@ -454,7 +455,7 @@ export function PatientScreen({ params }) {
           {/* G3-01 (D3b): «Ölçüm gir» — the bedside form in a dialog, beside the values it adds to. Absent without
               clinical.chart. */}
           <Box title={t("patient.vitals")} icon="activity" level={2}
-            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} onWritten={sofaMayHaveMoved} /> : null}>
+            right={canChart ? <VitalsEntry patientId={id} bed={bed} nowMs={nowMs} onWritten={valueWritten} /> : null}>
             <Vitals patient={patient} shadow={patient.shadow} nowMs={nowMs} />
           </Box>
           <ReadingsBox patientId={id} bed={bed} nowMs={nowMs} canChart={canChart} onWritten={sofaMayHaveMoved} reread={readingsReread} />{/* G3-05 (D16): the measurement record */}
@@ -503,7 +504,7 @@ export function PatientScreen({ params }) {
               patient shown and follows a move to another one itself (sofa/SofaBox.jsx). */}
           <SofaBox patientId={id} bed={bed} nowMs={nowMs} reread={sofaReread} />
 
-          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} onWritten={trendWritten} />
+          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} onWritten={valueWritten} />
         </>
       )}
     </div>
