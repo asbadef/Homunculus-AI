@@ -110,6 +110,18 @@ class TestContextNotAdvice:
         meds = _bed(client, "bed-1")["meds"]
         assert meds["creatinine"] == 2.4 and meds["weight_kg"] == 72
 
+    def test_the_creatinine_travels_with_the_time_it_was_observed(self, client):
+        """G3-04 (D12): a value without its time cannot be read as current — the card carries the observation's
+        own stamp, as `pressors_at` does. The latest one's, and None while none was ever observed."""
+        _chart(client, "bed-1", [{"code": "lactate", "value": 1.2}])
+        meds = _bed(client, "bed-1")["meds"]
+        assert (meds["creatinine"], meds["creatinine_at"]) == (None, None)
+        _chart(client, "bed-1", [{"code": "creatinine", "value": 2.4}], T0)
+        _chart(client, "bed-1", [{"code": "creatinine", "value": 1.9}], T0 + timedelta(minutes=45))
+        meds = _bed(client, "bed-1")["meds"]
+        assert meds["creatinine"] == 1.9
+        assert meds["creatinine_at"] == (T0 + timedelta(minutes=45)).isoformat()
+
 
 class TestChartedHistory:
     """G2-A3 (D5): the card says WHEN each pressor was last charted, that 0 means stopped, and what the
