@@ -183,6 +183,42 @@ class TestItDoesNotFlatterOrSlanderItself:
         assert report.answered_rate == 1.0      # 1 answered of 1 settled, not 0.5 of 2
 
 
+class TestTheSelfResolved:
+    """G4-03 (spec D4; plan note N5): an unanswered episode whose alarm cleared by itself — its rule stopped
+    (`alert_cleared`, reason `resolved`) and nobody ever answered — is counted apart, as a subset of
+    `unanswered`. A discharge also ends an episode, and is not the alarm clearing by itself."""
+
+    def test_an_unanswered_alarm_whose_rule_stopped_is_counted_apart(self):
+        records = [rec("first_seen", "bed-1", "news2", 0),
+                   rec("alert_cleared", "bed-1", "news2", 4, reason="resolved", severity="moderate"),
+                   rec("first_seen", "bed-2", "news2", 0)]                    # never stopped
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (2, 1)
+
+    def test_a_latched_critical_nobody_answered_is_one_too(self):
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical")]
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (1, 1)
+
+    def test_an_answered_or_pending_alarm_whose_rule_stopped_is_not(self):
+        answered = [rec("first_seen", "bed-1", "news2", 0), rec("ack", "bed-1", "news2", 1, role="ayse"),
+                    rec("alert_cleared", "bed-1", "news2", 3, reason="resolved", severity="moderate")]
+        assert alarm_quality(answered, _now(60)).unanswered_resolved == 0
+        pending = [rec("first_seen", "bed-1", "news2", 55),
+                   rec("alert_cleared", "bed-1", "news2", 57, reason="resolved", severity="moderate")]
+        report = alarm_quality(pending, _now(60))
+        assert (report.pending, report.unanswered_resolved) == (1, 0)
+
+    def test_a_discharge_ends_an_episode_without_its_alarm_clearing_by_itself(self):
+        records = [rec("first_seen", "bed-1", "news2", 0),
+                   rec("alert_cleared", "bed-1", "news2", 4, reason="discharged", severity="moderate")]
+        (episode,) = build_episodes(records)
+        assert episode.resolved_at == _now(4) and episode.self_resolved is False
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (1, 0)
+
+
 class TestTheBreakdown:
     def test_kinds_are_ranked_by_how_often_they_disturb_the_ward(self):
         records = []
@@ -256,6 +292,14 @@ class TestTheEndpoint:
         assert cells and {c["patient_id"] for c in cells} == {"bed-1"}
         assert sum(c["episodes"] for c in cells) == body["episodes"]
         assert all(c["hour"].endswith(":00:00+00:00") for c in cells)
+
+    def test_the_report_adds_the_self_resolved_count_and_changes_no_other_field(self, client):   # G4-03 (spec D4)
+        body = client.get("/alarm-quality", headers=AUTH).json()
+        assert body["unanswered_resolved"] == 0
+        assert set(body) == {"episodes", "answered", "unanswered", "unanswered_resolved", "escalated", "pending",
+                             "answered_rate", "median_response_sec", "p90_response_sec", "per_kind", "per_day",
+                             "noisiest_beds", "per_patient_hour", "repeats", "window_from", "window_to",
+                             "days", "truncated"}
 
 
 class TestChartingRaisesRealEpisodes:

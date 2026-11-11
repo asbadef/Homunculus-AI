@@ -76,6 +76,9 @@ class Episode:
     escalated: bool = False
     repeats: int = 0          # `alert` rows emitted while this episode was open
     resolved_at: datetime | None = None   # G2-A1: when its rule stopped firing (`alert_cleared`)
+    # G4-03 (spec D4): its rule itself stopped at least once (an `alert_cleared` row, reason `resolved`). A discharge
+    # or an «entered in error» also sets `resolved_at` when none was set, and is not the alarm clearing by itself.
+    self_resolved: bool = False
     ended_at: datetime | None = None      # when it closed: then, or at the ack that removed a latch
 
     @property
@@ -107,6 +110,9 @@ class AlarmQuality:
     unanswered: int = 0
     escalated: int = 0
     pending: int = 0
+    # G4-03 (spec D4): the unanswered episodes whose alarm cleared by itself (`Episode.self_resolved`), a subset of
+    # `unanswered`. New and additive: no other field changes.
+    unanswered_resolved: int = 0
     # None, never 0, when nothing has settled yet: a rate computed from no episodes is not 0%,
     # it is unknown, and a dashboard that renders it as 0% is reporting a catastrophe that did
     # not happen.
@@ -178,6 +184,8 @@ def build_episodes(records: list[AuditRecord]) -> list[Episode]:
             # writes a second `resolved` row, and the board shows that last stop.
             if reason == "resolved" or episode.resolved_at is None:
                 episode.resolved_at = when
+            if reason == "resolved":
+                episode.self_resolved = True     # G4-03: the rule stopped — not a discharge, not an error
             # `/ack` writes an `ack` row and this row for one act; the report must not depend on
             # which lands first, so the row that removes a latch is itself the answer.
             if reason == "acked_after_resolve" and episode.answered_at is None:
@@ -230,6 +238,8 @@ def summarise(episodes: list[Episode], now: datetime,
         else:
             stats.unanswered += 1
             report.unanswered += 1
+            if ep.self_resolved:
+                report.unanswered_resolved += 1      # G4-03 (spec D4): nobody answered; it cleared by itself
 
     for stats in per_kind.values():
         kind_responses = [ep.response_seconds for ep in episodes
