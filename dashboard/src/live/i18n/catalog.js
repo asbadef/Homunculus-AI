@@ -93,6 +93,9 @@ import ozet from "./strings/ozet.js";
 // G3-04: «Eczane» — the pharmacist's ward page (screens/eczane).
 import eczane from "./strings/eczane.js";
 
+// TRƏS-01: the national e-health feed — Yönetim › TRƏS (screens/admin/TresTab.jsx) and its refusals.
+import tres from "./strings/tres.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -150,6 +153,8 @@ export const NAMESPACES = {
   ozet, // G4-02
 
   eczane, // G3-04
+
+  tres, // TRƏS-01
 };
 
 function flattenInto(out, prefix, entries) {

@@ -49,6 +49,7 @@ import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from 
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
+import { EVENT_TYPES } from "./screens/denetim/denetim.js"; // TRƏS-01: the audit's event codes (EVENT_CODE below)
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -99,6 +100,12 @@ const A_FILE = /\.(?:js|jsx|ts|tsx|py|json|md|css|html)$/i;
  *  the catalogue are exempt, so a real `board.news2` left raw is still caught. Found by this
  *  file's own tab-walking sweep the first time the roles tab was built. */
 const PERMISSION_KEY = new Set(PERMISSION_KEYS);
+/** An audit EVENT CODE is not a translation key either, and one of them is namespace-shaped: `tres.settings`
+ *  (TRƏS-01) shares its first word with the `tres` namespace, as `tres.manage` does among the permissions. The
+ *  audit page's table (`screens/denetim/denetim.js` EVENT_TYPES) names each code on purpose, to map it to its
+ *  label. Only the EXACT codes of that table are exempt, and only where a SOURCE names them: a labelled code is
+ *  never shown to a reader in place of its label, so the rendered sweep (`rawKeys`) does not exempt them. */
+const EVENT_CODE = new Set(EVENT_TYPES.map((e) => e.code));
 
 /** Every key-shaped string this subtree shows a reader, text and accessible names alike.
  *
@@ -796,7 +803,7 @@ export function keyProblems(text, file) {
   const code = codeOf(text);
   const problems = [];
   for (const [, , key] of code.matchAll(KEY_LITERAL)) {
-    if (!NAMESPACE.has(key.split(".")[0]) || PERMISSION_KEY.has(key) || A_FILE.test(key)) continue;
+    if (!NAMESPACE.has(key.split(".")[0]) || PERMISSION_KEY.has(key) || EVENT_CODE.has(key) || A_FILE.test(key)) continue;
     const missing = LANG_CODES.filter((lang) => !(key in DICTIONARIES[lang]));
     if (missing.length > 0) problems.push(`${file} → ${key} (${missing.join(", ")})`);
   }
@@ -839,6 +846,7 @@ describe("every key the live sources name exists in all four languages", () => {
       "{/* t(\"admin.nopeInJsx\") */}",
       'const re = /["\']/g; const d = t("admin.nopeAfterARegex");',             // a quote in a regex
       'const store = "hmc.lock"; const perm = "board.view"; const file = "api/board.py";',
+      'const TYPES = [["tres.settings", "tresSettings"]];',                      // an audit event code, not a key
       'const e = t(hasPerm(perms, "groups.manage") ? "admin.title" : "admin.loading");', // a permission, asked inside t()
       "const built = `admin.${kind}`;",                                         // run time: out of reach
     ].join("\n");

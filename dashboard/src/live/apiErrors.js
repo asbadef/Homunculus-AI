@@ -266,6 +266,19 @@ export const TASK_CODE_KEYS = new Map([
   ["vital_not_due", "gorevler.err.vitalNotDue"],
 ]);
 
+/** TRƏS-01 — Yönetim › TRƏS (homunculus-engine tres/errors.py, spec §6): the routes' refusals by their code
+ *  (`err.apiCode`). Its own map, as the task queue's: ADMISSION_CODE_KEYS is held to admission/errors.py. */
+export const TRES_CODE_KEYS = new Map([
+  ["tres_mode", "tres.err.mode"],
+  ["tres_environment", "tres.err.environment"],
+  ["tres_settle_hours", "tres.err.settleHours"],
+  ["tres_types", "tres.err.types"],
+  ["tres_base_url", "tres.err.baseUrl"],
+  ["tres_field_length", "tres.err.fieldLength"],
+  ["egress_off", "tres.err.egressOff"],
+  ["tres_account_incomplete", "tres.err.accountIncomplete"],
+]);
+
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card
  *  key of an admission made since migration 0015 — so a protocol is never called a patient number. */
 export const WITH_PROTOCOL = new Map([
@@ -361,6 +374,7 @@ function admissionCodeKey(err) {
   }
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (TASK_CODE_KEYS.has(code)) return { key: TASK_CODE_KEYS.get(code), vars: {} };
+  if (TRES_CODE_KEYS.has(code)) return { key: TRES_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };
   }

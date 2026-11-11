@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, WITH_NUMBER, WITH_PROTOCOL,
+  ADMISSION_CODE_KEYS, API_MESSAGE_KEYS, INVALID_FIELD_KEYS, TRES_CODE_KEYS, WITH_NUMBER, WITH_PROTOCOL,
   apiErrorKey, apiErrorText, fieldRefusals, readErrorText,
 } from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
@@ -839,5 +839,30 @@ describe("the task queue's refusals (G3-02)", () => {
       expect(hit?.key, code).toMatch(/^gorevler\.err\./);
       for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
     }
+  });
+});
+
+// TRƏS-01 — Yönetim › TRƏS: the routes' refusals, by code (err.apiCode; homunculus-engine tres/errors.py).
+describe("the national feed's refusals (TRƏS-01)", () => {
+  const CODES = ["tres_mode", "tres_environment", "tres_settle_hours", "tres_types", "tres_base_url",
+    "tres_field_length", "egress_off", "tres_account_incomplete"];
+
+  it("maps each by its code, whatever the server's words", () => {
+    expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
+    const closed = Object.assign(new Error("Outbound sending is closed on this installation (TRES_EGRESS is not on)."),
+      { status: 409, apiCode: "egress_off" });
+    expect(apiErrorKey(closed)).toEqual({ key: "tres.err.egressOff", vars: {} });
+    expect(apiErrorKey(Object.assign(new Error("x"), { status: 422, apiCode: "tres_base_url" })).key).toBe("tres.err.baseUrl");
+  });
+
+  it("every coded refusal has its text in the four languages, and is said in the reader's", () => {
+    for (const code of CODES) {
+      const hit = apiErrorKey(Object.assign(new Error("x"), { status: 422, apiCode: code }));
+      expect(hit?.key, code).toMatch(/^tres\.err\./);
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
+    }
+    const t = createTranslator("az", DICTIONARIES);
+    expect(apiErrorText(t, Object.assign(new Error("x"), { status: 409, apiCode: "egress_off" })))
+      .toBe("Bu quraşdırmada xaricə göndəriş bağlıdır; bağlantı yoxlanılmadı.");
   });
 });
