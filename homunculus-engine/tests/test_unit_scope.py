@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from homunculus.admission.errors import Refusal
 from homunculus.admission.models import Admission, CareTeamMember, CareTeamRole, Patient
-from homunculus.admission.unitscope import caller_scope, reach_clause, reaches, require_reach
+from homunculus.admission.unitscope import caller_scope, reach_clause, reaches, require_reach, unit_clause
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import TenantMembership
 from homunculus.scope import Scope, build_scope
@@ -50,6 +50,19 @@ def test_the_sql_reach_names_the_granted_units_and_beds_and_nothing_else():
     nothing = build_scope("MEMBER", unit_ids=["Reanimasiya"], enforce_unassigned=True)
     assert _sql(reach_clause(nothing, unit_id=Unit.id, bed_id=Bed.id)) == \
         "units.id IN (NULL) AND (1 != 1) OR beds.id IN (NULL) AND (1 != 1)"     # never true
+
+
+def test_the_sql_unit_reach_names_the_granted_units_and_no_bed():
+    """G4-02 (spec D4): a row that belongs to a unit and no bed — a handover — is reached by a unit grant
+    only. No filter for an unrestricted scope; a bed grant alone, or an old free-text key, reaches none."""
+    assert unit_clause(build_scope("HOSPITAL_ADMIN"), unit_id=Unit.id) is None
+    scope = build_scope("MEMBER", unit_ids=[str(UNIT_A).upper(), "Reanimasiya"],
+                        bed_ids=[str(BED_B1)], enforce_unassigned=True)
+    text = _sql(unit_clause(scope, unit_id=Unit.id))
+    assert UNIT_A.hex in text.replace("-", "")
+    assert BED_B1.hex not in text.replace("-", "") and "Reanimasiya" not in text
+    beds_only = build_scope("MEMBER", bed_ids=[str(BED_B1)], enforce_unassigned=True)
+    assert _sql(unit_clause(beds_only, unit_id=Unit.id)) == "units.id IN (NULL) AND (1 != 1)"   # never true
 
 
 def test_an_unrestricted_scope_reaches_every_bed():

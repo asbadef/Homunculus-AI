@@ -331,6 +331,8 @@ export const INVALID_FIELD_KEYS = new Map([
   ["recommendation", "devir.invalid.recommendation"],
   // G2-B3b (D2): the receiver is another colleague who holds handover.sign — the open route's own check.
   ["incoming_user_id", "devir.invalid.receiver"],
+  // G4-02 (review A1): a handover is stored under its patients' beds' unit — patients in two units are not one handover.
+  ["admission_ids", "devir.invalid.patients"],
   // G2-B3b (D5): the legacy plain-text note, which «Vardiya devri» never sends (it sends `note`).
   ["narrative_note", NOT_ON_SCREEN],
   // G2-B1c: the on-call window (admission/router.py `_check_window`).
