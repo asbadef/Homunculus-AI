@@ -27,7 +27,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from homunculus.admission import router as admission_router
 from homunculus.admission import service
 from homunculus.admission.boardlink import BoardLink
-from homunculus.admission.models import Admission, AdmissionState, DischargeDisposition
+from homunculus.admission.models import (
+    Admission, AdmissionState, CareTeamMember, DischargeDisposition,
+)
 from homunculus.api.app import sse_board_frames
 from homunculus.scope import build_scope, sees_patient
 from homunculus.tenant.models import Bed, BedState
@@ -165,17 +167,23 @@ async def at_once(db_session, monkeypatch, step: str, first, second) -> tuple:
 
 
 # ---------------------------------------------------------------- sign-off
-async def test_the_physician_who_signs_a_draft_becomes_its_attending(ward):
+async def test_the_physician_who_signs_a_draft_becomes_its_attending(ward, db_session):
     w, client, app = ward
+    doctor = w.users["doctor"].id
     admission = await admit(w, client)
     r = await client.post(f"/admissions/{admission['id']}/sign-off", headers=w.auth["doctor"])
     assert r.status_code == 200, r.text
     assert r.json()["state"] == "ACTIVE"
-    assert r.json()["attending_physician_id"] == r.json()["signed_by"] == str(w.users["doctor"].id)
+    assert r.json()["attending_physician_id"] == r.json()["signed_by"] == str(doctor)
+    # G2-B1c (D3, §5.3): the row the signature writes, named in the sign-off's audit row.
+    member_id = (await db_session.execute(select(CareTeamMember.id).where(
+        CareTeamMember.admission_id == uuid.UUID(admission["id"])))).scalar_one()
     (row,) = audited(app, "admission.sign_off")
     assert (row.patient_id, row.payload) == (admission["board_key"],
                                              {"admission_id": admission["id"],
-                                              "actor": "doctor@kabul.example.com"})
+                                              "actor": "doctor@kabul.example.com",
+                                              "attending": "doctor@kabul.example.com",
+                                              "member_id": str(member_id)})
 
 
 async def test_a_nurse_does_not_sign_and_a_physician_signs_only_in_her_units(ward):

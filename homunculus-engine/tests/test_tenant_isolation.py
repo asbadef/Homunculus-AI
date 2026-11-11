@@ -79,6 +79,7 @@ class Side:
     handover: uuid.UUID   # OPEN; outgoing = the administrator, incoming = the nurse
     session: uuid.UUID    # break-glass, opened by the administrator
     member: uuid.UUID     # a nurse of this tenant
+    doctor: uuid.UUID     # G2-B1c: a physician (`attending`), the admission's attending (D3, T1)
 
     @classmethod
     def missing(cls) -> Side:
@@ -110,6 +111,9 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
                            group=groups["hospital_admin"])
     nurse = await add_user(db, username=f"nurse@{slug}.example.com", tenant_id=tenant.id,
                            group=groups["nurse"])
+    # G2-B1c (T1): an admission's attending is a physician; the administrator is not one.
+    doctor = await add_user(db, username=f"doctor@{slug}.example.com", tenant_id=tenant.id,
+                            group=groups["attending"])
 
     site = Site(tenant_id=tenant.id, name="Ana Kampüs")
     db.add(site)
@@ -132,7 +136,7 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     admission = await adm_service.create_draft_admission(
         db, tenant_id=tenant.id, patient=patient,
         note_fields={"admitting_unit_id": unit.id, "bed_id": bed.id,
-                     "attending_physician_id": admin.id,
+                     "attending_physician_id": doctor.id,
                      "admission_diagnosis_free_text": "Sentetik tanı"},
     )
     await adm_service.sign_off_admission(db, admission, signing_user_id=admin.id)
@@ -152,7 +156,7 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     return Side(tenant=tenant.id, site=site.id, unit=unit.id, room=room.id, bed=bed.id,
                 free_bed=free_bed.id, patient=patient.id, admission=admission.id,
                 alert=alert.id, handover=handover.id, session=session.id,
-                member=nurse.id), admin
+                member=nurse.id, doctor=doctor.id), admin
 
 
 @pytest_asyncio.fixture
@@ -484,7 +488,7 @@ async def test_a_pending_transfer_is_not_confirmed_even_into_the_callers_own_bed
 
 
 @requires_db
-async def test_a_draft_admission_is_signed_off_by_the_callers_own_attending(world):
+async def test_a_draft_admission_is_signed_off_with_the_callers_own_physician_as_attending(world):
     patient = Patient(tenant_id=world.a.tenant, display_name="Sentetik Taslak Hasta",
                       date_of_birth="1970-03-03", sex="male",
                       patient_number=await next_patient_number(world.db, world.a.tenant))
@@ -493,7 +497,7 @@ async def test_a_draft_admission_is_signed_off_by_the_callers_own_attending(worl
     draft = await adm_service.create_draft_admission(
         world.db, tenant_id=world.a.tenant, patient=patient,
         note_fields={"admitting_unit_id": world.a.unit, "bed_id": world.a.free_bed,
-                     "attending_physician_id": world.caller.id,
+                     "attending_physician_id": world.a.doctor,
                      "admission_diagnosis_free_text": "Sentetik tanı"},
     )
     await world.db.commit()
@@ -502,6 +506,8 @@ async def test_a_draft_admission_is_signed_off_by_the_callers_own_attending(worl
 
     assert r.status_code == 200, r.text
     assert r.json()["state"] == "ACTIVE" and r.json()["signed_by"] == str(world.caller.id)
+    # G2-B1c (T1): the administrator signs; the physician the draft names is the attending.
+    assert r.json()["attending_physician_id"] == str(world.a.doctor)
 
 
 # ---------------------------------------------------------------- lists

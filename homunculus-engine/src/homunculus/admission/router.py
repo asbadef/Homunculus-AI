@@ -70,8 +70,9 @@ from homunculus.admission.schemas import (
     ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, BED_RESERVED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
-    REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal, field_invalid,
+    BED_CLOSED, BED_RESERVED, CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION,
+    INVALID_TRANSITION, NO_PROTOCOL, REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal,
+    field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.boardkey import board_key
@@ -770,6 +771,23 @@ def _board_summary(request: Request, hospital: str, key: str) -> dict | None:
     return link.handover_summary(hospital, key)
 
 
+async def _people(db: AsyncSession, *ids: uuid.UUID | None) -> dict[uuid.UUID, tuple[str, str]]:
+    """G2-B1c (§5.2, §5.5): the users `ids` name, as (user name, full name): the audit's names and
+    the answers'. Staff, never a patient."""
+    wanted = {i for i in ids if i is not None}
+    if not wanted:
+        return {}
+    rows = await db.execute(select(User.id, User.username, User.full_name)
+                            .where(User.id.in_(wanted)))
+    return {uid: (username, full_name) for uid, username, full_name in rows.all()}
+
+
+def _not_physician() -> HTTPException:
+    """G2-B1c (T1): the member, the claimer, or the attending a sign-off would make is not a
+    physician."""
+    return Refusal(409, CARE_TEAM_NOT_PHYSICIAN, "Only a physician is on a care team.").http()
+
+
 # ---------------------------------------------------------------------------
 # Sign-off DRAFT → ACTIVE (§4.1 steps 4–5)
 # ---------------------------------------------------------------------------
@@ -781,27 +799,46 @@ async def sign_off(
     user: User = Depends(require_permission("admissions.sign_off")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    """G2-B1a (spec §3.2): the physician who signs a DRAFT with no attending becomes its
-    attending — no physician picker in this slice (and no care-team row: O45). The bed must be in
-    her units. The answer is made before the commit from what was written; after it, only the
-    audit row `admission.sign_off`, which never raises (A-26)."""
+    """G2-B1a (spec §3.2), G2-B1c (spec D3, §5.3, O45 closed): a physician signs a DRAFT in her
+    units. Its attending is the one the form named, else the signer. She must be a physician
+    (T1); if not, 409 `care_team_not_physician` and nothing is written, so an administrator
+    cannot sign a DRAFT that names nobody. In one transaction the admission becomes ACTIVE and the
+    attending's ATTENDING row is written (`service.set_attending`, granted by the signer); a
+    failure of either writes neither. The state is read under the locks first: a second signature
+    is `invalid_transition` before anything else is asked. After the commit, the audit rows
+    `admission.sign_off` (with the attending's user name and her row) and `care_team.attending`
+    (via `sign_off`); neither raises (A-26)."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
+    signer, actor = user.id, user.username
     admission = await _locked(db, admission)
-    if admission.state == AdmissionState.DRAFT and admission.attending_physician_id is None:
-        admission.attending_physician_id = user.id
+    if admission.state != AdmissionState.DRAFT:
+        raise _wf(WorkflowError(
+            f"Only a DRAFT admission can be signed off (current: {admission.state.value})."))
+    attending = admission.attending_physician_id or signer
+    if not await service.is_physician(db, caller_tenant, attending):
+        raise _not_physician()
+    admission.attending_physician_id = attending
     try:
-        await service.sign_off_admission(db, admission, signing_user_id=user.id)
+        await service.sign_off_admission(db, admission, signing_user_id=signer)
+        member, ended = await service.set_attending(db, admission, user_id=attending,
+                                                    granted_by_id=signer)
     except WorkflowError as exc:
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
     key = await _key_of(db, admission)
     hospital = await trail.hospital_of(db, caller_tenant)
-    written, actor = AdmissionResponse.model_validate(admission), user.username
+    named = (await _people(db, attending))[attending][0]
+    written, member_id = AdmissionResponse.model_validate(admission), member.id
     await db.commit()
     trail.record(request, hospital, "admission.sign_off", patient_id=key,
-                 payload={"admission_id": str(written.id), "actor": actor})
+                 payload={"admission_id": str(written.id), "actor": actor, "attending": named,
+                          "member_id": str(member_id)})
+    trail.record(request, hospital, "care_team.attending", patient_id=key,
+                 payload={"admission_id": str(written.id), "member_id": str(member_id),
+                          "member": named, "via": "sign_off", "ended": [str(i) for i in ended],
+                          "actor": actor})
     return written
 
 
