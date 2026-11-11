@@ -859,6 +859,9 @@ def create_app(
     # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
     from homunculus.protocol.router import router as protocol_router
     app.include_router(protocol_router)
+    # G4-03: «Kalite göstergeleri» — GET /quality (`quality.view`, the caller's tenant and units).
+    from homunculus.quality.router import router as quality_router
+    app.include_router(quality_router)
     # G2-B1d (spec §5, D12): the bridge's patient query — the device token only, never proxied by
     # nginx. `_caller` is defined below; the lambda reads it when a request arrives (E2).
     from homunculus.api.edge_query import edge_query_router
