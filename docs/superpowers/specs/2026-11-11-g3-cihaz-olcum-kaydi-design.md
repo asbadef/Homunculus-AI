@@ -3,8 +3,8 @@
 **Date:** 2026-11-11 · **Branch:** `feat/g3-cihaz-olcum-kaydi` (from main `331df704`) · **Migration:** `0021`
 (after Kalite's `0020`; `down_revision` is fixed by whoever merges second, `alembic heads` stays one)
 **Status:** the owner's five decisions are taken (2026-11-11, §2 D1–D5) and the four design points put to
-the owner are confirmed the same day (§10 Q1–Q4). The design as a whole awaits the owner's «evet». No plan
-and no code before that.
+the owner are confirmed the same day (§10 Q1–Q4). **The owner approved the design as a whole («Evet, plana
+geç», 2026-11-11).** Implementation plan next.
 
 ## 1. Why
 
@@ -245,7 +245,6 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
 
 **Still open:**
 
-- **O0.** The owner's «evet» on the design as a whole.
 - **O1.** Tests that post one identical reading twice now see a duplicate (D14). The fallout is known only
   when the task runs; each is fixed by giving the second reading its own time, never by weakening the rule.
 - **O2.** An empty `device.display` replays as "replay", so the shadow lane's removal and the «already» repair
