@@ -5,7 +5,7 @@
 // the newest period wins, and «Yeniden dene» reads it again. Synthetic answers only.
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useQuality, useSummaryReads } from "./useSummaryReads.js";
+import { usePeriodRead, useQuality, useSummaryReads } from "./useSummaryReads.js";
 
 const T0 = Date.parse("2026-11-11T10:00:00Z");
 const MIN = 60_000;
@@ -213,5 +213,23 @@ describe("the alarm quality's read (useQuality)", () => {
     const { result } = renderHook(() => useQuality({ store, may: true, period: 7 }));
     await flush();
     expect(result.current).toMatchObject({ phase: "failed", data: null, error: null });
+  });
+});
+
+// G4-03: «Kalite göstergeleri» reads its own answer through the same hook — its own read and its own check.
+describe("one read for a period (usePeriodRead)", () => {
+  const READ = (api, days) => api.alarmQuality(days);
+  const EVEN = (answer) => answer?.episodes % 2 === 0;
+
+  it("reads with the read it is given, and an answer its check refuses is a failed read", async () => {
+    const store = fakeStore();
+    const { result, rerender } = renderHook(
+      ({ period }) => usePeriodRead({ store, may: true, period, read: READ, valid: EVEN }), { initialProps: { period: 30 } });
+    await flush();
+    expect(result.current).toMatchObject({ phase: "ok", data: REPORT(30) });
+    rerender({ period: 7 });
+    await flush();
+    expect(result.current).toMatchObject({ phase: "failed", data: null, error: null });
+    expect(store.api.alarmQuality.mock.calls.map(([days]) => days)).toEqual([30, 7]);
   });
 });
