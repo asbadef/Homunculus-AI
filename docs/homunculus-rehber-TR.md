@@ -2102,7 +2102,8 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   2. **«Unutulan işler»:** dört kart; her biri bir sayı, neyi saydığını söyleyen bir satır ve kaynağının okunduğu
      saat («son okuma 10:42»).
      - **«Yanıtsız kalan alarm · {dönem}»:** seçilen dönemde hiç yanıtlanmamış ve en az 10 dakikalık alarm olayları.
-       10 dakika motorun rapor sınırıdır (5 dakikalık eskalasyonun iki katı); kart bunu söyler.
+       10 dakika motorun rapor sınırıdır (5 dakikalık eskalasyonun iki katı); kart bunu söyler. Sunucunun okuma sınırı
+       aşıldıysa sayı eksiktir ve kart bunu «eksik okuma: yalnız en yeni kayıtlar sayıldı» diye söyler.
      - **«Karşı imzası bekleyen devir»:** devredenin imzaladığı, devralanın henüz karşı imzalamadığı devirler ve
        «en eskisi {n} dk / saat / gün önce» (sunucunun saatiyle, aşağı yuvarlanarak). Bu durum kendiliğinden
        kapanmaz; en eskisi günler öncesi olabilir.
@@ -2110,6 +2111,9 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
      - **«Sessiz monitör»:** şimdi: sessiz ya da haber alınamayan monitörler («Cihazlar» sayfasının kurallarıyla,
        §3.22) ve «en uzunu {n} dk»; görünümde hiç monitör yoksa 0 ve «Bu görünümde monitör yok». «1 saatten uzun
        sessiz» gibi bir eşik yok: kaynağı yok.
+     - Kapsamı kısıtlı bir kullanıcıda (aşağıda, «Birimler») son üç kart yalnız onun kapsamına gönderilenleri sayar ve
+       bunu «yalnız kapsamınızdakiler, hastanenin tamamı değil» diye söyler. İlk kart hep hastane genelidir: sunucu
+       alarm kalitesini kısıtlı bir kapsama vermez.
   3. **«Alarm kalitesi»:** dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün); bu kutuyu ve ilk kartı
      değiştirir. «Bugün» takvim günü değil, son 24 saattir; kutu ve kart bunu «son 24 saat» diye yazar. Hastane
      geneli, denetim kaydından; birim birim değil (denetim kaydındaki alarmın yatağı yok; birim birim alarm kalitesi
@@ -2119,22 +2123,34 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
      eğilimi yok. Altında türe göre küçük bir tablo. Sunucunun okuma sınırı aşılırsa kutu bunu ve sayılan dönemin
      başını söyler. Kutu yalnız sayfa açılınca ve dönem değişince okunur; kendiliğinden ya da «Yenile» ile
      yenilenmez (sunucu dönemin her olayını denetim kaydından yeniden kurar); kendi okuma saatini altında yazar.
-     Prototipteki «3 dk içinde yanıt» ve «Hatalı olarak işaretlenen» yok: kaynakları yok. Kutu, denetim kaydı yetkisi
-     (`audit.view`) ve bütün hastaneyi kapsayan bir kapsam ister; yoksa bunu söyler.
+     Okunamazsa kutu nedenini söyler ve içinde bir «Yeniden dene» düğmesi çıkar (kullanıcının eylemi; zamanlayıcı
+     yok). Prototipteki «3 dk içinde yanıt» ve «Hatalı olarak işaretlenen» yok: kaynakları yok. Kutu, denetim kaydı
+     yetkisi (`audit.view`) ve bütün hastaneyi kapsayan bir kapsam ister; yoksa bunu söyler ve dönem seçiciyi
+     göstermez (başka bir dönem de aynı biçimde reddedilir).
   4. **«Birimler»:** yapıdaki her birim için bir satır, şimdi: doluluk («{dolu} / {kullanılabilir} dolu»; sıfırdan
      büyükse rezerve, kullanım dışı ve bakımdaki yataklar, Doluluk ekranının sözcükleriyle), yanıt bekleyen alarm
      (zilin saydığı alarmlar, onaylanan ve ertelenen sayılmaz; kritik ve yüksek ayraç içinde), geciken iş, karşı
      imzası bekleyen devir (en eskisinin yaşıyla), sessiz monitör. Kapalı bir birim «kapalı» diye yazılır. Yatağı
      olmayan ya da yapıda bulunmayan bir birimdeki hasta ve monitörler en alttaki **«Birimi belli olmayan»**
-     satırında toplanır; sayacak bir şey yoksa bu satır yazılmaz. Yapı henüz hiç okunmadıysa tablonun yerinde «Birim
-     satırları yazılamıyor · {neden}» yazar; yapının son okuması başarısızsa satırlar son okunan yapıdan yazılır ve
-     doluluk «— okunamadı» der.
+     satırında toplanır; sayacak bir şey yoksa bu satır yazılmaz. Yapı okunurken tablonun yerinde «Birimler
+     okunuyor…» yazar; hiç okunamadıysa ya da okuma yetkisi yoksa (sunucu reddettiyse de) «Birim satırları
+     yazılamıyor · {neden}». Yapının son okuması başarısızsa satırlar son okunan yapıdan yazılır ve doluluk
+     «— okunamadı» der.
+     - **Kapsamı kısıtlı bir kullanıcı** (ör. `summary.view` verilmiş, birim atanmış bir başhekim): sunucu panoyu,
+       görevleri, bekleyen devirleri ve cihaz panosunu onun kapsamıyla keser. Bu yüzden birim ataması olmayan bir
+       birimin satırı bu dört sütunda sayı yerine «— yetki yok» der, asla 0 değil; birimden yalnız bir yatak atanmışsa
+       da öyle (birimin bütünü onun değildir). Doluluk, yapıyı yönetme yetkisi (`structure.manage`) varsa yine yazılır
+       (o zaman sunucu yapının tamamını verir); yoksa o da «— yetki yok», çünkü yapı yalnız onun yataklarını listeler.
+       Kapsam canlı panodan okunur; pano henüz yüklenmediyse birim hücreleri nedeniyle «—» der. «Birimi belli
+       olmayan» satırı yalnız kısıtsız bir kapsamda yazılır.
 - **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Henüz okunmamış, okunamamış, güncel olmayan ya da
   yetkiniz olmayan bir kaynak, kendi sütununda ya da kartında «—» ve kısa nedeniyle yazılır: «okunuyor…»,
-  «okunamadı», «pano güncel değil», «yetki yok», «veri zinciri kesik», «bilinmiyor», «monitör şeridi kapalı». Asla 0
-  yazılmaz. Sıfırı yalnız güncel bir yanıt söyler (Karar 18): yanıt bekleyen alarm sütunu yalnız pano canlıyken
-  (bağlantı kopmuş sayılırken «pano güncel değil»), sessiz monitör sütunu yalnız cihaz panosu güncelken sayar.
-  Okuması başarısız olan bir kaynağın son sayısı da bugünün sayısı gibi gösterilmez.
+  «okunamadı», «pano güncel değil», «yetki yok», «veri zinciri kesik», «bilinmiyor», «monitör şeridi kapalı»,
+  «monitör verisi güncel değil». Asla 0 yazılmaz. Sıfırı yalnız güncel bir yanıt söyler (Karar 18): yanıt bekleyen
+  alarm sütunu yalnız pano canlıyken (bağlantı kopmuş sayılırken «pano güncel değil»), sessiz monitör sütunu yalnız
+  cihaz panosu güncelken sayar (değilse «monitör verisi güncel değil»). Okuması başarısız olan bir kaynağın son
+  sayısı da bugünün sayısı gibi gösterilmez. Biçimi beklenmeyen bir yanıt (tek bir bozuk kayıt bile) okunamamış
+  sayılır: bozuk kaydı atlayıp birimine 0 yazmak da uydurmak olurdu.
 - **Ne zaman okunur:** canlı pano ve cihaz panosu uygulamanın kendi sürekli okumalarıdır, sayfa onlara bakar. Yapı,
   görevler ve bekleyen devirler sayfa açılınca, «Yenile»de, sayfa görünürken her 60 saniyede bir ve sayfa yeniden
   görünür olunca hemen okunur.
