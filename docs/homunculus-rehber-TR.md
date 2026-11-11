@@ -1172,13 +1172,14 @@ değiştirilebilir):
 | İş | Kim | İzin |
 |---|---|---|
 | Kabul et | Hemşire, Sorumlu Hemşire | `admissions.admit` |
-| Kabulü imzala (hasta ekranından) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
+| Kabulü imzala (hasta ekranından; hekim adı geçmeyen taslağı yalnız bir hekim imzalar, 3.19) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
 | Taburcuyu başlat | Sorumlu Hekim, Ünite Hekimi | `admissions.move.initiate` |
 | Hasta çıktı · onayla | Sorumlu Hemşire | `admissions.discharge.confirm` |
 | Temizlik bitti · boş | Hemşire, Sorumlu Hemşire | `beds.release` |
 | Yönetim › Yapı | Sistem Yöneticisi | `structure.manage` |
 
-Sistem Yöneticisi bütün izinleri taşır. Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
+Sistem Yöneticisi bütün izinleri taşır, ama hekim adı geçmeyen bir taslağı imzalayamaz: imzalayan
+sorumlu hekim olur ve sorumlu hekim bir hekim olmalıdır (3.19). Kabulü hekim yapmaz, imzalar (D6): hekim Kabul sekmesini
 salt okunur bir notla görür. "Hekim" grubu kabul kayıtlarını görür ama imzalamaz ve taburcu
 başlatmaz. Herkes yalnız kendi birimlerinin yataklarında işlem yapar (birim kapsamı); birimi
 atanmamış hesap (pilot ayarı) ve yönetici her yere ulaşır.
@@ -1956,8 +1957,9 @@ adlar uydurmadır.
   verir, ekran bunu okuyanın dilinde söyler.
 - **İmzalayan sorumlu hekim olur.** Kabulü imzalayan hekim, formda başka bir sorumlu hekim adı yoksa,
   aynı işlemde sorumlu hekim olur ve ekipteki satırı yazılır; biri başarısız olursa ikisi de yazılmaz.
-  Formda bir hekim adı varsa sorumlu hekim odur. Sorumlu hekim (formdaki, yoksa imzalayan) hekim değilse
-  imza reddedilir: bir yönetici hesabı, hekim adı geçmeyen bir taslağı artık imzalayamaz; ekran «hekim
+  Formda bir hekim adı varsa sorumlu hekim odur; formda hekim olmayan biri adlandırılırsa kabul açılırken
+  reddedilir (422 `field_invalid:attending_physician_id`; Kabul ekranı hekim adı göndermez). Sorumlu hekim
+  (formdaki, yoksa imzalayan) hekim değilse imza reddedilir: bir yönetici hesabı, hekim adı geçmeyen bir taslağı artık imzalayamaz; ekran «hekim
   değil» der. Kabul bu yüzden hekim hesabıyla imzalanır. (3.8'deki «İmza, imzalayan hekimi bakım ekibine
   eklemez» sınırı bununla kapandı.)
 - **Kutu.** Hasta ekranında «Bakım ekibi»: her üyenin adı, rolü, nöbetçinin penceresi (geçtiyse
@@ -1974,8 +1976,10 @@ adlar uydurmadır.
     sonra, gelecekte ve en çok 48 saat sonra olmalıdır; başka rolün penceresi olmaz. Sunucu bunları
     ayrıca denetler (422).
   - «Sorumlu hekim yap» ve «Ekipten çıkar»: `care_team.assign` sahibi, sorumlu hekimin satırı dışında.
-  - «Ekipten ayrıl»: üyenin kendisi, kendi satırında; yalnız `admissions.view` yeter, kendi birimlerinin
-    dışından da.
+  - «Ekipten ayrıl»: üyenin kendisi, kendi satırında; sunucu için yalnız `admissions.view` yeter. Ama
+    kutu, hasta ekranının birim kapsamlı kabul okumasına bağlıdır: kendi birimlerinin dışındaki bir nöbetçi
+    hekimin kutusu yoktur, bu düğmeyi göremez. Satırını ekibi yöneten biri «Ekipten çıkar» ile bitirir
+    (üyeyi tanıyan bir okuma sonraki dilimdir).
 
   Varsayılan gruplarda `care_team.claim` ve `care_team.assign` yalnız Sorumlu Hekim grubundadır (ve bütün
   izinleri taşıyan Sistem Yöneticisi grubunda); Ünite Hekimi ile Hekim ekibi değiştirmez. Ekip imzadan
