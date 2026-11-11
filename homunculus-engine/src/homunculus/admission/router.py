@@ -1295,6 +1295,7 @@ async def transfer_admission(
     if bed.state == BedState.RESERVED and not payload.confirm_reserved:
         raise Refusal(409, BED_RESERVED, "The bed is reserved: the transfer must confirm it.",
                       extra={"bed_id": str(bed.id)}).http()
+    was_reserved = bed.state == BedState.RESERVED                            # B3a X9
     hospital = await trail.hospital_of(db, caller_tenant)
     key = await _key_of(db, admission)
     critical = _open_critical(request, hospital, key)
@@ -1309,12 +1310,25 @@ async def transfer_admission(
         raise _wf(exc)
     except ValueError as exc:
         raise _not_now(exc) from None
-    handovers_moved = len(handovers_followed)         # the audit row's count (Task 5); the ids follow
+    handovers_moved = len(handovers_followed)         # the audit row's count (X17)
     # Everything the answer, the audit row and the card need, as plain values before the commit.
     written = AdmissionResponse.model_validate(arriving)
     card = {"key": key, "display_name": name, "date_of_birth": born, "sex": sex,
             "bed_label": bed.label, "bed_id": payload.target_bed_id, "unit_id": target_unit}
     await db.commit()
+    # E4: the row's patient is the card's key. The moved protocol (O8), the places, the reason and
+    # whether a note was written — never a name, never the note (D8, B3a R8). The handovers the
+    # move re-pointed are counted and named, ids only, in the service's order (X17, X21): an
+    # inspection can tell which of them, signed or not, followed the patient.
+    trail.record(request, hospital, "admission.transfer", patient_id=key, payload={
+        "source_admission_id": str(admission_id), "admission_id": str(written.id),
+        "from_bed_id": str(source_bed_id), "from_unit_id": str(source_unit),
+        "to_bed_id": str(payload.target_bed_id), "to_unit_id": str(target_unit),
+        "protocol_no": written.protocol_no, "reason": payload.reason.value,
+        "note": note is not None, "critical_alarm_open": critical > 0,
+        "care_team_moved": team_moved, "handovers_moved": handovers_moved,
+        "handover_ids": [str(i) for i in handovers_followed], "actor": actor,
+        **({"bed_was_reserved": True} if was_reserved else {})})
     board = await transfer.move_card(request, hospital, card, left=(source_bed_id, source_unit))
     return TransferResponse(**written.model_dump(), board=board, critical_alarm_open=critical > 0)
 

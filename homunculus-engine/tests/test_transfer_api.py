@@ -41,13 +41,18 @@ from tests.conftest import requires_db
 from tests.kabul_world import BOARD, FIRST_PROTOCOL, SLUG, build_ward, ward_client
 from tests.signed_in import add_user, bearer
 from tests.test_discharge_api import (
-    _cards_on, _refused_tombstone, _the_ward, admit, at_once, audited, drain, form, septic_shock,
-    signed, started,
+    _cards_on, _refused_tombstone, _the_ward, acknowledged, admit, at_once, audited, drain, form,
+    septic_shock, signed, started,
 )
 
 pytestmark = [requires_db]
 NOTE = "Sentetik nakil notu"
 RESERVED_NOTE = "Sentetik planlı kabul"
+#: A D-Ö-D-Ö note as «Vardiya devri» sends it (G2-B3b D5), for the handover in hand (X17).
+HANDOVER_NOTE = {"situation": "Sentetik durum: hemodinami stabil",
+                 "background": "Sentetik öykü: postop 2. gün",
+                 "assessment": "Sentetik değerlendirme: laktat düşüyor",
+                 "recommendation": "Sentetik öneri: 2 saatte bir laktat"}
 
 
 @pytest_asyncio.fixture
@@ -664,3 +669,115 @@ async def test_a_release_takes_off_the_card_of_a_patient_moved_and_discharged_si
     (row,) = audited(app, "admission.discharge_board_retry")
     assert (row.payload["admission_id"], row.payload["via"], row.payload["board"]) == (
         arriving["id"], "bed.release", "ok")
+
+
+# ---------------------------------------------------------------- audit (spec §5.6)
+async def test_the_move_is_audited_with_its_places_protocol_and_reason_never_a_name_or_the_note(
+        ward, db_session):
+    w, client, app = ward
+    one, rea = str(w.beds["1"].id), str(w.units["rea"].id)
+    n1, neo = str(w.beds["N1"].id), str(w.units["neo"].id)
+    source = await signed(w, client)
+    answer = await moved(w, client, source, "N1", "admin", reason="OTHER", note=NOTE)
+    copied = await _fresh(db_session, select(CareTeamMember.id).where(
+        CareTeamMember.admission_id == uuid.UUID(answer["id"]),
+        CareTeamMember.is_active.is_(True)))
+    (row,) = audited(app, "admission.transfer")
+    assert row.patient_id == FIRST_PROTOCOL
+    assert row.payload == {
+        "source_admission_id": source["id"], "admission_id": answer["id"],
+        "from_bed_id": one, "from_unit_id": rea, "to_bed_id": n1, "to_unit_id": neo,
+        "protocol_no": FIRST_PROTOCOL, "reason": "OTHER", "note": True,
+        "critical_alarm_open": False, "care_team_moved": len(copied), "handovers_moved": 0,
+        "handover_ids": [],                                                  # X21 (controller)
+        "actor": "admin@kabul.example.com"}
+    assert NOTE not in repr(row.payload) and "Sentetik Hasta" not in repr(row.payload)
+
+
+async def test_the_audit_row_says_a_reserved_bed_and_an_open_critical_alarm(ward):
+    w, client, app = ward
+    two = w.beds["2"].id
+    source = await signed(w, client)
+    r = await client.post(f"/tenant/beds/{two}/reserve", json={"note": RESERVED_NOTE},
+                          headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    await septic_shock(client, source["board_key"])
+    await moved(w, client, source, confirm_reserved=True)
+    (row,) = audited(app, "admission.transfer")
+    assert (row.payload["bed_was_reserved"], row.payload["critical_alarm_open"],
+            row.payload["note"]) == (True, True, False)
+    assert RESERVED_NOTE not in repr(row.payload)
+
+
+async def test_a_card_moved_again_is_audited_as_a_retry_and_the_move_once(ward, monkeypatch):
+    w, client, app = ward
+    one = w.beds["1"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    with monkeypatch.context() as patched:
+        async def refused(self, tenant, record, *, left):
+            return "failed"
+
+        patched.setattr(BoardLink, "move", refused)
+        first = (await transfer(w, client, source)).json()
+        r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+        assert r.status_code == 409, r.text
+    again = await transfer(w, client, source)
+    assert again.status_code == 200, again.text
+    assert len(audited(app, "admission.transfer")) == 1
+    release, retry = audited(app, "admission.transfer_board_retry")
+    assert (release.patient_id, release.payload) == (key, {
+        "source_admission_id": source["id"], "admission_id": first["id"], "bed_id": str(one),
+        "board": "failed", "via": "bed.release", "actor": "nurse@kabul.example.com"})
+    assert (retry.patient_id, retry.payload) == (key, {
+        "source_admission_id": source["id"], "admission_id": first["id"], "board": "ok",
+        "via": "transfer", "actor": "doctor@kabul.example.com"})
+
+
+# ---------------------------------------------------------------- a handover in hand (owner 2026-11-10, X17)
+async def test_a_handover_in_hand_follows_the_patient_and_its_critical_gate_still_holds(ward):
+    """The owner's answer of 2026-11-10 (X17). A handover the nurse opened on bed 1 names the
+    arriving admission after the move. Her box shows the new bed and the key the card kept: what
+    «Vardiya devri» locks the signature on, and what its dialog's "already open" check matches a
+    second handover of the patient against (by `admission_id`; the server never refused a second
+    one, G2-B3b). B3b's outgoing gate (D3) still counts the patient's open critical alarm under
+    that key; acknowledged, the signature goes, seals her summary and is audited under her key.
+    The move's own row counts the handover and names it (X21, the controller's addition: an
+    inspection can tell which, possibly signed, handovers the move re-pointed)."""
+    w, client, app = ward
+    source = await signed(w, client)
+    key = source["board_key"]
+    r = await client.post("/handovers", json={
+        "unit_id": str(w.units["rea"].id), "incoming_user_id": str(w.users["charge"].id),
+        "admission_ids": [source["id"]]}, headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    handover = r.json()["id"]
+    await septic_shock(client, key)
+    answer = await moved(w, client, source)
+    (row,) = audited(app, "admission.transfer")
+    assert row.payload["handovers_moved"] == 1
+    assert row.payload["handover_ids"] == [handover]                         # X21 (controller)
+
+    async def outgoing() -> dict:
+        r = await client.get("/handovers", params={"box": "outgoing"}, headers=w.auth["nurse"])
+        assert r.status_code == 200, r.text
+        (mine,) = r.json()
+        return mine
+
+    async def sign():
+        return await client.post(f"/handovers/{handover}/sign-outgoing",
+                                 json={"note": HANDOVER_NOTE}, headers=w.auth["nurse"])
+
+    mine = await outgoing()
+    assert (mine["status"], mine["patients"]) == ("OPEN", [{
+        "admission_id": answer["id"], "board_key": key, "display_name": "Sentetik Hasta",
+        "bed_label": "2", "unit_name": "Reanimasiya"}])
+    r = await sign()
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "critical_alarm_open")
+    await acknowledged(client, key)
+    r = await sign()
+    assert (r.status_code, r.json()["status"]) == (200, "OUTGOING_SIGNED")
+    assert {"kind": "septic_shock", "severity": "critical", "acknowledged": True} \
+        in (await outgoing())["summary"]["open_alerts"]
+    (sealed,) = audited(app, "handover.sign_outgoing")
+    assert sealed.patient_id == key
