@@ -4,7 +4,7 @@
 // decision's dialog, and the charge nurse's confirmation, asked once more before it is sent.
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { refusal } from "../../session/mount.testutil.jsx";
 import { FOCUS_RING } from "../../ui/focus.js";
@@ -783,6 +783,46 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
     expect(screen.queryByRole("button", { name: `Kartı yenidən keçir: ${TO}` })).toBeNull();
     expect(screen.getAllByText(`${TO} · kart yeni çarpayıya keçirildi`).length).toBeGreaterThan(0);
   });
+
+  // After a landed move the source row's button is gone (her admission is TRANSFERRED), so the
+  // dialog's focus return finds nothing. The focus goes to the arriving row, where she lies now; when
+  // the re-read does not hold it (her new unit is outside the caller's), to the started discharges'
+  // list as a discharge's does — never <body> (spec §5.7).
+  it("moves the focus to the arriving row after a landed move, and to the started discharges' list when the list lacks it", async () => {
+    const { api } = await open(DOCTOR, (a) => a.transfer.mockResolvedValue(arrived()));
+    api.admissions.mockResolvedValue([ROWS[1], ROWS[2], arrived({ state: "ACTIVE" })]);   // the source has left the list
+    const nakil = screen.getByRole("button", { name: MOVE_ROW });
+    nakil.focus();                                                         // a keyboard user's press
+    await moveToBedOne();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(nakil.isConnected).toBe(false);
+    const arriving = screen.getByRole("button", { name: `${MOVE}: ${TO}` }).closest("li");
+    expect(arriving.getAttribute("tabindex")).toBe("-1");
+    expect(arriving).toHaveClass(...FOCUS_RING.split(" "));
+    expect(document.activeElement).toBe(arriving);
+    cleanup();
+
+    const again = await open(DOCTOR, (a) => a.transfer.mockResolvedValue(arrived()));
+    again.api.admissions.mockResolvedValue([ROWS[1], ROWS[2]]);           // the arriving row is not in her units
+    screen.getByRole("button", { name: MOVE_ROW }).focus();
+    await moveToBedOne();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Evə yazılması başladılanlar" }));
+  });
+
+  // A session holding only a transfer key (no `admissions.view`) has no list to move a patient from:
+  // GET /admissions needs `admissions.view` on the server and in useAdmissions, so the tab says so
+  // and the dialog — and the structure read its bed picker needs — is out of its reach. The server's
+  // GET /tenant/structure lists no transfer key either (tenant/router.py), so STRUCTURE_PERMS agrees
+  // with it by leaving them out: adding them to the client alone would only draw a 403 and retries.
+  it.each([["admissions.move.initiate"], ["admissions.transfer.confirm"]])(
+    "gives a session holding only %s no list and no «Nakil», and reads neither the list nor the structure", async (key) => {
+      const { api } = await open([key]);
+      expect(screen.getByText("Qəbul qeydlərini oxumaq səlahiyyətiniz yoxdur.")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: anyMove })).toBeNull();
+      expect(api.admissions).not.toHaveBeenCalled();
+      expect(api.structure).not.toHaveBeenCalled();
+    });
 
   // The retry's button goes with its note, and the focus that fell with it must not stay on <body>:
   // the discharge retry's refocus puts it on the started discharges' list (spec §5.7).

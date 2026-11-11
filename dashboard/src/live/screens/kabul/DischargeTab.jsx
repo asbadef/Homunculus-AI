@@ -39,7 +39,9 @@
 // note, and in the name of each row's button and each note's retry, after its words (M-4). And
 // when the re-read takes away the button the write was sent from — a started discharge moves up,
 // a confirmed one goes — the focus that fell with it goes to the started discharges' list, never
-// left on <body> (spec §5.7).
+// left on <body> (spec §5.7). After a landed move (G2-B1b) the source row is gone too: the focus goes
+// to the arriving row, where she lies now — or, when the list does not hold it (her new unit is
+// outside the caller's), to that list.
 import React, { useEffect, useId, useRef, useState } from "react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -76,11 +78,13 @@ const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateStrin
 /** When a discharge was decided: its time, and its date as well unless that is today. */
 const whenOf = (ms) => (sameDay(ms, Date.now()) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`);
 
-/** One admission, its bed line first; `children` are the row's actions. */
-function Row({ row, children }) {
+/** One admission, its bed line first; `children` are the row's actions. `rowRef` (G2-B1b) makes the
+ *  row a place the focus can be sent to by script — after a move, the arriving row — never a tab stop. */
+function Row({ row, children, rowRef }) {
   const { t } = useI18n();
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-ctl border border-line bg-card px-3 py-2.5">
+    <li ref={rowRef} tabIndex={rowRef ? -1 : undefined}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-ctl border border-line bg-card px-3 py-2.5${rowRef ? ` ${FOCUS_RING}` : ""}`}>
       <div className="min-w-0 flex-1">
         <p className="m-0 text-14 font-semibold">
           <span className="font-data">{row.bed_label}</span> · {row.room_name} · {row.unit_name}
@@ -181,6 +185,8 @@ export function DischargeTab() {
   const [unmoved, setUnmoved] = useState([]);          // moved, the card not on the new bed: {id, to, body}
   const [movingAgain, setMovingAgain] = useState(null); // the move being sent again
   const pendingRef = useRef(null);
+  const rowEls = useRef(new Map());                    // G2-B1b: the lying-in rows' elements, by admission id
+  const arrivedId = useRef(null);                      // G2-B1b: the admission a landed move made, until the focus is placed
   const pendingTitle = useId();                       // each section is named by its Box's own heading
   const lyingTitle = useId();
   const retryHeld = useId();                          // why the other notes' retry waits
@@ -188,7 +194,9 @@ export function DischargeTab() {
   useEffect(() => {
     if (!refocus) return;
     const active = document.activeElement;
-    if (!active || active === document.body) pendingRef.current?.focus();
+    // G2-B1b: after a landed move, her new row when the list holds it; else the list, as a discharge's.
+    if (!active || active === document.body) (rowEls.current.get(arrivedId.current) ?? pendingRef.current)?.focus();
+    arrivedId.current = null;
   }, [refocus]);
   const can = (key) => user?.perms?.includes(key) ?? false;
   const starts = can("admissions.move.initiate");
@@ -266,6 +274,7 @@ export function DischargeTab() {
   async function moved(row, { answer, body, to }) {
     setUnmoved((prev) => [...prev.filter((n) => n.id !== row.id),
       ...(answer?.board === "failed" ? [{ id: row.id, to, body }] : [])]);
+    arrivedId.current = answer?.id ?? null;           // the source row is gone after the re-read: the focus goes to this one
     reloadStructure();
     await reload();
     setMoving(null);
@@ -345,7 +354,8 @@ export function DischargeTab() {
         {rows === null ? loading : lying.length === 0 ? <Empty icon="bed">{t("kabul.lyingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {lying.map((row) => (
-              <Row key={row.id} row={row}>
+              <Row key={row.id} row={row}
+                rowRef={(el) => { if (el) rowEls.current.set(row.id, el); else rowEls.current.delete(row.id); }}>
                 {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p> : (
                   <>
                     {/* G2-B1b: «Nakil», never held (D7: the dialog warns). */}
