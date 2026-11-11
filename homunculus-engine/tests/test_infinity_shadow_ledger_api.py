@@ -222,3 +222,13 @@ def test_a_ledger_that_cannot_be_read_leaves_the_board_as_it_was_for_every_viewe
         assert all(not NEW_CARD & set(card) for card in _cards(board).values())
         assert _cards(board)["192.0.2.10"]["status"] == "streaming"
     assert "ledger" in caplog.text
+
+
+def test_a_packet_age_at_the_wire_bound_is_still_a_time_and_whole_seconds(tmp_path):
+    # Review 7: `packet_age_ms` may be up to 1e12 (the schema's bound, ≈31.7 years): the board still answers.
+    client, clock = _app(tmp_path)
+    _post(client, clock, _device("192.0.2.10", status="stale", packet_age_ms=1e12, hr=False))
+    board = _board(client)
+    one = _cards(board)["192.0.2.10"]
+    assert (one["status"], one["last_packet_at"], one["silent_for_s"]) == ("silent", _iso(T0 - 1e9), 1_000_000_000)
+    assert json.loads(json.dumps(board)) == board

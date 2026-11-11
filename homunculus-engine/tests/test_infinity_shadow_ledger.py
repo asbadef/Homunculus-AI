@@ -123,7 +123,7 @@ def test_a_channels_last_valid_value_outlives_the_stores_forgetting():
     assert clock.t - channels["spo2"] > FORGET_AFTER_S
 
 
-def test_only_a_value_the_board_showed_moves_a_channels_time():
+def test_only_a_valid_value_the_store_took_moves_a_channels_time():
     clock, store, ledger = lane()
     post(store, ledger, body(device("192.0.2.10", reading("hr", 72), reading("spo2", None, "%", valid=False))))
     assert dict(ledger.view().devices["192.0.2.10"].channels) == {"hr": pytest.approx(T0 - 0.5, abs=1e-3)}
@@ -339,3 +339,75 @@ def test_a_ledger_that_cannot_be_worded_leaves_the_board_exactly_as_it_was(caplo
                      patient_visible=lambda card: True, show_unassigned=True, now=clock.t, ledger=broken)
     assert out == _board(store, ledger, clock, with_ledger=False)
     assert "ledger" in caplog.text
+
+
+def test_a_wall_clock_stepped_back_an_hour_leaves_no_time_in_the_future():
+    # Review 2: as the store forgets what lies further ahead than any arrival may (`_expire`), the ledger
+    # drops a channel time or a last packet that a stepped-back clock has put in the future — kept, they
+    # would freeze a live channel and hide a stopped one for the hour. A time it cannot place is unknown.
+    wall, mono = Clock(T0), Clock(5_000.0)
+    _, store, ledger = lane(wall, mono)
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72), reading("spo2", 97, "%")),
+                             device("192.0.2.11", reading())))
+    wall.t -= 3600.0                                    # an NTP step or a VM restore
+    mono.t += 1.0
+    assert all((s.channels, s.last_packet_at) == ((), None) for s in ledger.view().devices.values())
+    for step in range(1, 40):                           # 195 s of posts: hr goes on, spo2 and .11 have stopped
+        wall.t += 5
+        mono.t += 5
+        post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=wall.t - 0.5)), sent_at=wall.t))
+    seen = ledger.view().devices
+    assert dict(seen["192.0.2.10"].channels) == {"hr": wall.t - 0.5}             # live, on the new clock
+    assert seen["192.0.2.10"].last_packet_at == wall.t - 0.1
+    assert (seen["192.0.2.11"].channels, seen["192.0.2.11"].last_packet_at) == ((), None)
+    card = {c["source"]: c for c in _board(store, ledger, wall)["beds"]}["192.0.2.11"]
+    assert (card["status"], card["last_packet_at"], card["silent_for_s"]) == ("unknown", None, None)
+
+
+def test_a_valid_reading_the_clock_rule_lets_lead_is_seen_though_the_strip_withholds_it_for_now():
+    # Review 3: a collector clock up to ARRIVAL_MAX_AHEAD_S ahead — the store takes the reading; the strip
+    # shows it «old» until the API's clock reaches it (unchanged). The ledger counts it at once.
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=T0 + 1.5),
+                                    reading("spo2", 97, "%", captured_at=T0 + 2.5))))   # 2.5 s: refused, «clock»
+    strip = {p["parameter"]: p["state"] for p in store.devices()["192.0.2.10"].parameters}
+    assert strip["hr"] == "old" and "spo2" not in strip
+    assert dict(ledger.view().devices["192.0.2.10"].channels) == {"hr": T0 + 1.5}
+
+
+def test_a_collector_clock_under_a_second_ahead_never_makes_a_live_channel_look_stale():
+    # Review 3: hr is seen once on a true clock, then the collector's drifts 0.9 s ahead: each reading
+    # 0.4 s old on it lands 0.5 s in the API's future. Seventy seconds on, hr must not read 60 s silent.
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=T0 - 0.4))))
+    for step in range(1, 15):
+        clock.t = T0 + 5 * step
+        post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=clock.t + 0.5)),   # 0.9 - 0.4
+                                 sent_at=clock.t))
+    last_post = clock.t
+    clock.t += 1.2                                      # a board 1.2 s after the last post
+    hr = next(ch for ch in _board(store, ledger, clock)["beds"][0]["channels_seen"] if ch["parameter"] == "hr")
+    assert hr["last_value_at"] == _iso(last_post + 0.5)
+    assert clock.t - (last_post + 0.5) < STALE_LIST_AFTER_S
+
+
+def test_nbp_is_seen_at_its_measurement_time_or_untimed_at_its_packets():
+    # Review 4: NBP's last value is the cuff's, not the packet that repeats it — the hub's `changed_at`, an
+    # upper bound of the measurement, even once the board withholds it past two hours. Untimed (NBP-2) it
+    # has no other time: its packet's. Three parts, one change, all valid, as the board's own rule.
+    clock, store, ledger = lane()
+
+    def triple(changed_at, values=(118, 79, 92), valid=True):
+        return [reading(name, value, "mmHg", valid=valid, changed_at=changed_at) for name, value in zip(NBP_PARTS, values)]
+
+    post(store, ledger, body(device("192.0.2.10", *triple(T0 - 600.0)),
+                             device("192.0.2.11", *triple(None)),
+                             device("192.0.2.12", *triple(T0 - 3 * 3600.0)),
+                             device("192.0.2.13", *triple(T0 - 600.0, valid=False))))
+    states = {s: v.parameters[-1]["state"] for s, v in store.devices().items()}
+    assert states == {"192.0.2.10": "value", "192.0.2.11": "value_untimed", "192.0.2.12": "old", "192.0.2.13": "invalid"}
+    seen = ledger.view().devices
+    assert dict(seen["192.0.2.10"].channels) == {"nbp": T0 - 600.0}
+    assert dict(seen["192.0.2.11"].channels) == {"nbp": T0 - 0.5}
+    assert dict(seen["192.0.2.12"].channels) == {"nbp": T0 - 3 * 3600.0}
+    assert dict(seen["192.0.2.13"].channels) == {}

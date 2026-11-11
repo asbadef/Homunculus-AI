@@ -187,6 +187,9 @@ class DeviceView:
     status_age_s: float
     packet_age_ms: float | None
     parameters: tuple[dict, ...]  # in PARAMETERS order; NBP's three folded into `nbp`, last
+    # G4-01: per board channel, when the reading held now carried a valid value (`ShadowStore._valid_at`).
+    # For the last-seen ledger only: `board_view` never copies it, the shadow engine never reads it.
+    valid_at: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass
@@ -377,7 +380,7 @@ class ShadowStore:
             if held.readings and (self._nbp_lane or any(name in held.readings for name in NBP_PARTS)):
                 parameters += (self._nbp_view(held.readings, now),)
             views[source] = DeviceView(source, held.group, PORT, status, round(max(0.0, age), 1),
-                                       held.packet_age_ms, parameters)
+                                       held.packet_age_ms, parameters, self._valid_at(held.readings))
         return views
 
     def feed(self, now: float | None = None) -> dict:
@@ -424,6 +427,23 @@ class ShadowStore:
         if previous is not None and captured <= previous.captured_at:
             return "duplicate"
         return None
+
+    @staticmethod
+    def _valid_at(readings: Mapping[str, _Held]) -> tuple[tuple[str, float], ...]:
+        """G4-01: per board channel (in CHANNELS' order), when the reading held now carried a valid
+        value — what the last-seen ledger notes, never what the strip shows. A valid reading counts as
+        soon as the store takes it, so one the collector's clock put up to ARRIVAL_MAX_AHEAD_S ahead
+        counts at once, although `_view` withholds it as `old` until the API's clock reaches it. NBP is
+        one channel, on `_nbp_view`'s own condition — three held parts, one change time, all valid — at
+        that change time (the hub's `changed_at`, an upper bound of the cuff's measurement), and so
+        also once the two hours withhold it; untimed (NBP-2), at its packet's time, the only one it has."""
+        out = tuple((name, readings[name].captured_at) for name in PARAMETERS
+                    if name not in NBP_PARTS and name in readings and readings[name].valid)
+        parts = [readings.get(name) for name in NBP_PARTS]
+        if all(part is not None and part.valid for part in parts) and len({part.changed_at for part in parts}) == 1:
+            changed = parts[0].changed_at
+            out += ((NBP, min(part.captured_at for part in parts) if changed is None else changed),)
+        return out
 
     @staticmethod
     def _view(name: str, held: _Held, now: float) -> dict:
@@ -508,17 +528,12 @@ class ShadowStore:
 # --- G4-01: the last-seen ledger -----------------------------------------------------------------
 
 CHANNELS = tuple(name for name in PARAMETERS if name not in NBP_PARTS) + (NBP,)   # the board's own, in its order
-SHOWN_VALUE = frozenset({"value", "value_untimed"})     # a board entry carrying a valid value (NBP-2's untimed too)
 
 
 def reported_sources(body: Mapping) -> list[str]:
     """The devices an ACCEPTED body reported, by address. Only after `ShadowStore.ingest` took the
     body: it has been validated whole, so every entry has a unicast `source`."""
     return [unicast_ipv4(item["source"]) for item in body["devices"]]
-
-
-def _epoch(iso: str) -> float:
-    return datetime.fromisoformat(iso).timestamp()
 
 
 @dataclass
@@ -532,7 +547,12 @@ class _Seen:
 
 @dataclass(frozen=True)
 class SeenView:
-    """One device as the ledger holds it. Wall-clock epochs; `channels` in the board's order (CHANNELS)."""
+    """One device as the ledger holds it. Wall-clock epochs; `channels` in the board's order (CHANNELS).
+
+    A channel's time (the board's `channels_seen[].last_value_at`) is when it last carried a valid
+    value: the reading's capture time — for `nbp` the time the hub saw its value change, an upper
+    bound of the cuff's measurement, and for an untimed NBP (NBP-2) its packet's time, the only one
+    it has (`ShadowStore._valid_at`)."""
     first_seen_at: float
     last_report_at: float
     last_packet_at: float | None
@@ -551,13 +571,21 @@ class FeedLedger:
 
     Memory only, beside `ShadowStore` and fed from it: after each accepted body the POST route hands
     `observe` what the store now shows (`ShadowStore.devices()`) and the addresses the body listed
-    (`reported_sources`). So it remembers only what the board showed: a device's last report, its
+    (`reported_sources`). So it remembers only what the store took: a device's last report, its
     last packet (the report's time less the hub's `packet_age_ms`; a report with no age — a device
     the hub has had no packet from — leaves it where it was), and per channel the time of the last
-    entry that carried a valid value (`value`, or NBP's `value_untimed`), kept after the store forgets
-    the reading at FORGET_AFTER_S. Bounds: a device is dropped LEDGER_KEEP_S after its last report,
-    and with the store when the store lets it go, so it never holds more than MAX_DEVICES; only the
-    board's own channels (CHANNELS).
+    valid reading the store held (`DeviceView.valid_at`: one the collector's clock put up to
+    ARRIVAL_MAX_AHEAD_S ahead included, which the strip withholds that long; NBP at its change
+    time — SeenView), kept after the store forgets the reading at FORGET_AFTER_S. Bounds: a device
+    is dropped LEDGER_KEEP_S after its last report, and with the store when the store lets it go, so
+    it never holds more than MAX_DEVICES; only the board's own channels (CHANNELS).
+
+    A wall clock stepped back (an NTP step, a VM restore) leaves the times taken before it in the
+    future. As the store forgets a reading further ahead than any arrival may be, the ledger drops a
+    channel time or a last packet more than ARRIVAL_MAX_AHEAD_S ahead (`_expire`): kept, the newest-
+    wins rule would freeze a live channel and hide a stopped one until the clock caught up. Dropped,
+    it reads as unknown — which it is, on the new clock. `first_seen_at` and `last_report_at` keep
+    the time the clock said then.
 
     The store, its readings and everything the shadow engine reads are untouched; nothing here is
     written anywhere. A restart empties it, and `started_at` says since when it has watched. Two
@@ -576,6 +604,7 @@ class FeedLedger:
         now, tick = self._clock(), self._monotonic()
         for source in [s for s in self._seen if s not in views]:
             del self._seen[source]                    # the store let it go (MAX_DEVICES): so does the ledger
+        self._expire(now)
         listed = frozenset(source for source in reported if source in views)
         for source in listed:
             view = views[source]
@@ -585,23 +614,31 @@ class FeedLedger:
             held.last_report_at, held.last_report_tick = now, tick
             if view.packet_age_ms is not None:
                 held.last_packet_at = now - view.packet_age_ms / 1000.0
-            for entry in view.parameters:
-                name = entry.get("parameter")
-                if name in CHANNELS and entry.get("state") in SHOWN_VALUE and entry.get("last_at"):
-                    at = _epoch(entry["last_at"])
-                    if at > held.channels.get(name, float("-inf")):
-                        held.channels[name] = at
+            for name, at in view.valid_at:
+                if name in CHANNELS and at > held.channels.get(name, float("-inf")):
+                    held.channels[name] = at
         self._reported = listed
         self._prune(tick)
 
     def view(self) -> LedgerView:
-        """What the ledger holds now, once what is past LEDGER_KEEP_S is dropped."""
+        """What the ledger holds now, once what is past LEDGER_KEEP_S, or in the future, is dropped."""
+        self._expire(self._clock())
         self._prune(self._monotonic())
         return LedgerView(self._started_at, {
             source: SeenView(held.first_seen_at, held.last_report_at, held.last_packet_at,
                              tuple((name, held.channels[name]) for name in CHANNELS if name in held.channels),
                              source in self._reported)
             for source, held in self._seen.items()})
+
+    def _expire(self, now: float) -> None:
+        """Drop what a wall clock stepped back has left further ahead than any arrival may be (the
+        store's `_expire` rule, ARRIVAL_MAX_AHEAD_S): a last packet, a channel's time."""
+        limit = now + ARRIVAL_MAX_AHEAD_S
+        for held in self._seen.values():
+            if held.last_packet_at is not None and held.last_packet_at > limit:
+                held.last_packet_at = None
+            for name in [name for name, at in held.channels.items() if at > limit]:
+                del held.channels[name]
 
     def _prune(self, tick: float) -> None:
         for source in [s for s, held in self._seen.items() if tick - held.last_report_tick > LEDGER_KEEP_S]:
