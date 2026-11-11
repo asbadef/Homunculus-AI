@@ -191,6 +191,47 @@ describe("linking a set to a patient", () => {
     expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
   });
 
+  // G3-05 review: while that read is out the old list still holds the set just linked, and a second link could be
+  // started on it (the engine refuses it with a 409 — harmless, but confusing). A set the engine took is left out of the
+  // answer it came with, until a read replaces that answer: the engine's next word is the last one.
+  it("leaves the set it has just linked out of the list while the list is read again", async () => {
+    const { api } = await toConfirm();
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await press(button("Bəli, bağla"));
+    expect(api.assignReadings).toHaveBeenCalledTimes(1);
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);        // the read is out: the linked set is gone
+    expect(screen.queryByRole("button", { name: "Xəstəyə bağla" })).toBeNull();           // and the other one cannot be linked
+    await act(async () => { release(unmatched([OLD])); await settle(); });
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  it("keeps it out when the read after the link fails: the engine took the link", async () => {
+    const { api } = await toConfirm();
+    api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    await press(button("Bəli, bağla"));
+    expect(screen.getByText(/^Uyğunlaşmayan ölçmələr oxunmadı: /)).toBeInTheDocument();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  it("lists it again if the read that follows says it still waits: the engine's answer is the last word", async () => {
+    const { api } = await toConfirm();
+    let release;
+    api.unmatchedReadings.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await press(button("Bəli, bağla"));
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+    await act(async () => { release(unmatched([ROUND, OLD])); await settle(); });
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
+  });
+
+  it("hides nothing for a link the engine refused: the set may still be waiting", async () => {
+    const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockRejectedValue(
+      refusal(409, "The reading is no longer waiting: it was linked or rejected already.", { apiCode: "reading_not_unmatched" })) });
+    api.unmatchedReadings.mockImplementation(() => new Promise(() => {}));
+    await press(button("Bəli, bağla"));
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
+  });
+
   it("a link that got no answer says it may have landed, and reads the list again", async () => {
     const { api } = await toConfirm({ setup: (a) => a.assignReadings.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
     const reads = api.unmatchedReadings.mock.calls.length;
@@ -315,6 +356,28 @@ describe("rejecting a set — the dialog's endings", () => {
     await act(async () => { release(unmatched([OLD])); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  // G3-05 review: a rejection the engine took leaves the list with the dialog even when the read after it fails; one it
+  // refused leaves the set where it was.
+  it("a rejection the engine took leaves the list with the dialog even if the list cannot be read again", async () => {
+    const { api } = await toDialog();
+    api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    await type(WHY);
+    await press(confirmButton());
+    expect(api.rejectReadings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([GONE]);
+  });
+
+  it("a rejection the engine refused leaves the set listed", async () => {
+    const { api } = await toDialog({ setup: (a) => a.rejectReadings.mockRejectedValue(
+      refusal(409, "The reading is no longer waiting: it was linked or rejected already.", { apiCode: "reading_not_unmatched" })) });
+    api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    await type(WHY);
+    await press(confirmButton());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setRows().map((r) => r.getAttribute("data-um-set"))).toEqual([TYPO, GONE]);
   });
 
   it("a double press sends one request", async () => {

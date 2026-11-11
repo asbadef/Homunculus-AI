@@ -10,8 +10,8 @@
 //
 // WHAT IT WRITES, for a `clinical.chart` holder only — absent otherwise, never a disabled button: «Düzelt» on each
 // value of the bedside set that is not withdrawn and that the engine can address (`entry`), in CorrectDialog.jsx.
-// After any ending of that dialog the box reads again, and tells the screen that a value moved (`onWritten`), so
-// the SOFA box and the trends follow.
+// After any ending of that dialog the box reads again, and tells the screen that a value moved (`onWritten`); the
+// screen has the SOFA box and the trend cards read again (PatientScreen.jsx) — the box reads itself, never twice.
 //
 // The shell keeps the patient screen mounted across a move to another patient (no `key`), so the box remembers
 // WHOSE dialog it opened: one opened on a patient is never shown on the next (the fluid box's rule).
@@ -115,7 +115,8 @@ function Sets({ data, nowMs, onCorrect }) {
 
 /** `patientId` is whose record this is; `bed` names the patient in the dialog and on its toasts (never the
  *  patient's name, Decision 14); `nowMs` is the screen's clock; `canChart` (`clinical.chart`) offers «Düzelt» —
- *  absent otherwise. `onWritten(patientId)` tells the screen a value moved (the SOFA box and the trends re-read).
+ *  absent otherwise. `onWritten(patientId)` tells the screen a value moved (it has the SOFA box and the trend cards
+ *  re-read; this box has already read again itself).
  *  `reread` is `{ id, n }`: the screen's word that a write made elsewhere on it (a withdrawal or a corrected device
  *  reading in the trend table) landed for patient `id` — the record reads again, as the fluid box's `reread`. */
 export function ReadingsBox({ patientId, bed, nowMs = Date.now(), canChart = false, onWritten, reread = null }) {

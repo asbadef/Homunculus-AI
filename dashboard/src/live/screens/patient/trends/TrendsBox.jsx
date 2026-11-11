@@ -27,14 +27,24 @@ import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 /** `onWritten(patientId)` is told when a write from the big chart's table has answered (G3-01's withdrawal, and G3-05's
  *  corrected device reading: its withdrawal, and its right value as a hand entry): the screen's SOFA box and its
- *  measurement record read again. */
-export function TrendsBox({ patient, bed, nowMs, onWritten }) {
+ *  measurement record read again. `reread` is `{ id, n }`, the screen's word that a write made elsewhere on it (a
+ *  «Düzelt» in the measurement record) landed for patient `id`: the cards read again, as the SOFA box's `reread`. */
+export function TrendsBox({ patient, bed, nowMs, onWritten, reread = null }) {
   const { t } = useI18n();
   const { user } = useSession();
   const board = useBoard();
   // G3-01 (D13, D14): a clinical.chart holder withdraws a hand entry from the big chart's table.
   const canRetract = user?.perms?.includes("clinical.chart") ?? false;
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
+  // Read again after a write made elsewhere on the screen for THIS patient (a withdrawn older value moves no measured
+  // instant). Not on mount, not for one count twice.
+  const seenReread = useRef(reread?.n ?? 0);
+  useEffect(() => {
+    const n = reread?.n ?? 0;
+    if (n === seenReread.current) return;
+    seenReread.current = n;
+    if (reread.id === patient.patient_id) trends.reload();
+  }, [reread?.n]);
   // The id of the card whose big chart is open. Like `editing` it survives a move to another patient (the
   // shell mounts this screen with no `key`), but the chart is read-only and reads for the patient it is given.
   const [open, setOpen] = useState(null);

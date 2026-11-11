@@ -308,6 +308,30 @@ describe("the patient screen", () => {
       expect(api.patientReadings).toHaveBeenLastCalledWith("S-001", 24);
     });
 
+    // G3-05 review: the trend cards are told too when the correction is made in the record box itself — withdrawing an
+    // older value moves no measured instant, so without it the cards (and their deltas) stay stale until the next poll.
+    // The record box reads itself once, not twice.
+    it("reads the trends once more after a «Düzelt» from the record box, and the record box only once", async () => {
+      const { api } = await open({
+        payload: TWO(), perms: CHART,
+        setup: (a) => {
+          a.patientReadings.mockImplementation((pid, hours) => Promise.resolve(readings(pid, hours)));
+          a.retractEntry.mockResolvedValue({ retracted: 421, code: "heart_rate", alerts: [] });
+        },
+      });
+      await press(within(document.querySelector("[data-reading='21']")).getByRole("button", { name: "Düzəlt" }));
+      const correct = screen.getByRole("dialog", { name: "Düzəlt · REA-01 · 2" });
+      fireEvent.change(within(correct).getByLabelText(/^Səbəb/), { target: { value: "yazım hatası, 80 idi" } });
+      await wait(RETRACT_ARM_MS + 50);
+      const trendReads = api.patientTrends.mock.calls.length;
+      const recordReads = api.patientReadings.mock.calls.length;
+      await press(within(correct).getByRole("button", { name: "Düzəlt" }));
+      expect(api.retractEntry).toHaveBeenCalledWith("S-001", 421, "yazım hatası, 80 idi");
+      expect(api.patientTrends.mock.calls.length).toBe(trendReads + 1);
+      expect(api.patientTrends).toHaveBeenLastCalledWith("S-001", 24);
+      expect(api.patientReadings.mock.calls.length).toBe(recordReads + 1);
+    });
+
     it("takes the focus into the saved step when the form gives way to it, instead of dropping it on the page", async () => {
       await saved();
       // The «Yadda saxla» button that had the focus is gone with the form: without a move, it falls to <body>.

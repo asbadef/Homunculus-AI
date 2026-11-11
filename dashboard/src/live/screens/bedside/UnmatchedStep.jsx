@@ -19,8 +19,10 @@
 // THE QUESTION'S PATIENT may leave the board while it is asked (discharged, out of scope): as on the page's own
 // identity step, the step says so and goes back to the list; on a board that is not LIVE the question waits, since
 // that list is old, not empty. A link goes back to the list BEFORE the list is read again, and a rejection holds its
-// dialog until it has been — a second press in between would send a second write. Each view takes the focus when it
-// opens, on its heading, so a keyboard and a screen reader follow the step.
+// dialog until it has been — a second press in between would send a second write. A set the engine has taken is left
+// out of the old answer meanwhile (and if that read fails), so that it cannot be linked a second time; the next answer
+// is the engine's word, whatever it says. Each view takes the focus when it opens, on its heading, so a keyboard and a
+// screen reader follow the step.
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
@@ -82,8 +84,9 @@ function SetFacts({ set, nowMs }) {
   );
 }
 
-/** `onReject(reason)` writes; `onDone()` reads the list again and closes the dialog — resolved, so that the rejected set
- *  leaves the screen together with it; `onClose()` only closes (Cancel, Escape). */
+/** `onReject(reason)` writes; `onDone(taken)` reads the list again and closes the dialog — resolved, so that the rejected
+ *  set leaves the screen together with it — and is told whether the engine took the rejection; `onClose()` only closes
+ *  (Cancel, Escape). */
 function RejectDialog({ set, onReject, onDone, onClose }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -101,9 +104,13 @@ function RejectDialog({ set, onReject, onDone, onClose }) {
     sending.current = true;
     setBusy(true);
     let close = true;
+    let taken = false;
     try {
       const answer = await onReject(reason.trim());
-      if (answer !== null) toast(t("kayit.umRejected", { subject }));
+      if (answer !== null) {
+        taken = true;
+        toast(t("kayit.umRejected", { subject }));
+      }
     } catch (err) {
       if (err?.superseded) close = false;       // its session is gone: nothing is said into the one that replaced it
       else {
@@ -114,7 +121,7 @@ function RejectDialog({ set, onReject, onDone, onClose }) {
     }
     // The guards are held until the list has been read again: a second press in between sends nothing.
     try {
-      if (close) await onDone();
+      if (close) await onDone(taken);
     } finally {
       sending.current = false;
       setBusy(false);
@@ -160,6 +167,19 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
   const board = useBoard();
   const toast = useToast();
   const { sets, phase, error, reload } = useUnmatched();
+  // The sets the engine has just taken (a link, a rejection), left out of the answer they came with until a read
+  // replaces that answer: the old list must not offer a second link on them while the next read is out. `base` is the
+  // answer they were taken from, so a replaced answer (the engine's word) shows whatever it says.
+  const [taken, setTaken] = useState(null);       // { base, ids } | null
+  const latest = useRef(sets);
+  latest.current = sets;
+  const take = (ids) => setTaken((prev) => {
+    const base = latest.current;
+    return { base, ids: prev?.base === base ? [...prev.ids, ...ids] : ids };
+  });
+  const shown = taken && taken.base === sets
+    ? sets.filter((set) => { const ids = idsOf(set); return !(ids.length > 0 && ids.every((id) => taken.ids.includes(id))); })
+    : sets;
   // { name: "list", gone? } | { name: "pick", set } | { name: "confirm", set, id }: `gone` is the notice that the
   // patient chosen to link to left the board, and belongs to the list it was raised for.
   const [view, setView] = useState({ name: "list" });
@@ -193,9 +213,13 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
     sending.current = true;
     setLinking(true);
     const subject = bedOf(target);
+    const ids = idsOf(view.set);
     try {
-      const answer = await board.store.assignReadings(idsOf(view.set), view.id);
-      if (answer !== null) toast(t("kayit.umLinked", { subject }));
+      const answer = await board.store.assignReadings(ids, view.id);
+      if (answer !== null) {
+        take(ids);       // the engine took it: it is not offered again while the list is read
+        toast(t("kayit.umLinked", { subject }));
+      }
     } catch (err) {
       if (!err?.superseded) {
         if (mayHaveLanded(err)) toast(t("kayit.umLinkMayHaveLanded", { subject }), "warn");
@@ -246,11 +270,11 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
         <Announce text={view.gone ? t("olcum.gone") : ""} />
         {error ? <Note tone="warn" icon="alert" className="mb-2">{t("kayit.umReadFailed", { reason: readErrorText(t, error) })}</Note> : null}
         {phase === "loading" ? <p className="m-0 text-13 text-mute">{t("kayit.umReading")}</p> : null}
-        {phase === "known" && sets.length === 0 ? <p className="m-0 text-13 text-mute">{t("kayit.umEmpty")}</p> : null}
-        {sets.length > 0 ? (
+        {phase === "known" && shown.length === 0 ? <p className="m-0 text-13 text-mute">{t("kayit.umEmpty")}</p> : null}
+        {shown.length > 0 ? (
           // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
           <ul role="list" className="m-0 list-none p-0">
-            {sets.map((set) => (
+            {shown.map((set) => (
               <li key={keyOf(set)} data-um-set={set.received_key} className="flex flex-wrap items-center gap-2 border-b border-line py-2.5 last:border-b-0">
                 <span className="min-w-0 flex-1">
                   <SetFacts set={set} nowMs={nowMs} />
@@ -272,7 +296,11 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
           <RejectDialog
             set={rejecting}
             onReject={(reason) => board.store.rejectReadings(idsOf(rejecting), reason)}
-            onDone={async () => { await reload(); setRejecting(null); }}
+            onDone={async (done) => {
+              await reload();
+              if (done) take(idsOf(rejecting));      // the engine took it, whether or not that read answered
+              setRejecting(null);
+            }}
             onClose={() => setRejecting(null)}
           />
         ) : null}
