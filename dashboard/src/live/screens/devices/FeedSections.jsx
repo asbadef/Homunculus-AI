@@ -9,7 +9,7 @@
 import React, { useId } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
-import { Note, StatusPill } from "../../ui/index.js";
+import { Note, StatusPill, useAnnounced } from "../../ui/index.js";
 import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { ageText, maxAgeOf } from "../common/monitor.js";
@@ -60,6 +60,29 @@ const PAST = Object.freeze({
   "cihaz.verdictCollector": "cihaz.pastCollector", "cihaz.verdictNever": "cihaz.pastNever",
   "cihaz.verdictUnknown": "cihaz.pastUnknown",
 });
+
+/** What the screen reader's status says for each verdict, fresh and not: the verdict with no number in it — the
+ *  forwarder's silence without its minutes, «the data flows» without its counts — so it speaks when the state
+ *  changes, never every minute. */
+const STATUS = Object.freeze({
+  flowing: ["cihaz.statusFlowing", "cihaz.statusFlowingPast"],
+  noneSending: ["cihaz.verdictNoneSending", "cihaz.pastNoneSending"],
+  noMonitors: ["cihaz.verdictNoMonitors", "cihaz.pastNoMonitors"],
+  countsUnknown: ["cihaz.verdictCountsUnknown", "cihaz.pastCountsUnknown"],
+  forwarder: ["cihaz.verdictForwarderNoTime", "cihaz.pastForwarderNoTime"],
+  collector: ["cihaz.verdictCollector", "cihaz.pastCollector"],
+  never: ["cihaz.verdictNever", "cihaz.pastNever"],
+  unknown: ["cihaz.verdictUnknown", "cihaz.pastUnknown"],
+});
+
+/** A visually hidden polite status, mounted empty with the sections and filled a moment later (useAnnounced: a
+ *  region mounted with its text is not announced). It holds the verdict and, for an answer that is not fresh,
+ *  «not up to date» — never a minute or a count. */
+function FeedStatus({ t, verdict, fresh }) {
+  const [now, past] = STATUS[verdict.kind] ?? STATUS.unknown;
+  const said = useAnnounced(fresh ? t(now) : `${t("cihaz.statusNotFresh")} · ${t(past)}`);
+  return <div role="status" className="sr-only" data-feed-status>{said}</div>;
+}
 
 /** The answer's own time, «HH:MM», for the marks of an answer that is not fresh; «—» for one with none. */
 const stampText = (data) => {
@@ -194,6 +217,7 @@ export function FeedSections({ shadow, mapping = null }) {
   const none = (key) => (fresh && listing === "rows" ? <p className="m-0 text-13 text-mute">{t(key)}</p> : null);
   return (
     <div className="flex flex-col gap-2.5" data-feed-sections>
+      <FeedStatus t={t} verdict={verdict} fresh={fresh} />
       <Section title={t("cihaz.verdictTitle")}>
         <Verdict t={t} data={data} verdict={verdict} counts={counts} fresh={fresh} />
       </Section>

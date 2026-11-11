@@ -3,7 +3,7 @@
 // the editor and the strips. The screen speaks az (the default). Synthetic devices only (shadow.testutil.js).
 import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
-import { act, cleanup, screen, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { AT, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
@@ -220,6 +220,38 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
   it("draws none of it while the strip is off", async () => {
     await open({ stage: "off" });
     expect(screen.queryByRole("region", { name: "Məlumat gəlirmi?" })).toBeNull();
+  });
+});
+
+/** Let the page's clock run `ms` on while its next poll is out and has not landed (the store asks again, and
+ *  ShadowProvider reads the clock again, on a visibilitychange). Under the display limit the answer stays fresh. */
+async function later(mounted, ms) {
+  mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + ms);
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+}
+
+// A polite status for a screen reader: the verdict and whether the board is fresh, and nothing that ticks — so it
+// speaks when the answer's state changes, not every minute.
+describe("what a screen reader is told", () => {
+  const status = () => document.querySelector("[data-feed-status]");
+
+  it("holds only the verdict and whether the board is fresh — never a minute or a count", async () => {
+    const mounted = await open(WARD);
+    expect(status()).toHaveAttribute("role", "status");
+    expect(status()).toHaveClass("sr-only");
+    await waitFor(() => expect(status()).toHaveTextContent(/^Məlumat axır$/));
+    await later(mounted, 10_000);                                   // still fresh: the durations move on, the status does not
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 250); }); });
+    expect(status()).toHaveTextContent(/^Məlumat axır$/);
+    await later(mounted, 10_000);                                   // 20 s without an answer: no longer fresh
+    await waitFor(() => expect(status()).toHaveTextContent(/^Lövhə yenilənməyib · Son cavabda məlumat axırdı$/));
+    expect(status().textContent).not.toMatch(/\d/);
+  });
+
+  it("names a broken chain's link without its minutes", async () => {
+    await open(withLedger(strip({ feed: { state: "forwarder_silent", last_post_at: before(4.2), last_post_age_s: 252 } })));
+    await waitFor(() => expect(status()).toHaveTextContent(/^Məlumat gəlmir: ötürücü susur$/));
   });
 });
 

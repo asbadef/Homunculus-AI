@@ -62,6 +62,18 @@ describe("the device page's words (cihaz)", () => {
     }
   });
 
+  it("gives the screen reader's status words with no number in them, so it speaks only when the state changes", () => {
+    expect(DICTIONARIES.tr["cihaz.statusFlowing"]).toBe("Veri akıyor");
+    expect(DICTIONARIES.tr["cihaz.statusNotFresh"]).toBe("Pano güncel değil");
+    for (const lang of LANG_CODES) {
+      const d = DICTIONARIES[lang];
+      for (const key of ["cihaz.statusFlowing", "cihaz.statusFlowingPast", "cihaz.statusNotFresh"]) {
+        expect(d[key], `${lang} ${key}`).toBeTruthy();
+        expect(d[key], `${lang} ${key}`).not.toMatch(/[{\d]/);
+      }
+    }
+  });
+
   it("carries a duration as one phrase, in every language", () => {
     for (const lang of LANG_CODES) {
       const d = DICTIONARIES[lang];
