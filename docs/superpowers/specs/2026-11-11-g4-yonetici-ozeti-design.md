@@ -171,3 +171,19 @@ says «yetki yok» instead of a number.
 
 **Gates:** the engine's no-DB suite; the DB tests that touch handovers and tasks, on a throwaway Postgres on
 127.0.0.1:5644x; the whole dashboard suite; `vite build`.
+
+## 5. Amendments (review)
+
+**A1 — a handover's unit is its patients' beds' unit (2026-11-11).**
+- **Why.** `POST /handovers` stored the body's `unit_id` and checked only that it was the hospital's. A nurse granted
+  Reanimasiya could open a handover for her Reanimasiya patient naming Neonatal; `/handovers/pending` then counted it
+  under Neonatal and showed it to Neonatal's readers. Nothing has to be crafted for this: the screen sends the
+  admission's `admitting_unit_id`, which a transfer sets from its own request body (A-12), so it can drift from the bed.
+- **Now.** The server stores the unit of the admissions' beds (bed → room → unit), read by `_reach_admission`, the same
+  read that checks the caller's reach. `/handovers/pending` groups and scopes by that unit.
+- **The body's unit is not refused.** It is still checked to be the hospital's (404, as before). A different unit there
+  is ignored, not refused: a data inconsistency must never stop a nurse from handing over.
+- **More than one unit.** Admissions whose beds lie in more than one unit are refused with 422
+  `field_invalid:admission_ids`. The screen always sends one admission, so only a crafted body meets this.
+- **Older rows.** Handovers opened before this change keep the unit they were opened with; nothing rewrites them. Such a
+  row is counted under that unit until it is countersigned (OUTGOING_SIGNED never expires).
