@@ -13,5 +13,8 @@ _JOINS = ("FROM admissions a JOIN patients p ON p.id = a.patient_id JOIN tenants
 #: `SELECT <columns of a> ` + this + NEWEST_FIRST: the open admission whose card key is `:key`.
 OPEN_ADMISSION_OF_KEY = (_JOINS + " AND (a.protocol_no = :key OR (a.protocol_no IS NULL AND p.patient_number = :key))")
 NEWEST_FIRST = " ORDER BY a.admission_datetime DESC LIMIT 1"
-#: The card key of every open admission of `:tenant`, with the time the stay began.
-OPEN_STAYS = "SELECT COALESCE(a.protocol_no, p.patient_number), a.admission_datetime " + _JOINS
+#: The card key of every open admission of `:tenant`, with the time the stay began. Oldest first: two open legacy
+#: admissions of one patient share a key (its H-number), and a dict built from these rows — the last write wins —
+#: keeps the NEWEST start, as `NEWEST_FIRST` makes `admission_of` answer the newest stay.
+OPEN_STAYS = ("SELECT COALESCE(a.protocol_no, p.patient_number), a.admission_datetime " + _JOINS
+              + " ORDER BY a.admission_datetime")

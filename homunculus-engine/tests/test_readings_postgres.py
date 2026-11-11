@@ -132,6 +132,26 @@ def test_a_legacy_admission_is_found_by_its_h_number(migrated):
         store.close()
 
 
+def test_two_open_legacy_stays_of_one_key_answer_with_the_newest(migrated):
+    """Two open admissions from before 0015 share the patient's H-number: `admission_of` takes the newest, and so
+    must `open_stays` (its dict keeps the last row, so the SQL lists the stays oldest first). Only one admission
+    of a patient may be ACTIVE (uq_one_active_admission_per_patient): the older stay is awaiting discharge, a
+    DRAFT is the new one. The newer is inserted FIRST, so a query with no ORDER BY would keep the older."""
+    with migrated.begin() as conn:
+        tenant = _tenant(conn, "h1")
+        patient = _patient(conn, tenant, "H-0000007")
+        newer = _admission(conn, tenant, patient, "DRAFT", protocol=None, hours_ago=2)
+        older = _admission(conn, tenant, patient, "PENDING_DISCHARGE", protocol=None, hours_ago=30)
+    store = PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        assert store.admission_of("h1", "H-0000007") == newer != older
+        [(key, began)] = store.open_stays("h1").items()
+        assert key == "H-0000007"
+        assert timedelta(minutes=110) < datetime.now(timezone.utc) - began < timedelta(minutes=130)   # `hours_ago=2`
+    finally:
+        store.close()
+
+
 def test_a_closed_admission_is_no_target(migrated):
     with migrated.begin() as conn:
         tenant = _tenant(conn, "h1")

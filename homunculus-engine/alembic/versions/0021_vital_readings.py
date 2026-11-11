@@ -13,12 +13,17 @@ Revision 0021. On its own branch it follows G3-04's 0019; if G4-03 Kalite's 0020
   and «hatalı giriş» names. No name and no free text but two reasons a person typed (≤ 200 characters).
 * Indexes: (tenant, patient_key, observed_at) — the patient screen's box; (admission_id, observed_at) where the
   stay is known — a stay's record; (tenant, received_at) where unmatched — the list; (tenant, entry_id) where
-  set — the withdrawal's mark; UNIQUE (tenant, audit_id) where set — `reconcile` adds nothing twice; UNIQUE
-  (tenant, received_key, code, observed_at, source, value) for device rows — a re-sent reading is recognised (D14).
+  set — the withdrawal's mark; (tenant, id) where a claim (state assigned, no patient yet) — `claims()`, which
+  `reconcile` runs at start and hourly; UNIQUE (tenant, audit_id) where set — `reconcile` adds nothing twice;
+  UNIQUE (tenant, received_key, code, observed_at, source, value) for device rows — a re-sent reading is
+  recognised (D14).
 * `ix_audit_tenant_patient_id` on `audit` (tenant, patient_id, id): the one-patient reads — the withdrawal's
   rebuild, trends, the single-patient task anchor (G3-01's open item O3). `IF NOT EXISTS`, as 0013's index. A
-  plain CREATE INDEX inside the migration's transaction: writes to `audit` wait while it builds, which happens
-  when the API's start command runs `alembic upgrade head`, before it serves.
+  plain CREATE INDEX takes a SHARE lock on `audit`, and Postgres holds it until the transaction commits — not
+  only while the index builds: writes to `audit` wait that long. env.py runs every revision of one `alembic
+  upgrade head` in a single transaction, so on a server that upgrades several revisions at once the lock lasts
+  until the whole `upgrade head` commits. It happens when the API's start command runs `alembic upgrade head`,
+  before it serves.
 
 SCHEMA ONLY: no row is written (D19; `scripts/backfill_vital_readings.py` is the optional step for the patients
 in bed). PURELY ADDITIVE: an image from before this revision serves against it. Downgrade drops the table with
@@ -89,6 +94,8 @@ def upgrade() -> None:
                     postgresql_where=sa.text("state = 'unmatched'"))
     op.create_index("ix_vital_readings_tenant_entry", TABLE, ["tenant", "entry_id"],
                     postgresql_where=sa.text("entry_id IS NOT NULL"))
+    op.create_index("ix_vital_readings_claims", TABLE, ["tenant", "id"],
+                    postgresql_where=sa.text("state = 'assigned' AND patient_key IS NULL"))
     op.create_index("uq_vital_readings_tenant_audit", TABLE, ["tenant", "audit_id"], unique=True,
                     postgresql_where=sa.text("audit_id IS NOT NULL"))
     op.create_index("uq_vital_readings_device", TABLE,
@@ -101,6 +108,7 @@ def downgrade() -> None:
     op.execute(_DROP_AUDIT_INDEX)
     op.drop_index("uq_vital_readings_device", table_name=TABLE)
     op.drop_index("uq_vital_readings_tenant_audit", table_name=TABLE)
+    op.drop_index("ix_vital_readings_claims", table_name=TABLE)
     op.drop_index("ix_vital_readings_tenant_entry", table_name=TABLE)
     op.drop_index("ix_vital_readings_unmatched", table_name=TABLE)
     op.drop_index("ix_vital_readings_admission_observed", table_name=TABLE)

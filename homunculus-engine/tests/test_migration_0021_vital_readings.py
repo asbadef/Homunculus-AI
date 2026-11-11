@@ -1,6 +1,6 @@
 # homunculus-engine/tests/test_migration_0021_vital_readings.py
 """Migration 0021 (G3-05, spec §3, D19, D20) on the real chain (`clean_db`, never `create_all`): the table with
-its checks and its foreign key, the six indexes, the audit index that closes G3-01's O3; schema only — no row is
+its checks and its foreign key, the seven indexes, the audit index that closes G3-01's O3; schema only — no row is
 written; the downgrade drops exactly this, and 0019 → 0021 → 0019 → 0021 runs. Synthetic rows only."""
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ MIGRATION = ENGINE_ROOT / "alembic" / "versions" / "0021_vital_readings.py"
 T0 = datetime(2026, 11, 11, 9, 0, tzinfo=timezone.utc)
 INDEXES = {
     "ix_vital_readings_tenant_patient_observed", "ix_vital_readings_admission_observed",
-    "ix_vital_readings_unmatched", "ix_vital_readings_tenant_entry",
+    "ix_vital_readings_unmatched", "ix_vital_readings_tenant_entry", "ix_vital_readings_claims",
     "uq_vital_readings_tenant_audit", "uq_vital_readings_device",
 }
 INSERT = text(
@@ -84,9 +84,12 @@ def test_the_table_its_indexes_and_the_audit_index(clean_db):
         found = {r[0] for r in conn.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'vital_readings'"))}
         audit = {r[0] for r in conn.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'audit'"))}
         device = conn.execute(text("SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_vital_readings_device'")).scalar_one()
+        claims = conn.execute(text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_vital_readings_claims'")).scalar_one()
         rows = conn.execute(text("SELECT count(*) FROM vital_readings")).scalar_one()
-    assert INDEXES <= found
+    assert found == INDEXES | {"vital_readings_pkey"}                    # the seven, and the primary key: no more
     assert "ix_audit_tenant_patient_id" in audit
+    assert "(tenant, id)" in claims and "state" in claims and "assigned" in claims    # partial: the open claims only
+    assert "patient_key IS NULL" in claims and "UNIQUE" not in claims
     assert "UNIQUE" in device and "(tenant, received_key, code, observed_at, source, value)" in device
     assert "origin" in device and "device" in device                     # partial: the device's rows only
     assert rows == 0                                                     # schema only (D19)

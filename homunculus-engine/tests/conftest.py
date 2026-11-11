@@ -131,6 +131,9 @@ async def db_session():
         pytest.skip("TEST_DATABASE_URL not set.")
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
+        # `vital_readings` (migration 0021) has no model and a foreign key into `admissions`: left behind by a
+        # killed migration test, it would make the `drop_all` below fail on `admissions`.
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS vital_readings")
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)

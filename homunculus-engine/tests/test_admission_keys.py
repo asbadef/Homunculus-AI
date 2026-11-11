@@ -29,3 +29,12 @@ def test_both_stores_read_the_one_fragment():
                                               + admission_keys.NEWEST_FIRST)
     assert readings_postgres.OPEN_STAYS == admission_keys.OPEN_STAYS
     assert admission_keys.OPEN_STAYS.startswith("SELECT COALESCE(a.protocol_no, p.patient_number), a.admission_datetime ")
+
+
+def test_the_stays_come_oldest_first_so_a_shared_key_keeps_the_newest():
+    """Two open legacy admissions of one patient share the H-number as their key: `open_stays` builds a dict
+    from these rows, the last write wins, so the order must end with the newest start (and `admission_of` takes
+    the newest too: NEWEST_FIRST)."""
+    sql = admission_keys.OPEN_STAYS
+    assert sql.endswith(" ORDER BY a.admission_datetime") and "DESC" not in sql
+    assert admission_keys.OPEN_STATES in sql and "t.slug = :tenant" in sql
