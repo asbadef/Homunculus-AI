@@ -1,9 +1,10 @@
-// Test-only: synthetic answers of GET /quality for «Kalite göstergeleri» (G4-03) — the engine's own answer for the
-// synthetic trail of homunculus-engine/tests/test_quality_indicators.py (Reanimasiya, Neonatal, a quiet Kardiyoloji,
-// two unplaced keys), a scoped caller's (Reanimasiya alone), periods with no alarm episode, and a caller who reaches
-// nothing. Every active unit in the caller's reach is listed, a quiet one with zeros (G4-03 review); `units: []` for a
-// scoped caller means her reach is empty. Unit ids and names are the kabul ward's (Kardiyoloji's id is this file's);
-// no patient key, no person and no free text, as the API sends none.
+// Test-only: synthetic answers of GET /quality for «Kalite göstergeleri» (G4-03) — the engine's own answers for the
+// synthetic trail of homunculus-engine/tests/test_quality_indicators.py: `ANSWER` is its `EVERYONE` (Reanimasiya,
+// Neonatal, two unplaced keys; Kardiyoloji closed and quiet, so left out), `WITH_QUIET` the same week with Kardiyoloji
+// open (listed, with its real zeros); then a scoped caller's (Reanimasiya alone), periods with no alarm episode, and a
+// caller who reaches nothing. Every active unit in the caller's reach is listed, a quiet one with zeros (G4-03
+// review); `units: []` for a scoped caller means her reach is empty. Unit ids and names are the kabul ward's
+// (Kardiyoloji's id is this file's); no patient key, no person and no free text, as the API sends none.
 import { NEO, REA } from "../kabul/kabul.testutil.js";
 
 /** A third unit of the ward, active and quiet all week. */
@@ -44,7 +45,6 @@ export const ANSWER = Object.freeze({
   truncated: false, scoped: false,
   coverage: { episodes: 9, placed: 7, unplaced: 2 },
   units: [
-    quiet(KARDIO, "Kardiyoloji"),
     { unit_id: NEO, unit_name: "Neonatal",
       alarms: alarms({ episodes: 1, answered: 1, answered_rate: 1, median_response_sec: 240, p90_response_sec: 240,
         per_kind: [kind("news2", 1, 1, 0, 0, 240)] }),
@@ -70,6 +70,9 @@ export const ANSWER = Object.freeze({
       p90_countersign_sec: 900 }),
   },
 });
+
+/** The same week with Kardiyoloji open: it is listed first (by name), with its real zeros; no sum changes. */
+export const WITH_QUIET = Object.freeze({ ...ANSWER, units: [quiet(KARDIO, "Kardiyoloji"), ...ANSWER.units] });
 
 /** A caller granted Reanimasiya alone: her unit, no unplaced block, the sum of what she got. */
 export const SCOPED = Object.freeze({

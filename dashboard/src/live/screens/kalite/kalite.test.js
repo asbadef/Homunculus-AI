@@ -9,12 +9,14 @@ import { REASON_KEYS as DIALOG_REASON_KEYS } from "../alarms/SnoozeDialog.jsx";
 import {
   REASON_KEYS, TOTAL, UNPLACED, alarmsView, isQualityAnswer, qualityPage, readQuality, selectionOf,
 } from "./kalite.js";
-import { ANSWER, KARDIO, NEO, NOTHING, QUIET, QUIET_SCOPED, REA, SCOPED, alarms } from "./kalite.testutil.js";
+import {
+  ANSWER, KARDIO, NEO, NOTHING, QUIET, QUIET_SCOPED, REA, SCOPED, WITH_QUIET, alarms,
+} from "./kalite.testutil.js";
 
 describe("the answer this page reads", () => {
   it("is the engine's shape — and one malformed figure makes the whole read a failure", () => {
-    for (const answer of [ANSWER, SCOPED, QUIET, QUIET_SCOPED, NOTHING]) expect(isQualityAnswer(answer)).toBe(true);
-    const [, neo] = ANSWER.units;
+    for (const answer of [ANSWER, WITH_QUIET, SCOPED, QUIET, QUIET_SCOPED, NOTHING]) expect(isQualityAnswer(answer)).toBe(true);
+    const [neo] = ANSWER.units;
     const broken = [
       { ...ANSWER, days: 2 }, { ...ANSWER, scoped: undefined }, { ...ANSWER, generated_at: "dün" },
       { ...ANSWER, window_from: null }, { ...ANSWER, coverage: { episodes: 9, placed: 7 } },
@@ -52,17 +54,19 @@ describe("the page", () => {
     expect(qualityPage(noSource(WHY.noRight), 7)).toEqual({ ok: false, why: "noRight" });
   });
 
-  it("draws the units in the answer's order — a quiet one too — then the unplaced row, then the total", () => {
+  it("draws the units in the answer's order, then the unplaced row, then the total", () => {
     const page = qualityPage(okSource(ANSWER), 7);
-    expect(page.rows.map((row) => [row.key, row.name])).toEqual([[KARDIO, "Kardiyoloji"], [NEO, "Neonatal"], [REA, "Reanimasiya"]]);
+    expect(page.rows.map((row) => [row.key, row.name])).toEqual([[NEO, "Neonatal"], [REA, "Reanimasiya"]]);
     expect([page.unplaced.key, page.unplaced.handovers, page.total.key]).toEqual([UNPLACED, null, TOTAL]);
     expect(page).toMatchObject({ ok: true, scoped: false, noReach: false, truncated: false,
       coverage: { episodes: 9, placed: 7, unplaced: 2 },
       generatedAtMs: Date.parse(ANSWER.generated_at), windowFromMs: Date.parse(ANSWER.window_from) });
   });
 
-  it("gives a quiet unit its real zeros: counts 0, no rate and no median", () => {
-    const [kardio] = qualityPage(okSource(ANSWER), 7).rows;
+  it("lists a quiet unit in its place, with its real zeros: counts 0, no rate and no median", () => {
+    const { rows } = qualityPage(okSource(WITH_QUIET), 7);
+    expect(rows.map((row) => row.key)).toEqual([KARDIO, NEO, REA]);
+    const [kardio] = rows;
     expect(kardio.alarms).toMatchObject({ episodes: 0, settled: 0, pct: null, median: null, p90: null, unanswered: 0 });
     expect(kardio.handovers).toEqual({ opened: 0, countersigned: 0, waiting: 0, expired: 0, median: null, p90: null });
     expect([kardio.snoozes.count, kardio.rrt]).toEqual([0, 0]);
@@ -70,12 +74,14 @@ describe("the page", () => {
 
   it("knows an empty reach from quiet units: only a scoped answer with no unit at all is one", () => {
     expect(qualityPage(okSource(NOTHING), 7).noReach).toBe(true);
-    for (const answer of [ANSWER, SCOPED, QUIET, QUIET_SCOPED]) expect(qualityPage(okSource(answer), 7).noReach).toBe(false);
+    for (const answer of [ANSWER, WITH_QUIET, SCOPED, QUIET, QUIET_SCOPED]) {
+      expect(qualityPage(okSource(answer), 7).noReach).toBe(false);
+    }
     expect(qualityPage(okSource({ ...QUIET, units: [] }), 7).noReach).toBe(false);   // unrestricted: the unplaced row stays
   });
 
   it("gives a row's figures: a whole percent, minutes and seconds, the self-resolved apart", () => {
-    const rea = qualityPage(okSource(ANSWER), 7).rows[2];
+    const rea = qualityPage(okSource(ANSWER), 7).rows[1];
     expect(rea.alarms).toMatchObject({ episodes: 6, answered: 3, settled: 5, pct: 60, median: { m: 3, s: 0 },
       p90: { m: 10, s: 0 }, escalated: 1, unanswered: 2, selfResolved: 1, pending: 1 });
     expect(rea.alarms.perKind[1]).toEqual({ kind: "spo2_low", episodes: 2, answered: 0, escalated: 0, unanswered: 2, median: null });

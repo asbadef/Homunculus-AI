@@ -1,5 +1,5 @@
 // KaliteScreen.test.jsx — «Keyfiyyət göstəriciləri» (G4-03, spec D5): one h1 and no patient anywhere; the coverage line;
-// the cards; the units table with a quiet unit's zeros, «Şöbəsi bəlli olmayan» and «Cəmi»; a unit selected by its name;
+// the cards; the units table, a quiet unit with its zeros, «Şöbəsi bəlli olmayan» and «Cəmi»; a unit selected by its name;
 // the snooze reasons and the alarms by kind for the selection; the period switch, the newest read winning, «Yenilə»; a
 // truncated read; a period with no alarm episode; a scoped caller, a quiet one and one who reaches nothing; reading,
 // 403, a failure, a malformed answer and another period's answer, each with its reason. The default language is az;
@@ -12,7 +12,7 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
 import { KaliteScreen } from "./KaliteScreen.jsx";
-import { ANSWER, NOTHING, QUIET, QUIET_SCOPED, SCOPED, deferred } from "./kalite.testutil.js";
+import { ANSWER, NOTHING, QUIET, QUIET_SCOPED, SCOPED, WITH_QUIET, deferred } from "./kalite.testutil.js";
 
 afterEach(() => { cleanup(); localStorage.clear(); });
 
@@ -71,16 +71,22 @@ describe("the quality page", () => {
     expect(value("Təhvilin əks-imza müddəti (median)")).toBe("5 dəq 0 san");
   });
 
-  it("draws a row per unit — a quiet one with its zeros — then «Şöbəsi bəlli olmayan», then «Cəmi»", async () => {
+  it("draws a row per unit, then «Şöbəsi bəlli olmayan», then «Cəmi»", async () => {
     await mountKalite();
     expect(rows()).toEqual([
-      ["Kardiyoloji", ...QUIET_ROW],
       ["Neonatal", "1", "4 dəq 0 san", "4 dəq 0 san", "100%", "0", "0 (0)", "1", "0", "1 / 1 / 0", "1 dəq 0 san"],
       ["Reanimasiya", "6", "3 dəq 0 san", "10 dəq 0 san", "60%", "1", "2 (1)", "2", "1", "6 / 2 / 1", "10 dəq 0 san"],
       // Every handover has a unit: the unplaced row's two handover cells are «—», never a 0 or a blank.
       ["Şöbəsi bəlli olmayan", "2", "1 dəq 0 san", "1 dəq 0 san", "50%", "0", "1 (0)", "1", "1", "—", "—"],
       ["Cəmi", "9", "3 dəq 0 san", "4 dəq 0 san", "63%", "1", "3 (1)", "4", "2", "7 / 3 / 1", "5 dəq 0 san"],
     ]);
+  });
+
+  it("lists a quiet unit in its place, with its real zeros — and the coverage line does not change", async () => {
+    await mountKalite({ setup: (api) => api.qualityIndicators.mockResolvedValue(WITH_QUIET) });
+    expect(rows().map((row) => row[0])).toEqual(["Kardiyoloji", "Neonatal", "Reanimasiya", "Şöbəsi bəlli olmayan", "Cəmi"]);
+    expect(rows()[0]).toEqual(["Kardiyoloji", ...QUIET_ROW]);
+    expect(coverage()).toHaveTextContent("Bu dövrdə 9 siqnal epizodundan 7 ədədi şöbəyə bağlana bildi.");
   });
 
   it("selects a unit by its name: the snooze reasons gain its column, the kinds are its own", async () => {
@@ -176,7 +182,7 @@ describe("the period switch and «Yenilə»", () => {
 
   it("a «Yenilə» that fails after an answer keeps nothing of it: «— oxunmadı», and no unit row", async () => {
     const { api } = await mountKalite();
-    expect(rows()).toHaveLength(5);
+    expect(rows()).toHaveLength(4);
     api.qualityIndicators.mockRejectedValue(refusal(503, "down"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenilə" })); });
     await settle();
@@ -234,7 +240,7 @@ describe("every number is real or says why not", () => {
     expect(value("RRT çağırışı")).toBe("— oxunmadı");
     cleanup();
     await mountKalite({ setup: (api) => api.qualityIndicators.mockResolvedValue(
-      { ...ANSWER, units: [{ ...ANSWER.units[1], rrt: { count: "1" } }] }) });
+      { ...ANSWER, units: [{ ...ANSWER.units[0], rrt: { count: "1" } }] }) });
     expect(document.querySelector("[data-failed]").textContent).toMatch(/Keyfiyyət göstəriciləri oxunmadı\.$/);
     expect(value("RRT çağırışı")).toBe("— oxunmadı");
   });
