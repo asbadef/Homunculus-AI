@@ -30,11 +30,12 @@ SPEC_KEYS = {
     "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
     "summary.view",       # G4-02 Yönetici özeti (spec D2, D3): the page, GET /handovers/pending
     "pharmacy.view",      # G3-04 Eczane (spec D2): the page, GET /pharmacy
+    "tres.manage",        # TRƏS-01 (spec D23): Yönetim › TRƏS, every /admin/tres/* route
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_eight_keys():
-    assert len(SPEC_KEYS) == 28
+def test_the_catalogue_is_exactly_the_specified_twenty_nine_keys():
+    assert len(SPEC_KEYS) == 29
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -252,4 +253,16 @@ def test_the_pharmacy_page_is_the_pharmacists_and_the_physicians_by_default():
     assert holders == {"hospital_admin", "pharmacist", "attending", "unit_physician", "physician"}
     assert PERMISSIONS["pharmacy.view"].startswith("Open the Eczane page")
     assert PERMISSIONS["pharmacy.view"].endswith("read-only")
-    assert list(PERMISSIONS)[-1] == "pharmacy.view"          # appended after summary.view: the mirrors' order
+    keys = list(PERMISSIONS)
+    assert keys[keys.index("summary.view") + 1] == "pharmacy.view"   # appended after summary.view: the mirrors' order
+
+
+def test_the_national_feed_is_the_system_administrators_alone_by_default():
+    """TRƏS-01 (spec D23): `tres.manage` is in no default group; the system group holds it by rule (it
+    holds the whole catalogue at token issuance), so no migration seeds it — as `summary.view`. A
+    hospital can give it to another group later on the Roles screen."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "tres.manage" in g["permissions"]}
+    assert holders == {"hospital_admin"}
+    assert PERMISSIONS["tres.manage"].startswith("Open Yönetim › TRƏS")
+    keys = list(PERMISSIONS)
+    assert keys[keys.index("pharmacy.view") + 1] == "tres.manage"    # appended after pharmacy.view: the mirrors' order

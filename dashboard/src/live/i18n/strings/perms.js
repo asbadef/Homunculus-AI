@@ -57,6 +57,8 @@ export default {
     summary: { view: "Yönetici özetini görür" },
     // G3-04 — Eczane
     pharmacy: { view: "“Eczane” sayfasını açar: kendi birimlerindeki hastaların vazopresörlerini, antibiyotik süresini, kreatininini ve günün sıvı dengesini salt okunur görür" },
+    // TRƏS-01 — the national e-health feed
+    tres: { manage: "Ulusal e-sağlık gönderimini (TRƏS) yönetir: ayarlar, hesap ve gönderim kayıtları" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -100,6 +102,8 @@ export default {
     summary: { view: "Rəhbər xülasəsini görür" },
     // G3-04 — Eczane
     pharmacy: { view: "“Aptek” səhifəsini açır: öz şöbələrindəki xəstələrin vazopressorlarını, antibiotik müddətini, kreatininini və günün maye balansını yalnız oxumaq üçün görür" },
+    // TRƏS-01 — the national e-health feed
+    tres: { manage: "Milli e-səhiyyə göndərişini (TRƏS) idarə edir: ayarlar, hesab və göndəriş qeydləri" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -143,6 +147,8 @@ export default {
     summary: { view: "Видит сводку для руководства" },
     // G3-04 — Eczane
     pharmacy: { view: "Открывает страницу «Аптека»: видит вазопрессоры, срок для антибиотика, креатинин и суточный баланс жидкости пациентов своих отделений — только чтение" },
+    // TRƏS-01 — the national e-health feed
+    tres: { manage: "Управляет передачей в национальную систему э-здравоохранения (TRƏS): настройки, учётная запись и журнал отправок" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -186,5 +192,7 @@ export default {
     summary: { view: "See the management summary" },
     // G3-04 — Eczane
     pharmacy: { view: "Open the “Pharmacy” page: see the vasopressors, the antibiotic window, creatinine and the day's fluid balance of the patients in one's own units, read-only" },
+    // TRƏS-01 — the national e-health feed
+    tres: { manage: "Manage the national e-health feed (TRƏS): its settings, its account and its delivery records" },
   },
 };

@@ -80,6 +80,12 @@ PERMISSIONS: dict[str, str] = {
     # and the physician groups; migration 0019 gives it to the tenants seeded before it.
     "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the "
                      "antibiotic clock, creatinine and the day's fluid balance; read-only",
+
+    # TRƏS-01 — the national e-health feed (spec D23): Yönetim › TRƏS and every /admin/tres/* route.
+    # In no default group: the system group holds it by rule, so no migration writes a row for it; a
+    # hospital may give it to another group on the Roles screen.
+    "tres.manage": "Open Yönetim › TRƏS: the national e-health feed's settings, its account and its "
+                   "delivery ledger (every /admin/tres/* route)",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)

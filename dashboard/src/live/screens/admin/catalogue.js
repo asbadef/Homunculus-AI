@@ -47,6 +47,10 @@ export const PERMISSION_KEYS = freeze([
 
   // G3-04 — Eczane (spec D2): the pharmacist's ward page and GET /pharmacy; the pharmacist and the physician groups
   "pharmacy.view",
+
+  // TRƏS-01 — the national e-health feed (spec D23): Yönetim › TRƏS and every /admin/tres/* route; in no default
+  // group, the system one holds it by rule
+  "tres.manage",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the
