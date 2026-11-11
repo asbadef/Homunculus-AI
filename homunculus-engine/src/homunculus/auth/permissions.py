@@ -70,6 +70,11 @@ PERMISSIONS: dict[str, str] = {
     # measurement for one interval with a reason.
     "tasks.view": "Open the Görevlerim queue and read the ward's tasks in one's own units",
     "tasks.manage": "Write, claim, close or skip a task; skip one vital measurement with a reason",
+
+    # G4-02 — Yönetici özeti (spec D2, D3): the hospital at a glance. In no default group: the system
+    # group holds it by rule, so no migration; a hospital may give it to another group on the Roles screen.
+    "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a "
+                    "countersignature (GET /handovers/pending), as counts and times only",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
