@@ -10,8 +10,9 @@ import { normId } from "../../data/structure.js";
 import { readErrorText } from "../../apiErrors.js";
 import { Button, Modal } from "../../ui/index.js";
 
-/** `bedId`, `bed` ("label · room · unit"); `onCancel` sends nothing, `onConfirm` sends with the flag. */
-export function ReservedAsk({ bedId, bed, onCancel, onConfirm }) {
+/** `bedId`, `bed` ("label · room · unit"); `onCancel` sends nothing, `onConfirm` sends with the flag.
+ *  `confirmKey` words the yes: the admission's by default, the transfer's from its dialog (G2-B1b, X6). */
+export function ReservedAsk({ bedId, bed, onCancel, onConfirm, confirmKey = "kabul.reservedAsk.confirm" }) {
   const { t } = useI18n();
   const { store } = useSession();
   const [note, setNote] = useState({ phase: "loading" });
@@ -37,7 +38,7 @@ export function ReservedAsk({ bedId, bed, onCancel, onConfirm }) {
       actions={(
         <>
           <Button onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button variant="primary" icon="ok" busy={note.phase === "loading"} onClick={onConfirm}>{t("kabul.reservedAsk.confirm")}</Button>
+          <Button variant="primary" icon="ok" busy={note.phase === "loading"} onClick={onConfirm}>{t(confirmKey)}</Button>
         </>
       )}>
       <p className="m-0 mb-2 text-14">{t("kabul.reservedAsk.body")}</p>
