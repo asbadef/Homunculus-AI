@@ -56,8 +56,8 @@ from homunculus.api.identity import Caller, bounded_role
 from homunculus.api.infinity_device_beds import DeviceBedSource, TableFile
 from homunculus.api.infinity_rules import ShadowLane
 from homunculus.api.infinity_shadow import (
-    MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
-    TooSoon, board_view,
+    MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, FeedLedger, ShadowRejected, ShadowSettings,
+    ShadowStore, TooSoon, board_view, reported_sources,
 )
 from homunculus.api.monitor_samples import InMemorySamples, SampleStore, is_missing_table, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
@@ -423,6 +423,9 @@ def create_app(
     # read right here, so its version and sha256 (or why it failed) are in the start-up log.
     shadow = shadow if shadow is not None else ShadowSettings()
     shadow_store = ShadowStore(clock=shadow_clock, monotonic=shadow_monotonic)
+    # G4-01 (spec 2026-11-11 D2): when the lane last saw each monitor and channel — memory only, beside the
+    # store and fed from what it shows; it changes nothing the store keeps or the shadow engine reads.
+    shadow_ledger = FeedLedger(clock=shadow_clock, monotonic=shadow_monotonic)
     shadow_table = device_beds if device_beds is not None else TableFile(shadow.table_path, clock=time.monotonic)
     shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
 
@@ -873,6 +876,7 @@ def create_app(
     app.state.tasks = tasks                         # G3-02
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
+    app.state.shadow_ledger = shadow_ledger         # G4-01
     app.state.shadow_lane = lane
     # G2-ESLEME (the monitor→bed editor, devicebeds/router.py): the lane's settings and clock, so the
     # editor answers only while this strip runs for its hospital (spec D15), and the table's
@@ -1867,14 +1871,25 @@ def create_app(
                 raise HTTPException(status_code=413, detail={"reason": "too_large"})
             raw.extend(chunk)
         try:
-            result = shadow_store.ingest(json.loads(raw))
+            parsed = json.loads(raw)
+            result = shadow_store.ingest(parsed)
         except TooSoon:
             raise HTTPException(status_code=429, detail={"reason": "too_soon"}) from None
         except (ShadowRejected, ValueError, RecursionError):
             raise HTTPException(status_code=400, detail={"reason": "rejected"}) from None
+        _note_seen(parsed)
         if shadow.rules:
             await _sample_and_publish()
         return result
+
+    def _note_seen(body: dict) -> None:
+        """G4-01 (D2): the ledger notes what the store now shows for the devices this accepted body
+        listed. Display memory only: a failure here is logged and never refuses the body, which the
+        store has already taken."""
+        try:
+            shadow_ledger.observe(shadow_store.devices(), reported_sources(body))
+        except Exception:                      # noqa: BLE001 — the body is accepted; the page only loses a time
+            log.exception("G4-01: the device ledger could not note a shadow body")
 
     async def _sample_and_publish() -> None:
         """Aşama B (D4, D5): one sampling pass per accepted body, then a frame per patient whose
@@ -1953,7 +1968,9 @@ def create_app(
             # with neither id is the board's unresolved bed, visible only unrestricted.
             visible=lambda card: manager or _at(card, ""),
             patient_visible=lambda card: _at(card, "") and _at(card, card["patient_id"]),
-            show_unassigned=scope.unrestricted or manager, now=now)
+            show_unassigned=scope.unrestricted or manager, now=now,
+            # G4-01 (D3): the last-seen ledger, on the cards this caller is shown and nowhere else.
+            ledger=shadow_ledger.view())
         if shadow.rules:
             # Aşama B: the running stage (`board_view` answers "shadow", the strip it builds), and
             # the shadow engine's word for the device screen — «gölge motor: hata» while failing.
