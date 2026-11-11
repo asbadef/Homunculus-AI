@@ -62,8 +62,8 @@ Guard `quality.view`. `days` is one of 1, 7, 30 (422 otherwise). `days=1` is the
 
 **Reading:**
 1. The audit trail of the caller's hospital since `now − days`, the newest rows first, capped as `/alarm-quality` is
-   (`ALARM_QUALITY_LIMIT_MAX`), for the event types `EPISODE_KINDS ∪ {alert_snooze, rrt_call}`; `truncated` when the
-   cap was hit.
+   (`ALARM_QUALITY_LIMIT_MAX`), for the event types `EPISODE_READ_KINDS ∪ {alert_snooze, rrt_call}` — the episode
+   kinds but `alert` (A2); `truncated` when the cap was hit.
 2. Episodes with the existing `build_episodes` (no change to its rules).
 3. **The key → unit map** (`quality.units_of_keys`): for the keys seen, the caller tenant's admissions whose
    `protocol_no` is the key, or (legacy) whose patient's `patient_number` is the key and whose `protocol_no` is null;
@@ -76,13 +76,14 @@ Guard `quality.view`. `days` is one of 1, 7, 30 (422 otherwise). `days=1` is the
 ```
 { days, generated_at, window_from, truncated,
   coverage: { episodes, placed, unplaced },                       # how many alarm episodes could be tied to a unit
-  units: [ { unit_id, unit_name, alarms, snoozes, rrt, handovers } ],   # by unit name, units with nothing left out
+  units: [ { unit_id, unit_name, alarms, snoozes, rrt, handovers } ],   # by unit name; every open unit reached (A3)
   unplaced: { alarms, snoozes, rrt } | null,                       # only for an unrestricted caller
   hospital: { alarms, snoozes, rrt, handovers } }                  # the sum the caller may see
 ```
 - **`alarms`**: `episodes`, `answered`, `answered_rate` (null when nothing settled), `median_response_sec`,
-  `p90_response_sec`, `escalated`, `unanswered`, **`unanswered_resolved`** (unanswered episodes whose alarm cleared by
-  itself: `resolved_at` set, never answered — a subset of `unanswered`, new and additive), `pending`, `per_kind`
+  `p90_response_sec`, `escalated`, `unanswered`, **`unanswered_resolved`** (settled unanswered episodes whose rule
+  stopped by itself: an `alert_cleared` row with reason `resolved`, never answered — a subset of `unanswered`, new and
+  additive; A1), `pending`, `per_kind`
   (kind → episodes, answered, escalated, unanswered, median). Same rules as `/alarm-quality`'s `summarise`; computed per
   group.
 - **`snoozes`**: `count`, `by_reason` (the five codes → count), `by_severity` (high, moderate → count),
@@ -99,9 +100,10 @@ Guard `quality.view`. `days` is one of 1, 7, 30 (422 otherwise). `days=1` is the
   bed, not its unit); no `unplaced` row; `hospital` sums only what they got; `coverage` counts only their units' and
   says so through a `scoped: true` flag.
 - A caller who reaches nothing gets empty `units`, and `hospital` with zeros, `scoped: true` — the page says
-  «kapsamınızda birim yok».
+  «kapsamınızda birim yok». A scope that cannot be read is a 503, never an empty reach (A4).
 
-**Additive change to `/alarm-quality`:** its `summarise` also returns `unanswered_resolved`. No existing field changes.
+**Change to `/alarm-quality`:** its `summarise` also returns `unanswered_resolved`; it no longer reads `alert` rows and
+no longer sends `repeats`, top level or per kind (A2). No other field changes.
 
 **Route tables:** `test_route_permissions` EXPECTED + 1; the tenant-isolation rule; nginx access-log map
 `~^/quality$ $uri;` if needed by the map's rules, and the proxied paths list (`quality` prefix).
@@ -166,3 +168,24 @@ downgrade deletes it). Its `down_revision` is the head of main when it lands: `0
 
 **Gates:** the engine's no-DB suite; the DB tests that touch quality, handovers, admissions and the migration, on a
 throwaway Postgres on 127.0.0.1:5644x; the whole dashboard suite; `vite build`.
+
+## 5. Amendments (review, 2026-11-11)
+
+- **A1 — `unanswered_resolved` is the alarms whose rule stopped, nothing else.** It counts the settled unanswered
+  episodes that an `alert_cleared` row with reason `resolved` closed (`Episode.self_resolved`). A discharge or an
+  «entered in error» («hatalı giriş») close also sets `resolved_at` and is not counted: the patient left, or the value
+  was withdrawn — the alarm did not clear by itself. A latched critical nobody answered does count: its rule stopped.
+  A pending episode is not counted. Owner's decision: «Yalnız kural durduysa». D4's bullet says so.
+- **A2 — neither `/quality` nor `/alarm-quality` reads `alert` rows; `repeats` is gone.** The engine writes an `alert`
+  row for every active alert on every ingest. Read, they filled the 20 000-row cap within hours: «7 gün» and «30 gün»
+  came back truncated to the last hours, and an episode whose `first_seen` fell past the cut vanished from the counts.
+  All they fed was `repeats`, which no screen shows. Both routes read `EPISODE_READ_KINDS` (`EPISODE_KINDS` but
+  `alert`); `build_episodes` still accepts `alert` rows (as repeats, never as episodes). `/alarm-quality` no longer
+  sends `repeats`, top level or per kind — it would always be 0. `/quality` never sent it.
+- **A3 — every open unit the caller reaches is a row.** All of the tenant's active units for an unrestricted caller,
+  her unit-granted ones for a scoped caller, each with real zeros when nothing happened in it in the window. A closed
+  unit (`is_active` false) is a row only when something happened in it in the window. So `units: []` means the reach
+  is empty, and «kapsamınızda birim yok» is never said of units that were merely quiet.
+- **A4 — a scope that cannot be read is a 503.** As on `/alarm-quality` (G2-A2, D13): `/quality` answers 503 «kapsam
+  şu anda okunamıyor» when the caller's scope cannot be read, never an empty reach the page would word as «kapsamınızda
+  birim yok». The order stays: 403 without `quality.view`, then 422 for another `days`, then the 503s.
