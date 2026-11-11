@@ -54,6 +54,8 @@ const EczaneScreen = lazyScreen(() => import("../screens/eczane/EczaneScreen.jsx
 
 const OzetScreen = lazyScreen(() => import("../screens/ozet/OzetScreen.jsx"), "OzetScreen"); // G4-02
 
+const KaliteScreen = lazyScreen(() => import("../screens/kalite/KaliteScreen.jsx"), "KaliteScreen"); // G4-03
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -89,6 +91,8 @@ const SCREENS = Object.freeze({
   eczane: EczaneScreen, // G3-04 — «Eczane»: the pharmacist's ward page — vasopressors, the antibiotic clock, creatinine, fluids
 
   ozet: OzetScreen, // G4-02 — «Yönetici özeti»: the cards, alarm quality, the units as of now; no patient
+
+  kalite: KaliteScreen, // G4-03 — «Kalite göstergeleri»: per unit, alarm response, snoozes, RRT, handovers; no patient
 
   settings: SettingsScreen,
 });
@@ -167,6 +171,12 @@ export const ROUTES = Object.freeze([
   // screen, so nobody's home moves.
   route({ id: "ozet", path: "/ozet", icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort",
     perms: ["summary.view"], work: false, nav: "main" }),
+
+  // G4-03 (spec D3) — «Kalite göstergeleri»: for whoever holds `quality.view` — the auditor group by default (migration
+  // 0020), the system administrator by rule, any group a hospital gives it. A work screen: a hospital's own quality
+  // group, given this key alone, signs in to it. After the management summary, so nobody's home moves.
+  route({ id: "kalite", path: "/kalite", icon: "star", labelKey: "kalite.nav", shortKey: "kalite.navShort",
+    perms: ["quality.view"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),
