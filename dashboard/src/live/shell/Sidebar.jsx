@@ -14,9 +14,14 @@
 // The alarms entry carries the count of unanswered alarms, under the same rule as the bell: a
 // number only from a LIVE board. The RRT entry (G2-B5, spec D7) carries the open calls under the
 // same rule, in its own words.
+//
+// G3-05 (D17): the «Yatak başı ölçüm» entry carries how many unmatched readings wait — the shell's own read
+// (data/UnmatchedProvider.jsx), not the board's — in a NEUTRAL tone: it is work waiting, not an alarm. A number only
+// from a read that succeeded; nothing at all otherwise.
 import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
+import { useUnmatched } from "../data/UnmatchedProvider.jsx";
 import { waitingAlarms } from "../data/boardStore.js";
 import { useSnoozeClock } from "../data/useSnoozeClock.js";
 import { rrtQueue } from "../screens/rrt/rrt.js";
@@ -77,6 +82,19 @@ function Badge({ badge }) {
   return null;
 }
 
+/** G3-05 (D17): the waiting unmatched sets, on the bedside page's entry. Neutral: no alarm colour. */
+function UnmatchedBadge() {
+  const { t } = useI18n();
+  const { count } = useUnmatched();
+  if (!count) return null;
+  return (
+    <>
+      <span aria-hidden="true" data-rail-badge="unmatched" className="absolute right-1 top-1 min-w-[16px] rounded-full border border-line bg-card2 px-1 font-text text-10 font-bold leading-[14px] text-ink">{count}</span>
+      <span className="sr-only">{` · ${t("kayit.badgeCount", { count })}`}</span>
+    </>
+  );
+}
+
 function RailLink({ route, current }) {
   const { t } = useI18n();
   const on = route.id === current;
@@ -91,6 +109,7 @@ function RailLink({ route, current }) {
         <span className="max-[640px]:hidden">{t(route.labelKey)}</span>
         <span className="hidden text-10 max-[640px]:block">{t(route.shortKey)}</span>
         <RailBadge routeId={route.id} />
+        {route.id === "olcum" ? <UnmatchedBadge /> : null}
       </a>
     </li>
   );

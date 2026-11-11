@@ -29,6 +29,7 @@ import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js"
 import { isChunkFailure, retryFailedScreens } from "./lazyScreen.js";
 import { ShellProvider } from "./ShellContext.jsx";
 import { StructureProvider } from "../data/StructureProvider.jsx";   // G2-B1a
+import { UnmatchedProvider } from "../data/UnmatchedProvider.jsx";   // G3-05
 import { Sidebar } from "./Sidebar.jsx";
 import { TopBar } from "./TopBar.jsx";
 
@@ -235,6 +236,8 @@ export function Shell({ resume = "" }) {
     <ShellProvider units={units} scope={scopeState}>
       {/* G2-B1a: the ward's units and beds by name, for the top bar and every screen. */}
       <StructureProvider>
+      {/* G3-05: the unmatched readings, read once for the rail's badge and the bedside page's step. */}
+      <UnmatchedProvider>
       <div className="grid h-full grid-cols-[86px_minmax(0,1fr)] bg-page font-text text-14.5 text-ink max-[640px]:grid-cols-[62px_minmax(0,1fr)]">
         <a
           href="#main"
@@ -263,6 +266,7 @@ export function Shell({ resume = "" }) {
         </div>
         {secondsLeft !== null ? <IdleWarning seconds={secondsLeft} onStay={stay} titleKey="shell.idle" spokenKey="shell.idleSpoken" /> : null}
       </div>
+      </UnmatchedProvider>
       </StructureProvider>
     </ShellProvider>
   );

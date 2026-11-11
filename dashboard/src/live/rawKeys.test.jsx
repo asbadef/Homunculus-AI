@@ -49,6 +49,7 @@ import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from 
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 import { readings } from "./screens/patient/readings/readings.testutil.js"; // G3-05
+import { unmatched } from "./screens/bedside/unmatched.testutil.js"; // G3-05
 import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
@@ -313,6 +314,7 @@ async function openAt(path, extra) {
       // G3-05: the patient screen's «Ölçüm kaydı» box — a hand entry, a device round with a withdrawn value and a
       // late arrival, so the sweep meets both sources, the struck value and «alındı».
       api.patientReadings.mockImplementation((pid, hours) => Promise.resolve(readings(pid, hours)));
+      api.unmatchedReadings.mockResolvedValue(unmatched());   // … and the bedside page's «Eşleşmeyen ölçümler» count
 
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));

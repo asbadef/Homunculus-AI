@@ -19,6 +19,10 @@
 // with it. The notice lives in the step it was raised for, and is spoken as well as shown. Each step takes the
 // focus when it opens, so a keyboard and a screen reader follow the page.
 //
+// «EŞLEŞMEYEN ÖLÇÜMLER» (G3-05, D17) is a step of this page too: a button on the first step — with how many sets
+// wait — opens the list (UnmatchedStep.jsx), which reuses this page's patient list and identity question
+// (PickSteps.jsx) before it links a reading. No route and no chunk of its own.
+//
 // THE ORDER is the beds screen's (`orderBeds`: by unit, a card the bed table does not place last, numbers as
 // numbers). The AGE of an infant is years, months and days (`ageOf`, `kabul.age`), the admission form's: whole
 // years print «0 yaşında» for every baby on a NICU round.
@@ -26,97 +30,28 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
+import { useUnmatched } from "../../data/UnmatchedProvider.jsx";   // G3-05
 import { Announce, Box, Button, Note, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
-import { BoardStrip, ScopeNote, boardKnown, nameOf, useBoardNow } from "../common/BoardState.jsx";
-import { bedNameOf, orderBeds } from "../beds/order.js";
-import { ageOf } from "../kabul/admitForm.js";
+import { BoardStrip, ScopeNote, boardKnown, useBoardNow } from "../common/BoardState.jsx";
+import { orderBeds } from "../beds/order.js";
+// G3-05: the patient list and the identity question live in PickSteps.jsx now — the «Eşleşmeyen ölçümler» step
+// (UnmatchedStep.jsx) asks the same question before it links a reading.
+import { IdentityStep, PickList, bedOf } from "./PickSteps.jsx";
 import { SavedStep } from "./SavedStep.jsx";
+import { UnmatchedStep } from "./UnmatchedStep.jsx";
 import { VitalsForm } from "./VitalsForm.jsx";
-import { birthYearOf, lastMeasuredMs } from "./vitalsFields.js";
 
 const TICK_MS = 30_000;
-const bedOf = bedNameOf;
-
-/** The board's day (YYYY-MM-DD, local, from the server-corrected clock): what `ageOf` counts to. */
-const dayOf = (ms) => {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-
-/** «56 yaşında»; an infant under a year, «0 yaş 2 ay 5 gün». null for an age the board does not have. */
-function ageLine(t, patient, nowMs) {
-  if (!Number.isInteger(patient.age)) return null;
-  if (patient.age === 0) {
-    const exact = ageOf(String(patient.birthDate ?? "").slice(0, 10), dayOf(nowMs));
-    if (exact) return t("kabul.age", exact);
-  }
-  return t("olcum.pickAge", { years: patient.age });
-}
-
-/** `known`: the board may be spoken of as current (LIVE). An empty list on any other board is no statement
- *  about the ward — the strip above says why — so «yatan xəstə yoxdur» is not written under it. */
-function PickList({ patients, nowMs, known, onPick }) {
-  const { t } = useI18n();
-  if (patients.length === 0) return known ? <Note tone="info" icon="bed">{t("olcum.pickEmpty")}</Note> : null;
-  return (
-    // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
-    <ul role="list" className="m-0 grid list-none gap-2 p-0 min-[640px]:grid-cols-2">
-      {patients.map((p) => {
-        const last = lastMeasuredMs(p);
-        const facts = [
-          ageLine(t, p, nowMs),
-          last !== null ? t("olcum.pickLast", { time: dayStamp(last, nowMs) }) : t("olcum.pickNone"),
-        ].filter(Boolean);
-        return (
-          <li key={p.patient_id}>
-            <button
-              type="button" data-pick={p.patient_id} onClick={() => onPick(p)}
-              className={`block w-full rounded-box border border-line bg-card px-4 py-3 text-left ${FOCUS_RING}`}
-            >
-              <b className="block font-data text-17 font-bold text-ink">{bedOf(p)}</b>
-              <span className={`block text-14.5 ${p.display_name ? "text-ink" : "italic text-mute"}`}>{nameOf(p, t)}</span>
-              <span className="mt-1 block text-12 text-mute">{facts.join(" · ")}</span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function IdentityStep({ patient, onYes, onNo }) {
-  const { t } = useI18n();
-  const year = birthYearOf(patient.birthDate);
-  const term = "font-semibold text-mute";
-  return (
-    <Box title={t("olcum.identityTitle")} icon="user" level={2}>
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-14.5">
-        <dt className={term}>{t("olcum.identityName")}</dt>
-        <dd className={`m-0 font-bold ${patient.display_name ? "" : "italic text-mute"}`}>{nameOf(patient, t)}</dd>
-        <dt className={term}>{t("olcum.identityYear")}</dt>
-        <dd className="m-0">
-          {year ? <b className="font-data">{year}</b> : <span className="italic text-mute">{t("olcum.identityNoBirth")}</span>}
-        </dd>
-        <dt className={term}>{t("olcum.identityBed")}</dt>
-        <dd className="m-0 font-data font-bold">{bedOf(patient)}</dd>
-      </dl>
-      <p className="m-0 mt-3 text-14.5 font-semibold">{t("olcum.identityAsk")}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="lg" variant="primary" icon="ok" onClick={onYes}>{t("olcum.identityYes")}</Button>
-        <Button size="lg" icon="x" onClick={onNo}>{t("olcum.identityNo")}</Button>
-      </div>
-    </Box>
-  );
-}
 
 export function BedsideScreen() {
   const { t } = useI18n();
   const board = useBoard();
   const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
-  // { name: "pick" | "identity" | "form" | "saved", id?, bed?, saved?, gone? }: the step, and the patient it is
-  // for. `gone` belongs to the list step it was raised for: the next step the page takes has none.
+  // { name: "pick" | "identity" | "form" | "saved" | "unmatched", id?, bed?, saved?, gone? }: the step, and the
+  // patient it is for. `gone` belongs to the list step it was raised for: the next step the page takes has none.
+  const waiting = useUnmatched();
   const [step, setStep] = useState({ name: "pick" });
   const stepRef = useRef(null);
   const seen = useRef(step.name);
@@ -141,6 +76,7 @@ export function BedsideScreen() {
   const stepLabel = step.name === "identity" ? t("olcum.identityTitle")
     : step.name === "form" ? t("olcum.formTitle", { bed })
     : step.name === "saved" ? t("olcum.saved", { time: dayStamp(step.saved.atMs, nowMs) })
+    : step.name === "unmatched" ? t("kayit.umTitle")
     : t("olcum.pickTitle");
   const choose = (p) => setStep({ name: "identity", id: p.patient_id, bed: bedOf(p) });
   const refuse = () => {
@@ -159,9 +95,18 @@ export function BedsideScreen() {
       <section ref={stepRef} tabIndex={-1} role="group" aria-label={stepLabel} data-step={step.name} className="outline-none">
         {step.name === "pick" ? (
           <>
+            {/* G3-05 (D17): the way into «Eşleşmeyen ölçümler», with the count when the last read gave one. */}
+            <div className="mb-3">
+              <Button icon="link" onClick={() => setStep({ name: "unmatched" })}>
+                {waiting.count ? t("kayit.umOpenCount", { count: waiting.count }) : t("kayit.umOpen")}
+              </Button>
+            </div>
             <h2 className="m-0 mb-2 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("olcum.pickTitle")}</h2>
             <PickList patients={patients} nowMs={nowMs} known={known} onPick={choose} />
           </>
+        ) : null}
+        {step.name === "unmatched" ? (
+          <UnmatchedStep patients={patients} nowMs={nowMs} known={known} onBack={() => setStep({ name: "pick" })} />
         ) : null}
         {step.name === "identity" && patient ? (
           <IdentityStep patient={patient} onYes={() => setStep({ name: "form", id, bed })} onNo={refuse} />
