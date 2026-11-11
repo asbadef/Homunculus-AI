@@ -232,6 +232,17 @@ class TestTheOrder:
         assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == [
             "S-7", "S-2", "S-6", "S-3", "S-1", "S-4", "S-5"]
 
+    def test_a_letter_with_a_diacritic_orders_with_its_base_letter(self):
+        """The board's collator (`localeCompare("en", {numeric: true, sensitivity: "base"})`) puts Ç with C and Ö
+        with O: a diacritic is no letter of its own, here either — whether it came composed or as a combining mark."""
+        rows = [_row("S-1", bed="YBU 1-1", unit="u1"), _row("S-2", bed="ÇYB 2", unit="u1"),
+                _row("S-3", bed="ybu 1-10", unit="u1"), _row("S-4", bed="ÇYB 1", unit="u1")]
+        assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-4", "S-2", "S-1", "S-3"]
+        rows = [_row("S-1", bed="Oz 2", unit="u1"), _row("S-2", bed="Öz 3", unit="u1"),
+                _row("S-3", bed="Öz 1", unit="u1"), _row("S-4", bed="İç 2", unit="u1"),
+                _row("S-5", bed="ic 1", unit="u1")]
+        assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-5", "S-4", "S-3", "S-1", "S-2"]
+
     def test_a_label_of_digits_and_one_of_letters_compare_without_an_error(self):
         rows = [_row("S-1", bed="B", unit="u1"), _row("S-2", bed="12", unit="u1"), _row("S-3", bed="²", unit="u1")]
         assert [r["patient_id"] for r in sorted(rows, key=sort_key)] == ["S-2", "S-1", "S-3"]
@@ -328,6 +339,31 @@ class TestTheWardAnswer:
         self._answer([_card(f"S-{n:03d}", meds=_meds()) for n in range(1, 31)], audit)
         assert len(reads) == 1 and "patient_id" not in reads[0]
         assert reads[0]["tenant"] == "h1" and reads[0]["event_types"] == {"chart", RETRACT}
+
+    def test_an_empty_board_reads_no_trail_and_still_answers_whole(self, monkeypatch):
+        """No card, no row to sum for: the tenant's fluid entries are not read at all (as `/tasks` skips its reads
+        `if cards`), and the answer keeps its whole shape — the same fluid day, zeros, nothing cut."""
+        audit, reads = InMemoryAuditLog(), []
+        _chart(audit, "S-001", "iv_fluid_ml", 500, DAY[0] + timedelta(hours=1))      # another caller's patient
+        real = audit.records
+
+        def records(*args, **kw):
+            reads.append(kw)
+            return real(*args, **kw)
+
+        monkeypatch.setattr(audit, "records", records)
+        answer = self._answer([], audit)
+        assert reads == []
+        assert answer == {
+            "now": "2026-11-04T09:30:00+00:00", "antibiotic_window_min": 60,
+            "antibiotic_window_source": "surviving-sepsis-campaign-2026",
+            "fluid_day": {"start": "2026-11-04T04:00:00+00:00", "end": "2026-11-05T04:00:00+00:00"},
+            "fluid_truncated": False,
+            "counts": {"patients": 0, "clock_running": 0, "clock_missed": 0, "on_pressor": 0, "recognized": 0,
+                       "recognized_no_record": 0},
+            "rows": []}
+        self._answer([_card("S-001", meds=_meds())], audit)
+        assert len(reads) == 1                                        # the spy does see the read of a ward with a card
 
     def test_a_cut_read_says_so(self, monkeypatch):
         audit = InMemoryAuditLog()

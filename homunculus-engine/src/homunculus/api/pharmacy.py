@@ -18,6 +18,7 @@ It reads the cards' `identity` and `meds` only and holds no reference to the eng
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime, timezone
 
 from homunculus.api.audit import AuditLog
@@ -107,10 +108,17 @@ def row_of(card: dict, fluid: dict | None) -> dict:
     }
 
 
+def _base(text: str) -> str:
+    """Letters as the board's collator compares them at `sensitivity: "base"`: no diacritic and no case — «Ç» with
+    «C», «Ö» with «O». The combining marks are dropped from the canonical decomposition, then the case is folded."""
+    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)).casefold()
+
+
 def _natural(label: str) -> tuple:
-    """A bed label as the board orders it (`screens/beds/order.js` `byBed`): digit runs compared as numbers, the rest
-    case-folded — «YBU 1-2» before «YBU 1-10»."""
-    return tuple((0, int(part), "") if part.isdecimal() else (1, 0, part.casefold())
+    """A bed label as the board orders it (`screens/beds/order.js` `byBed`,
+    `localeCompare("en", {numeric: true, sensitivity: "base"})`): digit runs compared as numbers, the rest without
+    diacritics and case-folded — «YBU 1-2» before «YBU 1-10», «ÇYB 2» before «YBU 1-1»."""
+    return tuple((0, int(part), "") if part.isdecimal() else (1, 0, _base(part))
                  for part in _DIGITS.split(label) if part)
 
 
@@ -140,9 +148,12 @@ def ward_pharmacy(cards: list[dict], audit: AuditLog, *, hospital: str, now: dat
     """The answer of `GET /pharmacy` without its scope block (spec §3). `cards` are the caller's scoped board cards;
     the fluid day is the one that holds `now` (`fluids.fluid_day`), read once for the whole tenant up to
     now + BEDSIDE_SKEW and summed per card over [day start, day end) — a row's balance equals «today» in that
-    patient's Sıvı box. Only the cards handed in become rows: another patient's entries are read and dropped."""
+    patient's Sıvı box. Only the cards handed in become rows: another patient's entries are read and dropped. A
+    board with no card has no row to sum for, so the trail is not read at all (as `/tasks` skips its reads): the
+    answer keeps its whole shape — the same fluid day, zeros, nothing cut."""
     day = fluid_day(now, zone, start_a, start_b)["day"]
-    by_patient, truncated = read_entries_by_patient(audit, hospital, since=day[0], until=now + BEDSIDE_SKEW)
+    by_patient, truncated = (read_entries_by_patient(audit, hospital, since=day[0], until=now + BEDSIDE_SKEW)
+                             if cards else ({}, False))
     rows = sorted((row_of(card, fluid_of(by_patient.get(card["patient_id"], []), day)) for card in cards),
                   key=sort_key)
     return {"now": _iso(now),

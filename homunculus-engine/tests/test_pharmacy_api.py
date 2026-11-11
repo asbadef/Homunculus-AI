@@ -10,11 +10,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from homunculus.api import app as app_module
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent
+from homunculus.api.fluids import fluid_day
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
-from homunculus.api.tasks import InMemoryTaskStore, TaskSettings
+from homunculus.api.tasks import DEFAULT_SETTINGS, InMemoryTaskStore, TaskSettings
 from homunculus.scope import Scope, build_scope
 from homunculus.scope.resolver import UNKNOWN
 from homunculus.tenant.bedmap import BedMap
@@ -65,17 +67,31 @@ def _app(scope: Scope = WHOLE, *, identities=None, store=None):
                       tasks=store if store is not None else InMemoryTaskStore(zones={"demo": "UTC"}))
 
 
-def _chart(client, pid, entries, at):
+def _chart(client, pid, entries, at, headers=DEVICE):
     """Through the door with the bridge's credential, as tests/test_api_board_meds.py charts."""
-    r = client.post(f"/clinical/{pid}", json={"entries": entries, "recorded_at": at.isoformat()}, headers=DEVICE)
+    r = client.post(f"/clinical/{pid}", json={"entries": entries, "recorded_at": at.isoformat()}, headers=headers)
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def _raise_sepsis(client, pid, at):
+def _raise_sepsis(client, pid, at, headers=DEVICE):
     """Suspected infection with a SOFA rise: the engine's sepsis rule fires, and recognition is stamped `at`."""
     return _chart(client, pid, [{"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 80},
-                                {"code": "creatinine", "value": 3.5}], at)
+                                {"code": "creatinine", "value": 3.5}], at, headers)
+
+
+def _one_instant(monkeypatch) -> datetime:
+    """Pin the instant the two fluid reads judge their day at — `GET /pharmacy` and `GET /patients/{id}/fluids` —
+    to one moment taken here. A test that charts into «today» and reads it back in later requests would otherwise
+    fail whenever the fluid day turned between two of its requests; pinned, it holds at any hour of the wall clock.
+    Only the `now` the route hands its builder is replaced: the door, the board and the engine keep the real clock,
+    which is at or after this instant."""
+    now = datetime.now(timezone.utc)
+    for name in ("ward_pharmacy", "patient_fluids"):
+        real = getattr(app_module, name)
+        monkeypatch.setattr(app_module, name,
+                            lambda *args, _real=real, **kw: _real(*args, **{**kw, "now": now}))
+    return now
 
 
 def _pharmacy(client, headers=PHARMACIST):
@@ -239,16 +255,21 @@ class TestTheScope:
 
 class TestTheFluidDay:
     def test_the_default_day_starts_at_eight_and_a_saved_shift_start_moves_it(self):
+        """Each answer is judged against its OWN `now`, never against the wall clock read beside the request: the
+        test holds at any hour, a day boundary between two of its lines included."""
         store = InMemoryTaskStore(zones={"demo": "UTC"})
         with TestClient(_app(store=store)) as client:
-            now = datetime.now(timezone.utc)
-            day = _pharmacy(client).json()["fluid_day"]
+            answer = _pharmacy(client).json()
+            now, day = datetime.fromisoformat(answer["now"]), answer["fluid_day"]
             start, end = datetime.fromisoformat(day["start"]), datetime.fromisoformat(day["end"])
             assert (start.hour, start.minute) == (8, 0) and end - start == timedelta(hours=24)
-            assert start <= now < end + timedelta(seconds=5)
+            assert start <= now < end
             store.save_settings("demo", TaskSettings(shift_start_a=7, shift_start_b=19), by="admin.lbys", now=now)
-            moved = datetime.fromisoformat(_pharmacy(client).json()["fluid_day"]["start"])
+            answer = _pharmacy(client).json()
+            now, moved = datetime.fromisoformat(answer["now"]), datetime.fromisoformat(answer["fluid_day"]["start"])
             assert (moved.hour, moved.minute) == (7, 0) and moved.utcoffset() == timedelta(0)
+            assert moved <= now < moved + timedelta(hours=24)
+            assert datetime.fromisoformat(answer["fluid_day"]["end"]) == moved + timedelta(hours=24)
 
     def test_the_day_is_read_in_the_tenants_zone(self, monkeypatch):
         """The tenant's zone name goes through `zone_of`, as at /patients/{id}/fluids. The zone database is not on
@@ -265,10 +286,12 @@ class TestTheFluidDay:
         assert asked == ["Asia/Baku"]
         assert (start.hour, start.minute) == (4, 0) and start.utcoffset() == timedelta(0)       # 08:00 in Baku
 
-    def test_todays_entries_are_summed_and_one_before_the_day_start_is_left_out(self, ward):
+    def test_todays_entries_are_summed_and_one_before_the_day_start_is_left_out(self, ward, monkeypatch):
         app, client = ward
+        now = _one_instant(monkeypatch)                    # every read below judges the same fluid day
         first = _pharmacy(client).json()
-        start, now = datetime.fromisoformat(first["fluid_day"]["start"]), datetime.fromisoformat(first["now"])
+        assert first["now"] == now.isoformat()
+        start = datetime.fromisoformat(first["fluid_day"]["start"])
         inside = start + (now - start) / 2                                     # in the day, never ahead of now
         _chart(client, "p-a1", [{"code": "iv_fluid_ml", "value": 500}, {"code": "urine_output_ml", "value": 300}],
                inside)
@@ -295,3 +318,97 @@ class TestTheTrail:
             assert _pharmacy(client, headers).status_code == 200
         assert _pharmacy(client, NURSE).status_code == 403
         assert len(app.state.audit.records(tenant="demo", limit=10_000)) == before
+
+    def test_an_empty_board_reads_no_fluid_entry_and_still_answers_whole(self, monkeypatch):
+        """A scope that reaches no card has no row to sum for: the tenant's fluid entries are not read at all (as
+        `/tasks` skips its reads), and the answer keeps its whole shape — the fluid day of its own `now`, zeros,
+        nothing cut, the scope block that says why it is empty. Still nothing is written."""
+        app = _app(build_scope("NURSE", unit_ids=["unit-yok"]))
+        with TestClient(app) as client:
+            _chart(client, "p-a1", [{"code": "iv_fluid_ml", "value": 500}],
+                   datetime.now(timezone.utc) - timedelta(seconds=30))             # a patient of another unit
+            real, reads = app.state.audit.records, []
+
+            def records(*args, **kw):
+                reads.append(kw)
+                return real(*args, **kw)
+
+            before = len(real(tenant="demo", limit=10_000))
+            monkeypatch.setattr(app.state.audit, "records", records)
+            r = _pharmacy(client)
+            fluid_reads = [kw for kw in reads if "chart" in (kw.get("event_types") or ())]
+            assert _pharmacy(client, DEVICE).json()["counts"]["patients"] == 3    # the whole ward: a card, a read
+            seen = [kw for kw in reads if "chart" in (kw.get("event_types") or ())]
+        answer = r.json()
+        assert r.status_code == 200 and list(answer) == KEYS
+        assert fluid_reads == [] and len(seen) == 1                   # the spy does see the read of a ward with a card
+        assert answer["rows"] == [] and answer["fluid_truncated"] is False
+        assert answer["counts"] == {"patients": 0, "clock_running": 0, "clock_missed": 0, "on_pressor": 0,
+                                    "recognized": 0, "recognized_no_record": 0}
+        start, end = fluid_day(datetime.fromisoformat(answer["now"]), timezone.utc, DEFAULT_SETTINGS.shift_start_a,
+                               DEFAULT_SETTINGS.shift_start_b)["day"]
+        assert answer["fluid_day"] == {"start": start.isoformat(), "end": end.isoformat()}
+        assert (answer["antibiotic_window_min"], answer["antibiotic_window_source"]) == (
+            60, "surviving-sepsis-campaign-2026")
+        assert answer["scope"]["blind"] is True and answer["scope_note"]
+        assert len(real(tenant="demo", limit=10_000)) == before
+
+
+class TestTwoHospitals:
+    def test_each_hospital_reads_only_its_own_row_sums_and_counts(self, monkeypatch):
+        """Two hospitals whose patients share the patient key AND the bed label, each with its own meds and fluid
+        entries: a caller of one gets its own row, its own day's sums and its own counters — nothing of the other's,
+        not a name, a rate, a clock or a millilitre. Pins the tenant boundary at the route (the builders' own is
+        tests/test_pharmacy.py and tests/test_fluids.py)."""
+        other = {"Authorization": "Bearer other-jwt"}
+        other_device = {"Authorization": "Bearer bridge-other"}
+        people = {**PEOPLE, "other-jwt": Caller(hospital="diger", actor="ecz.nigar", groups=("pharmacist",),
+                                                perms=frozenset({"board.view", "pharmacy.view"}))}
+        identities = _identities()
+        identities.apply("diger", IdentityRecord(patient_id="p-a1", given="Örnek Hasta", family="Dört", unit="YB",
+                                                 room="304", bed="1", source="comed",
+                                                 updated_at=datetime(2026, 11, 4, tzinfo=timezone.utc)))
+
+        async def resolve_scope(_credential: str) -> Scope:
+            return WHOLE
+
+        async def resolve_jwt(credential: str):
+            return people.get(credential)
+
+        app = create_app({"bridge-token": "demo", "bridge-other": "diger"}, run_escalation_loop=False,
+                         identities=identities, bedmap=BEDMAP, resolve_jwt=resolve_jwt, resolve_scope=resolve_scope,
+                         tasks=InMemoryTaskStore(zones={"demo": "UTC", "diger": "UTC"}))
+        now = _one_instant(monkeypatch)                    # every read below judges the same fluid day
+        with TestClient(app) as client:
+            start = datetime.fromisoformat(_pharmacy(client).json()["fluid_day"]["start"])
+            inside = start + (now - start) / 2                                 # in the day, never ahead of now
+            _chart(client, "p-a1", [{"code": "norepinephrine_rate", "value": 0.12}, {"code": "iv_fluid_ml", "value": 500},
+                                    {"code": "urine_output_ml", "value": 300}], inside)
+            _raise_sepsis(client, "p-a1", now - timedelta(hours=3), other_device)
+            _chart(client, "p-a1", [{"code": "iv_fluid_ml", "value": 900}], inside, other_device)
+            here, there = _pharmacy(client).json(), _pharmacy(client, other).json()
+            here_device, there_device = _pharmacy(client, DEVICE).json(), _pharmacy(client, other_device).json()
+        (mine,) = [row for row in here["rows"] if row["patient_id"] == "p-a1"]
+        assert [row["patient_id"] for row in here["rows"]] == ["p-a1", "p-a2", "p-n1"]
+        assert (mine["bed_label"], mine["display_name"]) == ("YB 304-1", "Örnek Hasta Bir")
+        assert mine["pressors"] == [{"drug": "norepinephrine", "rate": 0.12, "at": inside.isoformat()}]
+        assert mine["antibiotic"]["state"] == "none" and mine["creatinine"] is None
+        assert mine["fluid"] == {"in_ml": 500.0, "out_ml": 300.0, "balance_ml": 200.0, "entries": 2,
+                                 "last_at": inside.isoformat()}
+        assert here["counts"] == {"patients": 3, "clock_running": 0, "clock_missed": 0, "on_pressor": 1,
+                                  "recognized": 0, "recognized_no_record": 0}
+        (theirs,) = there["rows"]
+        assert (theirs["patient_id"], theirs["bed_label"], theirs["display_name"]) == (
+            "p-a1", "YB 304-1", "Örnek Hasta Dört")
+        assert theirs["pressors"] == [] and theirs["on_pressor"] is False
+        assert theirs["antibiotic"]["state"] == "missed"
+        assert theirs["antibiotic"]["recognized_at"] == (now - timedelta(hours=3)).isoformat()
+        assert theirs["creatinine"] == {"value": 3.5, "at": (now - timedelta(hours=3)).isoformat()}
+        assert theirs["fluid"] == {"in_ml": 900.0, "out_ml": 0.0, "balance_ml": 900.0, "entries": 1,
+                                   "last_at": inside.isoformat()}
+        assert there["counts"] == {"patients": 1, "clock_running": 0, "clock_missed": 1, "on_pressor": 0,
+                                   "recognized": 1, "recognized_no_record": 1}
+        for device, person in ((here_device, here), (there_device, there)):               # each bridge, its own
+            assert [(row["patient_id"], row["display_name"], row["fluid"]) for row in device["rows"]] == [
+                (row["patient_id"], row["display_name"], row["fluid"]) for row in person["rows"]]
+            assert device["counts"] == person["counts"]
