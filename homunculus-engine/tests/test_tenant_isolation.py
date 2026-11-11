@@ -80,6 +80,7 @@ class Side:
     session: uuid.UUID    # break-glass, opened by the administrator
     member: uuid.UUID     # a nurse of this tenant
     doctor: uuid.UUID     # G2-B1c: a physician (`attending`), the admission's attending (D3, T1)
+    team_row: uuid.UUID   # G2-B1c: the doctor's ATTENDING row on the admission
 
     @classmethod
     def missing(cls) -> Side:
@@ -140,6 +141,9 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
                      "admission_diagnosis_free_text": "Sentetik tanı"},
     )
     await adm_service.sign_off_admission(db, admission, signing_user_id=admin.id)
+    # G2-B1c (D3): the route writes the attending's row at sign-off; the service does not.
+    team_row, _ = await adm_service.set_attending(db, admission, user_id=doctor.id,
+                                                  granted_by_id=admin.id)
     alert = await esc_service.create_alert(
         db, tenant_id=tenant.id, admission_id=admission.id, patient_id=patient.id,
         unit_id=unit.id, kind="news2", tier=AlertTier.HIGH, summary="1A: sentetik bulgu",
@@ -156,7 +160,7 @@ async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
     return Side(tenant=tenant.id, site=site.id, unit=unit.id, room=room.id, bed=bed.id,
                 free_bed=free_bed.id, patient=patient.id, admission=admission.id,
                 alert=alert.id, handover=handover.id, session=session.id,
-                member=nurse.id, doctor=doctor.id), admin
+                member=nurse.id, doctor=doctor.id, team_row=team_row.id), admin
 
 
 @pytest_asyncio.fixture
@@ -242,10 +246,17 @@ BY_ID: dict[str, ById] = {
     # G2-B1d: the side's admission is a legacy one (made by the service, no protocol) — the
     # caller's own gets past the tenant and unit checks to the 409 `no_protocol`.
     "label": ById("POST", lambda s: f"/admissions/{s.admission}/label", lambda a: {"reprint": False}, 409),
-    "care-team claim": ById("POST", lambda s: f"/admissions/{s.admission}/care-team/claim"),
+    # G2-B1c (T1, T5): the caller (an administrator) and the body's member (a nurse) are not
+    # physicians, and the doctor's row is the attending's. The caller's own admission gets past the
+    # tenant and unit checks to the domain's 409 (`care_team_not_physician`,
+    # `care_team_attending_required`).
+    "care-team claim": ById("POST", lambda s: f"/admissions/{s.admission}/care-team/claim",
+                            control=409),
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",
-        lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+        lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 409),
+    "care-team end": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/care-team/{s.team_row}/end", control=409),
     # G2-B1c (D8): the picker's candidates; the caller's own admission is read (200).
     "care-team candidates": ById("GET", lambda s: f"/admissions/{s.admission}/care-team/candidates"),
     # A-37: the transfer routes are closed — the caller's own admission gets past the tenant
@@ -412,9 +423,10 @@ USERS: dict[str, InBody] = {
     "admitting attending": InBody(
         "POST", lambda a: "/admissions",
         lambda a, u: _admission_body(a.unit, a.free_bed, attending=u), 201),
+    # G2-B1c (T1): a member of the tenant gets past the tenant check; a nurse is no physician.
     "care-team member": InBody(
         "POST", lambda a: f"/admissions/{a.admission}/care-team",
-        lambda a, u: {"user_id": u, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+        lambda a, u: {"user_id": u, "role": "ASSOCIATE_PHYSICIAN"}, 409),
     "handover incoming user": InBody(
         "POST", lambda a: "/handovers", lambda a, u: _handover_body(a.unit, u, [a.admission]),
         201),
@@ -468,6 +480,20 @@ async def test_a_deactivated_account_is_no_member_though_its_membership_is_activ
     r = await _call(world, case.method, case.path(world.a), case.body(world.a, world.a.member))
 
     assert r.status_code == 422 and r.json()["detail"] == NOT_A_MEMBER
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+async def test_another_tenants_care_team_row_under_the_callers_admission_is_a_404(world):
+    """G2-B1c (§5.6): a row is found under its own admission only. Another tenant's row, named
+    under the caller's admission, is the 404 a missing one is, and nothing is written."""
+    before = await _snapshot(world.db)
+    foreign = await _call(world, "POST",
+                          f"/admissions/{world.a.admission}/care-team/{world.b.team_row}/end")
+    missing = await _call(world, "POST",
+                          f"/admissions/{world.a.admission}/care-team/{uuid.uuid4()}/end")
+    assert foreign.status_code == 404, foreign.text
+    assert foreign.json() == missing.json()
     assert await _snapshot(world.db) == before
 
 

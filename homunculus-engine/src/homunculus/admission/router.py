@@ -10,7 +10,8 @@ Permission guards (see auth/permissions.py):
   * admissions.transfer.confirm   confirm a transfer arrival
   (the two transfer routes are closed for now — 409 `transfer_unavailable`, A-37; see below)
   * admissions.discharge.confirm  confirm a discharge, release the bed
-  * care_team.claim / .assign  claim or assign a care-team role
+  * care_team.claim / .assign  claim or assign a care-team role; an assigner ends a row, and a
+                               member ends her own with `admissions.view` alone (G2-B1c)
   * shifts.manage              shift schedules
   * handover.sign              open, sign, countersign a handover; read my handovers and the
                                colleagues I can hand over to (G2-B3b)
@@ -57,8 +58,9 @@ from homunculus import crypto
 from homunculus.admission import form, service, trail, unitscope
 from homunculus.admission.boardlink import board_link_of, kabul_record
 from homunculus.admission.models import (
-    OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX, Admission, AdmissionState, CareTeamMember,
-    DischargeDisposition, Handover, HandoverStatus, Patient,
+    CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX, OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX,
+    Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
+    HandoverStatus, Patient,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
@@ -71,16 +73,16 @@ from homunculus.admission.schemas import (
     ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.errors import (
-    BED_CLOSED, BED_RESERVED, CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION,
-    INVALID_TRANSITION, NO_PROTOCOL, REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal,
-    field_invalid,
+    BED_CLOSED, BED_RESERVED, CARE_TEAM_ATTENDING_REQUIRED, CARE_TEAM_CONFLICT,
+    CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
+    REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.boardkey import board_key
 from homunculus.protocol.models import ProtocolSettings
 from homunculus.protocol.numbers import next_protocol_no
 from homunculus.admission.service import WorkflowError
-from homunculus.auth.dependencies import caller_tenant_id, require_permission
+from homunculus.auth.dependencies import Principal, caller_tenant_id, get_principal, require_permission
 from homunculus.auth.models import Group, GroupPermission, TenantMembership, User, UserGroup
 from homunculus.db import get_db
 from homunculus.api.patient_identity import IdentityRecord
@@ -910,21 +912,97 @@ def _member_out(member: CareTeamMember, people: dict, now: datetime) -> CareTeam
         created_at=member.created_at, closed_at=member.closed_at)
 
 
+#: G2-B1c (T3): the team lives from the sign-off to the end of the stay.
+TEAM_STATES = frozenset({AdmissionState.ACTIVE, AdmissionState.PENDING_DISCHARGE})
+#: A member row that is missing, or another admission's (§5.6).
+MEMBER_NOT_FOUND = "Care-team member not found."
+
+
+def _team_open(admission: Admission) -> None:
+    """T3: a DRAFT has no team yet (D3), and a closed admission keeps the one it had."""
+    if admission.state not in TEAM_STATES:
+        raise Refusal(409, INVALID_TRANSITION,
+                      "The care team is written from the sign-off to the end of the stay "
+                      f"(the admission is {admission.state.value}).").http()
+
+
+def _team_conflict() -> HTTPException:
+    """T7: the physician already holds a row here that is not an expired on-call one, or a
+    concurrent write took the place first."""
+    return Refusal(409, CARE_TEAM_CONFLICT,
+                   "This physician already holds a row on this care team.").http()
+
+
+async def _lost_at_an_index(db: AsyncSession, exc: IntegrityError) -> None:
+    """T7: a care-team write that met one of the two partial unique indexes (a writer the locks
+    did not order) is the coded 409, told apart by the index's name as the admission route tells
+    `uq_admissions_open_identity` apart. Anything else is raised as it is."""
+    broken = _broken_constraint(exc)
+    await db.rollback()
+    if broken in (CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX):
+        raise _team_conflict() from None
+    raise exc
+
+
+def _check_window(payload: CareTeamAdd, now: datetime) -> None:
+    """§5.2, X9: an on-call row needs its window, ending after it starts, in the future and at
+    most 48 hours after its start (`service.ONCALL_MAX_WINDOW`). Any other role takes none. A
+    field refusal names the end that is wrong."""
+    start, end = payload.window_start, payload.window_end
+    if payload.role != CareTeamRole.ONCALL_PHYSICIAN:
+        if start is not None:
+            raise field_invalid("window_start", "Only an on-call physician has a window.")
+        if end is not None:
+            raise field_invalid("window_end", "Only an on-call physician has a window.")
+        return
+    if start is None:
+        raise field_invalid("window_start", "An on-call physician needs the start of her window.")
+    if end is None:
+        raise field_invalid("window_end", "An on-call physician needs the end of her window.")
+    if end <= start:
+        raise field_invalid("window_end", "The window ends after it starts.")
+    if end <= now:
+        raise field_invalid("window_end", "The window ends in the future.")
+    if end - start > service.ONCALL_MAX_WINDOW:
+        raise field_invalid("window_end", "An on-call window is at most 48 hours.")
+
+
 @router.post("/{admission_id}/care-team/claim", response_model=CareTeamMemberResponse)
 async def claim_attending(
     admission_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("care_team.claim")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """G2-B1c (§5.2, T1–T4): the caller becomes the attending. She must be a physician (T1) whose
+    units hold the bed; the previous attending's row ends (D4). Already the attending: 409
+    `care_team_conflict`. There is no claiming on someone else's behalf: adding another clinician
+    goes through POST …/care-team (`care_team.assign`). Audited `care_team.attending` (via
+    `claim`) after the commit."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
-    # The caller becomes the attending of record. There is no claiming on someone else's
-    # behalf here: adding another clinician goes through POST .../care-team (care_team.assign).
-    member = await service.claim_attending(
-        db, admission, attending_id=user.id, granted_by_id=user.id,
-    )
-    answer = _member_out(member, await _people(db, member.user_id), _now())
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    me, actor = user.id, user.username
+    admission = await _locked(db, admission)
+    _team_open(admission)
+    if not await service.is_physician(db, caller_tenant, me):
+        raise _not_physician()
+    if any(m.user_id == me and m.role == CareTeamRole.ATTENDING
+           for m in await service.active_rows(db, admission.id)):
+        raise _team_conflict()
+    now = _now()
+    try:
+        member, ended = await service.set_attending(db, admission, user_id=me,
+                                                    granted_by_id=me, now=now)
+    except IntegrityError as exc:
+        await _lost_at_an_index(db, exc)
+    key = await _key_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    answer = _member_out(member, await _people(db, me), now)
     await db.commit()
+    trail.record(request, hospital, "care_team.attending", patient_id=key, payload={
+        "admission_id": str(answer.admission_id), "member_id": str(answer.id), "member": actor,
+        "via": "claim", "ended": [str(i) for i in ended], "actor": actor})
     return answer
 
 
@@ -932,22 +1010,123 @@ async def claim_attending(
 async def add_care_team_member(
     admission_id: uuid.UUID,
     payload: CareTeamAdd,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("care_team.assign")),
     caller_tenant: uuid.UUID = _tenant,
 ):
+    """G2-B1c (§5.2, T1–T4, T7, T8): an assigner adds a physician of the tenant.
+    - `user_id` must be a member of the tenant (422, as before) and a physician (T1).
+    - The window rules are `_check_window`'s (422).
+    - Role ATTENDING makes her the attending (`service.set_attending`, T4).
+    - A physician already holding a row here is refused `care_team_conflict`, unless that row is
+      an on-call row whose window has passed: it is ended and the new row written in one
+      transaction (T8, for any new role: X4).
+    Audited after the commit: `care_team.attending` (via `add`), or `care_team.add`."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await scope.ensure_members(db, caller_tenant, [payload.user_id])
+    now = _now()
     try:
-        member = await service.add_care_team_member(
-            db, admission, user_id=payload.user_id, role=payload.role,
-            granted_by_id=user.id, window_start=payload.window_start,
-            window_end=payload.window_end,
-        )
+        _check_window(payload, now)
+    except Refusal as exc:
+        raise exc.http() from None
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    actor_id, actor = user.id, user.username
+    admission = await _locked(db, admission)
+    _team_open(admission)
+    if not await service.is_physician(db, caller_tenant, payload.user_id):
+        raise _not_physician()
+    existing = next((m for m in await service.active_rows(db, admission.id)
+                     if m.user_id == payload.user_id), None)
+    renewed, ended = None, []
+    try:
+        if payload.role == CareTeamRole.ATTENDING:
+            if existing is not None and existing.role == CareTeamRole.ATTENDING:
+                raise _team_conflict()
+            member, ended = await service.set_attending(
+                db, admission, user_id=payload.user_id, granted_by_id=actor_id, now=now)
+        else:
+            if existing is not None:
+                if not service.expired(existing, now):
+                    raise _team_conflict()
+                await service.end_care_team_member(db, existing, now=now)         # T8
+                renewed = existing.id
+            member = await service.add_care_team_member(
+                db, admission, user_id=payload.user_id, role=payload.role,
+                granted_by_id=actor_id, window_start=payload.window_start,
+                window_end=payload.window_end)
+    except IntegrityError as exc:
+        await _lost_at_an_index(db, exc)
     except WorkflowError as exc:
         raise _wf(exc)
-    answer = _member_out(member, await _people(db, member.user_id, user.id), _now())
+    key = await _key_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    people = await _people(db, member.user_id, actor_id)
+    answer, name = _member_out(member, people, now), people[member.user_id][0]
     await db.commit()
+    if payload.role == CareTeamRole.ATTENDING:
+        trail.record(request, hospital, "care_team.attending", patient_id=key, payload={
+            "admission_id": str(answer.admission_id), "member_id": str(answer.id),
+            "member": name, "via": "add", "ended": [str(i) for i in ended], "actor": actor})
+    else:
+        trail.record(request, hospital, "care_team.add", patient_id=key, payload={
+            "admission_id": str(answer.admission_id), "member_id": str(answer.id),
+            "member": name, "role": answer.role.value,
+            "window_start": answer.window_start.isoformat() if answer.window_start else None,
+            "window_end": answer.window_end.isoformat() if answer.window_end else None,
+            "renewed": str(renewed) if renewed else None, "actor": actor})
+    return answer
+
+
+@router.post("/{admission_id}/care-team/{member_id}/end", response_model=CareTeamMemberResponse)
+async def end_care_team_member(
+    admission_id: uuid.UUID,
+    member_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("care_team.assign", "admissions.view")),
+    principal: Principal = Depends(get_principal),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    """G2-B1c (§5.2, T2, T5): a row of the team ends (`is_active` false, `closed_at` now).
+    - An assigner (`care_team.assign`) ends any row but the attending's, for a bed in her units.
+    - A member ends her own row with `admissions.view` alone, and needs no reach: ending it only
+      narrows what she sees (D6).
+    - Another's row without `care_team.assign`: 403.
+    - The ATTENDING row: 409 `care_team_attending_required` (T5).
+    - A row already ended: 409 `invalid_transition`.
+    - A row of another admission, or none: 404.
+    Audited `care_team.end` after the commit."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    member = await db.get(CareTeamMember, member_id)
+    if member is None or member.admission_id != admission.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MEMBER_NOT_FOUND)
+    me, actor = user.id, user.username
+    own = member.user_id == me
+    if not own and "care_team.assign" not in principal.perms:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="permission required: care_team.assign")
+    if not own:
+        await _reach_admission(db, me, caller_tenant, admission)
+    admission = await _locked(db, admission)
+    _team_open(admission)
+    member = (await db.execute(select(CareTeamMember).where(CareTeamMember.id == member_id)
+                               .execution_options(populate_existing=True))).scalar_one()
+    if not member.is_active:
+        raise Refusal(409, INVALID_TRANSITION, "This care-team row has ended already.").http()
+    if member.role == CareTeamRole.ATTENDING:
+        raise Refusal(409, CARE_TEAM_ATTENDING_REQUIRED,
+                      "The attending's row ends only when another attending is made.").http()
+    now = _now()
+    await service.end_care_team_member(db, member, now=now)
+    key = await _key_of(db, admission)
+    hospital = await trail.hospital_of(db, caller_tenant)
+    people = await _people(db, member.user_id, member.granted_by_id)
+    answer, name = _member_out(member, people, now), people[member.user_id][0]
+    await db.commit()
+    trail.record(request, hospital, "care_team.end", patient_id=key, payload={
+        "admission_id": str(answer.admission_id), "member_id": str(answer.id), "member": name,
+        "role": answer.role.value, "self": own, "actor": actor})
     return answer
 
 

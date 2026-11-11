@@ -198,23 +198,6 @@ async def find_stale_draft_admissions(db: AsyncSession) -> list[Admission]:
 # ---------------------------------------------------------------------------
 # Care team — §4.2–4.3, §3.3
 # ---------------------------------------------------------------------------
-async def claim_attending(
-    db: AsyncSession, admission: Admission, *, attending_id: uuid.UUID,
-    granted_by_id: uuid.UUID | None = None,
-) -> CareTeamMember:
-    """§4.2 — an attending takes the patient (or is assigned on their behalf)."""
-    admission.attending_physician_id = attending_id
-    member = CareTeamMember(
-        admission_id=admission.id,
-        user_id=attending_id,
-        role=CareTeamRole.ATTENDING,
-        granted_by_id=granted_by_id or attending_id,
-    )
-    db.add(member)
-    await db.flush()
-    return member
-
-
 async def add_care_team_member(
     db: AsyncSession, admission: Admission, *, user_id: uuid.UUID,
     role: CareTeamRole, granted_by_id: uuid.UUID,
