@@ -114,7 +114,7 @@ Read-only; no patient name, key or id anywhere; no person's name.
 
 1. **Header:** «Kalite göstergeleri», the line «Süreç ölçülür, kişi değil», the period switch «Bugün» (son 24 saat) ·
    «7 gün» · «30 gün», «HH:MM itibarıyla», «Yenile».
-2. **Coverage line** (always shown under the header): «Bu dönemde {episodes} alarmın {placed}'i bir birime
+2. **Coverage line** (shown under the header whenever there is an answer and the reach is not empty — §5 A5): «Bu dönemde {episodes} alarmın {placed}'i bir birime
    bağlanabildi. Birime bağlanamayanlar: bu sistemde kabul kaydı olmayan (HBYS'den gelen ya da kimliği olmayan monitör)
    hastalar.» A scoped caller reads «yalnız kapsamınızdaki birimler». When `truncated`: «yalnız en yeni kayıtlar okundu;
    dönem {window_from} ile başlıyor».
@@ -184,8 +184,20 @@ throwaway Postgres on 127.0.0.1:5644x; the whole dashboard suite; `vite build`.
   sends `repeats`, top level or per kind — it would always be 0. `/quality` never sent it.
 - **A3 — every open unit the caller reaches is a row.** All of the tenant's active units for an unrestricted caller,
   her unit-granted ones for a scoped caller, each with real zeros when nothing happened in it in the window. A closed
-  unit (`is_active` false) is a row only when something happened in it in the window. So `units: []` means the reach
-  is empty, and «kapsamınızda birim yok» is never said of units that were merely quiet.
+  unit (`is_active` false) is a row only when something happened in it in the window. So `units: []` means the caller
+  reaches no open unit (a scoped caller whose only granted unit is closed and quiet gets `[]` too), and «kapsamınızda
+  birim yok» is never said of open units that were merely quiet.
 - **A4 — a scope that cannot be read is a 503.** As on `/alarm-quality` (G2-A2, D13): `/quality` answers 503 «kapsam
   şu anda okunamıyor» when the caller's scope cannot be read, never an empty reach the page would word as «kapsamınızda
   birim yok». The order stays: 403 without `quality.view`, then 422 for another `days`, then the 503s.
+- **A5 — the page, after review.** The coverage line, «Erteleme nedenleri» and «Türe göre alarmlar» are drawn only
+  with an answer whose reach is not empty; an empty reach says «Kapsamınızda birim yok» once. A period with no alarm
+  episode says so in words («Bu dönemde alarm olayı yok.», a scoped variant) instead of «0 … 0 tanesi». With no
+  answer the cards take a neutral heading («Göstergeler · son 7 gün»), never «Hastane geneli» for a scoped caller.
+  The unplaced row's handover cells show «—».
+- **A6 — a whole percent never says more than the counts.** `wholePercent` (ozet.js, shared with «Yönetici özeti»)
+  rounds answered ÷ settled from the counts when known, and says 100 only when every settled episode was answered
+  and 0 only when none was (299 of 300 → 99, 1 of 300 → 1).
+- **A7 — a stricter shape check.** An answer for another period than the switch shows (`days`), a scoped answer with
+  an unplaced row, or `unanswered_resolved` above `unanswered` is a failed read. The shared `usePeriodRead` keeps the
+  period each answer was read for, so a period change shows «okunuyor…» at once, never the other period's numbers.

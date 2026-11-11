@@ -2516,8 +2516,8 @@ adlar uydurmadır.
     devirleri kendi tablosundan, dönemin tamamından okur. Yanıt, sayfanın bu sürümde yazmadığı iki sayıyı da taşır:
     süresi dolan devirler (30 dakikalık süresi devredenin imzası olmadan dolan) ve karşı imza süresinin p90'ı;
   - `GET /alarm-quality` yanıtına yeni bir alan, `unanswered_resolved` (kendiliğinden düzelen yanıtsız alarmlar);
-    türe göre dökümden (`per_kind`) `repeats` alanı kalktı, `/quality`'ninkinden de (iki yol da artık denetim
-    kaydının `alert` satırlarını okumuyor; hiçbir sayfa onu yazmıyordu); başka bir alan değişmedi;
+    `repeats` alanı kalktı, üst düzeyde ve türe göre dökümde (`per_kind`); `/quality` onu hiç göndermedi (iki yol
+    da artık denetim kaydının `alert` satırlarını okumuyor; hiçbir sayfa onu yazmıyordu); başka bir alan değişmedi;
   - göç `0020`: her hastanenin Denetçi grubuna `quality.view` (0019'dan sonra gelir; yalnız yetki satırı yazar, tablo
     ya da sütun eklemez);
   - nginx ve geliştirme sunucusu `/quality`'yi API'ye iletir.
